@@ -274,10 +274,10 @@ wrong or the run takes longer than `-timeout`, the check fails with the
 agent's error. It also fails when an image's name isn't valid, when kube
 still can't schedule the Pod 5 minutes after creating it, when a Secret is
 still missing or an image still can't be pulled 5 minutes after the
-container can start, and when fetching the head fails in three Pods in a
-row. The next head runs the agent again. To run it again
-on the same change, such as after a transient error, push an empty commit
-with `git commit --allow-empty`.
+container can start, and when three Pods in a row fail to fetch the head
+or find that the branch no longer points to it. The next head runs the
+agent again. To run it again on the same change, such as after a transient
+error, push an empty commit with `git commit --allow-empty`.
 
 Agent runs cost money. Three limits cap them, and they count runs, not
 tokens:
@@ -295,7 +295,9 @@ tokens:
 
 If the branch moves before the agent's Pod fetches it, the agent doesn't
 run, so the run doesn't count toward `maxAgentRuns` or `-max-runs-per-day`,
-and the new head starts a run of its own.
+and the new head starts a run of its own. If the branch's head is the same
+a minute later, such as when the branch moved back, the check fetches it
+again in a new Pod, which counts as a run.
 
 If an agent Pod is deleted before its run finishes, kube creates it again,
 and the agent runs again. The check counts that as another run. When
@@ -465,12 +467,14 @@ starts a new run, up to the job's `MaxRuns`. A deploy that changes the
 agent Pods' spec starts an unfinished run again in a new Pod, which takes
 a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
 Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
-the run back and waits for a `Job` with the new head. While the run waits,
-the status's `Moved` is true. If the run's Pod is
-deleted before the run is `Done`, kube creates it again and the agent runs
-again, so `RunJob` counts another run. When `MaxRuns` or
-`-max-runs-per-day` allows no more, `RunJob` ends the run instead, and
-kube doesn't create the Pod again.
+the run back and waits a minute for a `Job` with the new head. While the
+run waits, the status's `Moved` is true. If a call after that minute has
+the same `Job`, `RunJob` fetches the commits again in a new Pod, which
+counts as a run. A run ends after three Pods fail to fetch the commits or
+find that the branch moved. If the run's Pod is deleted before the run is
+`Done`, kube creates it again and the agent runs again, so `RunJob` counts
+another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
+`RunJob` ends the run instead, and kube doesn't create the Pod again.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and

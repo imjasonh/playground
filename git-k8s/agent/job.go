@@ -45,8 +45,9 @@ type Job struct {
 // Checkout is the commits that a job's agent works on.
 type Checkout struct {
 	// Branch points to Head. If the Pod finds it elsewhere, the agent
-	// doesn't run, and the run waits for a Job with the new head without
-	// counting toward the run limits.
+	// doesn't run, so the run doesn't count toward the run limits, and the
+	// run waits a minute for a Job with the new head before it fetches
+	// Head again in a new Pod.
 	Branch string
 	Head   string
 	// Parent names the branch that Branch lands on.
@@ -189,14 +190,12 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 // with another spec, such as after a deploy with other flags. The agent
 // starts over, so the restart takes a place in -max-runs-per-day, but it
 // doesn't count toward the job's runs, so a deploy can't stop a run whose
-// job has none left.
+// job has none left. A run whose Pod found that the branch moved has no
+// agent to start over, so it prepares the source again at once.
 func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
-		// A new Pod would find that the branch moved, too.
 		c := x.job.Checkout
-		s := x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
-		s.Moved = true
-		return s
+		return x.prepareAgain(ctx, fmt.Sprintf("%s no longer points to %s", c.Branch, c.Head))
 	}
 	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
 		kube.RequeueAfter(ctx, wait)
@@ -205,6 +204,37 @@ func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	x.st.Pod, x.st.UID = p.Name, ""
 	x.started = true
 	return x.follow(ctx, p)
+}
+
+// prepareAgain starts the run's next attempt at preparing the source in a
+// new Pod, after the run's Pod found that the branch moved, as msg says,
+// and the job is still for the same commits, such as when the branch moved
+// back. That Pod's run was given back, so the attempt is a new run.
+func (x *run) prepareAgain(ctx context.Context, msg string) JobStatus {
+	r, st := x.r, x.st
+	if st.Attempt >= prepareAttempts {
+		return x.fail("couldn't prepare the source in %d attempts: %s", prepareAttempts, msg)
+	}
+	if why := x.usedAll(); why != "" {
+		return x.moved("not preparing the source again: %s", why)
+	}
+	next := r.jobPod(x.job, st.Attempt+1)
+	if n := r.unfinishedPods(ctx, x.job.Namespace, next.Name); r.MaxPods > 0 && n >= r.MaxPods {
+		kube.RequeueAfter(ctx, time.Minute)
+		return x.moved("waiting to start a Pod: %d agent Pods are running, and -max-pods is %d", n, r.MaxPods)
+	}
+	if wait, ok := r.day.take(time.Now(), r.MaxRunsPerDay); !ok {
+		kube.RequeueAfter(ctx, wait)
+		return x.moved("waiting to prepare the source again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", r.MaxRunsPerDay)
+	}
+	old := st.Pod
+	st.Runs++
+	st.Attempt++
+	st.Pod, st.UID = next.Name, ""
+	// A later reconcile takes a missing Pod to mean that kube couldn't
+	// create it, so declare the Pod in this one.
+	kube.Own(ctx, next)
+	return x.status("preparing the source again in Pod %s, because the run is still for the same commits after Pod %s found that %s", next.Name, old, msg)
 }
 
 // usedAll says why the run can't start another Pod, if it used all the runs
@@ -316,9 +346,15 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 					st.Runs--
 				}
 			}
-			s := x.status("waiting for a run on the new commits: %s", msg)
-			s.Moved = true
-			return s
+			since := t.FinishedAt
+			if since.IsZero() {
+				since = pod.CreationTimestamp
+			}
+			if wait := movedWait - time.Since(since); wait > 0 {
+				kube.RequeueAfter(ctx, wait)
+				return x.moved("waiting up to a minute for a run on the new commits: %s", msg)
+			}
+			return x.prepareAgain(ctx, msg)
 		case st.Attempt < prepareAttempts:
 			st.Attempt++
 			next := x.r.jobPod(x.job, st.Attempt)
@@ -411,6 +447,13 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 
 func (x *run) status(format string, args ...any) JobStatus {
 	return JobStatus{Message: fmt.Sprintf(format, args...)}
+}
+
+// moved is the status of a run that waits because the branch moved.
+func (x *run) moved(format string, args ...any) JobStatus {
+	s := x.status(format, args...)
+	s.Moved = true
+	return s
 }
 
 // fail finishes the run without a result.

@@ -782,24 +782,17 @@ func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
 	t.Log("The agent doesn't run on a branch that moved, so the run doesn't count, once.")
 	moved := "c/x no longer points to " + f.b.Spec.Head
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()})},
 	}}
 	for range 2 {
 		rec := f.reconcile(p)
-		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name ||
+		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name ||
 			f.jobState() != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID, Refunded: p.UID}) {
 			t.Fatalf("result = %+v, want Running in the same Pod with the run given back", res)
 		}
-		if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
-			t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+		if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() < 59*time.Second || rec.RequeueAfter() > time.Minute {
+			t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and a retry in about a minute", len(pods), rec.RequeueAfter())
 		}
-	}
-
-	t.Log("A deploy doesn't start the run again in a new Pod, which would find the branch moved too.")
-	f.r.Model = "composer-3"
-	rec := f.reconcile(p)
-	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
-		t.Fatalf("result = %+v, want Running without a Pod", res)
 	}
 
 	t.Log("The new head starts a new run, which the limits still allow.")
@@ -808,6 +801,44 @@ func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
 	f.work.Push("c/x")
 	if q := f.start(); q.Name == p.Name || f.state().Outputs["runs"] != "2" {
 		t.Errorf("outputs = %v, want run 2 in a new Pod", f.state().Outputs)
+	}
+}
+
+func TestPreparesTheSourceAgainWhenTheHeadStaysTheSame(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 1
+	p := f.start()
+	moved := "c/x no longer points to " + f.b.Spec.Head
+	for attempt := 1; ; attempt++ {
+		t.Logf("Attempt %d finds that the branch moved, and then the branch moves back.", attempt)
+		exited := &Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()}
+		p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{{Name: "prepare", State: terminated(exited)}}}
+		rec := f.reconcile(p)
+		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+moved ||
+			res.Outputs["runs"] != "0" || len(f.r.day.starts) != 0 || rec.RequeueAfter() < 59*time.Second || rec.RequeueAfter() > time.Minute {
+			t.Fatalf("result = %+v with %d runs in the last day and RequeueAfter = %v, want the run given back and a retry in about a minute", res, len(f.r.day.starts), rec.RequeueAfter())
+		}
+
+		exited.FinishedAt = time.Now().Add(-movedWait)
+		rec = f.reconcile(p)
+		res := f.state()
+		if attempt == prepareAttempts {
+			if res.State != gitk8s.Failed || res.Message != "couldn't prepare the source in 3 attempts: "+moved || res.Outputs["runs"] != "0" || len(f.r.day.starts) != 0 {
+				t.Errorf("result = %+v with %d runs in the last day, want Failed without a run", res, len(f.r.day.starts))
+			}
+			return
+		}
+		pods := kube.Owned[Pod](rec)
+		if len(pods) != 2 || pods[1].Name != res.Outputs["pod"] {
+			t.Fatalf("owned Pods = %d and outputs = %v, want the old Pod and the new one", len(pods), res.Outputs)
+		}
+		next := pods[1]
+		want := "preparing the source again in Pod " + next.Name + ", because the run is still for the same commits after Pod " + p.Name + " found that " + moved
+		if st := f.jobState(); res.State != gitk8s.Running || res.Message != want || st.Runs != 1 || st.Attempt != attempt+1 || st.UID != "" || len(f.r.day.starts) != 1 {
+			t.Fatalf("result = %+v with %d runs in the last day, want attempt %d as a new run", res, len(f.r.day.starts), attempt+1)
+		}
+		p = next
+		p.Namespace, p.UID = "default", "uid-"+p.Name
 	}
 }
 

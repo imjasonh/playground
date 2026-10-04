@@ -53,8 +53,13 @@ const (
 )
 
 // prepareAttempts is how many Pods a run starts when preparing the source
-// fails.
+// fails or finds that the branch moved.
 const prepareAttempts = 3
+
+// movedWait is how long a run whose Pod found that the branch moved waits
+// for a job with the new head, such as a check's next head, before it
+// prepares the source for the same head again.
+const movedWait = time.Minute
 
 // Runner runs agents in Pods for one check. Set Name to the check's name,
 // and the other fields with AddFlags.

@@ -184,8 +184,9 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	job := f.reviewJob()
 	st := &JobState{Runs: 1}
 	p := f.startJob(job, st)
+	moved := "c/x no longer points to " + job.Checkout.Head
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head})},
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()})},
 	}}
 	for _, uid := range []string{p.UID, p.UID, "uid-again"} {
 		p.UID = uid
@@ -194,10 +195,63 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 		}
 	}
 
-	t.Log("A deploy doesn't start a Pod that would find the branch moved, too.")
+	t.Log("A deploy prepares the source again at once, in a new Pod that counts as a run.")
 	f.r.Image = "registry.example.com/agent-runner:new"
-	if s, rec := f.runJob(job, st, p); s.Done || !s.Moved || len(kube.Owned[Pod](rec)) != 0 || s.Message != "waiting for a run on the new commits: c/x no longer points to "+job.Checkout.Head {
-		t.Errorf("RunJob = %+v, want the moved run to wait without a Pod", s)
+	s, rec := f.runJob(job, st, p)
+	pods := kube.Owned[Pod](rec)
+	if len(pods) != 1 || pods[0].Name == p.Name {
+		t.Fatalf("owned Pods = %d, want a new Pod", len(pods))
+	}
+	want := "preparing the source again in Pod " + pods[0].Name + ", because the run is still for the same commits after Pod " + p.Name + " found that " + moved
+	if s.Done || s.Moved || s.Message != want || st.Runs != 2 || st.Pod != pods[0].Name || st.Attempt != 2 || st.UID != "" {
+		t.Errorf("RunJob = %+v with state %+v, want attempt 2 as a new run", s, st)
+	}
+}
+
+func TestWaitsToPrepareAJobsSourceAgain(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		limit    func(*fixture, *Job) []*Pod
+		want     string
+		min, max time.Duration
+	}{
+		{"MaxRuns", func(_ *fixture, job *Job) []*Pod {
+			job.MaxRuns = 1
+			return nil
+		}, "not preparing the source again: the job used all 1 of its runs", 0, 0},
+		{"-max-pods", func(f *fixture, _ *Job) []*Pod {
+			f.r.MaxPods = 1
+			other := &Pod{Object: kube.Meta("review-other", map[string]string{agentLabel: "review"})}
+			other.Namespace = "elsewhere"
+			other.Status.Phase = "Running"
+			return []*Pod{other}
+		}, "waiting to start a Pod: 1 agent Pods are running, and -max-pods is 1", time.Minute, time.Minute},
+		{"-max-runs-per-day", func(f *fixture, _ *Job) []*Pod {
+			f.r.MaxRunsPerDay = 1
+			f.r.day.take(time.Now(), f.r.MaxRunsPerDay)
+			return nil
+		}, "waiting to prepare the source again: 1 agent runs started in the last 24 hours, the -max-runs-per-day limit", 23 * time.Hour, 24 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			job := f.reviewJob()
+			st := &JobState{Runs: 1}
+			p := f.startJob(job, st)
+			exited := &Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head, FinishedAt: time.Now()}
+			p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{{Name: "prepare", State: terminated(exited)}}}
+			f.runJob(job, st, p)
+
+			t.Log("A minute later, the job is still for the same head, but a limit allows no new Pod yet.")
+			exited.FinishedAt = time.Now().Add(-movedWait)
+			s, rec := f.runJob(job, st, append([]*Pod{p}, tc.limit(f, job)...)...)
+			want := JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID, Refunded: p.UID}
+			if pods := kube.Owned[Pod](rec); s.Done || !s.Moved || s.Message != tc.want || *st != want || len(pods) != 1 || pods[0].Name != p.Name {
+				t.Errorf("RunJob = %+v with state %+v and %d owned Pods, want the run to wait in its old Pod", s, st, len(pods))
+			}
+			if d := rec.RequeueAfter(); d < tc.min || d > tc.max {
+				t.Errorf("RequeueAfter = %v, want between %v and %v", d, tc.min, tc.max)
+			}
+		})
 	}
 }
 
@@ -212,7 +266,7 @@ func TestGivesBackARunOnceForAStateWithoutRefunded(t *testing.T) {
 	st := &JobState{}
 	p := f.startJob(job, st)
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head})},
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head, FinishedAt: time.Now()})},
 	}}
 	for range 5 {
 		kept := &JobState{Runs: st.Runs, Pod: st.Pod, Attempt: st.Attempt, UID: st.UID}
