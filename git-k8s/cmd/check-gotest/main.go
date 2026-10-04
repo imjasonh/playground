@@ -5,7 +5,9 @@
 // container runs go test ./... as a non-root user, with no service account
 // token, no privileges, and a read-only root file system. Only the init
 // container sees the repository's credentials. The check reports the Pod's
-// result, with the end of the test output when the tests fail.
+// result, with the end of the test output when the tests fail. With
+// -go-cache, test Pods download modules from a go-cache server and share
+// build outputs through it; see addGoCache.
 //
 // kube deletes a Pod when the check stops declaring it, which happens after
 // the check records the Pod's result and when the branch moves to a new
@@ -20,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"maps"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -111,6 +114,9 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 			return checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg), nil
 		}
 		msg, _ := terminated(pod.Status.ContainerStatuses, "test")
+		if m, failed := goCacheFailure(pod); failed {
+			msg = m
+		}
 		out := tail(cmp.Or(msg, pod.Status.Message, pod.Status.Reason), 900)
 		v := checks.Fail("go test failed in Pod %s: %s", name, out)
 		if strings.Contains(out, "lookup disabled by GOPROXY=off") {
@@ -252,7 +258,13 @@ func testPod(in *checks.Input, name string) *Pod {
 			},
 		}},
 	}
+	addGoCache(p, in)
 	return p
 }
 
-func main() { checks.Main[Branch](check) }
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "cacheprog" {
+		os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	checks.Main[Branch](check)
+}
