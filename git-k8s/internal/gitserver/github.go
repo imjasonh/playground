@@ -32,9 +32,10 @@ import (
 // JSON, which is also YAML that Octo STS reads, and supports the fields
 // issuer, subject, subject_pattern, audience, and permissions.
 //
-// The tokens from the exchange act for the GitHub App OctoSTSApp, and the
-// administrator acts for OtherApp. As on GitHub, a token can update only its
-// app's check runs, but the administrator can update any.
+// The tokens from the exchange act for the GitHub App OctoSTSApp, unless
+// RouteApp routes them to another app, and the administrator acts for
+// OtherApp. As on GitHub, a token can update only its app's check runs, but
+// the administrator can update any.
 type GitHub struct {
 	// Root holds the repositories.
 	Root string
@@ -47,6 +48,7 @@ type GitHub struct {
 
 	mu        sync.Mutex
 	grants    map[string]grant
+	apps      map[route]int64
 	runs      []*CheckRun
 	exchanges []Exchange
 	requests  []string
@@ -84,10 +86,12 @@ type CheckRunApp struct {
 	ID int64 `json:"id"`
 }
 
-// The GitHub Apps that check runs belong to.
+// The GitHub Apps that check runs belong to. SecondOctoSTSApp is for
+// RouteApp.
 const (
-	OctoSTSApp int64 = 1
-	OtherApp   int64 = 2
+	OctoSTSApp       int64 = 1
+	OtherApp         int64 = 2
+	SecondOctoSTSApp int64 = 3
 )
 
 // CheckRunOutput is what a check run shows.
@@ -101,7 +105,11 @@ type grant struct {
 	repo        string
 	permissions map[string]string
 	expires     time.Time
+	app         int64
 }
+
+// route is the scope and identity of a token exchange.
+type route struct{ scope, identity string }
 
 const githubName = `[A-Za-z0-9][-A-Za-z0-9_.]*`
 
@@ -166,6 +174,17 @@ func (g *GitHub) Fail(status int) {
 	g.failing = status
 }
 
+// RouteApp makes the exchange's tokens for scope, OWNER/REPO, and identity
+// act for app, as Octo STS can route them when it has several GitHub Apps.
+func (g *GitHub) RouteApp(scope, identity string, app int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.apps == nil {
+		g.apps = map[route]int64{}
+	}
+	g.apps[route{scope, identity}] = app
+}
+
 // AcceptReopening makes the server accept an update that starts a
 // completed check run again. GitHub's documentation doesn't say whether
 // GitHub accepts one, so the server refuses one unless a test calls
@@ -228,7 +247,7 @@ func (g *GitHub) exchange(w http.ResponseWriter, r *http.Request) {
 	if g.grants == nil {
 		g.grants = map[string]grant{}
 	}
-	g.grants[token] = grant{repo: scope, permissions: p.Permissions, expires: time.Now().Add(time.Hour)}
+	g.grants[token] = grant{repo: scope, permissions: p.Permissions, expires: time.Now().Add(time.Hour), app: cmp.Or(g.apps[route{scope, identity}], OctoSTSApp)}
 	g.exchanges = append(g.exchanges, Exchange{Scope: scope, Identity: identity, Token: token})
 	g.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"token": token})
@@ -356,6 +375,9 @@ func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 			apiError(w, status, msg)
 			return
 		}
+		g.mu.Lock()
+		app = g.grants[token].app
+		g.mu.Unlock()
 	}
 	switch {
 	case sha != "" && r.Method == http.MethodGet:

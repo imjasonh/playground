@@ -252,15 +252,24 @@ remembers what it wrote, and writes a check run again only when a result
 changes, a branch leaves the check run's commit, or the program restarts, so
 a change that someone else makes to a check run can stay until then.
 
-GitHub limits the requests that each installation of a GitHub App can make.
-When GitHub answers that the Octo STS app's installation reached its limit,
-the controller stops publishing for that repository owner until the time
-that GitHub gives, or for a minute. It logs other errors from GitHub and
-tries again later. Neither holds back checks or landings. To show whether
-the check-runs identity works, the repositories controller sets the
-`CheckRunsTokenIssued` condition on the `GitRepository`, which is `False`
-with Octo STS's answer when Octo STS doesn't issue a token. The
-`GitRepository` stays `Ready` either way.
+Octo STS can have several GitHub Apps and issue the tokens for each
+repository and identity for a different one. So the controller learns each
+repository and identity's app from the check runs that it creates and
+updates. Octo STS's
+[sticky store](https://github.com/octo-sts/app#sticky-store) keeps a
+repository and identity on one app. If Octo STS moves them to another app,
+which can't update the old app's check runs, the controller creates new
+ones beside them.
+
+GitHub limits the requests that each installation of a GitHub App can make,
+and an installation is one owner's. When GitHub answers that an installation
+reached its limit, the controller stops publishing for that repository
+owner, for every app, until the time that GitHub gives, or for a minute. It
+logs other errors from GitHub and tries again later. Neither holds back
+checks or landings. To show whether the check-runs identity works, the
+repositories controller sets the `CheckRunsTokenIssued` condition on the
+`GitRepository`, which is `False` with Octo STS's answer when Octo STS
+doesn't issue a token. The `GitRepository` stays `Ready` either way.
 
 ### Security
 

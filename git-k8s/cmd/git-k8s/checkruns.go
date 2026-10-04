@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -49,22 +48,27 @@ type checkRuns struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
 
-	// app is the ID of the GitHub App that the controller's tokens act for,
-	// or 0 until the controller creates a check run. Every token from Octo
-	// STS acts for the Octo STS app, and GitHub lets only the app that
-	// created a check run update it, so the controller looks only for its
-	// app's check runs.
-	app atomic.Int64
-
 	mu sync.Mutex
 	// repos holds what the controller knows of each repository's check
 	// runs, by namespace and name.
 	repos map[string]*repoRuns
+	// apps holds the ID of the GitHub App that the controller's tokens act
+	// for, by repository and Octo STS identity, once the controller creates
+	// or updates a check run with them. GitHub lets only the app that
+	// created a check run update it, so the controller looks only for that
+	// app's check runs. Octo STS with several GitHub Apps can route each
+	// repository and identity to a different app, and to another app later.
+	apps map[appKey]int64
 	// paused holds when each repository owner's rate limit ends. GitHub
 	// limits each installation of a GitHub App, and an installation is one
-	// owner's.
+	// owner's. With several apps, the limit of one app's installation
+	// pauses the owner's check runs for every app.
 	paused map[string]time.Time
 }
+
+// appKey is a repository's REST API URL and an Octo STS identity. Octo STS
+// issues their tokens for one GitHub App at a time.
+type appKey struct{ repo, identity string }
 
 // repoRuns is what the controller knows of one repository's check runs,
 // which it keeps only in memory. A reconcile holds mu from its first
@@ -180,7 +184,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		kube.RequeueAfter(ctx, spread(wait))
 		return nil
 	}
-	s := &runSync{repoRuns: rr, c: c, gh: &githubAPI{repo: apiURL, token: token, now: c.clock}, external: key, branches: branches}
+	s := &runSync{repoRuns: rr, c: c, gh: &githubAPI{repo: apiURL, token: token, now: c.clock}, app: appKey{apiURL, repo.Spec.OctoSTS.CheckRunsIdentity}, external: key, branches: branches}
 	err = s.sync(ctx, b.Name)
 	var limited *rateLimited
 	if errors.As(err, &limited) {
@@ -198,6 +202,8 @@ type runSync struct {
 	*repoRuns
 	c  *checkRuns
 	gh *githubAPI
+	// app is the key of the GitHub App that gh's token acts for.
+	app appKey
 	// external is the check runs' external ID, the repository's namespace
 	// and name.
 	external string
@@ -262,7 +268,7 @@ func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.
 	changed := !ok || last.commit != res.Commit || last.shows != want
 	run, known := s.runs[cc]
 	if !known {
-		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, s.c.app.Load())
+		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, s.c.appFor(s.app))
 		if err != nil {
 			return err
 		}
@@ -295,16 +301,18 @@ func (s *runSync) write(ctx context.Context, cc commitCheck, run shownRun, known
 	// which GitHub shows instead of the old one, so the old one keeps its
 	// result.
 	if known && (run.shows.Status != "completed" || want.Status == "completed") {
-		err := s.gh.update(ctx, run.id, want)
+		updated, err := s.gh.update(ctx, run.id, want)
 		if err == nil {
+			s.c.learnApp(s.app, updated.App.ID)
 			s.runs[cc] = shownRun{id: run.id, shows: want, by: branch}
 			return nil
 		}
 		// Until the controller knows its app, it can find another app's
-		// check run, which only that app can update. And something else,
-		// such as another replica, can complete a check run that the
-		// controller last saw in progress, and GitHub's documentation
-		// doesn't say whether GitHub starts it again.
+		// check run, which only that app can update, and Octo STS can
+		// issue later tokens for another app. And something else, such as
+		// another replica, can complete a check run that the controller
+		// last saw in progress, and GitHub's documentation doesn't say
+		// whether GitHub starts it again.
 		if !notOurs(err) && !reopening(err, want) {
 			return err
 		}
@@ -313,7 +321,7 @@ func (s *runSync) write(ctx context.Context, cc commitCheck, run shownRun, known
 	if err != nil {
 		return err
 	}
-	s.c.app.Store(created.App.ID)
+	s.c.learnApp(s.app, created.App.ID)
 	s.runs[cc] = shownRun{id: created.ID, shows: want, by: branch}
 	return nil
 }
@@ -343,7 +351,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 		// branch's next reconcile creates one.
 		return nil
 	default:
-		err := s.gh.update(ctx, run.id, want)
+		updated, err := s.gh.update(ctx, run.id, want)
 		if retryable(err) {
 			return fmt.Errorf("updating the check run on %s: %w", gitk8s.Short(cc.commit), err)
 		}
@@ -351,6 +359,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 			slog.Warn("couldn't update a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "id", run.id, "error", err)
 			return nil
 		}
+		s.c.learnApp(s.app, updated.App.ID)
 	}
 	s.runs[cc] = shownRun{id: run.id, shows: want, by: by}
 	return nil
@@ -479,6 +488,28 @@ func (c *checkRuns) forget(key string) {
 	clear(rr.runs)
 }
 
+// appFor returns the ID of the GitHub App that k's tokens act for, or 0
+// when the controller doesn't know it.
+func (c *checkRuns) appFor(k appKey) int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.apps[k]
+}
+
+// learnApp records that k's tokens act for app, the app of a check run
+// that one of them created or updated.
+func (c *checkRuns) learnApp(k appKey, app int64) {
+	if app == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.apps == nil {
+		c.apps = map[appKey]int64{}
+	}
+	c.apps[k] = app
+}
+
 func (c *checkRuns) pausedFor(owner string) time.Duration {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -582,8 +613,10 @@ func (gh *githubAPI) create(ctx context.Context, run checkRun) (checkRun, error)
 	return created, err
 }
 
-func (gh *githubAPI) update(ctx context.Context, id int64, s runState) error {
-	return gh.do(ctx, http.MethodPatch, "/check-runs/"+strconv.FormatInt(id, 10), s, nil)
+func (gh *githubAPI) update(ctx context.Context, id int64, s runState) (checkRun, error) {
+	var updated checkRun
+	err := gh.do(ctx, http.MethodPatch, "/check-runs/"+strconv.FormatInt(id, 10), s, &updated)
+	return updated, err
 }
 
 // do sends a request with in as its JSON body, unless in is nil, and

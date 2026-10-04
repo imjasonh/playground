@@ -18,6 +18,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
 )
@@ -62,12 +63,12 @@ func TestReportsCheckRunsToken(t *testing.T) {
 	}
 }
 
-// resultsOf returns the GitBranch of acme/app's branch, as the check-runs
-// controller sees it, with checks.
-func resultsOf(branch string, checks map[string]gitk8s.CheckResult) *branchResults {
-	b := &branchResults{Object: kube.Meta(gitk8s.BranchObjectName("app", branch), map[string]string{gitk8s.RepositoryLabel: "app"})}
+// resultsOf returns the GitBranch of a branch of the GitRepository repo in
+// namespace default, as the check-runs controller sees it, with checks.
+func resultsOf(repo, branch string, checks map[string]gitk8s.CheckResult) *branchResults {
+	b := &branchResults{Object: kube.Meta(gitk8s.BranchObjectName(repo, branch), map[string]string{gitk8s.RepositoryLabel: repo})}
 	b.Namespace = "default"
-	b.Spec.Repository = "app"
+	b.Spec.Repository = repo
 	b.Status.Checks = checks
 	return b
 }
@@ -118,7 +119,7 @@ func (p *publisher) reconcile(branch string) ([]string, error) {
 	var b *branchResults
 	world := []any{p.repo}
 	for name, checks := range p.branches {
-		if o := resultsOf(name, maps.Clone(checks)); name == branch {
+		if o := resultsOf(p.repo.Name, name, maps.Clone(checks)); name == branch {
 			b = o
 		} else {
 			world = append(world, o)
@@ -366,6 +367,108 @@ func TestCheckRunsFromOtherApps(t *testing.T) {
 	remember(p.c, "c/x", "gofmt", next, 99, runFor(gitk8s.CheckResult{State: gitk8s.Running}))
 	got, err = p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Passed}})
 	if want := []string{"PATCH " + api + "check-runs/99", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+}
+
+// TestCheckRunsOfSeveralApps runs against an Octo STS that issues the
+// tokens of another repository, or of another identity, for another GitHub
+// App, as Octo STS can when it has several.
+func TestCheckRunsOfSeveralApps(t *testing.T) {
+	for _, other := range []struct{ name, repo, identity string }{
+		{"AnotherRepository", "lib", "checks"},
+		{"AnotherIdentity", "app", "other"},
+	} {
+		t.Run(other.name, func(t *testing.T) {
+			gh, w, main := newGitHub(t)
+			w.Write(".github/chainguard/other.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))
+			main = w.Commit("add the identity other")
+			w.Push("main")
+			w.Branch("c/x", main)
+			head := w.Commit("add x")
+			next := w.Commit("add y")
+			w.Push("c/x")
+			// lib is another GitRepository, for acme/lib or acme/app, whose
+			// tokens act for another app.
+			lib := gh.Repository("lib", gitk8s.OctoSTS{CheckRunsIdentity: other.identity}, rules()...)
+			lib.Spec.URL = gh.Remote(other.repo).URL
+			libHead := head
+			if other.repo == "lib" {
+				l := gh.NewWork(t, "lib")
+				l.Write(".github/chainguard/checks.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))
+				l.Commit("main")
+				l.Push("main")
+				l.Write("lib.go", "package lib\n")
+				libHead = l.Commit("add lib")
+				l.Push("c/x")
+			}
+			gh.Fake.RouteApp("acme/"+other.repo, other.identity, gitserver.SecondOctoSTSApp)
+			app := gh.Repository("app", sts, rules()...)
+			api := "/api/v3/repos/acme/app/"
+			gotest := func(commit, state string) map[string]gitk8s.CheckResult {
+				return map[string]gitk8s.CheckResult{"gotest": {Commit: commit, State: state}}
+			}
+			if _, err := (&publisher{t: t, gh: gh, repo: app, c: &checkRuns{}}).publish(gotest(head, gitk8s.Running)); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Log("After a restart, the app of lib's check runs doesn't keep the controller from finding acme/app's.")
+			c := &checkRuns{}
+			if _, err := (&publisher{t: t, gh: gh, repo: lib, c: c}).publish(gotest(libHead, gitk8s.Running)); err != nil {
+				t.Fatal(err)
+			}
+			var libApps []int64
+			for _, r := range gh.Fake.CheckRuns("acme/" + other.repo) {
+				if r.ExternalID == "default/lib" {
+					libApps = append(libApps, r.App.ID)
+				}
+			}
+			if !slices.Equal(libApps, []int64{gitserver.SecondOctoSTSApp}) {
+				t.Fatalf("lib's check runs belong to apps %v, want one of app %d", libApps, gitserver.SecondOctoSTSApp)
+			}
+			p := &publisher{t: t, gh: gh, repo: app, c: c}
+			got, err := p.publish(gotest(head, gitk8s.Passed))
+			if want := []string{"GET " + api + "commits/" + head + "/check-runs", "PATCH " + api + "check-runs/1"}; err != nil || !slices.Equal(got, want) {
+				t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+			}
+
+			t.Log("The update shows the controller acme/app's app, so then it looks only at that app's check runs.")
+			if status := asAdmin(t, gh, http.MethodPost, api+"check-runs", `{"name": "git-k8s/gotest", "head_sha": "`+next+`", "external_id": "default/app", "status": "in_progress", "output": {"title": "Running", "summary": "spoofed"}}`); status != http.StatusCreated {
+				t.Fatalf("creating another app's check run: %d", status)
+			}
+			got, err = p.publish(gotest(next, gitk8s.Passed))
+			if want := []string{"GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+				t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+			}
+		})
+	}
+}
+
+func TestLearnsAppFromCancelling(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	next := w.Commit("add y")
+	w.Push("c/x")
+	repo := gh.Repository("app", sts, rules()...)
+	api := "/api/v3/repos/acme/app/"
+	running := func(commit string) map[string]gitk8s.CheckResult {
+		return map[string]gitk8s.CheckResult{"gotest": {Commit: commit, State: gitk8s.Running}}
+	}
+	if _, err := (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(running(head)); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("After a restart, cancelling the check run on a commit that the branch left shows the controller its app.")
+	p := &publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}
+	if got, err := p.publish(running(head)); err != nil || len(got) != 1 {
+		t.Fatalf("requests = %q, err = %v; want only the search", got, err)
+	}
+	if status := asAdmin(t, gh, http.MethodPost, api+"check-runs", `{"name": "git-k8s/gotest", "head_sha": "`+next+`", "external_id": "default/app", "status": "in_progress", "output": {"title": "Running", "summary": "spoofed"}}`); status != http.StatusCreated {
+		t.Fatalf("creating another app's check run: %d", status)
+	}
+	got, err := p.publish(running(next))
+	if want := []string{"PATCH " + api + "check-runs/1", "GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
 	}
 }
@@ -624,7 +727,7 @@ func TestCheckRunsSurviveFailedReads(t *testing.T) {
 	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
 
 	t.Log("A reconcile that can't read the cluster sends nothing and forgets nothing.")
-	b := resultsOf("c/x", s.result(1, gitk8s.Running, ""))
+	b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
 	ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
 	kube.List[branchResults](ctx, kube.MatchingSelector("=broken"))
 	if rec.Err() == nil {
@@ -733,7 +836,7 @@ func TestBranchesTakeTurns(t *testing.T) {
 		var b *branchResults
 		world := []any{repo}
 		for name, checks := range cluster {
-			if o := resultsOf(name, checks); name == branch {
+			if o := resultsOf("app", name, checks); name == branch {
 				b = o
 			} else {
 				world = append(world, o)
@@ -815,7 +918,7 @@ func TestCheckRunErrors(t *testing.T) {
 	if got, err := publish(gitk8s.OctoSTS{GitIdentity: "git"}); err != nil || len(got) != 0 || len(gh.Fake.Exchanges()) != before {
 		t.Errorf("requests = %q, err = %v, %d new exchanges; want nothing", got, err, len(gh.Fake.Exchanges())-before)
 	}
-	b := resultsOf("c/x", checks)
+	b := resultsOf("app", "c/x", checks)
 	ctx, _ := kube.Fake(t.Context(), b)
 	if err := (&checkRuns{}).Reconcile(ctx, b); err != nil {
 		t.Errorf("without the GitRepository: %v", err)
