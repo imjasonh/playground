@@ -59,10 +59,11 @@ spec:
   validationActions: [Deny]
 ---
 # The approve annotation on a GitBranch records a person's approval, so no
-# git-k8s service account can set or change it. kube lets each controller
-# patch the type that it reconciles, which for a check is GitBranch, so this
-# policy also stops checks from changing a GitBranch's spec, labels, or
-# annotations.
+# git-k8s service account can set or change it. kube can add a finalizer to
+# an object whose controller owns other objects, so generate lets a check
+# that owns objects, such as check-gotest with its Pods, patch GitBranch
+# objects. This policy also stops checks from changing a GitBranch's spec,
+# labels, or annotations.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

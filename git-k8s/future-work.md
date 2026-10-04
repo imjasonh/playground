@@ -367,10 +367,6 @@ Questions to settle first:
 
 These belong in kube, in their own pull requests:
 
-- `generate` grants `patch` on every reconciled type. kube removes a
-  finalizer that a controller no longer needs, which takes `patch`, so
-  dropping the grant needs another way to remove finalizers that an earlier
-  version of a program added.
 - kube installs CRDs only for types that a controller reconciles. A program
   that only owns a custom type doesn't know all of the type's versions, so
   it can't safely update the CRD. It could still create a missing CRD and

@@ -365,17 +365,27 @@ patch_branch() {
 }
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
 core_token="$(k -n git-k8s create token git-k8s)"
-for bearer in "${token}" "${core_token}"; do
+# check-gotest owns Pods, so generate lets it patch GitBranch objects, and
+# only the policy stops it.
+gotest_token="$(k -n check-gotest create token check-gotest)"
+for bearer in "${gotest_token}" "${core_token}"; do
   code="$(patch_branch "${bearer}" "${approve}")"
   cat "${WORKDIR}/patch.json"
   echo
   [[ "${code}" == 422 ]]
   grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
 done
-code="$(patch_branch "${token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
-grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
+grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
+# check-gofmt owns nothing, so generate doesn't let it patch GitBranch
+# objects at all.
+code="$(patch_branch "${token}" "${approve}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 403 ]]
+grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
+echo "Neither a check nor the core controller can approve a branch, a check can't change one, and check-gofmt can't patch one."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
