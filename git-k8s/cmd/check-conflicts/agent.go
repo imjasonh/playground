@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path"
@@ -206,9 +207,16 @@ func report(ctx context.Context, in *checks.Input, t target, base string, st *ag
 			return running("fetching the branch and %s to commit the agent's resolution: %v", t.name, err)
 		}
 		fix, paths, err := commitResolution(ctx, in, repo, t, base, res)
-		if err != nil {
+		var bad rejected
+		switch {
+		case errors.As(err, &bad):
 			v = checks.Fail("can't commit the agent's resolution: %v", err)
-		} else {
+		case err != nil:
+			// Like a failed fetch: the next reconcile commits the result again.
+			st.Done = false
+			kube.RequeueAfter(ctx, 30*time.Second)
+			return running("committing the agent's resolution: %v", err)
+		default:
 			v = checks.Fail("the agent resolved the conflicts in %s", strings.Join(paths, ", "))
 			v.Fix = fix
 		}
@@ -279,7 +287,7 @@ func commitResolution(ctx context.Context, in *checks.Input, repo *git.Repo, t t
 		return "", nil, err
 	}
 	if tree != res.MergeTree {
-		return "", nil, fmt.Errorf("the agent resolved a merge with the tree %s, but the check's merge has the tree %s", res.MergeTree, tree)
+		return "", nil, rejected{fmt.Errorf("the agent resolved a merge with the tree %s, but the check's merge has the tree %s", res.MergeTree, tree)}
 	}
 	byPath := make(map[string]git.Conflict, len(conflicts))
 	for _, c := range conflicts {
@@ -289,11 +297,11 @@ func commitResolution(ctx context.Context, in *checks.Input, repo *git.Repo, t t
 		c, ok := byPath[f.Path]
 		switch {
 		case !ok:
-			return "", nil, fmt.Errorf("the agent changed %s, which doesn't conflict", f.Path)
+			return "", nil, rejected{fmt.Errorf("the agent changed %s, which doesn't conflict", f.Path)}
 		case f.Deleted:
-			return "", nil, fmt.Errorf("the agent deleted %s", f.Path)
+			return "", nil, rejected{fmt.Errorf("the agent deleted %s", f.Path)}
 		case (c.Ours == nil || f.Mode != c.Ours.Mode) && (c.Theirs == nil || f.Mode != c.Theirs.Mode):
-			return "", nil, fmt.Errorf("the agent gave %s the mode %s, which it has on neither side", f.Path, f.Mode)
+			return "", nil, rejected{fmt.Errorf("the agent gave %s the mode %s, which it has on neither side", f.Path, f.Mode)}
 		}
 	}
 	resolved, err := agent.ApplyFiles(ctx, repo, tree, res.Files)
@@ -315,13 +323,17 @@ func commitResolution(ctx context.Context, in *checks.Input, repo *git.Repo, t t
 	return fix, paths, err
 }
 
+// rejected says why the check rejects the agent's resolution, unlike an
+// error from git while the check commits it.
+type rejected struct{ error }
+
 // checkResolved returns an error if a file that conflicted, as it is in
 // tree, holds a line that starts with one of the merge's conflict marker
 // labels, or more lines that look like conflict markers than its two sides
 // hold together.
 func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Conflict, labels ...string) error {
 	if c.Ours == nil || c.Theirs == nil {
-		return fmt.Errorf("%s isn't a file on both sides", c.Path)
+		return rejected{fmt.Errorf("%s isn't a file on both sides", c.Path)}
 	}
 	got, err := repo.ReadBlob(ctx, tree+":"+c.Path)
 	if err != nil {
@@ -329,7 +341,7 @@ func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Confl
 	}
 	for _, label := range labels {
 		if hasLine(got, label) {
-			return fmt.Errorf("conflict markers remain in %s", c.Path)
+			return rejected{fmt.Errorf("conflict markers remain in %s", c.Path)}
 		}
 	}
 	var sides [len(markerPrefixes)]int
@@ -344,7 +356,7 @@ func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Confl
 	}
 	for i, n := range markerLines(got) {
 		if n > sides[i] {
-			return fmt.Errorf("%s has more lines that start with %s than its two sides, so conflict markers remain", c.Path, markerPrefixes[i])
+			return rejected{fmt.Errorf("%s has more lines that start with %s than its two sides, so conflict markers remain", c.Path, markerPrefixes[i])}
 		}
 	}
 	return nil

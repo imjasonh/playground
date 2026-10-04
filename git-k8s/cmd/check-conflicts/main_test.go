@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"reflect"
 	"slices"
 	"strconv"
@@ -689,6 +690,57 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 	res = b.Status.Checks.Result
 	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" || !readState(res.Outputs).Done || rec.RequeueAfter() != time.Second {
 		t.Fatalf("result = %+v and RequeueAfter = %v, want Fixed by the agent's one run, done, and a reconcile in a second", res, rec.RequeueAfter())
+	}
+	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
+		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
+	}
+}
+
+func TestCommitsTheResultAgainWhenGitFailsToCommitIt(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	withJobs(t, func(job *agent.Job, st *agent.JobState) agent.JobStatus {
+		switch {
+		case st.Done:
+			return agent.JobStatus{Done: true, Message: "the run in Pod " + st.Pod + " already finished"}
+		case st.Pod == "":
+			st.Runs, st.Pod, st.Attempt = st.Runs+1, "conflicts-app-c-x-1", 1
+			return agent.JobStatus{Message: "started Pod " + st.Pod}
+		}
+		st.Done = true
+		res := resolution(resolvedA)
+		res.MergeTree = mergeTree(t, w, job)
+		return agent.JobStatus{Done: true, Message: "Both sides change the second line.", Result: res}
+	})
+	if _, err := reconcile(t, srv, b, rules); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("The run finishes while git can't write objects.")
+	bin := t.TempDir() + "/git"
+	script := "#!/bin/sh\nfor a; do [ \"$a\" = commit-tree ] && { echo 'fatal: unable to write new object' >&2; exit 128; }; done\nexec git \"$@\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo, secret := srv.Repository("app", rules...)
+	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
+	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
+	cfg.Git.Bin = bin
+	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "committing the agent's resolution: ") || readState(res.Outputs).Done || rec.RequeueAfter() != 30*time.Second {
+		t.Fatalf("result = %+v and RequeueAfter = %v, want Running with the run not done, again in 30 seconds", res, rec.RequeueAfter())
+	}
+
+	t.Log("Then the check commits the result.")
+	if _, err := reconcile(t, srv, b, rules); err != nil {
+		t.Fatal(err)
+	}
+	res = b.Status.Checks.Result
+	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" {
+		t.Fatalf("result = %+v, want Fixed by the agent's one run", res)
 	}
 	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
 		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
