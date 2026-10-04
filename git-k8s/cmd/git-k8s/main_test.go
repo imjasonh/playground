@@ -161,6 +161,10 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 			t.Errorf("with one policy at a later version and the other at %q, which doesn't parse as an int, PoliciesInstalled = %+v", v, c)
 		}
 	}
+	policies[1].Annotations[policyVersionAnnotation] = current
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" || !strings.Contains(c.Message, ": git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 2") {
+		t.Errorf("with one policy at a later version, PoliciesInstalled = %+v", c)
+	}
 	policies[1].Annotations[policyVersionAnnotation] = later
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" || strings.Contains(c.Message, "apply") ||
 		!strings.Contains(c.Message, "upgrade the core program: git-k8s-check-results and git-k8s-branches have a git-k8s.imjasonh.com/policy-version later than 2") {
@@ -171,6 +175,22 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
+	}
+}
+
+func TestSubject(t *testing.T) {
+	for _, tc := range []struct {
+		names []string
+		want  string
+	}{
+		{[]string{"a"}, "a has"},
+		{[]string{"a", "b"}, "a and b have"},
+		{[]string{"a", "b", "c"}, "a, b, and c have"},
+		{[]string{"a", "b", "c", "d"}, "a, b, c, and d have"},
+	} {
+		if got := subject(tc.names, "has", "have"); got != tc.want {
+			t.Errorf("subject(%q) = %q, want %q", tc.names, got, tc.want)
+		}
 	}
 }
 

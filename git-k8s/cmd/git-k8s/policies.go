@@ -79,11 +79,16 @@ func policiesCondition(ctx context.Context) kube.Condition {
 	}
 }
 
-// subject joins names into the subject of a message, followed by the verb
-// one for a single name or many for more.
+// subject joins names into the subject of a message, as in "a", "a and b",
+// or "a, b, and c", followed by the verb one for a single name or many for
+// more.
 func subject(names []string, one, many string) string {
-	if len(names) > 1 {
-		one = many
+	if len(names) < 2 {
+		return strings.Join(names, "") + " " + one
 	}
-	return strings.Join(names, " and ") + " " + one
+	last, and := len(names)-1, " and "
+	if len(names) > 2 {
+		and = ", and "
+	}
+	return strings.Join(names[:last], ", ") + and + names[last] + " " + many
 }
