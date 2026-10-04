@@ -27,6 +27,13 @@ const divergedInstructions = `The merged branch is this branch as the external r
 
 `
 
+// replayInstructions replace divergedInstructions when the external
+// repository rewound the branch, because the prompt calls the replay a
+// merge.
+const replayInstructions = `The merged branch is this branch as the external repository holds it. The branch changed both in git-k8s and in the external repository since they last synced at the merge base, and the external repository rewound it, for example with a force push, so the change from the merge base to the merged commit removes commits that the head commit has. The files that you leave become one commit on top of the merged commit instead of a merge, which replays the head commit's change since the merge base. Don't bring back what the rewind removed.
+
+`
+
 var runner = &agent.Runner{Name: "conflicts"}
 
 // tools leave out delete, because a resolution keeps every file that
@@ -39,10 +46,14 @@ var runJob = func(ctx context.Context, job *agent.Job, st *agent.JobState) agent
 }
 
 // job is the agent's job that resolves the conflicts of merging t into the
-// branch's head, with base as the merge base.
+// branch's head, with base as the merge base, which is t.synced if
+// t.replay is set.
 func (t target) job(in *checks.Input, base string) *agent.Job {
 	task := agent.Task{Instructions: instructions, Edit: true}
-	if t.diverged {
+	switch {
+	case t.replay:
+		task.Instructions = replayInstructions + instructions
+	case t.diverged:
 		task.Instructions = divergedInstructions + instructions
 	}
 	return &agent.Job{
@@ -69,22 +80,24 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 // did. It comes before any git work, because kube deletes the run's Pod
 // after a reconcile that doesn't declare it. The run keeps merging the
 // commit that it started with, so that a parent that keeps moving doesn't
-// start a new run each time. The check starts over instead when -union
-// changed, because git might then resolve every conflict, or when the run
-// waits for a commit that t already has. Then it updates the runs in
-// outputs, which the new run counts from.
+// start a new run each time. The check starts over instead when the head
+// where a diverged branch last synced moved, when -union changed, because
+// git might then resolve every conflict, or when the run waits for a
+// commit that t already has. Then it updates the runs in outputs, which
+// the new run counts from.
 func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]string) (checks.Verdict, bool) {
 	prev := in.Previous
 	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head {
 		return checks.Verdict{}, false
 	}
 	st := readState(prev.Outputs)
-	if st.Pod == "" || (prev.Outputs["diverged"] != "") != t.diverged || !isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) ||
-		prev.Outputs["union"] != union.String() {
+	if st.Pod == "" || (prev.Outputs["diverged"] != "") != t.diverged || prev.Outputs["synced"] != t.synced ||
+		!isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) || prev.Outputs["union"] != union.String() {
 		return checks.Verdict{}, false
 	}
 	pinned, base := t, prev.Outputs["base"]
 	pinned.commit = prev.Outputs["merge"]
+	pinned.replay = prev.Outputs["rewound"] == "external"
 	s := runJob(ctx, pinned.job(in, base), st)
 	if s.Moved && pinned.commit != t.commit {
 		// RunJob gave back the run whose Pod found the branch moved.
@@ -92,7 +105,7 @@ func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]
 		return checks.Verdict{}, false
 	}
 	v := report(ctx, in, pinned, base, st, s)
-	for _, k := range []string{"diverged", "conflicts"} {
+	for _, k := range []string{"diverged", "rewound", "conflicts"} {
 		if prev.Outputs[k] != "" {
 			v.Outputs[k] = prev.Outputs[k]
 		}
@@ -110,7 +123,7 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 	base := bases[0]
 	tree, conflicts, err := repo.Merge(ctx, in.Spec.Head, t.commit, git.MergeOptions{Base: base, Union: union})
 	if err != nil {
-		return retry(ctx, "merging %s: %v", t.name, err)
+		return retry(ctx, "%s: %v", t.action(), err)
 	}
 	why, err := unresolvable(ctx, repo, in.Spec.Head, t, tree, conflicts)
 	switch {
@@ -122,7 +135,7 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 	st := &agent.JobState{Runs: readState(outputs).Runs}
 	s := runJob(ctx, t.job(in, base), st)
 	if !s.Done && st.Pod == "" {
-		s.Message = fmt.Sprintf("merging %s conflicts in %s; %s", t.name, list, s.Message)
+		s.Message = fmt.Sprintf("%s conflicts in %s; %s", t.action(), list, s.Message)
 	}
 	return report(ctx, in, t, base, st, s)
 }
@@ -132,22 +145,22 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 // the files that conflict in it.
 func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tree string, conflicts []git.Conflict) (string, error) {
 	if len(conflicts) > agent.MaxFiles {
-		return fmt.Sprintf("merging %s has conflicts in %d files, more than the agent can change", t.name, len(conflicts)), nil
+		return fmt.Sprintf("%s has conflicts in %d files, more than the agent can change", t.action(), len(conflicts)), nil
 	}
 	size := 0
 	for _, c := range conflicts {
 		if path.Base(c.Path) == ".cursorignore" {
-			return fmt.Sprintf("merging %s conflicts on %s, which the agent can't see, because its work tree leaves out .cursorignore files", t.name, c.Path), nil
+			return fmt.Sprintf("%s conflicts on %s, which the agent can't see, because its work tree leaves out .cursorignore files", t.action(), c.Path), nil
 		}
 		if c.Ours == nil || c.Theirs == nil || !textMode(c.Ours.Mode) || !textMode(c.Theirs.Mode) {
-			return fmt.Sprintf("merging %s conflicts on %s, which isn't a file on both sides, so the agent can't resolve it", t.name, c.Path), nil
+			return fmt.Sprintf("%s conflicts on %s, which isn't a file on both sides, so the agent can't resolve it", t.action(), c.Path), nil
 		}
 		b, err := repo.ReadBlob(ctx, tree+":"+c.Path)
 		if err != nil {
 			return "", err
 		}
 		if !hasLine(b, "<<<<<<< "+head) {
-			return fmt.Sprintf("merging %s conflicts on %s, which git can't mark with conflict markers, such as a binary file", t.name, c.Path), nil
+			return fmt.Sprintf("%s conflicts on %s, which git can't mark with conflict markers, such as a binary file", t.action(), c.Path), nil
 		}
 		size += len(b)
 	}
@@ -249,10 +262,11 @@ func readState(outputs map[string]string) *agent.JobState {
 	return st
 }
 
-// commitResolution makes the merge of t into the branch's head that the
-// agent's files resolve, after checking that the agent's Pod made the same
-// merge, and that the files change only files that conflict and leave no
-// conflict markers. It returns the merge and the files that conflicted.
+// commitResolution commits the merge of t into the branch's head, as the
+// agent's files resolve it, with mergeCommit, after checking that the
+// agent's Pod made the same merge, and that the files change only files
+// that conflict and leave no conflict markers. It returns the commit and
+// the files that conflicted.
 func commitResolution(ctx context.Context, in *checks.Input, repo *git.Repo, t target, base string, res *agent.Result) (string, []string, error) {
 	head := in.Spec.Head
 	tree, conflicts, err := repo.Merge(ctx, head, t.commit, git.MergeOptions{Base: base, Union: union})

@@ -10,9 +10,12 @@
 //     repository that the mirror syncs, so the mirror overwrites neither,
 //     and the branch's status.diverged holds the external repository's
 //     head. The conflicts check pushes a merge of that head, which the
-//     mirror then syncs to the external repository. When the external
-//     repository deleted the branch, the check fails and leaves the branch
-//     for a person.
+//     mirror then syncs to the external repository. When a side rewound
+//     since the sides last synced, a merge brings back the commits that
+//     the rewind removed, so the check replays the other side's commits
+//     onto the rewound side's head instead. When the external repository
+//     deleted the branch, the check fails and leaves the branch for a
+//     person.
 //
 // Git resolves what it can first: paths that match -union, such as go.sum,
 // merge with git's union driver, which keeps the lines of both sides. When
@@ -26,7 +29,9 @@
 // merge gate. So when one diverges, the check pushes the external
 // repository's head, with a commit that says why, to the branch
 // resolve/BRANCH instead, and that branch lands through the gate like any
-// other.
+// other. When a side of such a branch rewound, resolve/BRANCH would bring
+// back the commits that the rewind removed, so the check pushes nothing,
+// and says how to resolve the divergence.
 package main
 
 import (
@@ -138,10 +143,29 @@ type target struct {
 	// the branch takes a merge of even without conflicts, because nothing
 	// else merges it.
 	diverged bool
+	// synced is the head where the branch last synced with the external
+	// repository, if commit is the external repository's head and they
+	// synced.
+	synced string
+	// replay says that the external repository rewound since synced, so
+	// instead of a merge of commit, the check makes one commit on top of
+	// commit that replays the branch's changes since synced.
+	replay bool
+}
+
+// action names what the check does with t, for messages.
+func (t target) action() string {
+	if t.replay {
+		return "replaying the branch onto " + t.name
+	}
+	return "merging " + t.name
 }
 
 // resolveBranch resolves a branch's divergence from the external
-// repository, or else the conflicts of merging its parent into it.
+// repository, or else the conflicts of merging its parent into it. When
+// neither side of a divergence rewound since the sides last synced, a
+// head that contains both heads keeps both sides' changes, so the check
+// merges the external repository's head.
 func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]string) checks.Verdict {
 	head := in.Spec.Head
 	t := target{commit: in.Spec.ParentHead, ref: "refs/heads/" + in.Spec.Parent, name: in.Spec.Parent}
@@ -153,7 +177,7 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 		if d.Commit == "" {
 			return checks.Fail("%s", deletion(in.Spec.Branch, d))
 		}
-		t = target{commit: d.Commit, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
+		t = target{commit: d.Commit, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true, synced: d.Base}
 	}
 	if v, ok := follow(ctx, in, t, outputs); ok {
 		return v
@@ -161,6 +185,15 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 	repo, err := targetRepo(ctx, in, t)
 	if err != nil {
 		return retry(ctx, "fetching the branch and %s: %v", t.name, err)
+	}
+	if t.synced != "" {
+		switch rewound, err := rewinds(ctx, repo, head, t.commit, t.synced); {
+		case err != nil:
+			return retry(ctx, "%v", err)
+		case rewound != "":
+			outputs["rewound"] = rewound
+			return resolveRewind(ctx, in, repo, t, rewound, outputs)
+		}
 	}
 	switch ok, err := repo.IsAncestor(ctx, t.commit, head); {
 	case err != nil:
@@ -179,25 +212,36 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 	return resolve(ctx, in, repo, t, outputs)
 }
 
-// resolve merges t into the branch's head. It returns a verdict whose fix
-// is a merge that git resolved, or the verdict of the agent's run that
-// resolves the conflicts that git leaves.
+// resolve merges t into the branch's head, or, if t.replay is set,
+// replays the branch's changes since t.synced onto t's commit as one
+// commit. It returns a verdict whose fix is a commit that git resolved,
+// or the verdict of the agent's run that resolves the conflicts that git
+// leaves.
 func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, outputs map[string]string) checks.Verdict {
 	head := in.Spec.Head
 	outputs["merge"] = t.commit
-	bases, err := repo.MergeBases(ctx, head, t.commit)
-	if err != nil {
-		return retry(ctx, "finding the merge base with %s: %v", t.name, err)
+	var o git.MergeOptions
+	var bases []string
+	if t.replay {
+		o.Base, bases = t.synced, []string{t.synced}
+	} else {
+		var err error
+		if bases, err = repo.MergeBases(ctx, head, t.commit); err != nil {
+			return retry(ctx, "finding the merge base with %s: %v", t.name, err)
+		}
+		if len(bases) == 0 {
+			return checks.Fail("the branch shares no history with %s, so git can't merge them", t.name)
+		}
 	}
-	if len(bases) == 0 {
-		return checks.Fail("the branch shares no history with %s, so git can't merge them", t.name)
-	}
-	tree, conflicts, err := repo.Merge(ctx, head, t.commit, git.MergeOptions{})
+	tree, conflicts, err := repo.Merge(ctx, head, t.commit, o)
 	if err != nil {
-		return retry(ctx, "merging %s: %v", t.name, err)
+		return retry(ctx, "%s: %v", t.action(), err)
 	}
 	if len(conflicts) == 0 {
-		if !t.diverged {
+		switch {
+		case t.replay:
+			return fix(ctx, in, repo, t, tree, "", checks.Fail("replayed the branch's commits since %s onto %s at %s as one commit", gitk8s.Short(t.synced), t.name, gitk8s.Short(t.commit)))
+		case !t.diverged:
 			return checks.Pass("merging %s at %s has no conflicts to resolve", t.name, gitk8s.Short(t.commit))
 		}
 		return fix(ctx, in, repo, t, tree, "", checks.Fail("the branch diverged from %s at %s, which merges without conflicts", t.name, gitk8s.Short(t.commit)))
@@ -209,20 +253,21 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, ou
 	list := strings.Join(paths, ", ")
 	outputs["conflicts"] = strings.Join(paths, ",")
 	if len(union) > 0 {
-		tree, rest, err := repo.Merge(ctx, head, t.commit, git.MergeOptions{Union: union})
+		o.Union = union
+		tree, rest, err := repo.Merge(ctx, head, t.commit, o)
 		if err != nil {
-			return retry(ctx, "merging %s: %v", t.name, err)
+			return retry(ctx, "%s: %v", t.action(), err)
 		}
 		if len(rest) == 0 {
 			body := "Git merged these files with its union driver, which keeps the lines of both sides:\n\n" + strings.Join(paths, "\n")
-			return fix(ctx, in, repo, t, tree, body, checks.Fail("merging %s conflicts in %s, which git merged with its union driver", t.name, list))
+			return fix(ctx, in, repo, t, tree, body, checks.Fail("%s conflicts in %s, which git merged with its union driver", t.action(), list))
 		}
 	}
 	switch {
 	case runner.Image == "":
-		return checks.Fail("merging %s conflicts in %s; git can't resolve them, and the check runs no agent without -agent-image", t.name, list)
+		return checks.Fail("%s conflicts in %s; git can't resolve them, and the check runs no agent without -agent-image", t.action(), list)
 	case !in.Policy.MayPush:
-		return checks.Fail("merging %s conflicts in %s; the policy doesn't let this check push a resolution, so it runs no agent", t.name, list)
+		return checks.Fail("%s conflicts in %s; the policy doesn't let this check push a resolution, so it runs no agent", t.action(), list)
 	}
 	base, err := in.MergeBase(ctx)
 	if err != nil {
@@ -233,23 +278,23 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, ou
 		return retry(ctx, "counting automated commits: %v", err)
 	}
 	if limit := in.Spec.Merge.MaxCommits(); n >= limit {
-		return checks.Fail("merging %s conflicts in %s; not running an agent because the branch already has %d automated commits, the limit", t.name, list, n)
+		return checks.Fail("%s conflicts in %s; not running an agent because the branch already has %d automated commits, the limit", t.action(), list, n)
 	}
 	return startAgent(ctx, in, repo, t, bases, list, outputs)
 }
 
-// fix returns v with a merge of t into the branch's head, with tree, as its
-// fix.
+// fix returns v with the commit that mergeCommit makes of tree as its fix.
 func fix(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string, v checks.Verdict) checks.Verdict {
 	var err error
 	if v.Fix, err = mergeCommit(ctx, in, repo, t, tree, body); err != nil {
-		return retry(ctx, "committing the merge of %s: %v", t.name, err)
+		return retry(ctx, "committing the result of %s: %v", t.action(), err)
 	}
 	return v
 }
 
-// mergeCommit commits tree as a merge of t into the branch's head, with
-// body in the message.
+// mergeCommit commits tree as a merge of t into the branch's head, or, if
+// t.replay is set, as a commit on top of t's commit that replays the
+// branch's changes since t.synced, with body in the message.
 func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string) (string, error) {
 	hc, err := repo.Commit(ctx, in.Spec.Head)
 	if err != nil {
@@ -259,17 +304,27 @@ func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target
 	if err != nil {
 		return "", err
 	}
-	msg := fmt.Sprintf("Merge %s into %s\n\n", t.name, in.Spec.Branch)
+	branch := in.Spec.Branch
+	parents := []string{in.Spec.Head, t.commit}
+	msg := fmt.Sprintf("Merge %s into %s\n\n", t.name, branch)
+	if t.replay {
+		parents = []string{t.commit}
+		msg = fmt.Sprintf("Replay %s onto %s\n\n"+
+			"The external repository rewound %s since it last synced with git-k8s,\n"+
+			"so this commit replays the changes that %s made since then onto the\n"+
+			"external repository's head, as one commit:\n\n%s..%s\n\n", branch, t.name, branch, branch, t.synced, in.Spec.Head)
+	}
 	if body != "" {
 		msg += body + "\n\n"
 	}
 	msg += git.FixerTrailer + ": conflicts\n"
-	return repo.CommitTree(ctx, tree, []string{in.Spec.Head, t.commit}, msg, in.Identity, max(hc.Time, tc.Time))
+	return repo.CommitTree(ctx, tree, parents, msg, in.Identity, max(hc.Time, tc.Time))
 }
 
 // targetRepo returns the branch's repository with t's commit, which it
 // fetches from t's ref when t isn't the parent's head, which the checks
-// framework fetches.
+// framework fetches, and with the head where the branch last synced, if
+// t has one.
 func targetRepo(ctx context.Context, in *checks.Input, t target) (*git.Repo, error) {
 	repo, err := in.Repo(ctx)
 	if err != nil || !t.diverged {
@@ -279,7 +334,10 @@ func targetRepo(ctx context.Context, in *checks.Input, t target) (*git.Repo, err
 	if err != nil {
 		return nil, err
 	}
-	return repo, fetchCommit(ctx, repo, remote, t.commit, t.ref)
+	if err := fetchCommit(ctx, repo, remote, t.commit, t.ref); err != nil || t.synced == "" {
+		return repo, err
+	}
+	return repo, fetchCommit(ctx, repo, remote, t.synced, syncedPrefix+in.Spec.Branch)
 }
 
 // fetchCommit fetches ref from remote unless repo already has commit, and
@@ -378,7 +436,8 @@ func (r *reconciler) Reconcile(ctx context.Context, b *Branch) error {
 // resolve/BRANCH, which the repository's rules must give the parent
 // BRANCH. That branch lands through BRANCH's merge gate once BRANCH is
 // merged into it, by the base check, or by the conflicts check when the
-// merge conflicts.
+// merge conflicts. When a side rewound since the sides last synced,
+// parentRewind decides instead.
 func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	result := &b.Status.Checks.Result
 	d := divergence(ctx, &b.ObjectMeta)
@@ -417,12 +476,6 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	if d.Commit == "" {
 		return report(gitk8s.Failed, "%s", deletion(branch, d))
 	}
-	switch cr := gitk8s.FindRule(repo.Spec.Branches, child); {
-	case !policy.MayPush:
-		return report(gitk8s.Failed, "%s diverged from the external repository at %s, and the policy doesn't let this check push %s to resolve it", branch, gitk8s.Short(d.Commit), child)
-	case cr == nil || cr.Parent != branch:
-		return report(gitk8s.Failed, "%s diverged from the external repository at %s; add a rule that gives %s the parent %s, so that this check can resolve the divergence there", branch, gitk8s.Short(d.Commit), child, branch)
-	}
 
 	local, unlock, err := r.cache.Open(ctx, repo)
 	if err != nil {
@@ -451,12 +504,42 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	if ok, err := local.HasCommit(ctx, head); err != nil || !ok {
 		return fail(cmp.Or(err, fmt.Errorf("fetched %s but don't have %s; waiting for the repository controller to list it again", branch, gitk8s.Short(head))))
 	}
+	if d.Base != "" {
+		if err := fetchCommit(ctx, local, remote, d.Base, syncedPrefix+branch); err != nil {
+			return fail(err)
+		}
+		rewound, err := rewinds(ctx, local, head, d.Commit, d.Base)
+		if err != nil {
+			return fail(err)
+		}
+		if rewound != "" {
+			res.Outputs["rewound"] = rewound
+			state, msg, err := parentRewind(ctx, local, branch, head, d, rewound)
+			if err != nil {
+				return fail(err)
+			}
+			return report(state, "%s", msg)
+		}
+	}
 	contained, err := local.IsAncestor(ctx, d.Commit, head)
 	if err != nil {
 		return fail(err)
 	}
 	if contained {
 		return report(gitk8s.Passed, "%s contains the external repository's head %s", branch, gitk8s.Short(d.Commit))
+	}
+	// The mirror moves the branch to an external head that contains it.
+	switch ok, err := local.IsAncestor(ctx, head, d.Commit); {
+	case err != nil:
+		return fail(err)
+	case ok:
+		return report(gitk8s.Passed, "the external repository's head %s already contains %s's head", gitk8s.Short(d.Commit), branch)
+	}
+	switch cr := gitk8s.FindRule(repo.Spec.Branches, child); {
+	case !policy.MayPush:
+		return report(gitk8s.Failed, "%s diverged from the external repository at %s, and the policy doesn't let this check push %s to resolve it", branch, gitk8s.Short(d.Commit), child)
+	case cr == nil || cr.Parent != branch:
+		return report(gitk8s.Failed, "%s diverged from the external repository at %s; add a rule that gives %s the parent %s, so that this check can resolve the divergence there", branch, gitk8s.Short(d.Commit), child, branch)
 	}
 	// Reading the child's GitBranch runs this again when the child changes
 	// or is deleted.

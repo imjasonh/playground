@@ -98,7 +98,7 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
-| `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. See [Resolve conflicts](#resolve-conflicts). |
+| `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. When a side of a diverged branch rewound, it replays the other side's commits onto that side's head instead of merging. See [Resolve conflicts](#resolve-conflicts). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
 the head and runs the checks again. Fix commits have a `Git-K8s-Fixer:
@@ -444,19 +444,71 @@ conflict that keep a branch from landing:
   resolves the conflicts.
 - The branch diverged. It changed both in git-k8s and in the external repository
   since they last synced, and the core program set `status.diverged` to the
-  external repository's head. The check fetches that head from the ref in
-  `status.diverged.ref`, and pushes a merge of it with a lease on the branch's
-  head. If the external repository deleted the branch, the check fails and
-  leaves the branch for a person, who can push the branch to the external
-  repository again to keep its changes, or delete it in git-k8s to drop them.
-  Branches diverge only with the in-cluster mirror that
-  [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
-  end-to-end test can't make one diverge, and unit tests cover divergence
-  instead.
+  external repository's head, the ref that holds it, and the head where the
+  sides last synced. The check fetches the external repository's head from
+  `status.diverged.ref`, and pushes a merge of it, or the replays that a rewind
+  needs, with a lease on the branch's head. If the external repository deleted
+  the branch, the check fails and leaves the branch for a person, who can push
+  the branch to the external repository again to keep its changes, or delete it
+  in git-k8s to drop them.
 
-When a branch diverged and also conflicts with its parent, the check merges
-the external repository's head first, because merging the parent doesn't
-end the divergence.
+When a branch diverged and also conflicts with its parent, the check
+resolves the divergence first, because merging the parent doesn't end it.
+
+The check compares each side's head with the head where the sides last
+synced, `status.diverged.base`. A side added the commits that its head has
+and `base` doesn't, and removed the commits that `base` has and its head
+doesn't. A side that removed commits rewound, for example with a force push.
+If neither side rewound, only a head that contains both heads keeps both
+sides' changes, so the check merges the external repository's head. If one
+side rewound, a commit that contains both heads brings back the commits that
+the rewound side removed, so the check never makes a merge commit. It
+replays the commits that the other side added since `base` onto the rewound
+side's head instead, and pushes the result with a lease on the branch's
+head:
+
+- If the external repository rewound, the check replays the branch's commits
+  onto the external repository's head one at a time, with their authors and
+  messages. It skips a commit whose replay changes nothing, such as one whose
+  change the external repository's head already has. The check pushes to the
+  side that didn't rewind, so the result can change commits to resolve
+  conflicts. If a commit can't be replayed by itself, such as a merge, or a
+  commit whose replay conflicts, the check replays the branch's whole change
+  since `base` as one commit on top of the external repository's head
+  instead. Git and the agent resolve that commit's conflicts as they resolve
+  a merge's, with `base` as the merge base, and the agent's prompt says not
+  to bring back what the rewind removed.
+- If the branch rewound in git-k8s, the check replays the external
+  repository's commits onto the branch's head one at a time. It pushes the
+  result to the side that rewound, so each commit that the external
+  repository added needs a replay in it. A replay is a commit that removes
+  and adds the same lines in the same files as the original, ignoring the
+  unchanged lines around them. A merge commit, and a commit that changes no
+  file, have no replay. So the check resolves no conflicts here, and fails
+  and leaves the divergence for a person when a commit has no replay or
+  doesn't replay unchanged.
+- If both sides rewound, the check replays the branch's commits onto the
+  external repository's head if that head has none of the commits that the
+  branch removed. Otherwise, it replays the external repository's commits onto
+  the branch's head if that head has none of the commits that the external
+  repository removed. In this case, it never replays the branch's whole
+  change as one commit, and fails when neither replay works.
+
+A head keeps a side's changes when it has none of the commits that the side
+removed, and has each commit that the side added, or a replay of it if the
+head doesn't contain `base`. The check passes when one side's head already
+keeps every change that the other side made.
+
+Branches diverge only with the in-cluster mirror that
+[Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
+end-to-end test can't make one diverge, and unit tests cover divergence
+instead. Until git-k8s has the mirror, the check pushes to the repository's
+URL. With the mirror, the check pushes through the mirror, and the mirror
+resolves a divergence between its copy and the external repository by the
+same rule. It moves one side to the other side's head only if that head
+keeps every change that the moving side made, so once one side's head keeps
+both sides' changes, such as after the check's push, the mirror moves the
+other side to it.
 
 Git resolves what it can by itself. Files that match `-union`, which is `go.sum`
 by default, merge with git's union driver, which keeps the lines of both sides.
@@ -479,7 +531,8 @@ and holds both sides' changes. The agent can edit files but not delete them, and
 it can't build or run the code. It answers fail when it can't tell how to keep
 both sides' changes.
 
-The check commits the agent's files as a merge whose parents are both heads. It
+The check commits the agent's files as a merge whose parents are both heads,
+or, for a replay, as one commit on top of the external repository's head. It
 fails instead when the merge that the agent's Pod made doesn't have the same
 tree as the check's merge, when the agent changed a file that doesn't conflict,
 deleted a file, or gave a file a mode that the file has on neither side, or when
@@ -497,11 +550,14 @@ because the agent's work tree leaves those files out, or for conflicts in more
 than 1,000 files or in files that hold more than 8 MiB, the most that a result
 can change.
 
-Each merge that the check pushes is a new head, so every check runs again on
-it. The merge has a `Git-K8s-Fixer: conflicts` trailer and counts toward
-`maxAutomatedCommits`. When neither git nor the agent resolves the
-conflicts, the check fails with the reason and leaves the branch for a
-person, because a wrong resolution is worse than none.
+Each commit that the check pushes makes a new head, so every check runs
+again on it. A merge, and a replay of the branch's whole change as one
+commit, have a `Git-K8s-Fixer: conflicts` trailer and count toward
+`maxAutomatedCommits`. A replay of one commit keeps that commit's message,
+so it counts only if the original did, but the check pushes replays only
+while the branch is under the limit, like any fix. When neither git nor the
+agent resolves the conflicts, the check fails with the reason and leaves the
+branch for a person, because a wrong resolution is worse than none.
 
 A merge of the parent that has no conflicts passes, because merging it is
 `check-base`'s job. The check pushes a merge of the external repository's
@@ -514,9 +570,11 @@ again on the parent's new head. If the parent no longer contains the head
 that the run started with when the Pod fetches it, the agent doesn't run,
 and the check starts a new run on the parent's new head.
 
-The check merges, and doesn't rebase. A rebase rewrites commits that checks
-and people already saw, such as the head that an approval names, and
-`check-base` already brings branches up to date with merges.
+The check doesn't rebase a branch onto its parent or onto the external
+repository's head. A rebase rewrites commits that checks and people already
+saw, such as the head that an approval names, and `check-base` already
+brings branches up to date with merges. The check replays commits only when
+a side rewound, because then a merge brings back what the rewind removed.
 
 A branch without a parent, such as `main`, has no merge gate, so a merge
 pushed to it would skip every check. When such a branch diverges, the check
@@ -527,9 +585,10 @@ check's fix. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
 merge gate, like any other branch. `check-base` merges `BRANCH` into it, or
 the conflicts check resolves that merge when it conflicts. The check waits
 while `resolve/BRANCH` holds work that hasn't landed, and passes once
-`BRANCH` contains the external repository's head. To let the check resolve
-a diverged `main`, add the check to `main`'s policy, and give `resolve/main`
-the parent `main` with a rule:
+`BRANCH` contains the external repository's head, or when the external
+repository's head contains `BRANCH`'s head, because the mirror then moves
+`BRANCH` to it. To let the check resolve a diverged `main`, add the check to
+`main`'s policy, and give `resolve/main` the parent `main` with a rule:
 
 ```yaml
   branches:
@@ -546,6 +605,21 @@ the parent `main` with a rule:
     - match: c/**
       parent: main
 ```
+
+`resolve/BRANCH` lands only once it contains `BRANCH`'s head, so it can't
+resolve a rewind, and the check pushes nothing when a side of a diverged
+parent rewound. The merge controller only moves a parent to a commit that
+contains the parent's head, so a parent that rewound in the external
+repository resolves only there, with a replay of each commit that landed on
+the parent since `base`. If a commit can't be replayed unchanged, for
+example because it changes lines that the rewind removed, the parent stays
+diverged until the external repository's head contains the parent's head
+again. If the parent rewound in git-k8s instead, replay the external
+repository's commits onto the parent's head, and push the result to the
+external repository with a lease on its head. The check fails, and says
+which of these to do, until either side's head keeps every change that the
+other side made. Then it passes, because the mirror moves the other side to
+that head.
 
 Checks push with the repository's credentials, which can push to any
 branch. The mirror lets a check update only a branch that has a parent, so

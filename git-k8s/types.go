@@ -31,7 +31,8 @@ const RepositoryLabel = Group + "/repository"
 // characters.
 const ApproveAnnotation = Group + "/approve"
 
-// FixerTrailer is the commit trailer on every commit that a check pushes.
+// FixerTrailer is the commit trailer on every commit that a check pushes,
+// except a replay of another commit, which keeps that commit's message.
 // Its value is the check's name. MergePolicy.MaxAutomatedCommits limits how
 // many commits with this trailer a branch can have.
 const FixerTrailer = "Git-K8s-Fixer"

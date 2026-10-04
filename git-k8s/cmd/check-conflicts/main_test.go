@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +69,19 @@ func diverge(w *gittest.Work, name, branch, from string, files map[string]string
 	o.Namespace = "default"
 	o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + branch}
 	return e, o
+}
+
+// syncedAt pushes synced to the ref that holds the head where branch last
+// synced, and records it as o's base.
+func syncedAt(w *gittest.Work, o *observed, branch, synced string) {
+	w.Branch("synced", synced)
+	w.PushRef(syncedPrefix + branch)
+	o.Status.Diverged.Base = synced
+}
+
+// files lists the files at commit.
+func files(w *gittest.Work, commit string) string {
+	return w.Git("ls-tree", "--name-only", "--end-of-options", commit)
 }
 
 // rules give main a policy with the conflicts check and every other branch
@@ -1051,6 +1066,488 @@ func TestRunsAgainForAnotherMerge(t *testing.T) {
 	}
 }
 
+// rewound pushes c/x as a branch that last synced with the external
+// repository at synced, a commit on top of base that adds s.txt, and that
+// changed since then with the commits that branch makes on top of synced.
+// It returns c/x's view, base, and synced.
+func rewound(t *testing.T, srv *gittest.Server, branch func(w *gittest.Work, b *Branch)) (b *Branch, w *gittest.Work, base, synced string) {
+	b, w, base = setup(t, srv, map[string]string{"b.txt": "main\n"}, map[string]string{"s.txt": "synced\n"})
+	synced = b.Spec.Head
+	branch(w, b)
+	b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+	w.Push("c/x")
+	return b, w, base, synced
+}
+
+// authorAndMessage is commit's author, author date, and message.
+func authorAndMessage(w *gittest.Work, commit string) string {
+	return w.Git("log", "-1", "--format=%an <%ae> %ad%n%B", "--end-of-options", commit)
+}
+
+func TestReplaysTheBranchOntoARewoundExternalHead(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+		commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+		commit(w, "branch edit 2", map[string]string{"a.txt": "one\ntwo\nbranch\n"})
+	})
+	head := b.Spec.Head
+	// The external repository drops synced's commit, and changes a.txt.
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"a.txt": "external\ntwo\nthree\n"})
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" || res.Outputs["synced"] != synced {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replays %s", got, fix)
+	}
+	for i, orig := range []string{head, head + "~1"} {
+		replay := fmt.Sprintf("%s~%d", fix, i)
+		if got, want := authorAndMessage(w, replay), authorAndMessage(w, orig); got != want {
+			t.Errorf("replay %s's author and message = %q, want %q", replay, got, want)
+		}
+		if got := w.Git("log", "-1", "--format=%cn <%ce>", "--end-of-options", replay); got != "git-k8s <git-k8s@example.com>" {
+			t.Errorf("replay %s's committer = %q", replay, got)
+		}
+	}
+	if got := w.Git("rev-parse", "--verify", "--end-of-options", fix+"~2"); got != e {
+		t.Errorf("the replays start at %s, want the external head %s", got, e)
+	}
+	if got := w.Show(fix, "a.txt"); got != "external\ntwo\nbranch" {
+		t.Errorf("a.txt = %q, want both sides' changes", got)
+	}
+	if got := files(w, fix); got != "a.txt\nc.txt\ngo.sum" {
+		t.Errorf("files = %q, want c.txt, and not s.txt, which the external repository removed", got)
+	}
+
+	b.Spec.Head = fix
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want = "the branch keeps every change that the external repository's c/x at " + gitk8s.Short(e) + " made since they last synced at " + gitk8s.Short(synced)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want {
+		t.Errorf("result after the replays = %+v, want Passed with %q", res, want)
+	}
+}
+
+func TestSkipsChangesThatTheRewoundExternalHeadHas(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		// replays counts the replays on top of the external head.
+		replays int
+	}{
+		{name: "for some commits", want: "; replayed the branch's commits since then onto it, skipping those whose changes it already has", replays: 1},
+		{name: "for every commit", want: ", and already has every change that the branch made since then"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+				commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+				if tc.replays > 0 {
+					commit(w, "branch edit 2", map[string]string{"e.txt": "branch\n"})
+				}
+			})
+			// The external repository has the branch's first change in a
+			// commit that changes more, so it isn't a replay.
+			e, o := diverge(w, b.Name, "c/x", base, map[string]string{"c.txt": "branch\n", "d.txt": "external\n"})
+			syncedAt(w, o, "c/x", synced)
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			res := b.Status.Checks.Result
+			fix := res.Outputs["fix"]
+			want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + tc.want + "; pushed " + gitk8s.Short(fix)
+			if res.State != gitk8s.Fixed || res.Message != want {
+				t.Fatalf("result = %+v, want Fixed with %q", res, want)
+			}
+			if got := w.Fetch("c/x"); got != fix {
+				t.Fatalf("c/x = %s, want %s", got, fix)
+			}
+			if got := w.Git("rev-list", "--count", "--end-of-options", e+".."+fix); got != strconv.Itoa(tc.replays) {
+				t.Errorf("c/x has %s commits on top of the external head, want %d", got, tc.replays)
+			}
+		})
+	}
+}
+
+func TestReplaysTheBranchAsOneCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// branch makes c/x's commits since synced, and returns the one that
+		// can't be replayed by itself.
+		branch   func(w *gittest.Work, b *Branch) string
+		external map[string]string
+		// why says why the commit, which it formats, can't be replayed, and
+		// want is the rest of the message, which formats the head where
+		// the sides synced and the external head, if it has verbs.
+		why, want string
+		body      string
+		files     map[string]string
+	}{{
+		name: "when a replay conflicts",
+		branch: func(w *gittest.Work, _ *Branch) string {
+			c := commit(w, "branch edit", map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			commit(w, "branch revert", map[string]string{"a.txt": "one\ntwo\nthree\n", "c.txt": "branch\n"})
+			return c
+		},
+		external: map[string]string{"a.txt": "one\nexternal\nthree\n"},
+		why:      "replaying commit %s of the branch conflicts in a.txt",
+		want:     "replayed the branch's commits since %s onto the external repository's c/x at %s as one commit",
+		files:    map[string]string{"a.txt": "one\nexternal\nthree", "c.txt": "branch"},
+	}, {
+		name: "when the branch merged main",
+		branch: func(w *gittest.Work, b *Branch) string {
+			commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+			w.Git("merge", "--quiet", "--no-edit", "--end-of-options", b.Spec.ParentHead)
+			return w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+		},
+		external: map[string]string{"a.txt": "one\nexternal\nthree\n"},
+		why:      "commit %s of the branch is a merge, which has no replay",
+		want:     "replayed the branch's commits since %s onto the external repository's c/x at %s as one commit",
+		files:    map[string]string{"a.txt": "one\nexternal\nthree", "b.txt": "main", "c.txt": "branch"},
+	}, {
+		name: "with union paths",
+		branch: func(w *gittest.Work, _ *Branch) string {
+			return commit(w, "branch edit", map[string]string{"go.sum": "a v1\nc v1\n"})
+		},
+		external: map[string]string{"go.sum": "a v1\nd v1\n"},
+		why:      "replaying commit %s of the branch conflicts in go.sum",
+		want:     "replaying the branch onto the external repository's c/x conflicts in go.sum, which git merged with its union driver",
+		body:     "Git merged these files with its union driver, which keeps the lines of both sides:\n\ngo.sum\n\n",
+		files:    map[string]string{"go.sum": "a v1\nc v1\nd v1"},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "pw")
+			var stuck string
+			b, w, base, synced := rewound(t, srv, func(w *gittest.Work, b *Branch) { stuck = tc.branch(w, b) })
+			head := b.Spec.Head
+			e, o := diverge(w, b.Name, "c/x", base, tc.external)
+			syncedAt(w, o, "c/x", synced)
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			res := b.Status.Checks.Result
+			fix := res.Outputs["fix"]
+			want := tc.want
+			if strings.Contains(want, "%s") {
+				want = fmt.Sprintf(want, gitk8s.Short(synced), gitk8s.Short(e))
+			}
+			want = fmt.Sprintf(tc.why, gitk8s.Short(stuck)) + "; " + want + "; pushed " + gitk8s.Short(fix)
+			if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" || res.Outputs["merge"] != e {
+				t.Fatalf("result = %+v, want Fixed with %q", res, want)
+			}
+			if got := w.Fetch("c/x"); got != fix {
+				t.Fatalf("c/x = %s, want the replay %s", got, fix)
+			}
+			wantMsg := e + "\nReplay c/x onto the external repository's c/x\n\n" +
+				"The external repository rewound c/x since it last synced with git-k8s,\n" +
+				"so this commit replays the changes that c/x made since then onto the\n" +
+				"external repository's head, as one commit:\n\n" + synced + ".." + head + "\n\n" + tc.body + git.FixerTrailer + ": conflicts"
+			if got := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix); got != wantMsg {
+				t.Errorf("replay's parents and message =\n%s\nwant\n%s", got, wantMsg)
+			}
+			for file, content := range tc.files {
+				if got := w.Show(fix, file); got != content {
+					t.Errorf("%s = %q, want %q", file, got, content)
+				}
+			}
+			if got := files(w, fix); strings.Contains(got, "s.txt") {
+				t.Errorf("files = %q, want s.txt, which the external repository removed, left out", got)
+			}
+
+			b.Spec.Head = fix
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			if res := b.Status.Checks.Result; res.State != gitk8s.Passed || !strings.HasPrefix(res.Message, "the branch keeps every change that the external repository's c/x at ") {
+				t.Errorf("result after the replay = %+v, want Passed", res)
+			}
+		})
+	}
+}
+
+func TestStartsAnAgentToReplayTheBranch(t *testing.T) {
+	withAgent(t)
+	srv := gittest.NewServer(t, "")
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+		commit(w, "branch edit", map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	})
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"a.txt": "one\nexternal\nthree\n"})
+	syncedAt(w, o, "c/x", synced)
+	rec, err := reconcile(t, srv, b, rules, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, pods := b.Status.Checks.Result, kube.Owned[agent.Pod](rec)
+	if res.State != gitk8s.Running || len(pods) != 1 {
+		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
+	}
+	if want := "replaying commit " + gitk8s.Short(b.Spec.Head) + " of the branch conflicts in a.txt; started Pod " + pods[0].Name; res.Message != want {
+		t.Errorf("message = %q, want %q", res.Message, want)
+	}
+	for k, want := range map[string]string{"rewound": "external", "merge": e, "base": synced, "synced": synced, "diverged": e, "conflicts": "a.txt"} {
+		if got := res.Outputs[k]; got != want {
+			t.Errorf("outputs[%s] = %q, want %q", k, got, want)
+		}
+	}
+	task := agentTask(t, pods[0])
+	if task.Instructions != replayInstructions+instructions || task.Base != synced || task.MergeName != "the external repository's c/x" || task.MergeHead != e {
+		t.Errorf("the agent's task = %+v, want a replay onto the external head", task)
+	}
+	for name, want := range map[string]string{"MERGE_REF": downstream + "c/x", "MERGE_HEAD": e, "BASE": synced} {
+		if got := prepareEnv(pods[0], name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+
+	rec, err = reconcile(t, srv, b, rules, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, again := b.Status.Checks.Result, kube.Owned[agent.Pod](rec)
+	if res.State != gitk8s.Running || len(again) != 1 || again[0].Name != pods[0].Name || res.Outputs["rewound"] != "external" {
+		t.Errorf("result = %+v and Pods %v, want Running with Pod %s", res, again, pods[0].Name)
+	}
+
+	t.Log("When the sides sync at another head, the run is for another replay.")
+	syncedAt(w, o, "c/x", base)
+	rec, err = reconcile(t, srv, b, rules, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, pods := b.Status.Checks.Result, kube.Owned[agent.Pod](rec); len(pods) == 1 && pods[0].Name == again[0].Name {
+		t.Errorf("result = %+v, want the run that replays onto %s gone", res, gitk8s.Short(synced))
+	}
+}
+
+func TestCommitsTheAgentsReplay(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+		commit(w, "branch edit", map[string]string{"a.txt": "one\nbranch\nthree\n", "go.sum": "a v1\nc v1\n"})
+	})
+	head := b.Spec.Head
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"a.txt": "one\nexternal\nthree\n", "go.sum": "a v1\nb v1\n"})
+	syncedAt(w, o, "c/x", synced)
+	resolved := agent.File{Path: "a.txt", Mode: "100644", Content: []byte("one\nbranch\nexternal\nthree\n")}
+	jobs := withJobs(t, finish(t, w, resolution(resolved)))
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "replaying commit " + gitk8s.Short(head) + " of the branch conflicts in a.txt, go.sum; the agent resolved the conflicts in a.txt; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replay %s", got, fix)
+	}
+	wantMsg := e + "\nReplay c/x onto the external repository's c/x\n\n" +
+		"The external repository rewound c/x since it last synced with git-k8s,\n" +
+		"so this commit replays the changes that c/x made since then onto the\n" +
+		"external repository's head, as one commit:\n\n" + synced + ".." + head + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts"
+	if got := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix); got != wantMsg {
+		t.Errorf("replay's parents and message =\n%s\nwant\n%s", got, wantMsg)
+	}
+	if got := w.Show(fix, "a.txt"); got != "one\nbranch\nexternal\nthree" {
+		t.Errorf("a.txt = %q, want the agent's resolution", got)
+	}
+	if got := w.Show(fix, "go.sum"); got != "a v1\nc v1\nb v1" {
+		t.Errorf("go.sum = %q, want git's union merge", got)
+	}
+	if got := files(w, fix); strings.Contains(got, "s.txt") {
+		t.Errorf("files = %q, want s.txt, which the external repository removed, left out", got)
+	}
+	if len(*jobs) != 1 {
+		t.Fatalf("ran %d jobs, want 1", len(*jobs))
+	}
+	job := (*jobs)[0]
+	wantCheckout := agent.Checkout{
+		Branch: "c/x", Head: head, Parent: "main", Base: synced,
+		Merge: &agent.Ref{Name: downstream + "c/x", Commit: e, DisplayName: "the external repository's c/x"}, Union: []string{"go.sum"},
+	}
+	if !reflect.DeepEqual(job.Checkout, wantCheckout) || job.Task.Instructions != replayInstructions+instructions {
+		t.Errorf("job = %+v, want a replay of c/x onto the external head", job)
+	}
+}
+
+func TestReplaysTheExternalCommitsOntoARewoundBranch(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {})
+	// c/x drops synced's commit, and adds its own.
+	w.Branch("c/x", base)
+	b.Spec.Head = commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+	w.Push("c/x")
+	head := b.Spec.Head
+	e1, o := diverge(w, b.Name, "c/x", synced, map[string]string{"d.txt": "external\n"})
+	e := commit(w, "external edit 2", map[string]string{"a.txt": "one\ntwo\nexternal\n"})
+	w.PushRef(downstream + "c/x")
+	o.Status.Diverged.Commit = e
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the commits that the external repository's c/x added since then onto it; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "branch" {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replays %s", got, fix)
+	}
+	if got := w.Git("rev-parse", "--verify", "--end-of-options", fix+"~2"); got != head {
+		t.Errorf("the replays start at %s, want the branch's head %s", got, head)
+	}
+	for i, orig := range []string{e, e1} {
+		replay := fmt.Sprintf("%s~%d", fix, i)
+		if got, want := authorAndMessage(w, replay), authorAndMessage(w, orig); got != want {
+			t.Errorf("replay %s's author and message = %q, want %q", replay, got, want)
+		}
+		if got, want := w.Git("diff", "--end-of-options", replay+"~1", replay), w.Git("diff", "--end-of-options", orig+"~1", orig); got != want {
+			t.Errorf("replay %s's change =\n%s\nwant\n%s", replay, got, want)
+		}
+	}
+	if got := files(w, fix); got != "a.txt\nc.txt\nd.txt\ngo.sum" {
+		t.Errorf("files = %q, want c.txt and d.txt, and not s.txt, which the branch removed", got)
+	}
+
+	b.Spec.Head = fix
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want = "the branch keeps every change that the external repository's c/x at " + gitk8s.Short(e) + " made since they last synced at " + gitk8s.Short(synced)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want {
+		t.Errorf("result after the replays = %+v, want Passed with %q", res, want)
+	}
+}
+
+func TestLeavesARewoundBranchWhoseExternalCommitsDontReplay(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// branch makes c/x's commits on top of base, and external the
+		// external repository's on top of synced. external returns the
+		// commit that doesn't replay.
+		branch   func(w *gittest.Work)
+		external func(w *gittest.Work, b *Branch) string
+		why      string
+	}{{
+		name:     "when a replay conflicts",
+		branch:   func(w *gittest.Work) { commit(w, "branch edit", map[string]string{"a.txt": "one\nbranch\nthree\n"}) },
+		external: func(w *gittest.Work, _ *Branch) string { return commit(w, "external edit", conflictingA) },
+		why:      "replaying commit %s of the external repository's c/x conflicts in a.txt",
+	}, {
+		name:     "when a replay changes another file",
+		branch:   func(w *gittest.Work) { w.Git("mv", "--end-of-options", "a.txt", "r.txt"); w.Commit("rename a.txt") },
+		external: func(w *gittest.Work, _ *Branch) string { return commit(w, "external edit", conflictingA) },
+		why:      "the replay of commit %s of the external repository's c/x doesn't change the same lines in the same files as the commit",
+	}, {
+		name:     "when a commit changes no file",
+		branch:   func(w *gittest.Work) { commit(w, "branch edit", map[string]string{"c.txt": "branch\n"}) },
+		external: func(w *gittest.Work, _ *Branch) string { return w.Commit("empty") },
+		why:      "commit %s of the external repository's c/x changes no file, so it has no replay",
+	}, {
+		name:   "when a commit is a merge",
+		branch: func(w *gittest.Work) { commit(w, "branch edit", map[string]string{"c.txt": "branch\n"}) },
+		external: func(w *gittest.Work, b *Branch) string {
+			w.Git("merge", "--quiet", "--no-edit", "--end-of-options", b.Spec.ParentHead)
+			return w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+		},
+		why: "commit %s of the external repository's c/x is a merge, which has no replay",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {})
+			w.Branch("c/x", base)
+			tc.branch(w)
+			b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+			w.Push("c/x")
+			head := b.Spec.Head
+			w.Branch("external", synced)
+			stuck := tc.external(w, b)
+			w.PushRef(downstream + "c/x")
+			o := &observed{Object: kube.Meta(b.Name, nil)}
+			o.Namespace = "default"
+			o.Status.Diverged = &gitk8s.Divergence{Commit: w.Git("rev-parse", "--verify", "--end-of-options", "HEAD"), Ref: downstream + "c/x"}
+			syncedAt(w, o, "c/x", synced)
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + ", and " + fmt.Sprintf(tc.why, gitk8s.Short(stuck)) + ", so the check leaves the divergence for a person"
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "branch" {
+				t.Errorf("result = %+v, want Failed with %q", res, want)
+			}
+			if got := srv.Heads(t, "app")["c/x"]; got != head {
+				t.Errorf("c/x moved to %s", got)
+			}
+		})
+	}
+}
+
+func TestResolvesADivergenceInWhichBothSidesRewound(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	// The sides synced at s2, on top of s1. c/x drops s2 and adds a commit,
+	// and the external repository drops both and adds its own.
+	b, w, base, s1 := rewound(t, srv, func(w *gittest.Work, _ *Branch) {})
+	w.Branch("synced", s1)
+	s2 := commit(w, "synced 2", map[string]string{"s2.txt": "synced\n"})
+	w.Branch("c/x", s1)
+	b.Spec.Head = commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+	w.Push("c/x")
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"d.txt": "external\n"})
+	syncedAt(w, o, "c/x", s2)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(s2) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "both" {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replay %s", got, fix)
+	}
+	if got := w.Git("log", "--format=%P %s", "--end-of-options", fix); !strings.HasPrefix(got, e+" branch edit\n") {
+		t.Errorf("c/x's history =\n%s\nwant the branch's commit replayed onto the external head", got)
+	}
+	if got := files(w, fix); got != "a.txt\nc.txt\nd.txt\ngo.sum" {
+		t.Errorf("files = %q, want neither s.txt, which the external repository removed, nor s2.txt, which both sides removed", got)
+	}
+}
+
+func TestLeavesADivergenceInWhichBothSidesKeptWhatTheOtherRemoved(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	// The sides synced at a merge of s1 and s2. c/x keeps s1 and drops s2,
+	// and the external repository keeps s2 and drops s1.
+	b, w, base, s1 := rewound(t, srv, func(w *gittest.Work, _ *Branch) {})
+	w.Branch("s2", base)
+	s2 := commit(w, "synced 2", map[string]string{"s2.txt": "synced\n"})
+	w.Git("merge", "--quiet", "--no-edit", "--end-of-options", s1)
+	synced := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+	w.Branch("c/x", s1)
+	b.Spec.Head = commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+	w.Push("c/x")
+	head := b.Spec.Head
+	_, o := diverge(w, b.Name, "c/x", s2, map[string]string{"d.txt": "external\n"})
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "the branch and the external repository's c/x both rewound since they last synced at " + gitk8s.Short(synced) + ", and each kept commits that the other removed, so the check leaves the divergence for a person"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "both" {
+		t.Errorf("result = %+v, want Failed with %q", res, want)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
+	}
+}
+
 // parent pushes main and returns its view, with the external repository's
 // head of main on the downstream ref: base with a.txt, then mainFiles on
 // main and externalFiles on the external head.
@@ -1216,6 +1713,108 @@ func TestLeavesADivergedParent(t *testing.T) {
 				t.Error("pushed resolve/main")
 			}
 		})
+	}
+}
+
+func TestHandlesARewoundParent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// heads makes main's head and the external repository's head on
+		// top of base, which has a.txt, or synced, which adds s.txt.
+		heads          func(w *gittest.Work, base, synced string) (head, e string)
+		state, rewound string
+		// want is the message, with {head}, {e}, and {synced} for those
+		// commits.
+		want string
+	}{{
+		name: "when the external repository rewound",
+		heads: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("main", synced)
+			head := commit(w, "main edit", map[string]string{"a.txt": "main\n"})
+			w.Branch("external", base)
+			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
+		},
+		state: gitk8s.Failed, rewound: "external",
+		want: "the external repository rewound main since it last synced with git-k8s at {synced}, and the merge controller moves main only to a commit that contains its head, so only the external repository can resolve the divergence: push a head there that replays each commit that landed on main since {synced} unchanged, or that contains main's head {head}",
+	}, {
+		name: "when main rewound",
+		heads: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("main", base)
+			head := commit(w, "main edit", map[string]string{"a.txt": "main\n"})
+			w.Branch("external", synced)
+			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
+		},
+		state: gitk8s.Failed, rewound: "branch",
+		want: "main rewound in git-k8s since it last synced with the external repository at {synced}; replay the commits that the external repository added since then onto main's head {head}, and push the result to the external repository with a lease on its head {e}",
+	}, {
+		name: "after the external repository replays main's commits",
+		heads: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("main", synced)
+			head := commit(w, "main edit", map[string]string{"a.txt": "main\n"})
+			w.Branch("external", base)
+			return head, commit(w, "main edit", map[string]string{"a.txt": "main\n"})
+		},
+		state: gitk8s.Passed, rewound: "external",
+		want: "the external repository's head {e} keeps every change that main made since they last synced at {synced}",
+	}, {
+		name: "when both rewound",
+		heads: func(w *gittest.Work, base, _ string) (string, string) {
+			w.Branch("main", base)
+			head := commit(w, "main edit", map[string]string{"a.txt": "main\n"})
+			w.Branch("external", base)
+			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
+		},
+		state: gitk8s.Failed, rewound: "both",
+		want: "main rewound both in git-k8s and in the external repository since they last synced at {synced}, so the check leaves the divergence for a person",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			w := srv.NewWork(t, "app")
+			w.Write("a.txt", "one\n")
+			base := w.Commit("base")
+			synced := commit(w, "synced", map[string]string{"s.txt": "synced\n"})
+			head, e := tc.heads(w, base, synced)
+			w.PushRef(downstream + "main")
+			w.Branch("main", head)
+			w.Push("main")
+			b := &Branch{Object: kube.Meta("app-main", nil)}
+			b.Namespace = "default"
+			b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: head}
+			o := &observed{Object: kube.Meta("app-main", nil)}
+			o.Namespace = "default"
+			o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + "main"}
+			syncedAt(w, o, "main", synced)
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			want := strings.NewReplacer("{head}", gitk8s.Short(head), "{e}", gitk8s.Short(e), "{synced}", gitk8s.Short(synced)).Replace(tc.want)
+			if res := b.Status.Checks.Result; res.State != tc.state || res.Message != want || res.Outputs["rewound"] != tc.rewound {
+				t.Errorf("result = %+v, want %s with %q", res, tc.state, want)
+			}
+			heads := srv.Heads(t, "app")
+			if _, ok := heads["resolve/main"]; ok {
+				t.Error("pushed resolve/main, which would bring back the commits that the rewind removed")
+			}
+			if heads["main"] != head {
+				t.Errorf("main moved to %s", heads["main"])
+			}
+		})
+	}
+}
+
+func TestPassesWhenTheExternalHeadContainsTheParent(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, _, _ := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
+	e, o := diverge(w, b.Name, "main", b.Spec.Head, map[string]string{"b.txt": "external\n"})
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "the external repository's head " + gitk8s.Short(e) + " already contains main's head"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want {
+		t.Errorf("result = %+v, want Passed with %q", res, want)
+	}
+	if _, ok := srv.Heads(t, "app")["resolve/main"]; ok {
+		t.Error("pushed resolve/main")
 	}
 }
 

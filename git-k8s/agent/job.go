@@ -56,9 +56,12 @@ type Checkout struct {
 	Head   string
 	// Parent names the branch that Branch lands on.
 	Parent string
-	// Base is the merge base of Head and Parent's head, or of Head and
-	// Merge's commit, or empty if they share no history. The agent reads
-	// the change from Base to Head.
+	// Base is the merge base of Head and Parent's head, or empty if they
+	// share no history. With Merge, Base is the base of the merge, which
+	// is the merge base of Head and Merge's commit, or another commit that
+	// Head contains, such as the head where the branch last synced with a
+	// repository that rewound since then. The agent reads the change from
+	// Base to Head.
 	Base string
 	// Merge, if set, is a commit of the same repository to merge into
 	// Head, and Base can't be empty. The agent's files are then the tree
