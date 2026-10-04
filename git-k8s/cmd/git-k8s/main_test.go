@@ -447,6 +447,41 @@ func TestReportsStaleLock(t *testing.T) {
 	}
 }
 
+// A branch whose heads the mirror can't compare stays as it is on each
+// side and doesn't land, and the other branches still sync.
+func TestReportsBranchesItCantCompare(t *testing.T) {
+	f := newFixture(t)
+	b := f.branches()
+	w := f.work
+	w.Write("fix.txt", "fix\n")
+	fix := w.Commit("a check's fix")
+	f.pushToMirror("c/x")
+	w.Branch("person", b.Spec.Head)
+	w.Commit("a person's change")
+	w.Push("c/x")
+	w.Branch("newer", b.Spec.ParentHead)
+	newer := w.Commit("newer main")
+	w.Push("main")
+	// git merge-base fails on a synced head that isn't a commit.
+	w.Git("--git-dir="+f.copyDir(), "update-ref", "refs/git-k8s/synced/heads/c/x", b.Spec.ParentHead+"^{tree}")
+
+	f.fetch()
+	if c := f.condition("ExternalSynced"); c.Status != kube.False || c.Reason != "CompareFailed" || !strings.Contains(c.Message, "c/x (") {
+		t.Errorf("ExternalSynced = %+v", c)
+	}
+	if got := f.mirrorHeads()["main"]; got != newer {
+		t.Errorf("the mirror has main at %s, want the external repository's %s", got, newer)
+	}
+	b.Spec.Head = fix
+	pass(b)
+	if _, err := f.merge(b); err == nil {
+		t.Errorf("the merge controller reconciled c/x without an error; state = %q", b.Status.State)
+	}
+	if err := f.finalize(); err == nil || !strings.Contains(err.Error(), "couldn't be compared with the mirror on c/x") {
+		t.Errorf("Finalize = %v, want an error that names c/x", err)
+	}
+}
+
 func TestInvalidPolicyIsPermanent(t *testing.T) {
 	for _, mod := range []func(*gitk8s.GitRepository){
 		func(r *gitk8s.GitRepository) { r.Spec.PollInterval = "1ms" },

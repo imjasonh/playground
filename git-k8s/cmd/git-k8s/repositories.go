@@ -184,6 +184,9 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 	switch {
 	case p.failure != "":
 		c.Reason, c.Message = "SyncFailed", p.failure
+	case len(rep.Failed) > 0:
+		c.Reason = "CompareFailed"
+		c.Message = "the mirror left these branches as they are on each side because it couldn't compare their heads: " + failures(rep.Failed)
 	case len(rep.Diverged) > 0:
 		c.Reason = "Diverged"
 		c.Message = strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", ") +
@@ -198,6 +201,16 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 		c.Message = c.Message[:1021] + "..."
 	}
 	return c
+}
+
+// failures lists the branches whose heads a sync couldn't compare, with
+// why.
+func failures(failed map[string]error) string {
+	var parts []string
+	for _, name := range slices.Sorted(maps.Keys(failed)) {
+		parts = append(parts, fmt.Sprintf("%s (%v)", name, failed[name]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // noticeDivergence triggers a reconcile of each of repo's GitBranches whose
@@ -236,6 +249,9 @@ func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.GitRepository)
 	}
 	if len(rep.Diverged) > 0 {
 		unsynced = append(unsynced, "diverged from the mirror on "+strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", "))
+	}
+	if len(rep.Failed) > 0 {
+		unsynced = append(unsynced, "couldn't be compared with the mirror on "+failures(rep.Failed))
 	}
 	if rep.Err != nil {
 		unsynced = append(unsynced, rep.Err.Error())

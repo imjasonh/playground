@@ -707,6 +707,38 @@ func TestSyncKeepsAChangeOnAnotherLine(t *testing.T) {
 	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"deps/x": person, "main": m0})
 }
 
+// TestSyncReportsABranchItCantCompare makes comparing one branch's heads
+// fail, and checks that Sync reports the branch, leaves it as it is on
+// each side, and still syncs the other branches.
+func TestSyncReportsABranchItCantCompare(t *testing.T) {
+	w := newWorld(t)
+	main := w.commit("", "main")
+	w.pushExternal("main", main)
+	w.pushExternal("bad", main)
+	w.sync(SyncOptions{})
+
+	copyHead, extHead := w.commit(main, "copy"), w.commit(main, "external")
+	w.pushCopy("bad", copyHead)
+	w.pushExternal("bad", extHead)
+	newer := w.commit(main, "newer")
+	w.pushExternal("main", newer)
+	// git merge-base fails on a synced head that isn't a commit.
+	w.work.Git("--git-dir="+w.copyDir(), "update-ref", "refs/git-k8s/synced/heads/bad", main+"^{tree}")
+
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	if err := rep.Failed["bad"]; len(rep.Failed) != 1 || err == nil || !strings.Contains(err.Error(), "merge-base") {
+		t.Errorf("Report.Failed = %v; want bad, with git merge-base's error", rep.Failed)
+	}
+	if len(rep.Diverged) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+		t.Errorf("Sync = %+v; want nothing diverged or pending", rep)
+	}
+	wantHeads(t, "the copy's branches", w.copyRefs("refs/heads/"), map[string]string{"bad": copyHead, "main": newer})
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"bad": extHead, "main": newer})
+	if d, err := w.m.Divergence(t.Context(), w.repo, "bad"); err == nil {
+		t.Errorf("Divergence = %+v; want an error, so the merge controller holds the branch", d)
+	}
+}
+
 // TestSyncKeepsDeletions deletes a branch on one side while the other side
 // changes it. A deletion removes every commit, so the branch diverges.
 func TestSyncKeepsDeletions(t *testing.T) {

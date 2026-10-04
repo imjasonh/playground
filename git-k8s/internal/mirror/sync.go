@@ -42,6 +42,10 @@ type Report struct {
 	// to the external repository's head, or to "" if the external
 	// repository deleted the branch.
 	Diverged map[string]string
+	// Failed maps each branch whose heads Sync couldn't compare to why,
+	// such as git timing out. Sync leaves such a branch as it is on each
+	// side, and still syncs the other branches.
+	Failed map[string]error
 	// Err says why Sync couldn't fetch from or push to the external
 	// repository.
 	Err error
@@ -56,7 +60,8 @@ type Report struct {
 // the copy hasn't fetched the external repository yet, and the error wraps
 // ErrNotSynced, or local git failed. Failing to fetch from or push to the
 // external repository after the copy has fetched once only sets the
-// report's Err.
+// report's Err, and failing to compare one branch's heads only adds the
+// branch to the report's Failed.
 func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOptions) (*Report, error) {
 	e := m.entry(repo)
 	e.syncing.Lock()
@@ -119,7 +124,7 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 	if err != nil {
 		return nil, err
 	}
-	rep.Heads, rep.Diverged = map[string]string{}, map[string]string{}
+	rep.Heads, rep.Diverged, rep.Failed = map[string]string{}, map[string]string{}, map[string]error{}
 	for _, b := range branches {
 		if b.m != "" {
 			rep.Heads[b.name] = b.m
@@ -129,6 +134,8 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 			rep.Pending = append(rep.Pending, b.name)
 		case diverged:
 			rep.Diverged[b.name] = b.d
+		case failed:
+			rep.Failed[b.name] = b.err
 		}
 	}
 	return rep, nil
@@ -177,6 +184,9 @@ const (
 	// take moves the copy's head to the external repository's.
 	take
 	diverged
+	// failed means that comparing the heads failed, so a sync leaves the
+	// branch as it is on each side.
+	failed
 )
 
 // decide says what to do with a branch whose head is m in the copy and d in
@@ -309,6 +319,8 @@ type branch struct {
 	name    string
 	m, d, s string
 	act     action
+	// err is why decide failed, if act is failed.
+	err error
 }
 
 func (s *syncer) fetch(ctx context.Context) error {
@@ -322,7 +334,10 @@ func (s *syncer) fetch(ctx context.Context) error {
 	return nil
 }
 
-// plan reads every branch's heads and decides what to do with each.
+// plan reads every branch's heads and decides what to do with each. If
+// deciding fails for a branch, such as when git times out on a long
+// history, plan records the error on that branch, so one branch doesn't
+// keep the others from syncing.
 func (s *syncer) plan(ctx context.Context) ([]branch, error) {
 	refs, err := s.repo.Refs(ctx, "refs/heads", "refs/git-k8s/downstream/heads", "refs/git-k8s/synced/heads")
 	if err != nil {
@@ -357,8 +372,11 @@ func (s *syncer) plan(ctx context.Context) ([]branch, error) {
 	var out []branch
 	for _, name := range slices.Sorted(maps.Keys(byName)) {
 		b := byName[name]
-		if b.act, err = decide(ctx, s.repo, b.m, b.d, b.s); err != nil {
-			return nil, err
+		if b.act, b.err = decide(ctx, s.repo, b.m, b.d, b.s); b.err != nil {
+			if ctx.Err() != nil {
+				return nil, b.err
+			}
+			b.act = failed
 		}
 		out = append(out, *b)
 	}

@@ -140,6 +140,7 @@ external repository has every change in the copy:
 | `True` | `InSync` | The external repository has every change in the copy. |
 | `False` | `Pending` | The external repository doesn't have the changes to the branches that the message lists yet. |
 | `False` | `Diverged` | The branches that the message lists changed on both sides. See [Divergence](#divergence). |
+| `False` | `CompareFailed` | The mirror couldn't compare the heads of the branches that the message lists, for the reasons in the message, such as git timing out. It leaves those branches as they are on each side, and they don't land. |
 | `False` | `SyncFailed` | Fetching from or pushing to the external repository failed, for the reason in the message. |
 
 After a failure, the controller tries again within 30 seconds, or within
