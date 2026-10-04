@@ -472,7 +472,13 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 		// waits is how many reconciles see the Pod's exit before the spec
 		// holds main's new head.
 		waits int
-	}{{name: "after the spec holds main's new head", waits: 2}, {name: "when the spec already holds it"}} {
+		// deploy changes the agent Pods' spec after those reconciles.
+		deploy bool
+	}{
+		{name: "after the spec holds main's new head", waits: 2},
+		{name: "when the spec already holds it"},
+		{name: "after a deploy", waits: 1, deploy: true},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			withAgent(t)
 			srv := gittest.NewServer(t, "")
@@ -505,6 +511,18 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 				}
 				if res.Outputs["merge"] != started || res.Outputs["podUID"] != "uid-1" || res.Outputs["refunded"] != "uid-1" || res.Outputs["runs"] != "0" {
 					t.Errorf("outputs = %v, want the run that merges main at %s, given back", res.Outputs, started)
+				}
+			}
+			if tc.deploy {
+				runner.Model = "composer-3"
+				rec, err = reconcile(t, srv, b, rules, p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				res := b.Status.Checks.Result
+				want := "waiting for a run on the new commits: c/x no longer points to " + b.Spec.Head + ", or " + msg
+				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != want || len(pods) != 0 || res.Outputs["refunded"] != "uid-1" || res.Outputs["runs"] != "0" {
+					t.Fatalf("result = %+v and Pods %v, want Running without a Pod", res, pods)
 				}
 			}
 

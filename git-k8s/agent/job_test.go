@@ -152,18 +152,40 @@ func TestCountsAJobsPodThatsCreatedAgain(t *testing.T) {
 	}
 }
 
-func TestReportsABranchThatMoved(t *testing.T) {
-	f := newFixture(t, "")
-	job := f.reviewJob()
-	st := &JobState{}
-	p := f.startJob(job, st)
-	moved := "c/x no longer points to " + job.Checkout.Head
-	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
-	}}
-	s, rec := f.runJob(job, st, p)
-	if s.Done || !s.Moved || s.Message != "waiting for a run on the new commits: "+moved || len(kube.Owned[Pod](rec)) != 1 {
-		t.Errorf("RunJob = %+v, want a run that waits because c/x moved", s)
+func TestReportsCommitsThatMoved(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		merge bool
+	}{{name: "the branch"}, {name: "the merged ref", merge: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			job := f.reviewJob()
+			moved := "c/x no longer points to " + job.Checkout.Head
+			// After a deploy, RunJob no longer has the Pod that says which
+			// commit moved.
+			waiting := moved
+			if tc.merge {
+				job.Checkout.Merge = &Ref{Name: "refs/heads/main", Commit: f.base}
+				moved = "refs/heads/main no longer contains " + f.base
+				waiting += ", or " + moved
+			}
+			st := &JobState{}
+			p := f.startJob(job, st)
+			p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+				{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
+			}}
+			s, rec := f.runJob(job, st, p)
+			if s.Done || !s.Moved || s.Message != "waiting for a run on the new commits: "+moved || len(kube.Owned[Pod](rec)) != 1 {
+				t.Fatalf("RunJob = %+v, want a run that waits because the commits moved", s)
+			}
+
+			t.Log("A deploy doesn't start the run again in a new Pod, which would find the commits moved too.")
+			f.r.Image = "registry.example.com/agent-runner:new"
+			s, rec = f.runJob(job, st, p)
+			if s.Done || !s.Moved || s.Message != "waiting for a run on the new commits: "+waiting || len(kube.Owned[Pod](rec)) != 0 {
+				t.Errorf("RunJob = %+v with %d Pods, want a run that still waits, without a Pod", s, len(kube.Owned[Pod](rec)))
+			}
+		})
 	}
 }
 

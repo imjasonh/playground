@@ -98,7 +98,8 @@ type JobState struct {
 	// can tell when kube created the Pod again.
 	UID string
 	// Refunded is the UID of the run's Pod that found that the branch
-	// moved. Its agent didn't run, so RunJob gave back the run, once.
+	// moved, or that the merged ref no longer contains the merged commit.
+	// Its agent didn't run, so RunJob gave back the run, once.
 	Refunded string
 	// Done is true once RunJob reported that the run finished. Later calls
 	// for the same job report the run as done again, without its result,
@@ -198,9 +199,15 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 // job has none left.
 func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
-		// A new Pod would find that the branch moved, too.
+		// A new Pod would find that the commits moved, too.
 		c := x.job.Checkout
-		return x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
+		why := fmt.Sprintf("%s no longer points to %s", c.Branch, c.Head)
+		if m := c.Merge; m != nil {
+			why += fmt.Sprintf(", or %s no longer contains %s", m.Name, m.Commit)
+		}
+		s := x.status("waiting for a run on the new commits: %s", why)
+		s.Moved = true
+		return s
 	}
 	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
 		kube.RequeueAfter(ctx, wait)
