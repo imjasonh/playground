@@ -267,6 +267,10 @@ probe_ok() {
 }
 eventually 120 probe_ok
 echo "The program's own token, bound to its Pod, passes its review."
+can="$(k -n probe auth can-i create serviceaccounts --subresource=token --as=system:serviceaccount:probe:probe || true)"
+echo "can the probe request tokens: ${can}"
+[[ "${can}" == "no" ]]
+echo "The program's token comes from a projected volume, and it may not request tokens."
 
 checked="$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')"
 triggered() {

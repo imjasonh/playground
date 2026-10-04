@@ -481,16 +481,27 @@ for a server that trusts the cluster's tokens, such as
 `ReviewToken`:
 
 ```go
-token, expires, err := kube.RequestToken(ctx, "octo-sts.dev", time.Hour)
+token, expires, err := kube.RequestToken(ctx, "octo-sts.dev")
 ```
 
-The program asks the API server which service account it runs as, so
-`RequestToken` works in a Pod and with a kubeconfig that holds a service
-account's token. In a Pod, the new token is bound to the Pod. The API
-server issues tokens that last at least 10 minutes and can shorten long
-ones, so use the returned expiry. Each call makes a new token, so reuse one
-until shortly before it expires. Call `RequestToken` in a reconcile or in a
-`kube.Serve` handler.
+Pass the audience as a constant, as a string literal or a `const`. For each
+constant audience, the `generate` command adds a projected token to the
+program's Pod, and `RequestToken` reads it from the directory that
+`-token-dir` names. The token is bound to the Pod, the kubelet renews it, and
+the program needs no permission to request tokens.
+
+For an audience that isn't a constant, `RequestToken` asks the API server
+for a new token, and `generate` lets the program request tokens for its own
+service account. That permission also lets anyone who holds a token for the
+service account, such as the token in the program's Pod, make tokens for any
+audience that outlive the Pod, so prefer constant audiences. The program
+asks the API server which service account it runs as, so this works in a Pod
+and with a kubeconfig that holds a service account's token. In a Pod, the
+new token is bound to the Pod.
+
+A token lasts about an hour, so use the returned expiry. Call `RequestToken`
+each time you need a token, or reuse one until shortly before it expires.
+Call it in a reconcile or in a `kube.Serve` handler.
 
 Choose the audience in the program. If an object's author chose both the
 audience and where the program sends the token, they could have the program
@@ -550,6 +561,9 @@ and answer `503` if that takes too long.
 - `-webhook-addr`: where to serve webhooks. The default is `:9443`.
 - `-serve-addr`: where to serve the handler passed to `kube.Serve`. The
   default is `:8081`.
+- `-token-dir`: a directory of service account tokens for
+  `kube.RequestToken`, each in a file named by the hex SHA-256 hash of its
+  audience, as `generate` mounts them.
 - `-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`, for
   example on `:8080`.
 - `-v`: log debug messages.
@@ -574,8 +588,8 @@ The command does the following:
    its type, the types that it owns, and its webhooks. The command also
    type-checks the program's packages to find every call to `Get`, `List`,
    `Fetch`, `Own`, `Apply`, and `Delete`, and the type that each call uses,
-   including calls inside generic helpers, and whether the program calls
-   `ReviewToken` or `RequestToken`.
+   including calls inside generic helpers, whether the program calls
+   `ReviewToken`, and the audiences that it passes to `RequestToken`.
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
@@ -589,7 +603,9 @@ The command does the following:
    replica, the Deployment runs the program with `-leader-elect`, or with
    `-shards` when you set `-shards`. The container's root file system is
    read-only, with an `emptyDir` volume at `/tmp` for temporary files.
-   `-tmp-size` limits the volume's size.
+   `-tmp-size` limits the volume's size. A projected volume at
+   `/var/run/secrets/tokens` holds a token for each constant audience that
+   the program passes to `RequestToken`.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
@@ -674,7 +690,10 @@ way, its service account needs these permissions:
   `mutatingwebhookconfigurations`, for webhooks.
 - `create` on `tokenreviews`, to check tokens with `ReviewToken`.
 - `create` on `serviceaccounts/token` for its own service account, in its
-  namespace, to request tokens with `RequestToken`.
+  namespace, to request tokens with `RequestToken`. The `generate` command
+  grants it only to a program that passes an audience that isn't a constant.
+  For each constant audience, it mounts a projected token in `-token-dir`
+  instead.
 
 ## Test a controller
 
@@ -801,6 +820,10 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   generic type, as in a method of `reconciler[T]`, or a type argument that
   contains a type parameter, such as `Item[T]`. For those calls it prints a
   warning, and you add the permissions yourself.
+- `generate` mounts a token only for an audience that the call of
+  `RequestToken` passes as a constant. An audience that reaches the call
+  through a variable or a function's parameter gets the permission to
+  request tokens instead.
 - `generate` needs the program's source and the `go` command, so the copy of
   the program in the image can't run it. The image holds only the program.
   To ship other files, embed them with `embed`.
@@ -840,7 +863,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `internal/clone/` | Deep copy of any Go value, compiled once per type |
 | `internal/subset/` | Checks whether one JSON document's fields are a subset of another's |
 | `internal/yaml/` | The YAML subset that kubeconfig files use, and the YAML that `generate` writes |
-| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, and its calls of `ReviewToken` and `RequestToken`, for `generate`'s RBAC rules |
+| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, its calls of `ReviewToken`, and the audiences that it passes to `RequestToken`, for `generate`'s RBAC rules and token volumes |
 | `internal/image/` | Builds and pushes images with go-containerregistry, for `generate` |
 | `internal/envtest/`, `internal/e2e/` | Start `etcd` and `kube-apiserver` for tests |
 | `bench/` | Benchmark against `client-go` and `controller-runtime`, in its own module |

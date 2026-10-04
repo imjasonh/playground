@@ -671,24 +671,42 @@ anyone who captured one could act as the caller. `ReviewToken` doesn't cache
 reviews, so a token stops working as soon as the API server rejects it, for
 example when its Pod is deleted.
 
-`RequestToken` creates a TokenRequest for the program's own service account. The
-program learns which account that is from a SelfSubjectReview, which every
-authenticated user can create in Kubernetes 1.28 and later, and caches the
-answer. Reading the namespace from the in-cluster token's directory and the
-account's name from the downward API would work only in a Pod, and would need a
-change to the Deployment. Decoding the program's own token would depend on the
-token's format, and the API server's answer doesn't. When the review names a
-Pod, because the program authenticates with its Pod's token, the new token is
-bound to that Pod, so it stops working when the Pod is deleted, like the tokens
-that the kubelet projects.
+`RequestToken` reads a token that the kubelet projects into the program's Pod
+when there's one for the audience. `generate` adds a `serviceAccountToken`
+source to a projected volume for each audience that the program passes to
+`RequestToken` as a constant, and runs the program with `-token-dir` set to the
+volume's path. Each token's file is named by the SHA-256 hash of its audience,
+because an audience can hold characters that a file name can't, such as `/`.
+The kubelet requests each token bound to the Pod and replaces the file when 80%
+of the token's lifetime has passed, so `RequestToken` reads the file on every
+call and returns the expiry from the token's `exp` claim. The volume asks for
+3600 seconds, because the API server stretches a token of exactly 3607 seconds,
+the lifetime of the default service account token, to a year.
+
+For an audience without a file, `RequestToken` creates a TokenRequest for the
+program's own service account. The program learns which account that is from a
+SelfSubjectReview, which every authenticated user can create in Kubernetes 1.28
+and later, and caches the answer. Reading the namespace from the in-cluster
+token's directory and the account's name from the downward API would work only
+in a Pod, and would need a change to the Deployment. Decoding the program's own
+token would depend on the token's format, and the API server's answer doesn't.
+When the review names a Pod, because the program authenticates with its Pod's
+token, the new token is bound to that Pod, so it stops working when the Pod is
+deleted, like the tokens that the kubelet projects.
 
 `generate` grants `create` on `tokenreviews` in the ClusterRole when the program
-refers to `ReviewToken`, and `create` on `serviceaccounts/token` in the Role in
-the program's namespace when it refers to `RequestToken`, with the program's own
-service account as the only resource name. RBAC can limit a `create` to one name
-here because the name is in the request's path. A `RequestToken` that took any
+refers to `ReviewToken`. It grants `create` on `serviceaccounts/token` in the
+Role in the program's namespace only when the program refers to `RequestToken`
+other than in a call with a constant audience, with the program's own service
+account as the only resource name. RBAC can limit a `create` to one name here
+because the name is in the request's path. A `RequestToken` that took any
 account's name would need the rule for every account in the namespace, which
-would let the program act as any of them.
+would let the program act as any of them. Even for one account, the rule lets
+anyone who holds one of the account's tokens, such as the token in the
+program's Pod, create tokens for any audience. Those tokens needn't be bound to
+the Pod, and they can last as long as the API server allows. A projected token
+needs no rule, is always bound to the Pod, and lasts an hour, so `generate`
+mounts one for every audience that it can see in the source.
 
 A program never requests a token for an audience that a less trusted user
 chooses along with the destination. Whoever chooses both can have the program
@@ -866,6 +884,10 @@ new version lists and patches them in every namespace.
 first reference to each, and `generate` adds the rules that
 [Service account tokens](#service-account-tokens) describes. Any reference
 counts, so a program that passes one of them as a value still gets its rule.
+For `RequestToken`, the analysis also reports each constant that a call passes
+as the audience, from the type checker's constant values, and leaves those
+calls out of the first reference. A program whose calls all pass constants
+gets a projected token for each audience and no rule.
 
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
@@ -888,7 +910,9 @@ quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 serves gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
 describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
 write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
-Pod that writes more instead of letting it fill the node's disk.
+Pod that writes more instead of letting it fill the node's disk. A program that
+passes `RequestToken` constant audiences gets a read-only projected volume of
+tokens at `/var/run/secrets/tokens`.
 
 ### Testing
 
@@ -929,9 +953,13 @@ framework's tests check that:
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote.
 - Two replicas of the probe example, with the rules that `generate` writes,
-  both serve, accept tokens for their own audience and refuse others, request
-  a token for their own service account and review it, and queue a trigger
-  on the replica that holds the lease while the other answers `503`.
+  both serve, accept tokens for their own audience and refuse others, send a
+  token for their own service account from a token directory and review it,
+  and queue a trigger on the replica that holds the lease while the other
+  answers `503`. The probe gets no rule to request tokens.
+- `RequestToken` returns the token in the directory for its audience, and
+  requests a token for any other audience as a service account with only the
+  rule that `generate` writes for it.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
@@ -943,10 +971,10 @@ podpolicy webhooks deny and default pods through their Service.
 It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token
-bound to the program's Pod, and that a trigger runs a check on the replica
-that holds the lease while the other answers `503`. Then it replaces every
-replica while the client calls the API through the Service in a loop, and
-checks that none of those requests fail.
+bound to the program's Pod, that the program may not request tokens, and that
+a trigger runs a check on the replica that holds the lease while the other
+answers `503`. Then it replaces every replica while the client calls the API
+through the Service in a loop, and checks that none of those requests fail.
 
 ## Measurements
 
@@ -1071,6 +1099,10 @@ offers:
 - `generate` can't follow the type parameter of a generic type, or a type
   argument that contains a type parameter, to the types that it stands for.
   It warns about those calls instead.
+- `generate` sees a `RequestToken` audience only when the call passes a
+  constant. A helper that takes the audience as a parameter gets the rule to
+  request tokens, though following constants through parameters, as the
+  analysis follows type parameters, would find the audiences.
 - `generate` builds images that hold only the program. ko copies a `kodata`
   directory into the image; kube programs use `embed` instead.
 - One cluster per manager.

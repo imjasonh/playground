@@ -238,10 +238,7 @@ func (w *fakeWorld) reviewToken(_ context.Context, token string, want []string) 
 	return TokenReview{Error: "invalid bearer token"}, nil
 }
 
-func (w *fakeWorld) requestToken(_ context.Context, audience string, lifetime time.Duration) (string, time.Time, error) {
-	if lifetime == 0 {
-		lifetime = time.Hour
-	}
+func (w *fakeWorld) requestToken(_ context.Context, audience string) (string, time.Time, error) {
 	w.requested++
 	t := FakeToken{
 		Token: fmt.Sprintf("fake-token-%d", w.requested),
@@ -252,7 +249,7 @@ func (w *fakeWorld) requestToken(_ context.Context, audience string, lifetime ti
 		Audiences: []string{audience},
 	}
 	w.tokens = append(w.tokens, t)
-	return t.Token, time.Now().Add(lifetime), nil
+	return t.Token, time.Now().Add(time.Hour), nil
 }
 
 func (w *fakeWorld) trigger(ti *typeInfo, k Key) bool {

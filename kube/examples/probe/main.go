@@ -51,7 +51,9 @@ type ProbeSpec struct {
 // checkAudience is the audience of the tokens that checks send. The program
 // chooses it, not a Probe. Whoever chooses both a check's URL and its
 // audience can have the program send them a token for any server that
-// trusts the cluster's tokens, such as the API server.
+// trusts the cluster's tokens, such as the API server. Because it's a
+// constant, the generate command mounts the token into the program's Pod
+// instead of letting the program request tokens.
 const checkAudience = "probe"
 
 // ProbeStatus is the result of the last check.
@@ -69,7 +71,7 @@ type reconciler struct {
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, p *Probe) error {
-	token, _, err := kube.RequestToken(ctx, checkAudience, 10*time.Minute)
+	token, _, err := kube.RequestToken(ctx, checkAudience)
 	if err != nil {
 		p.Status.Code, p.Status.Message = 0, err.Error()
 		return err

@@ -229,6 +229,55 @@ func TestManifestsServe(t *testing.T) {
 	}
 }
 
+func TestManifestsTokens(t *testing.T) {
+	o := &generateOptions{program: "sts", name: "sts", namespace: "sts", replicas: 1, shards: 1, args: []string{"-v"}}
+	docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, tokens: []string{"https://octo-sts.dev", "probe"}})
+	b, _ := json.Marshal(docs[len(docs)-1])
+	for _, s := range []string{
+		`"args":["-addr=:8080","-token-dir=/var/run/secrets/tokens","-v"]`,
+		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"tokens","mountPath":"/var/run/secrets/tokens","readOnly":true}]`,
+		`{"name":"tokens","projected":{"sources":[` +
+			`{"serviceAccountToken":{"audience":"https://octo-sts.dev","expirationSeconds":3600,"path":"5ed769dad83e947182558c07a2054d31423885eaab718996164c0f14d4713c35"}},` +
+			`{"serviceAccountToken":{"audience":"probe","expirationSeconds":3600,"path":"ba9c736f19e7f60b7f6764adb0b7908c0a2b394e09b6c09863528c7f2bc86095"}}]}}`,
+	} {
+		if !strings.Contains(string(b), s) {
+			t.Errorf("the Deployment lacks %s: %s", s, b)
+		}
+	}
+	docs = o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}})
+	if b, _ := json.Marshal(docs[len(docs)-1]); strings.Contains(string(b), "token") {
+		t.Errorf("a program that requests no tokens mounts some: %s", b)
+	}
+}
+
+func TestPlanTokens(t *testing.T) {
+	for _, tc := range []struct {
+		pkg     string
+		tokens  []string
+		request bool
+	}{
+		{"github.com/imjasonh/playground/kube/examples/probe", []string{"probe"}, false},
+		{"github.com/imjasonh/playground/kube/testdata/tokens", []string{"https://octo-sts.dev", "probe"}, true},
+	} {
+		var stderr bytes.Buffer
+		o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: &stderr}
+		p, err := o.plan(t.Context(), nil, tc.pkg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(p.tokens, tc.tokens) {
+			t.Errorf("%s: tokens = %q, want %q", tc.pkg, p.tokens, tc.tokens)
+		}
+		rules, _ := json.Marshal(p.local.rules())
+		if want := `{"apiGroups":[""],"resources":["serviceaccounts/token"],"resourceNames":["prog"],"verbs":["create"]}`; strings.Contains(string(rules), want) != tc.request {
+			t.Errorf("%s: Role rules = %s, want the rule %s: %v", tc.pkg, rules, want, tc.request)
+		}
+		if logged := strings.Contains(stderr.String(), "testdata/tokens/main.go:19:"); logged != tc.request {
+			t.Errorf("%s: generate wrote:\n%s\nwant the position of RequestToken with a variable: %v", tc.pkg, stderr.String(), tc.request)
+		}
+	}
+}
+
 func TestGrantsFor(t *testing.T) {
 	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
 	same := func(a, b grants) bool {

@@ -2,8 +2,15 @@ package kube
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -61,7 +68,7 @@ func (u UserInfo) ServiceAccount() (namespace, name string, ok bool) {
 // world.
 type services interface {
 	reviewToken(ctx context.Context, token string, audiences []string) (TokenReview, error)
-	requestToken(ctx context.Context, audience string, lifetime time.Duration) (string, time.Time, error)
+	requestToken(ctx context.Context, audience string) (string, time.Time, error)
 	trigger(ti *typeInfo, k Key) bool
 }
 
@@ -98,33 +105,68 @@ func ReviewToken(ctx context.Context, token, audience string, more ...string) (T
 	return r, nil
 }
 
-// RequestToken returns a new token for the program's own service account,
-// valid for audience, and the time that it expires. Use it to prove the
-// program's identity to a server that trusts the cluster's service account
-// tokens, such as Octo STS, or to another program that checks tokens with
+// RequestToken returns a token for the program's own service account, valid
+// for audience, and the time that it expires. Use it to prove the program's
+// identity to a server that trusts the cluster's service account tokens,
+// such as Octo STS, or to another program that checks tokens with
 // ReviewToken.
 //
-// The program finds its service account by asking the API server who it
-// is, so RequestToken works with the in-cluster service account and with a
-// kubeconfig that holds a service account's token. When the program uses
-// its Pod's token, the new token is bound to the Pod too, so it stops
-// working when the Pod is deleted.
+// Pass the audience as a constant, such as "octo-sts.dev". The generate
+// command then has the kubelet mount a token for each such audience into the
+// program's Pod and renew it, and RequestToken reads that token from
+// Manager.TokenDir. The token is bound to the Pod, so it stops working when
+// the Pod is deleted, and the program needs no permission to request
+// tokens.
 //
-// The token lasts for lifetime, or an hour if lifetime is zero. The API
-// server issues no token for less than 10 minutes and may shorten long
-// lifetimes, so rely on the returned expiry. Each call returns a new token;
-// to make fewer requests, reuse a token until shortly before it expires. The
-// generate command grants a program that calls RequestToken permission to
-// request tokens for its own service account and no other.
-func RequestToken(ctx context.Context, audience string, lifetime time.Duration) (token string, expires time.Time, err error) {
+// For an audience without a mounted token, RequestToken asks the API server
+// for a new token with a TokenRequest. The program finds its service account
+// by asking the API server who it is, so this works with the in-cluster
+// service account and with a kubeconfig that holds a service account's
+// token. When the program uses its Pod's token, the new token is bound to
+// the Pod too. The generate command grants permission to request tokens for
+// the program's own service account, and no other, only to a program that
+// passes RequestToken an audience that isn't a constant.
+//
+// A token lasts about an hour, so rely on the returned expiry. The kubelet
+// renews a mounted token when 80% of that time has passed, and a
+// TokenRequest returns a new token on each call, so call RequestToken each
+// time you need a token, or reuse one until shortly before it expires.
+func RequestToken(ctx context.Context, audience string) (token string, expires time.Time, err error) {
 	s := scopeFrom(ctx, "RequestToken")
-	switch {
-	case audience == "":
+	if audience == "" {
 		return "", time.Time{}, errors.New("kube.RequestToken: the token needs an audience")
-	case lifetime != 0 && lifetime < 10*time.Minute:
-		return "", time.Time{}, fmt.Errorf("kube.RequestToken: a lifetime of %v is shorter than the API server's minimum of 10 minutes", lifetime)
 	}
-	return s.w.requestToken(ctx, audience, lifetime)
+	return s.w.requestToken(ctx, audience)
+}
+
+// tokenFile is the name of the file in Manager.TokenDir that holds the
+// token for audience.
+func tokenFile(audience string) string {
+	sum := sha256.Sum256([]byte(audience))
+	return hex.EncodeToString(sum[:])
+}
+
+// tokenExpiry returns when a service account token expires, from its exp
+// claim. It doesn't check the token's signature.
+func tokenExpiry(token string) (time.Time, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return time.Time{}, errors.New("not a JSON Web Token")
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("decoding the claims: %w", err)
+	}
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal(b, &claims); err != nil {
+		return time.Time{}, fmt.Errorf("decoding the claims: %w", err)
+	}
+	if claims.Exp == 0 {
+		return time.Time{}, errors.New("no exp claim")
+	}
+	return time.Unix(claims.Exp, 0), nil
 }
 
 func (m *Manager) reviewToken(ctx context.Context, token string, audiences []string) (TokenReview, error) {
@@ -159,7 +201,25 @@ func (m *Manager) whoami(ctx context.Context) (UserInfo, error) {
 	return out.Status.UserInfo, nil
 }
 
-func (m *Manager) requestToken(ctx context.Context, audience string, lifetime time.Duration) (string, time.Time, error) {
+func (m *Manager) requestToken(ctx context.Context, audience string) (string, time.Time, error) {
+	if m.TokenDir != "" {
+		file := filepath.Join(m.TokenDir, tokenFile(audience))
+		b, err := os.ReadFile(file) // #nosec G304 -- a file named by a hash, in the directory that -token-dir names.
+		switch {
+		case err == nil:
+			token := strings.TrimSpace(string(b))
+			expires, err := tokenExpiry(token)
+			if err != nil {
+				return "", time.Time{}, fmt.Errorf("kube.RequestToken: the token for %q in %s: %w", audience, file, err)
+			}
+			if !time.Now().Before(expires) {
+				return "", time.Time{}, fmt.Errorf("kube.RequestToken: the token for %q in %s expired at %v", audience, file, expires)
+			}
+			return token, expires, nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return "", time.Time{}, fmt.Errorf("kube.RequestToken: %w", err)
+		}
+	}
 	self, err := m.whoami(ctx)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("kube.RequestToken: finding the program's service account: %w", err)
@@ -169,9 +229,6 @@ func (m *Manager) requestToken(ctx context.Context, audience string, lifetime ti
 		return "", time.Time{}, fmt.Errorf("kube.RequestToken: the program runs as %q, not as a service account", self.Username)
 	}
 	spec := map[string]any{"audiences": []string{audience}}
-	if lifetime > 0 {
-		spec["expirationSeconds"] = int64(lifetime / time.Second)
-	}
 	if pod, uid := self.Extra[podNameExtra], self.Extra[podUIDExtra]; len(pod) == 1 && len(uid) == 1 {
 		spec["boundObjectRef"] = map[string]any{"apiVersion": "v1", "kind": "Pod", "name": pod[0], "uid": uid[0]}
 	}

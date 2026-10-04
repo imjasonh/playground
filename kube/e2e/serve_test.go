@@ -2,12 +2,17 @@ package e2e_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -45,11 +50,103 @@ func TestServeListenFailure(t *testing.T) {
 	}
 }
 
-// TestGenerateProbe installs the probe example, which requests tokens for
-// its own service account, reviews its callers' tokens, and triggers
-// reconciles from its kube.Serve handler. It runs two replicas of the
-// image's program with the generated RBAC rules, and the API server issues
-// and reviews the tokens.
+// TestRequestToken runs a manager as a service account that may request
+// tokens for itself, with a token directory that holds a token for one
+// audience, as a projected volume does. RequestToken returns that token,
+// and asks the API server for a token for any other audience.
+func TestRequestToken(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	for _, obj := range []map[string]any{
+		{"apiVersion": "v1", "kind": "ServiceAccount", "metadata": map[string]any{"name": "prog"}},
+		{
+			"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role", "metadata": map[string]any{"name": "prog"},
+			"rules": []any{map[string]any{"apiGroups": []string{""}, "resources": []string{"serviceaccounts/token"}, "resourceNames": []string{"prog"}, "verbs": []string{"create"}}},
+		},
+		{
+			"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding", "metadata": map[string]any{"name": "prog"},
+			"roleRef":  map[string]any{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "prog"},
+			"subjects": []any{map[string]any{"kind": "ServiceAccount", "name": "prog", "namespace": ns}},
+		},
+	} {
+		if err := c.Create(t.Context(), client.Path(obj["apiVersion"].(string), strings.ToLower(obj["kind"].(string))+"s", ns, ""), obj, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := t.TempDir()
+	mounted := serviceAccountToken(t, c, ns, "prog", "mounted")
+	sum := sha256.Sum256([]byte("mounted"))
+	if err := os.WriteFile(filepath.Join(dir, hex.EncodeToString(sum[:])), []byte(mounted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &kube.Manager{
+		Name: "request-token-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "prog"), Logger: e2e.Logger(t),
+		ServeAddr: freeAddr(t), TokenDir: dir,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- m.Run(ctx, kube.Serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token, expires, err := kube.RequestToken(r.Context(), r.URL.Query().Get("audience"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			fmt.Fprintf(w, "%s %d", token, expires.Unix())
+		})))
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("Run = %v", err)
+		}
+	})
+	request := func(audience string) (string, time.Time) {
+		t.Helper()
+		var token string
+		var expires int64
+		e2e.Eventually(t, 30*time.Second, func() error {
+			resp, err := http.Get("http://" + m.ServeAddr + "/?audience=" + url.QueryEscape(audience))
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("RequestToken(%q): %s: %s", audience, resp.Status, b)
+			}
+			_, err = fmt.Sscanf(string(b), "%s %d", &token, &expires)
+			return err
+		})
+		return token, time.Unix(expires, 0)
+	}
+
+	if token, _ := request("mounted"); token != mounted {
+		t.Errorf("RequestToken(mounted) = %q, want the token in the directory", token)
+	}
+	token, expires := request("other")
+	if token == mounted || time.Until(expires) < 50*time.Minute {
+		t.Errorf("RequestToken(other) = %q, which expires at %v, want a new token for about an hour", token, expires)
+	}
+	var review struct {
+		Status kube.TokenReview `json:"status"`
+	}
+	if err := c.Create(t.Context(), client.Path("authentication.k8s.io/v1", "tokenreviews", "", ""), map[string]any{
+		"apiVersion": "authentication.k8s.io/v1", "kind": "TokenReview",
+		"spec": map[string]any{"token": token, "audiences": []string{"other"}},
+	}, &review); err != nil {
+		t.Fatal(err)
+	}
+	if r := review.Status; !r.Authenticated || r.User.Username != "system:serviceaccount:"+ns+":prog" || !slices.Equal(r.Audiences, []string{"other"}) {
+		t.Errorf("TokenReview of the requested token = %+v", r)
+	}
+}
+
+// TestGenerateProbe installs the probe example, which sends tokens for its
+// own service account, reviews its callers' tokens, and triggers reconciles
+// from its kube.Serve handler. It runs two replicas of the image's program
+// with the generated RBAC rules and a token directory, and the API server
+// issues and reviews the tokens.
 func TestGenerateProbe(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
@@ -62,7 +159,6 @@ func TestGenerateProbe(t *testing.T) {
 	}
 	for kind, want := range map[string]string{
 		"ClusterRole": `{"apiGroups":["authentication.k8s.io"],"resources":["tokenreviews"],"verbs":["create"]}`,
-		"Role":        `{"apiGroups":[""],"resourceNames":["probe"],"resources":["serviceaccounts/token"],"verbs":["create"]}`,
 		"Service":     `{"name":"serve","port":80,"targetPort":"serve"}`,
 		"Deployment":  `"lifecycle":{"preStop":{"sleep":{"seconds":5}}}`,
 	} {
@@ -70,11 +166,16 @@ func TestGenerateProbe(t *testing.T) {
 			t.Errorf("%s = %s, want %s", kind, byKind[kind], want)
 		}
 	}
-	if strings.Contains(byKind["ClusterRole"], "serviceaccounts") {
-		t.Errorf("the ClusterRole lets the program request tokens for other service accounts: %s", byKind["ClusterRole"])
+	for _, kind := range []string{"ClusterRole", "Role"} {
+		if strings.Contains(byKind[kind], "serviceaccounts") {
+			t.Errorf("the %s lets the program request tokens, though its token's audience is a constant: %s", kind, byKind[kind])
+		}
 	}
-	if !slices.Contains(in.args, "-serve-addr=:8081") || !slices.Contains(in.args, "-leader-elect") {
+	if !slices.Contains(in.args, "-serve-addr=:8081") || !slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-token-dir=/var/run/secrets/tokens") {
 		t.Errorf("args = %q", in.args)
+	}
+	if len(in.tokens) != 1 || in.tokens[0].Audience != "probe" {
+		t.Errorf("projected tokens = %+v, want one for the audience probe", in.tokens)
 	}
 	in.apply(t, c)
 	exe := in.executable(t, "probe")
@@ -96,21 +197,7 @@ func TestGenerateProbe(t *testing.T) {
 	}
 	token := func(audiences ...string) string {
 		t.Helper()
-		var tr struct {
-			Status struct {
-				Token string `json:"token"`
-			} `json:"status"`
-		}
-		spec := map[string]any{}
-		if len(audiences) > 0 {
-			spec["audiences"] = audiences
-		}
-		if err := c.Create(t.Context(), client.Path("v1", "serviceaccounts", ns, "ci", "token"), map[string]any{
-			"apiVersion": "authentication.k8s.io/v1", "kind": "TokenRequest", "spec": spec,
-		}, &tr); err != nil {
-			t.Fatal(err)
-		}
-		return tr.Status.Token
+		return serviceAccountToken(t, c, ns, "ci", audiences...)
 	}
 	type response struct {
 		code  int
