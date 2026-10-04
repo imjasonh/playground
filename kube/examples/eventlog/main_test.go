@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +80,69 @@ func TestKeepsAndServesEvents(t *testing.T) {
 	} {
 		if w := get(tc.path, tc.token); w.Code != tc.code || !strings.Contains(w.Body.String(), tc.body) {
 			t.Errorf("GET %s with %q = %d %q, want %d %q", tc.path, tc.token, w.Code, w.Body, tc.code, tc.body)
+		}
+	}
+}
+
+func TestSkipsCopiesThatCantBeRead(t *testing.T) {
+	dir := t.TempDir()
+	t0 := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	kept := newEvent("team", "web-1.a", "uid-a", "Pulling", t0)
+	damaged := newEvent("team", "web-1.b", "uid-b", "Pulled", t0.Add(time.Minute))
+	ctx, _ := kube.Fake(t.Context(), kept, damaged,
+		kube.FakeToken{Token: "ci", User: kube.UserInfo{Username: "system:serviceaccount:team:ci"}, Audiences: []string{"eventlog"}})
+	l := &eventLog{dir: &dir}
+	for _, e := range []*Event{kept, damaged} {
+		if err := l.Reconcile(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	team := filepath.Join(dir, "team")
+	// A copy emptied by a crash, one cut short, and one that isn't a file.
+	for name, data := range map[string]string{"uid-b.json": "", "uid-gone.json": `{"name":"web-1.gone","obj`} {
+		if err := os.WriteFile(filepath.Join(team, name), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(team, "uid-dir.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	audience := "eventlog"
+	h := (&api{dir: &dir, audience: &audience}).handler()
+	names := func() []string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/events/team", nil).WithContext(ctx)
+		req.Header.Set("Authorization", "Bearer ci")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		var records []Record
+		if err := json.Unmarshal(w.Body.Bytes(), &records); w.Code != http.StatusOK || err != nil {
+			t.Fatalf("GET /events/team = %d %s", w.Code, w.Body)
+		}
+		var names []string
+		for _, r := range records {
+			names = append(names, r.Name)
+		}
+		return names
+	}
+	if got := names(); !slices.Equal(got, []string{"web-1.a"}) {
+		t.Errorf("records = %q, want only the copy that can be read", got)
+	}
+
+	if err := l.Reconcile(ctx, damaged); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(); !slices.Equal(got, []string{"web-1.a", "web-1.b"}) {
+		t.Errorf("after a reconcile of the damaged copy's Event, records = %q", got)
+	}
+	entries, err := os.ReadDir(team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".event-") {
+			t.Errorf("a temporary file is left: %s", e.Name())
 		}
 	}
 }

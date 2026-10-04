@@ -7,9 +7,12 @@
 //
 // It shows a program that keeps state on disk with kube.Volume. The
 // generate command gives it a PersistentVolumeClaim, mounted at
-// /var/lib/eventlog, and runs one replica, which writes the volume. A caller
-// sends a service account token for the audience "eventlog", and can read
-// the Events of its own namespace.
+// /var/lib/eventlog, and runs one replica, which writes the volume. So that
+// a copy survives a crash of the program or its node, the program writes a
+// new file, syncs it, renames it over the old copy, and syncs the
+// directory. It skips a copy that it can't read instead of failing the
+// whole namespace. A caller sends a service account token for the audience
+// "eventlog", and can read the Events of its own namespace.
 package main
 
 import (
@@ -17,7 +20,10 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
+	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,11 +85,18 @@ func (l *eventLog) Reconcile(ctx context.Context, e *Event) error {
 	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, b) {
 		return nil
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := syncDir(*l.dir); err != nil {
+			return err
+		}
 	}
 	// A copy written in place would be cut short if the program stopped
-	// partway, so write a new file and rename it over the old one.
+	// partway, so write a new file and rename it over the old one. Sync the
+	// file before the rename, and the directory after it, or a crash of the
+	// node can leave the new name with an empty file, or the old copy.
 	f, err := os.CreateTemp(dir, ".event-")
 	if err != nil {
 		return err
@@ -93,10 +106,28 @@ func (l *eventLog) Reconcile(ctx context.Context, e *Event) error {
 		f.Close()
 		return err
 	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	return syncDir(dir)
+}
+
+// syncDir writes dir's entries to disk, so that the files created and
+// renamed in it survive a crash.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // api serves the copies.
@@ -134,14 +165,18 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 	}
 	records := []Record{}
 	for _, p := range paths {
+		// Skip a copy that can't be read, such as one that a disk error
+		// damaged, so that one bad copy doesn't hide the rest. While the
+		// Event exists, its next reconcile, at the latest when the program
+		// starts, writes the copy again.
 		var rec Record
 		b, err := os.ReadFile(p)
 		if err == nil {
 			err = json.Unmarshal(b, &rec)
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			slog.WarnContext(r.Context(), "skipping a copy of an Event that can't be read", "path", p, "err", err)
+			continue
 		}
 		records = append(records, rec)
 	}
