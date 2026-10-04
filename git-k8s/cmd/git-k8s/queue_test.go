@@ -257,51 +257,63 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 }
 
 func TestRejoinsAtTheBack(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	one, two, w := behind(t, srv)
-	main := parentOf(one, "c/one", "c/two")
-	start := main.Spec.Head
-	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	one.Status.Queued = &gitk8s.Queued{Since: since, Head: one.Spec.Head, Position: 1}
-	two.Status.Queued = &gitk8s.Queued{Since: since, Head: two.Spec.Head, Position: 2}
-	reconcile := func(b *gitk8s.GitBranch) string {
-		t.Helper()
-		return mergeIn(t, srv, main, b)
-	}
+	for _, branch := range []string{"c/one", "c/two"} {
+		t.Run(branch, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			one, two, w := behind(t, srv)
+			main := parentOf(one, "c/one", "c/two")
+			start := main.Spec.Head
+			since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			one.Status.Queued = &gitk8s.Queued{Since: since, Head: one.Spec.Head, Position: 1}
+			two.Status.Queued = &gitk8s.Queued{Since: since, Head: two.Spec.Head, Position: 2}
+			pushed, other := one, two
+			if branch == "c/two" {
+				pushed, other = two, one
+			}
+			reconcile := func(b *gitk8s.GitBranch) string {
+				t.Helper()
+				return mergeIn(t, srv, main, b)
+			}
 
-	t.Log("Someone pushes to c/one at the front of main's queue, and the checks pass on the new head before main's queue drops c/one.")
-	w.Branch("c/one", one.Spec.Head)
-	w.Write("more.txt", "more\n")
-	head := w.Commit("more work")
-	w.Push("c/one")
-	one.Generation++
-	one.Spec.Head = head
-	one.Status.Checks = map[string]gitk8s.CheckResult{
-		"base":  {Commit: head, ParentCommit: start, State: gitk8s.Passed, Outputs: map[string]string{"behind": "true"}},
-		"gofmt": {Commit: head, State: gitk8s.Passed},
-	}
-	if msg := reconcile(one); one.Status.Queued != nil || msg != "rejoining main's queue at the back" {
-		t.Fatalf("c/one: queued %+v, %q", one.Status.Queued, msg)
-	}
+			t.Logf("Someone pushes to %s in main's queue, and the checks pass on the new head before main's queue drops %[1]s.", branch)
+			w.Branch(branch, pushed.Spec.Head)
+			w.Write("more.txt", "more\n")
+			head := w.Commit("more work")
+			w.Push(branch)
+			pushed.Generation++
+			pushed.Spec.Head = head
+			pushed.Status.Checks = map[string]gitk8s.CheckResult{
+				"base":  {Commit: head, ParentCommit: start, State: gitk8s.Passed, Outputs: map[string]string{"behind": "true"}},
+				"gofmt": {Commit: head, State: gitk8s.Passed},
+			}
+			if msg := reconcile(pushed); pushed.Status.Queued != nil || msg != "rejoining main's queue at the back" {
+				t.Fatalf("%s: queued %+v, %q", branch, pushed.Status.Queued, msg)
+			}
+			t.Logf("%s waits until main's queue drops it.", branch)
+			if msg := reconcile(pushed); pushed.Status.Queued != nil || msg != "rejoining main's queue at the back" {
+				t.Fatalf("%s: queued %+v, %q", branch, pushed.Status.Queued, msg)
+			}
 
-	t.Log("main's queue drops c/one, which then joins at the back.")
-	if got, want := queueOf(t, main, one, two), []string{"c/two"}; !slices.Equal(got, want) {
-		t.Fatalf("queue = %q, want %q", got, want)
-	}
-	if msg := reconcile(one); one.Status.Queued == nil || msg != "joining main's queue" {
-		t.Fatalf("c/one: queued %+v, %q", one.Status.Queued, msg)
-	}
-	if got, want := queueOf(t, main, one, two), []string{"c/two", "c/one"}; !slices.Equal(got, want) {
-		t.Fatalf("queue = %q, want %q", got, want)
-	}
-	if msg := reconcile(one); msg != "2 of 2 in main's queue" {
-		t.Errorf("c/one: %q", msg)
-	}
-	if msg := reconcile(two); msg != "first in main's queue; waiting for the base check to merge main in" {
-		t.Errorf("c/two: %q", msg)
-	}
-	if got := srv.Heads(t, "app")["main"]; got != start {
-		t.Errorf("main moved to %s", got)
+			t.Logf("main's queue drops %s, which then joins at the back.", branch)
+			if got, want := queueOf(t, main, one, two), []string{other.Spec.Branch}; !slices.Equal(got, want) {
+				t.Fatalf("queue = %q, want %q", got, want)
+			}
+			if msg := reconcile(pushed); pushed.Status.Queued == nil || msg != "joining main's queue" {
+				t.Fatalf("%s: queued %+v, %q", branch, pushed.Status.Queued, msg)
+			}
+			if got, want := queueOf(t, main, one, two), []string{other.Spec.Branch, branch}; !slices.Equal(got, want) {
+				t.Fatalf("queue = %q, want %q", got, want)
+			}
+			if msg := reconcile(pushed); msg != "2 of 2 in main's queue" {
+				t.Errorf("%s: %q", branch, msg)
+			}
+			if msg := reconcile(other); msg != "first in main's queue; waiting for the base check to merge main in" {
+				t.Errorf("%s: %q", other.Spec.Branch, msg)
+			}
+			if got := srv.Heads(t, "app")["main"]; got != start {
+				t.Errorf("main moved to %s", got)
+			}
+		})
 	}
 }
 
@@ -420,9 +432,10 @@ func TestLeavingTheFront(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// when is the gate of a merge policy that lists base, gofmt, and
-		// approval. gofmt fails, and approval doesn't finish.
-		when string
-		base string
+		// approval. approval doesn't finish.
+		when  string
+		base  string
+		gofmt string
 		// queue is main's queue.
 		queue []string
 		// stays reports whether c/x keeps its place.
@@ -430,33 +443,45 @@ func TestLeavingTheFront(t *testing.T) {
 	}{{
 		name:  "every check must pass",
 		base:  gitk8s.Passed,
+		gofmt: gitk8s.Failed,
 		queue: []string{"c/x"},
 	}, {
 		name:  "behind the front",
 		base:  gitk8s.Passed,
+		gofmt: gitk8s.Failed,
 		queue: []string{"c/a", "c/x"},
 		stays: true,
 	}, {
 		name:  "the gate can still pass",
 		when:  `checks.base.passed && (checks.gofmt.passed || checks.approval.passed)`,
 		base:  gitk8s.Passed,
+		gofmt: gitk8s.Failed,
 		queue: []string{"c/x"},
 		stays: true,
 	}, {
 		name:  "the gate can't pass",
 		when:  `checks.base.passed && checks.gofmt.passed`,
 		base:  gitk8s.Passed,
+		gofmt: gitk8s.Failed,
 		queue: []string{"c/x"},
 	}, {
 		name:  "the gate reads an output that isn't set yet",
 		when:  `checks.base.passed && (checks.gofmt.passed || checks.approval.outputs.by != "")`,
 		base:  gitk8s.Passed,
+		gofmt: gitk8s.Failed,
 		queue: []string{"c/x"},
 		stays: true,
 	}, {
 		name:  "the base check fails",
 		when:  `checks.approval.passed`,
 		base:  gitk8s.Failed,
+		gofmt: gitk8s.Failed,
+		queue: []string{"c/x"},
+	}, {
+		name:  "the gate passes, but the base check fails",
+		when:  `checks.gofmt.passed`,
+		base:  gitk8s.Failed,
+		gofmt: gitk8s.Passed,
 		queue: []string{"c/x"},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -467,7 +492,7 @@ func TestLeavingTheFront(t *testing.T) {
 			p.When = tc.when
 			b.Spec.Merge = &p
 			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: tc.base}
-			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
+			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: tc.gofmt}
 			pos := int32(slices.Index(tc.queue, "c/x") + 1)
 			b.Status.Queued = &gitk8s.Queued{Since: since, Head: b.Spec.Head, Position: pos}
 			main := b.Spec.ParentHead
