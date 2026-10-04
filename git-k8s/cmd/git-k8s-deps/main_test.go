@@ -1656,6 +1656,14 @@ exclude example.com/other v1.1.0
 	f.work.Write("vendored/vendor/modules.txt", "# example.com/greet v1.0.0\n")
 	f.work.Write("broken/go.mod", "module example.com/app/broken\n\nrequire (\n")
 	f.work.Write("nomodule/go.mod", "go 1.24\n")
+	unpruned := map[string]string{
+		"go116/go.mod": "module example.com/app/go116\n\ngo 1.16\n\nrequire example.com/greet v1.0.0\n",
+		"nogo/go.mod":  "module example.com/app/nogo\n\nrequire example.com/greet v1.0.0\n",
+	}
+	for p, content := range unpruned {
+		f.work.Write(p, content)
+	}
+	logs := captureLogs(t)
 	f.b.Spec.Head = f.work.Commit("modules")
 	f.work.Push("main")
 	for _, v := range []string{"v1.0.0", "v1.0.1", "v1.1.0"} {
@@ -1672,6 +1680,13 @@ exclude example.com/other v1.1.0
 	for _, m := range []string{"example.com/indirect", "example.com/replaced"} {
 		if n := f.proxy.hitsOf(m, "list"); n != 0 {
 			t.Errorf("the controller read the versions of %s, want it skipped", m)
+		}
+	}
+	for p := range unpruned {
+		if !slices.ContainsFunc(strings.Split(logs.String(), "\n"), func(l string) bool {
+			return strings.Contains(l, "whose go line is older than 1.17") && strings.HasSuffix(l, " path="+p)
+		}) {
+			t.Errorf("the controller didn't warn that it skips %s; logs:\n%s", p, logs)
 		}
 	}
 
