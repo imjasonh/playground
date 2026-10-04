@@ -256,6 +256,55 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 	}
 }
 
+func TestRejoinsAtTheBack(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	one, two, w := behind(t, srv)
+	main := parentOf(one, "c/one", "c/two")
+	start := main.Spec.Head
+	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	one.Status.Queued = &gitk8s.Queued{Since: since, Head: one.Spec.Head, Position: 1}
+	two.Status.Queued = &gitk8s.Queued{Since: since, Head: two.Spec.Head, Position: 2}
+	reconcile := func(b *gitk8s.GitBranch) string {
+		t.Helper()
+		return mergeIn(t, srv, main, b)
+	}
+
+	t.Log("Someone pushes to c/one at the front of main's queue, and the checks pass on the new head before main's queue drops c/one.")
+	w.Branch("c/one", one.Spec.Head)
+	w.Write("more.txt", "more\n")
+	head := w.Commit("more work")
+	w.Push("c/one")
+	one.Generation++
+	one.Spec.Head = head
+	one.Status.Checks = map[string]gitk8s.CheckResult{
+		"base":  {Commit: head, ParentCommit: start, State: gitk8s.Passed, Outputs: map[string]string{"behind": "true"}},
+		"gofmt": {Commit: head, State: gitk8s.Passed},
+	}
+	if msg := reconcile(one); one.Status.Queued != nil || msg != "rejoining main's queue at the back" {
+		t.Fatalf("c/one: queued %+v, %q", one.Status.Queued, msg)
+	}
+
+	t.Log("main's queue drops c/one, which then joins at the back.")
+	if got, want := queueOf(t, main, one, two), []string{"c/two"}; !slices.Equal(got, want) {
+		t.Fatalf("queue = %q, want %q", got, want)
+	}
+	if msg := reconcile(one); one.Status.Queued == nil || msg != "joining main's queue" {
+		t.Fatalf("c/one: queued %+v, %q", one.Status.Queued, msg)
+	}
+	if got, want := queueOf(t, main, one, two), []string{"c/two", "c/one"}; !slices.Equal(got, want) {
+		t.Fatalf("queue = %q, want %q", got, want)
+	}
+	if msg := reconcile(one); msg != "2 of 2 in main's queue" {
+		t.Errorf("c/one: %q", msg)
+	}
+	if msg := reconcile(two); msg != "first in main's queue; waiting for the base check to merge main in" {
+		t.Errorf("c/two: %q", msg)
+	}
+	if got := srv.Heads(t, "app")["main"]; got != start {
+		t.Errorf("main moved to %s", got)
+	}
+}
+
 func TestLeavingTheQueue(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {

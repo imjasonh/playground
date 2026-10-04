@@ -194,9 +194,13 @@ func branches(t *testing.T, srv *gittest.Server) (*gitk8s.GitBranch, *gittest.Wo
 	return b, w
 }
 
-// merge reconciles b at the front of its parent's merge queue.
+// merge reconciles b at the front of its parent's merge queue. A b that
+// isn't queued joined in an earlier reconcile.
 func merge(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch) error {
 	t.Helper()
+	if b.Status.Queued == nil {
+		b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
+	}
 	repo, secret := srv.Repository("app", rules()...)
 	ctx, _ := kube.Fake(t.Context(), b, repo, secret, parentOf(b, b.Spec.Branch))
 	return (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b)
@@ -260,11 +264,8 @@ func TestWaitsForFreshPassingChecks(t *testing.T) {
 			b, _ := branches(t, srv)
 			edit(b)
 			main := b.Spec.ParentHead
-			if err := merge(t, srv, b); err != nil {
-				t.Fatal(err)
-			}
-			if b.Status.State != reasonWaitingForChecks {
-				t.Errorf("state = %q, want %s", b.Status.State, reasonWaitingForChecks)
+			if msg := mergeIn(t, srv, parentOf(b), b); b.Status.State != reasonWaitingForChecks || b.Status.Queued != nil {
+				t.Errorf("state = %q, queued %+v, %q; want %s, out of the queue", b.Status.State, b.Status.Queued, msg, reasonWaitingForChecks)
 			}
 			if got := srv.Heads(t, "app")["main"]; got != main {
 				t.Errorf("main moved to %s", got)

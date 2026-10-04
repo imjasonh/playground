@@ -94,8 +94,9 @@ func position(ctx context.Context, b *gitk8s.GitBranch) (int32, int) {
 // passes and the base check passes, which the base check does for a branch
 // that's behind its parent but merges cleanly. b leaves the queue when it
 // lands, when someone other than a check pushes to it, or when its checks
-// finish without passing. Only the branch at the front lands, after the base
-// check merges the parent into it if it's behind.
+// finish without passing. A branch that leaves joins again at the back.
+// Only the branch at the front lands, after the base check merges the
+// parent into it if it's behind.
 func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, pass bool) error {
 	spec := &b.Spec
 	base := checks["base"]
@@ -117,10 +118,16 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil
 	}
-	if q == nil {
+	pos, n := position(ctx, b)
+	switch {
+	case q == nil && pos != 0:
+		// b left, but the parent's queue still lists it, and joining now
+		// would keep its old place.
+		report(b, reasonQueued, false, "rejoining %s's queue at the back", spec.Parent)
+		return nil
+	case q == nil:
 		q = &gitk8s.Queued{Since: time.Now().UTC().Truncate(time.Second)}
 	}
-	pos, n := position(ctx, b)
 	q.Head, q.Position = spec.Head, pos
 	b.Status.Queued = q
 	switch {
