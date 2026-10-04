@@ -1284,6 +1284,46 @@ func TestReplaysTheBranchOntoARewoundExternalHead(t *testing.T) {
 	}
 }
 
+func TestReplaysTheBranchOntoAnAmendedExternalHead(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+		commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+	})
+	// The external repository amends synced's commit, which added s.txt, so
+	// that it adds other content.
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"s.txt": "amended\n"})
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replay %s", got, fix)
+	}
+	if got := w.Git("rev-parse", "--verify", "--end-of-options", fix+"~1"); got != e {
+		t.Errorf("the replay starts at %s, want the external head %s", got, e)
+	}
+	if got := w.Show(fix, "s.txt"); got != "amended" {
+		t.Errorf("s.txt = %q, want the external repository's amended content", got)
+	}
+
+	// base, where the sides meet, lacks s.txt, but the replays were built on
+	// the external head and keep its amended s.txt.
+	b.Spec.Head = fix
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want = "the branch keeps every change that the external repository's c/x at " + gitk8s.Short(e) + " made since they last synced at " + gitk8s.Short(synced)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want {
+		t.Errorf("result after the replays = %+v, want Passed with %q", res, want)
+	}
+}
+
 func TestSkipsChangesThatTheRewoundExternalHeadHas(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string
