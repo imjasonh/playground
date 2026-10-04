@@ -434,6 +434,7 @@ func TestIgnoresBranchesThatNoLongerWait(t *testing.T) {
 		{"has no parent head", func(b *Branch) { b.Spec.ParentHead = "" }},
 		{"no longer runs the check", func(b *Branch) { b.Spec.Merge = nil }},
 		{"is being deleted", func(b *Branch) { b.DeletionTimestamp = &early }},
+		{"belongs to a GitRepository that's gone", func(b *Branch) { b.Spec.Repository = "gone" }},
 	} {
 		stale := waitingBranch("app-c-a", early)
 		c.change(stale)

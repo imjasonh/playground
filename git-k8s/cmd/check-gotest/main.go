@@ -189,7 +189,7 @@ func (g *gotest) take(ctx context.Context, b, pod kube.Key, since time.Time) boo
 		return false
 	}
 	for _, o := range kube.List[Branch](ctx) {
-		k, t, ok := waitingFor(o)
+		k, t, ok := waitingFor(ctx, o)
 		if _, declared := g.declared[k]; !ok || declared || seen[k] || o.Key() == b {
 			continue
 		}
@@ -217,16 +217,19 @@ func waiting(res *gitk8s.CheckResult, head string) (string, time.Time, bool) {
 }
 
 // waitingFor returns the Pod that b is waiting to start and when it started
-// waiting. It skips branches that the check no longer runs on, because
-// nothing updates their results, and a stale result holds up every branch
-// behind it.
-func waitingFor(b *Branch) (kube.Key, time.Time, bool) {
+// waiting. It skips branches that the check no longer runs on, including
+// branches whose GitRepository is gone, because nothing updates their
+// results, and a stale result holds up every branch behind it.
+func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 	s := &b.Spec
 	if b.Deleting() || s.Parent == "" || s.Merge.Check("gotest") == nil || s.Head == "" || s.ParentHead == "" {
 		return kube.Key{}, time.Time{}, false
 	}
 	pod, since, ok := waiting(b.Status.Checks.Result, s.Head)
-	return kube.Key{Namespace: b.Namespace, Name: pod}, since, ok
+	if !ok || kube.Get[gitk8s.Repository](ctx, b.Namespace, s.Repository) == nil {
+		return kube.Key{}, time.Time{}, false
+	}
+	return kube.Key{Namespace: b.Namespace, Name: pod}, since, true
 }
 
 // podName names the Pod for one attempt at one head of a branch.
