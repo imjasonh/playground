@@ -235,9 +235,8 @@ func TestIsSSH(t *testing.T) {
 	for u, want := range map[string]bool{
 		"ssh://git@example.com/app.git":  true,
 		"ssh://example.com:2222/app.git": true,
-		"git+ssh://example.com/app.git":  true,
+		"ssh://example.com/~/app.git":    true,
 		"git@example.com:org/app.git":    true,
-		"example.com:app.git":            true,
 		"git@[example.com:2222]:app.git": true,
 		"https://example.com/app.git":    false,
 		"http://127.0.0.1:8418/app.git":  false,
@@ -245,6 +244,11 @@ func TestIsSSH(t *testing.T) {
 		"file:///srv/app.git":            false,
 		"/srv/app.git":                   false,
 		"./dir:with-colon/app.git":       false,
+		// git reads these as SSH, but git-k8s doesn't support them.
+		"git+ssh://example.com/app.git": false,
+		"ssh+git://example.com/app.git": false,
+		"example.com:app.git":           false,
+		"@example.com:app.git":          false,
 	} {
 		if got := git.IsSSH(u); got != want {
 			t.Errorf("IsSSH(%q) = %v, want %v", u, got, want)

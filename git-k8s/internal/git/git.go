@@ -44,14 +44,17 @@ type Remote struct {
 	SSH  *SSHKey
 }
 
-// IsSSH reports whether git reaches url over SSH. That's an ssh:// URL, or
-// the scp-like syntax [user@]host:path, which has a colon before any slash.
+// IsSSH reports whether url is an ssh:// URL or the scp-like
+// user@host:path, which has no slash before the colon. git also treats the
+// deprecated git+ssh:// and ssh+git:// schemes, and host:path without a
+// user, as SSH, but git-k8s doesn't support those forms.
 func IsSSH(url string) bool {
 	if scheme, _, ok := strings.Cut(url, "://"); ok {
-		return scheme == "ssh" || scheme == "git+ssh" || scheme == "ssh+git"
+		return scheme == "ssh"
 	}
-	colon, slash := strings.IndexByte(url, ':'), strings.IndexByte(url, '/')
-	return colon >= 0 && (slash < 0 || colon < slash)
+	address, _, ok := strings.Cut(url, ":")
+	user, host, hasUser := strings.Cut(address, "@")
+	return ok && hasUser && user != "" && host != "" && !strings.Contains(address, "/")
 }
 
 // SSHCommand returns a GIT_SSH_COMMAND that authenticates with the private
