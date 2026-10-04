@@ -177,7 +177,11 @@ func TestPrepareScript(t *testing.T) {
 	w.Branch("c/x", base)
 	for i := range 60 {
 		w.Write("a.txt", fmt.Sprintf("one\ntwo\n%d\n", i))
-		w.Commit(fmt.Sprintf("change %d", i))
+		msg := fmt.Sprintf("change %d", i)
+		if i == 59 {
+			msg += strings.Repeat(" long", 100)
+		}
+		w.Commit(msg)
 	}
 	w.Write("dir/b.txt", "b\n")
 	head := w.Commit("add b")
@@ -244,8 +248,10 @@ func TestPrepareScript(t *testing.T) {
 	if diff := read(dir + "/input/change.diff"); !strings.Contains(diff, "+59") || !strings.Contains(diff, "diff --git a/dir/b.txt b/dir/b.txt") {
 		t.Errorf("change.diff =\n%s", diff)
 	}
-	if log := strings.Split(strings.TrimSpace(read(dir+"/input/log.txt")), "\n"); len(log) != 50 || !strings.HasSuffix(log[0], " add b") {
+	if log := strings.Split(strings.TrimSpace(read(dir+"/input/log.txt")), "\n"); len(log) != 50 || !strings.HasSuffix(strings.TrimRight(log[0], " "), " add b") {
 		t.Errorf("log.txt = %q, want the newest 50 commits", log)
+	} else if long := log[1]; len(long) > 220 || !strings.HasSuffix(long, " long lon..") {
+		t.Errorf("log.txt has %q, want its subject cut at 200 columns", long)
 	}
 	if fi, err := os.Stat(dir + "/key/api-key"); err != nil || fi.Mode().Perm() != 0o600 || read(dir+"/key/api-key") != "key-123" {
 		t.Errorf("api-key = %v, %v; want key-123 that only its owner can read", fi, err)

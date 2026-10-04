@@ -89,7 +89,7 @@ if [ -n "${BASE:-}" ]; then
   range="$BASE..$HEAD"
 fi
 git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$from" "$HEAD" >"$INPUT/change.diff"
-git log --format='%h %s' -n 50 "$range" >"$INPUT/log.txt"
+git log --format='%h %<(200,trunc)%s' -n 50 "$range" >"$INPUT/log.txt"
 umask 077
 printf '%s' "$CURSOR_API_KEY" >"$KEY_FILE"
 `

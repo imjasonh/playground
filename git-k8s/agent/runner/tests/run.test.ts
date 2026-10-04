@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { Backend } from "../src/backends/types.js";
+import { fakeBackend } from "../src/backends/fake.js";
+import type { AgentRequest, Backend } from "../src/backends/types.js";
+import { MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
@@ -41,6 +43,23 @@ test("passes a clean change", async () => {
   const task = preparePod({ "a.txt": "one\n" }, { "b.txt": "fine\n" });
   assert.equal(await runTask(task), 0);
   assert.equal(readResult(task).verdict, "pass");
+});
+
+test("reads only the start of a long diff and commit log", async () => {
+  const task = preparePod({}, { "a.txt": "a\n" });
+  writeFileSync(task.diffFile, `diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,100001 @@\n${"+x\n".repeat(100_000)}+DO NOT MERGE\n`);
+  writeFileSync(task.logFile, `abc1234 ${"x".repeat(100)}\n`.repeat(2 * MAX_LOG));
+  let request: AgentRequest | undefined;
+  const capture: Backend = async (r) => {
+    request = r;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.equal(readResult(task).verdict, "pass", "the marker is past the part of the diff that the agent sees");
+  assert.ok(request);
+  assert.ok(Buffer.byteLength(request.diff) <= MAX_DIFF && request.diff.endsWith("+x\n"));
+  assert.ok(request.prompt.length < MAX_DIFF + MAX_LOG + 5000);
+  assert.match(request.prompt, /longer than 200000 bytes/);
 });
 
 test("reports the files that the agent changed", async () => {

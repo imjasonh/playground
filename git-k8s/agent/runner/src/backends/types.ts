@@ -3,7 +3,7 @@ import type { Usage } from "../result.js";
 /** What a backend needs to run one agent task. */
 export interface AgentRequest {
   prompt: string;
-  /** The change from the merge base to the head, which the prompt also holds. */
+  /** The whole lines of the change from the merge base to the head that the prompt holds. */
   diff: string;
   /** The work tree, which the agent works in. */
   cwd: string;

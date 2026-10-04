@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import type { Backend } from "./backends/types.js";
 import { changedFiles } from "./changes.js";
-import { buildPrompt } from "./prompt.js";
+import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
 import { errorMessage, redact, truncate } from "./text.js";
@@ -65,12 +65,12 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   if (task.backend === "cursor" && !key) {
     throw new Error(`${task.keyFile} holds no Cursor API key; check the Secret that the Pod reads it from`);
   }
-  const diff = await readFile(task.diffFile, "utf8");
-  const commits = await readFile(task.logFile, "utf8");
+  const diff = await readStart(task.diffFile, MAX_DIFF + 1);
+  const commits = await readStart(task.logFile, MAX_LOG + 1);
   const started = Date.now();
   const response = await backends[task.backend]({
     prompt: buildPrompt(task, diff, commits),
-    diff,
+    diff: firstLines(diff, MAX_DIFF).text,
     cwd: task.workTree,
     edit: task.edit,
     model: task.model,
@@ -105,6 +105,25 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
     result.costCents = response.costCents;
   }
   return result;
+}
+
+/** Reads at most limit bytes from the start of a file. */
+async function readStart(path: string, limit: number): Promise<Buffer> {
+  const file = await open(path);
+  try {
+    const buf = Buffer.alloc(limit);
+    let n = 0;
+    while (n < limit) {
+      const { bytesRead } = await file.read(buf, n, limit - n, n);
+      if (bytesRead === 0) {
+        break;
+      }
+      n += bytesRead;
+    }
+    return buf.subarray(0, n);
+  } finally {
+    await file.close();
+  }
 }
 
 /**
