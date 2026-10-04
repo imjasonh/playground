@@ -64,6 +64,14 @@ type reports struct {
 	// fail is how many more reconciles that read a pending result fail
 	// before they write it, and failed counts them.
 	fail, failed int
+	// reads counts the reconciles that read each pending result.
+	reads map[string]int
+}
+
+func (h *reports) readCount(result string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.reads[result]
 }
 
 // gate stops reconciles while it's shut, and gives the test a channel for
@@ -118,12 +126,13 @@ func (g *gate) next(t *testing.T) chan struct{} {
 }
 
 // watchHold proxies requests to the API server and can hold back the events
-// of the watches of one resource, so that a manager's cache falls behind
-// the API server.
+// of the open watches of one resource, so that a manager's caches fall
+// behind the API server. Watches that start during a hold aren't held.
 type watchHold struct {
 	resource string
 
-	mu sync.Mutex
+	mu   sync.Mutex
+	open map[*heldBody]bool
 	// held is closed when the hold ends, and nil when there's no hold.
 	held chan struct{}
 }
@@ -162,13 +171,17 @@ func newWatchHold(t *testing.T, resource string) (*watchHold, string) {
 	}
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(ca)
-	w := &watchHold{resource: resource}
+	w := &watchHold{resource: resource, open: map[*heldBody]bool{}}
 	proxy := &httputil.ReverseProxy{
 		Rewrite:   func(r *httputil.ProxyRequest) { r.SetURL(target) },
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, ForceAttemptHTTP2: true},
 		ModifyResponse: func(resp *http.Response) error {
 			if req := resp.Request; req.URL.Query().Get("watch") != "" && strings.HasSuffix(req.URL.Path, "/"+w.resource) {
-				resp.Body = &heldBody{ReadCloser: resp.Body, w: w, ctx: req.Context()}
+				b := &heldBody{ReadCloser: resp.Body, w: w, ctx: req.Context()}
+				w.mu.Lock()
+				w.open[b] = true
+				w.mu.Unlock()
+				resp.Body = b
 			}
 			return nil
 		},
@@ -200,12 +213,16 @@ users:
 	return w, path
 }
 
-// hold holds back the watch events that arrive from now until release.
+// hold holds back the events of the open watches that arrive from now until
+// release.
 func (w *watchHold) hold() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.held == nil {
 		w.held = make(chan struct{})
+	}
+	for b := range w.open {
+		b.held = w.held
 	}
 }
 
@@ -217,18 +234,24 @@ func (w *watchHold) release() {
 		close(w.held)
 		w.held = nil
 	}
+	for b := range w.open {
+		b.held = nil
+	}
 }
 
 type heldBody struct {
 	io.ReadCloser
 	w   *watchHold
 	ctx context.Context
+	// held is the watchHold's channel while this watch is held, and nil
+	// otherwise. The watchHold's mutex guards it.
+	held chan struct{}
 }
 
 func (b *heldBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	b.w.mu.Lock()
-	held := b.w.held
+	held := b.held
 	b.w.mu.Unlock()
 	if held != nil {
 		select {
@@ -237,6 +260,13 @@ func (b *heldBody) Read(p []byte) (int, error) {
 		}
 	}
 	return n, err
+}
+
+func (b *heldBody) Close() error {
+	b.w.mu.Lock()
+	delete(b.w.open, b)
+	b.w.mu.Unlock()
+	return b.ReadCloser.Close()
 }
 
 func (h *reports) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +314,12 @@ func (h *reports) Reconcile(ctx context.Context, rep *Report) error {
 	h.gate.wait(ctx)
 	h.mu.Lock()
 	results := slices.Clone(h.pending[kube.Key{Namespace: rep.Namespace, Name: rep.Name}])
+	if h.reads == nil {
+		h.reads = map[string]int{}
+	}
+	for _, result := range results {
+		h.reads[result]++
+	}
 	fail := rep.Name == h.broken || len(results) > 0 && h.fail > 0
 	if fail && rep.Name != h.broken {
 		h.fail--
@@ -493,6 +529,18 @@ func watchHistory(t *testing.T, c *client.Client, ns, name string) *history {
 		<-done
 	})
 	return h
+}
+
+// holds reports whether any version held result.
+func (h *history) holds(result string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, v := range h.versions {
+		if slices.Contains(v.results, result) {
+			return true
+		}
+	}
+	return false
 }
 
 // check waits until the history reaches the stored version, and fails the
