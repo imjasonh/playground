@@ -141,6 +141,7 @@ func TestFindInExamples(t *testing.T) {
 	}{
 		{"github.com/imjasonh/playground/kube/examples/replicator", []string{"List k8s.Namespace", "Fetch k8s.Secret", "Own k8s.Secret"}},
 		{"github.com/imjasonh/playground/kube/examples/reloader", []string{"Get main.SecretMeta", "Get k8s.ConfigMap", "Apply main.Deployment"}},
+		{"github.com/imjasonh/playground/kube/examples/probe", []string{"Get main.Probe", "RequestToken", "ReviewToken"}},
 	} {
 		uses, warnings, err := Find(t.Context(), Config{
 			Dir: ".", Env: append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64"), Pattern: tc.pkg,

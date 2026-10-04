@@ -33,6 +33,9 @@ type installation struct {
 	// image and args are the Deployment's container image and arguments.
 	image string
 	args  []string
+	// serveAddr is where runInstalled's program serves its kube.Serve
+	// handler.
+	serveAddr string
 }
 
 // generateExample runs an example's generate command and returns what it
@@ -231,6 +234,8 @@ func (in installation) runInstalled(t *testing.T, exe, kubeconfig string) *syncB
 			a = "-webhook-addr=" + hookAddr
 		case strings.HasPrefix(a, "-webhook-service="):
 			a = "-webhook-url=https://" + hookAddr
+		case strings.HasPrefix(a, "-serve-addr="):
+			a = "-serve-addr=" + in.serveAddr
 		}
 		args = append(args, a)
 	}
