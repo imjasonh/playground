@@ -1548,6 +1548,207 @@ func TestLeavesADivergenceInWhichBothSidesKeptWhatTheOtherRemoved(t *testing.T) 
 	}
 }
 
+// twins is f.txt with 60 numbered lines, except that lines 10 and 50 say
+// foo, or bar if they're in at. A commit that changes line 10 from foo to
+// bar has the same patch ID as one that changes line 50, because a patch
+// ID ignores where in a file a change is.
+func twins(at ...int) map[string]string {
+	var b strings.Builder
+	for i := 1; i <= 60; i++ {
+		switch {
+		case slices.Contains(at, i):
+			b.WriteString("bar\n")
+		case i == 10 || i == 50:
+			b.WriteString("foo\n")
+		default:
+			fmt.Fprintf(&b, "line %d\n", i)
+		}
+	}
+	return map[string]string{"f.txt": b.String()}
+}
+
+func TestReplaysAChangeThatTheRewoundExternalHeadMakesElsewhere(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	b, w, _ := setup(t, srv, map[string]string{"b.txt": "main\n"}, twins())
+	p := b.Spec.Head
+	synced := commit(w, "synced", map[string]string{"s.txt": "synced\n"})
+	b.Spec.Head = commit(w, "branch edit", twins(10))
+	w.Push("c/x")
+	// The external repository drops synced's commit, and makes the
+	// branch's change to line 50 instead of line 10.
+	e, o := diverge(w, b.Name, "c/x", p, twins(50))
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replay %s", got, fix)
+	}
+	if got, want := w.Show(fix, "f.txt"), strings.TrimSuffix(twins(10, 50)["f.txt"], "\n"); got != want {
+		t.Errorf("f.txt = %q, want both sides' changes", got)
+	}
+
+	b.Spec.Head = fix
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want = "the branch keeps every change that the external repository's c/x at " + gitk8s.Short(e) + " made since they last synced at " + gitk8s.Short(synced)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want {
+		t.Errorf("result after the replay = %+v, want Passed with %q", res, want)
+	}
+}
+
+func TestLeavesAnExternalChangeThatTheRewoundBranchMakesElsewhere(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, _ := setup(t, srv, map[string]string{"b.txt": "main\n"}, twins())
+	p := b.Spec.Head
+	synced := commit(w, "synced", map[string]string{"s.txt": "synced\n"})
+	// c/x drops synced's commit, and makes the external repository's
+	// change to line 10 instead of line 50.
+	w.Branch("c/x", p)
+	b.Spec.Head = commit(w, "branch edit", twins(10))
+	w.Push("c/x")
+	head := b.Spec.Head
+	_, o := diverge(w, b.Name, "c/x", synced, twins(50))
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + ", and the branch with replays of the commits of the external repository's c/x doesn't have every change that the external repository's c/x made, so the check leaves the divergence for a person"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "branch" {
+		t.Errorf("result = %+v, want Failed with %q", res, want)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
+	}
+}
+
+func TestLeavesAFileThatTheRewoundBranchBringsBack(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	// c/x drops synced's commit, replays the external repository's
+	// commit, which deletes a.txt, and then adds a.txt back.
+	b, w, _, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+		w.Branch("c/x", "HEAD~1")
+		w.Git("rm", "--quiet", "--end-of-options", "a.txt")
+		w.Commit("delete a.txt")
+		commit(w, "add a.txt back", map[string]string{"a.txt": "branch\n"})
+	})
+	head := b.Spec.Head
+	w.Branch("external", synced)
+	w.Git("rm", "--quiet", "--end-of-options", "a.txt")
+	e := w.Commit("external deletes a.txt")
+	w.PushRef(downstream + "c/x")
+	o := &observed{Object: kube.Meta(b.Name, nil)}
+	o.Namespace = "default"
+	o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + "c/x"}
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + ", and the branch with replays of the commits of the external repository's c/x doesn't have every change that the external repository's c/x made, so the check leaves the divergence for a person"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "branch" {
+		t.Errorf("result = %+v, want Failed with %q", res, want)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
+	}
+}
+
+func TestLeavesACopyOfARemovedCommit(t *testing.T) {
+	// rebase copies synced's commit, which adds s.txt on top of base, onto
+	// another commit on top of the current one, and reword copies the
+	// current commit with another message. Each returns the copy.
+	rebase := func(w *gittest.Work, synced string) string {
+		commit(w, "other edit", map[string]string{"m.txt": "other\n"})
+		w.Git("cherry-pick", "--end-of-options", synced)
+		return w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+	}
+	reword := func(w *gittest.Work) string {
+		w.Git("commit", "--quiet", "--amend", "--message=reworded")
+		return w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+	}
+	for _, tc := range []struct {
+		name string
+		// sides returns c/x's head and the external head. One side
+		// removes synced's commit, and the other copies it.
+		sides func(w *gittest.Work, base, synced string) (head, external string)
+		// merge says that c/x's head is a merge, which has no replay.
+		merge bool
+	}{{
+		name: "when the branch rebased it",
+		sides: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("copy", base)
+			return rebase(w, synced), base
+		},
+	}, {
+		name: "when the branch reworded it",
+		sides: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("copy", synced)
+			return reword(w), base
+		},
+	}, {
+		name: "when the branch reworded it and merged the external head",
+		sides: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("external", base)
+			e := commit(w, "external edit", map[string]string{"d.txt": "external\n"})
+			w.Branch("copy", synced)
+			reword(w)
+			w.Git("merge", "--quiet", "--no-edit", "--end-of-options", e)
+			return w.Git("rev-parse", "--verify", "--end-of-options", "HEAD"), e
+		},
+		merge: true,
+	}, {
+		name: "when the external repository reworded it",
+		sides: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("copy", synced)
+			return base, reword(w)
+		},
+	}, {
+		name: "when the external repository rebased it",
+		sides: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("copy", base)
+			e := rebase(w, synced)
+			w.Branch("c/x", base)
+			return commit(w, "branch edit", map[string]string{"c.txt": "branch\n"}), e
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w, base, synced := rewound(t, srv, func(*gittest.Work, *Branch) {})
+			head, e := tc.sides(w, base, synced)
+			w.Branch("c/x", head)
+			w.Push("c/x")
+			b.Spec.Head = head
+			w.Branch("external", e)
+			w.PushRef(downstream + "c/x")
+			o := &observed{Object: kube.Meta(b.Name, nil)}
+			o.Namespace = "default"
+			o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + "c/x"}
+			syncedAt(w, o, "c/x", synced)
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			why := "the replays of the branch's commits onto the external repository's c/x don't have every change that both sides made"
+			if tc.merge {
+				why = "commit " + gitk8s.Short(head) + " of the branch is a merge, which has no replay"
+			}
+			want := "the branch and the external repository's c/x both rewound since they last synced at " + gitk8s.Short(synced) + ", and " + why + ", so the check leaves the divergence for a person"
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "both" {
+				t.Errorf("result = %+v, want Failed with %q", res, want)
+			}
+			if got := srv.Heads(t, "app")["c/x"]; got != head {
+				t.Errorf("c/x moved to %s", got)
+			}
+		})
+	}
+}
+
 // parent pushes main and returns its view, with the external repository's
 // head of main on the downstream ref: base with a.txt, then mainFiles on
 // main and externalFiles on the external head.

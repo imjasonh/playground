@@ -44,7 +44,11 @@ func rewinds(ctx context.Context, repo *git.Repo, head, external, synced string)
 // head keeps every change that the side made since the sides last synced
 // at synced: head has none of the commits that the side removed, and has
 // each commit that the side added, or a replay of it if head doesn't
-// contain synced. The mirror moves one side to the other side's head by
+// contain synced. Unless head contains other and the side didn't rewind,
+// or head was built on other after the side rewound, head must also have
+// every change that the side made, because a replay can match a commit
+// that changes other lines, and another commit can bring back what the
+// side removed. The mirror moves one side to the other side's head by
 // this rule, so when it holds, the mirror resolves the divergence by
 // itself.
 func keeps(ctx context.Context, repo *git.Repo, head, other, synced string) (bool, error) {
@@ -54,6 +58,11 @@ func keeps(ctx context.Context, repo *git.Repo, head, other, synced string) (boo
 		if ok, err := removedNone(ctx, repo, head, other, synced); err != nil || !ok {
 			return false, err
 		}
+		if ok, err := builtOn(ctx, repo, head, other, synced); err != nil || ok {
+			return ok, err
+		}
+		// Another commit in head can bring back what the side removed.
+		return replays(ctx, repo, head, other, synced)
 	}
 	if ok, err := repo.IsAncestor(ctx, other, head); err != nil || ok {
 		return ok, err
@@ -63,8 +72,63 @@ func keeps(ctx context.Context, repo *git.Repo, head, other, synced string) (boo
 	if ok, err := repo.IsAncestor(ctx, synced, head); err != nil || ok {
 		return false, err
 	}
+	return replays(ctx, repo, head, other, synced)
+}
+
+// replays reports whether head has every change from synced to other, and
+// a replay of each commit that other added since synced. A patch ID
+// ignores where in a file a change is, so a replay alone doesn't show that
+// head has the change.
+func replays(ctx context.Context, repo *git.Repo, head, other, synced string) (bool, error) {
+	if ok, err := keepsChanges(ctx, repo, head, synced, other); err != nil || !ok {
+		return false, err
+	}
 	missing, _, err := unreplayed(ctx, repo, head, other, synced)
 	return err == nil && len(missing) == 0, err
+}
+
+// keepsChanges reports whether head has every change from synced to each
+// of sides: merging a side into head with synced as the merge base has no
+// conflicts and leaves head's tree as it is.
+func keepsChanges(ctx context.Context, repo *git.Repo, head, synced string, sides ...string) (bool, error) {
+	c, err := repo.Commit(ctx, head)
+	if err != nil {
+		return false, err
+	}
+	for _, side := range sides {
+		tree, conflicts, err := repo.Merge(ctx, head, side, git.MergeOptions{Base: synced})
+		if err != nil || len(conflicts) > 0 || tree != c.Tree {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// builtOn reports whether each commit in head but not in side, a head that
+// rewound since synced, was made on top of side, and side has a commit
+// that synced doesn't. Then whoever made head started from side after it
+// rewound, so head keeps the side's changes even if it changed them to
+// resolve conflicts. A side that rewound to an older commit doesn't count:
+// a head that contains it can have been made before it rewound.
+func builtOn(ctx context.Context, repo *git.Repo, head, side, synced string) (bool, error) {
+	if ok, err := repo.IsAncestor(ctx, side, synced); err != nil || ok {
+		return false, err
+	}
+	if ok, err := repo.IsAncestor(ctx, side, head); err != nil || !ok {
+		return false, err
+	}
+	revs, err := repo.Revs(ctx, head, side)
+	if err != nil {
+		return false, err
+	}
+	on := map[string]bool{side: true}
+	for _, r := range revs {
+		if !slices.ContainsFunc(r.Parents, func(p string) bool { return on[p] }) {
+			return false, nil
+		}
+		on[r.Commit] = true
+	}
+	return true, nil
 }
 
 // removedNone reports whether head has none of the commits that side
@@ -210,7 +274,8 @@ func parentRewind(ctx context.Context, repo *git.Repo, branch, head string, d *g
 // replays them one at a time, and skips a commit whose replay changes
 // nothing, such as one whose change the external repository's head
 // already has. When a commit can't be replayed by itself, such as a merge
-// or a commit whose replay conflicts, resolve replays all of them as one
+// or a commit whose replay conflicts, or when the replays don't have
+// every change that both sides made, resolve replays all of them as one
 // commit, unless the branch rewound too.
 func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rewound string, outputs map[string]string) checks.Verdict {
 	since := gitk8s.Short(t.synced)
@@ -219,9 +284,19 @@ func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t targe
 		return retry(ctx, "listing the branch's commits since %s: %v", since, err)
 	}
 	tip, replays, why, err := replayOnto(ctx, repo, t.commit, added, in.Identity, "the branch", false)
-	switch {
-	case err != nil:
+	if err != nil {
 		return retry(ctx, "replaying the branch's commits onto %s: %v", t.name, err)
+	}
+	if why == "" {
+		// Commits that the branch removed have no replay to leave out.
+		switch ok, err := keepsChanges(ctx, repo, tip, t.synced, in.Spec.Head, t.commit); {
+		case err != nil:
+			return retry(ctx, "comparing the replays of the branch's commits: %v", err)
+		case !ok:
+			why = "the replays of the branch's commits onto " + t.name + " don't have every change that both sides made"
+		}
+	}
+	switch {
 	case why == "" && len(replays) == 0:
 		v := checks.Fail("%s rewound since it last synced at %s, and already has every change that the branch made since then", t.name, since)
 		v.Fix = t.commit
@@ -245,8 +320,8 @@ func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t targe
 // replayExternal replays the commits that the external repository added
 // since t.synced onto the branch's head, which rewound since then. The
 // mirror moves the external repository to the result only if it has a
-// replay of each of those commits, so the check replays each one
-// unchanged, or fails.
+// replay of each of those commits and every change that they made, so the
+// check replays each one unchanged, or fails.
 func replayExternal(ctx context.Context, in *checks.Input, repo *git.Repo, t target) checks.Verdict {
 	since := gitk8s.Short(t.synced)
 	leave := func(why string) checks.Verdict {
@@ -276,6 +351,12 @@ func replayExternal(ctx context.Context, in *checks.Input, repo *git.Repo, t tar
 		if got[replays[r.Commit]] != ids[r.Commit] {
 			return leave(fmt.Sprintf("the replay of commit %s of %s doesn't change the same lines in the same files as the commit", gitk8s.Short(r.Commit), t.name))
 		}
+	}
+	switch ok, err := keepsChanges(ctx, repo, tip, t.synced, t.commit); {
+	case err != nil:
+		return retry(ctx, "comparing the replays of the commits of %s: %v", t.name, err)
+	case !ok:
+		return leave(fmt.Sprintf("the branch with replays of the commits of %s doesn't have every change that %s made", t.name, t.name))
 	}
 	v := checks.Fail("the branch rewound since it last synced at %s; replayed the commits that %s added since then onto it", since, t.name)
 	v.Fix = tip

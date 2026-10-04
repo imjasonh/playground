@@ -46,7 +46,7 @@ func (r *Repo) PatchIDs(ctx context.Context, commits []string) (map[string]strin
 	if len(commits) == 0 {
 		return ids, nil
 	}
-	diffs, err := r.git.run(ctx, r.Dir, []string{"diff-tree", "--stdin", "--root", "-p", "-U0", "--binary"},
+	diffs, err := r.git.run(ctx, r.Dir, []string{"diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index"},
 		opts{stdin: []byte(strings.Join(commits, "\n") + "\n"), env: remoteProtocols})
 	if err != nil {
 		return nil, err
