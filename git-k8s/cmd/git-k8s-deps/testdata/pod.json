@@ -1,0 +1,306 @@
+{
+  "metadata": {
+    "name": "deps-301a14cfe6cce3fe",
+    "labels": {
+      "app.kubernetes.io/name": "git-k8s-deps"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "automountServiceAccountToken": false,
+    "enableServiceLinks": false,
+    "activeDeadlineSeconds": 60,
+    "runtimeClassName": "gvisor",
+    "securityContext": {
+      "runAsNonRoot": true,
+      "runAsUser": 65532,
+      "runAsGroup": 65532,
+      "fsGroup": 65532,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "volumes": [
+      {
+        "name": "src",
+        "emptyDir": {
+          "sizeLimit": "2Gi"
+        }
+      },
+      {
+        "name": "tmp",
+        "emptyDir": {
+          "sizeLimit": "4Gi"
+        }
+      },
+      {
+        "name": "result",
+        "emptyDir": {
+          "sizeLimit": "64Mi"
+        }
+      }
+    ],
+    "initContainers": [
+      {
+        "name": "prepare",
+        "image": "git",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "sh",
+          "-c",
+          "set -eu\ngit init -q --end-of-options \"$REPO\"\ncd \"$REPO\"\nif [ -n \"${GIT_PASSWORD:-}\" ]; then\n  git config credential.helper '!f() { echo \"username=${GIT_USERNAME:-git}\"; echo \"password=${GIT_PASSWORD}\"; }; f'\nfi\ngit fetch -q --depth=1 --end-of-options \"$URL\" \"refs/heads/$BRANCH\"\nif [ \"$(git rev-parse --verify --end-of-options FETCH_HEAD)\" != \"$HEAD\" ]; then\n  echo \"$BRANCH no longer points to $HEAD\" >&2\n  exit 3\nfi\ngit config --unset credential.helper || true\nprintf '* -text -eol -ident -filter -working-tree-encoding\\n' >.git/info/attributes\ngit switch -q --detach --end-of-options FETCH_HEAD\n"
+        ],
+        "env": [
+          {
+            "name": "URL",
+            "value": "https://git.example.com/app.git"
+          },
+          {
+            "name": "BRANCH",
+            "value": "main"
+          },
+          {
+            "name": "HEAD",
+            "value": "0123abcd"
+          },
+          {
+            "name": "REPO",
+            "value": "/src/repo"
+          },
+          {
+            "name": "HOME",
+            "value": "/tmp"
+          },
+          {
+            "name": "GIT_TERMINAL_PROMPT",
+            "value": "0"
+          },
+          {
+            "name": "GIT_ALLOW_PROTOCOL",
+            "value": "http:https:git:ssh"
+          },
+          {
+            "name": "GIT_USERNAME",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-creds",
+                "key": "username",
+                "optional": true
+              }
+            }
+          },
+          {
+            "name": "GIT_PASSWORD",
+            "valueFrom": {
+              "secretKeyRef": {
+                "name": "app-creds",
+                "key": "password"
+              }
+            }
+          }
+        ],
+        "volumeMounts": [
+          {
+            "name": "src",
+            "mountPath": "/src"
+          },
+          {
+            "name": "tmp",
+            "mountPath": "/tmp"
+          }
+        ],
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "readOnlyRootFilesystem": true,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePolicy": "FallbackToLogsOnError",
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "ephemeral-storage": "1Gi",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "ephemeral-storage": "6464Mi",
+            "memory": "1Gi"
+          }
+        }
+      },
+      {
+        "name": "update",
+        "image": "go",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "sh",
+          "-c",
+          "set -u\ncd \"$REPO\" || exit 1\nprintf '{\"updates\":[' >\"$RESULT_FILE\" || exit 1\nsep=\nwhile read -r module version dirs; do\n  [ -n \"$module\" ] || continue\n  git reset -q --hard && git clean -q -fdx || exit 1\n  : >\"$LOG_FILE\"\n  ok=true\n  for dir in $dirs; do\n    if ! (\n      cd \"$dir\" || exit 1\n      tidy=false\n      if go mod tidy -diff >/dev/null 2>&1; then tidy=true; fi\n      go get \"$module@$version\" || exit 1\n      if [ \"$tidy\" = true ]; then\n        go mod tidy -e\n      else\n        go list -mod=mod -e -deps -test ./... >/dev/null\n      fi\n    ) >>\"$LOG_FILE\" 2>&1; then\n      ok=false\n      break\n    fi\n  done\n  printf '%s{\"module\":\"%s\",\"version\":\"%s\",\"ok\":%s' \"$sep\" \"$module\" \"$version\" \"$ok\" >>\"$RESULT_FILE\"\n  sep=,\n  if [ \"$ok\" = true ]; then\n    printf ',\"files\":[' >>\"$RESULT_FILE\"\n    fsep=\n    for dir in $dirs; do\n      for name in go.mod go.sum; do\n        file=\"$dir/$name\"\n        [ \"$dir\" != . ] || file=$name\n        [ -f \"$file\" ] || continue\n        printf '%s{\"path\":\"%s\",\"content\":\"%s\"}' \"$fsep\" \"$file\" \"$(base64 -w0 \"$file\")\" >>\"$RESULT_FILE\"\n        fsep=,\n      done\n    done\n    printf ']' >>\"$RESULT_FILE\"\n  else\n    printf ',\"output\":\"%s\"' \"$(tail -c 4000 \"$LOG_FILE\" | base64 -w0)\" >>\"$RESULT_FILE\"\n  fi\n  printf '}' >>\"$RESULT_FILE\"\ndone <<EOF\n$UPDATES\nEOF\nprintf ']}' >>\"$RESULT_FILE\"\nprintf 'sha256:%s' \"$(sha256sum \"$RESULT_FILE\" | cut -d ' ' -f 1)\" >\"$TERMINATION_LOG\"\n"
+        ],
+        "env": [
+          {
+            "name": "UPDATES",
+            "value": "example.com/greet v1.1.0 . tools\n"
+          },
+          {
+            "name": "REPO",
+            "value": "/src/repo"
+          },
+          {
+            "name": "RESULT_FILE",
+            "value": "/result/result.json"
+          },
+          {
+            "name": "LOG_FILE",
+            "value": "/tmp/update.log"
+          },
+          {
+            "name": "TERMINATION_LOG",
+            "value": "/dev/termination-log"
+          },
+          {
+            "name": "HOME",
+            "value": "/tmp"
+          },
+          {
+            "name": "GOCACHE",
+            "value": "/tmp/go-build"
+          },
+          {
+            "name": "GOPATH",
+            "value": "/tmp/go"
+          },
+          {
+            "name": "GOTOOLCHAIN",
+            "value": "local"
+          },
+          {
+            "name": "GOWORK",
+            "value": "off"
+          },
+          {
+            "name": "GOPROXY",
+            "value": "https://proxy.example.com"
+          },
+          {
+            "name": "GOSUMDB",
+            "value": "sum.golang.org"
+          },
+          {
+            "name": "CGO_ENABLED",
+            "value": "0"
+          },
+          {
+            "name": "GIT_TERMINAL_PROMPT",
+            "value": "0"
+          },
+          {
+            "name": "GIT_ALLOW_PROTOCOL",
+            "value": "http:https:git:ssh"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "name": "src",
+            "mountPath": "/src"
+          },
+          {
+            "name": "tmp",
+            "mountPath": "/tmp"
+          },
+          {
+            "name": "result",
+            "mountPath": "/result"
+          }
+        ],
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "readOnlyRootFilesystem": true,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePolicy": "FallbackToLogsOnError",
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "ephemeral-storage": "1Gi",
+            "memory": "256Mi"
+          },
+          "limits": {
+            "ephemeral-storage": "6464Mi",
+            "memory": "2Gi"
+          }
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "result",
+        "image": "agent-runner",
+        "imagePullPolicy": "IfNotPresent",
+        "args": [
+          "serve"
+        ],
+        "env": [
+          {
+            "name": "POD_UID",
+            "valueFrom": {
+              "fieldRef": {
+                "fieldPath": "metadata.uid"
+              }
+            }
+          },
+          {
+            "name": "RESULT_FILE",
+            "value": "/result/result.json"
+          },
+          {
+            "name": "PORT",
+            "value": "8080"
+          }
+        ],
+        "ports": [
+          {
+            "name": "result",
+            "containerPort": 8080,
+            "protocol": "TCP"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "name": "result",
+            "mountPath": "/result",
+            "readOnly": true
+          }
+        ],
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "readOnlyRootFilesystem": true,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "terminationMessagePolicy": "FallbackToLogsOnError",
+        "resources": {
+          "requests": {
+            "cpu": "10m",
+            "ephemeral-storage": "64Mi",
+            "memory": "32Mi"
+          },
+          "limits": {
+            "ephemeral-storage": "256Mi",
+            "memory": "256Mi"
+          }
+        }
+      }
+    ]
+  }
+}

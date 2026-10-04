@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"flag"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -22,16 +24,44 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
+var updateGolden = flag.Bool("update", false, "rewrite testdata/pod.json")
+
 func TestPod(t *testing.T) {
 	u := &updater{
 		goImage: "go", gitImage: "git", resultImage: "agent-runner", timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi",
+		goSumDB: "sum.golang.org", runtimeClass: "gvisor",
 		proxy: newProxy([]string{"https://proxy.example.com"}, time.Hour, time.Now),
 	}
 	b := &Branch{Object: kube.Meta("app-main", nil)}
 	b.Spec.Branch = "main"
-	repo := &gitk8s.Repository{Spec: gitk8s.GitRepositorySpec{URL: "https://git.example.com/app.git"}}
+	repo := &gitk8s.Repository{Spec: gitk8s.GitRepositorySpec{URL: "https://git.example.com/app.git", SecretRef: &gitk8s.SecretRef{Name: "app-creds"}}}
 	ups := []update{{module: greet, version: "v1.1.0", from: map[string]string{"tools": "v1.0.0", ".": "v1.0.0"}}}
 	p := u.pod(b, repo, "0123abcd", 0, ups)
+	var got strings.Builder
+	enc := json.NewEncoder(&got)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(p); err != nil {
+		t.Fatal(err)
+	}
+	golden := filepath.Join("testdata", "pod.json")
+	if *updateGolden {
+		if err := os.WriteFile(golden, []byte(got.String()), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, w := strings.Split(got.String(), "\n"), strings.Split(string(want), "\n"); !slices.Equal(g, w) {
+		i := 0
+		for i < len(g)-1 && i < len(w)-1 && g[i] == w[i] {
+			i++
+		}
+		t.Errorf("the Pod differs from %s at line %d, which go test -run TestPod -update rewrites:\ngot:  %s\nwant: %s", golden, i+1, g[i], w[i])
+	}
+
 	if got, want := env(p.Spec.InitContainers[1], "UPDATES"), "example.com/greet v1.1.0 . tools\n"; got != want {
 		t.Errorf("UPDATES = %q, want %q", got, want)
 	}
@@ -263,6 +293,45 @@ func TestScripts(t *testing.T) {
 	}
 	if f, err := modfile.Parse("go.mod", o.files["go.mod"], nil); err != nil || !requires(f, greet, "v1.0.0") || o.files["tools/go.mod"] != nil {
 		t.Errorf("other's update didn't start from the parent's files:\n%s", o.files["go.mod"])
+	}
+}
+
+// TestPrepareScriptGitArguments runs the prepare script with a git that
+// records its arguments instead of running, so a URL that looks like an
+// option has to show up after --end-of-options.
+func TestPrepareScriptGitArguments(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh isn't installed")
+	}
+	dir, bin := t.TempDir(), t.TempDir()
+	args, repo := filepath.Join(dir, "args"), filepath.Join(dir, "repo")
+	stub := "#!/bin/sh\nfor a; do printf '[%s]' \"$a\"; done >>\"$ARGS\"\necho >>\"$ARGS\"\n" +
+		"case $1 in\ninit) mkdir -p \"$REPO/.git/info\" ;;\nrev-parse) echo \"$HEAD\" ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", prepareScript)
+	cmd.Dir = dir
+	cmd.Env = []string{
+		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "ARGS=" + args,
+		"URL=--upload-pack=touch ran", "BRANCH=main", "HEAD=0123abcd", "REPO=" + repo,
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"[init][-q][--end-of-options][" + repo + "]",
+		"[fetch][-q][--depth=1][--end-of-options][--upload-pack=touch ran][refs/heads/main]",
+		"[rev-parse][--verify][--end-of-options][FETCH_HEAD]",
+		"[config][--unset][credential.helper]",
+		"[switch][-q][--detach][--end-of-options][FETCH_HEAD]",
+	}
+	if got := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n"); !slices.Equal(got, want) {
+		t.Errorf("the prepare script ran git with:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 
