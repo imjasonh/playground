@@ -194,10 +194,11 @@ func branches(t *testing.T, srv *gittest.Server) (*gitk8s.GitBranch, *gittest.Wo
 	return b, w
 }
 
+// merge reconciles b at the front of its parent's merge queue.
 func merge(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch) error {
 	t.Helper()
 	repo, secret := srv.Repository("app", rules()...)
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
+	ctx, _ := kube.Fake(t.Context(), b, repo, secret, parentOf(b, b.Spec.Branch))
 	return (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b)
 }
 
