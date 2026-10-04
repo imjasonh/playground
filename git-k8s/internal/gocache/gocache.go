@@ -37,7 +37,7 @@ const OutputIDHeader = "Go-Output-Id"
 
 // MaxOutputSize is the size of the largest build output that go-cache
 // stores.
-const MaxOutputSize = 1 << 30
+const MaxOutputSize = 256 << 20
 
 const audiencePrefix = "git-k8s.imjasonh.com/go-cache/"
 

@@ -25,10 +25,10 @@ func newMetrics() *metrics {
 	for _, r := range []string{"hit", "miss", "invalid", "denied", "error"} {
 		m.build["GET "+r] = 0
 	}
-	for _, r := range []string{"created", "exists", "conflict", "invalid", "denied", "error"} {
+	for _, r := range []string{"created", "exists", "conflict", "invalid", "denied", "full", "busy", "error"} {
 		m.build["PUT "+r] = 0
 	}
-	for _, r := range []string{"hit", "fetched", "passthrough", "not_found", "error"} {
+	for _, r := range []string{"hit", "fetched", "passthrough", "not_found", "full", "busy", "error"} {
 		m.modules[r] = 0
 	}
 	return m

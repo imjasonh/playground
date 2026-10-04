@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -59,13 +61,18 @@ func (f fakeReviewer) review(_ context.Context, token, audience string) (string,
 	return t.namespace, nil
 }
 
-func newTestServer(t *testing.T, upstream string, rev reviewer) (*server, *httptest.Server) {
+// newTestServer starts a go-cache server, after letting each of configure
+// change its store.
+func newTestServer(t *testing.T, upstream string, rev reviewer, configure ...func(*store)) (*server, *httptest.Server) {
 	t.Helper()
 	m := newMetrics()
 	log := slog.New(slog.DiscardHandler)
 	st, err := openStore(t.TempDir(), 1<<30, m, log)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, c := range configure {
+		c(st)
 	}
 	s := &server{store: st, upstream: upstream, client: http.DefaultClient, reviewer: rev, metrics: m, log: log}
 	srv := httptest.NewServer(s.handler())
@@ -301,6 +308,133 @@ func TestModuleProxy(t *testing.T) {
 		}
 	}
 	for result, want := range map[string]int64{"hit": 1, "fetched": 1, "passthrough": 5, "not_found": 2, "error": 2} {
+		if got := s.metrics.count(result); got != want {
+			t.Errorf("%s module requests: %d, want %d", result, got, want)
+		}
+	}
+}
+
+// TestConcurrentModuleFetches sends 20 requests at once for a 5 MiB zip that
+// go-cache doesn't have, with a store that holds 10 MiB. The upstream sends
+// half of the zip, and the rest once every request has reached go-cache.
+func TestConcurrentModuleFetches(t *testing.T) {
+	const size, maxSize, clients = 5 << 20, 10 << 20, 20
+	zip := bytes.Repeat([]byte("z"), size)
+	want := sha256.Sum256(zip)
+	var fetches atomic.Int32
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches.Add(1)
+		w.Header().Set("Content-Length", strconv.Itoa(size))
+		w.Write(zip[:size/2])
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+			w.Write(zip[size/2:])
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(upstream.Close)
+	s, _ := newTestServer(t, upstream.URL, nil, func(st *store) { st.max = maxSize })
+	var entered atomic.Int32
+	h := s.handler()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered.Add(1)
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	releaseUpstream := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseUpstream)
+
+	// usage returns the bytes in the store's files, and counts a file with
+	// two links once.
+	usage := func() int64 {
+		var seen []fs.FileInfo
+		var total int64
+		filepath.WalkDir(s.store.dir, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			fi, err := d.Info()
+			if err != nil || slices.ContainsFunc(seen, func(o fs.FileInfo) bool { return os.SameFile(o, fi) }) {
+				return nil
+			}
+			seen = append(seen, fi)
+			total += fi.Size()
+			return nil
+		})
+		return total
+	}
+	var peak int64
+	stop, sampled := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(sampled)
+		for {
+			peak = max(peak, usage())
+			select {
+			case <-stop:
+				return
+			case <-t.Context().Done():
+				return
+			case <-time.After(time.Millisecond):
+			}
+		}
+	}()
+
+	type result struct {
+		status int
+		sum    [sha256.Size]byte
+		err    error
+	}
+	results := make([]result, clients)
+	var wg sync.WaitGroup
+	for i := range clients {
+		wg.Go(func() {
+			resp, err := http.Get(srv.URL + "/mod/example.com/big/@v/v1.0.0.zip")
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			defer resp.Body.Close()
+			h := sha256.New()
+			_, err = io.Copy(h, resp.Body)
+			results[i] = result{resp.StatusCode, [sha256.Size]byte(h.Sum(nil)), err}
+		})
+	}
+	deadline := time.Now().Add(time.Minute)
+	for entered.Load() < clients {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d requests reached go-cache", entered.Load(), clients)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Requests that each fetched the zip would all be waiting on the
+	// upstream by now, with half of it in a temporary file.
+	time.Sleep(200 * time.Millisecond)
+	releaseUpstream()
+	wg.Wait()
+	close(stop)
+	<-sampled
+
+	if n := fetches.Load(); n != 1 {
+		t.Errorf("%d requests at once for a zip that go-cache didn't have fetched it from the upstream %d times, want once", clients, n)
+	}
+	for i, r := range results {
+		if r.err != nil || r.status != http.StatusOK || r.sum != want {
+			t.Errorf("request %d: %d, %v; body matches the zip: %v", i, r.status, r.err, r.sum == want)
+		}
+	}
+	t.Logf("The store's files took up to %d bytes.", peak)
+	if peak > maxSize {
+		t.Errorf("the store's files took up to %d bytes, more than its maximum of %d", peak, maxSize)
+	}
+	s.store.mu.Lock()
+	stored, reserved := s.store.size, s.store.reserved
+	s.store.mu.Unlock()
+	if stored != size || reserved != 0 {
+		t.Errorf("the store holds %d bytes, and writes hold %d; want %d and 0", stored, reserved, size)
+	}
+	for result, want := range map[string]int64{"fetched": 1, "hit": clients - 1} {
 		if got := s.metrics.count(result); got != want {
 			t.Errorf("%s module requests: %d, want %d", result, got, want)
 		}
@@ -551,7 +685,7 @@ func TestStore(t *testing.T) {
 	}
 	put := func(key string, age time.Duration) bool {
 		t.Helper()
-		created, err := s.put(key, func(w io.Writer) error {
+		created, err := s.put(t.Context(), key, 40, func(w io.Writer) error {
 			_, err := w.Write(bytes.Repeat([]byte("x"), 40))
 			return err
 		})
@@ -605,6 +739,190 @@ func TestStore(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "tmp", "put-1")); err == nil {
 		t.Error("reopening the store left a temporary file")
+	}
+}
+
+func TestStoreReservesRoom(t *testing.T) {
+	newStore := func(t *testing.T) *store {
+		t.Helper()
+		s, err := openStore(t.TempDir(), 100, newMetrics(), slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	write := func(n int) func(io.Writer) error {
+		return func(w io.Writer) error {
+			_, err := w.Write(bytes.Repeat([]byte("x"), n))
+			return err
+		}
+	}
+	exists := func(s *store, key string) bool {
+		_, err := os.Stat(s.path(key))
+		return err == nil
+	}
+	// state returns the bytes in a store's files, the room that writes in
+	// progress hold, and how many temporary files there are.
+	state := func(s *store) (size, reserved int64, temps int) {
+		s.mu.Lock()
+		size, reserved = s.size, s.reserved
+		s.mu.Unlock()
+		entries, _ := os.ReadDir(filepath.Join(s.dir, "tmp"))
+		return size, reserved, len(entries)
+	}
+	// slowPut starts a put of n bytes that writes them when finish is
+	// called, and returns the put's error.
+	slowPut := func(t *testing.T, s *store, key string, n int) (finish func() error) {
+		t.Helper()
+		started, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+		go func() {
+			_, err := s.put(t.Context(), key, int64(n), func(w io.Writer) error {
+				close(started)
+				<-release
+				return write(n)(w)
+			})
+			done <- err
+		}()
+		select {
+		case <-started:
+		case err := <-done:
+			t.Fatalf("put of %s: %v", key, err)
+		}
+		return func() error {
+			close(release)
+			return <-done
+		}
+	}
+
+	t.Run("a write holds room for its size until it ends", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.put(t.Context(), "mod/old", 20, write(20)); err != nil {
+			t.Fatal(err)
+		}
+		finish := slowPut(t, s, "mod/slow", 60)
+		if _, err := s.put(t.Context(), "mod/big", 50, write(50)); !errors.Is(err, errFull) {
+			t.Errorf("put of 50 bytes while a write holds 60 of 100: %v, want errFull", err)
+		}
+		if !exists(s, "mod/old") {
+			t.Error("a put that no eviction could make room for evicted a file")
+		}
+		if _, err := s.put(t.Context(), "mod/small", 20, write(20)); err != nil {
+			t.Errorf("put of 20 bytes that fit beside the write: %v", err)
+		}
+		if err := finish(); err != nil {
+			t.Fatal(err)
+		}
+		if size, reserved, temps := state(s); size != 100 || reserved != 0 || temps != 0 {
+			t.Errorf("after the writes: %d bytes in files, %d reserved, %d temporary files; want 100, 0, 0", size, reserved, temps)
+		}
+	})
+
+	t.Run("a write that fails gives its room back", func(t *testing.T) {
+		s := newStore(t)
+		failure := errors.New("the client went away")
+		_, err := s.put(t.Context(), "mod/fails", 60, func(w io.Writer) error {
+			w.Write([]byte("partial"))
+			return failure
+		})
+		if !errors.Is(err, failure) {
+			t.Errorf("put that failed partway: %v, want %v", err, failure)
+		}
+		if _, err := s.put(t.Context(), "mod/long", 10, write(11)); !errors.Is(err, errOverSize) {
+			t.Errorf("put that wrote more than its size: %v, want errOverSize", err)
+		}
+		if size, reserved, temps := state(s); size != 0 || reserved != 0 || temps != 0 || exists(s, "mod/fails") || exists(s, "mod/long") {
+			t.Errorf("after failed writes: %d bytes in files, %d reserved, %d temporary files; want none", size, reserved, temps)
+		}
+		if _, err := s.put(t.Context(), "mod/all", 100, write(100)); err != nil {
+			t.Errorf("put of 100 bytes after the failed writes: %v", err)
+		}
+	})
+
+	t.Run("a write of unknown size reserves room as it writes", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.put(t.Context(), "mod/old", 50, write(50)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.put(t.Context(), "mod/grows", -1, write(60)); err != nil {
+			t.Errorf("put of 60 bytes of unknown size: %v", err)
+		}
+		if exists(s, "mod/old") || !exists(s, "mod/grows") {
+			t.Errorf("after a write of unknown size: old %v, grows %v; want old evicted", exists(s, "mod/old"), exists(s, "mod/grows"))
+		}
+		_, err := s.put(t.Context(), "mod/huge", -1, func(w io.Writer) error {
+			for range 3 {
+				if err := write(50)(w); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if !errors.Is(err, errFull) {
+			t.Errorf("put of 150 bytes of unknown size: %v, want errFull", err)
+		}
+		if _, reserved, temps := state(s); reserved != 0 || temps != 0 || exists(s, "mod/huge") {
+			t.Errorf("after a write that passed the maximum: %d reserved, %d temporary files, huge %v; want none", reserved, temps, exists(s, "mod/huge"))
+		}
+	})
+
+	t.Run("writes wait for a slot", func(t *testing.T) {
+		s := newStore(t)
+		s.writes = make(chan struct{}, 1)
+		s.writeWait = 10 * time.Millisecond
+		finish := slowPut(t, s, "mod/slow", 10)
+		if _, err := s.put(t.Context(), "mod/waits", 10, write(10)); !errors.Is(err, errBusy) {
+			t.Errorf("put while another write holds the only slot: %v, want errBusy", err)
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if _, err := s.put(ctx, "mod/canceled", 10, write(10)); !errors.Is(err, context.Canceled) {
+			t.Errorf("put with a canceled context: %v, want context.Canceled", err)
+		}
+		if err := finish(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.put(t.Context(), "mod/after", 10, write(10)); err != nil {
+			t.Errorf("put after the slot was free: %v", err)
+		}
+	})
+}
+
+// TestStoreUnavailable checks that go-cache answers writes that its store
+// can't take with 503.
+func TestStoreUnavailable(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(bytes.Repeat([]byte("m"), 200))
+	}))
+	t.Cleanup(upstream.Close)
+	rev := fakeReviewer{"writer": {"ns", []string{gocache.WriteAudience("ns", "app")}}}
+	full, fullSrv := newTestServer(t, upstream.URL, rev, func(st *store) { st.max = 100 })
+	busy, busySrv := newTestServer(t, upstream.URL, rev, func(st *store) {
+		st.writes = make(chan struct{}, 1)
+		st.writes <- struct{}{}
+		st.writeWait = time.Millisecond
+	})
+	output := strings.Repeat("o", 200)
+	for _, tc := range []struct {
+		result string
+		s      *server
+		url    string
+	}{
+		{"full", full, fullSrv.URL},
+		{"busy", busy, busySrv.URL},
+	} {
+		resp, msg := do(t, http.MethodPut, tc.url+gocache.Path("ns", "app")+"/"+id("action"), "writer", strings.NewReader(output), map[string]string{gocache.OutputIDHeader: id(output)})
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("PUT to a %s store: %s %q, want 503", tc.result, resp.Status, msg)
+		}
+		resp, msg = do(t, http.MethodGet, tc.url+"/mod/example.com/m/@v/v1.0.0.mod", "", nil, nil)
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("module fetch to a %s store: %s %q, want 503", tc.result, resp.Status, msg)
+		}
+		for _, key := range []string{"PUT " + tc.result, tc.result} {
+			if got := tc.s.metrics.count(key); got != 1 {
+				t.Errorf("%q requests to a %s store: %d, want 1", key, tc.result, got)
+			}
+		}
 	}
 }
 

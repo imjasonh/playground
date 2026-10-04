@@ -13,8 +13,11 @@
 // that compiles a branch, and the token that writes to a container that
 // uploads what the compiler built, before any of the branch's code runs.
 //
-// go-cache keeps modules and outputs in -dir, and removes the least
-// recently used files when they pass -max-size.
+// go-cache keeps modules and outputs in -dir, and keeps them, with the
+// writes in progress, under -max-size. A write reserves room for its bytes
+// before it writes them, and go-cache removes the least recently used
+// files to make room. When writes in progress hold the room, or too many
+// writes are in progress, go-cache answers new writes with 503.
 package main
 
 import (
@@ -34,6 +37,7 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/kube"
+	"golang.org/x/sync/singleflight"
 )
 
 type server struct {
@@ -44,6 +48,8 @@ type server struct {
 	reviewer reviewer
 	metrics  *metrics
 	log      *slog.Logger
+	// fetches holds the module fetches in progress, by key.
+	fetches singleflight.Group
 }
 
 func (s *server) handler() http.Handler {
@@ -91,7 +97,7 @@ func main() {
 	addr := flag.String("addr", ":8080", "address to serve on")
 	upstream := flag.String("upstream", "https://proxy.golang.org", "module proxy to fetch modules from")
 	dir := flag.String("dir", filepath.Join(os.TempDir(), "go-cache"), "directory to keep modules and build outputs in")
-	maxSize := flag.String("max-size", "4Gi", "most bytes to keep in -dir, such as 512Mi or 8Gi; keep it below the size of -dir's volume")
+	maxSize := flag.String("max-size", "4Gi", "most bytes that files in -dir and writes in progress can take, such as 512Mi or 8Gi; keep it below the size of -dir's volume")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(log, *addr, *upstream, *dir, *maxSize); err != nil {
@@ -125,7 +131,15 @@ func run(log *slog.Logger, addr, upstream, dir, maxSize string) error {
 	} else {
 		s.reviewer = r
 	}
-	srv := &http.Server{Addr: addr, Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           s.handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		// ReadTimeout limits how long a slow upload holds a write and its
+		// room in the store.
+		ReadTimeout: 5 * time.Minute,
+		IdleTimeout: 2 * time.Minute,
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	log.Info("serving", "addr", addr, "upstream", upstream, "dir", dir, "max-size", maxSize)

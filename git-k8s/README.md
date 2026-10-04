@@ -218,12 +218,18 @@ go run ./cmd/check-gotest generate -registry=REGISTRY \
 ```
 
 `go-cache` keeps modules and build outputs on the `emptyDir` volume at
-`/tmp`, and removes the least recently used files when their total size
-passes `-max-size`, 4Gi by default. The kubelet evicts a Pod whose volume
-passes `-tmp-size`, so leave room above `-max-size` for uploads in
-progress. Each replica would have its own store, so `-replicas=1` runs one.
-The volume survives restarts of `go-cache`'s container, but a new Pod, such
-as one that replaces a deleted or evicted Pod, starts with an empty store.
+`/tmp`, and keeps their total size, with the writes in progress, under
+`-max-size`, 4Gi by default. Before it writes a file, `go-cache` reserves
+room for it, and removes the least recently used files to make room. It
+answers a write with `503 Service Unavailable` when writes in progress
+hold the room, or when the write waits more than 30 seconds behind 16
+others. A test Pod fails if a module download gets a 503, but a failed
+upload only means that later Pods compile the output again. `go-cache`
+doesn't keep build outputs larger than 256 MiB. The kubelet evicts a Pod
+whose volume passes `-tmp-size`, so keep `-max-size` a little below it.
+Each replica would have its own store, so `-replicas=1` runs one. The
+volume survives restarts of `go-cache`'s container, but a new Pod, such as
+one that replaces a deleted or evicted Pod, starts with an empty store.
 That costs test Pods only the time to download and compile again.
 
 `generate` can't make what `config/go-cache.yaml` holds. It makes Services
@@ -323,8 +329,15 @@ The design leaves these risks:
 - `go-cache` remembers a token's review for a minute, so a token works for
   up to a minute after its Pod is deleted.
 - A namespace can fill the store and push other namespaces' entries out,
-  which slows their builds. It doesn't change their results, because a Pod
-  that compiles an evicted output again compiles the same output.
+  which slows their builds. Its tokens can name any repository, even one
+  that doesn't exist, so it can write as many entries as it likes.
+  Eviction doesn't change results, because a Pod that compiles an evicted
+  output again compiles the same output.
+- A write holds its room in the store until it ends. A namespace that
+  uploads slowly can take all 16 of `go-cache`'s concurrent writes, with
+  up to 256 MiB of room each, for up to 5 minutes, `go-cache`'s read
+  timeout. Meanwhile `go-cache` answers other writes, including downloads
+  of modules that it doesn't have, with 503.
 
 ### Restrict test Pods' network
 

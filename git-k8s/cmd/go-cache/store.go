@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -9,31 +10,47 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
-// store keeps files in a directory, by key, and removes the least recently
-// used ones when their total size passes max. A file is written to a
-// temporary file and then linked into place, so readers never see part of
-// one, and the first of two writers of a key wins.
+// store keeps files in a directory, by key, and keeps their total size,
+// with the writes in progress, under max. A write reserves room for its
+// bytes before it writes them, and the store removes the least recently
+// used files to make room. A file is written to a temporary file and then
+// linked into place, so readers never see part of one, and the first of
+// two writers of a key wins.
 type store struct {
 	dir     string
 	max     int64
 	metrics *metrics
 	log     *slog.Logger
+	// writes holds a value for each write in progress, up to its capacity.
+	writes chan struct{}
+	// writeWait is how long a write waits for another to finish.
+	writeWait time.Duration
 
 	mu       sync.Mutex
-	size     int64
-	evicting atomic.Bool
+	size     int64 // bytes in files
+	reserved int64 // bytes that writes in progress can still add
+
+	evicting sync.Mutex
 }
 
-// touchAfter is how old a file's modification time, which eviction goes
-// by, gets before a read updates it.
-const touchAfter = time.Hour
+const (
+	// touchAfter is how old a file's modification time, which eviction goes
+	// by, gets before a read updates it.
+	touchAfter = time.Hour
+	// maxWrites is how many writes a store runs at once.
+	maxWrites = 16
+)
+
+var (
+	errFull = errors.New("there's no room for the write under -max-size")
+	errBusy = errors.New("too many writes are in progress")
+)
 
 func openStore(dir string, max int64, m *metrics, log *slog.Logger) (*store, error) {
-	s := &store{dir: dir, max: max, metrics: m, log: log}
+	s := &store{dir: dir, max: max, metrics: m, log: log, writes: make(chan struct{}, maxWrites), writeWait: 30 * time.Second}
 	tmp := filepath.Join(dir, "tmp")
 	if err := os.RemoveAll(tmp); err != nil {
 		return nil, err
@@ -104,26 +121,47 @@ func (s *store) open(key string) (*os.File, error) {
 	return f, nil
 }
 
-// put writes the file for key with write. It reports false if key
-// already existed, and leaves that file alone.
-func (s *store) put(key string, write func(io.Writer) error) (bool, error) {
+// put writes the file for key with write, which must write at most size
+// bytes, or any number if size is negative. It reports false if key
+// already existed, and leaves that file alone. put fails with errBusy if
+// other writes keep it waiting for longer than writeWait, and with errFull
+// if it can't reserve room for what write writes.
+func (s *store) put(ctx context.Context, key string, size int64, write func(io.Writer) error) (bool, error) {
+	path := s.path(key)
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	}
+	wait := time.NewTimer(s.writeWait)
+	defer wait.Stop()
+	select {
+	case s.writes <- struct{}{}:
+	case <-wait.C:
+		return false, errBusy
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	defer func() { <-s.writes }()
+	w := &reservedWriter{s: s, fixed: size >= 0}
+	defer func() { s.release(w.reserved) }()
+	if size >= 0 {
+		if err := s.reserve(size); err != nil {
+			return false, err
+		}
+		w.reserved = size
+	}
 	f, err := os.CreateTemp(filepath.Join(s.dir, "tmp"), "put-")
 	if err != nil {
 		return false, err
 	}
 	defer os.Remove(f.Name())
-	err = write(f)
+	w.f = f
+	err = write(w)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		return false, err
 	}
-	fi, err := os.Stat(f.Name())
-	if err != nil {
-		return false, err
-	}
-	path := s.path(key)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
@@ -133,33 +171,101 @@ func (s *store) put(key string, write func(io.Writer) error) (bool, error) {
 		return false, err
 	}
 	s.mu.Lock()
-	s.size += fi.Size()
-	over := s.size > s.max
+	s.size += w.written
+	s.reserved -= w.reserved
+	w.reserved = 0
 	s.metrics.stored.Store(s.size)
 	s.mu.Unlock()
-	if over {
-		s.evict()
-	}
 	return true, nil
 }
 
-// evict removes the least recently used files until the store holds at
-// most 90% of max.
-func (s *store) evict() {
-	if !s.evicting.CompareAndSwap(false, true) {
+// reservedWriter writes a store's temporary file, and reserves room for
+// each byte before it writes it.
+type reservedWriter struct {
+	s *store
+	f *os.File
+	// fixed is whether the write reserved its size before it started, so
+	// it can't grow.
+	fixed    bool
+	reserved int64
+	written  int64
+}
+
+var errOverSize = errors.New("the write is larger than its size")
+
+func (w *reservedWriter) Write(p []byte) (int, error) {
+	if need := w.written + int64(len(p)) - w.reserved; need > 0 {
+		if w.fixed {
+			return 0, errOverSize
+		}
+		if err := w.s.reserve(need); err != nil {
+			return 0, err
+		}
+		w.reserved += need
+	}
+	n, err := w.f.Write(p)
+	w.written += int64(n)
+	return n, err
+}
+
+// reserve counts n more bytes toward max for a write in progress. If they
+// don't fit, it removes the least recently used files, and fails with
+// errFull if they still don't.
+func (s *store) reserve(n int64) error {
+	if s.tryReserve(n) {
+		return nil
+	}
+	s.evicting.Lock()
+	defer s.evicting.Unlock()
+	if !s.tryReserve(n) {
+		s.evict(n)
+		if !s.tryReserve(n) {
+			return errFull
+		}
+	}
+	return nil
+}
+
+func (s *store) tryReserve(n int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.size+s.reserved+n > s.max {
+		return false
+	}
+	s.reserved += n
+	return true
+}
+
+func (s *store) release(n int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reserved -= n
+}
+
+// evict removes the least recently used files until n more bytes would
+// leave the store at most 90% full, or would fit, if writes in progress
+// hold more than that. It removes nothing if writes in progress hold too
+// much room for n more bytes to fit at all.
+func (s *store) evict(n int64) {
+	s.mu.Lock()
+	target := s.max / 10 * 9
+	if s.reserved+n > target {
+		target = s.max
+	}
+	hopeless := s.reserved+n > s.max
+	s.mu.Unlock()
+	if hopeless {
 		return
 	}
-	defer s.evicting.Store(false)
 	files, err := s.files()
 	if err != nil {
 		s.log.Error("listing files to evict", "err", err)
 		return
 	}
 	slices.SortFunc(files, func(a, b file) int { return a.mtime.Compare(b.mtime) })
-	target := s.max / 10 * 9
 	for _, f := range files {
 		s.mu.Lock()
-		done := s.size <= target
+		done := s.size+s.reserved+n <= target
 		s.mu.Unlock()
 		if done {
 			return

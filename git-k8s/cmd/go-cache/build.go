@@ -123,26 +123,31 @@ func (s *server) putOutput(w http.ResponseWriter, r *http.Request) {
 	if s.answerExisting(w, key, output) {
 		return
 	}
-	created, err := s.store.put(key, func(f io.Writer) error {
-		if _, err := fmt.Fprintf(f, "%s %d\n", output, size); err != nil {
+	header := fmt.Sprintf("%s %d\n", output, size)
+	created, err := s.store.put(r.Context(), key, int64(len(header))+size, func(f io.Writer) error {
+		if _, err := io.WriteString(f, header); err != nil {
 			return err
 		}
 		h := sha256.New()
-		n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(r.Body, size+1))
+		_, err := io.CopyN(io.MultiWriter(f, h), r.Body, size)
 		switch {
-		case errors.Is(err, io.ErrUnexpectedEOF):
+		case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
 			return errMismatch
 		case err != nil:
 			return err
-		case n != size || hex.EncodeToString(h.Sum(nil)) != output:
+		case hex.EncodeToString(h.Sum(nil)) != output:
 			return errMismatch
 		}
 		return nil
 	})
+	result, unavailable := storeUnavailable(err)
 	switch {
 	case errors.Is(err, errMismatch):
 		s.metrics.buildRequest("PUT", "invalid")
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case unavailable:
+		s.metrics.buildRequest("PUT", result)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	case err != nil:
 		s.buildFailed(w, "PUT", err)
 	case created:

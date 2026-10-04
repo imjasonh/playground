@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path"
@@ -72,17 +74,85 @@ func (s *server) module(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var key string
-	if canonicalRE.MatchString(file) {
-		sum := sha256.Sum256([]byte(module + "/" + file))
-		key = "mod/" + hex.EncodeToString(sum[:1]) + "/" + hex.EncodeToString(sum[:])
-		if f, err := s.store.open(key); err == nil {
-			defer f.Close()
-			s.metrics.moduleRequest("hit")
-			serveModuleFile(w, f, file)
+	if !canonicalRE.MatchString(file) {
+		s.passThrough(w, r, module, file)
+		return
+	}
+	sum := sha256.Sum256([]byte(module + "/" + file))
+	key := "mod/" + hex.EncodeToString(sum[:1]) + "/" + hex.EncodeToString(sum[:])
+	result := "hit"
+	f, err := s.store.open(key)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Requests that miss at once share one fetch, which goes on if the
+		// request that started it ends.
+		v, ferr, _ := s.fetches.Do(key, func() (any, error) {
+			result = "fetched"
+			return s.fetchModule(context.WithoutCancel(r.Context()), module, file, key)
+		})
+		if ferr != nil {
+			s.moduleFailed(w, ferr)
 			return
 		}
+		if missing := v.(*upstreamMiss); missing != nil {
+			s.metrics.moduleRequest("not_found")
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(missing.status)
+			w.Write(missing.msg)
+			return
+		}
+		f, err = s.store.open(key)
 	}
+	if err != nil {
+		s.moduleFailed(w, err)
+		return
+	}
+	defer f.Close()
+	s.metrics.moduleRequest(result)
+	serveModuleFile(w, f, file)
+}
+
+// upstreamMiss is the upstream's answer for a file that it doesn't have.
+type upstreamMiss struct {
+	status int
+	msg    []byte
+}
+
+// fetchModule fetches a canonical version's file from the upstream into the
+// store. It returns the upstream's answer if the upstream doesn't have the
+// file.
+func (s *server) fetchModule(ctx context.Context, module, file, key string) (*upstreamMiss, error) {
+	resp, err := s.fetch(ctx, s.upstream+"/"+module+"/"+file)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound, http.StatusGone:
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return &upstreamMiss{resp.StatusCode, msg}, nil
+	default:
+		return nil, fmt.Errorf("GET %s: %s", resp.Request.URL, resp.Status)
+	}
+	if resp.ContentLength > maxModuleFile {
+		return nil, fmt.Errorf("GET %s: it's larger than %d bytes", resp.Request.URL, maxModuleFile)
+	}
+	_, err = s.store.put(ctx, key, resp.ContentLength, func(f io.Writer) error {
+		n, err := io.Copy(f, io.LimitReader(resp.Body, maxModuleFile+1))
+		if err == nil && n > maxModuleFile {
+			err = fmt.Errorf("it's larger than %d bytes", maxModuleFile)
+		}
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", resp.Request.URL, err)
+	}
+	return nil, nil
+}
+
+// passThrough serves a file that can change, such as a module's list of
+// versions, from the upstream without keeping it.
+func (s *server) passThrough(w http.ResponseWriter, r *http.Request, module, file string) {
 	resp, err := s.fetch(r.Context(), s.upstream+"/"+module+"/"+file)
 	if err != nil {
 		s.moduleFailed(w, err)
@@ -102,31 +172,9 @@ func (s *server) module(w http.ResponseWriter, r *http.Request) {
 		s.moduleFailed(w, fmt.Errorf("GET %s: %s", resp.Request.URL, resp.Status))
 		return
 	}
-	if key == "" {
-		s.metrics.moduleRequest("passthrough")
-		w.Header().Set("Content-Type", moduleContentType(file))
-		io.Copy(w, resp.Body)
-		return
-	}
-	_, err = s.store.put(key, func(f io.Writer) error {
-		n, err := io.Copy(f, io.LimitReader(resp.Body, maxModuleFile+1))
-		if err == nil && n > maxModuleFile {
-			err = fmt.Errorf("it's larger than %d bytes", maxModuleFile)
-		}
-		return err
-	})
-	if err != nil {
-		s.moduleFailed(w, fmt.Errorf("GET %s: %w", resp.Request.URL, err))
-		return
-	}
-	f, err := s.store.open(key)
-	if err != nil {
-		s.moduleFailed(w, err)
-		return
-	}
-	defer f.Close()
-	s.metrics.moduleRequest("fetched")
-	serveModuleFile(w, f, file)
+	s.metrics.moduleRequest("passthrough")
+	w.Header().Set("Content-Type", moduleContentType(file))
+	io.Copy(w, resp.Body)
 }
 
 func (s *server) fetch(ctx context.Context, url string) (*http.Response, error) {
@@ -138,9 +186,25 @@ func (s *server) fetch(ctx context.Context, url string) (*http.Response, error) 
 }
 
 func (s *server) moduleFailed(w http.ResponseWriter, err error) {
-	s.metrics.moduleRequest("error")
+	status, result := http.StatusBadGateway, "error"
+	if r, ok := storeUnavailable(err); ok {
+		status, result = http.StatusServiceUnavailable, r
+	}
+	s.metrics.moduleRequest(result)
 	s.log.Warn("module proxy", "err", err)
-	http.Error(w, err.Error(), http.StatusBadGateway)
+	http.Error(w, err.Error(), status)
+}
+
+// storeUnavailable returns the metrics result for an error that means the
+// store can't take a write now.
+func storeUnavailable(err error) (string, bool) {
+	switch {
+	case errors.Is(err, errFull):
+		return "full", true
+	case errors.Is(err, errBusy):
+		return "busy", true
+	}
+	return "", false
 }
 
 func serveModuleFile(w http.ResponseWriter, f *os.File, file string) {
