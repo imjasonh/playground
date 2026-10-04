@@ -463,15 +463,15 @@ so a branch can't make git resolve its own conflicts, such as by marking a file
 that a person recorded in a working tree, or the `ours` and `theirs` options of
 git's merge strategy, which pick a side.
 
-When conflicts remain and the check has an agent image, an agent resolves
-them in a sandboxed Pod that `Runner.RunJob` starts, as described in
-[Run agents from a controller](#run-agents-from-a-controller). The Pod makes
-the same merge as the check, with the same `-union` attributes, so its files
-hold the conflicts that git left, in the diff3 style, which shows the merge
-base's lines between the two sides. The agent's prompt lists both sides'
-commits since the merge base and holds the branch's change. The agent can
-edit files but not delete them, and it can't build or run the code. It
-answers fail when it can't tell how to keep both sides' changes.
+When conflicts remain and the check has an agent image, an agent resolves them
+in a sandboxed Pod that `Runner.RunJob` starts, as described in [Run agents from
+a controller](#run-agents-from-a-controller). The Pod makes the same merge as
+the check, with the same `-union` attributes, so its files hold the conflicts
+that git left, in the diff3 style, which shows the merge base's lines between
+the two sides. The agent's prompt lists both sides' commits since the merge base
+and holds both sides' changes. The agent can edit files but not delete them, and
+it can't build or run the code. It answers fail when it can't tell how to keep
+both sides' changes.
 
 The check commits the agent's files as a merge whose parents are both
 heads. It fails instead when the agent changed a file that doesn't conflict,
@@ -610,9 +610,11 @@ head's, which is the same merge as `git.Repo.Merge` with those patterns in
 conflict in a file holds the head's lines, the merge base's lines, and the
 merged commit's lines between conflict markers. A file that one side deleted and
 the other changed holds the changed version. The prompt lists the paths that
-conflict and the commits that the merge brings in. With `Task.Edit`, the
-result's `Files` change the merge's files, and the controller builds the merge
-commit from them.
+conflict, and holds the change from the merge base to the merged commit, its
+paths, and its commits, as well as the head's. The two diffs share the prompt's
+200,000 bytes for a diff, and each gets at least half of them. With `Task.Edit`,
+the result's `Files` change the merge's files, and the controller builds the
+merge commit from them.
 
 The branch must still point to the head when the Pod fetches it, because
 the controller pushes what the agent changes onto the head with a lease,

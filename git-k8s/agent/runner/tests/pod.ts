@@ -52,7 +52,8 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
 /**
  * Lays out what the agent container sees for a task that merges theirs
  * into ours, the way the prepare container does: the merge's files, with
- * conflict markers, the paths that conflict, and the merged commits' log.
+ * conflict markers, the paths that conflict, and the merged commit's
+ * change, its paths, and its log.
  */
 export function prepareMerge(base: Files, ours: Files, theirs: Files, task: Partial<Task> = {}): Task {
   const { root, repo, baseSha } = newRepo(base);
@@ -60,16 +61,21 @@ export function prepareMerge(base: Files, ours: Files, theirs: Files, task: Part
   git(repo, "checkout", "-q", "-b", "theirs", baseSha);
   const mergeHead = commit(repo, theirs, "Theirs");
   const args = ["-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z"];
-  const merged = spawnSync("git", [...args, `--merge-base=${baseSha}`, head, mergeHead], { cwd: repo, env: gitEnv });
+  const merged = spawnSync("git", [...args, `--merge-base=${baseSha}`, "--end-of-options", head, mergeHead], { cwd: repo, env: gitEnv });
   if (merged.status !== 0 && merged.status !== 1) {
     throw new Error(`git merge-tree failed: ${merged.stderr.toString()}`);
   }
-  const conflictsFile = join(root, "input", "conflicts");
-  const mergeLogFile = join(root, "input", "merge-log.txt");
+  const input = join(root, "input");
+  const conflictsFile = join(input, "conflicts");
+  const mergeLogFile = join(input, "merge-log.txt");
+  const mergeDiffFile = join(input, "merge.diff");
+  const mergeChangesFile = join(input, "merge-changes");
   const tree = merged.stdout.subarray(0, merged.stdout.indexOf(0)).toString();
-  const laidOut = layOut(root, repo, baseSha, head, tree, { mergeName: "theirs", mergeHead, conflictsFile, mergeLogFile, ...task });
+  const laidOut = layOut(root, repo, baseSha, head, tree, { mergeName: "theirs", mergeHead, conflictsFile, mergeLogFile, mergeDiffFile, mergeChangesFile, ...task });
   writeFileSync(conflictsFile, merged.stdout);
-  writeFileSync(mergeLogFile, git(repo, "log", "--format=%h %s", `${baseSha}..${mergeHead}`));
+  writeFileSync(mergeLogFile, git(repo, "log", "--format=%h %s", "--end-of-options", `${baseSha}..${mergeHead}`));
+  writeFileSync(mergeDiffFile, gitBuffer(repo, "diff", "--no-color", "--end-of-options", baseSha, mergeHead));
+  writeFileSync(mergeChangesFile, gitBuffer(repo, "diff", "--name-status", "-z", "--end-of-options", baseSha, mergeHead));
   return laidOut;
 }
 

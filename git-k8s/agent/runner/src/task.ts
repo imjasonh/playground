@@ -44,6 +44,10 @@ export interface Task {
   conflictsFile?: string;
   /** The merged branch's commits since base, one per line. */
   mergeLogFile?: string;
+  /** The change from base to mergeHead, from git diff. */
+  mergeDiffFile?: string;
+  /** The paths that the change from base to mergeHead touches, from git diff --name-status -z. */
+  mergeChangesFile?: string;
   /** Holds the Cursor API key. The runner deletes it before the agent starts. */
   keyFile: string;
   resultFile: string;
@@ -66,7 +70,7 @@ const STRING_FIELDS = [
   "terminationLog",
 ] as const;
 
-const OPTIONAL_STRING_FIELDS = ["changesFile", "mergeName", "mergeHead", "conflictsFile", "mergeLogFile"] as const;
+const OPTIONAL_STRING_FIELDS = ["changesFile", "mergeName", "mergeHead", "conflictsFile", "mergeLogFile", "mergeDiffFile", "mergeChangesFile"] as const;
 
 /** Parses and checks a task from its JSON. */
 export function parseTask(json: string): Task {
@@ -111,7 +115,7 @@ export function parseTask(json: string): Task {
     }
   }
   if (task.mergeHead !== undefined) {
-    for (const field of ["mergeName", "mergeHead", "base", "conflictsFile", "mergeLogFile"] as const) {
+    for (const field of ["mergeName", "mergeHead", "base", "conflictsFile", "mergeLogFile", "mergeDiffFile", "mergeChangesFile"] as const) {
       if (!task[field]) {
         throw new Error(`AGENT_TASK.${field} can't be empty in a merge`);
       }

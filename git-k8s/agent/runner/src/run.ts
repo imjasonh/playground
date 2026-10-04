@@ -5,7 +5,7 @@ import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import { AgentError, type AgentResponse, type Backend, type Spent } from "./backends/types.js";
 import { changedFiles, checkPaths } from "./changes.js";
-import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
+import { buildPrompt, diffLimits, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
 import { toolsFor } from "./tools.js";
@@ -77,8 +77,13 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   const commits = await readStart(task.logFile, MAX_LOG + 1);
   const paths = task.changesFile ? parseNameStatus(await readStart(task.changesFile, MAX_PATHS_BYTES + 1)) : undefined;
   const merge =
-    task.mergeHead && task.conflictsFile && task.mergeLogFile
-      ? { conflicts: parseConflicts(await readStart(task.conflictsFile, MAX_PATHS_BYTES + 1)), log: await readStart(task.mergeLogFile, MAX_LOG + 1) }
+    task.mergeHead && task.conflictsFile && task.mergeLogFile && task.mergeDiffFile && task.mergeChangesFile
+      ? {
+          conflicts: parseConflicts(await readStart(task.conflictsFile, MAX_PATHS_BYTES + 1)),
+          log: await readStart(task.mergeLogFile, MAX_LOG + 1),
+          diff: await readStart(task.mergeDiffFile, MAX_DIFF + 1),
+          paths: parseNameStatus(await readStart(task.mergeChangesFile, MAX_PATHS_BYTES + 1)),
+        }
       : undefined;
   const index = task.edit ? await readFile(task.filesFile) : undefined;
   if (index) {
@@ -89,7 +94,7 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   try {
     response = await backends[task.backend]({
       prompt: buildPrompt(task, diff, commits, paths, merge),
-      diff: firstLines(diff, MAX_DIFF).text,
+      diff: firstLines(diff, diffLimits(diff, merge?.diff)[0]).text,
       cwd: task.workTree,
       edit: task.edit,
       tools: toolsFor(task),

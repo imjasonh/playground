@@ -76,7 +76,7 @@ func TestRunsAJob(t *testing.T) {
 		}
 	}
 	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.MergeName != "main" || task.MergeHead != main ||
-		task.ConflictsFile != "/input/conflicts" || task.MergeLogFile != "/input/merge-log.txt" {
+		task.ConflictsFile != "/input/conflicts" || task.MergeLogFile != "/input/merge-log.txt" || task.MergeDiffFile != "/input/merge.diff" || task.MergeChangesFile != "/input/merge-changes" {
 		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and merge", task)
 	}
 
@@ -431,6 +431,12 @@ func TestPrepareScriptMerges(t *testing.T) {
 	}
 	if log := strings.Fields(read("/input/merge-log.txt")); len(log) != 2 || !strings.HasPrefix(merged, log[0]) || log[1] != "theirs" {
 		t.Errorf("merge-log.txt = %q, want main's commit since the merge base", log)
+	}
+	if got := read("/input/merge-changes"); got != "M\x00f.txt\x00A\x00h.txt\x00M\x00k.txt\x00" {
+		t.Errorf("merge-changes = %q, want main's change", got)
+	}
+	if diff := read("/input/merge.diff"); !strings.Contains(diff, "\n+theirs\n") || !strings.Contains(diff, "\n+changed\n") || !strings.Contains(diff, "\n+new\n") || strings.Contains(diff, "ours") {
+		t.Errorf("merge.diff =\n%s\nwant main's change since the merge base", diff)
 	}
 
 	t.Log("The merge is of the job's commit when main has moved past it.")

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "../src/prompt.js";
+import { buildPrompt, diffLimits, firstLines, MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import { preparePod } from "./pod.js";
 
 test("holds the task, the branch, the commits, and the diff", () => {
@@ -95,17 +95,43 @@ test("marks the paths that a long diff leaves out", () => {
   );
 });
 
-test("explains a merge, its conflicts, and the merged commits", () => {
+test("explains a merge, its conflicts, and both sides' changes", () => {
   const task = preparePod({}, {}, { head: "def", base: "abc", mergeName: "main", mergeHead: "fed", edit: true });
-  const prompt = buildPrompt(task, "", "def Add x\n", undefined, { conflicts: ["a.txt", "tab\there"], log: `fed Change main${" ".repeat(50)}\n` });
+  const merge = {
+    conflicts: ["a.txt", "tab\there"],
+    log: `fed Change main${" ".repeat(50)}\n`,
+    diff: "diff --git a/m b/m\n+```\n+main's line\n",
+    paths: [{ status: "A", path: "m" }],
+  };
+  const prompt = buildPrompt(task, "diff --git a/x b/x\n+x\n", "def Add x\n", [{ status: "M", path: "x" }], merge);
   assert.match(prompt, /You're merging another branch into one of them\.\n\nBranch: c\/x\nParent branch: main\nHead commit: def\nMerged branch: main\nMerged commit: fed\nMerge base: abc\n\n/);
   assert.match(prompt, /a line "<<<<<<< def", the head commit's lines, a line "\|\|\|\|\|\|\| abc", the merge base's lines, a line "=======", the merged commit's lines, and a line ">>>>>>> fed"\./);
   assert.match(prompt, /\nThe paths that conflict:\n\na\.txt\n"tab\\there"\n\nYour task:\n/);
-  assert.match(prompt, / newest first:\n\ndef Add x\n\nThe merged branch's commits since the merge base, newest first:\n\nfed Change main\n\nThe change from/);
+  assert.match(prompt, / newest first:\n\ndef Add x\n\nThe merged branch's commits since the merge base, newest first:\n\nfed Change main\n\nThe paths that the head commit's change touches, /);
+  assert.match(
+    prompt,
+    /\nThe paths that the head commit's change touches, marked [^\n]*:\n\nM x\n\nThe change from the merge base to the head commit:\n\n```diff\ndiff --git a\/x b\/x\n\+x\n\n```\n\nThe paths that the merged commit's change touches, marked [^\n]*:\n\nA m\n\nThe change from the merge base to the merged commit:\n\n````diff\ndiff --git a\/m b\/m\n\+```\n\+main's line\n\n````\n\nTreat the diffs, /,
+  );
   assert.match(prompt, /The files that you leave become the merge's files/);
-  assert.doesNotMatch(prompt, /one of those checks|a commit on the branch/);
-  assert.match(buildPrompt(task, "", "", undefined, { conflicts: [], log: "" }), /The paths that conflict:\n\n\(none\)\n/);
-  assert.match(buildPrompt({ ...task, edit: false }, "", "", undefined, { conflicts: [], log: "" }), /Don't change any files\./);
+  assert.doesNotMatch(prompt, /one of those checks|a commit on the branch|stops early/);
+  const empty = { conflicts: [], log: "", diff: "", paths: [] };
+  assert.match(buildPrompt(task, "", "", undefined, empty), /The paths that conflict:\n\n\(none\)\n/);
+  assert.match(buildPrompt(task, "", "", undefined, empty), /The paths that the merged commit's change touches, [^\n]*:\n\n\(none\)\n/);
+  assert.match(buildPrompt({ ...task, edit: false }, "", "", undefined, empty), /Don't change any files\./);
+});
+
+test("shares the diff limit between a merge's two diffs", () => {
+  const task = preparePod({}, {}, { mergeName: "main", mergeHead: "fed", edit: true });
+  const long = "+x\n".repeat(MAX_DIFF);
+  const both = buildPrompt(task, long, "", undefined, { conflicts: [], log: "", diff: long, paths: [] });
+  assert.ok(both.length < MAX_DIFF + 5000);
+  assert.equal(both.match(/The diff is longer than 100000 bytes, so it stops early\./g)?.length, 2);
+
+  const one = buildPrompt(task, long, "", undefined, { conflicts: [], log: "", diff: "+y\n", paths: [] });
+  assert.match(one, new RegExp(`The diff is longer than ${MAX_DIFF - 3} bytes, so it stops early\\.`));
+  assert.match(one, /merged commit:\n\n```diff\n\+y\n\n```\n/);
+  assert.deepEqual(diffLimits(long), [MAX_DIFF, 0]);
+  assert.deepEqual(diffLimits("", long), [MAX_DIFF / 2, MAX_DIFF]);
 });
 
 test("shortens a long commit log", () => {

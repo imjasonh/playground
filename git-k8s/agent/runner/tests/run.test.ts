@@ -134,6 +134,8 @@ test("resolves a merge, and reports the files of the merge that the agent change
   assert.deepEqual(request.tools, ["read", "edit"]);
   assert.match(request.prompt, /\nThe paths that conflict:\n\na\.txt\n\n/);
   assert.match(request.prompt, /\nThe merged branch's commits since the merge base, newest first:\n\n[0-9a-f]+ Theirs\n\n/);
+  assert.match(request.prompt, /\nThe paths that the merged commit's change touches, [^\n]*:\n\nM a\.txt\nA new\.txt\n\n/);
+  assert.match(request.prompt, /\nThe change from the merge base to the merged commit:\n\n```diff\ndiff --git a\/a\.txt b\/a\.txt\n[^`]*\n\+theirs\n[^`]*\n\+new\n\n```\n/);
   assert.deepEqual(
     readResult(task).files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
     [["a.txt", "one\nours and theirs\nthree\n"]],
