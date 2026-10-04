@@ -234,6 +234,27 @@ func TestCountsAJobsRunOnceWithTheStateFromBeforeItsPod(t *testing.T) {
 	}
 }
 
+func TestLimitsAJobsRunsWithANegativeCount(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	job.MaxRuns = 1
+	st := &JobState{Runs: -5}
+	p := f.startJob(job, st)
+
+	t.Log("RunJob counts a negative number of runs as 0, so a job for another head can't start more runs than MaxRuns allows.")
+	job.Checkout.Head = f.base
+	if s, rec := f.runJob(job, st); len(kube.Owned[Pod](rec)) != 0 || s.Message != "not starting the agent: the job used all 1 of its runs" || *st != (JobState{Runs: 1}) {
+		t.Errorf("RunJob = %+v with state %+v, want no new run after 1 run", s, st)
+	}
+
+	t.Log("A run in progress counts a negative number of runs as 0 too.")
+	job.Checkout.Head = f.b.Spec.Head
+	st = &JobState{Runs: -5, Pod: p.Name, Attempt: 1}
+	if s, _ := f.runJob(job, st, p); s.Done || st.Pod != p.Name || st.Runs != 0 {
+		t.Errorf("RunJob = %+v with state %+v, want the run in Pod %s after 0 runs", s, st, p.Name)
+	}
+}
+
 func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()

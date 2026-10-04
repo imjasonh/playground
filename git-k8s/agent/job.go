@@ -152,6 +152,7 @@ func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 }
 
 func (r *Runner) runJob(ctx context.Context, job *Job, st *JobState) JobStatus {
+	st.Runs = max(st.Runs, 0)
 	return (&run{r: r, job: job, st: st}).startOrFollow(ctx)
 }
 
