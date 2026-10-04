@@ -214,8 +214,9 @@ the URL:
   `git`.
 - An SSH URL, such as `ssh://git@git.example.com/app.git` or the scp-like
   `git@git.example.com:app.git`, needs an `ssh-privatekey` key, as in a
-  `kubernetes.io/ssh-auth` Secret, and a `known_hosts` key. An SSH URL
-  without a `secretRef` is an error.
+  `kubernetes.io/ssh-auth` Secret, and a `known_hosts` key. Include a user
+  name, usually `git`, as these examples do. Without one, ssh logs in as the
+  program's own user. An SSH URL without a `secretRef` is an error.
 
 `known_hosts` holds the server's host keys, in the format of OpenSSH's
 `known_hosts` file. The programs connect only to a server whose key it lists.
@@ -242,10 +243,14 @@ The key can't have a passphrase, because the programs can't enter one. For a
 server on a port other than 22, run `ssh-keyscan -p PORT HOST`, which writes
 lines that start with `[HOST]:PORT`.
 
-The programs check the Secret before they run git. If the Secret lacks a key
-that the URL needs, or the private key has a passphrase or isn't
-PEM-encoded, the `Ready` condition's reason is `CredentialsUnavailable`, and
-its message says what's wrong.
+`git-k8s`, `check-base`, `check-gofmt`, and `check-risk` check the Secret
+before they run git. If the Secret lacks a key that the URL needs, or the
+private key has a passphrase or isn't PEM-encoded, the `GitRepository`'s
+`Ready` condition has the reason `CredentialsUnavailable`, the checks report
+an `Error` result, and each message says what's wrong. `check-gotest`
+doesn't read the Secret. Its test Pods mount it, so a missing or bad key
+shows up as a failed fetch, and after three attempts the check fails with
+the fetch's error.
 
 Because ssh reads keys only from files, the programs write the key and
 `known_hosts` for each git command to a new directory under `/tmp` that only
