@@ -153,8 +153,8 @@ when: >-
 ```
 
 An approval without `approved-by`, such as one from before the policy was
-installed, still passes, but without `outputs.approver`, so a gate that reads
-the approver doesn't pass.
+installed, still passes with an empty `outputs.approver`, so the branch waits
+at a gate like this one until someone approves it again.
 
 ### Write a check
 

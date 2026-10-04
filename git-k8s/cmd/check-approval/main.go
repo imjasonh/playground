@@ -8,9 +8,9 @@
 //
 // The approval check passes while the branch's head is that commit, so a
 // later push needs a new approval. A passing result's approver output is
-// the approved-by annotation, for merge gates that care who approved. The
-// git-k8s-approvals admission policy in config/policy.yaml decides who can
-// approve and checks approved-by.
+// the approved-by annotation, or empty without one, for merge gates that
+// care who approved. The git-k8s-approvals admission policy in
+// config/policy.yaml decides who can approve and checks approved-by.
 package main
 
 import (
@@ -47,10 +47,12 @@ func run(_ context.Context, in *checks.Input) (checks.Verdict, error) {
 	switch {
 	case len(approved) >= 7 && strings.HasPrefix(head, approved):
 		approver := in.Meta.Annotations[gitk8s.ApprovedByAnnotation]
-		if approver == "" {
-			return checks.Pass("%s is approved", gitk8s.Short(head)), nil
+		v := checks.Pass("%s is approved", gitk8s.Short(head))
+		if approver != "" {
+			v = checks.Pass("%s is approved by %s", gitk8s.Short(head), approver)
 		}
-		v := checks.Pass("%s is approved by %s", gitk8s.Short(head), approver)
+		// The key is there even without approved-by, so a gate that compares
+		// the approver evaluates to false instead of failing.
 		v.Outputs = map[string]string{"approver": approver}
 		return v, nil
 	case approved != "":

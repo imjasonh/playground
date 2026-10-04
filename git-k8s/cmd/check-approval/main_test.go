@@ -62,8 +62,11 @@ func TestApprover(t *testing.T) {
 	if res.State != gitk8s.Passed || res.Outputs["approver"] != "alice" || !strings.Contains(res.Message, "approved by alice") {
 		t.Errorf("approved by alice: %+v", res)
 	}
-	// An approval from before the admission policy has no approved-by.
-	if res := approve(t, head, "", nil); res.State != gitk8s.Passed || len(res.Outputs) != 0 {
+	// An approval from before the admission policy has no approved-by. Its
+	// approver output is empty rather than missing, so a gate that compares
+	// it evaluates to false instead of failing.
+	res = approve(t, head, "", nil)
+	if approver, ok := res.Outputs["approver"]; res.State != gitk8s.Passed || !ok || approver != "" {
 		t.Errorf("approved without approved-by: %+v", res)
 	}
 	// Only a passing result names the approver, so a gate that requires an
