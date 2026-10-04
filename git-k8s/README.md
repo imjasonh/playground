@@ -232,13 +232,27 @@ result, because the change runs the check again.
 
 ### Security model
 
-A check can't write another check's result, because it can't write
-`GitBranch` status at all. `generate` grants a program what its packages
-call, so a check's RBAC rules include nothing for `gitbranches/status`. They
-don't let a check create tokens either, because the check reads the token
-that `generate` mounts in its Pod. The core program writes only the entry of
-the check that the token's service account runs, so one check's token can't
-write another check's entry.
+The results endpoint and the `git-k8s-check-results` admission policy keep
+each check's service account to its own entry in `status.checks`.
+`generate` grants a program what its packages call, so a check's RBAC rules
+include nothing for `gitbranches/status`. They don't let a check create
+tokens either, because the check reads the token that `generate` mounts in
+its Pod. The core program writes only the entry of the check that the
+token's service account runs, so one check's token can't write another
+check's entry. The policy is a backstop. It rejects status writes by checks,
+and changes to `status.checks` by service accounts other than the core
+program's, even when a role grants them status access. See
+[Install](#install).
+
+Neither stops a check that creates Pods from running a Pod as another
+service account. `check-gotest` runs tests in Pods, so `generate` grants it
+permission to create, patch, and delete Pods in every namespace. Until the
+`git-k8s-check-pods` admission policy is installed, it can run a Pod as
+another check's service account and mount a `git-k8s-results` token that the
+core program accepts as that check's. It can also run a Pod as the core
+program's service account, which writes every check's result. Anyone else
+who can create Pods in a check's namespace or in the `git-k8s` namespace can
+do the same.
 
 The tokens have the audience `git-k8s-results`, so a token sent to the core
 program can't call the API server, and a token for the API server can't send
@@ -246,11 +260,6 @@ results. The endpoint uses plain HTTP inside the cluster, so anything that
 can read the traffic between Pods can copy a token and send that check's
 results until the token expires, within an hour, or the check's Pod is
 deleted.
-
-The `git-k8s-check-results` admission policy is a backstop. It rejects
-status writes by checks, and changes to `status.checks` by service accounts
-other than the core program's, even when a role grants them status access.
-See [Install](#install).
 
 ### Write a result by hand
 
