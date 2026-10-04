@@ -255,13 +255,14 @@ kubectl -n git-k8s rollout restart deployment/git-k8s
 ```
 
 `PoliciesInstalled` also turns `False` when no binding for a policy denies
-every request that the policy rejects. A binding lets some of them through
-when its `validationActions` doesn't hold `Deny`, when its
-`paramRef.parameterNotFoundAction` isn't `Deny`, or when its
-`matchResources` sets a selector or resource rules. The message gives a
-`kubectl patch` command that makes the binding from `config/policy.yaml`
-deny them again, without a restart. For a binding that someone set to
-`Warn`, the command is:
+every request that the policy rejects. A binding can let some of them
+through when its `validationActions` doesn't hold `Deny`, when its
+`paramRef.parameterNotFoundAction` isn't `Deny`, when its `matchResources`
+sets resource rules, or when a selector in its `matchResources` sets
+`matchLabels` or `matchExpressions`. The message gives a `kubectl patch`
+command that makes the binding from `config/policy.yaml` deny all of them
+again, without a restart. For a binding that someone set to `Warn`, the
+command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
@@ -319,6 +320,9 @@ kubectl apply -f config/policy.yaml
 
 With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
 says to apply `config/policy.yaml` instead of restarting the core program.
+The core program doesn't apply the manifest when it starts, so a binding set
+to `Warn` doesn't stop it, and the condition doesn't report one while another
+binding for the same policy denies.
 
 ### Check service accounts
 
