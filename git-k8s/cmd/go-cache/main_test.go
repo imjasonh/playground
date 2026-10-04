@@ -1083,19 +1083,22 @@ func TestStoreReservesRoom(t *testing.T) {
 
 	t.Run("tryPut doesn't wait for a slot", func(t *testing.T) {
 		s := newStore(t)
-		s.writes = make(chan struct{}, 1)
-		s.writeWait = time.Hour
-		finish := slowPut(t, s, "mod/slow", 10)
+		s.fetches = make(chan struct{}, 1)
+		s.fetches <- struct{}{}
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()
 		if _, err := s.tryPut(ctx, "mod/tries", 10, write(10)); !errors.Is(err, errBusy) {
-			t.Errorf("tryPut while another write holds the only slot: %v, want errBusy", err)
+			t.Errorf("tryPut while another fetch holds the only fetch slot: %v, want errBusy", err)
+		}
+		<-s.fetches
+		s.writes = make(chan struct{}, 1)
+		s.writeWait = time.Hour
+		finish := slowPut(t, s, "mod/slow", 10)
+		if _, err := s.tryPut(ctx, "mod/after", 10, write(10)); err != nil {
+			t.Errorf("tryPut while an upload holds every write slot: %v", err)
 		}
 		if err := finish(); err != nil {
 			t.Fatal(err)
-		}
-		if _, err := s.tryPut(t.Context(), "mod/after", 10, write(10)); err != nil {
-			t.Errorf("tryPut after the slot was free: %v", err)
 		}
 	})
 }
@@ -1143,13 +1146,13 @@ func TestModulesWhenStoreUnavailable(t *testing.T) {
 	t.Cleanup(upstream.Close)
 	full, fullSrv := newTestServer(t, upstream.URL, nil, func(st *store) { st.max = 100 })
 	busy, busySrv := newTestServer(t, upstream.URL, nil, func(st *store) {
-		st.writes = make(chan struct{}, 1)
-		st.writes <- struct{}{}
+		st.fetches = make(chan struct{}, 1)
+		st.fetches <- struct{}{}
 		// A fetch that waited for the slot would outlast the request.
 		st.writeWait = time.Hour
 	})
 	// If a fetch waits for the slot, freeing it lets the server close.
-	t.Cleanup(func() { <-busy.store.writes })
+	t.Cleanup(func() { <-busy.store.fetches })
 	for _, tc := range []struct {
 		result string
 		s      *server
@@ -1186,6 +1189,35 @@ func TestModulesWhenStoreUnavailable(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestModulesWhileUploadsHoldEverySlot checks that uploads, which wait for
+// a write slot and so take each one that frees up, can't keep go-cache from
+// keeping the modules that it fetches.
+func TestModulesWhileUploadsHoldEverySlot(t *testing.T) {
+	mod := bytes.Repeat([]byte("m"), 200)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(mod)
+	}))
+	t.Cleanup(upstream.Close)
+	s, srv := newTestServer(t, upstream.URL, nil)
+	for range cap(s.store.writes) {
+		s.store.writes <- struct{}{}
+	}
+	resp, err := http.Get(srv.URL + "/mod/example.com/m/@v/v1.0.0.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || err != nil || !bytes.Equal(body, mod) {
+		t.Errorf("GET: %s, %v; body matches the upstream's: %v", resp.Status, err, bytes.Equal(body, mod))
+	}
+	for result, want := range map[string]int64{"fetched": 1, "busy": 0} {
+		if got := s.metrics.count(result); got != want {
+			t.Errorf("%s module requests while uploads hold every write slot: %d, want %d", result, got, want)
+		}
 	}
 }
 

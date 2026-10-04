@@ -16,8 +16,10 @@
 // go-cache keeps modules and outputs in -dir, and keeps them, with the
 // writes in progress, under -max-size. A write reserves room for its bytes
 // before it writes them, and go-cache removes the least recently used
-// files to make room. When writes in progress hold the room, or too many
-// writes are in progress, go-cache answers new writes with 503.
+// files to make room. Uploads and module fetches have separate slots for
+// their writes. When writes in progress hold the room, or every slot that
+// a new write needs, go-cache answers an upload with 503, and serves a
+// module from the upstream without keeping it.
 package main
 
 import (

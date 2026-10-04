@@ -221,11 +221,13 @@ go run ./cmd/check-gotest generate -registry=REGISTRY \
 `/tmp`, and keeps their total size, with the writes in progress, under
 `-max-size`, 4Gi by default. Before it writes a file, `go-cache` reserves
 room for it, and removes the least recently used files to make room. It
-runs at most 16 writes at once. When writes in progress hold the room or
-all 16 slots, `go-cache` serves a module that it doesn't have from
-`-upstream` without keeping it, and answers an upload with
-`503 Service Unavailable`. An upload waits up to 30 seconds for a slot
-first. After a 503, the test Pod stops uploading, which only means that
+writes at most 16 uploads at once, and at most 16 fetched modules in
+slots of their own. When writes in progress hold the room, or fetches
+hold all 16 fetch slots, `go-cache` serves a module that it doesn't have
+from `-upstream` without keeping it. When writes in progress hold the
+room, or uploads hold all 16 upload slots, `go-cache` answers an upload
+with `503 Service Unavailable`. An upload waits up to 30 seconds for a
+slot first. After a 503, the test Pod stops uploading, which only means that
 later Pods compile those outputs again. `go-cache` doesn't keep build
 outputs larger than 256 MiB. The kubelet evicts a Pod whose volume passes
 `-tmp-size`, so keep `-max-size` a little below it.
@@ -348,11 +350,14 @@ The design leaves these risks:
   Eviction doesn't change results, because a Pod that compiles an evicted
   output again compiles the same output.
 - A write holds its room in the store until it ends. A namespace that
-  uploads slowly can take all 16 of `go-cache`'s concurrent writes, with
-  up to 256 MiB of room each, for up to 5 minutes, `go-cache`'s read
-  timeout. Meanwhile `go-cache` answers other uploads with 503, and serves
-  modules that it doesn't have without keeping them. That slows other
-  namespaces' test Pods, but doesn't fail them.
+  uploads slowly can take all 16 upload slots for up to 5 minutes,
+  `go-cache`'s read timeout, and hold up to 256 MiB of room with each,
+  4Gi in all. Meanwhile `go-cache` answers other uploads with 503. Module
+  fetches have slots of their own, but the uploads can hold all of the
+  default `-max-size` of 4Gi, and then `go-cache` serves modules that it
+  doesn't have without keeping them. That slows other namespaces' test
+  Pods, but doesn't fail them. A `-max-size` above 4Gi leaves room for
+  modules.
 
 ### Restrict test Pods' network
 

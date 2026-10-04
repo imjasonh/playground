@@ -26,6 +26,9 @@ type store struct {
 	log     *slog.Logger
 	// writes holds a value for each write in progress, up to its capacity.
 	writes chan struct{}
+	// fetches is writes for module fetches, which don't wait for a slot.
+	// Uploads, which do, would take every slot of writes that frees up.
+	fetches chan struct{}
 	// writeWait is how long a write waits for another to finish.
 	writeWait time.Duration
 
@@ -42,6 +45,9 @@ const (
 	touchAfter = time.Hour
 	// maxWrites is how many writes a store runs at once.
 	maxWrites = 16
+	// maxFetches is how many module fetches a store runs at once, besides
+	// its other writes.
+	maxFetches = maxWrites
 )
 
 var (
@@ -50,7 +56,7 @@ var (
 )
 
 func openStore(dir string, max int64, m *metrics, log *slog.Logger) (*store, error) {
-	s := &store{dir: dir, max: max, metrics: m, log: log, writes: make(chan struct{}, maxWrites), writeWait: 30 * time.Second}
+	s := &store{dir: dir, max: max, metrics: m, log: log, writes: make(chan struct{}, maxWrites), fetches: make(chan struct{}, maxFetches), writeWait: 30 * time.Second}
 	tmp := filepath.Join(dir, "tmp")
 	if err := os.RemoveAll(tmp); err != nil {
 		return nil, err
@@ -127,24 +133,24 @@ func (s *store) open(key string) (*os.File, error) {
 // other writes keep it waiting for longer than writeWait, and with errFull
 // if it can't reserve room for what write writes.
 func (s *store) put(ctx context.Context, key string, size int64, write func(io.Writer) error) (bool, error) {
-	return s.putWithin(ctx, s.writeWait, key, size, write)
+	return s.putWithin(ctx, s.writes, s.writeWait, key, size, write)
 }
 
-// tryPut is put, but fails with errBusy at once if other writes are using
-// every slot.
+// tryPut is put for module fetches, which have slots of their own. It fails
+// with errBusy at once if other fetches are using every one.
 func (s *store) tryPut(ctx context.Context, key string, size int64, write func(io.Writer) error) (bool, error) {
-	return s.putWithin(ctx, 0, key, size, write)
+	return s.putWithin(ctx, s.fetches, 0, key, size, write)
 }
 
-func (s *store) putWithin(ctx context.Context, wait time.Duration, key string, size int64, write func(io.Writer) error) (bool, error) {
+func (s *store) putWithin(ctx context.Context, slots chan struct{}, wait time.Duration, key string, size int64, write func(io.Writer) error) (bool, error) {
 	path := s.path(key)
 	if _, err := os.Stat(path); err == nil {
 		return false, nil
 	}
-	if err := s.takeSlot(ctx, wait); err != nil {
+	if err := takeSlot(ctx, slots, wait); err != nil {
 		return false, err
 	}
-	defer func() { <-s.writes }()
+	defer func() { <-slots }()
 	w := &reservedWriter{s: s, fixed: size >= 0}
 	defer func() { s.release(w.reserved) }()
 	if size >= 0 {
@@ -183,10 +189,10 @@ func (s *store) putWithin(ctx context.Context, wait time.Duration, key string, s
 	return true, nil
 }
 
-// takeSlot takes a slot for a write, waiting up to wait for one.
-func (s *store) takeSlot(ctx context.Context, wait time.Duration) error {
+// takeSlot takes one of slots for a write, waiting up to wait for one.
+func takeSlot(ctx context.Context, slots chan struct{}, wait time.Duration) error {
 	select {
-	case s.writes <- struct{}{}:
+	case slots <- struct{}{}:
 		return nil
 	default:
 	}
@@ -196,7 +202,7 @@ func (s *store) takeSlot(ctx context.Context, wait time.Duration) error {
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
-	case s.writes <- struct{}{}:
+	case slots <- struct{}{}:
 		return nil
 	case <-timer.C:
 		return errBusy
