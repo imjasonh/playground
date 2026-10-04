@@ -143,6 +143,8 @@ func TestPassesOtherBranches(t *testing.T) {
 }
 
 func TestNeedsAValidPrefix(t *testing.T) {
+	defer func(r *agent.Runner) { runner = r }(runner)
+	runner = &agent.Runner{Name: "deps"}
 	t.Cleanup(func() { prefix = "deps/" })
 	if err := new(branchPrefix).Set(string(prefix)); err != nil {
 		t.Errorf("the default -prefix, %q, isn't valid: %v", prefix, err)
