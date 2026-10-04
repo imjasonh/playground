@@ -12,9 +12,9 @@ import (
 )
 
 func TestTestPodsPolicy(t *testing.T) {
-	defer func(ml, dl labels, dc cidrs, ns, proxy string) {
-		mirrorLabels, dnsLabels, dnsCIDRs, *dnsNS, *goProxy = ml, dl, dc, ns, proxy
-	}(mirrorLabels, dnsLabels, dnsCIDRs, *dnsNS, *goProxy)
+	defer func(ml, dl labels, dc cidrs, mns, dns, proxy string) {
+		mirrorLabels, dnsLabels, dnsCIDRs, *mirrorNS, *dnsNS, *goProxy = ml, dl, dc, mns, dns, proxy
+	}(mirrorLabels, dnsLabels, dnsCIDRs, *mirrorNS, *dnsNS, *goProxy)
 	set := func(name, value string) {
 		t.Helper()
 		if err := flag.Set(name, value); err != nil {
@@ -65,7 +65,7 @@ func TestTestPodsPolicy(t *testing.T) {
 
 	t.Log("Test Pods can reach only the mirror and the cluster's DNS Pods.")
 	check(
-		conn{mirror, "TCP", mirrorPort, true},
+		conn{mirror, "TCP", 8081, true}, // the port of kube.Serve in generate's Deployment
 		conn{mirror, "TCP", 8080, false},
 		conn{gofmt, "TCP", mirrorPort, false},
 		conn{notMirror, "TCP", mirrorPort, false},
@@ -101,14 +101,16 @@ func TestTestPodsPolicy(t *testing.T) {
 	set("goproxy", "off")
 
 	t.Log("The flags choose the mirror's and the DNS servers' Pods, and DNS servers outside Pods.")
+	set("mirror-namespace", "vcs")
 	set("mirror-labels", "app=mirror,tier=git")
 	set("dns-namespace", "openshift-dns")
 	set("dns-labels", "dns.operator.openshift.io/daemonset-dns=default")
 	set("dns-cidrs", "169.254.20.10/32,fd00::a/128")
 	openshiftDNS := dest{ns: "openshift-dns", labels: map[string]string{"dns.operator.openshift.io/daemonset-dns": "default"}, ip: "10.128.0.4"}
 	check(
-		conn{dest{ns: "git-k8s", labels: map[string]string{"app": "mirror", "tier": "git", "extra": "x"}, ip: "10.244.0.8"}, "TCP", mirrorPort, true},
-		conn{dest{ns: "git-k8s", labels: map[string]string{"app": "mirror"}, ip: "10.244.0.9"}, "TCP", mirrorPort, false},
+		conn{dest{ns: "vcs", labels: map[string]string{"app": "mirror", "tier": "git", "extra": "x"}, ip: "10.244.0.8"}, "TCP", mirrorPort, true},
+		conn{dest{ns: "git-k8s", labels: map[string]string{"app": "mirror", "tier": "git"}, ip: "10.244.0.10"}, "TCP", mirrorPort, false},
+		conn{dest{ns: "vcs", labels: map[string]string{"app": "mirror"}, ip: "10.244.0.9"}, "TCP", mirrorPort, false},
 		conn{mirror, "TCP", mirrorPort, false},
 		conn{openshiftDNS, "UDP", 53, true},
 		conn{coreDNS, "UDP", 53, false},
