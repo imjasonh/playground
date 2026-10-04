@@ -80,7 +80,11 @@ type fixture struct {
 // newFixture pushes main and a branch c/x that adds a file, and returns a
 // GitBranch view for c/x whose policy runs the touch check.
 func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
-	srv := gittest.NewServer(t, "pw")
+	return newFixtureOn(t, gittest.NewServer(t, "pw"), policy)
+}
+
+// newFixtureOn is newFixture with the repository on srv.
+func newFixtureOn(t *testing.T, srv *gittest.Server, policy gitk8s.CheckPolicy) *fixture {
 	w := srv.NewWork(t, "app")
 	w.Write("README.md", "hello\n")
 	main := w.Commit("main")
@@ -90,13 +94,7 @@ func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
 	head := w.Commit("add x")
 	w.Push("c/x")
 
-	repo := &gitk8s.GitRepository{
-		Object: kube.Meta("app", nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: srv.Remote("app").URL, SecretRef: &gitk8s.SecretRef{Name: "creds"}},
-	}
-	repo.Namespace = "default"
-	secret := &k8s.Secret{Object: kube.Meta("creds", nil), Data: map[string][]byte{"username": []byte(srv.Username), "password": []byte(srv.Password)}}
-	secret.Namespace = "default"
+	repo, secret := srv.Repository("app")
 	b := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{
@@ -161,6 +159,21 @@ func TestPushesFixThenPasses(t *testing.T) {
 	}
 	if runs != before {
 		t.Errorf("the check ran again for a head with a final result")
+	}
+}
+
+func TestPushesFixOverSSH(t *testing.T) {
+	f := newFixtureOn(t, gittest.NewSSHServer(t), gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+	runs := 0
+	if err := f.reconcile(t, touch(&runs)); err != nil {
+		t.Fatal(err)
+	}
+	res := f.branch.Status.Checks.Result
+	if res == nil || res.State != gitk8s.Fixed {
+		t.Fatalf("result = %+v, want Fixed", res)
+	}
+	if got := f.srv.Heads(t, "app")["c/x"]; got != res.Outputs["fix"] {
+		t.Errorf("c/x = %s, want the fix %s", got, res.Outputs["fix"])
 	}
 }
 

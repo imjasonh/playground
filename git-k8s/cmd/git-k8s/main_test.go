@@ -156,6 +156,38 @@ func TestListFailureKeepsBranches(t *testing.T) {
 	}
 }
 
+func TestListsAndLandsOverSSH(t *testing.T) {
+	srv := gittest.NewSSHServer(t)
+	b, _ := branches(t, srv)
+	repo, secret := srv.Repository("app", rules()...)
+	ctx, rec := kube.Fake(t.Context(), repo, secret)
+	if err := (&repositories{git: &git.Git{}}).Reconcile(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	if owned := kube.Owned[gitk8s.GitBranch](rec); len(owned) != 2 {
+		t.Fatalf("owned %d GitBranches, want 2: %+v", len(owned), owned)
+	}
+	if err := merge(t, srv, b); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.Heads(t, "app")["main"]; got != b.Spec.Head {
+		t.Errorf("main = %s, want %s", got, b.Spec.Head)
+	}
+}
+
+func TestListFailsWithAnUnknownHostKey(t *testing.T) {
+	srv, other := gittest.NewSSHServer(t), gittest.NewSSHServer(t)
+	repo, secret := srv.Repository("app", rules()...)
+	secret.Data["known_hosts"] = other.SSH.KnownHosts
+	ctx, _ := kube.Fake(t.Context(), repo, secret)
+	if err := (&repositories{git: &git.Git{}}).Reconcile(ctx, repo); err == nil {
+		t.Fatal("reconcile with another host's key succeeded")
+	}
+	if c := kube.FindCondition(repo.Status.Conditions, "Ready"); c == nil || c.Reason != "ListFailed" || !strings.Contains(c.Message, "Host key verification failed") {
+		t.Errorf("Ready = %+v", c)
+	}
+}
+
 func TestInvalidPolicyIsPermanent(t *testing.T) {
 	for _, mod := range []func(*gitk8s.GitRepository){
 		func(r *gitk8s.GitRepository) { r.Spec.PollInterval = "1ms" },
