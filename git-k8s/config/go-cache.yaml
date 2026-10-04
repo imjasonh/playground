@@ -1,0 +1,45 @@
+# go-cache needs two things that generate doesn't make for it. generate
+# makes a Service only for webhooks, so this Service is how test Pods reach
+# go-cache. generate grants what a program calls through kube, and go-cache
+# checks tokens with TokenReviews that it sends to the API server itself, so
+# this ClusterRole grants that and nothing else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-cache
+  namespace: go-cache
+  labels:
+    app.kubernetes.io/name: go-cache
+spec:
+  selector:
+    app.kubernetes.io/name: go-cache
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: go-cache-token-reviewer
+  labels:
+    app.kubernetes.io/name: go-cache
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: go-cache-token-reviewer
+  labels:
+    app.kubernetes.io/name: go-cache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: go-cache-token-reviewer
+subjects:
+  - kind: ServiceAccount
+    name: go-cache
+    namespace: go-cache
