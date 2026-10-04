@@ -185,6 +185,8 @@ func TestRiskOfModules(t *testing.T) {
 			},
 			level: "high", reason: "changes go.work",
 		},
+		{name: "go.work in a subdirectory", change: map[string]string{"sub/go.work": "go 1.24\n\nuse ..\n"}, level: "high", reason: "changes sub/go.work"},
+		{name: "go.work.sum", change: map[string]string{"go.work.sum": strings.Repeat("example.com/a v1.2.4 h1:abc=\n", 12)}, level: "low", reason: "changes 0 lines in 1 files, not counting go.sum"},
 		{name: "new go.mod", change: map[string]string{"svc/go.mod": "module example.com/app/svc\n\ngo 1.26\n\nrequire example.com/a v1.2.3\n"}, level: "low"},
 		{name: "new module", change: edit(")", "\texample.com/c v1.0.0\n)"), level: "high", reason: "adds module example.com/c"},
 		{name: "major version path", change: edit("example.com/a v1.2.3", "example.com/a/v2 v2.0.0"), level: "high", reason: "moves example.com/a to example.com/a/v2"},

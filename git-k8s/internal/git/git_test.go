@@ -194,6 +194,8 @@ func TestListCommits(t *testing.T) {
 		{Name: `"git-k8s"`, Email: " git-k8s@example.com\n"},
 		{Name: "git\n-k8s", Email: "git-k8s@<example>.com"},
 		{Name: "Ana Lima\xff", Email: "\x01ana@example.com"},
+		{Name: "git-k8s", Email: "git-k8s\ufffd\ufffe\uffff\U0001fffe@example.com"},
+		{Name: "git-k8s", Email: "git-k8s\ufdcf\ufdd0\ufdef\ufdf0@example.com"},
 		{Name: "git-k8s", Email: ""},
 	} {
 		commit, err := repo.CommitTree(ctx, c.Tree, []string{head}, "edit", id, c.Time)
