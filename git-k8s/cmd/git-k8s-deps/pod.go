@@ -292,7 +292,10 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 	}
 	spec, _ := json.Marshal(p.Spec)
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", b.Name, attempt, spec))
-	p.Name = "deps-" + hex.EncodeToString(sum[:8])
+	// The name must have no hyphen, so that no check can create a Pod with
+	// it first under a policy that limits each check's new Pods to names of
+	// the form NAME-ID.
+	p.Name = "gitk8sdeps" + hex.EncodeToString(sum[:8])
 	return p
 }
 

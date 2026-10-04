@@ -1271,7 +1271,7 @@ func TestWaitsForFreePods(t *testing.T) {
 	f.u.maxPods = 2
 	var others []any
 	for i, phase := range []string{"Running", "Pending", "Succeeded", "Failed"} {
-		p := &agent.Pod{Object: kube.Meta("deps-"+strconv.Itoa(i), podLabels)}
+		p := &agent.Pod{Object: kube.Meta("gitk8sdeps"+strconv.Itoa(i), podLabels)}
 		p.Namespace = "other"
 		p.Status.Phase = phase
 		others = append(others, p)

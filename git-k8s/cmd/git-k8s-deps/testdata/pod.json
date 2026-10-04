@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "name": "deps-301a14cfe6cce3fe",
+    "name": "gitk8sdeps301a14cfe6cce3fe",
     "labels": {
       "app.kubernetes.io/name": "git-k8s-deps"
     }

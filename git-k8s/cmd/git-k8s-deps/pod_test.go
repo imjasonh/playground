@@ -106,6 +106,14 @@ func TestPod(t *testing.T) {
 	}
 }
 
+func TestPodName(t *testing.T) {
+	u := &updater{proxy: newProxy(nil, time.Hour, time.Now)}
+	b := &Branch{Object: kube.Meta("app-main", nil)}
+	if name := u.pod(b, &gitk8s.Repository{}, "0123abcd", 0, nil).Name; strings.Contains(name, "-") {
+		t.Errorf("the update Pod's name %s has a hyphen, so a check whose new Pods must be named NAME-ID could create a Pod with it first", name)
+	}
+}
+
 func TestSizes(t *testing.T) {
 	for s, want := range map[string]int64{
 		"2Gi": 2 << 30, "500M": 500e6, "1": 1, "1k": 1000, "64Ki": 64 << 10, "3Ti": 3 << 40, "2097151Ti": 2097151 << 40,
