@@ -193,6 +193,55 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	}
 }
 
+func TestKeepsAFinishedJobDone(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	first := f.startJob(job, st)
+	first.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: unable to access the repository"})},
+	}}
+	_, rec := f.runJob(job, st, first)
+	pods := kube.Owned[Pod](rec)
+	p := pods[len(pods)-1]
+	p.Namespace, p.UID = "default", "uid-"+p.Name
+	s, _ := f.runJob(job, st, finished(p, f.serve(review(Pass), p.UID)))
+	done := JobState{Runs: 1, Pod: p.Name, Attempt: 2, UID: p.UID, Done: true}
+	if !s.Done || s.Result == nil || *st != done {
+		t.Fatalf("RunJob = %+v with state %+v, want the agent's result and %+v", s, st, done)
+	}
+
+	t.Log("Later calls declare no Pod, so neither a deleted Pod nor a deploy runs the agent again.")
+	for _, tc := range []struct {
+		model string
+		pods  []*Pod
+	}{
+		{f.r.Model, []*Pod{p}},
+		{f.r.Model, nil},
+		{"composer-3", nil},
+	} {
+		f.r.Model = tc.model
+		s, rec := f.runJob(job, st, tc.pods...)
+		if !s.Done || s.Result != nil || s.Failed != nil || s.Message != "the run in Pod "+p.Name+" already finished" || len(kube.Owned[Pod](rec)) != 0 || *st != done {
+			t.Fatalf("RunJob = %+v with state %+v, want the run done without its Pod", s, st)
+		}
+	}
+
+	t.Log("A job for another head starts a new run.")
+	job.Checkout.Head = f.base
+	s, rec = f.runJob(job, st)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || *st != (JobState{Runs: 2, Pod: pods[0].Name, Attempt: 1}) {
+		t.Fatalf("RunJob = %+v with state %+v, want run 2", s, st)
+	}
+
+	t.Log("A job that isn't valid ends its run at once, without a Pod to wait for.")
+	job.Tools = []string{"shell"}
+	s, rec = f.runJob(job, st)
+	if !s.Done || len(kube.Owned[Pod](rec)) != 0 || rec.RequeueAfter() != 0 || *st != (JobState{Runs: 2, Done: true}) {
+		t.Errorf("RunJob = %+v with state %+v and RequeueAfter = %v, want the run done without a Pod", s, st, rec.RequeueAfter())
+	}
+}
+
 func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()

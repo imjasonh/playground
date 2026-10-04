@@ -446,19 +446,21 @@ with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says
 why. If the run failed after the agent started, `Failed` holds the runner's
-report, with its `Error` and what the agent used. Then stop calling
-`RunJob` for the run, and kube deletes the Pod.
+report, with its `Error` and what the agent used. `RunJob` reports that
+once and sets the state's `Done`. Later calls for the same `Job` report
+the run as `Done` without a `Result` or `Failed` and don't declare the
+Pod, so kube deletes it.
 
 A `Job` with other commits, another task, other tools, or another image
 starts a new run, up to the job's `MaxRuns`. A deploy that changes the
-agent Pods' spec starts the run again in a new Pod, which takes a place in
-`-max-runs-per-day` but doesn't count toward `MaxRuns`. If the Pod finds
-that the branch moved, the agent doesn't run, and `RunJob` gives the run
-back and waits for a `Job` with the new head. If the run's Pod is deleted
-before the run is `Done`, kube creates it again and the agent runs again,
-so `RunJob` counts another run. When `MaxRuns` or `-max-runs-per-day`
-allows no more, `RunJob` ends the run instead, and kube doesn't create the
-Pod again.
+agent Pods' spec starts an unfinished run again in a new Pod, which takes
+a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
+Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
+the run back and waits for a `Job` with the new head. If the run's Pod is
+deleted before the run is `Done`, kube creates it again and the agent runs
+again, so `RunJob` counts another run. When `MaxRuns` or
+`-max-runs-per-day` allows no more, `RunJob` ends the run instead, and
+kube doesn't create the Pod again.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and

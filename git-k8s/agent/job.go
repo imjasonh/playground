@@ -71,12 +71,16 @@ type JobState struct {
 	// Refunded is the UID of the run's Pod that found that the branch
 	// moved. Its agent didn't run, so RunJob gave back the run, once.
 	Refunded string
+	// Done is true once RunJob reported that the run finished. Later calls
+	// for the same job report the run as done again, without its result,
+	// and don't declare its Pod.
+	Done bool
 }
 
 // JobStatus is how a job's run stands.
 type JobStatus struct {
-	// Done is true once the run finished. Then stop calling RunJob for the
-	// run, and kube deletes its Pod.
+	// Done is true once the run finished. Then kube deletes its Pod, and
+	// RunJob reports the run as done until the job changes.
 	Done bool
 	// Message says how the run is going, or why it failed.
 	Message string
@@ -91,16 +95,22 @@ type JobStatus struct {
 // declares the run's Pod with kube.Own, so call it on each reconcile until
 // the run is done. A JobState whose Pod was for another job, such as one
 // with other commits or another task, starts a new run. One whose Pod has
-// another spec, such as after a deploy with other flags, starts the run
-// again in a new Pod, which doesn't count as another run. If the run's Pod
-// is deleted before the run finishes, kube creates it again, which runs
-// the agent again, so RunJob counts another run.
+// another spec, such as after a deploy with other flags, starts an
+// unfinished run again in a new Pod, which doesn't count as another run.
+// If the run's Pod is deleted before the run finishes, kube creates it
+// again, which runs the agent again, so RunJob counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
+	if st.Done && sameJob(r.jobPod(job, max(st.Attempt, 1)).Name, st.Pod) {
+		return JobStatus{Done: true, Message: fmt.Sprintf("the run in Pod %s already finished", st.Pod)}
+	}
 	s := r.runJob(ctx, job, st)
 	if s.Done {
-		// The caller stops declaring the Pod once the run is done, so kube
-		// deletes it on the next reconcile.
-		kube.RequeueAfter(ctx, time.Second)
+		st.Done = true
+		if st.Pod != "" {
+			// RunJob doesn't declare a done run's Pod, so kube deletes it
+			// on the next reconcile.
+			kube.RequeueAfter(ctx, time.Second)
+		}
 	}
 	return s
 }
@@ -116,6 +126,8 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return JobStatus{Message: fmt.Sprintf("can't start agents: %v", err)}
 	}
 	if err := job.validate(); err != nil {
+		// RunJob marks st done, so it can't keep naming another job's Pod.
+		*st = JobState{Runs: st.Runs}
 		return x.fail("can't run the agent: %v", err)
 	}
 	if st.Pod != "" {
