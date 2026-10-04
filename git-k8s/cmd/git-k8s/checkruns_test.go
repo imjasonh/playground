@@ -519,6 +519,41 @@ func TestCheckRunsAfterIdentityChanges(t *testing.T) {
 	}
 }
 
+func TestCheckRunsAfterURLChanges(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	w.Push("c/x")
+	l := gh.NewWork(t, "lib")
+	l.Write(".github/chainguard/checks.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))
+	libHead := l.Commit("main")
+	l.Push("main")
+	gh.Fake.RouteApp("acme/lib", "checks", gitserver.SecondOctoSTSApp)
+	repo := gh.Repository("app", sts, rules()...)
+	passed := func(commit string) map[string]gitk8s.CheckResult {
+		return map[string]gitk8s.CheckResult{"gotest": {Commit: commit, State: gitk8s.Passed}}
+	}
+	// Before a restart, the controller published c/x's result when the
+	// GitRepository named acme/lib.
+	repo.Spec.URL = gh.Remote("lib").URL
+	if _, err := (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(passed(libHead)); err != nil {
+		t.Fatal(err)
+	}
+	repo.Spec.URL = gh.Remote("app").URL
+	p := &publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}
+	if _, err := p.publish(passed(head)); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("When the GitRepository names a repository whose tokens act for another app, the controller finds that app's check run instead of looking only at the first app's.")
+	repo.Spec.URL = gh.Remote("lib").URL
+	api := "/api/v3/repos/acme/lib/"
+	got, err := p.publish(passed(libHead))
+	if want := []string{"GET " + api + "commits/" + libHead + "/check-runs", "PATCH " + api + "check-runs/1"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+}
+
 func TestLearnsAppFromCancelling(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
