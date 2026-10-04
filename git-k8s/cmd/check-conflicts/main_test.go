@@ -1749,6 +1749,66 @@ func TestLeavesACopyOfARemovedCommit(t *testing.T) {
 	}
 }
 
+func TestLeavesAReplayThatUndoesAReset(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// synced is what the commit where the sides synced changes, and
+		// branch is what the branch changes on top of it.
+		synced, branch map[string]string
+		// conflict is the file that conflicts when the check replays the
+		// branch onto the external head.
+		conflict string
+		// resolved is the agent's resolution, or nil if git resolves the
+		// conflict, and want says how the replay resolved it.
+		resolved *agent.File
+		want     string
+	}{{
+		name:     "that git's union driver resolved",
+		synced:   map[string]string{"go.sum": "a v1\nb v1\n"},
+		branch:   map[string]string{"go.sum": "a v1\nc v1\n"},
+		conflict: "go.sum",
+		want:     "replaying the branch onto the external repository's c/x conflicts in go.sum, which git merged with its union driver",
+	}, {
+		name:     "that the agent resolved",
+		synced:   map[string]string{"a.txt": "one\nsynced\nthree\n"},
+		branch:   map[string]string{"a.txt": "one\nbranch\nthree\n"},
+		conflict: "a.txt",
+		resolved: &agent.File{Path: "a.txt", Mode: "100644", Content: []byte("one\nbranch\nthree\n")},
+		want:     "the agent resolved the conflicts in a.txt",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w, base := setup(t, srv, map[string]string{"b.txt": "main\n"}, tc.synced)
+			synced := b.Spec.Head
+			b.Spec.Head = commit(w, "branch edit", tc.branch)
+			w.Push("c/x")
+			if tc.resolved != nil {
+				withJobs(t, finish(t, w, resolution(*tc.resolved)))
+			}
+			// The external repository resets c/x to base, which undoes the
+			// commit where the sides synced.
+			w.Branch("external", base)
+			w.PushRef(downstream + "c/x")
+			o := &observed{Object: kube.Meta(b.Name, nil)}
+			o.Namespace = "default"
+			o.Status.Diverged = &gitk8s.Divergence{Commit: base, Ref: downstream + "c/x"}
+			syncedAt(w, o, "c/x", synced)
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			want := "replaying commit " + gitk8s.Short(b.Spec.Head) + " of the branch conflicts in " + tc.conflict + "; " + tc.want +
+				", but the replay doesn't keep every change that the external repository's c/x at " + gitk8s.Short(base) +
+				" made since they last synced at " + gitk8s.Short(synced) + ", so the check leaves the divergence for a person"
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want {
+				t.Errorf("result = %+v, want Failed with %q", res, want)
+			}
+			if got := srv.Heads(t, "app")["c/x"]; got != b.Spec.Head {
+				t.Errorf("c/x moved to %s", got)
+			}
+		})
+	}
+}
+
 // parent pushes main and returns its view, with the external repository's
 // head of main on the downstream ref: base with a.txt, then mainFiles on
 // main and externalFiles on the external head.

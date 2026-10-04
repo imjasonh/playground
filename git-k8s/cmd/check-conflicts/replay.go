@@ -317,6 +317,25 @@ func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t targe
 	return v
 }
 
+// keepsExternal returns v, or a failure if v's fix replays the branch onto
+// t's commit as one commit but doesn't keep every change that the
+// external repository made since t.synced. A replay that resolves
+// conflicts can change lines that the external repository changed, and
+// when the external repository rewound to an older commit, keeps can't
+// tell that whoever made the replay started from that commit. The mirror
+// doesn't move the external repository to such a replay, and the check
+// would leave the divergence at its next run, so it leaves it now instead
+// of pushing the replay over the branch.
+func keepsExternal(ctx context.Context, repo *git.Repo, t target, v checks.Verdict) (checks.Verdict, error) {
+	if !t.replay || v.Fix == "" {
+		return v, nil
+	}
+	if ok, err := keeps(ctx, repo, v.Fix, t.commit, t.synced); err != nil || ok {
+		return v, err
+	}
+	return checks.Fail("%s, but the replay doesn't keep every change that %s at %s made since they last synced at %s, so the check leaves the divergence for a person", v.Message, t.name, gitk8s.Short(t.commit), gitk8s.Short(t.synced)), nil
+}
+
 // replayExternal replays the commits that the external repository added
 // since t.synced onto the branch's head, which rewound since then. The
 // mirror moves the external repository to the result only if it has a

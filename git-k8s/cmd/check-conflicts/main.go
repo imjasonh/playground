@@ -283,11 +283,15 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, ou
 	return startAgent(ctx, in, repo, t, bases, list, outputs)
 }
 
-// fix returns v with the commit that mergeCommit makes of tree as its fix.
+// fix returns v with the commit that mergeCommit makes of tree as its fix,
+// unless keepsExternal turns it into a failure.
 func fix(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string, v checks.Verdict) checks.Verdict {
 	var err error
 	if v.Fix, err = mergeCommit(ctx, in, repo, t, tree, body); err != nil {
 		return retry(ctx, "committing the result of %s: %v", t.action(), err)
+	}
+	if v, err = keepsExternal(ctx, repo, t, v); err != nil {
+		return retry(ctx, "comparing the result of %s with %s: %v", t.action(), t.name, err)
 	}
 	return v
 }

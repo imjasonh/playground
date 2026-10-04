@@ -212,6 +212,11 @@ func report(ctx context.Context, in *checks.Input, t target, base string, st *ag
 			v = checks.Fail("the agent resolved the conflicts in %s", strings.Join(paths, ", "))
 			v.Fix = fix
 		}
+		if v, err = keepsExternal(ctx, repo, t, v); err != nil {
+			st.Done = false
+			kube.RequeueAfter(ctx, 30*time.Second)
+			return running("comparing the agent's replay with %s: %v", t.name, err)
+		}
 	}
 	maps.Copy(o, agent.UsageOutputs(res))
 	o["summary"] = res.Summary
