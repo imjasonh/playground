@@ -3,7 +3,7 @@
 // To approve a branch, annotate its GitBranch with the commit to approve
 // and your username:
 //
-//	kubectl annotate gitbranch NAME git-k8s.imjasonh.com/approve=SHA \
+//	kubectl annotate --overwrite gitbranch NAME git-k8s.imjasonh.com/approve=SHA \
 //	  git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 //
 // The approval check passes while the branch's head is that commit, so a

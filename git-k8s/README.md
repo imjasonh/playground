@@ -111,7 +111,7 @@ An approval is two annotations on the `GitBranch`: `approve`, which names
 the commit, and `approved-by`, which names you. Set both in one request:
 
 ```sh
-kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA \
+kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA \
   git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 ```
 
@@ -137,7 +137,7 @@ when you set or change `approve`, and removes it when you remove `approve`,
 so one annotation approves:
 
 ```sh
-kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
 ```
 
 The mutating policy leaves `approved-by` alone when the request changes it
