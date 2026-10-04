@@ -1174,6 +1174,15 @@ func TestPodCheckDenials(t *testing.T) {
 		t.Errorf("100 checks of a Pod without check-gotest's label: %d denials after %d Pod gets, want 100 after 1", denials, gets.Load())
 	}
 
+	t.Log("It remembers the Pod, not its name.")
+	gets.Store(0)
+	if err := r.checkWriter(t.Context(), identity{namespace: "ns", pod: "builder", podUID: "uid-earlier"}); !errors.Is(err, errDenied) {
+		t.Errorf("check of an earlier Pod named ns/builder = %v, want a denial", err)
+	}
+	if denials, errs := check("builder", 1); denials != 0 || errs != 0 || gets.Load() != 2 {
+		t.Errorf("check of Pod ns/builder after a check of an earlier Pod with its name failed: %d denials and %d errors after %d Pod gets, want none after 2", denials, errs, gets.Load())
+	}
+
 	t.Log("It doesn't remember a Pod that passed, or an error.")
 	gets.Store(0)
 	if denials, errs := check("builder", 3); denials != 0 || errs != 0 || gets.Load() != 3 {
