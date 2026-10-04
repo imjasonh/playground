@@ -187,7 +187,7 @@ type core struct {
 	// applied to each object.
 	statusApplies map[Key]uint64
 	// caughtUp holds, for each object, the tenure of its shard in which a
-	// status write that required the cached resource version succeeded.
+	// write to the object that required the cached resource version succeeded.
 	caughtUp map[Key]uint64
 }
 

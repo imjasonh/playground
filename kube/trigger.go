@@ -42,10 +42,10 @@ import (
 // before the retry, the retry runs on the next holder of the shard, which
 // doesn't have the data. Once the object holds the data, a next holder whose
 // cache doesn't show it yet can't remove it, because that replica's status
-// writes for the object require the resource version in its cache until one
-// succeeds. That holds when the shard is handed off. A replica that loses its
-// lease lets running reconciles finish, and a late status write from one of
-// them can still remove the data.
+// writes for the object, and the finalizer writes before them, require the
+// resource version in its cache until one succeeds. That holds when the shard
+// is handed off. A replica that loses its lease lets running reconciles
+// finish, and a late status write from one of them can still remove the data.
 //
 // Have the reconcile read the data without removing it, then read the
 // object with Get and add the data to that copy, not to the object that
