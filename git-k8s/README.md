@@ -55,6 +55,9 @@ set to those transports. Its git commands put `--end-of-options` before every
 URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
+Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
+shows each URL, and `check-gotest` copies it into its Pod specs.
+
 The `git-k8s` program runs two controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
 
