@@ -83,7 +83,11 @@ type podTask struct {
 	TerminationLog string `json:"terminationLog"`
 
 	// Only some jobs set these.
-	Tools []string `json:"tools,omitempty"`
+	Tools         []string `json:"tools,omitempty"`
+	MergeBranch   string   `json:"mergeBranch,omitempty"`
+	MergeHead     string   `json:"mergeHead,omitempty"`
+	ConflictsFile string   `json:"conflictsFile,omitempty"`
+	MergeLogFile  string   `json:"mergeLogFile,omitempty"`
 }
 
 // movedStatus is prepareScript's exit status when a branch no longer points
@@ -94,13 +98,16 @@ const movedStatus = 3
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
 // touches, the commit log, and the API key, if the Secret holds one, for
-// the agent container. It leaves .cursorignore files out of the head's
-// files and index, because Cursor reads them to hide files from the agent.
-// The git image has no commands but git and sh, so the script uses only
-// those and the shell's builtins, and git init's templates make .git/info.
-// The repository goes in a directory that git init creates, because git
-// refuses to use one that another user owns, such as the root of an
-// emptyDir volume. The attributes file makes the files match their
+// the agent container. With MERGE_HEAD, it also fetches MERGE_BRANCH, or
+// exits with status 3 if that moved, and writes the files and index of
+// HEAD's merge with MERGE_HEAD instead of the head's, the paths that
+// conflict, and the merged commits' log. It leaves .cursorignore files out
+// of the files and index, because Cursor reads them to hide files from the
+// agent. The git image has no commands but git and sh, so the script uses
+// only those and the shell's builtins, and git init's templates make
+// .git/info. The repository goes in a directory that git init creates,
+// because git refuses to use one that another user owns, such as the root
+// of an emptyDir volume. The attributes file makes the files match their
 // blobs, so the runner can tell which ones the agent changed.
 //
 // MERGE_REF, if set, is the ref to fetch MERGE_HEAD from instead of

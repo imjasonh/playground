@@ -9,7 +9,7 @@ import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
 import { toolsFor } from "./tools.js";
-import { MAX_PATHS_BYTES, parseNameStatus } from "./touched.js";
+import { MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "./touched.js";
 import { errorMessage, redact, truncate } from "./text.js";
 import { parseVerdict } from "./verdict.js";
 
@@ -76,6 +76,10 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   const diff = await readStart(task.diffFile, MAX_DIFF + 1);
   const commits = await readStart(task.logFile, MAX_LOG + 1);
   const paths = task.changesFile ? parseNameStatus(await readStart(task.changesFile, MAX_PATHS_BYTES + 1)) : undefined;
+  const merge =
+    task.mergeHead && task.conflictsFile && task.mergeLogFile
+      ? { conflicts: parseConflicts(await readStart(task.conflictsFile, MAX_PATHS_BYTES + 1)), log: await readStart(task.mergeLogFile, MAX_LOG + 1) }
+      : undefined;
   const index = task.edit ? await readFile(task.filesFile) : undefined;
   if (index) {
     checkPaths(index);
@@ -84,7 +88,7 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   let response: AgentResponse;
   try {
     response = await backends[task.backend]({
-      prompt: buildPrompt(task, diff, commits, paths),
+      prompt: buildPrompt(task, diff, commits, paths, merge),
       diff: firstLines(diff, MAX_DIFF).text,
       cwd: task.workTree,
       edit: task.edit,

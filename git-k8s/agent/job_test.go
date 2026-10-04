@@ -2,6 +2,11 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -30,10 +35,10 @@ func TestRunsAJob(t *testing.T) {
 	main := f.base
 	job := &Job{
 		Name: "app-c-x", Namespace: "default", URL: repo.Spec.URL, Credentials: repo.Spec.SecretRef,
-		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: main},
-		Task:     Task{Instructions: "Fix the change.", Edit: true},
+		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: main, Merge: &Ref{Branch: "main", Commit: main}},
+		Task:     Task{Instructions: "Merge main into c/x.", Edit: true},
 		Tools:    []string{"read", "edit"},
-		Image:    "registry.example.com/agent-runner:fix",
+		Image:    "registry.example.com/agent-runner:merge",
 		MaxRuns:  1,
 	}
 	st := &JobState{}
@@ -56,7 +61,7 @@ func TestRunsAJob(t *testing.T) {
 		}
 		env[e.Name] = e.Value
 	}
-	if env["URL"] != repo.Spec.URL || env["HEAD"] != job.Checkout.Head || env["BASE"] != main {
+	if env["URL"] != repo.Spec.URL || env["HEAD"] != job.Checkout.Head || env["BASE"] != main || env["MERGE_BRANCH"] != "main" || env["MERGE_HEAD"] != main {
 		t.Errorf("prepare's environment = %v, want the job's commits", env)
 	}
 	if want := []string{"app-creds/username", "app-creds/password", "cursor-api-key/api-key"}; !slices.Equal(secrets, want) {
@@ -70,8 +75,9 @@ func TestRunsAJob(t *testing.T) {
 			}
 		}
 	}
-	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.Head != job.Checkout.Head || task.Base != main {
-		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and commits", task)
+	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.MergeBranch != "main" || task.MergeHead != main ||
+		task.ConflictsFile != "/input/conflicts" || task.MergeLogFile != "/input/merge-log.txt" {
+		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and merge", task)
 	}
 
 	t.Log("RunJob follows the Pod until it serves the agent's result.")
@@ -288,6 +294,7 @@ func TestValidatesJobs(t *testing.T) {
 		func(j *Job) {
 			j.Checkout.Head = strings.Repeat("c", 64)
 			j.Checkout.Base = sha
+			j.Checkout.Merge = &Ref{Branch: "main", Commit: sha}
 			j.Tools = []string{"read", "delete"}
 		},
 		func(j *Job) {

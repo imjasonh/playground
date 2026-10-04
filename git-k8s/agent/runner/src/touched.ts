@@ -38,3 +38,22 @@ export function parseNameStatus(data: Buffer): TouchedPath[] {
   }
   return paths;
 }
+
+/**
+ * Parses git merge-tree --write-tree --name-only -z output: the merge's
+ * tree, and then each path that conflicts.
+ */
+export function parseConflicts(data: Buffer): string[] {
+  if (data.length > MAX_PATHS_BYTES) {
+    throw new Error(`the merge's conflicting paths take more than ${MAX_PATHS_BYTES >> 10} KiB, more than an agent can resolve`);
+  }
+  const fields = data.toString("utf8").split("\0");
+  const [tree, ...paths] = fields.slice(0, -1);
+  if (fields.at(-1) !== "" || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(tree ?? "") || paths.includes("")) {
+    throw new Error("the merge's list of conflicts isn't git merge-tree --name-only -z output");
+  }
+  if (paths.length > MAX_PATHS) {
+    throw new Error(`more than ${MAX_PATHS} paths conflict, more than an agent can resolve`);
+  }
+  return paths;
+}

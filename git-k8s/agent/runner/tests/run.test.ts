@@ -10,7 +10,7 @@ import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
 import { MAX_PATHS } from "../src/touched.js";
-import { preparePod } from "./pod.js";
+import { prepareMerge, preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 

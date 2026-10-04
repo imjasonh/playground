@@ -602,6 +602,19 @@ controller that keeps a run on the commits that it started with, as
 `agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
 a result can change, so a controller can skip a run whose result can't fit.
 
+For an agent that resolves a merge, set `Checkout.Merge` to the branch to
+merge into the head, and `Checkout.Base` to their merge base. The `prepare`
+container then writes the files of the merge that `git merge-tree
+--write-tree` makes with `merge.conflictStyle=diff3`, instead of the
+head's. Each conflict in a file holds the head's lines, the merge base's
+lines, and the merged branch's lines between conflict markers. A file that
+one side deleted and the other changed holds the changed version. The
+prompt lists the paths that conflict and the merged branch's commits. With
+`Task.Edit`, the result's `Files` change the merge's files, and the
+controller builds the merge commit from them. If either branch moved before
+the Pod fetched it, the agent doesn't run, and the run waits for a `Job`
+with the new commits, which starts a new run.
+
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and
 none of them runs a command. A shell would run the branch's code, such as
