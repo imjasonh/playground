@@ -910,6 +910,48 @@ func TestSyncRemovesStaleLocks(t *testing.T) {
 	}
 }
 
+// A lock is stale once it's older than the longest that a git command can
+// take, 5 minutes 10 seconds by default, plus a minute in case the volume's
+// clock differs from the node's. Sync keeps a newer lock, which a running
+// git may hold, wherever it is in the copy.
+func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+
+	const stale = 6*time.Minute + 10*time.Second
+	locks := map[string]time.Duration{
+		"packed-refs.lock":        stale + time.Second,
+		"HEAD.lock":               stale - time.Second,
+		"refs/heads/feature.lock": stale + time.Second,
+		"refs/heads/fix.lock":     stale - time.Second,
+		"objects/info/commit-graphs/commit-graph-chain.lock": stale + time.Second,
+		"objects/maintenance.lock":                           stale - time.Second,
+	}
+	now := time.Now()
+	for path, age := range locks {
+		path = filepath.Join(w.copyDir(), path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, now.Add(-age), now.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w.sync(SyncOptions{})
+	for path, age := range locks {
+		_, err := os.Stat(filepath.Join(w.copyDir(), path))
+		if removed, want := errors.Is(err, os.ErrNotExist), age > stale; removed != want {
+			t.Errorf("Sync removed %s, %v old: %t, want %t", path, age, removed, want)
+		}
+	}
+}
+
 // Fetches and pushes don't start git's maintenance, which would run in the
 // background. Sync runs it in the foreground, even after a killed
 // maintenance left its lock, which makes maintenance skip the copy without
