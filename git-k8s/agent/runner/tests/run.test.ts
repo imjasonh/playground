@@ -4,7 +4,7 @@ import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFile
 import { join } from "node:path";
 import { test } from "node:test";
 import { fakeBackend } from "../src/backends/fake.js";
-import type { AgentRequest, Backend } from "../src/backends/types.js";
+import { AgentError, type AgentRequest, type Backend } from "../src/backends/types.js";
 import { MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
@@ -217,6 +217,36 @@ test("keeps the API key out of error messages", async (t) => {
   assert.equal(readFileSync(task.terminationLog, "utf8"), "can't use [REDACTED]");
 });
 
+test("reports what a run that failed after the agent started used", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const broken: Backend = async (request) => {
+    throw new AgentError(`the run broke after using ${request.apiKey}`, {
+      model: request.model,
+      usage: { inputTokens: 5, outputTokens: 2, cacheReadTokens: 1, cacheWriteTokens: 0 },
+      costCents: 1.5,
+      chargedCents: 0,
+    });
+  };
+  const task = preparePod({}, { "a.txt": "a\n" }, { edit: true });
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: broken } }), 0);
+
+  const body = readFileSync(task.resultFile);
+  const { durationMs, ...result } = JSON.parse(body.toString()) as Result;
+  assert.ok(durationMs >= 0);
+  assert.deepEqual(result, {
+    verdict: "fail",
+    summary: "",
+    reasoning: "",
+    error: "the run broke after using [REDACTED]",
+    model: "composer-2.5",
+    usage: { inputTokens: 5, outputTokens: 2, cacheReadTokens: 1, cacheWriteTokens: 0 },
+    costCents: 1.5,
+    chargedCents: 0,
+    files: [],
+  });
+  assert.equal(readFileSync(task.terminationLog, "utf8"), `sha256:${createHash("sha256").update(body).digest("hex")}`);
+});
+
 test("keeps the API key out of the answer", async () => {
   const leaky: Backend = async (request) => ({
     text: JSON.stringify({ verdict: "pass", summary: `key ${request.apiKey}`, reasoning: request.apiKey }),
@@ -241,21 +271,29 @@ test("refuses files that hold the API key", async (t) => {
     };
   };
   const task = preparePod({}, { "a.txt": "a\n" }, { edit: true });
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 1);
-  assert.equal(readFileSync(task.terminationLog, "utf8"), "the agent wrote the Cursor API key to a.txt");
-  assert.equal(existsSync(task.resultFile), false);
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 0);
+  assert.ok(!readFileSync(task.resultFile, "utf8").includes("test-key-123"));
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.equal(result.error, "the agent wrote the Cursor API key to a.txt");
+  assert.deepEqual(result.files, []);
+  assert.deepEqual(result.usage, { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 });
 });
 
-test("fails an answer without a verdict", async (t) => {
+test("fails an answer without a verdict, and reports what it used", async (t) => {
   t.mock.method(console, "error", () => undefined);
   const vague: Backend = async (request) => ({
     text: "Looks fine to me.",
     model: request.model,
     usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    costCents: 0.25,
   });
   const task = preparePod({}, { "a.txt": "a\n" });
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: vague } }), 1);
-  assert.match(readFileSync(task.terminationLog, "utf8"), /doesn't end with a JSON verdict: "Looks fine to me\."/);
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: vague } }), 0);
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.match(result.error ?? "", /^the agent's answer doesn't end with a JSON verdict: "Looks fine to me\."$/);
+  assert.equal(result.costCents, 0.25);
 });
 
 test("replaces a link at the result path instead of following it", async () => {

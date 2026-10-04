@@ -143,14 +143,15 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	if prev != nil && prev.State == gitk8s.Running && prev.Commit == head && prev.Outputs["pod"] != "" {
 		st.Pod = prev.Outputs["pod"]
 		st.Attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
+		st.UID = prev.Outputs["podUID"]
 		x.job.Checkout.Base = prev.Outputs["base"]
 	}
 	// A Pod's name covers its spec, so a changed flag or policy starts a
 	// new run instead of changing a Pod that can't change.
 	if st.Pod == "" || r.jobPod(x.job, max(st.Attempt, 1)).Name != st.Pod {
 		*st = JobState{Runs: st.Runs}
-		if limit := in.Spec.Merge.MaxRuns(); st.Runs >= limit {
-			return x.running("not starting the agent: the branch used all %d agent runs that maxAgentRuns allows", limit), nil
+		if why := x.usedAll(); why != "" {
+			return x.running("not starting the agent: %s", why), nil
 		}
 		base, err := in.MergeBase(ctx)
 		if err != nil {
@@ -164,12 +165,16 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		}
 		x.job.Checkout.Base = base
 	}
-	s := r.runJob(ctx, x.job, st)
+	s := x.startOrFollow(ctx)
 	switch {
 	case !s.Done:
 		return x.running("%s", s.Message), nil
 	case s.Result == nil:
-		return x.done(ctx, checks.Fail("%s", s.Message)), nil
+		v := checks.Fail("%s", s.Message)
+		if s.Failed != nil {
+			v.Outputs = usageOutputs(s.Failed)
+		}
+		return x.done(ctx, v), nil
 	}
 	return x.verdict(ctx, s.Result)
 }
@@ -217,6 +222,9 @@ func (x *run) outputs() map[string]string {
 	if x.st.Pod != "" {
 		o["pod"] = x.st.Pod
 		o["attempt"] = strconv.Itoa(x.st.Attempt)
+		if x.st.UID != "" {
+			o["podUID"] = x.st.UID
+		}
 		if base := x.job.Checkout.Base; base != "" {
 			o["base"] = base
 		}
@@ -276,8 +284,14 @@ func (x *run) verdict(ctx context.Context, res *Result) (checks.Verdict, *Result
 		}
 		v.Fix = fix
 	}
-	v.Outputs = map[string]string{
-		"summary":          res.Summary,
+	v.Outputs = usageOutputs(res)
+	v.Outputs["summary"] = res.Summary
+	return x.done(ctx, v), res
+}
+
+// usageOutputs say what a run used.
+func usageOutputs(res *Result) map[string]string {
+	o := map[string]string{
 		"model":            res.Model,
 		"inputTokens":      strconv.FormatInt(res.Usage.InputTokens, 10),
 		"outputTokens":     strconv.FormatInt(res.Usage.OutputTokens, 10),
@@ -285,12 +299,12 @@ func (x *run) verdict(ctx context.Context, res *Result) (checks.Verdict, *Result
 		"cacheWriteTokens": strconv.FormatInt(res.Usage.CacheWriteTokens, 10),
 	}
 	if res.CostCents != nil {
-		v.Outputs["costCents"] = strconv.FormatFloat(*res.CostCents, 'f', -1, 64)
+		o["costCents"] = strconv.FormatFloat(*res.CostCents, 'f', -1, 64)
 	}
 	if res.ChargedCents != nil {
-		v.Outputs["chargedCents"] = strconv.FormatFloat(*res.ChargedCents, 'f', -1, 64)
+		o["chargedCents"] = strconv.FormatFloat(*res.ChargedCents, 'f', -1, 64)
 	}
-	return x.done(ctx, v), res
+	return o
 }
 
 // commit makes a commit on the branch's head with the agent's changes, or

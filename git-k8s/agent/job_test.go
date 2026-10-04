@@ -103,6 +103,63 @@ func TestRunsAJob(t *testing.T) {
 	}
 }
 
+// reviewJob is a job that reviews the fixture's branch.
+func (f *fixture) reviewJob() *Job {
+	repo, _ := f.srv.Repository("app")
+	return &Job{
+		Name: "app-c-x", Namespace: "default", URL: repo.Spec.URL,
+		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: f.base},
+		Task:     Task{Instructions: "Review the change."},
+	}
+}
+
+// startJob runs job, expects it to start a Pod, and returns the Pod as the
+// API server would hold it.
+func (f *fixture) startJob(job *Job, st *JobState) *Pod {
+	f.t.Helper()
+	_, rec := f.runJob(job, st)
+	pods := kube.Owned[Pod](rec)
+	if len(pods) != 1 {
+		f.t.Fatalf("owned Pods = %d, want 1", len(pods))
+	}
+	p := pods[0]
+	p.Namespace = "default"
+	p.UID = "uid-" + p.Name
+	return p
+}
+
+func TestCountsAJobsPodThatsCreatedAgain(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	job.MaxRuns = 2
+	st := &JobState{}
+	p := f.startJob(job, st)
+	for i, uid := range []string{"uid-1", "uid-2"} {
+		p.UID = uid
+		s, _ := f.runJob(job, st, p)
+		if want := (JobState{Runs: i + 1, Pod: p.Name, Attempt: 1, UID: uid}); s.Done || *st != want {
+			t.Fatalf("RunJob = %+v with state %+v, want %+v", s, st, want)
+		}
+	}
+	p.UID = "uid-3"
+	if s, _ := f.runJob(job, st, p); !s.Done || s.Result != nil || s.Message != "Pod "+p.Name+" was deleted and created again, but the job used all 2 of its runs" {
+		t.Errorf("RunJob = %+v, want the run to end at the job's limit", s)
+	}
+}
+
+func TestReportsWhatAFailedJobUsed(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	body, _ := json.Marshal(Result{Verdict: Fail, Model: "fake:composer-2.5", Usage: Usage{InputTokens: 9}, Error: "the agent's run ended with status error: rate limited"})
+	s, rec := f.runJob(job, st, finished(p, f.serve(body, p.UID)))
+	if !s.Done || s.Result != nil || s.Failed == nil || s.Failed.Usage.InputTokens != 9 || rec.RequeueAfter() != time.Second ||
+		s.Message != "the agent failed in Pod "+p.Name+": the agent's run ended with status error: rate limited" {
+		t.Errorf("RunJob = %+v, want a failed run with what the agent used", s)
+	}
+}
+
 func TestValidatesJobs(t *testing.T) {
 	sha := strings.Repeat("a", 40)
 	job := func(change func(*Job)) *Job {

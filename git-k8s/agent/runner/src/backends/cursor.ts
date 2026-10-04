@@ -1,7 +1,8 @@
 import type { AgentOptions, AgentUsage, RunResult, SDKMessage } from "@cursor/sdk";
 import type { Usage } from "../result.js";
+import { errorMessage } from "../text.js";
 import { toolsFor } from "../tools.js";
-import type { AgentResponse, Backend } from "./types.js";
+import { AgentError, type Backend, type Spent } from "./types.js";
 
 const USAGE_ATTEMPTS = 4;
 const USAGE_DELAY_MS = 1500;
@@ -58,45 +59,44 @@ export function newCursorBackend(options: CursorBackendOptions = {}): Backend {
         void run.cancel().catch(() => undefined);
       }, request.timeoutMs);
       const texts: string[] = [];
+      let result: RunResult | undefined;
+      let failure: Error | undefined;
       try {
-        for await (const event of run.stream()) {
-          if (event.type === "assistant") {
-            for (const block of event.message.content) {
-              if (block.type === "text") {
-                texts.push(block.text);
+        try {
+          for await (const event of run.stream()) {
+            if (event.type === "assistant") {
+              for (const block of event.message.content) {
+                if (block.type === "text") {
+                  texts.push(block.text);
+                }
               }
+            } else if (event.type === "tool_call" && event.status !== "running") {
+              request.log(`tool ${event.name}: ${event.status}`);
             }
-          } else if (event.type === "tool_call" && event.status !== "running") {
-            request.log(`tool ${event.name}: ${event.status}`);
           }
+        } finally {
+          clearTimeout(timer);
         }
-      } finally {
-        clearTimeout(timer);
-      }
-      const result = await run.wait();
-      if (timedOut) {
-        throw new Error(`the agent didn't finish in ${Math.round(request.timeoutMs / 1000)}s`);
-      }
-      if (result.status !== "finished") {
-        throw new Error(`the agent's run ended with status ${result.status}: ${result.error?.message ?? "no message"}`);
+        result = await run.wait();
+        if (timedOut) {
+          failure = new Error(`the agent didn't finish in ${Math.round(request.timeoutMs / 1000)}s`);
+        } else if (result.status !== "finished") {
+          failure = new Error(`the agent's run ended with status ${result.status}: ${result.error?.message ?? "no message"}`);
+        }
+      } catch (err) {
+        failure = err instanceof Error ? err : new Error(String(err));
       }
       const billed = await readUsage(() => agent.getUsage(), usageDelayMs);
-      const usage = billed?.usage && billed.usage.totalTokens > 0 ? billed.usage : result.usage;
-      const response: AgentResponse = {
-        text: texts.join("\n") || result.result || "",
-        model: request.model,
-        usage: tokens(usage),
-      };
-      const raw = cents(billed?.cost?.rawCostCents);
-      const charged = cents(billed?.cost?.chargedCents);
-      if (raw !== undefined) {
-        response.costCents = raw;
+      const usage = billed?.usage && billed.usage.totalTokens > 0 ? billed.usage : result?.usage;
+      const spent = used(request.model, usage, billed?.cost);
+      if (result && !failure) {
+        request.log(`the agent finished in ${result.durationMs ?? 0}ms with ${usage?.totalTokens ?? 0} tokens`);
+        return { text: texts.join("\n") || result.result || "", ...spent };
       }
-      if (charged !== undefined) {
-        response.chargedCents = charged;
+      if (!billed && !usage) {
+        throw failure;
       }
-      request.log(`the agent finished in ${result.durationMs ?? 0}ms with ${usage?.totalTokens ?? 0} tokens`);
-      return response;
+      throw new AgentError(errorMessage(failure), spent);
     } finally {
       await agent[Symbol.asyncDispose]().catch(() => undefined);
     }
@@ -123,6 +123,20 @@ async function readUsage(read: () => Promise<Billed>, delayMs: number): Promise<
     latest = await read().catch(() => latest);
   }
   return latest;
+}
+
+/** What a run used, with the costs that the SDK reported as valid numbers. */
+function used(model: string, usage: Partial<Usage> | undefined, cost: Billed["cost"]): Spent {
+  const spent: Spent = { model, usage: tokens(usage) };
+  const raw = cents(cost?.rawCostCents);
+  const charged = cents(cost?.chargedCents);
+  if (raw !== undefined) {
+    spent.costCents = raw;
+  }
+  if (charged !== undefined) {
+    spent.chargedCents = charged;
+  }
+  return spent;
 }
 
 function tokens(usage: Partial<Usage> | undefined): Usage {
