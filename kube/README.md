@@ -663,6 +663,11 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   - The framework makes another write to the same object at the same time.
   - The write uses one version of a type, and the cache reads another.
   - The cache's label selector uses `<` or `>`.
+- A cache with a label selector hides an object that the framework deleted,
+  or changed to stop matching, until the watch removes the object. If other
+  clients' earlier changes take the object out of the selector and back in,
+  the cache returns the older version that they put back until the watch
+  delivers the framework's write.
 
 ## Layout
 

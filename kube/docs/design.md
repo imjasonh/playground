@@ -567,7 +567,8 @@ resource version is among them when the write ends, the cache already holds
 the write or a later version. Otherwise the event is still to come, and
 reads return the written object until it arrives. Older events that arrive
 first update the watched object underneath, so reads never return a version
-older than the write.
+older than the write, except when the write hides the object from a cache
+with a label selector, as described later.
 
 When the order of a write and the cache's contents is unknown, the cache
 waits for the watch. Two writes by the manager to one object at the same
@@ -601,8 +602,15 @@ or one with a partial type returns what its watch would deliver. If the
 written object doesn't match a cache's label selector, the cache hides the
 object until its watch removes it. A watch with a label selector reports an
 object that stops matching as a `DELETED` event with the write's resource
-version. kube's selector parser doesn't handle the `<` and `>` operators, so
-a cache whose selector uses them doesn't return writes early.
+version. But if another client's change took the object out of the selector
+first, the write causes no event, so any removal of the object ends the
+hiding. Then, if other clients' earlier changes take the object out and put
+it back, the cache returns the version that they put back, which is older
+than the write, until the write's event arrives. A deleted object can
+reappear the same way. Without ordered resource versions, the cache can't
+tell that those changes come before the write. kube's selector parser
+doesn't handle the `<` and `>` operators, so a cache whose selector uses
+them doesn't return writes early.
 
 Only the caches of the process that wrote return a write before its event.
 Every replica caches every object, but a replica reads another replica's
@@ -1034,9 +1042,11 @@ offers:
   out other managers' fields is also written once, because the record of the
   last status write is in memory.
 - Only the process that wrote reads its writes before the watch delivers
-  them, and a write that overlaps a list doesn't show early. With ordered
-  resource versions, the cache could show the writes that are newer than the
-  list, but extension API servers might not order them.
+  them, a write that overlaps a list doesn't show early, and a cache with a
+  label selector can return an older version of an object that a write hid.
+  With ordered resource versions, the cache could show the writes that are
+  newer than the list and ignore the older versions, but extension API
+  servers might not order them.
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.
