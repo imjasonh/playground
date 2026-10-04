@@ -277,7 +277,9 @@ The mirror compares each side's head with the head where they last synced,
 removed the commits that `base` has and its head doesn't. A side that
 removed commits rewound, for example with a force push, and deleting a
 branch removes every commit. The mirror moves one side to the other side's
-head only if that head keeps every change that the moving side made:
+head only if that head keeps every change that the moving side made. A head
+keeps a side's changes when it has none of the commits the side removed, a
+replay of each commit it added, and every change it made since `base`:
 
 - The head has none of the commits that the moving side removed.
 - The head has each commit that the moving side added. If the head doesn't
@@ -288,17 +290,28 @@ head only if that head keeps every change that the moving side made:
   replays at most one commit, and a commit that changes no file has no
   replay.
 - If the moving side removed commits, or the head doesn't contain the
-  moving side's head, the head's files have the moving side's changes:
-  merging the moving side's head into the head, with `base` as the merge
-  base, has no conflicts and changes no file. If the head contains the
-  moving side's head, merging the newest commit that the moving side's head
-  and `base` both contain also counts.
+  moving side's head, merging the moving side's head into the head, with
+  `base` as the merge base, is clean and changes nothing. The merge ignores
+  `.gitattributes` files, so that an attribute such as `merge=union` can't
+  make it clean.
 
 So a branch diverges if one side rewound and the other side added commits,
 even if the other side's head contains the rewound side's head, because
 moving the rewound side to it brings back the commits that it removed. If
 neither side rewound, only a head that contains both heads keeps both
 sides' changes.
+
+A head built on a side that rewound to a new commit keeps that side's
+changes even where it resolved conflicts. The side's head is then a commit
+that `base` doesn't have, and each commit that the head has and the side's
+head doesn't has the side's head or another such commit as a parent. In
+that case, merging the commit where the side's head and `base` meet, their
+only merge base, into the head, with `base` as the merge base, also counts
+if it's clean and changes nothing, so that the head can't bring back what
+the side removed. A merge of the side's head with another commit is built
+on the side's head only if that commit is too. So a merge with a commit that
+overrides the side's change, such as one that `git merge -X theirs` makes,
+doesn't keep the side's changes, and the branch diverges.
 
 Because a replay can match the same change on another line, the merge is
 what stops a commit from counting as the replay of a different change, and
