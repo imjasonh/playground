@@ -506,9 +506,10 @@ type modFile struct {
 // in directories whose names hold characters other than letters, digits,
 // dots, hyphens, and underscores, and in modules that vendor their
 // dependencies, which go get doesn't update. It also skips files whose go
-// line is older than 1.17 or missing, which the go command reads as 1.16:
-// such a file lists only the requirements that other requirements don't
-// imply, so raised can't see every version that go get raises.
+// line is older than 1.17: such a file lists only the requirements that
+// other requirements don't imply, so raised can't see every version that go
+// get raises. go get adds a go line to a file that has none, and the file
+// then lists every module that the build uses.
 func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.Logger) (map[string]*modFile, error) {
 	entries, err := repo.LsTree(ctx, commit)
 	if err != nil {
@@ -538,7 +539,7 @@ func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.L
 			log.Warn("skipping a go.mod file that doesn't parse", "path", e.Path, "error", err)
 			continue
 		}
-		if f.Go == nil || goversion.Compare("go"+f.Go.Version, "go1.17") < 0 {
+		if f.Go != nil && goversion.Compare("go"+f.Go.Version, "go1.17") < 0 {
 			log.Warn("skipping a go.mod file whose go line is older than 1.17, so it doesn't list every module that the build uses", "path", e.Path)
 			continue
 		}

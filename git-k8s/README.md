@@ -683,12 +683,14 @@ The controller ignores `go.work` files. It also skips `go.mod` files in
 `testdata` and `vendor` directories, in modules that vendor their
 dependencies, and in directories whose names hold characters other than
 letters, digits, dots, hyphens, and underscores. It skips a `go.mod` file
-whose `go` line is older than 1.17, or that has none, which the go command
-reads as 1.16, and logs a warning. Such a file lists only the requirements
-that other requirements don't imply, so `go get` can raise a module that the
-build uses without the file showing it, and neither the minimum age nor
-`check-risk` would see the new version. To have the controller update the
-module, raise its `go` line to 1.17 or later and run `go mod tidy`.
+whose `go` line is older than 1.17, and logs a warning. Such a file lists
+only the requirements that other requirements don't imply, so `go get` can
+raise a module that the build uses without the file showing it, and neither
+the minimum age nor `check-risk` would see the new version. To have the
+controller update the module, raise its `go` line to 1.17 or later and run
+`go mod tidy`. The controller updates a `go.mod` file that has no `go` line:
+`go get` adds one, the file then lists every module that the build uses, and
+`check-risk` rates the change high.
 
 ### Branches
 

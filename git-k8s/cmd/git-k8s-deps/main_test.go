@@ -1758,13 +1758,8 @@ exclude example.com/other v1.1.0
 	f.work.Write("vendored/vendor/modules.txt", "# example.com/greet v1.0.0\n")
 	f.work.Write("broken/go.mod", "module example.com/app/broken\n\nrequire (\n")
 	f.work.Write("nomodule/go.mod", "go 1.24\n")
-	unpruned := map[string]string{
-		"go116/go.mod": "module example.com/app/go116\n\ngo 1.16\n\nrequire example.com/greet v1.0.0\n",
-		"nogo/go.mod":  "module example.com/app/nogo\n\nrequire example.com/greet v1.0.0\n",
-	}
-	for p, content := range unpruned {
-		f.work.Write(p, content)
-	}
+	f.work.Write("go116/go.mod", "module example.com/app/go116\n\ngo 1.16\n\nrequire example.com/greet v1.0.0\n")
+	f.work.Write("nogo/go.mod", "module example.com/app/nogo\n\nrequire example.com/greet v1.0.0\n")
 	logs := captureLogs(t)
 	f.b.Spec.Head = f.work.Commit("modules")
 	f.work.Push("main")
@@ -1775,7 +1770,7 @@ exclude example.com/other v1.1.0
 	f.proxy.publish("example.com/replaced", "v1.1.0", longAgo, "")
 
 	p := f.start()
-	want := "example.com/greet v1.1.0 . tools\nexample.com/other v1.0.1 .\n"
+	want := "example.com/greet v1.1.0 . nogo tools\nexample.com/other v1.0.1 .\n"
 	if got := env(p.Spec.InitContainers[1], "UPDATES"); got != want {
 		t.Errorf("UPDATES = %q, want %q", got, want)
 	}
@@ -1784,18 +1779,17 @@ exclude example.com/other v1.1.0
 			t.Errorf("the controller read the versions of %s, want it skipped", m)
 		}
 	}
-	for p := range unpruned {
-		if !slices.ContainsFunc(strings.Split(logs.String(), "\n"), func(l string) bool {
-			return strings.Contains(l, "whose go line is older than 1.17") && strings.HasSuffix(l, " path="+p)
-		}) {
-			t.Errorf("the controller didn't warn that it skips %s; logs:\n%s", p, logs)
-		}
+	if !slices.ContainsFunc(strings.Split(logs.String(), "\n"), func(l string) bool {
+		return strings.Contains(l, "whose go line is older than 1.17") && strings.HasSuffix(l, " path=go116/go.mod")
+	}) || strings.Contains(logs.String(), "path=nogo/go.mod") {
+		t.Errorf("the controller didn't warn that it skips go116/go.mod, or warned about nogo/go.mod, which has no go line; logs:\n%s", logs)
 	}
 
-	t.Log("The branch updates both files in one commit; old/go.mod already requires v1.1.0.")
+	t.Log("The branch updates the three files in one commit; old/go.mod already requires v1.1.0, and go get adds a go line to nogo/go.mod.")
 	toolsMod := "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/greet v1.1.0\n"
+	nogoMod := "module example.com/app/nogo\n\ngo 1.26.0\n\nrequire example.com/greet v1.1.0\n"
 	f.finish(p, result(
-		withFiles("v1.1.0", "go.mod", strings.Replace(rootMod, "greet v1.0.0", "greet v1.1.0", 1), "tools/go.mod", toolsMod),
+		withFiles("v1.1.0", "go.mod", strings.Replace(rootMod, "greet v1.0.0", "greet v1.1.0", 1), "nogo/go.mod", nogoMod, "tools/go.mod", toolsMod),
 		updateJSON{Module: "example.com/other", Version: "v1.0.1", Output: []byte("no")},
 	))
 	heads := f.srv.Heads(t, "app")
@@ -1806,6 +1800,7 @@ exclude example.com/other v1.1.0
 	f.work.Fetch(greetBranch)
 	msg := "Update example.com/greet to v1.1.0\n\n" +
 		"Update example.com/greet from v1.0.0 to v1.1.0 in go.mod.\n" +
+		"Update example.com/greet from v1.0.0 to v1.1.0 in nogo/go.mod.\n" +
 		"Update example.com/greet from v1.0.0 to v1.1.0 in tools/go.mod.\n\n" +
 		"Git-K8s-Deps: go example.com/greet v1.1.0"
 	if got := f.work.Git("log", "-1", "--format=%B", head); got != msg {
@@ -1813,6 +1808,9 @@ exclude example.com/other v1.1.0
 	}
 	if got := f.work.Show(head, "tools/go.mod"); got != strings.TrimSpace(toolsMod) {
 		t.Errorf("tools/go.mod = %q, want greet at v1.1.0", got)
+	}
+	if got := f.work.Show(head, "nogo/go.mod"); got != strings.TrimSpace(nogoMod) {
+		t.Errorf("nogo/go.mod = %q, want greet at v1.1.0", got)
 	}
 }
 
