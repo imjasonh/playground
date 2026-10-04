@@ -53,7 +53,7 @@ type Event struct {
 // Record an event when something happens, such as a push to a system outside
 // Kubernetes, rather than on every reconcile. Once a call such as Get has
 // failed the reconcile, Eventf does nothing, because what the reconcile saw
-// is incomplete.
+// is incomplete. In a webhook, Eventf fails the request, as Own does.
 func Eventf(ctx context.Context, eventType, reason, format string, args ...any) {
 	s := scopeFrom(ctx, "Eventf")
 	if s.readOnly("Eventf") || s.err != nil {

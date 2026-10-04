@@ -221,7 +221,7 @@ Events are only about the reconciled object, which is the object that people
 describe to see what the controller did. To report something about an owned
 object, name it in the note. Once a call such as `Get` has failed the
 reconcile, `Eventf` does nothing, because what the reconcile saw is
-incomplete. Webhooks can't record events.
+incomplete. In a webhook, `Eventf` fails the request, as `Own` does.
 
 ## Types
 

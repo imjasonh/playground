@@ -530,13 +530,13 @@ the owner can then be deleted without the controller running.
 
 ### Events
 
-`kube.Eventf` doesn't write either. It adds an event to the scope, and after
-`Reconcile` or `Finalize` returns, the framework passes the scope's events to
-the manager's event writer. Unlike intents, the events go to the writer when
-the reconcile fails too, so a Warning can explain the failure. Once a call
-such as `Get` has failed the reconcile, `Eventf` adds nothing, because the
-reconcile saw an incomplete state. In a webhook, `Eventf` fails the request,
-as `Own` does, because a webhook can only read.
+Like `Own`, `Apply`, and `Delete`, `kube.Eventf` doesn't write. It adds an event
+to the scope, and after `Reconcile` or `Finalize` returns, the framework passes
+the scope's events to the manager's event writer. Unlike intents, the events go
+to the writer when the reconcile fails too, so a Warning can explain the
+failure. Once a call such as `Get` has failed the reconcile, `Eventf` adds
+nothing, because the reconcile saw an incomplete state. In a webhook, `Eventf`
+fails the request, as `Own` does, because a webhook can only read.
 
 `Eventf` checks an event as the API server would, so that `kube.Fake` records
 only events that a cluster would accept. It drops an event whose type isn't
@@ -582,10 +582,10 @@ at most 6 minutes behind.
 A 404 on a patch means that someone deleted the Event, so the writer creates
 it again. A 409 on a create means that an earlier create succeeded although
 its response was lost, so the writer goes on as if this one had. The writer
-logs and counts other errors. After a 429 or a 5xx, it tries again at its next
-tick. After any other error, such as a 403 when RBAC doesn't allow events in
-the namespace, it stops writing the series, because the same write would fail
-again.
+logs and counts other errors. After a 429, a 5xx, or a network error, it tries
+again at its next tick. After any other error from the API server, such as a 403
+when RBAC doesn't allow events in the namespace, it stops writing the series,
+because the same write would fail again.
 
 The Event goes in the object's namespace. The API server accepts an Event
 about a cluster-scoped object only in `default` or `kube-system`, so the
