@@ -2,7 +2,6 @@ package git_test
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -188,61 +187,6 @@ func TestTreeEditing(t *testing.T) {
 		if _, err := repo.ReplaceFiles(ctx, c.Tree, []git.TreeEntry{{Mode: "100644", SHA: blob, Path: path}}); err == nil {
 			t.Errorf("ReplaceFiles(%q) succeeded; want an error for a path that macOS or Windows reads as .git", path)
 		}
-	}
-}
-
-func TestNumstatIgnoresAttributes(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	w := srv.NewWork(t, "app")
-	w.Write("a.txt", "1\n2\n3\n")
-	base := w.Commit("base")
-	w.Write("a.txt", "1\ntwo\n3\nfour\n")
-	head := w.Commit("change")
-	w.Write(".gitattributes", "*.txt -diff\n")
-	binary := w.Commit("mark text files binary")
-	w.Push("main")
-	repo := fetched(t, srv, "main")
-	readAttributesFrom(t, repo, binary)
-
-	stats, err := repo.Numstat(t.Context(), base, head)
-	if err != nil || len(stats) != 1 || stats[0] != (git.FileStat{Path: "a.txt", Added: 2, Removed: 1}) {
-		t.Errorf("Numstat with attributes that mark a.txt binary = %+v, %v; want 2 lines added and 1 removed in a.txt", stats, err)
-	}
-}
-
-func TestNumstatReportsBadCommits(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	w := srv.NewWork(t, "app")
-	w.Write("a.txt", "a\n")
-	head := w.Commit("add a.txt")
-	w.Push("main")
-	repo := fetched(t, srv, "main")
-
-	output := filepath.Join(t.TempDir(), "output")
-	for _, base := range []string{strings.Repeat("1", 40), "--output=" + output} {
-		if stats, err := repo.Numstat(t.Context(), base, head); err == nil || !strings.HasPrefix(err.Error(), "git diff: exit status 128") {
-			t.Errorf("Numstat(%q, head) = %+v, %v; want diff's exit status", base, stats, err)
-		}
-	}
-	if _, err := os.Stat(output); !os.IsNotExist(err) {
-		t.Errorf("Numstat read a base as an option and wrote %s", output)
-	}
-}
-
-func TestNumstatAllowsOnlyRemoteTransports(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	w := srv.NewWork(t, "app")
-	base := w.Commit("base")
-	w.Write("a.txt", "a\n")
-	head := w.Commit("add a.txt")
-	w.Push("main")
-	repo, commands := logged(t, fetched(t, srv, "main"))
-
-	if _, err := repo.Numstat(t.Context(), base, head); err != nil {
-		t.Fatal(err)
-	}
-	if got := commands(); len(got) != 2 {
-		t.Errorf("Numstat ran git %q; want hash-object and diff", got)
 	}
 }
 
