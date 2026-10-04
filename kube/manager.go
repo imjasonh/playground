@@ -462,8 +462,8 @@ func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
 }
 
 // runCRDCall runs call, the entry for ti in m.crdCalls. If the call fails or
-// panics, runCRDCall removes the entry before it closes call.done, so that
-// the waiters that try again start one new call.
+// panics, runCRDCall removes the entry before it closes call.done, so that a
+// waiter that tries again never finds the finished call.
 func (m *Manager) runCRDCall(ctx context.Context, ti *typeInfo, call *crdCall) error {
 	finished := false
 	defer func() {

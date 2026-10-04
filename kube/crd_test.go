@@ -460,8 +460,8 @@ func TestEnsureCRDAfterPanic(t *testing.T) {
 	a.script(crdWith(true, map[string]bool{"v2": true}))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	if err := m.ensureCRD(ctx, gizmos); err != nil {
-		t.Errorf("after a panic, ensureCRD = %v", err)
+	if err := m.ensureCRD(ctx, gizmos); err != nil || len(a.got()) != 1 {
+		t.Errorf("after a panic, ensureCRD = %v after %d requests, want 1", err, len(a.got()))
 	}
 }
 
