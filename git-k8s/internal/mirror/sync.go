@@ -211,112 +211,13 @@ func decide(ctx context.Context, r *git.Repo, m, d, s string) (action, error) {
 	case m == s:
 		return take, nil
 	}
-	if ok, err := keeps(ctx, r, m, d, s); err != nil || ok {
+	if ok, err := r.Keeps(ctx, m, d, s); err != nil || ok {
 		return push, err
 	}
-	if ok, err := keeps(ctx, r, d, m, s); err != nil || ok {
+	if ok, err := r.Keeps(ctx, d, m, s); err != nil || ok {
 		return take, err
 	}
 	return diverged, nil
-}
-
-// keeps reports whether moving one side of a branch from other to head
-// keeps every change that side made since the sides agreed at s. The side
-// removed the commits in s but not in other, and added the commits in
-// other but not in s. head keeps them if:
-//
-//   - head has none of the removed commits;
-//   - head has each added commit, or, if head doesn't contain s, a replay
-//     of it, as Repo.Replays says; and
-//   - if the side removed commits, or head doesn't contain other, head's
-//     files have the side's changes, as keepsChanges and keepsRemoval say.
-//
-// The last check is what stops a rebased copy of a removed commit, which
-// shares no commit with s, from bringing the removed change back. Replays
-// alone aren't enough either, because two commits that make the same
-// change on different lines have the same patch ID.
-//
-// head, other, and s differ, and "" means that the branch doesn't exist,
-// or never agreed.
-func keeps(ctx context.Context, r *git.Repo, head, other, s string) (bool, error) {
-	switch {
-	case s == "":
-		return r.IsAncestor(ctx, other, head)
-	case head == "":
-		return r.IsAncestor(ctx, other, s)
-	case other == "":
-		bases, err := r.MergeBases(ctx, head, s)
-		return len(bases) == 0, err
-	}
-	contains, err := r.IsAncestor(ctx, other, head)
-	if err != nil {
-		return false, err
-	}
-	if forward, err := r.IsAncestor(ctx, s, other); err != nil {
-		return false, err
-	} else if forward {
-		if contains {
-			return true, nil
-		}
-		// When both sides only added commits, replays would rewrite the
-		// history of a side that didn't rewind.
-		if ok, err := r.IsAncestor(ctx, s, head); err != nil || ok {
-			return false, err
-		}
-		return keepsChanges(ctx, r, head, other, s)
-	}
-	// The commits that head and s share are their merge bases and the merge
-	// bases' ancestors, so head has none of the commits that the side
-	// removed if other contains each merge base.
-	bases, err := r.MergeBases(ctx, head, s)
-	if err != nil {
-		return false, err
-	}
-	for _, b := range bases {
-		if ok, err := r.IsAncestor(ctx, b, other); err != nil || !ok {
-			return false, err
-		}
-	}
-	if contains {
-		return keepsRemoval(ctx, r, head, other, s)
-	}
-	return keepsChanges(ctx, r, head, other, s)
-}
-
-// keepsChanges reports whether head's files have every change from s's
-// files to other's, and head has a replay of each commit that other added
-// and head doesn't have. The file check runs first because it's cheap:
-// Replays hashes commits that head has and other doesn't, which after a
-// rebase can be all of main's new commits.
-func keepsChanges(ctx context.Context, r *git.Repo, head, other, s string) (bool, error) {
-	if ok, err := r.KeepsChanges(ctx, head, other, s); err != nil || !ok {
-		return false, err
-	}
-	return r.Replays(ctx, head, other, s)
-}
-
-// keepsRemoval reports whether head, which contains other, keeps the
-// changes of the commits that other's side removed since s out of its
-// files. head has each commit that the side added, so it needs no
-// replays. Either of two merges shows it, and each passes in a case where
-// the other conflicts:
-//
-//   - Merging other into head, with s as the merge base, changes nothing.
-//     This conflicts if head's own commits changed lines that the side
-//     added, such as to resolve conflicts while replaying commits onto
-//     other.
-//   - Merging the commit where other and s meet, their only merge base,
-//     changes nothing. This conflicts if the side's added commits changed
-//     lines that the removed commits changed.
-func keepsRemoval(ctx context.Context, r *git.Repo, head, other, s string) (bool, error) {
-	if ok, err := r.KeepsChanges(ctx, head, other, s); err != nil || ok {
-		return ok, err
-	}
-	bases, err := r.MergeBases(ctx, other, s)
-	if err != nil || len(bases) != 1 || bases[0] == other {
-		return false, err
-	}
-	return r.KeepsChanges(ctx, head, bases[0], s)
 }
 
 type syncer struct {

@@ -248,6 +248,13 @@ func TestDecide(t *testing.T) {
 	w.work.Git("cherry-pick", "-x", c)
 	same := w.work.Git("rev-parse", "HEAD")
 	other := w.commit(a, "other")
+	// e and qux change a.txt in different ways on a. overridden merges qux
+	// into e with -X theirs, so it contains e but has qux's a.txt.
+	e := w.commitFiles(a, "e", map[string]string{"a.txt": "external\n"})
+	qux := w.commitFiles(a, "qux", map[string]string{"a.txt": "qux\n"})
+	w.work.Git("checkout", "--quiet", "--detach", e)
+	w.work.Git("merge", "--quiet", "--no-ff", "--no-edit", "-X", "theirs", qux)
+	overridden := w.work.Git("rev-parse", "HEAD")
 	r, err := w.m.Git.Open(t.Context(), filepath.Join(w.work.Dir, ".git"))
 	if err != nil {
 		t.Fatal(err)
@@ -287,6 +294,8 @@ func TestDecide(t *testing.T) {
 		{name: "a rewind in the copy, resolved in the external repository", m: a, d: replayed, s: a2, want: take},
 		{name: "a rewind in the copy, resolved in the copy with another change", m: other, d: c, s: a2, want: diverged},
 		{name: "a rewind in the copy, resolved in the external repository with another change", m: a, d: other, s: a2, want: take},
+		{name: "an external rewind, merged in the copy with a change that overrides it", m: overridden, d: e, s: a2, want: diverged},
+		{name: "a rewind in the copy, merged in the external repository with a change that overrides it", m: e, d: overridden, s: a2, want: diverged},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := decide(t.Context(), r, tc.m, tc.d, tc.s)
@@ -311,6 +320,7 @@ func TestDecideRewrittenCommits(t *testing.T) {
 	both := w.commitFiles(line10, "line 50 too", file(map[int]string{10: "bar", 50: "bar"}))
 	line50NoS := w.commitFiles(p, "line 50 without s", file(map[int]string{10: "foo", 50: "bar"}))
 	line10NoS := w.commitFiles(p, "line 10 without s", file(map[int]string{10: "bar", 50: "foo"}))
+	line10And11NoS := w.commitFiles(p, "lines 10 and 11 without s", file(map[int]string{10: "bar", 11: "eleven", 50: "foo"}))
 	line50 := w.commitFiles(s, "line 50", file(map[int]string{10: "foo", 50: "bar"}))
 	sOnLine10 := w.replay(s, line10NoS)
 	// line10 then baz changes line 10 twice; onMain replays s and both
@@ -373,6 +383,9 @@ func TestDecideRewrittenCommits(t *testing.T) {
 		want    action
 	}{
 		{name: "the external repository rewound and replayed the copy's change", m: line10, d: line10NoS, s: s, want: take},
+		// git conflicts on adjacent lines, so a replay next to another
+		// change diverges even though it keeps the copy's change.
+		{name: "the external repository rewound and replayed the copy's change next to a change of its own", m: line10, d: line10And11NoS, s: s, want: diverged},
 		{name: "the external repository rewound and made the copy's change on another line", m: line10, d: line50NoS, s: s, want: diverged},
 		{name: "the external repository rewound and made one of the copy's two changes", m: both, d: line10NoS, s: s, want: diverged},
 		{name: "the copy rebased onto a main that made the external repository's change on another line", m: sOnLine10, d: line50, s: s, want: diverged},
