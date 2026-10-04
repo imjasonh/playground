@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -31,6 +32,8 @@ type store[T any, P Resource[T]] struct {
 	flights  map[Key][]*flight
 	// listing is set from beginList until replace.
 	listing bool
+	// sweep is when end next forgets the writes that reads no longer return.
+	sweep time.Time
 }
 
 // ownWrite is what one of this process's writes stored. obj is nil when
@@ -271,6 +274,10 @@ func (s *store[T, P]) begin(k Key) *flight {
 // held w.rv when the write began, or its watch delivered w.rv since, the
 // store holds this write or a later version. Otherwise the event is still
 // to come, and reads return w until it arrives or maxOwnWriteAge passes.
+//
+// The next event for a key forgets a write that reads no longer return, but
+// some objects, such as deleted ones, get no more events. So end also
+// forgets those writes, at most once per maxOwnWriteAge.
 func (s *store[T, P]) end(f *flight, w *ownWrite[T]) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -278,6 +285,11 @@ func (s *store[T, P]) end(f *flight, w *ownWrite[T]) {
 		s.flights[f.key] = fs
 	} else {
 		delete(s.flights, f.key)
+	}
+	now := time.Now()
+	if !now.Before(s.sweep) {
+		maps.DeleteFunc(s.writes, func(_ Key, old *ownWrite[T]) bool { return !old.live(now) })
+		s.sweep = now.Add(maxOwnWriteAge)
 	}
 	switch {
 	case w == nil, f.stale, w.rv != "" && slices.Contains(f.seen, w.rv):
@@ -292,7 +304,7 @@ func (s *store[T, P]) end(f *flight, w *ownWrite[T]) {
 	if s.writes == nil {
 		s.writes = map[Key]*ownWrite[T]{}
 	}
-	w.expires = time.Now().Add(maxOwnWriteAge)
+	w.expires = now.Add(maxOwnWriteAge)
 	s.writes[f.key] = w
 }
 

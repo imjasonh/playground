@@ -211,6 +211,36 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		})
 	})
 
+	t.Run("expired writes to objects that get no more events", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			s := newStore()
+			holds := func(want ...string) {
+				t.Helper()
+				var got []string
+				for k := range s.writes {
+					got = append(got, k.Name)
+				}
+				slices.Sort(got)
+				if !slices.Equal(got, want) {
+					t.Errorf("store holds writes to %v, want %v", got, want)
+				}
+			}
+			two := Key{"a", "two"}
+			s.end(s.begin(k), wrote("2"))
+			time.Sleep(maxOwnWriteAge / 2)
+			s.end(s.begin(two), &ownWrite[widget]{obj: cm("a", "two", "3", nil, ""), rv: "3", uid: "v"})
+			time.Sleep(maxOwnWriteAge / 2)
+			s.end(s.begin(two), nil)
+			holds("two")
+			time.Sleep(maxOwnWriteAge / 2)
+			s.end(s.begin(k), nil) // within maxOwnWriteAge of the last sweep
+			holds("two")
+			time.Sleep(maxOwnWriteAge / 2)
+			s.end(s.begin(k), nil)
+			holds()
+		})
+	})
+
 	t.Run("a write whose event arrives before its response", func(t *testing.T) {
 		s := newStore()
 		s.put(obj("1", "u"))
