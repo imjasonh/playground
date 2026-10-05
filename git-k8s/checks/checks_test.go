@@ -2,6 +2,7 @@ package checks_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http/httptest"
 	"reflect"
@@ -88,8 +89,12 @@ func replay() checks.Check {
 		}
 		tip := in.Spec.ParentHead
 		for range 2 {
-			if tip, err = in.Replay(ctx, in.Spec.Head, tip, c.Tree); err != nil {
+			var problem string
+			if tip, problem, err = in.Replay(ctx, in.Spec.Head, tip, c.Tree); err != nil {
 				return checks.Verdict{}, err
+			}
+			if problem != "" {
+				return checks.Verdict{}, errors.New(problem)
 			}
 		}
 		v := checks.Fail("replayed")

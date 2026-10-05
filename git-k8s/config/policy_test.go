@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"maps"
@@ -78,7 +79,9 @@ type policy struct {
 	conditions  []cel.Program
 	variables   []cel.Program
 	validations []cel.Program
-	messages    []cel.Program
+	// messages has each validation's messageExpression, or nil for a
+	// validation that has only a message.
+	messages []cel.Program
 }
 
 func compile(t *testing.T, m manifest) *policy {
@@ -115,22 +118,30 @@ func compile(t *testing.T, m manifest) *policy {
 		p.variables = append(p.variables, prg(v.Expression))
 	}
 	for _, v := range m.Spec.Validations {
-		if v.MessageExpression == "" {
-			t.Fatalf("validation %q has no messageExpression", v.Expression)
+		var msg cel.Program
+		switch {
+		case v.MessageExpression != "":
+			msg = prg(v.MessageExpression)
+		case v.Message == "":
+			t.Fatalf("validation %q has no message", v.Expression)
 		}
 		p.validations = append(p.validations, prg(v.Expression))
-		p.messages = append(p.messages, prg(v.MessageExpression))
+		p.messages = append(p.messages, msg)
 	}
 	return p
 }
 
-// request is an admission request for a Pod or one of its subresources.
+// request is an admission request for a Pod, or for the resource that
+// resource names, or for one of its subresources. params is the ConfigMap
+// that the binding names, or nil if there's none.
 type request struct {
 	user        string
 	operation   string
+	resource    string
 	subresource string
 	namespace   string
 	nsLabels    map[string]string
+	params      map[string]any
 	object      map[string]any
 	oldObject   map[string]any
 }
@@ -141,7 +152,7 @@ type request struct {
 // fails, or "" if they all pass.
 func (p *policy) admit(t *testing.T, r request) string {
 	t.Helper()
-	resource := "pods"
+	resource := cmp.Or(r.resource, "pods")
 	if r.subresource != "" {
 		resource += "/" + r.subresource
 	}
@@ -178,6 +189,9 @@ func (p *policy) admit(t *testing.T, r request) string {
 		if r.oldObject != nil {
 			a["oldObject"] = r.oldObject
 		}
+		if r.params != nil {
+			a["params"] = r.params
+		}
 		return a
 	}
 	eval := func(prg cel.Program) any {
@@ -200,7 +214,11 @@ func (p *policy) admit(t *testing.T, r request) string {
 		vars[p.m.Spec.Variables[i].Name] = out
 	}
 	for i, v := range p.validations {
-		if !eval(v).(bool) {
+		switch {
+		case eval(v).(bool):
+		case p.messages[i] == nil:
+			return p.m.Spec.Validations[i].Message
+		default:
 			return eval(p.messages[i]).(string)
 		}
 	}
@@ -777,5 +795,216 @@ func TestCheckPodsBinding(t *testing.T) {
 	}
 	if r := b.Spec.ParamRef; r != nil && r.ParameterNotFoundAction != "Allow" {
 		t.Errorf("paramRef.parameterNotFoundAction = %q, want Allow", r.ParameterNotFoundAction)
+	}
+}
+
+// checksConfigMap returns the git-k8s-checks ConfigMap with the entries kv, a
+// list of keys and values.
+func checksConfigMap(kv ...string) map[string]any {
+	cm := map[string]any{"metadata": map[string]any{"name": "git-k8s-checks", "namespace": "git-k8s"}}
+	if len(kv) > 0 {
+		data := map[string]any{}
+		for i := 0; i < len(kv); i += 2 {
+			data[kv[i]] = kv[i+1]
+		}
+		cm["data"] = data
+	}
+	return cm
+}
+
+// gitBranch returns a GitBranch for the branch main, after edit changes its
+// metadata and spec.
+func gitBranch(edit func(meta, spec map[string]any)) map[string]any {
+	meta := map[string]any{"name": "app-main"}
+	spec := map[string]any{"branch": "main", "head": "0000000"}
+	if edit != nil {
+		edit(meta, spec)
+	}
+	return map[string]any{"metadata": meta, "spec": spec}
+}
+
+func TestCheckResults(t *testing.T) {
+	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-check-results"))
+	const (
+		gotest   = "system:serviceaccount:check-gotest:check-gotest"
+		bot      = "system:serviceaccount:checks:bot"
+		core     = "system:serviceaccount:git-k8s:git-k8s"
+		deployer = "system:serviceaccount:checks:deployer"
+	)
+	old := gitBranch(nil)
+	withStatus := func(status map[string]any) map[string]any {
+		b := gitBranch(nil)
+		b["status"] = status
+		return b
+	}
+	wrote := func(check string) map[string]any {
+		return withStatus(map[string]any{"checks": map[string]any{check: map[string]any{"commit": "0000000", "state": "Passed"}}})
+	}
+	queued := withStatus(map[string]any{"queue": []any{"c/x"}})
+	merged := withStatus(map[string]any{"state": "Merged"})
+	update := func(user string, params, object map[string]any) request {
+		return request{user: user, operation: "UPDATE", resource: "gitbranches", subresource: "status", namespace: "repos", params: params, object: object, oldObject: old}
+	}
+	only := func(check string) string { return "the " + check + " check can only write status.checks." + check }
+	emptied := func(user string) string {
+		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
+	}
+	none := checksConfigMap()
+	for _, tt := range []struct {
+		name string
+		r    request
+		want string
+	}{{
+		name: "a check writes its result",
+		r:    update(gotest, none, wrote("gotest")),
+	}, {
+		name: "a check writes another check's result",
+		r:    update(gotest, none, wrote("race")),
+		want: only("gotest"),
+	}, {
+		name: "a check writes a merge queue",
+		r:    update(gotest, none, queued),
+		want: only("gotest"),
+	}, {
+		name: "a check that only its entry names writes its result",
+		r:    update(bot, checksConfigMap("checks.bot", "bot"), wrote("bot")),
+	}, {
+		name: "a check that only its entry names writes a merge queue",
+		r:    update(bot, checksConfigMap("checks.bot", "bot"), queued),
+		want: only("bot"),
+	}, {
+		name: "a check whose entry is empty writes its result",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), wrote("gotest")),
+		want: emptied(gotest),
+	}, {
+		name: "a check whose entry is empty writes a merge queue",
+		r:    update(bot, checksConfigMap("checks.bot", ""), queued),
+		want: emptied(bot),
+	}, {
+		name: "a check whose entry is empty writes a branch's state",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), merged),
+		want: emptied(gotest),
+	}, {
+		name: "the core program writes a merge queue",
+		r:    update(core, none, queued),
+	}, {
+		name: "the core program writes a merge queue despite an empty entry",
+		r:    update(core, checksConfigMap("git-k8s.git-k8s", ""), queued),
+	}, {
+		name: "the core program writes a result despite an entry that names a check",
+		r:    update(core, checksConfigMap("git-k8s.git-k8s", "gofmt"), wrote("gofmt")),
+		want: core + " isn't a check's service account, so it can't write status.checks",
+	}, {
+		name: "another service account in a check's namespace writes a merge queue",
+		r:    update(deployer, checksConfigMap("checks.bot", ""), queued),
+	}, {
+		name: "another service account in a check's namespace writes a result",
+		r:    update(deployer, checksConfigMap("checks.bot", ""), wrote("bot")),
+		want: deployer + " isn't a check's service account, so it can't write status.checks",
+	}} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.admit(t, tt.r); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBranches(t *testing.T) {
+	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-branches"))
+	const (
+		gotest  = "system:serviceaccount:check-gotest:check-gotest"
+		bot     = "system:serviceaccount:checks:bot"
+		core    = "system:serviceaccount:git-k8s:git-k8s"
+		approve = "git-k8s controllers can't approve branches"
+	)
+	old := gitBranch(nil)
+	labeled := gitBranch(func(meta, _ map[string]any) { meta["labels"] = map[string]any{"e2e": "changed"} })
+	moved := gitBranch(func(_, spec map[string]any) { spec["head"] = "1111111" })
+	approvedBy := func(user string) map[string]any {
+		return gitBranch(func(meta, _ map[string]any) {
+			meta["annotations"] = map[string]any{"git-k8s.imjasonh.com/approve": "0000000", "git-k8s.imjasonh.com/approved-by": user}
+		})
+	}
+	update := func(user string, params, object map[string]any) request {
+		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", params: params, object: object, oldObject: old}
+	}
+	cantChange := func(check string) string { return "the " + check + " check can't change GitBranch objects" }
+	emptied := func(user string) string {
+		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
+	}
+	none := checksConfigMap()
+	for _, tt := range []struct {
+		name string
+		r    request
+		want string
+	}{{
+		name: "a check adds a label",
+		r:    update(gotest, none, labeled),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check changes a branch's spec",
+		r:    update(gotest, none, moved),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check creates a GitBranch",
+		r:    request{user: gotest, operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		want: cantChange("gotest"),
+	}, {
+		name: "a check approves a branch",
+		r:    update(gotest, none, approvedBy(gotest)),
+		want: approve,
+	}, {
+		name: "a check writes its result",
+		r:    request{user: gotest, operation: "UPDATE", resource: "gitbranches", subresource: "status", namespace: "repos", params: none, object: labeled, oldObject: old},
+	}, {
+		name: "a check whose entry names another check adds a label",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", "race"), labeled),
+		want: cantChange("race"),
+	}, {
+		name: "a check that only its entry names adds a label",
+		r:    update(bot, checksConfigMap("checks.bot", "bot"), labeled),
+		want: cantChange("bot"),
+	}, {
+		name: "a check whose entry is empty adds a label",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), labeled),
+		want: emptied(gotest),
+	}, {
+		name: "a check that only its entry names adds a label after the entry is emptied",
+		r:    update(bot, checksConfigMap("checks.bot", ""), labeled),
+		want: emptied(bot),
+	}, {
+		name: "a check whose entry is empty changes a branch's spec",
+		r:    update(bot, checksConfigMap("checks.bot", ""), moved),
+		want: emptied(bot),
+	}, {
+		name: "a check whose entry is empty approves a branch",
+		r:    update(bot, checksConfigMap("checks.bot", ""), approvedBy(bot)),
+		want: approve,
+	}, {
+		name: "the core program adds a label",
+		r:    update(core, none, labeled),
+	}, {
+		name: "the core program adds a label despite an entry that names a check",
+		r:    update(core, checksConfigMap("git-k8s.git-k8s", "gofmt"), labeled),
+	}, {
+		name: "the core program adds a label despite an empty entry",
+		r:    update(core, checksConfigMap("git-k8s.git-k8s", ""), labeled),
+	}, {
+		name: "the core program approves a branch",
+		r:    update(core, none, approvedBy(core)),
+		want: approve,
+	}, {
+		name: "another service account in a check's namespace adds a label",
+		r:    update("system:serviceaccount:checks:deployer", checksConfigMap("checks.bot", ""), labeled),
+	}, {
+		name: "a person adds a label",
+		r:    update("alice@example.com", checksConfigMap("checks.bot", ""), labeled),
+	}} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.admit(t, tt.r); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

@@ -59,6 +59,20 @@ func commit(w *gittest.Work, message string, files map[string]string) string {
 	return w.Commit(message)
 }
 
+// commitAs commits files with an author header that git commit doesn't
+// write, such as one with a five-digit time zone, and returns the commit.
+func commitAs(w *gittest.Work, author string, files map[string]string) string {
+	for path, content := range files {
+		w.Write(path, content)
+	}
+	w.Git("add", "-A")
+	w.Write(".git/raw-commit", fmt.Sprintf("tree %s\nparent %s\nauthor %s\ncommitter Test Author <author@example.com> 1767323045 +0000\n\nodd author\n",
+		w.Git("write-tree"), w.Git("rev-parse", "--verify", "--end-of-options", "HEAD"), author))
+	sha := w.Git("hash-object", "-t", "commit", "--literally", "-w", ".git/raw-commit")
+	w.Git("reset", "--quiet", "--hard", sha)
+	return sha
+}
+
 // diverge pushes a commit on from that changes files to the ref that holds
 // the external repository's head of branch. It returns the commit, and the
 // divergence of the GitBranch called name.
@@ -1417,6 +1431,15 @@ func TestReplaysTheBranchAsOneCommit(t *testing.T) {
 		want:     "replaying the branch onto the external repository's c/x conflicts in go.sum, which git merged with its union driver",
 		body:     "Git merged these files with its union driver, which keeps the lines of both sides:\n\ngo.sum\n\n",
 		files:    map[string]string{"go.sum": "a v1\nc v1\nd v1"},
+	}, {
+		name: "when git would change a commit's author date",
+		branch: func(w *gittest.Work, _ *Branch) string {
+			return commitAs(w, "Ana Lima <ana@example.com> 1700000000 +12345", map[string]string{"c.txt": "branch\n"})
+		},
+		external: map[string]string{"a.txt": "one\nexternal\nthree\n"},
+		why:      "the author of commit %s of the branch has no date that git can copy",
+		want:     "replayed the branch's commits since %s onto the external repository's c/x at %s as one commit",
+		files:    map[string]string{"a.txt": "one\nexternal\nthree", "c.txt": "branch"},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "pw")
@@ -1691,6 +1714,13 @@ func TestLeavesARewoundBranchWhoseExternalCommitsDontReplay(t *testing.T) {
 			return w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 		},
 		why: "commit %s of the external repository's c/x is a merge, which has no replay",
+	}, {
+		name:   "when git refuses a commit's author",
+		branch: func(w *gittest.Work) { commit(w, "branch edit", map[string]string{"c.txt": "branch\n"}) },
+		external: func(w *gittest.Work, _ *Branch) string {
+			return commitAs(w, ",;: <ana@example.com> 1700000000 -0800", map[string]string{"d.txt": "external\n"})
+		},
+		why: `the author of commit %s of the external repository's c/x has no name that git accepts, only ",;:"`,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "")

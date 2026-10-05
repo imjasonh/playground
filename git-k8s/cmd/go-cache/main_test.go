@@ -470,6 +470,22 @@ func goEnv(home string, env ...string) []string {
 	}, env...)...)
 }
 
+// goHome returns a new directory for the go command to use as its home,
+// with Go telemetry off. Otherwise the go command can start a telemetry
+// process that outlives it and writes in the directory while the test
+// removes it.
+func goHome(t *testing.T, gobin string) string {
+	t.Helper()
+	home := t.TempDir()
+	cmd := exec.Command(gobin, "telemetry", "off")
+	cmd.Dir = home
+	cmd.Env = goEnv(home)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go telemetry off: %v\n%s", err, out)
+	}
+	return home
+}
+
 // TestGoModDownload downloads a module with the go command through
 // go-cache twice, into empty module caches. The second download doesn't
 // reach the upstream proxy.
@@ -502,7 +518,7 @@ func TestGoModDownload(t *testing.T) {
 	_, srv := newTestServer(t, upstream.URL, nil)
 	download := func() {
 		t.Helper()
-		home := t.TempDir()
+		home := goHome(t, gobin)
 		cmd := exec.Command(gobin, "mod", "download", "-json", "example.com/greet@v1.0.0")
 		cmd.Dir = home
 		cmd.Env = goEnv(home, "GOPROXY="+srv.URL+"/mod")
@@ -564,7 +580,7 @@ func TestGoCommand(t *testing.T) {
 		"writer": {"ns", []string{gocache.WriteAudience("ns", "app")}},
 	})
 	remote := srv.URL + gocache.Path("ns", "app")
-	home := t.TempDir()
+	home := goHome(t, gobin)
 	build := func(dir string) string {
 		t.Helper()
 		cmd := exec.Command(gobin, "list", "-export", "-f={{.Export}}", "./...")

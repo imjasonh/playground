@@ -426,11 +426,13 @@ func (in *Input) CommitTree(ctx context.Context, tree string, parents []string, 
 
 // Replay makes a commit in Repo's repository that replays commit onto
 // parent with tree, as git.Repo.Replay does, with the controller's identity
-// as its committer. It signs the commit as CommitTree does.
-func (in *Input) Replay(ctx context.Context, commit, parent, tree string) (string, error) {
+// as its committer. It signs the commit as CommitTree does. When a new
+// commit can't take commit's author, Replay makes no commit and returns
+// the problem, as git.Repo.Replay does.
+func (in *Input) Replay(ctx context.Context, commit, parent, tree string) (sha, problem string, err error) {
 	local, key, err := in.committer(ctx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	return local.Replay(ctx, commit, parent, tree, in.identity, key)
 }

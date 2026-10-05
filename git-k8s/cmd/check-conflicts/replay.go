@@ -332,9 +332,9 @@ func replayExternal(ctx context.Context, in *checks.Input, repo *git.Repo, t tar
 // commit. Each replay applies its commit's change from the commit's
 // parent. A replay that changes nothing stops the replays if exact is set,
 // and is skipped otherwise. replayOnto also stops at a commit that it
-// can't replay, and says why: a merge, a commit without a parent, or a
-// commit whose replay conflicts. side names the commits' side of the
-// branch.
+// can't replay, and says why: a merge, a commit without a parent, a commit
+// whose replay conflicts, or a commit whose author git can't copy. side
+// names the commits' side of the branch.
 func replayOnto(ctx context.Context, in *checks.Input, repo *git.Repo, onto string, commits []git.Rev, side string, exact bool) (tip string, replays map[string]string, why string, err error) {
 	c, err := repo.Commit(ctx, onto)
 	if err != nil {
@@ -367,10 +367,14 @@ func replayOnto(ctx context.Context, in *checks.Input, repo *git.Repo, onto stri
 			}
 			continue
 		}
-		if tip, err = in.Replay(ctx, r.Commit, tip, next); err != nil {
+		replay, problem, err := in.Replay(ctx, r.Commit, tip, next)
+		switch {
+		case err != nil:
 			return "", nil, "", err
+		case problem != "":
+			return tip, replays, "the author of " + name + " " + problem, nil
 		}
-		tree, replays[r.Commit] = next, tip
+		tip, tree, replays[r.Commit] = replay, next, replay
 	}
 	return tip, replays, "", nil
 }

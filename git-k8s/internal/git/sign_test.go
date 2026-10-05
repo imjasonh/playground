@@ -114,18 +114,18 @@ func TestReplaySigns(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := git.Identity{Name: "git-k8s", Email: signer.Email}
-	replay, err := repo.Replay(t.Context(), head, head, c.Tree, id, key)
-	if err != nil {
-		t.Fatal(err)
+	replay, problem, err := repo.Replay(t.Context(), head, head, c.Tree, id, key)
+	if err != nil || problem != "" {
+		t.Fatalf("Replay = %s, %q, %v", replay, problem, err)
 	}
 	if err := signer.Verify(repo.Dir, replay); err != nil {
 		t.Error(err)
 	}
-	if again, err := repo.Replay(t.Context(), head, head, c.Tree, id, key); err != nil || again != replay {
-		t.Errorf("Replay again = %s, %v; want the same commit %s", again, err, replay)
+	if again, problem, err := repo.Replay(t.Context(), head, head, c.Tree, id, key); err != nil || problem != "" || again != replay {
+		t.Errorf("Replay again = %s, %q, %v; want the same commit %s", again, problem, err, replay)
 	}
-	if unsigned, err := repo.Replay(t.Context(), head, head, c.Tree, id, nil); err != nil || signer.Verify(repo.Dir, unsigned) == nil {
-		t.Errorf("the replay without a key, %s, verified (%v)", unsigned, err)
+	if unsigned, problem, err := repo.Replay(t.Context(), head, head, c.Tree, id, nil); err != nil || problem != "" || signer.Verify(repo.Dir, unsigned) == nil {
+		t.Errorf("the replay without a key, %s, verified (%q, %v)", unsigned, problem, err)
 	}
 }
 
