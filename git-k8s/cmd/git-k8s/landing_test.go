@@ -455,6 +455,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 				t.Errorf("Merged = %+v, want reason %s and a message with %q", c, reasonNeedsRebase, tt.problem)
 			}
 
+			b.Generation++
 			b.Status.Checks = results
 			if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
 				t.Fatal(err)
@@ -751,6 +752,7 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 
 	t.Log("The checks pass on the squashed commit, which lands by fast-forward.")
 	w.Branch("c/x", squashed)
+	b.Generation++
 	refresh(t, b, w)
 	withHistoryCheck(b)
 	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
@@ -789,6 +791,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			// commit.
 			squash := func() {
 				t.Helper()
+				b.Generation++
 				refresh(t, b, w)
 				withHistoryCheck(b)
 				head := b.Spec.Head
@@ -817,6 +820,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			t.Log("dco pushes another fix, and the branch lands by fast-forward.")
 			w.Write("z.txt", "z, fixed\n")
 			w.Commit("Fix z\n\nGit-K8s-Fixer: dco")
+			b.Generation++
 			refresh(t, b, w)
 			withHistoryCheck(b)
 			head := b.Spec.Head

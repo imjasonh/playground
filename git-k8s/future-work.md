@@ -158,7 +158,7 @@ Questions to settle first:
 
 ## Keep queued branches moving
 
-Two things can stop a branch in a merge queue from landing, or hold up the
+Three things can stop a branch in a merge queue from landing, or hold up the
 branches behind it:
 
 - An approval names one head, so the front's merge of its parent needs a
@@ -169,6 +169,11 @@ branches behind it:
 - A check that never finishes at the front, such as one whose controller
   isn't running, holds up every branch behind it while the front can still
   land.
+- A squash or rebase landing that pushes its commit to the front for the
+  checks holds the front until the repository controller lists that
+  commit. If someone pushes the branch's old head back before then, the
+  listing doesn't change, so the branch holds the front until its head or
+  its parent's head changes.
 
 The proposed fixes are an approval that still counts after a clean merge of
 the parent, and a time limit at the front of the queue, after which the

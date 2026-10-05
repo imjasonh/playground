@@ -623,7 +623,10 @@ branches land through a queue for each parent instead:
    step.
 3. When the gate passes for the new head, the merge controller lands the
    branch, as [Landing methods](#landing-methods) describes, and the next
-   branch moves to the front.
+   branch moves to the front. When a squash or rebase landing first pushes
+   its commit to the branch for the checks, as
+   [Which results count](#which-results-count) describes, the branch stays
+   at the front while they run on it.
 
 The branches behind the front keep their heads, so each landing runs every
 check again on one branch, and only the checks that set `UsesParent`, such
@@ -646,11 +649,9 @@ A branch leaves the queue when one of these happens:
   after the merge of the parent. At the front, it leaves sooner, as soon
   as the `base` check fails or the gate fails with its unfinished checks
   counted as passing.
-- A squash or rebase landing sets its state to `NeedsRebase` or
-  `Rewritten`, as [Landing methods](#landing-methods) describes. The branch
-  doesn't join again until its head or its parent's head changes. For a
-  `Rewritten` branch, that happens when the repositories controller lists
-  the commit that the landing pushed.
+- A squash or rebase landing sets its state to `NeedsRebase`, as
+  [Landing methods](#landing-methods) describes. The branch doesn't join
+  again until its head or its parent's head changes.
 - Someone deletes the branch, which deletes its `GitBranch`.
 - Its parent goes away, or the parent's merge policy goes away or can't be
   evaluated.
@@ -798,8 +799,8 @@ When the gate doesn't pass on the counted results alone, the controller
 pushes the new commit to the branch instead, with a lease on the branch's
 head, and sets the branch's state to `Rewritten`. The checks run on the new
 commit, and when the gate passes, the parent fast-forwards to it. In a
-[merge queue](#merge-queue), the branch first joins the queue again at the
-back. `check-approval` passes only for the head that the annotation names,
+[merge queue](#merge-queue), the branch keeps its place at the front until
+then. `check-approval` passes only for the head that the annotation names,
 so a rewritten branch needs a new approval.
 
 A check with `mayPush: true` can push a fix on top of the new commit. While
