@@ -4,8 +4,7 @@
 //! Maps when the key is usable, and return HTML, JSON, or a PDF.
 
 use worker::{
-    console_error, console_log, event, Context, Env, Fetch, Headers, Method, Request, Response,
-    Result, Url,
+    console_error, event, Context, Env, Fetch, Headers, Method, Request, Response, Result, Url,
 };
 
 use crate::address::Address;
@@ -22,12 +21,6 @@ use crate::render;
 async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let key = read_maps_key(&env);
     let maps_live = api_key_usable(key.as_deref());
-    console_log!(
-        "maps_live={} method={} path={}",
-        maps_live,
-        req.method().as_ref(),
-        req.url().map(|u| u.path().to_string()).unwrap_or_default()
-    );
 
     let url = req.url()?;
     let query: Vec<(String, String)> = url
@@ -95,17 +88,9 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
 fn read_maps_key(env: &Env) -> Option<String> {
     match env.secret("GOOGLE_MAPS_API_KEY") {
-        Ok(s) => {
-            let v = s.to_string();
-            console_log!("GOOGLE_MAPS_API_KEY secret bound, len={}", v.len());
-            Some(v)
-        }
+        Ok(s) => Some(s.to_string()),
         Err(secret_err) => match env.var("GOOGLE_MAPS_API_KEY") {
-            Ok(s) => {
-                let v = s.to_string();
-                console_log!("GOOGLE_MAPS_API_KEY var bound, len={}", v.len());
-                Some(v)
-            }
+            Ok(s) => Some(s.to_string()),
             Err(_) => {
                 console_error!("GOOGLE_MAPS_API_KEY not bound: {secret_err}");
                 None
