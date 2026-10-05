@@ -567,18 +567,19 @@ cat "${WORKDIR}/mirror.txt"
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${APPROVAL_NS}" check-approval)")" == 200 ]]
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token git-k8s git-k8s)")" == 404 ]]
 cat "${WORKDIR}/mirror.txt"
-# can_list_secrets reports whether service account $1, in the namespace of
-# the same name, can list or watch the Secrets in NS. A check that signs
-# commits can get a Secret by name, for its signing key.
+# can_list_secrets reports whether service account $1, in namespace $2 or
+# the namespace of the same name, can list or watch the Secrets in NS. A
+# check that signs commits can get a Secret by name, for its signing key.
 can_list_secrets() {
-  local as="system:serviceaccount:$1:$1"
+  local as="system:serviceaccount:${2:-$1}:$1"
   k auth can-i list secrets -n "${NS}" --as="${as}" || k auth can-i watch secrets -n "${NS}" --as="${as}"
 }
 for program in check-base check-gofmt check-risk check-approval check-gotest; do
-  as="system:serviceaccount:${program}:${program}"
+  program_ns="$(namespace_of "${program}")"
+  as="system:serviceaccount:${program_ns}:${program}"
   case "${program}" in
     check-base | check-gofmt)
-      if can_list_secrets "${program}"; then
+      if can_list_secrets "${program}" "${program_ns}"; then
         echo "${program} can list Secrets" >&2
         exit 1
       fi
@@ -590,7 +591,7 @@ for program in check-base check-gofmt check-risk check-approval check-gotest; do
       fi
       ;;
   esac
-  if k -n "${program}" auth can-i create "serviceaccounts/${program}" --subresource=token --as="${as}"; then
+  if k -n "${program_ns}" auth can-i create "serviceaccounts/${program}" --subresource=token --as="${as}"; then
     echo "${program} can create tokens for its service account" >&2
     exit 1
   fi
