@@ -12,7 +12,9 @@
 use async_trait::async_trait;
 use worker::js_sys::Uint8Array;
 use worker::kv::{KvError, KvStore};
-use worker::{event, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response};
+use worker::{
+    console_error, event, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response, Url,
+};
 
 use crate::api::{self, ApiConfig, ApiRequest};
 use crate::push::WebPushClient;
@@ -54,11 +56,20 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
     let now_unix = (worker::js_sys::Date::now() / 1000.0) as u64;
     let response = api::handle(api_request, &store, &sender, &config, now_unix).await;
 
+    log_server_error(response.status, &response.body);
     let headers = cors_headers();
     headers.set("Content-Type", &response.content_type)?;
     Ok(Response::from_bytes(response.body)?
         .with_status(response.status)
         .with_headers(headers))
+}
+
+/// Log the body of a 5xx response at error level, so Workers Issues records
+/// why the request failed and not only that it did.
+fn log_server_error(status: u16, body: &[u8]) {
+    if status >= 500 {
+        console_error!("HTTP {status}: {}", String::from_utf8_lossy(body));
+    }
 }
 
 /// Assemble the API configuration from environment bindings.
@@ -102,6 +113,7 @@ fn json_error(status: u16, message: &str) -> worker::Result<Response> {
     let body = serde_json::json!({ "error": message })
         .to_string()
         .into_bytes();
+    log_server_error(status, &body);
     Ok(Response::from_bytes(body)?
         .with_status(status)
         .with_headers(headers))
@@ -202,10 +214,29 @@ impl PushSender for WorkerSender {
             .with_headers(headers)
             .with_body(Some(array.into()));
 
+        // The endpoint path identifies the subscription, so logs name only the
+        // push service.
+        let service = Url::parse(&request.endpoint)
+            .map(|u| u.origin().ascii_serialization())
+            .unwrap_or_default();
         let outbound = Request::new_with_init(&request.endpoint, &init).map_err(worker_err)?;
-        let mut response = Fetch::Request(outbound).send().await.map_err(worker_err)?;
+        let mut response = match Fetch::Request(outbound).send().await {
+            Ok(response) => response,
+            Err(e) => {
+                console_error!("push to {service} failed: {e}");
+                return Err(worker_err(e));
+            }
+        };
         let status = response.status_code();
         let body = response.text().await.ok();
-        Ok(PushResponse { status, body })
+        let pushed = PushResponse { status, body };
+        // A 404 or 410 means the subscription expired, and the API removes it.
+        if !pushed.is_success() && !pushed.is_gone() {
+            console_error!(
+                "push to {service} returned HTTP {status}: {}",
+                pushed.body.as_deref().unwrap_or_default()
+            );
+        }
+        Ok(pushed)
     }
 }

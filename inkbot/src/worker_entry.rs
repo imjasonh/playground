@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use worker::js_sys::Uint8Array;
 use worker::{
-    event, Bucket, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response, Result,
+    console_error, event, Bucket, Context, Env, Fetch, Headers, Method, Request, RequestInit,
+    Response, Result,
 };
 
 use crate::api::{
@@ -284,7 +285,15 @@ async fn handle_slack(
             };
 
             let image_bytes = match mention.first_image() {
-                Some(file) => Some(download_slack_file(&token, &file.url_private_download).await),
+                Some(file) => {
+                    let download = download_slack_file(&token, &file.url_private_download).await;
+                    // The bot replies in the thread and the event still gets a 200,
+                    // so log the failure here.
+                    if let Err(e) = &download {
+                        console_error!("slack file download failed: {e}");
+                    }
+                    Some(download)
+                }
                 None => None,
             };
 
@@ -607,6 +616,15 @@ fn normalize_path(path: &str) -> String {
 }
 
 fn into_worker_response(response: ApiResponse) -> Result<Response> {
+    // Log the body of a 5xx at error level, so Workers Issues records why the
+    // request failed and not only that it did.
+    if response.status >= 500 {
+        console_error!(
+            "HTTP {}: {}",
+            response.status,
+            String::from_utf8_lossy(&response.body).trim_end()
+        );
+    }
     let headers = Headers::new();
     headers.set("Content-Type", response.content_type)?;
     if let Some(etag) = &response.etag {
