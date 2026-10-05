@@ -280,9 +280,9 @@ k get -f "${ROOT}/config/policy.yaml" --show-labels
   --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
 policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
 generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
-# The results endpoint reads the git-k8s-checks ConfigMap, so the one rule
-# that may name a ConfigMap or a policy is get on that ConfigMap alone. The
-# rule ends where the next rule or object starts.
+# The results endpoint and the mirror read the git-k8s-checks ConfigMap, so
+# the one rule that may name a ConfigMap or a policy is get on that ConfigMap
+# alone. The rule ends where the next rule or object starts.
 read_checks=$'- apiGroups:\n  - ""\n  resources:\n  - configmaps\n  resourceNames:\n  - git-k8s-checks\n  verbs:\n  - get\n-'
 without_policies="$(<"${WORKDIR}/git-k8s-without-policies.yaml")"
 if [[ "${without_policies}" != *"${read_checks}"* ]] ||
@@ -560,6 +560,13 @@ k -n "${NS}" create serviceaccount stranger
 cat "${WORKDIR}/mirror.txt"
 [[ "$(info_refs -H "Authorization: Bearer ${GOFMT_TOKEN}")" == 200 ]]
 [[ -n "$(mirror_head refs/heads/main)" && "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+# The mirror maps service accounts to checks as the results endpoint does:
+# check-approval is the approval check, which main's merge policy lists,
+# through its entry in the git-k8s-checks ConfigMap. The core program's
+# entry names the gofmt check, but the core program is never a check.
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${APPROVAL_NS}" check-approval)")" == 200 ]]
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token git-k8s git-k8s)")" == 404 ]]
+cat "${WORKDIR}/mirror.txt"
 # can_list_secrets reports whether service account $1, in the namespace of
 # the same name, can list or watch the Secrets in NS. A check that signs
 # commits can get a Secret by name, for its signing key.
@@ -589,7 +596,7 @@ for program in check-base check-gofmt check-risk check-approval check-gotest; do
   fi
 done
 k -n git-k8s auth can-i create serviceaccounts/git-k8s --subresource=token --as=system:serviceaccount:git-k8s:git-k8s
-echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. It maps check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
 echo "::endgroup::"
 
 echo "::group::A check can't push to a parent through the mirror"

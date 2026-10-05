@@ -24,8 +24,9 @@ var pathRE = regexp.MustCompile(`^/([a-z0-9]([-a-z0-9]*[a-z0-9])?)/([a-z0-9]([-a
 // gitk8s.MirrorPath. Every request needs a service account token whose
 // audience is gitk8s.MirrorAudience as a bearer token. Run it with
 // kube.Serve: it reads GitRepository and GitBranch objects, checks tokens
-// with kube.ReviewToken, gets the Pod that a check Pod's token is bound to
-// with kube.Fetch, and calls kube.Trigger for a GitRepository after a push.
+// with kube.ReviewToken, gets the git-k8s-checks ConfigMap and the Pod that
+// a check Pod's token is bound to with kube.Fetch, and calls kube.Trigger
+// for a GitRepository after a push.
 func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A request may take this long to arrive, and its response as long
 	// again. Without a write deadline, a client that stops reading blocks
@@ -66,10 +67,17 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the mirror couldn't check the token; try again", http.StatusServiceUnavailable)
 		return
 	}
+	entries, err := caller.Checks(ctx)
+	if err != nil {
+		slog.Warn("reading the git-k8s-checks ConfigMap failed", "err", err)
+		http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
+		return
+	}
+	check, _ := who.Check(entries)
 	repo := kube.Get[gitk8s.Repository](ctx, namespace, name)
 	may := false
 	if repo != nil {
-		if may, err = m.mayFetch(ctx, who, repo); err != nil {
+		if may, err = m.mayFetch(ctx, who, check, repo); err != nil {
 			slog.Warn("checking a caller failed", "repository", namespace+"/"+name, "caller", who.String(), "err", err)
 			http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
 			return
@@ -79,7 +87,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("no GitRepository %s/%s that %s may fetch", namespace, name, who), http.StatusNotFound)
 		return
 	}
-	if service == "receive-pack" && !m.mayPushAny(who, repo) {
+	if service == "receive-pack" && !m.mayPushAny(who, check, repo) {
 		http.Error(w, fmt.Sprintf("%s may not push to %s/%s", who, namespace, name), http.StatusForbidden)
 		return
 	}
@@ -112,7 +120,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			if reasons := m.refusals(who, repo, p); reasons != nil {
+			if reasons := m.refusals(who, check, repo, p); reasons != nil {
 				refuseAll(w, r, p, reasons)
 				slog.Info("refused a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "reason", reasons[0])
 				return
@@ -161,14 +169,14 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// refusals returns why who may not make each update in p, or nil if it may
-// make them all. The mirror refuses a push whole, so it either makes every
-// update or none.
-func (m *Mirror) refusals(who caller.Caller, repo *gitk8s.Repository, p *pushRequest) []string {
+// refusals returns why who, which runs check, may not make each update in
+// p, or nil if it may make them all. The mirror refuses a push whole, so it
+// either makes every update or none.
+func (m *Mirror) refusals(who caller.Caller, check string, repo *gitk8s.Repository, p *pushRequest) []string {
 	reasons := make([]string, len(p.commands))
 	refused := false
 	for i, c := range p.commands {
-		reasons[i] = m.refuse(who, repo, c)
+		reasons[i] = m.refuse(who, check, repo, c)
 		refused = refused || reasons[i] != ""
 	}
 	if !refused {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -32,7 +33,9 @@ const (
 // fixture serves a mirror whose copy of default/app has main at base and
 // feature at feature. Main's merge policy lets the gofmt check push and
 // lists the approval check, and the service account git-k8s-deps may start
-// branches under deps/.
+// branches under deps/. The git-k8s-checks ConfigMap makes the service
+// account bot in the namespace checks the gofmt check, and names the gofmt
+// check for the core program, which is never a check.
 type fixture struct {
 	*world
 	srv           *httptest.Server
@@ -90,9 +93,12 @@ func newFixture(t *testing.T) *fixture {
 			Audiences: []string{gitk8s.MirrorAudience},
 		}
 	}
+	checks := &k8s.ConfigMap{Object: kube.Meta(caller.ChecksConfigMap, nil), Data: map[string]string{"checks.bot": "gofmt", "git-k8s.git-k8s": "gofmt"}}
+	checks.Namespace = caller.ChecksNamespace
 	objects := []any{
 		repo,
 		unsynced,
+		checks,
 		branch("app-feature", "gotest-1"),
 		pod("gotest-1", gitk8s.GoTestController, "Pending"),
 		branch("app-squatted", "gotest-squatted"),
@@ -103,6 +109,8 @@ func newFixture(t *testing.T) *fixture {
 		token("approval", "system:serviceaccount:check-approval:check-approval", nil),
 		token("other", "system:serviceaccount:check-other:check-other", nil),
 		token("deps", "system:serviceaccount:git-k8s-deps:git-k8s-deps", nil),
+		token("bot", "system:serviceaccount:checks:bot", nil),
+		token("core", "system:serviceaccount:git-k8s:git-k8s", nil),
 		podToken("pod", "default", "gotest-1", "uid-gotest-1"),
 		podToken("stray-pod", "default", "gotest-2", "uid-gotest-2"),
 		podToken("team-pod", "team", "gotest-1", "uid-gotest-1"),
@@ -193,6 +201,8 @@ func TestServeHTTPStatus(t *testing.T) {
 		{name: "a check that may push", path: push, token: "gofmt", want: http.StatusOK, body: "001f# service=git-receive-pack\n0000"},
 		{name: "a check that may not push", path: push, token: "approval", want: http.StatusForbidden, body: "check-approval/check-approval may not push to default/app"},
 		{name: "a controller with a prefix", path: push, token: "deps", want: http.StatusOK},
+		{name: "a check through its ConfigMap entry", path: push, token: "bot", want: http.StatusOK},
+		{name: "the core program, whose ConfigMap entry names a check", path: fetch, token: "core", want: http.StatusNotFound, body: "no GitRepository default/app that git-k8s/git-k8s may fetch"},
 		{name: "a test Pod fetches", path: fetch, token: "pod", want: http.StatusOK},
 		{name: "a test Pod pushes", path: push, token: "pod", want: http.StatusForbidden},
 		{name: "a Pod that no check runs", path: fetch, token: "stray-pod", want: http.StatusNotFound},
@@ -318,6 +328,20 @@ func TestServeLetsControllersStartBranches(t *testing.T) {
 	}
 	if got := f.takeTriggered(); len(got) != 3 {
 		t.Errorf("3 pushes triggered %v; want 3 triggers", got)
+	}
+}
+
+// TestServeMapsChecksWithTheConfigMap pushes as a service account that only
+// the git-k8s-checks ConfigMap makes a check.
+func TestServeMapsChecksWithTheConfigMap(t *testing.T) {
+	f := newFixture(t)
+	fix := f.commit(f.feature, "fix")
+	if out, err := f.git("bot", "push", f.url("app"), fix+":refs/heads/feature"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	wantHeads(t, "the copy's branches", f.copyRefs("refs/heads/"), map[string]string{"main": f.base, "feature": fix})
+	if out, err := f.git("bot", "push", f.url("app"), fix+":refs/heads/main"); err == nil || !strings.Contains(err.Error(), "main is a parent branch") {
+		t.Errorf("push to main: %v\n%s; want a refusal", err, out)
 	}
 }
 

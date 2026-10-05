@@ -207,7 +207,7 @@ do:
 
 | Caller | Can fetch | Can push |
 | --- | --- | --- |
-| The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME` | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
+| The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME`, or as a service account that the `git-k8s-checks` ConfigMap maps to `NAME`, as [Check service accounts](#check-service-accounts) describes | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
 | A controller that starts branches, or a check such as `check-conflicts`, whose service account the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
 | A Pod of a check, such as a test Pod of `check-gotest` or an agent Pod of `check-review` or `check-conflicts`, with a token that's bound to the Pod | The repository of the branch that the Pod works on, while the check's `Running` result on that branch names the Pod, the branch's merge policy lists the check, and the Pod is `Pending` | Nothing |
 
@@ -3236,13 +3236,13 @@ denies.
 
 ### Check service accounts
 
-The results endpoint and the first two policies recognize a check by its
-service account. `generate` installs `check-NAME` with the service account
-`check-NAME` in the namespace `check-NAME`, and the endpoint and the
-policies treat that service account as the check `NAME`. For a check that
-runs as another service account, such as a check installed with
-`generate -namespace=checks`, add an entry to the `git-k8s-checks`
-ConfigMap in the `git-k8s` namespace. Each key is
+The results endpoint, the [mirror](#the-mirror), and the first two policies
+recognize a check by its service account. `generate` installs `check-NAME`
+with the service account `check-NAME` in the namespace `check-NAME`, and the
+endpoint, the mirror, and the policies treat that service account as the
+check `NAME`. For a check that runs as another service account, such as a
+check installed with `generate -namespace=checks`, add an entry to the
+`git-k8s-checks` ConfigMap in the `git-k8s` namespace. Each key is
 `NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
 
 ```sh
@@ -3251,9 +3251,10 @@ kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
 ```
 
 An entry overrides the `check-NAME` convention, so an entry with an empty
-value stops that service account from sending results. The first two
-policies still treat that service account as a check, so it can't change a
-`GitBranch` or its status even if RBAC lets it patch them. The endpoint and
+value stops that service account from sending results, and from fetching
+from the mirror or pushing to it as a check. The first two policies still
+treat that service account as a check, so it can't change a `GitBranch` or
+its status even if RBAC lets it patch them. The endpoint, the mirror, and
 the policies ignore an entry for the core program's service account,
 `git-k8s.git-k8s`, so an entry can't make the core program a check, or stop
 it from writing results or changing `GitBranch` objects. Don't add an entry
@@ -3262,20 +3263,15 @@ Pods run their Pods as that service account, as
 [Security model](#security-model) describes. The core program applies the
 ConfigMap without data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
-service accounts send which results, so give that permission only to people
-who can install checks.
+service accounts send which results, and which ones fetch and push as which
+checks, so give that permission only to people who can install checks.
 
 The third policy doesn't read the ConfigMap, so an entry doesn't change
 which Pods a check can write. A check that owns Pods and runs as another
-service account needs a policy of its own.
-
-The [mirror](#the-mirror) doesn't read the ConfigMap either. It treats only
-the service account `check-NAME` in the namespace `check-NAME` as the check
-`NAME`, so a check that runs as another service account can't fetch from the
-mirror or push to it. An entry with an empty value doesn't stop a check from
-fetching or pushing. To stop a check from pushing, remove its `mayPush`
-from the repositories' merge policies, and to stop it from fetching too,
-remove the check from them.
+service account needs a policy of its own. The core program's
+`-branch-prefix` names service accounts too, so a check such as
+`check-conflicts` that runs as another service account needs that flag to
+name its service account.
 
 While the ConfigMap is missing, the API server denies every create and update
 of a `GitBranch` or its status, including people's, with a message that says

@@ -72,6 +72,11 @@ var (
 	// controller's namespace.
 	depsImpostor = caller.Caller{Namespace: "team", Name: "git-k8s-deps"}
 	depsNeighbor = caller.Caller{Namespace: "git-k8s-deps", Name: "default"}
+	// bot runs the gofmt check through its entry in the git-k8s-checks
+	// ConfigMap, botAsGofmt.
+	bot        = caller.Caller{Namespace: "checks", Name: "bot"}
+	botAsGofmt = map[string]string{"checks.bot": "gofmt"}
+	core       = caller.Caller{Namespace: "git-k8s", Name: "git-k8s"}
 )
 
 func TestRefuse(t *testing.T) {
@@ -82,7 +87,9 @@ func TestRefuse(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		who  caller.Caller
-		c    command
+		// entries are the git-k8s-checks ConfigMap's.
+		entries map[string]string
+		c       command
 		// want is part of the refusal, or "" if the update is allowed.
 		want string
 	}{
@@ -108,9 +115,16 @@ func TestRefuse(t *testing.T) {
 		{name: "a check's name in another namespace", who: impostor, c: update("refs/heads/feature"), want: "team/check-gofmt may not push"},
 		{name: "a controller's name in another namespace", who: depsImpostor, c: create("refs/heads/deps/bump"), want: "team/git-k8s-deps may not push"},
 		{name: "another service account in a controller's namespace", who: depsNeighbor, c: create("refs/heads/deps/bump"), want: "git-k8s-deps/default may not push"},
+		{name: "a check through its ConfigMap entry", who: bot, entries: botAsGofmt, c: update("refs/heads/feature")},
+		{name: "a check through its ConfigMap entry updates a parent", who: bot, entries: botAsGofmt, c: update("refs/heads/main"), want: "main is a parent branch"},
+		{name: "a service account without an entry", who: bot, c: update("refs/heads/feature"), want: "checks/bot may not push"},
+		{name: "a check whose entry names another check", who: gofmt, entries: map[string]string{"check-gofmt.check-gofmt": "risk"}, c: update("refs/heads/feature"), want: "the merge policy of main doesn't let the risk check push"},
+		{name: "a check whose entry is empty", who: gofmt, entries: map[string]string{"check-gofmt.check-gofmt": ""}, c: update("refs/heads/feature"), want: "check-gofmt/check-gofmt may not push"},
+		{name: "the core program, whose entry names a check", who: core, entries: map[string]string{"git-k8s.git-k8s": "gofmt"}, c: update("refs/heads/feature"), want: "git-k8s/git-k8s may not push"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := m.refuse(tc.who, rulesRepo, tc.c)
+			check, _ := tc.who.Check(tc.entries)
+			got := m.refuse(tc.who, check, rulesRepo, tc.c)
 			if tc.want == "" && got != "" || !strings.Contains(got, tc.want) {
 				t.Errorf("refuse = %q; want %q", got, tc.want)
 			}
@@ -183,8 +197,10 @@ func TestMayFetchAndPush(t *testing.T) {
 	}
 	r := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
 	for _, tc := range []struct {
-		name              string
-		who               caller.Caller
+		name string
+		who  caller.Caller
+		// entries are the git-k8s-checks ConfigMap's.
+		entries           map[string]string
 		mayFetch, mayPush bool
 	}{
 		{name: "a check that may push", who: gofmt, mayFetch: true, mayPush: true},
@@ -215,13 +231,20 @@ func TestMayFetchAndPush(t *testing.T) {
 		{name: "a review Pod whose agent has finished", who: pod("team", "review-running")},
 		{name: "a Pod with the gotest label that the review result names", who: pod("team", "review-squatted")},
 		{name: "a Pod that a result names on a branch whose policy doesn't list the check", who: pod("team", "review-unlisted")},
+		{name: "a check through its ConfigMap entry", who: bot, entries: botAsGofmt, mayFetch: true, mayPush: true},
+		{name: "a service account without an entry", who: bot},
+		{name: "a check whose entry names one that the repository doesn't list", who: gofmt, entries: map[string]string{"check-gofmt.check-gofmt": "approval"}},
+		{name: "a check whose entry names a check that the repository lists", who: approval, entries: map[string]string{"check-approval.check-approval": "risk"}, mayFetch: true, mayPush: true},
+		{name: "a check whose entry is empty", who: gofmt, entries: map[string]string{"check-gofmt.check-gofmt": ""}},
+		{name: "the core program, whose entry names a check", who: core, entries: map[string]string{"git-k8s.git-k8s": "gofmt"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := m.mayFetch(ctx, tc.who, r)
+			check, _ := tc.who.Check(tc.entries)
+			got, err := m.mayFetch(ctx, tc.who, check, r)
 			if err != nil || got != tc.mayFetch {
 				t.Errorf("mayFetch = %v, %v; want %v", got, err, tc.mayFetch)
 			}
-			if got := m.mayPushAny(tc.who, r); got != tc.mayPush {
+			if got := m.mayPushAny(tc.who, check, r); got != tc.mayPush {
 				t.Errorf("mayPushAny = %v; want %v", got, tc.mayPush)
 			}
 		})

@@ -57,15 +57,16 @@ func (m *Mirror) prefixes(who caller.Caller) []string {
 	return out
 }
 
-// mayFetch reports whether who may fetch repo: a controller with a branch
-// prefix, a check that one of repo's merge policies lists, or a Pending Pod
-// in repo's namespace that such a check runs on one of repo's branches. An
-// error means that the mirror couldn't get the Pod.
-func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, repo *gitk8s.Repository) (bool, error) {
+// mayFetch reports whether who, which runs check, or no check if check is
+// "", may fetch repo: a controller with a branch prefix, a check that one of
+// repo's merge policies lists, or a Pending Pod in repo's namespace that
+// such a check runs on one of repo's branches. An error means that the
+// mirror couldn't get the Pod.
+func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, check string, repo *gitk8s.Repository) (bool, error) {
 	if len(m.prefixes(who)) > 0 {
 		return true, nil
 	}
-	if check, ok := who.Check(); ok && listed(repo, check, false) {
+	if check != "" && listed(repo, check, false) {
 		return true, nil
 	}
 	if who.Pod == "" || who.PodUID == "" || who.Namespace != repo.Namespace {
@@ -78,13 +79,13 @@ func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, repo *gitk8s.R
 	return isCheckPod(ctx, who, checks)
 }
 
-// mayPushAny reports whether who may push some branch of repo.
-func (m *Mirror) mayPushAny(who caller.Caller, repo *gitk8s.Repository) bool {
+// mayPushAny reports whether who, which runs check, may push some branch of
+// repo.
+func (m *Mirror) mayPushAny(who caller.Caller, check string, repo *gitk8s.Repository) bool {
 	if len(m.prefixes(who)) > 0 {
 		return true
 	}
-	check, ok := who.Check()
-	return ok && listed(repo, check, true)
+	return check != "" && listed(repo, check, true)
 }
 
 // listed reports whether a merge policy of repo lists check, and with
@@ -151,8 +152,9 @@ func isCheckPod(ctx context.Context, who caller.Caller, checks []string) (bool, 
 	return false, nil
 }
 
-// refuse returns why who may not make update c to repo, or "" if it may.
-func (m *Mirror) refuse(who caller.Caller, repo *gitk8s.Repository, c command) string {
+// refuse returns why who, which runs check, may not make update c to repo,
+// or "" if it may.
+func (m *Mirror) refuse(who caller.Caller, check string, repo *gitk8s.Repository, c command) string {
 	branch, ok := strings.CutPrefix(c.Ref, headsPrefix)
 	if !ok || branch == "" {
 		return "the mirror takes only branches, under refs/heads/"
@@ -169,11 +171,10 @@ func (m *Mirror) refuse(who caller.Caller, repo *gitk8s.Repository, c command) s
 			return ""
 		}
 	}
-	check, ok := who.Check()
 	switch {
-	case !ok && len(prefixes) > 0:
+	case check == "" && len(prefixes) > 0:
 		return fmt.Sprintf("%s may push only branches under %s", who, strings.Join(prefixes, ", "))
-	case !ok:
+	case check == "":
 		return fmt.Sprintf("%s may not push", who)
 	case isZero(c.Old):
 		return "checks may not create branches"

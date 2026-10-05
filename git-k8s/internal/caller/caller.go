@@ -1,6 +1,6 @@
 // Package caller identifies the program that sends a request to the core
 // program, from the projected service account token in the request's
-// Authorization header.
+// Authorization header, and the check that the program runs.
 package caller
 
 import (
@@ -11,6 +11,17 @@ import (
 	"strings"
 
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
+)
+
+// ChecksNamespace and ChecksConfigMap name the git-k8s-checks ConfigMap,
+// which maps service accounts to checks. The admission policies in
+// config/policy.yaml read the same ConfigMap, and name the same service
+// account as the core program's.
+const (
+	ChecksNamespace = "git-k8s"
+	ChecksConfigMap = "git-k8s-checks"
+	coreAccount     = "git-k8s.git-k8s"
 )
 
 // ErrUnauthenticated is wrapped by Identify's errors when the request has
@@ -34,11 +45,34 @@ type Caller struct {
 
 func (c Caller) String() string { return c.Namespace + "/" + c.Name }
 
-// Check returns the name of the check that the caller runs. kube's
-// generate installs each program in a namespace with a service account of
-// the program's name, so the check NAME runs as the service account
-// check-NAME in the namespace check-NAME, as config/policy.yaml expects.
-func (c Caller) Check() (string, bool) {
+// Checks returns the data of the git-k8s-checks ConfigMap, the entries that
+// Check takes, or no entries if the ConfigMap doesn't exist.
+func Checks(ctx context.Context) (map[string]string, error) {
+	cm, err := kube.Fetch[k8s.ConfigMap](ctx, ChecksNamespace, ChecksConfigMap)
+	if err != nil || cm == nil {
+		return nil, err
+	}
+	return cm.Data, nil
+}
+
+// Check returns the name of the check that the caller runs. Each of
+// entries, the data of the git-k8s-checks ConfigMap, maps
+// NAMESPACE.SERVICE_ACCOUNT to a check's name, or to "" for a service
+// account that isn't a check. Without an entry, generate's convention
+// applies: it installs each program in a namespace with a service account
+// of the program's name, so the check NAME runs as the service account
+// check-NAME in the namespace check-NAME. The core program's service
+// account is never a check. The check variable of the policies in
+// config/policy.yaml maps service accounts the same way, so change both
+// together.
+func (c Caller) Check(entries map[string]string) (string, bool) {
+	account := c.Namespace + "." + c.Name
+	if account == coreAccount {
+		return "", false
+	}
+	if check, ok := entries[account]; ok {
+		return check, check != ""
+	}
 	name, ok := strings.CutPrefix(c.Name, "check-")
 	if !ok || name == "" || c.Namespace != c.Name {
 		return "", false
