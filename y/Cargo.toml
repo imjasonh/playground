@@ -31,6 +31,8 @@ url = "2"
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = { version = "0.8", features = ["d1"] }
+# join! runs independent D1 queries concurrently.
+futures = "0.3"
 # getrandom reaches crypto.getRandomValues through wasm-bindgen.
 getrandom = { version = "0.4", features = ["wasm_js"] }
 
