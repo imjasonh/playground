@@ -1563,7 +1563,10 @@ dg log -1 --format=%B FETCH_HEAD^ | grep -qx 'Git-K8s-Deps: go example.com/greet
 dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
 sleep 6
 [[ "$(remote_head main deps)" == "${deps_main}" ]]
-k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "git-k8s.imjasonh.com/approve=${fixed}"
+# config/approved-by.yaml sets approved-by to whoever sets approve.
+approver="$(k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "${APPROVE}=${fixed}" \
+  -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}')"
+[[ "${approver}" == "${admin}" ]]
 deps_landed() { [[ "$(remote_head main deps)" == "${fixed}" ]]; }
 eventually 120 deps_landed
 eventually 60 greet_branch_gone
@@ -1572,21 +1575,35 @@ eventually 60 no_agent_pods
 sleep 12
 [[ -z "$(remote_head "${GREET_BRANCH}" deps)" ]]
 deps_main_requires v1.1.0
-echo "v1.1.0 broke the build, the fake agent fixed it, and the fix landed once approved. v1.2.0 is too new, so no branch takes it."
+echo "v1.1.0 broke the build, the fake agent fixed it, and the fix landed once ${approver} approved it. v1.2.0 is too new, so no branch takes it."
 
+# git-k8s-deps doesn't have the approve verb, so git-k8s-approvals stops it
+# from approving. The API server reports only one of the policies that deny
+# a request, and not always the same one, so git-k8s-deps gets the verb here
+# and names itself in approved-by, which leaves git-k8s-branches as the only
+# policy that stops it.
+deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
+can_approve() {
+  [[ "$(k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com "--as=${deps_sa}" || true)" == "$1"* ]]
+}
+can_approve no
+k create clusterrolebinding git-k8s-e2e-deps-approve --clusterrole=git-k8s-e2e-approve \
+  --serviceaccount=git-k8s-deps:git-k8s-deps
+eventually 30 can_approve yes
 deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
 code="$(patch_branch "${deps_token}" '{}')"
 [[ "${code}" == 200 ]]
-for patch in "${approve}" '{"metadata":{"labels":{"e2e":"changed"}}}'; do
+for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
+  '{"metadata":{"labels":{"e2e":"changed"}}}'; do
   code="$(patch_branch "${deps_token}" "${patch}")"
   cat "${WORKDIR}/patch.json"
   echo
   [[ "${code}" == 422 ]]
   grep -q "git-k8s-deps can't change GitBranch objects" "${WORKDIR}/patch.json"
 done
-echo "git-k8s-deps can't approve or change a GitBranch."
+k delete clusterrolebinding git-k8s-e2e-deps-approve
+echo "git-k8s-deps can't approve a GitBranch, even with the approve verb, or change one."
 
-deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
 can_i() { k auth can-i "$1" configmaps -n "$2" "--as=${deps_sa}" || true; }
 for verb in get create patch; do
   [[ "$(can_i "${verb}" git-k8s-deps)" == yes ]]
