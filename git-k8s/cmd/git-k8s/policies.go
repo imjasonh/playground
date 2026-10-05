@@ -18,6 +18,7 @@ var policies = []struct {
 	{"git-k8s-check-results", []string{"checks can write each other's results"}},
 	{"git-k8s-branches", []string{"git-k8s service accounts can approve branches", "checks can change GitBranch objects"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
+	{"git-k8s-approvals", []string{"anyone who can patch a GitBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
 }
 
 type admissionPolicy struct {
@@ -66,11 +67,11 @@ func (s *labelSelector) selects() bool {
 	return s != nil && (len(s.MatchLabels) > 0 || len(s.MatchExpressions) > 0)
 }
 
-// policiesCondition reports whether the admission policies that keep checks
-// apart are installed, with bindings that deny the requests they reject,
-// even while the bindings' parameters are missing. Reading them through the
-// cache runs the reconcile again when they change. installs is set when the
-// program installs the policies when it starts.
+// policiesCondition reports whether the admission policies in
+// config/policy.yaml are installed, with bindings that deny the requests
+// they reject, even while the bindings' parameters are missing. Reading them
+// through the cache runs the reconcile again when they change. installs is
+// set when the program installs the policies when it starts.
 func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
 	var missing, weak, warns, patches, exposures []string
@@ -111,7 +112,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-			Message: "the admission policies keep git-k8s service accounts from approving branches and keep checks to their own results and Pods",
+			Message: "the admission policies keep git-k8s service accounts from approving branches, keep checks to their own results and Pods, and check who approves branches",
 		}
 	}
 	var problems, sentences, fixes []string

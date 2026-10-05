@@ -1,6 +1,6 @@
-// Package analysis finds the types that a program passes to a package's
-// generic functions, by type-checking the program's source with export data
-// from the go command.
+// Package analysis finds which of a package's functions a program calls, and
+// the types that it passes to the generic ones, by type-checking the
+// program's source with export data from the go command.
 package analysis
 
 import (
@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -41,6 +42,9 @@ type Config struct {
 	// Calls are the names of functions without type parameters whose uses
 	// to report.
 	Calls []string
+	// Consts maps some of Calls to the index of a string parameter. For a
+	// call that passes a constant there, Find reports the constant.
+	Consts map[string]int
 	// Marker is a struct type in Package. Find reports the tag of the field
 	// through which a type argument embeds it.
 	Marker string
@@ -60,6 +64,10 @@ type Use struct {
 	// Fields are the names in the json tags of the type's exported fields,
 	// other than the field that embeds Marker.
 	Fields []string
+	// Constant is set for a call that passes a constant as the argument
+	// that Consts names, and Value is the constant.
+	Constant bool
+	Value    string
 	// Pos is where the call is.
 	Pos string
 }
@@ -199,6 +207,7 @@ func (a *analyzer) check(p *listedPackage) error {
 		}),
 	}
 	info := &types.Info{
+		Types:     map[ast.Expr]types.TypeAndValue{},
 		Instances: map[*ast.Ident]types.Instance{},
 		Uses:      map[*ast.Ident]types.Object{},
 		Defs:      map[*ast.Ident]types.Object{},
@@ -260,10 +269,40 @@ func (a *analyzer) check(p *listedPackage) error {
 			a.add(to, typeArg{arg, pos})
 		}
 	}
+	// constArg holds the constant argument that Consts asks for, by the
+	// called function's identifier, for calls that pass one.
+	constArg := map[*ast.Ident]string{}
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			var id *ast.Ident
+			switch fun := ast.Unparen(call.Fun).(type) {
+			case *ast.Ident:
+				id = fun
+			case *ast.SelectorExpr:
+				id = fun.Sel
+			}
+			fn, ok := info.Uses[id].(*types.Func)
+			if !ok || fn.Pkg() == nil || fn.Pkg().Path() != a.cfg.Package {
+				return true
+			}
+			if i, ok := a.cfg.Consts[fn.Name()]; ok && i < len(call.Args) {
+				if v := info.Types[call.Args[i]].Value; v != nil && v.Kind() == constant.String {
+					constArg[id] = constant.StringVal(v)
+				}
+			}
+			return true
+		})
+	}
 	for id, obj := range info.Uses {
 		fn, ok := obj.(*types.Func)
 		if ok && fn.Pkg() != nil && fn.Pkg().Path() == a.cfg.Package && fn.Signature().Recv() == nil && slices.Contains(a.cfg.Calls, fn.Name()) {
-			a.calls = append(a.calls, Use{Func: fn.Name(), Pos: fset.Position(id.Pos()).String()})
+			u := Use{Func: fn.Name(), Pos: fset.Position(id.Pos()).String()}
+			u.Value, u.Constant = constArg[id]
+			a.calls = append(a.calls, u)
 		}
 	}
 	return nil
@@ -391,6 +430,9 @@ func jsonFields(st *types.Struct, skip int) []string {
 
 // String formats a use for messages.
 func (u Use) String() string {
+	if u.Constant {
+		return fmt.Sprintf("%s(%q) at %s", u.Func, u.Value, u.Pos)
+	}
 	if u.Type == "" {
 		return fmt.Sprintf("%s at %s", u.Func, u.Pos)
 	}
