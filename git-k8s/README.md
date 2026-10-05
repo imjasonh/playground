@@ -254,9 +254,9 @@ tries again, and `check-conflicts` on a branch with a parent, which reports
 `Running` and tries again. When `git-k8s-deps` can't, it logs
 `reconcile failed; retrying` with the error and tries again with backoff. The
 messages include Octo STS's answer, such as
-`unable to find trust policy for "git-k8s"`. Octo STS
-caches each trust policy, and the lack of one, for 5 minutes, so a change to a
-trust policy can take that long to apply.
+`unable to find trust policy for "git-k8s"`. Octo STS caches each trust
+policy, and the lack of one, for 5 minutes, so a change to a trust policy can
+take that long to apply.
 
 ### Check runs
 
