@@ -211,7 +211,11 @@ func mergeIn(t *testing.T, srv *gittest.Server, parent, b *gitk8s.GitBranch, wor
 	results := b.Status.Checks
 	repo, secret := srv.Repository("app", rules()...)
 	ctx, _ := kube.Fake(t.Context(), b, append([]any{repo, secret, parent}, world...)...)
-	if err := (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b); err != nil {
+	m := &merger{
+		ident: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"},
+		cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()},
+	}
+	if err := m.Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	b.Status.Checks = results

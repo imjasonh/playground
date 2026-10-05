@@ -607,9 +607,9 @@ branches land through a queue for each parent instead:
    again, merges the parent in, and pushes the merge. Every check then runs
    on the new head. A branch that already contains the parent skips this
    step.
-3. When the gate passes for the new head, the merge controller
-   fast-forwards the parent to the branch, and the next branch moves to the
-   front.
+3. When the gate passes for the new head, the merge controller lands the
+   branch, as [Landing methods](#landing-methods) describes, and the next
+   branch moves to the front.
 
 The branches behind the front keep their heads, so each landing runs every
 check again on one branch, and only the checks that set `UsesParent`, such
@@ -632,6 +632,11 @@ A branch leaves the queue when one of these happens:
   after the merge of the parent. At the front, it leaves sooner, as soon
   as the `base` check fails or the gate fails with its unfinished checks
   counted as passing.
+- A squash or rebase landing sets its state to `NeedsRebase` or
+  `Rewritten`, as [Landing methods](#landing-methods) describes. The branch
+  doesn't join again until its head or its parent's head changes. For a
+  `Rewritten` branch, that happens when the repositories controller lists
+  the commit that the landing pushed.
 - Someone deletes the branch, which deletes its `GitBranch`.
 - Its parent goes away, or the parent's merge policy goes away or can't be
   evaluated.
@@ -651,10 +656,11 @@ Three choices shape the queue:
 - **How it orders branches.** Branches keep the order in which they joined.
   Branches that join between two reconciles of the parent go by
   `status.queued.since`, which is to the second, then by name.
-- **Whether to merge or rebase.** The front merges the parent in, as
-  `check-base` did before the queue. A rebase rewrites commits that people
-  pushed, so their next push would conflict, and the merge controller
-  couldn't tell a check's rebase from a force push.
+- **Whether to merge or rebase.** The front catches up with the parent by
+  merging it in, as `check-base` did before the queue. A rebase rewrites
+  commits that people pushed, so their next push would conflict, and the
+  merge controller couldn't tell a check's rebase from a force push. A
+  squash or rebase landing still leaves the merge out of the parent.
 
 At the front, the `base` check merges the parent at the head that the
 repository controller listed. If the parent moved after that, the check
@@ -777,9 +783,10 @@ them, the push changes neither, and the controller tries again.
 When the gate doesn't pass on the counted results alone, the controller
 pushes the new commit to the branch instead, with a lease on the branch's
 head, and sets the branch's state to `Rewritten`. The checks run on the new
-commit, and when the gate passes, the parent fast-forwards to it.
-`check-approval` passes only for the head that the annotation names, so a
-rewritten branch needs a new approval.
+commit, and when the gate passes, the parent fast-forwards to it. In a
+[merge queue](#merge-queue), the branch first joins the queue again at the
+back. `check-approval` passes only for the head that the annotation names,
+so a rewritten branch needs a new approval.
 
 A check with `mayPush: true` can push a fix on top of the new commit. While
 the parent doesn't move, a squash landing doesn't squash its own commit and

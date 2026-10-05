@@ -100,9 +100,10 @@ func position(ctx context.Context, b *gitk8s.GitBranch) (int32, int) {
 // lands, when someone other than a check pushes to it, or when its checks
 // finish without passing. At the front, b leaves as soon as it can't pass
 // even if its unfinished checks do, so it doesn't hold up the branches
-// behind it. A branch that leaves joins again at the back. Only the branch
-// at the front lands, after the base check merges the parent into it if
-// it's behind.
+// behind it. It also leaves when a squash or rebase landing sets it aside,
+// and then it doesn't join again until its spec changes. Otherwise, a
+// branch that leaves joins again at the back. Only the branch at the front
+// lands, after the base check merges the parent into it if it's behind.
 func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
 	spec := &b.Spec
 	base := checks["base"]
@@ -119,6 +120,9 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 	}
 	if q == nil && !ready {
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		return nil
+	}
+	if q == nil && setAside(b) {
 		return nil
 	}
 	pos, n := position(ctx, b)
@@ -163,7 +167,7 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		if err := m.land(ctx, b, results); err != nil {
 			return err
 		}
-		if c := kube.FindCondition(b.Status.Conditions, "Merged"); c.Status == kube.True {
+		if c := kube.FindCondition(b.Status.Conditions, "Merged"); c.Status == kube.True || setAside(b) {
 			b.Status.Queued = nil
 		}
 	}
@@ -176,6 +180,15 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 func landed(b *gitk8s.GitBranch) bool {
 	c := kube.FindCondition(b.Status.Conditions, "Merged")
 	return c != nil && c.Reason == reasonLanded && c.ObservedGeneration == b.Generation
+}
+
+// setAside reports whether a squash or rebase landing set b aside at its
+// current spec, because b needs a rebase or because this controller pushed
+// rewritten commits to b for the checks. Such a branch stays out of the
+// queue until its spec changes, when b or its parent moves.
+func setAside(b *gitk8s.GitBranch) bool {
+	c := kube.FindCondition(b.Status.Conditions, "Merged")
+	return c != nil && (c.Reason == reasonNeedsRebase || c.Reason == reasonRewritten) && c.ObservedGeneration == b.Generation
 }
 
 // settled reports whether every check has passed or failed for the branch's

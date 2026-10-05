@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -505,6 +506,114 @@ func TestLeavingTheFront(t *testing.T) {
 			}
 			if got := srv.Heads(t, "app")["main"]; got != main {
 				t.Errorf("main moved to %s", got)
+			}
+		})
+	}
+}
+
+// A squash or rebase landing at the front can set the branch aside: the
+// branch needs a rebase, or the merge controller pushes the rewritten
+// commits to it for a check whose results don't have filesOnly. The branch
+// leaves the queue, so the next branch moves to the front, and it joins
+// again only after its spec changes.
+func TestLandingSetsTheFrontAside(t *testing.T) {
+	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name    string
+		landing string
+		// change makes the merge of main into c/one change a file of its
+		// own, which a rebase leaves out.
+		change bool
+		// history adds a check whose results don't have filesOnly.
+		history bool
+		state   string
+	}{{
+		name:    "a rebase that needs a person",
+		landing: gitk8s.Rebase,
+		change:  true,
+		state:   reasonNeedsRebase,
+	}, {
+		name:    "a squash that the checks see first",
+		landing: gitk8s.Squash,
+		history: true,
+		state:   reasonRewritten,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			one, two, w := behind(t, srv)
+			main := parentOf(one, "c/one", "c/two")
+			start := main.Spec.Head
+			reconcile := func(b *gitk8s.GitBranch) string {
+				t.Helper()
+				return mergeIn(t, srv, main, b)
+			}
+			// pass moves b to head, with passing results for it.
+			pass := func(b *gitk8s.GitBranch, head string) {
+				b.Generation++
+				b.Spec.Head = head
+				b.Status.Checks = map[string]gitk8s.CheckResult{
+					"base":  {Commit: head, ParentCommit: start, State: gitk8s.Passed, FilesOnly: true},
+					"gofmt": {Commit: head, State: gitk8s.Passed, FilesOnly: true},
+				}
+				if tc.history {
+					withHistoryCheck(b)
+				}
+			}
+			p := *policy
+			p.Landing = tc.landing
+			one.Spec.Merge = &p
+			two.Status.Queued = &gitk8s.Queued{Since: since, Head: two.Spec.Head, Position: 2}
+
+			t.Log("The base check merges main into c/one at the front, the checks pass, and the landing sets c/one aside.")
+			w.Branch("c/one", one.Spec.Head)
+			w.Git("merge", "--quiet", "--no-ff", "-m", "Merge main into c/one\n\n"+git.FixerTrailer+": base", start)
+			if tc.change {
+				w.Write("merge.txt", "merge\n")
+				w.Git("add", "-A")
+				w.Git("commit", "--quiet", "--amend", "--no-edit")
+			}
+			w.Push("c/one")
+			pass(one, w.Git("rev-parse", "HEAD"))
+			one.Status.Queued = &gitk8s.Queued{Since: since, Head: one.Spec.Head, Position: 1}
+			msg := reconcile(one)
+			if one.Status.State != tc.state || one.Status.Queued != nil {
+				t.Fatalf("c/one: state %q, queued %+v, %q; want %s, out of the queue", one.Status.State, one.Status.Queued, msg, tc.state)
+			}
+			heads := srv.Heads(t, "app")
+			if heads["main"] != start {
+				t.Fatalf("main moved to %s", heads["main"])
+			}
+
+			t.Log("Until its spec changes, c/one stays out of main's queue, and the merge controller doesn't land it again.")
+			if again := reconcile(one); one.Status.State != tc.state || one.Status.Queued != nil || again != msg {
+				t.Errorf("c/one: state %q, queued %+v, %q; want it unchanged", one.Status.State, one.Status.Queued, again)
+			}
+			if got, want := queueOf(t, main, one, two), []string{"c/two"}; !slices.Equal(got, want) {
+				t.Fatalf("queue = %q, want %q", got, want)
+			}
+			if again := reconcile(one); one.Status.State != tc.state || one.Status.Queued != nil || again != msg {
+				t.Errorf("c/one after main's queue dropped it: state %q, queued %+v, %q; want it unchanged", one.Status.State, one.Status.Queued, again)
+			}
+			if after := srv.Heads(t, "app"); !maps.Equal(after, heads) {
+				t.Errorf("heads = %v, want %v", after, heads)
+			}
+
+			t.Log("c/two moves to the front.")
+			if msg := reconcile(two); two.Status.Queued == nil || two.Status.Queued.Position != 1 ||
+				msg != "first in main's queue; waiting for the base check to merge main in" {
+				t.Errorf("c/two: queued %+v, %q", two.Status.Queued, msg)
+			}
+
+			t.Log("Someone pushes to c/one, and it joins main's queue at the back when its gate passes.")
+			w.Branch("c/one", w.Fetch("c/one"))
+			w.Write("more.txt", "more\n")
+			pass(one, w.Commit("more work"))
+			w.Push("c/one")
+			if msg := reconcile(one); one.Status.State != reasonQueued || one.Status.Queued == nil || msg != "joining main's queue" {
+				t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
+			}
+			if got, want := queueOf(t, main, one, two), []string{"c/two", "c/one"}; !slices.Equal(got, want) {
+				t.Errorf("queue = %q, want %q", got, want)
 			}
 		})
 	}
