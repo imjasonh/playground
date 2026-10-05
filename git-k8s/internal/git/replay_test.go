@@ -402,7 +402,7 @@ func TestReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	onto, err := repo.CommitTree(ctx, ontoTree, []string{base}, "Add b\n", id, 1900000000)
+	onto, err := repo.CommitTree(ctx, ontoTree, []string{base}, "Add b\n", id, 1900000000, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,11 +411,11 @@ func TestReplay(t *testing.T) {
 		t.Fatalf("Merge = %v, %v", conflicts, err)
 	}
 
-	replay, err := repo.Replay(ctx, original, onto, tree, id)
+	replay, err := repo.Replay(ctx, original, onto, tree, id, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again, err := repo.Replay(ctx, original, onto, tree, id); err != nil || again != replay {
+	if again, err := repo.Replay(ctx, original, onto, tree, id, nil); err != nil || again != replay {
 		t.Errorf("Replay again = %s, %v; want the same commit %s", again, err, replay)
 	}
 	if err := repo.Push(ctx, srv.Remote("app"), git.RefUpdate{Ref: "refs/heads/replay", New: replay}); err != nil {

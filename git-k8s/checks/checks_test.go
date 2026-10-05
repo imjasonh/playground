@@ -72,6 +72,39 @@ func touch(runs *int) checks.Check {
 	}}
 }
 
+// replay proposes the branch's head replayed onto the parent's head, and
+// then onto that replay, as a check that replays several commits does. It
+// has touch's name, so the fixture's policy runs it.
+func replay() checks.Check {
+	return checks.Check{Name: "touch", Remote: credentials.Remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+		repo, err := in.Repo(ctx)
+		if err != nil {
+			return checks.Verdict{}, err
+		}
+		c, err := repo.Commit(ctx, in.Spec.Head)
+		if err != nil {
+			return checks.Verdict{}, err
+		}
+		tip := in.Spec.ParentHead
+		for range 2 {
+			if tip, err = in.Replay(ctx, in.Spec.Head, tip, c.Tree); err != nil {
+				return checks.Verdict{}, err
+			}
+		}
+		v := checks.Fail("replayed")
+		v.Fix = tip
+		return v, nil
+	}}
+}
+
+// forEachCommitter runs test with a check that commits with
+// Input.CommitTree, and with one that commits with Input.Replay.
+func forEachCommitter(t *testing.T, test func(t *testing.T, check checks.Check)) {
+	runs := 0
+	t.Run("CommitTree", func(t *testing.T) { test(t, touch(&runs)) })
+	t.Run("Replay", func(t *testing.T) { test(t, replay()) })
+}
+
 type fixture struct {
 	srv    *gittest.Server
 	work   *gittest.Work
@@ -191,38 +224,66 @@ func TestSignsFixes(t *testing.T) {
 	}
 }
 
-func TestCommitTreeNeedsSigningKey(t *testing.T) {
+func TestSignsReplays(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
-	head := f.branch.Spec.Head
-	runs := 0
-	check := touch(&runs)
-	check.SigningKey = nil
-	err := f.reconcile(t, check)
-	if err == nil || !strings.Contains(err.Error(), "set Check.SigningKey to signing.Key") {
-		t.Fatalf("err = %v, want one that says to set Check.SigningKey", err)
+	signer := gittest.NewSigner(t, f.cfg.Identity.Email)
+	f.world = append(f.world, signer.Sign(f.repo))
+	reads := 0
+	check := replay()
+	check.SigningKey = func(ctx context.Context, repo *gitk8s.Repository) (*git.SigningKey, error) {
+		reads++
+		return signing.Key(ctx, repo)
 	}
-	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
-		t.Errorf("result = %+v, want Error", res)
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
 	}
-	if got := f.srv.Heads(t, "app")["c/x"]; got != head {
-		t.Errorf("c/x moved to %s", got)
+	fix := f.work.Fetch("c/x")
+	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed replays %s", res, fix)
+	}
+	for _, c := range []string{fix, fix + "~1"} {
+		if err := signer.Verify(f.work.Dir, c); err != nil {
+			t.Error(err)
+		}
+	}
+	if reads != 1 {
+		t.Errorf("read the signing key %d times for two replays, want once", reads)
 	}
 }
 
+func TestCommitsNeedSigningKey(t *testing.T) {
+	forEachCommitter(t, func(t *testing.T, check checks.Check) {
+		f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+		head := f.branch.Spec.Head
+		check.SigningKey = nil
+		err := f.reconcile(t, check)
+		if err == nil || !strings.Contains(err.Error(), "set Check.SigningKey to signing.Key") {
+			t.Fatalf("err = %v, want one that says to set Check.SigningKey", err)
+		}
+		if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
+			t.Errorf("result = %+v, want Error", res)
+		}
+		if got := f.srv.Heads(t, "app")["c/x"]; got != head {
+			t.Errorf("c/x moved to %s", got)
+		}
+	})
+}
+
 func TestMissingSigningKeyIsReported(t *testing.T) {
-	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
-	f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
-	head := f.branch.Spec.Head
-	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err == nil {
-		t.Fatal("reconcile without the signing key's Secret succeeded")
-	}
-	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "Secret app-signing doesn't exist") {
-		t.Errorf("result = %+v, want Error because the Secret is missing", res)
-	}
-	if got := f.srv.Heads(t, "app")["c/x"]; got != head {
-		t.Errorf("c/x moved to %s without a signature", got)
-	}
+	forEachCommitter(t, func(t *testing.T, check checks.Check) {
+		f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+		f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
+		head := f.branch.Spec.Head
+		if err := f.reconcile(t, check); err == nil {
+			t.Fatal("reconcile without the signing key's Secret succeeded")
+		}
+		if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "Secret app-signing doesn't exist") {
+			t.Errorf("result = %+v, want Error because the Secret is missing", res)
+		}
+		if got := f.srv.Heads(t, "app")["c/x"]; got != head {
+			t.Errorf("c/x moved to %s without a signature", got)
+		}
+	})
 }
 
 func TestStaleRunsTheCheckAgain(t *testing.T) {
@@ -316,16 +377,17 @@ func TestDoesNotPushWithoutPermission(t *testing.T) {
 }
 
 func TestDoesNotReadSigningKeyWithoutPermission(t *testing.T) {
-	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
-	// The key's Secret doesn't exist, so reading the key fails.
-	f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
-	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err != nil {
-		t.Fatal(err)
-	}
-	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "doesn't let this check push") {
-		t.Errorf("result = %+v, want Failed because of the policy", res)
-	}
+	forEachCommitter(t, func(t *testing.T, check checks.Check) {
+		f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+		// The key's Secret doesn't exist, so reading the key fails.
+		f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatal(err)
+		}
+		if res := f.branch.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "doesn't let this check push") {
+			t.Errorf("result = %+v, want Failed because of the policy", res)
+		}
+	})
 }
 
 func TestStopsAtAutomatedCommitLimit(t *testing.T) {

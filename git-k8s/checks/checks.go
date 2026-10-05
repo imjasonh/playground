@@ -74,8 +74,9 @@ type Check struct {
 	Remote func(context.Context, *gitk8s.Repository) (git.Remote, error)
 	// SigningKey returns the key that signs a repository's commits, or nil
 	// if the repository doesn't name one. A check that calls
-	// Input.CommitTree sets it to signing.Key. A check that leaves it nil
-	// doesn't link that package, so its program doesn't read signing keys.
+	// Input.CommitTree or Input.Replay sets it to signing.Key. A check that
+	// leaves it nil doesn't link that package, so its program doesn't read
+	// signing keys.
 	SigningKey func(context.Context, *gitk8s.Repository) (*git.SigningKey, error)
 	// Run examines the branch.
 	Run func(ctx context.Context, in *Input) (Verdict, error)
@@ -128,16 +129,27 @@ func Main[V any, P interface {
 }](check Check) {
 	cfg := &Config{}
 	cfg.AddFlags(flag.CommandLine)
+	if check.SigningKey != nil {
+		RemoveSigningKeys()
+	}
+	kube.Main(For[V, P](check, cfg))
+}
+
+// RemoveSigningKeys removes the signing keys that an earlier run of the
+// program left, when the program runs in a Pod. Main calls it for a check
+// that signs commits. A program that signs commits but doesn't call Main
+// calls it before it starts its controllers.
+func RemoveSigningKeys() {
 	// A container that's killed while it signs a commit leaves the key in
 	// os.TempDir, which generate puts on a volume that outlives the
 	// container. Outside a Pod, as in generate or a controller run with
 	// -kubeconfig, other processes can be signing in the same directory.
-	if check.SigningKey != nil && os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
-		if err := git.RemoveSigningKeys(); err != nil {
-			slog.Warn("removing signing keys that an earlier run left", "err", err)
-		}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
+		return
 	}
-	kube.Main(For[V, P](check, cfg))
+	if err := git.RemoveSigningKeys(); err != nil {
+		slog.Warn("removing signing keys that an earlier run left", "err", err)
+	}
 }
 
 // For returns a controller that runs check on every GitBranch whose merge
@@ -283,6 +295,7 @@ type Input struct {
 	local     *git.Repo
 	unlock    func()
 	mergeBase *string
+	key       **git.SigningKey
 }
 
 // Remote returns the repository's URL and credentials, from Check.Remote.
@@ -350,20 +363,43 @@ func (in *Input) MergeBase(ctx context.Context) (string, error) {
 // the repository names one. Otherwise the framework doesn't push the
 // commit, so CommitTree neither reads the key nor signs the commit.
 func (in *Input) CommitTree(ctx context.Context, tree string, parents []string, message string, unix int64) (string, error) {
-	if in.check.SigningKey == nil {
-		return "", fmt.Errorf("the %s check can't make commits: set Check.SigningKey to signing.Key", in.check.Name)
-	}
-	local, err := in.Repo(ctx)
+	local, key, err := in.committer(ctx)
 	if err != nil {
 		return "", err
 	}
-	var key *git.SigningKey
-	if in.Policy.MayPush {
-		if key, err = in.check.SigningKey(ctx, in.Repository); err != nil {
-			return "", err
-		}
-	}
 	return local.CommitTree(ctx, tree, parents, message, in.identity, unix, key)
+}
+
+// Replay makes a commit in Repo's repository that replays commit onto
+// parent with tree, as git.Repo.Replay does, with the controller's identity
+// as its committer. It signs the commit as CommitTree does.
+func (in *Input) Replay(ctx context.Context, commit, parent, tree string) (string, error) {
+	local, key, err := in.committer(ctx)
+	if err != nil {
+		return "", err
+	}
+	return local.Replay(ctx, commit, parent, tree, in.identity, key)
+}
+
+// committer returns Repo's repository, and the key that signs the commits
+// that the check makes there, which is nil unless the check's policy lets
+// it push. It reads the key at most once.
+func (in *Input) committer(ctx context.Context) (*git.Repo, *git.SigningKey, error) {
+	if in.check.SigningKey == nil {
+		return nil, nil, fmt.Errorf("the %s check can't make commits: set Check.SigningKey to signing.Key", in.check.Name)
+	}
+	local, err := in.Repo(ctx)
+	if err != nil || !in.Policy.MayPush {
+		return local, nil, err
+	}
+	if in.key == nil {
+		key, err := in.check.SigningKey(ctx, in.Repository)
+		if err != nil {
+			return nil, nil, err
+		}
+		in.key = &key
+	}
+	return local, *in.key, nil
 }
 
 func (in *Input) release() {

@@ -17,24 +17,17 @@ import (
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 )
 
-// fetched pushes a commit to a test server and returns a local repository
-// that has fetched it, and the commit.
-func fetched(t *testing.T) (*git.Repo, git.Commit, string) {
+// fetchedCommit pushes a commit to a test server and returns a local
+// repository that has fetched it, and the commit.
+func fetchedCommit(t *testing.T) (*git.Repo, git.Commit, string) {
 	t.Helper()
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
 	w.Write("a.txt", "one\n")
 	head := w.Commit("base")
 	w.Push("main")
-	ctx := t.Context()
-	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
-		t.Fatal(err)
-	}
-	c, err := repo.Commit(ctx, head)
+	repo := fetched(t, srv, "main")
+	c, err := repo.Commit(t.Context(), head)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +36,7 @@ func fetched(t *testing.T) (*git.Repo, git.Commit, string) {
 
 func TestCommitTreeSigns(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
-	repo, c, head := fetched(t)
+	repo, c, head := fetchedCommit(t)
 	ctx := t.Context()
 	id := git.Identity{Name: "git-k8s", Email: signer.Email}
 	commit := func(key *git.SigningKey) string {
@@ -91,7 +84,7 @@ func TestCommitTreeSigns(t *testing.T) {
 // another person wrote, such as a rebased one, verifies too.
 func TestWriteCommitSigns(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
-	repo, c, head := fetched(t)
+	repo, c, head := fetchedCommit(t)
 	key, err := git.NewSigningKey(signer.Key)
 	if err != nil {
 		t.Fatal(err)
@@ -111,9 +104,34 @@ func TestWriteCommitSigns(t *testing.T) {
 	}
 }
 
+// A replay keeps the author of the commit that it replays, and verifies
+// against its committer, as a rebased commit does.
+func TestReplaySigns(t *testing.T) {
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	repo, c, head := fetchedCommit(t)
+	key, err := git.NewSigningKey(signer.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := git.Identity{Name: "git-k8s", Email: signer.Email}
+	replay, err := repo.Replay(t.Context(), head, head, c.Tree, id, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signer.Verify(repo.Dir, replay); err != nil {
+		t.Error(err)
+	}
+	if again, err := repo.Replay(t.Context(), head, head, c.Tree, id, key); err != nil || again != replay {
+		t.Errorf("Replay again = %s, %v; want the same commit %s", again, err, replay)
+	}
+	if unsigned, err := repo.Replay(t.Context(), head, head, c.Tree, id, nil); err != nil || signer.Verify(repo.Dir, unsigned) == nil {
+		t.Errorf("the replay without a key, %s, verified (%v)", unsigned, err)
+	}
+}
+
 func TestSigningKeyStaysPrivate(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
-	repo, c, head := fetched(t)
+	repo, c, head := fetchedCommit(t)
 
 	// Record what git hands ssh-keygen, and the permissions of the key file
 	// and its directory while ssh-keygen runs.

@@ -287,8 +287,9 @@ func (r *Repo) PatchIDs(ctx context.Context, commits []string) (map[string]strin
 // Replay commits tree with parent as its only parent, and with the author,
 // author date, and message of commit, which it replays. The committer is
 // id, at the later of commit's and parent's committer times, so the same
-// arguments always make the same commit.
-func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Identity) (string, error) {
+// arguments make the same commit, as WriteCommit describes. key signs the
+// commit unless it's nil.
+func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Identity, key *SigningKey) (string, error) {
 	out, err := r.run(ctx, "show", "-s", "--date=raw", "--format=format:%an%x00%ae%x00%ad%x00%ct%x00%B", "--end-of-options", commit)
 	if err != nil {
 		return "", err
@@ -315,5 +316,5 @@ func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Ident
 		Author:    Signature{Name: f[0], Email: f[1], Date: f[2]},
 		Committer: Signature{Name: id.Name, Email: id.Email, Date: fmt.Sprintf("%d +0000", max(ct, pct))},
 		Message:   f[4],
-	})
+	}, key)
 }
