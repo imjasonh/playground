@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Update, lint, build, and test every top-level Rust app.
+# Update, lint, build, and test every top-level Rust app, and update the
+# Wrangler version that the Cloudflare Worker apps deploy with.
 #
 # Runs `cargo update` (the lockfile-level analog of `go get -u`) then verifies
 # the app the same way the test workflow gates it, so an update is only pushed
@@ -42,6 +43,21 @@ if [ "${#apps[@]}" -eq 0 ]; then
     echo "- No Rust apps found." >> "$GITHUB_STEP_SUMMARY"
   fi
 fi
+
+# Bump the pinned Wrangler before the loop, so every Worker app's deploy
+# check runs with the new version.
+echo "::group::Update Wrangler"
+if (
+  cd .github/wrangler
+  npx --yes npm-check-updates@latest --upgrade
+); then
+  echo "- ✅ Wrangler: $(jq -r '.devDependencies.wrangler' .github/wrangler/package.json)" >> "$GITHUB_STEP_SUMMARY"
+else
+  result=failure
+  echo "::error title=Dependency update failed::Wrangler: npm-check-updates"
+  echo "- ❌ Wrangler: update failed" >> "$GITHUB_STEP_SUMMARY"
+fi
+echo "::endgroup::"
 
 for app in "${apps[@]}"; do
   echo "::group::Update and verify ${app}"

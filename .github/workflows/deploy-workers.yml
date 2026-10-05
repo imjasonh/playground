@@ -63,7 +63,8 @@ jobs:
 
       # wrangler-action v4 defaults to the latest Wrangler v4. Deploy with the
       # version pinned in .github/wrangler/package.json instead, so deploys
-      # are reproducible and Dependabot proposes (and CI tests) each bump.
+      # are reproducible and the daily dependency update (deps.yaml) proposes,
+      # and CI tests, each bump.
       # Keep it at 4.134.0 or later. Older versions drop
       # `[observability.issues]` from wrangler.toml, and a deploy without that
       # key turns Workers Issues off.

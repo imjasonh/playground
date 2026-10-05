@@ -212,7 +212,7 @@ discovery scripts.
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, plus the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
@@ -413,15 +413,17 @@ test workflow gates on:
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
 | Go | `go get -u ./...` | `go build ./...` → `go test -race ./...` |
 | Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
+| Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 
 - **Everything upgraded, built, and tested** → it opens (or updates) a pull
   request on `automation/dependency-updates` with the changed lockfiles/manifests
   (`go.mod`/`go.sum`, `package.json`/`package-lock.json` plus vendored output,
-  `Cargo.toml`/`Cargo.lock`), enables auto-merge, and lets required status
-  checks merge it into `main`. Direct pushes to `main` are blocked by branch
-  protection, so the workflow federates an [Octo STS](https://github.com/octo-sts/app)
+  `Cargo.toml`/`Cargo.lock`, and `.github/wrangler/package.json`), enables
+  auto-merge, and lets required status checks merge it into `main`. Direct
+  pushes to `main` are blocked by branch protection, so the workflow
+  federates an [Octo STS](https://github.com/octo-sts/app)
   GitHub App token (trust policy
   `.github/chainguard/dependency-updates.sts.yaml`) instead of using
   `GITHUB_TOKEN` — App-authored PRs trigger Actions checks; `GITHUB_TOKEN` ones
@@ -434,35 +436,15 @@ Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 `update-js-dependencies.sh`, `update-rust-dependencies.sh`). The three scripts
 run in parallel in one checkout and write temporary files into it, so each one
-reports only pass or fail. After all three exit,
+reports only pass or fail. `update-rust-dependencies.sh` bumps the Wrangler
+pin before it verifies any app, so every Worker app's deploy check runs with
+the new version; a separate leg could race those checks. After all three exit,
 `manage-dependency-update.sh detect-changes` decides whether there is anything
 to publish, from the same paths that the publish step commits.
 `manage-dependency-update.sh` also handles the pull request, auto-merge, and
 failure reporting. To test change detection, run
 `bash .github/scripts/manage-dependency-update_test.sh`. New apps are
 discovered automatically — no workflow edits are needed.
-
-### Dependabot (Cloudflare Worker apps)
-
-`cargo update` can't cross a semver-incompatible release, and `deps.yaml`
-doesn't manage toolchains or CI tools. For the Cloudflare Worker apps,
-`.github/dependabot.yml` covers the rest with weekly pull requests:
-
-- `cargo` updates bump requirements in each Worker's `Cargo.toml`. The
-  `worker` crate family and the RustCrypto crates are grouped, because each
-  family has to move together.
-- `rust-toolchain` updates bump the `channel` in every Worker's
-  `rust-toolchain.toml` in one pull request.
-- `npm` updates bump the Wrangler version in `.github/wrangler/package.json`,
-  which `deploy-workers.yml`, the Worker CI check, and the Worker e2e scripts
-  read.
-- `github-actions` updates cover `cloudflare/wrangler-action` only.
-
-worker-build has no pin of its own. Each Worker's `[build]` command installs
-the worker-build release that matches the locked `worker` crate
-(`cargo pkgid worker`), so a `worker` bump updates both. These pull requests
-run the normal `test.yml` checks for the Workers they touch (a Wrangler bump
-selects every Worker). Dependabot doesn't enable auto-merge.
 
 ## Adding a new browser app
 

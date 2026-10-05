@@ -23,8 +23,9 @@ git init -q -b main repo
 cd repo
 git config user.name test
 git config user.email test@example.com
-mkdir gomod jsapp worker
+mkdir gomod jsapp worker .github .github/wrangler
 echo 'module gomod' > gomod/go.mod
+echo '{"devDependencies":{"wrangler":"4.0.0"}}' > .github/wrangler/package.json
 echo '{}' > jsapp/package.json
 echo '{}' > jsapp/package-lock.json
 echo '[package]' > worker/Cargo.toml
@@ -60,6 +61,11 @@ reset_tree
 echo '# v2' > worker/Cargo.lock
 expect "lockfile bump" true "$(detect)"
 expect "lockfile bump staged" "M worker/Cargo.lock" "$(staged)"
+reset_tree
+
+echo '{"devDependencies":{"wrangler":"4.1.0"}}' > .github/wrangler/package.json
+expect "wrangler bump" true "$(detect)"
+expect "wrangler bump staged" "M .github/wrangler/package.json" "$(staged)"
 reset_tree
 
 mkdir newmod

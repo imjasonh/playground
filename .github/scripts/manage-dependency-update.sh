@@ -14,6 +14,7 @@ DEP_PATHSPECS=(
   ':(glob)*/vendor/**'
   ':(glob)*/Cargo.toml'
   ':(glob)*/Cargo.lock'
+  ':(glob).github/wrangler/package.json'
 )
 
 _git_identity() {

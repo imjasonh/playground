@@ -1,6 +1,6 @@
 # Toolchain pin for this Cloudflare Worker crate (the Rust analog of a Go app's
-# go.mod version). Dependabot proposes channel bumps. CI reads this channel;
-# rustup uses the whole file for local builds too.
+# go.mod version). CI reads this channel; rustup uses the whole file for local
+# builds too.
 [toolchain]
 channel = "1.99.0"
 components = ["clippy", "rustfmt"]
