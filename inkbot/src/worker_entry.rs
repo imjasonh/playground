@@ -88,13 +88,31 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         let Some(name) = catalog.latest.clone() else {
             return into_worker_response(ApiResponse::text(404, "no image yet\n"));
         };
-        return respond_frame_get(&bucket, &api_req, &name, panel, upload_secret.as_str()).await;
+        return respond_frame_get(
+            &bucket,
+            &api_req,
+            &name,
+            catalog,
+            panel,
+            upload_secret.as_str(),
+        )
+        .await;
     }
     if method == Method::Get {
         if let Some((name, ext)) = parse_get_image(&norm) {
             let mut req = api_req;
             req.path = format!("/{name}.{ext}");
-            return respond_frame_get(&bucket, &req, &name, panel, upload_secret.as_str()).await;
+            // Serving a frame by name never consults the catalog, so skip
+            // reading it.
+            return respond_frame_get(
+                &bucket,
+                &req,
+                &name,
+                Catalog::empty(),
+                panel,
+                upload_secret.as_str(),
+            )
+            .await;
         }
     }
 
@@ -119,13 +137,10 @@ async fn respond_frame_get(
     bucket: &Bucket,
     api_req: &ApiRequest,
     name: &str,
+    catalog: Catalog,
     panel: PanelSpec,
     upload_secret: &str,
 ) -> Result<Response> {
-    let catalog = match load_catalog(bucket).await {
-        Ok(c) => c,
-        Err(e) => return text_response(500, &format!("catalog: {e}\n")),
-    };
     let frame = match load_frame(bucket, name).await {
         Ok(Some(frame)) => frame,
         Ok(None) => return into_worker_response(ApiResponse::text(404, "no such image\n")),
@@ -520,7 +535,12 @@ impl ImageStore for R2ImageStore {
 }
 
 async fn load_frame(bucket: &Bucket, name: &str) -> Result<Option<StoredFrame>> {
-    let png_obj = match bucket.get(png_key(name)).execute().await? {
+    // Fetch both objects in one R2 round trip.
+    let (png_obj, bin_obj) = futures::join!(
+        bucket.get(png_key(name)).execute(),
+        bucket.get(bin_key(name)).execute()
+    );
+    let png_obj = match png_obj? {
         Some(o) => o,
         None => return Ok(None),
     };
@@ -529,7 +549,7 @@ async fn load_frame(bucket: &Bucket, name: &str) -> Result<Option<StoredFrame>> 
         .ok_or_else(|| worker::Error::RustError("missing png body".into()))?
         .bytes()
         .await?;
-    let packed = match bucket.get(bin_key(name)).execute().await? {
+    let packed = match bin_obj? {
         Some(obj) => {
             obj.body()
                 .ok_or_else(|| worker::Error::RustError("missing bin body".into()))?
