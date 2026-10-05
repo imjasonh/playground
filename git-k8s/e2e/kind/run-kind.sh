@@ -2084,9 +2084,12 @@ echo "c/refused changed both in the mirror and in the git server, and the confli
 # The git server rewinds c/refused, which drops the merge and the commits
 # under it, while the base check adds a commit in the mirror. A merge of
 # the two heads would bring back the dropped commits, so the check replays
-# the mirror's commit onto the git server's head instead.
+# the mirror's commit onto the git server's head instead. fix2.txt doesn't
+# hold fix.txt's content, because git would take the replay's new file for
+# fix.txt renamed, and the rewind deleted fix.txt, so the check's merges
+# would conflict and it would leave the divergence for a person.
 cf switch -q -C in-mirror --end-of-options "${merged}"
-printf 'fix\n' >"${CONFLICTED}/fix2.txt"
+printf 'another fix\n' >"${CONFLICTED}/fix2.txt"
 cf add -A
 cf commit -qm "Add another fix" -m "Git-K8s-Fixer: base"
 base_fix2="$(cf rev-parse --verify --end-of-options HEAD)"
@@ -2101,7 +2104,7 @@ cf log -1 --format='%B%nauthor %an <%ae>, committer %cn <%ce>' --end-of-options 
 [[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "${rewritten}" ]]
 [[ "$(cf log -1 --format='%an %ae%n%B' --end-of-options FETCH_HEAD)" == "$(cf log -1 --format='%an %ae%n%B' --end-of-options "${base_fix2}")" ]]
 signed_by_git_k8s FETCH_HEAD cf
-[[ "$(cf show --end-of-options FETCH_HEAD:fix2.txt)" == fix && "$(cf show --end-of-options FETCH_HEAD:rewritten.txt)" == rewritten ]]
+[[ "$(cf show --end-of-options FETCH_HEAD:fix2.txt)" == "another fix" && "$(cf show --end-of-options FETCH_HEAD:rewritten.txt)" == rewritten ]]
 [[ -z "$(cf ls-tree --name-only --end-of-options FETCH_HEAD fix.txt person.txt)" ]]
 [[ "$(remote_head main conflicted)" == "${moved}" ]]
 eventually 60 no_agent_pods
