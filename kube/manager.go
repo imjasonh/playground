@@ -107,6 +107,7 @@ type Manager struct {
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
+	unshared    []cache // primary informers that aren't in caches
 	cacheDone   []chan struct{}
 	resolved    map[*typeInfo]resolved
 	crdCalls    map[*typeInfo]*crdCall
@@ -536,15 +537,14 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 }
 
 // adopt registers a controller's primary informer as the shared cache for
-// its type when it watches the same objects that Get and List would.
+// its type when it watches the same objects that Get and List would, and
+// otherwise as an unshared one, so that the process's writes show in it.
 func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) {
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}
-	if cfg.namespace != key.namespace || cfg.selector != "" {
-		return
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.caches[key]; ok {
+	if _, ok := m.caches[key]; ok || cfg.namespace != key.namespace || cfg.selector != "" {
+		m.unshared = append(m.unshared, inf)
 		return
 	}
 	id := inf.id()

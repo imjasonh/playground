@@ -113,6 +113,13 @@ func TestApplyAndDelete(t *testing.T) {
 	if del["propagationPolicy"] != "Background" || del["preconditions"].(map[string]any)["uid"] != "u-1" {
 		t.Errorf("delete body = %v", del)
 	}
+	out.Metadata.ResourceVersion = ""
+	if err := c.DeleteInto(t.Context(), "/api/v1/namespaces/d/configmaps/x", DeleteOptions{}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Metadata.ResourceVersion != "7" {
+		t.Errorf("DeleteInto decoded %+v", out)
+	}
 }
 
 type item struct {

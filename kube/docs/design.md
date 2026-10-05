@@ -410,6 +410,9 @@ cluster, compression costs the API server CPU on every list and saves
 bandwidth that's rarely scarce, so kube turns it off. `Manager.Compression`
 turns it back on.
 
+A cache also returns the manager's own writes before its watch delivers
+them, as [A controller's own writes](#a-controllers-own-writes) describes.
+
 ### Dependency tracking
 
 Each reconcile runs with a scope that records what it reads. `Get` records the
@@ -628,6 +631,104 @@ object goes in, so any owned object counts. When the API server forbids the
 removal and the controller has neither `Finalize` nor the option, the error
 names the option, because the likely cause is a finalizer that an earlier
 version of the program added.
+
+### A controller's own writes
+
+A cache holds a write once its watch delivers the write's event, and a
+reconcile of the object can run before then. `RequeueAfter`, a retry, or a
+change to another object that the reconcile read can start it. A reconcile
+that reads the older object writes again what the last one wrote, and one
+that takes a step per reconcile repeats the step.
+
+So after the framework writes an object, every cache of the object's version
+and kind that covers its namespace returns what the API server stored, until
+the cache's watch delivers the write's event. That covers status writes,
+finalizer changes, `Own` and `Apply`, and deletes, including the ones that
+prune undeclared objects. `Get`, `List`, the owner index, and the checks that
+skip applies and status writes all read the written object, in every
+controller of the manager. KEP-5647 proposes another approach for
+`client-go`. A controller records the resource version of each write, and
+requeues the object until its cache has seen a later one. That needs ordered
+resource versions, and it delays the reconcile instead of letting it read
+the write.
+
+The cache compares resource versions to tell when its watch has caught up.
+[Kubernetes API Concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)
+says that resource versions from `kube-apiserver` are integers that increase
+within a resource type, and conformance requires that since Kubernetes 1.35.
+Extension API servers might not order them, and older versions of the page
+allowed only tests for equality. So the cache tests resource versions only
+for equality, and only among versions of one object from one watch. Two
+facts make that enough. A write's response carries the resource version of
+the watch event that the write causes, or, if the write changed nothing, of
+the object's latest event. And a watch delivers one object's events in
+order. When a write begins, the cache notes the object's resource version,
+and then each one that its watch delivers for the object. If the write's
+resource version is among them when the write ends, the cache already holds
+the write or a later version. Otherwise the event is still to come, and
+reads return the written object until it arrives. Older events that arrive
+first update the watched object underneath, so reads never return a version
+older than the write, with two exceptions described later: a write that
+hides the object from a cache with a label selector, and a write whose event
+takes more than a minute.
+
+When the order of a write and the cache's contents is unknown, the cache
+waits for the watch. Two writes by the manager to one object at the same
+time don't show early, because the cache can't tell which one the API server
+applied last. A list replaces the cache's contents at start and after
+`410 Gone`. It asks for the latest state, so it holds each write that ended
+before the list began, or a later version. The cache drops what those
+writes stored, because the watch that follows the list might never deliver
+their events. A write that overlaps the list doesn't show early, because the
+cache can't tell whether the list holds it. If the list doesn't, it would
+replace the write with an older version, and if it does, the watch never
+delivers the write's event. A write that fails changes no cache, except a
+delete with a UID precondition that finds no object, which shows that the
+object with that UID is gone. A conflict doesn't show that the object is
+gone, because an admission webhook can deny a delete with one.
+
+Reads return a write for at most a minute. An API server whose watch doesn't
+deliver the resource version that a write's response carries would otherwise
+leave the written object in the cache until the next list, which a healthy
+watch with bookmarks might never need. Until then, reads would miss other
+clients' changes to the object, and return it even after it's deleted. With
+the limit, a watch that lags by more than a minute can make a reconcile
+repeat a write.
+
+A delete's response is a `Status` with the object's UID, or the deleted
+object. Either way the object is gone, and the cache hides it until its
+watch removes the object with that UID, because a delete's response doesn't
+always carry the resource version of the deletion. If finalizers, including
+a namespace's `spec.finalizers`, or a grace period hold the object, the
+response is the object with `deletionTimestamp` set, and the cache returns
+it like any other write. An update that removes the last finalizer of an
+object that's being deleted, with no grace period left, deletes the object,
+and the API server answers with the object as the update left it. The cache
+treats that answer as a delete too.
+
+Each cache decodes the response into its own type, so a metadata-only cache
+or one with a partial type returns what its watch would deliver. If the
+written object doesn't match a cache's label selector, the cache hides the
+object until its watch removes it. A watch with a label selector reports an
+object that stops matching as a `DELETED` event with the write's resource
+version. But if another client's change took the object out of the selector
+first, the write causes no event, so any removal of the object ends the
+hiding. Then, if other clients' earlier changes take the object out and put
+it back, the cache returns the version that they put back, which is older
+than the write, until the write's event arrives. A deleted object can
+reappear the same way. Without ordered resource versions, the cache can't
+tell that those changes come before the write. kube's selector parser
+doesn't handle the `<` and `>` operators, so a cache whose selector uses
+them doesn't return writes early.
+
+Only the caches of the process that wrote return a write before its event.
+Every replica caches every object, but a replica reads another replica's
+writes when its watch delivers them, as it does any other client's. So after
+a shard moves, the first reconciles in it can repeat the previous holder's
+last writes, and they converge once the watch catches up. A replica that
+takes a shard forgets what it last wrote for the shard's keys, but its
+caches keep returning its own writes, because each lasts only until its own
+event, which the watch delivers before any later version.
 
 ### Custom resource definitions
 
@@ -959,6 +1060,12 @@ framework's tests check that:
 
 - A converged controller makes no writes when its objects' labels change, and
   none after a restart.
+- A controller that moves a status one step per reconcile, through a proxy
+  that holds back watch events by 200 ms, reads each step that it wrote, and
+  applies and deletes its ConfigMap once each.
+- A controller with `Finalize` that resyncs every millisecond, through the
+  same proxy, adds its finalizer once, and runs `Finalize` and removes the
+  finalizer once each.
 - Reconciles that apply their own entries in another object's status own
   only those entries, make no writes when they run again, and remove an entry
   when they stop applying it. A status for a kind without a status
@@ -1097,7 +1204,11 @@ status makes no status writes for votes that leave the total as it was.
 A controller that applies each Ballot's vote to a Poll's status with `Apply`
 makes no applies when label changes reconcile the Ballots again. A change to
 a ConfigMap field that a reconcile's type doesn't declare doesn't run the
-reconcile again.
+reconcile again. With watch events held back by 200 ms, a controller that
+moves a Widget's status 10 steps up and 10 steps down writes status 20
+times, applies its ConfigMap once, and deletes it once. A controller that
+resyncs every millisecond behind the same delay applies its finalizer once
+to add it and once to remove it, and runs `Finalize` once.
 
 ### Binary size and dependencies
 
@@ -1140,6 +1251,12 @@ offers:
   because the framework doesn't annotate objects it doesn't own. After a
   restart, a status that leaves out other managers' fields is also written
   once, because the record of the last status write is in memory.
+- Only the process that wrote reads its writes before the watch delivers
+  them, a write that overlaps a list doesn't show early, and a cache with a
+  label selector can return an older version of an object that a write hid.
+  With ordered resource versions, the cache could show the writes that are
+  newer than the list and ignore the older versions, but extension API
+  servers might not order them.
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops declaring it, and when the reconciled object is deleted.
   Giving them up would take a durable record of what each reconcile applied.

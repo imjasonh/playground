@@ -66,7 +66,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		"status":     json.RawMessage(after),
 	}
 	var resp json.RawMessage
-	err = c.m.client.Apply(ctx, c.res.path(m.Namespace, m.Name, "status"), c.name, true, body, &resp)
+	err = c.m.apply(ctx, c.ti, key, c.res.path(m.Namespace, m.Name, "status"), c.name, body, &resp)
 	if err != nil {
 		if replaced(err) {
 			return nil
@@ -137,7 +137,7 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		record("skipped")
 		return nil
 	}
-	if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name, "status"), manager, true, body, nil); err != nil {
+	if err := c.m.apply(ctx, in.ti, m.Key(), in.res.path(m.Namespace, m.Name, "status"), manager, body, nil); err != nil {
 		// The kind may have stopped serving a status subresource since its
 		// discovery results were cached.
 		if client.IsNotFound(err) {

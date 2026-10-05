@@ -710,7 +710,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			if in.status {
 				out = &resp
 			}
-			if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name), manager, true, body, out); err != nil {
+			if err := c.m.apply(ctx, in.ti, m.Key(), in.res.path(m.Namespace, m.Name), manager, body, out); err != nil {
 				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
 			}
 			applied[ak] = h
@@ -767,7 +767,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 }
 
 func (c *controller[T, P]) delete(ctx context.Context, ti *typeInfo, res resolved, m *ObjectMeta) error {
-	err := c.m.client.Delete(ctx, res.path(m.Namespace, m.Name), client.DeleteOptions{UID: m.UID, Propagation: "Background"})
+	err := c.m.delete(ctx, ti, m.Key(), res.path(m.Namespace, m.Name), client.DeleteOptions{UID: m.UID, Propagation: "Background"})
 	if err != nil && !client.IsNotFound(err) && !client.IsConflict(err) {
 		return fmt.Errorf("deleting %v %s: %w", ti, m.Key(), err)
 	}
@@ -881,7 +881,7 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 		Metadata ObjectMeta `json:"metadata"`
 	}
 	path := c.res.path(m.Namespace, m.Name)
-	if err := c.m.client.Apply(ctx, path, c.name+"-finalizer", true, body, &out); err != nil {
+	if err := c.m.apply(ctx, c.ti, m.Key(), path, c.name+"-finalizer", body, &out); err != nil {
 		if !present && replaced(err) {
 			return nil
 		}
@@ -900,7 +900,7 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 			{"op": "test", "path": fmt.Sprintf("/metadata/finalizers/%d", i), "value": c.finalizer},
 			{"op": "remove", "path": fmt.Sprintf("/metadata/finalizers/%d", i)},
 		})
-		if err := c.m.client.Patch(ctx, path, client.JSONPatch, nil, patch, nil); err != nil && !client.IsNotFound(err) {
+		if err := c.m.patch(ctx, c.ti, m.Key(), path, client.JSONPatch, patch); err != nil && !client.IsNotFound(err) {
 			return err
 		}
 	}
