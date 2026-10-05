@@ -225,6 +225,7 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 		return err
 	}
 	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
+	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s: %s", gitk8s.Short(v.Fix), in.Spec.Branch, v.Message)
 	res.State = gitk8s.Fixed
 	res.Message = truncate(fmt.Sprintf("%s; pushed %s", v.Message, gitk8s.Short(v.Fix)))
 	if res.Outputs == nil {

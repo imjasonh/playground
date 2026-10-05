@@ -362,23 +362,3 @@ Questions to settle first:
   often pulled within days, so a delay keeps most of them out.
 - What happens to a branch that hasn't landed when newer versions come out.
   The controller could push the newer versions to the same branch.
-
-## kube changes that git-k8s would use
-
-These belong in kube, in their own pull requests:
-
-- `generate` grants `patch` on every reconciled type. kube removes a
-  finalizer that a controller no longer needs, which takes `patch`, so
-  dropping the grant needs another way to remove finalizers that an earlier
-  version of a program added.
-- kube installs CRDs only for types that a controller reconciles. A program
-  that only owns a custom type doesn't know all of the type's versions, so
-  it can't safely update the CRD. It could still create a missing CRD and
-  never update it.
-- kube has no Events API, so landings and fix pushes show up only in logs and
-  conditions. An event intent that kube carries out after a reconcile, and
-  that groups repeats, would show them in `kubectl describe`.
-- `Apply` drops `status`, so a controller can write another controller's
-  status only by reconciling a view of its type, as each check does today.
-- The cache lags a controller's own writes, so a reconcile that runs just
-  after a write can repeat work.

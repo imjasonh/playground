@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -34,29 +36,34 @@ type Config struct {
 	Pattern string
 	// Package is the import path of the package that declares Funcs.
 	Package string
-	// Funcs are the names of the functions to report. For a generic
-	// function, Find reports each first type argument.
+	// Funcs are the names of generic functions whose first type argument
+	// to report.
 	Funcs []string
-	// Consts maps some of Funcs that aren't generic to the index of a
-	// string parameter. Find reports each constant that the program passes
-	// there, and the first other reference to the function, such as a call
-	// that passes a variable.
+	// Calls are the names of functions without type parameters whose uses
+	// to report.
+	Calls []string
+	// Consts maps some of Calls to the index of a string parameter. For a
+	// call that passes a constant there, Find reports the constant.
 	Consts map[string]int
 	// Marker is a struct type in Package. Find reports the tag of the field
 	// through which a type argument embeds it.
 	Marker string
 }
 
-// A Use is a call of one of Funcs, with a type argument if it's generic.
+// A Use is a call of one of Funcs with a type argument, or a use of one of
+// Calls.
 type Use struct {
 	// Func is the function's name, such as "Get".
 	Func string
 	// Type is the type argument, such as "example.com/app.Widget", and Name
 	// is its name without the package, such as "Widget". Both are empty for
-	// a function that isn't generic.
+	// a use of one of Calls.
 	Type, Name string
 	// Tag is the struct tag of the field that embeds Marker.
 	Tag string
+	// Fields are the names in the json tags of the type's exported fields,
+	// other than the field that embeds Marker.
+	Fields []string
 	// Constant is set for a call that passes a constant as the argument
 	// that Consts names, and Value is the constant.
 	Constant bool
@@ -80,11 +87,12 @@ type listedPackage struct {
 // directly or through each other, and returns each call of one of Funcs
 // whose type argument embeds Marker. A call inside a generic function
 // counts once for each type that the function is instantiated with
-// anywhere in those packages. For each of Funcs that isn't generic, Find
-// returns the first reference to it, if those packages have one, and the
-// first call with each constant that Consts asks for. Find also returns
-// warnings about calls whose type arguments it can't tell.
-func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
+// anywhere in those packages. Find also returns the calls of Funcs whose
+// type arguments it can't tell, with only Func and Pos set. Pos is where
+// the program passes a type argument that Find can't tell, which can be a
+// call of a generic function that passes it on to one of Funcs. After the
+// calls of Funcs, uses holds each use of one of Calls.
+func Find(ctx context.Context, cfg Config) (uses, unresolved []Use, err error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern.
 	cmd.Dir, cmd.Env = cfg.Dir, cfg.Env
 	var stderr bytes.Buffer
@@ -130,8 +138,6 @@ func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 		exports:  exports,
 		edges:    map[node][]node{},
 		concrete: map[node]map[string]typeArg{},
-		calls:    map[string]string{},
-		consts:   map[string]map[string]string{},
 	}
 	for _, p := range pkgs {
 		if reaches[p.ImportPath] && p.ImportPath != cfg.Package {
@@ -140,7 +146,8 @@ func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 			}
 		}
 	}
-	return a.uses(), a.warnings, nil
+	uses, unresolved = a.uses()
+	return uses, unresolved, nil
 }
 
 // A node is a type parameter of a generic function: the function's full
@@ -150,9 +157,20 @@ type node struct {
 	index int
 }
 
+// A typeArg is a type that a type parameter is instantiated with, and
+// where. A nil t is a type argument that Find can't tell.
 type typeArg struct {
 	t   types.Type
 	pos string
+}
+
+// key tells type arguments apart: by type, or, for one that Find can't
+// tell, by where it is. No type string starts with "?".
+func (t typeArg) key() string {
+	if t.t == nil {
+		return "?" + t.pos
+	}
+	return types.TypeString(t.t, nil)
 }
 
 type analyzer struct {
@@ -162,15 +180,9 @@ type analyzer struct {
 	// parameters of the functions it passes it to.
 	edges map[node][]node
 	// concrete holds the types that each type parameter is instantiated
-	// with, by type string.
+	// with, by key.
 	concrete map[node]map[string]typeArg
-	// calls holds where the program first refers to each of Funcs that
-	// isn't generic, other than in the calls that consts holds. consts
-	// holds where the program first passes each constant to one of Consts,
-	// by function and constant.
-	calls    map[string]string
-	consts   map[string]map[string]string
-	warnings []string
+	calls    []Use
 }
 
 func (a *analyzer) check(p *listedPackage) error {
@@ -241,22 +253,18 @@ func (a *analyzer) check(p *listedPackage) error {
 			to := node{fn.FullName(), j}
 			arg := inst.TypeArgs.At(j)
 			if tp, ok := arg.(*types.TypeParam); ok {
-				g := enclosing(id.Pos())
-				if g == nil || !ownsTypeParam(g, tp) {
-					if target {
-						a.warnings = append(a.warnings, fmt.Sprintf("%s: can't tell which types %s.%s is called with", pos, fn.Pkg().Name(), fn.Name()))
-					}
+				if g := enclosing(id.Pos()); g != nil && ownsTypeParam(g, tp) {
+					from := node{g.FullName(), tp.Index()}
+					a.edges[from] = append(a.edges[from], to)
 					continue
 				}
-				from := node{g.FullName(), tp.Index()}
-				a.edges[from] = append(a.edges[from], to)
-				continue
 			}
 			if hasTypeParam(arg) {
-				if target {
-					a.warnings = append(a.warnings, fmt.Sprintf("%s: can't tell which types %s.%s is called with", pos, fn.Pkg().Name(), fn.Name()))
-				}
-				continue
+				// A type parameter that the enclosing function doesn't
+				// declare belongs to a method's generic receiver type,
+				// whose instantiations Find doesn't follow. Find also
+				// doesn't substitute types into one such as Item[T].
+				arg = nil
 			}
 			a.add(to, typeArg{arg, pos})
 		}
@@ -289,42 +297,12 @@ func (a *analyzer) check(p *listedPackage) error {
 			return true
 		})
 	}
-	first := map[string]token.Pos{}
-	firstConst := map[string]map[string]token.Pos{}
 	for id, obj := range info.Uses {
 		fn, ok := obj.(*types.Func)
-		if !ok || fn.Pkg() == nil || fn.Pkg().Path() != a.cfg.Package || !slices.Contains(a.cfg.Funcs, fn.Name()) {
-			continue
-		}
-		if sig := fn.Origin().Signature(); sig.Recv() != nil || sig.TypeParams().Len() > 0 {
-			continue
-		}
-		if v, ok := constArg[id]; ok {
-			if firstConst[fn.Name()] == nil {
-				firstConst[fn.Name()] = map[string]token.Pos{}
-			}
-			if p, ok := firstConst[fn.Name()][v]; !ok || id.Pos() < p {
-				firstConst[fn.Name()][v] = id.Pos()
-			}
-			continue
-		}
-		if p, ok := first[fn.Name()]; !ok || id.Pos() < p {
-			first[fn.Name()] = id.Pos()
-		}
-	}
-	for name, p := range first {
-		if _, ok := a.calls[name]; !ok {
-			a.calls[name] = fset.Position(p).String()
-		}
-	}
-	for name, values := range firstConst {
-		if a.consts[name] == nil {
-			a.consts[name] = map[string]string{}
-		}
-		for v, p := range values {
-			if _, ok := a.consts[name][v]; !ok {
-				a.consts[name][v] = fset.Position(p).String()
-			}
+		if ok && fn.Pkg() != nil && fn.Pkg().Path() == a.cfg.Package && fn.Signature().Recv() == nil && slices.Contains(a.cfg.Calls, fn.Name()) {
+			u := Use{Func: fn.Name(), Pos: fset.Position(id.Pos()).String()}
+			u.Value, u.Constant = constArg[id]
+			a.calls = append(a.calls, u)
 		}
 	}
 	return nil
@@ -367,7 +345,7 @@ func hasTypeParam(t types.Type) bool {
 }
 
 func (a *analyzer) add(n node, t typeArg) bool {
-	key := types.TypeString(t.t, nil)
+	key := t.key()
 	if _, ok := a.concrete[n][key]; ok {
 		return false
 	}
@@ -379,8 +357,9 @@ func (a *analyzer) add(n node, t typeArg) bool {
 }
 
 // uses follows the edges from each instantiated type parameter, then
-// reports the types that reach Funcs.
-func (a *analyzer) uses() []Use {
+// reports the types that reach Funcs, and the type arguments that Find
+// can't tell that reach them.
+func (a *analyzer) uses() (uses, unresolved []Use) {
 	queue := slices.Collect(maps.Keys(a.concrete))
 	for len(queue) > 0 {
 		n := queue[0]
@@ -395,22 +374,21 @@ func (a *analyzer) uses() []Use {
 			}
 		}
 	}
-	var out []Use
 	for _, f := range a.cfg.Funcs {
-		if pos, ok := a.calls[f]; ok {
-			out = append(out, Use{Func: f, Pos: pos})
-		}
-		for _, v := range slices.Sorted(maps.Keys(a.consts[f])) {
-			out = append(out, Use{Func: f, Constant: true, Value: v, Pos: a.consts[f][v]})
-		}
 		args := a.concrete[node{a.cfg.Package + "." + f, 0}]
 		for _, key := range slices.Sorted(maps.Keys(args)) {
-			if u, ok := a.use(f, args[key]); ok {
-				out = append(out, u)
+			t := args[key]
+			if t.t == nil {
+				unresolved = append(unresolved, Use{Func: f, Pos: t.pos})
+				continue
+			}
+			if u, ok := a.use(f, t); ok {
+				uses = append(uses, u)
 			}
 		}
 	}
-	return out
+	slices.SortFunc(a.calls, func(x, y Use) int { return cmp.Or(cmp.Compare(x.Func, y.Func), cmp.Compare(x.Pos, y.Pos)) })
+	return append(uses, a.calls...), unresolved
 }
 
 // use describes a call of f with type argument t, if t embeds Marker.
@@ -430,10 +408,24 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 		}
 		ft, ok := types.Unalias(field.Type()).(*types.Named)
 		if ok && ft.Obj().Pkg() != nil && ft.Obj().Pkg().Path() == a.cfg.Package && ft.Obj().Name() == a.cfg.Marker {
-			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Pos: t.pos}, true
+			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Fields: jsonFields(st, i), Pos: t.pos}, true
 		}
 	}
 	return Use{}, false
+}
+
+// jsonFields returns the names in the json tags of st's exported fields,
+// other than field skip.
+func jsonFields(st *types.Struct, skip int) []string {
+	var out []string
+	for i := range st.NumFields() {
+		name, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ",")
+		if i == skip || !st.Field(i).Exported() || name == "" || name == "-" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 // String formats a use for messages.

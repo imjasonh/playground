@@ -1,36 +1,42 @@
 {
-  "expectedLegal": false,
-  "notes": "dp.overBudget",
-  "list": {
-    "id": "0FEA1C28-425C-491F-938B-EF93D49FE6C8",
-    "name": "Illegal DP",
-    "catalogVersion": "11e-1",
-    "factionID": "leagues-of-votann",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : false,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "leagues-of-votann--hearthband"
     ],
-    "units": [
+    "factionID" : "leagues-of-votann",
+    "id" : "EEB7727B-71B7-4688-9766-EF5166A0A9C0",
+    "name" : "Illegal DP",
+    "notes" : "",
+    "units" : [
       {
-        "id": "40C32FC9-2115-4F6E-B296-91C29E166DE2",
-        "datasheetID": "leagues-of-votann--kahl",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "leagues-of-votann--kahl",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C2C969F4-6222-4687-9BB5-9977372B626F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "326CC750-9353-4770-AFE9-F43E5A474785",
-        "datasheetID": "leagues-of-votann--hearthkyn-warriors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "leagues-of-votann--hearthkyn-warriors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C03A94B3-0EED-4902-8193-F34B23D1248B",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "40C32FC9-2115-4F6E-B296-91C29E166DE2",
-    "notes": "",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "C2C969F4-6222-4687-9BB5-9977372B626F"
+  },
+  "notes" : "dp.overBudget"
 }

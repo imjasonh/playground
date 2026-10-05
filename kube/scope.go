@@ -47,6 +47,9 @@ type intent struct {
 	res      resolved
 	obj      any // desired object, or the object to delete
 	observed any // the cached object, shared; nil if unknown
+	// status is set when the framework also applies obj's status to the
+	// status subresource.
+	status bool
 }
 
 // scope is the state of one reconcile. Reconcile's context carries it.
@@ -57,15 +60,17 @@ type scope struct {
 	parentNS bool
 	deps     map[dep]struct{}
 	intents  []intent
+	events   []eventIntent
 	requeue  time.Duration
 	err      error
+	lastErr  error
 	cancel   context.CancelCauseFunc
 	// webhook scopes can read, but don't track reads or accept intents.
 	webhook bool
 }
 
 func newScope(ctx context.Context, w world, c *core, key Key) (context.Context, *scope) {
-	s := &scope{w: w, c: c, key: key, parentNS: c.res.namespaced, deps: map[dep]struct{}{}}
+	s := &scope{w: w, c: c, key: key, parentNS: c.res.namespaced, deps: map[dep]struct{}{}, lastErr: c.lastError(key)}
 	ctx, s.cancel = context.WithCancelCause(context.WithValue(ctx, scopeKey{}, s))
 	return ctx, s
 }
@@ -268,10 +273,22 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 		return resolved{}, false
 	}
 	for _, in := range s.intents {
-		if in.kind != intentDelete && in.ti == ti && metaOfAny(in.obj).Key() == m.Key() {
-			s.fail(fmt.Errorf("kube.%s: %v %s was declared twice in one reconcile", verb, ti, m.Key()))
-			return resolved{}, false
+		if in.kind == intentDelete || !in.ti.sameKind(ti) || metaOfAny(in.obj).Key() != m.Key() {
+			continue
 		}
+		first := "Apply"
+		if in.kind == intentOwn {
+			first = "Own"
+		}
+		msg := fmt.Sprintf("kube.%s: %v %s was declared twice in one reconcile", verb, ti, m.Key())
+		switch {
+		case first != verb:
+			msg += fmt.Sprintf(", with %s and %s; Own doesn't apply a status, and Apply is for objects that the reconciled object doesn't own", first, verb)
+		case in.ti != ti:
+			msg += fmt.Sprintf(", as %v and %v; declare it with one type", in.ti.goType, ti.goType)
+		}
+		s.fail(errors.New(msg))
+		return resolved{}, false
 	}
 	return res, true
 }
@@ -284,8 +301,8 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 // object with server-side apply and deletes objects it created for this owner
 // in an earlier reconcile that weren't declared this time. It skips the write
 // when the observed object already matches. Owned objects are deleted when
-// their owner is. Changes to an owned object, including its status, run the
-// owner's reconcile again.
+// their owner is. The framework doesn't apply desired's status, but changes
+// to an owned object, including its status, run the owner's reconcile again.
 //
 // The namespace of desired defaults to the owner's. An owned object may be in
 // another namespace, or cluster-scoped; the framework then adds a finalizer
@@ -324,6 +341,22 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // returns nil, the framework applies the fields with server-side apply. The
 // object isn't deleted with the reconciled object, and fields that a later
 // reconcile stops applying are removed.
+//
+// If desired's type has a status, the framework then applies the status to
+// the object's status subresource, in a second request with the same field
+// manager, so the status fields that a later reconcile stops applying are
+// removed too, unless another manager also set them. The framework applies
+// the status with force, so the controller takes over every field in it. Set
+// only your own fields, and build a fresh object rather than editing one that
+// Get returned. The framework sends an empty status only to remove status
+// fields that an earlier reconcile applied, even one that failed or that ran
+// in an earlier run of the program. If the cluster doesn't serve a status
+// subresource for the type, a status that isn't empty fails the reconcile.
+//
+// When the reconciled type has a status, the framework writes the status of
+// the object being reconciled from the object that Reconcile received. So
+// when desired is that object, Apply ignores an empty status and fails the
+// reconcile for any other.
 func Apply[T any, P Resource[T]](ctx context.Context, desired P) {
 	s := scopeFrom(ctx, "Apply")
 	if s.readOnly("Apply") {
@@ -335,11 +368,34 @@ func Apply[T any, P Resource[T]](ctx context.Context, desired P) {
 	if !ok {
 		return
 	}
+	status := ti.status != nil
+	if status && s.writesStatus(ti, m.Key()) {
+		st, err := statusOf(desired)
+		if err != nil {
+			s.fail(err)
+			return
+		}
+		if st != nil {
+			s.fail(fmt.Errorf("kube.Apply: %v %s is the object being reconciled, so the framework writes its status; set the status on the object that Reconcile received", ti, m.Key()))
+			return
+		}
+		status = false
+	}
 	var observed any
 	if src := s.w.existing(ti); src != nil {
 		observed = src.peek(m.Key())
 	}
-	s.intents = append(s.intents, intent{kind: intentApply, ti: ti, res: res, obj: desired, observed: observed})
+	s.intents = append(s.intents, intent{kind: intentApply, ti: ti, res: res, obj: desired, observed: observed, status: status})
+}
+
+// writesStatus reports whether the framework writes the status of the object
+// of type ti with key k after the reconcile, because it's the object being
+// reconciled.
+func (s *scope) writesStatus(ti *typeInfo, k Key) bool {
+	if s.c == nil || s.c.ti == nil || s.c.ti.status == nil {
+		return false
+	}
+	return ti.sameKind(s.c.ti) && k == s.key
 }
 
 // Delete declares that obj should be deleted. After Reconcile returns nil,
@@ -373,6 +429,24 @@ func RequeueAfter(ctx context.Context, d time.Duration) {
 	if d > 0 && (s.requeue == 0 || d < s.requeue) {
 		s.requeue = d
 	}
+}
+
+// LastError returns the error that the previous reconcile of the object
+// failed with, or nil if it succeeded or there wasn't one. The framework
+// carries out a reconcile's declarations after Reconcile returns, so only the
+// next reconcile can see that one failed, for example because an admission
+// policy rejected an apply. The framework writes the status even when a
+// declaration fails, so that reconcile can report the error in the status.
+//
+// Each process keeps the errors in memory, so LastError returns nil in the
+// first reconcile after the process starts or acquires the object's shard.
+// It keeps them by namespace and name, so when an object is deleted and
+// recreated before the process reconciles the deletion, the new object's
+// first reconcile can get the old object's error. An error from the API
+// server can quote the values that it rejected, so if those values are
+// secret, don't copy the error into a status.
+func LastError(ctx context.Context) error {
+	return scopeFrom(ctx, "LastError").lastErr
 }
 
 // Permanent marks err as one that retrying won't fix, such as an invalid
