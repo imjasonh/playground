@@ -78,21 +78,8 @@ func (r *Repo) Keeps(ctx context.Context, head, side, base string) (bool, error)
 // keeper runs the git commands that Keeps needs.
 type keeper Repo
 
-// exec runs git in the repository. It limits git to the transports that a
-// GitRepository's URL can name, even though these commands read only local
-// objects, because a repository with a promisor remote fetches the objects
-// that it lacks.
 func (k *keeper) exec(ctx context.Context, stdin []byte, args ...string) (result, error) {
-	return k.git.exec(ctx, k.Dir, args, opts{stdin: stdin, env: []string{"GIT_ALLOW_PROTOCOL=http:https:git:ssh"}})
-}
-
-// noAttributes returns the option that makes git read attributes from the
-// empty tree. Without it, git reads them from the tree that attr.tree names
-// or, in some versions such as 2.43, from HEAD in a bare repository, and a
-// .gitattributes file there changes what Keeps says about every branch.
-func (k *keeper) noAttributes(ctx context.Context) (string, error) {
-	empty, err := k.run(ctx, []byte{}, "hash-object", "-t", "tree", "--stdin")
-	return "--attr-source=" + strings.TrimSpace(string(empty)), err
+	return k.git.exec(ctx, k.Dir, args, opts{stdin: stdin})
 }
 
 func (k *keeper) run(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
@@ -308,7 +295,7 @@ func (k *keeper) leavesOut(ctx context.Context, head, side, base string) (bool, 
 // .gitattributes file, such as one that union-merges a file, can change how
 // it merges.
 func (k *keeper) changes(ctx context.Context, head, side, base string) (bool, error) {
-	noAttrs, err := k.noAttributes(ctx)
+	noAttrs, err := (*Repo)(k).noAttributes(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -384,7 +371,7 @@ func (k *keeper) replays(ctx context.Context, head, side, base string) (bool, er
 // file, such as one that marks text files binary, can keep a replay from
 // matching.
 func (k *keeper) changeIDs(ctx context.Context, commits []string) (map[string]string, error) {
-	noAttrs, err := k.noAttributes(ctx)
+	noAttrs, err := (*Repo)(k).noAttributes(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -231,6 +231,19 @@ func TestKeeps(t *testing.T) {
 		}
 	})
 
+	t.Run("only remote transports", func(t *testing.T) {
+		repo, commands := logged(t, repo)
+		if got, err := repo.Keeps(t.Context(), later, side, base); err != nil || !got {
+			t.Fatalf("Keeps = %t, %v; want true", got, err)
+		}
+		ran := strings.Join(commands(), "\n")
+		for _, command := range []string{" merge-tree ", " diff-tree ", " patch-id "} {
+			if !strings.Contains(ran, command) {
+				t.Errorf("Keeps didn't run git%s:\n%s", command, ran)
+			}
+		}
+	})
+
 	// attrRepo returns another copy of the repository, whose attr.tree makes
 	// git read attributes from tree, as some versions do from HEAD in a bare
 	// repository.
