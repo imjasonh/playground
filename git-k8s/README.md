@@ -844,8 +844,9 @@ verifies a signature no matter which credential pushed the commit.
 
 ### Protected branches
 
-Checks push their commits to the branch that they check, and the merge
-controller pushes the parent when a branch lands. GitHub's branch
+Checks push their commits to the branch that they check. When a branch
+lands, the merge controller pushes the parent, and can delete the branch or,
+in a squash or rebase landing, replace its commits. GitHub's branch
 protection rules and rulesets apply to those pushes:
 
 - Rules that limit who can push to the parent, such as **Require a pull
@@ -865,13 +866,19 @@ protection rules and rulesets apply to those pushes:
   git-k8s doesn't wait for those to show a branch's results before it lands
   the branch, so GitHub can refuse a landing at first, and git-k8s retries it.
 - **Require signed commits** refuses a landing unless GitHub verifies the
-  signature of every commit that it adds to the parent, so people have to
-  sign with a key on their GitHub account and use a committer email that
-  the account has verified.
+  signature of every commit that it adds to the parent. That includes
+  people's commits, which even a squash or rebase landing adds as they are
+  when it has nothing to change, so people have to sign with a key on their
+  GitHub account and use a committer email that the account has verified.
 - **Require linear history** rejects the merge commits that `check-base`
-  makes. Leave it off for a parent whose merge policy lets `base` push.
-- **Block force pushes** doesn't affect git-k8s, which pushes only
-  fast-forwards and deletions.
+  makes. Leave it off for a parent whose merge policy lets `base` push and
+  lands branches by `FastForward`, the default. `Squash` and `Rebase`
+  landings add no merge commits to the parent.
+- **Block force pushes** affects git-k8s only on branches that land by
+  `Squash` or `Rebase`, where it stops the merge controller from replacing
+  their commits, as [Landing methods](#landing-methods) describes. git-k8s
+  only fast-forwards parents, and checks add commits on top of the branches
+  that they check.
 - **Restrict deletions** on a branch stops `deleteMergedBranches` from
   deleting it after it lands.
 
@@ -879,8 +886,9 @@ When GitHub refuses a check's commit or a landing, the reason that it gives
 shows up on the `GitBranch`. For a check's commit, the check's result in
 `status.checks` has state `Error` and the reason in its message. For a
 landing, the `Synced` condition is `False` and has the reason in its
-message. git-k8s retries refused pushes, waiting longer each time, up to
-about 5 minutes.
+message. git-k8s retries those pushes, waiting longer each time, up to about
+5 minutes. When GitHub refuses only what a squash or rebase landing pushes
+to the branch, the `Merged` condition's message has the reason instead.
 
 ## Install
 
