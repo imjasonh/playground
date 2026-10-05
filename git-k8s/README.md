@@ -965,8 +965,8 @@ commits with `in.Replay`, which also need `SigningKey: signing.Key` to
 packages call. It mounts the mirror's token in the Pods of each program
 that uses `mirror.Remote`, and lets each program that uses `signing.Key`
 read Secrets. A check that reads only the `GitBranch`, such as
-`check-approval`, leaves both out, so its program gets no token and can't
-read Secrets.
+`check-approval`, leaves both out, so its program gets no token for the
+mirror and can't read Secrets.
 
 The core program accepts at most 16 outputs, with names of up to 63 bytes.
 A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
@@ -1081,8 +1081,8 @@ server gives them only what it gives anonymous requests.
 
 All of a test Pod's containers meet the `restricted`
 [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
-An admission policy keeps `check-gotest` to its own Pods, in namespaces that
-opt in to test Pods and enforce the `restricted` standard. See
+An admission policy keeps each check to its own Pods, in namespaces that
+opt in to check Pods and enforce the `restricted` standard. See
 [Install](#install).
 
 ### Share modules and build outputs
@@ -1250,7 +1250,7 @@ defend against that as follows:
   account and can create Pods, give it a policy of its own, as
   [Check service accounts](#check-service-accounts) says. Without one, its
   Pods can have `check-gotest`'s label and write. Other checks' Pods can
-  read the build caches of a namespace that opts in to test Pods, where
+  read the build caches of a namespace that opts in to check Pods, where
   they can already mount the namespace's Secrets. Reads don't change what
   any Pod compiles. Namespaces don't share build caches.
 
@@ -2093,7 +2093,7 @@ CEL works, for example `int(checks.risk.outputs.lines) < 500` or
 one side decides it, even if the other side is an error, such as a missing
 output. Without `when`, every listed check must pass.
 
-The repository controller compiles each `when` when it reads the
+The repositories controller compiles each `when` when it reads the
 `GitRepository`, so a syntax error or a misspelled field, such as
 `checks.gofmt.pased`, makes the `GitRepository` not `Ready` instead of
 holding branches back later. Each evaluation can cost at most 100,000, which
@@ -2176,7 +2176,7 @@ Three choices shape the queue:
   squash or rebase landing still leaves the merge out of the parent.
 
 At the front, the `base` check merges the parent at the head that the
-repository controller listed. If the parent moved after that, the check
+repositories controller listed. If the parent moved after that, the check
 waits for the next listing, because a merge of the older head would be
 behind as soon as it was pushed.
 
@@ -2445,7 +2445,7 @@ describes how to take that away. Other programs don't read the key, but
 `check-gotest` can create Pods, and a Pod can mount any Secret in its
 namespace. `check-gotest` doesn't give its test Pods the signing Secret,
 and the [admission policies](#install) let it create Pods only in
-namespaces that opt in to test Pods.
+namespaces that opt in to check Pods.
 
 For each commit, the program that signs it writes the key to a file with
 mode 0600 in a new directory with mode 0700 under `/tmp`, passes git the
@@ -3403,8 +3403,8 @@ reads `go-cache`'s metrics to check that a test Pod got the module through
 it, and that a later Pod read its build outputs instead of compiling them.
 It checks what test Pods can reach only if the cluster enforces
 NetworkPolicies, which kindnet does only on kernels with `nfnetlink_queue`.
-It needs Docker, `kubectl`, `git`, and `ssh-keygen`, and installs kind if
-it's missing:
+It needs Docker, `kubectl`, `git`, `ssh-keygen`, and `curl`, and installs
+kind if it's missing:
 
 ```sh
 GIT_K8S_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
