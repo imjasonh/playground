@@ -1955,13 +1955,13 @@ kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
 ```
 
 An entry overrides the `check-NAME` convention, so an entry with an empty
-value stops that service account from writing results. The second policy
-still treats that service account as a check, so it can't change `GitBranch`
-objects even if RBAC lets it patch them. The policies ignore an entry for
-the core program's service account, `git-k8s.git-k8s`, so an entry can't let
-the core program write a result or stop it from changing `GitBranch`
-objects. The core program applies the ConfigMap without data, so restarting
-it keeps your entries.
+value stops that service account from writing results. The first two
+policies still treat that service account as a check, so it can't change a
+`GitBranch` or its status even if RBAC lets it patch them. The policies
+ignore an entry for the core program's service account, `git-k8s.git-k8s`,
+so an entry can't let the core program write a result or stop it from
+changing `GitBranch` objects. The core program applies the ConfigMap without
+data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
 service accounts write which results, so give that permission only to people
 who can install checks.

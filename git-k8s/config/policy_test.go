@@ -823,6 +823,93 @@ func gitBranch(edit func(meta, spec map[string]any)) map[string]any {
 	return map[string]any{"metadata": meta, "spec": spec}
 }
 
+func TestCheckResults(t *testing.T) {
+	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-check-results"))
+	const (
+		gotest   = "system:serviceaccount:check-gotest:check-gotest"
+		bot      = "system:serviceaccount:checks:bot"
+		core     = "system:serviceaccount:git-k8s:git-k8s"
+		deployer = "system:serviceaccount:checks:deployer"
+	)
+	old := gitBranch(nil)
+	withStatus := func(status map[string]any) map[string]any {
+		b := gitBranch(nil)
+		b["status"] = status
+		return b
+	}
+	wrote := func(check string) map[string]any {
+		return withStatus(map[string]any{"checks": map[string]any{check: map[string]any{"commit": "0000000", "state": "Passed"}}})
+	}
+	queued := withStatus(map[string]any{"queue": []any{"c/x"}})
+	merged := withStatus(map[string]any{"state": "Merged"})
+	update := func(user string, params, object map[string]any) request {
+		return request{user: user, operation: "UPDATE", resource: "gitbranches", subresource: "status", namespace: "repos", params: params, object: object, oldObject: old}
+	}
+	only := func(check string) string { return "the " + check + " check can only write status.checks." + check }
+	emptied := func(user string) string {
+		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
+	}
+	none := checksConfigMap()
+	for _, tt := range []struct {
+		name string
+		r    request
+		want string
+	}{{
+		name: "a check writes its result",
+		r:    update(gotest, none, wrote("gotest")),
+	}, {
+		name: "a check writes another check's result",
+		r:    update(gotest, none, wrote("race")),
+		want: only("gotest"),
+	}, {
+		name: "a check writes a merge queue",
+		r:    update(gotest, none, queued),
+		want: only("gotest"),
+	}, {
+		name: "a check that only its entry names writes its result",
+		r:    update(bot, checksConfigMap("checks.bot", "bot"), wrote("bot")),
+	}, {
+		name: "a check that only its entry names writes a merge queue",
+		r:    update(bot, checksConfigMap("checks.bot", "bot"), queued),
+		want: only("bot"),
+	}, {
+		name: "a check whose entry is empty writes its result",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), wrote("gotest")),
+		want: emptied(gotest),
+	}, {
+		name: "a check whose entry is empty writes a merge queue",
+		r:    update(bot, checksConfigMap("checks.bot", ""), queued),
+		want: emptied(bot),
+	}, {
+		name: "a check whose entry is empty writes a branch's state",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), merged),
+		want: emptied(gotest),
+	}, {
+		name: "the core program writes a merge queue",
+		r:    update(core, none, queued),
+	}, {
+		name: "the core program writes a merge queue despite an empty entry",
+		r:    update(core, checksConfigMap("git-k8s.git-k8s", ""), queued),
+	}, {
+		name: "the core program writes a result despite an entry that names a check",
+		r:    update(core, checksConfigMap("git-k8s.git-k8s", "gofmt"), wrote("gofmt")),
+		want: core + " isn't a check's service account, so it can't write status.checks",
+	}, {
+		name: "another service account in a check's namespace writes a merge queue",
+		r:    update(deployer, checksConfigMap("checks.bot", ""), queued),
+	}, {
+		name: "another service account in a check's namespace writes a result",
+		r:    update(deployer, checksConfigMap("checks.bot", ""), wrote("bot")),
+		want: deployer + " isn't a check's service account, so it can't write status.checks",
+	}} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.admit(t, tt.r); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBranches(t *testing.T) {
 	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-branches"))
 	const (

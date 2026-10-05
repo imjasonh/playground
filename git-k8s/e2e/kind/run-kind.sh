@@ -715,10 +715,11 @@ done
 echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt and check-approval can't patch one."
 echo "::endgroup::"
 
-echo "::group::A check that the ConfigMap names can't change GitBranch objects"
+echo "::group::A check that the ConfigMap names can't change GitBranch objects or their status"
 # bot has the permissions that generate gives check-gotest, so RBAC lets it
-# patch GitBranch objects. It runs in the namespace ${APPROVAL_NS}, so only
-# its entry in the git-k8s-checks ConfigMap makes it a check.
+# patch GitBranch objects and their status. It runs in the namespace
+# ${APPROVAL_NS}, so only its entry in the git-k8s-checks ConfigMap makes it a
+# check.
 k -n "${APPROVAL_NS}" create serviceaccount bot
 k create clusterrolebinding git-k8s-e2e-bot --clusterrole=check-gotest --serviceaccount="${APPROVAL_NS}:bot"
 k -n git-k8s patch configmap git-k8s-checks --type=merge -p "{\"data\":{\"${APPROVAL_NS}.bot\":\"bot\"}}"
@@ -733,12 +734,24 @@ bot_cant_change() {
   [[ "${code}" == 422 ]] && grep -qF "$1" "${WORKDIR}/patch.json"
 }
 eventually 30 bot_cant_change "the bot check can't change GitBranch objects"
+# bot_cant_write_status passes if the API server rejects bot's patch of a
+# merge queue with the message $1.
+bot_cant_write_status() {
+  local code
+  code="$(patch_status '{"status":{"queue":["c/x"]}}' "${bot_token}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]] && grep -qF "$1" "${WORKDIR}/patch.json"
+}
+eventually 30 bot_cant_write_status "the bot check can only write status.checks.bot"
 # An empty entry stops bot from writing results, and RBAC still lets it patch
-# GitBranch objects.
+# GitBranch objects and their status.
 k -n git-k8s patch configmap git-k8s-checks --type=merge -p "{\"data\":{\"${APPROVAL_NS}.bot\":\"\"}}"
 eventually 30 bot_cant_change \
   "system:serviceaccount:${APPROVAL_NS}:bot, a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
-echo "RBAC lets bot patch GitBranch objects, and the policy stops it both as the bot check that its ConfigMap entry names and after the entry is emptied."
+eventually 30 bot_cant_write_status \
+  "system:serviceaccount:${APPROVAL_NS}:bot, a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
+echo "RBAC lets bot patch GitBranch objects and their status, and the policies stop it both as the bot check that its ConfigMap entry names and after the entry is emptied."
 echo "::endgroup::"
 
 echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
