@@ -255,12 +255,6 @@ what lands, so that may be acceptable. Once checks send results to the core
 program instead of writing them, the check-results policy is a backstop, and
 the policy that stops controllers from approving branches matters most.
 
-## Support SSH keys
-
-The mirror authenticates to external repositories with HTTP basic auth, or
-for GitHub with Octo STS. Other forges often use SSH keys, which the mirror
-needs to support too.
-
 ## Support more ways to land
 
 Landing fast-forwards the parent to the branch's head, so the parent ends up
