@@ -2265,9 +2265,13 @@ go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git
 Upgrade the core program first, because it installs `config/policy.yaml`
 when it starts, and the second policy there stops `git-k8s-deps` from
 changing `GitBranch` objects. With `-install-policies=false`, apply
-`config/policy.yaml` instead. The policy recognizes `git-k8s-deps` only as
-the service account `git-k8s-deps` in the namespace `git-k8s-deps`, so
-install it there, as `generate` does unless you set `-namespace`.
+`config/policy.yaml` instead. The policy recognizes `git-k8s-deps` as the
+service account `git-k8s-deps` in the namespace `git-k8s-deps`, where
+`generate` installs it unless you set `-namespace`. For another service
+account, add an entry with an empty value for it to the `git-k8s-checks`
+ConfigMap, as [Check service accounts](#check-service-accounts) describes.
+The policy then treats the service account as a check, which can't change
+`GitBranch` objects.
 
 `check-deps` takes `-prefix`, which must match the controller's, and the
 flags in the `check-review` table. It exits at startup when `-prefix` isn't a
