@@ -9,11 +9,6 @@ import (
 	"unicode"
 )
 
-// remoteProtocols limits git to the transports that a GitRepository's URL
-// can name, even in a command that reads only local objects, because a
-// repository with a promisor remote fetches the objects that it lacks.
-var remoteProtocols = []string{"GIT_ALLOW_PROTOCOL=http:https:git:ssh"}
-
 // MergeOptions changes how Merge merges.
 type MergeOptions struct {
 	// Base is the merge base to use. Merge finds one when it's empty.
@@ -58,7 +53,7 @@ func (r *Repo) Merge(ctx context.Context, ours, theirs string, o MergeOptions) (
 	if o.Base != "" {
 		args = append(args, "--merge-base="+o.Base)
 	}
-	res, err := r.git.exec(ctx, r.Dir, append(args, "--end-of-options", ours, theirs), opts{env: remoteProtocols})
+	res, err := r.git.exec(ctx, r.Dir, append(args, "--end-of-options", ours, theirs), opts{})
 	if err != nil {
 		return "", nil, err
 	}
@@ -102,7 +97,7 @@ func (r *Repo) Merge(ctx context.Context, ours, theirs string, o MergeOptions) (
 // empty tree. Without it, git reads them from the tree that attr.tree names
 // or, in some versions such as 2.43, from HEAD in a bare repository.
 func (r *Repo) noAttributes(ctx context.Context) (string, error) {
-	empty, err := r.git.run(ctx, r.Dir, []string{"hash-object", "-t", "tree", "--stdin"}, opts{stdin: []byte{}, env: remoteProtocols})
+	empty, err := r.git.run(ctx, r.Dir, []string{"hash-object", "-t", "tree", "--stdin"}, opts{stdin: []byte{}})
 	return "--attr-source=" + strings.TrimSpace(string(empty)), err
 }
 
@@ -123,7 +118,7 @@ func UnionAttributes(patterns []string) (string, error) {
 // MergeBases returns every best common ancestor of two commits. A merge of
 // commits with more than one depends on how git combines them.
 func (r *Repo) MergeBases(ctx context.Context, a, b string) ([]string, error) {
-	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", "--all", "--end-of-options", a, b}, opts{env: remoteProtocols})
+	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", "--all", "--end-of-options", a, b}, opts{})
 	switch {
 	case err != nil:
 		return nil, err
@@ -144,7 +139,7 @@ func (r *Repo) FetchRef(ctx context.Context, remote Remote, ref string) (string,
 	}
 	// check-ref-format takes no --end-of-options, and the refs/ prefix
 	// keeps ref from reading as an option.
-	if _, err := r.git.run(ctx, r.Dir, []string{"check-ref-format", ref}, opts{env: remoteProtocols}); err != nil {
+	if _, err := r.run(ctx, "check-ref-format", ref); err != nil {
 		return "", fmt.Errorf("%q isn't a full ref name", ref)
 	}
 	local := ref
@@ -152,9 +147,8 @@ func (r *Repo) FetchRef(ctx context.Context, remote Remote, ref string) (string,
 		local = "refs/remotes/origin/" + b
 	}
 	args := []string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--end-of-options", remote.URL, "+" + ref + ":" + local}
-	if _, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth, env: remoteProtocols}); err != nil {
+	if _, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth}); err != nil {
 		return "", err
 	}
-	out, err := r.git.run(ctx, r.Dir, []string{"rev-parse", "--verify", "--end-of-options", local + "^{commit}"}, opts{env: remoteProtocols})
-	return strings.TrimSpace(string(out)), err
+	return r.text(ctx, "rev-parse", "--verify", "--end-of-options", local+"^{commit}")
 }

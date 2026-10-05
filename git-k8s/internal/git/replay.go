@@ -217,7 +217,7 @@ func (r *Repo) Revs(ctx context.Context, head string, excluded ...string) ([]Rev
 			args = append(args, "^"+x)
 		}
 	}
-	out, err := r.git.run(ctx, r.Dir, args, opts{env: remoteProtocols})
+	out, err := r.run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -247,14 +247,14 @@ func (r *Repo) PatchIDs(ctx context.Context, commits []string) (map[string]strin
 		return nil, err
 	}
 	res, err := r.git.exec(ctx, r.Dir, []string{noAttrs, "diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index"},
-		opts{stdin: []byte(strings.Join(commits, "\n") + "\n"), env: remoteProtocols})
+		opts{stdin: []byte(strings.Join(commits, "\n") + "\n")})
 	if err == nil && res.code != 0 {
 		err = &Error{Command: "diff-tree", Code: res.code, Stderr: res.stderr}
 	}
 	if err != nil {
 		return nil, err
 	}
-	out, err := r.git.run(ctx, r.Dir, []string{"patch-id", "--stable"}, opts{stdin: res.stdout, env: remoteProtocols})
+	out, err := r.git.run(ctx, r.Dir, []string{"patch-id", "--stable"}, opts{stdin: res.stdout})
 	if err != nil {
 		return nil, err
 	}
@@ -275,8 +275,7 @@ func (r *Repo) PatchIDs(ctx context.Context, commits []string) (map[string]strin
 // id, at the later of commit's and parent's committer times, so the same
 // arguments always make the same commit.
 func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Identity) (string, error) {
-	out, err := r.git.run(ctx, r.Dir, []string{"show", "-s", "--date=raw", "--format=format:%an%x00%ae%x00%ad%x00%ct%x00%B", "--end-of-options", commit},
-		opts{env: remoteProtocols})
+	out, err := r.run(ctx, "show", "-s", "--date=raw", "--format=format:%an%x00%ae%x00%ad%x00%ct%x00%B", "--end-of-options", commit)
 	if err != nil {
 		return "", err
 	}
@@ -288,7 +287,7 @@ func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Ident
 	if err != nil {
 		return "", fmt.Errorf("git show: unexpected committer time %q", f[3])
 	}
-	out, err = r.git.run(ctx, r.Dir, []string{"show", "-s", "--format=format:%ct", "--end-of-options", parent}, opts{env: remoteProtocols})
+	out, err = r.run(ctx, "show", "-s", "--format=format:%ct", "--end-of-options", parent)
 	if err != nil {
 		return "", err
 	}
