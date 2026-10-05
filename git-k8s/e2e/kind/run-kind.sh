@@ -44,6 +44,7 @@ diagnose() {
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
   k -n "${NS}" get pods -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
+  k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
   for program in git-k8s "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
     k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
@@ -945,6 +946,100 @@ code="$(pod_request DELETE "${NS}/pods/other")"
 grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
 k -n "${NS}" delete pod other
 echo "check-gotest can't run Pods in a program's namespace, as another service account, in a namespace that doesn't opt in, on a node that it names, or under another check's Pod name, and can't change or delete a Pod that it didn't create."
+echo "::endgroup::"
+
+echo "::group::An agent reviews branches in sandboxed Pods"
+# The fake backend fails added lines that hold DO NOT MERGE and deletes them
+# when the check may push, so the test needs no Cursor API key.
+AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
+docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
+docker push -q "${AGENT_IMAGE}"
+docker rmi "${AGENT_IMAGE}" >/dev/null || true
+AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
+CHECKS+=(check-review)
+install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+k -n check-review rollout status deployment/check-review --timeout=180s
+REVIEWED="${WORKDIR}/reviewed"
+git init -q -b main "${REVIEWED}"
+rv() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${REVIEWED}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+printf 'Notes\n' >"${REVIEWED}/notes.txt"
+rv add -A
+rv commit -qm "Add notes"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:main HEAD:draft
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: reviewed
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/reviewed.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: review
+            mayPush: true
+        deleteMergedBranches: true
+    - match: c/**
+      parent: main
+    - match: draft
+      merge:
+        checks:
+          - name: review
+        maxAgentRuns: 1
+    - match: d/**
+      parent: draft
+EOF
+review() { k -n "${NS}" get gitbranch "$(branch_object "$1" reviewed)" -o jsonpath="{.status.checks.review.$2}"; }
+no_agent_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=git-k8s-agent -o name)" ]]; }
+
+rv checkout -q -b c/marked
+printf 'Notes\nDO NOT MERGE\nMore notes\n' >"${REVIEWED}/notes.txt"
+rv commit -qam "Add more notes"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:c/marked
+fixed_on_main() {
+  rv fetch -q "${HOST_URL}/reviewed.git" main &&
+    [[ "$(rv show FETCH_HEAD:notes.txt)" == "$(printf 'Notes\nMore notes')" ]]
+}
+eventually 300 fixed_on_main
+rv log -1 --format=%B FETCH_HEAD
+rv log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: review'
+marked_gone() { [[ -z "$(remote_head c/marked reviewed)" && -z "$(branch_object c/marked reviewed)" ]]; }
+eventually 60 marked_gone
+eventually 60 no_agent_pods
+
+rv checkout -q -b d/marked main
+printf 'Notes\nDO NOT MERGE\n' >"${REVIEWED}/notes.txt"
+rv commit -qam "Mark the notes"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:d/marked
+review_failed() { [[ -n "$(branch_object d/marked reviewed)" && "$(review d/marked state)" == Failed ]]; }
+eventually 300 review_failed
+k -n "${NS}" get gitbranch "$(branch_object d/marked reviewed)" -o jsonpath='{.status.checks.review}'
+echo
+[[ "$(review d/marked message)" == "The change adds DO NOT MERGE at notes.txt:2." ]]
+[[ "$(review d/marked outputs.summary)" == "1 added line holds DO NOT MERGE" ]]
+[[ "$(review d/marked outputs.model)" == fake:composer-2.5 ]]
+[[ "$(review d/marked outputs.inputTokens)" -gt 0 ]]
+[[ "$(review d/marked outputs.runs)" == 1 ]]
+eventually 60 no_agent_pods
+printf 'Notes\nDO NOT MERGE\nDO NOT MERGE EITHER\n' >"${REVIEWED}/notes.txt"
+rv commit -qam "Mark the notes again"
+marked_again="$(rv rev-parse HEAD)"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:d/marked
+out_of_runs() { [[ "$(review d/marked commit)" == "${marked_again}" && "$(review d/marked state)" == Running ]]; }
+eventually 120 out_of_runs
+review d/marked message
+echo
+review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
+no_agent_pods
+echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
