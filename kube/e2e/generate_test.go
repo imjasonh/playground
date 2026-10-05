@@ -371,6 +371,66 @@ func TestGenerateOneNamespace(t *testing.T) {
 	noPermissionErrors(t, out)
 }
 
+// TestGenerateOwnedType installs the imagereport example, which owns
+// ImageReports without reconciling them. Its rules let it create the missing
+// CRD and get that CRD, but not change it.
+func TestGenerateOwnedType(t *testing.T) {
+	c := e2e.Client(t)
+	reg := imagetest.Registry(t)
+	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
+	in := generateExample(t, reg, "imagereport", "imagereport", "-replicas=1")
+	const crd = "imagereports.examples.kube.imjasonh.github.io"
+	var crdRules []any
+	for _, obj := range in.objects {
+		if obj["kind"] != "ClusterRole" {
+			continue
+		}
+		for _, r := range obj["rules"].([]any) {
+			if b, _ := json.Marshal(r); strings.Contains(string(b), `"customresourcedefinitions"`) {
+				crdRules = append(crdRules, r)
+			}
+		}
+	}
+	want := `[{"apiGroups":["apiextensions.k8s.io"],"resources":["customresourcedefinitions"],"verbs":["create"]},` +
+		`{"apiGroups":["apiextensions.k8s.io"],"resourceNames":["` + crd + `"],"resources":["customresourcedefinitions"],"verbs":["get"]}]`
+	if b, _ := json.Marshal(crdRules); string(b) != want {
+		t.Errorf("rules for CRDs =\n%s\nwant\n%s", b, want)
+	}
+	in.apply(t, c)
+	exe := in.executable(t, "imagereport")
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "imagereport", "imagereport"))
+
+	ns := e2e.Namespace(t, c)
+	if err := c.Create(t.Context(), client.Path("v1", "pods", ns, ""), map[string]any{
+		"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "app"},
+		"spec": map[string]any{"containers": []any{map[string]any{"name": "app", "image": "ghcr.io/example/app:v1"}}},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var report struct {
+			Images []struct {
+				Image string `json:"image"`
+			} `json:"images"`
+		}
+		if err := e2e.Get(t.Context(), c, client.Path("examples.kube.imjasonh.github.io/v1", "imagereports", ns, "images"), &report); err != nil {
+			return err
+		}
+		if len(report.Images) != 1 || report.Images[0].Image != "ghcr.io/example/app:v1" {
+			return fmt.Errorf("report images = %+v", report.Images)
+		}
+		return nil
+	})
+	var meta crdMeta
+	if err := e2e.Get(t.Context(), c, "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/"+crd, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.managedBy() != "imagereport" {
+		t.Errorf("the CRD is managed by %q, want imagereport", meta.managedBy())
+	}
+	noPermissionErrors(t, out)
+}
+
 // TestGenerateWebhooks installs the podpolicy example, whose admission
 // webhooks need a Service, a certificate Secret, and webhook
 // configurations, and passes it a flag after --.

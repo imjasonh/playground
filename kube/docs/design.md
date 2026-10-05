@@ -587,6 +587,17 @@ waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
 
+An intent that fails, for example because an admission policy rejects an
+apply, fails the reconcile in the same way. The framework stops carrying out
+the intents, writes the status that `Reconcile` set, and retries with backoff.
+`Reconcile` returned before the write failed, so it can't report the error.
+The controller keeps each object's last error in memory, and `kube.LastError`
+returns it to the next reconcile, which can put it in the status. That matters
+for a status without a `Synced` condition, such as one entry in a status that
+several controllers share. The errors are kept by namespace and name, so if an
+object is deleted and recreated before the controller reconciles the deletion,
+the new object's first reconcile can get the old object's error.
+
 ### Finalizers and cleanup
 
 When a reconciler has a `Finalize` method, the framework adds a finalizer to
@@ -605,6 +616,19 @@ UID, then removes the finalizer. When a reconcile stops declaring such
 objects, the framework deletes any that remain and removes the finalizer, so
 the owner can then be deleted without the controller running.
 
+A controller without a `Finalize` method also removes its finalizer from
+objects, so a finalizer that an earlier version of the program added doesn't
+keep them from being deleted. Adding and removing a finalizer patch the
+object. Permission to patch an object also allows changes to its spec,
+labels, and annotations, so `generate` grants it only to a controller that
+can need it: one with a `Finalize` method, one with the
+`kube.RemovesFinalizer` option, or one whose type is namespaced in a program
+that declares owned objects. The source doesn't show which namespace an owned
+object goes in, so any owned object counts. When the API server forbids the
+removal and the controller has neither `Finalize` nor the option, the error
+names the option, because the likely cause is a finalizer that an earlier
+version of the program added.
+
 ### Custom resource definitions
 
 `internal/schema` generates an OpenAPI v3 schema from a struct, using `json`
@@ -617,6 +641,60 @@ else installed the CRD, for example a Helm chart, the controller leaves it
 alone. [CRD upgrades](#crd-upgrades) describes how it updates a CRD that
 already exists.
 
+A program can also own a custom type that none of its controllers reconciles,
+such as a report that it writes. It knows only the versions that it declares,
+so applying its CRD could drop the others, or replace a schema that a newer
+release of the reconciling program installed. Instead, at startup with
+`kube.Owns`, or at the program's first `Own` of the type, `createCRD` gets the
+CRD. If it's missing, `createCRD` creates it with a plain `POST` and the label
+that marks a CRD as installed by the framework, then waits until it's
+`Established`. It never updates a CRD. A `POST` fails with `AlreadyExists`
+when the CRD exists, so if two programs create it at once, one succeeds, the
+other waits for the same CRD, and neither changes what the other created. If
+the CRD, whether it existed or another program created it first, doesn't
+serve the program's version of the type, `Own` fails with an error. At
+startup, `kube.Owns` logs an error from `createCRD` instead of returning it,
+so that a CRD without the program's version, or a failed request, doesn't
+stop the program's other controllers and webhooks. `ensureCRD` keeps only a
+success, so the next `Own` tries again. If the program can't get CRDs, for
+example because it runs with the rules of an earlier release, it logs a
+warning and uses the type without creating its CRD.
+
+Because of the label, a program that reconciles the type later treats the
+created CRD as its own and installs its CRD over it. That fails when the two
+programs disagree about the type:
+
+- A CRD's `spec.scope` is immutable, so if the reconciling program declares
+  another scope, the API server rejects its CRD, and the program doesn't
+  start.
+- If the created version isn't one of the reconciling program's versions, the
+  program doesn't start. `planCRD` refuses a newer version, because the CRD
+  doesn't serve the program's own version. `checkDropped` refuses an older
+  one, because the API server lists a new CRD's storage version in
+  `status.storedVersions` before the CRD has objects.
+- `ownsCRD` looks for the label under the reconciling program's own
+  `Manager.Domain`, so a program with another `Domain` uses the CRD as
+  something else installed it, and never updates it.
+
+The remedy is to make the declarations agree and delete the created CRD while
+it has no objects, or, if only the version differs, to declare the created
+version in the reconciling program with `kube.Version`. When the label names
+another program, the errors from `planCRD` and `checkDropped` name it and
+suggest these remedies.
+
+Only owning a type creates its CRD. A program that only reads the type gains
+nothing from creating it, because there are no objects to read until something
+writes them. A struct that reads a type is a
+[projection](#types-are-projections) that needn't declare every field, so a
+CRD created from it could prune fields that other programs write. A reading
+struct with the wrong scope or version would also create a CRD that the
+reconciling program can't take over. A program that owns the type can't write
+its objects without the CRD. The cost is two rules that `generate` writes for
+each owned type: `create` on `customresourcedefinitions`, and `get` on the
+CRD's name. RBAC can't limit `create` to a name, so this is the same `create`
+rule that reconciled types need. There's no `patch`. To own a type without
+creating its CRD, declare it with `apiVersion` and `kind`.
+
 ### Shards and leader election
 
 Leader election and sharding are one mechanism. The keys of every controller
@@ -624,11 +702,12 @@ in a manager are divided into shards by an FNV hash of namespace and name, and
 each shard is a `coordination.k8s.io/v1` Lease with a 15-second duration,
 renewed every 2 seconds. A worker reconciles a key only while its replica
 holds the key's shard, and a replica that acquires a shard enqueues every
-cached key in it and forgets what it last wrote for them, because another
-replica may have reconciled them since. Leader election is the case of one
-shard. Candidates measure a lease's expiry from when they saw its holder or
-renew time change, on their own clock, so clock skew between replicas doesn't
-give a shard two holders.
+cached key in it and forgets what it last wrote for them. It also forgets
+every reconcile error that it kept for the shard, including deleted objects'
+errors, because another replica may have reconciled the shard's keys since.
+Leader election is the case of one shard. Candidates measure a lease's expiry
+from when they saw its holder or renew time change, on their own clock, so
+clock skew between replicas doesn't give a shard two holders.
 
 With more than one shard, each replica also renews a membership Lease, and
 every replica lists the manager's Leases each retry period. Each computes the
@@ -772,8 +851,9 @@ kind and the messages it contains at a time.
 Some fields differ between the two encodings. A struct that `encoding/json`
 inlines, such as a Volume's VolumeSource, is a nested message. Times,
 quantities, and int-or-string values are messages in protobuf but strings or
-numbers in JSON. A few lists, such as a user's extra values, are messages that
-wrap a repeated field. The decoder sets times and quantities directly, and
+numbers in JSON. The zero time is an empty message in protobuf and `null` in
+JSON. A few lists, such as a user's extra values, are messages that wrap a
+repeated field. The decoder sets times and quantities directly, and
 converts other such values, or any field whose Go type has an `UnmarshalJSON`
 method, to the JSON value that the API server would send, and decodes that
 with `encoding/json`. A test creates an object of every type in the `k8s`
@@ -814,6 +894,18 @@ needs `create` and `patch`, and `Delete` needs `delete`. When a type passed to
 `patch` on the type's `status` subresource. `controller-gen` reads
 `+kubebuilder:rbac` comment markers, which people write and update by hand.
 These rules change when the calls do.
+
+A controller gets `get`, `list`, and `watch` on its own type, and `patch` on
+the type's `status` subresource if it has one. It gets `patch` on the type
+itself only when the framework writes the object: to add or remove the
+controller's finalizer, as [Finalizers and cleanup](#finalizers-and-cleanup)
+describes, or to migrate the stored objects of a type with more than one
+version. The `describe` method reports whether a controller has a `Finalize`
+method, the `kube.RemovesFinalizer` option, owned types, or more than one
+version, and the analysis reports whether the program calls `Own`, including
+calls whose type arguments it can't tell. A program that declares no owned
+objects, and whose controllers only write status, gets no permission to change
+the spec, labels, or annotations of the objects that they reconcile.
 
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
@@ -886,6 +978,14 @@ framework's tests check that:
   program removes the webhooks it dropped.
 - Objects written in one version read back in another, through the
   conversion webhook or without one.
+- When two programs that own a custom type without reconciling it start at
+  once, one creates the type's missing CRD and both use it, and a program that
+  reconciles the type then takes it over. A program that knows fewer of the
+  type's versions leaves an existing CRD as it is, and a program that only
+  reads the type doesn't create its CRD. A program that can't create the CRD
+  at startup starts anyway, and creates it at a later `Own`. A program that
+  reconciles the type doesn't start while it lacks the created CRD's version,
+  and takes the CRD over once it declares the version with `kube.Version`.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
   to equal structs.
 - The program in the image that `generate` pushes runs with the token of the
@@ -897,8 +997,10 @@ A test in `e2e/kind` runs the whole installation in a
 kube-proxy. It pushes to a local registry as kind's
 [guide](https://kind.sigs.k8s.io/docs/user/local-registry/) describes, pipes
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
-that reconciles continue after every controller pod is replaced, and that the
-podpolicy webhooks deny and default pods through their Service.
+that reconciles continue after every controller pod is replaced, that
+imagereport creates its CRD with the rules that `generate` wrote and reports
+the images that pods run, and that the podpolicy webhooks deny and default
+pods through their Service.
 
 ## Measurements
 
@@ -1046,6 +1148,12 @@ offers:
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.
+- A program that owns a type without reconciling it creates the type's CRD
+  but never updates it, so a later release that changes the type leaves the
+  CRD as it was.
+- A program that reconciles a type takes over the CRD that another program
+  created only if both programs declare the same scope and `Manager.Domain`,
+  and the reconciling program declares the created version.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
@@ -191,6 +192,20 @@ func TestProtobufDecodesLikeJSON(t *testing.T) {
 	status("v1", "nodes", "", node, `{"status":{"capacity":{"cpu":"8","memory":"32Gi","pods":"110"},"allocatable":{"cpu":"7500m","memory":"30Gi"},"conditions":[{"type":"Ready","status":"True","reason":"KubeletReady","message":"kubelet is posting ready status"}]}}`)
 	sameDecoding[k8s.Node](t, c, "v1", "Node", client.Path("v1", "nodes", "", node))
 	sameDecoding[k8s.Namespace](t, c, "v1", "Namespace", client.Path("v1", "namespaces", "", ns))
+
+	t.Log("An unset time decodes as the zero time, and the Unix epoch as the epoch.")
+	type event struct {
+		kube.Object    `kube:"apiVersion=v1,kind=Event"`
+		FirstTimestamp *time.Time `json:"firstTimestamp"`
+		LastTimestamp  time.Time  `json:"lastTimestamp"`
+		EventTime      time.Time  `json:"eventTime"`
+	}
+	ref := map[string]any{"kind": "Pod", "namespace": ns, "name": "web"}
+	create("v1", "events", ns, map[string]any{"apiVersion": "v1", "kind": "Event", "metadata": map[string]any{"name": "zero"}, "involvedObject": ref})
+	create("v1", "events", ns, map[string]any{"apiVersion": "v1", "kind": "Event", "metadata": map[string]any{"name": "epoch"}, "involvedObject": ref,
+		"firstTimestamp": "1970-01-01T00:00:00Z", "lastTimestamp": "1970-01-01T00:00:00Z"})
+	sameDecoding[event](t, c, "v1", "Event", client.Path("v1", "events", ns, "zero"))
+	sameDecoding[event](t, c, "v1", "Event", client.Path("v1", "events", ns, "epoch"))
 
 	t.Log("Lists decode item by item, and metadata-only reads decode too.")
 	var jsonList struct {
