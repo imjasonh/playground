@@ -47,6 +47,17 @@ and branches that match no rule aren't tracked. A branch whose rule names a
 `parent` is a proposal to that parent. The parent's rule says what a proposal
 needs before it lands.
 
+`url` must be an `https://`, `http://`, `git://`, or `ssh://` URL, or an
+scp-like address with a user name, such as `git@example.com:app.git`. Without
+a user name, write an `ssh://` URL, such as `ssh://example.com/~/app.git`. The
+API server rejects other URLs, and git-k8s runs git with `GIT_ALLOW_PROTOCOL`
+set to those transports. Its git commands put `--end-of-options` before every
+URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
+track branches whose names start with `-` or aren't valid ref names.
+
+Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
+shows each URL, and `check-gotest` copies it into its Pod specs.
+
 The `git-k8s` program runs two controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
 

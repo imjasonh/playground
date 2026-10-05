@@ -246,6 +246,31 @@ eventually 60 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
+echo "::group::The API server rejects a URL that git could read as an option"
+url_repository() {
+  cat <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: url-check
+  namespace: ${NS}
+spec:
+  url: '$1'
+EOF
+}
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
+  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+  if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
+    echo "the API server accepted ${url}" >&2
+    exit 1
+  fi
+  cat "${WORKDIR}/apply.err"
+  grep -q 'spec.url' "${WORKDIR}/apply.err"
+done
+url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
+echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
+echo "::endgroup::"
+
 # remote_head prints a branch's commit in repository $2, or app.
 remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
