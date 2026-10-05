@@ -1,1 +1,0 @@
-Temporary file that makes CI test kube and git-k8s on this pull request.
