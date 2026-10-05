@@ -54,12 +54,16 @@
     <main>
       <h1>QR quine</h1>
       <p>
-        The symbol encodes a <code>data:</code> URL. Pasting that URL into the
-        address bar runs a script that reads its own address and draws this
-        same symbol.
+        This symbol encodes this page's address. Scanning it opens this page,
+        which draws the same symbol.
+      </p>
+      <div id="qr"></div>
+      <p>
+        The data URL is this page with no server. Paste it into the address
+        bar. The iPhone Camera app reads that code and shows "No usable data
+        found". It does not open a <code>data:</code> URL.
       </p>
       <p><button id="copy" type="button">Copy the data URL</button></p>
-      <div id="qr"></div>
     </main>
     <script type="module" src="src/main.js"></script>
   </body>

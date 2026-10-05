@@ -1,9 +1,14 @@
 # QR quine
 
-This symbol encodes a `data:` URL. Opening that URL runs a script that reads
-`location.href` and draws the same symbol.
+The symbol on the page encodes that page's address. Scanning it opens the
+page, which draws the same symbol. The iPhone Camera app opens that address.
 
-The payload is a version 40 QR code, error correction L, mask 0, byte mode.
+The data URL is the same page with no server. Opening it runs a script that
+reads `location.href` and draws the same symbol. The Camera app reads that
+symbol and shows "No usable data found". It does not open a `data:` URL.
+Paste the URL into the address bar.
+
+The data URL is a version 40 QR code, error correction L, mask 0, byte mode.
 That symbol holds 2953 bytes. `src/encode.js` is the page that gets copied
 into the URL, with comments and spare whitespace removed. In a `data:text/html`
 URL, Chrome percent-encodes `%`, `?`, `#`, `<`, `>`, and backticks, and the

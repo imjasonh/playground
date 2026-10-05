@@ -20,5 +20,8 @@ button.addEventListener("click", async () => {
   button.textContent = "Copied";
 });
 
-D(quine);
+// The symbol on this page encodes the page address. The iPhone Camera app
+// opens an http(s) URL. It reads a data: URL and then reports that it found
+// no usable data.
+D(location.href);
 document.querySelector("#qr").appendChild(document.querySelector("canvas"));

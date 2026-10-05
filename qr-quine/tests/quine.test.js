@@ -61,8 +61,8 @@ test("the data URL is the script and fits in the symbol", () => {
   assert.equal(countDiffs(quine), 0);
 });
 
-test("a scan of the painted symbol returns the data URL", () => {
-  const modules = Q(quine);
+function scan(text) {
+  const modules = Q(text);
   const scale = 4;
   const quiet = 4;
   const side = (SIZE + quiet * 2) * scale;
@@ -85,5 +85,15 @@ test("a scan of the painted symbol returns the data URL", () => {
   }
   const code = jsQR(data, side, side);
   assert.ok(code, "decoder found no symbol");
-  assert.equal(code.data, quine);
+  return code.data;
+}
+
+test("a page address scans back as that address", () => {
+  const page = "https://imjasonh.github.io/playground/qr-quine/";
+  assert.equal(countDiffs(page), 0);
+  assert.equal(scan(page), page);
+});
+
+test("a scan of the painted symbol returns the data URL", () => {
+  assert.equal(scan(quine), quine);
 });
