@@ -40,10 +40,13 @@ func TestMergeListsConflicts(t *testing.T) {
 	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "c/x"); err != nil {
 		t.Fatal(err)
 	}
-	// A bare repository reads attributes from HEAD's tree.
+	// Some versions, such as 2.43, read a bare repository's attributes from
+	// HEAD's tree. Later versions read them only from the tree that
+	// attr.tree names.
 	if err := os.WriteFile(filepath.Join(repo.Dir, "HEAD"), []byte("ref: refs/remotes/origin/c/x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	readAttributesFrom(t, repo, ours)
 
 	tree, conflicts, err := repo.Merge(ctx, ours, theirs, git.MergeOptions{Base: base})
 	if err != nil {
