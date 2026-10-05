@@ -14,9 +14,10 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-results
   annotations:
-    # The core program reports PoliciesInstalled False unless each policy
-    # has its policyVersion, in cmd/git-k8s/policies.go. Raise both when
-    # the core program needs a change to the policies.
+    # The core program reports PoliciesInstalled False unless every policy
+    # in this file has its policyVersion, in cmd/git-k8s/policies.go. Raise
+    # policyVersion and every policy's annotation together when the core
+    # program needs a change to the policies.
     git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
@@ -154,6 +155,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-pods
+  annotations:
+    git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -334,6 +337,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-approvals
+  annotations:
+    git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
   matchConstraints:
