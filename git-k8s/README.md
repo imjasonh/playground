@@ -3018,7 +3018,11 @@ needs an entry in the `git-k8s-checks` ConfigMap, as
 [Check service accounts](#check-service-accounts) describes. The second
 stops every git-k8s service account from setting the `approve` and
 `approved-by` annotations, which are for people, and stops checks and
-`git-k8s-deps` from changing `GitBranch` objects at all. RBAC also keeps
+`git-k8s-deps` from changing a `GitBranch` object's spec, labels,
+annotations, finalizers, or owner references. A finalizer that nobody
+removes would keep a deleted branch in its parent's merge queue, and an
+owner reference to a missing object would make garbage collection delete
+the `GitBranch` with its approval. RBAC also keeps
 every check except `check-gotest`, `check-review`, `check-deps`, and
 `check-conflicts`, which own Pods, from patching `GitBranch` objects.
 `generate` grants that permission to a program that owns objects, such as

@@ -953,6 +953,14 @@ func TestBranches(t *testing.T) {
 	old := gitBranch(nil)
 	labeled := gitBranch(func(meta, _ map[string]any) { meta["labels"] = map[string]any{"e2e": "changed"} })
 	moved := gitBranch(func(_, spec map[string]any) { spec["head"] = "1111111" })
+	// A finalizer that nobody removes keeps a deleted branch's GitBranch,
+	// and its place in the merge queue, forever. An owner reference to an
+	// object that doesn't exist makes garbage collection delete the
+	// GitBranch, with its approval and its place in the queue.
+	finalized := gitBranch(func(meta, _ map[string]any) { meta["finalizers"] = []any{"example.com/hold"} })
+	reowned := gitBranch(func(meta, _ map[string]any) {
+		meta["ownerReferences"] = []any{map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "name": "gone", "uid": "6d9e4f0c-0000-4000-8000-000000000000"}}
+	})
 	approvedBy := func(user string) map[string]any {
 		return gitBranch(func(meta, _ map[string]any) {
 			meta["annotations"] = map[string]any{"git-k8s.imjasonh.com/approve": "0000000", "git-k8s.imjasonh.com/approved-by": user}
@@ -977,6 +985,14 @@ func TestBranches(t *testing.T) {
 	}, {
 		name: "a check changes a branch's spec",
 		r:    update(gotest, none, moved),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check adds a finalizer",
+		r:    update(gotest, none, finalized),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check changes a branch's owner references",
+		r:    update(gotest, none, reowned),
 		want: cantChange("gotest"),
 	}, {
 		name: "a check creates a GitBranch",
@@ -1017,6 +1033,9 @@ func TestBranches(t *testing.T) {
 		name: "the core program adds a label",
 		r:    update(core, none, labeled),
 	}, {
+		name: "the core program adds a finalizer",
+		r:    update(core, none, finalized),
+	}, {
 		name: "the core program adds a label despite an entry that names a check",
 		r:    update(core, checksConfigMap("git-k8s.git-k8s", "gofmt"), labeled),
 	}, {
@@ -1036,6 +1055,14 @@ func TestBranches(t *testing.T) {
 	}, {
 		name: "git-k8s-deps changes a branch's spec",
 		r:    update(deps, none, moved),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps adds a finalizer",
+		r:    update(deps, none, finalized),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps changes a branch's owner references",
+		r:    update(deps, none, reowned),
 		want: depsCantChange,
 	}, {
 		name: "git-k8s-deps creates a GitBranch",
