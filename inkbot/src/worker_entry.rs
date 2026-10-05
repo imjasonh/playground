@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use worker::js_sys::Uint8Array;
 use worker::{
-    event, Bucket, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response, Result,
+    console_error, event, Bucket, Context, Env, Fetch, Headers, Method, Request, RequestInit,
+    Response, Result,
 };
 
 use crate::api::{
@@ -87,13 +88,31 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         let Some(name) = catalog.latest.clone() else {
             return into_worker_response(ApiResponse::text(404, "no image yet\n"));
         };
-        return respond_frame_get(&bucket, &api_req, &name, panel, upload_secret.as_str()).await;
+        return respond_frame_get(
+            &bucket,
+            &api_req,
+            &name,
+            catalog,
+            panel,
+            upload_secret.as_str(),
+        )
+        .await;
     }
     if method == Method::Get {
         if let Some((name, ext)) = parse_get_image(&norm) {
             let mut req = api_req;
             req.path = format!("/{name}.{ext}");
-            return respond_frame_get(&bucket, &req, &name, panel, upload_secret.as_str()).await;
+            // Serving a frame by name never consults the catalog, so skip
+            // reading it.
+            return respond_frame_get(
+                &bucket,
+                &req,
+                &name,
+                Catalog::empty(),
+                panel,
+                upload_secret.as_str(),
+            )
+            .await;
         }
     }
 
@@ -118,13 +137,10 @@ async fn respond_frame_get(
     bucket: &Bucket,
     api_req: &ApiRequest,
     name: &str,
+    catalog: Catalog,
     panel: PanelSpec,
     upload_secret: &str,
 ) -> Result<Response> {
-    let catalog = match load_catalog(bucket).await {
-        Ok(c) => c,
-        Err(e) => return text_response(500, &format!("catalog: {e}\n")),
-    };
     let frame = match load_frame(bucket, name).await {
         Ok(Some(frame)) => frame,
         Ok(None) => return into_worker_response(ApiResponse::text(404, "no such image\n")),
@@ -239,10 +255,8 @@ fn parse_get_image(path: &str) -> Option<(String, &'static str)> {
     }
     let (stem, ext) = if let Some(s) = rest.strip_suffix(".bin") {
         (s, "bin")
-    } else if let Some(s) = rest.strip_suffix(".png") {
-        (s, "png")
     } else {
-        return None;
+        (rest.strip_suffix(".png")?, "png")
     };
     let name = api::validate_name(stem)?;
     Some((name, ext))
@@ -286,7 +300,15 @@ async fn handle_slack(
             };
 
             let image_bytes = match mention.first_image() {
-                Some(file) => Some(download_slack_file(&token, &file.url_private_download).await),
+                Some(file) => {
+                    let download = download_slack_file(&token, &file.url_private_download).await;
+                    // The bot replies in the thread and the event still gets a 200,
+                    // so log the failure here.
+                    if let Err(e) = &download {
+                        console_error!("slack file download failed: {e}");
+                    }
+                    Some(download)
+                }
                 None => None,
             };
 
@@ -513,7 +535,12 @@ impl ImageStore for R2ImageStore {
 }
 
 async fn load_frame(bucket: &Bucket, name: &str) -> Result<Option<StoredFrame>> {
-    let png_obj = match bucket.get(png_key(name)).execute().await? {
+    // Fetch both objects in one R2 round trip.
+    let (png_obj, bin_obj) = futures::join!(
+        bucket.get(png_key(name)).execute(),
+        bucket.get(bin_key(name)).execute()
+    );
+    let png_obj = match png_obj? {
         Some(o) => o,
         None => return Ok(None),
     };
@@ -522,7 +549,7 @@ async fn load_frame(bucket: &Bucket, name: &str) -> Result<Option<StoredFrame>> 
         .ok_or_else(|| worker::Error::RustError("missing png body".into()))?
         .bytes()
         .await?;
-    let packed = match bucket.get(bin_key(name)).execute().await? {
+    let packed = match bin_obj? {
         Some(obj) => {
             obj.body()
                 .ok_or_else(|| worker::Error::RustError("missing bin body".into()))?
@@ -609,6 +636,15 @@ fn normalize_path(path: &str) -> String {
 }
 
 fn into_worker_response(response: ApiResponse) -> Result<Response> {
+    // Log the body of a 5xx at error level, so Workers Issues records why the
+    // request failed and not only that it did.
+    if response.status >= 500 {
+        console_error!(
+            "HTTP {}: {}",
+            response.status,
+            String::from_utf8_lossy(&response.body).trim_end()
+        );
+    }
     let headers = Headers::new();
     headers.set("Content-Type", response.content_type)?;
     if let Some(etag) = &response.etag {

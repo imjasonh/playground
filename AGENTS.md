@@ -200,7 +200,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -212,7 +212,7 @@ discovery scripts.
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, plus the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
@@ -327,13 +327,14 @@ another top-level module with a relative path is also selected when that
 directory changes, so a change under `kube/` tests `git-k8s` too. `inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
 Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
-tests and firmware cross-builds instead.
+tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
+pinned Wrangler version) selects every Cloudflare Worker app.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test -race ./...` |
-| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
+| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
 | site index | `.github/pages/index.html.tmpl`, `render-index.py`, `publish-site-index.sh`, or the index discovery/test scripts, via `discover-index.sh` | `python3 .github/scripts/render-index_test.py` and `bash .github/scripts/discover-index_test.sh` |
@@ -342,7 +343,8 @@ Go is the only ecosystem here with a stable, first-class data-race detector (`go
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
-Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
+Worker apps pin Rust 1.99, and their `[build]` command installs the
+`worker-build` release that matches the locked `worker` crate.
 
 **ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
 `test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
@@ -410,16 +412,18 @@ test workflow gates on:
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
 | Go | `go get -u ./...` | `go build ./...` → `go test -race ./...` |
-| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + the wrangler `[build]` command |
+| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
+| Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 
 - **Everything upgraded, built, and tested** → it opens (or updates) a pull
   request on `automation/dependency-updates` with the changed lockfiles/manifests
   (`go.mod`/`go.sum`, `package.json`/`package-lock.json` plus vendored output,
-  `Cargo.toml`/`Cargo.lock`), enables auto-merge, and lets required status
-  checks merge it into `main`. Direct pushes to `main` are blocked by branch
-  protection, so the workflow federates an [Octo STS](https://github.com/octo-sts/app)
+  `Cargo.toml`/`Cargo.lock`, and `.github/wrangler/package.json`), enables
+  auto-merge, and lets required status checks merge it into `main`. Direct
+  pushes to `main` are blocked by branch protection, so the workflow
+  federates an [Octo STS](https://github.com/octo-sts/app)
   GitHub App token (trust policy
   `.github/chainguard/dependency-updates.sts.yaml`) instead of using
   `GITHUB_TOKEN` — App-authored PRs trigger Actions checks; `GITHUB_TOKEN` ones
@@ -432,7 +436,9 @@ Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 `update-js-dependencies.sh`, `update-rust-dependencies.sh`). The three scripts
 run in parallel in one checkout and write temporary files into it, so each one
-reports only pass or fail. After all three exit,
+reports only pass or fail. `update-rust-dependencies.sh` bumps the Wrangler
+pin before it verifies any app, so every Worker app's deploy check runs with
+the new version; a separate leg could race those checks. After all three exit,
 `manage-dependency-update.sh detect-changes` decides whether there is anything
 to publish, from the same paths that the publish step commits.
 `manage-dependency-update.sh` also handles the pull request, auto-merge, and
@@ -551,8 +557,10 @@ go test ./...
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
  if absent, so the key is stable across deploys). A Worker that ships
  `examples/gensecret.rs` gets a `JWT_SECRET` the same way. Every Worker must enable
- Workers Logs (including invocation logs) and Workers Traces in its
- `wrangler.toml` — the `wrangler_observability` pasta rule enforces this.
+ Workers Logs (including invocation logs), Workers Traces, and Workers Issues
+ in its `wrangler.toml`. The `wrangler_observability` pasta rule enforces this.
+ Issues needs Wrangler 4.134.0 or later, so keep the version pinned in
+ `.github/wrangler/package.json` at 4.134.0 or later.
  Head sampling is 100% at playground traffic; dial down before serious
  volume.
 

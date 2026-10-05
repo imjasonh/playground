@@ -160,7 +160,7 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 
 | Path | What it does |
 |---|---|
-| [wrangler_observability](./analyzers/wrangler_observability/wrangler_observability.cue) | Require `[observability]` / `[observability.logs]` / `[observability.traces]` enabled (with `invocation_logs = true`) in every `wrangler.toml` |
+| [wrangler_observability](./analyzers/wrangler_observability/wrangler_observability.cue) | Require `[observability]` / `[observability.logs]` / `[observability.traces]` / `[observability.issues]` enabled (with `invocation_logs = true`) in every `wrangler.toml` |
 | [toml_duplicate_key](./analyzers/toml_duplicate_key/toml_duplicate_key.cue) | Flag consecutive duplicate keys in a table |
 
 **Bash**

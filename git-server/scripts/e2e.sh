@@ -11,7 +11,8 @@
 #                                 # deployed backend (no build, no wrangler)
 #
 # Requirements (local mode): node/npx (wrangler is fetched via npx), the Rust
-# wasm32 target, and worker-build (`cargo +stable install worker-build@0.8.5`).
+# wasm32 target, and worker-build (scripts/worker-build.sh installs the version
+# that matches the locked worker crate).
 #
 # The test pushes to a uniquely named repo, clones it back, verifies contents
 # and `git fsck`, exercises incremental push/pull, the file/tree/blame APIs,
@@ -38,8 +39,9 @@ if [ -z "${GIT_SERVER_URL:-}" ]; then
   # `wrangler dev` runs the [build] command from wrangler.toml itself, but we
   # pre-build to fail fast with a readable error if the wasm build breaks.
   worker-build --release >/dev/null
+  WRANGLER="wrangler@$(node -p "require('../.github/wrangler/package.json').devDependencies.wrangler")"
 
-  npx -y wrangler@4 dev --port "$PORT" --local >"$TMP/wrangler.log" 2>&1 &
+  npx -y "$WRANGLER" dev --port "$PORT" --local >"$TMP/wrangler.log" 2>&1 &
   WRANGLER_PID=$!
   GIT_SERVER_URL="http://127.0.0.1:$PORT"
 

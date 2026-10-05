@@ -540,7 +540,9 @@ until emission) and emitted three ways:
 
 Persistent invocation logs and traces are enabled in `wrangler.toml`
 (`[observability]` / `[observability.logs]` / `[observability.traces]`;
-the playground default for every Worker). Every invocation stores
+the playground default for every Worker). `[observability.issues]` turns
+on Workers Issues, which groups exceptions, failed invocations, `5xx`
+responses, and `console_error!` lines into issues. Every invocation stores
 Cloudflare's `outcome` field alongside our log lines —
 diagnostic signatures worth knowing:
 

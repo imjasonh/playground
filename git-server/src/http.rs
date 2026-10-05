@@ -89,7 +89,8 @@ pub struct Response {
     /// header and/or a structured log line. For streamed bodies these cover
     /// the handler phase only (backend ops that occur while the body
     /// streams are not yet accounted; noted in docs/design.md).
-    pub metrics: Option<(crate::metrics::Metrics, f64)>,
+    /// Boxed so error paths that return a `Response` stay small.
+    pub metrics: Option<Box<(crate::metrics::Metrics, f64)>>,
 }
 
 impl Response {
@@ -127,7 +128,7 @@ impl Response {
     /// collected.
     pub fn server_timing(&self) -> Option<String> {
         self.metrics
-            .as_ref()
+            .as_deref()
             .map(|(m, total)| m.server_timing(*total))
     }
 
@@ -222,13 +223,13 @@ impl GitHttp {
             // live so the packfile PROGRESS tail can emit a full timing line.
             Body::Stream(_) => {
                 if let Some(m) = crate::metrics::snapshot() {
-                    resp.metrics = Some((m, total_ms));
+                    resp.metrics = Some(Box::new((m, total_ms)));
                 }
             }
             Body::Full(bytes) => {
                 if let Some(mut m) = crate::metrics::take() {
                     m.bytes_out += bytes.len() as u64;
-                    resp.metrics = Some((m, total_ms));
+                    resp.metrics = Some(Box::new((m, total_ms)));
                 }
             }
         }

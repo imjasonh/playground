@@ -92,7 +92,7 @@ Set in `wrangler.toml` under `[vars]` (or with `wrangler secret`/dashboard):
 ## Develop and test
 
 This is an isolated Rust crate pinned to the toolchain in `rust-toolchain.toml`
-(Rust 1.88 + the `wasm32-unknown-unknown` target). All security logic is
+(plus the `wasm32-unknown-unknown` target). All security logic is
 transport-agnostic and unit-tested on the host — no deployment needed:
 
 ```bash
@@ -115,8 +115,7 @@ you need a Cloudflare account and [`wrangler`](https://developers.cloudflare.com
 
 ```bash
 cd cors-proxy
-cargo +stable install worker-build@0.8.5   # tool build; see wrangler.toml note
-npx wrangler deploy                          # builds the wasm Worker and publishes
+npx wrangler deploy   # installs the matching worker-build, builds the wasm Worker, and publishes
 ```
 
 `wrangler.toml`'s `[build]` command installs `worker-build` and compiles the

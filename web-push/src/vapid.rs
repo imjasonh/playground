@@ -6,8 +6,7 @@
 
 use p256::ecdsa::signature::Signer;
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
-use p256::SecretKey;
-use rand_core::OsRng;
+use p256::elliptic_curve::Generate;
 use serde_json::json;
 
 use crate::b64;
@@ -36,9 +35,8 @@ impl VapidKey {
 
     /// Generate a fresh random VAPID key (used by tooling and tests).
     pub fn generate() -> Self {
-        let secret = SecretKey::random(&mut OsRng);
         Self {
-            signing: SigningKey::from(secret),
+            signing: SigningKey::generate(),
         }
     }
 
@@ -49,7 +47,7 @@ impl VapidKey {
 
     /// The public key as a 65-byte uncompressed SEC1 point.
     pub fn public_key_bytes(&self) -> [u8; 65] {
-        let encoded = self.signing.verifying_key().to_encoded_point(false);
+        let encoded = self.signing.verifying_key().to_sec1_point(false);
         let mut out = [0u8; 65];
         out.copy_from_slice(encoded.as_bytes());
         out
