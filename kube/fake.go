@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"reflect"
 	"time"
 
@@ -33,7 +34,7 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 		w.add(o)
 	}
 	ti, err := typeInfoFor[T, P]()
-	c := &core{name: "test", labels: newLabelKeys("test")}
+	c := &core{name: "test", labels: newLabelKeys("test"), log: slog.Default()}
 	if err == nil {
 		c.ti = ti
 		c.res, _ = w.resolve(ctx, ti)
@@ -61,6 +62,16 @@ func (r *Recorder) RequeueAfter() time.Duration { return r.s.requeue }
 // Err returns the error that canceled the reconcile's context, if any, for
 // example a struct that doesn't embed Object.
 func (r *Recorder) Err() error { return r.s.err }
+
+// Events returns the events that the reconciler recorded with Eventf, in
+// order.
+func (r *Recorder) Events() []Event {
+	var out []Event
+	for _, e := range r.s.events {
+		out = append(out, e.Event)
+	}
+	return out
+}
 
 // Owned returns the objects of type T passed to Own, in order.
 func Owned[T any](r *Recorder) []*T { return intentsOf[T](r, intentOwn) }

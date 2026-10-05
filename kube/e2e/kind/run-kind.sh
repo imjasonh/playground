@@ -156,6 +156,13 @@ k get website hello
 [[ "$(k get deployment hello -o jsonpath='{.metadata.ownerReferences[0].kind}')" == Website ]]
 [[ "$(k get website hello -o jsonpath='{.status.url}')" == http://hello.default.svc ]]
 
+serving_event() {
+  k describe website hello | grep -E "Normal +Serving .+ website +$1 of $1 replicas are ready"
+}
+eventually 60 serving_event 2
+k describe website hello | sed -n '/^Events:/,$p'
+echo "kubectl describe shows the Website's events."
+
 k port-forward service/hello 18080:80 >"${WORKDIR}/port-forward.log" 2>&1 &
 PORT_FORWARD_PID=$!
 eventually 30 curl -fsS -o /dev/null http://127.0.0.1:18080/
@@ -168,7 +175,8 @@ k -n website delete pods -l app.kubernetes.io/name=website
 k -n website rollout status deployment/website --timeout=180s
 k patch website hello --type=merge -p '{"spec":{"replicas":3}}'
 eventually 180 website_ready 3
-echo "The controller's new pods reconcile."
+eventually 60 serving_event 3
+echo "The controller's new pods reconcile and record events."
 
 k delete website hello
 deployment_gone() { ! k get deployment hello >/dev/null 2>&1; }

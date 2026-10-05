@@ -730,6 +730,78 @@ takes a shard forgets what it last wrote for the shard's keys, but its
 caches keep returning its own writes, because each lasts only until its own
 event, which the watch delivers before any later version.
 
+### Events
+
+Like `Own`, `Apply`, and `Delete`, `kube.Eventf` doesn't write. It adds an event
+to the scope, and after `Reconcile` or `Finalize` returns, the framework passes
+the scope's events to the manager's event writer. Unlike intents, the events go
+to the writer when the reconcile fails too, so a Warning can explain the
+failure. Once a call such as `Get` has failed the reconcile, `Eventf` adds
+nothing, because the reconcile saw an incomplete state. In a webhook, `Eventf`
+fails the request, as `Own` does, because a webhook can only read.
+
+`Eventf` checks an event as the API server would, so that `kube.Fake` records
+only events that a cluster would accept. It drops an event whose type isn't
+`Normal` or `Warning`, or whose reason is empty or longer than 128 bytes, and
+logs a warning. It cuts the note to 1,024 bytes, the most that the API server
+accepts, after replacing invalid UTF-8 with U+FFFD, because a note that quotes
+untrusted text, such as a file name, can hold any bytes, and JSON encodes each
+invalid byte as U+FFFD, which takes 3 bytes.
+
+The writer is one goroutine per manager, which reads a channel with room for
+1,000 events. When the channel is full, the framework drops the event instead
+of waiting, so a slow or unavailable API server delays only events. The
+`kube_events_total` metric counts events by result: `created`, `updated`,
+`failed`, or `dropped`.
+
+The writer groups repeats into a series, as `client-go`'s `tools/events`
+package does. The first event creates an `events.k8s.io/v1` Event. An event
+with the same controller, action, type, reason, note, and object as one less
+than 6 minutes earlier is a repeat. The first repeat patches the Event's
+`series` to a count of 2 right away, so the Event shows that it repeats, and
+the writer counts later repeats in memory. Every 6 minutes, the writer patches
+each series whose count changed and forgets each series that had no repeat in
+that time, so a later repeat creates a new Event. When the manager stops,
+after its reconciles finish, the writer cancels any write in progress and
+spends up to 5 seconds writing the events left in the channel and the counts
+that it hasn't written, so an API server that doesn't answer delays stopping
+by at most 5 seconds. However often a reconcile repeats an event, the writer
+makes two writes for it and then at most one every 6 minutes.
+
+`client-go` keys a series on the controller, action, reason, and object
+references, which include the object's resource version, and the series
+keeps its first event's note. kube's key adds the type and the note, so
+events that differ only in their notes are separate Events instead of one
+count under the first note. It leaves out the resource version. After a
+reconcile fails, the framework writes the `Synced` condition, which changes
+the resource version, so with `client-go`'s key each failing loop would make
+two Events, and a reconcile that writes its object every time wouldn't group
+at all. The Event's `regarding` reference has no resource version either.
+`client-go` writes counts every 30 minutes and when a series ends. kube writes
+them at the 6-minute tick that ends series, so a count in the API server is
+at most 6 minutes behind.
+
+A 404 on a patch means that someone deleted the Event, so the writer creates
+it again. A 409 on a create means that an earlier create succeeded although
+its response was lost, so the writer goes on as if this one had. The writer
+logs and counts other errors. After a 429, a 5xx, or a network error, it tries
+again at its next tick. After any other error from the API server, such as a 403
+when RBAC doesn't allow events in the namespace, it stops writing the series,
+because the same write would fail again.
+
+The Event goes in the object's namespace. The API server accepts an Event
+about a cluster-scoped object only in `default` or `kube-system`, so the
+writer puts those in `default`. The Event's name is the object's name, a dot,
+and a hexadecimal timestamp in nanoseconds, as `client-go` names Events, with
+the lowercase kind in place of a name that would make it too long. The writer
+keeps the timestamps increasing, so two of its Events can't get the same
+name. The `reportingController` is the controller's name, and the
+`reportingInstance` is the controller's name and the host name, which in a
+cluster is the pod's name. A controller name is at most 50 lowercase letters,
+digits, '-', and '.', so it's always a valid `reportingController`, and the
+writer cuts the `reportingInstance` to 128 bytes, the most that the API server
+accepts.
+
 ### Custom resource definitions
 
 `internal/schema` generates an OpenAPI v3 schema from a struct, using `json`
@@ -1008,6 +1080,15 @@ calls whose type arguments it can't tell. A program that declares no owned
 objects, and whose controllers only write status, gets no permission to change
 the spec, labels, or annotations of the objects that they reconcile.
 
+`Eventf` has no type argument, because an event is always about the
+reconciled object. The analysis reports each use of `Eventf`, and a program
+that has one gets `create` and `patch` on `events.k8s.io` events for each type
+that it reconciles. The rule goes in the ClusterRole, or with
+`-watch-namespace` in the watched namespace's Role. For a cluster-scoped type,
+it goes in a Role in `default`, where that type's events go. The analysis
+can't tell which controller's reconcile calls `Eventf`, so a program with
+several controllers gets the rule for each reconciled type.
+
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
 a Role in its namespace. With `-watch-namespace`, the program runs with
@@ -1044,13 +1125,13 @@ of letting it fill the node's disk.
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
 caches. The reconcile runs the same code as in a cluster, and the scope
 records its intents for the test to check with `kube.Owned`,
-`kube.Applied`, and `kube.Deleted`. `kube.Applied` returns each object with
-the status that the framework would apply, and the scope rejects a status for
-the reconciled object as it does in a cluster. In a cluster, every type of a
-kind reads the same objects, so the fake converts the listed objects of one
-type through JSON for reads of another type of the same kind. A test doesn't
-fake an API server, so there's no fake behavior that can differ from a real
-server's.
+`kube.Applied`, and `kube.Deleted`, and its events for `Recorder.Events`.
+`kube.Applied` returns each object with the status that the framework would
+apply, and the scope rejects a status for the reconciled object as it does in
+a cluster. In a cluster, every type of a kind reads the same objects, so the
+fake converts the listed objects of one type through JSON for reads of
+another type of the same kind. A test doesn't fake an API server, so there's
+no fake behavior that can differ from a real server's.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
@@ -1077,6 +1158,9 @@ framework's tests check that:
   has the permission. When a reconcile applies a vote and a label and then
   fails, the next reconcile that abstains removes both.
 - Panics and permanent errors are reported and retried correctly.
+- A reconcile's events become Events about namespaced and cluster-scoped
+  objects, the retries of a failing reconcile add to one Event's count, and
+  the manager writes the last counts when it stops.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
   stops and another starts, and never reconcile one object at the same time.
@@ -1097,17 +1181,18 @@ framework's tests check that:
   to equal structs.
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
-  that `generate` wrote.
+  that `generate` wrote. The website example writes its events with those
+  rules, and podpolicy, which records none, gets no rule for them.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
 kube-proxy. It pushes to a local registry as kind's
 [guide](https://kind.sigs.k8s.io/docs/user/local-registry/) describes, pipes
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
-that reconciles continue after every controller pod is replaced, that
-imagereport creates its CRD with the rules that `generate` wrote and reports
-the images that pods run, and that the podpolicy webhooks deny and default
-pods through their Service.
+that `kubectl describe` shows the Website's events, that reconciles continue
+after every controller pod is replaced, that imagereport creates its CRD with
+the rules that `generate` wrote and reports the images that pods run, and
+that the podpolicy webhooks deny and default pods through their Service.
 
 ## Measurements
 
@@ -1275,3 +1360,8 @@ offers:
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache
   syncs.
+- Events are only about the reconciled object, and every type that a program
+  reconciles gets the rule for events when any of its code calls `Eventf`. A
+  replica that crashes loses the counts of repeats that it hasn't written,
+  which cover up to 6 minutes. A replica that stops loses the events and
+  counts that it can't write in 5 seconds.

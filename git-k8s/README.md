@@ -84,9 +84,10 @@ The checks and the merge controller read each branch's repository as a
 repositories controller's status writes don't run them again.
 
 Git objects stay in local bare repositories, one for each `GitRepository`
-in each program. Only commit SHAs go into Kubernetes objects, and no object
-records a single push or check run, so the API server holds a bounded amount
-of state.
+in each program. Only commit SHAs go into Kubernetes objects. Apart from
+[events](#events), which the API server deletes after an hour by default, no
+object records a single push or check run, so the API server holds a bounded
+amount of state.
 
 After a branch lands, `kubectl get gitbranches` shows what's still open:
 
@@ -98,6 +99,41 @@ app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b       
 
 The `Merged` condition's message explains a `WaitingForChecks` state, for
 example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`.
+
+## Events
+
+The controllers record an event about a `GitBranch` each time they change
+the remote:
+
+| Reason | From | When |
+| --- | --- | --- |
+| `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch. |
+| `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
+| `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
+
+`kubectl describe gitbranch GITBRANCH` lists a branch's events. After the
+merge controller deletes a branch, the repositories controller deletes its
+`GitBranch`, so list the namespace's events instead:
+
+```sh
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+After `c/fmt` in the end-to-end test lands, the output looks like this:
+
+```
+LAST SEEN   TYPE     REASON          OBJECT                           MESSAGE
+14s         Normal   PushedFix       gitbranch/app-c-fmt-793d86522b   pushed 5d0c2e9a71b4 to c/fmt: 1 of 2 Go files need gofmt: util/add.go
+9s          Normal   Landed          gitbranch/app-c-fmt-793d86522b   fast-forwarded main from 0e4f8a2c9d13 to c/fmt at 5d0c2e9a71b4
+9s          Normal   DeletedBranch   gitbranch/app-c-fmt-793d86522b   deleted c/fmt at 5d0c2e9a71b4 after it landed on main
+```
+
+kube drops events when it falls behind on writing them, and the API server
+deletes events after an hour by default. To audit what landed, use the
+remote's history. `generate` grants `create` and `patch` on events to the
+`git-k8s` program and to every check program. A check that never pushes a
+fix, such as `check-approval`, gets the grant too, because the `checks`
+package that every check uses records `PushedFix`.
 
 ## Checks
 
