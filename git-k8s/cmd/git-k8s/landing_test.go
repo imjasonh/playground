@@ -304,8 +304,8 @@ func TestRebaseLanding(t *testing.T) {
 }
 
 // Squash and rebase landings sign the commits that they make with the
-// GitRepository's key, including a squashed commit that the merge
-// controller pushes to the branch for the checks.
+// GitRepository's key, including the squashed or rebased commits that the
+// merge controller pushes to the branch for the checks.
 func TestLandingsSign(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
 	id := git.Identity{Name: "git-k8s", Email: signer.Email}
@@ -318,6 +318,7 @@ func TestLandingsSign(t *testing.T) {
 		{"squash", gitk8s.Squash, false, "main", 1},
 		{"rebase", gitk8s.Rebase, false, "main", 2},
 		{"squash for the checks", gitk8s.Squash, true, "c/x", 1},
+		{"rebase for the checks", gitk8s.Rebase, true, "c/x", 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "")
