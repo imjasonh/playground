@@ -48,6 +48,9 @@ type results struct {
 	// poll is how often a waiting request looks for its result in the
 	// cache.
 	poll time.Duration
+	// checks holds the entries of the git-k8s-checks ConfigMap. Nil reads
+	// the ConfigMap for every request.
+	checks *caller.Checks
 
 	mu   sync.Mutex
 	held map[kube.Key]map[string]*gitk8s.CheckResult
@@ -81,7 +84,7 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, review.Error, http.StatusUnauthorized)
 		return
 	}
-	entries, err := caller.Checks(r.Context())
+	entries, err := rs.checks.Entries(r.Context())
 	if err != nil {
 		slog.ErrorContext(r.Context(), "reading the git-k8s-checks ConfigMap failed", "err", err)
 		http.Error(w, "can't read the git-k8s-checks ConfigMap now", http.StatusInternalServerError)

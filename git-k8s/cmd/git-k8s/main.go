@@ -37,6 +37,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
+	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
@@ -47,10 +48,11 @@ const mirrorDir = "/var/lib/git-k8s"
 
 func main() {
 	g := &git.Git{}
-	m := &mirror.Mirror{Git: g}
+	checks := &caller.Checks{}
+	m := &mirror.Mirror{Git: g, Checks: checks}
 	repos := &repositories{mirror: m}
 	merge := &merger{mirror: m}
-	rs := &results{timeout: 10 * time.Second, poll: 100 * time.Millisecond}
+	rs := &results{timeout: 10 * time.Second, poll: 100 * time.Millisecond, checks: checks}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&m.Dir, "mirror-dir", mirrorDir, "writable directory for the mirror's copies of repositories, which one process at a time may use")
 	flag.StringVar(&merge.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")

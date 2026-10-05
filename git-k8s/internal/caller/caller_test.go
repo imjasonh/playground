@@ -2,13 +2,11 @@ package caller
 
 import (
 	"errors"
-	"maps"
 	"net/http/httptest"
 	"testing"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
-	"github.com/imjasonh/playground/kube/k8s"
 )
 
 func TestIdentify(t *testing.T) {
@@ -100,18 +98,5 @@ func TestCheck(t *testing.T) {
 				t.Errorf("%v.Check(%v) = %q, %v; want %q", tc.c, tc.entries, got, ok, tc.want)
 			}
 		})
-	}
-}
-
-func TestChecks(t *testing.T) {
-	ctx, _ := kube.FakeRequest(t.Context())
-	if got, err := Checks(ctx); err != nil || got != nil {
-		t.Errorf("without the ConfigMap, Checks = %v, %v; want no entries", got, err)
-	}
-	cm := &k8s.ConfigMap{Object: kube.Meta(ChecksConfigMap, nil), Data: map[string]string{"checks.bot": "bot"}}
-	cm.Namespace = ChecksNamespace
-	ctx, _ = kube.FakeRequest(t.Context(), cm)
-	if got, err := Checks(ctx); err != nil || !maps.Equal(got, cm.Data) {
-		t.Errorf("Checks = %v, %v; want %v", got, err, cm.Data)
 	}
 }

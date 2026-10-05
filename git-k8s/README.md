@@ -3204,11 +3204,12 @@ that list by name. Remove such an entry with `kubectl edit`.
 `generate` grants the core program `create` and `patch` on each policy,
 binding, and ConfigMap in `config/policy.yaml`, by name, and `get` on the
 `git-k8s-checks` ConfigMap, which the bindings of the first two policies
-name as their parameter, and which the results endpoint reads. The API
-server lets only someone who can read every ConfigMap create a policy whose
-parameter is a ConfigMap, and it checks that as `get` on a ConfigMap named
-`*`. No ConfigMap can have that name, so `generate` also grants `get` on the
-name `*`, and the core program still can't read any other ConfigMap.
+name as their parameter, and which the results endpoint and the mirror
+read. The API server lets only someone who can read every ConfigMap create
+a policy whose parameter is a ConfigMap, and it checks that as `get` on a
+ConfigMap named `*`. No ConfigMap can have that name, so `generate` also
+grants `get` on the name `*`, and the core program still can't read any
+other ConfigMap.
 
 The core program can't create other admission policies, but a compromised
 core program could rewrite these policies, their bindings, and the
@@ -3265,6 +3266,13 @@ ConfigMap without data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
 service accounts send which results, and which ones fetch and push as which
 checks, so give that permission only to people who can install checks.
+
+The results endpoint and the mirror read the ConfigMap at most once every 5
+seconds while reads succeed, so a change to an entry, such as emptying it,
+takes effect for them within 5 seconds. While reads fail, they use the
+entries from the last read that succeeded for up to 30 seconds after it.
+After that, the mirror answers `503 Service Unavailable` and the results
+endpoint answers `500 Internal Server Error` until a read succeeds.
 
 The third policy doesn't read the ConfigMap, so an entry doesn't change
 which Pods a check can write. A check that owns Pods and runs as another
