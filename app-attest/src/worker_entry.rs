@@ -5,7 +5,9 @@
 use async_trait::async_trait;
 use js_sys::Uint8Array;
 use worker::kv::{KvError, KvStore};
-use worker::{event, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response};
+use worker::{
+    console_error, event, Context, Env, Fetch, Headers, Method, Request, RequestInit, Response,
+};
 
 use crate::api::{self, ApiConfig, ApiRequest};
 use crate::b64;
@@ -48,11 +50,20 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> worker::Result<Resp
         api::handle_with_fraud(api_request, &store, &config, &NoopFraudClient, now_unix).await
     };
 
+    log_server_error(response.status, &response.body);
     let headers = cors_headers();
     headers.set("Content-Type", &response.content_type)?;
     Ok(Response::from_bytes(response.body)?
         .with_status(response.status)
         .with_headers(headers))
+}
+
+/// Log the body of a 5xx response at error level, so Workers Issues records
+/// why the request failed and not only that it did.
+fn log_server_error(status: u16, body: &[u8]) {
+    if status >= 500 {
+        console_error!("HTTP {status}: {}", String::from_utf8_lossy(body));
+    }
 }
 
 fn build_config(env: &Env) -> Result<ApiConfig, String> {
@@ -120,6 +131,25 @@ impl FraudMetricClient for AppleFraudClient {
         development: bool,
         now_unix: u64,
     ) -> FraudRefreshResult {
+        // The API request carries on without a new metric, so this log line is
+        // the only record of the failure.
+        let result = self
+            .refresh_from_apple(receipt, development, now_unix)
+            .await;
+        if let FraudRefreshResult::Failed(why) = &result {
+            console_error!("Apple fraud metric refresh failed: {why}");
+        }
+        result
+    }
+}
+
+impl AppleFraudClient {
+    async fn refresh_from_apple(
+        &self,
+        receipt: &[u8],
+        development: bool,
+        now_unix: u64,
+    ) -> FraudRefreshResult {
         let jwt =
             match fraud::device_check_jwt(&self.team_id, &self.key_id, &self.private_key, now_unix)
             {
@@ -181,6 +211,7 @@ fn json_error(status: u16, message: &str) -> worker::Result<Response> {
     let body = serde_json::json!({ "error": message })
         .to_string()
         .into_bytes();
+    log_server_error(status, &body);
     Ok(Response::from_bytes(body)?
         .with_status(status)
         .with_headers(headers))

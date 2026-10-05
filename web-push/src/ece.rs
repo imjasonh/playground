@@ -12,16 +12,10 @@
 //! For Web Push the `keyid` is the application server's *ephemeral* P-256
 //! public key (65-byte uncompressed point).
 
-// aes-gcm 0.10 depends on generic-array 0.14, which the upstream maintainers
-// blanket-deprecated in favor of 1.x. We must still name `GenericArray` to pass
-// keys/nonces to the AEAD, so silence that deprecation in this module only.
-#![allow(deprecated)]
-
-use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes128Gcm, KeyInit};
 use hkdf::Hkdf;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use p256::{PublicKey, SecretKey};
 use sha2::Sha256;
 
@@ -39,7 +33,7 @@ const RECORD_OVERHEAD: usize = 1 + 16;
 
 /// Serialize a P-256 public key as a 65-byte uncompressed SEC1 point.
 pub fn public_key_bytes(pk: &PublicKey) -> [u8; 65] {
-    let encoded = pk.to_encoded_point(false);
+    let encoded = pk.to_sec1_point(false);
     let mut out = [0u8; 65];
     out.copy_from_slice(encoded.as_bytes());
     out
@@ -110,7 +104,7 @@ pub fn content_encrypt(
 
     let cipher = Aes128Gcm::new_from_slice(&cek).map_err(|_| Error::Crypto("bad key length"))?;
     let ciphertext = cipher
-        .encrypt(&GenericArray::from(nonce), record.as_slice())
+        .encrypt(&nonce.into(), record.as_slice())
         .map_err(|_| Error::Crypto("aes128gcm encrypt"))?;
 
     let mut body = Vec::with_capacity(16 + 4 + 1 + keyid.len() + ciphertext.len());
@@ -127,7 +121,7 @@ fn content_decrypt(ikm: &[u8], salt: &[u8; 16], ciphertext: &[u8]) -> Result<Vec
     let (cek, nonce) = derive_cek_nonce(salt, ikm);
     let cipher = Aes128Gcm::new_from_slice(&cek).map_err(|_| Error::Crypto("bad key length"))?;
     let mut plaintext = cipher
-        .decrypt(&GenericArray::from(nonce), ciphertext)
+        .decrypt(&nonce.into(), ciphertext)
         .map_err(|_| Error::Crypto("aes128gcm decrypt"))?;
 
     // Strip trailing zero padding, then the delimiter octet (0x02 last / 0x01).
@@ -217,7 +211,7 @@ pub fn decrypt(
 mod tests {
     use super::*;
     use crate::b64;
-    use rand_core::OsRng;
+    use p256::elliptic_curve::Generate;
 
     /// RFC 8188 Appendix A.1: a single-record aes128gcm known-answer test with
     /// the input keying material supplied directly (no ECDH involved). This
@@ -235,12 +229,12 @@ mod tests {
 
     #[test]
     fn webpush_round_trip() {
-        let ua_secret = SecretKey::random(&mut OsRng);
+        let ua_secret = SecretKey::generate();
         let receiver = ReceiverKeys {
             p256dh: ua_secret.public_key(),
             auth: [7u8; 16],
         };
-        let as_secret = SecretKey::random(&mut OsRng);
+        let as_secret = SecretKey::generate();
         let salt = [9u8; 16];
         let plaintext = b"When I grow up, I want to be a watermelon";
 
@@ -260,12 +254,12 @@ mod tests {
 
     #[test]
     fn decrypt_rejects_tampered_ciphertext() {
-        let ua_secret = SecretKey::random(&mut OsRng);
+        let ua_secret = SecretKey::generate();
         let receiver = ReceiverKeys {
             p256dh: ua_secret.public_key(),
             auth: [3u8; 16],
         };
-        let as_secret = SecretKey::random(&mut OsRng);
+        let as_secret = SecretKey::generate();
         let mut body = encrypt(
             &receiver,
             &as_secret,

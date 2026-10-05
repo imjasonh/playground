@@ -17,6 +17,8 @@ DEP_PATHSPECS=(
   # Nested npm packages that update-js-dependencies.sh updates.
   'git-k8s/agent/runner/package.json'
   'git-k8s/agent/runner/package-lock.json'
+  # The Wrangler pin that update-rust-dependencies.sh updates.
+  '.github/wrangler/package.json'
 )
 
 _git_identity() {

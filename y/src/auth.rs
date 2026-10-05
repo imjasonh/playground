@@ -8,9 +8,8 @@
 //! `SESSION_SECRET` to revoke every session. Challenges are
 //! `<expires>.<challenge>.<hmac>` and last [`CHALLENGE_TTL`] seconds.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use pbkdf2::pbkdf2_hmac_array;
-use rand_core::{OsRng, RngCore};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -40,7 +39,7 @@ fn pbkdf2(password: &str, salt: &[u8], iterations: u32) -> [u8; 32] {
 /// Hash a password into the stored `pbkdf2$…` form (100k iterations, 16-byte salt).
 pub fn hash_password(password: &str) -> String {
     let mut salt = [0u8; 16];
-    OsRng.fill_bytes(&mut salt);
+    getrandom::fill(&mut salt).expect("system random number generator");
     let hash = pbkdf2(password, &salt, PBKDF2_ITER);
     format!(
         "pbkdf2${}${}${}",
@@ -161,7 +160,7 @@ pub fn verify_challenge_cookie(
 /// 32 random bytes as unpadded base64url — a WebAuthn challenge.
 pub fn random_challenge() -> String {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    getrandom::fill(&mut bytes).expect("system random number generator");
     crate::webauthn::b64url_encode(&bytes)
 }
 

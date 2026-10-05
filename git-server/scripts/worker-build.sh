@@ -34,8 +34,10 @@ trap cleanup EXIT
 # rebuilds without the path.
 touch src/lib.rs
 
-# worker-build is major-version-locked with the `worker` crate (0.8.x ↔ 0.8.x).
-# Install the tool with stable (its own deps want a recent Cargo); it then
-# compiles this crate with rust-toolchain.toml (rustup honors it per-dir).
-cargo +stable install -q worker-build@0.8.5
+# worker-build releases in lockstep with the `worker` crate, so install the
+# version that matches the locked `worker`. It reads the wasm-bindgen version
+# from Cargo.lock and downloads the matching CLI. Install the tool with stable
+# (its own deps want a recent Cargo); it then compiles this crate with
+# rust-toolchain.toml (rustup honors it per-dir).
+cargo +stable install -q "worker-build@$(cargo pkgid worker | cut -d@ -f2)"
 worker-build --release
