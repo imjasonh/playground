@@ -708,8 +708,8 @@ func TestExternalRepositoryRefusesTheBranch(t *testing.T) {
 		keep bool
 		why  string
 	}{
-		"deletion":                          {deny: "receive.denyDeletes", why: "[remote rejected] (deletion prohibited)"},
-		"force push to a branch that stays": {deny: "receive.denyNonFastForwards", keep: true, why: "[remote rejected] (non-fast-forward)"},
+		"deletion":                          {deny: "receive.denyDeletes", why: "[remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x"},
+		"force push to a branch that stays": {deny: "receive.denyNonFastForwards", keep: true, why: "[remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first)"},
 	} {
 		for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 			t.Run(name+"/"+landing, func(t *testing.T) {
@@ -780,7 +780,7 @@ func TestExternalRepositoryRefusesTheRewrittenBranch(t *testing.T) {
 			if heads := f.srv.Heads(t, "app"); heads["main"] != main || heads["c/x"] != head {
 				t.Errorf("external heads = %v, want main at %s and c/x at %s", heads, main, head)
 			}
-			want := "the external repository refused updates to c/x ([remote rejected] (non-fast-forward))"
+			want := "the external repository refused updates to c/x ([remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first))"
 			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.False || c.Message != want {
 				t.Errorf("ExternalSynced = %+v, want False and message %q", c, want)
 			}

@@ -202,6 +202,16 @@ func TestFetchPruneAndPushEach(t *testing.T) {
 		t.Errorf("heads = %v, want main moved back and new deleted", heads)
 	}
 
+	t.Log("A rejection's reason ends with the remote's messages, which say why.")
+	srv.Config(t, "app", "receive.denyDeletes", "true")
+	rejected, err = repo.PushEach(ctx, remote, git.RefUpdate{Ref: "refs/heads/main", Old: main})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rejected["refs/heads/main"], "[remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/main"; len(rejected) != 1 || got != want {
+		t.Errorf("rejected = %v, want main's reason %q", rejected, want)
+	}
+
 	bad := remote
 	bad.Auth = &git.Auth{Username: "git-k8s", Password: "wrong"}
 	if _, err := repo.PushEach(ctx, bad, git.RefUpdate{Ref: "refs/heads/main", New: next, Old: main}); err == nil {

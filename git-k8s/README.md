@@ -453,18 +453,19 @@ divergence by itself.
 
 ### Credentials
 
-Only the core program reads Secrets or gets tokens from Octo STS. Each time
-the repositories controller fetches from or pushes to an external
-repository, it reads the Secret that `secretRef` names, and sends its
-`username` and `password` keys with HTTP basic auth, or `git` as the
-username if the Secret has none. For a repository on GitHub, it can use a
-token from Octo STS instead, as [GitHub repositories](#github-repositories)
-describes. Checks and their test Pods and agent Pods fetch only from the
-mirror, with their own tokens, so `generate` doesn't let the checks read
-Secrets or request tokens. The
+Only the core program reads the credentials of external repositories or
+gets tokens from Octo STS. Each time the repositories controller fetches
+from or pushes to an external repository, it reads the Secret that
+`secretRef` names, and sends its `username` and `password` keys with HTTP
+basic auth, or `git` as the username if the Secret has none. For a
+repository on GitHub, it can use a token from Octo STS instead, as
+[GitHub repositories](#github-repositories) describes. Checks and their test
+Pods and agent Pods fetch only from the mirror, with their own tokens, so
+`generate` doesn't let the checks request tokens. It lets only the checks
+that [sign commits](#sign-commits) read Secrets, for the signing key. The
 [`credentials`](credentials/credentials.go) package holds the only code that
-reads Secrets or gets tokens for external repositories, and is where other
-ways to authenticate belong.
+reads credentials or gets tokens for external repositories, and is where
+other ways to authenticate belong.
 
 The mirror reaches external repositories only over the network. A `url`
 that's a local path or a `file` URL fails, so a `GitRepository` can't read
@@ -1776,10 +1777,11 @@ because the mirror moves the other side to that head.
 
 The check fetches from the mirror and pushes to it, as the other checks do,
 and its agent Pods fetch from the mirror with tokens that are bound to them,
-so `generate` doesn't let the check read Secrets. The mirror lets a check
-update only a branch that has a parent, and create none, so give the service
-account `check-conflicts` in the namespace `check-conflicts` the branch-name
-prefix `resolve/` when you install the core program:
+so the check reads no repository credentials. It reads Secrets only for the
+[signing key](#sign-commits). The mirror lets a check update only a branch
+that has a parent, and create none, so give the service account
+`check-conflicts` in the namespace `check-conflicts` the branch-name prefix
+`resolve/` when you install the core program:
 
 ```sh
 go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=check-conflicts/check-conflicts=resolve/ | kubectl apply -f -
@@ -2154,8 +2156,9 @@ branch on its own, so the parent still reaches the external repository, and
 the external repository keeps the branch where it was. The
 `GitRepository`'s `ExternalSynced` condition is then `False` with the reason
 `SyncFailed` and a message such as
-`the external repository refused updates to c/auth ([remote rejected] (deletion prohibited))`,
-and the mirror tries again at each poll. A rewritten branch that the
+`the external repository refused updates to c/auth ([remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/auth)`,
+which ends with the messages that the external repository sent, and the
+mirror tries again at each poll. A rewritten branch that the
 external repository refused still lands. If the merge policy deletes merged
 branches, the mirror then deletes the branch in the external repository,
 unless the external repository refuses that too. To clear the condition,
@@ -2169,7 +2172,7 @@ commits: merges of a parent into a branch, formatting fixes, an agent's
 fixes, and the commits that resolve conflicts and divergences. The merge
 controller makes the commits of
 [squash and rebase landings](#landing-methods), including those that it
-pushes to the branch for another round of checks. A fast-forward landing
+moves the branch to for another round of checks. A fast-forward landing
 makes none, because it moves the parent to a commit that's already on the
 branch. To sign these commits, make an SSH key for signing only, put it in
 its own Secret in the `GitRepository`'s namespace, and name the Secret in
@@ -2218,9 +2221,10 @@ service account token, instead of a long-lived key, because:
 supporting it needs.
 
 The key needs a Secret of its own, because the `secretRef` Secret holds the
-credentials for the remote, and each test Pod's init container gets some of
-its keys. A check or a landing reports an error instead of signing if
-`signingKeyRef` names the `secretRef` Secret.
+external repository's credentials, which only the core program uses. The
+checks that sign read the whole signing Secret, so with a Secret of its own
+they never hold the credentials. A check or a landing reports an error
+instead of signing if `signingKeyRef` names the `secretRef` Secret.
 
 Only the core `git-k8s` program, `check-base`, `check-gofmt`, `check-review`,
 and `check-conflicts` read the signing Secret, through the `signing` package,
@@ -2228,18 +2232,22 @@ which no other program links. The checks read it only to sign a commit that
 their policy lets them push, and the merge controller only when a squash or
 rebase landing makes commits. `check-review` and `check-conflicts` commit
 their agents' changes in their own processes, so agent Pods never get the
-key. Other programs don't read the key, but some can:
+key.
 
-- `generate` lets each program that reads `secretRef` Secrets get every
-  Secret in the namespaces that it watches, which is every namespace unless
-  you pass `-watch-namespace`. Those programs are the core `git-k8s`
-  program, `check-base`, `check-gofmt`, `check-risk`, `check-review`, and
-  `check-conflicts`, so signing gives the programs that sign no new
-  permissions.
-- `check-gotest` doesn't give its test Pods the signing Secret, but it can
-  create Pods, and a Pod can mount any Secret in its namespace. The
-  [admission policies](#install) let it create Pods only in namespaces that
-  opt in to test Pods.
+`generate` lets each program that reads a Secret get every Secret in the
+namespaces that it watches, which is every namespace unless you pass
+`-watch-namespace`. The checks reach repositories through the mirror and
+read no other Secret, so signing is what lets `check-base`, `check-gofmt`,
+`check-review`, and `check-conflicts` read Secrets, including the
+`secretRef` Secrets. A compromised check that signs can read an external
+repository's credentials, and push to the external repository without the
+mirror.
+[Sign commits in the mirror](future-work.md#sign-commits-in-the-mirror)
+describes how to take that away. Other programs don't read the key, but
+`check-gotest` can create Pods, and a Pod can mount any Secret in its
+namespace. `check-gotest` doesn't give its test Pods the signing Secret,
+and the [admission policies](#install) let it create Pods only in
+namespaces that opt in to test Pods.
 
 For each commit, the program that signs it writes the key to a file with
 mode 0600 in a new directory with mode 0700 under `/tmp`, passes git the
@@ -2272,10 +2280,13 @@ verifies a signature no matter which credential pushed the commit.
 
 ### Protected branches
 
-Checks push their commits to the branch that they check. When a branch
-lands, the merge controller pushes the parent, and can delete the branch or,
-in a squash or rebase landing, replace its commits. GitHub's branch
-protection rules and rulesets apply to those pushes:
+Checks push their commits to the branch that they check in the mirror's
+copy. When a branch lands, the merge controller moves the parent there, and
+can delete the branch or, in a squash or rebase landing, replace its
+commits. The mirror then pushes each change to GitHub, as the account that
+the `secretRef` Secret's credentials belong to, or as Octo STS's GitHub App
+for a repository that [gets tokens from Octo STS](#github-repositories).
+GitHub's branch protection rules and rulesets apply to the mirror's pushes:
 
 - Rules that limit who can push to the parent, such as **Require a pull
   request before merging** and **Restrict updates**, reject a landing
@@ -2304,20 +2315,20 @@ protection rules and rulesets apply to those pushes:
   default. `Squash` and `Rebase` landings add no merge commits to the
   parent.
 - **Block force pushes** affects git-k8s only on branches that land by
-  `Squash` or `Rebase`, where it stops the merge controller from replacing
-  their commits, as [Landing methods](#landing-methods) describes. git-k8s
-  only fast-forwards parents, and checks add commits on top of the branches
-  that they check.
-- **Restrict deletions** on a branch stops `deleteMergedBranches` from
-  deleting it after it lands.
+  `Squash` or `Rebase`, where it stops the mirror from replacing their
+  commits in GitHub, as [Landing methods](#landing-methods) describes.
+  git-k8s only fast-forwards parents, and checks add commits on top of the
+  branches that they check.
+- **Restrict deletions** on a branch keeps it in GitHub after
+  `deleteMergedBranches` deletes it in the mirror's copy.
 
-When GitHub refuses a check's commit or a landing, the reason that it gives
-shows up on the `GitBranch`. For a check's commit, the check's result in
-`status.checks` has state `Error` and the reason in its message. For a
-landing, the `Synced` condition is `False` and has the reason in its
-message. git-k8s retries those pushes, waiting longer each time, up to about
-5 minutes. When GitHub refuses only what a squash or rebase landing pushes
-to the branch, the `Merged` condition's message has the reason instead.
+When GitHub refuses the mirror's push of a check's commit or a landing, the
+change stays in the mirror's copy, and the reason that GitHub gives shows up
+on the `GitRepository`. Its `ExternalSynced` condition is `False` with the
+reason `SyncFailed`, and its message names each branch that GitHub refused
+and ends with GitHub's messages, which name the rule. The mirror tries again
+at each poll, as [Landing methods](#landing-methods) describes for branches
+that the external repository won't delete or rewrite.
 
 ## Install
 
@@ -2652,9 +2663,13 @@ a change:
   gives the check `mayPush: true`, and to the branches under a prefix that
   `-branch-prefix` gives it, such as `check-conflicts`' `resolve/`, except
   parents. Each push is a new head that every check runs on again, so a
-  compromised check can't move a parent or skip a merge gate. It can't read
-  Secrets or reach external repositories, and the admission policies keep it
-  to its own result.
+  compromised check can't move a parent or skip a merge gate through the
+  mirror, and the admission policies keep it to its own result. A check
+  that doesn't [sign commits](#sign-commits) can't read Secrets or reach
+  external repositories. One that does can read every Secret in the
+  namespaces that it watches, including the external repositories'
+  credentials, so a compromised one can push to an external repository
+  without the mirror.
 - The test container, which runs the branch's code, has no token and no
   credentials, and the core program's NetworkPolicy lets it reach only the
   mirror and the cluster's DNS servers. `check-gotest` creates the Pod but
@@ -2673,9 +2688,9 @@ a change:
   comes from a `GitRepository` or a push, and doesn't sync or list branches
   whose names start with `-`, so neither can pass git an option.
 
-The core program is the only program that reads Secrets or changes
-NetworkPolicies, which it does in every namespace, and the only one that
-gets tokens from Octo STS. It holds the external repositories' credentials
+The core program is the only program that reads the external repositories'
+credentials or changes NetworkPolicies, which it does in every namespace,
+and the only one that gets tokens from Octo STS. It holds those credentials
 and decides what lands.
 
 Kubernetes RBAC is the trust boundary. Anyone who can write a

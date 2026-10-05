@@ -1149,8 +1149,8 @@ func TestSyncReportsRefusedPushes(t *testing.T) {
 	w.pushCopy("old", "")
 	w.pushCopy("feature", base)
 	rep := w.sync(SyncOptions{Push: true})
-	if rep.Err == nil || !strings.Contains(rep.Err.Error(), "refused updates to old") {
-		t.Errorf("Report.Err = %v; want a refused update to old", rep.Err)
+	if want := "the external repository refused updates to old ([remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/old)"; rep.Err == nil || rep.Err.Error() != want {
+		t.Errorf("Report.Err = %v; want %q", rep.Err, want)
 	}
 	if want := []string{"old"}; !slices.Equal(rep.Pending, want) {
 		t.Errorf("Report.Pending = %v; want %v", rep.Pending, want)

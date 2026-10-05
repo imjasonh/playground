@@ -623,13 +623,7 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 		}
 	}
 	if len(rejected) > 0 {
-		e := &PushError{Rejected: rejected}
-		for line := range strings.SplitSeq(res.stderr, "\n") {
-			if msg, ok := strings.CutPrefix(line, "remote:"); ok && strings.TrimSpace(msg) != "" {
-				e.Remote = append(e.Remote, strings.TrimSpace(msg))
-			}
-		}
-		return e
+		return &PushError{Rejected: rejected, Remote: remoteMessages(res.stderr)}
 	}
 	if res.code != 0 {
 		return &Error{Command: "push", Code: res.code, Stderr: res.stderr}
@@ -637,10 +631,23 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 	return nil
 }
 
+// remoteMessages returns the messages that the remote sent, from the lines
+// of git's stderr that start with "remote:".
+func remoteMessages(stderr string) []string {
+	var msgs []string
+	for line := range strings.SplitSeq(stderr, "\n") {
+		if msg, ok := strings.CutPrefix(line, "remote:"); ok && strings.TrimSpace(msg) != "" {
+			msgs = append(msgs, strings.TrimSpace(msg))
+		}
+	}
+	return msgs
+}
+
 // PushEach pushes updates to the remote, each with its own lease, so that a
 // rejected update doesn't stop the others. It returns why the remote
-// rejected each update that it rejected, by ref. An error means that the
-// push didn't happen.
+// rejected each update that it rejected, by ref, as PushError's Reason
+// does: git's summary followed by the remote's messages. An error means
+// that the push didn't happen.
 func (r *Repo) PushEach(ctx context.Context, remote Remote, updates ...RefUpdate) (map[string]string, error) {
 	if len(updates) == 0 {
 		return nil, nil
@@ -673,7 +680,12 @@ func (r *Repo) PushEach(ctx context.Context, remote Remote, updates ...RefUpdate
 	if !reported && res.code != 0 {
 		return nil, &Error{Command: "push", Code: res.code, Stderr: res.stderr}
 	}
-	return rejected, nil
+	e := &PushError{Rejected: rejected, Remote: remoteMessages(res.stderr)}
+	reasons := make(map[string]string, len(rejected))
+	for ref := range rejected {
+		reasons[ref] = e.Reason(ref)
+	}
+	return reasons, nil
 }
 
 // CountFixerCommits counts the commits in head but not in base that carry

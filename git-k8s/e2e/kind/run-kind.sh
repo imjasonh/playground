@@ -466,19 +466,36 @@ k -n "${NS}" create serviceaccount stranger
 cat "${WORKDIR}/mirror.txt"
 [[ "$(info_refs -H "Authorization: Bearer ${GOFMT_TOKEN}")" == 200 ]]
 [[ -n "$(mirror_head refs/heads/main)" && "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+# can_list_secrets reports whether service account $1, in the namespace of
+# the same name, can list or watch the Secrets in NS. A check that signs
+# commits can get a Secret by name, for its signing key.
+can_list_secrets() {
+  local as="system:serviceaccount:$1:$1"
+  k auth can-i list secrets -n "${NS}" --as="${as}" || k auth can-i watch secrets -n "${NS}" --as="${as}"
+}
 for program in check-base check-gofmt check-risk check-approval check-gotest; do
   as="system:serviceaccount:${program}:${program}"
-  if k auth can-i get secrets -n "${NS}" --as="${as}"; then
-    echo "${program} can read Secrets" >&2
-    exit 1
-  fi
+  case "${program}" in
+    check-base | check-gofmt)
+      if can_list_secrets "${program}"; then
+        echo "${program} can list Secrets" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      if k auth can-i get secrets -n "${NS}" --as="${as}"; then
+        echo "${program} can read Secrets" >&2
+        exit 1
+      fi
+      ;;
+  esac
   if k -n "${program}" auth can-i create "serviceaccounts/${program}" --subresource=token --as="${as}"; then
     echo "${program} can create tokens for its service account" >&2
     exit 1
   fi
 done
 k -n git-k8s auth can-i create serviceaccounts/git-k8s --subresource=token --as=system:serviceaccount:git-k8s:git-k8s
-echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. No check can read Secrets or create tokens, and only the core program can create tokens for Octo STS."
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
 echo "::endgroup::"
 
 echo "::group::A check can't push to a parent through the mirror"
@@ -1767,10 +1784,11 @@ CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
 # The agent Pods fetch from the mirror with tokens that kube binds to them,
-# so check-review needs no repository credentials.
+# so check-review needs no repository credentials. It gets Secrets only by
+# name, for its signing key.
 review_sa=system:serviceaccount:check-review:check-review
-if k auth can-i get secrets -n "${NS}" --as="${review_sa}"; then
-  echo "check-review can read Secrets" >&2
+if can_list_secrets check-review; then
+  echo "check-review can list Secrets" >&2
   exit 1
 fi
 if k -n check-review auth can-i create serviceaccounts/check-review --subresource=token --as="${review_sa}"; then
@@ -1860,7 +1878,7 @@ review d/marked message
 echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
-echo "check-review can't read Secrets or create tokens. The agent's signed fix, from a Pod that fetched from the mirror, landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "check-review can't list Secrets or create tokens. The agent's signed fix, from a Pod that fetched from the mirror, landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Conflicts with a parent that moved are resolved before branches land"
@@ -1871,17 +1889,18 @@ CHECKS+=(check-conflicts)
 install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
 # The check and its agent Pods fetch from the mirror, and the check pushes
-# to it, so check-conflicts needs no repository credentials either.
+# to it, so check-conflicts needs no repository credentials either. It gets
+# Secrets only by name, for its signing key.
 conflicts_sa=system:serviceaccount:check-conflicts:check-conflicts
-if k auth can-i get secrets -n "${NS}" --as="${conflicts_sa}"; then
-  echo "check-conflicts can read Secrets" >&2
+if can_list_secrets check-conflicts; then
+  echo "check-conflicts can list Secrets" >&2
   exit 1
 fi
 if k -n check-conflicts auth can-i create serviceaccounts/check-conflicts --subresource=token --as="${conflicts_sa}"; then
   echo "check-conflicts can create tokens for its service account" >&2
   exit 1
 fi
-echo "check-conflicts can't read Secrets or create tokens."
+echo "check-conflicts can't list Secrets or create tokens."
 CONFLICTED="${WORKDIR}/conflicted"
 mkdir "${CONFLICTED}"
 cf() {
