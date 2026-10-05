@@ -1,143 +1,209 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "C43707B4-CF7B-4BC9-9009-63894B06A4C0",
-    "name": "Death Guard Strike Force 1920pts",
-    "catalogVersion": "11e-1",
-    "factionID": "death-guard",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "death-guard--flyblown-host",
       "death-guard--mortarion-s-hammer"
     ],
-    "units": [
+    "factionID" : "death-guard",
+    "id" : "6D7A3B66-8792-4727-AA98-A117A47FFF30",
+    "name" : "Death Guard Strike Force 1955pts",
+    "notes" : "stress seed=38 attach=true enh=true",
+    "units" : [
       {
-        "id": "22BF2762-500F-46B8-A7B1-6827B295B374",
-        "datasheetID": "death-guard--icon-bearer",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "F3C199BD-DB74-43B2-B8A4-ADA17841F9E0",
+        "datasheetID" : "death-guard--icon-bearer",
+        "enhancementIDs" : [
           "death-guard--mortarion-s-hammer--shriekworm-familiar"
         ],
-        "attachedToUnitID": "5235B75D-C88F-4BAC-9B33-8E95683BAEF5"
+        "id" : "340D0178-44D5-4C16-A51E-00BD3D7F813A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5235B75D-C88F-4BAC-9B33-8E95683BAEF5",
-        "datasheetID": "death-guard--plague-marines",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--plaguebearers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8D52F39A-5641-44F6-8A75-CADA01C6322B",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4C928644-42F1-4D79-B8D5-46FF603F01EC",
-        "datasheetID": "death-guard--plaguebearers",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--helbrute",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "83EA976C-2E69-45B6-8836-4AD619E83F06",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "20D72511-F1D9-46DD-994B-901429E986A7",
-        "datasheetID": "death-guard--chaos-rhino",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--death-guard-cultists",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6977814E-7D7E-4BCF-B614-1CB33B989DF0",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "11F1E623-3617-4F8E-B994-8D95519BEF88",
-        "datasheetID": "death-guard--defiler",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--myphitic-blight-haulers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BF22C45A-8206-4B16-94DC-E12EFD0563A8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7CA8D2FB-F3A1-4A8A-B671-9C68E85A3F88",
-        "datasheetID": "death-guard--helbrute",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--blightlord-terminators",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0532459C-B8D4-4C8E-A245-E364FA07EC9B",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "875C96BD-B452-4774-A308-910518B4B6D5",
-        "datasheetID": "death-guard--chaos-spawn",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--plagueburst-crawler",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BB662840-D180-43A2-A0D3-E7A07E14FBBA",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D3C80719-165E-42BF-B2DD-0546F5DFB7D6",
-        "datasheetID": "death-guard--plague-marines",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--chaos-land-raider",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "615E3C1C-4AA4-473B-8EB6-E3A33D0BAF3D",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2ACEDA08-6721-4D6D-BD37-6A56541AFCED",
-        "datasheetID": "death-guard--foetid-bloat-drone-with-heavy-blight-launcher",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--plague-drones",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "77F27DE4-2EE4-4AC8-ACA7-AF18CDCBB175",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DCC9BC5F-DCDC-4E74-912B-E8CB3AB77ABC",
-        "datasheetID": "death-guard--poxwalkers",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--chaos-spawn",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7D988A47-DF8A-486A-BAD0-C331A6E8F75D",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1FEB5457-6F13-4AC7-9A89-12EE34703210",
-        "datasheetID": "death-guard--plagueburst-crawler",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--plague-marines",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F3C199BD-DB74-43B2-B8A4-ADA17841F9E0",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "957C6273-01ED-43A6-B826-CE4880BD546F",
-        "datasheetID": "death-guard--beasts-of-nurgle",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--plaguebearers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "593C550F-B955-4E69-A6C2-B8864E8A68E1",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0983CB6E-2F7F-4DCD-8B28-3503B1C808D3",
-        "datasheetID": "death-guard--chaos-predator-annihilator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--chaos-rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2F91A8E9-23F7-46BA-84D6-0227B49D6A56",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2AD6320E-6A82-4576-89AA-CC41D515D243",
-        "datasheetID": "death-guard--death-guard-possessed",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--poxwalkers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F5655F29-3C1E-4615-9277-F2ACF5FFF659",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "22D9F871-C31D-4D17-A729-BCD5BC05CCF4",
-        "datasheetID": "death-guard--foetid-bloat-drone",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--chaos-predator-annihilator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2BDC2A55-9E99-499F-9008-C924F387D2FC",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "death-guard--plague-marines",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "51F165EE-D95D-437A-BE9A-C7FAC94082EF",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "death-guard--foetid-bloat-drone",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E7DEB048-C703-43D5-9CC7-1ED6D0B25BF9",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "22BF2762-500F-46B8-A7B1-6827B295B374",
-    "notes": "stress seed=38 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "340D0178-44D5-4C16-A51E-00BD3D7F813A"
+  },
+  "notes" : "auto-built"
 }

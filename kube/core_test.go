@@ -194,7 +194,7 @@ func TestStore(t *testing.T) {
 	if got := len(s.byOwner("a/parent")); got != 1 {
 		t.Errorf("after replace, byOwner = %d, want 1", got)
 	}
-	if old := s.remove(Key{"a", "one"}); old == nil || len(s.byOwner("a/parent")) != 0 {
+	if old := s.remove(cm("a", "one", "2", nil, "a/parent")); old == nil || len(s.byOwner("a/parent")) != 0 {
 		t.Error("remove didn't unindex")
 	}
 }
@@ -537,6 +537,26 @@ func TestPermanent(t *testing.T) {
 	var target errorString
 	if !errors.As(err, &target) {
 		t.Error("Permanent doesn't unwrap")
+	}
+}
+
+func TestFakeLastError(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	ctx, _ := Fake(t.Context(), parent)
+	if err := LastError(ctx); err != nil {
+		t.Errorf("LastError = %v, want nil", err)
+	}
+
+	denied := errorString("applying Pod.v1 shop/p: forbidden")
+	pod := &podMeta{Object: Meta("p", nil)}
+	pod.Namespace = "shop"
+	ctx, _ = Fake(t.Context(), parent, denied, pod)
+	if err := LastError(ctx); err != denied {
+		t.Errorf("LastError = %v, want %v", err, denied)
+	}
+	if pods := List[podMeta](ctx, InNamespace("shop")); len(pods) != 1 || pods[0].Name != "p" {
+		t.Errorf("List = %v, want the Pod and not the error", pods)
 	}
 }
 

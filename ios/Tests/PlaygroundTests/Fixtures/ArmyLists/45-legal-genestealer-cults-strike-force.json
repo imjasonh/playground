@@ -1,166 +1,230 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "F53ECF54-8D70-4E33-AFA5-2C169FD4EBE4",
-    "name": "Genestealer Cults Strike Force 1880pts",
-    "catalogVersion": "11e-1",
-    "factionID": "genestealer-cults",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "genestealer-cults--brood-brothers-auxilia"
     ],
-    "units": [
+    "factionID" : "genestealer-cults",
+    "id" : "11D9729A-89F8-4467-BE96-C482154DD203",
+    "name" : "Genestealer Cults Strike Force 1920pts",
+    "notes" : "stress seed=44 attach=true enh=true",
+    "units" : [
       {
-        "id": "96E6D03D-0994-4C82-BA4F-E31CED76B5C6",
-        "datasheetID": "genestealer-cults--acolyte-iconward",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "0B9F2588-8F5E-4534-B069-EA6DD1AD8E17",
+        "datasheetID" : "genestealer-cults--acolyte-iconward",
+        "enhancementIDs" : [
           "genestealer-cults--brood-brothers-auxilia--adaptive-reprisal"
         ],
-        "attachedToUnitID": "62E978F7-CB1A-4806-8441-77D16354FD27"
+        "id" : "42088243-548E-4828-9B31-5EC60913BFAC",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "62E978F7-CB1A-4806-8441-77D16354FD27",
-        "datasheetID": "genestealer-cults--neophyte-hybrids",
-        "models": 20,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--goliath-rockgrinder",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D5E5FB9D-1A09-47ED-B211-45BD56F430B1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EA861B4F-B489-4348-91F3-CEB1DABBDB86",
-        "datasheetID": "genestealer-cults--hybrid-metamorphs",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--acolyte-hybrids-with-autopistols",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0B9F2588-8F5E-4534-B069-EA6DD1AD8E17",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A5EBACC9-040D-4915-88EF-681118ED3FF3",
-        "datasheetID": "genestealer-cults--goliath-rockgrinder",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--neophyte-hybrids",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "31AF7285-6A63-4307-9E1A-97DD4C895CAB",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4A6BBC02-6C0D-49CC-9F87-2DEE2B7172CA",
-        "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--acolyte-hybrids-with-hand-flamers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C70FBA4F-105F-4377-BC7E-5B9460E32FD9",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5099E9EF-860C-4462-BF9F-53771C8F40CB",
-        "datasheetID": "genestealer-cults--achilles-ridgerunners",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--goliath-truck",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4D56C030-D3E6-4209-8A5E-70136961E779",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "8DE16B7A-B9B3-49ED-B800-628B1A358141",
-        "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--hybrid-metamorphs",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4314F927-D712-43F9-88CC-D4466AAEF6A5",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "249C98CA-2ACB-4F00-A157-7E4DFCC28E4A",
-        "datasheetID": "genestealer-cults--atalan-jackals",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--atalan-jackals",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "29376795-A067-446F-B609-5FBE0041D15B",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D23AA0C2-67D8-4F23-A61B-C21A78297AB7",
-        "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--tectonic-fragdrill",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7F68B400-1DE6-4C86-945F-7825CC3882E3",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "CA096D7A-726D-4BF4-88E8-A8B396CD0CD2",
-        "datasheetID": "genestealer-cults--aberrants",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--acolyte-hybrids-with-autopistols",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C56D57B9-999F-4B9C-A206-7C5312355A9F",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9C83C54C-EB2C-4E45-9CE3-58DA626F9D39",
-        "datasheetID": "genestealer-cults--neophyte-hybrids",
-        "models": 20,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--purestrain-genestealers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7B886128-4567-44C4-A002-716F182564CD",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "F14E5BA0-A311-48BB-8260-9866AE7DA8AF",
-        "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--acolyte-hybrids-with-hand-flamers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "21D64AAE-4204-4EC3-8E02-97301D95115F",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DB814155-66C4-41FC-8C95-7EC8723DFDCB",
-        "datasheetID": "genestealer-cults--tectonic-fragdrill",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--aberrants",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "37B0D53E-2CA4-400F-AC42-FEF14D37424D",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "799AEED1-3EC5-4727-A609-20029BFA26C2",
-        "datasheetID": "genestealer-cults--purestrain-genestealers",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--neophyte-hybrids",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "3D0CE18A-C460-42DB-BA69-224AC972C253",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "24C8CCDE-0929-4947-828D-58EA47070167",
-        "datasheetID": "genestealer-cults--goliath-truck",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--achilles-ridgerunners",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B3DBC1DB-4544-46F9-B86B-40D0D1572C08",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7B0DE084-9130-41E0-9F88-CE1DBCBB9AC6",
-        "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--acolyte-hybrids-with-autopistols",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "196C7BBD-AF1F-4719-A667-DFDF3682254A",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EFC3F7BD-0592-4996-B4C3-EAD8A65630CC",
-        "datasheetID": "genestealer-cults--neophyte-hybrids",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--neophyte-hybrids",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EFC6EEA4-5C21-40C8-8489-C42F27799940",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2B2F296C-F514-4A97-A2F6-8A396ED09822",
-        "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "genestealer-cults--acolyte-hybrids-with-hand-flamers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B511D9D4-5AC8-4916-92E7-4924F93B2913",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "genestealer-cults--goliath-truck",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EBED3850-8C1B-4C0D-9067-D09589D9074F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "96E6D03D-0994-4C82-BA4F-E31CED76B5C6",
-    "notes": "stress seed=44 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "42088243-548E-4828-9B31-5EC60913BFAC"
+  },
+  "notes" : "auto-built"
 }

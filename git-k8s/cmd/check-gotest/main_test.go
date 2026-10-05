@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -9,6 +13,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -68,6 +73,77 @@ func TestStartsSandboxedPod(t *testing.T) {
 	}
 	if !hasSecret(spec.InitContainers[0]) || hasSecret(spec.Containers[0]) {
 		t.Error("only the fetch container can see the repository's credentials")
+	}
+}
+
+// fetch runs the fetch container of the branch's test Pod on this machine,
+// with secrets as the values of the Secret's keys. It returns the directory
+// that the container fetches into in place of /src/repo.
+func fetch(t *testing.T, b *Branch, repo *gitk8s.GitRepository, secrets map[string]string) (string, error) {
+	t.Helper()
+	pods := kube.Owned[Pod](reconcileWith(t, b, repo))
+	if len(pods) != 1 {
+		t.Fatalf("owned Pods = %+v", pods)
+	}
+	c := pods[0].Spec.InitContainers[0]
+	dir := filepath.Join(t.TempDir(), "repo")
+	cmd := exec.Command(c.Command[0], c.Command[1], strings.ReplaceAll(c.Command[2], "/src/repo", dir))
+	// Keep this machine's git configuration out.
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1"}
+	for _, e := range c.Env {
+		v := e.Value
+		if e.ValueFrom != nil {
+			v = secrets[e.ValueFrom.SecretKeyRef.Key]
+		}
+		cmd.Env = append(cmd.Env, e.Name+"="+v)
+	}
+	cmd.Env = append(cmd.Env, "HOME="+t.TempDir())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return dir, fmt.Errorf("%w: %s", err, out)
+	}
+	return dir, nil
+}
+
+func TestFetchChecksOutHead(t *testing.T) {
+	srv := gittest.NewServer(t, "s3cret")
+	w := srv.NewWork(t, "app")
+	w.Write("add.go", "package app\n")
+	b, repo := branch()
+	b.Spec.Head = w.Commit("Add add.go")
+	w.Push("c/x")
+	repo.Spec.URL = srv.Remote("app").URL
+	dir, err := fetch(t, b, repo, map[string]string{"username": srv.Username, "password": srv.Password})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "add.go")); err != nil {
+		t.Errorf("the fetch container didn't check out the head: %v", err)
+	}
+}
+
+func TestFetchRefusesUnsafeURLs(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git isn't installed")
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for url, want := range map[string]string{
+		"--upload-pack=touch " + marker + "; false": "blocked",
+		"evil::x": "not allowed",
+	} {
+		b, repo := branch()
+		repo.Spec.URL = url
+		_, err := fetch(t, b, repo, nil)
+		if _, statErr := os.Stat(marker); statErr == nil {
+			t.Fatalf("fetching %q ran a command", url)
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("fetching %q: err = %v, want %q", url, err, want)
+		}
 	}
 }
 
