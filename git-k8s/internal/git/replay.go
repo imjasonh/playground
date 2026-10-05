@@ -296,10 +296,11 @@ func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Ident
 	if err != nil {
 		return "", fmt.Errorf("git show: unexpected committer time %q", out)
 	}
-	env := append([]string{
-		"GIT_AUTHOR_NAME=" + f[0], "GIT_AUTHOR_EMAIL=" + f[1], "GIT_AUTHOR_DATE=@" + f[2],
-		"GIT_COMMITTER_NAME=" + id.Name, "GIT_COMMITTER_EMAIL=" + id.Email, fmt.Sprintf("GIT_COMMITTER_DATE=@%d +0000", max(ct, pct)),
-	}, remoteProtocols...)
-	out, err = r.git.run(ctx, r.Dir, []string{"commit-tree", "-p", parent, "-F", "-", "--end-of-options", tree}, opts{stdin: []byte(f[4]), env: env})
-	return strings.TrimSpace(string(out)), err
+	return r.WriteCommit(ctx, NewCommit{
+		Tree:      tree,
+		Parents:   []string{parent},
+		Author:    Signature{Name: f[0], Email: f[1], Date: f[2]},
+		Committer: Signature{Name: id.Name, Email: id.Email, Date: fmt.Sprintf("%d +0000", max(ct, pct))},
+		Message:   f[4],
+	})
 }
