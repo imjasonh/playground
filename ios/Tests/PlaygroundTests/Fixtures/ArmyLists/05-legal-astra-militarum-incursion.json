@@ -1,94 +1,98 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "C8892D4E-D9BB-4F54-9957-75F7E6EDAFB3",
-    "name": "Astra Militarum Incursion 915pts",
-    "catalogVersion": "11e-1",
-    "factionID": "astra-militarum",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "astra-militarum--recon-element"
     ],
-    "units": [
+    "factionID" : "astra-militarum",
+    "id" : "211346F7-4D14-4538-8EBB-0329A4C92ED4",
+    "name" : "Astra Militarum Incursion 970pts",
+    "notes" : "stress seed=4 attach=true enh=true",
+    "units" : [
       {
-        "id": "E8AA55B7-BDBA-4A33-88E8-CACB57AD7358",
-        "datasheetID": "astra-militarum--commissar",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "43A98F3A-BF5A-49BC-88FD-37F84E2AD1BA",
+        "datasheetID" : "astra-militarum--commissar",
+        "enhancementIDs" : [
           "astra-militarum--recon-element--guerrilla-honours"
         ],
-        "attachedToUnitID": "683F65DA-CA2C-47F5-BED5-544A80A7768C"
+        "id" : "3A29264C-4067-4A5B-B305-EB87B939CF5D",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "683F65DA-CA2C-47F5-BED5-544A80A7768C",
-        "datasheetID": "astra-militarum--kasrkin",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "astra-militarum--ogryn-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4D239CBF-8239-4683-8A67-C68BEE719022",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1FAA65D5-3364-436E-AD2A-A7762A469E01",
-        "datasheetID": "astra-militarum--aegis-defence-line",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "astra-militarum--catachan-jungle-fighters",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "43A98F3A-BF5A-49BC-88FD-37F84E2AD1BA",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "600EA202-6360-4323-ADA8-9F3ADE3F941F",
-        "datasheetID": "astra-militarum--krieg-heavy-weapons-squad",
-        "models": 4,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "astra-militarum--praetor",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "29D4257E-1BF1-4AB8-B6A2-C3989F0BB36A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "F24131D1-3C6E-43A0-8FC9-C397B9367137",
-        "datasheetID": "astra-militarum--colossus",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "astra-militarum--regimental-attaches",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7F4D4A59-5A31-40ED-94A0-6C5DC1310888",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "56DA3848-1AAC-434C-BAB3-09F145670EA2",
-        "datasheetID": "astra-militarum--hellhound",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "astra-militarum--malcador-annihilator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C5DA8590-EC8A-43E6-A22F-B89FC3DAE27A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "76612EFE-B6EE-4740-A33F-5190B081DC03",
-        "datasheetID": "astra-militarum--death-korps-grenadier-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "8E563C6B-D258-46D5-A8F1-7EE4137A0547",
-        "datasheetID": "astra-militarum--field-ordnance-battery",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "90DA99F0-3ADB-49D4-BB1B-25F816A89E04",
-        "datasheetID": "astra-militarum--scout-sentinels",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "astra-militarum--death-korps-of-krieg",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7BBD4B44-71EC-46EE-A053-E760BF877B61",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "E8AA55B7-BDBA-4A33-88E8-CACB57AD7358",
-    "notes": "stress seed=4 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "3A29264C-4067-4A5B-B305-EB87B939CF5D"
+  },
+  "notes" : "auto-built"
 }
