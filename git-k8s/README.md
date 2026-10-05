@@ -162,12 +162,14 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. The programs
 that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
-`check-risk`, and `check-review`, which pushes its agent's fixes. The test
-Pods of `check-gotest` and the agent Pods of `check-review` fetch without
-credentials, so with Octo STS, `gotest` and `review` work only for a public
-repository. The `git-k8s` program publishes [check runs](#check-runs) with
-tokens for `checkRunsIdentity`, and publishes none without it. The URL must
-have the form `https://github.com/OWNER/REPO`, with or without `.git`.
+`check-risk`, `check-conflicts`, and `check-review`, which pushes its agent's
+fixes. The test Pods of `check-gotest` and the agent Pods of `check-review`
+and `check-conflicts` fetch without credentials, so with Octo STS, `gotest`
+and `review` work only for a public repository, and for a private one,
+`conflicts` resolves only what git can. The `git-k8s` program publishes
+[check runs](#check-runs) with tokens for `checkRunsIdentity`, and publishes
+none without it. The URL must have the form `https://github.com/OWNER/REPO`,
+with or without `.git`.
 
 ### Set up Octo STS
 
@@ -188,7 +190,7 @@ have the form `https://github.com/OWNER/REPO`, with or without `.git`.
 
    ```yaml
    issuer: ISSUER
-   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-review:check-review)
+   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-conflicts:check-conflicts|check-review:check-review)
    audience: octo-sts.dev/NAMESPACE
    permissions:
      contents: write
@@ -239,10 +241,11 @@ minute before it expires, and ask Octo STS again after 30 seconds. When the
 `git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
 is `False` with the reason `CredentialsUnavailable`. When a check can't, it
 reports an `Error` result, except `check-review`, which reports `Running` and
-tries again to push its agent's fix. The messages include Octo STS's answer,
-such as `unable to find trust policy for "git-k8s"`. Octo STS caches each
-trust policy, and the lack of one, for 5 minutes, so a change to a trust
-policy can take that long to apply.
+tries again to push its agent's fix, and `check-conflicts` on a branch with a
+parent, which reports `Running` and tries again. The messages include Octo
+STS's answer, such as `unable to find trust policy for "git-k8s"`. Octo STS
+caches each trust policy, and the lack of one, for 5 minutes, so a change to a
+trust policy can take that long to apply.
 
 ### Check runs
 
