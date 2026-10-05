@@ -77,6 +77,10 @@ var (
 	sensitive = flag.String("sensitive", "", "comma-separated globs of paths that make a change high risk, such as auth/**,**/*.pem")
 )
 
+// The check also reads whether a commit has the agent trailer. A squash
+// landing keeps every such line, and a rebase keeps each copied commit's
+// message, so the check can be FilesOnly. Its message doesn't count those
+// commits, because a squash makes one commit of them.
 var check = checks.Check{Name: "risk", UsesParent: true, FilesOnly: true, Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
@@ -133,10 +137,8 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	switch n, err := repo.CountCommits(ctx, base, in.Spec.Head, git.AgentTrailer); {
 	case err != nil:
 		return checks.Verdict{}, err
-	case n == 1:
-		reasons = append(reasons, "has 1 commit from an AI agent")
-	case n > 1:
-		reasons = append(reasons, fmt.Sprintf("has %d commits from AI agents", n))
+	case n > 0:
+		reasons = append(reasons, "has changes from AI agents")
 	}
 	level := "low"
 	if len(reasons) > 0 {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,7 @@ func write(t *testing.T, w *gittest.Work, path, content string) {
 }
 
 // rate commits base on main, and change on c/x with message, and rates c/x.
-func rate(t *testing.T, base, change map[string]string, message string) *gitk8s.CheckResult {
+func rate(t *testing.T, base, change map[string]string, messages ...string) *gitk8s.CheckResult {
 	t.Helper()
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
@@ -66,7 +67,10 @@ func rate(t *testing.T, base, change map[string]string, message string) *gitk8s.
 	for path, content := range change {
 		write(t, w, path, content)
 	}
-	head := w.Commit(message)
+	var head string
+	for _, message := range messages {
+		head = w.Commit(message)
+	}
 	w.Push("c/x")
 
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
@@ -211,7 +215,7 @@ func TestRiskOfModules(t *testing.T) {
 			change:  map[string]string{"main.go": "package main\n"},
 			message: "Apply changes from the deps agent\n\n" + git.FixerTrailer + ": deps\n" + git.AgentTrailer + ": deps",
 			level:   "high",
-			reason:  "has 1 commit from an AI agent",
+			reason:  "has changes from AI agents",
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -220,6 +224,22 @@ func TestRiskOfModules(t *testing.T) {
 				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
 			}
 		})
+	}
+}
+
+// TestRiskOfSquashedAgentCommits rates a branch with two commits from agents
+// and a commit with the same files and both agent trailers, as a squash
+// landing makes. The check is FilesOnly, so the two must get the same result.
+func TestRiskOfSquashedAgentCommits(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	fix := func(name string) string {
+		return "Apply changes from the " + name + " agent\n\n" + git.FixerTrailer + ": " + name + "\n" + git.AgentTrailer + ": " + name
+	}
+	change := map[string]string{"main.go": "package main\n"}
+	head := rate(t, nil, change, fix("deps"), fix("review"))
+	squashed := rate(t, nil, change, "Change main.go\n\n"+git.AgentTrailer+": deps\n"+git.AgentTrailer+": review")
+	if head.Outputs["level"] != "high" || head.Message != squashed.Message || !maps.Equal(head.Outputs, squashed.Outputs) {
+		t.Errorf("head's result = %+v, squashed commit's = %+v, want the same high rating", head, squashed)
 	}
 }
 

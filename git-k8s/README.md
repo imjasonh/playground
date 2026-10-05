@@ -518,7 +518,7 @@ without approval under a gate such as
 `checks.risk.outputs.level == "low" || checks.approval.passed`. The check
 skips `go.mod` files in `testdata` and `vendor` directories. Its message
 lists every reason, for example `risk is high: adds module example.com/c;
-has 1 commit from an AI agent`.
+has changes from AI agents`.
 
 ### Write a check
 
@@ -984,9 +984,12 @@ message starts with the first one's subject and lists the subject of every
 commit that isn't a merge. It ends with the trailers of the commits that
 aren't fixes, such as `Signed-off-by`, and a `Co-authored-by` trailer for
 each of their authors besides the first. The squashed message never has a
-`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. A rebase keeps
-each commit's author and message, and leaves out a commit that changes
-nothing, such as a change that the parent already has.
+`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. It always has
+every `Git-K8s-Agent` line of the branch's commits, fixes and merges
+included, so the commit still counts as a change from an AI agent, as
+[Which results count](#which-results-count) explains. A rebase keeps each
+commit's author and message, and leaves out a commit that changes nothing,
+such as a change that the parent already has.
 
 The merge controller commits as
 `git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and
@@ -1055,6 +1058,20 @@ compares them with the parent's head. `check-approval` reads only the
 `GitBranch`, and an approval is for the change, which the new commit makes
 too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
 what checks push, and the gate doesn't read it.
+
+`check-risk` also rates a change `high` when one of its commits has a
+`Git-K8s-Agent` trailer, so its result depends on commit messages too. It
+still sets `FilesOnly`, because both landings keep those trailers. A squash
+keeps every `Git-K8s-Agent` line of the branch's commits, so the squashed
+commit gets the head's rating. A rebase keeps each commit's message but
+leaves out merge commits and commits that change nothing, so the head's
+rating is never lower than the new commit's. The check's message doesn't
+count those commits, because a squash makes one commit of them. If a squash
+dropped the trailers, `check-risk` would rate a rewritten branch's squashed
+commit `low` when it runs again, so the commit could land without a new
+approval, and the parent's history wouldn't show which changes came from
+agents. Dropping `FilesOnly` wouldn't fix that, because the check would read
+the same squashed message.
 
 When the counted results pass the gate, the controller lands the new commit
 without another round of checks. It pushes the commit to the parent, with a
