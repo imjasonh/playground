@@ -409,6 +409,14 @@ func TestGoCommand(t *testing.T) {
 	r, srv, tokenFile := newRemote(t)
 	remoteURL := srv.URL + Path("ns", "app")
 	home := t.TempDir()
+	// Without telemetry off in home, the go command can start a telemetry
+	// process that outlives it and writes in home while the test removes it.
+	off := exec.Command(gobin, "telemetry", "off")
+	off.Dir = home
+	off.Env = append(os.Environ(), "HOME="+home, "GOENV=off", "GOTOOLCHAIN=local")
+	if out, err := off.CombinedOutput(); err != nil {
+		t.Fatalf("go telemetry off: %v\n%s", err, out)
+	}
 	build := func(dir string) string {
 		t.Helper()
 		cmd := exec.Command(gobin, "list", "-export", "-f={{.Export}}", "./...")
