@@ -15,16 +15,20 @@ crate-type = ["cdylib", "rlib"]
 # pure-Rust (RustCrypto) so the exact same code path is exercised by native
 # `cargo test` and by the wasm32 Worker build.
 [dependencies]
-base64 = "0.22"
+# The SIMD engines (default `simd-unsafe` feature) do nothing on wasm32.
+base64 = { version = "0.23", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
-hkdf = "0.12"
-aes-gcm = "0.10"
+sha2 = "0.11"
+hkdf = "0.13"
+# RFC 8188 derives each nonce with HKDF, so aead's RNG helpers (the default
+# `getrandom` feature) go unused.
+aes-gcm = { version = "0.11", default-features = false, features = ["aes", "alloc"] }
 # Only the raw-byte ECDSA/ECDH APIs are used (no PEM/PKCS8), so default
 # features are disabled to avoid the der/base64ct dependency chain.
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "ecdh", "arithmetic"] }
-rand_core = { version = "0.6", features = ["getrandom"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "ecdh", "arithmetic", "getrandom"] }
+# Random salts; p256's `getrandom` feature generates the ephemeral keys.
+getrandom = "0.4"
 async-trait = "0.1"
 
 # The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
@@ -32,7 +36,8 @@ async-trait = "0.1"
 # all business logic stays testable on the host.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "0.8"
-getrandom = { version = "0.2", features = ["js"] }
+# getrandom reaches crypto.getRandomValues through wasm-bindgen.
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 futures = "0.3"

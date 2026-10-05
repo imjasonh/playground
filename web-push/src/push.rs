@@ -2,7 +2,7 @@
 //! (RFC 8291) and a VAPID `Authorization` header (RFC 8292).
 
 use p256::SecretKey;
-use rand_core::{OsRng, RngCore};
+use p256::elliptic_curve::Generate;
 
 use crate::ece::{self, DEFAULT_RECORD_SIZE};
 use crate::error::Error;
@@ -125,9 +125,10 @@ impl WebPushClient {
         message: &WebPushMessage,
         now_unix: u64,
     ) -> Result<WebPushRequest, Error> {
-        let as_secret = SecretKey::random(&mut OsRng);
+        let as_secret =
+            SecretKey::try_generate().map_err(|_| Error::Crypto("random ephemeral key"))?;
         let mut salt = [0u8; 16];
-        OsRng.fill_bytes(&mut salt);
+        getrandom::fill(&mut salt).map_err(|_| Error::Crypto("random salt"))?;
         self.build_request_with(subscription, message, now_unix, &as_secret, &salt)
     }
 
