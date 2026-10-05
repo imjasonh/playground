@@ -111,7 +111,7 @@ spec:
 # can't tell whether an owned object needs a finalizer on its owner. kube
 # adds that finalizer with a cleanup annotation, which this policy denies, so
 # a check can own only namespaced objects in the branch's namespace. A check
-# whose entry in the git-k8s-checks ConfigMap is empty can't write results,
+# whose entry in the git-k8s-checks ConfigMap is empty can't send results,
 # but it keeps its RBAC, so this policy still treats it as a check.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy

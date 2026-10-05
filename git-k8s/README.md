@@ -2313,7 +2313,7 @@ Pods run their Pods as that service account, as
 [Security model](#security-model) describes. The core program applies the
 ConfigMap without data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
-service accounts write which results, so give that permission only to people
+service accounts send which results, so give that permission only to people
 who can install checks.
 
 The third policy doesn't read the ConfigMap, so an entry doesn't change
