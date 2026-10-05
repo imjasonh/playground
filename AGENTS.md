@@ -303,6 +303,14 @@ tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
 enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
 (see `.github/scripts/test-pasta.sh`).
 
+The kind end-to-end tests of `git-k8s`, `kube`, and `sshapp` run as their own
+steps in the parallel group (`.github/scripts/test-kind-e2e.sh`), beside the
+Go unit tests, because they mostly wait for a cluster and its Pods. Their
+clusters, registries, and ports have different names, so they can share the
+runner. The job restores Go's module and build caches from the newest cache
+that a push to `main` saved, matching by prefix so that a new `go.sum`
+doesn't miss. Only pushes to `main` save a cache.
+
 Cloud Agents also check each commit with pasta. When a Cloud Agent VM starts,
 `.cursor/environment.json` runs `.cursor/install.sh`, which builds pasta and
 installs its pre-commit hook (`pasta -fail-on=warning -quiet -staged`). If the

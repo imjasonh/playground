@@ -1,102 +1,142 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "6113D03F-8E09-4810-874F-BCDD1635DE64",
-    "name": "Imperial Agents Incursion 970pts",
-    "catalogVersion": "11e-1",
-    "factionID": "imperial-agents",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "imperial-agents--ordo-xenos-alien-hunters"
     ],
-    "units": [
+    "factionID" : "imperial-agents",
+    "id" : "0A493D1B-3574-4FF0-83CC-D3ABF5304A4B",
+    "name" : "Imperial Agents Incursion 955pts",
+    "notes" : "stress seed=18 attach=true enh=true",
+    "units" : [
       {
-        "id": "90D0F3F9-3BC9-4340-B1B1-89C5F95072C4",
-        "datasheetID": "imperial-agents--jokaero-weaponsmith",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "7C051ACD-CCE3-4C84-8D7A-77F751E56635",
+        "datasheetID" : "imperial-agents--jokaero-weaponsmith",
+        "enhancementIDs" : [
           "imperial-agents--ordo-xenos-alien-hunters--blackweave-shroud"
         ],
-        "attachedToUnitID": "5018CC98-1214-4A66-95E0-12F79ED7BBBC"
+        "id" : "B01D537C-BAC1-4530-B187-C69D95920913",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "02F61B14-A2EF-4F2C-9374-B42D2AF36000",
-        "datasheetID": "imperial-agents--inquisitorial-chimera--every-model-has-the-imperium-keyword",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--deathwatch-kill-team",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EE00644F-B32A-4429-973B-90C3385D6EB0",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "15EF855D-5007-463C-B498-BA217D425F8B",
-        "datasheetID": "imperial-agents--daemonhost",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--imperial-navy-breachers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "CC2D2D96-80A1-4890-9D40-6507DB7CD3BE",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9A12A9E9-2FBA-4A5C-8E22-23B352F93339",
-        "datasheetID": "imperial-agents--aquila-kill-team--every-model-has-the-imperium-keyword",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--daemonhost",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DA099BE4-3403-4774-93E1-058D30662832",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1BF863BB-6EBE-4DA0-A17F-6E5AFC53F572",
-        "datasheetID": "imperial-agents--subductor-squad--every-model-has-the-imperium-keyword",
-        "models": 11,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--vigilant-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "98C81F7E-6697-4AF7-B9AA-91D05A7020A3",
+        "models" : 11,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D377A5E0-0B04-4CA2-8AE7-53571D445772",
-        "datasheetID": "imperial-agents--vigilant-squad--every-model-has-the-imperium-keyword",
-        "models": 11,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--inquisitorial-agents--every-model-has-the-imperium-keyword",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "86C9F936-6BC7-433C-8FE6-DFA7E28983D6",
+        "models" : 6,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4BB7B57C-ACC8-46CB-A3B1-7FD195D11F0A",
-        "datasheetID": "imperial-agents--deathwatch-kill-team",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--proteus-kill-team",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2478F73A-06AF-4386-95FA-0DBF60132236",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5A8AC8B4-2C31-44DE-8B02-9512F04E8EDE",
-        "datasheetID": "imperial-agents--fortis-kill-team",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--imperial-rhino--every-model-has-the-imperium-keyword",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F22B1E74-2EC5-44C0-8BC7-F4CCEAA03D79",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5018CC98-1214-4A66-95E0-12F79ED7BBBC",
-        "datasheetID": "imperial-agents--inquisitorial-agents",
-        "models": 6,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--imperial-navy-breachers--every-model-has-the-imperium-keyword",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7008ECDD-174A-4E80-B10B-DD43DC5513B3",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0F033E82-E11B-4EC5-9905-15BD6D695E80",
-        "datasheetID": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "imperial-agents--voidsmen-at-arms",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1EDDACF0-9F3E-4897-87C0-8AAA0A37C0A7",
+        "models" : 6,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "imperial-agents--inquisitorial-agents",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7C051ACD-CCE3-4C84-8D7A-77F751E56635",
+        "models" : 6,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "90D0F3F9-3BC9-4340-B1B1-89C5F95072C4",
-    "notes": "stress seed=18 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "B01D537C-BAC1-4530-B187-C69D95920913"
+  },
+  "notes" : "auto-built"
 }

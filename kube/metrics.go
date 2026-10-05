@@ -49,6 +49,7 @@ var help = map[string]string{
 	"kube_webhook_requests_total":     "Admission and conversion webhook requests, by path and result.",
 	"kube_webhook_duration_seconds":   "Time spent answering webhook requests, by path.",
 	"kube_shard_transitions_total":    "Shards this replica acquired, released to another replica, or lost.",
+	"kube_events_total":               "Events by controller and result: created, updated with a new count of repeats, failed, or dropped because writing fell behind.",
 }
 
 func newMetrics() *metrics {

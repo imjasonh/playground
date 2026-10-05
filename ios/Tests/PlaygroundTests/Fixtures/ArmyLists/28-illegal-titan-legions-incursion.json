@@ -1,0 +1,20 @@
+{
+  "expectedLegal" : false,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+
+    ],
+    "factionID" : "titan-legions",
+    "id" : "4596942D-5257-474B-A2A5-D3AB47F065BE",
+    "name" : "Titan Legions (no detachments)",
+    "notes" : "Catalog has no detachments for this faction.",
+    "units" : [
+
+    ],
+    "updatedAt" : "2026-01-01T00:00:00Z"
+  },
+  "notes" : "expected illegal: no detachments in catalog"
+}

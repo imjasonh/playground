@@ -1,158 +1,186 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "95626B8D-DE4B-4A14-A604-CB753719ACA2",
-    "name": "Thousand Sons Strike Force 1935pts",
-    "catalogVersion": "11e-1",
-    "factionID": "thousand-sons",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "thousand-sons--ritual-of-regeneration"
     ],
-    "units": [
+    "factionID" : "thousand-sons",
+    "id" : "436EE33B-DE03-4E68-889E-AC6BA88B5704",
+    "name" : "Thousand Sons Strike Force 1900pts",
+    "notes" : "stress seed=39 attach=true enh=true",
+    "units" : [
       {
-        "id": "089D1753-0749-4281-9D4D-836D0FD02F6D",
-        "datasheetID": "thousand-sons--tzaangor-shaman",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "E503A3A7-9521-48E9-824A-DF96C20F5918",
+        "datasheetID" : "thousand-sons--tzaangor-shaman",
+        "enhancementIDs" : [
           "thousand-sons--ritual-of-regeneration--eruption-of-vitality"
         ],
-        "attachedToUnitID": "5912C8C9-8A75-4920-8F9E-4CCD3D460F2F"
+        "id" : "618C96C4-71C9-4E6F-8ECC-8FBEDF17E1A2",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1C2DF641-9261-4978-B115-87D1A41FAB18",
-        "datasheetID": "thousand-sons--pink-horrors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--heldrake",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9FD97697-6817-4E94-B421-6573413EBD55",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9CAA2BA9-F250-4BDC-804E-CD06B2D15BAB",
-        "datasheetID": "thousand-sons--screamers",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--tzaangor-enlightened",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E503A3A7-9521-48E9-824A-DF96C20F5918",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "080D35DA-2D09-40E9-AC51-4919B071FC47",
-        "datasheetID": "thousand-sons--heldrake",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--forgefiend",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9BCB801B-A95D-4EEE-80AF-DC3F062033AD",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1FD439E9-0BD7-47AA-A551-BC267B928D33",
-        "datasheetID": "thousand-sons--forgefiend",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--chaos-land-raider",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "418EFBB4-8038-4C51-AE40-9FB37AC2B0EC",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "395D8366-E6B9-4CA1-AB80-01A0F64EAD96",
-        "datasheetID": "thousand-sons--helbrute",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--chaos-spawn",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "57E5FABB-D40C-4079-8C79-83D20EECB727",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5912C8C9-8A75-4920-8F9E-4CCD3D460F2F",
-        "datasheetID": "thousand-sons--tzaangor-enlightened",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--rubric-marines",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5D068563-EE29-44D6-9A41-ABCCEFCEC3DE",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "83835FD5-F5F1-4CDB-BA59-E3CFC946BEFC",
-        "datasheetID": "thousand-sons--mutalith-vortex-beast",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--pink-horrors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D322E8B0-9592-47C0-98CC-E32A9D23B4F6",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D89DD74F-641D-4D75-B71C-80E840565104",
-        "datasheetID": "thousand-sons--chaos-predator-destructor",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--chaos-predator-destructor",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "39C84276-4C92-449A-8679-3E6070D48A02",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "45353831-8486-4046-8795-8141808F0FDB",
-        "datasheetID": "thousand-sons--chaos-spawn",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--scarab-occult-terminators",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0F408321-D8A5-4025-A4B3-94BDA96601EE",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A02B21E0-3248-46B6-A052-3929912C1E16",
-        "datasheetID": "thousand-sons--pink-horrors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--blue-horrors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D5EFB556-98A1-40F2-B2D3-EE5254A22679",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EAAA3FD3-5118-4BEE-AEF8-9D17887D8902",
-        "datasheetID": "thousand-sons--sekhetar-robots",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--screamers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0BB93AF8-C75C-4B46-B0FB-85BB576F97C9",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "C21A4E64-CB4B-4068-832E-D0D5ABA1FAC0",
-        "datasheetID": "thousand-sons--tzaangor-enlightened-with-fatecaster-greatbows",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--maulerfiend",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "31593951-6A0D-454B-9EFC-D82F74C891E9",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D4F620B4-267E-430F-BA46-D9EACF974DE2",
-        "datasheetID": "thousand-sons--chaos-predator-annihilator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--pink-horrors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C7C96CFE-3824-4F02-BC30-0C3670297EEB",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1EEE8B80-DC30-46E1-8BA0-86AFDC3F8A43",
-        "datasheetID": "thousand-sons--rubric-marines",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "D4F7C9D6-6C94-42C4-856B-48E9926771F9",
-        "datasheetID": "thousand-sons--maulerfiend",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "2A1F45AB-2EDC-43F9-BA1C-C77666C73CC6",
-        "datasheetID": "thousand-sons--blue-horrors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "thousand-sons--sekhetar-robots",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4DA01DDF-78D3-47A8-8A60-8C134D5C5B84",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "089D1753-0749-4281-9D4D-836D0FD02F6D",
-    "notes": "stress seed=39 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "618C96C4-71C9-4E6F-8ECC-8FBEDF17E1A2"
+  },
+  "notes" : "auto-built"
 }

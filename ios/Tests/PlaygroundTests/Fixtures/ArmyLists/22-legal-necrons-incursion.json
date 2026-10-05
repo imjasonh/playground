@@ -1,76 +1,132 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "BF0DF1A0-2341-4E9A-8017-3AB92CA3B9A4",
-    "name": "Necrons Incursion 940pts",
-    "catalogVersion": "11e-1",
-    "factionID": "necrons",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
-      "necrons--hand-of-the-dynasty"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "necrons--hand-of-the-dynasty",
+      "necrons--the-phaeron-s-armoury"
     ],
-    "units": [
+    "factionID" : "necrons",
+    "id" : "621AD875-C7B5-48AE-BB41-1D5F5CB1CD57",
+    "name" : "Necrons Incursion 910pts",
+    "notes" : "stress seed=21 attach=true enh=true",
+    "units" : [
       {
-        "id": "76DD22A0-7B80-4CA5-8A97-4481ED576FD0",
-        "datasheetID": "necrons--royal-warden",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "attachedToUnitID" : "64AF98A3-3CA8-4154-9570-0D4655586326",
+        "datasheetID" : "necrons--royal-warden",
+        "enhancementIDs" : [
+          "necrons--the-phaeron-s-armoury--prelocational-optimiser"
+        ],
+        "id" : "379B1362-429E-4B39-AC91-75A27B5C284C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "54DDA950-4921-408E-AAA4-488C196669F7",
-        "datasheetID": "necrons--annihilation-barge",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--immortals",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "64AF98A3-3CA8-4154-9570-0D4655586326",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0A6C7357-2120-40CC-9E82-7978F4F2B8EE",
-        "datasheetID": "necrons--canoptek-reanimator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--tomb-citadel-walls",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "32B5EFBD-2D66-46B9-8BA7-209C5DDFFBB6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E713D1A3-1B4F-48DD-81FB-64989A4F2A7B",
-        "datasheetID": "necrons--lokhust-destroyers",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--sentry-pylons",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B0332292-693F-415A-B165-17FD3D900829",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "46B1D13D-FD53-42F6-B770-8536FF84EACF",
-        "datasheetID": "necrons--skorpekh-destroyers",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--canoptek-tomb-crawlers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5E7AF4F9-B2FB-4EB4-8724-64599B32F914",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DFFB739A-3453-48E7-BE09-FB1566BE558F",
-        "datasheetID": "necrons--flayed-ones",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--convergence-of-dominion",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BC644CBB-83D0-4F02-8DF9-D2437D979C23",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B9CA6A8E-50A5-4D9D-86EA-F1F47FB1184F",
-        "datasheetID": "necrons--seraptek-heavy-construct",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--annihilation-barge",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4A3A3466-AE0C-4C94-83F5-2AC51184A893",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "necrons--cryptothralls",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "888ED876-3478-4BDB-A985-EEA7714C6AE0",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "necrons--canoptek-reanimator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F620F9F5-D3FD-45BD-BFD5-520B5028C9D1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "necrons--lokhust-heavy-destroyers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "14BD04E7-4782-4DF7-8528-46F2A6BCD020",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "76DD22A0-7B80-4CA5-8A97-4481ED576FD0",
-    "notes": "stress seed=21 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "379B1362-429E-4B39-AC91-75A27B5C284C"
+  },
+  "notes" : "auto-built"
 }
