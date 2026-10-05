@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -396,6 +397,20 @@ func TestLeavingTheQueue(t *testing.T) {
 		},
 		state: reasonWaitingForChecks,
 	}, {
+		name: "the branch diverges",
+		edit: func(f *fixture, b *gitk8s.GitBranch) {
+			head := b.Spec.Head
+			f.work.Write("x.txt", "fixed\n")
+			b.Spec.Head = f.work.Commit("Fix x\n\n" + git.FixerTrailer + ": gofmt")
+			f.pushToMirror("c/x")
+			f.work.Branch("person", head)
+			f.work.Write("person.txt", "person\n")
+			f.work.Commit("a person's change")
+			f.work.Push("c/x")
+			f.fetch()
+		},
+		state: reasonDiverged,
+	}, {
 		name: "a check fails",
 		edit: func(_ *fixture, b *gitk8s.GitBranch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
@@ -435,6 +450,45 @@ func TestLeavingTheQueue(t *testing.T) {
 				t.Errorf("main moved to %s", got)
 			}
 		})
+	}
+}
+
+// TestKeepingThePlaceThroughAnError checks that a branch keeps its place in
+// its parent's queue when its reconcile fails, since kube writes the status
+// of a failed reconcile too, and that it lands once the error passes.
+func TestKeepingThePlaceThroughAnError(t *testing.T) {
+	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	f, b, _ := branches(t)
+	b.Status.Queued = &gitk8s.Queued{Since: since, Head: b.Spec.Head, Position: 1}
+	main := b.Spec.ParentHead
+	results := b.Status.Checks
+	// The mirror keeps its copy open, so the next read of the copy fails
+	// once its directory is gone.
+	moved := f.copyDir() + ".moved"
+	if err := os.Rename(f.copyDir(), moved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.merge(b); err == nil {
+		t.Fatal("merge succeeded without the mirror's copy")
+	}
+	if q := b.Status.Queued; q == nil || !q.Since.Equal(since) || q.Head != b.Spec.Head || q.Position != 1 {
+		t.Fatalf("queued = %+v, want its place at the front, at head %s", q, gitk8s.Short(b.Spec.Head))
+	}
+
+	if err := os.Rename(moved, f.copyDir()); err != nil {
+		t.Fatal(err)
+	}
+	// The merge controller leaves the checks' results out of its status
+	// write, so the next reconcile still reads them.
+	b.Status.Checks = results
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	if b.Status.State != reasonLanded {
+		t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+	}
+	if got := f.mirrorHeads()["main"]; got == main {
+		t.Errorf("main is still at %s", gitk8s.Short(main))
 	}
 }
 

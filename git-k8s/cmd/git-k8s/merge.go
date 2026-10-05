@@ -47,15 +47,17 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	if err != nil {
 		return err
 	}
-	queued := b.Status.Queued
-	b.Status.Queued = nil
 
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
 	diverged, err := m.diverged(ctx, repo, b.Spec.Branch)
 	if err != nil {
+		// kube writes the status of a failed reconcile too, so b keeps its
+		// place in the queue.
 		return err
 	}
 	b.Status.Diverged = diverged
+	queued := b.Status.Queued
+	b.Status.Queued = nil
 
 	spec := &b.Spec
 	switch {

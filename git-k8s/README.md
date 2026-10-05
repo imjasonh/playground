@@ -1930,6 +1930,8 @@ A branch leaves the queue when one of these happens:
   branch's place, including the `base` check's merge of the parent. The
   merge controller trusts the trailer, so a person who adds it to a commit
   keeps the branch's place, but the checks still run on the new head.
+- It changes both in the mirror and in the external repository, so it
+  [diverges](#divergence).
 - Its checks finish without its gate passing, such as a test that fails
   after the merge of the parent. At the front, it leaves sooner, as soon
   as the `base` check fails or the gate fails with its unfinished checks
@@ -1941,7 +1943,10 @@ A branch leaves the queue when one of these happens:
 - Its parent goes away, or the parent's merge policy goes away or can't be
   evaluated.
 
-A branch that leaves joins at the back when its gate passes again.
+A branch that leaves joins at the back when its gate passes again. A
+reconcile that fails, such as one in which the mirror can't read its copy
+of the repository, doesn't take a branch out of the queue. The branch keeps
+its place while kube tries the reconcile again.
 
 Three choices shape the queue:
 
