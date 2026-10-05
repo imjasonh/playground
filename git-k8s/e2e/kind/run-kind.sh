@@ -193,22 +193,28 @@ crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; 
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
-# the admission policies in config/policy.yaml.
+# the objects in config/policy.yaml.
 generate git-k8s >"${WORKDIR}/git-k8s.yaml"
 k apply -f "${WORKDIR}/git-k8s.yaml"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+# policies_applied passes once each object in config/policy.yaml has the label
+# that the core program sets when it applies them with the permissions that
+# generate grants it.
 policies_applied() {
-  [[ "$(k get validatingadmissionpolicies,validatingadmissionpolicybindings \
-    -l kube.imjasonh.github.io/managed-by=git-k8s -o name | wc -l)" -eq 4 ]] &&
-    [[ -n "$(k -n git-k8s get configmaps -l kube.imjasonh.github.io/managed-by=git-k8s -o name)" ]]
+  local owners
+  owners="$(k get -f "${ROOT}/config/policy.yaml" \
+    -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.labels.kube\.imjasonh\.github\.io/managed-by}{"\n"}{end}')" &&
+    [[ -n "${owners}" ]] && ! grep -vq ' git-k8s$' <<<"${owners}"
 }
 eventually 60 policies_applied
-k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels
-# generate grants the permissions to install the policies only to a program
-# that installs them.
-grep -q git-k8s-check-results "${WORKDIR}/git-k8s.yaml"
+k get -f "${ROOT}/config/policy.yaml" --show-labels
+# generate grants those permissions by name, and only to a program that
+# installs the objects.
+[[ "$(k auth can-i patch validatingadmissionpolicies.admissionregistration.k8s.io/other \
+  --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
+policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
 generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
-if grep -E 'configmaps|git-k8s-check-results' "${WORKDIR}/git-k8s-without-policies.yaml"; then
+if grep -F -e configmaps -e "${policy_names}" "${WORKDIR}/git-k8s-without-policies.yaml"; then
   echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
   exit 1
 fi
