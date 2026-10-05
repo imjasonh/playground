@@ -122,6 +122,7 @@ type MergePolicy struct {
 	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
 	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward|Squash|Rebase,default=FastForward" doc:"How to land a branch, which must contain the parent's head. FastForward moves the parent to the branch's head. Squash makes one commit with the head's files on top of the parent's head, and Rebase copies each of the branch's commits that isn't a merge onto it. The squashed commit, or the last rebased commit, has the files that the checks saw and builds on the parent head that they saw, so results with filesOnly count for it. When the gate needs other results, the merge controller moves the branch to the new commits for the checks to run on."`
 	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer of the branch's commits that the parent doesn't have. The limit stops two checks that disagree from pushing forever. A squashed commit that the merge controller moves the branch to leaves out the fixes before it, so the count starts again after it. The merge controller doesn't squash the fixes after its own commit again."`
+	MaxAgentRuns        *int32        `json:"maxAgentRuns,omitempty" kube:"min=0,max=1000,default=10" doc:"Most agent runs that each agentic check, such as review, can start on one branch. Each new head needs a run, so the limit caps the runs that one branch can start, not what they cost."`
 	// DeleteMergedBranches deletes a branch after it lands.
 	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch after it lands."`
 }
@@ -146,6 +147,14 @@ func (p *MergePolicy) MaxCommits() int {
 		return 5
 	}
 	return int(*p.MaxAutomatedCommits)
+}
+
+// MaxRuns returns MaxAgentRuns, or its default of 10 when unset.
+func (p *MergePolicy) MaxRuns() int {
+	if p == nil || p.MaxAgentRuns == nil {
+		return 10
+	}
+	return int(*p.MaxAgentRuns)
 }
 
 // Landing methods, the values of MergePolicy.Landing.

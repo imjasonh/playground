@@ -1,6 +1,8 @@
 package main
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -13,7 +15,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -47,15 +51,21 @@ func named(b *Branch, attempt int) {
 	}}
 }
 
-// reconcileWith runs the check with world holding the Pods that exist.
+// reconcileWith runs a new check with world holding the Pods that exist.
 func reconcileWith(t *testing.T, b *Branch, repo *gitk8s.GitRepository, pods ...*Pod) *kube.Recorder {
 	t.Helper()
 	world := []any{repo}
 	for _, p := range pods {
 		world = append(world, p)
 	}
+	return reconcileIn(t, checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{}), b, world...)
+}
+
+// reconcileIn runs r on b with world holding the objects that exist.
+func reconcileIn(t *testing.T, r kube.Reconciler[Branch], b *Branch, world ...any) *kube.Recorder {
+	t.Helper()
 	ctx, rec := kube.Fake(t.Context(), b, world...)
-	if err := checks.NewReconciler[Branch](check, &checks.Config{}).Reconcile(ctx, b); err != nil {
+	if err := r.Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	return rec
@@ -196,6 +206,14 @@ func TestWaitsForAPlaceToRun(t *testing.T) {
 	if res.State != gitk8s.Running || !strings.Contains(res.Message, "-max-pods is 2") || rec.RequeueAfter() == 0 {
 		t.Fatalf("result = %+v, RequeueAfter = %v; want Running, waiting, and a requeue", res, rec.RequeueAfter())
 	}
+	since := res.Outputs["waiting"]
+	if _, err := time.Parse(time.RFC3339, since); err != nil {
+		t.Fatalf("outputs.waiting = %q, want when the branch started waiting", since)
+	}
+	reconcileWith(t, b, repo, others...)
+	if got := b.Status.Checks.Result.Outputs["waiting"]; got != since {
+		t.Errorf("outputs.waiting = %q after another reconcile, want %q", got, since)
+	}
 
 	t.Log("A finished Pod doesn't take a place.")
 	others[1].Status.Phase = "Succeeded"
@@ -210,6 +228,366 @@ func TestWaitsForAPlaceToRun(t *testing.T) {
 	rec = reconcileWith(t, b, repo, append(others, mine)...)
 	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != mine.Name {
 		t.Fatalf("owned Pods = %+v, want the branch's running Pod", pods)
+	}
+}
+
+func TestCountsOnlyTestPods(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	b, repo := branch()
+	named(b, 1)
+	// generate labels the check's own Pods like this.
+	self := &Pod{Object: kube.Meta("check-gotest-5d8f7c9b4-x2x7q", map[string]string{"app.kubernetes.io/name": "check-gotest"})}
+	self.Namespace = "check-gotest"
+	self.Status.Phase = "Running"
+	if pods := kube.Owned[Pod](reconcileWith(t, b, repo, self)); len(pods) != 1 {
+		t.Errorf("owned Pods = %+v, want a test Pod while only the check's own Pod runs", pods)
+	}
+}
+
+// waitingBranch returns a branch named name that has waited since the given
+// time to start its Pod.
+func waitingBranch(name string, since time.Time) *Branch {
+	b, _ := branch()
+	b.Name = name
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: head, State: gitk8s.Running, Outputs: map[string]string{
+		"pod": podName(name, head, 1), "attempt": "1", "waiting": since.UTC().Format(waitingLayout),
+	}}
+	return b
+}
+
+// startedIn reconciles each branch with r, in a world that holds repo, the
+// branches, and pods, and returns the branches that declared a Pod that
+// isn't in pods.
+func startedIn(t *testing.T, r kube.Reconciler[Branch], repo *gitk8s.GitRepository, branches []*Branch, pods []*Pod) []string {
+	t.Helper()
+	var started []string
+	for _, b := range branches {
+		world := []any{repo}
+		for _, o := range branches {
+			world = append(world, o)
+		}
+		for _, p := range pods {
+			world = append(world, p)
+		}
+		for _, p := range kube.Owned[Pod](reconcileIn(t, r, b, world...)) {
+			if !slices.ContainsFunc(pods, func(o *Pod) bool { return o.Name == p.Name }) {
+				started = append(started, b.Name)
+			}
+		}
+	}
+	return started
+}
+
+func TestStartsTheBranchThatHasWaitedLongest(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	_, repo := branch()
+	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	// The names sort differently from the order that the branches started
+	// waiting, and app-c-x hasn't started waiting yet.
+	newcomer, _ := branch()
+	branches := []*Branch{
+		waitingBranch("app-c-a", start.Add(2*time.Second)),
+		waitingBranch("app-c-b", start),
+		waitingBranch("app-c-c", start.Add(time.Second)),
+		newcomer,
+	}
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	var pods []*Pod
+	for i, next := range []string{"app-c-b", "app-c-c", "app-c-a", "app-c-x"} {
+		if i == 1 {
+			t.Log("A restarted check finds the order in the branches' statuses.")
+			r = checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		}
+		if got := startedIn(t, r, repo, branches, pods); !slices.Equal(got, []string{next}) {
+			t.Fatalf("started %v, want only %s", got, next)
+		}
+		if i == 0 && newcomer.Status.Checks.Result.Outputs["waiting"] == "" {
+			t.Fatalf("result = %+v, want app-c-x to record when it started waiting", newcomer.Status.Checks.Result)
+		}
+		p := runningPod("default", podName(next, head, 1))
+		pods = append(pods, p)
+		if got := startedIn(t, r, repo, branches, pods); len(got) != 0 {
+			t.Fatalf("started %v while the Pod of %s runs", got, next)
+		}
+		p.Status.Phase = "Succeeded"
+	}
+}
+
+func TestBreaksTiesByName(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	_, repo := branch()
+	since := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	branches := []*Branch{waitingBranch("app-c-b", since), waitingBranch("app-c-a", since)}
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	if got := startedIn(t, r, repo, branches, nil); !slices.Equal(got, []string{"app-c-a"}) {
+		t.Errorf("started %v, want only app-c-a", got)
+	}
+}
+
+func TestKeepsTheLimitInABurst(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 3
+	_, repo := branch()
+	var branches []*Branch
+	for i := range 10 {
+		b, _ := branch()
+		b.Name = fmt.Sprintf("app-c-%d", i)
+		branches = append(branches, b)
+	}
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	// burst reconciles every branch at once, as kube's workers do, in a
+	// world that holds pods. It returns the Pod that each branch declared.
+	burst := func(pods ...*Pod) map[string]string {
+		t.Helper()
+		world := []any{repo}
+		for _, b := range branches {
+			world = append(world, b)
+		}
+		for _, p := range pods {
+			world = append(world, p)
+		}
+		copies := make([]Branch, len(branches))
+		owned := make([][]*Pod, len(branches))
+		var wg sync.WaitGroup
+		for i, b := range branches {
+			copies[i] = *b
+			wg.Go(func() {
+				ctx, rec := kube.Fake(t.Context(), &copies[i], world...)
+				if err := r.Reconcile(ctx, &copies[i]); err != nil {
+					t.Error(err)
+				}
+				owned[i] = kube.Owned[Pod](rec)
+			})
+		}
+		wg.Wait()
+		declared := map[string]string{}
+		for i, b := range branches {
+			b.Status = copies[i].Status
+			if len(owned[i]) == 1 {
+				declared[b.Name] = owned[i][0].Name
+			}
+		}
+		return declared
+	}
+
+	t.Log("Three branches take places, and name their Pods before they start them.")
+	if got := burst(); len(got) != 0 {
+		t.Fatalf("declared Pods = %v, want none until the results name them", got)
+	}
+	first := burst()
+	if len(first) != 3 {
+		t.Fatalf("declared Pods = %v, want 3", first)
+	}
+
+	t.Log("The branches that started keep their Pods while the cache doesn't show them, and no other branch starts.")
+	if got := burst(); !maps.Equal(got, first) {
+		t.Fatalf("declared Pods = %v, want %v", got, first)
+	}
+
+	t.Log("The cache shows the Pods, and one has finished, so the branch that has waited longest starts.")
+	var pods []*Pod
+	for _, name := range slices.Sorted(maps.Values(first)) {
+		pods = append(pods, runningPod("default", name))
+	}
+	pods[0].Status.Phase = "Succeeded"
+	var waiters []*Branch
+	for _, b := range branches {
+		if _, ok := first[b.Name]; !ok {
+			waiters = append(waiters, b)
+		}
+	}
+	longest := slices.MinFunc(waiters, func(a, b *Branch) int {
+		wa, wb := a.Status.Checks.Result.Outputs["waiting"], b.Status.Checks.Result.Outputs["waiting"]
+		return cmp.Or(strings.Compare(wa, wb), strings.Compare(a.Name, b.Name))
+	})
+	got := burst(pods...)
+	for name, pod := range first {
+		if got[name] != pod {
+			t.Errorf("%s declared %q, want its Pod %s", name, got[name], pod)
+		}
+		delete(got, name)
+	}
+	if want := map[string]string{longest.Name: podName(longest.Name, head, 1)}; !maps.Equal(got, want) {
+		t.Errorf("newly declared Pods = %v, want %v", got, want)
+	}
+}
+
+func TestStopsCountingAPodThatNeverAppears(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		defer func(n int) { *maxPods = n }(*maxPods)
+		*maxPods = 1
+		_, repo := branch()
+		first, second := waitingBranch("app-c-a", time.Now()), waitingBranch("app-c-b", time.Now().Add(time.Second))
+		r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, repo, first, second)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-a's Pod", pods)
+		}
+		rec := reconcileIn(t, r, second, repo, first, second)
+		if pods := kube.Owned[Pod](rec); len(pods) != 0 {
+			t.Fatalf("owned Pods = %+v, want none while app-c-a's Pod may be on its way", pods)
+		}
+		if rec.RequeueAfter() == 0 || rec.RequeueAfter() > declaredFor {
+			t.Errorf("RequeueAfter = %v, want at most %v, to start once app-c-a's Pod stops counting", rec.RequeueAfter(), declaredFor)
+		}
+
+		t.Log("The API server never creates app-c-a's Pod.")
+		time.Sleep(declaredFor)
+		// app-c-a goes first, while the check still holds its expired entry.
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, repo, first, second)); len(pods) != 1 {
+			t.Errorf("owned Pods = %+v, want app-c-a, which has waited longest, to take the free place again", pods)
+		}
+		if pods := kube.Owned[Pod](reconcileIn(t, r, second, repo, first, second)); len(pods) != 0 {
+			t.Errorf("owned Pods = %+v, want none while app-c-a's Pod may be on its way again", pods)
+		}
+	})
+}
+
+func TestKeepsItsPlaceWhenThePodIsRefused(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		defer func(n int) { *maxPods = n }(*maxPods)
+		*maxPods = 1
+		_, repo := branch()
+		start := time.Now()
+		first := waitingBranch("app-c-a", start)
+		second := waitingBranch("app-c-b", start.Add(time.Second))
+		third := waitingBranch("app-c-c", start.Add(2*time.Second))
+		since := first.Status.Checks.Result.Outputs["waiting"]
+		world := func(objs ...any) []any { return append([]any{repo, first, second, third}, objs...) }
+		r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, world()...)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-a's Pod", pods)
+		}
+
+		t.Log("The check Pod policy denies app-c-a's Pod, and kube tries again with backoff.")
+		denied := errors.New(`pods "` + podName("app-c-a", head, 1) + `" is forbidden: ` +
+			`ValidatingAdmissionPolicy 'git-k8s-check-pods' with binding 'git-k8s-check-pods' denied request (422 Invalid)`)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, world(denied)...)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-a to declare its Pod again", pods)
+		}
+		if pods := kube.Owned[Pod](reconcileIn(t, r, second, world()...)); len(pods) != 0 {
+			t.Fatalf("owned Pods = %+v, want app-c-b to wait while app-c-a's Pod may be on its way", pods)
+		}
+
+		t.Log("After a minute, app-c-a's Pod stops counting, so app-c-b doesn't wait out the backoff.")
+		time.Sleep(declaredFor)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, second, world()...)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-b's Pod", pods)
+		}
+		running := runningPod("default", podName("app-c-b", head, 1))
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, world(running, denied)...)); len(pods) != 0 {
+			t.Fatalf("owned Pods = %+v, want app-c-a to wait while app-c-b's Pod runs", pods)
+		}
+		if got := first.Status.Checks.Result.Outputs["waiting"]; got != since {
+			t.Errorf("outputs.waiting = %q, want %q, when app-c-a first started waiting", got, since)
+		}
+
+		t.Log("Someone labels the namespace, and app-c-b's Pod finishes.")
+		running.Status.Phase = "Succeeded"
+		if got := startedIn(t, r, repo, []*Branch{third, first, second}, []*Pod{running}); !slices.Equal(got, []string{"app-c-a"}) {
+			t.Errorf("started %v, want only app-c-a, which started waiting before app-c-c", got)
+		}
+		reconcileIn(t, r, first, world(running, runningPod("default", podName("app-c-a", head, 1)))...)
+		if outputs := first.Status.Checks.Result.Outputs; outputs["waiting"] != "" || outputs["queued"] != "" {
+			t.Errorf("outputs = %v, want no wait recorded once app-c-a's Pod exists", outputs)
+		}
+	})
+}
+
+func TestStopsCountingAPodThatTheCacheShowed(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	b, repo := branch()
+	next, _ := branch()
+	next.Name = "app-c-y"
+	named(b, 1)
+	named(next, 1)
+	for _, sees := range []*Branch{b, next} {
+		r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		if pods := kube.Owned[Pod](reconcileIn(t, r, b, repo)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-x's Pod", pods)
+		}
+		reconcileIn(t, r, sees, repo, b, next, runningPod("default", podName(b.Name, head, 1)))
+
+		t.Logf("%s saw the Pod. The Pod finishes, and kube deletes it.", sees.Name)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, next, repo, b)); len(pods) != 1 {
+			t.Errorf("owned Pods = %+v, want app-c-y's Pod", pods)
+		}
+	}
+}
+
+func TestCountsAStartedBranchOnce(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 2
+	_, repo := branch()
+	early := time.Now().Add(-time.Hour)
+	// stale is app-c-a as the cache shows it until the cache catches up with
+	// the status that says app-c-a started.
+	stale := waitingBranch("app-c-a", early)
+	for _, c := range []struct {
+		when string
+		pods []any
+	}{
+		{"before the cache shows app-c-a's Pod", nil},
+		{"once the cache shows app-c-a's Pod", []any{runningPod("default", podName("app-c-a", head, 1))}},
+	} {
+		r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		reconcileIn(t, r, waitingBranch("app-c-a", early), repo)
+		next := waitingBranch("app-c-b", early.Add(time.Second))
+		if pods := kube.Owned[Pod](reconcileIn(t, r, next, append([]any{repo, stale}, c.pods...)...)); len(pods) != 1 {
+			t.Errorf("%s, owned Pods = %+v, want app-c-b's Pod", c.when, pods)
+		}
+	}
+}
+
+func TestIgnoresBranchesThatNoLongerWait(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	_, repo := branch()
+	early := time.Now().Add(-time.Hour)
+	b, _ := branch()
+	named(b, 1)
+	rec := reconcileIn(t, checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{}), b, repo, waitingBranch("app-c-a", early))
+	if pods := kube.Owned[Pod](rec); len(pods) != 0 {
+		t.Fatalf("owned Pods = %+v, want app-c-x to wait behind app-c-a", pods)
+	}
+	for _, c := range []struct {
+		why    string
+		change func(*Branch)
+	}{
+		{"moved to a new head, which waits from the start", func(b *Branch) { b.Spec.Head = strings.Repeat("1", 40) }},
+		{"has no parent head", func(b *Branch) { b.Spec.ParentHead = "" }},
+		{"no longer runs the check", func(b *Branch) { b.Spec.Merge = nil }},
+		{"is being deleted", func(b *Branch) { b.DeletionTimestamp = &early }},
+		{"belongs to a GitRepository that's gone", func(b *Branch) { b.Spec.Repository = "gone" }},
+	} {
+		stale := waitingBranch("app-c-a", early)
+		c.change(stale)
+		b, _ := branch()
+		named(b, 1)
+		rec := reconcileIn(t, checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{}), b, repo, stale)
+		if pods := kube.Owned[Pod](rec); len(pods) != 1 {
+			t.Errorf("owned Pods = %+v; a branch that %s kept app-c-x waiting", pods, c.why)
+		}
+	}
+}
+
+func TestKeepsItsPlaceWhileItNamesThePod(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	b, repo := branch()
+	reconcileWith(t, b, repo)
+	since := b.Status.Checks.Result.Outputs["queued"]
+	if _, err := time.Parse(time.RFC3339, since); err != nil {
+		t.Fatalf("outputs.queued = %q, want when the branch took a place", since)
+	}
+
+	t.Log("The check restarts, and another branch's Pod takes the place first.")
+	reconcileWith(t, b, repo, runningPod("default", podName("app-c-y", head, 1)))
+	if got := b.Status.Checks.Result.Outputs["waiting"]; got != since {
+		t.Errorf("outputs.waiting = %q, want %q, when the branch took its place", got, since)
 	}
 }
 

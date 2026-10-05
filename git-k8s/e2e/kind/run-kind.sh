@@ -49,6 +49,7 @@ diagnose() {
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
   k -n "${NS}" get pods,networkpolicies -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
+  k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
   for program in git-k8s "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
     k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
@@ -197,7 +198,7 @@ for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1
       ;;
     *) install "${program}" ;;
   esac
@@ -1143,6 +1144,91 @@ k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type
 echo "A Pending Pod that a gotest result names fetched with check-gotest's label, and not with another check's label, without the label, or while it was being deleted. A running Pod that the result named couldn't fetch, and neither could the same service account's token without a Pod."
 echo "::endgroup::"
 
+echo "::group::A burst of branches takes turns under -max-pods=1"
+# Each branch's test sleeps, so Pods that ran at once would overlap. The
+# branches start from main's parent, so they pass without landing.
+# c/burst-a sorts first, but it's pushed after the others are waiting.
+burst=(c/burst-b c/burst-c c/burst-d)
+for b in "${burst[@]}" c/burst-a; do
+  t checkout -q -b "${b}" "${tested_main}"
+  cat >"${TESTED}/slow_test.go" <<'GO'
+package tested
+
+import (
+	"testing"
+	"time"
+)
+
+func TestSlow(t *testing.T) { time.Sleep(5 * time.Second) }
+GO
+  t add slow_test.go
+  t commit -qm "Test slowly on ${b}"
+done
+# burst_results prints each tested branch's name, head, and gotest commit,
+# state, and waiting time.
+burst_results() {
+  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.outputs.waiting}{"\n"}{end}'
+}
+burst_checked() { [[ "$(burst_results | awk -F'|' '$1 ~ /^c\/burst-[bcd]$/ && $2 == $3' | wc -l)" -eq 3 ]]; }
+t push -q "${HOST_URL}/tested.git" "${burst[@]}"
+eventually 120 burst_checked
+t push -q "${HOST_URL}/tested.git" c/burst-a
+
+declare -A waited=() finished=()
+order=()
+most=0
+deadline=$((SECONDS + 600))
+while ((${#finished[@]} < 4)); do
+  if ((SECONDS >= deadline)); then
+    echo "timed out; started: ${order[*]}" >&2
+    exit 1
+  fi
+  running="$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest \
+    -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -cvE '^(Succeeded|Failed)$' || true)"
+  if ((running > most)); then
+    most=${running}
+  fi
+  while IFS='|' read -r branch head commit state since; do
+    if [[ "${branch}" != c/burst-* || "${commit}" != "${head}" ]]; then
+      continue
+    fi
+    if [[ -n "${since}" ]]; then
+      waited[${branch}]=${since}
+    elif [[ " ${order[*]} " != *" ${branch} "* ]]; then
+      order+=("${branch}")
+    fi
+    if [[ "${state}" == Passed || "${state}" == Failed ]]; then
+      finished[${branch}]=${state}
+    fi
+  done < <(burst_results)
+  sleep 1
+done
+for b in "${order[@]}"; do
+  echo "${b} started after waiting since ${waited[${b}]:-never}, and ${finished[${b}]}"
+done
+echo "Most test Pods running at once: ${most}"
+((most == 1))
+for b in "${order[@]}"; do
+  [[ "${finished[${b}]}" == Passed ]]
+done
+# Only the first branch found a free place. The others started in the order
+# that they started waiting, which put c/burst-a last.
+[[ ${#order[@]} -eq 4 && -z "${waited[${order[0]}]:-}" ]]
+for b in "${order[@]:1}"; do
+  [[ -n "${waited[${b}]:-}" ]]
+done
+by_wait="$(for b in "${order[@]:1}"; do echo "${waited[${b}]} ${b}"; done | LC_ALL=C sort | cut -d' ' -f2 | paste -sd' ')"
+[[ "${by_wait}" == "${order[*]:1}" && "${order[3]}" == c/burst-a ]]
+t push -q --delete "${HOST_URL}/tested.git" "${burst[@]}" c/burst-a
+burst_gone() {
+  local results
+  results="$(burst_results)" && [[ "${results}" != *c/burst-* ]]
+}
+eventually 60 burst_gone
+eventually 60 no_test_pods
+echo "Four branches ran one at a time, in the order that they started waiting."
+echo "::endgroup::"
+
 echo "::group::A check can change only its own Pods"
 gotest_token="$(k -n check-gotest create token check-gotest)"
 # pod_request sends request $1 for the Pods path $2 under
@@ -1220,6 +1306,100 @@ code="$(pod_request DELETE "${NS}/pods/other")"
 grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
 k -n "${NS}" delete pod other
 echo "check-gotest can't run Pods in a program's namespace, as another service account, in a namespace that doesn't opt in, on a node that it names, or under another check's Pod name, and can't change or delete a Pod that it didn't create."
+echo "::endgroup::"
+
+echo "::group::An agent reviews branches in sandboxed Pods"
+# The fake backend fails added lines that hold DO NOT MERGE and deletes them
+# when the check may push, so the test needs no Cursor API key.
+AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
+docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
+docker push -q "${AGENT_IMAGE}"
+docker rmi "${AGENT_IMAGE}" >/dev/null || true
+AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
+CHECKS+=(check-review)
+install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+k -n check-review rollout status deployment/check-review --timeout=180s
+REVIEWED="${WORKDIR}/reviewed"
+git init -q -b main "${REVIEWED}"
+rv() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${REVIEWED}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+printf 'Notes\n' >"${REVIEWED}/notes.txt"
+rv add -A
+rv commit -qm "Add notes"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:main HEAD:draft
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: reviewed
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/reviewed.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: review
+            mayPush: true
+        deleteMergedBranches: true
+    - match: c/**
+      parent: main
+    - match: draft
+      merge:
+        checks:
+          - name: review
+        maxAgentRuns: 1
+    - match: d/**
+      parent: draft
+EOF
+review() { k -n "${NS}" get gitbranch "$(branch_object "$1" reviewed)" -o jsonpath="{.status.checks.review.$2}"; }
+no_agent_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=git-k8s-agent -o name)" ]]; }
+
+rv checkout -q -b c/marked
+printf 'Notes\nDO NOT MERGE\nMore notes\n' >"${REVIEWED}/notes.txt"
+rv commit -qam "Add more notes"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:c/marked
+fixed_on_main() {
+  rv fetch -q "${HOST_URL}/reviewed.git" main &&
+    [[ "$(rv show FETCH_HEAD:notes.txt)" == "$(printf 'Notes\nMore notes')" ]]
+}
+eventually 300 fixed_on_main
+rv log -1 --format=%B FETCH_HEAD
+rv log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: review'
+marked_gone() { [[ -z "$(remote_head c/marked reviewed)" && -z "$(branch_object c/marked reviewed)" ]]; }
+eventually 60 marked_gone
+eventually 60 no_agent_pods
+
+rv checkout -q -b d/marked main
+printf 'Notes\nDO NOT MERGE\n' >"${REVIEWED}/notes.txt"
+rv commit -qam "Mark the notes"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:d/marked
+review_failed() { [[ -n "$(branch_object d/marked reviewed)" && "$(review d/marked state)" == Failed ]]; }
+eventually 300 review_failed
+k -n "${NS}" get gitbranch "$(branch_object d/marked reviewed)" -o jsonpath='{.status.checks.review}'
+echo
+[[ "$(review d/marked message)" == "The change adds DO NOT MERGE at notes.txt:2." ]]
+[[ "$(review d/marked outputs.summary)" == "1 added line holds DO NOT MERGE" ]]
+[[ "$(review d/marked outputs.model)" == fake:composer-2.5 ]]
+[[ "$(review d/marked outputs.inputTokens)" -gt 0 ]]
+[[ "$(review d/marked outputs.runs)" == 1 ]]
+eventually 60 no_agent_pods
+printf 'Notes\nDO NOT MERGE\nDO NOT MERGE EITHER\n' >"${REVIEWED}/notes.txt"
+rv commit -qam "Mark the notes again"
+marked_again="$(rv rev-parse HEAD)"
+rv push -q "${HOST_URL}/reviewed.git" HEAD:d/marked
+out_of_runs() { [[ "$(review d/marked commit)" == "${marked_again}" && "$(review d/marked state)" == Running ]]; }
+eventually 120 out_of_runs
+review d/marked message
+echo
+review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
+no_agent_pods
+echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
