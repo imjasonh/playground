@@ -108,6 +108,10 @@ func (s *Server) NewWork(t testing.TB, repo string) *Work {
 	}
 	w := &Work{t: t, Dir: t.TempDir(), remote: u.String()}
 	w.Git("init", "--quiet", "--initial-branch=main")
+	// Commands such as commit and fetch start automatic maintenance, which
+	// runs in the background and can still be writing to the repository
+	// when the test's cleanup removes it.
+	w.Git("config", "maintenance.auto", "false")
 	return w
 }
 
