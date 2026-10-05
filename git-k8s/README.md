@@ -730,10 +730,14 @@ defend against that as follows:
   while it's Pending, and write too. `generate` lets a check that runs Pods
   create them in every namespace, but the `git-k8s-check-pods` policy in
   `config/policy.yaml` keeps each check to Pods with its own label, so
-  another check's Pods can't write. They can read the build caches of a
-  namespace that opts in to test Pods, where they can already mount the
-  namespace's Secrets. Reads don't change what any Pod compiles.
-  Namespaces don't share build caches.
+  another check's Pods can't write. The policy skips service accounts whose
+  namespace and name don't start with `check-`. If a check runs as such an
+  account and can create Pods, give it a policy of its own, as
+  [Check service accounts](#check-service-accounts) says. Without one, its
+  Pods can have `check-gotest`'s label and write. Other checks' Pods can
+  read the build caches of a namespace that opts in to test Pods, where
+  they can already mount the namespace's Secrets. Reads don't change what
+  any Pod compiles. Namespaces don't share build caches.
 
 The design leaves these risks:
 
