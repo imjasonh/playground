@@ -510,6 +510,17 @@ waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
 
+An intent that fails, for example because an admission policy rejects an
+apply, fails the reconcile in the same way. The framework stops carrying out
+the intents, writes the status that `Reconcile` set, and retries with backoff.
+`Reconcile` returned before the write failed, so it can't report the error.
+The controller keeps each object's last error in memory, and `kube.LastError`
+returns it to the next reconcile, which can put it in the status. That matters
+for a status without a `Synced` condition, such as one entry in a status that
+several controllers share. The errors are kept by namespace and name, so if an
+object is deleted and recreated before the controller reconciles the deletion,
+the new object's first reconcile can get the old object's error.
+
 ### Finalizers and cleanup
 
 When a reconciler has a `Finalize` method, the framework adds a finalizer to
@@ -560,11 +571,12 @@ in a manager are divided into shards by an FNV hash of namespace and name, and
 each shard is a `coordination.k8s.io/v1` Lease with a 15-second duration,
 renewed every 2 seconds. A worker reconciles a key only while its replica
 holds the key's shard, and a replica that acquires a shard enqueues every
-cached key in it and forgets what it last wrote for them, because another
-replica may have reconciled them since. Leader election is the case of one
-shard. Candidates measure a lease's expiry from when they saw its holder or
-renew time change, on their own clock, so clock skew between replicas doesn't
-give a shard two holders.
+cached key in it and forgets what it last wrote for them. It also forgets
+every reconcile error that it kept for the shard, including deleted objects'
+errors, because another replica may have reconciled the shard's keys since.
+Leader election is the case of one shard. Candidates measure a lease's expiry
+from when they saw its holder or renew time change, on their own clock, so
+clock skew between replicas doesn't give a shard two holders.
 
 With more than one shard, each replica also renews a membership Lease, and
 every replica lists the manager's Leases each retry period. Each computes the
@@ -708,8 +720,9 @@ kind and the messages it contains at a time.
 Some fields differ between the two encodings. A struct that `encoding/json`
 inlines, such as a Volume's VolumeSource, is a nested message. Times,
 quantities, and int-or-string values are messages in protobuf but strings or
-numbers in JSON. A few lists, such as a user's extra values, are messages that
-wrap a repeated field. The decoder sets times and quantities directly, and
+numbers in JSON. The zero time is an empty message in protobuf and `null` in
+JSON. A few lists, such as a user's extra values, are messages that wrap a
+repeated field. The decoder sets times and quantities directly, and
 converts other such values, or any field whose Go type has an `UnmarshalJSON`
 method, to the JSON value that the API server would send, and decodes that
 with `encoding/json`. A test creates an object of every type in the `k8s`
