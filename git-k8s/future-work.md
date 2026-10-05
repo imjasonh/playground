@@ -208,15 +208,6 @@ Questions to settle first:
   `queue/main`, would let the checks run on it as on any other branch.
 - How many branches go in a batch.
 
-## Share build caches
-
-Each test Pod fetches its branch and builds it with an empty Go build cache.
-The mirror gives test Pods a nearby place to fetch from, but not what earlier
-Pods built. An in-cluster Go module proxy, and a shared build cache through
-`GOCACHEPROG` or a ReadWriteMany volume, let a test Pod reuse what earlier
-Pods downloaded and compiled. A module proxy in the cluster also lets tests
-with dependencies run without giving them the internet through `-goproxy`.
-
 ## Require an approver who didn't write the change
 
 `check-approval` reports who approved a branch, but not who wrote it, so a
