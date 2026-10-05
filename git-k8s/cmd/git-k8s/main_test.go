@@ -121,7 +121,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
 	}
 	if c := reconcile(); c == nil || c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != "git-k8s-check-results and git-k8s-branches aren't fully installed, so checks can write each other's results, git-k8s service accounts can approve branches, and checks can change GitBranch objects; apply config/policy.yaml" {
+		c.Message != "git-k8s-check-results, git-k8s-branches, and git-k8s-check-pods aren't fully installed, so checks can write each other's results, git-k8s service accounts can approve branches, checks can change GitBranch objects, and checks that own Pods can write any Pod in the cluster; apply config/policy.yaml" {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -142,19 +142,19 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// which the API server rejects, so the fix patches them instead.
 	warns := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"validationActions":["Deny"]}}'`
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		!strings.HasSuffix(c.Message, "; run "+fmt.Sprintf(warns, "git-k8s-check-results")+" and "+fmt.Sprintf(warns, "git-k8s-branches")) ||
+		!strings.HasSuffix(c.Message, "; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", "+fmt.Sprintf(warns, "git-k8s-branches")+", and "+fmt.Sprintf(warns, "git-k8s-check-pods")) ||
 		strings.Contains(c.Message, "restart") {
 		t.Errorf("with bindings that only warn, PoliciesInstalled = %+v", c)
 	}
 	if c := reconcile(world[1:]...); c.Status != kube.False || c.Reason != "Missing" ||
-		!strings.HasSuffix(c.Message, fmt.Sprintf(warns, "git-k8s-branches")+", then run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
+		!strings.HasSuffix(c.Message, ", and "+fmt.Sprintf(warns, "git-k8s-check-pods")+", then run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
 		t.Errorf("without a policy whose binding only warns, PoliciesInstalled = %+v", c)
 	}
 	for _, b := range bindings {
 		b.Spec.ValidationActions = []string{"Deny"}
 	}
 	if c := reconcile(world...); c.Status != kube.True || c.Reason != "Installed" ||
-		c.Message != "the admission policies keep checks to their own results and keep git-k8s service accounts from approving branches" {
+		c.Message != "the admission policies keep git-k8s service accounts from approving branches and keep checks to their own results and Pods" {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
 	}
 	bindings[1].Spec.ValidationActions = []string{"Warn"}

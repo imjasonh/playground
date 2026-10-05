@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"maps"
 	"reflect"
 	"slices"
@@ -83,6 +84,10 @@ type validatingReconciler struct{ gizmoReconciler }
 
 func (validatingReconciler) Validate(context.Context, *gizmo, *gizmo) error { return nil }
 
+type finalizingReconciler struct{ gizmoReconciler }
+
+func (finalizingReconciler) Finalize(context.Context, *gizmo) error { return nil }
+
 func TestDescribe(t *testing.T) {
 	type deployment struct {
 		Object `kube:"apiVersion=apps/v1,kind=Deployment"`
@@ -94,6 +99,8 @@ func TestDescribe(t *testing.T) {
 	}{
 		{"reconciler", For[gizmo](gizmoReconciler{}, Owns[deployment]()), declared{reconciles: true, owns: []*typeInfo{{kind: "Deployment"}}}},
 		{"validator", For[gizmo](validatingReconciler{}), declared{reconciles: true, webhooks: true}},
+		{"finalizer", For[gizmo](finalizingReconciler{}), declared{reconciles: true, finalizes: true}},
+		{"finalizer from an earlier version", For[gizmo](gizmoReconciler{}, RemovesFinalizer()), declared{reconciles: true, finalizes: true}},
 		{"conversion", For[conversionHub](nop[conversionHub]{}, Version[conversionSpoke]()), declared{reconciles: true, webhooks: true, versioned: true}},
 		{"no conversion", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), declared{reconciles: true, versioned: true}},
 		{"webhooks", Webhooks[configMapMeta](labeler{}), declared{webhooks: true}},
@@ -102,13 +109,72 @@ func TestDescribe(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.ti == nil || got.reconciles != tc.want.reconciles || got.webhooks != tc.want.webhooks || got.versioned != tc.want.versioned || len(got.owns) != len(tc.want.owns) {
+		if got.ti == nil || got.reconciles != tc.want.reconciles || got.finalizes != tc.want.finalizes || got.webhooks != tc.want.webhooks || got.versioned != tc.want.versioned || len(got.owns) != len(tc.want.owns) {
 			t.Errorf("%s: describe = %+v, want %+v", tc.name, got, tc.want)
 		}
 		for i, o := range got.owns {
 			if o.kind != tc.want.owns[i].kind {
 				t.Errorf("%s: owns %s, want %s", tc.name, o.kind, tc.want.owns[i].kind)
 			}
+		}
+	}
+}
+
+func TestPlanPatch(t *testing.T) {
+	type deployment struct {
+		Object `kube:"apiVersion=apps/v1,kind=Deployment"`
+	}
+	type namespace struct {
+		Object `kube:"apiVersion=v1,kind=Namespace,scope=Cluster"`
+	}
+	const (
+		deletes      = "github.com/imjasonh/playground/kube/examples/janitor"
+		owns         = "github.com/imjasonh/playground/kube/examples/website"
+		genericOwner = "github.com/imjasonh/playground/kube/testdata/genericowner"
+	)
+	for _, tc := range []struct {
+		name  string
+		c     Controller
+		pkg   string
+		watch string
+		patch bool
+		// role says that the rules for the reconciled type go in the Role
+		// in the watched namespace instead of the ClusterRole.
+		role bool
+	}{
+		{"status only", For[gizmo](gizmoReconciler{}), deletes, "", false, false},
+		{"finalizer", For[gizmo](finalizingReconciler{}), deletes, "", true, false},
+		{"finalizer from an earlier version", For[gizmo](gizmoReconciler{}, RemovesFinalizer()), deletes, "", true, false},
+		{"more than one version", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, "", true, false},
+		{"declared owned type", For[gizmo](gizmoReconciler{}, Owns[deployment]()), deletes, "", true, false},
+		{"program that owns objects", For[gizmo](gizmoReconciler{}), owns, "", true, false},
+		{"program that owns objects of types that generate can't tell", For[gizmo](gizmoReconciler{}), genericOwner, "", true, false},
+		{"cluster-scoped type in a program that owns objects", For[namespace](nop[namespace]{}), owns, "", false, false},
+		{"program that owns objects and watches one namespace", For[gizmo](gizmoReconciler{}), owns, "sites", true, true},
+		{"more than one version in a program that watches one namespace", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, "sites", true, false},
+	} {
+		o := &generateOptions{program: "test", watchNamespace: tc.watch, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
+		p, err := o.plan(t.Context(), []Controller{tc.c}, tc.pkg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := tc.c.describe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, r := resourceName(d.ti)
+		rules, other, where := p.cluster, p.watched, "ClusterRole"
+		if tc.role {
+			rules, other, where = p.watched, p.cluster, "Role"
+		}
+		if got := rules[grantKey{g, r, ""}]["patch"]; got != tc.patch {
+			t.Errorf("%s: patch on %s in the %s = %t, want %t", tc.name, r, where, got, tc.patch)
+		}
+		if other[grantKey{g, r, ""}]["patch"] {
+			t.Errorf("%s: patch on %s outside the %s", tc.name, r, where)
+		}
+		if d.ti.status != nil && !rules[grantKey{g, r + "/status", ""}]["patch"] {
+			t.Errorf("%s: no patch on %s/status in the %s", tc.name, r, where)
 		}
 	}
 }
@@ -146,6 +212,7 @@ func TestManifests(t *testing.T) {
 		`"replicas":3`,
 		`"image":"ghcr.io/you/web-site@sha256:abc"`,
 		`"args":["-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-v"]`,
+		`"env":[{"name":"KUBE_IMAGE","value":"ghcr.io/you/web-site@sha256:abc"}]`,
 		`"serviceAccountName":"web-site"`,
 		`"runAsNonRoot":true`,
 		`"readOnlyRootFilesystem":true`,
@@ -201,6 +268,52 @@ func TestGrantsFor(t *testing.T) {
 		if got := p.grantsFor(tc.ti, tc.watching); !same(got, tc.want) {
 			t.Errorf("%s: got the wrong grants", tc.name)
 		}
+	}
+}
+
+func TestPlanGrantsStatusOfAppliedTypes(t *testing.T) {
+	o := &generateOptions{platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
+	p, err := o.plan(t.Context(), nil, "./testdata/applystatus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		group, resource string
+		want            []string
+	}{
+		{"apps", "deployments", []string{"create", "patch"}},
+		{"apps", "deployments/status", []string{"patch"}},
+		{"", "configmaps", []string{"create", "patch"}},
+		{"", "configmaps/status", nil},
+		{"", "pods", []string{"list", "watch"}},
+		{"", "pods/status", nil},
+	} {
+		if got := slices.Sorted(maps.Keys(p.cluster[grantKey{tc.group, tc.resource, ""}])); !slices.Equal(got, tc.want) {
+			t.Errorf("verbs on %s = %q, want %q", tc.resource, got, tc.want)
+		}
+	}
+}
+
+// TestPlanCRDRules works out the rules of testdata/crdrules, which reads one
+// custom type and owns another without reconciling either. The program may
+// create the CRD of the type that it owns, and nothing for the type that it
+// reads.
+func TestPlanCRDRules(t *testing.T) {
+	var stderr bytes.Buffer
+	o := &generateOptions{program: "crdrules", name: "crdrules", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, stderr: &stderr}
+	p, err := o.plan(t.Context(), []Controller{For[configMapMeta](nop[configMapMeta]{})}, "github.com/imjasonh/playground/kube/testdata/crdrules")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, stderr.String())
+	}
+	got := map[string][]string{}
+	for k, verbs := range p.cluster {
+		if k.resource == "customresourcedefinitions" {
+			got[k.name] = slices.Sorted(maps.Keys(verbs))
+		}
+	}
+	want := map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("verbs on customresourcedefinitions by name = %v, want %v", got, want)
 	}
 }
 
@@ -409,6 +522,49 @@ func TestManifestsForInstalledObjects(t *testing.T) {
 	}
 	if want := []string{"Role other/app", "RoleBinding other/app", "Role policies/app", "RoleBinding policies/app"}; !slices.Equal(roles, want) {
 		t.Errorf("roles = %q, want %q", roles, want)
+	}
+}
+
+// TestManifestsForInstalledObjectsAndEventsInDefault checks that objects
+// that Install applies in default and events about cluster-scoped objects
+// share one Role there, since two Roles with one name would replace each
+// other.
+func TestManifestsForInstalledObjectsAndEventsInDefault(t *testing.T) {
+	o := &generateOptions{program: "app", name: "app", namespace: "app-system", replicas: 1, shards: 1}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{"default": {}}, defaultNS: grants{}}
+	p.namespaces["default"].add("", "configmaps", "params", "create", "patch")
+	p.defaultNS.add("events.k8s.io", "events", "", "create", "patch")
+	var roles []string
+	for _, d := range o.manifests("ref", p) {
+		b, _ := json.Marshal(d)
+		var m struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Rules []struct {
+				Resources []string `json:"resources"`
+			} `json:"rules"`
+		}
+		_ = json.Unmarshal(b, &m)
+		if m.Kind != "Role" {
+			continue
+		}
+		roles = append(roles, m.Metadata.Namespace)
+		var resources []string
+		for _, r := range m.Rules {
+			resources = append(resources, r.Resources...)
+		}
+		slices.Sort(resources)
+		if want := []string{"configmaps", "events"}; !slices.Equal(resources, want) {
+			t.Errorf("the Role in %s covers %q, want %q", m.Metadata.Namespace, resources, want)
+		}
+	}
+	if want := []string{"default"}; !slices.Equal(roles, want) {
+		t.Errorf("Roles in %q, want %q", roles, want)
+	}
+	if got := p.namespaces["default"]; len(got) != 1 {
+		t.Errorf("manifests changed the plan's grants in default to %v", got)
 	}
 }
 

@@ -17,6 +17,7 @@ var policies = []struct {
 }{
 	{"git-k8s-check-results", []string{"checks can write each other's results"}},
 	{"git-k8s-branches", []string{"git-k8s service accounts can approve branches", "checks can change GitBranch objects"}},
+	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
 }
 
 type admissionPolicy struct {
@@ -110,7 +111,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-			Message: "the admission policies keep checks to their own results and keep git-k8s service accounts from approving branches",
+			Message: "the admission policies keep git-k8s service accounts from approving branches and keep checks to their own results and Pods",
 		}
 	}
 	var problems, sentences, fixes []string
@@ -121,7 +122,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		if len(weak) > 1 {
 			problem = "the bindings %s don't deny every request that their policies reject"
 		}
-		problems = append(problems, fmt.Sprintf(problem, strings.Join(weak, " and ")))
+		problems = append(problems, fmt.Sprintf(problem, list(weak)))
 	}
 	if len(missing) > 0 {
 		reason = "Missing"
@@ -129,7 +130,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		if len(missing) > 1 {
 			problem = "%s aren't fully installed"
 		}
-		problems = append(problems, fmt.Sprintf(problem, strings.Join(missing, " and ")))
+		problems = append(problems, fmt.Sprintf(problem, list(missing)))
 	}
 	if len(problems) > 0 {
 		sentences = append(sentences, strings.Join(problems, ", and ")+", so "+clauses(exposures))
@@ -139,13 +140,13 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		if len(warns) > 1 {
 			warn = "the bindings %s warn"
 		}
-		sentences = append(sentences, fmt.Sprintf(warn, strings.Join(warns, " and "))+", so the core program stops the next time it starts")
+		sentences = append(sentences, fmt.Sprintf(warn, list(warns))+", so the core program stops the next time it starts")
 	}
 	// The patches come before the restart, because restarting the core
 	// program while a binding warns stops it. The binding's validationActions
 	// would then hold both Warn and Deny, which the API server rejects.
 	if len(patches) > 0 {
-		fixes = append(fixes, "run "+strings.Join(patches, " and "))
+		fixes = append(fixes, "run "+list(patches))
 	}
 	if len(missing) > 0 {
 		if installs {
@@ -171,6 +172,14 @@ func clauses(cs []string) string {
 		return strings.Join(cs, "")
 	}
 	return strings.Join(cs[:len(cs)-1], ", ") + ", and " + cs[len(cs)-1]
+}
+
+// list joins items as "a", "a and b", or "a, b, and c".
+func list(items []string) string {
+	if len(items) == 2 {
+		return items[0] + " and " + items[1]
+	}
+	return clauses(items)
 }
 
 // denyPatch returns a merge patch that makes a binding deny every request that

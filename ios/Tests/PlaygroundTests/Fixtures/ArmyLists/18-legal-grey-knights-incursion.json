@@ -1,79 +1,87 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "4A583687-643F-4A60-9B2B-6A7C52E1C46B",
-    "name": "Grey Knights Incursion 915pts",
-    "catalogVersion": "11e-1",
-    "factionID": "grey-knights",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "grey-knights--argent-assault",
       "grey-knights--immaterial-interdiction"
     ],
-    "units": [
+    "factionID" : "grey-knights",
+    "id" : "6349C62E-33E1-41C8-A803-E2B1CC53DAD2",
+    "name" : "Grey Knights Incursion 985pts",
+    "notes" : "stress seed=17 attach=true enh=true",
+    "units" : [
       {
-        "id": "EE210156-18C5-4932-8C70-F2FF9698866E",
-        "datasheetID": "grey-knights--brotherhood-chaplain",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "datasheetID" : "grey-knights--brotherhood-chaplain",
+        "enhancementIDs" : [
           "grey-knights--argent-assault--vigilance-of-titan"
         ],
-        "attachedToUnitID": null
+        "id" : "839EBD2F-8DCD-43D8-88DA-369CF3F9A9AA",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5695FA20-0B49-464A-9F00-FD69F3068A5A",
-        "datasheetID": "grey-knights--strike-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "grey-knights--strike-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F57956B3-4936-477F-92FB-4C24871C7C5D",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "309DD258-D9D5-46B2-8BA2-16DCAA65D6C4",
-        "datasheetID": "grey-knights--purgation-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "grey-knights--grey-knights-relic-razorback",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2B10900B-4554-4E1B-902C-5FAD1464A8ED",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "37B0021C-35D8-4103-B03D-6055609F9A71",
-        "datasheetID": "grey-knights--servitors",
-        "models": 4,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "grey-knights--land-raider",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5145A660-9418-457D-BE5E-C2DD9EEE90B0",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2937753E-4D8B-497F-9EE3-64317EF126E9",
-        "datasheetID": "grey-knights--nemesis-dreadknight",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "grey-knights--stormtalon-gunship",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E75201AA-F130-435A-9C2B-CF5ECE930ECD",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "8BD384C2-1FD7-4108-8F40-0BB46770A8AD",
-        "datasheetID": "grey-knights--rhino",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "23F02094-9D55-442C-A9C2-2685D1DE40AE",
-        "datasheetID": "grey-knights--stormtalon-gunship",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "grey-knights--grey-knights-dreadnought",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6D0ED922-4266-4D1E-AA9C-C08FB0EE00C3",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "EE210156-18C5-4932-8C70-F2FF9698866E",
-    "notes": "stress seed=17 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "839EBD2F-8DCD-43D8-88DA-369CF3F9A9AA"
+  },
+  "notes" : "auto-built"
 }

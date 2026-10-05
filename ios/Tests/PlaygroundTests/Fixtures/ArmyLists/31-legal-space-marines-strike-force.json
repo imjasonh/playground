@@ -1,151 +1,187 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "E9AA067A-52B3-42F8-B901-A2AECE4690C9",
-    "name": "Space Marines Strike Force 1915pts",
-    "catalogVersion": "11e-1",
-    "factionID": "space-marines",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
-      "space-marines--fulguris-task-force",
-      "space-marines--headhunter-task-force"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "space-marines--forgefather-s-seekers",
+      "space-marines--gravis-linebreaker-force"
     ],
-    "units": [
+    "factionID" : "space-marines",
+    "id" : "E7845F16-B066-4DFF-9CF5-2B40B5513BC0",
+    "name" : "Space Marines Strike Force 1990pts",
+    "notes" : "stress seed=30 attach=true enh=true",
+    "units" : [
       {
-        "id": "17F76008-1A77-4FDF-A645-DA1AF1FD727B",
-        "datasheetID": "space-marines--judiciar",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "space-marines--headhunter-task-force--gunnery-honours"
+        "attachedToUnitID" : "51A73918-7069-4221-BE98-484A30F91647",
+        "datasheetID" : "space-marines--techmarine",
+        "enhancementIDs" : [
+          "space-marines--forgefather-s-seekers--adamantine-mantle"
         ],
-        "attachedToUnitID": "704D4C74-697F-4748-B5EA-685741DD4ED5"
+        "id" : "CC135513-DA33-4D54-9DAE-82B02DBA84F7",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4F7FFFEF-AFBC-4C0D-A4DE-95DB3D4D6277",
-        "datasheetID": "space-marines--company-veterans-on-bikes",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--kaius-konorius",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "83F01934-3098-43A6-8844-1FE7D8D39681",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "40DC80B5-1749-4E8C-A300-86888FD64E68",
-        "datasheetID": "space-marines--incursor-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--predator-annihilator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "69EDE61B-963A-4600-B6D2-7BD1925FF8B7",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7B58FD7D-290B-4296-9CC2-53A399A60566",
-        "datasheetID": "space-marines--rhino-primaris",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--roboute-guilliman",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BF88DAC6-05C9-49C3-94CA-6BA907E7E6B6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9BC9D87A-EF0B-488B-93EA-EB13B56EC544",
-        "datasheetID": "space-marines--ballistus-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--gladiator-lancer",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "05089619-4AB1-40EE-A2E3-42144D88F572",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "F7886998-4398-42A3-B0D7-C5C4B511AC10",
-        "datasheetID": "space-marines--tarantula-sentry-battery",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--aggressor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BB2C5979-E94F-4F56-A0A1-B41E4B128A41",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A502DB34-3B17-4210-8EC9-BAE9C2EA5E78",
-        "datasheetID": "space-marines--typhon",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--vanguard-veteran-squad-with-jump-packs",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "61946EB9-00EF-48BF-8E34-819C94A9F990",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "83C36C54-2478-4861-B73D-FA9F4071C70A",
-        "datasheetID": "space-marines--aggressor-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--invader-atvs",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7718AF0F-E179-4A19-AC55-2D306FE8A313",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A5CCE76B-531C-4456-B7FF-11EF291A658D",
-        "datasheetID": "space-marines--imperial-space-marine",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--firestrike-servo-turrets",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7D2EF407-D38E-4C0C-BA2E-BDB3EF3A286C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "28A7A452-3DB1-4B8E-BF94-00ECE1624170",
-        "datasheetID": "space-marines--land-speeder-tornado",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--vanguard-veteran-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F3471102-4E97-4025-B832-2AF4DEE2BEE4",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "704D4C74-697F-4748-B5EA-685741DD4ED5",
-        "datasheetID": "space-marines--bladeguard-veteran-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--storm-speeder-hailstrike",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5932ACFF-476A-4594-A600-0C184F02F745",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "CC4C728E-F7A3-4895-8228-0684041C0866",
-        "datasheetID": "space-marines--vanguard-veteran-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--hellblaster-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2F770CD7-3089-4D98-8444-AC4E2BF58D91",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "15496CF6-F095-46EF-B019-33455F0E44D6",
-        "datasheetID": "space-marines--heavy-intercessor-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--eliminator-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F5BBB935-2053-418F-9295-7DB7488E7BE6",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "00AA8BDF-EDEF-4173-AC65-4E08365FC297",
-        "datasheetID": "space-marines--scout-bike-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--heavy-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2B2281A9-5286-4483-9056-AD827B9AECB0",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EA993590-F968-4C5B-8FF6-C1D0BCB39561",
-        "datasheetID": "space-marines--redemptor-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "8EBF81A2-E555-48E9-8987-9A4EB886D6D9",
-        "datasheetID": "space-marines--venerable-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--assault-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "51A73918-7069-4221-BE98-484A30F91647",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "17F76008-1A77-4FDF-A645-DA1AF1FD727B",
-    "notes": "stress seed=30 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "CC135513-DA33-4D54-9DAE-82B02DBA84F7"
+  },
+  "notes" : "auto-built"
 }
