@@ -56,8 +56,8 @@ URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
 Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
-shows each URL, and `check-gotest`, `check-review`, and `check-conflicts` copy
-it into their Pod specs.
+shows each URL, and `check-gotest`, `check-review`, `check-deps`,
+`check-conflicts`, and `git-k8s-deps` copy it into their Pod specs.
 
 The `git-k8s` program runs three controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
@@ -168,15 +168,18 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. The programs
 that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
-`check-risk`, `check-conflicts`, and `check-review`. Before it starts each
-run, `check-review` fetches the branch and its parent to find their merge
-base, and it pushes its agent's fixes. The test Pods of `check-gotest` and
-the agent Pods of `check-review` and `check-conflicts` fetch without
-credentials, so with Octo STS, `gotest` and `review` work only for a public
-repository, and for a private one, `conflicts` resolves only what git can.
-The `git-k8s` program publishes [check runs](#check-runs) with tokens for
-`checkRunsIdentity`, and publishes none without it. The URL must have the
-form `https://github.com/OWNER/REPO`, with or without `.git`.
+`check-risk`, `check-conflicts`, `check-review`, `check-deps`, and
+`git-k8s-deps`. Before they start each run, `check-review` and `check-deps`
+fetch the branch and its parent to find their merge base, and they push their
+agents' fixes. `git-k8s-deps` pushes dependency updates. The test Pods of
+`check-gotest`, the agent Pods of `check-review`, `check-deps`, and
+`check-conflicts`, and the update Pods of `git-k8s-deps` fetch without
+credentials. So with Octo STS, `gotest`, `review`, and `deps` work only for a
+public repository, `git-k8s-deps` updates only a public repository, and for a
+private one, `conflicts` resolves only what git can. The `git-k8s` program
+publishes [check runs](#check-runs) with tokens for `checkRunsIdentity`, and
+publishes none without it. The URL must have the form
+`https://github.com/OWNER/REPO`, with or without `.git`.
 
 ### Set up Octo STS
 
@@ -197,7 +200,7 @@ form `https://github.com/OWNER/REPO`, with or without `.git`.
 
    ```yaml
    issuer: ISSUER
-   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-conflicts:check-conflicts|check-review:check-review)
+   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-conflicts:check-conflicts|check-review:check-review|check-deps:check-deps|git-k8s-deps:git-k8s-deps)
    audience: octo-sts.dev/NAMESPACE
    permissions:
      contents: write
@@ -247,14 +250,16 @@ before it expires. If an exchange fails, they use the old token until a
 minute before it expires, and ask Octo STS again after 30 seconds. When the
 `git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
 is `False` with the reason `CredentialsUnavailable`. When a check can't, it
-reports an `Error` result, except `check-review`, which reports `Running` and
-tries again after 30 seconds, and `check-conflicts` on a branch with a
-parent, which reports `Running` and tries again. Until it gets a token,
-`check-review` can't find the merge base, so it doesn't start a run, and it
-can't commit or push an agent's fix. The messages include Octo STS's answer,
-such as `unable to find trust policy for "git-k8s"`. Octo STS caches each
-trust policy, and the lack of one, for 5 minutes, so a change to a trust
-policy can take that long to apply.
+reports an `Error` result, except `check-review` and `check-deps`, which
+report `Running` and try again after 30 seconds, and `check-conflicts` on a
+branch with a parent, which reports `Running` and tries again. Until they get
+a token, `check-review` and `check-deps` can't find the merge base, so they
+don't start a run, and they can't commit or push an agent's fix. When
+`git-k8s-deps` can't, it logs `reconcile failed; retrying` with the error and
+tries again with backoff. The messages include Octo STS's answer, such as
+`unable to find trust policy for "git-k8s"`. Octo STS caches each trust
+policy, and the lack of one, for 5 minutes, so a change to a trust policy can
+take that long to apply.
 
 ### Check runs
 
@@ -420,10 +425,11 @@ branch, including the checks without `mayPush: true`.
 | --- | --- | --- |
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
-| `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
+| `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
+| `check-deps` | `deps` | On a dependency branch, passes when the `gotest` check passes. When the tests fail, it has an AI agent change the code to fit the new versions, and pushes the agent's fix. It passes on other branches. See [Dependency updates](#dependency-updates). |
 | `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. When a side of a diverged branch rewound, it replays the other side's commits onto that side's head instead of merging. See [Resolve conflicts](#resolve-conflicts). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
@@ -491,6 +497,46 @@ when: >-
 An approval without `approved-by`, such as one from before the policy was
 installed, still passes with an empty `outputs.approver`, so the branch waits
 at a gate like this one until someone approves it again.
+
+### Risk ratings
+
+`check-risk` compares the branch's head with its merge base on the parent,
+and rates the change `high` when any of these is true:
+
+- It changes more lines than `-max-lines`, 200 by default. Lines in `go.sum`
+  and `go.work.sum` files don't count, because they're checksums that the
+  `go` command checks, and the versions that they cover show in `go.mod`.
+- It touches a path that matches a `-sensitive` glob.
+- A `go.mod` file that it changes requires a module that no `go.mod` file
+  at the merge base requires, moves a module to an earlier version than the
+  file required, to a new major version, or to a version that isn't a
+  release, such as a pseudo-version, replaces a module with another module
+  or with a directory outside the repository, stops replacing one, or
+  changes the `go` or `toolchain` line. A directory is outside the
+  repository when its path is absolute, leads out of the repository from
+  the `go.mod` file's directory, or goes through a symbolic link or a
+  submodule, because the `go` command follows the link, which can point
+  anywhere, and a submodule's files come from another repository. A
+  `go.mod` file that the check can't parse also counts. Requiring a module
+  that the file replaces with a directory in the repository is fine,
+  because that code is in the repository. Requiring a module that only a
+  `go.mod` file in the repository declares isn't, because without a
+  replacement, the `go` command downloads the module from the module proxy.
+- It adds or changes a symbolic link or a submodule that the directory of a
+  replacement in any `go.mod` file goes through, even when no `go.mod` file
+  changes.
+- It changes a `go.work` file, whose directives apply to every module in
+  the workspace.
+- It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
+  trailer, because no person wrote that code.
+
+Otherwise the change is `low` risk. So a patch or minor release of a module
+that any part of the repository already requires is low risk, and lands
+without approval under a gate such as
+`checks.risk.outputs.level == "low" || checks.approval.passed`. The check
+skips `go.mod` files in `testdata` and `vendor` directories. Its message
+lists every reason, for example `risk is high: adds module example.com/c;
+has changes from AI agents`.
 
 ### Write a check
 
@@ -933,11 +979,12 @@ paths.
 
 When the policy lets the check push, the agent can also edit the files.
 The check commits what changed on the head, and [signs](#sign-commits) and
-pushes the commit like any other fix, with a `Git-K8s-Fixer: review`
-trailer and within `maxAutomatedCommits`. A fix leaves `.cursorignore`
-files as they are. If a path in the head isn't valid UTF-8, the run fails
-before the agent starts. Without `mayPush`, the agent's files are
-read-only.
+pushes the commit like any other fix, with `Git-K8s-Fixer: review` and
+`Git-K8s-Agent: review` trailers and within `maxAutomatedCommits`. The
+second trailer makes `check-risk` rate the branch high. A fix leaves
+`.cursorignore` files as they are. If a path in the head isn't valid UTF-8,
+the run fails before the agent starts. Without `mayPush`, the agent's files
+are read-only.
 
 The check's outputs hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
@@ -1605,9 +1652,12 @@ message starts with the first one's subject and lists the subject of every
 commit that isn't a merge. It ends with the trailers of the commits that
 aren't fixes, such as `Signed-off-by`, and a `Co-authored-by` trailer for
 each of their authors besides the first. The squashed message never has a
-`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. A rebase keeps
-each commit's author and message, and leaves out a commit that changes
-nothing, such as a change that the parent already has.
+`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. It always has
+every `Git-K8s-Agent` line of the branch's commits, fixes and merges
+included, so the commit still counts as a change from an AI agent, as
+[Which results count](#which-results-count) explains. A rebase keeps each
+commit's author and message, and leaves out a commit that changes nothing,
+such as a change that the parent already has.
 
 The merge controller commits as
 `git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and
@@ -1670,7 +1720,7 @@ in its `checks.Check`, which gives its results `filesOnly: true`. A check
 without `FilesOnly` costs one more round of checks, as the end of this section
 describes.
 
-The built-in checks set `FilesOnly`, except `check-review` and
+The built-in checks set `FilesOnly`, except `check-review`, `check-deps`, and
 `check-conflicts`. The agent of an [agentic check](#agentic-checks) reads the
 subjects of the branch's commits, and `check-conflicts` replays commits with
 their authors and messages. `check-base` passes for any commit that builds on
@@ -1679,6 +1729,20 @@ the parent's head, `check-gofmt` and `check-gotest` read only the files, and
 the `GitBranch`, and an approval is for the change, which the new commit makes
 too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
 what checks push, and the gate doesn't read it.
+
+`check-risk` also rates a change `high` when one of its commits has a
+`Git-K8s-Agent` trailer, so its result depends on commit messages too. It
+still sets `FilesOnly`, because both landings keep those trailers. A squash
+keeps every `Git-K8s-Agent` line of the branch's commits, so the squashed
+commit gets the head's rating. A rebase keeps each commit's message but
+leaves out merge commits and commits that change nothing, so the head's
+rating is never lower than the new commit's. The check's message doesn't
+count those commits, because a squash makes one commit of them. If a squash
+dropped the trailers, `check-risk` would rate a rewritten branch's squashed
+commit `low` when it runs again, so the commit could land without a new
+approval, and the parent's history wouldn't show which changes came from
+agents. Dropping `FilesOnly` wouldn't fix that, because the check would read
+the same squashed message.
 
 When the counted results pass the gate, the controller lands the new commit
 without another round of checks. It pushes the commit to the parent, with a
@@ -1728,16 +1792,17 @@ remote accept force pushes to proposal branches.
 
 ## Sign commits
 
-`check-base`, `check-gofmt`, `check-review`, and `check-conflicts` make
-commits: merges of a parent into a branch, formatting fixes, an agent's
-fixes, and the commits that resolve conflicts and divergences. The merge
-controller makes the commits of
+`check-base`, `check-gofmt`, `check-review`, `check-conflicts`, and
+`check-deps` make commits: merges of a parent into a branch, formatting
+fixes, agents' fixes, and the commits that resolve conflicts and
+divergences. The merge controller makes the commits of
 [squash and rebase landings](#landing-methods), including those that it
 pushes to the branch for another round of checks. A fast-forward landing
 makes none, because it moves the parent to a commit that's already on the
-branch. To sign these commits, make an SSH key for signing only, put it in
-its own Secret in the `GitRepository`'s namespace, and name the Secret in
-the `GitRepository`:
+branch. `git-k8s-deps` makes the commits of
+[dependency updates](#dependency-updates). To sign these commits, make an
+SSH key for signing only, put it in its own Secret in the `GitRepository`'s
+namespace, and name the Secret in the `GitRepository`:
 
 ```sh
 ssh-keygen -t ed25519 -N '' -C git-k8s -f git-k8s-signing
@@ -1756,11 +1821,14 @@ spec:
 
 git-k8s signs with git's SSH signature format, `gpg.format=ssh`. Git runs
 `ssh-keygen` to sign, so the images of `git-k8s`, `check-base`,
-`check-gofmt`, `check-review`, and `check-conflicts` need it, and the
-`cgr.dev/chainguard/git` image that [Install](#install) uses has it. The key
-must be unencrypted, in the OpenSSH format that `ssh-keygen` writes. Ed25519
-and RSA signatures come out the same every time, so a check still makes the
-same fix commit from the same inputs, and a landing makes the same commits;
+`check-gofmt`, `check-review`, `check-conflicts`, `check-deps`, and
+`git-k8s-deps` need it, and the `cgr.dev/chainguard/git` image that
+[Install](#install) and
+[Install the dependency controller](#install-the-dependency-controller) use
+has it. The key must be unencrypted, in the OpenSSH format that `ssh-keygen`
+writes. Ed25519 and RSA signatures come out the same every time, so a check
+still makes the same fix commit from the same inputs, a landing makes the
+same commits, and an update of the same parent head makes the same commit;
 ECDSA signatures don't. Without `signingKeyRef`, these commits aren't
 signed.
 
@@ -1784,22 +1852,26 @@ supporting it needs.
 The key needs a Secret of its own, because the `secretRef` Secret holds the
 credentials for the remote, and each test Pod's init container gets some of
 its keys. A check or a landing reports an error instead of signing if
-`signingKeyRef` names the `secretRef` Secret.
+`signingKeyRef` names the `secretRef` Secret, and `git-k8s-deps` logs the
+error instead of pushing the update.
 
 Only the core `git-k8s` program, `check-base`, `check-gofmt`, `check-review`,
-and `check-conflicts` read the signing Secret, through the `signing` package,
-which no other program links. The checks read it only to sign a commit that
-their policy lets them push, and the merge controller only when a squash or
-rebase landing makes commits. `check-review` and `check-conflicts` commit
-their agents' changes in their own processes, so agent Pods never get the
-key. Other programs don't read the key, but some can:
+`check-conflicts`, `check-deps`, and `git-k8s-deps` read the signing Secret,
+through the `signing` package, which no other program links. The checks read
+it only to sign a commit that their policy lets them push, the merge
+controller only when a squash or rebase landing makes commits, and
+`git-k8s-deps` only when it commits an update. `check-review`,
+`check-conflicts`, and `check-deps` commit their agents' changes in their own
+processes, and `git-k8s-deps` commits what its update Pods made in its own
+process, so agent Pods and update Pods never get the key. Other programs
+don't read the key, but some can:
 
 - `generate` lets each program that reads `secretRef` Secrets get every
   Secret in the namespaces that it watches, which is every namespace unless
   you pass `-watch-namespace`. Those programs are the core `git-k8s`
-  program, `check-base`, `check-gofmt`, `check-risk`, `check-review`, and
-  `check-conflicts`, so signing gives the programs that sign no new
-  permissions.
+  program, `check-base`, `check-gofmt`, `check-risk`, `check-review`,
+  `check-conflicts`, `check-deps`, and `git-k8s-deps`, so signing gives the
+  programs that sign no new permissions.
 - `check-gotest` doesn't give its test Pods the signing Secret, but it can
   create Pods, and a Pod can mount any Secret in its namespace. The
   [admission policies](#install) let it create Pods only in namespaces that
@@ -1823,8 +1895,10 @@ the commit's committer. On GitHub:
    to **Signing Key**, and add `git-k8s-signing.pub`. Or run
    `gh ssh-key add git-k8s-signing.pub --type signing` as that account.
 2. Set the `-identity-email` flag of `git-k8s`, `check-base`, `check-gofmt`,
-   `check-review`, and `check-conflicts` to an email address that the account
-   has verified, such as its `ID+USERNAME@users.noreply.github.com` address.
+   `check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps` to an
+   email address that the account has verified, such as its
+   `ID+USERNAME@users.noreply.github.com` address, and set the
+   `-check-identity-email` flag of `git-k8s-deps` to the same address.
    GitHub marks a commit **Verified** only when its committer email belongs
    to the account that has the key. To pass a flag, add it after `--` in the
    `generate` command, as in [Install](#install).
@@ -1838,8 +1912,9 @@ verifies a signature no matter which credential pushed the commit.
 
 Checks push their commits to the branch that they check. When a branch
 lands, the merge controller pushes the parent, and can delete the branch or,
-in a squash or rebase landing, replace its commits. GitHub's branch
-protection rules and rulesets apply to those pushes:
+in a squash or rebase landing, replace its commits. `git-k8s-deps` pushes
+and deletes the branches under its prefix. GitHub's branch protection rules
+and rulesets apply to those pushes:
 
 - Rules that limit who can push to the parent, such as **Require a pull
   request before merging** and **Restrict updates**, reject a landing
@@ -1882,6 +1957,355 @@ landing, the `Synced` condition is `False` and has the reason in its
 message. git-k8s retries those pushes, waiting longer each time, up to about
 5 minutes. When GitHub refuses only what a squash or rebase landing pushes
 to the branch, the `Merged` condition's message has the reason instead.
+When GitHub refuses a push from `git-k8s-deps`, the controller logs the
+reason and tries the push again a minute later.
+
+## Dependency updates
+
+`git-k8s-deps` is a controller that keeps the Go modules that repositories
+require up to date. It pushes each update to its own branch under a prefix,
+`deps/` by default, and each branch lands through its parent's merge policy
+like any other branch. When an update breaks the tests, `check-deps` has an
+AI agent fix the code.
+
+To keep a parent's modules up to date, add a rule that matches branches
+under the prefix and names that parent. The parent's policy in this example
+also lists the checks that dependency branches need:
+
+```yaml
+spec:
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gotest
+          - name: deps
+            mayPush: true
+          - name: risk
+          - name: approval
+        when: >-
+          checks.base.passed && checks.gotest.passed && checks.deps.passed &&
+          (checks.risk.outputs.level == "low" || checks.approval.passed)
+    - match: deps/**
+      parent: main
+```
+
+Every `-interval`, one hour by default, the controller reads the `go.mod`
+files on the parent's head. For each module that they require directly, it
+reads the module's versions from the module proxies in `-goproxy`, and picks
+the newest release with the same major version. It runs `go get` in a Pod to
+make the update, commits the `go.mod` and `go.sum` files that `go` changed on
+the parent's head, and pushes the commit to the module's branch, such as
+`deps/go/example.com/greet@v1`. The commit has a
+`Git-K8s-Deps: go MODULE VERSION` trailer, and the controller
+[signs](#sign-commits) it when the repository has a `signingKeyRef`. The
+same update of the same parent head always makes the same commit, unless an
+ECDSA key signs it.
+
+`check-risk` rates a patch or minor release of a module that the repository
+already requires `low`, unless the update brings in a module that the
+repository didn't require before or changes a `go` or `toolchain` line.
+[Risk ratings](#risk-ratings) lists the rules. Under the gate in the example,
+a low-risk update lands as soon as its checks pass, and a person approves the
+rest.
+
+### Versions
+
+The controller updates each module that a `go.mod` file requires without an
+`// indirect` comment, unless the file replaces the module. `go get` updates
+indirect requirements as the direct ones need. Each module and major version
+gets its own branch, so an update that breaks the tests doesn't hold back
+the others, and each change stays small enough to rate low risk. The
+controller never moves a module to another major version, because major
+versions make incompatible changes, and from `v2` on each one has its own
+module path.
+
+Compromised releases are often pulled within days, so the controller takes a
+version only once it's `-min-age` old, 72 hours by default, both by the time
+that the module proxy reports for it and since the controller first saw it in
+the module's list of versions. A proxy such as `proxy.golang.org` reports the
+time of the version's commit, not when the release came out, and whoever
+makes a commit can set its time. When a newer version is younger than that,
+the controller looks again once the version is old enough.
+
+`go get` can also raise other requirements to newer versions, and add modules
+that a `go.mod` file didn't require. The minimum age covers those versions
+too. Before the controller pushes an update, each version that the update
+raises a requirement to must be `-min-age` old by both measures. A raised
+version waits from when the controller first saw it, either in its module's
+list as a version that the controller could update to, or in an update that
+raised a requirement to it. The controller doesn't look for versions of
+indirect requirements or new modules ahead of time, so their versions usually
+wait from when an update first raises a requirement to them, and the update
+takes a second update Pod. Proxies don't list pseudo-versions, and a proxy
+can serve a version before it lists it, so those versions wait from then
+too, and keep that time until the proxy lists them.
+
+`go get` also raises a requirement to a version that its module retracts,
+with only a warning. The controller doesn't push such an update. It logs
+that the update failed, and makes the update again after `-interval`. When
+the update would replace a branch whose `go.mod` files raise a requirement
+to a retracted version too, including the version of the branch's own
+module, for example because the controller pushed the branch before the
+module retracted the version, the controller deletes the branch. It deletes
+a branch that stays behind its parent in a merge queue the same way, without
+making the update again, as [Branches](#branches) describes.
+
+When no module proxy has a module or version that an update raises a
+requirement to, the controller can't check the version, so it doesn't push
+the update either. It logs that the update failed, and starts no update Pod
+for the update until `-interval` later, even when the parent moves.
+
+While an update waits, the controller doesn't push it. It logs the version
+that the update waits for and until when, and starts no update Pod for the
+update until then, even when the parent moves. Then it makes the update again
+in a new Pod, and pushes it if every version that it raises is old enough.
+The wait holds back only that version of the module. Once a newer version is
+old enough, the controller makes that update in its own Pod, and it can wait
+too. The controller forgets the wait of an update that it no longer needs,
+such as the older version's.
+
+The version of a branch that the controller owns, which the trailer of the
+branch's update names, was old enough when the controller pushed it, so it
+doesn't wait again, even after a restart. A branch whose version the module
+retracts or a `go.mod` file excludes is still deleted.
+
+For other versions, the controller keeps when it first saw each one in the
+ConfigMap in its own namespace that `-seen-configmap` names,
+`git-k8s-deps-first-seen` by default, so that a restart, or another replica
+taking over, doesn't restart their wait. Each line of the ConfigMap's
+`first-seen` key holds a proxy URL, a module path, a version, and when the
+controller first saw the version, in that proxy's list of the module's
+versions or in an update that raised a requirement to it. A line ends with
+`unlisted` when an update raised a requirement to the version while the proxy's
+list left the version out. The controller reads the ConfigMap before it looks
+for newer versions, and writes it when the times change. It records only
+versions that it could update to and versions that an update raises a
+requirement to. It drops a version when the proxy that listed it stops listing
+it, and if the version comes back, it waits again. It keeps the times of
+pseudo-versions, which proxies don't list, and of `unlisted` versions until the
+proxy lists them. When the controller can't read the ConfigMap, it logs a
+warning, uses the times in its memory, and doesn't write the ConfigMap.
+`generate` lets the controller read and write ConfigMaps only in its own
+namespace. With `-seen-configmap=`, the controller keeps the times only in
+memory, so after a restart, each of these versions waits `-min-age` again.
+
+The controller also skips prereleases, versions that a `go.mod` file
+excludes, and versions that the module retracts. To keep the controller from
+taking a version, exclude it in `go.mod`. To keep the controller away from a
+module, add a rule for the module's branch, without a parent, before the
+prefix's rule, such as `match: deps/go/example.com/big@v1`.
+
+The controller ignores `go.work` files. It also skips `go.mod` files in
+`testdata` and `vendor` directories, in modules that vendor their
+dependencies, and in directories whose names hold characters other than
+letters, digits, dots, hyphens, and underscores. It skips a `go.mod` file
+whose `go` line is older than 1.17, and logs a warning. Such a file lists
+only the requirements that other requirements don't imply, so `go get` can
+raise a module that the build uses without the file showing it, and neither
+the minimum age nor `check-risk` would see the new version. To have the
+controller update the module, raise its `go` line to 1.17 or later and run
+`go mod tidy`. The controller updates a `go.mod` file that has no `go` line:
+`go get` adds one, the file then lists every module that the build uses, and
+`check-risk` rates the change high.
+
+### Branches
+
+When a newer version comes out before a branch lands, the controller replaces
+the branch's commit with an update to the newer version, so each module keeps
+one branch. When the parent has no [merge queue](#merge-queue), the
+controller also remakes a branch that falls behind its parent, so that the
+branch can fast-forward the parent. Every push has a lease on the head that
+the controller read, so the controller never overwrites a push that it
+didn't see.
+
+When the parent has a merge queue, as in the example, a branch that falls
+behind stays instead. Remaking it would push a head that doesn't contain the
+one before, which sends the branch to the back of the queue, and would drop
+fix commits from checks, such as `check-deps`. `check-base` merges the parent
+in when the branch reaches the front. The branch stays only while it merges
+cleanly with the parent and has automated commits left under
+`maxAutomatedCommits` for that merge. Without a queue, `check-base` doesn't
+merge the parent in, so the controller remakes a branch that falls behind
+even when the branch has fixes, and the fixes are lost. While a branch stays
+behind its parent, the controller deletes it if it raises a requirement to a
+version that its module retracts. A newer version still replaces the branch
+and its fixes.
+
+The controller changes and deletes only branches whose commits beyond the
+parent are all its updates and checks' fixes. An update is a commit that the
+controller committed, as its `-identity-email`, whose last trailer is its
+`Git-K8s-Deps` trailer. A fix is a commit that a check committed, as
+`-check-identity-email`, with a `Git-K8s-Fixer` trailer. To take over a
+branch, push a commit of your own to it. Amending or squashing the branch's
+commits also makes you their committer, so the branch becomes yours. When
+no update is left for a module, for example because its branch landed or
+someone updated the module on another branch, the controller deletes the
+module's branch.
+
+The merge controller also commits as `git-k8s@users.noreply.github.com` by
+default. When a squash landing pushes a squashed commit to a dependency
+branch for the checks, as [Which results count](#which-results-count)
+describes, the commit keeps the update's author and `Git-K8s-Deps` trailer.
+If the branch had a commit of yours or an agent's fix, the squashed commit
+ends with a `Co-authored-by` or `Git-K8s-Agent` trailer, so the controller
+leaves the branch alone and the change isn't lost. If you amended the update
+and kept its message instead, the squashed commit looks like an update, so
+the controller can replace it and drop your change. To keep a change, push
+it as a commit of its own.
+
+The controller doesn't authenticate committers. Anyone who can push to the
+repository can make commits that look like updates and fixes, and the
+controller then treats the branch as its own: it replaces or deletes the
+branch, and takes the version that the update's trailer names as old enough.
+That gives nothing beyond push access, because the parent's merge policy
+decides what lands, and it treats the branch as it would the same change
+pushed under the person's own name.
+
+### Agent fixes
+
+`check-deps` passes on branches outside its `-prefix`, so the parent's policy
+can list it for every branch. It also passes when the policy doesn't list
+`gotest`. On a dependency branch, it waits for the `gotest` check's result
+for the branch's current commits, and passes when the tests pass. When the
+tests fail, for example because a module changed its API, and the policy
+lets the check push, the check runs an agent with the `agent` package, as
+`check-review` does. The agent gets the test output and the update's change,
+and can edit files. The check [signs](#sign-commits) and pushes what the
+agent changed as a fix with `Git-K8s-Fixer: deps` and `Git-K8s-Agent: deps`
+trailers, and `check-gotest` tests the new head.
+
+The agent runs in this check instead of in `git-k8s-deps`, so its fix takes
+the same path as other checks' fixes: the policy must let the check push, the
+fix counts toward `maxAutomatedCommits`, and the push has a lease on the
+commit whose tests failed.
+
+The check fails, and the branch waits for a person, when the policy doesn't
+let it push, when the branch has no automated commits left, and when the
+agent can't fix the tests, changes a `go.mod`, `go.sum`, `go.work`, or
+`go.work.sum` file, or changes no files. The limits in
+[Agentic checks](#agentic-checks), such as `maxAgentRuns`, cap its agent
+runs. Its fix commit makes `check-risk` rate the branch `high`, so a person
+approves the fix before it lands.
+
+### Update Pods
+
+`go get` downloads modules that anyone can publish, so the controller runs it
+in a Pod, as `check-gotest` runs tests. Each Pod makes up to 10 updates on
+one parent's head, and has three containers:
+
+- The `prepare` init container fetches the parent's head with the
+  repository's credentials. It's the only container that gets them.
+- The `update` init container runs `go get`, and then `go mod tidy` in
+  modules that were tidy, as user 65532 with no service account token, no
+  privileges, and a read-only root file system. `GOPROXY` holds only the
+  proxies in `-goproxy`, so `go` downloads modules only from them and runs no
+  version control tools. `GOTOOLCHAIN=local` stops it from downloading
+  another Go toolchain.
+- The `result` container, from the agent runner's image, serves the `go.mod`
+  and `go.sum` files that `go` changed. The controller fetches them and
+  checks them against their digest, as
+  [Agentic checks](#agentic-checks) describes.
+
+Update Pods run in the parent's namespace and meet the `restricted` Pod
+Security Standard. The `git-k8s-check-pods` policy applies only to checks'
+service accounts, so update Pods don't need the namespace to opt in to check
+Pods.
+
+The controller accepts only the `go.mod` and `go.sum` files next to the
+`go.mod` files that it asked to update. It rejects a `go.mod` file that
+changes anything other than its requirements and its `go` and `toolchain`
+lines, but not one whose other directives `go get` sorted. The `go` command
+checks the `go.sum` checksums when it builds the branch. At most `-max-pods`
+update Pods run at once across all namespaces, and kube deletes each one once
+the controller has its result. When an update fails, the controller logs why
+and tries again after `-interval`. An update also fails when an image's name
+isn't valid, when kube still can't schedule the update Pod 5 minutes after
+creating it, and when a Secret is still missing or an image still can't be
+pulled 5 minutes after the container can start.
+
+Each update Pod's volumes have size limits. The repository can use up to
+`-source-size`, 2Gi by default, and the home directory, which holds Go's
+module and build caches, up to `-go-cache-size`, 4Gi by default. The init
+containers request 1Gi of ephemeral storage, and their limits cover all the
+volumes. When a Pod uses more than a limit, the kubelet evicts it, and its
+updates fail with the kubelet's reason.
+
+Update Pods need to reach the repository, the module proxies, and the
+checksum database in `-gosumdb`, and the controller needs to reach them on
+TCP port 8080. A NetworkPolicy like the one in
+[Agentic checks](#agentic-checks), with the Pod label
+`app.kubernetes.io/name: git-k8s-deps` and the namespace `git-k8s-deps`,
+allows that. For `check-deps`'s agent Pods, allow requests from the
+namespace `check-deps` too.
+
+Until git-k8s has a mirror, the controller pushes with the repository's
+credentials, which can push to any branch, so it refuses to push branches
+outside its prefix. It reads the repository's Secret, so `generate` lets it
+read every Secret, and `config/policy.yaml` stops it from approving or
+changing `GitBranch` objects. [Push dependency branches to the
+mirror](future-work.md#push-dependency-branches-to-the-mirror) proposes the
+fix.
+
+### Install the dependency controller
+
+To install `git-k8s-deps` and `check-deps`, build and push the agent runner's
+image. In each namespace with dependency branches, create the
+`cursor-api-key` Secret and opt the namespace in to check Pods, as
+[Agentic checks](#agentic-checks) describes. `git-k8s-deps` runs its result
+containers from that image, and `check-deps` runs agents in it:
+
+```sh
+go run ./cmd/git-k8s-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -result-image="${image}" | kubectl apply -f -
+go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+```
+
+Upgrade the core program first, because it installs `config/policy.yaml`
+when it starts, and the second policy there stops `git-k8s-deps` from
+changing `GitBranch` objects. With `-install-policies=false`, apply
+`config/policy.yaml` instead. The policy recognizes `git-k8s-deps` as the
+service account `git-k8s-deps` in the namespace `git-k8s-deps`, where
+`generate` installs it unless you set `-namespace`. For another service
+account, add an entry with an empty value for it to the `git-k8s-checks`
+ConfigMap, as [Check service accounts](#check-service-accounts) describes.
+The policy then treats the service account as a check, which can't change
+`GitBranch` objects.
+
+`check-deps` takes `-prefix`, which must match the controller's, and the
+flags in the `check-review` table. It exits at startup when `-prefix` isn't a
+branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-result-image` | Required | Image that serves update results, built from `agent/runner/Dockerfile` |
+| `-prefix` | `deps/` | Branch-name prefix of the controller's branches, ending with `/` |
+| `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
+| `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
+| `-interval` | `1h` | How often to look for newer versions |
+| `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it or pushes an update that raises a requirement to it |
+| `-seen-configmap` | `git-k8s-deps-first-seen` | Name of the ConfigMap in the controller's namespace that keeps when the controller first saw versions, or empty to keep the times only in memory |
+| `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
+| `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
+| `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
+| `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
+| `-timeout` | `15m` | Longest that an update Pod can run |
+| `-source-size` | `2Gi` | Most disk space that an update Pod's copy of the repository can use |
+| `-go-cache-size` | `4Gi` | Most disk space that an update Pod's Go module and build caches can use |
+| `-max-pods` | 10 | Most update Pods to run at once, in all namespaces; 0 means no limit |
+| `-runtime-class` | None | RuntimeClass for update Pods, such as `gvisor` |
+
+Update Pods get no credentials for modules, so the controller can't update a
+private module unless a proxy in `-goproxy` serves it. An update that needs
+a newer Go than the one in `-go-image` fails. The controller remembers only
+in memory which updates failed and which wait for the versions that they
+raise. After a restart, it makes each of them again in a new Pod once the
+version that it updates to is old enough. That's right away when the
+ConfigMap that `-seen-configmap` names kept when the controller first saw
+the version, and `-min-age` after the restart with `-seen-configmap=`. The
+controller still doesn't push an update whose raised versions aren't old
+enough.
 
 ## Install
 
@@ -1915,13 +2339,14 @@ check's result. It also stops every service account except the core program's
 from changing `status.diverged`, which names the commit that `check-conflicts`
 merges or replays. The second stops every git-k8s service account from setting
 the `approve` and `approved-by` annotations, which are for people, and stops
-checks from changing `GitBranch` objects at all. RBAC also keeps every check
-except `check-gotest`, `check-review`, and `check-conflicts`, which own Pods,
-from patching `GitBranch` objects. `generate` grants that permission to a
-check that owns objects, because it can't tell whether an owned object needs a
-finalizer on its owner. The second policy denies the annotation that kube adds
-with that finalizer, so a check can own only namespaced objects in the
-branch's namespace.
+checks and `git-k8s-deps` from changing `GitBranch` objects at all. RBAC
+also keeps every check except `check-gotest`, `check-review`, `check-deps`,
+and `check-conflicts`, which own Pods, from patching `GitBranch` objects.
+`generate` grants that permission to a program that owns objects, such as
+these checks and `git-k8s-deps`, because it can't tell whether an owned
+object needs a finalizer on its owner. The second policy denies the
+annotation that kube adds with that finalizer, so these programs can own
+only namespaced objects in the branch's namespace.
 
 The third keeps each check to its own Pods. `generate` lets a check that
 declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
@@ -1988,9 +2413,10 @@ Without the policies, most of that doesn't hold, so the repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
 `False` until all four policies are installed with bindings that deny.
 
-Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
-or `review`, or lists `conflicts` with `mayPush: true` while `check-conflicts`
-runs with `-agent-image`, must opt in to check Pods and enforce the
+Each namespace that holds a `GitRepository` whose merge policy lists
+`gotest`, `review`, or `deps`, or lists `conflicts` with `mayPush: true`
+while `check-conflicts` runs with `-agent-image`, must opt in to check Pods
+and enforce the
 `restricted` Pod Security Standard, or the third policy denies the check's
 Pods:
 
@@ -2002,16 +2428,16 @@ Replace `NAMESPACE` with the namespace of the `GitRepository`. The namespace
 can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
 `latest`. Until it has both labels, the branch's `gotest`, `review`, or
-`conflicts` result stays `Running`, and its message says why kube couldn't
-create the Pod. kube tries again with backoff that grows to 5 minutes, plus up
-to 10% jitter, so it creates the Pod within about 5.5 minutes after you label
-the namespace, without a new push.
+`conflicts` result, or a `deps` result that runs an agent, stays `Running`,
+and its message says why kube couldn't create the Pod. kube tries again with
+backoff that grows to 5 minutes, plus up to 10% jitter, so it creates the Pod
+within about 5.5 minutes after you label the namespace, without a new push.
 
-If `check-gotest`, `check-review`, or `check-conflicts` already runs, label
-the namespaces of their repositories before you upgrade the core program,
-which installs `config/policy.yaml` when it starts, or before you apply
-`config/policy.yaml` yourself. Otherwise the policy denies their Pods until
-you do.
+If `check-gotest`, `check-review`, `check-deps`, or `check-conflicts` already
+runs, label the namespaces of their repositories before you upgrade the core
+program, which installs `config/policy.yaml` when it starts, or before you
+apply `config/policy.yaml` yourself. Otherwise the policy denies their Pods
+until you do.
 
 ### Admission policies
 
@@ -2188,12 +2614,17 @@ afterward, set `GIT_K8S_KIND_KEEP=1`. If your network can't reach `cgr.dev`,
 set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 
 The end-to-end test builds the agent runner's image with Docker, and runs
-`check-review` with the `fake` backend, which needs no API key. The fake
-agent fails a change that adds a line with `DO NOT MERGE` in it, and deletes
-those lines when the check can push. It runs `check-conflicts` with the
-`fake` backend too. There, the fake agent resolves each conflict by keeping
-the branch's lines and then the other side's, and fails a conflict with
-`DO NOT MERGE` in it.
+`check-review` and `check-deps` with the `fake` backend, which needs no API
+key. The fake agent fails a change that adds a line with `DO NOT MERGE` in
+it, and deletes those lines when the check can push. When it can edit files,
+it also replaces each line that holds `FAKE AGENT FIX:` with the text after
+it. It runs `check-conflicts` with the `fake` backend too. There, the fake
+agent resolves each conflict by keeping the branch's lines and then the other
+side's, and fails a conflict with `DO NOT MERGE` in it. The git server also
+serves a Go module proxy. The test publishes module versions to it, makes it
+`go-cache`'s upstream, and checks that `git-k8s-deps` lands a patch release
+without approval, that the fake agent fixes a release that breaks the tests,
+and that `git-k8s-deps` keeps when it first saw a version through a restart.
 
 ## Limitations
 
@@ -2211,12 +2642,23 @@ the branch's lines and then the other side's, and fails a conflict with
   the back. While other branches keep landing, it might never land.
 - A check that doesn't finish at the front of a queue holds up the branches
   behind it while the front can still land.
-- `check-review` and `check-conflicts` read repository credentials, so
-  `generate` lets them read every Secret, including the Cursor API key,
-  which only their agent Pods use. Like `check-gotest`, they can also create
-  Pods in every namespace, and `check-conflicts` can even without
-  `-agent-image`. Installing them with `generate -watch-namespace` limits
-  their Secrets and Pods to one namespace.
+- `check-review`, `check-deps`, and `check-conflicts` read repository
+  credentials, so `generate` lets them read every Secret, including the
+  Cursor API key, which only their agent Pods use. Like `check-gotest`, they
+  can also create Pods in every namespace, and `check-conflicts` can even
+  without `-agent-image`. Installing them with `generate -watch-namespace`
+  limits their Secrets and Pods to one namespace.
+- Like `check-review`, `git-k8s-deps` reads repository credentials and
+  creates Pods, so `generate` lets it read every Secret and create Pods in
+  every namespace. Only its own code keeps its pushes under its prefix.
+- `git-k8s-deps` keeps at most 256 KiB of first-seen times in its ConfigMap,
+  and drops the oldest first, so after a restart, a version whose time it
+  dropped waits `-min-age` again. When a write leaves out times, it logs a
+  warning that says how many. With more than one shard, or for a moment while a
+  Deployment with one replica rolls out, two controllers can write the
+  ConfigMap at once, and the last write wins. Each one writes its times again
+  the next time that it reads the module's versions, so a time is lost only
+  when the controller that saw the version stops first.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.

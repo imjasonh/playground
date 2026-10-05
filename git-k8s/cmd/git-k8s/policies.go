@@ -16,7 +16,7 @@ var policies = []struct {
 	exposures []string
 }{
 	{"git-k8s-check-results", []string{"checks can write each other's results"}},
-	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks can change GitBranch objects"}},
+	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change GitBranch objects"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
 	{"git-k8s-approvals", []string{"anyone who can patch a GitBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
 }

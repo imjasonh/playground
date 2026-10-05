@@ -80,6 +80,11 @@ type deploymentProjection struct {
 	} `json:"spec"`
 }
 
+type localConfigMap struct {
+	Object `kube:"apiVersion=v1,kind=ConfigMap,local"`
+	Data   map[string]string `json:"data,omitempty"`
+}
+
 func TestTypeInfo(t *testing.T) {
 	ti, err := typeInfoFor[widget, *widget]()
 	if err != nil {
@@ -103,6 +108,12 @@ func TestTypeInfo(t *testing.T) {
 	if ti, _ := typeInfoFor[deploymentProjection, *deploymentProjection](); ti.group != "apps" || ti.version != "v1" || ti.metadataOnly || ti.status != nil {
 		t.Errorf("deploymentProjection = %+v", ti)
 	}
+	if ti, _ := typeInfoFor[localConfigMap, *localConfigMap](); !ti.local || ti.scope != "Namespaced" || ti.custom {
+		t.Errorf("localConfigMap = %+v", ti)
+	}
+	if ti, _ := typeInfoFor[podMeta, *podMeta](); ti.local {
+		t.Errorf("podMeta is local")
+	}
 }
 
 type noObject struct{ Name string }
@@ -116,6 +127,9 @@ type bothVersions struct {
 type badOption struct {
 	Object `kube:"group=example.dev,colour=red"`
 }
+type localCluster struct {
+	Object `kube:"group=example.dev,scope=Cluster,local"`
+}
 
 func TestTypeInfoErrors(t *testing.T) {
 	for _, tc := range []struct {
@@ -127,6 +141,7 @@ func TestTypeInfoErrors(t *testing.T) {
 		{second(typeInfoFor[badGroup, *badGroup]()), "must be a domain name"},
 		{second(typeInfoFor[bothVersions, *bothVersions]()), "not both"},
 		{second(typeInfoFor[badOption, *badOption]()), "unknown tag option"},
+		{second(typeInfoFor[localCluster, *localCluster]()), "can't have scope=Cluster"},
 	} {
 		if tc.err == nil || !strings.Contains(tc.err.Error(), tc.want) {
 			t.Errorf("err = %v, want %q", tc.err, tc.want)
@@ -512,6 +527,43 @@ func TestFakeReadsEveryTypeOfAKind(t *testing.T) {
 	ctx, _ := Fake(t.Context(), parent, full, small, hidden, shown, pod)
 	if err := r.Reconcile(ctx, parent); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLocalTypes(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	state := &localConfigMap{Object: Meta("state", nil), Data: map[string]string{"k": "v"}}
+	state.Namespace = "system"
+	for name, use := range map[string]func(context.Context){
+		"Get":  func(ctx context.Context) { Get[localConfigMap](ctx, "system", "state") },
+		"List": func(ctx context.Context) { List[localConfigMap](ctx, InNamespace("system")) },
+		"Own":  func(ctx context.Context) { Own(ctx, &localConfigMap{Object: Meta("state", nil)}) },
+		// The reconciled object's namespace isn't the program's, and the
+		// Role doesn't cover it.
+		"Apply without a namespace": func(ctx context.Context) { Apply(ctx, &localConfigMap{Object: Meta("state", nil)}) },
+		"Fetch without a namespace": func(ctx context.Context) { Fetch[localConfigMap](ctx, "", "state") },
+	} {
+		ctx, rec := Fake(t.Context(), parent, state)
+		use(ctx)
+		if err := rec.Err(); !IsPermanent(err) || !strings.Contains(err.Error(), "is local") {
+			t.Errorf("%s: Err = %v, want an error that says the type is local", name, err)
+		}
+	}
+
+	ctx, rec := Fake(t.Context(), parent, state)
+	got, err := Fetch[localConfigMap](ctx, "system", "state")
+	if err != nil || got == nil || got.Data["k"] != "v" {
+		t.Errorf("Fetch = %+v, %v", got, err)
+	}
+	desired := &localConfigMap{Object: Meta("state", nil), Data: map[string]string{"k": "w"}}
+	desired.Namespace = "system"
+	Apply(ctx, desired)
+	old := &localConfigMap{Object: Meta("old", nil)}
+	old.Namespace = "system"
+	Delete(ctx, old)
+	if rec.Err() != nil || len(Applied[localConfigMap](rec)) != 1 || len(Deleted[localConfigMap](rec)) != 1 {
+		t.Errorf("Err = %v, Applied = %v, Deleted = %v", rec.Err(), Applied[localConfigMap](rec), Deleted[localConfigMap](rec))
 	}
 }
 
