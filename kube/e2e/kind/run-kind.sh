@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install the website and podpolicy examples in a kind cluster with
-# generate, which pushes their images to a local registry, and check that
-# they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
-# sets when kube changes.
+# Install the website, imagereport, janitor, probe, and podpolicy examples in
+# a kind cluster with generate, which pushes their images to a local
+# registry, and check that they work. go test ./e2e/kind runs this when
+# KUBE_KIND_E2E=1, which CI sets when kube changes.
 #
 # KUBE_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -26,7 +26,8 @@ k() { kubectl --context "${CONTEXT}" "$@"; }
 diagnose() {
   echo "::group::Cluster state"
   k get nodes,websites,all -A -o wide || true
-  for ns in website podpolicy; do
+  k get probes -A -o yaml || true
+  for ns in website imagereport janitor probe podpolicy; do
     k -n "${ns}" describe pods || true
     k -n "${ns}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${ns}" || true
   done
@@ -136,6 +137,9 @@ generate() {
 echo "::group::Install the website example"
 generate website | k apply -f -
 k -n website rollout status deployment/website --timeout=180s
+container() { k -n website get deployment website -o jsonpath="{.spec.template.spec.containers[0].$1}"; }
+[[ "$(container 'env[?(@.name=="KUBE_IMAGE")].value')" == "$(container image)" ]]
+echo "KUBE_IMAGE names the controller's image: $(container image)"
 
 website_ready() {
   [[ "$(k get website hello -o jsonpath='{.status.readyReplicas}')" == "$1" ]]
@@ -156,6 +160,13 @@ k get website hello
 [[ "$(k get deployment hello -o jsonpath='{.metadata.ownerReferences[0].kind}')" == Website ]]
 [[ "$(k get website hello -o jsonpath='{.status.url}')" == http://hello.default.svc ]]
 
+serving_event() {
+  k describe website hello | grep -E "Normal +Serving .+ website +$1 of $1 replicas are ready"
+}
+eventually 60 serving_event 2
+k describe website hello | sed -n '/^Events:/,$p'
+echo "kubectl describe shows the Website's events."
+
 k port-forward service/hello 18080:80 >"${WORKDIR}/port-forward.log" 2>&1 &
 PORT_FORWARD_PID=$!
 eventually 30 curl -fsS -o /dev/null http://127.0.0.1:18080/
@@ -168,12 +179,222 @@ k -n website delete pods -l app.kubernetes.io/name=website
 k -n website rollout status deployment/website --timeout=180s
 k patch website hello --type=merge -p '{"spec":{"replicas":3}}'
 eventually 180 website_ready 3
-echo "The controller's new pods reconcile."
+eventually 60 serving_event 3
+echo "The controller's new pods reconcile and record events."
 
 k delete website hello
 deployment_gone() { ! k get deployment hello >/dev/null 2>&1; }
 eventually 120 deployment_gone
 echo "Deleting the Website deletes what it owned."
+echo "::endgroup::"
+
+# podpolicy's webhooks deny Pods from this registry, so imagereport and
+# janitor go first.
+echo "::group::Install the imagereport example"
+generate imagereport -replicas=1 | k apply -f -
+k -n imagereport rollout status deployment/imagereport --timeout=180s
+
+# The program owns ImageReports without reconciling them, so it creates their
+# CRD with the rules that generate wrote.
+crd_created() {
+  [[ "$(k get crd imagereports.examples.kube.imjasonh.github.io \
+    -o jsonpath='{.metadata.labels.kube\.imjasonh\.github\.io/managed-by}')" == imagereport ]]
+}
+eventually 60 crd_created
+has_report() {
+  [[ "$(k -n "$1" get imagereport images -o jsonpath='{.images[*].image}' 2>/dev/null)" == *"$2"* ]]
+}
+eventually 60 has_report imagereport "/kube-e2e/imagereport@sha256:"
+eventually 60 has_report kube-system kube-apiserver
+k get imagereports -A
+echo "The program created the ImageReport CRD and reports pods' images."
+echo "::endgroup::"
+
+echo "::group::Install the janitor example"
+generate janitor | k apply -f -
+k -n janitor rollout status deployment/janitor --timeout=180s
+# janitor has no Finalize method and owns nothing, so generate doesn't let it
+# patch namespaces.
+[[ "$(k auth can-i patch namespaces --as=system:serviceaccount:janitor:janitor)" == no ]]
+namespace_gone() { ! k get namespace "$1" >/dev/null 2>&1; }
+namespace_deleting() { [[ -n "$(k get namespace "$1" -o jsonpath='{.metadata.deletionTimestamp}')" ]]; }
+k apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: janitor-e2e
+  annotations:
+    janitor.examples.kube.imjasonh.github.io/ttl: 1s
+EOF
+eventually 120 namespace_gone janitor-e2e
+echo "janitor deletes an expired namespace without permission to patch it."
+
+# A finalizer that an earlier version of janitor added stays, because
+# removing it takes patch, and janitor's error names the option to add.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: janitor-stale
+  annotations:
+    janitor.examples.kube.imjasonh.github.io/ttl: 1s
+  finalizers:
+  - kube.imjasonh.github.io/janitor
+EOF
+names_option() {
+  [[ "$(k -n janitor logs -l app.kubernetes.io/name=janitor --tail=-1)" == *'pass kube.RemovesFinalizer() to kube.For'* ]]
+}
+eventually 120 namespace_deleting janitor-stale
+eventually 120 names_option
+[[ "$(k get namespace janitor-stale -o jsonpath='{.metadata.finalizers}')" == *kube.imjasonh.github.io/janitor* ]]
+k patch namespace janitor-stale --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'
+eventually 120 namespace_gone janitor-stale
+echo "janitor can't remove a finalizer that an earlier version added, and its error names kube.RemovesFinalizer."
+echo "::endgroup::"
+
+# This runs before the podpolicy example, whose webhooks deny the images
+# that these Pods use.
+echo "::group::Install the probe example"
+generate probe | k apply -f -
+k -n probe rollout status deployment/probe --timeout=180s
+k create namespace probe-e2e
+k -n probe-e2e create serviceaccount ci
+# The client calls the probe API with a projected service account token for
+# the API's audience, like a Pod that another program runs.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: probe-e2e
+spec:
+  serviceAccountName: ci
+  automountServiceAccountToken: false
+  containers:
+  - name: client
+    image: ${CHAINGUARD}/curl:latest-dev
+    command: [sleep, "3600"]
+    volumeMounts:
+    - name: token
+      mountPath: /var/run/secrets/probe
+  volumes:
+  - name: token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: probe
+          path: token
+EOF
+k -n probe-e2e wait --for=condition=Ready pod/client --timeout=180s
+
+client_token="$(k -n probe-e2e exec client -- cat /var/run/secrets/probe/token)"
+
+# respond METHOD URL TOKEN sends a request with TOKEN from the client Pod,
+# and prints the response's status code and body.
+respond() {
+  local out
+  out="$(k -n probe-e2e exec client -- curl -sS -w '\n%{http_code}' -X "$1" -H "Authorization: Bearer $3" "$2")"
+  echo "${out##*$'\n'} ${out%$'\n'*}"
+}
+pod_ips() { k -n probe get pods -l app.kubernetes.io/name=probe -o jsonpath='{.items[*].status.podIP}'; }
+whoami_ok() {
+  local out
+  out="$(respond GET "$1" "${client_token}")"
+  echo "$1: ${out}"
+  [[ "${out}" == "200 system:serviceaccount:probe-e2e:ci in Pod client" ]]
+}
+
+eventually 60 whoami_ok http://probe.probe.svc/whoami
+for ip in $(pod_ips); do
+  whoami_ok "http://${ip}:8081/whoami"
+done
+for other in "$(k -n probe-e2e create token ci --audience other)" "$(k -n probe-e2e create token ci)"; do
+  out="$(respond GET http://probe.probe.svc/whoami "${other}")"
+  echo "${out}"
+  [[ "${out}" == "401 "* ]]
+done
+echo "Every replica serves, and accepts only tokens for its audience."
+
+# The replica that holds the lease creates the Probe CRD once it starts.
+create_probe() {
+  k apply -f - <<EOF
+apiVersion: examples.kube.imjasonh.github.io/v1
+kind: Probe
+metadata:
+  name: self
+  namespace: probe-e2e
+spec:
+  url: http://probe.probe.svc/whoami
+EOF
+}
+eventually 60 create_probe
+# The program checks a URL again only after 10 minutes, unless something
+# triggers a check, so trigger one if the first check failed.
+probe_ok() {
+  local status
+  status="$(k -n probe-e2e get probe self -o jsonpath='{.status.code} {.status.message}')"
+  echo "status: ${status}"
+  if [[ "${status}" == "200 system:serviceaccount:probe:probe in Pod probe-"* ]]; then
+    return 0
+  fi
+  respond POST http://probe.probe.svc/probes/probe-e2e/self "${client_token}" >/dev/null || true
+  return 1
+}
+eventually 120 probe_ok
+echo "The program's own token, bound to its Pod, passes its review."
+can="$(k -n probe auth can-i create serviceaccounts --subresource=token --as=system:serviceaccount:probe:probe || true)"
+echo "can the probe request tokens: ${can}"
+[[ "${can}" == "no" ]]
+echo "The program's token comes from a projected volume, and it may not request tokens."
+
+checked="$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')"
+triggered() {
+  local ip out accepted=0 refused=0
+  for ip in $(pod_ips); do
+    out="$(respond POST "http://${ip}:8081/probes/probe-e2e/self" "${client_token}")"
+    echo "${ip}: ${out}"
+    case "${out}" in
+      202*) accepted=$((accepted + 1)) ;;
+      503*) refused=$((refused + 1)) ;;
+    esac
+  done
+  ((accepted == 1 && refused == 1))
+}
+eventually 60 triggered
+checked_again() { [[ "$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')" != "${checked}" ]]; }
+eventually 60 checked_again
+echo "The replica that holds the lease triggers a check, and the other refuses."
+
+# The client calls the API through the Service, in a loop that runs in its
+# Pod, while every replica is replaced. None of its requests may fail.
+k -n probe-e2e exec client -- sh -c 'rm -f /tmp/stop /tmp/done /tmp/codes /tmp/errors
+(while [ ! -e /tmp/stop ]; do
+  curl -sS -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $(cat /var/run/secrets/probe/token)" http://probe.probe.svc/whoami >>/tmp/codes 2>>/tmp/errors
+done; touch /tmp/done) >/dev/null 2>&1 &'
+old_pods="$(k -n probe get pods -l app.kubernetes.io/name=probe -o name)"
+k -n probe rollout restart deployment/probe
+k -n probe rollout status deployment/probe --timeout=180s
+old_pods_gone() {
+  local pod
+  for pod in ${old_pods}; do
+    if k -n probe get "${pod}" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+}
+eventually 120 old_pods_gone
+k -n probe-e2e exec client -- touch /tmp/stop
+loop_done() { k -n probe-e2e exec client -- test -e /tmp/done; }
+eventually 30 loop_done
+codes="$(k -n probe-e2e exec client -- cat /tmp/codes)"
+failed="$(grep -cv '^200$' <<<"${codes}" || true)"
+echo "$(wc -l <<<"${codes}") requests while the replicas were replaced; ${failed} failed"
+if ((failed > 0)); then
+  sort <<<"${codes}" | uniq -c
+  k -n probe-e2e exec client -- cat /tmp/errors
+  exit 1
+fi
+echo "Requests through the Service succeed while every replica is replaced."
 echo "::endgroup::"
 
 echo "::group::Install the podpolicy example"

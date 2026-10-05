@@ -166,6 +166,7 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[stri
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
 		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head))
 	report(b, reasonLanded, true, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
+	kube.Eventf(ctx, kube.Normal, reasonLanded, "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
 	return deleteBranch(ctx, local, remote, b)
 }
 
@@ -200,6 +201,7 @@ func deleteBranch(ctx context.Context, local *git.Repo, remote git.Remote, b *gi
 		return fmt.Errorf("deleting merged branch %s: %w", b.Spec.Branch, err)
 	}
 	slog.Info("deleted merged branch", "namespace", b.Namespace, "repository", b.Spec.Repository, "branch", b.Spec.Branch)
+	kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", b.Spec.Branch, gitk8s.Short(b.Spec.Head), b.Spec.Parent)
 	return nil
 }
 

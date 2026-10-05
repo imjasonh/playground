@@ -2,8 +2,14 @@ package git_test
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net"
+	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,6 +40,142 @@ func TestLsRemoteNeedsCredentials(t *testing.T) {
 	if _, err := g.LsRemote(t.Context(), wrong); err == nil {
 		t.Error("ls-remote with the wrong password succeeded")
 	}
+}
+
+func TestOptionURLsDontRunCommands(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	head := w.Commit("first")
+	w.Push("main")
+
+	ctx := t.Context()
+	g := &git.Git{}
+	repo, err := g.Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func(command string) error{
+		"ls-remote": func(command string) error {
+			_, err := g.LsRemote(ctx, git.Remote{URL: "--upload-pack=" + command})
+			return err
+		},
+		"fetch": func(command string) error {
+			return repo.Fetch(ctx, git.Remote{URL: "--upload-pack=" + command}, "main")
+		},
+		"push": func(command string) error {
+			return repo.Push(ctx, git.Remote{URL: "--receive-pack=" + command}, git.RefUpdate{Ref: "refs/heads/x", New: head})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "ran")
+			err := run("touch " + marker + "; false")
+			if _, statErr := os.Stat(marker); statErr == nil {
+				t.Fatal("git ran the command in the URL")
+			}
+			if err == nil || !strings.Contains(err.Error(), "blocked") {
+				t.Errorf("err = %v, want git to block the URL", err)
+			}
+		})
+	}
+}
+
+func TestOtherTransportsDontRun(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "ran")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	g := &git.Git{}
+	local, err := g.Open(t.Context(), filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, url := range []string{"evil::x", local.Dir, "file://" + local.Dir} {
+		_, err := g.LsRemote(t.Context(), git.Remote{URL: url})
+		if _, statErr := os.Stat(marker); statErr == nil {
+			t.Fatal("git ran the remote helper")
+		}
+		if err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("ls-remote %s: err = %v, want git to refuse the transport", url, err)
+		}
+	}
+}
+
+func TestLsRemoteSkipsUnsafeBranches(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("first")
+	w.Push("main")
+	// git branch refuses this name, but a server accepts a push to it.
+	w.Push("-x")
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": main}) {
+		t.Errorf("heads = %q, want only main", heads)
+	}
+
+	sha := strings.Repeat("1", 40)
+	url := serveRefs(t, sha,
+		"refs/heads/main",
+		"refs/heads/-x",
+		"refs/heads/main\n--output=/tmp/pwned\trefs/heads/injected",
+		"refs/heads/a b",
+		"refs/heads/a..b",
+	)
+	heads, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(heads, map[string]string{"main": sha}) {
+		t.Errorf("heads from a malicious server = %q, want only main", heads)
+	}
+}
+
+// serveRefs runs a git daemon whose one repository has refs, all pointing at
+// sha, and returns the repository's URL. It sends the ref names as they are,
+// as a malicious server can.
+func serveRefs(t *testing.T, sha string, refs ...string) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	var ad strings.Builder
+	for i, ref := range refs {
+		line := sha + " " + ref
+		if i == 0 {
+			line += "\x00"
+		}
+		fmt.Fprintf(&ad, "%04x%s\n", len(line)+5, line)
+	}
+	ad.WriteString("0000")
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				var size [4]byte
+				if _, err := io.ReadFull(c, size[:]); err != nil {
+					return
+				}
+				n, _ := strconv.ParseUint(string(size[:]), 16, 16)
+				if _, err := io.CopyN(io.Discard, c, int64(n)-4); err != nil {
+					return
+				}
+				// A client that asks for protocol version 2 accepts this
+				// version 0 advertisement, and sends a flush packet after it.
+				io.WriteString(c, ad.String())
+				io.Copy(io.Discard, c)
+			}()
+		}
+	}()
+	return "git://" + l.Addr().String() + "/app.git"
 }
 
 func TestFetchMergePush(t *testing.T) {

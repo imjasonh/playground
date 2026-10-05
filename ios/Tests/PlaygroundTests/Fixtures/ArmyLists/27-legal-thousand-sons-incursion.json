@@ -1,0 +1,142 @@
+{
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "thousand-sons--servants-of-change"
+    ],
+    "factionID" : "thousand-sons",
+    "id" : "EA35A134-9DAC-4623-A390-4713B654B101",
+    "name" : "Thousand Sons Incursion 910pts",
+    "notes" : "stress seed=26 attach=true enh=true",
+    "units" : [
+      {
+        "attachedToUnitID" : "AC8F2006-4C36-4D5B-BD95-1BEA3DAF3860",
+        "datasheetID" : "thousand-sons--tzaangor-shaman",
+        "enhancementIDs" : [
+          "thousand-sons--servants-of-change--unravelled-fates"
+        ],
+        "id" : "1817FFE0-2463-45F2-B9F7-43AAA5570656",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--sekhetar-robots",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "CEC7B502-31F5-4A35-B751-F91A4A6C9745",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--tzaangor-enlightened-with-fatecaster-greatbows",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "AC8F2006-4C36-4D5B-BD95-1BEA3DAF3860",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--blue-horrors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BA7E63CE-1A57-440A-B38C-9D9D53D4890B",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--chaos-spawn",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7888ADE5-D2A7-44BA-9985-0C849FAF3D23",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--chaos-rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "66CCC74F-BECD-4B38-AF87-E363EE79FE5F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--helbrute",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "04768981-4113-4E72-B5BA-09D785A44592",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--flamers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D29CAE07-1DB3-481E-ABBE-B79703EBABA2",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--pink-horrors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5024CAB5-D47D-40B9-9112-1C1F12180D4C",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--pink-horrors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "FE9BCAF4-4E0A-4F09-A76D-D6BD331F8CE4",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "thousand-sons--tzaangor-enlightened",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5C1F4A25-FCBF-400E-AD27-22E471BE5AAA",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      }
+    ],
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "1817FFE0-2463-45F2-B9F7-43AAA5570656"
+  },
+  "notes" : "auto-built"
+}

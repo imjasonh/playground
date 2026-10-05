@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +26,12 @@ import (
 
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
 const FixerTrailer = "Git-K8s-Fixer"
+
+// AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
+// with. It allows only the transports that a GitRepository's URL can name.
+// It leaves out file, which also covers plain paths, so git can't read a
+// local repository such as another GitRepository's cache.
+const AllowProtocol = "http:https:git:ssh"
 
 // Auth is a username and password for HTTP basic authentication.
 type Auth struct {
@@ -128,6 +135,7 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_ALLOW_PROTOCOL=" + AllowProtocol,
 		"LC_ALL=C",
 	}
 	for _, kv := range os.Environ() {
@@ -178,20 +186,46 @@ func (g *Git) run(ctx context.Context, dir string, args []string, o opts) ([]byt
 }
 
 // LsRemote lists a remote's branches as a map from branch name to commit
-// SHA, without fetching any objects.
+// SHA, without fetching any objects. It leaves out branches whose names
+// start with "-" or aren't valid ref names, and lines without a SHA, which a
+// server can add by putting a newline in a ref name.
 func (g *Git) LsRemote(ctx context.Context, r Remote) (map[string]string, error) {
-	out, err := g.run(ctx, "", []string{"ls-remote", r.URL, "refs/heads/*"}, opts{auth: r.Auth})
+	out, err := g.run(ctx, "", []string{"ls-remote", "--end-of-options", r.URL, "refs/heads/*"}, opts{auth: r.Auth})
 	if err != nil {
 		return nil, err
 	}
 	heads := map[string]string{}
 	for line := range strings.SplitSeq(string(out), "\n") {
-		sha, ref, ok := strings.Cut(line, "\t")
-		if branch, isHead := strings.CutPrefix(ref, "refs/heads/"); ok && isHead {
+		sha, ref, _ := strings.Cut(line, "\t")
+		branch, isHead := strings.CutPrefix(ref, "refs/heads/")
+		if isHead && objectID(sha) && validBranch(branch) {
 			heads[branch] = sha
 		}
 	}
 	return heads, nil
+}
+
+// objectID reports whether s is a SHA-1 or SHA-256 object ID in hex.
+func objectID(s string) bool {
+	_, err := hex.DecodeString(s)
+	return err == nil && (len(s) == 40 || len(s) == 64)
+}
+
+// validBranch reports whether refs/heads/name is a valid ref name, as git
+// check-ref-format checks, and name doesn't start with "-".
+func validBranch(name string) bool {
+	if name == "" || name[0] == '-' || strings.HasSuffix(name, ".") ||
+		strings.Contains(name, "..") || strings.Contains(name, "@{") ||
+		strings.ContainsAny(name, " ~^:?*[\\\x7f") ||
+		strings.ContainsFunc(name, func(r rune) bool { return r < ' ' }) {
+		return false
+	}
+	for seg := range strings.SplitSeq(name, "/") {
+		if seg == "" || seg[0] == '.' || strings.HasSuffix(seg, ".lock") {
+			return false
+		}
+	}
+	return true
 }
 
 // Open returns the bare repository at dir, creating it if it doesn't exist.
@@ -226,7 +260,7 @@ func (r *Repo) text(ctx context.Context, args ...string) (string, error) {
 
 // Fetch fetches branches from the remote into refs/remotes/origin/.
 func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) error {
-	args := []string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", remote.URL}
+	args := []string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--end-of-options", remote.URL}
 	for _, b := range branches {
 		args = append(args, "+refs/heads/"+b+":refs/remotes/origin/"+b)
 	}
@@ -236,14 +270,14 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 
 // HasCommit reports whether the repository has the commit.
 func (r *Repo) HasCommit(ctx context.Context, sha string) (bool, error) {
-	res, err := r.git.exec(ctx, r.Dir, []string{"cat-file", "-e", sha + "^{commit}"}, opts{})
+	res, err := r.git.exec(ctx, r.Dir, []string{"cat-file", "-e", "--end-of-options", sha + "^{commit}"}, opts{})
 	return err == nil && res.code == 0, err
 }
 
 // IsAncestor reports whether ancestor is descendant or one of its
 // ancestors.
 func (r *Repo) IsAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
-	args := []string{"merge-base", "--is-ancestor", ancestor, descendant}
+	args := []string{"merge-base", "--is-ancestor", "--end-of-options", ancestor, descendant}
 	res, err := r.git.exec(ctx, r.Dir, args, opts{})
 	switch {
 	case err != nil:
@@ -259,7 +293,7 @@ func (r *Repo) IsAncestor(ctx context.Context, ancestor, descendant string) (boo
 // MergeBase returns the best common ancestor of two commits, or "" if they
 // have none.
 func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
-	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", a, b}, opts{})
+	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", "--end-of-options", a, b}, opts{})
 	switch {
 	case err != nil:
 		return "", err
@@ -274,7 +308,7 @@ func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
 // MergeTree merges two commits without a worktree. It returns the merged
 // tree, or the paths that conflict.
 func (r *Repo) MergeTree(ctx context.Context, ours, theirs string) (tree string, conflicts []string, err error) {
-	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", ours, theirs}
+	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--end-of-options", ours, theirs}
 	res, err := r.git.exec(ctx, r.Dir, args, opts{})
 	if err != nil {
 		return "", nil, err
@@ -302,7 +336,7 @@ type Commit struct {
 
 // Commit returns a commit's tree and committer time.
 func (r *Repo) Commit(ctx context.Context, sha string) (Commit, error) {
-	out, err := r.text(ctx, "show", "-s", "--format=%T %ct", sha)
+	out, err := r.text(ctx, "show", "-s", "--format=%T %ct", "--end-of-options", sha)
 	if err != nil {
 		return Commit{}, err
 	}
@@ -317,11 +351,11 @@ func (r *Repo) Commit(ctx context.Context, sha string) (Commit, error) {
 // CommitTree makes a commit object. The same arguments always make the same
 // commit, so two controllers that make the same fix push the same commit.
 func (r *Repo) CommitTree(ctx context.Context, tree string, parents []string, message string, id Identity, unix int64) (string, error) {
-	args := []string{"commit-tree", tree}
+	args := []string{"commit-tree"}
 	for _, p := range parents {
 		args = append(args, "-p", p)
 	}
-	args = append(args, "-F", "-")
+	args = append(args, "-F", "-", "--end-of-options", tree)
 	date := fmt.Sprintf("@%d +0000", unix)
 	env := []string{
 		"GIT_AUTHOR_NAME=" + id.Name, "GIT_AUTHOR_EMAIL=" + id.Email, "GIT_AUTHOR_DATE=" + date,
@@ -377,10 +411,11 @@ func (e *PushError) Refused(ref string) bool {
 // so the push fails with a PushError unless every ref still points at the
 // commit that the update expects.
 func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) error {
-	args := []string{"push", "--porcelain", "--atomic", remote.URL}
+	args := []string{"push", "--porcelain", "--atomic"}
 	for _, u := range updates {
 		args = append(args, "--force-with-lease="+u.Ref+":"+u.Old)
 	}
+	args = append(args, "--end-of-options", remote.URL)
 	for _, u := range updates {
 		args = append(args, u.New+":"+u.Ref)
 	}
@@ -411,7 +446,7 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 // CountFixerCommits counts the commits in head but not in base that carry
 // the fixer trailer. With base "", it counts every commit in head.
 func (r *Repo) CountFixerCommits(ctx context.Context, base, head string) (int, error) {
-	args := []string{"rev-list", "--count", "--grep=^" + FixerTrailer + ":", head}
+	args := []string{"rev-list", "--count", "--grep=^" + FixerTrailer + ":", "--end-of-options", head}
 	if base != "" {
 		args = append(args, "^"+base)
 	}
@@ -432,7 +467,7 @@ type FileStat struct {
 
 // Numstat lists the files that differ between two commits.
 func (r *Repo) Numstat(ctx context.Context, base, head string) ([]FileStat, error) {
-	out, err := r.run(ctx, "diff", "--numstat", "-z", "--no-renames", base, head)
+	out, err := r.run(ctx, "diff", "--numstat", "-z", "--no-renames", "--end-of-options", base, head)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +499,7 @@ type TreeEntry struct {
 
 // LsTree lists every file in a commit's tree.
 func (r *Repo) LsTree(ctx context.Context, commit string) ([]TreeEntry, error) {
-	out, err := r.run(ctx, "ls-tree", "-r", "-z", "--full-tree", commit)
+	out, err := r.run(ctx, "ls-tree", "-r", "-z", "--full-tree", "--end-of-options", commit)
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +517,7 @@ func (r *Repo) LsTree(ctx context.Context, commit string) ([]TreeEntry, error) {
 
 // ReadBlob returns a blob's contents.
 func (r *Repo) ReadBlob(ctx context.Context, sha string) ([]byte, error) {
-	return r.run(ctx, "cat-file", "blob", sha)
+	return r.run(ctx, "cat-file", "blob", "--end-of-options", sha)
 }
 
 // WriteBlob stores a blob and returns its SHA.
@@ -499,7 +534,7 @@ func (r *Repo) ReplaceFiles(ctx context.Context, tree string, files []TreeEntry)
 	index := filepath.Join(r.Dir, fmt.Sprintf("git-k8s-%d.index", indexes.Add(1)))
 	defer os.Remove(index)
 	o := opts{env: []string{"GIT_INDEX_FILE=" + index}}
-	if _, err := r.git.run(ctx, r.Dir, []string{"read-tree", tree}, o); err != nil {
+	if _, err := r.git.run(ctx, r.Dir, []string{"read-tree", "--end-of-options", tree}, o); err != nil {
 		return "", err
 	}
 	var info bytes.Buffer

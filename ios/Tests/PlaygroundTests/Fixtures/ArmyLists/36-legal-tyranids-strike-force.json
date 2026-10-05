@@ -1,127 +1,176 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "12310422-E28D-49E4-ADD2-2FBC609C4CC7",
-    "name": "Tyranids Strike Force 1915pts",
-    "catalogVersion": "11e-1",
-    "factionID": "tyranids",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "tyranids--ambush-predators",
       "tyranids--vanguard-onslaught"
     ],
-    "units": [
+    "factionID" : "tyranids",
+    "id" : "42C55F15-0056-4355-9B6A-1BAC859C4F40",
+    "name" : "Tyranids Strike Force 2000pts",
+    "notes" : "stress seed=35 attach=true enh=true",
+    "units" : [
       {
-        "id": "9731B8BD-9778-48E6-822B-AB5B8554BBE1",
-        "datasheetID": "tyranids--winged-tyranid-prime",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "F4E42DCB-7C4C-4B91-A54A-AA2D4E0B4022",
+        "datasheetID" : "tyranids--winged-tyranid-prime",
+        "enhancementIDs" : [
           "tyranids--vanguard-onslaught--stalker"
         ],
-        "attachedToUnitID": "E8D3DE7C-729E-4E4A-9515-501346233C64"
+        "id" : "AD8F4092-BCF8-460D-AA14-51B857B56201",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "773D5210-A384-482B-997E-9C1FEC087047",
-        "datasheetID": "tyranids--barbed-hierodule",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--neurogaunts",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EC501074-888E-458C-BD4D-5FA8914E0B78",
+        "models" : 11,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5212386D-D84C-46B3-B2FD-213930CD6C9A",
-        "datasheetID": "tyranids--dimachaeron",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--harpy",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "FAA1F215-941F-4399-B37E-83B82B936E5F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "09A7F73E-285D-44A0-9195-7A9EF1EE640A",
-        "datasheetID": "tyranids--mawloc",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--exocrine",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B8DD86B2-28EA-4BBB-9941-CBF561A552F9",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "644BD2EE-220A-4DE7-A137-CDF19C673CAA",
-        "datasheetID": "tyranids--norn-assimilator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--harridan",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A6A3F27E-8062-4B5E-AF1E-74378DF76E83",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9D3F86EE-C647-4AE0-A974-2CF82995FB9D",
-        "datasheetID": "tyranids--ripper-swarms",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--hive-guard",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "449FBDDF-236C-454A-B5BA-EB48E7218D1F",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1CC79DC6-8246-4925-BDFB-40048B790447",
-        "datasheetID": "tyranids--carnifexes",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--tyrannofex",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1268C84F-9A80-4AD4-AB39-555C688A424C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4FE1CC48-F5CA-4199-84A0-3BD06687BB48",
-        "datasheetID": "tyranids--lictor",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--sky-slasher-swarms",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "90615E8C-482D-4648-9196-CD079911E727",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D0D9DF5C-E351-4406-BB2F-F8E4DD811334",
-        "datasheetID": "tyranids--raveners",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--biovores",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "3E9BDAE5-4A36-450B-A70B-879D6AC370EF",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "62761256-0674-4081-9F7A-F1EA8E76C7F5",
-        "datasheetID": "tyranids--sky-slasher-swarms",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--termagants",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9CB01731-A148-42FF-AD6F-937C54126E2E",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D5F007DA-4E00-4E98-B573-D16D4DEDCC55",
-        "datasheetID": "tyranids--sporocyst",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--trygon",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2AA9A240-B4E3-44AA-A392-F5FB06207A8F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E8D3DE7C-729E-4E4A-9515-501346233C64",
-        "datasheetID": "tyranids--gargoyles",
-        "models": 20,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--hive-crone",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "68D868B5-03BD-4C38-89A2-51BB32F10E2C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "72F60D59-56DD-42E8-A85E-BDEFEE31D66F",
-        "datasheetID": "tyranids--norn-emissary",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tyranids--carnifexes",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D6BD588D-5EEE-4BC7-9F88-54E45DC2175C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--gargoyles",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F4E42DCB-7C4C-4B91-A54A-AA2D4E0B4022",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "9731B8BD-9778-48E6-822B-AB5B8554BBE1",
-    "notes": "stress seed=35 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "AD8F4092-BCF8-460D-AA14-51B857B56201"
+  },
+  "notes" : "auto-built"
 }

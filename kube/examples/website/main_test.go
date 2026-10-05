@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -43,6 +44,9 @@ func TestReconcileCreatesDeploymentAndService(t *testing.T) {
 	if c := kube.FindCondition(site.Status.Conditions, "Ready"); c == nil || c.Status != kube.False || c.Reason != "Creating" {
 		t.Errorf("Ready = %+v", c)
 	}
+	if got, want := rec.Events(), []kube.Event{{Type: kube.Normal, Reason: "Creating", Note: "0 of 3 replicas are ready"}}; !slices.Equal(got, want) {
+		t.Errorf("Events = %+v, want %+v", got, want)
+	}
 }
 
 func TestReconcileWithoutPortHasNoService(t *testing.T) {
@@ -64,21 +68,35 @@ func TestReconcileReportsReadiness(t *testing.T) {
 	running := &k8s.Deployment{Object: kube.Meta("blog", nil)}
 	running.Namespace, running.Generation = "default", 4
 	running.Status = k8s.DeploymentStatus{ObservedGeneration: 4, UpdatedReplicas: 3, ReadyReplicas: 2}
-	ctx, _ := kube.Fake(t.Context(), site, running)
+	ctx, rec := kube.Fake(t.Context(), site, running)
 	if err := (reconciler{}).Reconcile(ctx, site); err != nil {
 		t.Fatal(err)
 	}
 	if c := kube.FindCondition(site.Status.Conditions, "Ready"); c.Status != kube.False || c.Message != "2 of 3 replicas are ready" {
 		t.Errorf("Ready = %+v", c)
 	}
+	if got, want := rec.Events(), []kube.Event{{Type: kube.Normal, Reason: "Starting", Note: "2 of 3 replicas are ready"}}; !slices.Equal(got, want) {
+		t.Errorf("Events = %+v, want %+v", got, want)
+	}
 
 	running.Status.ReadyReplicas = 3
-	ctx, _ = kube.Fake(t.Context(), site, running)
+	ctx, rec = kube.Fake(t.Context(), site, running)
 	if err := (reconciler{}).Reconcile(ctx, site); err != nil {
 		t.Fatal(err)
 	}
 	if c := kube.FindCondition(site.Status.Conditions, "Ready"); c.Status != kube.True || site.Status.ReadyReplicas != 3 {
 		t.Errorf("Ready = %+v, readyReplicas = %d", c, site.Status.ReadyReplicas)
+	}
+	if got, want := rec.Events(), []kube.Event{{Type: kube.Normal, Reason: "Serving", Note: "3 of 3 replicas are ready"}}; !slices.Equal(got, want) {
+		t.Errorf("Events = %+v, want %+v", got, want)
+	}
+
+	ctx, rec = kube.Fake(t.Context(), site, running)
+	if err := (reconciler{}).Reconcile(ctx, site); err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.Events(); len(got) != 0 {
+		t.Errorf("with the same reason, Events = %+v, want none", got)
 	}
 }
 
@@ -142,6 +160,33 @@ func TestEndToEnd(t *testing.T) {
 			return fmt.Errorf("status = %+v", site.Status)
 		}
 		return nil
+	})
+
+	t.Log("The controller records an event about the Website when its Ready reason changes.")
+	e2e.Eventually(t, 10*time.Second, func() error {
+		var events struct {
+			Items []struct {
+				Type                string `json:"type"`
+				Reason              string `json:"reason"`
+				Note                string `json:"note"`
+				ReportingController string `json:"reportingController"`
+				Regarding           struct {
+					Kind string `json:"kind"`
+					Name string `json:"name"`
+					UID  string `json:"uid"`
+				} `json:"regarding"`
+			} `json:"items"`
+		}
+		if err := e2e.Get(ctx, c, client.Path("events.k8s.io/v1", "events", ns, ""), &events); err != nil {
+			return err
+		}
+		for _, e := range events.Items {
+			if e.Type == kube.Normal && e.Reason == "Serving" && e.Note == "2 of 2 replicas are ready" && e.ReportingController == "website" &&
+				e.Regarding.Kind == "Website" && e.Regarding.Name == "blog" && e.Regarding.UID == site.UID {
+				return nil
+			}
+		}
+		return fmt.Errorf("events = %+v", events.Items)
 	})
 
 	t.Log("Changing the image updates the Deployment; removing the port deletes the Service.")

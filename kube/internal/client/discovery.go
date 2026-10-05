@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -36,23 +37,52 @@ type discovery struct {
 // discovery results and refetches once when a kind is missing, so a newly
 // installed CustomResourceDefinition is found.
 func (c *Client) Resource(ctx context.Context, apiVersion, kind string) (APIResource, error) {
-	for attempt := range 2 {
-		c.disco.mu.Lock()
-		list, ok := c.disco.lists[apiVersion]
-		c.disco.mu.Unlock()
-		if !ok || attempt > 0 {
-			var err error
-			if list, err = c.fetchResources(ctx, apiVersion); err != nil {
-				return APIResource{}, err
-			}
-		}
-		for _, r := range list {
-			if r.Kind == kind && !strings.Contains(r.Name, "/") {
-				return r, nil
-			}
-		}
+	r, ok, err := c.lookup(ctx, apiVersion, func(r APIResource) bool {
+		return r.Kind == kind && !strings.Contains(r.Name, "/")
+	})
+	if err != nil {
+		return APIResource{}, err
 	}
-	return APIResource{}, &NoKindError{APIVersion: apiVersion, Kind: kind}
+	if !ok {
+		return APIResource{}, &NoKindError{APIVersion: apiVersion, Kind: kind}
+	}
+	return r, nil
+}
+
+// Serves reports whether the server serves the resource or subresource
+// name, such as "deployments/status", in apiVersion. Like Resource, it
+// refetches discovery results once when they don't list name.
+func (c *Client) Serves(ctx context.Context, apiVersion, name string) (bool, error) {
+	_, ok, err := c.lookup(ctx, apiVersion, func(r APIResource) bool { return r.Name == name })
+	return ok, err
+}
+
+// Forget drops the cached discovery results for apiVersion, so the next
+// lookup in it fetches them.
+func (c *Client) Forget(apiVersion string) {
+	c.disco.mu.Lock()
+	defer c.disco.mu.Unlock()
+	delete(c.disco.lists, apiVersion)
+}
+
+// lookup returns the first resource in apiVersion that match accepts. It
+// fetches discovery results, at most once, when none are cached or the cached
+// ones have no match.
+func (c *Client) lookup(ctx context.Context, apiVersion string, match func(APIResource) bool) (APIResource, bool, error) {
+	c.disco.mu.Lock()
+	list := c.disco.lists[apiVersion]
+	c.disco.mu.Unlock()
+	if i := slices.IndexFunc(list, match); i >= 0 {
+		return list[i], true, nil
+	}
+	list, err := c.fetchResources(ctx, apiVersion)
+	if err != nil {
+		return APIResource{}, false, err
+	}
+	if i := slices.IndexFunc(list, match); i >= 0 {
+		return list[i], true, nil
+	}
+	return APIResource{}, false, nil
 }
 
 func (c *Client) fetchResources(ctx context.Context, apiVersion string) ([]APIResource, error) {
