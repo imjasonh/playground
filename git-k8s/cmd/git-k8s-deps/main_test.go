@@ -1301,6 +1301,23 @@ func TestLeavesPeoplesBranchesAlone(t *testing.T) {
 			f.work.Push(greetBranch)
 			return head
 		},
+	}, {
+		name: "the merge controller's squash of the update and an agent's fix",
+		change: func(f *fixture, update string) string {
+			f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
+			head := f.commitAs(f.u.cfg.Identity, f.work.Git("log", "-1", "--format=%B", update)+"\nGit-K8s-Agent: deps\n", f.b.Spec.Head)
+			f.work.Push(greetBranch)
+			return head
+		},
+	}, {
+		name: "the merge controller's squash of the update and a person's commit",
+		change: func(f *fixture, update string) string {
+			f.pushTo(greetBranch, "app.go", "package app\n\n// Greet takes a name.\n", "Make Greet take a name")
+			head := f.commitAs(f.u.cfg.Identity, "Update "+greet+" to v1.1.0\n\n* Update "+greet+" to v1.1.0\n* Make Greet take a name\n\n"+
+				"Git-K8s-Deps: go "+greet+" v1.1.0\nCo-authored-by: Test Author <author@example.com>\n", f.b.Spec.Head)
+			f.work.Push(greetBranch)
+			return head
+		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)

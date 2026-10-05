@@ -1282,14 +1282,25 @@ in. A newer version still replaces the branch and its fixes.
 
 The controller changes and deletes only branches whose commits beyond the
 parent are all its updates and checks' fixes. An update is a commit that the
-controller committed, as its `-identity-email`, with its trailer at the end
-of the message. A fix is a commit that a check committed, as
-`-check-identity-email`, with a `Git-K8s-Fixer` trailer at the end. To take
-over a branch, push a commit of your own to it. Amending or squashing the
-branch's commits also makes you their committer, so the branch becomes
-yours. When no update is left for a module, for example because its branch
-landed or someone updated the module on another branch, the controller
-deletes the module's branch.
+controller committed, as its `-identity-email`, whose last trailer is its
+`Git-K8s-Deps` trailer. A fix is a commit that a check committed, as
+`-check-identity-email`, with a `Git-K8s-Fixer` trailer. To take over a
+branch, push a commit of your own to it. Amending or squashing the branch's
+commits also makes you their committer, so the branch becomes yours. When
+no update is left for a module, for example because its branch landed or
+someone updated the module on another branch, the controller deletes the
+module's branch.
+
+The merge controller also commits as `git-k8s@users.noreply.github.com` by
+default. When a squash landing pushes a squashed commit to a dependency
+branch for the checks, as [Which results count](#which-results-count)
+describes, the commit keeps the update's author and `Git-K8s-Deps` trailer.
+If the branch had a commit of yours or an agent's fix, the squashed commit
+ends with a `Co-authored-by` or `Git-K8s-Agent` trailer, so the controller
+leaves the branch alone and the change isn't lost. If you amended the update
+and kept its message instead, the squashed commit looks like an update, so
+the controller can replace it and drop your change. To keep a change, push
+it as a commit of its own.
 
 The controller doesn't authenticate committers. Anyone who can push to the
 repository can make commits that look like updates and fixes, and the

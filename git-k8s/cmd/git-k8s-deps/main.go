@@ -717,9 +717,12 @@ func (u *updater) owned(ctx context.Context, repo *git.Repo, parentHead string, 
 
 // ownership reports whether every commit that a module's branch has and its
 // parent doesn't is the controller's or a check's fix. The controller
-// committed its commits, which end with its trailer, and a check committed
-// each fix, which ends with the fixer trailer. Someone who amends or
+// committed its commits, whose last trailer is its trailer, and a check
+// committed each fix, which has the fixer trailer. Someone who amends or
 // squashes those commits becomes their committer, so the branch is theirs.
+// The merge controller commits as the controller does by default, so only
+// the last trailer, such as Co-authored-by or the agent trailer, shows that
+// a squash it pushed to the branch has a person's commit or an agent's fix.
 func (u *updater) ownership(ctx context.Context, repo *git.Repo, parentHead string, m moduleMajor, head string) (b ownedBranch, owned bool, err error) {
 	commits, err := repo.ListCommits(ctx, parentHead, head, maxOwned+1)
 	if err != nil || len(commits) > maxOwned {
@@ -730,7 +733,7 @@ func (u *updater) ownership(ctx context.Context, repo *git.Repo, parentHead stri
 		switch {
 		case c.Committer.Email == checks && hasTrailer(c, git.FixerTrailer):
 			b.fixes++
-		case c.Committer.Email != mine || !hasTrailer(c, depsTrailer):
+		case c.Committer.Email != mine || len(c.Trailers) == 0 || !strings.HasPrefix(c.Trailers[len(c.Trailers)-1], depsTrailer+":"):
 			return ownedBranch{}, false, nil
 		case b.version == "":
 			b.version = updatedTo(c, m)
