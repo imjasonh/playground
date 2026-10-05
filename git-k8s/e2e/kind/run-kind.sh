@@ -595,6 +595,25 @@ done
 echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt and check-approval can't patch one."
 echo "::endgroup::"
 
+echo "::group::A check that the ConfigMap names can't change GitBranch objects"
+# bot has the permissions that generate gives check-gotest, so RBAC lets it
+# patch GitBranch objects. It runs in the namespace ${APPROVAL_NS}, so only
+# its entry in the git-k8s-checks ConfigMap makes it a check.
+k -n "${APPROVAL_NS}" create serviceaccount bot
+k create clusterrolebinding git-k8s-e2e-bot --clusterrole=check-gotest --serviceaccount="${APPROVAL_NS}:bot"
+k -n git-k8s patch configmap git-k8s-checks --type=merge -p "{\"data\":{\"${APPROVAL_NS}.bot\":\"bot\"}}"
+bot_token="$(k -n "${APPROVAL_NS}" create token bot)"
+bot_cant_change() {
+  local code
+  code="$(patch_branch "${bot_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]] && grep -q "the bot check can't change GitBranch objects" "${WORKDIR}/patch.json"
+}
+eventually 30 bot_cant_change
+echo "RBAC lets bot patch GitBranch objects, and the policy stops it as the bot check that its ConfigMap entry names."
+echo "::endgroup::"
+
 echo "::group::Tests run in a sandboxed Pod"
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
