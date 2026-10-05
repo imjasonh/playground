@@ -2657,6 +2657,14 @@ The third policy doesn't read the ConfigMap, so an entry doesn't change
 which Pods a check can write. A check that owns Pods and runs as another
 service account needs a policy of its own.
 
+The [mirror](#the-mirror) doesn't read the ConfigMap either. It treats only
+the service account `check-NAME` in the namespace `check-NAME` as the check
+`NAME`, so a check that runs as another service account can't fetch from the
+mirror or push to it. An entry with an empty value doesn't stop a check from
+fetching or pushing. To stop a check from pushing, remove its `mayPush`
+from the repositories' merge policies, and to stop it from fetching too,
+remove the check from them.
+
 While the ConfigMap is missing, the API server denies every create and update
 of a `GitBranch` or its status, including people's, with a message that says
 `no params found for policy binding`. To create the ConfigMap again, run
