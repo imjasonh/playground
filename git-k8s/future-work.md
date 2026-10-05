@@ -214,12 +214,13 @@ from a Secret, so a compromised check can sign anything with it. With the
 instead and sign for the checks, for example through a program that git's
 `gpg.ssh.program` setting runs, so that no check reads the Secret.
 
-With the mirror, every change reaches GitHub as a push from the mirror's
-[Octo STS](#get-github-credentials-from-octo-sts) identity, a GitHub App.
-Branch protection rules and rulesets have to let that App push to protected
-branches without a pull request, by adding it to their bypass lists. An App
-can't have a signing key, so the commits stay signed with a bot account's
-key, with that account's email address as their committer.
+With the mirror, every change reaches GitHub as a push from the mirror. For
+a repository that gets [tokens from Octo STS](README.md#github-repositories),
+the mirror pushes as Octo STS's GitHub App. Branch protection rules and
+rulesets have to let that App push to protected branches without a pull
+request, by adding it to their bypass lists. An App can't have a signing
+key, so the commits stay signed with a bot account's key, with that
+account's email address as their committer.
 
 ## Sign commits with gitsign
 
