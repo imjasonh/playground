@@ -2963,36 +2963,8 @@ others.
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
 `emptyDir` volume that `generate` mounts at `/tmp`.
 
-To upgrade an installation from before the mirror, apply it with
-`kubectl apply`, as the loop does, because server-side apply can't switch
-the core program's Deployment to the `Recreate` strategy. `kubectl apply`
-replaces the rules of the core program's Role in the `git-k8s` namespace,
-which drops the rules for leader election and keeps the ones for the
-`git-k8s-checks` ConfigMap and the core program's own tokens, so keep the
-Role and its RoleBinding. Then delete the PodDisruptionBudget that the core
-program needed for two replicas:
-
-```sh
-kubectl -n git-k8s delete --ignore-not-found poddisruptionbudget git-k8s
-```
-
-If you set `check-gotest`'s `-goproxy`, set the same value on the core
-program. Otherwise, on a cluster that enforces NetworkPolicies, the test
-Pods' NetworkPolicy keeps them from reaching the proxy. A proxy inside the
-cluster also needs a NetworkPolicy of your own, as
-[Sandboxed checks](#sandboxed-checks) describes. Likewise, if you set
-`check-gotest`'s `-go-cache`, set the core program's `-go-cache-namespace`,
-as [Share modules and build outputs](#share-modules-and-build-outputs)
-describes.
-
-If you applied the `test-pods` NetworkPolicy that an earlier version of this
-README described, delete it from each namespace that has a `GitRepository`.
-A cluster allows any connection that one of a Pod's NetworkPolicies allows,
-so that policy still lets test Pods reach the git remote:
-
-```sh
-kubectl -n NAMESPACE delete --ignore-not-found networkpolicy test-pods
-```
+To upgrade an installation from before the mirror, follow
+[Upgrade from before the mirror](#upgrade-from-before-the-mirror).
 
 `generate` also writes a Service for the core program, which routes port 80
 to port 8081 of its Pod, where one handler serves both the mirror and the
@@ -3118,12 +3090,6 @@ can't be `git-k8s` or start with `check-`. If it has the label
 and its message says why kube couldn't create the Pod. kube tries again with
 backoff that grows to 5 minutes, plus up to 10% jitter, so it creates the Pod
 within about 5.5 minutes after you label the namespace, without a new push.
-
-If `check-gotest`, `check-review`, `check-deps`, or `check-conflicts` already
-runs, label the namespaces of their repositories before you upgrade the core
-program, which installs `config/policy.yaml` when it starts, or before you
-apply `config/policy.yaml` yourself. Otherwise the policy denies their Pods
-until you do.
 
 ### Admission policies
 
@@ -3280,32 +3246,67 @@ of a `GitBranch` or its status, including people's, with a message that says
 program with `kubectl -n git-k8s rollout restart deployment/git-k8s`. With
 `-install-policies=false`, apply `config/policy.yaml` instead.
 
-### Upgrade from checks that write status
+### Upgrade from before the mirror
 
-If your installed checks write their own results to `GitBranch` status, as
-each did before the results endpoint, upgrade in this order:
+To upgrade an installation from before the mirror, follow these steps in
+order:
 
-1. Apply `config/policy.yaml`. The earlier policy stops the core program
-   from writing results, and this one rejects the installed checks' status
-   writes, so branches get no new results until step 3.
-2. Install the core program, with `kubectl apply` if the installed one is
-   from before the mirror, as [Install](#install) describes. It changes
-   `status.checks` in the `GitBranch` CustomResourceDefinition to an atomic
-   map, which one field manager writes as a whole, and starts the results
-   endpoint.
-3. Install the checks. They lose their RBAC rule for `gitbranches/status`,
+1. Grant the people who approve branches the `approve` verb. From step 3
+   on, the `git-k8s-approvals` policy rejects approvals without it, and a
+   new approval must set `approved-by` too, as
+   [Approve a branch](#approve-a-branch) describes.
+2. If `check-gotest`, `check-review`, `check-deps`, or `check-conflicts`
+   runs, label the namespaces of its repositories as [Install](#install)
+   describes. From step 3 on, the `git-k8s-check-pods` policy denies the
+   check's Pods in a namespace without the labels.
+3. Apply `config/policy.yaml`. If your checks write their own results to
+   `GitBranch` status, as each did before the results endpoint, the policy
+   rejects those writes, so branches get no new results until step 5.
+4. Install the core program with `kubectl apply`, as the loop in
+   [Install](#install) does, because server-side apply can't switch its
+   Deployment to the `Recreate` strategy. `kubectl apply` replaces the rules
+   of the core program's Role in the `git-k8s` namespace, which drops the
+   rules for leader election and keeps the ones for the `git-k8s-checks`
+   ConfigMap and the core program's own tokens, so keep the Role and its
+   RoleBinding. Then delete the PodDisruptionBudget that the core program
+   needed for two replicas:
+
+   ```sh
+   kubectl -n git-k8s delete --ignore-not-found poddisruptionbudget git-k8s
+   ```
+
+   On a cluster that enforces NetworkPolicies, the core program's
+   NetworkPolicy then limits what test Pods can reach, as
+   [Sandboxed checks](#sandboxed-checks) describes. If you set
+   `check-gotest`'s `-goproxy`, set the same value on the core program, and
+   if the proxy runs in the cluster, add a NetworkPolicy of your own that
+   lets test Pods reach it. If you set `check-gotest`'s `-go-cache`, set the
+   core program's `-go-cache-namespace`, as
+   [Share modules and build outputs](#share-modules-and-build-outputs)
+   describes.
+5. Install the checks. They lose their RBAC rule for `gitbranches/status`,
    and send their results to the core program.
+6. If you applied the `test-pods` NetworkPolicy that an earlier version of
+   this README described, delete it from each namespace that has a
+   `GitRepository`. A cluster allows any connection that one of a Pod's
+   NetworkPolicies allows, so that policy still lets test Pods reach the git
+   remote:
 
-After step 2, a status write from an old check replaces all of
-`status.checks` with that check's entry, so make sure that the policy from
-step 1 is installed first. The core program installs it when it starts, but
-only after it changes the CustomResourceDefinition. The earlier core program
-installs the earlier policy again each time it starts, so if it restarts
-before step 2, apply `config/policy.yaml` again. While the earlier policy is
-installed, the core program reports `PoliciesInstalled` as `False` with the
-reason `Outdated`. The results controller takes over a branch's results the
-first time it writes them, and server-side apply then removes the old checks
-from the branch's managed fields.
+   ```sh
+   kubectl -n NAMESPACE delete --ignore-not-found networkpolicy test-pods
+   ```
+
+When the core program starts, it changes `status.checks` in the `GitBranch`
+CustomResourceDefinition to an atomic map, which one field manager writes as
+a whole, and only then installs `config/policy.yaml`. From that change on, a
+status write from an old check that no policy rejects replaces all of
+`status.checks` with that check's entry, which is why step 3 comes first. An
+earlier core program that installs the earlier policy when it starts does
+that again each time, so if it restarts before step 4, apply
+`config/policy.yaml` again. While the earlier policy is installed, the core
+program reports `PoliciesInstalled` as `False`. The results controller takes
+over a branch's results the first time it writes them, and server-side apply
+then removes the old checks from the branch's managed fields.
 
 ## What each program can do
 
