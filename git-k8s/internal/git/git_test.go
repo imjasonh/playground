@@ -237,6 +237,21 @@ func TestErrorsNameTheSubcommand(t *testing.T) {
 	}
 }
 
+// Merge puts --attr-source, and -c with its value, before merge-tree.
+func TestErrorsNameTheSubcommandAfterOptions(t *testing.T) {
+	repo, err := (&git.Git{}).Open(t.Context(), filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalled := wrap(t, repo, `case " $* " in *" merge-tree "*) exec sleep 60 ;; esac`)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, _, err = stalled.Merge(ctx, "HEAD", "HEAD", git.MergeOptions{})
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.HasPrefix(err.Error(), "git merge-tree: ") {
+		t.Errorf("err = %v, want an error that starts with %q and wraps %v", err, "git merge-tree: ", context.DeadlineExceeded)
+	}
+}
+
 func TestFetchMergePush(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")

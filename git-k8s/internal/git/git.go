@@ -129,16 +129,26 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// Options such as --attr-source, and -c with its value, can come before
+	// git's command.
+	command := args[0]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+		} else if !strings.HasPrefix(args[i], "-") {
+			command = args[i]
+			break
+		}
+	}
+	if dir != "" {
+		args = append([]string{"-C", dir}, args...)
+	}
 	// Keep the automatic maintenance that fetch starts in the foreground.
 	// Detached, it outlives the command. It can still be writing to a cache
 	// while the cache is removed, and where PID 1 is a Go program, which
 	// never waits for it, each fetch leaves a zombie. Git uses gc.autoDetach
 	// when maintenance.autoDetach isn't set.
-	options := []string{"-c", "gc.autoDetach=false"}
-	if dir != "" {
-		options = append(options, "-C", dir)
-	}
-	cmd := exec.CommandContext(ctx, bin, append(options, args...)...)
+	cmd := exec.CommandContext(ctx, bin, append([]string{"-c", "gc.autoDetach=false"}, args...)...)
 	env := []string{
 		// Never prompt, and ignore system and user configuration so that
 		// results don't depend on the machine.
@@ -179,11 +189,11 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	switch {
 	case err == nil:
 	case ctx.Err() != nil:
-		return res, fmt.Errorf("git %s: %w", args[0], ctx.Err())
+		return res, fmt.Errorf("git %s: %w", command, ctx.Err())
 	case errors.As(err, &exit):
 		res.code = exit.ExitCode()
 	default:
-		return res, fmt.Errorf("git %s: %w", args[0], err)
+		return res, fmt.Errorf("git %s: %w", command, err)
 	}
 	return res, nil
 }
