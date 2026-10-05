@@ -576,9 +576,9 @@ go test ./...
  if absent, so the key is stable across deploys). A Worker that ships
  `examples/gensecret.rs` gets a `JWT_SECRET` the same way. Every Worker must enable
  Workers Logs (including invocation logs), Workers Traces, and Workers Issues
- in its `wrangler.toml` — the `wrangler_observability` pasta rule enforces this.
- Issues needs Wrangler 4.134.0 or later, so keep the `wranglerVersion` pin in
- `deploy-workers.yml` at or past that version.
+ in its `wrangler.toml`. The `wrangler_observability` pasta rule enforces this.
+ Issues needs Wrangler 4.134.0 or later, so keep the version pinned in
+ `.github/wrangler/package.json` at 4.134.0 or later.
  Head sampling is 100% at playground traffic; dial down before serious
  volume.
 
