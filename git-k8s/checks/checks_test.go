@@ -268,6 +268,7 @@ func TestChecksFixedResultBeforePushing(t *testing.T) {
 			head := f.branch.Spec.Head
 			runs := 0
 			check := touch(&runs)
+			check.FilesOnly = true
 			run := check.Run
 			check.Run = func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 				v, err := run(ctx, in)
@@ -281,8 +282,8 @@ func TestChecksFixedResultBeforePushing(t *testing.T) {
 				t.Fatal(err)
 			}
 			res := f.branch.Status.Checks.Result
-			if res == nil || res.State != tc.state || !strings.Contains(res.Message, tc.msg) || len(res.Outputs) != tc.resultOutputs {
-				t.Errorf("result = %+v, want %s with %d outputs and a message that contains %q", res, tc.state, tc.resultOutputs, tc.msg)
+			if res == nil || res.State != tc.state || !strings.Contains(res.Message, tc.msg) || len(res.Outputs) != tc.resultOutputs || !res.FilesOnly {
+				t.Errorf("result = %+v, want %s with filesOnly, %d outputs, and a message that contains %q", res, tc.state, tc.resultOutputs, tc.msg)
 			}
 			if pushed := f.srv.Heads(t, "app")["c/x"] != head; pushed != tc.pushed {
 				t.Errorf("pushed the fix: %v, want %v", pushed, tc.pushed)

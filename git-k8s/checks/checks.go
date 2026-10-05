@@ -220,8 +220,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	if err := reported.Validate(); err != nil {
 		// Running the check again returns the same result, so report why in
 		// the result instead of failing the reconcile, which kube retries.
-		*result = &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, State: gitk8s.Error,
-			Message: truncate(why + err.Error())}
+		res.State, res.Message, res.Outputs = gitk8s.Error, truncate(why+err.Error()), nil
+		*result = res
 		return nil
 	}
 	if v.Fix != "" {
