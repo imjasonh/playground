@@ -56,8 +56,8 @@ URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
 Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
-shows each URL, and `check-gotest`, `check-review`, and `check-conflicts` copy
-it into their Pod specs.
+shows each URL, and `check-gotest`, `check-review`, `check-deps`,
+`check-conflicts`, and `git-k8s-deps` copy it into their Pod specs.
 
 The `git-k8s` program runs three controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
@@ -168,14 +168,16 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. The programs
 that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
-`check-risk`, `check-conflicts`, and `check-review`, which pushes its agent's
-fixes. The test Pods of `check-gotest` and the agent Pods of `check-review`
-and `check-conflicts` fetch without credentials, so with Octo STS, `gotest`
-and `review` work only for a public repository, and for a private one,
-`conflicts` resolves only what git can. The `git-k8s` program publishes
-[check runs](#check-runs) with tokens for `checkRunsIdentity`, and publishes
-none without it. The URL must have the form `https://github.com/OWNER/REPO`,
-with or without `.git`.
+`check-risk`, `check-conflicts`, `check-review` and `check-deps`, which push
+their agents' fixes, and `git-k8s-deps`, which pushes dependency updates. The
+test Pods of `check-gotest`, the agent Pods of `check-review`, `check-deps`,
+and `check-conflicts`, and the update Pods of `git-k8s-deps` fetch without
+credentials. So with Octo STS, `gotest`, `review`, and `deps` work only for a
+public repository, `git-k8s-deps` updates only a public repository, and for a
+private one, `conflicts` resolves only what git can. The `git-k8s` program
+publishes [check runs](#check-runs) with tokens for `checkRunsIdentity`, and
+publishes none without it. The URL must have the form
+`https://github.com/OWNER/REPO`, with or without `.git`.
 
 ### Set up Octo STS
 
@@ -196,7 +198,7 @@ with or without `.git`.
 
    ```yaml
    issuer: ISSUER
-   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-conflicts:check-conflicts|check-review:check-review)
+   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-conflicts:check-conflicts|check-review:check-review|check-deps:check-deps|git-k8s-deps:git-k8s-deps)
    audience: octo-sts.dev/NAMESPACE
    permissions:
      contents: write
@@ -247,9 +249,12 @@ minute before it expires, and ask Octo STS again after 30 seconds. When the
 `git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
 is `False` with the reason `CredentialsUnavailable`. When a check can't, it
 reports an `Error` result, except `check-review`, which reports `Running` and
-tries again to push its agent's fix, and `check-conflicts` on a branch with a
-parent, which reports `Running` and tries again. The messages include Octo
-STS's answer, such as `unable to find trust policy for "git-k8s"`. Octo STS
+tries again to push its agent's fix, `check-deps`, which reports `Running` and
+tries again, and `check-conflicts` on a branch with a parent, which reports
+`Running` and tries again. When `git-k8s-deps` can't, it logs
+`reconcile failed; retrying` with the error and tries again with backoff. The
+messages include Octo STS's answer, such as
+`unable to find trust policy for "git-k8s"`. Octo STS
 caches each trust policy, and the lack of one, for 5 minutes, so a change to a
 trust policy can take that long to apply.
 
@@ -2231,11 +2236,11 @@ and its message says why kube couldn't create the Pod. kube tries again with
 backoff that grows to 5 minutes, plus up to 10% jitter, so it creates the Pod
 within about 5.5 minutes after you label the namespace, without a new push.
 
-If `check-gotest`, `check-review`, or `check-conflicts` already runs, label
-the namespaces of their repositories before you upgrade the core program,
-which installs `config/policy.yaml` when it starts, or before you apply
-`config/policy.yaml` yourself. Otherwise the policy denies their Pods until
-you do.
+If `check-gotest`, `check-review`, `check-deps`, or `check-conflicts` already
+runs, label the namespaces of their repositories before you upgrade the core
+program, which installs `config/policy.yaml` when it starts, or before you
+apply `config/policy.yaml` yourself. Otherwise the policy denies their Pods
+until you do.
 
 ### Admission policies
 
@@ -2431,12 +2436,12 @@ and that `git-k8s-deps` keeps when it first saw a version through a restart.
   the back. While other branches keep landing, it might never land.
 - A check that doesn't finish at the front of a queue holds up the branches
   behind it while the front can still land.
-- `check-review` and `check-conflicts` read repository credentials, so
-  `generate` lets them read every Secret, including the Cursor API key,
-  which only their agent Pods use. Like `check-gotest`, they can also create
-  Pods in every namespace, and `check-conflicts` can even without
-  `-agent-image`. Installing them with `generate -watch-namespace` limits
-  their Secrets and Pods to one namespace.
+- `check-review`, `check-deps`, and `check-conflicts` read repository
+  credentials, so `generate` lets them read every Secret, including the
+  Cursor API key, which only their agent Pods use. Like `check-gotest`, they
+  can also create Pods in every namespace, and `check-conflicts` can even
+  without `-agent-image`. Installing them with `generate -watch-namespace`
+  limits their Secrets and Pods to one namespace.
 - Like `check-review`, `git-k8s-deps` reads repository credentials and
   creates Pods, so `generate` lets it read every Secret and create Pods in
   every namespace. Only its own code keeps its pushes under its prefix.
