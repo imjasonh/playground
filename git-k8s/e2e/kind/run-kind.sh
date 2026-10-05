@@ -2208,6 +2208,19 @@ install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=
 k -n go-cache rollout status deployment/go-cache --timeout=180s
 k -n check-deps rollout status deployment/check-deps --timeout=180s
 k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
+# check-deps and its agent Pods fetch from the mirror, and the check pushes
+# to it, as check-review does. It gets Secrets only by name, for its signing
+# key.
+checkdeps_sa=system:serviceaccount:check-deps:check-deps
+if can_list_secrets check-deps; then
+  echo "check-deps can list Secrets" >&2
+  exit 1
+fi
+if k -n check-deps auth can-i create serviceaccounts/check-deps --subresource=token --as="${checkdeps_sa}"; then
+  echo "check-deps can create tokens for its service account" >&2
+  exit 1
+fi
+echo "check-deps can't list Secrets or create tokens."
 GREET_BRANCH="deps/go/example.com/greet@v1"
 deps_main_requires() {
   dg fetch -q "${HOST_URL}/deps.git" main && dg show FETCH_HEAD:go.mod | grep -qx "require example.com/greet $1"
