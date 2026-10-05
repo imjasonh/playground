@@ -2,9 +2,9 @@
 // generate, and checks that branches are fixed, gated, and merged through
 // the mirror, which syncs them with a git server outside the cluster.
 //
-// Set GIT_K8S_KIND_E2E=1 to run it; CI sets it when git-k8s changes. It
-// needs Docker, kubectl, git, ssh-keygen, and curl, and installs kind if
-// it's missing.
+// Set GIT_K8S_KIND_E2E=1 to run it; CI sets it when git-k8s or kube
+// changes. It needs Docker, kubectl, git, ssh-keygen, and curl, and installs
+// kind if it's missing.
 package kind_test
 
 import (
