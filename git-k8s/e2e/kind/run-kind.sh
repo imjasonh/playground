@@ -249,15 +249,44 @@ eventually 60 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
+echo "::group::The API server rejects a URL that git could read as an option"
+url_repository() {
+  cat <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: url-check
+  namespace: ${NS}
+spec:
+  url: '$1'
+EOF
+}
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
+  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+  if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
+    echo "the API server accepted ${url}" >&2
+    exit 1
+  fi
+  cat "${WORKDIR}/apply.err"
+  grep -q 'spec.url' "${WORKDIR}/apply.err"
+done
+url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
+echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
+echo "::endgroup::"
+
 # remote_head prints a branch's commit in repository $2, or app.
-remote_head() { git ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
+remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
     -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
-branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
+# A failed ls-remote prints nothing too, so it must not count as gone.
+branch_gone() {
+  local head
+  head="$(remote_head "$1")" && [[ -z "${head}" && -z "$(branch_object "$1")" ]]
+}
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
@@ -271,7 +300,8 @@ formatted='package util
 func Add(a, b int) int { return a + b }'
 formatted_on_main() { fetch_main && [[ "$(g show FETCH_HEAD:util/add.go 2>/dev/null)" == "${formatted}" ]]; }
 eventually 120 formatted_on_main
-g log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
+# grep -q would exit at the first match and fail the pipeline with SIGPIPE.
+g log -1 --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: gofmt' >/dev/null
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
 echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
@@ -323,7 +353,7 @@ both_landed() {
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
 eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: base'
+g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
 g log --graph --oneline FETCH_HEAD
 echo "One branch landed, the base check merged main into the other, and it landed too."
 echo "::endgroup::"
@@ -435,7 +465,7 @@ broken_failed() { [[ -n "$(branch_object c/broken tested)" && "$(gotest c/broken
 eventually 300 broken_failed
 gotest c/broken message
 echo
-gotest c/broken message | grep -q -- '--- FAIL: TestAdd'
+gotest c/broken message | grep -- '--- FAIL: TestAdd' >/dev/null
 [[ "$(remote_head main tested)" == "${tested_main}" ]]
 # kube deletes a test Pod once the check stops declaring it.
 no_test_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest -o name)" ]]; }

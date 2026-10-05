@@ -26,6 +26,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -181,7 +182,7 @@ cd /src/repo
 if [ -n "${GIT_PASSWORD:-}" ]; then
   git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
 fi
-git fetch -q --depth=1 "$URL" "refs/heads/$BRANCH"
+git fetch -q --depth=1 --end-of-options "$URL" "refs/heads/$BRANCH"
 if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
@@ -205,6 +206,7 @@ func testPod(in *checks.Input, name string) *Pod {
 		{Name: "HEAD", Value: in.Spec.Head},
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
 	}
 	if ref := in.Repository.Spec.SecretRef; ref != nil {
 		fetchEnv = append(fetchEnv,
