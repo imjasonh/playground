@@ -224,8 +224,9 @@ program could apply the policies when it starts, the way kube installs CRDs.
 That needs RBAC to write ValidatingAdmissionPolicies, which a compromised
 core program could use to weaken them. The core program already decides
 what lands, so that may be acceptable. Checks send results to the core
-program instead of writing them, so the check-results policy is a backstop,
-and the policy that stops controllers from approving branches matters most.
+program instead of writing them, so the check-results policy is a backstop.
+The policies that stop controllers from approving branches and keep checks
+to their own Pods matter most.
 
 ## Map any service account to a check
 

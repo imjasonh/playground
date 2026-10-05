@@ -366,15 +366,17 @@ and changes to `status.checks` by service accounts other than the core
 program's, even when a role grants them status access. See
 [Install](#install).
 
-Neither stops a check that creates Pods from running a Pod as another
-service account, and no admission policy in this release does.
 `check-gotest` runs tests in Pods, so `generate` grants it permission to
-create, patch, and delete Pods in every namespace. It can run a Pod as
-another check's service account and mount a `git-k8s-results` token that the
-core program accepts as that check's. It can also run a Pod as the core
-program's service account, which writes every check's result. Anyone else
-who can create Pods in a check's namespace or in the `git-k8s` namespace can
-do the same.
+create, patch, and delete Pods in every namespace. The `git-k8s-check-pods`
+admission policy keeps those Pods out of the `git-k8s` and `check-*`
+namespaces, and makes them run as their namespace's `default` service
+account, which the core program doesn't map to a check. Without that policy,
+`check-gotest` can run a Pod as another check's service account and mount a
+`git-k8s-results` token that the core program accepts as that check's. It
+can also run a Pod as the core program's service account, which writes every
+check's result. Anyone else who can create Pods in a check's namespace or in
+the `git-k8s` namespace can do the same, because the policy covers only
+checks.
 
 The tokens have the audience `git-k8s-results`, so a token sent to the core
 program can't call the API server, and a token for the API server can't send
@@ -387,7 +389,7 @@ kube doesn't fence writes, and the results controller writes all of
 `status.checks` at once, so a replica that hasn't noticed that its leader
 lease expired can put back earlier results. Checks other than `approval` run
 again on an earlier result, which is for earlier commits or isn't final. If
-someone removed the approve annotation, though, the replica can put back
+someone removed the `approve` annotation, though, the replica can put back
 `approval`'s `Passed` result until `check-approval` sends `Failed` again, and
 the merge controller can merge the branch in that window.
 
