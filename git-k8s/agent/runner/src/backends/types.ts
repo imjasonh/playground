@@ -10,6 +10,8 @@ export interface AgentRequest {
   edit: boolean;
   /** The agent's tools, if not all that edit allows. */
   tools?: string[];
+  /** For a task that merges, the files that conflict, which hold conflict markers. */
+  conflicts?: string[];
   model: string;
   apiKey: string;
   timeoutMs: number;

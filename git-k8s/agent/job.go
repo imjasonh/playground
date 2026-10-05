@@ -10,8 +10,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -44,17 +46,47 @@ type Job struct {
 
 // Checkout is the commits that a job's agent works on.
 type Checkout struct {
-	// Branch points to Head. If the Pod finds it elsewhere, the agent
-	// doesn't run, so the run doesn't count toward the run limits, and the
-	// run waits a minute for a Job with the new head before it fetches
-	// Head again in a new Pod.
+	// Branch points to Head. If the Pod finds it elsewhere, even at a
+	// commit that contains Head, the agent doesn't run, so the run doesn't
+	// count toward the run limits, and the run waits a minute for a Job
+	// with the new head before it fetches Head again in a new Pod. A
+	// controller pushes what the agent changes onto Head with a lease,
+	// which fails once Branch moves.
 	Branch string
 	Head   string
 	// Parent names the branch that Branch lands on.
 	Parent string
 	// Base is the merge base of Head and Parent's head, or empty if they
-	// share no history. The agent reads the change from Base to Head.
+	// share no history. With Merge, Base is the base of the merge, which
+	// is the merge base of Head and Merge's commit, or another commit that
+	// Head contains, such as the head where the branch last synced with a
+	// repository that rewound since then. The agent reads the change from
+	// Base to Head.
 	Base string
+	// Merge, if set, is a commit of the same repository to merge into
+	// Head, and Base can't be empty. The agent's files are then the tree
+	// that git merge-tree --write-tree --merge-base=Base writes with
+	// merge.conflictStyle=diff3, instead of Head's, so the files that
+	// conflict hold conflict markers. A Result's Files change that tree.
+	Merge *Ref
+	// Union lists path patterns, in the gitattributes format, whose
+	// conflicts the merge resolves with git's union driver, which keeps
+	// the lines of both sides, as git.MergeOptions does.
+	Union []string
+}
+
+// Ref is a commit and a ref of the job's repository that contains it.
+type Ref struct {
+	// Name is the full name of the ref that the Pod fetches Commit from,
+	// such as refs/heads/main or refs/git-k8s/downstream/heads/main. The
+	// merge is of Commit, so the ref can move past Commit before the Pod
+	// fetches it. If the ref no longer contains Commit, the agent doesn't
+	// run, as when Branch moves.
+	Name   string
+	Commit string
+	// DisplayName names the ref in the agent's prompt, such as main. Empty
+	// means Name.
+	DisplayName string
 }
 
 // JobState is what RunJob needs to follow a job's run from one call to the
@@ -72,7 +104,8 @@ type JobState struct {
 	// can tell when kube created the Pod again.
 	UID string `json:"uid,omitempty"`
 	// Refunded is the UID of the run's Pod that found that the branch
-	// moved. Its agent didn't run, so RunJob gave back the run, once.
+	// moved, or that the merged ref no longer contains the merged commit.
+	// Its agent didn't run, so RunJob gave back the run, once.
 	Refunded string `json:"refunded,omitempty"`
 	// Done is true once RunJob reported that the run finished. Later calls
 	// for the same job report the run as done again, without its result,
@@ -116,7 +149,7 @@ type JobStatus struct {
 	// started, with the Error and what the agent used, or nil.
 	Failed *Result
 	// Moved is true when the run waits because a branch moved before the
-	// Pod fetched it.
+	// Pod fetched it, or because Merge's ref no longer contains its commit.
 	Moved bool
 }
 
@@ -211,12 +244,17 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 // with another spec, such as after a deploy with other flags. The agent
 // starts over, so the restart takes a place in -max-runs-per-day, but it
 // doesn't count toward the job's runs, so a deploy can't stop a run whose
-// job has none left. A run whose Pod found that the branch moved has no
-// agent to start over, so it prepares the source again at once.
+// job has none left. A run whose Pod found that the branch or the merged
+// ref moved has no agent to start over, so it prepares the source again at
+// once.
 func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
 		c := x.job.Checkout
-		return x.prepareAgain(ctx, fmt.Sprintf("%s no longer points to %s", c.Branch, c.Head))
+		why := fmt.Sprintf("%s no longer points to %s", c.Branch, c.Head)
+		if m := c.Merge; m != nil {
+			why += fmt.Sprintf(", or %s no longer contains %s", m.Name, m.Commit)
+		}
+		return x.prepareAgain(ctx, why)
 	}
 	// After a rollback, p can still exist, and following it starts no
 	// agent. If it's being deleted, follow counts the Pod that kube creates
@@ -293,8 +331,19 @@ func (j *Job) validate() error {
 		return errors.New("the job needs a name, a namespace, a repository URL, and a branch")
 	case !isCommit(c.Head) || c.Base != "" && !isCommit(c.Base):
 		return errors.New("the job's head and merge base must be commit SHAs")
+	case c.Merge != nil && (!isCommit(c.Merge.Commit) || c.Base == ""):
+		return errors.New("a merge needs its commit's SHA and the merge base")
+	case c.Merge != nil && !isRefName(c.Merge.Name):
+		return fmt.Errorf("the merged ref %.100q isn't a full ref name", c.Merge.Name)
+	case c.Merge != nil && strings.ContainsFunc(c.Merge.DisplayName, unicode.IsControl):
+		return fmt.Errorf("the merged ref's display name %.100q holds a control character", c.Merge.DisplayName)
+	case len(c.Union) > 0 && c.Merge == nil:
+		return errors.New("union paths need a merge")
 	case strings.TrimSpace(j.Task.Instructions) == "":
 		return errors.New("the job needs instructions")
+	}
+	if _, err := git.UnionAttributes(c.Union); err != nil {
+		return err
 	}
 	for _, tool := range j.Tools {
 		switch {
@@ -312,6 +361,14 @@ func (j *Job) validate() error {
 func isCommit(s string) bool {
 	_, err := hex.DecodeString(s)
 	return (len(s) == 40 || len(s) == 64) && err == nil && s == strings.ToLower(s)
+}
+
+// isRefName reports whether s is a full ref name that git fetches as one
+// ref, without a pattern or a destination.
+func isRefName(s string) bool {
+	return strings.HasPrefix(s, "refs/") && !strings.ContainsFunc(s, func(c rune) bool {
+		return unicode.IsSpace(c) || unicode.IsControl(c) || strings.ContainsRune(`:*?[\^~`, c)
+	})
 }
 
 // follow declares desired, the run's Pod, and reports how the run stands.
@@ -466,7 +523,7 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		kube.RequeueAfter(ctx, 5*time.Second)
 		return x.status("fetching the agent's result from Pod %s: %v", st.Pod, err)
 	}
-	res, err := parseResult(body, digest, x.job.Task.Edit)
+	res, err := parseResult(body, digest, x.job.Task.Edit, x.job.Checkout.Merge != nil)
 	if err != nil {
 		return x.fail("the agent's result from Pod %s isn't valid: %v", st.Pod, err)
 	}

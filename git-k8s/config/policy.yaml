@@ -17,14 +17,15 @@ metadata:
 # its results endpoint, which writes each one to the entry of the check that
 # sent it, and checks have no RBAC rule to write GitBranch status. This
 # policy is the backstop if a role grants one: it rejects every status write
-# by a check's service account, and every change to status.checks by a
-# service account other than the core program's. generate installs each
-# program in a namespace with a service account of the program's name, so
-# the core program runs as system:serviceaccount:git-k8s:git-k8s and the
-# gofmt check as system:serviceaccount:check-gofmt:check-gofmt. A check
-# installed under another name or namespace needs an entry in the
-# git-k8s-checks ConfigMap. People aren't service accounts, so RBAC alone
-# decides whether they can write results.
+# by a check's service account, and every change to status.checks or
+# status.diverged by a service account other than the core program's.
+# generate installs each program in a namespace with a service account of
+# the program's name, so the core program runs as
+# system:serviceaccount:git-k8s:git-k8s and the gofmt check as
+# system:serviceaccount:check-gofmt:check-gofmt. A check installed under
+# another name or namespace needs an entry in the git-k8s-checks ConfigMap.
+# People aren't service accounts, so RBAC alone decides whether they can
+# write results.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -75,6 +76,13 @@ spec:
     - expression: variables.check != "" || variables.core || variables.new == variables.old
       messageExpression: >-
         request.userInfo.username + " isn't the core program's service account, so it can't write status.checks"
+    # The conflicts check merges or replays the commit that status.diverged
+    # names, so only the core program, which runs the mirror, writes it.
+    - expression: >-
+        variables.check != "" || variables.core ||
+        (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
+        (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : [])
+      messageExpression: request.userInfo.username + " isn't the core program's service account, so it can't write status.diverged"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

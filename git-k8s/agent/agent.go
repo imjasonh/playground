@@ -24,7 +24,8 @@
 //
 // A controller, or a check that needs a Job that Run doesn't build, calls
 // Runner.RunJob. A Job names the repository, the commits to check out, the
-// task, and the agent's tools, and Run builds one from the check's branch.
+// task, and the agent's tools, and can have the agent resolve a merge's
+// conflicts. Run builds one from the check's branch.
 package agent
 
 import (
@@ -197,7 +198,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	case s.Result == nil:
 		v := checks.Fail("%s", s.Message)
 		if s.Failed != nil {
-			v.Outputs = usageOutputs(s.Failed)
+			v.Outputs = UsageOutputs(s.Failed)
 		}
 		return x.done(ctx, v), nil
 	}
@@ -335,13 +336,14 @@ func (x *run) verdict(ctx context.Context, res *Result) (checks.Verdict, *Result
 		}
 		v.Fix = fix
 	}
-	v.Outputs = usageOutputs(res)
+	v.Outputs = UsageOutputs(res)
 	v.Outputs["summary"] = res.Summary
 	return x.done(ctx, v), res
 }
 
-// usageOutputs say what a run used.
-func usageOutputs(res *Result) map[string]string {
+// UsageOutputs returns the outputs that say what a run used, such as its
+// model, its tokens, and its cost.
+func UsageOutputs(res *Result) map[string]string {
 	o := map[string]string{
 		"model":            res.Model,
 		"inputTokens":      strconv.FormatInt(res.Usage.InputTokens, 10),

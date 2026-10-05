@@ -696,6 +696,7 @@ patch_status() {
 }
 result='{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}'
 approval_result='{"status":{"checks":{"approval":{"commit":"0000000","state":"Passed"}}}}'
+diverged='{"status":{"diverged":{"commit":"0000000","ref":"refs/git-k8s/downstream/heads/main"}}}'
 approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
 for bearer in "${token}" "${approval_token}"; do
   code="$(patch_status "${result}" "${bearer}")"
@@ -741,9 +742,9 @@ kill "${PORT_FORWARD_PID}"
 PORT_FORWARD_PID=""
 
 # If a role lets a check or another service account write status anyway,
-# the admission policy still lets only the core program write results. It
-# rejects any status write from a check, including a merge queue, and a result
-# from a service account that isn't a check.
+# the admission policy still lets only the core program write results and
+# status.diverged. It rejects any status write from a check, including a
+# merge queue, and a change to either from any other service account.
 k -n "${NS}" create serviceaccount rogue
 k apply -f - <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
@@ -778,7 +779,7 @@ rogue_token="$(k -n "${NS}" create token rogue)"
 status_rejected() { [[ "$(patch_status "$1" "$2")" == 422 ]] && grep -q "$3" "${WORKDIR}/patch.json"; }
 for patch in "${result}" '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}' \
   '{"status":{"queued":{"since":"2026-01-01T00:00:00Z","head":"0000000"}}}' \
-  '{"status":{"queue":["c/x"]}}'; do
+  '{"status":{"queue":["c/x"]}}' "${diverged}"; do
   eventually 30 status_rejected "${patch}" "${token}" "the gofmt check can't write GitBranch status"
   cat "${WORKDIR}/patch.json"
   echo
@@ -790,12 +791,16 @@ echo
 eventually 30 status_rejected "${result}" "${rogue_token}" "system:serviceaccount:${NS}:rogue isn't the core program's service account"
 cat "${WORKDIR}/patch.json"
 echo
+eventually 30 status_rejected "${diverged}" "${rogue_token}" "system:serviceaccount:${NS}:rogue isn't the core program's service account, so it can't write status.diverged"
+cat "${WORKDIR}/patch.json"
+echo
 # The policies ignore the core program's entry, which names the gofmt check.
 core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${result}" "${core_token}")" == 200 ]]
+[[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "Checks can't write GitBranch status or a merge queue even with a role that allows it, check-approval in the namespace ${APPROVAL_NS} is the approval check through its ConfigMap entry, the results endpoint refuses a check's token for another check's entry, and the core program, despite its entry, and people can write status.checks but other service accounts can't."
+echo "Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it, check-approval in the namespace ${APPROVAL_NS} is the approval check through its ConfigMap entry, the results endpoint refuses a check's token for another check's entry, the core program, despite its entry, and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -1569,6 +1574,112 @@ echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
 echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "::endgroup::"
+
+echo "::group::Conflicts with a parent that moved are resolved before branches land"
+# Git merges go.sum with its union driver. The fake agent resolves other
+# conflicts by keeping the branch's lines and then the parent's, and fails a
+# conflict that holds DO NOT MERGE.
+CHECKS+=(check-conflicts)
+install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
+CONFLICTED="${WORKDIR}/conflicted"
+mkdir "${CONFLICTED}"
+cf() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=http:https:git:ssh \
+    git -C "${CONFLICTED}" -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+cf init -q -b main
+printf 'example.com/a v1.0.0 h1:a=\n' >"${CONFLICTED}/go.sum"
+printf 'Notes\n' >"${CONFLICTED}/notes.txt"
+cf add -A
+cf commit -qm "Add go.sum and notes"
+cf push -q --end-of-options "${HOST_URL}/conflicted.git" HEAD:main
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: conflicted
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/conflicted.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: conflicts
+            mayPush: true
+        deleteMergedBranches: true
+    - match: c/**
+      parent: main
+EOF
+result() { k -n "${NS}" get gitbranch "$(branch_object "$1" conflicted)" -o jsonpath="{.status.checks.$2.$3}"; }
+# race_main sets the file $2 to $3 and then $4 on a new branch $1 from main,
+# and to $3 and then $5 on main. It pushes main first, so that the branch
+# conflicts with main when git-k8s first sees it.
+race_main() {
+  cf switch -q -c "$1" --end-of-options main
+  printf '%b%s\n' "$3" "$4" >"${CONFLICTED}/$2"
+  cf commit -qam "Change $2 on $1"
+  cf switch -q --end-of-options main
+  printf '%b%s\n' "$3" "$5" >"${CONFLICTED}/$2"
+  cf commit -qam "Change $2 on main"
+  cf push -q --end-of-options "${HOST_URL}/conflicted.git" main:main
+  cf push -q --end-of-options "${HOST_URL}/conflicted.git" "$1:$1"
+}
+# landed_with reports whether the branch $1 landed and is gone, and main's
+# file $2 holds $3.
+landed_with() {
+  [[ -z "$(remote_head "$1" conflicted)" && -z "$(branch_object "$1" conflicted)" ]] &&
+    cf fetch -q --end-of-options "${HOST_URL}/conflicted.git" main &&
+    [[ "$(cf show --end-of-options FETCH_HEAD:"$2")" == "$3" ]]
+}
+# merged_main checks that main's head, in FETCH_HEAD, is the conflicts
+# check's merge of the main that race_main pushed into the branch $1. It
+# saves the message instead of piping it to grep, because grep -q can exit
+# before git log finishes writing, and pipefail then fails on git's SIGPIPE.
+merged_main() {
+  local message
+  message="$(cf log -1 --format=%B --end-of-options FETCH_HEAD)"
+  echo "${message}"
+  grep -qx 'Git-K8s-Fixer: conflicts' <<<"${message}"
+  [[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "$(cf rev-parse --verify --end-of-options "$1") $(cf rev-parse --verify --end-of-options main)" ]]
+}
+
+race_main c/sum go.sum 'example.com/a v1.0.0 h1:a=\n' 'example.com/b v1.0.0 h1:b=' 'example.com/c v1.0.0 h1:c='
+eventually 300 landed_with c/sum go.sum "$(printf 'example.com/a v1.0.0 h1:a=\nexample.com/b v1.0.0 h1:b=\nexample.com/c v1.0.0 h1:c=')"
+merged_main c/sum
+echo "Git merged the go.sum conflict with its union driver, and c/sum landed."
+
+cf switch -q -C main --end-of-options FETCH_HEAD
+race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds this line.'
+eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
+merged_main c/text
+eventually 60 no_agent_pods
+echo "The agent resolved the notes.txt conflict, and c/text landed."
+
+cf switch -q -C main --end-of-options FETCH_HEAD
+race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'
+refused="$(cf rev-parse --verify --end-of-options c/refused)"
+moved="$(cf rev-parse --verify --end-of-options main)"
+refused_failed() {
+  [[ -n "$(branch_object c/refused conflicted)" && "$(result c/refused conflicts state)" == Failed &&
+    "$(result c/refused base outputs.conflicts)" == notes.txt ]]
+}
+eventually 300 refused_failed
+k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.checks}'
+echo
+[[ "$(result c/refused conflicts message)" == "the agent couldn't resolve the conflicts: The conflicts in notes.txt hold DO NOT MERGE or aren't well formed, so the fake agent changed no files." ]]
+[[ "$(result c/refused conflicts outputs.runs)" == 1 ]]
+[[ "$(remote_head c/refused conflicted)" == "${refused}" ]]
+[[ "$(remote_head main conflicted)" == "${moved}" ]]
+eventually 60 no_agent_pods
+echo "The base check reported the notes.txt conflict on c/refused, and the agent refused to resolve it, so c/refused stays as it is."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
