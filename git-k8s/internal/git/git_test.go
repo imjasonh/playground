@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net"
 	"net/http"
@@ -205,6 +206,34 @@ func TestLsRemoteReturnsWhenCanceled(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want %v", err, context.Canceled)
+	}
+}
+
+// Commands in a repository run git with -C and the repository's directory
+// before the subcommand.
+func TestErrorsNameTheSubcommand(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "app.git")
+	if _, err := (&git.Git{}).Open(t.Context(), dir); err != nil {
+		t.Fatal(err)
+	}
+	for name, tt := range map[string]struct {
+		git  *git.Git
+		want error
+	}{
+		"timeout":        {&git.Git{Timeout: time.Nanosecond}, context.DeadlineExceeded},
+		"missing binary": {&git.Git{Bin: filepath.Join(t.TempDir(), "git")}, fs.ErrNotExist},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Open doesn't run git for a repository that exists.
+			repo, err := tt.git.Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = repo.Fetch(t.Context(), git.Remote{URL: "http://127.0.0.1:1/app.git"}, "main")
+			if !errors.Is(err, tt.want) || !strings.HasPrefix(err.Error(), "git fetch: ") {
+				t.Errorf("err = %v, want an error that starts with %q and wraps %v", err, "git fetch: ", tt.want)
+			}
+		})
 	}
 }
 
