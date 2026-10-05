@@ -2131,8 +2131,9 @@ echo "::group::No zombie lasts, and the programs' Pods meet the restricted Pod S
 no_lasting_zombies
 # generate doesn't label the programs' namespaces, so their Pods get only the
 # cluster's default Pod Security level. A server-side dry run of the
-# restricted label warns about each Pod that violates it.
-programs=(git-k8s go-cache "${CHECKS[@]}" check-review check-conflicts check-deps git-k8s-deps)
+# restricted label warns about each Pod that violates it. By now, CHECKS
+# holds every program that the groups installed except git-k8s and go-cache.
+programs=(git-k8s go-cache "${CHECKS[@]}")
 for program in "${programs[@]}"; do
   k label --dry-run=server --overwrite namespace "$(namespace_of "${program}")" \
     pod-security.kubernetes.io/enforce=restricted 2>&1 >/dev/null | tee "${WORKDIR}/pod-security.log"
