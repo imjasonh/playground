@@ -7,9 +7,9 @@
     "detachmentIDs" : [
 
     ],
-    "factionID" : "chaos-titan-legions",
-    "id" : "4824A717-5020-466D-A918-499185CD0CD0",
-    "name" : "Chaos Titan Legions (no detachments)",
+    "factionID" : "titan-legions",
+    "id" : "4596942D-5257-474B-A2A5-D3AB47F065BE",
+    "name" : "Titan Legions (no detachments)",
     "notes" : "Catalog has no detachments for this faction.",
     "units" : [
 

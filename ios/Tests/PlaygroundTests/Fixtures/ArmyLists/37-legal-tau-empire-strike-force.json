@@ -1,135 +1,231 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "BA5F95F6-E093-48BF-9391-B4AB4DC6305B",
-    "name": "T\u2019au Empire Strike Force 1985pts",
-    "catalogVersion": "11e-1",
-    "factionID": "tau-empire",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "tau-empire--auxiliary-cadre",
       "tau-empire--kauyon"
     ],
-    "units": [
+    "factionID" : "tau-empire",
+    "id" : "BF3B1E09-336E-4177-9441-1F14678576BE",
+    "name" : "T’au Empire Strike Force 1870pts",
+    "notes" : "stress seed=36 attach=true enh=true",
+    "units" : [
       {
-        "id": "C978C1A3-E211-4F1C-956B-CDC54EAEED9A",
-        "datasheetID": "tau-empire--kroot-flesh-shaper",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "9D0965A0-6034-4843-9A93-E885D0D241CF",
+        "datasheetID" : "tau-empire--kroot-flesh-shaper",
+        "enhancementIDs" : [
           "tau-empire--auxiliary-cadre--admired-leader"
         ],
-        "attachedToUnitID": null
+        "id" : "DA0ED6DE-E9EC-4866-93C2-E0B9F94DC269",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7E70194B-9B94-4A5C-9B6A-B98993AA4BAC",
-        "datasheetID": "tau-empire--strike-team",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--crisis-battlesuits",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A3386C1C-CCC9-4E6D-A8D1-FD096FB74608",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "80D9B19E-EBCC-488D-8FEB-EE4A91287E58",
-        "datasheetID": "tau-empire--aun-va",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--crisis-starscythe-battlesuits",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "89326893-FA79-4007-96D9-1FB0E7F027A5",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E6FC72F3-9171-4774-883E-C63299108BD8",
-        "datasheetID": "tau-empire--hammerhead-gunship",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--drone-sentry-turret",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DF1219A4-F360-4368-B4F2-8F78A1BACAFC",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2C4152A5-FDCB-44BC-8F80-07FA6621269B",
-        "datasheetID": "tau-empire--remora-stealth-drones",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--orca-dropship",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "255FB902-05F4-4978-8214-52CDDFFCD112",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4DA548C5-1F13-4FEE-B82E-CAB1A373B16A",
-        "datasheetID": "tau-empire--knarloc-riders",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--riptide-battlesuit",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DB184457-E9DB-4E9A-8003-C49AD1868198",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "82F29810-144F-4B8F-AF03-85AD26036B3F",
-        "datasheetID": "tau-empire--tiger-shark",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--tx42-piranha",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "811DB17B-3F91-42E5-AE2E-DA130BBD9F6D",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2BD3CB7A-4196-434C-A60B-137C9435E807",
-        "datasheetID": "tau-empire--breacher-team",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--krootox-rampagers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9786C88D-3A1A-4ADC-8C91-E790D74A14D4",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E5372D0D-D13E-4A61-B6CF-110A5D8F6B18",
-        "datasheetID": "tau-empire--krootox-rampagers",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--kroot-carnivores",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9D0965A0-6034-4843-9A93-E885D0D241CF",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "93669538-48D9-4CAF-831E-BA8DBF99E899",
-        "datasheetID": "tau-empire--orca-dropship",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--kroot-hounds",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1358BD8B-5737-418B-98E8-0866674BA934",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "CFDC14F8-8537-47F5-9C29-9162C94F8EF3",
-        "datasheetID": "tau-empire--tidewall-shieldline",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--great-knarloc",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "797F0CB6-6C4C-4004-866F-DC50CFC4C308",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "70D2031F-AF09-49C1-A733-B2C52F882875",
-        "datasheetID": "tau-empire--xv9-hazard-battlesuits",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--crisis-sunforge-battlesuits",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4F49B11D-323A-4C57-A413-834A60302926",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "8AEED122-E1AE-40DA-B47F-02606E61AC6A",
-        "datasheetID": "tau-empire--vespid-stingwings",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--krootox-riders",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "159B9C63-2A5D-4B95-B2AD-AFB2BF26F24B",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "919791DB-6C79-44E1-9126-3AD732B002B0",
-        "datasheetID": "tau-empire--stormsurge",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "tau-empire--broadside-battlesuits",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4BD6A680-7241-4AF1-B0E0-495FDBDE09A8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--strike-team",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "71382422-D38D-4DDE-9EFA-225EC0EB7D28",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--stealth-battlesuits",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "073BD0D1-5FBD-4F7C-BCD9-F59DE1CE895B",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--kroot-farstalkers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8DF3E7FA-2697-414C-8AC2-A9C96A010627",
+        "models" : 12,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--breacher-team",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "83730B02-F5C4-41B0-884B-902911EC39E3",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--aun-va",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "69283EEF-4CDA-477F-B631-1695D76B254D",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "C978C1A3-E211-4F1C-956B-CDC54EAEED9A",
-    "notes": "stress seed=36 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "DA0ED6DE-E9EC-4866-93C2-E0B9F94DC269"
+  },
+  "notes" : "auto-built"
 }

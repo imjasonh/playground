@@ -1,143 +1,166 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "6811D4DA-C311-42B8-9F15-9A37A77DAB08",
-    "name": "Space Wolves Strike Force 1970pts",
-    "catalogVersion": "11e-1",
-    "factionID": "space-wolves",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
-      "space-wolves--fulguris-task-force",
-      "space-wolves--saga-of-the-beastslayer"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "space-wolves--assault-brethren",
+      "space-wolves--gauntlet-task-force",
+      "space-wolves--gravis-siege-force"
     ],
-    "units": [
+    "factionID" : "space-wolves",
+    "id" : "F1CD4661-9BDE-42DD-9EC2-E1A248C1CDE2",
+    "name" : "Space Wolves Strike Force 2000pts",
+    "notes" : "stress seed=43 attach=true enh=true",
+    "units" : [
       {
-        "id": "9B840E39-1E93-4871-9F0A-4D09F4D3B9E0",
-        "datasheetID": "space-wolves--iron-priest",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "space-wolves--saga-of-the-beastslayer--wolf-touched"
+        "attachedToUnitID" : "0938F85A-5F03-411C-9650-AB6A94F66E52",
+        "datasheetID" : "space-wolves--iron-priest",
+        "enhancementIDs" : [
+          "space-wolves--gravis-siege-force--narthecis-gauntlet"
         ],
-        "attachedToUnitID": "3211D720-CDA0-46FF-97E7-C1197F3CFB8B"
+        "id" : "1589ECF6-269A-46D0-B283-CEC4677A5F44",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2005128D-DD85-44DB-BA90-EF822499BA4C",
-        "datasheetID": "space-wolves--assault-intercessor-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--blood-claws",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0938F85A-5F03-411C-9650-AB6A94F66E52",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B7867435-476E-4ECD-B6FC-23B942029CDF",
-        "datasheetID": "space-wolves--terminator-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--wolf-guard-pack-leader-with-jump-pack",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5F94652C-020D-4436-B435-C1C146FD30BD",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DEECF0A4-C072-4383-B215-CE10C1598E2D",
-        "datasheetID": "space-wolves--stormtalon-gunship",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--hellblaster-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A5BC5E9A-98C1-400F-8204-46EA8D224CC8",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E4E1CBF8-6EDD-44C3-8AE9-6FACCC7B48CF",
-        "datasheetID": "space-wolves--infernus-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--drop-pod",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5BB275D7-753A-4F17-807F-22160D2B9513",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0D99196A-9767-4350-9862-01F0BEFBF110",
-        "datasheetID": "space-wolves--intercessor-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--mastodon",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "015311EC-0F82-4056-AE16-CEB2CFD8CFB0",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "08972276-85E7-4423-9759-83F92BEC17D1",
-        "datasheetID": "space-wolves--vindicator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--hounds-of-morkai",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "17B8003C-D524-4CBA-8CC5-D6E05CAD6115",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "72958868-CD43-41E5-8865-A6AEC1A67251",
-        "datasheetID": "space-wolves--wolf-scouts",
-        "models": 6,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--hammerfall-bunker",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1D977D51-7A3F-4763-9AF3-EB30FCC17ED0",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E729274D-6674-42B8-B4F0-3DFD639AAC27",
-        "datasheetID": "space-wolves--incursor-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--gladiator-valiant",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "93A135DD-AB3E-4BA7-9853-242CF97525F1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "C4F89A9D-1525-4D3A-BE2F-0E9ECD6AA8F8",
-        "datasheetID": "space-wolves--scout-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--harald-deathwolf",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F9E4B2B4-B370-42C5-86C6-F6B319D26C61",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5FA37D28-A8DC-4408-8992-CD9307CF6F6C",
-        "datasheetID": "space-wolves--assault-intercessor-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "CF2A3B88-3E59-4AD3-A437-1EAB1B6311A0",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E3664092-5F4E-4366-9818-9F06BEBA5227",
-        "datasheetID": "space-wolves--hounds-of-morkai",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--wolf-guard-pack-leader",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9558FEFE-5CC3-4F70-B27D-60CB5FFC5CA8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7ABF32A2-D7D3-4DE2-83C4-DF4F095FB00C",
-        "datasheetID": "space-wolves--aggressor-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "3D6B6885-53D1-46BD-A77D-068173D43EA9",
-        "datasheetID": "space-wolves--stormraven-gunship",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "3211D720-CDA0-46FF-97E7-C1197F3CFB8B",
-        "datasheetID": "space-wolves--grey-hunters",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--brutalis-dreadnought",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "CBCF2B54-D990-4991-B03B-F0BCD448C187",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "9B840E39-1E93-4871-9F0A-4D09F4D3B9E0",
-    "notes": "stress seed=43 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "1589ECF6-269A-46D0-B283-CEC4677A5F44"
+  },
+  "notes" : "auto-built"
 }

@@ -1,94 +1,119 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "DE84E2AD-1106-4361-8E96-D7B3B05ED7D4",
-    "name": "Death Guard Incursion 995pts",
-    "catalogVersion": "11e-1",
-    "factionID": "death-guard",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "death-guard--death-lord-s-chosen"
     ],
-    "units": [
+    "factionID" : "death-guard",
+    "id" : "93CA45C5-2212-4DFD-9888-52D893B11427",
+    "name" : "Death Guard Incursion 935pts",
+    "notes" : "stress seed=12 attach=true enh=true",
+    "units" : [
       {
-        "id": "DDFF7493-6E9F-48ED-A68E-916479351F7E",
-        "datasheetID": "death-guard--icon-bearer",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "datasheetID" : "death-guard--icon-bearer",
+        "enhancementIDs" : [
           "death-guard--death-lord-s-chosen--face-of-death"
         ],
-        "attachedToUnitID": "53708243-4DB2-4D0D-A691-3C72C4C6CC74"
+        "id" : "A222D2B0-AA08-4A1E-BB74-6894C9FECBA0",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0CA7FAF2-D307-490A-99B5-8E0ED18CA98C",
-        "datasheetID": "death-guard--nurglings",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--beasts-of-nurgle",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "230B85E2-7EB5-4E40-A852-48B192818C6C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "BE98F792-0026-4216-BE51-DC3457C0A7F4",
-        "datasheetID": "death-guard--defiler",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--death-guard-cultists",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0949C0BB-3FC5-4996-964D-45938611CAE8",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "76D83C14-E861-4ED2-84FE-EDA625F8B2DE",
-        "datasheetID": "death-guard--chaos-rhino",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--plaguebearers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5F0DFAF4-73BD-4A5E-B47A-E1181F8B6929",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4D96B081-17CC-4C5E-BEFD-941625CFF88C",
-        "datasheetID": "death-guard--chaos-predator-annihilator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--foetid-bloat-drone",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A5DD4516-1D6F-48D3-82D1-4590A1E4337A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DD27652E-C5F9-46A8-88BD-4692EBBEDDD5",
-        "datasheetID": "death-guard--plaguebearers",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--myphitic-blight-haulers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5BBB1F3D-02AF-46FB-8014-7D8CCD89E31A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2ADF3721-2151-4C72-A334-8E57F97725C8",
-        "datasheetID": "death-guard--plague-drones",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--nurglings",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0184E862-909C-4012-AEB3-F0DC24E7EEF3",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "BBF2550F-0A4E-414C-BE2D-67D3153103F3",
-        "datasheetID": "death-guard--beasts-of-nurgle",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--defiler",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1751F930-764F-4BA2-8CAA-70514C4C31FA",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "53708243-4DB2-4D0D-A691-3C72C4C6CC74",
-        "datasheetID": "death-guard--plague-marines",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "death-guard--helbrute",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1DD825BE-FB72-4A20-9A60-BE97DDA269B3",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "DDFF7493-6E9F-48ED-A68E-916479351F7E",
-    "notes": "stress seed=12 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "A222D2B0-AA08-4A1E-BB74-6894C9FECBA0"
+  },
+  "notes" : "auto-built"
 }

@@ -1,86 +1,109 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "3CFC965F-EC56-446B-B0ED-FA55CD4B690A",
-    "name": "Emperor\u2019s Children Incursion 980pts",
-    "catalogVersion": "11e-1",
-    "factionID": "emperors-children",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
-      "emperors-children--peerless-bladesmen"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "emperors-children--mercurial-host"
     ],
-    "units": [
+    "factionID" : "emperors-children",
+    "id" : "09E69222-2C7C-4F75-96E6-2D8348785216",
+    "name" : "Emperor’s Children Incursion 980pts",
+    "notes" : "stress seed=15 attach=true enh=true",
+    "units" : [
       {
-        "id": "F79459BF-9277-43A3-A1CD-446298BBA4D7",
-        "datasheetID": "emperors-children--sorcerer",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "emperors-children--peerless-bladesmen--rise-to-the-challenge"
+        "attachedToUnitID" : "EBCEED1D-0FFA-4524-90F4-3A6FA7D42980",
+        "datasheetID" : "emperors-children--sorcerer",
+        "enhancementIDs" : [
+          "emperors-children--mercurial-host--tactical-perfection"
         ],
-        "attachedToUnitID": "E4DB6180-8A4F-4CC4-935E-C9D4F397BA64"
+        "id" : "29A09296-32E5-4F27-B67E-1799AFC8EAD9",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DF13652F-9512-4F90-9B60-BD961AC8E627",
-        "datasheetID": "emperors-children--chaos-spawn",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--maulerfiend",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EF97E8C7-D6E2-4035-8446-5DE96B554D0A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A19551E6-5E72-4B70-9156-718B772D2256",
-        "datasheetID": "emperors-children--daemonettes",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--chaos-rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B54A753B-842F-4461-92EC-06DB0007B4C8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4406C3BA-97B8-4258-B2F5-22B0E5E529D3",
-        "datasheetID": "emperors-children--heldrake",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--tormentors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EBCEED1D-0FFA-4524-90F4-3A6FA7D42980",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E4DB6180-8A4F-4CC4-935E-C9D4F397BA64",
-        "datasheetID": "emperors-children--infractors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--heldrake",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "11A220BF-84E1-4B4D-BEEB-07293F1E1E42",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "3ADB3290-DA3C-4106-AA65-B7648EE3D9D3",
-        "datasheetID": "emperors-children--seekers",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--daemonettes",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A77D4DE7-C675-4EA9-9CEF-27D078440173",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "ECDE651F-7B2E-4648-8F5F-03B0624798ED",
-        "datasheetID": "emperors-children--tormentors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--daemonettes",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2DB74F07-FABD-4293-AA85-13CE4371933A",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5648CFB8-456D-4121-8A2C-F137134656DC",
-        "datasheetID": "emperors-children--noise-marines",
-        "models": 6,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "emperors-children--infractors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "23A00F52-67DB-4B22-A883-8FC5A8BB7096",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "F79459BF-9277-43A3-A1CD-446298BBA4D7",
-    "notes": "stress seed=15 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "29A09296-32E5-4F27-B67E-1799AFC8EAD9"
+  },
+  "notes" : "auto-built"
 }

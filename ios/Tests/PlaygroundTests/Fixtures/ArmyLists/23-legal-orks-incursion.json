@@ -1,95 +1,99 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "216B4C5D-A82E-4114-AE54-2B90B94A536D",
-    "name": "Orks Incursion 975pts",
-    "catalogVersion": "11e-1",
-    "factionID": "orks",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "orks--brute-bosses",
       "orks--taktikal-brigade"
     ],
-    "units": [
+    "factionID" : "orks",
+    "id" : "DD6D80EE-96DD-41BD-9AF2-B43010B90F6D",
+    "name" : "Orks Incursion 915pts",
+    "notes" : "stress seed=22 attach=true enh=true",
+    "units" : [
       {
-        "id": "17B02EFC-DCB3-4869-AB80-19BA377B5013",
-        "datasheetID": "orks--mek",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "65FBC5C1-BB7A-4BD6-824B-4D95C0BB74CC",
+        "datasheetID" : "orks--mad-dok-grotsnik",
+        "enhancementIDs" : [
           "orks--brute-bosses--brutal-but-kunnin"
         ],
-        "attachedToUnitID": null
+        "id" : "641AA9AE-6F92-4D91-953F-05A41DF587B4",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "071992D7-60C8-4F5D-A53D-E18A4D669091",
-        "datasheetID": "orks--kill-rig",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--gorkanaut",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C9CABBD5-048C-496A-965C-996EB7623B8E",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "BEA243FA-8683-48BC-B9EF-5D6764000E46",
-        "datasheetID": "orks--wartrakks",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--beast-snagga-boyz",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1FE5D1CB-E673-4FC4-B4A7-9A8351A2C309",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "6344ADA7-704A-4F0F-BB15-E03919C7DF8C",
-        "datasheetID": "orks--lootas",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--boyz",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "65FBC5C1-BB7A-4BD6-824B-4D95C0BB74CC",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0426EE43-51BC-4B60-A6DA-7030B085BDB9",
-        "datasheetID": "orks--rukkatrukk-squigbuggies",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--lootas",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1B8F1547-809C-40E0-808C-7F7F97CF7D3F",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "3898B8BB-CF66-493B-A5BB-343F92D3CC63",
-        "datasheetID": "orks--tankbustas",
-        "models": 6,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--wartrakks",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C1FDFE9B-A776-43E4-AE59-0AE9850FC659",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "C580BB72-BE65-48D6-9C4A-C91DB1831BF9",
-        "datasheetID": "orks--gunwagon",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "3BE00722-1EEF-479B-B534-EE00CECD5194",
-        "datasheetID": "orks--runtherd",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "F8FA30F6-D273-44B8-9339-69EAD0C4E649",
-        "datasheetID": "orks--wazbom-blastajet",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--gretchin",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D7E0F418-B585-4AEC-8C2E-B98F48030EC5",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "17B02EFC-DCB3-4869-AB80-19BA377B5013",
-    "notes": "stress seed=22 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "641AA9AE-6F92-4D91-953F-05A41DF587B4"
+  },
+  "notes" : "auto-built"
 }
