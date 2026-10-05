@@ -410,6 +410,9 @@ cluster, compression costs the API server CPU on every list and saves
 bandwidth that's rarely scarce, so kube turns it off. `Manager.Compression`
 turns it back on.
 
+A cache also returns the manager's own writes before its watch delivers
+them, as [A controller's own writes](#a-controllers-own-writes) describes.
+
 ### Dependency tracking
 
 Each reconcile runs with a scope that records what it reads. `Get` records the
@@ -465,6 +468,17 @@ target don't remove each other's fields. An owned object's document also gets
 the owner label and annotation and, when Kubernetes allows it, an owner
 reference.
 
+A reconcile can pass an object to `Own` or `Apply` only once, and the
+framework compares the objects by group, kind, and key, not by Go type.
+Server-side apply takes each request as the field manager's whole intent, so
+if two declarations of one object shared a manager, the second request would
+remove the fields that only the first sent. For example, a type that sets a
+label, followed by a type that declares only the status, would remove the
+label. Declaring an object with both `Own` and `Apply` fails too, because
+`Apply` is for objects that the reconciled object doesn't own. The error also
+says that `Own` doesn't apply a status, so that a program doesn't move the
+status into the `Own` declaration and lose it unnoticed.
+
 The framework skips an apply when the cached object already has every field
 of the document. That alone isn't enough, because server-side apply removes
 fields that a manager stops sending, and a desired object that drops a field
@@ -473,9 +487,75 @@ carries an annotation with a hash of the rest of the document. If the cached
 object has every field including that annotation, the last apply sent this
 same document, and there's nothing to add or remove. Because the hash lives on
 the object, the skip works after a restart or a leader failover. For `Apply`,
-the framework doesn't annotate objects it doesn't own, and skips only when
-this process applied the same document before. The `kube_apply_total` metric
-counts applies by result, `applied` or `skipped`.
+the framework doesn't annotate objects it doesn't own. Instead, it records in
+memory the documents that the last successful reconcile of each object
+applied, and skips only when the record holds the same document. A reconcile
+whose writes fail may already have applied documents that the record doesn't
+hold, so the framework drops the record, and the next reconcile sends every
+document. The `kube_apply_total` metric counts applies by result, `applied` or
+`skipped`.
+
+For a kind with a status subresource, server-side apply tracks the status
+fields apart from the object's other fields, and a request to the object
+itself ignores the status. So when the type passed to `Apply` has a status,
+the framework sends a second document to the status subresource, with the
+same field manager, that holds the object's name, namespace, UID, and status.
+It sends the status after the first request succeeds or is skipped, and not
+at all when the first request fails. When the status request fails, the
+reconcile fails and is retried, and the first request's fields stay. A status
+request is skipped by the same rule as the first request, and counts in
+`kube_apply_total` the same way.
+
+An empty status goes without a `status` field, so the manager gives up every
+status field that it owns, and the API server removes each one that no other
+manager owns. So an empty status needs a request only while the manager owns
+status fields. The API server keeps a `managedFields` entry for a manager and
+subresource only while the manager owns fields there. When the framework sends
+the first request, it sends an empty status only if the response has an entry
+for the manager and the status subresource. The framework records a status
+that isn't empty along with each document, so when it skips the first request,
+it sends an empty status only if the record holds a status. A program that
+never sets a status sends no status requests, and one that clears a status
+sends one, even after a restart or a failed reconcile.
+
+An earlier version of a program can leave status fields to give up, even when
+the current one sets only a label on a type with a status, such as
+`k8s.Deployment`. So `generate` grants `patch` on the status subresource for
+each type with a status that a program applies. With hand-written rules that
+leave that out, the program works until it has status fields to give up.
+Then the reconcile fails with `403 Forbidden`, and the fields stay until the
+controller gets the permission. Skipping a forbidden empty status instead
+would report success while the fields stay.
+
+A request to a subresource that the API server doesn't serve fails with the
+same `404 Not Found` as a request for an object that was deleted, so before it
+sends a status, the framework checks discovery for the status subresource.
+Without one, the framework skips an empty status and fails the reconcile for
+any other. Such a kind either has no status, as with ConfigMaps, or is a
+custom resource whose definition keeps the status with the other fields. The
+framework doesn't put the status in the first request instead, because the
+API server rejects a document with a field that the kind doesn't declare, so
+for a kind without a status, the rest of the object wouldn't be applied
+either.
+
+The client caches discovery results and fetches them again when they don't
+list the subresource, so it finds one that a CRD gains. When a status request
+fails with `404`, the framework drops the cached results for the kind's API
+version, so the next status request finds out whether the kind lost the
+subresource. The client doesn't remember a missing subresource, because that
+would hide one that a CRD gains later. So for such a kind, a status that
+isn't empty costs a discovery request on each retry, and an empty status
+costs one only when the manager owns status fields, as after a CRD drops its
+status subresource.
+
+The framework writes the reconciled object's status with the controller's
+name as the field manager. If `Apply` wrote it too, under the name derived
+from the reconciled object, both managers would own every field that both
+send, and neither could remove one alone. So when the reconciled type has a
+status, `Apply` fails the reconcile when it's given a status for the
+reconciled object, and ignores an empty one. A reconciled type without a
+status, such as a view of another controller's type, can apply the status of
+its own object.
 
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
@@ -510,6 +590,17 @@ waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
 
+An intent that fails, for example because an admission policy rejects an
+apply, fails the reconcile in the same way. The framework stops carrying out
+the intents, writes the status that `Reconcile` set, and retries with backoff.
+`Reconcile` returned before the write failed, so it can't report the error.
+The controller keeps each object's last error in memory, and `kube.LastError`
+returns it to the next reconcile, which can put it in the status. That matters
+for a status without a `Synced` condition, such as one entry in a status that
+several controllers share. The errors are kept by namespace and name, so if an
+object is deleted and recreated before the controller reconciles the deletion,
+the new object's first reconcile can get the old object's error.
+
 ### Finalizers and cleanup
 
 When a reconciler has a `Finalize` method, the framework adds a finalizer to
@@ -528,6 +619,189 @@ UID, then removes the finalizer. When a reconcile stops declaring such
 objects, the framework deletes any that remain and removes the finalizer, so
 the owner can then be deleted without the controller running.
 
+A controller without a `Finalize` method also removes its finalizer from
+objects, so a finalizer that an earlier version of the program added doesn't
+keep them from being deleted. Adding and removing a finalizer patch the
+object. Permission to patch an object also allows changes to its spec,
+labels, and annotations, so `generate` grants it only to a controller that
+can need it: one with a `Finalize` method, one with the
+`kube.RemovesFinalizer` option, or one whose type is namespaced in a program
+that declares owned objects. The source doesn't show which namespace an owned
+object goes in, so any owned object counts. When the API server forbids the
+removal and the controller has neither `Finalize` nor the option, the error
+names the option, because the likely cause is a finalizer that an earlier
+version of the program added.
+
+### A controller's own writes
+
+A cache holds a write once its watch delivers the write's event, and a
+reconcile of the object can run before then. `RequeueAfter`, a retry, or a
+change to another object that the reconcile read can start it. A reconcile
+that reads the older object writes again what the last one wrote, and one
+that takes a step per reconcile repeats the step.
+
+So after the framework writes an object, every cache of the object's version
+and kind that covers its namespace returns what the API server stored, until
+the cache's watch delivers the write's event. That covers status writes,
+finalizer changes, `Own` and `Apply`, and deletes, including the ones that
+prune undeclared objects. `Get`, `List`, the owner index, and the checks that
+skip applies and status writes all read the written object, in every
+controller of the manager. KEP-5647 proposes another approach for
+`client-go`. A controller records the resource version of each write, and
+requeues the object until its cache has seen a later one. That needs ordered
+resource versions, and it delays the reconcile instead of letting it read
+the write.
+
+The cache compares resource versions to tell when its watch has caught up.
+[Kubernetes API Concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)
+says that resource versions from `kube-apiserver` are integers that increase
+within a resource type, and conformance requires that since Kubernetes 1.35.
+Extension API servers might not order them, and older versions of the page
+allowed only tests for equality. So the cache tests resource versions only
+for equality, and only among versions of one object from one watch. Two
+facts make that enough. A write's response carries the resource version of
+the watch event that the write causes, or, if the write changed nothing, of
+the object's latest event. And a watch delivers one object's events in
+order. When a write begins, the cache notes the object's resource version,
+and then each one that its watch delivers for the object. If the write's
+resource version is among them when the write ends, the cache already holds
+the write or a later version. Otherwise the event is still to come, and
+reads return the written object until it arrives. Older events that arrive
+first update the watched object underneath, so reads never return a version
+older than the write, with two exceptions described later: a write that
+hides the object from a cache with a label selector, and a write whose event
+takes more than a minute.
+
+When the order of a write and the cache's contents is unknown, the cache
+waits for the watch. Two writes by the manager to one object at the same
+time don't show early, because the cache can't tell which one the API server
+applied last. A list replaces the cache's contents at start and after
+`410 Gone`. It asks for the latest state, so it holds each write that ended
+before the list began, or a later version. The cache drops what those
+writes stored, because the watch that follows the list might never deliver
+their events. A write that overlaps the list doesn't show early, because the
+cache can't tell whether the list holds it. If the list doesn't, it would
+replace the write with an older version, and if it does, the watch never
+delivers the write's event. A write that fails changes no cache, except a
+delete with a UID precondition that finds no object, which shows that the
+object with that UID is gone. A conflict doesn't show that the object is
+gone, because an admission webhook can deny a delete with one.
+
+Reads return a write for at most a minute. An API server whose watch doesn't
+deliver the resource version that a write's response carries would otherwise
+leave the written object in the cache until the next list, which a healthy
+watch with bookmarks might never need. Until then, reads would miss other
+clients' changes to the object, and return it even after it's deleted. With
+the limit, a watch that lags by more than a minute can make a reconcile
+repeat a write.
+
+A delete's response is a `Status` with the object's UID, or the deleted
+object. Either way the object is gone, and the cache hides it until its
+watch removes the object with that UID, because a delete's response doesn't
+always carry the resource version of the deletion. If finalizers, including
+a namespace's `spec.finalizers`, or a grace period hold the object, the
+response is the object with `deletionTimestamp` set, and the cache returns
+it like any other write. An update that removes the last finalizer of an
+object that's being deleted, with no grace period left, deletes the object,
+and the API server answers with the object as the update left it. The cache
+treats that answer as a delete too.
+
+Each cache decodes the response into its own type, so a metadata-only cache
+or one with a partial type returns what its watch would deliver. If the
+written object doesn't match a cache's label selector, the cache hides the
+object until its watch removes it. A watch with a label selector reports an
+object that stops matching as a `DELETED` event with the write's resource
+version. But if another client's change took the object out of the selector
+first, the write causes no event, so any removal of the object ends the
+hiding. Then, if other clients' earlier changes take the object out and put
+it back, the cache returns the version that they put back, which is older
+than the write, until the write's event arrives. A deleted object can
+reappear the same way. Without ordered resource versions, the cache can't
+tell that those changes come before the write. kube's selector parser
+doesn't handle the `<` and `>` operators, so a cache whose selector uses
+them doesn't return writes early.
+
+Only the caches of the process that wrote return a write before its event.
+Every replica caches every object, but a replica reads another replica's
+writes when its watch delivers them, as it does any other client's. So after
+a shard moves, the first reconciles in it can repeat the previous holder's
+last writes, and they converge once the watch catches up. A replica that
+takes a shard forgets what it last wrote for the shard's keys, but its
+caches keep returning its own writes, because each lasts only until its own
+event, which the watch delivers before any later version.
+
+### Events
+
+Like `Own`, `Apply`, and `Delete`, `kube.Eventf` doesn't write. It adds an event
+to the scope, and after `Reconcile` or `Finalize` returns, the framework passes
+the scope's events to the manager's event writer. Unlike intents, the events go
+to the writer when the reconcile fails too, so a Warning can explain the
+failure. Once a call such as `Get` has failed the reconcile, `Eventf` adds
+nothing, because the reconcile saw an incomplete state. In a webhook, `Eventf`
+fails the request, as `Own` does, because a webhook can only read.
+
+`Eventf` checks an event as the API server would, so that `kube.Fake` records
+only events that a cluster would accept. It drops an event whose type isn't
+`Normal` or `Warning`, or whose reason is empty or longer than 128 bytes, and
+logs a warning. It cuts the note to 1,024 bytes, the most that the API server
+accepts, after replacing invalid UTF-8 with U+FFFD, because a note that quotes
+untrusted text, such as a file name, can hold any bytes, and JSON encodes each
+invalid byte as U+FFFD, which takes 3 bytes.
+
+The writer is one goroutine per manager, which reads a channel with room for
+1,000 events. When the channel is full, the framework drops the event instead
+of waiting, so a slow or unavailable API server delays only events. The
+`kube_events_total` metric counts events by result: `created`, `updated`,
+`failed`, or `dropped`.
+
+The writer groups repeats into a series, as `client-go`'s `tools/events`
+package does. The first event creates an `events.k8s.io/v1` Event. An event
+with the same controller, action, type, reason, note, and object as one less
+than 6 minutes earlier is a repeat. The first repeat patches the Event's
+`series` to a count of 2 right away, so the Event shows that it repeats, and
+the writer counts later repeats in memory. Every 6 minutes, the writer patches
+each series whose count changed and forgets each series that had no repeat in
+that time, so a later repeat creates a new Event. When the manager stops,
+after its reconciles finish, the writer cancels any write in progress and
+spends up to 5 seconds writing the events left in the channel and the counts
+that it hasn't written, so an API server that doesn't answer delays stopping
+by at most 5 seconds. However often a reconcile repeats an event, the writer
+makes two writes for it and then at most one every 6 minutes.
+
+`client-go` keys a series on the controller, action, reason, and object
+references, which include the object's resource version, and the series
+keeps its first event's note. kube's key adds the type and the note, so
+events that differ only in their notes are separate Events instead of one
+count under the first note. It leaves out the resource version. After a
+reconcile fails, the framework writes the `Synced` condition, which changes
+the resource version, so with `client-go`'s key each failing loop would make
+two Events, and a reconcile that writes its object every time wouldn't group
+at all. The Event's `regarding` reference has no resource version either.
+`client-go` writes counts every 30 minutes and when a series ends. kube writes
+them at the 6-minute tick that ends series, so a count in the API server is
+at most 6 minutes behind.
+
+A 404 on a patch means that someone deleted the Event, so the writer creates
+it again. A 409 on a create means that an earlier create succeeded although
+its response was lost, so the writer goes on as if this one had. The writer
+logs and counts other errors. After a 429, a 5xx, or a network error, it tries
+again at its next tick. After any other error from the API server, such as a 403
+when RBAC doesn't allow events in the namespace, it stops writing the series,
+because the same write would fail again.
+
+The Event goes in the object's namespace. The API server accepts an Event
+about a cluster-scoped object only in `default` or `kube-system`, so the
+writer puts those in `default`. The Event's name is the object's name, a dot,
+and a hexadecimal timestamp in nanoseconds, as `client-go` names Events, with
+the lowercase kind in place of a name that would make it too long. The writer
+keeps the timestamps increasing, so two of its Events can't get the same
+name. The `reportingController` is the controller's name, and the
+`reportingInstance` is the controller's name and the host name, which in a
+cluster is the pod's name. A controller name is at most 50 lowercase letters,
+digits, '-', and '.', so it's always a valid `reportingController`, and the
+writer cuts the `reportingInstance` to 128 bytes, the most that the API server
+accepts.
+
 ### Custom resource definitions
 
 `internal/schema` generates an OpenAPI v3 schema from a struct, using `json`
@@ -540,6 +814,103 @@ else installed the CRD, for example a Helm chart, the controller leaves it
 alone. [CRD upgrades](#crd-upgrades) describes how it updates a CRD that
 already exists.
 
+A program can also own a custom type that none of its controllers reconciles,
+such as a report that it writes. It knows only the versions that it declares,
+so applying its CRD could drop the others, or replace a schema that a newer
+release of the reconciling program installed. Instead, at startup with
+`kube.Owns`, or at the program's first `Own` of the type, `createCRD` gets the
+CRD. If it's missing, `createCRD` creates it with a plain `POST` and the label
+that marks a CRD as installed by the framework, then waits until it's
+`Established`. It never updates a CRD. A `POST` fails with `AlreadyExists`
+when the CRD exists, so if two programs create it at once, one succeeds, the
+other waits for the same CRD, and neither changes what the other created. If
+the CRD, whether it existed or another program created it first, doesn't
+serve the program's version of the type, `Own` fails with an error. At
+startup, `kube.Owns` logs an error from `createCRD` instead of returning it,
+so that a CRD without the program's version, or a failed request, doesn't
+stop the program's other controllers and webhooks. `ensureCRD` keeps only a
+success, so the next `Own` tries again. If the program can't get CRDs, for
+example because it runs with the rules of an earlier release, it logs a
+warning and uses the type without creating its CRD.
+
+Because of the label, a program that reconciles the type later treats the
+created CRD as its own and installs its CRD over it. That fails when the two
+programs disagree about the type:
+
+- A CRD's `spec.scope` is immutable, so if the reconciling program declares
+  another scope, the API server rejects its CRD, and the program doesn't
+  start.
+- If the created version isn't one of the reconciling program's versions, the
+  program doesn't start. `planCRD` refuses a newer version, because the CRD
+  doesn't serve the program's own version. `checkDropped` refuses an older
+  one, because the API server lists a new CRD's storage version in
+  `status.storedVersions` before the CRD has objects.
+- `ownsCRD` looks for the label under the reconciling program's own
+  `Manager.Domain`, so a program with another `Domain` uses the CRD as
+  something else installed it, and never updates it.
+
+The remedy is to make the declarations agree and delete the created CRD while
+it has no objects, or, if only the version differs, to declare the created
+version in the reconciling program with `kube.Version`. When the label names
+another program, the errors from `planCRD` and `checkDropped` name it and
+suggest these remedies.
+
+Only owning a type creates its CRD. A program that only reads the type gains
+nothing from creating it, because there are no objects to read until something
+writes them. A struct that reads a type is a
+[projection](#types-are-projections) that needn't declare every field, so a
+CRD created from it could prune fields that other programs write. A reading
+struct with the wrong scope or version would also create a CRD that the
+reconciling program can't take over. A program that owns the type can't write
+its objects without the CRD. The cost is two rules that `generate` writes for
+each owned type: `create` on `customresourcedefinitions`, and `get` on the
+CRD's name. RBAC can't limit `create` to a name, so this is the same `create`
+rule that reconciled types need. There's no `patch`. To own a type without
+creating its CRD, declare it with `apiVersion` and `kind`.
+
+### Installed objects
+
+`kube.Install` applies objects that a program needs but doesn't reconcile,
+such as admission policies, from a manifest that the program embeds. Because
+the objects stay in a YAML file, a cluster that manages them separately can
+apply the same file with `kubectl`, and because a function returns the
+manifest, a flag can turn installation off. `internal/yaml` parses each
+document, so a manifest is limited to the subset of YAML that kubeconfig
+files use.
+
+Install's controller doesn't reconcile. Its `setup` runs after the
+reconcilers' `setup`, which installs their CRDs, so the manifest can hold
+objects of the types that the program reconciles. With leader election or
+shards, a replica applies the objects when it first holds a shard. It
+server-side applies each object in order and labels it with the program's
+name, as it labels CRDs. The forced apply takes over the fields that the
+manifest sets and keeps the rest, including entries that others add to a list
+that merges by key or value, such as a binding's `validationActions`. If the
+merged object isn't valid, the apply fails, `setup` returns the error, and the
+program exits when it starts. The controller doesn't watch the objects or
+delete those that a later manifest leaves out, so it needs no `list`,
+`watch`, or `delete` permission on them.
+
+`generate` calls the manifest function after it parses the arguments after
+`--` into the program's flags, and grants `create` and `patch` on each object
+by name. RBAC can't limit a `POST` create by name, but server-side apply sends
+a `PATCH` to the object's URL, and when the object doesn't exist, the API
+server checks `create` on that name. An admission policy with a `paramKind`
+needs one more rule. The API server lets a user create the policy, or change
+its `paramKind`, only if they can get every object of that kind, which it
+checks as `get` on the name `*` in the namespace `*`. RBAC matches resource
+names exactly, and ConfigMaps and custom resources can't have the name `*`, so
+for those kinds a ClusterRole rule for that name passes the check without
+letting the program read any object. Objects of some other kinds, such as
+ClusterRoles, can have the name `*`, and `generate` can't tell a custom
+resource from an aggregated API's kind by its API version, so it grants the
+rule only when the `paramKind` is ConfigMap or a custom type that the program
+defines, and warns otherwise. A binding with a `paramRef` needs `get` on the
+object that it names, and `generate` finds that object's resource from the
+`paramKind` of the policy earlier in the manifest. Rules for objects in a
+namespace other than the program's own and the one that it watches go in a
+Role in that namespace.
+
 ### Shards and leader election
 
 Leader election and sharding are one mechanism. The keys of every controller
@@ -547,11 +918,12 @@ in a manager are divided into shards by an FNV hash of namespace and name, and
 each shard is a `coordination.k8s.io/v1` Lease with a 15-second duration,
 renewed every 2 seconds. A worker reconciles a key only while its replica
 holds the key's shard, and a replica that acquires a shard enqueues every
-cached key in it and forgets what it last wrote for them, because another
-replica may have reconciled them since. Leader election is the case of one
-shard. Candidates measure a lease's expiry from when they saw its holder or
-renew time change, on their own clock, so clock skew between replicas doesn't
-give a shard two holders.
+cached key in it and forgets what it last wrote for them. It also forgets
+every reconcile error that it kept for the shard, including deleted objects'
+errors, because another replica may have reconciled the shard's keys since.
+Leader election is the case of one shard. Candidates measure a lease's expiry
+from when they saw its holder or renew time change, on their own clock, so
+clock skew between replicas doesn't give a shard two holders.
 
 With more than one shard, each replica also renews a membership Lease, and
 every replica lists the manager's Leases each retry period. Each computes the
@@ -695,8 +1067,9 @@ kind and the messages it contains at a time.
 Some fields differ between the two encodings. A struct that `encoding/json`
 inlines, such as a Volume's VolumeSource, is a nested message. Times,
 quantities, and int-or-string values are messages in protobuf but strings or
-numbers in JSON. A few lists, such as a user's extra values, are messages that
-wrap a repeated field. The decoder sets times and quantities directly, and
+numbers in JSON. The zero time is an empty message in protobuf and `null` in
+JSON. A few lists, such as a user's extra values, are messages that wrap a
+repeated field. The decoder sets times and quantities directly, and
 converts other such values, or any field whose Go type has an `UnmarshalJSON`
 method, to the JSON value that the API server would send, and decodes that
 with `encoding/json`. A test creates an object of every type in the `k8s`
@@ -732,9 +1105,32 @@ function that contains the call. The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 `get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
-needs `create` and `patch`, and `Delete` needs `delete`. `controller-gen`
-reads `+kubebuilder:rbac` comment markers, which people write and update by
-hand. These rules change when the calls do.
+needs `create` and `patch`, and `Delete` needs `delete`. When a type passed to
+`Apply` has a field whose `json` tag names it `status`, the rules also grant
+`patch` on the type's `status` subresource. `controller-gen` reads
+`+kubebuilder:rbac` comment markers, which people write and update by hand.
+These rules change when the calls do.
+
+A controller gets `get`, `list`, and `watch` on its own type, and `patch` on
+the type's `status` subresource if it has one. It gets `patch` on the type
+itself only when the framework writes the object: to add or remove the
+controller's finalizer, as [Finalizers and cleanup](#finalizers-and-cleanup)
+describes, or to migrate the stored objects of a type with more than one
+version. The `describe` method reports whether a controller has a `Finalize`
+method, the `kube.RemovesFinalizer` option, owned types, or more than one
+version, and the analysis reports whether the program calls `Own`, including
+calls whose type arguments it can't tell. A program that declares no owned
+objects, and whose controllers only write status, gets no permission to change
+the spec, labels, or annotations of the objects that they reconcile.
+
+`Eventf` has no type argument, because an event is always about the
+reconciled object. The analysis reports each use of `Eventf`, and a program
+that has one gets `create` and `patch` on `events.k8s.io` events for each type
+that it reconciles. The rule goes in the ClusterRole, or with
+`-watch-namespace` in the watched namespace's Role. For a cluster-scoped type,
+it goes in a Role in `default`, where that type's events go. The analysis
+can't tell which controller's reconcile calls `Eventf`, so a program with
+several controllers gets the rule for each reconciled type.
 
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
@@ -775,10 +1171,13 @@ that run its own binary.
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
 caches. The reconcile runs the same code as in a cluster, and the scope
 records its intents for the test to check with `kube.Owned`,
-`kube.Applied`, and `kube.Deleted`. In a cluster, every type of a kind reads
-the same objects, so the fake converts the listed objects of one type through
-JSON for reads of another type of the same kind. A test doesn't fake an API
-server, so there's no fake behavior that can differ from a real server's.
+`kube.Applied`, and `kube.Deleted`, and its events for `Recorder.Events`.
+`kube.Applied` returns each object with the status that the framework would
+apply, and the scope rejects a status for the reconciled object as it does in
+a cluster. In a cluster, every type of a kind reads the same objects, so the
+fake converts the listed objects of one type through JSON for reads of
+another type of the same kind. A test doesn't fake an API server, so there's
+no fake behavior that can differ from a real server's.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
@@ -788,28 +1187,62 @@ framework's tests check that:
 
 - A converged controller makes no writes when its objects' labels change, and
   none after a restart.
+- A controller that moves a status one step per reconcile, through a proxy
+  that holds back watch events by 200 ms, reads each step that it wrote, and
+  applies and deletes its ConfigMap once each.
+- A controller with `Finalize` that resyncs every millisecond, through the
+  same proxy, adds its finalizer once, and runs `Finalize` and removes the
+  finalizer once each.
+- Reconciles that apply their own entries in another object's status own
+  only those entries, make no writes when they run again, and remove an entry
+  when they stop applying it. A status for a kind without a status
+  subresource fails the reconcile after the rest of the object is applied. A
+  reconcile that applies one object through two types fails and writes
+  nothing. A controller that may not patch a Deployment's status still
+  applies a label to it. Restarted without permission to patch a Poll's
+  status, a controller fails to withdraw its vote, and withdraws it once it
+  has the permission. When a reconcile applies a vote and a label and then
+  fails, the next reconcile that abstains removes both.
 - Panics and permanent errors are reported and retried correctly.
+- A reconcile's events become Events about namespaced and cluster-scoped
+  objects, the retries of a failing reconcile add to one Event's count, and
+  the manager writes the last counts when it stops.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
   stops and another starts, and never reconcile one object at the same time.
 - Admission webhooks reject and default objects, including a metadata-only
   webhook whose patch keeps a ConfigMap's data, and a later version of the
   program removes the webhooks it dropped.
+- `kube.Install` applies its objects again after a restart and keeps fields
+  that others set, and a program installs an admission policy with
+  parameters, and an object of a type that it reconciles, using only the RBAC
+  rules that `generate` wrote.
 - Objects written in one version read back in another, through the
   conversion webhook or without one.
+- When two programs that own a custom type without reconciling it start at
+  once, one creates the type's missing CRD and both use it, and a program that
+  reconciles the type then takes it over. A program that knows fewer of the
+  type's versions leaves an existing CRD as it is, and a program that only
+  reads the type doesn't create its CRD. A program that can't create the CRD
+  at startup starts anyway, and creates it at a later `Own`. A program that
+  reconciles the type doesn't start while it lacks the created CRD's version,
+  and takes the CRD over once it declares the version with `kube.Version`.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
   to equal structs.
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
-  that `generate` wrote.
+  that `generate` wrote. The website example writes its events with those
+  rules, and podpolicy, which records none, gets no rule for them.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
 kube-proxy. It pushes to a local registry as kind's
 [guide](https://kind.sigs.k8s.io/docs/user/local-registry/) describes, pipes
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
-that reconciles continue after every controller pod is replaced, and that the
-podpolicy webhooks deny and default pods through their Service.
+that `kubectl describe` shows the Website's events, that reconciles continue
+after every controller pod is replaced, that imagereport creates its CRD with
+the rules that `generate` wrote and reports the images that pods run, and
+that the podpolicy webhooks deny and default pods through their Service.
 
 ## Measurements
 
@@ -902,9 +1335,15 @@ The end-to-end tests count writes with the `kube_apply_total` and
 changes cause five reconciles, no applies, and no status writes. A new manager
 that starts over the converged Widget makes no applies and no status writes.
 A controller that totals the votes that other managers write into a Poll's
-status makes no status writes for votes that leave the total as it was. A
-change to a ConfigMap field that a reconcile's type doesn't declare doesn't
-run the reconcile again.
+status makes no status writes for votes that leave the total as it was.
+A controller that applies each Ballot's vote to a Poll's status with `Apply`
+makes no applies when label changes reconcile the Ballots again. A change to
+a ConfigMap field that a reconcile's type doesn't declare doesn't run the
+reconcile again. With watch events held back by 200 ms, a controller that
+moves a Widget's status 10 steps up and 10 steps down writes status 20
+times, applies its ConfigMap once, and deletes it once. A controller that
+resyncs every millisecond behind the same delay applies its finalizer once
+to add it and once to remove it, and runs `Finalize` once.
 
 ### Binary size and dependencies
 
@@ -942,14 +1381,37 @@ offers:
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted, so its finalizer is never removed.
-- After a restart, each object declared with `Apply` is applied once, because
-  the framework doesn't annotate objects it doesn't own. A status that leaves
-  out other managers' fields is also written once, because the record of the
-  last status write is in memory.
+- After a restart, or after a reconcile whose writes fail, each object
+  declared with `Apply` is applied once, and so is a status that isn't empty,
+  because the framework doesn't annotate objects it doesn't own. After a
+  restart, a status that leaves out other managers' fields is also written
+  once, because the record of the last status write is in memory.
+- Only the process that wrote reads its writes before the watch delivers
+  them, a write that overlaps a list doesn't show early, and a cache with a
+  label selector can return an older version of an object that a write hid.
+  With ordered resource versions, the cache could show the writes that are
+  newer than the list and ignore the older versions, but extension API
+  servers might not order them.
+- Fields that `Apply` wrote, including status fields, stay on an object when
+  a reconcile stops declaring it, and when the reconciled object is deleted.
+  Giving them up would take a durable record of what each reconcile applied.
+- `Apply` can't write the status of a custom resource whose definition keeps
+  the status with the other fields, without a status subresource.
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.
+- A program that owns a type without reconciling it creates the type's CRD
+  but never updates it, so a later release that changes the type leaves the
+  CRD as it was.
+- A program that reconciles a type takes over the CRD that another program
+  created only if both programs declare the same scope and `Manager.Domain`,
+  and the reconciling program declares the created version.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache
   syncs.
+- Events are only about the reconciled object, and every type that a program
+  reconciles gets the rule for events when any of its code calls `Eventf`. A
+  replica that crashes loses the counts of repeats that it hasn't written,
+  which cover up to 6 minutes. A replica that stops loses the events and
+  counts that it can't write in 5 seconds.

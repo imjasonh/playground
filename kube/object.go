@@ -21,7 +21,10 @@ import (
 // controller that reconciles a type with a group tag starts, it installs a
 // CustomResourceDefinition generated from the struct, or updates the one it
 // installed before. If something else installed the CustomResourceDefinition,
-// the controller uses it as it is.
+// the controller uses it as it is. A program that owns the type without
+// reconciling it creates the CustomResourceDefinition if it's missing, and
+// never changes one that exists. A program that only reads the type never
+// creates it.
 //
 // For a type that already exists, give its apiVersion and kind, and declare
 // only the fields you use. The cache stores only those fields:
@@ -144,7 +147,9 @@ const (
 // SetCondition adds c to conds, or replaces the condition of the same type.
 // LastTransitionTime is set to now when the status changes and kept
 // otherwise, so a reconcile that observes the same state doesn't produce a
-// status write.
+// status write. SetCondition can keep only a time that conds holds, so to
+// apply a condition to another object, start conds from that object's copy of
+// the condition, which FindCondition returns.
 func SetCondition(conds *[]Condition, c Condition) {
 	for i, old := range *conds {
 		if old.Type != c.Type {
