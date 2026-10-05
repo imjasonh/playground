@@ -296,8 +296,8 @@ disk space, raise `-storage-request`.
 A ResourceQuota on `limits.ephemeral-storage` counts each agent Pod's
 limit, and one on `requests.ephemeral-storage` counts `-storage-request`.
 A LimitRange with a smaller maximum for ephemeral storage rejects every
-agent Pod. When kube can't create a Pod, the check says so, and the
-program's log says why.
+agent Pod. When kube can't create a Pod, the check says so, and its
+message or the program's log says why.
 
 The agent's prompt holds the first 200,000 bytes of the diff and lists
 every path that the change touches, so the agent can read the files that
@@ -393,7 +393,9 @@ To install `check-review`, build the runner's image from
 `agent/runner/Dockerfile`, push it, and pass its digest to the check with
 `-agent-image`. Then create a Secret named `cursor-api-key` that holds a
 Cursor API key under the key `api-key`, in each namespace with branches to
-review:
+review. Agent Pods meet the `restricted` Pod Security Standard and run in
+their branch's namespace, which must also opt in to check Pods, as
+[Install](#install) describes:
 
 ```sh
 docker build -t REGISTRY/agent-runner agent/runner
@@ -401,6 +403,7 @@ docker push REGISTRY/agent-runner
 image="$(docker inspect -f '{{index .RepoDigests 0}}' REGISTRY/agent-runner)"
 go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
 kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key=KEY
+kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
 ```
 
 In a namespace without the Secret, each run fails before the agent starts.
@@ -503,6 +506,8 @@ Secret with the repository's credentials, the commits to check out, the
 task, the agent's tools, and the runner's image if it isn't
 `-agent-image`. `Run` builds a `Job` from a check's branch, so both start
 the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
+For a check, the `Runner`'s name must be the check's name, and the `Job`'s
+namespace must opt in to check Pods, as [Install](#install) describes.
 
 Call `RunJob` on each reconcile with the `JobState` that the last call
 left. The state names the run's Pod and counts the runs that `RunJob`
@@ -595,8 +600,9 @@ write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
 the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all. RBAC also keeps every check except `check-gotest`,
-which owns the Pods that run tests, from patching `GitBranch` objects.
+`GitBranch` objects at all. RBAC also keeps every check except `check-gotest`
+and `check-review`, which own the Pods that run tests and agents, from
+patching `GitBranch` objects.
 `generate` grants that permission to a check that owns objects, because it
 can't tell whether an owned object needs a finalizer on its owner. The second
 policy denies the annotation that kube adds with that finalizer, so a check
@@ -639,8 +645,8 @@ namespace, weakens only that rest. The policy doesn't limit node selectors,
 affinity, tolerations, or `runtimeClassName`, so a compromised check can
 schedule Pods onto any node, including tainted ones, and start them without
 the RuntimeClass that `-runtime-class` sets. To require that RuntimeClass,
-add a ValidatingAdmissionPolicy that denies a Pod with the label
-`kube.imjasonh.github.io/controller=check-gotest` unless its
+add a ValidatingAdmissionPolicy that denies a Pod with the check's label,
+such as `kube.imjasonh.github.io/controller=check-gotest`, unless its
 `spec.runtimeClassName` is the RuntimeClass.
 
 The policy matches every service account whose namespace or name starts with
@@ -665,8 +671,8 @@ controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
 `False` until all three policies are installed with bindings that deny.
 
 Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
-must opt in to test Pods and enforce the `restricted` Pod Security Standard,
-or the third policy denies the test Pods:
+or `review` must opt in to check Pods and enforce the `restricted` Pod
+Security Standard, or the third policy denies the check's Pods:
 
 ```sh
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
@@ -675,15 +681,15 @@ kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-secur
 Replace `NAMESPACE` with the namespace of the `GitRepository`. The namespace
 can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
-`latest`. Until the namespace has both labels, the branch's `gotest` result
+`latest`. Until it has both labels, the branch's `gotest` or `review` result
 stays `Running`, and its message says why kube couldn't create the Pod. kube
 tries again with backoff that grows to 5 minutes, plus up to 10% jitter, so it
 creates the Pod within about 5.5 minutes after you label the namespace,
 without a new push.
 
-If `check-gotest` already runs, label the namespaces of its repositories
-before you apply `config/policy.yaml`. Otherwise the policy denies their test
-Pods until you do.
+If `check-gotest` or `check-review` already runs, label the namespaces of
+their repositories before you apply `config/policy.yaml`. Otherwise the
+policy denies their Pods until you do.
 
 ## Test
 
