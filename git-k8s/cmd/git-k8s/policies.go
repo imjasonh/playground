@@ -17,7 +17,7 @@ var policies = []struct {
 	name      string
 	exposures []string
 }{
-	{"git-k8s-check-results", []string{"any service account that can write GitBranch status can write check results"}},
+	{"git-k8s-check-results", []string{"any service account that can write GitBranch status can write check results and status.diverged", "checks that can write GitBranch status can change a branch's state and merge queue"}},
 	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change GitBranch objects"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
 	{"git-k8s-approvals", []string{"anyone who can patch a GitBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
@@ -89,7 +89,10 @@ func (s *labelSelector) selects() bool {
 // set when the program installs the policies when it starts.
 func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
-	var missing, weak, warns, outdated, newer, patches, exposures []string
+	var missing, weak, noParamRef, warns, outdated, newer, patches, exposures, ignores []string
+	// ignoresAt is where the clause about the policies in ignores goes in
+	// exposures, so that the clauses keep the order of the policies.
+	ignoresAt := 0
 	for _, p := range policies {
 		policy := kube.Get[admissionPolicy](ctx, "", p.name)
 		if policy != nil {
@@ -102,10 +105,11 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		}
 		params := policy != nil && policy.Spec.ParamKind != nil
 		var own *admissionPolicyBinding
-		denies := false
+		denies, unparameterized := false, false
 		for _, b := range bindings {
 			if b.Spec.PolicyName == p.name {
 				denies = denies || denyPatch(b, params) == ""
+				unparameterized = unparameterized || lacksOnlyParamRef(b, params)
 				if b.Name == p.name {
 					own = b
 				}
@@ -124,16 +128,30 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 			}
 			continue
 		}
-		exposures = append(exposures, p.exposures...)
+		// A binding that lacks only a paramRef enforces the policy, but the API
+		// server evaluates it without parameters, so the policy ignores the
+		// entries in the git-k8s-checks ConfigMap.
+		if unparameterized {
+			if len(ignores) == 0 {
+				ignoresAt = len(exposures)
+			}
+			ignores = append(ignores, p.name)
+		} else {
+			exposures = append(exposures, p.exposures...)
+		}
 		if own != nil && denyPatch(own, params) != "" {
-			weak = append(weak, p.name)
+			if lacksOnlyParamRef(own, params) {
+				noParamRef = append(noParamRef, p.name)
+			} else {
+				weak = append(weak, p.name)
+			}
 			patches = append(patches, patchCommand(own, params))
 		}
 		if policy == nil || own == nil {
 			missing = append(missing, p.name)
 		}
 	}
-	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 && len(outdated) == 0 && len(newer) == 0 {
+	if len(missing) == 0 && len(weak) == 0 && len(noParamRef) == 0 && len(warns) == 0 && len(outdated) == 0 && len(newer) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
 			Message: "the admission policies keep git-k8s service accounts from approving branches, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
@@ -155,6 +173,14 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		}
 		problems = append(problems, fmt.Sprintf(problem, list(weak)))
 	}
+	if len(noParamRef) > 0 {
+		reason = "NotDenying"
+		problem := "the binding %s has no paramRef"
+		if len(noParamRef) > 1 {
+			problem = "the bindings %s have no paramRef"
+		}
+		problems = append(problems, fmt.Sprintf(problem, list(noParamRef)))
+	}
 	if len(missing) > 0 {
 		reason = "Missing"
 		problem := "%s isn't fully installed"
@@ -162,6 +188,13 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 			problem = "%s aren't fully installed"
 		}
 		problems = append(problems, fmt.Sprintf(problem, list(missing)))
+	}
+	if len(ignores) > 0 {
+		ignore := "%s ignores the entries in the git-k8s-checks ConfigMap"
+		if len(ignores) > 1 {
+			ignore = "%s ignore the entries in the git-k8s-checks ConfigMap"
+		}
+		exposures = slices.Insert(exposures, ignoresAt, fmt.Sprintf(ignore, list(ignores)))
 	}
 	if len(problems) > 0 {
 		sentences = append(sentences, strings.Join(problems, ", and ")+", so "+clauses(exposures))
@@ -264,4 +297,11 @@ func denyPatch(b *admissionPolicyBinding, params bool) string {
 		return ""
 	}
 	return `{"spec":{` + strings.Join(fields, ",") + `}}`
+}
+
+// lacksOnlyParamRef reports whether b's policy reads parameters, and b would
+// deny every request that the policy rejects if it had the paramRef from
+// config/policy.yaml.
+func lacksOnlyParamRef(b *admissionPolicyBinding, params bool) bool {
+	return params && b.Spec.ParamRef == nil && denyPatch(b, false) == ""
 }
