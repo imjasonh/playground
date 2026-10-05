@@ -1620,7 +1620,7 @@ DEPS="${WORKDIR}/deps"
 git init -q -b main "${DEPS}"
 dg() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${DEPS}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 printf 'module example.com/deps\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n' >"${DEPS}/go.mod"
 # The fake agent replaces a line that holds FAKE AGENT FIX with the text
@@ -1664,6 +1664,8 @@ spec:
   url: ${CLUSTER_URL}/deps.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -1708,9 +1710,10 @@ func Hello() string { return "hello" }'
 eventually 300 deps_main_requires v1.0.1
 dg log -1 --format=%B FETCH_HEAD
 dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Deps: go example.com/greet v1.0.1'
+signed_by_git_k8s FETCH_HEAD dg
 eventually 60 greet_branch_gone
 eventually 60 no_deps_pods
-echo "git-k8s-deps pushed v1.0.1 to ${GREET_BRANCH}, which landed without approval because a patch release is low risk."
+echo "git-k8s-deps signed and pushed v1.0.1 to ${GREET_BRANCH}, which landed without approval because a patch release is low risk."
 
 # v1.1.0 changes Hello, so the update breaks the build until the agent fixes
 # the call. The proxy's time for v1.2.0 is years ahead, so it's too new to
@@ -1733,6 +1736,8 @@ fixed="$(dg rev-parse FETCH_HEAD)"
 dg log -2 --format=%B FETCH_HEAD
 dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: deps'
 dg log -1 --format=%B FETCH_HEAD^ | grep -qx 'Git-K8s-Deps: go example.com/greet v1.1.0'
+signed_by_git_k8s FETCH_HEAD dg
+signed_by_git_k8s FETCH_HEAD^ dg
 dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
 sleep 6
 [[ "$(remote_head main deps)" == "${deps_main}" ]]
@@ -1748,7 +1753,7 @@ eventually 60 no_agent_pods
 sleep 12
 [[ -z "$(remote_head "${GREET_BRANCH}" deps)" ]]
 deps_main_requires v1.1.0
-echo "v1.1.0 broke the build, the fake agent fixed it, and the fix landed once ${approver} approved it. v1.2.0 is too new, so no branch takes it."
+echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix, and the fix landed once ${approver} approved it. v1.2.0 is too new, so no branch takes it."
 
 # git-k8s-deps doesn't have the approve verb, so git-k8s-approvals stops it
 # from approving. The API server reports only one of the policies that deny

@@ -188,12 +188,13 @@ Questions to settle first:
 
 ## Sign commits in the mirror
 
-`check-base`, `check-gofmt`, `check-review`, `check-conflicts`, and the
-merge controller sign their commits with a key that they read from a
-Secret, so a compromised check can sign anything with it. With the
-[mirror](#run-an-in-cluster-git-mirror), the mirror can hold the key instead
-and sign for them, for example through a program that git's
-`gpg.ssh.program` setting runs, so that no check reads the Secret.
+`check-base`, `check-gofmt`, `check-review`, `check-conflicts`,
+`check-deps`, the merge controller, and `git-k8s-deps` sign their commits
+with a key that they read from a Secret, so a compromised check can sign
+anything with it. With the [mirror](#run-an-in-cluster-git-mirror), the
+mirror can hold the key instead and sign for them, for example through a
+program that git's `gpg.ssh.program` setting runs, so that none of them
+reads the Secret.
 
 With the mirror, every change reaches GitHub as a push from the mirror. For
 a repository that gets [tokens from Octo STS](README.md#github-repositories),
@@ -253,9 +254,10 @@ So the controller reads Secrets, and only its own code keeps its pushes
 under its prefix. Once the [mirror](#run-an-in-cluster-git-mirror) exists,
 the core program gives the service account `git-k8s-deps` in the namespace
 `git-k8s-deps` the prefix `deps/`. The controller then pushes to the mirror
-with a projected service account token and stops reading Secrets, and its
-update Pods fetch from the mirror with tokens bound to the Pods, like test
-Pods.
+with a projected service account token, and its update Pods fetch from the
+mirror with tokens bound to the Pods, like test Pods. Once the mirror also
+[signs commits](#sign-commits-in-the-mirror), the controller stops reading
+Secrets.
 
 ## Update npm and Cargo dependencies
 

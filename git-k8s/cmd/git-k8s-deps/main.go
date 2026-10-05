@@ -53,6 +53,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gomod"
+	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -364,8 +365,9 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	// still applies the Pod that the reconcile declares.
 	st := u.stateFor(b.Key(), parentHead)
 	u.runPod(ctx, b, repo, st, writes, log)
+	key := sync.OnceValues(func() (*git.SigningKey, error) { return signing.Key(ctx, repo) })
 	for _, w := range writes {
-		u.write(ctx, local, remote, mods, st, w, log)
+		u.write(ctx, local, remote, key, mods, st, w, log)
 	}
 	for _, d := range deletes {
 		if err := u.push(ctx, local, remote, d.branch, "", d.old); err != nil {
@@ -895,8 +897,9 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 	kube.RequeueAfter(ctx, time.Second)
 }
 
-// write commits an update whose Pod succeeded and pushes it to its branch.
-func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote, mods map[string]*modFile, st *state, w change, log *slog.Logger) {
+// write commits an update whose Pod succeeded, signed with the key that key
+// returns, and pushes it to its branch.
+func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote, key func() (*git.SigningKey, error), mods map[string]*modFile, st *state, w change, log *slog.Logger) {
 	o := st.outcomes[w.up.key()]
 	if o == nil || o.err != "" {
 		return
@@ -930,7 +933,13 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 	if u.waitsForRaised(ctx, st, w, raises, log) {
 		return
 	}
-	commit, err := u.commit(ctx, local, st.head, w.up, o.files)
+	k, err := key()
+	if err != nil {
+		log.Warn("reading the signing key failed", "branch", w.branch, "error", err)
+		kube.RequeueAfter(ctx, errorRetry)
+		return
+	}
+	commit, err := u.commit(ctx, local, st.head, w.up, o.files, k)
 	if err == nil && commit != w.old {
 		err = u.push(ctx, local, remote, w.branch, commit, w.old)
 	}
@@ -1115,8 +1124,9 @@ func sameDirectives[T any, K comparable](a, b []T, key func(T) K) bool {
 }
 
 // commit makes the commit on the parent's head that writes an update's
-// files. The same update on the same head always makes the same commit.
-func (u *updater) commit(ctx context.Context, repo *git.Repo, parentHead string, up update, files map[string][]byte) (string, error) {
+// files, signed with key unless key is nil. The same update on the same
+// head always makes the same commit, unless an ECDSA key signs it.
+func (u *updater) commit(ctx context.Context, repo *git.Repo, parentHead string, up update, files map[string][]byte, key *git.SigningKey) (string, error) {
 	c, err := repo.Commit(ctx, parentHead)
 	if err != nil {
 		return "", err
@@ -1129,7 +1139,7 @@ func (u *updater) commit(ctx context.Context, repo *git.Repo, parentHead string,
 	if err != nil {
 		return "", err
 	}
-	return repo.CommitTree(ctx, tree, []string{parentHead}, message(up), u.cfg.Identity, c.Time, nil)
+	return repo.CommitTree(ctx, tree, []string{parentHead}, message(up), u.cfg.Identity, c.Time, key)
 }
 
 // message returns the commit message of an update.
@@ -1166,5 +1176,6 @@ func (u *updater) pushFailed(ctx context.Context, log *slog.Logger, branch strin
 func main() {
 	u := &updater{}
 	u.addFlags(flag.CommandLine)
+	checks.RemoveLeftoverSigningKeys()
 	kube.Main(kube.For[Branch](u, kube.Named("deps")))
 }

@@ -80,16 +80,17 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 // v1.0.0, a module proxy that has greet v1.0.0 and v1.1.0, an updater for
 // them, and a server that stands in for the result containers of its Pods.
 // The updater has no -min-age, which would hold back each version from when
-// it first shows up.
+// it first shows up. With a signer, the GitRepository names its key.
 type fixture struct {
-	t     *testing.T
-	srv   *gittest.Server
-	work  *gittest.Work
-	proxy *fakeProxy
-	u     *updater
-	b     *Branch
-	rules []gitk8s.BranchRule
-	clock time.Time
+	t      *testing.T
+	srv    *gittest.Server
+	work   *gittest.Work
+	proxy  *fakeProxy
+	u      *updater
+	b      *Branch
+	rules  []gitk8s.BranchRule
+	clock  time.Time
+	signer *gittest.Signer
 
 	mu   sync.Mutex
 	body []byte
@@ -163,7 +164,11 @@ func (f *fixture) serve(body []byte, uid string) string {
 func (f *fixture) reconcile(world ...any) *kube.Recorder {
 	f.t.Helper()
 	repo, secret := f.srv.Repository("app", f.rules...)
-	ctx, rec := kube.Fake(f.t.Context(), f.b, append([]any{repo, secret}, world...)...)
+	world = append([]any{repo, secret}, world...)
+	if f.signer != nil {
+		world = append(world, f.signer.Sign(repo))
+	}
+	ctx, rec := kube.Fake(f.t.Context(), f.b, world...)
 	if err := f.u.Reconcile(ctx, f.b); err != nil {
 		f.t.Fatal(err)
 	}
@@ -533,6 +538,54 @@ func TestUpdatesAModule(t *testing.T) {
 	t.Log("Then it stops declaring the Pod and leaves the branch alone.")
 	if rec := f.checkStays(head, p); rec.RequeueAfter() != time.Hour {
 		t.Errorf("RequeueAfter() = %v, want the interval", rec.RequeueAfter())
+	}
+}
+
+func TestSignsItsUpdates(t *testing.T) {
+	f := newFixture(t)
+	f.signer = gittest.NewSigner(t, f.u.cfg.Identity.Email)
+	head := f.update("v1.1.0")
+	if err := f.signer.Verify(f.work.Dir, head); err != nil {
+		t.Error(err)
+	}
+}
+
+// An update that the controller can't sign isn't pushed, but deleting a
+// branch makes no commit, so it doesn't read the key.
+func TestUpdatesNeedTheSigningKey(t *testing.T) {
+	f := newFixture(t)
+	f.update("v1.1.0")
+	logs := captureLogs(t)
+	f.signer = &gittest.Signer{Email: f.u.cfg.Identity.Email, Key: []byte("hunter2")}
+
+	t.Log("main stops requiring greet, so the controller deletes greet's branch without reading the key.")
+	f.moveMain("go.mod", "module example.com/app\n\ngo 1.24\n")
+	f.checkStays("")
+	if got := logs.String(); strings.Contains(got, "signing key") {
+		t.Errorf("logs = %s, want nothing about the signing key", got)
+	}
+
+	t.Log("main requires greet v1.0.0 again, and the controller can't sign the update to v1.1.0.")
+	f.moveMain("go.mod", modAt("v1.0.0"))
+	p := f.start()
+	f.finish(p, result(updated("v1.1.0")))
+	if got := f.srv.Heads(t, "app")[greetBranch]; got != "" {
+		t.Fatalf("the controller pushed %s at %s without the signing key", greetBranch, got)
+	}
+	if got := logs.String(); !strings.Contains(got, `msg="reading the signing key failed"`) || !strings.Contains(got, "Secret app-signing: the key isn't a private key") || strings.Contains(got, "hunter2") {
+		t.Errorf("logs = %s, want why the controller couldn't sign the update, without the key", got)
+	}
+
+	t.Log("Once the Secret holds a key, the controller signs and pushes the update without another Pod.")
+	f.signer = gittest.NewSigner(t, f.u.cfg.Identity.Email)
+	rec := f.reconcile(p)
+	head := f.srv.Heads(t, "app")[greetBranch]
+	if pods := kube.Owned[agent.Pod](rec); head == "" || len(pods) != 0 {
+		t.Fatalf("%s = %q and owned Pods = %d, want the update and no Pod", greetBranch, head, len(pods))
+	}
+	f.work.Fetch(greetBranch)
+	if err := f.signer.Verify(f.work.Dir, head); err != nil {
+		t.Error(err)
 	}
 }
 

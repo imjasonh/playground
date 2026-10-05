@@ -25,14 +25,15 @@ const (
 )
 
 // fixture is a branch that updates a module on a git server, and the gotest
-// check's result on it.
+// check's result on it. With a signer, the GitRepository names its key.
 type fixture struct {
-	t    *testing.T
-	srv  *gittest.Server
-	work *gittest.Work
-	b    *Branch
-	test *gitk8s.CheckResult
-	cfg  *checks.Config
+	t      *testing.T
+	srv    *gittest.Server
+	work   *gittest.Work
+	b      *Branch
+	test   *gitk8s.CheckResult
+	cfg    *checks.Config
+	signer *gittest.Signer
 }
 
 func newFixture(t *testing.T, branch string) *fixture {
@@ -66,7 +67,11 @@ func (f *fixture) reconcile() *kube.Recorder {
 	tr := &testResult{Object: kube.Meta(f.b.Name, nil)}
 	tr.Namespace = f.b.Namespace
 	tr.Status.Checks.Gotest = f.test
-	ctx, rec := kube.Fake(f.t.Context(), f.b, repo, secret, tr)
+	world := []any{repo, secret, tr}
+	if f.signer != nil {
+		world = append(world, f.signer.Sign(repo))
+	}
+	ctx, rec := kube.Fake(f.t.Context(), f.b, world...)
 	if err := checks.NewReconciler[Branch](check, f.cfg).Reconcile(ctx, f.b); err != nil {
 		f.t.Fatal(err)
 	}
@@ -291,6 +296,20 @@ func TestPushesTheAgentsFix(t *testing.T) {
 	}
 	if !task.Edit || task.Instructions != instructions(testOutput) {
 		t.Errorf("the agent's task = %+v, want edits and the test output", task)
+	}
+}
+
+func TestSignsTheAgentsFix(t *testing.T) {
+	f := newFixture(t, depsBranch)
+	f.signer = gittest.NewSigner(t, f.cfg.Identity.Email)
+	f.agentThat(agent.Pass, agent.File{Path: "app.go", Mode: "100644", Content: []byte("package app\n\n// fixed\n")})
+	f.reconcile()
+	fix := f.work.Fetch(depsBranch)
+	if res := f.result(); res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
+	}
+	if err := f.signer.Verify(f.work.Dir, fix); err != nil {
+		t.Error(err)
 	}
 }
 
