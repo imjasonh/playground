@@ -93,7 +93,11 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		kube.RequeueAfter(ctx, time.Minute)
 		return running("waiting to start a Pod: %d test Pods are running, and -max-pods is %d", n, *maxPods), nil
 	}
-	pod := kube.Own(ctx, testPod(in, name))
+	p, err := testPod(in, name)
+	if err != nil {
+		return checks.Verdict{}, err
+	}
+	pod := kube.Own(ctx, p)
 	if pod == nil {
 		// kube creates the Pod after run returns, and retries with backoff
 		// when it can't, for example because an admission policy denies it.
@@ -196,7 +200,7 @@ fi
 git checkout -q --detach FETCH_HEAD
 `
 
-func testPod(in *checks.Input, name string) *Pod {
+func testPod(in *checks.Input, name string) (*Pod, error) {
 	yes, no := true, false
 	user := int64(65532)
 	deadline := int64(timeout.Seconds())
@@ -267,8 +271,10 @@ func testPod(in *checks.Input, name string) *Pod {
 			},
 		}},
 	}
-	addGoCache(p, in)
-	return p
+	if err := addGoCache(p, in); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func main() {

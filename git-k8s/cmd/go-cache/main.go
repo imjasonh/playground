@@ -95,17 +95,19 @@ func parseSize(s string) (int64, error) {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "generate" {
-		// go-cache has no controllers, but generate installs it like a
-		// controller program.
-		kube.Main()
-		return
-	}
-	addr := flag.String("addr", ":8080", "address to serve on")
 	upstream := flag.String("upstream", "https://proxy.golang.org", "module proxy to fetch modules from")
 	dir := flag.String("dir", filepath.Join(os.TempDir(), "go-cache"), "directory to keep modules and build outputs in")
 	maxSize := flag.String("max-size", "4Gi", "most bytes that files in -dir and writes in progress can take, such as 512Mi or 8Gi; keep it below the size of -dir's volume")
 	controller := flag.String("controller", "check-gotest", "kube controller whose Pods may write to the build caches")
+	if len(os.Args) > 1 && os.Args[1] == "generate" {
+		// go-cache has no controllers, but generate installs it like a
+		// controller program. generate checks the flags after -- against
+		// the flags above and kube.Main's own, which include -addr, so
+		// go-cache defines -addr only when it serves.
+		kube.Main()
+		return
+	}
+	addr := flag.String("addr", ":8080", "address to serve on")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(log, *addr, *upstream, *dir, *maxSize, *controller); err != nil {

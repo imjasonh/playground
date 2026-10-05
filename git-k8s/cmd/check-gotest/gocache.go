@@ -21,9 +21,6 @@ import (
 var goCache struct {
 	// url is the go-cache server's URL, without a trailing slash.
 	url string
-	// image is check-gotest's own image, which installs and runs the
-	// GOCACHEPROG program in test Pods.
-	image string
 }
 
 func init() {
@@ -35,11 +32,7 @@ func setGoCache(s string) error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("%q isn't an http or https URL", s)
 	}
-	image := os.Getenv("KUBE_IMAGE")
-	if image == "" {
-		return errors.New("test Pods run check-gotest's own image to use go-cache, so KUBE_IMAGE must name it, as kube's generate does")
-	}
-	goCache.url, goCache.image = strings.TrimSuffix(s, "/"), image
+	goCache.url = strings.TrimSuffix(s, "/")
 	return nil
 }
 
@@ -68,9 +61,15 @@ const (
 // code has run yet. The test container compiles the module's own packages,
 // gets the rest from the go-cache volume, and has neither token, so tests
 // can't change what other Pods read.
-func addGoCache(p *Pod, in *checks.Input) {
+func addGoCache(p *Pod, in *checks.Input) error {
 	if goCache.url == "" {
-		return
+		return nil
+	}
+	// generate parses -go-cache too, but only the Deployment that it writes
+	// sets KUBE_IMAGE.
+	image := os.Getenv("KUBE_IMAGE")
+	if image == "" {
+		return errors.New("test Pods run check-gotest's own image to use go-cache, so KUBE_IMAGE must name it, as kube's generate does")
 	}
 	ns, repo := in.Meta.Namespace, in.Repository.Name
 	remote := goCache.url + gocache.Path(ns, repo)
@@ -101,7 +100,7 @@ func addGoCache(p *Pod, in *checks.Input) {
 	helper := func(name string, mounts []VolumeMount, args ...string) Container {
 		return Container{
 			Name:                     name,
-			Image:                    goCache.image,
+			Image:                    image,
 			ImagePullPolicy:          "IfNotPresent",
 			Args:                     append([]string{"cacheprog"}, args...),
 			VolumeMounts:             mounts,
@@ -117,6 +116,7 @@ func addGoCache(p *Pod, in *checks.Input) {
 			{Name: "go-cache-write", MountPath: tokenDir, ReadOnly: true},
 		}, "-upload", "-dir="+outputsDir, "-remote="+remote, "-token-file="+tokenFile),
 	)
+	return nil
 }
 
 func setEnv(c *Container, name, value string) {

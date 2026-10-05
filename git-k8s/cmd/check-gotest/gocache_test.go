@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/gocache"
 	"github.com/imjasonh/playground/kube"
 )
@@ -55,18 +56,31 @@ func mount(c Container, volume string) *VolumeMount {
 func TestSetGoCache(t *testing.T) {
 	saved := goCache
 	t.Cleanup(func() { goCache = saved })
-	t.Setenv("KUBE_IMAGE", testImage)
 	for _, bad := range []string{"go-cache.go-cache", "ftp://go-cache", "http://", "http://go-cache?x=1", "http://go-cache#x", "http://[::1"} {
 		if err := setGoCache(bad); err == nil {
 			t.Errorf("setGoCache(%q) succeeded", bad)
 		}
 	}
-	if err := setGoCache("https://go-cache.example.com/"); err != nil || goCache.url != "https://go-cache.example.com" || goCache.image != testImage {
+	t.Log("generate parses -go-cache where KUBE_IMAGE isn't set, because only the Deployment sets it.")
+	t.Setenv("KUBE_IMAGE", "")
+	if err := setGoCache("https://go-cache.example.com/"); err != nil || goCache.url != "https://go-cache.example.com" {
 		t.Errorf("setGoCache: %v, goCache = %+v", err, goCache)
 	}
+}
+
+func TestGoCacheNeedsImage(t *testing.T) {
+	withGoCache(t)
 	t.Setenv("KUBE_IMAGE", "")
-	if err := setGoCache("http://go-cache.go-cache"); err == nil || !strings.Contains(err.Error(), "KUBE_IMAGE") {
-		t.Errorf("setGoCache without KUBE_IMAGE: %v", err)
+	b, repo := branch()
+	ctx, rec := kube.Fake(t.Context(), b, repo)
+	if err := checks.NewReconciler[Branch](check, &checks.Config{}).Reconcile(ctx, b); err == nil || !strings.Contains(err.Error(), "KUBE_IMAGE") {
+		t.Errorf("Reconcile = %v, want an error about KUBE_IMAGE", err)
+	}
+	if res := b.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "KUBE_IMAGE") {
+		t.Errorf("result = %+v, want Error about KUBE_IMAGE", res)
+	}
+	if pods := kube.Owned[Pod](rec); len(pods) != 0 {
+		t.Errorf("owned Pods = %+v, want none without the image for cacheprog and upload", pods)
 	}
 }
 
