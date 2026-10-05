@@ -59,6 +59,14 @@ type Check struct {
 	// UsesParent says the check's result depends on the parent's head as
 	// well as the branch's, so the check runs again when the parent moves.
 	UsesParent bool
+	// FilesOnly says that the check's result for the branch's head also
+	// holds for any commit with the same files that builds on the same
+	// parent head, because the result doesn't depend on the branch's
+	// commits, such as their messages, authors, or signatures. Only such
+	// results count for the commits that squash and rebase landings make.
+	// For a check without it, the merge controller pushes those commits to
+	// the branch, and the check runs on them before they land.
+	FilesOnly bool
 	// Always runs the check on every reconcile, instead of only when the
 	// heads change. Use it for checks that read only the GitBranch object.
 	Always bool
@@ -180,7 +188,10 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		parentCommit = spec.ParentHead
 	}
 	cur := *result
-	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit {
+	// A result with filesOnly from before the check stopped setting
+	// FilesOnly must not count for a squashed or rebased commit, so the
+	// check runs again. A result without filesOnly is only cautious.
+	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit && (r.check.FilesOnly || !cur.FilesOnly) {
 		return nil
 	}
 
@@ -192,7 +203,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, check: &r.check, cache: r.cache}
 	defer in.release()
 
-	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit}
+	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, FilesOnly: r.check.FilesOnly}
 	v, err := r.check.Run(ctx, in)
 	if err != nil {
 		res.State, res.Message = gitk8s.Error, truncate(err.Error())

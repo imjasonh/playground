@@ -45,7 +45,13 @@ GitHub, and any other forge, is a downstream copy:
   reports the branch as diverged, and leaves it to the
   [conflict resolution controller](#resolve-conflicts-in-a-controller).
 - The mirror holds the only credentials for external repositories, so no
-  other program reads Secrets.
+  other program reads Secrets. For a repository that gets
+  [tokens from Octo STS](README.md#github-repositories), only the mirror
+  requests tokens for the `GitRepository`'s `gitIdentity`, so the trust
+  policy's `subject_pattern` narrows to the mirror's service account. The
+  checks stop requesting tokens for Octo STS, so `generate` stops granting
+  them `create` on `serviceaccounts/token`, and the risk that
+  [Security](README.md#security) describes no longer applies to them.
 - Every ref change passes through the mirror, so it tells git-k8s about each
   one as it happens, and git-k8s reconciles the repository at once. Only the
   mirror polls, and only the external repository, to find pushes that people
@@ -70,40 +76,20 @@ Questions to settle first:
   reconcile, so either kube adds an API for it, or the mirror patches an
   annotation on the `GitRepository`.
 
-## Get GitHub credentials from Octo STS
+## Support GitHub Enterprise Server
 
-For a GitHub repository, git-k8s uses a long-lived basic-auth Secret, such as
-a personal access token. [Octo STS](https://github.com/octo-sts/app)
-exchanges an OIDC token for a GitHub App installation token that expires
-within an hour. The token gets the permissions that a trust policy in the
-repository's `.github/chainguard/` directory grants to the identity in the
-OIDC token. This repository's dependency workflow uses it.
+A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)
+only for a repository on github.com, because the public Octo STS service
+issues tokens only for github.com. A repository on GitHub Enterprise Server
+needs a Secret.
 
-The decision is to use the public Octo STS service. With the mirror, only
-git-k8s's own components talk to GitHub: the mirror, to sync, and the program
-that reports check runs. Each exchanges its projected service account token,
-whose subject is `system:serviceaccount:NAMESPACE:NAME`, for a GitHub token,
-and gets a new one before the old one expires. A `GitRepository` names the
-trust policies to use instead of a Secret:
-
-- The mirror's identity gets `contents: write`, to sync branches in both
-  directions.
-- The identity that reports results gets `checks: write`, so each check's
-  result also shows as a check run on its commit, and on the commit's pull
-  request. Check runs copy git-k8s's results; they don't change them.
-
-Checks need no GitHub credentials at all. GitHub grants `contents: write` for
-a whole repository, not for branches, which is acceptable because only the
-mirror holds it.
-
-Questions to settle first:
-
-- How to test it. Octo STS fetches the cluster's OIDC discovery document and
-  keys, so the cluster's issuer has to be reachable from the public service,
-  as on GKE and EKS. A kind cluster's issuer isn't, so the end-to-end test
-  needs a fake token service.
-- Whether to support GitHub Enterprise Server, which the public service
-  doesn't reach.
+GitHub Enterprise Server needs its own Octo STS deployment, with a GitHub App
+on that server. The programs then need the deployment's token exchange URL
+and audience, and the server's web and REST API URLs. These can't be
+`GitRepository` fields, because a tenant could then choose where the programs
+send their service account tokens, and for which audience. They belong in
+program flags, like `-fake-github`, or in a cluster-scoped object that only
+administrators can change.
 
 ## Resolve conflicts in a controller
 
@@ -145,11 +131,11 @@ Questions to settle first:
 
 ## Land branches through a merge queue
 
-Branches land by fast-forward only. Each landing moves the parent, so no
-other open branch contains the parent's head anymore. `check-base` merges the
-parent into each of them, which changes their heads and runs every check
-again, including a `go test` Pod. With N open branches, each landing costs
-about N runs of every check.
+A branch lands only when it contains its parent's head. Each landing moves
+the parent, so no other open branch contains the parent's head anymore.
+`check-base` merges the parent into each of them, which changes their heads
+and runs every check again, including a `go test` Pod. With N open branches,
+each landing costs about N runs of every check.
 
 The proposed fix is a queue for each parent. A branch whose checks pass,
 apart from being behind its parent, joins the queue. Only the branch at the
@@ -239,13 +225,6 @@ The proposed fix is for `checkFor`, the one function in the core program
 that maps service accounts to checks, to read a ConfigMap of check service
 accounts. The admission policies can take the same ConfigMap as a
 parameter, so that the two agree.
-
-## Support more ways to land
-
-Landing fast-forwards the parent to the branch's head, so the parent ends up
-at the commit that the checks tested. Squash and rebase landings, which many
-forges offer, make a commit that no check saw, so they need either another
-round of checks or a rule about which results still count.
 
 ## Add agentic operators
 

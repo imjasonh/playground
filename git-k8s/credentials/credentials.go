@@ -1,9 +1,12 @@
-// Package credentials reads the URL and credentials of a repository.
+// Package credentials reads the URL and credentials of a repository, or
+// gets a GitHub token for it from Octo STS.
 //
 // Reading the Secret makes kube's generate grant a program get access to
-// Secrets in every namespace, because generate grants what a program's
-// packages call. Only the programs that fetch from or push to a repository
-// import this package, so the others never get that access.
+// Secrets in every namespace, and exchanging tokens makes it grant the
+// program permission to request tokens for its own service account, because
+// generate grants what a program's packages call. Only the programs that
+// fetch from or push to a repository import this package, so the others
+// never get that access.
 package credentials
 
 import (
@@ -17,9 +20,14 @@ import (
 )
 
 // Remote returns a repository's URL and credentials. It reads the Secret
-// that SecretRef names with kube.Fetch, so it must run in a reconcile, and
-// the Secret isn't cached.
+// that SecretRef names with kube.Fetch, or exchanges a token for the
+// program's service account for a token for OctoSTS.GitIdentity, so it must
+// run in a reconcile. The Secret isn't cached, and the GitHub token is
+// cached until shortly before it expires.
 func Remote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+	if sts := repo.Spec.OctoSTS; sts != nil && sts.GitIdentity != "" {
+		return octoSTSRemote(ctx, repo)
+	}
 	r := git.Remote{URL: repo.Spec.URL}
 	if repo.Spec.SecretRef == nil {
 		return r, nil
