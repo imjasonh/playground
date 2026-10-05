@@ -352,12 +352,18 @@ cat "${WORKDIR}/mirror.txt"
 [[ "$(info_refs -H "Authorization: Bearer ${GOFMT_TOKEN}")" == 200 ]]
 [[ -n "$(mirror_head refs/heads/main)" && "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
 for program in check-base check-gofmt check-risk check-approval check-gotest; do
-  if k auth can-i get secrets -n "${NS}" --as="system:serviceaccount:${program}:${program}"; then
+  as="system:serviceaccount:${program}:${program}"
+  if k auth can-i get secrets -n "${NS}" --as="${as}"; then
     echo "${program} can read Secrets" >&2
     exit 1
   fi
+  if k -n "${program}" auth can-i create "serviceaccounts/${program}" --subresource=token --as="${as}"; then
+    echo "${program} can create tokens for its service account" >&2
+    exit 1
+  fi
 done
-echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. No check can read Secrets."
+k -n git-k8s auth can-i create serviceaccounts/git-k8s --subresource=token --as=system:serviceaccount:git-k8s:git-k8s
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. No check can read Secrets or create tokens, and only the core program can create tokens for Octo STS."
 echo "::endgroup::"
 
 echo "::group::A check can't push to a parent through the mirror"
