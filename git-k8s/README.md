@@ -454,8 +454,8 @@ divergence by itself.
 
 ### Credentials
 
-Only the core program reads the credentials of external repositories or
-gets tokens from Octo STS. Each time the repositories controller fetches
+Only the core program pushes with the credentials of external repositories
+or gets tokens from Octo STS. Each time the repositories controller fetches
 from or pushes to an external repository, it reads the Secret that
 `secretRef` names, and sends its `username` and `password` keys with HTTP
 basic auth, or `git` as the username if the Secret has none. For a
@@ -463,7 +463,10 @@ repository on GitHub, it can use a token from Octo STS instead, as
 [GitHub repositories](#github-repositories) describes. Checks and their test
 Pods and agent Pods fetch only from the mirror, with their own tokens, so
 `generate` doesn't let the checks request tokens. It lets only the checks
-that [sign commits](#sign-commits) read Secrets, for the signing key. The
+that [sign commits](#sign-commits) read Secrets, for the signing key. Agent
+Pods that a controller starts with `RunJob`, and the update Pods of
+`git-k8s-deps`, fetch from the external repository with the Secret's
+credentials, as [Limitations](#limitations) describes. The
 [`credentials`](credentials/credentials.go) package holds the only code that
 reads credentials or gets tokens for external repositories, and is where
 other ways to authenticate belong.
@@ -3118,10 +3121,13 @@ a change:
   comes from a `GitRepository` or a push, and doesn't sync or list branches
   whose names start with `-`, so neither can pass git an option.
 
-The core program is the only program that reads the external repositories'
-credentials or changes NetworkPolicies, which it does in every namespace,
-and the only one that gets tokens from Octo STS. It holds those credentials
-and decides what lands.
+The core program is the only program that changes NetworkPolicies, which it
+does in every namespace, the only one that gets tokens from Octo STS, and
+the only one that pushes to external repositories. It decides what lands.
+Agent Pods that a controller starts with `RunJob`, and the update Pods of
+`git-k8s-deps`, get an external repository's credentials to fetch from it,
+and the programs that sign commits can read them, as
+[Limitations](#limitations) describes.
 
 Kubernetes RBAC is the trust boundary. Anyone who can write a
 `GitRepository` in a namespace chooses the external repository, and the
