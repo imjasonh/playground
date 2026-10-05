@@ -133,10 +133,14 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	var world []any
 	var bindings []*admissionPolicyBinding
 	for _, p := range policies {
+		vap := &admissionPolicy{Object: kube.Meta(p.name, nil)}
+		if p.name == "git-k8s-check-results" || p.name == "git-k8s-branches" {
+			vap.Spec.ParamKind = &struct{}{}
+		}
 		b := &admissionPolicyBinding{Object: kube.Meta(p.name, nil)}
 		b.Spec.PolicyName, b.Spec.ValidationActions = p.name, []string{"Warn"}
 		bindings = append(bindings, b)
-		world = append(world, &admissionPolicy{Object: kube.Meta(p.name, nil)}, b)
+		world = append(world, vap, b)
 	}
 	// A restart would add Deny next to Warn in these bindings' validationActions,
 	// which the API server rejects, so the fix patches them instead.
@@ -200,13 +204,16 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	for _, b := range bindings {
 		b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Allow"}
 	}
-	if c := reconcile(world...); c.Status != kube.False ||
-		!strings.Contains(c.Message, `kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge -p '{"spec":{"paramRef":{"parameterNotFoundAction":"Deny"}}}'`) {
+	// The API server ignores the paramRef of a binding whose policy has no
+	// paramKind, so only the bindings of the policies that read parameters let
+	// requests through while the parameters are missing.
+	params := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"parameterNotFoundAction":"Deny"}}}'`
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so checks can write each other's results, git-k8s service accounts can approve branches, and checks can change GitBranch objects; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
 		t.Errorf("with bindings that allow requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}
-	for _, b := range bindings {
-		b.Spec.ParamRef.ParameterNotFoundAction = "Deny"
-	}
+	bindings[0].Spec.ParamRef.ParameterNotFoundAction = "Deny"
+	bindings[1].Spec.ParamRef.ParameterNotFoundAction = "Deny"
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with bindings that deny requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}

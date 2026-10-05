@@ -23,6 +23,11 @@ var policies = []struct {
 
 type admissionPolicy struct {
 	kube.Object `kube:"apiVersion=admissionregistration.k8s.io/v1,kind=ValidatingAdmissionPolicy,plural=validatingadmissionpolicies,scope=Cluster"`
+	Spec        struct {
+		// ParamKind is set when the policy reads parameters. Only whether it's
+		// set matters, so it reads as an empty struct.
+		ParamKind *struct{} `json:"paramKind"`
+	} `json:"spec"`
 }
 
 type admissionPolicyBinding struct {
@@ -76,17 +81,18 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
 	var missing, weak, warns, patches, exposures []string
 	for _, p := range policies {
+		policy := kube.Get[admissionPolicy](ctx, "", p.name)
+		params := policy != nil && policy.Spec.ParamKind != nil
 		var own *admissionPolicyBinding
 		denies := false
 		for _, b := range bindings {
 			if b.Spec.PolicyName == p.name {
-				denies = denies || denyPatch(b) == ""
+				denies = denies || denyPatch(b, params) == ""
 				if b.Name == p.name {
 					own = b
 				}
 			}
 		}
-		policy := kube.Get[admissionPolicy](ctx, "", p.name)
 		// While its own binding warns, the core program stops the next time it
 		// starts, even if another binding enforces the policy, because its apply
 		// adds Deny next to the Warn.
@@ -96,14 +102,14 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		}
 		if policy != nil && denies {
 			if warn {
-				patches = append(patches, patchCommand(own))
+				patches = append(patches, patchCommand(own, params))
 			}
 			continue
 		}
 		exposures = append(exposures, p.exposures...)
-		if own != nil && denyPatch(own) != "" {
+		if own != nil && denyPatch(own, params) != "" {
 			weak = append(weak, p.name)
-			patches = append(patches, patchCommand(own))
+			patches = append(patches, patchCommand(own, params))
 		}
 		if policy == nil || own == nil {
 			missing = append(missing, p.name)
@@ -163,8 +169,8 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 }
 
 // patchCommand returns the kubectl command that applies b's denyPatch.
-func patchCommand(b *admissionPolicyBinding) string {
-	return fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", b.Name, denyPatch(b))
+func patchCommand(b *admissionPolicyBinding, params bool) string {
+	return fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", b.Name, denyPatch(b, params))
 }
 
 // clauses joins independent clauses as "a", "a, and b", or "a, b, and c".
@@ -186,13 +192,15 @@ func list(items []string) string {
 // denyPatch returns a merge patch that makes a binding deny every request that
 // its policy rejects, or "" if it already does. config/policy.yaml sets no
 // matchResources, so the core program's apply keeps any that someone adds, and
-// the patch removes them.
-func denyPatch(b *admissionPolicyBinding) string {
+// the patch removes them. params is set when the binding's policy reads
+// parameters. The API server ignores the paramRef of a binding whose policy
+// doesn't.
+func denyPatch(b *admissionPolicyBinding, params bool) string {
 	var fields []string
 	if !slices.Contains(b.Spec.ValidationActions, "Deny") {
 		fields = append(fields, `"validationActions":["Deny"]`)
 	}
-	if b.Spec.ParamRef != nil && b.Spec.ParamRef.ParameterNotFoundAction != "Deny" {
+	if params && b.Spec.ParamRef != nil && b.Spec.ParamRef.ParameterNotFoundAction != "Deny" {
 		fields = append(fields, `"paramRef":{"parameterNotFoundAction":"Deny"}`)
 	}
 	if b.Spec.MatchResources.limits() {
