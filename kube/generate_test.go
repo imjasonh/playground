@@ -525,6 +525,49 @@ func TestManifestsForInstalledObjects(t *testing.T) {
 	}
 }
 
+// TestManifestsForInstalledObjectsAndEventsInDefault checks that objects
+// that Install applies in default and events about cluster-scoped objects
+// share one Role there, since two Roles with one name would replace each
+// other.
+func TestManifestsForInstalledObjectsAndEventsInDefault(t *testing.T) {
+	o := &generateOptions{program: "app", name: "app", namespace: "app-system", replicas: 1, shards: 1}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{"default": {}}, defaultNS: grants{}}
+	p.namespaces["default"].add("", "configmaps", "params", "create", "patch")
+	p.defaultNS.add("events.k8s.io", "events", "", "create", "patch")
+	var roles []string
+	for _, d := range o.manifests("ref", p) {
+		b, _ := json.Marshal(d)
+		var m struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Rules []struct {
+				Resources []string `json:"resources"`
+			} `json:"rules"`
+		}
+		_ = json.Unmarshal(b, &m)
+		if m.Kind != "Role" {
+			continue
+		}
+		roles = append(roles, m.Metadata.Namespace)
+		var resources []string
+		for _, r := range m.Rules {
+			resources = append(resources, r.Resources...)
+		}
+		slices.Sort(resources)
+		if want := []string{"configmaps", "events"}; !slices.Equal(resources, want) {
+			t.Errorf("the Role in %s covers %q, want %q", m.Metadata.Namespace, resources, want)
+		}
+	}
+	if want := []string{"default"}; !slices.Equal(roles, want) {
+		t.Errorf("Roles in %q, want %q", roles, want)
+	}
+	if got := p.namespaces["default"]; len(got) != 1 {
+		t.Errorf("manifests changed the plan's grants in default to %v", got)
+	}
+}
+
 // installForTest is a program flag for TestParseProgramFlags.
 var installForTest = flag.Bool("kube-test-install", true, "install objects")
 
