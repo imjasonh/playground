@@ -126,7 +126,7 @@ func (f *fixture) commit(ctx context.Context, in *checks.Input, files []agent.Fi
 		f.t.Fatal(err)
 	}
 	msg := "Apply changes from the deps agent\n\n" + git.FixerTrailer + ": deps\n" + git.AgentTrailer + ": deps\n"
-	fix, err := repo.CommitTree(ctx, tree, []string{in.Spec.Head}, msg, in.Identity, head.Time)
+	fix, err := in.CommitTree(ctx, tree, []string{in.Spec.Head}, msg, head.Time)
 	if err != nil {
 		f.t.Fatal(err)
 	}

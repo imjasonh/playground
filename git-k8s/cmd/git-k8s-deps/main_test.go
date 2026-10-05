@@ -324,7 +324,7 @@ func (f *fixture) commitAs(id git.Identity, message string, parents ...string) s
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	commit, err := repo.CommitTree(ctx, f.work.Git("write-tree"), parents, message, id, f.clock.Unix())
+	commit, err := repo.CommitTree(ctx, f.work.Git("write-tree"), parents, message, id, f.clock.Unix(), nil)
 	if err != nil {
 		f.t.Fatal(err)
 	}

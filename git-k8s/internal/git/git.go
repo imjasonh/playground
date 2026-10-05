@@ -357,21 +357,12 @@ func (r *Repo) Commit(ctx context.Context, sha string) (Commit, error) {
 	return Commit{Tree: tree, Time: t}, nil
 }
 
-// CommitTree makes a commit object. The same arguments always make the same
-// commit, so two controllers that make the same fix push the same commit.
-func (r *Repo) CommitTree(ctx context.Context, tree string, parents []string, message string, id Identity, unix int64) (string, error) {
-	args := []string{"commit-tree"}
-	for _, p := range parents {
-		args = append(args, "-p", p)
-	}
-	args = append(args, "-F", "-", "--end-of-options", tree)
-	date := fmt.Sprintf("@%d +0000", unix)
-	env := []string{
-		"GIT_AUTHOR_NAME=" + id.Name, "GIT_AUTHOR_EMAIL=" + id.Email, "GIT_AUTHOR_DATE=" + date,
-		"GIT_COMMITTER_NAME=" + id.Name, "GIT_COMMITTER_EMAIL=" + id.Email, "GIT_COMMITTER_DATE=" + date,
-	}
-	out, err := r.git.run(ctx, r.Dir, args, opts{stdin: []byte(message), env: env})
-	return strings.TrimSpace(string(out)), err
+// CommitTree is WriteCommit with id as the author and committer, at the
+// time unix in UTC. Two controllers that make the same fix push the same
+// commit, unless an ECDSA key signs it, as WriteCommit describes.
+func (r *Repo) CommitTree(ctx context.Context, tree string, parents []string, message string, id Identity, unix int64, key *SigningKey) (string, error) {
+	sig := Signature{Name: id.Name, Email: id.Email, Date: fmt.Sprintf("%d +0000", unix)}
+	return r.WriteCommit(ctx, NewCommit{Tree: tree, Parents: parents, Author: sig, Committer: sig, Message: message}, key)
 }
 
 // RefUpdate is one ref update in a push.
@@ -385,8 +376,11 @@ type RefUpdate struct {
 	Old string
 }
 
-// ErrRejected is wrapped by errors from Push when the remote refused an
-// update, usually because a ref no longer pointed at the expected commit.
+// ErrRejected is wrapped by errors from Push when an update is refused,
+// because a ref no longer points at the expected commit or because the
+// remote declines it, as a forge does for a push that breaks a branch
+// protection rule. The error ends with the remote's messages, which usually
+// say why.
 var ErrRejected = errors.New("push rejected")
 
 // PushError is the error from Push when git or the remote rejects the
@@ -396,6 +390,9 @@ type PushError struct {
 	// "[rejected] (stale info)" for a lease that doesn't hold, or
 	// "[remote rejected] (deletion prohibited)".
 	Rejected map[string]string
+	// Remote holds the messages that the remote sent, such as the reasons
+	// that a forge gives for refusing a push.
+	Remote []string
 }
 
 func (e *PushError) Error() string {
@@ -403,10 +400,24 @@ func (e *PushError) Error() string {
 	for _, ref := range slices.Sorted(maps.Keys(e.Rejected)) {
 		refs = append(refs, ref+" "+e.Rejected[ref])
 	}
-	return fmt.Sprintf("%v: %s", ErrRejected, strings.Join(refs, "; "))
+	return fmt.Sprintf("%v: %s", ErrRejected, e.withRemote(refs))
 }
 
 func (e *PushError) Unwrap() error { return ErrRejected }
+
+// Reason returns git's summary of why ref's update was rejected, followed
+// by the remote's messages. A forge's summary only says that a rule refused
+// the push, and its messages name the rule.
+func (e *PushError) Reason(ref string) string {
+	return e.withRemote([]string{e.Rejected[ref]})
+}
+
+func (e *PushError) withRemote(parts []string) string {
+	for _, msg := range e.Remote {
+		parts = append(parts, "remote: "+msg)
+	}
+	return strings.Join(parts, "; ")
+}
 
 // Refused reports whether the remote refused to update ref for a reason of
 // its own, such as a rule against deleting the branch or replacing its
@@ -444,7 +455,13 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 		}
 	}
 	if len(rejected) > 0 {
-		return &PushError{Rejected: rejected}
+		e := &PushError{Rejected: rejected}
+		for line := range strings.SplitSeq(res.stderr, "\n") {
+			if msg, ok := strings.CutPrefix(line, "remote:"); ok && strings.TrimSpace(msg) != "" {
+				e.Remote = append(e.Remote, strings.TrimSpace(msg))
+			}
+		}
+		return e
 	}
 	if res.code != 0 {
 		return &Error{Command: "push", Code: res.code, Stderr: res.stderr}

@@ -1129,7 +1129,7 @@ func (u *updater) commit(ctx context.Context, repo *git.Repo, parentHead string,
 	if err != nil {
 		return "", err
 	}
-	return repo.CommitTree(ctx, tree, []string{parentHead}, message(up), u.cfg.Identity, c.Time)
+	return repo.CommitTree(ctx, tree, []string{parentHead}, message(up), u.cfg.Identity, c.Time, nil)
 }
 
 // message returns the commit message of an update.

@@ -1,9 +1,16 @@
 package gitserver_test
 
 import (
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 )
 
@@ -32,6 +39,104 @@ func TestRequiresCredentials(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestRequiresSignatures(t *testing.T) {
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	hs := httptest.NewServer(&gitserver.Server{Root: t.TempDir(), AllowedSigners: signer.AllowedSigners})
+	t.Cleanup(hs.Close)
+	srv := &gittest.Server{URL: hs.URL}
+	w := srv.NewWork(t, "app")
+	w.Write("a.txt", "one\n")
+	unsigned := w.Commit("unsigned")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(w.Dir, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := repo.Commit(ctx, unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := git.NewSigningKey(signer.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := git.NewSigningKey(gittest.NewSigner(t, signer.Email).Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(parents []string, email string, key *git.SigningKey) string {
+		t.Helper()
+		sha, err := repo.CommitTree(ctx, c.Tree, parents, "commit\n", git.Identity{Name: "git-k8s", Email: email}, c.Time, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sha
+	}
+	push := func(update git.RefUpdate) error {
+		return repo.Push(ctx, srv.Remote("app"), update)
+	}
+
+	signed := commit(nil, signer.Email, key)
+	for _, tc := range []struct{ branch, commit string }{
+		{"unsigned", unsigned},
+		{"unsigned-parent", commit([]string{unsigned}, signer.Email, key)},
+		{"another-committer", commit([]string{signed}, "someone@example.com", key)},
+		{"unknown-key", commit([]string{signed}, signer.Email, other)},
+	} {
+		err := push(git.RefUpdate{Ref: "refs/heads/" + tc.branch, New: tc.commit})
+		if !errors.Is(err, git.ErrRejected) || !strings.Contains(err.Error(), "remote: refs/heads/"+tc.branch+": commit ") {
+			t.Errorf("pushing %s: err = %v, want a rejected push that gives the server's reason", tc.branch, err)
+		}
+	}
+	if err := push(git.RefUpdate{Ref: "refs/heads/main", New: signed}); err != nil {
+		t.Fatalf("pushing a signed commit: %v", err)
+	}
+	if err := push(git.RefUpdate{Ref: "refs/heads/copy", New: signed}); err != nil {
+		t.Errorf("pointing a new branch at a pushed commit: %v", err)
+	}
+	if err := push(git.RefUpdate{Ref: "refs/heads/copy", Old: signed}); err != nil {
+		t.Errorf("deleting a branch: %v", err)
+	}
+	if heads := srv.Heads(t, "app"); len(heads) != 1 || heads["main"] != signed {
+		t.Errorf("heads = %v, want main at the signed commit %s", heads, signed)
+	}
+}
+
+func TestRemovesRepositoryWhoseSetupFailed(t *testing.T) {
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	root := t.TempDir()
+	hook := filepath.Join(root, "app.git", "hooks", "pre-receive")
+	// A directory where the hook goes makes writing the hook fail.
+	if err := os.MkdirAll(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hs := httptest.NewServer(&gitserver.Server{Root: root, AllowedSigners: signer.AllowedSigners})
+	t.Cleanup(hs.Close)
+	get := func() int {
+		t.Helper()
+		resp, err := http.Get(hs.URL + "/app.git/info/refs?service=git-receive-pack")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if status := get(); status == http.StatusOK {
+		t.Errorf("status = %d, want an error because the hook couldn't be written", status)
+	}
+	if _, err := os.Stat(filepath.Join(root, "app.git")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("app.git is still there after its setup failed (%v)", err)
+	}
+	if status := get(); status != http.StatusOK {
+		t.Errorf("status = %d, want 200 once the repository can be set up", status)
+	}
+	if fi, err := os.Stat(hook); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("the hook isn't a file after the repository was set up again: %v", err)
 	}
 }
 

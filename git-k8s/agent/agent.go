@@ -377,7 +377,7 @@ func (x *run) commit(ctx context.Context, repo *git.Repo, res *Result) (string, 
 		paths[i] = f.Path
 	}
 	msg := fmt.Sprintf("Apply changes from the %s agent\n\n%s\n\n%s\n\n%s: %s\n%s: %s\n", x.r.Name, res.Summary, strings.Join(paths, "\n"), git.FixerTrailer, x.r.Name, git.AgentTrailer, x.r.Name)
-	return repo.CommitTree(ctx, tree, []string{head}, msg, x.in.Identity, c.Time)
+	return x.in.CommitTree(ctx, tree, []string{head}, msg, c.Time)
 }
 
 func state(statuses []ContainerStatus, name string) ContainerState {

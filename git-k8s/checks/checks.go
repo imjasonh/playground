@@ -27,10 +27,10 @@ package checks
 import (
 	"cmp"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -72,6 +72,12 @@ type Check struct {
 	// that leaves it nil doesn't link that package, so its program can't
 	// read Secrets.
 	Remote func(context.Context, *gitk8s.Repository) (git.Remote, error)
+	// SigningKey returns the key that signs a repository's commits, or nil
+	// if the repository doesn't name one. A check that calls
+	// Input.CommitTree or Input.Replay sets it to signing.Key. A check that
+	// leaves it nil doesn't link that package, so its program doesn't read
+	// signing keys.
+	SigningKey func(context.Context, *gitk8s.Repository) (*git.SigningKey, error)
 	// Run examines the branch.
 	Run func(ctx context.Context, in *Input) (Verdict, error)
 }
@@ -123,7 +129,27 @@ func Main[V any, P interface {
 }](check Check) {
 	cfg := &Config{}
 	cfg.AddFlags(flag.CommandLine)
+	if check.SigningKey != nil {
+		RemoveLeftoverSigningKeys()
+	}
 	kube.Main(For[V, P](check, cfg))
+}
+
+// RemoveLeftoverSigningKeys removes the signing keys that an earlier run of
+// the program left, when the program runs in a Pod. Main calls it for a
+// check that signs commits. A program that signs commits but doesn't call
+// Main calls it before it starts its controllers.
+func RemoveLeftoverSigningKeys() {
+	// A container that's killed while it signs a commit leaves the key in
+	// os.TempDir, which generate puts on a volume that outlives the
+	// container. Outside a Pod, as in generate or a controller run with
+	// -kubeconfig, other processes can be signing in the same directory.
+	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
+		return
+	}
+	if err := git.RemoveSigningKeys(); err != nil {
+		slog.Warn("removing signing keys that an earlier run left", "err", err)
+	}
 }
 
 // For returns a controller that runs check on every GitBranch whose merge
@@ -185,7 +211,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
-	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, check: &r.check, cache: r.cache}
+	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache}
 	defer in.release()
 
 	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, FilesOnly: r.check.FilesOnly}
@@ -198,6 +224,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), v.Outputs
 	if v.Fix != "" {
 		if err := r.push(ctx, in, v, res); err != nil {
+			res.State, res.Message = gitk8s.Error, truncate(err.Error())
+			*result = res
 			return err
 		}
 	}
@@ -234,13 +262,11 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 		return err
 	}
 	err = local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + in.Spec.Branch, New: v.Fix, Old: in.Spec.Head})
-	if errors.Is(err, git.ErrRejected) {
-		// The branch moved since the repository controller listed it. The
-		// next listing changes the spec, which runs the check again.
-		return fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(v.Fix), in.Spec.Branch, err)
-	}
 	if err != nil {
-		return err
+		// If the push was rejected because the branch moved since the
+		// repository controller listed it, the next listing changes the
+		// spec, which runs the check on the new head.
+		return fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(v.Fix), in.Spec.Branch, err)
 	}
 	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
 	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s: %s", gitk8s.Short(v.Fix), in.Spec.Branch, v.Message)
@@ -259,17 +285,17 @@ type Input struct {
 	Spec       *gitk8s.GitBranchSpec
 	Policy     gitk8s.CheckPolicy
 	Repository *gitk8s.Repository
-	// Identity is the author and committer for fix commits.
-	Identity git.Identity
 	// Previous is the check's last result, which can be for other commits.
 	Previous *gitk8s.CheckResult
 
+	identity  git.Identity
 	check     *Check
 	cache     *gitk8s.Cache
 	remote    *git.Remote
 	local     *git.Repo
 	unlock    func()
 	mergeBase *string
+	key       **git.SigningKey
 }
 
 // Remote returns the repository's URL and credentials, from Check.Remote.
@@ -329,6 +355,51 @@ func (in *Input) MergeBase(ctx context.Context) (string, error) {
 		in.mergeBase = &mb
 	}
 	return *in.mergeBase, nil
+}
+
+// CommitTree makes a commit in Repo's repository, with the controller's
+// identity as its author and committer. If the check's policy lets it
+// push, CommitTree signs the commit with the key from Check.SigningKey, if
+// the repository names one. Otherwise the framework doesn't push the
+// commit, so CommitTree neither reads the key nor signs the commit.
+func (in *Input) CommitTree(ctx context.Context, tree string, parents []string, message string, unix int64) (string, error) {
+	local, key, err := in.committer(ctx)
+	if err != nil {
+		return "", err
+	}
+	return local.CommitTree(ctx, tree, parents, message, in.identity, unix, key)
+}
+
+// Replay makes a commit in Repo's repository that replays commit onto
+// parent with tree, as git.Repo.Replay does, with the controller's identity
+// as its committer. It signs the commit as CommitTree does.
+func (in *Input) Replay(ctx context.Context, commit, parent, tree string) (string, error) {
+	local, key, err := in.committer(ctx)
+	if err != nil {
+		return "", err
+	}
+	return local.Replay(ctx, commit, parent, tree, in.identity, key)
+}
+
+// committer returns Repo's repository, and the key that signs the commits
+// that the check makes there, which is nil unless the check's policy lets
+// it push. It reads the key at most once.
+func (in *Input) committer(ctx context.Context) (*git.Repo, *git.SigningKey, error) {
+	if in.check.SigningKey == nil {
+		return nil, nil, fmt.Errorf("the %s check can't make commits: set Check.SigningKey to signing.Key", in.check.Name)
+	}
+	local, err := in.Repo(ctx)
+	if err != nil || !in.Policy.MayPush {
+		return local, nil, err
+	}
+	if in.key == nil {
+		key, err := in.check.SigningKey(ctx, in.Repository)
+		if err != nil {
+			return nil, nil, err
+		}
+		in.key = &key
+	}
+	return local, *in.key, nil
 }
 
 func (in *Input) release() {
