@@ -1,12 +1,12 @@
-// Package credentials reads the URL and credentials of a repository, or
-// gets a GitHub token for it from Octo STS.
+// Package credentials reads the URL and credentials of an external
+// repository, or gets a GitHub token for it from Octo STS.
 //
 // Reading the Secret makes kube's generate grant a program get access to
 // Secrets in every namespace, and exchanging tokens makes it grant the
 // program permission to request tokens for its own service account, because
-// generate grants what a program's packages call. Only the programs that
-// fetch from or push to a repository import this package, so the others
-// never get that access.
+// generate grants what a program's packages call. Only the core program
+// imports this package, for the mirror and for check runs, so checks never
+// get that access.
 package credentials
 
 import (

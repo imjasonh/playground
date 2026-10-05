@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -42,12 +44,18 @@ func repository(rules ...gitk8s.BranchRule) *gitk8s.GitRepository {
 	return repo
 }
 
+// noCopies returns a mirror without copies, for reconciles that only
+// order a queue.
+func noCopies(t *testing.T) *mirror.Mirror {
+	return &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()}
+}
+
 // queueOf reconciles parent among the GitBranches in world, and returns its
 // merge queue.
 func queueOf(t *testing.T, parent *gitk8s.GitBranch, world ...any) []string {
 	t.Helper()
 	ctx, _ := kube.Fake(t.Context(), parent, append([]any{repository(rules()...)}, world...)...)
-	if err := (&merger{}).Reconcile(ctx, parent); err != nil {
+	if err := (&merger{mirror: noCopies(t)}).Reconcile(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
 	return parent.Status.Queue
@@ -94,7 +102,7 @@ func TestOnlyParentsHaveQueues(t *testing.T) {
 	main := parentOf(x, "c/x")
 	repo := repository(gitk8s.BranchRule{Match: "main", Merge: &p}, gitk8s.BranchRule{Match: "c/**", Parent: "main"})
 	ctx, _ := kube.Fake(t.Context(), main, repo, x)
-	if err := (&merger{}).Reconcile(ctx, main); err != nil {
+	if err := (&merger{mirror: noCopies(t)}).Reconcile(ctx, main); err != nil {
 		t.Fatal(err)
 	}
 	if main.Status.Queue != nil {
@@ -102,12 +110,14 @@ func TestOnlyParentsHaveQueues(t *testing.T) {
 	}
 }
 
-// behind pushes main, then c/one and c/two from it, then moves main ahead.
-// It returns the branches' GitBranches with fresh, passing results: both
-// merge main cleanly, so the base check passes them but reports that they're
-// behind.
-func behind(t *testing.T, srv *gittest.Server) (one, two *gitk8s.GitBranch, w *gittest.Work) {
-	w = srv.NewWork(t, "app")
+// behind pushes main, then c/one and c/two from it, then moves main ahead,
+// all in the external repository of a new fixture, and syncs the mirror.
+// It returns the fixture, the branches' GitBranches with fresh, passing
+// results, and the fixture's working repository: both branches merge main
+// cleanly, so the base check passes them but reports that they're behind.
+func behind(t *testing.T) (f *fixture, one, two *gitk8s.GitBranch, w *gittest.Work) {
+	f = newFixture(t)
+	w = f.work
 	start := w.Commit("main")
 	w.Write("y.txt", "y\n")
 	main := w.Commit("main moves")
@@ -126,17 +136,17 @@ func behind(t *testing.T, srv *gittest.Server) (one, two *gitk8s.GitBranch, w *g
 		}
 		bs = append(bs, b)
 	}
-	return bs[0], bs[1], w
+	f.fetch()
+	return f, bs[0], bs[1], w
 }
 
 func TestQueuedBranchesLandInTurn(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	one, two, w := behind(t, srv)
+	f, one, two, w := behind(t)
 	main := parentOf(one)
 	start := main.Spec.Head
 	reconcile := func(b *gitk8s.GitBranch) string {
 		t.Helper()
-		return mergeIn(t, srv, main, b)
+		return f.mergeIn(main, b)
 	}
 
 	t.Log("Both branches become ready together and join main's queue.")
@@ -157,7 +167,7 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	if msg := reconcile(two); two.Status.Queued.Position != 2 || msg != "2 of 2 in main's queue" {
 		t.Errorf("c/two: queued %+v, %q", two.Status.Queued, msg)
 	}
-	if got := srv.Heads(t, "app")["main"]; got != start {
+	if got := f.mirrorHeads()["main"]; got != start {
 		t.Fatalf("main moved to %s", got)
 	}
 
@@ -165,7 +175,7 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	w.Branch("c/one", one.Spec.Head)
 	w.Git("merge", "--quiet", "--no-ff", "-m", "Merge main into c/one\n\n"+git.FixerTrailer+": base", start)
 	merged := w.Git("rev-parse", "HEAD")
-	w.Push("c/one")
+	f.pushToMirror("c/one")
 	one.Generation++
 	one.Spec.Head = merged
 	one.Status.Checks = map[string]gitk8s.CheckResult{
@@ -175,7 +185,7 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	if msg := reconcile(one); one.Status.State != reasonLanded || one.Status.Queued != nil {
 		t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
 	}
-	if got := srv.Heads(t, "app")["main"]; got != merged {
+	if got := f.mirrorHeads()["main"]; got != merged {
 		t.Fatalf("main = %s, want %s", got, merged)
 	}
 
@@ -198,18 +208,18 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 }
 
 func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	one, two, w := behind(t, srv)
+	f, one, two, w := behind(t)
 	main := parentOf(one)
 	start := main.Spec.Head
 	reconcile := func(b *gitk8s.GitBranch) string {
 		t.Helper()
-		return mergeIn(t, srv, main, b)
+		return f.mergeIn(main, b)
 	}
 	w.Branch("c/two", start)
 	w.Write("two.txt", "c/two\n")
 	two.Spec.Head = w.Commit("add c/two")
 	w.Push("c/two")
+	f.fetch()
 	two.Status.Checks = map[string]gitk8s.CheckResult{
 		"base":  {Commit: two.Spec.Head, ParentCommit: start, State: gitk8s.Passed},
 		"gofmt": {Commit: two.Spec.Head, State: gitk8s.Passed},
@@ -221,7 +231,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 			t.Fatalf("%s: state %q, %q", b.Spec.Branch, b.Status.State, msg)
 		}
 	}
-	if got := srv.Heads(t, "app")["main"]; got != start {
+	if got := f.mirrorHeads()["main"]; got != start {
 		t.Fatalf("main moved to %s", got)
 	}
 	if got, want := queueOf(t, main, one, two), []string{"c/one", "c/two"}; !slices.Equal(got, want) {
@@ -235,7 +245,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 	if msg := reconcile(one); msg != "first in main's queue; waiting for the base check to merge main in" {
 		t.Errorf("c/one: %q", msg)
 	}
-	if got := srv.Heads(t, "app")["main"]; got != start {
+	if got := f.mirrorHeads()["main"]; got != start {
 		t.Fatalf("main moved to %s", got)
 	}
 
@@ -244,7 +254,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 	if msg := reconcile(one); one.Status.State != reasonWaitingForChecks || one.Status.Queued != nil {
 		t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
 	}
-	if got := srv.Heads(t, "app")["main"]; got != start {
+	if got := f.mirrorHeads()["main"]; got != start {
 		t.Fatalf("main moved to %s", got)
 	}
 	if got, want := queueOf(t, main, one, two), []string{"c/two"}; !slices.Equal(got, want) {
@@ -253,7 +263,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 	if msg := reconcile(two); two.Status.State != reasonLanded {
 		t.Fatalf("c/two: state %q, %q", two.Status.State, msg)
 	}
-	if got := srv.Heads(t, "app")["main"]; got != two.Spec.Head {
+	if got := f.mirrorHeads()["main"]; got != two.Spec.Head {
 		t.Errorf("main = %s, want %s", got, two.Spec.Head)
 	}
 }
@@ -261,8 +271,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 func TestRejoinsAtTheBack(t *testing.T) {
 	for _, branch := range []string{"c/one", "c/two"} {
 		t.Run(branch, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			one, two, w := behind(t, srv)
+			f, one, two, w := behind(t)
 			main := parentOf(one, "c/one", "c/two")
 			start := main.Spec.Head
 			since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -274,7 +283,7 @@ func TestRejoinsAtTheBack(t *testing.T) {
 			}
 			reconcile := func(b *gitk8s.GitBranch) string {
 				t.Helper()
-				return mergeIn(t, srv, main, b)
+				return f.mergeIn(main, b)
 			}
 
 			t.Logf("Someone pushes to %s in main's queue, and the checks pass on the new head before main's queue drops %[1]s.", branch)
@@ -282,6 +291,7 @@ func TestRejoinsAtTheBack(t *testing.T) {
 			w.Write("more.txt", "more\n")
 			head := w.Commit("more work")
 			w.Push(branch)
+			f.fetch()
 			pushed.Generation++
 			pushed.Spec.Head = head
 			pushed.Status.Checks = map[string]gitk8s.CheckResult{
@@ -312,7 +322,7 @@ func TestRejoinsAtTheBack(t *testing.T) {
 			if msg := reconcile(other); msg != "first in main's queue; waiting for the base check to merge main in" {
 				t.Errorf("%s: %q", other.Spec.Branch, msg)
 			}
-			if got := srv.Heads(t, "app")["main"]; got != start {
+			if got := f.mirrorHeads()["main"]; got != start {
 				t.Errorf("main moved to %s", got)
 			}
 		})
@@ -320,8 +330,7 @@ func TestRejoinsAtTheBack(t *testing.T) {
 }
 
 func TestKeepsItsPlaceWhileItsCacheLags(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	one, two, _ := behind(t, srv)
+	f, one, two, _ := behind(t)
 	main := parentOf(one, "c/one", "c/two")
 	start := main.Spec.Head
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -337,12 +346,12 @@ func TestKeepsItsPlaceWhileItsCacheLags(t *testing.T) {
 		// live is the branch as the API server has it.
 		live := *tc.b
 		live.Status.Queued = &gitk8s.Queued{Since: since, Head: tc.b.Spec.Head}
-		msg := mergeIn(t, srv, main, tc.b, &live)
+		msg := f.mergeIn(main, tc.b, &live)
 		if q := tc.b.Status.Queued; q == nil || !q.Since.Equal(since) || q.Position != tc.pos || msg != tc.want {
 			t.Errorf("%s: queued %+v, %q; want its place at %d, %q", tc.b.Spec.Branch, q, msg, tc.pos, tc.want)
 		}
 	}
-	if got := srv.Heads(t, "app")["main"]; got != start {
+	if got := f.mirrorHeads()["main"]; got != start {
 		t.Errorf("main moved to %s", got)
 	}
 }
@@ -351,49 +360,65 @@ func TestLeavingTheQueue(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name string
-		edit func(*gitk8s.GitBranch, *gittest.Work)
+		edit func(*fixture, *gitk8s.GitBranch)
 		// state is the branch's state afterward, Queued if it keeps its place.
 		state string
 	}{{
 		name: "a check pushes a fix",
-		edit: func(b *gitk8s.GitBranch, w *gittest.Work) {
-			w.Write("x.txt", "fixed\n")
-			b.Spec.Head = w.Commit("Fix x\n\n" + git.FixerTrailer + ": gofmt")
-			w.Push("c/x")
+		edit: func(f *fixture, b *gitk8s.GitBranch) {
+			f.work.Write("x.txt", "fixed\n")
+			b.Spec.Head = f.work.Commit("Fix x\n\n" + git.FixerTrailer + ": gofmt")
+			f.pushToMirror("c/x")
 		},
 		state: reasonQueued,
 	}, {
 		name: "a check is still running",
-		edit: func(b *gitk8s.GitBranch, _ *gittest.Work) {
+		edit: func(_ *fixture, b *gitk8s.GitBranch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Running}
 		},
 		state: reasonQueued,
 	}, {
 		name: "a person pushes",
-		edit: func(b *gitk8s.GitBranch, w *gittest.Work) {
-			w.Write("more.txt", "more\n")
-			b.Spec.Head = w.Commit("more work")
-			w.Push("c/x")
+		edit: func(f *fixture, b *gitk8s.GitBranch) {
+			f.work.Write("more.txt", "more\n")
+			b.Spec.Head = f.work.Commit("more work")
+			f.work.Push("c/x")
+			f.fetch()
 		},
 		state: reasonWaitingForChecks,
 	}, {
 		name: "someone force-pushes",
-		edit: func(b *gitk8s.GitBranch, w *gittest.Work) {
-			w.Branch("c/x", b.Spec.ParentHead)
-			w.Write("other.txt", "other\n")
-			b.Spec.Head = w.Commit("start over")
-			w.Push("c/x")
+		edit: func(f *fixture, b *gitk8s.GitBranch) {
+			f.work.Branch("c/x", b.Spec.ParentHead)
+			f.work.Write("other.txt", "other\n")
+			b.Spec.Head = f.work.Commit("start over")
+			f.work.Push("c/x")
+			f.fetch()
 		},
 		state: reasonWaitingForChecks,
 	}, {
+		name: "the branch diverges",
+		edit: func(f *fixture, b *gitk8s.GitBranch) {
+			head := b.Spec.Head
+			f.work.Write("x.txt", "fixed\n")
+			b.Spec.Head = f.work.Commit("Fix x\n\n" + git.FixerTrailer + ": gofmt")
+			f.pushToMirror("c/x")
+			f.work.Branch("person", head)
+			f.work.Write("person.txt", "person\n")
+			f.work.Commit("a person's change")
+			f.work.Push("c/x")
+			f.fetch()
+		},
+		state: reasonDiverged,
+	}, {
 		name: "a check fails",
-		edit: func(b *gitk8s.GitBranch, _ *gittest.Work) {
+		edit: func(_ *fixture, b *gitk8s.GitBranch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
 		},
 		state: reasonWaitingForChecks,
 	}, {
 		name: "the gate is invalid",
-		edit: func(b *gitk8s.GitBranch, _ *gittest.Work) {
+		edit: func(_ *fixture, b *gitk8s.GitBranch) {
 			p := *policy
 			p.When = "checks.missing.passed"
 			b.Spec.Merge = &p
@@ -401,16 +426,15 @@ func TestLeavingTheQueue(t *testing.T) {
 		state: reasonInvalidGate,
 	}, {
 		name:  "the parent is gone",
-		edit:  func(b *gitk8s.GitBranch, _ *gittest.Work) { b.Spec.ParentHead = "" },
+		edit:  func(_ *fixture, b *gitk8s.GitBranch) { b.Spec.ParentHead = "" },
 		state: reasonParentMissing,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, _ := branches(t)
 			b.Status.Queued = &gitk8s.Queued{Since: since, Head: b.Spec.Head, Position: 1}
 			main := b.Spec.ParentHead
-			tc.edit(b, w)
-			if err := merge(t, srv, b); err != nil {
+			tc.edit(f, b)
+			if _, err := f.merge(b); err != nil {
 				t.Fatal(err)
 			}
 			if b.Status.State != tc.state {
@@ -422,10 +446,49 @@ func TestLeavingTheQueue(t *testing.T) {
 			case tc.state == reasonQueued && (q == nil || !q.Since.Equal(since) || q.Head != b.Spec.Head || q.Position != 1):
 				t.Errorf("queued = %+v, want its place at the front, at head %s", q, gitk8s.Short(b.Spec.Head))
 			}
-			if got := srv.Heads(t, "app")["main"]; got != main {
+			if got := f.mirrorHeads()["main"]; got != main {
 				t.Errorf("main moved to %s", got)
 			}
 		})
+	}
+}
+
+// TestKeepingThePlaceThroughAnError checks that a branch keeps its place in
+// its parent's queue when its reconcile fails, since kube writes the status
+// of a failed reconcile too, and that it lands once the error passes.
+func TestKeepingThePlaceThroughAnError(t *testing.T) {
+	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	f, b, _ := branches(t)
+	b.Status.Queued = &gitk8s.Queued{Since: since, Head: b.Spec.Head, Position: 1}
+	main := b.Spec.ParentHead
+	results := b.Status.Checks
+	// The mirror keeps its copy open, so the next read of the copy fails
+	// once its directory is gone.
+	moved := f.copyDir() + ".moved"
+	if err := os.Rename(f.copyDir(), moved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.merge(b); err == nil {
+		t.Fatal("merge succeeded without the mirror's copy")
+	}
+	if q := b.Status.Queued; q == nil || !q.Since.Equal(since) || q.Head != b.Spec.Head || q.Position != 1 {
+		t.Fatalf("queued = %+v, want its place at the front, at head %s", q, gitk8s.Short(b.Spec.Head))
+	}
+
+	if err := os.Rename(moved, f.copyDir()); err != nil {
+		t.Fatal(err)
+	}
+	// The merge controller leaves the checks' results out of its status
+	// write, so the next reconcile still reads them.
+	b.Status.Checks = results
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	if b.Status.State != reasonLanded {
+		t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+	}
+	if got := f.mirrorHeads()["main"]; got == main {
+		t.Errorf("main is still at %s", gitk8s.Short(main))
 	}
 }
 
@@ -487,8 +550,7 @@ func TestLeavingTheFront(t *testing.T) {
 		queue: []string{"c/x"},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, _ := branches(t, srv)
+			f, b, _ := branches(t)
 			p := *policy
 			p.Checks = append(p.Checks[:2:2], gitk8s.CheckPolicy{Name: "approval"})
 			p.When = tc.when
@@ -498,14 +560,14 @@ func TestLeavingTheFront(t *testing.T) {
 			pos := int32(slices.Index(tc.queue, "c/x") + 1)
 			b.Status.Queued = &gitk8s.Queued{Since: since, Head: b.Spec.Head, Position: pos}
 			main := b.Spec.ParentHead
-			msg := mergeIn(t, srv, parentOf(b, tc.queue...), b)
+			msg := f.mergeIn(parentOf(b, tc.queue...), b)
 			switch q := b.Status.Queued; {
 			case tc.stays && (b.Status.State != reasonQueued || q == nil || !q.Since.Equal(since) || q.Position != pos):
 				t.Errorf("state = %q, queued %+v, %q; want its place at %d", b.Status.State, q, msg, pos)
 			case !tc.stays && (b.Status.State != reasonWaitingForChecks || q != nil):
 				t.Errorf("state = %q, queued %+v, %q; want %s, out of the queue", b.Status.State, q, msg, reasonWaitingForChecks)
 			}
-			if got := srv.Heads(t, "app")["main"]; got != main {
+			if got := f.mirrorHeads()["main"]; got != main {
 				t.Errorf("main moved to %s", got)
 			}
 		})
@@ -517,13 +579,12 @@ func TestLeavingTheFront(t *testing.T) {
 // moves to the front, and it joins again only after its spec changes.
 func TestNeedsRebaseLeavesTheQueue(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	srv := gittest.NewServer(t, "")
-	one, two, w := behind(t, srv)
+	f, one, two, w := behind(t)
 	main := parentOf(one, "c/one", "c/two")
 	start := main.Spec.Head
 	reconcile := func(b *gitk8s.GitBranch) string {
 		t.Helper()
-		return mergeIn(t, srv, main, b)
+		return f.mergeIn(main, b)
 	}
 	// list moves c/one to head, as the repository controller does, with
 	// passing results for head.
@@ -545,13 +606,13 @@ func TestNeedsRebaseLeavesTheQueue(t *testing.T) {
 	w.Git("merge", "--quiet", "--no-ff", "--no-commit", start)
 	w.Write("merge.txt", "merge\n")
 	list(w.Commit("Merge main into c/one\n\n" + git.FixerTrailer + ": base"))
-	w.Push("c/one")
+	f.pushToMirror("c/one")
 	one.Status.Queued = &gitk8s.Queued{Since: since, Head: one.Spec.Head, Position: 1}
 	msg := reconcile(one)
 	if one.Status.State != reasonNeedsRebase || one.Status.Queued != nil {
 		t.Fatalf("c/one: state %q, queued %+v, %q; want %s, out of the queue", one.Status.State, one.Status.Queued, msg, reasonNeedsRebase)
 	}
-	heads := srv.Heads(t, "app")
+	heads := f.mirrorHeads()
 	if heads["main"] != start {
 		t.Fatalf("main moved to %s", heads["main"])
 	}
@@ -566,7 +627,7 @@ func TestNeedsRebaseLeavesTheQueue(t *testing.T) {
 	if again := reconcile(one); one.Status.State != reasonNeedsRebase || one.Status.Queued != nil || again != msg {
 		t.Errorf("c/one after main's queue dropped it: state %q, queued %+v, %q; want it unchanged", one.Status.State, one.Status.Queued, again)
 	}
-	if after := srv.Heads(t, "app"); !maps.Equal(after, heads) {
+	if after := f.mirrorHeads(); !maps.Equal(after, heads) {
 		t.Errorf("heads = %v, want %v", after, heads)
 	}
 
@@ -580,6 +641,7 @@ func TestNeedsRebaseLeavesTheQueue(t *testing.T) {
 	w.Write("more.txt", "more\n")
 	list(w.Commit("more work"))
 	w.Push("c/one")
+	f.fetch()
 	if msg := reconcile(one); one.Status.State != reasonQueued || one.Status.Queued == nil || msg != "joining main's queue" {
 		t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
 	}
@@ -594,13 +656,12 @@ func TestNeedsRebaseLeavesTheQueue(t *testing.T) {
 // then the commit and the fixes land by fast-forward.
 func TestRewrittenBranchHoldsTheFront(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	srv := gittest.NewServer(t, "")
-	one, two, w := behind(t, srv)
+	f, one, two, w := behind(t)
 	main := parentOf(one, "c/one", "c/two")
 	start := main.Spec.Head
 	reconcile := func(b *gitk8s.GitBranch) string {
 		t.Helper()
-		return mergeIn(t, srv, main, b)
+		return f.mergeIn(main, b)
 	}
 	// list moves c/one to head, as the repository controller does.
 	list := func(head string) {
@@ -628,14 +689,14 @@ func TestRewrittenBranchHoldsTheFront(t *testing.T) {
 	t.Log("The base check merges main into c/one at the front, and the checks pass, but dco has to check the squashed commit.")
 	w.Branch("c/one", one.Spec.Head)
 	w.Git("merge", "--quiet", "--no-ff", "-m", "Merge main into c/one\n\n"+git.FixerTrailer+": base", start)
-	w.Push("c/one")
+	f.pushToMirror("c/one")
 	list(w.Git("rev-parse", "HEAD"))
 	pass()
 	one.Status.Queued = &gitk8s.Queued{Since: since, Head: one.Spec.Head, Position: 1}
 	msg := reconcile(one)
-	heads := srv.Heads(t, "app")
+	heads := f.mirrorHeads()
 	squashed := heads["c/one"]
-	want := fmt.Sprintf("squashed c/one onto main at %s as %s and pushed it to c/one, because the results of dco might depend on the branch's commits",
+	want := fmt.Sprintf("squashed c/one onto main at %s as %s and moved c/one there, because the results of dco might depend on the branch's commits",
 		gitk8s.Short(start), gitk8s.Short(squashed))
 	if one.Status.State != reasonRewritten || msg != want || !front(squashed) {
 		t.Fatalf("c/one: state %q, queued %+v, %q; want %s at the front at %s, %q", one.Status.State, one.Status.Queued, msg, reasonRewritten, squashed, want)
@@ -648,7 +709,7 @@ func TestRewrittenBranchHoldsTheFront(t *testing.T) {
 	if again := reconcile(one); one.Status.State != reasonRewritten || again != msg || !front(squashed) {
 		t.Errorf("c/one: state %q, queued %+v, %q; want it unchanged", one.Status.State, one.Status.Queued, again)
 	}
-	if after := srv.Heads(t, "app"); !maps.Equal(after, heads) {
+	if after := f.mirrorHeads(); !maps.Equal(after, heads) {
 		t.Errorf("heads = %v, want %v", after, heads)
 	}
 	if got, want := queueOf(t, main, one, two), []string{"c/one", "c/two"}; !slices.Equal(got, want) {
@@ -666,17 +727,17 @@ func TestRewrittenBranchHoldsTheFront(t *testing.T) {
 	}
 
 	t.Log("gofmt pushes a fix, which keeps c/one's place. The checks pass, and the squashed commit and the fix land by fast-forward.")
-	w.Branch("c/one", w.Fetch("c/one"))
+	w.Branch("c/one", f.fetchFromMirror("c/one"))
 	w.Write("one.txt", "c/one, fixed\n")
 	fixed := w.Commit("Fix one.txt\n\n" + git.FixerTrailer + ": gofmt")
-	w.Push("c/one")
+	f.pushToMirror("c/one")
 	list(fixed)
 	pass()
 	want = fmt.Sprintf("fast-forwarded main from %s to %s", gitk8s.Short(start), gitk8s.Short(fixed))
 	if msg := reconcile(one); one.Status.State != reasonLanded || one.Status.Queued != nil || msg != want {
 		t.Fatalf("c/one: state %q, queued %+v, %q; want %s, out of the queue, %q", one.Status.State, one.Status.Queued, msg, reasonLanded, want)
 	}
-	if got := srv.Heads(t, "app")["main"]; got != fixed {
+	if got := f.mirrorHeads()["main"]; got != fixed {
 		t.Errorf("main = %s, want %s", got, fixed)
 	}
 	if got, want := queueOf(t, main, one, two), []string{"c/two"}; !slices.Equal(got, want) {
@@ -685,14 +746,12 @@ func TestRewrittenBranchHoldsTheFront(t *testing.T) {
 }
 
 func TestLandsWithoutAQueue(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, _ := branches(t, srv)
+	f, b, _ := branches(t)
 	p := *policy
 	p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt", MayPush: true}}
 	b.Spec.Merge = &p
-	repo, secret := srv.Repository("app", rules()...)
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
-	if err := (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b); err != nil {
+	ctx, _ := kube.Fake(t.Context(), b, f.world(f.repo)...)
+	if err := (&merger{mirror: f.mirror}).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	if b.Status.State != reasonLanded || b.Status.Queued != nil {

@@ -1,11 +1,14 @@
 package git_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +19,271 @@ import (
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 )
+
+func TestBearerToken(t *testing.T) {
+	headers := make(chan string, 1)
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case headers <- r.Header.Get("Authorization"):
+		default:
+		}
+		http.Error(w, "no", http.StatusForbidden)
+	}))
+	defer hs.Close()
+	remote := git.Remote{URL: hs.URL + "/app.git", Auth: &git.Auth{Username: "u", Password: "p", Token: "t0ken"}}
+	if _, err := (&git.Git{}).LsRemote(t.Context(), remote); err == nil {
+		t.Fatal("ls-remote succeeded against a server that refuses everything")
+	}
+	if got := <-headers; got != "Bearer t0ken" {
+		t.Errorf("Authorization = %q, want the bearer token instead of basic auth", got)
+	}
+}
+
+// An error from running git names git's command, not the -c and -C options
+// that the command starts with.
+func TestErrorNamesTheCommand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := (&git.Git{Bin: filepath.Join(t.TempDir(), "missing")}).Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Maintain(t.Context()); err == nil || !strings.HasPrefix(err.Error(), "git maintenance: ") {
+		t.Errorf("Maintain = %v, want an error that starts with %q", err, "git maintenance: ")
+	}
+}
+
+func TestRefTransactions(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	one := w.Commit("one")
+	two := w.Commit("two")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateRefs(ctx,
+		git.RefUpdate{Ref: "refs/heads/a", New: one},
+		git.RefUpdate{Ref: "refs/heads/a/b", New: two},
+	); err == nil || errors.Is(err, git.ErrRejected) {
+		t.Fatalf("creating refs/heads/a and refs/heads/a/b together: err = %v, want an error that isn't ErrRejected", err)
+	}
+	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/a", New: one}, git.RefUpdate{Ref: "refs/x/b", New: two}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"refs/heads/a": one, "refs/x/b": two, "refs/remotes/origin/main": two}
+	if refs, err := repo.Refs(ctx); err != nil || !maps.Equal(refs, want) {
+		t.Fatalf("Refs() = %v, %v; want %v", refs, err, want)
+	}
+	if refs, err := repo.Refs(ctx, "refs/heads", "refs/x/b"); err != nil || len(refs) != 2 || refs["refs/x/b"] != two {
+		t.Errorf("Refs(refs/heads, refs/x/b) = %v, %v", refs, err)
+	}
+
+	t.Log("A ref can't add a command to the transaction.")
+	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/c " + one + "\ncreate refs/heads/d", New: one}); err == nil {
+		t.Error("UpdateRefs took a ref with a newline in it")
+	}
+	if refs, _ := repo.Refs(ctx); !maps.Equal(refs, want) {
+		t.Fatalf("after a ref with a newline, refs = %v, want %v", refs, want)
+	}
+
+	t.Log("One stale lease leaves every ref as it was.")
+	err = repo.UpdateRefs(ctx,
+		git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one},
+		git.RefUpdate{Ref: "refs/x/b", Old: one},
+	)
+	if !errors.Is(err, git.ErrRejected) {
+		t.Fatalf("err = %v, want ErrRejected", err)
+	}
+	for _, u := range []git.RefUpdate{{Ref: "refs/x/b", New: one}, {Ref: "refs/heads/a"}, {Ref: "refs/heads/missing", Old: one}} {
+		if err := repo.UpdateRefs(ctx, u); !errors.Is(err, git.ErrRejected) {
+			t.Errorf("UpdateRefs(%+v) = %v, want ErrRejected", u, err)
+		}
+	}
+
+	t.Log("A lock that a killed git left isn't a lease that failed.")
+	lock := filepath.Join(repo.Dir, "refs", "heads", "a.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one})
+	if err == nil || errors.Is(err, git.ErrRejected) || !strings.Contains(err.Error(), "a.lock") {
+		t.Errorf("with a stale lock, err = %v; want one about the lock that doesn't wrap ErrRejected", err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/missing"}, git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one}, git.RefUpdate{Ref: "refs/x/b", Old: two}); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _ := repo.Refs(ctx, "refs/heads", "refs/x"); !maps.Equal(refs, map[string]string{"refs/heads/a": two}) {
+		t.Errorf("refs = %v, want only refs/heads/a at %s", refs, two)
+	}
+
+	if v, ok, err := repo.Config(ctx, "gitk8s.uid"); err != nil || ok || v != "" {
+		t.Errorf("Config of an unset key = %q, %v, %v", v, ok, err)
+	}
+	if err := repo.SetConfig(ctx, "gitk8s.uid", "1234"); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok, err := repo.Config(ctx, "gitk8s.uid"); err != nil || !ok || v != "1234" {
+		t.Errorf("Config = %q, %v, %v; want 1234", v, ok, err)
+	}
+	if err := repo.SetConfig(ctx, "gitk8s.url", "--upload-pack=x"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, err := repo.Config(ctx, "gitk8s.url"); err != nil || v != "--upload-pack=x" {
+		t.Errorf("Config = %q, %v; want --upload-pack=x", v, err)
+	}
+}
+
+func TestFetchPruneAndPushEach(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+	w.Push("old")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := srv.Remote("app")
+	const refspec = "+refs/heads/*:refs/copy/heads/*"
+	if err := repo.FetchPrune(ctx, remote, refspec); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _ := repo.Refs(ctx); !maps.Equal(refs, map[string]string{"refs/copy/heads/main": main, "refs/copy/heads/old": main}) {
+		t.Fatalf("after fetching, refs = %v", refs)
+	}
+	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/old", Old: main}); err != nil {
+		t.Fatal(err)
+	}
+	w.Write("next.txt", "next\n")
+	next := w.Commit("next")
+	w.Push("main")
+	if err := repo.FetchPrune(ctx, remote, refspec); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _ := repo.Refs(ctx); !maps.Equal(refs, map[string]string{"refs/copy/heads/main": next}) {
+		t.Fatalf("after the remote deleted old, refs = %v", refs)
+	}
+
+	t.Log("A stale lease rejects only its own update.")
+	rejected, err := repo.PushEach(ctx, remote,
+		git.RefUpdate{Ref: "refs/heads/main", New: main, Old: main},
+		git.RefUpdate{Ref: "refs/heads/new", New: next},
+		git.RefUpdate{Ref: "refs/heads/gone", Old: main},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rejected) != 2 || rejected["refs/heads/main"] == "" || rejected["refs/heads/gone"] == "" {
+		t.Errorf("rejected = %v, want main and gone", rejected)
+	}
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": next, "new": next}) {
+		t.Errorf("heads = %v", heads)
+	}
+	rejected, err = repo.PushEach(ctx, remote, git.RefUpdate{Ref: "refs/heads/new", Old: next}, git.RefUpdate{Ref: "refs/heads/main", New: main, Old: next})
+	if err != nil || len(rejected) != 0 {
+		t.Fatalf("PushEach = %v, %v", rejected, err)
+	}
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": main}) {
+		t.Errorf("heads = %v, want main moved back and new deleted", heads)
+	}
+
+	t.Log("A rejection's reason ends with the remote's messages, which say why.")
+	srv.Config(t, "app", "receive.denyDeletes", "true")
+	rejected, err = repo.PushEach(ctx, remote, git.RefUpdate{Ref: "refs/heads/main", Old: main})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rejected["refs/heads/main"], "[remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/main"; len(rejected) != 1 || got != want {
+		t.Errorf("rejected = %v, want main's reason %q", rejected, want)
+	}
+
+	bad := remote
+	bad.Auth = &git.Auth{Username: "git-k8s", Password: "wrong"}
+	if _, err := repo.PushEach(ctx, bad, git.RefUpdate{Ref: "refs/heads/main", New: next, Old: main}); err == nil {
+		t.Error("PushEach with the wrong password succeeded")
+	}
+}
+
+func TestFetchPruneAndPushEachReachOnlyTheNetwork(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "copy.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(srv.Root, "app.git")
+	marker := filepath.Join(t.TempDir(), "ran")
+	for _, url := range []string{
+		dir,
+		"file://" + dir,
+		"--upload-pack=touch " + marker + ";false",
+		"--receive-pack=touch " + marker + ";false",
+	} {
+		if err := repo.FetchPrune(ctx, git.Remote{URL: url}, "+refs/heads/*:refs/stolen/*"); err == nil {
+			t.Errorf("FetchPrune from %q succeeded", url)
+		}
+		if _, err := repo.PushEach(ctx, git.Remote{URL: url}, git.RefUpdate{Ref: "refs/heads/planted", New: main}); err == nil {
+			t.Errorf("PushEach to %q succeeded", url)
+		}
+	}
+	if refs, _ := repo.Refs(ctx, "refs/stolen"); len(refs) != 0 {
+		t.Errorf("fetched %v from a repository on the local disk", refs)
+	}
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": main}) {
+		t.Errorf("heads = %v, want only main", heads)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("git ran a command from a URL: %v", err)
+	}
+}
+
+func TestServe(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+	ctx := t.Context()
+	g := &git.Git{}
+	repo, err := g.Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := g.Advertise(ctx, "upload-pack", repo.Dir, "", &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), main+" refs/remotes/origin/main") {
+		t.Errorf("advertisement = %q, want refs/remotes/origin/main", out.String())
+	}
+	if err := g.Serve(ctx, "http-backend", repo.Dir, "", strings.NewReader(""), &out); err == nil {
+		t.Error("Serve ran a service other than upload-pack and receive-pack")
+	}
+}
 
 func TestLsRemoteNeedsCredentials(t *testing.T) {
 	srv := gittest.NewServer(t, "s3cret")

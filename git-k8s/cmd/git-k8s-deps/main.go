@@ -15,11 +15,15 @@
 // remakes a branch that falls behind the parent, unless the parent lands
 // branches through a merge queue and the branch still merges cleanly.
 //
-// The Pod's first init container fetches the parent with the repository's
-// credentials, the second runs go get without them, and a container from the
-// agent runner image serves the result, which the controller fetches and
-// checks as agent checks fetch an agent's result. kube deletes the Pod once
-// the controller stops declaring it.
+// The controller reads branches from the mirror and pushes its own there,
+// as checks do, and the mirror lets it update only branches under the
+// prefix that the core program's -branch-prefix gives its service account.
+// The mirror lets only check Pods fetch, so the Pod's first init container
+// fetches the parent from the external repository with the repository's
+// credentials. The second runs go get without them, and a container from
+// the agent runner image serves the result, which the controller fetches
+// and checks as agent checks fetch an agent's result. kube deletes the Pod
+// once the controller stops declaring it.
 //
 // Dependency branches go through the parent's merge policy like any other
 // branch: check-deps has an agent fix the code when an update breaks the
@@ -50,9 +54,9 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gomod"
+	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
@@ -94,7 +98,8 @@ const maxOwned = 101
 
 // How long the controller waits to try again after fetching a result from a
 // Pod fails, after a push is rejected because the branch moved, and after
-// other errors.
+// other errors, such as an update Pod that finds the parent at another
+// commit in the external repository than in the mirror.
 const (
 	fetchRetry = 5 * time.Second
 	pushRetry  = 10 * time.Second
@@ -125,6 +130,8 @@ type updater struct {
 
 	// now is time.Now, except in tests.
 	now func() time.Time
+	// remote is mirror.Remote, except in tests.
+	remote func(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error)
 	// fetchConfigMap is kube.Fetch, and applyConfigMap is kube.Apply,
 	// except in tests.
 	fetchConfigMap func(ctx context.Context, namespace, name string) (*configMap, error)
@@ -255,6 +262,12 @@ type outcome struct {
 	files map[string][]byte
 	err   string
 	at    time.Time
+	// behind is whether the update failed because its Pod found the parent
+	// at another commit in the external repository than in the mirror.
+	behind bool
+	// retry is how long after at a failed update can run again, if not
+	// -interval.
+	retry time.Duration
 }
 
 // state is what the controller remembers about a parent between
@@ -271,6 +284,12 @@ type state struct {
 	// attempt goes up when an update fails or waits, so that trying again
 	// starts a new Pod.
 	attempt int
+	// behind is whether an update Pod found the parent at another commit
+	// in the external repository than head. The mirror pushes a parent
+	// that moves to the external repository soon after, so the first time
+	// on a head, the updates run again after errorRetry, or after
+	// -interval if it's shorter.
+	behind bool
 }
 
 // stateFor returns what the controller remembers about a parent, without
@@ -287,7 +306,7 @@ func (u *updater) stateFor(key kube.Key, head string) *state {
 		u.states[key] = st
 	}
 	if st.head != head {
-		st.head, st.outcomes = head, map[module.Version]*outcome{}
+		st.head, st.outcomes, st.behind = head, map[module.Version]*outcome{}, false
 	}
 	return st
 }
@@ -319,7 +338,11 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	kube.RequeueAfter(ctx, u.interval)
 	log := slog.With("namespace", b.Namespace, "repository", repo.Name, "parent", parent)
 
-	remote, err := credentials.Remote(ctx, repo)
+	remoteFor := mirror.Remote
+	if u.remote != nil {
+		remoteFor = u.remote
+	}
+	remote, err := remoteFor(ctx, repo)
 	if err != nil {
 		return err
 	}
@@ -832,11 +855,13 @@ func requires(f *modfile.File, mod, version string) bool {
 
 // runPod starts or follows the Pod that makes the updates that writes need
 // and that have no outcome yet, and records the outcomes that it reports. A
-// failed update gets no new Pod until -interval after it failed. Neither
-// does an update that raises a requirement to a version that no module
-// proxy has, even when the parent moves, and an update that waits for the
-// versions that it raises gets none until they're old enough. runPod
-// forgets the outcomes and waits of updates that writes don't need.
+// failed update gets no new Pod until -interval after it failed, except the
+// first time on the parent's head that a Pod finds the parent behind, as
+// state's behind field describes. Neither does an update that raises a
+// requirement to a version that no module proxy has, even when the parent
+// moves, and an update that waits for the versions that it raises gets none
+// until they're old enough. runPod forgets the outcomes and waits of
+// updates that writes don't need.
 func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change, log *slog.Logger) {
 	now := u.clock()
 	wanted := map[module.Version]bool{}
@@ -844,7 +869,7 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 		wanted[w.up.key()] = true
 	}
 	for k, o := range st.outcomes {
-		retry := o.at.Add(u.interval)
+		retry := o.at.Add(cmp.Or(o.retry, u.interval))
 		switch {
 		case !wanted[k], o.err != "" && !now.Before(retry):
 			delete(st.outcomes, k)
@@ -880,10 +905,14 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 	if out == nil {
 		return
 	}
-	failedAny := false
+	failedAny, behind := false, false
 	for _, up := range pending {
 		o := out[up.key()]
 		o.at = now
+		if o.behind && !st.behind {
+			o.retry = min(errorRetry, u.interval)
+		}
+		behind = behind || o.behind
 		st.outcomes[up.key()] = o
 		if o.err != "" {
 			failedAny = true
@@ -892,6 +921,9 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 	}
 	if failedAny {
 		st.attempt++
+	}
+	if behind {
+		st.behind = true
 	}
 	// The next reconcile doesn't declare the Pod, so kube deletes it.
 	kube.RequeueAfter(ctx, time.Second)
@@ -1154,8 +1186,7 @@ func message(up update) string {
 }
 
 // push updates or deletes a branch with a lease on old. It refuses branches
-// outside the prefix, because the repository's credentials can push to any
-// branch.
+// outside the prefix, which the mirror refuses too.
 func (u *updater) push(ctx context.Context, repo *git.Repo, remote git.Remote, branch, commit, old string) error {
 	if !strings.HasPrefix(branch, u.prefix) || !git.ValidBranch(branch) {
 		return fmt.Errorf("not pushing %q, which isn't a branch under %s", branch, u.prefix)

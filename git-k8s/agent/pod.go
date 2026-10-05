@@ -41,13 +41,28 @@ type SeccompProfile struct {
 }
 
 type Volume struct {
-	Name     string    `json:"name"`
-	EmptyDir *EmptyDir `json:"emptyDir,omitempty"`
+	Name      string     `json:"name"`
+	EmptyDir  *EmptyDir  `json:"emptyDir,omitempty"`
+	Projected *Projected `json:"projected,omitempty"`
 }
 
 type EmptyDir struct {
 	Medium    string `json:"medium,omitempty"`
 	SizeLimit string `json:"sizeLimit,omitempty"`
+}
+
+type Projected struct {
+	Sources []VolumeProjection `json:"sources"`
+}
+
+type VolumeProjection struct {
+	ServiceAccountToken *ServiceAccountToken `json:"serviceAccountToken,omitempty"`
+}
+
+type ServiceAccountToken struct {
+	Audience          string `json:"audience"`
+	ExpirationSeconds *int64 `json:"expirationSeconds,omitempty"`
+	Path              string `json:"path"`
 }
 
 type Container struct {

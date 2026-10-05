@@ -107,6 +107,7 @@ func goCachePod(t *testing.T, url string) PodSpec {
 		t.Fatal(err)
 	}
 	b, repo := branch()
+	named(b, 1)
 	return kube.Owned[Pod](reconcileWith(t, b, repo))[0].Spec
 }
 

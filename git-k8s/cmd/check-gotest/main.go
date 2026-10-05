@@ -1,13 +1,21 @@
 // Command check-gotest runs a branch's Go tests in a sandboxed Pod.
 //
 // For each branch head, the gotest check declares a Pod with kube.Own. An
-// init container fetches the head from the repository, and the test
+// init container fetches the head from the repository's copy on the mirror,
+// with a token for the mirror that's bound to the Pod, and the test
 // container runs go test ./... as a non-root user, with no service account
-// token, no privileges, and a read-only root file system. Only the init
-// container sees the repository's credentials. The check reports the Pod's
-// result, with the end of the test output when the tests fail. With
-// -go-cache, test Pods download modules from a go-cache server and share
-// build outputs through it; see addGoCache.
+// token, no privileges, and a read-only root file system. Only that init
+// container sees the token for the mirror. The mirror lets the token fetch
+// only the branch's repository, and only while the check's running result
+// names the Pod and the Pod that has the token's UID carries kube's
+// controller label for this check and is Pending, as a Pod is until its
+// init containers finish. A NetworkPolicy that the core program owns lets
+// the Pods with that label reach only the mirror, the cluster's DNS
+// servers, and what the core program's -goproxy and -go-cache allow, so
+// this program needs no permission to change NetworkPolicies. The check
+// reports the Pod's result, with the end of the test output when the tests
+// fail. With -go-cache, test Pods download modules from a go-cache server
+// and share build outputs through it; see addGoCache.
 //
 // kube deletes a Pod when the check stops declaring it, which happens after
 // the check records the Pod's result and when the branch moves to a new
@@ -23,6 +31,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,14 +64,18 @@ var (
 	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
-	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules")
+	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and other values need the same -goproxy on the core program")
 	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
+	mirrorURL    = flag.String("mirror", gitk8s.MirrorURL, "base URL of the git-k8s mirror, which test Pods fetch from")
 )
 
 // testPodLabels are the labels on every test Pod. generate gives the
 // check's own Pods the same app.kubernetes.io/name, so the component label
 // is what keeps the check from counting them.
 var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest", "app.kubernetes.io/component": "test"}
+
+// mirrorTokenDir holds the fetch container's token for the mirror.
+const mirrorTokenDir = "/var/run/secrets/git-k8s"
 
 // podPhase is what the check counts running test Pods by. Declaring only
 // the phase means that other changes to Pods don't run the check again.
@@ -76,6 +89,11 @@ type podPhase struct {
 // fetchAttempts is how many Pods the check starts for one head when
 // fetching the source fails.
 const fetchAttempts = 3
+
+// fetchRetryDelay is how long the check waits after the first failed fetch
+// before it starts the next Pod. The wait doubles after each failure, so
+// that the attempts outlast a restart of the mirror.
+const fetchRetryDelay = 30 * time.Second
 
 // declaredFor is how long the check counts a Pod that it declared but its
 // cache doesn't show. A Pod that the API server never created stops taking
@@ -97,15 +115,16 @@ type gotest struct {
 }
 
 func (g *gotest) check() checks.Check {
-	return checks.Check{Name: "gotest", FilesOnly: true, Run: g.run}
+	return checks.Check{Name: gitk8s.GoTestCheck, FilesOnly: true, Run: g.run}
 }
 
 func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
-	attempt := 1
+	attempt, named := 1, ""
 	if p := in.Previous; p != nil && p.Commit == in.Spec.Head && p.State == gitk8s.Running {
 		if n, err := strconv.Atoi(p.Outputs["attempt"]); err == nil && n > 0 {
 			attempt = n
 		}
+		named = p.Outputs["pod"]
 	}
 	name := podName(in.Meta.Name, in.Spec.Head, attempt)
 	outputs := map[string]string{"pod": name, "attempt": strconv.Itoa(attempt)}
@@ -129,6 +148,14 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		kube.RequeueAfter(ctx, time.Minute)
 		return running("waiting to start a Pod: -max-pods is %d, and branches that have waited longer start first", *maxPods), nil
 	}
+	if named != name {
+		// The mirror lets a test Pod fetch only once a running result names
+		// it, so the check records the name before it starts the Pod, and
+		// outputs.queued keeps the branch's place in line meanwhile.
+		outputs["queued"] = since.Format(waitingLayout)
+		kube.RequeueAfter(ctx, time.Second)
+		return running("starting Pod %s", name), nil
+	}
 	pod := kube.Own(ctx, p)
 	if pod == nil {
 		// outputs.queued keeps the branch's place in line until the Pod
@@ -151,15 +178,24 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		v.Outputs = map[string]string{"pod": name}
 		return v, nil
 	case "Failed":
+		msg, finished, failed := terminated(pod.Status.InitContainerStatuses, "fetch")
+		delay := fetchRetryDelay << (attempt - 1)
+		if wait := delay - time.Since(finished); failed && attempt < fetchAttempts && wait > 0 {
+			// The failed Pod stays declared while the check waits, because
+			// its finish time says when to try again.
+			kube.RequeueAfter(ctx, wait)
+			return running("fetching the source failed, so trying again at %s UTC: %s", finished.Add(delay).UTC().Format(time.TimeOnly), msg), nil
+		}
 		kube.RequeueAfter(ctx, time.Second)
-		if msg, failed := terminated(pod.Status.InitContainerStatuses, "fetch"); failed {
+		if failed {
 			if attempt < fetchAttempts {
 				outputs["attempt"] = strconv.Itoa(attempt + 1)
+				outputs["pod"] = podName(in.Meta.Name, in.Spec.Head, attempt+1)
 				return running("fetching the source failed, so trying again: %s", msg), nil
 			}
 			return checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg), nil
 		}
-		msg, _ := terminated(pod.Status.ContainerStatuses, "test")
+		msg, _, _ = terminated(pod.Status.ContainerStatuses, "test")
 		if m, failed := goCacheFailure(pod); failed {
 			msg = m
 		}
@@ -251,7 +287,7 @@ func waiting(res *gitk8s.CheckResult, head string, keys ...string) (string, time
 // results, and a stale result holds up every branch behind it.
 func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 	s := &b.Spec
-	if b.Deleting() || s.Parent == "" || s.Merge.Check("gotest") == nil || s.Head == "" || s.ParentHead == "" {
+	if b.Deleting() || s.Parent == "" || s.Merge.Check(gitk8s.GoTestCheck) == nil || s.Head == "" || s.ParentHead == "" {
 		return kube.Key{}, time.Time{}, false
 	}
 	pod, since, ok := waiting(b.Status.Checks.Result, s.Head, "waiting")
@@ -269,15 +305,15 @@ func podName(branch, head string, attempt int) string {
 	return "gotest-" + hex.EncodeToString(sum[:8])
 }
 
-// terminated returns the message of the named container if it exited with
-// an error.
-func terminated(statuses []ContainerStatus, name string) (string, bool) {
+// terminated returns the message and finish time of the named container if
+// it exited with an error.
+func terminated(statuses []ContainerStatus, name string) (string, time.Time, bool) {
 	for _, s := range statuses {
 		if t := s.State.Terminated; s.Name == name && t != nil && t.ExitCode != 0 {
-			return cmp.Or(t.Message, t.Reason, fmt.Sprintf("exit code %d", t.ExitCode)), true
+			return cmp.Or(t.Message, t.Reason, fmt.Sprintf("exit code %d", t.ExitCode)), t.FinishedAt, true
 		}
 	}
-	return "", false
+	return "", time.Time{}, false
 }
 
 // tail keeps the end of s, where go test prints its summary.
@@ -292,13 +328,15 @@ func tail(s string, n int) string {
 // or exits with status 3 if the branch moved, which the next head's Pod
 // takes care of. The repository goes in a directory that the container
 // creates, because git refuses to use one that another user owns, such as
-// the root of an emptyDir volume.
+// the root of an emptyDir volume. The token goes in git's environment, not
+// in the repository's config, which the test container can read. The git
+// image has no cat, so the shell reads the token, which has no newline.
 const fetchScript = `set -eu
+token=
+IFS= read -r token < "$TOKEN_FILE" || [ -n "$token" ]
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="Authorization: Bearer $token"
 git init -q /src/repo
 cd /src/repo
-if [ -n "${GIT_PASSWORD:-}" ]; then
-  git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
-fi
 git fetch -q --depth=1 --end-of-options "$URL" "refs/heads/$BRANCH"
 if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
@@ -311,6 +349,7 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	yes, no := true, false
 	user := int64(65532)
 	deadline := int64(timeout.Seconds())
+	expiry := int64(tokenSeconds)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,
 		ReadOnlyRootFilesystem:   &yes,
@@ -318,18 +357,13 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	}
 	mounts := []VolumeMount{{Name: "src", MountPath: "/src"}, {Name: "tmp", MountPath: "/tmp"}}
 	fetchEnv := []EnvVar{
-		{Name: "URL", Value: in.Repository.Spec.URL},
+		{Name: "URL", Value: strings.TrimSuffix(*mirrorURL, "/") + gitk8s.MirrorPath(in.Repository.Namespace, in.Repository.Name)},
 		{Name: "BRANCH", Value: in.Spec.Branch},
 		{Name: "HEAD", Value: in.Spec.Head},
+		{Name: "TOKEN_FILE", Value: mirrorTokenDir + "/token"},
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
-	}
-	if ref := in.Repository.Spec.SecretRef; ref != nil {
-		fetchEnv = append(fetchEnv,
-			EnvVar{Name: "GIT_USERNAME", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "username", Optional: &yes}}},
-			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
-		)
 	}
 	p := &Pod{Object: kube.Meta(name, maps.Clone(testPodLabels))}
 	p.Spec = PodSpec{
@@ -344,14 +378,20 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 			FSGroup:        &user,
 			SeccompProfile: &SeccompProfile{Type: "RuntimeDefault"},
 		},
-		Volumes: []Volume{{Name: "src", EmptyDir: &EmptyDir{}}, {Name: "tmp", EmptyDir: &EmptyDir{}}},
+		Volumes: []Volume{
+			{Name: "src", EmptyDir: &EmptyDir{}},
+			{Name: "tmp", EmptyDir: &EmptyDir{}},
+			{Name: "mirror-token", Projected: &Projected{Sources: []VolumeProjection{{
+				ServiceAccountToken: &ServiceAccountTokenProjection{Audience: gitk8s.MirrorAudience, ExpirationSeconds: &expiry, Path: "token"},
+			}}}},
+		},
 		InitContainers: []Container{{
 			Name:                     "fetch",
 			Image:                    *gitImage,
 			ImagePullPolicy:          "IfNotPresent",
 			Command:                  []string{"sh", "-c", fetchScript},
 			Env:                      fetchEnv,
-			VolumeMounts:             mounts,
+			VolumeMounts:             append(slices.Clip(mounts), VolumeMount{Name: "mirror-token", MountPath: mirrorTokenDir, ReadOnly: true}),
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 		}},

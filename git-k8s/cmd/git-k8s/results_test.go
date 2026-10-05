@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -37,8 +38,8 @@ func checkToken(check string) kube.FakeToken {
 
 // checksEntries returns the git-k8s-checks ConfigMap with entries.
 func checksEntries(entries map[string]string) *k8s.ConfigMap {
-	cm := &k8s.ConfigMap{Object: kube.Meta(checksConfigMap, nil), Data: entries}
-	cm.Namespace = checksNamespace
+	cm := &k8s.ConfigMap{Object: kube.Meta(caller.ChecksConfigMap, nil), Data: entries}
+	cm.Namespace = caller.ChecksNamespace
 	return cm
 }
 

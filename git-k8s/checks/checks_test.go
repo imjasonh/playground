@@ -11,13 +11,11 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
-	"github.com/imjasonh/playground/kube/k8s"
 )
 
 type Branch struct {
@@ -34,10 +32,16 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
+// remote reaches the repository at the GitRepository's URL in place of the
+// mirror. Every test server here requires the password pw.
+func remote(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+	return git.Remote{URL: repo.Spec.URL, Auth: &git.Auth{Username: "git-k8s", Password: "pw"}}, nil
+}
+
 // touch passes branches that have a TOUCHED file, and otherwise proposes a
 // commit that adds one.
 func touch(runs *int) checks.Check {
-	return checks.Check{Name: "touch", Remote: credentials.Remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	return checks.Check{Name: "touch", Remote: remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		*runs++
 		repo, err := in.Repo(ctx)
 		if err != nil {
@@ -78,7 +82,7 @@ func touch(runs *int) checks.Check {
 // then onto that replay, as a check that replays several commits does. It
 // has touch's name, so the fixture's policy runs it.
 func replay() checks.Check {
-	return checks.Check{Name: "touch", Remote: credentials.Remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	return checks.Check{Name: "touch", Remote: remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		repo, err := in.Repo(ctx)
 		if err != nil {
 			return checks.Verdict{}, err
@@ -115,7 +119,6 @@ type fixture struct {
 	srv    *gittest.Server
 	work   *gittest.Work
 	repo   *gitk8s.GitRepository
-	secret *k8s.Secret
 	branch *Branch
 	cfg    *checks.Config
 	world  []any
@@ -141,11 +144,9 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work, policy git
 
 	repo := &gitk8s.GitRepository{
 		Object: kube.Meta("app", nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: srv.Remote("app").URL, SecretRef: &gitk8s.SecretRef{Name: "creds"}},
+		Spec:   gitk8s.GitRepositorySpec{URL: srv.Remote("app").URL},
 	}
 	repo.Namespace = "default"
-	secret := &k8s.Secret{Object: kube.Meta("creds", nil), Data: map[string][]byte{"username": []byte(srv.Username), "password": []byte(srv.Password)}}
-	secret.Namespace = "default"
 	b := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{
@@ -153,12 +154,12 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work, policy git
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{policy}},
 	}
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
-	return &fixture{srv: srv, work: w, repo: repo, secret: secret, branch: b, cfg: cfg}
+	return &fixture{srv: srv, work: w, repo: repo, branch: b, cfg: cfg}
 }
 
 func (f *fixture) reconcile(t *testing.T, check checks.Check) error {
 	t.Helper()
-	ctx, _ := kube.Fake(t.Context(), f.branch, append([]any{f.repo, f.secret}, f.world...)...)
+	ctx, _ := kube.Fake(t.Context(), f.branch, append([]any{f.repo}, f.world...)...)
 	return checks.NewReconciler[Branch](check, f.cfg).Reconcile(ctx, f.branch)
 }
 
@@ -168,7 +169,7 @@ func TestRepoNeedsRemote(t *testing.T) {
 	check := touch(&runs)
 	check.Remote = nil
 	err := f.reconcile(t, check)
-	if err == nil || !strings.Contains(err.Error(), "set Check.Remote to credentials.Remote") {
+	if err == nil || !strings.Contains(err.Error(), "set Check.Remote to mirror.Remote") {
 		t.Fatalf("err = %v, want one that says to set Check.Remote", err)
 	}
 	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
@@ -512,9 +513,14 @@ func TestRefusedPushIsReported(t *testing.T) {
 
 func TestRunErrorIsReported(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
-	f.secret.Data["password"] = []byte("wrong")
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err == nil {
+	check := touch(&runs)
+	check.Remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+		r := f.srv.Remote("app")
+		r.Auth.Password = "wrong"
+		return r, nil
+	}
+	if err := f.reconcile(t, check); err == nil {
 		t.Fatal("reconcile with the wrong password succeeded")
 	}
 	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {

@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,48 +15,48 @@ import (
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/gate"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
-// repositories reconciles GitRepository objects. A remote can't be
-// watched, so each reconcile lists its branches and asks to run again after
-// the repository's poll interval. A change to an owned GitBranch, such as a
-// check result, also runs it, so the controller notices a fixer's push soon
-// after the fixer reports it.
+// repositories reconciles GitRepository objects. Each reconcile syncs the
+// repository's copy in the mirror with the external repository, and owns a
+// GitBranch for each of the copy's branches that the rules select, and the
+// NetworkPolicy of the test Pods in the repository's namespace.
+//
+// The mirror triggers a reconcile after each push to it, and the merge
+// controller after each landing, so a reconcile reads the copy, which is
+// cheap, and pushes what changed. The external repository can't be watched,
+// so a reconcile fetches from it only once each poll interval.
 type repositories struct {
-	git *git.Git
+	mirror *mirror.Mirror
 	// now is time.Now, except in tests.
 	now func() time.Time
 	// installPolicies is the -install-policies flag.
 	installPolicies bool
 
-	mu     sync.Mutex
-	listed map[string]listing
+	mu    sync.Mutex
+	polls map[string]poll
 }
 
-// listing is what one git ls-remote of a repository found.
-type listing struct {
-	url   string
-	at    time.Time
-	heads map[string]string
+// poll is when a repository's reconcile next contacts its external
+// repository.
+type poll struct {
+	url string
+	// next is when to fetch from the external repository again.
+	next time.Time
+	// failure is why the last fetch or push failed, or "" if it didn't.
+	// Until next, reconciles don't push either.
+	failure string
 }
 
-// minListInterval is the shortest time between two listings of a
-// repository. A branch's checks can report several results within a
-// second, and each runs the reconcile again.
-const minListInterval = 5 * time.Second
+// retryInterval is the longest wait before a reconcile tries again to
+// reach an external repository that failed.
+const retryInterval = 30 * time.Second
 
-// recent returns the heads that a listing of url found less than window
-// ago, and how long until the listing is that old.
-func (r *repositories) recent(key, url string, window time.Duration) (map[string]string, time.Duration, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	l, ok := r.listed[key]
-	if age := r.clock().Sub(l.at); ok && l.url == url && age < window {
-		return l.heads, window - age, true
-	}
-	return nil, 0, false
-}
+// finalizer is the finalizer that kube adds to each GitRepository for the
+// repositories controller.
+const finalizer = "kube.imjasonh.github.io/repositories"
 
 func (r *repositories) clock() time.Time {
 	if r.now != nil {
@@ -62,19 +65,41 @@ func (r *repositories) clock() time.Time {
 	return time.Now()
 }
 
-func (r *repositories) remember(key, url string, heads map[string]string) {
+func (r *repositories) poll(key, url string) poll {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	now := r.clock()
-	for k, l := range r.listed {
-		if now.Sub(l.at) >= minListInterval {
-			delete(r.listed, k)
+	if p := r.polls[key]; p.url == url {
+		return p
+	}
+	return poll{url: url}
+}
+
+// polled records what a sync that started at now did, and returns the
+// repository's new poll.
+func (r *repositories) polled(key string, p poll, now time.Time, interval time.Duration, rep *mirror.Report, pushed bool) poll {
+	switch {
+	case rep.Err != nil:
+		p.failure = rep.Err.Error()
+		p.next = now.Add(min(interval, retryInterval))
+	case rep.Fetched || pushed:
+		p.failure = ""
+		if rep.Fetched {
+			p.next = now.Add(interval)
 		}
 	}
-	if r.listed == nil {
-		r.listed = map[string]listing{}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.polls == nil {
+		r.polls = map[string]poll{}
 	}
-	r.listed[key] = listing{url: url, at: now, heads: heads}
+	r.polls[key] = p
+	return p
+}
+
+func (r *repositories) forget(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.polls, key)
 }
 
 func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository) error {
@@ -102,26 +127,41 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 	}
 
 	key := repo.Namespace + "/" + repo.Name
-	heads, wait, ok := r.recent(key, repo.Spec.URL, min(interval, minListInterval))
-	if ok {
-		// Declaring the same branches keeps them, and the reconcile lists
-		// the remote once the last listing is old enough.
-		kube.RequeueAfter(ctx, wait)
-	} else {
-		remote, err := credentials.Remote(ctx, &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec})
-		if err != nil {
-			ready.Reason, ready.Message = "CredentialsUnavailable", err.Error()
-			return err
-		}
-		// If listing fails, the error skips the declarations below, so the
+	now := r.clock()
+	p := r.poll(key, repo.Spec.URL)
+	fetch := !now.Before(p.next)
+	push := fetch || p.failure == ""
+	spec := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
+	var credErr error
+	rep, err := r.mirror.Sync(ctx, spec, mirror.SyncOptions{
+		Fetch: fetch,
+		Push:  push,
+		Remote: func() (git.Remote, error) {
+			remote, err := credentials.Remote(ctx, spec)
+			credErr = err
+			return remote, err
+		},
+	})
+	if err != nil {
+		// Without a report, the error skips the declarations below, so the
 		// framework keeps every GitBranch instead of pruning them.
-		if heads, err = r.git.LsRemote(ctx, remote); err != nil {
-			ready.Reason, ready.Message = "ListFailed", err.Error()
-			return err
+		switch {
+		case credErr != nil:
+			ready.Reason = "CredentialsUnavailable"
+		case errors.Is(err, mirror.ErrNotSynced):
+			ready.Reason = "FetchFailed"
+		default:
+			ready.Reason = "MirrorFailed"
 		}
-		r.remember(key, repo.Spec.URL, heads)
+		ready.Message = err.Error()
+		return err
 	}
-	specs := gitk8s.DesiredBranches(repo.Name, repo.Spec.Branches, heads)
+	p = r.polled(key, p, now, interval, rep, push)
+
+	// kube applies declarations in order, so the test Pods' NetworkPolicy
+	// exists before the GitBranches that check-gotest starts test Pods for.
+	kube.Own(ctx, testPodsPolicy(repo))
+	specs := gitk8s.DesiredBranches(repo.Name, repo.Spec.Branches, rep.Heads)
 	for _, spec := range specs {
 		kube.Own(ctx, &gitk8s.GitBranch{
 			Object: kube.Meta(gitk8s.BranchObjectName(repo.Name, spec.Branch), map[string]string{gitk8s.RepositoryLabel: repo.Name}),
@@ -133,8 +173,97 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		Type:    "Ready",
 		Status:  kube.True,
 		Reason:  "Listed",
-		Message: fmt.Sprintf("tracking %d of %d branches", len(specs), len(heads)),
+		Message: fmt.Sprintf("tracking %d of %d branches", len(specs), len(rep.Heads)),
 	}
-	kube.RequeueAfter(ctx, interval)
+	kube.SetCondition(&repo.Status.Conditions, syncedCondition(p, rep))
+	noticeDivergence(ctx, repo, rep.Diverged)
+	kube.RequeueAfter(ctx, p.next.Sub(now))
 	return nil
+}
+
+// syncedCondition reports whether the external repository has every change
+// in the mirror's copy.
+func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
+	c := kube.Condition{Type: "ExternalSynced", Status: kube.False}
+	switch {
+	case p.failure != "":
+		c.Reason, c.Message = "SyncFailed", p.failure
+	case len(rep.Failed) > 0:
+		c.Reason = "CompareFailed"
+		c.Message = "the mirror left these branches as they are on each side because it couldn't compare their heads: " + failures(rep.Failed)
+	case len(rep.Diverged) > 0:
+		c.Reason = "Diverged"
+		c.Message = strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", ") +
+			" changed both in the mirror and in the external repository, and neither side's head keeps the other side's changes; the mirror keeps the external repository's heads under refs/git-k8s/downstream/heads/"
+	case len(rep.Pending) > 0:
+		c.Reason = "Pending"
+		c.Message = "the external repository doesn't have the mirror's changes to " + strings.Join(rep.Pending, ", ") + " yet"
+	default:
+		c.Status, c.Reason, c.Message = kube.True, "InSync", "the external repository has every change in the mirror"
+	}
+	if len(c.Message) > 1024 {
+		c.Message = c.Message[:1021] + "..."
+	}
+	return c
+}
+
+// failures lists the branches whose heads a sync couldn't compare, with
+// why.
+func failures(failed map[string]error) string {
+	var parts []string
+	for _, name := range slices.Sorted(maps.Keys(failed)) {
+		parts = append(parts, fmt.Sprintf("%s (%v)", name, failed[name]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// noticeDivergence triggers a reconcile of each of repo's GitBranches whose
+// status.diverged doesn't match diverged, so the merge controller updates
+// it. A divergence doesn't move the branch's head in the mirror, so nothing
+// else changes the GitBranch.
+func noticeDivergence(ctx context.Context, repo *gitk8s.GitRepository, diverged map[string]string) {
+	branches := kube.List[gitk8s.GitBranch](ctx, kube.InNamespace(repo.Namespace),
+		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: repo.Name}))
+	for _, b := range branches {
+		want, ok := diverged[b.Spec.Branch]
+		have := b.Status.Diverged
+		if (have != nil) != ok || (have != nil && have.Commit != want) {
+			kube.Trigger[gitk8s.GitBranch](ctx, b.Namespace, b.Name)
+		}
+	}
+}
+
+// Finalize pushes the last changes in the mirror's copy of repo to the
+// external repository, and then deletes the copy. While the external
+// repository lacks a change that the mirror accepted, Finalize fails, and
+// the GitRepository stays.
+func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.GitRepository) error {
+	spec := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
+	rep, err := r.mirror.Sync(ctx, spec, mirror.SyncOptions{
+		Push:   true,
+		Final:  true,
+		Remote: func() (git.Remote, error) { return credentials.Remote(ctx, spec) },
+	})
+	if err != nil {
+		return err
+	}
+	var unsynced []string
+	if len(rep.Pending) > 0 {
+		unsynced = append(unsynced, "doesn't have the mirror's changes to "+strings.Join(rep.Pending, ", "))
+	}
+	if len(rep.Diverged) > 0 {
+		unsynced = append(unsynced, "diverged from the mirror on "+strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", "))
+	}
+	if len(rep.Failed) > 0 {
+		unsynced = append(unsynced, "couldn't be compared with the mirror on "+failures(rep.Failed))
+	}
+	if rep.Err != nil {
+		unsynced = append(unsynced, rep.Err.Error())
+	}
+	if len(unsynced) > 0 {
+		return fmt.Errorf("the mirror keeps its copy until the external repository has every change in it, but the external repository %s; to delete the copy and the changes, remove the finalizer %s",
+			strings.Join(unsynced, "; "), finalizer)
+	}
+	r.forget(repo.Namespace + "/" + repo.Name)
+	return r.mirror.Delete(ctx, spec)
 }

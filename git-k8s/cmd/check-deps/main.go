@@ -24,8 +24,8 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
@@ -94,7 +94,7 @@ var runAgent = func(ctx context.Context, in *checks.Input, task agent.Task) (che
 
 // The agent reads the subjects of the branch's commits, so the check isn't
 // FilesOnly.
-var check = checks.Check{Name: "deps", Remote: credentials.Remote, SigningKey: signing.Key, Run: run}
+var check = checks.Check{Name: "deps", Remote: mirror.Remote, SigningKey: signing.Key, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if !strings.HasPrefix(in.Spec.Branch, string(prefix)) {

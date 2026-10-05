@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
@@ -621,6 +622,8 @@ func TestValidatesJobs(t *testing.T) {
 			j.Checkout.Merge = &Ref{Name: "refs/heads/main", Commit: sha}
 			j.Tools = []string{"read", "delete"}
 		},
+		func(j *Job) { j.Credentials = &gitk8s.SecretRef{Name: "app-creds"} },
+		func(j *Job) { j.Mirror = true },
 		func(j *Job) {
 			j.Checkout.Base = sha
 			j.Checkout.Merge = &Ref{Name: "refs/git-k8s/downstream/heads/c/x", Commit: sha, DisplayName: "the external repository's c/x"}
@@ -638,6 +641,7 @@ func TestValidatesJobs(t *testing.T) {
 	}{
 		{"no name", func(j *Job) { j.Name = "" }, "needs a name, a namespace, a repository URL, and a branch"},
 		{"no branch", func(j *Job) { j.Checkout.Branch = "" }, "needs a name, a namespace, a repository URL, and a branch"},
+		{"mirror and credentials", func(j *Job) { j.Mirror, j.Credentials = true, &gitk8s.SecretRef{Name: "app-creds"} }, "fetches from the mirror can't have credentials"},
 		{"short head", func(j *Job) { j.Checkout.Head = "aaaaaaa" }, "must be commit SHAs"},
 		{"option head", func(j *Job) { j.Checkout.Head = "--" + sha[2:] }, "must be commit SHAs"},
 		{"uppercase base", func(j *Job) { j.Checkout.Base = strings.ToUpper(strings.Repeat("b", 40)) }, "must be commit SHAs"},
@@ -698,7 +702,7 @@ func TestPrepareScriptMerges(t *testing.T) {
 		Checkout: Checkout{Branch: "c/x", Head: head, Parent: "main", Base: base, Merge: &Ref{Name: "refs/heads/main", Commit: merged}},
 		Task:     Task{Instructions: "Merge main.", Edit: true},
 	}
-	dir, out, err := runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], data)
+	dir, out, err := runPrepare(t, r.jobPod(job, 1), data, "")
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -745,7 +749,7 @@ func TestPrepareScriptMerges(t *testing.T) {
 	w.Write("g.txt", "later\n")
 	w.Commit("main moves on")
 	w.Push("main")
-	dir, out, err = runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], data)
+	dir, out, err = runPrepare(t, r.jobPod(job, 1), data, "")
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -761,7 +765,7 @@ func TestPrepareScriptMerges(t *testing.T) {
 	w.Write("f.txt", "one\nrewound\nthree\n")
 	w.Commit("main rewinds")
 	w.Push("main")
-	_, out, err = runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], data)
+	_, out, err = runPrepare(t, r.jobPod(job, 1), data, "")
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != movedStatus || !strings.Contains(out, "refs/heads/main no longer contains "+merged) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)
@@ -798,9 +802,10 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 	}
 	// Git reads the branch's .gitattributes from the head's tree, as some
 	// versions do in a bare repository.
-	prepare := r.jobPod(job, 1).Spec.InitContainers[0]
+	pod := r.jobPod(job, 1)
+	prepare := &pod.Spec.InitContainers[0]
 	prepare.Env = append(prepare.Env, EnvVar{Name: "GIT_ATTR_SOURCE", Value: head})
-	dir, out, err := runPrepare(t, prepare, nil)
+	dir, out, err := runPrepare(t, pod, nil, "")
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -838,7 +843,7 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 		w.Commit(fmt.Sprintf("external moves %d", i))
 	}
 	w.PushRef(downstream)
-	dir, out, err = runPrepare(t, prepare, nil)
+	dir, out, err = runPrepare(t, pod, nil, "")
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -851,7 +856,7 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 	w.Write("g.txt", "rewound\n")
 	w.Commit("external rewinds")
 	w.PushRef(downstream)
-	_, out, err = runPrepare(t, prepare, nil)
+	_, out, err = runPrepare(t, pod, nil, "")
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != movedStatus || !strings.Contains(out, downstream+" no longer contains "+external) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)

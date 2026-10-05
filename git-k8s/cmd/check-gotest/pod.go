@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -76,19 +78,8 @@ type Container struct {
 }
 
 type EnvVar struct {
-	Name      string        `json:"name"`
-	Value     string        `json:"value,omitempty"`
-	ValueFrom *EnvVarSource `json:"valueFrom,omitempty"`
-}
-
-type EnvVarSource struct {
-	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
-}
-
-type SecretKeySelector struct {
-	Name     string `json:"name"`
-	Key      string `json:"key"`
-	Optional *bool  `json:"optional,omitempty"`
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
 }
 
 type VolumeMount struct {
@@ -128,7 +119,8 @@ type ContainerStatus struct {
 }
 
 type Terminated struct {
-	ExitCode int32  `json:"exitCode"`
-	Reason   string `json:"reason,omitempty"`
-	Message  string `json:"message,omitempty"`
+	ExitCode   int32     `json:"exitCode"`
+	Reason     string    `json:"reason,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	FinishedAt time.Time `json:"finishedAt,omitzero"`
 }

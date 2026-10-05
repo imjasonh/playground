@@ -7,12 +7,18 @@
 #
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
-# Like a forge that requires signed commits, it rejects a push that adds a
-# commit that isn't signed with its committer's key, so this test signs its
-# own commits, and git-k8s signs the commits that it makes.
-# It also serves a Go module proxy at /proxy/, without a password. A second
-# module proxy on this machine serves the one module that the tested
-# repository's branches depend on, as go-cache's upstream.
+# It plays the external repository: only the mirror in the core program
+# and git-k8s-deps's update Pods reach it, and the checks, git-k8s-deps,
+# and test Pods fetch and push through the mirror. The script reaches the
+# mirror through kubectl port-forward, with service account tokens for the
+# mirror's audience. Like a forge that requires signed commits, the git
+# server rejects a push that adds a commit that isn't signed with its
+# committer's key, so this test signs its own commits, and git-k8s signs the
+# commits that it makes.
+#
+# The git server also serves a Go module proxy at /proxy/, without a
+# password. A second module proxy on this machine serves the one module that
+# the tested repository's branches depend on, as go-cache's upstream.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -72,7 +78,7 @@ diagnose() {
   echo "::group::Cluster state"
   k get nodes -o wide || true
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
-  k -n "${NS}" get pods -o wide || true
+  k -n "${NS}" get pods,networkpolicies -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-deps || true
@@ -84,6 +90,8 @@ diagnose() {
   done
   echo "--- git server log"
   cat "${WORKDIR}/gitserver.log" || true
+  echo "--- port-forward log"
+  cat "${WORKDIR}/port-forward.log" || true
   echo "--- module proxy log"
   cat "${WORKDIR}/modproxy.log" || true
   echo "::endgroup::"
@@ -156,6 +164,7 @@ need go
 need git
 need ssh-keygen
 need curl
+need timeout
 install_kind
 docker info >/dev/null
 
@@ -240,9 +249,16 @@ crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; 
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
-# the objects in config/policy.yaml. Its second replica is a standby, which
-# answers some of the checks' results with 503, so they try again.
-install git-k8s -replicas=2 -- "-fake-github=${CLUSTER_URL}/github"
+# the objects in config/policy.yaml. It runs one replica, the only writer of
+# the mirror's volume, so no standby answers the checks' results with 503.
+# The service account e2e-deps stands in for a controller that starts
+# branches, and git-k8s-deps, which the deps group installs, starts deps/
+# branches too. check-conflicts creates resolve/BRANCH. The test Pods'
+# NetworkPolicy lets them reach go-cache.
+install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
+  "-branch-prefix=git-k8s-deps/git-k8s-deps=deps/" \
+  "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github" \
+  -go-cache-namespace=go-cache
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
   "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
@@ -264,9 +280,9 @@ k get -f "${ROOT}/config/policy.yaml" --show-labels
   --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
 policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
 generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
-# The results endpoint reads the git-k8s-checks ConfigMap, so the one rule
-# that may name a ConfigMap or a policy is get on that ConfigMap alone. The
-# rule ends where the next rule or object starts.
+# The results endpoint and the mirror read the git-k8s-checks ConfigMap, so
+# the one rule that may name a ConfigMap or a policy is get on that ConfigMap
+# alone. The rule ends where the next rule or object starts.
 read_checks=$'- apiGroups:\n  - ""\n  resources:\n  - configmaps\n  resourceNames:\n  - git-k8s-checks\n  verbs:\n  - get\n-'
 without_policies="$(<"${WORKDIR}/git-k8s-without-policies.yaml")"
 if [[ "${without_policies}" != *"${read_checks}"* ]] ||
@@ -326,7 +342,7 @@ status_managers() {
     -o jsonpath='{range .metadata.managedFields[?(@.subresource=="status")]}{.manager} {end}'
 }
 echo "Status managers before the upgrade: $(status_managers)"
-k -n git-k8s scale deployment/git-k8s --replicas=2
+k -n git-k8s scale deployment/git-k8s --replicas=1
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 old_field() { k -n git-k8s-upgrade get gitbranch app-c-old -o jsonpath="$1"; }
 upgraded() {
@@ -344,7 +360,6 @@ echo "::endgroup::"
 echo "::group::Install the checks"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
-    check-base | check-gofmt) install "${program}" -- "-fake-github=${CLUSTER_URL}/github" ;;
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
       install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1 \
@@ -405,6 +420,7 @@ spec:
         deleteMergedBranches: true
     - match: c/**
       parent: main
+    - match: deps/**
 EOF
 repository_ready() {
   [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" == True ]]
@@ -455,8 +471,48 @@ url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
 echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
 echo "::endgroup::"
 
-# remote_head prints a branch's commit in repository $2, or app.
+# forward_mirror port-forwards a local port to the core program's Service,
+# which serves the mirror, and sets MIRROR to the base URL of NS's copies.
+# A port-forward goes to one Pod, so it needs restarting with the Pod.
+forward_mirror() {
+  if [[ -n "${PORT_FORWARD_PID}" ]]; then
+    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
+    wait "${PORT_FORWARD_PID}" 2>/dev/null || true
+  fi
+  k -n git-k8s port-forward service/git-k8s :80 >"${WORKDIR}/port-forward.log" 2>&1 &
+  PORT_FORWARD_PID=$!
+  forwarding() { grep -qE '^Forwarding from 127[.]0[.]0[.]1:[0-9]+' "${WORKDIR}/port-forward.log"; }
+  eventually 30 forwarding
+  MIRROR="http://127.0.0.1:$(grep -oE '127[.]0[.]0[.]1:[0-9]+' "${WORKDIR}/port-forward.log" | head -n 1 | cut -d: -f2)/${NS}"
+}
+# mirror_token prints a token for the mirror for service account $2 in
+# namespace $1.
+mirror_token() { k -n "$1" create token "$2" --audience=git-k8s-mirror; }
+# mg runs git in the working repository with token $1 for the mirror.
+mg() {
+  local token=$1
+  shift
+  g -c "http.extraHeader=Authorization: Bearer ${token}" "$@"
+}
+forward_mirror
+k -n "${NS}" create serviceaccount e2e-deps
+DEPS_TOKEN="$(mirror_token "${NS}" e2e-deps)"
+GOFMT_TOKEN="$(mirror_token check-gofmt check-gofmt)"
+
+# remote_head prints a branch's commit in repository $2, or app, in the
+# external repository.
 remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
+# mirror_head prints a ref's commit in the mirror's copy of repository $2,
+# or app.
+mirror_head() { mg "${DEPS_TOKEN}" ls-remote "${MIRROR}/${2:-app}.git" "$1" | cut -f1; }
+# synced_condition prints a field of the ExternalSynced condition of
+# repository $2, or app, which says whether the external repository has
+# every change in the mirror.
+synced_condition() {
+  k -n "${NS}" get gitrepository "${2:-app}" -o jsonpath="{.status.conditions[?(@.type==\"ExternalSynced\")].$1}"
+}
+# in_sync reports whether repository $1, or app, is in sync.
+in_sync() { [[ "$(synced_condition reason "${1:-app}")" == InSync ]]; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
@@ -492,6 +548,75 @@ g checkout -q main
 echo "The git server rejected an unsigned commit, so git-k8s's commits land only if they're signed."
 echo "::endgroup::"
 
+echo "::group::Only git-k8s's programs reach the mirror"
+info_refs() {
+  curl -sS -o "${WORKDIR}/mirror.txt" -w '%{http_code}' "$@" "${MIRROR}/app.git/info/refs?service=git-upload-pack"
+}
+[[ "$(info_refs)" == 401 ]]
+[[ "$(info_refs -H "Authorization: Bearer $(k -n check-gofmt create token check-gofmt)")" == 401 ]]
+cat "${WORKDIR}/mirror.txt"
+k -n "${NS}" create serviceaccount stranger
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${NS}" stranger)")" == 404 ]]
+cat "${WORKDIR}/mirror.txt"
+[[ "$(info_refs -H "Authorization: Bearer ${GOFMT_TOKEN}")" == 200 ]]
+[[ -n "$(mirror_head refs/heads/main)" && "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+# The mirror maps service accounts to checks as the results endpoint does:
+# check-approval is the approval check, which main's merge policy lists,
+# through its entry in the git-k8s-checks ConfigMap. The core program's
+# entry names the gofmt check, but the core program is never a check.
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${APPROVAL_NS}" check-approval)")" == 200 ]]
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token git-k8s git-k8s)")" == 404 ]]
+cat "${WORKDIR}/mirror.txt"
+# can_list_secrets reports whether service account $1, in namespace $2 or
+# the namespace of the same name, can list or watch the Secrets in NS. A
+# check that signs commits can get a Secret by name, for its signing key.
+can_list_secrets() {
+  local as="system:serviceaccount:${2:-$1}:$1"
+  k auth can-i list secrets -n "${NS}" --as="${as}" || k auth can-i watch secrets -n "${NS}" --as="${as}"
+}
+for program in check-base check-gofmt check-risk check-approval check-gotest; do
+  program_ns="$(namespace_of "${program}")"
+  as="system:serviceaccount:${program_ns}:${program}"
+  case "${program}" in
+    check-base | check-gofmt)
+      if can_list_secrets "${program}" "${program_ns}"; then
+        echo "${program} can list Secrets" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      if k auth can-i get secrets -n "${NS}" --as="${as}"; then
+        echo "${program} can read Secrets" >&2
+        exit 1
+      fi
+      ;;
+  esac
+  if k -n "${program_ns}" auth can-i create "serviceaccounts/${program}" --subresource=token --as="${as}"; then
+    echo "${program} can create tokens for its service account" >&2
+    exit 1
+  fi
+done
+k -n git-k8s auth can-i create serviceaccounts/git-k8s --subresource=token --as=system:serviceaccount:git-k8s:git-k8s
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. It maps check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
+echo "::endgroup::"
+
+echo "::group::A check can't push to a parent through the mirror"
+fetch_main
+g checkout -q -B to-main FETCH_HEAD
+echo main >"${WORK}/main.txt"
+g add -A
+g commit -qm "Push to main from a check"
+if out="$(mg "${GOFMT_TOKEN}" push "${MIRROR}/app.git" HEAD:main 2>&1)"; then
+  echo "the mirror took a check's push to main: ${out}" >&2
+  exit 1
+fi
+echo "${out}"
+grep -q 'main is a parent branch, which only the merge controller updates' <<<"${out}"
+[[ "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+g checkout -q main
+echo "The mirror refused check-gofmt's push to main, with a reason that git showed."
+echo "::endgroup::"
+
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
 mkdir -p "${WORK}/util"
@@ -509,7 +634,11 @@ g log -1 --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: gofmt' >/dev/null
 signed_by_git_k8s FETCH_HEAD
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
-echo "The gofmt check pushed a signed fix, main fast-forwarded to it, and c/fmt was deleted."
+k -n git-k8s logs deployment/git-k8s >"${WORKDIR}/core.log"
+grep -q 'served a push.*caller=check-gofmt/check-gofmt' "${WORKDIR}/core.log"
+eventually 60 in_sync
+[[ "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+echo "The gofmt check pushed a signed fix to the mirror, main fast-forwarded to it in the mirror, the mirror synced main to the git server, and c/fmt was deleted."
 echo "::endgroup::"
 
 echo "::group::The fix, the landing, and the deletion are events"
@@ -766,24 +895,21 @@ for bearer in "${token}" "${approval_token}"; do
   grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
   grep -q 'gitbranches/status' "${WORKDIR}/patch.json"
 done
-# Checks read the results token that generate mounts in their Pods. A check
-# that doesn't send tokens to Octo STS may not create tokens, and no check may
-# create one for another service account.
+# Checks read the tokens for the results endpoint and the mirror that generate
+# mounts in their Pods, so no check may create tokens, for its own service
+# account or for another.
 [[ "$(k auth can-i create serviceaccounts/check-approval --subresource=token -n "${APPROVAL_NS}" --as="system:serviceaccount:${APPROVAL_NS}:check-approval")" == no ]]
 [[ "$(k auth can-i create serviceaccounts/check-risk --subresource=token -n check-risk --as=system:serviceaccount:check-gofmt:check-gofmt)" == no ]]
 [[ "$(k auth can-i create serviceaccounts/git-k8s --subresource=token -n git-k8s --as=system:serviceaccount:check-gofmt:check-gofmt)" == no ]]
 
 # The results endpoint takes a check's result only with a token for the
-# check's own service account and the endpoint's audience.
-k -n git-k8s port-forward svc/git-k8s 0:80 >"${WORKDIR}/port-forward.log" 2>&1 &
-PORT_FORWARD_PID=$!
-forwarding() { grep -q '^Forwarding from 127.0.0.1:' "${WORKDIR}/port-forward.log"; }
-eventually 30 forwarding
-forward_port="$(sed -n 's/^Forwarding from 127[.]0[.]0[.]1:\([0-9]*\) .*/\1/p' "${WORKDIR}/port-forward.log" | head -n 1)"
+# check's own service account and the endpoint's audience. It shares the
+# core program's Service and port with the mirror.
+forward_mirror
 send_result() {
   curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: ${3:-Bearer} $1" \
     -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
-    "http://127.0.0.1:${forward_port}/results/${NS}/$(branch_object main)/$2"
+    "${MIRROR%/"${NS}"}/results/${NS}/$(branch_object main)/$2"
 }
 risk_token="$(k -n check-risk create token check-risk --audience=git-k8s-results)"
 code="$(send_result "${risk_token}" gofmt)"
@@ -815,8 +941,14 @@ code="$(send_result "${core_results_token}" gofmt)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 403 ]]
 grep -q "system:serviceaccount:git-k8s:git-k8s isn't a check's service account" "${WORKDIR}/result.txt"
-kill "${PORT_FORWARD_PID}"
-PORT_FORWARD_PID=""
+# Each endpoint accepts only tokens for its own audience, even from a check
+# that the other endpoint accepts.
+code="$(send_result "$(mirror_token check-risk check-risk)" risk)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 401 ]]
+[[ "$(info_refs -H "Authorization: Bearer ${risk_token}")" == 401 ]]
+cat "${WORKDIR}/mirror.txt"
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token check-risk check-risk)")" == 200 ]]
 
 # If a role lets a check or another service account write status anyway,
 # the admission policy still lets only the core program write results and
@@ -877,7 +1009,7 @@ core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
+echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The results endpoint refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -1001,6 +1133,67 @@ k delete clusterrolebinding,clusterrole git-k8s-e2e-bot-status
 echo "RBAC lets bot patch GitBranch objects and, through a role that generate gives no check, their status, and the policies stop it both as the bot check that its ConfigMap entry names and after the entry is emptied."
 echo "::endgroup::"
 
+echo "::group::A branch that changes on both sides diverges until a commit has both heads"
+fetch_main
+g checkout -q -B deps/x FETCH_HEAD
+echo base >"${WORK}/deps.txt"
+g add -A
+g commit -qm "Start deps/x"
+DEPS_BASE="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:deps/x
+in_mirror() { [[ "$(mirror_head "$1")" == "$2" ]]; }
+eventually 60 in_mirror refs/heads/deps/x "${DEPS_BASE}"
+eventually 60 in_sync
+echo "A push to the git server reached the mirror."
+
+# A wrong password keeps the mirror from reaching the git server while both
+# sides change.
+k -n "${NS}" patch secret app-creds --type=merge -p '{"stringData":{"password":"wrong"}}'
+sync_failed() { [[ "$(synced_condition reason "${1:-app}")" == SyncFailed ]]; }
+eventually 90 sync_failed
+synced_condition message
+echo
+g checkout -q -B in-mirror "${DEPS_BASE}"
+echo mirror >"${WORK}/deps.txt"
+g commit -qam "Change deps/x in the mirror"
+IN_MIRROR="$(g rev-parse HEAD)"
+mg "${DEPS_TOKEN}" push -q "${MIRROR}/app.git" HEAD:deps/x
+g checkout -q -B in-external "${DEPS_BASE}"
+echo external >"${WORK}/deps.txt"
+g commit -qam "Change deps/x in the git server"
+IN_EXTERNAL="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:deps/x
+k -n "${NS}" patch secret app-creds --type=merge -p "{\"stringData\":{\"password\":\"${PASSWORD}\"}}"
+
+diverged() { k -n "${NS}" get gitbranch "$(branch_object deps/x)" -o jsonpath="{.status.diverged.$1}"; }
+DOWNSTREAM=refs/git-k8s/downstream/heads/deps/x
+recorded() {
+  [[ "$(diverged commit)" == "${IN_EXTERNAL}" && "$(diverged ref)" == "${DOWNSTREAM}" &&
+    "$(synced_condition reason)" == Diverged ]]
+}
+eventually 120 recorded
+synced_condition message
+echo
+[[ "$(mirror_head refs/heads/deps/x)" == "${IN_MIRROR}" && "$(remote_head deps/x)" == "${IN_EXTERNAL}" ]]
+[[ "$(mirror_head "${DOWNSTREAM}")" == "${IN_EXTERNAL}" ]]
+echo "Neither side was overwritten, and the mirror keeps the git server's head at ${DOWNSTREAM}."
+
+k -n git-k8s rollout restart deployment/git-k8s
+k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+forward_mirror
+eventually 60 recorded
+[[ "$(mirror_head refs/heads/deps/x)" == "${IN_MIRROR}" && "$(mirror_head "${DOWNSTREAM}")" == "${IN_EXTERNAL}" ]]
+echo "After the core program restarted, its volume still held both heads, and the divergence stayed recorded."
+
+g checkout -q -B resolved "${IN_MIRROR}"
+g merge -q --no-edit -s ours "${IN_EXTERNAL}"
+RESOLVED="$(g rev-parse HEAD)"
+mg "${DEPS_TOKEN}" push -q --force-with-lease="refs/heads/deps/x:${IN_MIRROR}" "${MIRROR}/app.git" HEAD:deps/x
+resolved() { [[ "$(remote_head deps/x)" == "${RESOLVED}" && -z "$(diverged commit)" ]] && in_sync; }
+eventually 120 resolved
+echo "A commit with both heads cleared the divergence, and the mirror fast-forwarded the git server to it."
+echo "::endgroup::"
+
 echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
 # The git server fakes GitHub and Octo STS under /github. Its token exchange
 # has the API server review each token, because Octo STS can't reach a kind
@@ -1014,11 +1207,13 @@ o() {
 }
 issuer="$(k get --raw /.well-known/openid-configuration | sed -nE 's/.*"issuer":"([^"]*)".*/\1/p')"
 mkdir -p "${OCTO}/.github/chainguard"
-# The fake reads trust policies as JSON, which is also YAML.
+# The fake reads trust policies as JSON, which is also YAML. Only the core
+# program exchanges tokens: the mirror for gitIdentity, and the check-runs
+# controller for checkRunsIdentity.
 cat >"${OCTO}/.github/chainguard/git-k8s.sts.yaml" <<EOF
 {
   "issuer": "${issuer}",
-  "subject_pattern": "system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt)",
+  "subject": "system:serviceaccount:git-k8s:git-k8s",
   "audience": "octo-sts.dev/${NS}",
   "permissions": {"contents": "write"}
 }
@@ -1103,7 +1298,7 @@ check_runs_published() {
     "$(check_run "${fix}" base)" == "completed success" ]]
 }
 eventually 60 check_runs_published
-echo "check-gofmt pushed a signed fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
+echo "check-gofmt pushed a signed fix to the mirror, git-k8s landed it and pushed it to GitHub with Octo STS tokens, and the results became check runs."
 
 k create namespace "${NS}-other"
 octo_repository "${NS}-other"
@@ -1119,6 +1314,60 @@ echo "A GitRepository in another namespace can't use the trust policies, whose a
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
+# kindnet, kind's network plugin, enforces NetworkPolicies only where the
+# kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
+# egress tries to reach the git server until it can't. The plugin can take a
+# few seconds to apply the policy to a new Pod, so the test decides that the
+# cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
+# git server after 30 seconds. The test's own Pods, like check-gotest's,
+# meet the restricted Pod Security Standard, so they start in a namespace
+# that enforces it.
+k apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: no-egress
+  namespace: ${NS}
+spec:
+  podSelector:
+    matchLabels:
+      e2e: no-egress
+  policyTypes: [Egress]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-egress
+  namespace: ${NS}
+  labels:
+    e2e: no-egress
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: probe
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "read -r _"]
+      stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      env:
+        - {name: HOME, value: /tmp}
+        - {name: GIT_TERMINAL_PROMPT, value: "0"}
+        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
+EOF
+k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
+no_egress() {
+  ! timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
+    git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1
+}
+ENFORCED=1
+if ! eventually 30 no_egress 2>/dev/null; then
+  ENFORCED=0
+  echo "This cluster doesn't enforce NetworkPolicies, so the test doesn't check what test Pods can reach."
+fi
+k -n "${NS}" delete pod/no-egress networkpolicy/no-egress --wait=false
+
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
 t() {
@@ -1138,6 +1387,34 @@ func TestAdd(t *testing.T) {
 	}
 }
 GO
+if [[ ${ENFORCED} -eq 1 ]]; then
+  # The test Pods' NetworkPolicy lets them reach only the mirror and CoreDNS,
+  # so this test passes only in a Pod that can't reach the git server,
+  # CoreDNS's metrics port, or, if the node can reach the internet, a public
+  # DNS server. kindnet doesn't filter a Pod's connections to its own node,
+  # which on a one-node cluster include the API server.
+  cat >"${TESTED}/sandbox_test.go" <<GO
+package tested
+
+import (
+	"net"
+	"testing"
+	"time"
+)
+
+func TestSandbox(t *testing.T) {
+	if _, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local"); err != nil {
+		t.Fatalf("looking up CoreDNS: %v", err)
+	}
+	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153", "1.1.1.1:53"} {
+		if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
+			c.Close()
+			t.Errorf("the test Pod reached %s", addr)
+		}
+	}
+}
+GO
+fi
 t add -A
 t commit -qm "Add Add"
 t push -q "${HOST_URL}/tested.git" HEAD:main
@@ -1187,6 +1464,153 @@ fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+if [[ ${ENFORCED} -eq 1 ]]; then
+  echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server, CoreDNS's metrics port, or a public DNS server."
+else
+  echo "The test Pods fetched from the mirror."
+fi
+# The core program owns a NetworkPolicy for each GitRepository that selects
+# the Pods with check-gotest's controller label. The mirror lets a gotest
+# result's Pod fetch only with that label, so the test Pods that fetched
+# have it, even where the cluster doesn't enforce the policy.
+selects_test_pods() {
+  [[ "$(k -n "${NS}" get networkpolicy "$1-test-pods" --ignore-not-found \
+    -o jsonpath='{.spec.podSelector.matchLabels.kube\.imjasonh\.github\.io/controller}')" == check-gotest ]]
+}
+selects_test_pods app
+selects_test_pods tested
+can_i() { k auth can-i "$1" networkpolicies -n "${NS}" --as="system:serviceaccount:$2:$2" || true; }
+for verb in create patch delete; do
+  [[ "$(can_i "${verb}" check-gotest)" == no && "$(can_i "${verb}" git-k8s)" == yes ]]
+done
+k -n "${NS}" delete networkpolicy tested-test-pods
+tested_selects_test_pods() { selects_test_pods tested; }
+eventually 60 tested_selects_test_pods
+echo "Each GitRepository's NetworkPolicy selects check-gotest's Pods, check-gotest can't change NetworkPolicies, and the core program created a deleted policy again."
+echo "::endgroup::"
+
+echo "::group::The mirror checks a test Pod, not just its name"
+# A person writes a gotest result that names a Pod, as only check-gotest's
+# service account or a person can. A result counts only on a branch whose
+# merge policy lists gotest, so the result goes on c/named in tested. Until
+# c/named is gone, check-gotest, which would replace the result, stops. The
+# mirror lets a token that's bound to the Pod fetch only while the Pod has
+# check-gotest's controller label, isn't being deleted, and is Pending, as
+# check-gotest's Pods are while their init container fetches. gotest-named
+# stays Pending because its init container waits. That container ignores
+# SIGTERM, so a deleted Pod stays in its 30-second grace period, while the
+# API server still accepts its token. gotest-running has no init container,
+# so it runs.
+k -n check-gotest scale deployment/check-gotest --replicas=0
+gotest_stopped() { [[ -z "$(k -n check-gotest get pods -o name)" ]]; }
+eventually 120 gotest_stopped
+t checkout -q -b c/named
+t commit -q --allow-empty -m "Name a test Pod"
+t push -q --end-of-options "${HOST_URL}/tested.git" HEAD:c/named
+named_listed() { [[ -n "$(branch_object c/named tested)" ]]; }
+eventually 60 named_listed
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gotest-named
+  namespace: ${NS}
+  labels:
+    kube.imjasonh.github.io/controller: check-gotest
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+  initContainers:
+    - name: fetch
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "trap '' TERM; read -r _"]
+      stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+  containers:
+    - name: test
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "read -r _"]
+      stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gotest-running
+  namespace: ${NS}
+  labels:
+    kube.imjasonh.github.io/controller: check-gotest
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: test
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "read -r _"]
+      stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+EOF
+named_waits() {
+  [[ -n "$(k -n "${NS}" get pod gotest-named -o jsonpath='{.status.initContainerStatuses[0].state.running.startedAt}')" ]]
+}
+eventually 120 named_waits
+k -n "${NS}" wait --for=condition=Ready pod/gotest-running --timeout=120s
+[[ "$(k -n "${NS}" get pod gotest-named -o jsonpath='{.status.phase}')" == Pending ]]
+# named_result writes a gotest result that names Pod $1 on branch $2 of
+# repository $3, or on c/named of tested.
+named_result() {
+  k -n "${NS}" patch gitbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
+    -p '{"status":{"checks":{"gotest":{"commit":"0000000","state":"Running","outputs":{"pod":"'"$1"'"}}}}}' >/dev/null
+}
+# pod_token prints a token for the mirror that's bound to Pod $1.
+pod_token() {
+  k -n "${NS}" create token default --audience=git-k8s-mirror --bound-object-kind=Pod \
+    --bound-object-name="$1" --bound-object-uid="$(k -n "${NS}" get pod "$1" -o jsonpath='{.metadata.uid}')"
+}
+# tested_refs is info_refs for tested's copy.
+tested_refs() {
+  curl -sS -o "${WORKDIR}/mirror.txt" -w '%{http_code}' "$@" "${MIRROR}/tested.git/info/refs?service=git-upload-pack"
+}
+# main has no parent, so no merge policy applies to it, and a result on app's
+# main doesn't count. The mirror reads results in the order that they're
+# written, so once the result on c/named counts, it has read this one too.
+named_result gotest-named main app
+named_result gotest-named
+named_token="$(pod_token gotest-named)"
+named_fetch() { tested_refs -H "Authorization: Bearer ${named_token}"; }
+named_fetches() { [[ "$(named_fetch)" == 200 ]]; }
+eventually 30 named_fetches
+[[ "$(info_refs -H "Authorization: Bearer ${named_token}")" == 404 ]]
+k -n "${NS}" label pod gotest-named --overwrite kube.imjasonh.github.io/controller=check-other
+[[ "$(named_fetch)" == 404 ]]
+k -n "${NS}" label pod gotest-named kube.imjasonh.github.io/controller-
+[[ "$(named_fetch)" == 404 ]]
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${NS}" default)")" == 404 ]]
+[[ "$(tested_refs -H "Authorization: Bearer $(mirror_token "${NS}" default)")" == 404 ]]
+k -n "${NS}" label pod gotest-named kube.imjasonh.github.io/controller=check-gotest
+[[ "$(named_fetch)" == 200 ]]
+# Once gotest-named can't fetch, the mirror has the result that names
+# gotest-running, so the mirror refuses gotest-running only because it runs.
+named_result gotest-running
+named_refused() { [[ "$(named_fetch)" == 404 ]]; }
+eventually 30 named_refused
+[[ "$(info_refs -H "Authorization: Bearer $(pod_token gotest-running)")" == 404 ]]
+[[ "$(tested_refs -H "Authorization: Bearer $(pod_token gotest-running)")" == 404 ]]
+named_result gotest-named
+eventually 30 named_fetches
+k -n "${NS}" delete pod gotest-named --wait=false
+[[ "$(named_fetch)" == 404 ]]
+k -n "${NS}" delete pod gotest-named gotest-running --grace-period=0 --force --ignore-not-found 2>/dev/null
+k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge \
+  -p '{"status":{"checks":{"gotest":null}}}' >/dev/null
+t push -q --delete --end-of-options "${HOST_URL}/tested.git" c/named
+named_gone() { [[ -z "$(branch_object c/named tested)" ]]; }
+eventually 60 named_gone
+k -n check-gotest scale deployment/check-gotest --replicas=1
+k -n check-gotest rollout status deployment/check-gotest --timeout=180s
+echo "A Pending Pod that a gotest result names fetched with check-gotest's label, and not with another check's label, without the label, or while it was being deleted. A running Pod that the result named couldn't fetch, and neither could the same service account's token without a Pod. Only a result on a branch whose merge policy lists gotest counted, and only in that branch's repository."
 echo "::endgroup::"
 
 echo "::group::A burst of branches takes turns under -max-pods=1"
@@ -1275,45 +1699,13 @@ echo "Four branches ran one at a time, in the order that they started waiting."
 echo "::endgroup::"
 
 echo "::group::Test Pods get modules and build outputs from go-cache"
-# This is the README's NetworkPolicy: test Pods reach DNS, go-cache, and the
-# git server, and nothing else.
-k apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: test-pods
-  namespace: ${NS}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: check-gotest
-  policyTypes: [Ingress, Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - {protocol: UDP, port: 53}
-        - {protocol: TCP, port: 53}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: go-cache
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: go-cache
-      ports:
-        - {protocol: TCP, port: 8080}
-    - to:
-        - ipBlock:
-            cidr: ${GATEWAY}/32
-      ports:
-        - {protocol: TCP, port: ${GIT_PORT}}
-EOF
+# With -go-cache-namespace, the core program's NetworkPolicy lets test Pods
+# reach go-cache, as well as the mirror and CoreDNS.
+policy_reaches_go_cache() {
+  [[ "$(k -n "${NS}" get networkpolicy tested-test-pods \
+    -o jsonpath='{.spec.egress[*].to[*].namespaceSelector.matchLabels.kubernetes\.io/metadata\.name}')" == *go-cache* ]]
+}
+eventually 30 policy_reaches_go_cache
 metrics() { k get --raw /api/v1/namespaces/go-cache/services/go-cache:http/proxy/metrics; }
 # metric prints the value of a sample, such as
 # go_cache_module_requests_total{result="hit"}, from the metrics in file $1.
@@ -1355,10 +1747,11 @@ eventually 60 no_test_pods
 metrics >"${WORKDIR}/metrics-1.txt"
 (($(grew "${WORKDIR}/metrics-0.txt" "${WORKDIR}/metrics-1.txt" "${MOD_FETCHED}") > 0))
 
-# A Pod that NetworkPolicies treat as a test Pod tries to reach the module
-# proxy itself. kind's network plugin enforces NetworkPolicies, except on
-# hosts that lack the kernel support that it needs. Like a test Pod, the
-# probe meets the restricted Pod Security Standard.
+# A Pod with check-gotest's controller label, which the core program's
+# NetworkPolicy selects, tries to reach the module proxy itself. kind's
+# network plugin enforces NetworkPolicies, except on hosts that lack the
+# kernel support that it needs. Like a test Pod, the probe meets the
+# restricted Pod Security Standard.
 k apply -f - <<EOF
 apiVersion: v1
 kind: Pod
@@ -1366,7 +1759,7 @@ metadata:
   name: np-probe
   namespace: ${NS}
   labels:
-    app.kubernetes.io/name: check-gotest
+    kube.imjasonh.github.io/controller: check-gotest
 spec:
   restartPolicy: Never
   activeDeadlineSeconds: 30
@@ -1428,7 +1821,6 @@ stored_again="$(grew "${m1}" "${m2}" "${PUT_CREATED}")"
 (($(metric "${m2}" "${PUT_DENIED}") == 0))
 echo "c/greet's Pod got example.com/greet through go-cache and stored ${stored} build outputs."
 echo "With the module proxy stopped, c/greet-docs's Pod got the module from go-cache's store, read ${read_back} build outputs, missed ${missed}, and stored ${stored_again}."
-k -n "${NS}" delete networkpolicy test-pods
 echo "::endgroup::"
 
 echo "::group::Only check-gotest's Pending Pods write to the build caches"
@@ -1619,6 +2011,18 @@ AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
 CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
+# The agent Pods fetch from the mirror with tokens that kube binds to them,
+# so check-review needs no repository credentials. It gets Secrets only by
+# name, for its signing key.
+review_sa=system:serviceaccount:check-review:check-review
+if can_list_secrets check-review; then
+  echo "check-review can list Secrets" >&2
+  exit 1
+fi
+if k -n check-review auth can-i create serviceaccounts/check-review --subresource=token --as="${review_sa}"; then
+  echo "check-review can create tokens for its service account" >&2
+  exit 1
+fi
 REVIEWED="${WORKDIR}/reviewed"
 git init -q -b main "${REVIEWED}"
 rv() {
@@ -1702,7 +2106,7 @@ review d/marked message
 echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
-echo "The agent's signed fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "check-review can't list Secrets or create tokens. The agent's signed fix, from a Pod that fetched from the mirror, landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Conflicts with a parent that moved are resolved before branches land"
@@ -1712,6 +2116,19 @@ echo "::group::Conflicts with a parent that moved are resolved before branches l
 CHECKS+=(check-conflicts)
 install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
+# The check and its agent Pods fetch from the mirror, and the check pushes
+# to it, so check-conflicts needs no repository credentials either. It gets
+# Secrets only by name, for its signing key.
+conflicts_sa=system:serviceaccount:check-conflicts:check-conflicts
+if can_list_secrets check-conflicts; then
+  echo "check-conflicts can list Secrets" >&2
+  exit 1
+fi
+if k -n check-conflicts auth can-i create serviceaccounts/check-conflicts --subresource=token --as="${conflicts_sa}"; then
+  echo "check-conflicts can create tokens for its service account" >&2
+  exit 1
+fi
+echo "check-conflicts can't list Secrets or create tokens."
 CONFLICTED="${WORKDIR}/conflicted"
 mkdir "${CONFLICTED}"
 cf() {
@@ -1793,7 +2210,7 @@ race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds thi
 eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
 merged_main c/text
 eventually 60 no_agent_pods
-echo "The agent resolved the notes.txt conflict, the check signed its merge, and c/text landed."
+echo "The agent, in a Pod that fetched from the mirror, resolved the notes.txt conflict, the check signed its merge, and c/text landed."
 
 cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'
@@ -1812,6 +2229,89 @@ echo
 [[ "$(remote_head main conflicted)" == "${moved}" ]]
 eventually 60 no_agent_pods
 echo "The base check reported the notes.txt conflict on c/refused, and the agent refused to resolve it, so c/refused stays as it is."
+echo "::endgroup::"
+
+echo "::group::The conflicts check resolves a divergence and a rewind through the mirror"
+# c/refused can't land, so it stays while both sides change it. As with
+# deps/x, a wrong password keeps the mirror from the git server while a
+# commit goes to each side. The commit in the mirror comes from the base
+# check, which main's merge policy lets push to c/refused, and the commit in
+# the git server comes from a person.
+forward_mirror
+BASE_TOKEN="$(mirror_token check-base check-base)"
+# diverge_refused pushes commit $1 to c/refused in the mirror, and forces
+# commit $2 onto c/refused in the git server, while the mirror can't reach
+# the git server.
+diverge_refused() {
+  k -n "${NS}" patch secret app-creds --type=merge -p '{"stringData":{"password":"wrong"}}'
+  eventually 90 sync_failed conflicted
+  cf -c "http.extraHeader=Authorization: Bearer ${BASE_TOKEN}" push -q --end-of-options "${MIRROR}/conflicted.git" "$1:refs/heads/c/refused"
+  cf push -q --force --end-of-options "${HOST_URL}/conflicted.git" "$2:refs/heads/c/refused"
+  k -n "${NS}" patch secret app-creds --type=merge -p "{\"stringData\":{\"password\":\"${PASSWORD}\"}}"
+}
+# refused_resolved reports whether the mirror and the git server have
+# c/refused at the same commit, which is neither $1 nor $2, with no
+# divergence left, and fetches that commit into FETCH_HEAD.
+refused_resolved() {
+  local tip
+  tip="$(remote_head c/refused conflicted)"
+  [[ -n "${tip}" && "${tip}" != "$1" && "${tip}" != "$2" &&
+    "$(mirror_head refs/heads/c/refused conflicted)" == "${tip}" &&
+    -z "$(k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.diverged}')" ]] &&
+    in_sync conflicted &&
+    cf fetch -q --end-of-options "${HOST_URL}/conflicted.git" c/refused
+}
+
+cf switch -q -C in-mirror --end-of-options "${refused}"
+printf 'fix\n' >"${CONFLICTED}/fix.txt"
+cf add -A
+cf commit -qm "Add a fix" -m "Git-K8s-Fixer: base"
+base_fix="$(cf rev-parse --verify --end-of-options HEAD)"
+cf switch -q -C in-external --end-of-options "${refused}"
+printf 'person\n' >"${CONFLICTED}/person.txt"
+cf add -A
+cf commit -qm "Add a person's change"
+person="$(cf rev-parse --verify --end-of-options HEAD)"
+diverge_refused "${base_fix}" "${person}"
+eventually 300 refused_resolved "${base_fix}" "${person}"
+merge_message="$(cf log -1 --format=%B --end-of-options FETCH_HEAD)"
+echo "${merge_message}"
+[[ "$(head -n 1 <<<"${merge_message}")" == "Merge the external repository's c/refused into c/refused" ]]
+grep -qx 'Git-K8s-Fixer: conflicts' <<<"${merge_message}"
+[[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "${base_fix} ${person}" ]]
+signed_by_git_k8s FETCH_HEAD cf
+[[ "$(remote_head main conflicted)" == "${moved}" ]]
+merged="$(cf rev-parse --verify --end-of-options FETCH_HEAD)"
+echo "c/refused changed both in the mirror and in the git server, and the conflicts check pushed a signed merge of the git server's head to the mirror, which pushed it to the git server."
+
+# The git server rewinds c/refused, which drops the merge and the commits
+# under it, while the base check adds a commit in the mirror. A merge of
+# the two heads would bring back the dropped commits, so the check replays
+# the mirror's commit onto the git server's head instead. fix2.txt doesn't
+# hold fix.txt's content, because git would take the replay's new file for
+# fix.txt renamed, and the rewind deleted fix.txt, so the check's merges
+# would conflict and it would leave the divergence for a person.
+cf switch -q -C in-mirror --end-of-options "${merged}"
+printf 'another fix\n' >"${CONFLICTED}/fix2.txt"
+cf add -A
+cf commit -qm "Add another fix" -m "Git-K8s-Fixer: base"
+base_fix2="$(cf rev-parse --verify --end-of-options HEAD)"
+cf switch -q -C in-external --end-of-options "${refused}"
+printf 'rewritten\n' >"${CONFLICTED}/rewritten.txt"
+cf add -A
+cf commit -qm "Rewrite the branch"
+rewritten="$(cf rev-parse --verify --end-of-options HEAD)"
+diverge_refused "${base_fix2}" "${rewritten}"
+eventually 300 refused_resolved "${base_fix2}" "${rewritten}"
+cf log -1 --format='%B%nauthor %an <%ae>, committer %cn <%ce>' --end-of-options FETCH_HEAD
+[[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "${rewritten}" ]]
+[[ "$(cf log -1 --format='%an %ae%n%B' --end-of-options FETCH_HEAD)" == "$(cf log -1 --format='%an %ae%n%B' --end-of-options "${base_fix2}")" ]]
+signed_by_git_k8s FETCH_HEAD cf
+[[ "$(cf show --end-of-options FETCH_HEAD:fix2.txt)" == "another fix" && "$(cf show --end-of-options FETCH_HEAD:rewritten.txt)" == rewritten ]]
+[[ -z "$(cf ls-tree --name-only --end-of-options FETCH_HEAD fix.txt person.txt)" ]]
+[[ "$(remote_head main conflicted)" == "${moved}" ]]
+eventually 60 no_agent_pods
+echo "The git server rewound c/refused while the base check added a commit in the mirror, and the conflicts check replayed that commit onto the git server's head, so the commits that the rewind dropped stayed out."
 echo "::endgroup::"
 
 echo "::group::A controller keeps Go modules up to date on branches"
@@ -1911,6 +2411,33 @@ install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=
 k -n go-cache rollout status deployment/go-cache --timeout=180s
 k -n check-deps rollout status deployment/check-deps --timeout=180s
 k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
+# check-deps and its agent Pods fetch from the mirror, and the check pushes
+# to it, as check-review does. It gets Secrets only by name, for its signing
+# key.
+checkdeps_sa=system:serviceaccount:check-deps:check-deps
+if can_list_secrets check-deps; then
+  echo "check-deps can list Secrets" >&2
+  exit 1
+fi
+if k -n check-deps auth can-i create serviceaccounts/check-deps --subresource=token --as="${checkdeps_sa}"; then
+  echo "check-deps can create tokens for its service account" >&2
+  exit 1
+fi
+echo "check-deps can't list Secrets or create tokens."
+# git-k8s-deps reads and pushes branches through the mirror, under the
+# prefix that the core program gives it, and its update Pods get the
+# repository's credentials from the kubelet. It gets Secrets only by name,
+# for its signing key.
+if can_list_secrets git-k8s-deps; then
+  echo "git-k8s-deps can list Secrets" >&2
+  exit 1
+fi
+if k -n git-k8s-deps auth can-i create serviceaccounts/git-k8s-deps --subresource=token \
+  --as=system:serviceaccount:git-k8s-deps:git-k8s-deps; then
+  echo "git-k8s-deps can create tokens for its service account" >&2
+  exit 1
+fi
+echo "git-k8s-deps can't list Secrets or create tokens."
 GREET_BRANCH="deps/go/example.com/greet@v1"
 deps_main_requires() {
   dg fetch -q "${HOST_URL}/deps.git" main && dg show FETCH_HEAD:go.mod | grep -qx "require example.com/greet $1"

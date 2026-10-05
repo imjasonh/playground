@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"maps"
 	"net/http"
@@ -205,10 +206,12 @@ func TestScripts(t *testing.T) {
 	src := t.TempDir()
 	repo := filepath.Join(src, "repo")
 	prepare := append(base, "URL="+srv.Remote("app").URL, "BRANCH=main", "REPO="+repo, "GIT_USERNAME="+srv.Username, "GIT_PASSWORD="+srv.Password)
-	t.Log("The prepare script stops if the branch moved.")
+	t.Log("The prepare script stops with behindStatus if the branch is at another commit.")
 	moved := append(prepare[:len(prepare):len(prepare)], "HEAD=4567cdef4567cdef4567cdef4567cdef4567cdef", "REPO="+filepath.Join(src, "moved"))
-	if out, err := run(src, prepareScript, moved); err == nil || !strings.Contains(out, "main no longer points to 4567cdef") {
-		t.Fatalf("prepare with another head = %v\n%s", err, out)
+	var exit *exec.ExitError
+	if out, err := run(src, prepareScript, moved); !errors.As(err, &exit) || exit.ExitCode() != behindStatus ||
+		!strings.Contains(out, "main is at "+head+" in the external repository, not at 4567cdef") {
+		t.Fatalf("prepare with another head = %v, want exit status %d\n%s", err, behindStatus, out)
 	}
 	t.Log("A URL that looks like an option is still a URL.")
 	marker := filepath.Join(t.TempDir(), "ran")

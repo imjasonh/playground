@@ -7,6 +7,12 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +44,7 @@ type fixture struct {
 
 func newFixture(t *testing.T, branch string) *fixture {
 	srv := gittest.NewServer(t, "")
+	serveMirror(t, srv)
 	w := srv.NewWork(t, "app")
 	w.Write("go.mod", "module example.com/app\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n")
 	w.Write("app.go", "package app\n")
@@ -63,11 +70,11 @@ func newFixture(t *testing.T, branch string) *fixture {
 
 func (f *fixture) reconcile() *kube.Recorder {
 	f.t.Helper()
-	repo, secret := f.srv.Repository("app")
+	repo, _ := f.srv.Repository("app")
 	tr := &testResult{Object: kube.Meta(f.b.Name, nil)}
 	tr.Namespace = f.b.Namespace
 	tr.Status.Checks.Gotest = f.test
-	world := []any{repo, secret, tr}
+	world := []any{repo, tr}
 	if f.signer != nil {
 		world = append(world, f.signer.Sign(repo))
 	}
@@ -79,6 +86,35 @@ func (f *fixture) reconcile() *kube.Recorder {
 }
 
 func (f *fixture) result() *gitk8s.CheckResult { return f.b.Status.Checks.Result }
+
+// serveMirror serves the repositories on srv like the mirror: at
+// /default/NAME.git, to requests with a token from kube.RequestToken. The
+// -mirror flag points to that server until the test ends.
+func serveMirror(t *testing.T, srv *gittest.Server) {
+	t.Helper()
+	upstream, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	m := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		path, ok := strings.CutPrefix(r.URL.Path, "/default/")
+		switch {
+		case !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer fake-token-"):
+			http.Error(rw, "send a token for the mirror", http.StatusUnauthorized)
+		case !ok:
+			http.NotFound(rw, r)
+		default:
+			r.URL.Path = "/" + path
+			proxy.ServeHTTP(rw, r)
+		}
+	}))
+	t.Cleanup(m.Close)
+	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
+	if err := flag.Set("mirror", m.URL); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // replaceAgent makes runAgent call fake for the rest of the test.
 func replaceAgent(t *testing.T, fake func(context.Context, *checks.Input, agent.Task) (checks.Verdict, *agent.Result)) {
@@ -279,6 +315,30 @@ func TestStartsAnAgentThatCanEdit(t *testing.T) {
 	}
 	if !task.Edit || task.Instructions != instructions(testOutput) {
 		t.Errorf("the agent's task = %+v, want edits and the test output", task)
+	}
+}
+
+func TestAgentPodsFetchFromTheMirror(t *testing.T) {
+	defer func(r *agent.Runner) { runner = r }(runner)
+	runner = &agent.Runner{Name: "deps", Image: "agent-runner", GitImage: "git", Backend: "fake", Model: "composer-2.5", Secret: "cursor-api-key", Timeout: time.Minute}
+	f := newFixture(t, depsBranch)
+	pods := kube.Owned[agent.Pod](f.reconcile())
+	if len(pods) != 1 {
+		t.Fatalf("%d Pods, want one", len(pods))
+	}
+	env := map[string]string{}
+	var secrets []string
+	for _, e := range pods[0].Spec.InitContainers[0].Env {
+		if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			secrets = append(secrets, e.ValueFrom.SecretKeyRef.Name)
+		}
+		env[e.Name] = e.Value
+	}
+	if want := flag.Lookup("mirror").Value.String() + "/default/app.git"; env["URL"] != want || env["TOKEN_FILE"] == "" {
+		t.Errorf("the prepare container fetches %q with token file %q, want %q with a token for the mirror", env["URL"], env["TOKEN_FILE"], want)
+	}
+	if !slices.Equal(secrets, []string{"cursor-api-key"}) {
+		t.Errorf("the prepare container reads Secrets %q, want only the API key's", secrets)
 	}
 }
 

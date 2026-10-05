@@ -24,8 +24,9 @@ import (
 const defaultResultsURL = "http://git-k8s.git-k8s.svc/results"
 
 // sendAttempts is how many times a check tries to send a result before its
-// reconcile fails and kube retries it, which runs the check again. Each try
-// can reach a standby replica of the core program, which answers 503.
+// reconcile fails and kube retries it, which runs the check again. A try
+// fails while the core program restarts, and gets 503 while the core
+// program can't write the result.
 const sendAttempts = 10
 
 // branch is the part of a GitBranch that a check controller reconciles. It
@@ -75,9 +76,9 @@ type sender struct {
 }
 
 // send sets res as the check's result on the GitBranch that meta describes.
-// The core program answers 503 from a replica that doesn't write the
-// branch's results, so send tries again, and each try can reach another
-// replica.
+// The core program answers 503 and closes the connection while it can't
+// write the result, as when its Pod starts or stops, so send tries again on
+// a new connection, which can reach the Pod that replaces a stopping one.
 func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.CheckResult) error {
 	body, err := json.Marshal(res)
 	if err != nil {

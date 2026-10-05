@@ -6,6 +6,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -22,6 +23,12 @@ func newGitHub(t *testing.T) (*gittest.GitHub, *gittest.Work, string) {
 	return gh, w, main
 }
 
+// newRepositories returns a repositories controller whose mirror keeps its
+// copies in a new directory.
+func newRepositories(t *testing.T) *repositories {
+	return &repositories{mirror: &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()}}
+}
+
 func TestListsWithOctoSTS(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/add", main)
@@ -29,7 +36,7 @@ func TestListsWithOctoSTS(t *testing.T) {
 	w.Push("c/add")
 	repo := gh.Repository("app", gitk8s.OctoSTS{GitIdentity: "git"}, rules()...)
 	ctx, rec := kube.Fake(t.Context(), repo)
-	if err := (&repositories{git: &git.Git{}}).Reconcile(ctx, repo); err != nil {
+	if err := newRepositories(t).Reconcile(ctx, repo); err != nil {
 		t.Fatal(err)
 	}
 	heads := map[string]string{}
@@ -47,12 +54,25 @@ func TestListsWithOctoSTS(t *testing.T) {
 	}
 }
 
+// The merge controller lands c/x in the mirror's copy, and the mirror pushes
+// the landing to GitHub with a token for gitIdentity.
 func TestLandsWithOctoSTS(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
 	w.Write("x.txt", "x\n")
 	head := w.Commit("add x")
 	w.Push("c/x")
+	repo := gh.Repository("app", gitk8s.OctoSTS{GitIdentity: "git"}, rules()...)
+	repo.UID = "uid-1"
+	r := newRepositories(t)
+	sync := func() {
+		t.Helper()
+		ctx, _ := kube.Fake(t.Context(), repo)
+		if err := r.Reconcile(ctx, repo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sync()
 	b := &gitk8s.GitBranch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main, Merge: policy}
@@ -62,9 +82,18 @@ func TestLandsWithOctoSTS(t *testing.T) {
 	}
 	// policy queues branches, and only the front of main's queue lands.
 	b.Status.Queued = &gitk8s.Queued{Head: head, Position: 1}
-	ctx, _ := kube.Fake(t.Context(), b, gh.Repository("app", gitk8s.OctoSTS{GitIdentity: "git"}, rules()...), parentOf(b, "c/x"))
-	if err := (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b); err != nil {
-		t.Fatal(err)
+	ctx, _ := kube.Fake(t.Context(), b, repo, parentOf(b, "c/x"))
+	if err := (&merger{mirror: r.mirror}).Reconcile(ctx, b); err != nil || b.Status.State != reasonLanded {
+		t.Fatalf("err = %v, state = %q", err, b.Status.State)
+	}
+	sync()
+	if c := kube.FindCondition(repo.Status.Conditions, "ExternalSynced"); c == nil || c.Status != kube.True {
+		t.Errorf("ExternalSynced = %+v", c)
+	}
+	for _, ex := range gh.Fake.Exchanges() {
+		if ex.Identity != "git" {
+			t.Errorf("exchanged a token for identity %s, want only git", ex.Identity)
+		}
 	}
 	heads := gh.Heads(t, "app")
 	if heads["main"] != head {
