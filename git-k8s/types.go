@@ -241,7 +241,7 @@ func (r *CheckResult) Equal(o *CheckResult) bool {
 		return r == o
 	}
 	return r.Commit == o.Commit && r.ParentCommit == o.ParentCommit && r.State == o.State &&
-		r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs)
+		r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs) && r.FilesOnly == o.FilesOnly
 }
 
 // Short returns the first 12 characters of a commit SHA, for messages.

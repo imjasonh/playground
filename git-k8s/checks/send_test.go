@@ -164,6 +164,24 @@ func TestSendsNothingWhenNotListed(t *testing.T) {
 	}
 }
 
+// A check that stopped setting FilesOnly runs again on its last result, and
+// sends the new one even if only filesOnly changed, so that the old result
+// stops counting for squashed and rebased commits.
+func TestSendsResultWithoutFilesOnly(t *testing.T) {
+	e := &endpoint{}
+	f := newSendFixture(t, e)
+	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed, Message: "clean", FilesOnly: true}
+	f.verdict = Pass("clean")
+	if err := f.runAndSend(f.context(t)); err != nil {
+		t.Fatal(err)
+	}
+	got := e.requests()
+	want := gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed, Message: "clean"}
+	if f.runs != 1 || len(got) != 1 || !got[0].result.Equal(&want) {
+		t.Errorf("%d runs sent %+v, want %+v", f.runs, got, want)
+	}
+}
+
 // A check that can't run sends an Error result, and its reconcile still
 // fails, so that kube runs the check again.
 func TestSendsErrorAndFails(t *testing.T) {

@@ -138,6 +138,7 @@ func TestEqual(t *testing.T) {
 		{Commit: "h1", State: Passed, Message: "fine", Outputs: map[string]string{"level": "low"}},
 		{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "high"}},
 		{Commit: "h1", State: Passed, Message: "ok"},
+		{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}, FilesOnly: true},
 	} {
 		if r.Equal(o) || o.Equal(r) {
 			t.Errorf("%+v equals %+v", r, o)
