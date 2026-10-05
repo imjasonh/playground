@@ -112,6 +112,12 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	running := func(format string, args ...any) checks.Verdict {
 		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: outputs}
 	}
+	// take counts the Pod from the moment that it lets the branch start it,
+	// so build the Pod first, and one that can't be built takes no place.
+	p, err := testPod(in, name)
+	if err != nil {
+		return checks.Verdict{}, err
+	}
 	since := time.Now().UTC().Truncate(time.Microsecond)
 	if pod, t, ok := waiting(in.Previous, in.Spec.Head, "waiting", "queued"); ok && pod == name {
 		since = t
@@ -122,10 +128,6 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		// requeue covers declared Pods that never appear.
 		kube.RequeueAfter(ctx, time.Minute)
 		return running("waiting to start a Pod: -max-pods is %d, and branches that have waited longer start first", *maxPods), nil
-	}
-	p, err := testPod(in, name)
-	if err != nil {
-		return checks.Verdict{}, err
 	}
 	pod := kube.Own(ctx, p)
 	if pod == nil {

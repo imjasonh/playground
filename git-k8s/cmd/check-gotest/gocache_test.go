@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -81,6 +82,29 @@ func TestGoCacheNeedsImage(t *testing.T) {
 	}
 	if pods := kube.Owned[Pod](rec); len(pods) != 0 {
 		t.Errorf("owned Pods = %+v, want none without the image for cacheprog and upload", pods)
+	}
+}
+
+func TestEveryBranchReportsMissingImage(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	withGoCache(t)
+	t.Setenv("KUBE_IMAGE", "")
+	_, repo := branch()
+	first, second := waitingBranch("app-c-a", time.Now()), waitingBranch("app-c-b", time.Now().Add(time.Second))
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	t.Log("No test Pod can be built, so app-c-a's mustn't take the only place from app-c-b.")
+	for _, b := range []*Branch{first, second} {
+		ctx, rec := kube.Fake(t.Context(), b, repo, first, second)
+		if err := r.Reconcile(ctx, b); err == nil || !strings.Contains(err.Error(), "KUBE_IMAGE") {
+			t.Errorf("%s: Reconcile = %v, want an error about KUBE_IMAGE", b.Name, err)
+		}
+		if res := b.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "KUBE_IMAGE") {
+			t.Errorf("%s: result = %+v, want Error about KUBE_IMAGE", b.Name, res)
+		}
+		if pods := kube.Owned[Pod](rec); len(pods) != 0 {
+			t.Errorf("%s: owned Pods = %+v, want none", b.Name, pods)
+		}
 	}
 }
 
