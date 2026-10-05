@@ -223,6 +223,20 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with bindings that deny requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}
+	// The patch for a binding whose policy reads no parameters leaves its
+	// paramRef alone, whether or not another binding enforces the policy.
+	bindings[2].Spec.ValidationActions = []string{"Warn"}
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the binding git-k8s-check-pods doesn't deny every request that its policy rejects, so checks that own Pods can write any Pod in the cluster; the binding git-k8s-check-pods warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-check-pods") {
+		t.Errorf("with git-k8s-check-pods warning, and a paramRef that allows requests, PoliciesInstalled = %+v", c)
+	}
+	pods := &admissionPolicyBinding{Object: kube.Meta("admin-pods", nil)}
+	pods.Spec.PolicyName, pods.Spec.ValidationActions = "git-k8s-check-pods", []string{"Deny"}
+	if c := reconcile(append([]any{pods}, world...)...); c.Status != kube.False || c.Reason != "BindingWarns" ||
+		c.Message != "the binding git-k8s-check-pods warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-check-pods") {
+		t.Errorf("with git-k8s-check-pods warning while admin-pods denies, and a paramRef that allows requests, PoliciesInstalled = %+v", c)
+	}
+	bindings[2].Spec.ValidationActions = []string{"Deny"}
 
 	// The API server stores matchResources like these. It fills in matchPolicy
 	// and empty selectors when someone adds matchResources.
