@@ -57,6 +57,9 @@ type fixture struct {
 	poll string
 	// lastErr is what kube.LastError returns, if it isn't nil.
 	lastErr error
+	// signer, if it isn't nil, has the key that the repository names for
+	// signing commits.
+	signer *gittest.Signer
 
 	mu   sync.Mutex
 	body []byte
@@ -128,6 +131,9 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 		repo.Spec.PollInterval = f.poll
 	}
 	world := []any{repo, secret}
+	if f.signer != nil {
+		world = append(world, f.signer.Sign(repo))
+	}
 	for _, p := range pods {
 		world = append(world, p)
 	}
@@ -295,6 +301,21 @@ func TestPushesTheAgentsChanges(t *testing.T) {
 	msg := f.work.Git("log", "-1", "--format=%P%n%B", fix)
 	if !strings.HasPrefix(msg, head+"\n") || !strings.Contains(msg, "1 added line holds DO NOT MERGE") || !strings.Contains(msg, git.FixerTrailer+": review") {
 		t.Errorf("fix's parent and message =\n%s", msg)
+	}
+}
+
+func TestSignsTheAgentsChanges(t *testing.T) {
+	f := newFixture(t, "")
+	f.task.Edit = true
+	f.signer = gittest.NewSigner(t, "git-k8s@example.com")
+	p := f.start()
+	f.reconcile(finished(p, f.serve(review(Fail, File{Path: "a.txt", Mode: "100644", Content: []byte("one\n")}), p.UID)))
+	fix := f.work.Fetch("c/x")
+	if res := f.state(); res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
+	}
+	if err := f.signer.Verify(f.work.Dir, fix); err != nil {
+		t.Error(err)
 	}
 }
 

@@ -1019,7 +1019,7 @@ REVIEWED="${WORKDIR}/reviewed"
 git init -q -b main "${REVIEWED}"
 rv() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${REVIEWED}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 printf 'Notes\n' >"${REVIEWED}/notes.txt"
 rv add -A
@@ -1035,6 +1035,8 @@ spec:
   url: ${CLUSTER_URL}/reviewed.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -1067,6 +1069,7 @@ fixed_on_main() {
 eventually 300 fixed_on_main
 rv log -1 --format=%B FETCH_HEAD
 rv log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: review'
+signed_by_git_k8s FETCH_HEAD rv
 marked_gone() { [[ -z "$(remote_head c/marked reviewed)" && -z "$(branch_object c/marked reviewed)" ]]; }
 eventually 60 marked_gone
 eventually 60 no_agent_pods
@@ -1095,7 +1098,7 @@ review d/marked message
 echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
-echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "The agent's signed fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
