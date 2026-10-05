@@ -38,8 +38,9 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 }
 
 // The check reads only the GitBranch, so it runs on every reconcile,
-// including the one that a new annotation causes.
-var check = checks.Check{Name: "approval", Always: true, Run: run}
+// including the one that a new annotation causes. An approval is for the
+// change, which a squashed or rebased commit makes too, so it's FilesOnly.
+var check = checks.Check{Name: "approval", Always: true, FilesOnly: true, Run: run}
 
 func run(_ context.Context, in *checks.Input) (checks.Verdict, error) {
 	head := in.Spec.Head

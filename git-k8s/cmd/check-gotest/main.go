@@ -93,7 +93,9 @@ type gotest struct {
 	declared map[kube.Key]time.Time
 }
 
-func (g *gotest) check() checks.Check { return checks.Check{Name: "gotest", Run: g.run} }
+func (g *gotest) check() checks.Check {
+	return checks.Check{Name: "gotest", FilesOnly: true, Run: g.run}
+}
 
 func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	attempt := 1
