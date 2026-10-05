@@ -559,8 +559,17 @@ func (r *Repo) ReplaceFiles(ctx context.Context, tree string, files []TreeEntry)
 		fmt.Fprintf(&info, "%s %s\t%s\x00", f.Mode, f.SHA, f.Path)
 	}
 	o.stdin = info.Bytes()
-	if _, err := r.git.run(ctx, r.Dir, []string{"update-index", "-z", "--index-info"}, o); err != nil {
+	update := []string{"-c", "core.protectHFS=true", "-c", "core.protectNTFS=true", "update-index", "-z", "--index-info"}
+	res, err := r.git.exec(ctx, r.Dir, update, o)
+	switch {
+	case err != nil:
 		return "", err
+	case res.code != 0:
+		return "", &Error{Command: "update-index", Code: res.code, Stderr: res.stderr}
+	case res.stderr != "":
+		// update-index skips a path that it refuses, such as one that macOS
+		// or Windows would read as .git, with only a warning.
+		return "", fmt.Errorf("git update-index: %s", res.stderr)
 	}
 	o.stdin = nil
 	out, err := r.git.run(ctx, r.Dir, []string{"write-tree"}, o)

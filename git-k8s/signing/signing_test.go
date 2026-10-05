@@ -79,7 +79,7 @@ func TestOnlyCommitMakersImport(t *testing.T) {
 			got = append(got, path.Base(fields[0]))
 		}
 	}
-	if want := []string{"check-base", "check-gofmt", "git-k8s"}; !slices.Equal(got, want) {
+	if want := []string{"check-base", "check-gofmt", "check-review", "git-k8s"}; !slices.Equal(got, want) {
 		t.Errorf("programs that import %s = %v, want %v", pkg, got, want)
 	}
 }
