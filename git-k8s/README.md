@@ -1363,7 +1363,9 @@ changing `status.checks`. A check that doesn't run as `check-NAME` in the
 namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap to
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
-check's result. The second stops every git-k8s service account from setting
+check's result. It also stops every service account except the core program's
+from changing `status.diverged`, which names the commit that `check-conflicts`
+merges or replays. The second stops every git-k8s service account from setting
 the `approve` and `approved-by` annotations, which are for people, and stops
 checks from changing `GitBranch` objects at all. RBAC also keeps every check
 except `check-gotest`, `check-review`, and `check-conflicts`, which own Pods,
