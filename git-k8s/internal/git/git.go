@@ -490,9 +490,15 @@ func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
 }
 
 // MergeTree merges two commits without a worktree. It returns the merged
-// tree, or the paths that conflict.
+// tree, or the paths that conflict. Attributes from the commits'
+// .gitattributes files don't apply, so a branch can't choose how its own
+// conflicts merge.
 func (r *Repo) MergeTree(ctx context.Context, ours, theirs string) (tree string, conflicts []string, err error) {
-	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--end-of-options", ours, theirs}
+	noAttrs, err := r.noAttributes(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	args := []string{noAttrs, "merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--end-of-options", ours, theirs}
 	res, err := r.git.exec(ctx, r.Dir, args, opts{})
 	if err != nil {
 		return "", nil, err
