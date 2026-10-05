@@ -114,8 +114,13 @@ func TestTimeoutStopsWhatGitStarted(t *testing.T) {
 // --attr-source comes before merge-tree in Keeps.
 func TestErrorNamesTheCommandAfterItsOptions(t *testing.T) {
 	g := &Git{Bin: filepath.Join(t.TempDir(), "missing")}
-	_, err := g.run(t.Context(), t.TempDir(), []string{"--attr-source=HEAD", "merge-tree"}, opts{})
-	if err == nil || !strings.HasPrefix(err.Error(), "git merge-tree: ") {
-		t.Errorf("err = %v, want an error that starts with %q", err, "git merge-tree: ")
+	for _, args := range [][]string{
+		{"--attr-source=HEAD", "merge-tree"},
+		{"--attr-source=HEAD", "-c", "merge.conflictStyle=diff3", "merge-tree"},
+	} {
+		_, err := g.run(t.Context(), t.TempDir(), args, opts{})
+		if err == nil || !strings.HasPrefix(err.Error(), "git merge-tree: ") {
+			t.Errorf("run(%q) = %v, want an error that starts with %q", args, err, "git merge-tree: ")
+		}
 	}
 }

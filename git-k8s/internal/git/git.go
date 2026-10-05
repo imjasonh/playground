@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -117,9 +116,17 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	ctx, cancel := context.WithTimeout(ctx, g.timeout())
 	defer cancel()
 
-	// Options such as --attr-source can come before git's command.
-	i := slices.IndexFunc(args, func(a string) bool { return !strings.HasPrefix(a, "-") })
-	command := args[max(i, 0)]
+	// Options such as --attr-source, and -c with its value, can come before
+	// git's command.
+	command := args[0]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+		} else if !strings.HasPrefix(args[i], "-") {
+			command = args[i]
+			break
+		}
+	}
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
