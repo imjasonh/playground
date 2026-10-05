@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ const gitEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_NOSYSTEM: "1",
+  GIT_ALLOW_PROTOCOL: "http:https:git:ssh",
   GIT_AUTHOR_NAME: "test",
   GIT_AUTHOR_EMAIL: "test@example.com",
   GIT_COMMITTER_NAME: "test",
@@ -44,25 +45,66 @@ function write(root: string, files: Files): void {
  * and the key file.
  */
 export function preparePod(base: Files, change: Files, task: Partial<Task> = {}): Task {
+  const { root, repo, baseSha } = newRepo(base);
+  const head = commit(repo, change, "Change");
+  return layOut(root, repo, baseSha, head, head, task);
+}
+
+/**
+ * Lays out what the agent container sees for a task that merges theirs
+ * into ours, the way the prepare container does: the merge's files, with
+ * conflict markers, the paths that conflict, and the merged commit's
+ * change, its paths, and its log.
+ */
+export function prepareMerge(base: Files, ours: Files, theirs: Files, task: Partial<Task> = {}): Task {
+  const { root, repo, baseSha } = newRepo(base);
+  const head = commit(repo, ours, "Ours");
+  git(repo, "switch", "-q", "-c", "theirs", "--end-of-options", baseSha);
+  const mergeHead = commit(repo, theirs, "Theirs");
+  const args = ["-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z"];
+  const merged = spawnSync("git", [...args, `--merge-base=${baseSha}`, "--end-of-options", head, mergeHead], { cwd: repo, env: gitEnv });
+  if (merged.status !== 0 && merged.status !== 1) {
+    throw new Error(`git merge-tree failed: ${merged.stderr.toString()}`);
+  }
+  const input = join(root, "input");
+  const conflictsFile = join(input, "conflicts");
+  const mergeLogFile = join(input, "merge-log.txt");
+  const mergeDiffFile = join(input, "merge.diff");
+  const mergeChangesFile = join(input, "merge-changes");
+  const tree = merged.stdout.subarray(0, merged.stdout.indexOf(0)).toString();
+  const laidOut = layOut(root, repo, baseSha, head, tree, { mergeName: "theirs", mergeHead, conflictsFile, mergeLogFile, mergeDiffFile, mergeChangesFile, ...task });
+  writeFileSync(conflictsFile, merged.stdout);
+  writeFileSync(mergeLogFile, git(repo, "log", "--format=%h %s", "--end-of-options", `${baseSha}..${mergeHead}`));
+  writeFileSync(mergeDiffFile, gitBuffer(repo, "diff", "--no-color", "--end-of-options", baseSha, mergeHead));
+  writeFileSync(mergeChangesFile, gitBuffer(repo, "diff", "--name-status", "-z", "--end-of-options", baseSha, mergeHead));
+  return laidOut;
+}
+
+function newRepo(base: Files): { root: string; repo: string; baseSha: string } {
   const root = mkdtempSync(join(tmpdir(), "agent-runner-"));
   const repo = join(root, "git");
   mkdirSync(repo);
   git(repo, "init", "-q", "-b", "main");
-  write(repo, base);
-  git(repo, "add", "-A");
-  git(repo, "commit", "-q", "--allow-empty", "-m", "Base");
-  const baseSha = git(repo, "rev-parse", "HEAD").trim();
-  write(repo, change);
-  git(repo, "add", "-A");
-  git(repo, "commit", "-q", "--allow-empty", "-m", "Change");
-  const head = git(repo, "rev-parse", "HEAD").trim();
+  return { root, repo, baseSha: commit(repo, base, "Base") };
+}
 
-  for (const dir of ["src", "input", "key", "result"]) {
+function commit(repo: string, files: Files, message: string): string {
+  write(repo, files);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "--allow-empty", "-m", message);
+  return git(repo, "rev-parse", "--verify", "--end-of-options", "HEAD").trim();
+}
+
+/** Checks out tree, and writes the change from baseSha to head, as preparePod describes. */
+function layOut(root: string, repo: string, baseSha: string, head: string, tree: string, task: Partial<Task>): Task {
+  for (const dir of ["src", "input", "key", "result", "empty"]) {
     mkdirSync(join(root, dir));
   }
-  git(repo, "read-tree", head);
-  git(repo, "rm", "-q", "--cached", "--ignore-unmatch", "--", ":(glob)**/.cursorignore");
-  git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
+  // Like the Pod's repository, the index's work tree holds no files.
+  const index = (...args: string[]) => git(join(root, "empty"), `--git-dir=${join(repo, ".git")}`, "--work-tree=.", ...args);
+  index("read-tree", "--end-of-options", tree);
+  index("rm", "-q", "--cached", "--ignore-unmatch", "--", ":(glob)**/.cursorignore");
+  index("checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
   writeFileSync(join(root, "input", "files"), gitBuffer(repo, "ls-files", "-s", "-z"));
   writeFileSync(join(root, "input", "change.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, head));
   writeFileSync(join(root, "input", "changes"), gitBuffer(repo, "diff", "--name-status", "-z", baseSha, head));
