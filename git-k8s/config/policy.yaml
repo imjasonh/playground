@@ -21,7 +21,9 @@ metadata:
 # status.checks.gofmt. A check installed under another name or namespace
 # needs an entry in the git-k8s-checks ConfigMap to write results.
 # Server-side apply already keeps well-behaved controllers apart; this policy
-# stops a buggy or compromised one from writing another's result.
+# stops a buggy or compromised one from writing another's result. A check
+# whose entry in the ConfigMap is empty can't write results, but it keeps its
+# RBAC, so this policy still stops it from writing the rest of the status.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -51,6 +53,10 @@ spec:
         params != null && has(params.data) && variables.account in params.data ? params.data[variables.account] :
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
+    - name: checkAccount
+      expression: >-
+        variables.check != "" || variables.account != "git-k8s.git-k8s" &&
+        params != null && has(params.data) && variables.account in params.data
     - name: old
       expression: >-
         has(oldObject.status) && has(oldObject.status.checks) ? oldObject.status.checks : {}
@@ -64,7 +70,7 @@ spec:
         variables.old.all(k, k == variables.check || k in variables.new))
       messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
     - expression: >-
-        variables.check == "" ||
+        !variables.checkAccount ||
         ((has(object.status) && has(object.status.state) ? object.status.state : "") ==
         (has(oldObject.status) && has(oldObject.status.state) ? oldObject.status.state : "") &&
         (has(object.status) && has(object.status.conditions) ? object.status.conditions : []) ==
@@ -75,9 +81,14 @@ spec:
         (has(oldObject.status) && has(oldObject.status.queue) ? oldObject.status.queue : []) &&
         (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
         (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : []))
-      messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
+      messageExpression: >-
+        variables.check != "" ? "the " + variables.check + " check can only write status.checks." + variables.check :
+        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
     - expression: variables.check != "" || variables.new == variables.old
-      messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write status.checks"
+      messageExpression: >-
+        variables.checkAccount ?
+        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status" :
+        request.userInfo.username + " isn't a check's service account, so it can't write status.checks"
     # The conflicts check merges or replays the commit that status.diverged
     # names, so only the core program, which runs the mirror, writes it.
     - expression: >-
@@ -105,7 +116,9 @@ spec:
 # objects, such as check-gotest, patch GitBranch objects, because generate
 # can't tell whether an owned object needs a finalizer on its owner. kube
 # adds that finalizer with a cleanup annotation, which this policy denies, so
-# a check can own only namespaced objects in the branch's namespace.
+# a check can own only namespaced objects in the branch's namespace. A check
+# whose entry in the git-k8s-checks ConfigMap is empty can't write results,
+# but it keeps its RBAC, so this policy still treats it as a check.
 #
 # git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
 # RBAC lets it patch GitBranch objects too, and the policy stops it the same
@@ -139,6 +152,10 @@ spec:
         params != null && has(params.data) && variables.account in params.data ? params.data[variables.account] :
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
+    - name: checkAccount
+      expression: >-
+        variables.check != "" || variables.account != "git-k8s.git-k8s" &&
+        params != null && has(params.data) && variables.account in params.data
     - name: core
       expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
     - name: deps
@@ -163,17 +180,19 @@ spec:
         oldObject.metadata.annotations["git-k8s.imjasonh.com/approved-by"] : ""
   validations:
     - expression: >-
-        !(variables.core || variables.check != "") ||
+        !(variables.core || variables.checkAccount) ||
         (variables.approval == variables.oldApproval && variables.approver == variables.oldApprover)
       message: git-k8s controllers can't approve branches
     - expression: >-
-        variables.check == "" ||
+        !variables.checkAccount ||
         (oldObject != null && object.spec == oldObject.spec &&
         (has(object.metadata.labels) ? object.metadata.labels : {}) ==
         (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
         (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
         (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
-      messageExpression: '"the " + variables.check + " check can''t change GitBranch objects"'
+      messageExpression: >-
+        variables.check != "" ? "the " + variables.check + " check can't change GitBranch objects" :
+        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
     - expression: >-
         !variables.deps ||
         (oldObject != null && object.spec == oldObject.spec &&

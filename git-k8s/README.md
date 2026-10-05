@@ -168,10 +168,12 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. The programs
 that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
-`check-risk`, `check-conflicts`, `check-review` and `check-deps`, which push
-their agents' fixes, and `git-k8s-deps`, which pushes dependency updates. The
-test Pods of `check-gotest`, the agent Pods of `check-review`, `check-deps`,
-and `check-conflicts`, and the update Pods of `git-k8s-deps` fetch without
+`check-risk`, `check-conflicts`, `check-review`, `check-deps`, and
+`git-k8s-deps`. Before they start each run, `check-review` and `check-deps`
+fetch the branch and its parent to find their merge base, and they push their
+agents' fixes. `git-k8s-deps` pushes dependency updates. The test Pods of
+`check-gotest`, the agent Pods of `check-review`, `check-deps`, and
+`check-conflicts`, and the update Pods of `git-k8s-deps` fetch without
 credentials. So with Octo STS, `gotest`, `review`, and `deps` work only for a
 public repository, `git-k8s-deps` updates only a public repository, and for a
 private one, `conflicts` resolves only what git can. The `git-k8s` program
@@ -248,12 +250,13 @@ before it expires. If an exchange fails, they use the old token until a
 minute before it expires, and ask Octo STS again after 30 seconds. When the
 `git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
 is `False` with the reason `CredentialsUnavailable`. When a check can't, it
-reports an `Error` result, except `check-review`, which reports `Running` and
-tries again to push its agent's fix, `check-deps`, which reports `Running` and
-tries again, and `check-conflicts` on a branch with a parent, which reports
-`Running` and tries again. When `git-k8s-deps` can't, it logs
-`reconcile failed; retrying` with the error and tries again with backoff. The
-messages include Octo STS's answer, such as
+reports an `Error` result, except `check-review` and `check-deps`, which
+report `Running` and try again after 30 seconds, and `check-conflicts` on a
+branch with a parent, which reports `Running` and tries again. Until they get
+a token, `check-review` and `check-deps` can't find the merge base, so they
+don't start a run, and they can't commit or push an agent's fix. When
+`git-k8s-deps` can't, it logs `reconcile failed; retrying` with the error and
+tries again with backoff. The messages include Octo STS's answer, such as
 `unable to find trust policy for "git-k8s"`. Octo STS caches each trust
 policy, and the lack of one, for 5 minutes, so a change to a trust policy can
 take that long to apply.
@@ -1213,8 +1216,9 @@ head:
   messages. It skips a commit whose replay changes nothing, such as one whose
   change the external repository's head already has. The check pushes to the
   side that didn't rewind, so the result can change commits to resolve
-  conflicts. If a commit can't be replayed by itself, such as a merge, or a
-  commit whose replay conflicts, or if the replays don't have every change
+  conflicts. If a commit can't be replayed by itself, such as a merge, a
+  commit whose replay conflicts, or a commit with an author that git refuses
+  or whose date git would change, or if the replays don't have every change
   that both sides made, the check replays the branch's whole change since
   `base` as one commit on top of the external repository's head instead.
   Git and the agent resolve that commit's conflicts as they resolve a
@@ -1427,8 +1431,12 @@ Secret with the repository's credentials, the commits to check out, the
 task, the agent's tools, and the runner's image if it isn't
 `-agent-image`. `Run` builds a `Job` from a check's branch, so both start
 the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
-For a check, the `Runner`'s name must be the check's name, and the `Job`'s
-namespace must opt in to check Pods, as [Install](#install) describes.
+The `Job`'s namespace must be the namespace of the object that the
+controller reconciles, because `RunJob` declares the Pod with `kube.Own`,
+which puts it there. The Secrets that the Pod reads must be in that
+namespace too. For a check, the `Runner`'s name must be the check's name,
+and that namespace must opt in to check Pods, as [Install](#install)
+describes.
 
 Call `RunJob` on each reconcile with the `JobState` that the last call
 left. The state names the run's Pod and counts the runs that `RunJob`
@@ -2449,15 +2457,19 @@ kubectl -n git-k8s rollout restart deployment/git-k8s
 
 `PoliciesInstalled` also turns `False` when no binding for a policy denies
 every request that the policy rejects. A binding can let some of them
-through when its `validationActions` doesn't hold `Deny`, when its policy
-reads parameters and its `paramRef.parameterNotFoundAction` isn't `Deny`,
-when its `matchResources` sets resource rules, or when a selector in its
-`matchResources` sets `matchLabels` or `matchExpressions`. The API server
-ignores the `paramRef` of a binding whose policy doesn't read parameters,
-such as the third and fourth policies, so the condition does too. The
-message gives a `kubectl patch` command that makes the binding from
-`config/policy.yaml` deny all of them again, without a restart. For a
-binding that someone set to `Warn`, the command is:
+through when its `validationActions` doesn't hold `Deny`, when its
+`matchResources` sets resource rules, or when a selector in its
+`matchResources` sets `matchLabels` or `matchExpressions`. If a binding's
+policy reads parameters, as the first two do, the binding also lets some
+through when its `paramRef.parameterNotFoundAction` isn't `Deny`, or when
+it has no `paramRef`. Without a `paramRef`, the API server evaluates the
+policy without parameters, so the policy ignores the entries in the
+`git-k8s-checks` ConfigMap. The API server ignores the `paramRef` of a
+binding whose policy doesn't read parameters, such as the third and fourth
+policies, so the condition does too. The message gives a `kubectl patch`
+command that makes the binding from `config/policy.yaml` deny all of them
+again, without a restart. For a binding that someone set to `Warn`, the
+command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
@@ -2536,11 +2548,13 @@ kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
 ```
 
 An entry overrides the `check-NAME` convention, so an entry with an empty
-value stops that service account from writing results. The policies ignore
-an entry for the core program's service account, `git-k8s.git-k8s`, so an
-entry can't let the core program write a result or stop it from changing
-`GitBranch` objects. The core program applies the ConfigMap without data, so
-restarting it keeps your entries.
+value stops that service account from writing results. The first two
+policies still treat that service account as a check, so it can't change a
+`GitBranch` or its status even if RBAC lets it patch them. The policies
+ignore an entry for the core program's service account, `git-k8s.git-k8s`,
+so an entry can't let the core program write a result or stop it from
+changing `GitBranch` objects. The core program applies the ConfigMap without
+data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
 service accounts write which results, so give that permission only to people
 who can install checks.
