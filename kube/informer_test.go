@@ -25,7 +25,8 @@ type cfgMap struct {
 }
 
 // fakeAPI serves list and watch for ConfigMaps in one namespace, with
-// switches for the server behaviors an informer must handle.
+// switches for the server behaviors an informer must handle. Unlike
+// Kubernetes, its discovery lists a status subresource for ConfigMaps.
 type fakeAPI struct {
 	mu        sync.Mutex
 	objs      map[string]map[string]any
@@ -126,6 +127,10 @@ func (f *fakeAPI) calls() (lists, watches []url.Values) {
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/v1" {
+		fmt.Fprint(w, `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","namespaced":true,"kind":"ConfigMap"},{"name":"configmaps/status","namespaced":true,"kind":"ConfigMap"}]}`)
+		return
+	}
 	q := r.URL.Query()
 	f.mu.Lock()
 	if write := f.write; write != nil && r.Method != http.MethodGet {
