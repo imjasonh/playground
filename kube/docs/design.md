@@ -973,9 +973,11 @@ write from a cache that's behind gets `409 Conflict`, which the framework
 tells apart from a deleted object, and the reconcile is retried. Such a
 retry is expected, so the framework logs it at the info level and counts it
 in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
-A webhook can also refuse a write with `409 Conflict`, though, and a cache
-catches up within a few retries. So after five failed reconciles of the
-object in a row, the framework logs each further one as a warning.
+The framework doesn't record the failure for `kube.LastError`, so the retry
+sees the error from the reconcile before it. A webhook can also refuse a
+write with `409 Conflict`, though, and a cache catches up within a few
+retries. So after five failed reconciles of the object in a row, the
+framework logs each further one as a warning.
 One success is enough, whether of the status write or of a write before it,
 since the status may need no write. It shows that the cache had every earlier
 write when that reconcile started. After a hand-off, this replica is then the

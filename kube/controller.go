@@ -621,7 +621,11 @@ func (c *controller[T, P]) specChanged(old, new *T) bool {
 func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	start := time.Now()
 	requeue, err := c.reconcileKey(ctx, key)
-	c.setLastError(key, err)
+	// The retry of a stale reconcile redoes it from a newer copy of the
+	// object, so LastError keeps returning the error from before it.
+	if !errors.Is(err, errStale) {
+		c.setLastError(key, err)
+	}
 	elapsed := time.Since(start)
 	result := "success"
 	log := c.log.With("key", key.String(), "duration", elapsed.Round(time.Microsecond))

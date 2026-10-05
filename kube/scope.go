@@ -437,6 +437,8 @@ func RequeueAfter(ctx context.Context, d time.Duration) {
 // next reconcile can see that one failed, for example because an admission
 // policy rejected an apply. The framework writes the status even when a
 // declaration fails, so that reconcile can report the error in the status.
+// When a write fails because the cache was behind, the framework retries the
+// reconcile, and LastError in the retry returns the error from before it.
 //
 // Each process keeps the errors in memory, so LastError returns nil in the
 // first reconcile after the process starts or acquires the object's shard.

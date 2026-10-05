@@ -768,14 +768,15 @@ takeover, a reconcile can fail this way. So can the first reconcile of a new
 object, if something else writes the object while it runs. The framework
 logs the failure at the info level, counts it in `kube_reconcile_total` with
 `result="stale"` rather than as an error, and retries the reconcile, which
-succeeds once the caches catch up. After five failed reconciles of the object
-in a row, the framework logs each further one as a warning. A cache catches
-up sooner, so something else, such as a webhook, may be refusing the write
-with `409 Conflict`. Requiring the cached resource version covers a hand-off,
-where the previous holder finishes its reconciles before it releases the
-shard, but not a lost Lease. A replica that can't renew its Lease lets
-running reconciles finish, and a late status write from one of them can
-still remove data that a client was told was saved.
+succeeds once the caches catch up. `kube.LastError` doesn't return such a
+failure, so the retry sees the error from the reconcile before it. After five
+failed reconciles of the object in a row, the framework logs each further one
+as a warning. A cache catches up sooner, so something else, such as a webhook,
+may be refusing the write with `409 Conflict`. Requiring the cached resource
+version covers a hand-off, where the previous holder finishes its reconciles
+before it releases the shard, but not a lost Lease. A replica that can't renew
+its Lease lets running reconciles finish, and a late status write from one of
+them can still remove data that a client was told was saved.
 
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:
