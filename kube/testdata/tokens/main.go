@@ -1,5 +1,5 @@
-// Command tokens passes RequestToken audiences that are constants and one
-// that isn't, for generate's tests. It's never run.
+// Command tokens passes RequestToken audiences that are constants, one of
+// them twice, and one that isn't, for generate's tests. It's never run.
 package main
 
 import (
@@ -17,4 +17,5 @@ func main() {
 	_, _, _ = kube.RequestToken(ctx, "probe")
 	_, _, _ = kube.RequestToken(ctx, "")
 	_, _, _ = kube.RequestToken(ctx, os.Getenv("AUDIENCE"))
+	_, _, _ = kube.RequestToken(ctx, "probe")
 }

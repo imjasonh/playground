@@ -25,17 +25,20 @@ type cfgMap struct {
 }
 
 // fakeAPI serves list and watch for ConfigMaps in one namespace, with
-// switches for the server behaviors an informer must handle.
+// switches for the server behaviors an informer must handle. Unlike
+// Kubernetes, its discovery lists a status subresource for ConfigMaps.
 type fakeAPI struct {
 	mu        sync.Mutex
 	objs      map[string]map[string]any
 	rv        int
 	streaming bool
-	expire    bool // answer the next resumed watch with 410 Gone
+	expire    bool   // answer the next resumed watch with 410 Gone
+	onList    func() // runs once, between reading and sending the next list
 	events    chan string
 	drop      chan struct{}
 	lists     []url.Values
 	watches   []url.Values
+	write     http.HandlerFunc // serves requests other than GET
 }
 
 func newFakeAPI(t *testing.T, streaming bool) (*fakeAPI, *client.Client) {
@@ -107,6 +110,16 @@ func (f *fakeAPI) bookmark(rv int, initialEnd bool) string {
 	return string(b)
 }
 
+// unlockAfterList unlocks f.mu, which must be held, and then runs onList.
+func (f *fakeAPI) unlockAfterList() {
+	onList := f.onList
+	f.onList = nil
+	f.mu.Unlock()
+	if onList != nil {
+		onList()
+	}
+}
+
 func (f *fakeAPI) calls() (lists, watches []url.Values) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -114,8 +127,17 @@ func (f *fakeAPI) calls() (lists, watches []url.Values) {
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/v1" {
+		fmt.Fprint(w, `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","namespaced":true,"kind":"ConfigMap"},{"name":"configmaps/status","namespaced":true,"kind":"ConfigMap"}]}`)
+		return
+	}
 	q := r.URL.Query()
 	f.mu.Lock()
+	if write := f.write; write != nil && r.Method != http.MethodGet {
+		f.mu.Unlock()
+		write(w, r)
+		return
+	}
 	if q.Get("watch") != "1" {
 		f.lists = append(f.lists, q)
 		names := slices.Sorted(maps.Keys(f.objs))
@@ -133,7 +155,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if end < len(names) {
 			meta["continue"] = strconv.Itoa(end)
 		}
-		f.mu.Unlock()
+		f.unlockAfterList()
 		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "ConfigMapList", "apiVersion": "v1", "metadata": meta, "items": items})
 		return
 	}
@@ -146,18 +168,24 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"kind":"Status","status":"Failure","reason":"Invalid","code":422,"message":"sendInitialEvents is forbidden"}`)
 		return
 	case q.Get("sendInitialEvents") == "true":
+		var initial []string
 		for _, n := range slices.Sorted(maps.Keys(f.objs)) {
 			b, _ := json.Marshal(map[string]any{"type": client.Added, "object": f.objs[n]})
-			fmt.Fprintln(w, string(b))
+			initial = append(initial, string(b))
 		}
-		fmt.Fprintln(w, f.bookmark(f.rv, true))
+		initial = append(initial, f.bookmark(f.rv, true))
+		f.unlockAfterList()
+		for _, line := range initial {
+			fmt.Fprintln(w, line)
+		}
 	case f.expire:
 		f.expire = false
 		f.mu.Unlock()
 		fmt.Fprintln(w, `{"type":"ERROR","object":{"kind":"Status","status":"Failure","reason":"Expired","code":410,"message":"too old resource version"}}`)
 		return
+	default:
+		f.mu.Unlock()
 	}
-	f.mu.Unlock()
 	flusher.Flush()
 	for {
 		select {
@@ -353,6 +381,86 @@ func TestInformerRelistsWhenResourceVersionExpires(t *testing.T) {
 	slices.SortFunc(after, func(a, b notification) int { return compare(a.key, b.key) })
 	if want := []notification{{key: "a", deleted: true}, {key: "c"}}; !slices.Equal(after, want) {
 		t.Errorf("relist notifications = %+v, want %+v", after, want)
+	}
+}
+
+func TestInformerDoesntShowWritesThatOverlapAList(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			f, c := newFakeAPI(t, streaming)
+			f.set("a", map[string]string{"v": "1"})
+			f.set("b", map[string]string{"v": "1"})
+			inf, _ := startInformer(t, c, streaming)
+			waitFor(t, "first watch", func() bool { _, w := f.calls(); return len(w) == 1 })
+			ka, kb := Key{"ns", "a"}, Key{"ns", "b"}
+			read := func(k Key) string {
+				if o, ok := inf.get(k).(*cfgMap); ok {
+					return o.Data["v"]
+				}
+				return ""
+			}
+			watched := func(k Key) string {
+				inf.store.mu.RLock()
+				defer inf.store.mu.RUnlock()
+				if o := inf.store.objs[k.Namespace][k.Name]; o != nil {
+					return o.Data["v"]
+				}
+				return ""
+			}
+			respond := func(end func(*written), o map[string]any) {
+				b, err := json.Marshal(o)
+				if err != nil {
+					t.Error(err)
+				}
+				end(&written{obj: b})
+			}
+
+			t.Log("The informer misses a change to a, and its watch expires during a write to b that the list holds.")
+			f.set("a", map[string]string{"v": "2"})
+			endB := inf.begin(kb)
+			wroteB := f.set("b", map[string]string{"v": "2"})
+			var wroteA map[string]any
+			listed := make(chan struct{})
+			f.mu.Lock()
+			f.expire = true
+			f.onList = func() {
+				defer close(listed)
+				// The write to a ends after the list reads the objects, so
+				// the list doesn't hold it.
+				endA := inf.begin(ka)
+				wroteA = f.set("a", map[string]string{"v": "3"})
+				respond(endA, wroteA)
+				if got := read(ka); got != "1" {
+					t.Errorf("during the list, a = %s, want 1", got)
+				}
+			}
+			f.mu.Unlock()
+			f.drop <- struct{}{}
+			select {
+			case <-listed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the informer didn't list again")
+			}
+			waitFor(t, "the list", func() bool { return watched(ka) == "2" })
+			respond(endB, wroteB)
+			if a, b := read(ka), read(kb); a != "2" || b != "2" {
+				t.Errorf("after the list, a = %s and b = %s, want 2 and 2", a, b)
+			}
+
+			t.Log("The watch delivers the write to a, and another client's change to b.")
+			f.send(client.Modified, wroteA)
+			f.put("b", map[string]string{"v": "3"})
+			waitFor(t, "the watch events", func() bool { return watched(ka) == "3" && watched(kb) == "3" })
+			if a, b := read(ka), read(kb); a != "3" || b != "3" {
+				t.Errorf("after the watch events, a = %s and b = %s, want 3 and 3", a, b)
+			}
+			inf.store.mu.RLock()
+			writes, flights := len(inf.store.writes), len(inf.store.flights)
+			inf.store.mu.RUnlock()
+			if writes != 0 || flights != 0 {
+				t.Errorf("store holds %d writes and %d writes in progress, want none", writes, flights)
+			}
+		})
 	}
 }
 

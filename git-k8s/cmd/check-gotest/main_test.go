@@ -302,6 +302,9 @@ func TestFetchScript(t *testing.T) {
 	if got := gitIn(t, dir, "rev-parse", "HEAD"); got != commit {
 		t.Errorf("checked out %s, want %s", got, commit)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "repo", "go.mod")); err != nil {
+		t.Errorf("the fetch container didn't check out the head: %v", err)
+	}
 	if config, err := os.ReadFile(filepath.Join(dir, "repo", ".git", "config")); err != nil || strings.Contains(string(config), token) {
 		t.Errorf("the repository's config, which the test container reads, holds the token (%v):\n%s", err, config)
 	}
@@ -315,6 +318,33 @@ func TestFetchScript(t *testing.T) {
 	w.Push("c/x")
 	if _, err := fetch(t, p, token); err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "no longer points to") {
 		t.Errorf("fetch after the branch moved = %v, want exit status 3", err)
+	}
+}
+
+func TestFetchRefusesUnsafeURLs(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git isn't installed")
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	defer func(u string) { *mirrorURL = u }(*mirrorURL)
+	for url, want := range map[string]string{
+		"--upload-pack=touch " + marker + "; false": "blocked",
+		"evil::x": "not allowed",
+	} {
+		*mirrorURL = url
+		b, repo := branch()
+		_, err := fetch(t, started(t, b, repo), "token")
+		if _, statErr := os.Stat(marker); statErr == nil {
+			t.Fatalf("fetching from %q ran a command", url)
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("fetching from %q: err = %v, want %q", url, err, want)
+		}
 	}
 }
 

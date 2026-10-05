@@ -48,12 +48,12 @@ type projectedToken struct {
 	Path     string `json:"path"`
 }
 
-// generateExample runs an example's generate command and returns what it
-// wrote.
-func generateExample(t *testing.T, reg, example, namespace string, extra ...string) installation {
+// generateExample runs the generate command of a program in the kube
+// module, such as examples/website, and returns what it wrote.
+func generateExample(t *testing.T, reg, program, namespace string, extra ...string) installation {
 	t.Helper()
 	args := append([]string{
-		"run", "github.com/imjasonh/playground/kube/examples/" + example, "generate",
+		"run", "github.com/imjasonh/playground/kube/" + program, "generate",
 		"-registry=" + reg + "/e2e", "-base=" + reg + "/chainguard/static:latest",
 		"-platform=linux/amd64", "-namespace=" + namespace,
 	}, extra...)
@@ -340,6 +340,29 @@ func noPermissionErrors(t *testing.T, out *syncBuffer) {
 	}
 }
 
+// eventFrom waits for an Event in namespace from controller. The program
+// writes events in the background, so a denial can come after its other
+// writes succeed.
+func eventFrom(t *testing.T, c *client.Client, namespace, controller string) {
+	t.Helper()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var events struct {
+			Items []struct {
+				ReportingController string `json:"reportingController"`
+			} `json:"items"`
+		}
+		if err := c.Get(t.Context(), client.Path("events.k8s.io/v1", "events", namespace, ""), &events); err != nil {
+			return err
+		}
+		for _, e := range events.Items {
+			if e.ReportingController == controller {
+				return nil
+			}
+		}
+		return fmt.Errorf("no Events from %s in %s", controller, namespace)
+	})
+}
+
 // TestGenerateWebsite installs the website example from what its generate
 // command wrote, and runs the image's program with the generated RBAC
 // rules: the API server enforces them, so a missing rule fails the test.
@@ -347,7 +370,7 @@ func TestGenerateWebsite(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "website", "website-system")
+	in := generateExample(t, reg, "examples/website", "website-system")
 	if !slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("args = %q, want -leader-elect for two replicas", in.args)
 	}
@@ -388,6 +411,7 @@ func TestGenerateWebsite(t *testing.T) {
 	if err := c.Get(t.Context(), client.Path("coordination.k8s.io/v1", "leases", "website-system", ""), &leases); err != nil || len(leases.Items) == 0 {
 		t.Errorf("leases in website-system: %d, %v", len(leases.Items), err)
 	}
+	eventFrom(t, c, ns, "website")
 	noPermissionErrors(t, out)
 }
 
@@ -400,7 +424,7 @@ func TestGenerateOneNamespace(t *testing.T) {
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
 	watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
-	in := generateExample(t, reg, "website", "website-one", "-replicas=1", "-watch-namespace="+watched)
+	in := generateExample(t, reg, "examples/website", "website-one", "-replicas=1", "-watch-namespace="+watched)
 	if !slices.Contains(in.args, "-namespace="+watched) {
 		t.Errorf("args = %q, want -namespace=%s", in.args, watched)
 	}
@@ -433,6 +457,67 @@ func TestGenerateOneNamespace(t *testing.T) {
 	if err := e2e.Get(t.Context(), c, client.Path("apps/v1", "deployments", other, "blog"), &map[string]any{}); err == nil {
 		t.Errorf("the program reconciled a Website in %s, which it doesn't watch", other)
 	}
+	eventFrom(t, c, watched, "website")
+	noPermissionErrors(t, out)
+}
+
+// TestGenerateOwnedType installs the imagereport example, which owns
+// ImageReports without reconciling them. Its rules let it create the missing
+// CRD and get that CRD, but not change it.
+func TestGenerateOwnedType(t *testing.T) {
+	c := e2e.Client(t)
+	reg := imagetest.Registry(t)
+	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
+	in := generateExample(t, reg, "examples/imagereport", "imagereport", "-replicas=1")
+	const crd = "imagereports.examples.kube.imjasonh.github.io"
+	var crdRules []any
+	for _, obj := range in.objects {
+		if obj["kind"] != "ClusterRole" {
+			continue
+		}
+		for _, r := range obj["rules"].([]any) {
+			if b, _ := json.Marshal(r); strings.Contains(string(b), `"customresourcedefinitions"`) {
+				crdRules = append(crdRules, r)
+			}
+		}
+	}
+	want := `[{"apiGroups":["apiextensions.k8s.io"],"resources":["customresourcedefinitions"],"verbs":["create"]},` +
+		`{"apiGroups":["apiextensions.k8s.io"],"resourceNames":["` + crd + `"],"resources":["customresourcedefinitions"],"verbs":["get"]}]`
+	if b, _ := json.Marshal(crdRules); string(b) != want {
+		t.Errorf("rules for CRDs =\n%s\nwant\n%s", b, want)
+	}
+	in.apply(t, c)
+	exe := in.executable(t, "imagereport")
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "imagereport", "imagereport"))
+
+	ns := e2e.Namespace(t, c)
+	if err := c.Create(t.Context(), client.Path("v1", "pods", ns, ""), map[string]any{
+		"apiVersion": "v1", "kind": "Pod", "metadata": map[string]any{"name": "app"},
+		"spec": map[string]any{"containers": []any{map[string]any{"name": "app", "image": "ghcr.io/example/app:v1"}}},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var report struct {
+			Images []struct {
+				Image string `json:"image"`
+			} `json:"images"`
+		}
+		if err := e2e.Get(t.Context(), c, client.Path("examples.kube.imjasonh.github.io/v1", "imagereports", ns, "images"), &report); err != nil {
+			return err
+		}
+		if len(report.Images) != 1 || report.Images[0].Image != "ghcr.io/example/app:v1" {
+			return fmt.Errorf("report images = %+v", report.Images)
+		}
+		return nil
+	})
+	var meta crdMeta
+	if err := e2e.Get(t.Context(), c, "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/"+crd, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.managedBy() != "imagereport" {
+		t.Errorf("the CRD is managed by %q, want imagereport", meta.managedBy())
+	}
 	noPermissionErrors(t, out)
 }
 
@@ -443,10 +528,13 @@ func TestGenerateWebhooks(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "podpolicy", "podpolicy", "--", "-registries=ghcr.io/example/")
+	in := generateExample(t, reg, "examples/podpolicy", "podpolicy", "--", "-registries=ghcr.io/example/")
 	kinds := map[string]bool{}
 	for _, obj := range in.objects {
 		kinds[obj["kind"].(string)] = true
+		if b, _ := json.Marshal(obj); strings.Contains(string(b), `"events.k8s.io"`) {
+			t.Errorf("podpolicy records no events, but its %s has a rule for them: %s", obj["kind"], b)
+		}
 	}
 	if !kinds["Service"] || !kinds["Role"] || slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-registries=ghcr.io/example/") {
 		t.Errorf("kinds = %v, args = %q", kinds, in.args)

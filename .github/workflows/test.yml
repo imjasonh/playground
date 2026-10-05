@@ -42,11 +42,29 @@ jobs:
       # Go module; the pasta leg builds the CLI even when no other Go app
       # changed).
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        id: setup-go
         if: ${{ steps.discover.outputs.modules != '[]' || steps.discover.outputs.pasta == 'true' }}
         with:
           go-version: 'stable'
           check-latest: true
           cache: false
+
+      # Go's module and build caches. setup-go's own cache needs an exact
+      # match on every go.sum in the repository, which the daily dependency
+      # update changes, so restore the newest cache with a prefix instead.
+      # Only pushes to main save one, after the tests, so a pull request
+      # doesn't spend time uploading a cache that no other run can read.
+      - name: Restore Go caches
+        id: go-cache
+        if: ${{ steps.setup-go.outcome == 'success' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs. Use the
@@ -73,6 +91,20 @@ jobs:
               MODULES: ${{ steps.discover.outputs.modules }}
             run: bash .github/scripts/test-go-modules.sh
 
+          # A kind test mostly waits for a cluster and its Pods, so each runs
+          # beside the unit tests instead of after them.
+          - name: kind e2e for git-k8s
+            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'git-k8s') }}
+            run: bash .github/scripts/test-kind-e2e.sh git-k8s
+
+          - name: kind e2e for kube
+            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'kube') }}
+            run: bash .github/scripts/test-kind-e2e.sh kube
+
+          - name: kind e2e for sshapp
+            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'sshapp') }}
+            run: bash .github/scripts/test-kind-e2e.sh sshapp
+
           - name: Lint, build, and test changed Rust apps
             if: ${{ steps.discover.outputs.rust != '[]' }}
             env:
@@ -90,3 +122,12 @@ jobs:
           - name: Test site index
             if: ${{ steps.discover.outputs.index == 'true' }}
             run: bash .github/scripts/test-index.sh
+
+      - name: Save Go caches
+        if: ${{ github.ref == 'refs/heads/main' && steps.go-cache.outcome == 'success' && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}

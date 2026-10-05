@@ -116,7 +116,12 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	}
 	pod := kube.Own(ctx, testPod(in, name))
 	if pod == nil {
-		return running("started Pod %s", name), nil
+		// kube creates the Pod after run returns, and retries with backoff
+		// when it can't, for example because an admission policy denies it.
+		if err := kube.LastError(ctx); err != nil {
+			return running("starting Pod %s; the last try failed: %v", name, err), nil
+		}
+		return running("starting Pod %s", name), nil
 	}
 	switch pod.Status.Phase {
 	case "Succeeded":
@@ -172,7 +177,9 @@ func unfinishedPods(ctx context.Context, ns, name string) int {
 	return n
 }
 
-// podName names the Pod for one attempt at one head of a branch.
+// podName names the Pod for one attempt at one head of a branch. The check
+// Pod policy in config/policy.yaml denies a new Pod unless its name is
+// gotest-ID, where ID has no hyphens.
 func podName(branch, head string, attempt int) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", branch, head, attempt)))
 	return "gotest-" + hex.EncodeToString(sum[:8])

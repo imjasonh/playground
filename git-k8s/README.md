@@ -50,6 +50,17 @@ branches that match no rule aren't tracked. A branch whose rule names a
 `parent` is a proposal to that parent. The parent's rule says what a proposal
 needs before it lands.
 
+`url` must be an `https://`, `http://`, `git://`, or `ssh://` URL, or an
+scp-like address with a user name, such as `git@example.com:app.git`. Without
+a user name, write an `ssh://` URL, such as `ssh://example.com/~/app.git`. The
+API server rejects other URLs, and git-k8s runs git with `GIT_ALLOW_PROTOCOL`
+set to those transports. Its git commands put `--end-of-options` before every
+URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
+track branches whose names start with `-` or aren't valid ref names.
+
+Put credentials in `secretRef`, not in `url`, because
+`kubectl get gitrepositories` shows each URL.
+
 The `git-k8s` program, which this README calls the core program, serves the
 mirror and runs two controllers. Each check runs as its own program. The
 mirror is a `kube.Serve` handler, and each controller is a `kube.For`
@@ -83,8 +94,9 @@ repositories controller's status writes don't run them again.
 
 Git objects live in the mirror's copies, and each check that reads files
 keeps a local copy of the repositories that it reads. Only commit SHAs go
-into Kubernetes objects, and no object records a single push or check run,
-so the API server holds a bounded amount of state.
+into Kubernetes objects. Apart from [events](#events), which the API server
+deletes after an hour by default, no object records a single push or check
+run, so the API server holds a bounded amount of state.
 
 After a branch lands, `kubectl get gitbranches` shows what's still open:
 
@@ -242,10 +254,11 @@ Pod, and refuses the request unless the Pod has that UID, has kube's label
 Pods that `check-gotest` declares, isn't being deleted, and is `Pending`. A
 Pod is `Pending` while its init containers run, and only the init container
 that fetches the branch has the token, so the token stops working when the
-tests start. That's why `generate` lets the core program get Pods. Any
-program that can create Pods in the namespace can set the label, so the
-label means `check-gotest` only as long as the other programs that create
-Pods there don't set it.
+tests start. That's why `generate` lets the core program get Pods. The
+third admission policy in `config/policy.yaml` keeps other checks from
+setting the label, as [Install](#install) describes. Any other program that
+can create Pods in the namespace can set it, so the label means
+`check-gotest` only as long as those programs don't set it.
 
 ### Divergence
 
@@ -426,12 +439,50 @@ basic auth, or `git` as the username if the Secret has none. Checks and test
 Pods reach only the mirror, with their own tokens, so `generate` doesn't let
 them read Secrets. The [`credentials`](credentials/credentials.go) package
 holds the only code that reads them, and is where other ways to
-authenticate, such as SSH keys, belong.
+authenticate belong.
 
-The mirror reaches external repositories only over the network, with
-`https`, `http`, or `git` URLs. A `url` that's a local path or a `file` URL
-fails, so a `GitRepository` can't read another namespace's copy from the
-core program's volume.
+The mirror reaches external repositories only over the network. A `url`
+that's a local path or a `file` URL fails, so a `GitRepository` can't read
+another namespace's copy from the core program's volume.
+
+## Events
+
+The controllers record an event about a `GitBranch` each time they change
+the branch or its parent in the mirror's copy. The repositories controller
+then pushes the change to the external repository, as
+[Sync with the external repository](#sync-with-the-external-repository)
+describes:
+
+| Reason | From | When |
+| --- | --- | --- |
+| `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch. |
+| `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
+| `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
+
+`kubectl describe gitbranch GITBRANCH` lists a branch's events. After the
+merge controller deletes a branch, the repositories controller deletes its
+`GitBranch`, so list the namespace's events instead:
+
+```sh
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+After `c/fmt` in the end-to-end test lands, the output looks like this:
+
+```
+LAST SEEN   TYPE     REASON          OBJECT                           MESSAGE
+14s         Normal   PushedFix       gitbranch/app-c-fmt-793d86522b   pushed 5d0c2e9a71b4 to c/fmt: 1 of 2 Go files need gofmt: util/add.go
+9s          Normal   Landed          gitbranch/app-c-fmt-793d86522b   fast-forwarded main from 0e4f8a2c9d13 to c/fmt at 5d0c2e9a71b4
+9s          Normal   DeletedBranch   gitbranch/app-c-fmt-793d86522b   deleted c/fmt at 5d0c2e9a71b4 after it landed on main
+```
+
+kube drops events when it falls behind on writing them, and the API server
+deletes events after an hour by default. To audit what landed, use the git
+history of the copy or of the external repository. `generate` grants
+`create` and `patch` on events to the `git-k8s` program and to every check
+program. A check that never pushes a fix, such as `check-approval`, gets the
+grant too, because the `checks` package that every check uses records
+`PushedFix`.
 
 ## Checks
 
@@ -440,7 +491,7 @@ core program's volume.
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
-| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
+| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 
 A check with `mayPush: true` pushes its fix commit to the branch in the
@@ -450,11 +501,64 @@ how many a branch can have, so two checks that undo each other's fixes stop.
 The same inputs always produce the same fix commit, so two retries of one
 fix push the same commit.
 
-To approve a branch:
+### Approve a branch
+
+An approval is two annotations on the `GitBranch`: `approve`, which names
+the commit, and `approved-by`, which names you. Set both in one request:
 
 ```sh
-kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA \
+  git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 ```
+
+The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
+
+- Setting, changing, or removing the `approve` or `approved-by` annotation
+  requires the `approve` verb on the `GitBranch`. `generate` grants that
+  verb to no program, so grant it to the people who approve:
+
+  ```sh
+  kubectl create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+  kubectl create rolebinding approver --role=approver --group=GROUP
+  ```
+
+- A request that sets or changes `approve` must set `approved-by` to the
+  username that sends it.
+- A request that removes `approve` must remove `approved-by` too.
+- A request that changes only `approved-by` takes over the approval, so
+  `approve` must name a commit, and the request must set `approved-by` to
+  the username that sends it.
+
+On Kubernetes 1.36 or later, `kubectl apply -f config/approved-by.yaml`
+installs a MutatingAdmissionPolicy that sets `approved-by` to your username
+when you set or change `approve`, and removes it when you remove `approve`,
+so one annotation approves:
+
+```sh
+kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+```
+
+The mutating policy leaves `approved-by` alone when the request changes it
+as well, and `git-k8s-approvals` checks every approval either way.
+
+To take over an existing approval of the same commit, set both annotations
+as in the first command. Setting only `approve` leaves that approval and its
+`approved-by` as they are. Admission policies see only the object that a
+request produces, so the mutating policy can't tell that the request set
+`approve` again. `check-approval` reports the new approver after a takeover.
+
+`check-approval` reports `approved-by` as `outputs.approver`, so a merge gate
+can require particular approvers:
+
+```yaml
+when: >-
+  checks.approval.passed &&
+  checks.approval.outputs.approver in ["alice@example.com", "bob@example.com"]
+```
+
+An approval without `approved-by`, such as one from before the policy was
+installed, still passes with an empty `outputs.approver`, so the branch waits
+at a gate like this one until someone approves it again.
 
 ### Write a check
 
@@ -577,6 +681,12 @@ kind's kindnet, don't filter a Pod's connections to its own node, which can
 include the API server. Test Pods have no service account token, so the API
 server gives them only what it gives anonymous requests.
 
+Both of a test Pod's containers meet the `restricted`
+[Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
+An admission policy keeps `check-gotest` to its own Pods, in namespaces that
+opt in to test Pods and enforce the `restricted` standard. See
+[Install](#install).
+
 ## Merge gates
 
 `when` is a [CEL](https://cel.dev) expression. It has one variable,
@@ -676,7 +786,7 @@ Pods' NetworkPolicy keeps them from reaching the proxy. A proxy inside the
 cluster also needs a NetworkPolicy of your own, as
 [Sandboxed checks](#sandboxed-checks) describes.
 
-`config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
+`config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
 changing `status.checks`. A check must run as the service account
@@ -684,12 +794,101 @@ changing `status.checks`. A check must run as the service account
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
-the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all.
+the `approve` and `approved-by` annotations, which are for people, and stops
+checks from changing `GitBranch` objects at all. RBAC also keeps every check
+except `check-gotest`, which owns the Pods that run tests, from patching
+`GitBranch` objects. `generate` grants that permission to a check that owns
+objects, because it can't tell whether an owned object needs a finalizer on
+its owner. The second policy denies the annotation that kube adds with that
+finalizer, so a check can own only namespaced objects in the branch's
+namespace.
 
-Without the policies, none of that holds, so the repositories controller
-sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`
-until both policies are installed with bindings that deny.
+The third keeps each check to its own Pods. `generate` lets a check that
+declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
+delete Pods in every namespace, because RBAC can't limit those verbs to the
+Pods that a program created. kube labels each Pod that `check-NAME` declares
+with `kube.imjasonh.github.io/controller=check-NAME`. The policy lets the
+check change or delete only Pods with that label, and its new Pods must have
+it. A new Pod's name must be `NAME-ID`, where `ID` has no hyphens, so that a
+check can't take the name of another check's next Pod and block it. The check
+can't write Pods in the `git-k8s` or `check-*` namespaces. Elsewhere, it
+creates and changes Pods only in namespaces that have the label
+`git-k8s.imjasonh.com/check-pods=true` and enforce the `restricted` Pod
+Security Standard at version `latest`. It can delete its Pods in a namespace
+without those labels, so it can clean up after a namespace drops them. Its
+Pods must run as their namespace's `default` service account, and a new Pod
+can't set `spec.nodeName`.
+
+The policy itself enforces the `baseline` Pod Security Standard, more strictly
+for capabilities and sysctls. It denies these fields in containers, init
+containers, and ephemeral containers:
+
+- The node's network, PID, and IPC namespaces
+- `hostPath` volumes and host ports
+- Privileged containers and added capabilities
+- An unmasked `/proc`, the `Unconfined` seccomp profile, and Windows host
+  processes
+- The `Unconfined` AppArmor profile, SELinux users and roles, SELinux types
+  other than the container types that `baseline` allows, and sysctls
+- Probes and lifecycle handlers that set `host`, which make the kubelet
+  connect from the node to another address
+
+Pod Security admission enforces the rest of `restricted`, such as running as
+a non-root user. An exemption in the cluster's Pod Security admission
+configuration that covers a check's Pods, by user, RuntimeClass, or
+namespace, weakens only that rest. The policy doesn't limit node selectors,
+affinity, tolerations, or `runtimeClassName`, so a compromised check can
+schedule Pods onto any node, including tainted ones, and start them without
+the RuntimeClass that `-runtime-class` sets. To require that RuntimeClass,
+add a ValidatingAdmissionPolicy that denies a Pod with the label
+`kube.imjasonh.github.io/controller=check-gotest` unless its
+`spec.runtimeClassName` is the RuntimeClass.
+
+The policy matches every service account whose namespace or name starts with
+`check-`. Of those, only `check-NAME` in the namespace `check-NAME`, as
+`generate` installs the `NAME` check, can write Pods. Any other, such as an
+unrelated service account named `check-deployer`, can't write Pods at all. A
+check that runs as another service account needs a policy of its own. If that
+policy reads parameters, its binding must set
+`parameterNotFoundAction: Allow`. The API server looks up a binding's
+parameters before it evaluates the policy's match conditions, so with `Deny`,
+every Pod write in the cluster fails while the parameters are missing.
+
+In a namespace that opts in, a compromised check's Pods can still mount the
+namespace's Secrets, ConfigMaps, and PersistentVolumeClaims, run as its
+`default` service account, and mount tokens for that account with any
+audience. A service that accepts those tokens must check which Pod a token is
+bound to, and that the Pod has the label of the check that the service
+trusts. The mirror checks both for test Pods, as
+[Who can fetch and push](#who-can-fetch-and-push) describes.
+
+The fourth checks who approves, as [Approve a branch](#approve-a-branch)
+describes.
+
+Without the policies, most of that doesn't hold, so the repositories
+controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
+`False` until all four policies are installed with bindings that deny.
+
+Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
+must opt in to test Pods and enforce the `restricted` Pod Security Standard,
+or the third policy denies the test Pods:
+
+```sh
+kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
+```
+
+Replace `NAMESPACE` with the namespace of the `GitRepository`. The namespace
+can't be `git-k8s` or start with `check-`. If it has the label
+`pod-security.kubernetes.io/enforce-version`, the label's value must be
+`latest`. Until the namespace has both labels, the branch's `gotest` result
+stays `Running`, and its message says why kube couldn't create the Pod. kube
+tries again with backoff that grows to 5 minutes, plus up to 10% jitter, so it
+creates the Pod within about 5.5 minutes after you label the namespace,
+without a new push.
+
+If `check-gotest` already runs, label the namespaces of its repositories
+before you apply `config/policy.yaml`. Otherwise the policy denies their test
+Pods until you do.
 
 ## Security model
 

@@ -1,4 +1,5 @@
-// Package yaml decodes the subset of YAML that kubeconfig files use.
+// Package yaml decodes the subset of YAML that kubeconfig files use. It also
+// parses each document of a manifest for kube.Install.
 //
 // It supports block mappings and sequences (including sequences indented at
 // the same level as their parent key), flow collections, plain, single-quoted,

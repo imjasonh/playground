@@ -34,7 +34,7 @@ func TestGenerateVolume(t *testing.T) {
 		t.Errorf("generate -replicas=2: %v\n%s", err, stderr.String())
 	}
 
-	in := generateExample(t, reg, "eventlog", "eventlog", "-volume-size=2Gi")
+	in := generateExample(t, reg, "examples/eventlog", "eventlog", "-volume-size=2Gi")
 	byKind := map[string]string{}
 	for _, obj := range in.objects {
 		b, _ := json.Marshal(obj)

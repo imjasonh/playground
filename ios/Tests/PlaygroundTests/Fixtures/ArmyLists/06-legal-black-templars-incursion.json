@@ -1,78 +1,98 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "21A4D5BD-0C04-476D-BBCD-3450E79932F0",
-    "name": "Black Templars Incursion 985pts",
-    "catalogVersion": "11e-1",
-    "factionID": "black-templars",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
-      "black-templars--ironstorm-spearhead"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "black-templars--assault-brethren",
+      "black-templars--gravis-siege-force"
     ],
-    "units": [
+    "factionID" : "black-templars",
+    "id" : "30F4F779-A59A-4941-B1BC-A9D2D78C11C3",
+    "name" : "Black Templars Incursion 1000pts",
+    "notes" : "stress seed=5 attach=true enh=true",
+    "units" : [
       {
-        "id": "593C5AB4-D746-4BD7-BD0F-953EE1E092E1",
-        "datasheetID": "black-templars--execrator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "black-templars--ironstorm-spearhead--master-of-machine-war"
+        "datasheetID" : "black-templars--execrator",
+        "enhancementIDs" : [
+          "black-templars--gravis-siege-force--narthecis-gauntlet"
         ],
-        "attachedToUnitID": null
+        "id" : "67A8BB98-6D5B-4CB4-9CB3-7A895BD22EC6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B5B3E273-09C8-474C-8697-22ABE67E79C6",
-        "datasheetID": "black-templars--redemptor-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "black-templars--heavy-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8CE56140-DFD9-4E98-9DCD-910CEB5F1A4E",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "25F2AC20-DA0A-4B22-A747-ABD97A85A569",
-        "datasheetID": "black-templars--land-raider",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "black-templars--intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9A0703D3-0DDA-49A0-93BC-EFBC33051A5C",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0434EA94-344B-4122-B1AF-342178287D63",
-        "datasheetID": "black-templars--bladeguard-veteran-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "black-templars--centurion-assault-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "587C803F-88E3-443B-B983-7D669E6C9547",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "755FCB41-72BE-4920-9D6C-D9F738756F45",
-        "datasheetID": "black-templars--intercessor-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "black-templars--outrider-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4623B6B9-0A07-4ECB-8FED-4150CDA3FE17",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D199D45E-0EA8-4965-827B-994F13EA89D2",
-        "datasheetID": "black-templars--desolation-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "black-templars--hellblaster-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E4E74B63-9DF1-4D05-95DF-15C406F4B6A7",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DD88F091-A4D1-4DC2-B743-9D2FEC715B5F",
-        "datasheetID": "black-templars--eradicator-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "black-templars--whirlwind",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B2A1BC64-1D1A-4C66-8BBA-F93D39E2605A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "593C5AB4-D746-4BD7-BD0F-953EE1E092E1",
-    "notes": "stress seed=5 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "67A8BB98-6D5B-4CB4-9CB3-7A895BD22EC6"
+  },
+  "notes" : "auto-built"
 }
