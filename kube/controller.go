@@ -43,7 +43,9 @@ type Reconciler[T any] interface {
 // resource. When a reconciler implements it, the framework adds a finalizer to
 // each object before the first Reconcile, calls Finalize when the object is
 // deleted, and removes the finalizer once Finalize returns nil. Objects that
-// the deleted object owns are cleaned up without it.
+// the deleted object owns are cleaned up without it. After you remove
+// Finalize from a reconciler, pass RemovesFinalizer to For until no object
+// carries the finalizer.
 type Finalizer[T any] interface {
 	Finalize(ctx context.Context, obj *T) error
 }
@@ -70,6 +72,10 @@ type Controller interface {
 type declared struct {
 	ti         *typeInfo
 	reconciles bool
+	// finalizes is set when the reconciler has a Finalize method, or when
+	// objects can carry a finalizer that an earlier version of the program
+	// added.
+	finalizes bool
 	// webhooks is set when the controller serves admission or conversion
 	// webhooks.
 	webhooks bool
@@ -85,6 +91,7 @@ func (c *controller[T, P]) describe() (declared, error) {
 		return declared{}, err
 	}
 	d := declared{ti: ti, reconciles: true}
+	d.finalizes = c.fin != nil || c.opts.finalizes
 	_, validates := c.r.(Validator[T])
 	_, defaults := c.r.(Defaulter[T])
 	d.webhooks = validates || defaults
@@ -114,6 +121,7 @@ type options struct {
 	selector  string
 	resync    time.Duration
 	owns      []func() (*typeInfo, error)
+	finalizes bool
 	versions  []versionOption
 }
 
@@ -147,6 +155,15 @@ func Resync(d time.Duration) Option { return func(o *options) { o.resync = d } }
 func Owns[T any, P Resource[T]]() Option {
 	return func(o *options) { o.owns = append(o.owns, typeInfoFor[T, P]) }
 }
+
+// RemovesFinalizer declares that objects can carry the controller's
+// finalizer from an earlier version of the program, for example one whose
+// reconciler had a Finalize method. The framework removes a finalizer that
+// the controller no longer needs, which takes permission to patch the
+// object, so the generate command grants patch on the reconciled type for
+// this option. When no object carries the finalizer anymore, remove the
+// option.
+func RemovesFinalizer() Option { return func(o *options) { o.finalizes = true } }
 
 // For returns a controller that reconciles objects of type T with r.
 func For[T any, P Resource[T]](r Reconciler[T], opts ...Option) Controller {
@@ -715,8 +732,8 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		if err := c.cleanupOwned(ctx, parent, keep); err != nil {
 			return err
 		}
-		if err := c.setFinalizer(ctx, parent, false, ""); err != nil {
-			return fmt.Errorf("removing finalizer: %w", err)
+		if err := c.removeFinalizer(ctx, parent); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -863,6 +880,21 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 	return nil
 }
 
+// removeFinalizer removes the controller's finalizer from obj. The generate
+// command grants the permission that this takes only to controllers that
+// need it, so a denial names the option that grants it.
+func (c *controller[T, P]) removeFinalizer(ctx context.Context, obj *T) error {
+	err := c.setFinalizer(ctx, obj, false, "")
+	switch {
+	case err == nil:
+		return nil
+	case client.IsForbidden(err) && c.fin == nil && !c.opts.finalizes:
+		return fmt.Errorf("removing finalizer %s: %w; if an earlier version of the program added it, pass kube.RemovesFinalizer() to kube.For and run generate again", c.finalizer, err)
+	default:
+		return fmt.Errorf("removing finalizer: %w", err)
+	}
+}
+
 // finalize runs the Finalizer, deletes owned objects that garbage
 // collection can't, and removes the finalizer.
 func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T) (time.Duration, error) {
@@ -879,7 +911,7 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 		err = c.cleanupOwned(ctx, obj, nil)
 	}
 	if err == nil {
-		err = c.setFinalizer(ctx, obj, false, "")
+		err = c.removeFinalizer(ctx, obj)
 	}
 	c.m.tracker.forget(ref{c: &c.core, key: key})
 	if err != nil {

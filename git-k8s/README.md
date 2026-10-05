@@ -247,7 +247,12 @@ write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
 the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all.
+`GitBranch` objects at all. RBAC also keeps every check except `check-gotest`,
+which owns the Pods that run tests, from patching `GitBranch` objects.
+`generate` grants that permission to a check that owns objects, because it
+can't tell whether an owned object needs a finalizer on its owner. The second
+policy denies the annotation that kube adds with that finalizer, so a check
+can own only namespaced objects in the branch's namespace.
 
 The third keeps each check to its own Pods. `generate` lets a check that
 declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
@@ -307,9 +312,9 @@ audience. A service that accepts those tokens must check which Pod a token is
 bound to, and that the Pod has the label of the check that the service
 trusts.
 
-Without the policies, none of that holds, so the repositories controller
-sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`
-until all three policies are installed with bindings that deny.
+Without the policies, most of that doesn't hold, so the repositories
+controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
+`False` until all three policies are installed with bindings that deny.
 
 Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
 must opt in to test Pods and enforce the `restricted` Pod Security Standard,

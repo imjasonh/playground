@@ -168,6 +168,16 @@ object is deleted and removes the finalizer when `Finalize` returns `nil`. Use
 it to clean up outside Kubernetes, as [`examples/dnsrecord`](examples/dnsrecord/main.go)
 does for DNS records.
 
+When you remove `Finalize` from a reconciler, objects keep the finalizer that
+an earlier version of the program added, such as
+`kube.imjasonh.github.io/dnsrecord`, and the framework removes it the next
+time that it reconciles each object. Removing a finalizer takes permission to
+patch the reconciled type, which `generate` grants only to controllers that
+need it. Until no object has the finalizer, pass `kube.RemovesFinalizer()` to
+`kube.For`. Without the option, the program might not have that permission.
+Then a deleted object stays, and the reconcile fails with an error that names
+the option.
+
 ## Types
 
 Any struct that embeds `kube.Object` is a Kubernetes type. Its `kube` struct
@@ -521,8 +531,14 @@ way, its service account needs these permissions:
 - `create`, `patch`, and `delete` on every type that it declares with `Own`,
   `Apply`, or `Delete`. Server-side apply needs `create` for objects that
   don't exist yet.
-- `patch` on the reconciled type and its `status` subresource, for finalizers
-  and status.
+- `patch` on the reconciled type's `status` subresource, for status.
+- `patch` on the reconciled type, for its finalizer and for migrations, when
+  any of the following is true:
+  - The reconciler has a `Finalize` method.
+  - The controller has `kube.RemovesFinalizer()`.
+  - The type has more than one version.
+  - The program declares owned objects with `Own` or `kube.Owns`, and the
+    type's `kube` tag doesn't say `scope=Cluster`.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
@@ -633,8 +649,12 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `generate` follows the type parameters of generic functions to the types
   that the program calls them with. It can't follow the type parameter of a
   generic type, as in a method of `reconciler[T]`, or a type argument that
-  contains a type parameter, such as `Item[T]`. For those calls it prints a
-  warning, and you add the permissions yourself.
+  contains a type parameter, such as `Item[T]`. When it can't tell which
+  types a call passes to a `kube` function, directly or through the
+  program's own generic helpers, it prints a warning at that call, and you
+  add the permissions for those types yourself. Such a call that reaches
+  `kube.Own` still counts as declaring owned objects, so the program gets
+  `patch` on the namespaced types that it reconciles.
 - `generate` needs the program's source and the `go` command, so the copy of
   the program in the image can't run it. The image holds only the program.
   To ship other files, embed them with `embed`.
@@ -653,6 +673,10 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted to the controller, so its finalizer is never
   removed.
+- `generate` can't tell which namespace an owned object goes in, so a program
+  that declares owned objects gets `patch` on every namespaced type that it
+  reconciles, even when each owned object is in its owner's namespace and
+  needs no finalizer.
 
 ## Layout
 

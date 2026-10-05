@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -453,6 +454,74 @@ func TestReconcilesOnlyForChangesTheTypeDeclares(t *testing.T) {
 	e2e.Eventually(t, 5*time.Second, func() error {
 		if r.calls.Load() == base {
 			return errors.New("a change to data didn't reconcile the widget")
+		}
+		return nil
+	})
+}
+
+// unfinalized reconciles ConfigMaps without a Finalize method.
+type unfinalized struct{}
+
+func (unfinalized) Reconcile(context.Context, *settings) error { return nil }
+
+// TestStaleFinalizerNeedsPatch runs a controller as a service account that
+// can't patch the type that it reconciles, which is what generate grants a
+// controller without Finalize or kube.RemovesFinalizer. The finalizer that
+// an earlier version of the program added stays, and the error names the
+// option. Once the account can patch, the controller removes the finalizer.
+func TestStaleFinalizerNeedsPatch(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	const finalizer = "kube.imjasonh.github.io/unfinalized"
+	role := func(verbs ...string) {
+		t.Helper()
+		if err := c.Apply(t.Context(), client.Path("rbac.authorization.k8s.io/v1", "roles", ns, "unfinalized"), "e2e", true, map[string]any{
+			"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role", "metadata": map[string]any{"name": "unfinalized"},
+			"rules": []any{map[string]any{"apiGroups": []string{""}, "resources": []string{"configmaps"}, "verbs": verbs}},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	role("get", "list", "watch")
+	for path, obj := range map[string]map[string]any{
+		client.Path("v1", "serviceaccounts", ns, "unfinalized"): {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": map[string]any{"name": "unfinalized"}},
+		client.Path("rbac.authorization.k8s.io/v1", "rolebindings", ns, "unfinalized"): {
+			"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding", "metadata": map[string]any{"name": "unfinalized"},
+			"roleRef":  map[string]any{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "unfinalized"},
+			"subjects": []any{map[string]any{"kind": "ServiceAccount", "name": "unfinalized", "namespace": ns}},
+		},
+		client.Path("v1", "configmaps", ns, "old"): {"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "old", "finalizers": []string{finalizer}}},
+	} {
+		if err := c.Apply(t.Context(), path, "e2e", true, obj, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := &syncBuffer{}
+	e2e.Run(t, &kube.Manager{
+		Name: "unfinalized-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "unfinalized"), Namespace: ns,
+		Logger: slog.New(slog.NewTextHandler(out, nil)),
+	}, kube.For[settings](unfinalized{}, kube.Named("unfinalized")))
+	finalizers := func() ([]string, error) {
+		var cm settings
+		err := c.Get(t.Context(), client.Path("v1", "configmaps", ns, "old"), &cm)
+		return cm.Finalizers, err
+	}
+
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if !strings.Contains(out.String(), "pass kube.RemovesFinalizer() to kube.For") {
+			return fmt.Errorf("no error names kube.RemovesFinalizer; output:\n%s", out.String())
+		}
+		return nil
+	})
+	if f, err := finalizers(); err != nil || len(f) != 1 || f[0] != finalizer {
+		t.Fatalf("finalizers = %v, %v; want %s, which the controller can't remove", f, err, finalizer)
+	}
+
+	t.Log("Once the service account can patch ConfigMaps, the controller removes the finalizer.")
+	role("get", "list", "watch", "patch")
+	e2e.Eventually(t, time.Minute, func() error {
+		if f, err := finalizers(); err != nil || len(f) > 0 {
+			return fmt.Errorf("finalizers = %v, %v", f, err)
 		}
 		return nil
 	})
