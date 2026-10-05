@@ -466,7 +466,7 @@ func TestLeavingTheFront(t *testing.T) {
 		queue: []string{"c/x"},
 	}, {
 		name:  "the gate reads an output that isn't set yet",
-		when:  `checks.base.passed && (checks.gofmt.passed || checks.approval.outputs.by != "")`,
+		when:  `checks.base.passed && (checks.gofmt.passed || checks.approval.outputs.approver == "alice")`,
 		base:  gitk8s.Passed,
 		gofmt: gitk8s.Failed,
 		queue: []string{"c/x"},
