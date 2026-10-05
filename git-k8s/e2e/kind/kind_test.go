@@ -2,7 +2,8 @@
 // generate, and checks that branches are fixed, gated, and merged.
 //
 // Set GIT_K8S_KIND_E2E=1 to run it; CI sets it when git-k8s changes. It
-// needs Docker, kubectl, git, and curl, and installs kind if it's missing.
+// needs Docker, kubectl, git, ssh-keygen, and curl, and installs kind if
+// it's missing.
 package kind_test
 
 import (

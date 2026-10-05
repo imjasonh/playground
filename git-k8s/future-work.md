@@ -158,16 +158,34 @@ Questions to settle first:
   made the commit set, so the check needs verified commit signatures, and a
   way to map each signer to the Kubernetes username in `approved-by`.
 
-## Sign commits and respect protected branches
+## Sign commits in the mirror
 
-Fix commits, merges of a parent into a branch, and landings aren't signed. A
-forge that requires signed commits rejects them. With the mirror, every
-change reaches GitHub as a push from the mirror's Octo STS identity, so
-GitHub's branch rules have to let that identity push to protected branches.
+`check-base`, `check-gofmt`, `check-review`, `check-conflicts`, and the
+merge controller sign their commits with a key that they read from a
+Secret, so a compromised check can sign anything with it. With the
+[mirror](#run-an-in-cluster-git-mirror), the mirror can hold the key instead
+and sign for them, for example through a program that git's
+`gpg.ssh.program` setting runs, so that no check reads the Secret.
 
-The proposed fix is for the mirror to sign the commits that git-k8s makes,
-with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
-through Sigstore, or with an SSH key that only the mirror holds.
+With the mirror, every change reaches GitHub as a push from the mirror. For
+a repository that gets [tokens from Octo STS](README.md#github-repositories),
+the mirror pushes as Octo STS's GitHub App. Branch protection rules and
+rulesets have to let that App push to protected branches without a pull
+request, by adding it to their bypass lists. An App can't have a signing
+key, so the commits stay signed with a bot account's key, with that
+account's email address as their committer.
+
+## Sign commits with gitsign
+
+Keyless signing with [gitsign](https://github.com/sigstore/gitsign) leaves
+no long-lived key to protect, but git-k8s doesn't support it, for the
+reasons in [Sign commits](README.md#sign-commits). Supporting it needs:
+
+- Verification of Sigstore signatures on GitHub, so that a rule that
+  requires signed commits accepts the commits that gitsign signs.
+- A private Sigstore for the end-to-end test: a Fulcio certificate
+  authority that accepts tokens from the kind cluster's service account
+  issuer, and a Rekor transparency log.
 
 ## Run more agents
 
