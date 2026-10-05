@@ -168,6 +168,10 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	if o.stdout != nil {
 		cmd.Stdout = o.stdout
 	}
+	// Killing the command leaves its subprocesses running, such as a remote
+	// helper that waits on a server, and they hold the command's stdout and
+	// stderr open. Without WaitDelay, Run waits for them to exit.
+	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 	res := result{stdout: stdout.Bytes(), stderr: strings.TrimSpace(stderr.String())}
 	var exit *exec.ExitError

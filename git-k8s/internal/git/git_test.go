@@ -1,17 +1,21 @@
 package git_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
@@ -176,6 +180,32 @@ func serveRefs(t *testing.T, sha string, refs ...string) string {
 		}
 	}()
 	return "git://" + l.Addr().String() + "/app.git"
+}
+
+// Killing git leaves its remote helper running, holding git's stderr, until
+// the server responds.
+func TestLsRemoteReturnsWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		select {
+		case <-release:
+		case <-time.After(20 * time.Second):
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	start := time.Now()
+	_, err := (&git.Git{}).LsRemote(ctx, git.Remote{URL: srv.URL + "/app.git"})
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("ls-remote returned %v after it started", d.Round(time.Second))
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want %v", err, context.Canceled)
+	}
 }
 
 func TestFetchMergePush(t *testing.T) {
