@@ -690,7 +690,9 @@ protection rules and rulesets apply to those pushes:
   **Restrict who can push to matching branches** if that's on.
 - **Require status checks to pass** rejects a landing unless the branch's
   head already passed those checks, for example in CI that runs on the
-  branch. git-k8s doesn't report its own results to GitHub yet.
+  branch. The checks can include git-k8s's own [check runs](#check-runs).
+  git-k8s doesn't wait for those to show a branch's results before it lands
+  the branch, so GitHub can refuse a landing at first, and git-k8s retries it.
 - **Require signed commits** refuses a landing unless GitHub verifies the
   signature of every commit that it adds to the parent, so people have to
   sign with a key on their GitHub account and use a committer email that
