@@ -43,8 +43,8 @@ EOF
 
   worker-build --release >/dev/null
 
-  npx -y wrangler@4.107.0 d1 migrations apply y --local --persist-to "$TMP/state" >/dev/null
-  npx -y wrangler@4.107.0 dev --port "$PORT" --local --persist-to "$TMP/state" \
+  npx -y wrangler@4.147.0 d1 migrations apply y --local --persist-to "$TMP/state" >/dev/null
+  npx -y wrangler@4.147.0 dev --port "$PORT" --local --persist-to "$TMP/state" \
     >"$TMP/wrangler.log" 2>&1 &
   WRANGLER_PID=$!
   Y_URL="http://127.0.0.1:${PORT}"

@@ -69,8 +69,11 @@ jobs:
           workingDirectory: ${{ matrix.app }}
           # wrangler-action v4 defaults to latest wrangler v4; pin a known
           # version so deploys stay reproducible. Bump this periodically (the
-          # dependency-update bot doesn't manage it).
-          wranglerVersion: "4.107.0"
+          # dependency-update bot doesn't manage it). Keep it at 4.134.0 or
+          # later. Older versions drop `[observability.issues]` from
+          # wrangler.toml, and a deploy without that key turns Workers Issues
+          # off.
+          wranglerVersion: "4.147.0"
           # Before deploying, create-or-get the KV namespaces this Worker needs
           # (rewriting the placeholder ids in wrangler.toml with the real ones),
           # create any R2 buckets it declares that don't exist yet, and apply
