@@ -610,11 +610,11 @@ subjects:
     name: rogue
 EOF
 rogue_token="$(k -n "${NS}" create token rogue)"
-rejected() { [[ "$(patch_status "${result}" "$1")" == 422 ]] && grep -q "$2" "${WORKDIR}/patch.json"; }
-eventually 30 rejected "${token}" "the gofmt check can't write GitBranch status"
+status_rejected() { [[ "$(patch_status "${result}" "$1")" == 422 ]] && grep -q "$2" "${WORKDIR}/patch.json"; }
+eventually 30 status_rejected "${token}" "the gofmt check can't write GitBranch status"
 cat "${WORKDIR}/patch.json"
 echo
-eventually 30 rejected "${rogue_token}" "system:serviceaccount:${NS}:rogue isn't the core program's service account"
+eventually 30 status_rejected "${rogue_token}" "system:serviceaccount:${NS}:rogue isn't the core program's service account"
 cat "${WORKDIR}/patch.json"
 echo
 core_token="$(k -n git-k8s create token git-k8s)"
