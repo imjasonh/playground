@@ -899,6 +899,17 @@ the rules for a reconciled type with more than one version, because the
 program migrates its stored objects in every namespace, and for a type whose
 `kube` tag doesn't say `scope=Namespaced` or `scope=Cluster`.
 
+A type whose `kube` tag says `local`, such as
+`kube:"apiVersion=v1,kind=ConfigMap,local"`, is one that the program reads and
+writes only in its own namespace, for example to keep state there. Its rules
+go in the Role in the program's namespace, wherever the program watches. Use
+a local type only with `Fetch`, `Apply`, and `Delete`. `Get`, `List`, and
+`Own` read caches that watch every namespace that the program watches, so they
+fail the reconcile with a local type, and `generate` rejects a controller that
+reconciles or owns one. Give each local object the program's namespace:
+`Fetch` and `Apply` fail the reconcile when it's empty, rather than use the
+namespace of the object being reconciled, which the Role doesn't cover.
+
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-registry` | Required | Registry, and optionally a repository prefix, to push to |

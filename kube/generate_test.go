@@ -362,6 +362,8 @@ func TestGrantsFor(t *testing.T) {
 		{"a namespaced type in a program that watches every namespace", &typeInfo{scope: "Namespaced"}, false, p.cluster},
 		{"a cluster-scoped type", &typeInfo{scope: "Cluster"}, true, p.cluster},
 		{"a type whose scope discovery decides", &typeInfo{}, true, p.cluster},
+		{"a local type in a program that watches one namespace", &typeInfo{scope: "Namespaced", local: true}, true, p.local},
+		{"a local type in a program that watches every namespace", &typeInfo{scope: "Namespaced", local: true}, false, p.local},
 	} {
 		if got := p.grantsFor(tc.ti, tc.watching); !same(got, tc.want) {
 			t.Errorf("%s: got the wrong grants", tc.name)
@@ -701,5 +703,16 @@ func TestGenerateArguments(t *testing.T) {
 	}
 	if p, err := v1.ParsePlatform("linux/arm/v7"); err != nil || !reflect.DeepEqual(buildEnv(*p)[len(buildEnv(*p))-1], "GOARM=7") {
 		t.Errorf("buildEnv(linux/arm/v7) doesn't set GOARM: %v", err)
+	}
+}
+
+func TestDescribeLocal(t *testing.T) {
+	for name, c := range map[string]Controller{
+		"reconciles": For[localConfigMap](nop[localConfigMap]{}),
+		"owns":       For[gizmo](gizmoReconciler{}, Owns[localConfigMap]()),
+	} {
+		if _, err := c.describe(); err == nil || !strings.Contains(err.Error(), "is local") {
+			t.Errorf("a controller that %s a local type: describe err = %v", name, err)
+		}
 	}
 }
