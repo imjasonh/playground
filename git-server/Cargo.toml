@@ -44,17 +44,14 @@ tiny_http = "0.12"
 # all business logic stays testable on the host.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "0.8"
-# Wall clock for request metrics (Date.now); version family is pinned by the
-# wasm-bindgen pin below.
+# Wall clock for request metrics (Date.now).
 js-sys = "0.3"
 # The `#[durable_object]` macro expands to code referencing these two crates
 # directly, so they must be declared even though `worker` re-exports them.
 wasm-bindgen-futures = "0.4"
 serde-wasm-bindgen = "0.6"
-# Deploy pin: worker-build 0.8.x is version-locked with worker 0.8.x and
-# bundles wasm-bindgen CLI 0.2.125. The library schema must match that CLI
-# exactly — bump this in lock-step with worker-build in scripts/worker-build.sh.
-wasm-bindgen = "=0.2.125"
+# The `#[wasm_bindgen]` tracing bindings in src/trace.rs use this directly.
+wasm-bindgen = "0.2.129"
 
 [dev-dependencies]
 tempfile = "3"
@@ -81,10 +78,10 @@ harness = false
 [profile.release]
 opt-level = "s"
 lto = true
-# worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
-# custom section (for `reference-types` / externref catch wrappers).
-# `strip = true` (= "symbols") drops that section and fails bindgen with
-# "externref table required for catch wrappers" (workers-rs#1014).
+# wasm-bindgen needs the wasm `target_features` custom section (for
+# `reference-types` / externref catch wrappers). `strip = true` (= "symbols")
+# drops that section and fails bindgen with "externref table required for
+# catch wrappers" (workers-rs#1014).
 strip = "debuginfo"
 
 # Benchmarks want optimized code even in `cargo bench` default profile.

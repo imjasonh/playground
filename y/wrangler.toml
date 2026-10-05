@@ -14,12 +14,13 @@ compatibility_date = "2025-04-01"
 # Build the wasm Worker from Rust. `worker-build` wraps `cargo build
 # --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
 #
-# worker-build is major-version-locked with `worker` (0.8.x ↔ 0.8.x) and bundles
-# wasm-bindgen CLI 0.2.125, which must match the library pin in Cargo.toml.
-# Build the *tool* with stable — its deps need a recent Cargo — while
-# worker-build compiles this crate with rust-toolchain.toml.
+# worker-build releases in lockstep with the `worker` crate, so install the
+# version that matches the locked `worker` (`cargo pkgid worker`). It reads
+# the wasm-bindgen version from Cargo.lock and downloads the matching CLI.
+# Build the *tool* with stable, while worker-build compiles this crate with
+# rust-toolchain.toml.
 [build]
-command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
+command = "cargo +stable install -q worker-build@$(cargo pkgid worker | cut -d@ -f2) && worker-build --release"
 
 # Default vars; override per-env as needed.
 [vars]

@@ -239,10 +239,8 @@ fn parse_get_image(path: &str) -> Option<(String, &'static str)> {
     }
     let (stem, ext) = if let Some(s) = rest.strip_suffix(".bin") {
         (s, "bin")
-    } else if let Some(s) = rest.strip_suffix(".png") {
-        (s, "png")
     } else {
-        return None;
+        (rest.strip_suffix(".png")?, "png")
     };
     let name = api::validate_name(stem)?;
     Some((name, ext))

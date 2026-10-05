@@ -32,7 +32,7 @@ impl Default for PanelSpec {
 
 impl PanelSpec {
     pub fn new(width: u32, height: u32) -> Result<Self, PanelError> {
-        if width == 0 || height == 0 || width % 8 != 0 {
+        if width == 0 || height == 0 || !width.is_multiple_of(8) {
             return Err(PanelError::BadSpec);
         }
         Ok(Self { width, height })

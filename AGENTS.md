@@ -342,7 +342,8 @@ Go is the only ecosystem here with a stable, first-class data-race detector (`go
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
-Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
+Worker apps pin Rust 1.99, and their `[build]` command installs the
+`worker-build` release that matches the locked `worker` crate.
 
 **ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
 `test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
