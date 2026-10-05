@@ -205,6 +205,9 @@ g commit -qm "Initial commit"
 g push -q "${HOST_URL}/app.git" HEAD:main
 
 k create namespace "${NS}"
+# The gotest check runs Pods only in namespaces that opt in and enforce Pod
+# Security.
+k label namespace "${NS}" git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
 k -n "${NS}" create secret generic app-creds --type=kubernetes.io/basic-auth \
   --from-literal=username=git-k8s --from-literal=password="${PASSWORD}"
 k apply -f - <<EOF
@@ -246,15 +249,44 @@ eventually 60 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
+echo "::group::The API server rejects a URL that git could read as an option"
+url_repository() {
+  cat <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: url-check
+  namespace: ${NS}
+spec:
+  url: '$1'
+EOF
+}
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
+  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+  if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
+    echo "the API server accepted ${url}" >&2
+    exit 1
+  fi
+  cat "${WORKDIR}/apply.err"
+  grep -q 'spec.url' "${WORKDIR}/apply.err"
+done
+url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
+echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
+echo "::endgroup::"
+
 # remote_head prints a branch's commit in repository $2, or app.
-remote_head() { git ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
+remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
     -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
-branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
+# A failed ls-remote prints nothing too, so it must not count as gone.
+branch_gone() {
+  local head
+  head="$(remote_head "$1")" && [[ -z "${head}" && -z "$(branch_object "$1")" ]]
+}
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
@@ -268,10 +300,27 @@ formatted='package util
 func Add(a, b int) int { return a + b }'
 formatted_on_main() { fetch_main && [[ "$(g show FETCH_HEAD:util/add.go 2>/dev/null)" == "${formatted}" ]]; }
 eventually 120 formatted_on_main
-g log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
+# grep -q would exit at the first match and fail the pipeline with SIGPIPE.
+g log -1 --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: gofmt' >/dev/null
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
 echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
+echo "::endgroup::"
+
+echo "::group::The fix, the landing, and the deletion are events"
+# has_event succeeds when controller $1 recorded an event with reason $2 and
+# message $3, and prints the message.
+has_event() {
+  k -n "${NS}" get events --field-selector "reportingComponent=$1,reason=$2" \
+    -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | grep -Fx -- "$3"
+}
+fmt_fix="$(g rev-parse FETCH_HEAD)"
+fmt_from="$(g rev-parse FETCH_HEAD~2)"
+eventually 30 has_event check-gofmt PushedFix "pushed ${fmt_fix:0:12} to c/fmt: 1 of 2 Go files need gofmt: util/add.go"
+eventually 30 has_event merge Landed "fast-forwarded main from ${fmt_from:0:12} to c/fmt at ${fmt_fix:0:12}"
+eventually 30 has_event merge DeletedBranch "deleted c/fmt at ${fmt_fix:0:12} after it landed on main"
+k -n "${NS}" get events --sort-by=.metadata.creationTimestamp
+echo "kubectl get events lists the gofmt check's fix and the merge controller's landing and deletion of c/fmt."
 echo "::endgroup::"
 
 echo "::group::A risky branch waits for approval"
@@ -320,7 +369,7 @@ both_landed() {
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
 eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: base'
+g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
 g log --graph --oneline FETCH_HEAD
 echo "One branch landed, the base check merged main into the other, and it landed too."
 echo "::endgroup::"
@@ -365,17 +414,27 @@ patch_branch() {
 }
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
 core_token="$(k -n git-k8s create token git-k8s)"
-for bearer in "${token}" "${core_token}"; do
+# check-gotest owns Pods, so generate lets it patch GitBranch objects, and
+# only the policy stops it.
+gotest_token="$(k -n check-gotest create token check-gotest)"
+for bearer in "${gotest_token}" "${core_token}"; do
   code="$(patch_branch "${bearer}" "${approve}")"
   cat "${WORKDIR}/patch.json"
   echo
   [[ "${code}" == 422 ]]
   grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
 done
-code="$(patch_branch "${token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
-grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
+grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
+# check-gofmt owns nothing, so generate doesn't let it patch GitBranch
+# objects at all.
+code="$(patch_branch "${token}" "${approve}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 403 ]]
+grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
+echo "Neither a check nor the core controller can approve a branch, a check can't change one, and check-gofmt can't patch one."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
@@ -432,7 +491,7 @@ broken_failed() { [[ -n "$(branch_object c/broken tested)" && "$(gotest c/broken
 eventually 300 broken_failed
 gotest c/broken message
 echo
-gotest c/broken message | grep -q -- '--- FAIL: TestAdd'
+gotest c/broken message | grep -- '--- FAIL: TestAdd' >/dev/null
 [[ "$(remote_head main tested)" == "${tested_main}" ]]
 # kube deletes a test Pod once the check stops declaring it.
 no_test_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
@@ -532,6 +591,85 @@ burst_gone() {
 eventually 60 burst_gone
 eventually 60 no_test_pods
 echo "Four branches ran one at a time, in the order that they started waiting."
+echo "::endgroup::"
+
+echo "::group::A check can change only its own Pods"
+gotest_token="$(k -n check-gotest create token check-gotest)"
+# pod_request sends request $1 for the Pods path $2 under
+# /api/v1/namespaces/, with body $3, as check-gotest, without changing
+# anything.
+pod_request() {
+  local type=application/json
+  [[ "$1" == PATCH ]] && type=application/merge-patch+json
+  curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/pod.json" -w '%{http_code}' -X "$1" \
+    -H "Authorization: Bearer ${gotest_token}" -H "Content-Type: ${type}" \
+    --data "${3:-}" "${server}/api/v1/namespaces/$2?dryRun=All"
+}
+# gotest_pod prints a Pod named $3, or gotest-e2e if $3 is empty, that meets
+# the restricted Pod Security Standard, with the gotest check's label, that
+# runs as service account $1 on node $2, or on the node that the scheduler
+# picks if $2 is empty.
+gotest_pod() {
+  cat <<EOF
+{"apiVersion": "v1", "kind": "Pod",
+ "metadata": {"name": "${3:-gotest-e2e}", "labels": {"kube.imjasonh.github.io/controller": "check-gotest"}},
+ "spec": {"serviceAccountName": "$1", "nodeName": "${2:-}", "restartPolicy": "Never", "automountServiceAccountToken": false,
+  "securityContext": {"runAsNonRoot": true, "runAsUser": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
+  "containers": [{"name": "test", "image": "${GO_IMAGE}", "command": ["go", "version"],
+   "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}
+EOF
+}
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default)")"
+[[ "${code}" == 201 ]]
+code="$(pod_request POST check-gofmt/pods "$(gotest_pod check-gofmt)")"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can't change Pods in the namespaces of git-k8s programs" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod rogue)")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check's Pods must run as their namespace's default service account" "${WORKDIR}/pod.json"
+code="$(pod_request POST default/pods "$(gotest_pod default)")"
+[[ "${code}" == 422 ]]
+grep -q "can't create or change Pods in namespace default, which doesn't have the label git-k8s.imjasonh.com/check-pods=true" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default "${CLUSTER}-control-plane")")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can't assign its Pods to a node" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default "" review-e2e)")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check's new Pods need a name of the form gotest-ID, where ID has no hyphens" "${WORKDIR}/pod.json"
+k -n "${NS}" apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: other
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: other
+      image: ${GO_IMAGE}
+      command: [go, version]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+EOF
+code="$(pod_request PATCH "${NS}/pods/other" '{"metadata":{"labels":{"kube.imjasonh.github.io/controller":"check-gotest"}}}')"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
+code="$(pod_request DELETE "${NS}/pods/other")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
+k -n "${NS}" delete pod other
+echo "check-gotest can't run Pods in a program's namespace, as another service account, in a namespace that doesn't opt in, on a node that it names, or under another check's Pod name, and can't change or delete a Pod that it didn't create."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"

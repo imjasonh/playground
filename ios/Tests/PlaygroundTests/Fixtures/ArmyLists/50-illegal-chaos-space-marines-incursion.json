@@ -1,36 +1,43 @@
 {
-  "expectedLegal": false,
-  "notes": "unit.attachNoTargets",
-  "list": {
-    "id": "03CA1952-06A3-48BF-8C7D-D0D96B2EA022",
-    "name": "Illegal empty leaderTo attach",
-    "catalogVersion": "11e-1",
-    "factionID": "chaos-space-marines",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : false,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "chaos-space-marines--chaos-cult"
     ],
-    "units": [
+    "factionID" : "chaos-space-marines",
+    "id" : "98474A3D-E5E1-4C7D-B9FD-0A6BE89D46D0",
+    "name" : "Illegal empty leaderTo attach",
+    "notes" : "",
+    "units" : [
       {
-        "id": "E558ECF1-0801-4F49-B403-DE184F40BA9E",
-        "datasheetID": "chaos-space-marines--legionaries",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--legionaries",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "CCBC3CDA-4BB7-45C7-9D63-12F1DB86EBD3",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5E871E2A-5422-4D61-966F-A2F1283B74B8",
-        "datasheetID": "chaos-space-marines--master-of-executions",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": "E558ECF1-0801-4F49-B403-DE184F40BA9E"
+        "attachedToUnitID" : "CCBC3CDA-4BB7-45C7-9D63-12F1DB86EBD3",
+        "datasheetID" : "chaos-space-marines--master-of-executions",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DA30673B-74C8-495A-93BC-41C9C87990E4",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "5E871E2A-5422-4D61-966F-A2F1283B74B8",
-    "notes": "",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "DA30673B-74C8-495A-93BC-41C9C87990E4"
+  },
+  "notes" : "unit.attachNoTargets"
 }

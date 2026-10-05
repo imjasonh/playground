@@ -27,6 +27,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -119,7 +120,12 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	}
 	pod := kube.Own(ctx, testPod(in, name))
 	if pod == nil {
-		return running("started Pod %s", name), nil
+		// kube creates the Pod after run returns, and retries with backoff
+		// when it can't, for example because an admission policy denies it.
+		if err := kube.LastError(ctx); err != nil {
+			return running("starting Pod %s; the last try failed: %v", name, err), nil
+		}
+		return running("starting Pod %s", name), nil
 	}
 	switch pod.Status.Phase {
 	case "Succeeded":
@@ -232,7 +238,9 @@ func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 	return kube.Key{Namespace: b.Namespace, Name: pod}, since, true
 }
 
-// podName names the Pod for one attempt at one head of a branch.
+// podName names the Pod for one attempt at one head of a branch. The check
+// Pod policy in config/policy.yaml denies a new Pod unless its name is
+// gotest-ID, where ID has no hyphens.
 func podName(branch, head string, attempt int) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", branch, head, attempt)))
 	return "gotest-" + hex.EncodeToString(sum[:8])
@@ -268,7 +276,7 @@ cd /src/repo
 if [ -n "${GIT_PASSWORD:-}" ]; then
   git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
 fi
-git fetch -q --depth=1 "$URL" "refs/heads/$BRANCH"
+git fetch -q --depth=1 --end-of-options "$URL" "refs/heads/$BRANCH"
 if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
@@ -292,6 +300,7 @@ func testPod(in *checks.Input, name string) *Pod {
 		{Name: "HEAD", Value: in.Spec.Head},
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
 	}
 	if ref := in.Repository.Spec.SecretRef; ref != nil {
 		fetchEnv = append(fetchEnv,

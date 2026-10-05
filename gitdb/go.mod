@@ -8,7 +8,7 @@ go 1.26.0
 replace github.com/values-conflict/go-sqlite-fdw => github.com/values-conflict/go-sqlite-fdw v0.0.0-20260630071241-65cea68abcec
 
 require (
-	github.com/go-git/go-git/v5 v5.19.2
+	github.com/go-git/go-git/v5 v5.19.3
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
 	github.com/values-conflict/go-sqlite-fdw/modernc v0.0.0-20260630071241-65cea68abcec
 )
