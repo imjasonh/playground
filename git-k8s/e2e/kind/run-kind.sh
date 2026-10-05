@@ -1500,7 +1500,7 @@ CONFLICTED="${WORKDIR}/conflicted"
 mkdir "${CONFLICTED}"
 cf() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=http:https:git:ssh \
-    git -C "${CONFLICTED}" -c user.name=e2e -c user.email=e2e@example.com "$@"
+    git -C "${CONFLICTED}" -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 cf init -q -b main
 printf 'example.com/a v1.0.0 h1:a=\n' >"${CONFLICTED}/go.sum"
@@ -1518,6 +1518,8 @@ spec:
   url: ${CLUSTER_URL}/conflicted.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -1553,8 +1555,8 @@ landed_with() {
     [[ "$(cf show --end-of-options FETCH_HEAD:"$2")" == "$3" ]]
 }
 # merged_main checks that main's head, in FETCH_HEAD, is the conflicts
-# check's merge of the main that race_main pushed into the branch $1. It
-# saves the message instead of piping it to grep, because grep -q can exit
+# check's signed merge of the main that race_main pushed into the branch $1.
+# It saves the message instead of piping it to grep, because grep -q can exit
 # before git log finishes writing, and pipefail then fails on git's SIGPIPE.
 merged_main() {
   local message
@@ -1562,19 +1564,20 @@ merged_main() {
   echo "${message}"
   grep -qx 'Git-K8s-Fixer: conflicts' <<<"${message}"
   [[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "$(cf rev-parse --verify --end-of-options "$1") $(cf rev-parse --verify --end-of-options main)" ]]
+  signed_by_git_k8s FETCH_HEAD cf
 }
 
 race_main c/sum go.sum 'example.com/a v1.0.0 h1:a=\n' 'example.com/b v1.0.0 h1:b=' 'example.com/c v1.0.0 h1:c='
 eventually 300 landed_with c/sum go.sum "$(printf 'example.com/a v1.0.0 h1:a=\nexample.com/b v1.0.0 h1:b=\nexample.com/c v1.0.0 h1:c=')"
 merged_main c/sum
-echo "Git merged the go.sum conflict with its union driver, and c/sum landed."
+echo "Git merged the go.sum conflict with its union driver, the check signed the merge, and c/sum landed."
 
 cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds this line.'
 eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
 merged_main c/text
 eventually 60 no_agent_pods
-echo "The agent resolved the notes.txt conflict, and c/text landed."
+echo "The agent resolved the notes.txt conflict, the check signed its merge, and c/text landed."
 
 cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'
