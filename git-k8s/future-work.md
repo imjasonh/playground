@@ -356,10 +356,3 @@ Questions to settle first:
   often pulled within days, so a delay keeps most of them out.
 - What happens to a branch that hasn't landed when newer versions come out.
   The controller could push the newer versions to the same branch.
-
-## kube changes that git-k8s would use
-
-These belong in kube, in their own pull requests:
-
-- The mirror and the results endpoint need a TokenReview client, and events
-  from the mirror need a way to queue a reconcile from outside one.
