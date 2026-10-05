@@ -29,6 +29,8 @@ ureq = "3"
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "0.8"
+# join! runs the two geocoding requests concurrently.
+futures = "0.3"
 
 [[example]]
 name = "envelope"
