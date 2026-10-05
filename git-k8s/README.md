@@ -841,18 +841,20 @@ creates the Pod within about 5.5 minutes after you label the namespace,
 without a new push.
 
 If `check-gotest` already runs, label the namespaces of its repositories
-before you apply `config/policy.yaml`. Otherwise the policy denies their test
-Pods until you do.
+before you upgrade the core program, which installs `config/policy.yaml`
+when it starts, or before you apply `config/policy.yaml` yourself.
+Otherwise the policy denies their test Pods until you do.
 
 ### Admission policies
 
 The core program installs `config/policy.yaml` when it starts, before it
-reconciles. It labels the policies, their bindings, and their ConfigMap with
-`kube.imjasonh.github.io/managed-by=git-k8s`, and applies them again each
-time it starts, but doesn't watch them. The policies name the core program's
-service account and keep their ConfigMap in the `git-k8s` namespace, so
-install the core program in that namespace, as `generate` does unless you set
-`-namespace`.
+reconciles. It labels the policies, their bindings, and the `git-k8s-checks`
+ConfigMap with `kube.imjasonh.github.io/managed-by=git-k8s`, and applies
+them again each time it starts, but doesn't watch them. The first two
+policies name the core program's service account and read the
+`git-k8s-checks` ConfigMap in the `git-k8s` namespace, and the third keeps
+checks' Pods out of that namespace. Install the core program there, as
+`generate` does unless you set `-namespace`.
 
 If a policy or its binding goes missing, `PoliciesInstalled` turns `False`,
 and its message says to restart the core program. Only the replica that
@@ -865,13 +867,15 @@ kubectl -n git-k8s rollout restart deployment/git-k8s
 
 `PoliciesInstalled` also turns `False` when no binding for a policy denies
 every request that the policy rejects. A binding can let some of them
-through when its `validationActions` doesn't hold `Deny`, when its
-`paramRef.parameterNotFoundAction` isn't `Deny`, when its `matchResources`
-sets resource rules, or when a selector in its `matchResources` sets
-`matchLabels` or `matchExpressions`. The message gives a `kubectl patch`
-command that makes the binding from `config/policy.yaml` deny all of them
-again, without a restart. For a binding that someone set to `Warn`, the
-command is:
+through when its `validationActions` doesn't hold `Deny`, when its policy
+reads parameters and its `paramRef.parameterNotFoundAction` isn't `Deny`,
+when its `matchResources` sets resource rules, or when a selector in its
+`matchResources` sets `matchLabels` or `matchExpressions`. The API server
+ignores the `paramRef` of a binding whose policy doesn't read parameters,
+such as the third and fourth policies, so the condition does too. The
+message gives a `kubectl patch` command that makes the binding from
+`config/policy.yaml` deny all of them again, without a restart. For a
+binding that someone set to `Warn`, the command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
@@ -904,20 +908,21 @@ the manifest sets, such as `failurePolicy` and the validations. Applying
 entry that someone adds under another name, because the API server merges
 that list by name. Remove such an entry with `kubectl edit`.
 
-`generate` grants the core program `create` and `patch` on the two policies,
-their bindings, and the `git-k8s-checks` ConfigMap, by name, and `get` on the
-ConfigMap, which the bindings name as their parameter. The API server lets
-only someone who can read every ConfigMap create a policy whose parameter is
-a ConfigMap, and it checks that as `get` on a ConfigMap named `*`. No
-ConfigMap can have that name, so `generate` also grants `get` on the name
-`*`, and the core program still can't read any other ConfigMap.
+`generate` grants the core program `create` and `patch` on each policy,
+binding, and ConfigMap in `config/policy.yaml`, by name, and `get` on the
+`git-k8s-checks` ConfigMap, which the bindings of the first two policies
+name as their parameter. The API server lets only someone who can read
+every ConfigMap create a policy whose parameter is a ConfigMap, and it
+checks that as `get` on a ConfigMap named `*`. No ConfigMap can have that
+name, so `generate` also grants `get` on the name `*`, and the core program
+still can't read any other ConfigMap.
 
 The core program can't create other admission policies, but a compromised
-core program could rewrite these policies, their bindings, and their
-ConfigMap, to weaken them or to deny other requests in the cluster. It
-already decides what lands, so it could land a branch without its checks
-anyway. To keep the policies out of its reach, for example in a cluster that
-manages admission policies separately, install it with
+core program could rewrite these policies, their bindings, and the
+`git-k8s-checks` ConfigMap, to weaken them or to deny other requests in the
+cluster. It already decides what lands, so it could land a branch without
+its checks anyway. To keep the policies out of its reach, for example in a
+cluster that manages admission policies separately, install it with
 `-install-policies=false`, which also leaves out the permissions, and apply
 `config/policy.yaml` yourself:
 
@@ -935,8 +940,8 @@ binding for the same policy denies.
 
 ### Check service accounts
 
-The policies recognize a check by the service account that makes each
-write. `generate` installs `check-NAME` with the service account
+The first two policies recognize a check by the service account that makes
+each write. `generate` installs `check-NAME` with the service account
 `check-NAME` in the namespace `check-NAME`, and the policies treat that
 service account as the check `NAME`. For a check that runs as another
 service account, such as a check installed with `generate -namespace=checks`,
@@ -957,6 +962,10 @@ restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
 service accounts write which results, so give that permission only to people
 who can install checks.
+
+The third policy doesn't read the ConfigMap, so an entry doesn't change
+which Pods a check can write. A check that owns Pods and runs as another
+service account needs a policy of its own.
 
 While the ConfigMap is missing, the API server denies every create and update
 of a `GitBranch` or its status, including people's, with a message that says

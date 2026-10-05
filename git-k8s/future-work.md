@@ -96,8 +96,8 @@ or on purpose, because it can't write results at all:
   `generate` doesn't grant them access, and they read their earlier results
   through a second view.
 - The core program finds the check for a token's service account the way the
-  policies do, from the `git-k8s-checks` ConfigMap or the `check-NAME`
-  convention.
+  check-results policy does, from the `git-k8s-checks` ConfigMap or the
+  `check-NAME` convention.
 - The admission policy stays as a backstop. People with write access to
   `GitBranch` status can still write a result, for example to unblock a
   branch whose check is broken.
