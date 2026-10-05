@@ -551,8 +551,10 @@ go test ./...
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
  if absent, so the key is stable across deploys). A Worker that ships
  `examples/gensecret.rs` gets a `JWT_SECRET` the same way. Every Worker must enable
- Workers Logs (including invocation logs) and Workers Traces in its
- `wrangler.toml` — the `wrangler_observability` pasta rule enforces this.
+ Workers Logs (including invocation logs), Workers Traces, and Workers Issues
+ in its `wrangler.toml` — the `wrangler_observability` pasta rule enforces this.
+ Issues needs Wrangler 4.134.0 or later, so keep the `wranglerVersion` pin in
+ `deploy-workers.yml` at or past that version.
  Head sampling is 100% at playground traffic; dial down before serious
  volume.
 

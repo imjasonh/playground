@@ -68,6 +68,9 @@ invocation_logs = true
 enabled = true
 head_sampling_rate = 1
 
+[observability.issues]
+enabled = true
+
 # Optional (uncomment on Business/Enterprise zones, whose request-body cap is
 # higher than the Free/Pro 100 MB): the server-side per-push size limit, in
 # bytes. Defaults to 100 MB to match the edge cap — see docs/design.md
