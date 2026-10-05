@@ -16,9 +16,9 @@ import (
 	"github.com/imjasonh/playground/kube/k8s"
 )
 
-// Doodad is reconciled only by TestEvents, which leaves Doodads behind. Other
+// Whatsit is reconciled only by TestEvents, which leaves Whatsits behind. Other
 // tests reconcile Widgets in every namespace and count their writes.
-type Doodad struct {
+type Whatsit struct {
 	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
 	Spec        struct {
 		Size int `json:"size"`
@@ -28,11 +28,11 @@ type Doodad struct {
 	} `json:"status,omitzero"`
 }
 
-// eventer records an event each time it reconciles or finalizes a Doodad.
-// It fails to reconcile a Doodad named failing, which the framework retries.
+// eventer records an event each time it reconciles or finalizes a Whatsit.
+// It fails to reconcile a Whatsit named failing, which the framework retries.
 type eventer struct{ failures atomic.Int64 }
 
-func (r *eventer) Reconcile(ctx context.Context, d *Doodad) error {
+func (r *eventer) Reconcile(ctx context.Context, d *Whatsit) error {
 	if d.Name == "failing" {
 		r.failures.Add(1)
 		kube.Eventf(ctx, kube.Warning, "TooBig", "size %d is too big", d.Spec.Size)
@@ -42,7 +42,7 @@ func (r *eventer) Reconcile(ctx context.Context, d *Doodad) error {
 	return nil
 }
 
-func (r *eventer) Finalize(ctx context.Context, d *Doodad) error {
+func (r *eventer) Finalize(ctx context.Context, d *Whatsit) error {
 	kube.Eventf(ctx, kube.Normal, "Finalized", "cleaned up after size %d", d.Spec.Size)
 	return nil
 }
@@ -118,7 +118,7 @@ func TestEvents(t *testing.T) {
 	m := &kube.Manager{Name: "events-e2e", Kubeconfig: env.Kubeconfig, Addr: addr, Logger: e2e.Logger(t)}
 	go func() {
 		done <- m.Run(ctx,
-			kube.For[Doodad](r, kube.Named("events"), kube.WatchNamespace(ns)),
+			kube.For[Whatsit](r, kube.Named("events"), kube.WatchNamespace(ns)),
 			kube.For[k8s.Namespace](namespaceEventer{}, kube.Named("namespaces"), kube.WatchSelector("events-e2e="+ns)))
 	}()
 	stop := sync.OnceFunc(func() {
@@ -128,20 +128,20 @@ func TestEvents(t *testing.T) {
 		}
 	})
 	defer stop()
-	doodadPath := func(name string) string { return client.Path(group+"/v1", "doodads", ns, name) }
+	whatsitPath := func(name string) string { return client.Path(group+"/v1", "whatsits", ns, name) }
 	create := func(name string, size int) {
 		e2e.Eventually(t, 30*time.Second, func() error {
-			return c.Create(t.Context(), doodadPath(""), map[string]any{
-				"apiVersion": group + "/v1", "kind": "Doodad", "metadata": map[string]any{"name": name}, "spec": map[string]any{"size": size},
+			return c.Create(t.Context(), whatsitPath(""), map[string]any{
+				"apiVersion": group + "/v1", "kind": "Whatsit", "metadata": map[string]any{"name": name}, "spec": map[string]any{"size": size},
 			}, nil)
 		})
 	}
 
-	t.Log("A reconcile's event becomes an events.k8s.io/v1 Event about the Doodad.")
+	t.Log("A reconcile's event becomes an events.k8s.io/v1 Event about the Whatsit.")
 	create("fine", 3)
 	e2e.Eventually(t, 10*time.Second, func() error {
-		var d Doodad
-		if err := e2e.Get(t.Context(), c, doodadPath("fine"), &d); err != nil {
+		var d Whatsit
+		if err := e2e.Get(t.Context(), c, whatsitPath("fine"), &d); err != nil {
 			return err
 		}
 		e, err := oneEvent(t, c, ns, "fine", "Sized")
@@ -149,7 +149,7 @@ func TestEvents(t *testing.T) {
 			return err
 		}
 		if e.Type != kube.Normal || e.Action != "Reconcile" || e.Note != "size is 3" || e.ReportingController != "events" || e.ReportingInstance != "events-"+host ||
-			e.Regarding.APIVersion != group+"/v1" || e.Regarding.Kind != "Doodad" || e.Regarding.Namespace != ns || e.Regarding.UID != d.UID {
+			e.Regarding.APIVersion != group+"/v1" || e.Regarding.Kind != "Whatsit" || e.Regarding.Namespace != ns || e.Regarding.UID != d.UID {
 			return fmt.Errorf("Event = %+v", e)
 		}
 		return nil
@@ -172,17 +172,17 @@ func TestEvents(t *testing.T) {
 	}
 	found := false
 	for _, e := range coreEvents.Items {
-		found = found || e.InvolvedObject.Kind == "Doodad" && e.InvolvedObject.Name == "fine" && e.Reason == "Sized" && e.Message == "size is 3" && e.ReportingComponent == "events"
+		found = found || e.InvolvedObject.Kind == "Whatsit" && e.InvolvedObject.Name == "fine" && e.Reason == "Sized" && e.Message == "size is 3" && e.ReportingComponent == "events"
 	}
 	if !found {
 		t.Errorf("core v1 Events = %+v", coreEvents.Items)
 	}
 
-	t.Log("A failing reconcile's retries add to one Event, though the first failure's status write changed the Doodad.")
+	t.Log("A failing reconcile's retries add to one Event, though the first failure's status write changed the Whatsit.")
 	create("failing", 9)
 	e2e.Eventually(t, 10*time.Second, func() error {
-		var d Doodad
-		if err := e2e.Get(t.Context(), c, doodadPath("failing"), &d); err != nil {
+		var d Whatsit
+		if err := e2e.Get(t.Context(), c, whatsitPath("failing"), &d); err != nil {
 			return err
 		}
 		if cond := kube.FindCondition(d.Status.Conditions, "Synced"); cond == nil || cond.Status != kube.False {
@@ -199,7 +199,7 @@ func TestEvents(t *testing.T) {
 	})
 	e2e.Eventually(t, 10*time.Second, func() error {
 		if n := r.failures.Load(); n < 4 {
-			return fmt.Errorf("the failing Doodad was reconciled %d times", n)
+			return fmt.Errorf("the failing Whatsit was reconciled %d times", n)
 		}
 		return nil
 	})
@@ -228,7 +228,7 @@ func TestEvents(t *testing.T) {
 	}
 
 	t.Log("Finalize records events too.")
-	if err := c.Delete(t.Context(), doodadPath("fine"), client.DeleteOptions{}); err != nil {
+	if err := c.Delete(t.Context(), whatsitPath("fine"), client.DeleteOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	e2e.Eventually(t, 10*time.Second, func() error {
