@@ -1164,7 +1164,8 @@ func (u *updater) push(ctx context.Context, repo *git.Repo, remote git.Remote, b
 }
 
 func (u *updater) pushFailed(ctx context.Context, log *slog.Logger, branch string, err error) {
-	if errors.Is(err, git.ErrRejected) {
+	var rejected *git.PushError
+	if errors.As(err, &rejected) && !rejected.Refused("refs/heads/"+branch) {
 		log.Info("not pushing a branch that moved", "branch", branch)
 		kube.RequeueAfter(ctx, pushRetry)
 		return

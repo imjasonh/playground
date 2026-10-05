@@ -29,6 +29,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
 )
@@ -99,7 +100,12 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	srv := gittest.NewServer(t, "s3cret")
-	w := srv.NewWork(t, "app")
+	return newFixtureOn(t, srv, srv.NewWork(t, "app"))
+}
+
+// newFixtureOn is newFixture with a server, and a working repository for
+// the repository app on it.
+func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work) *fixture {
 	w.Write("go.mod", modAt("v1.0.0"))
 	w.Write("go.sum", sumAt("v1.0.0"))
 	w.Write("app.go", "package app\n")
@@ -586,6 +592,52 @@ func TestUpdatesNeedTheSigningKey(t *testing.T) {
 	f.work.Fetch(greetBranch)
 	if err := f.signer.Verify(f.work.Dir, head); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestLogsWhyTheRemoteRefusesAnUpdate(t *testing.T) {
+	signer := gittest.NewSigner(t, "author@example.com")
+	hs := httptest.NewServer(&gitserver.Server{Root: t.TempDir(), Username: "git-k8s", Password: "s3cret", AllowedSigners: signer.AllowedSigners})
+	t.Cleanup(hs.Close)
+	srv := &gittest.Server{URL: hs.URL, Username: "git-k8s", Password: "s3cret"}
+	w := srv.NewWork(t, "app")
+	w.SignWith(signer)
+	f := newFixtureOn(t, srv, w)
+	logs := captureLogs(t)
+
+	t.Log("The server requires signed commits, and the repository names no signing key, so the server refuses the update.")
+	p := f.start()
+	f.finish(p, result(updated("v1.1.0")))
+	if got := f.srv.Heads(t, "app")[greetBranch]; got != "" {
+		t.Fatalf("%s = %s, want no branch", greetBranch, got)
+	}
+	if got := logs.String(); !strings.Contains(got, `msg="pushing a branch failed"`) || !strings.Contains(got, "isn't signed with its committer's key") || strings.Contains(got, "moved") {
+		t.Errorf("logs = %s, want the server's reason for refusing the update", got)
+	}
+	if rec := f.reconcile(p); rec.RequeueAfter() != errorRetry {
+		t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), errorRetry)
+	}
+}
+
+// A lease that doesn't hold means that the branch moved, which the next
+// reconcile sees, so the controller tries again soon.
+func TestPushFailed(t *testing.T) {
+	const ref = "refs/heads/" + greetBranch
+	for _, tc := range []struct {
+		err    error
+		logged string
+		wait   time.Duration
+	}{
+		{err: &git.PushError{Rejected: map[string]string{ref: "[rejected] (stale info)"}}, logged: `msg="not pushing a branch that moved"`, wait: pushRetry},
+		{err: &git.PushError{Rejected: map[string]string{ref: "[remote rejected] (pre-receive hook declined)"}}, logged: `msg="pushing a branch failed"`, wait: errorRetry},
+		{err: errors.New("connection refused"), logged: `msg="pushing a branch failed"`, wait: errorRetry},
+	} {
+		var logs bytes.Buffer
+		ctx, rec := kube.Fake(t.Context(), &Branch{Object: kube.Meta("app.main", nil)})
+		(&updater{}).pushFailed(ctx, slog.New(slog.NewTextHandler(&logs, nil)), greetBranch, tc.err)
+		if !strings.Contains(logs.String(), tc.logged) || rec.RequeueAfter() != tc.wait {
+			t.Errorf("pushFailed(%v) logged %q and RequeueAfter() = %v, want %s and %v", tc.err, logs.String(), rec.RequeueAfter(), tc.logged, tc.wait)
+		}
 	}
 }
 

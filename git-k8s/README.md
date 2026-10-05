@@ -1949,6 +1949,8 @@ landing, the `Synced` condition is `False` and has the reason in its
 message. git-k8s retries those pushes, waiting longer each time, up to about
 5 minutes. When GitHub refuses only what a squash or rebase landing pushes
 to the branch, the `Merged` condition's message has the reason instead.
+When GitHub refuses a push from `git-k8s-deps`, the controller logs the
+reason and tries the push again a minute later.
 
 ## Dependency updates
 
