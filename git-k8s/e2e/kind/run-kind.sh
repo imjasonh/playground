@@ -311,10 +311,12 @@ branch_gone() {
   head="$(remote_head "$1")" && [[ -z "${head}" && -z "$(branch_object "$1")" ]]
 }
 # signed_by_git_k8s checks that commit $1 has a good signature from git-k8s's
-# key, and git-k8s as its committer.
+# key, and git-k8s as its committer. $2 is the function that runs git in the
+# repository that has the commit, g by default.
 signed_by_git_k8s() {
-  g verify-commit "$1"
-  [[ "$(g log -1 --format='%G? %GS %ce' "$1")" == "G ${IDENTITY} ${IDENTITY}" ]]
+  local run="${2:-g}"
+  "${run}" verify-commit "$1"
+  [[ "$("${run}" log -1 --format='%G? %GS %ce' "$1")" == "G ${IDENTITY} ${IDENTITY}" ]]
 }
 
 echo "::group::The git server rejects unsigned commits"
@@ -591,7 +593,7 @@ OCTO="${WORKDIR}/octo"
 git init -q -b main "${OCTO}"
 o() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${OCTO}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 issuer="$(k get --raw /.well-known/openid-configuration | sed -nE 's/.*"issuer":"([^"]*)".*/\1/p')"
 mkdir -p "${OCTO}/.github/chainguard"
@@ -631,6 +633,8 @@ spec:
   octoSTS:
     gitIdentity: git-k8s
     checkRunsIdentity: git-k8s-checks
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -668,6 +672,8 @@ fix_landed() {
 }
 eventually 120 fix_landed
 fix="$(octo_head main)"
+o fetch -q "${GITHUB_URL}/acme/octo.git" main
+signed_by_git_k8s "${fix}" o
 # check_run prints the status and conclusion of check $2's check run on
 # commit $1.
 check_run() {
@@ -680,7 +686,7 @@ check_runs_published() {
     "$(check_run "${fix}" base)" == "completed success" ]]
 }
 eventually 60 check_runs_published
-echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
+echo "check-gofmt pushed a signed fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
 
 k create namespace "${NS}-other"
 octo_repository "${NS}-other"

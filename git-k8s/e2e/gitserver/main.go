@@ -33,7 +33,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	if *kubeContext != "" {
-		srv.Handler = withGitHub(srv.Handler, *root, *username, password, *kubeContext)
+		srv.Handler = withGitHub(srv.Handler, *root, *username, password, *allowedSigners, *kubeContext)
 	}
 	log.Printf("serving %s on %s", *root, *addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
