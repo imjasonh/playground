@@ -3,6 +3,7 @@ package checks_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -409,6 +410,53 @@ func TestStopsAtAutomatedCommitLimit(t *testing.T) {
 	}
 	if got := f.srv.Heads(t, "app")["c/x"]; got != head {
 		t.Errorf("c/x moved to %s past the limit", got)
+	}
+}
+
+// The output fix counts toward the core program's limit, and the framework
+// checks the Fixed result before it pushes, so that a fix doesn't land with
+// an Error result.
+func TestChecksFixedResultBeforePushing(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		outputs       int
+		mayPush       bool
+		state         string
+		msg           string
+		resultOutputs int
+		pushed        bool
+	}{
+		{"the most outputs", gitk8s.MaxOutputs, true, gitk8s.Error,
+			"not pushing the fix because the core program wouldn't accept the Fixed result: the result has more than 16 outputs", 0, false},
+		{"room for the fix", gitk8s.MaxOutputs - 1, true, gitk8s.Fixed, "; pushed ", gitk8s.MaxOutputs, true},
+		{"no permission to push", gitk8s.MaxOutputs - 1, false, gitk8s.Failed, "doesn't let this check push", gitk8s.MaxOutputs - 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: tc.mayPush})
+			head := f.branch.Spec.Head
+			runs := 0
+			check := touch(&runs)
+			check.FilesOnly = true
+			run := check.Run
+			check.Run = func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+				v, err := run(ctx, in)
+				v.Outputs = map[string]string{}
+				for i := range tc.outputs {
+					v.Outputs[fmt.Sprintf("output-%d", i)] = "v"
+				}
+				return v, err
+			}
+			if err := f.reconcile(t, check); err != nil {
+				t.Fatal(err)
+			}
+			res := f.branch.Status.Checks.Result
+			if res == nil || res.State != tc.state || !strings.Contains(res.Message, tc.msg) || len(res.Outputs) != tc.resultOutputs || !res.FilesOnly {
+				t.Errorf("result = %+v, want %s with filesOnly, %d outputs, and a message that contains %q", res, tc.state, tc.resultOutputs, tc.msg)
+			}
+			if pushed := f.srv.Heads(t, "app")["c/x"] != head; pushed != tc.pushed {
+				t.Errorf("pushed the fix: %v, want %v", pushed, tc.pushed)
+			}
+		})
 	}
 }
 

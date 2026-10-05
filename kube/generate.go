@@ -420,6 +420,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
 		Calls: []string{"Eventf", "RequestToken", "ReviewToken"}, Consts: map[string]int{"RequestToken": 1},
+		Objects: map[string]int{"Fetch": 1},
 	})
 	if err != nil {
 		return nil, err
@@ -461,6 +462,10 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		addType(ti)
 		g, r := resourceName(ti)
+		if ns, ok := namedObject(u, ti); ok {
+			o.grantsIn(p, ns).add(g, r, u.ObjectName, scopeVerbs[u.Func]...)
+			continue
+		}
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
 		if u.Func == "Apply" && slices.Contains(u.Fields, "status") {
 			grantsFor(ti).add(g, r+"/status", "", "patch")
@@ -544,6 +549,23 @@ func (o *generateOptions) grantsIn(p *installPlan, ns string) grants {
 		p.namespaces[ns] = grants{}
 	}
 	return p.namespaces[ns]
+}
+
+// namedObject reports whether u names one object of ti, so that the call
+// needs permission on only that object, and returns the namespace for the
+// object's rule. It needs ti's scope from its kube tag, because the API
+// server reads a cluster-scoped object without a namespace, and a namespaced
+// one only with a namespace.
+func namedObject(u analysis.Use, ti *typeInfo) (string, bool) {
+	switch {
+	case !u.Object || u.ObjectName == "":
+		return "", false
+	case ti.scope == "Cluster":
+		return "", true
+	case ti.scope == "Namespaced" && u.ObjectNamespace != "":
+		return u.ObjectNamespace, true
+	}
+	return "", false
 }
 
 // lookupType returns the program's type for a kind in an API version, whose

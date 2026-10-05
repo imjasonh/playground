@@ -1347,7 +1347,11 @@ function that contains the call. The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 `get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
-needs `create` and `patch`, and `Delete` needs `delete`. When a type passed to
+needs `create` and `patch`, and `Delete` needs `delete`. A `Fetch` that
+passes a type with a known scope and constants as the namespace and name
+needs `get` on only that object, so the rule names it. The analysis reads
+the constants at the call, so a `Fetch` in a generic helper still needs
+`get` on every object of the type. When a type passed to
 `Apply` has a field whose `json` tag names it `status`, the rules also grant
 `patch` on the type's `status` subresource. `controller-gen` reads
 `+kubebuilder:rbac` comment markers, which people write and update by hand.

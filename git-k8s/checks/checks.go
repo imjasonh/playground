@@ -1,6 +1,6 @@
 // Package checks runs check controllers.
 //
-// A check controller reconciles GitBranch objects through its own view type,
+// A check controller reads GitBranch objects through its own view type,
 // which declares the branch's spec and only the check's entry in
 // status.checks:
 //
@@ -18,10 +18,13 @@
 //		return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 //	}
 //
-// kube writes the status that a reconcile leaves with server-side apply, so
-// each check controller manages exactly its own entry. Other checks' entries
-// never pass through it, and because its cache doesn't decode them, their
-// changes don't make it reconcile.
+// The controller reconciles a view of GitBranch without a status, so it
+// can't write status. It reads the check's last result through the check's
+// view, and sends each new result to the core program with a token for the
+// check's service account. The core program writes the result to the
+// check's entry and no other. Other checks' entries never pass through the
+// controller, and because its caches don't decode them, their changes don't
+// make it reconcile.
 package checks
 
 import (
@@ -30,8 +33,13 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -82,7 +90,10 @@ type Check struct {
 	Run func(ctx context.Context, in *Input) (Verdict, error)
 }
 
-// Verdict is the outcome of running a check.
+// Verdict is the outcome of running a check. The framework shortens the
+// message and output values to fit the core program's limits, and reports
+// an Error result instead of a verdict that the core program doesn't
+// accept, such as one with more than gitk8s.MaxOutputs outputs.
 type Verdict struct {
 	// State is Passed, Failed, or Running.
 	State   string
@@ -92,7 +103,9 @@ type Verdict struct {
 	// commit on top of the branch's head. The framework moves the branch to
 	// it with a lease on the head, even if it doesn't contain the head, when
 	// the check's policy allows and the branch has automated commits left,
-	// and reports Fixed; otherwise it reports Failed.
+	// and reports Fixed, with the commit in the output fix; otherwise it
+	// reports Failed. It reports Error instead, and doesn't move the branch,
+	// if the core program wouldn't accept the Fixed result.
 	Fix string
 }
 
@@ -106,20 +119,24 @@ func Fail(format string, args ...any) Verdict {
 	return Verdict{State: gitk8s.Failed, Message: fmt.Sprintf(format, args...)}
 }
 
-// Config holds what check controllers need to work with git.
+// Config holds what check controllers need to work with git and to send
+// results.
 type Config struct {
 	Git      git.Git
 	CacheDir string
 	Identity git.Identity
+	// ResultsURL is the core program's results endpoint.
+	ResultsURL string
 }
 
 // AddFlags registers flags that set c: -git, -cache-dir, -identity-name,
-// and -identity-email.
+// -identity-email, and -results-url.
 func (c *Config) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Git.Bin, "git", "git", "git executable")
 	fs.StringVar(&c.CacheDir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	fs.StringVar(&c.Identity.Name, "identity-name", "git-k8s", "author and committer name of commits that the controller pushes")
 	fs.StringVar(&c.Identity.Email, "identity-email", "git-k8s@users.noreply.github.com", "author and committer email of commits that the controller pushes")
+	fs.StringVar(&c.ResultsURL, "results-url", defaultResultsURL, "URL of the core program's results endpoint")
 }
 
 // Main runs a check controller with flags from Config.AddFlags and kube.Main.
@@ -153,17 +170,33 @@ func RemoveLeftoverSigningKeys() {
 }
 
 // For returns a controller that runs check on every GitBranch whose merge
-// policy lists it. The controller's name, and so its field manager, is
-// check- followed by the check's name.
+// policy lists it, and sends each new result to the core program. The
+// controller's name is check- followed by the check's name.
 func For[V any, P interface {
 	kube.Resource[V]
 	View
 }](check Check, cfg *Config, opts ...kube.Option) kube.Controller {
-	return kube.For[V, P](NewReconciler[V, P](check, cfg), append([]kube.Option{kube.Named("check-" + check.Name)}, opts...)...)
+	return ForReconciler[V, P](check, cfg, NewReconciler[V, P](check, cfg), opts...)
 }
 
-// NewReconciler returns the reconciler that For runs, for tests that call
-// Reconcile directly with a context from kube.Fake.
+// ForReconciler returns a controller like For's that runs r on the check's
+// view of each GitBranch instead of NewReconciler's reconciler, for a check
+// that does more than run on the branches that its policy lists. r can call
+// NewReconciler's reconciler for those branches. The controller sends the
+// result that r sets in the view to the core program when it changes.
+func ForReconciler[V any, P interface {
+	kube.Resource[V]
+	View
+}](check Check, cfg *Config, r kube.Reconciler[V], opts ...kube.Option) kube.Controller {
+	s := &sender{check: check.Name, cfg: cfg, client: &http.Client{Timeout: 30 * time.Second}, delay: 100 * time.Millisecond}
+	return kube.For[branch](reconcileFunc(func(ctx context.Context, b *branch) error {
+		return runAndSend[V, P](ctx, r, s, b)
+	}), append([]kube.Option{kube.Named("check-" + check.Name)}, opts...)...)
+}
+
+// NewReconciler returns the reconciler that For runs on the check's view of
+// each branch, for tests that call Reconcile directly with a context from
+// kube.Fake. It sets the check's result in the view and doesn't send it.
 func NewReconciler[V any, P interface {
 	kube.Resource[V]
 	View
@@ -185,8 +218,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	meta, spec, result := P(obj).Parts()
 	policy := spec.Merge.Check(r.check.Name)
 	if spec.Parent == "" || policy == nil {
-		// Leaving the entry empty removes it: this controller stops
-		// managing a field it no longer applies.
+		// The core program removes the results of checks that the policy
+		// doesn't list, so there's no result to send.
 		*result = nil
 		return nil
 	}
@@ -221,7 +254,20 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		*result = res
 		return err
 	}
-	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), v.Outputs
+	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), truncateOutputs(v.Outputs)
+	reported, why := res, "the core program doesn't accept the check's result: "
+	if v.Fix != "" {
+		// If push doesn't push, it reports Failed with at most the Fixed
+		// result's outputs, so checking the Fixed result covers that one too.
+		reported, why = fixed(res, v), "not pushing the fix because the core program wouldn't accept the Fixed result: "
+	}
+	if err := reported.Validate(); err != nil {
+		// Running the check again returns the same result, so report why in
+		// the result instead of failing the reconcile, which kube retries.
+		res.State, res.Message, res.Outputs = gitk8s.Error, truncate(why+err.Error()), nil
+		*result = res
+		return nil
+	}
 	if v.Fix != "" {
 		if err := r.push(ctx, in, v, res); err != nil {
 			res.State, res.Message = gitk8s.Error, truncate(err.Error())
@@ -270,13 +316,21 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 	}
 	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
 	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s: %s", gitk8s.Short(v.Fix), in.Spec.Branch, v.Message)
-	res.State = gitk8s.Fixed
-	res.Message = truncate(fmt.Sprintf("%s; pushed %s", v.Message, gitk8s.Short(v.Fix)))
-	if res.Outputs == nil {
-		res.Outputs = map[string]string{}
-	}
-	res.Outputs["fix"] = v.Fix
+	*res = *fixed(res, v)
 	return nil
+}
+
+// fixed returns the result that push reports after it pushes v's fix.
+func fixed(res *gitk8s.CheckResult, v Verdict) *gitk8s.CheckResult {
+	f := *res
+	f.State = gitk8s.Fixed
+	f.Message = truncate(fmt.Sprintf("%s; pushed %s", v.Message, gitk8s.Short(v.Fix)))
+	f.Outputs = maps.Clone(res.Outputs)
+	if f.Outputs == nil {
+		f.Outputs = map[string]string{}
+	}
+	f.Outputs["fix"] = v.Fix
+	return &f
 }
 
 // Input is what a check sees of a branch.
@@ -410,10 +464,33 @@ func (in *Input) release() {
 	}
 }
 
-// truncate keeps messages to a size that fits comfortably in an object.
-func truncate(s string) string {
-	if len(s) > 1024 {
-		return s[:1021] + "..."
+// truncate keeps messages to the size that the core program accepts.
+func truncate(s string) string { return shorten(s, gitk8s.MaxMessageLength) }
+
+// truncateOutputs keeps output values to the size that the core program
+// accepts.
+func truncateOutputs(outputs map[string]string) map[string]string {
+	if outputs == nil {
+		return nil
 	}
-	return s
+	out := make(map[string]string, len(outputs))
+	for k, v := range outputs {
+		out[k] = shorten(v, gitk8s.MaxOutputValueLength)
+	}
+	return out
+}
+
+// shorten returns s as valid UTF-8 of at most n bytes, ending in "..." if
+// it's cut. The core program measures a result after decoding it from JSON,
+// which turns each invalid byte into a three-byte replacement character.
+func shorten(s string, n int) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if len(s) <= n {
+		return s
+	}
+	n -= len("...")
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
 }

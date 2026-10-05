@@ -1,10 +1,11 @@
-# The git-k8s-check-results and git-k8s-branches policies read this ConfigMap
-# to find checks that don't run as the service account check-NAME in the
-# namespace check-NAME. Each entry maps NAMESPACE.SERVICE_ACCOUNT to a
-# check's name, for example "ci.gofmt-bot: gofmt", and overrides that
-# convention. They ignore an entry for the core program's service account,
-# git-k8s.git-k8s, which is never a check. The core program applies this
-# ConfigMap without data, so it keeps the entries that you add.
+# The git-k8s-check-results and git-k8s-branches policies, and the core
+# program's results endpoint, read this ConfigMap to find checks that don't
+# run as the service account check-NAME in the namespace check-NAME. Each
+# entry maps NAMESPACE.SERVICE_ACCOUNT to a check's name, for example
+# "ci.gofmt-bot: gofmt", and overrides that convention. They ignore an entry
+# for the core program's service account, git-k8s.git-k8s, which is never a
+# check. The core program applies this ConfigMap without data, so it keeps
+# the entries that you add.
 # While the ConfigMap is missing, those policies deny every write to
 # GitBranch objects, including people's.
 apiVersion: v1
@@ -13,21 +14,30 @@ metadata:
   name: git-k8s-checks
   namespace: git-k8s
 ---
-# Each check controller can write only its own entry in a GitBranch's
-# status.checks, and no other service account, including the core
-# program's, can write status.checks at all. generate installs each program
-# in a namespace with a service account of the program's name, so
-# check-gofmt runs as system:serviceaccount:check-gofmt:check-gofmt and owns
-# status.checks.gofmt. A check installed under another name or namespace
-# needs an entry in the git-k8s-checks ConfigMap to write results.
-# Server-side apply already keeps well-behaved controllers apart; this policy
-# stops a buggy or compromised one from writing another's result. A check
-# whose entry in the ConfigMap is empty can't write results, but it keeps its
-# RBAC, so this policy still stops it from writing the rest of the status.
+# Only the core program writes check results. Checks send their results to
+# its results endpoint, which writes each one to the entry of the check that
+# sent it, and checks have no RBAC rule to write GitBranch status. This
+# policy is the backstop if a role grants one: it rejects every status write
+# by a check's service account, and every change to status.checks or
+# status.diverged by a service account other than the core program's.
+# generate installs each program in a namespace with a service account of
+# the program's name, so the core program runs as
+# system:serviceaccount:git-k8s:git-k8s and the gofmt check as
+# system:serviceaccount:check-gofmt:check-gofmt. A check installed under
+# another name or namespace needs an entry in the git-k8s-checks ConfigMap.
+# A check whose entry is empty can't send results, but this policy still
+# treats it as a check. People aren't service accounts, so RBAC alone
+# decides whether they can write results.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-results
+  annotations:
+    # The core program reports PoliciesInstalled False unless every policy
+    # in this file has its policyVersion, in cmd/git-k8s/policies.go. Raise
+    # policyVersion and every policy's annotation together when the core
+    # program needs a change to the policies.
+    git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -57,6 +67,8 @@ spec:
       expression: >-
         variables.check != "" || variables.account != "git-k8s.git-k8s" &&
         params != null && has(params.data) && variables.account in params.data
+    - name: core
+      expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
     - name: old
       expression: >-
         has(oldObject.status) && has(oldObject.status.checks) ? oldObject.status.checks : {}
@@ -64,35 +76,17 @@ spec:
       expression: >-
         has(object.status) && has(object.status.checks) ? object.status.checks : {}
   validations:
-    - expression: >-
-        variables.check == "" ||
-        (variables.new.all(k, k == variables.check || (k in variables.old && variables.new[k] == variables.old[k])) &&
-        variables.old.all(k, k == variables.check || k in variables.new))
-      messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
-    - expression: >-
-        !variables.checkAccount ||
-        ((has(object.status) && has(object.status.state) ? object.status.state : "") ==
-        (has(oldObject.status) && has(oldObject.status.state) ? oldObject.status.state : "") &&
-        (has(object.status) && has(object.status.conditions) ? object.status.conditions : []) ==
-        (has(oldObject.status) && has(oldObject.status.conditions) ? oldObject.status.conditions : []) &&
-        (has(object.status) && has(object.status.queued) ? [object.status.queued] : []) ==
-        (has(oldObject.status) && has(oldObject.status.queued) ? [oldObject.status.queued] : []) &&
-        (has(object.status) && has(object.status.queue) ? object.status.queue : []) ==
-        (has(oldObject.status) && has(oldObject.status.queue) ? oldObject.status.queue : []) &&
-        (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
-        (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : []))
+    - expression: '!variables.checkAccount'
       messageExpression: >-
-        variables.check != "" ? "the " + variables.check + " check can only write status.checks." + variables.check :
+        variables.check != "" ? "the " + variables.check + " check can't write GitBranch status; it sends its results to the core program" :
         request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
-    - expression: variables.check != "" || variables.new == variables.old
+    - expression: variables.checkAccount || variables.core || variables.new == variables.old
       messageExpression: >-
-        variables.checkAccount ?
-        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status" :
-        request.userInfo.username + " isn't a check's service account, so it can't write status.checks"
+        request.userInfo.username + " isn't the core program's service account, so it can't write status.checks"
     # The conflicts check merges or replays the commit that status.diverged
     # names, so only the core program, which runs the mirror, writes it.
     - expression: >-
-        request.userInfo.username == "system:serviceaccount:git-k8s:git-k8s" ||
+        variables.checkAccount || variables.core ||
         (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
         (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : [])
       messageExpression: request.userInfo.username + " isn't the core program's service account, so it can't write status.diverged"
@@ -117,7 +111,7 @@ spec:
 # can't tell whether an owned object needs a finalizer on its owner. kube
 # adds that finalizer with a cleanup annotation, which this policy denies, so
 # a check can own only namespaced objects in the branch's namespace. A check
-# whose entry in the git-k8s-checks ConfigMap is empty can't write results,
+# whose entry in the git-k8s-checks ConfigMap is empty can't send results,
 # but it keeps its RBAC, so this policy still treats it as a check.
 #
 # git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
@@ -127,6 +121,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-branches
+  annotations:
+    git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -234,6 +230,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-pods
+  annotations:
+    git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -414,6 +412,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-approvals
+  annotations:
+    git-k8s.imjasonh.com/policy-version: "2"
 spec:
   failurePolicy: Fail
   matchConstraints:

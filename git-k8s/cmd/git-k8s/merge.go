@@ -37,9 +37,9 @@ const (
 
 func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	results := b.Status.Checks
-	// Check controllers manage status.checks. Leaving it out of this
+	// The results controller manages status.checks. Leaving it out of this
 	// controller's status write keeps server-side apply from making this
-	// controller a manager of their entries.
+	// controller a manager of the check results.
 	b.Status.Checks = nil
 	q, err := queue(ctx, b)
 	b.Status.Queue = q

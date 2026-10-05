@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
+	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -15,11 +17,19 @@ var policies = []struct {
 	name      string
 	exposures []string
 }{
-	{"git-k8s-check-results", []string{"checks can write each other's results"}},
+	{"git-k8s-check-results", []string{"any service account that can write GitBranch status can write check results"}},
 	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change GitBranch objects"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
 	{"git-k8s-approvals", []string{"anyone who can patch a GitBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
 }
+
+// Each policy in config/policy.yaml has policyVersionAnnotation set to
+// policyVersion. Raise both when the core program needs a change to the
+// policies, so that it reports the earlier policies as outdated.
+const (
+	policyVersionAnnotation = gitk8s.Group + "/policy-version"
+	policyVersion           = 2
+)
 
 type admissionPolicy struct {
 	kube.Object `kube:"apiVersion=admissionregistration.k8s.io/v1,kind=ValidatingAdmissionPolicy,plural=validatingadmissionpolicies,scope=Cluster"`
@@ -72,16 +82,24 @@ func (s *labelSelector) selects() bool {
 	return s != nil && (len(s.MatchLabels) > 0 || len(s.MatchExpressions) > 0)
 }
 
-// policiesCondition reports whether the admission policies in
+// policiesCondition reports whether this release's admission policies in
 // config/policy.yaml are installed, with bindings that deny the requests
 // they reject, even while the bindings' parameters are missing. Reading them
 // through the cache runs the reconcile again when they change. installs is
 // set when the program installs the policies when it starts.
 func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
-	var missing, weak, warns, patches, exposures []string
+	var missing, weak, warns, outdated, newer, patches, exposures []string
 	for _, p := range policies {
 		policy := kube.Get[admissionPolicy](ctx, "", p.name)
+		if policy != nil {
+			switch v, err := strconv.Atoi(policy.Annotations[policyVersionAnnotation]); {
+			case err != nil || v < policyVersion:
+				outdated = append(outdated, p.name)
+			case v > policyVersion:
+				newer = append(newer, p.name)
+			}
+		}
 		params := policy != nil && policy.Spec.ParamKind != nil
 		var own *admissionPolicyBinding
 		denies := false
@@ -115,14 +133,20 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 			missing = append(missing, p.name)
 		}
 	}
-	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 {
+	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 && len(outdated) == 0 && len(newer) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-			Message: "the admission policies keep git-k8s service accounts from approving branches, keep checks to their own results and Pods, and check who approves branches",
+			Message: "the admission policies keep git-k8s service accounts from approving branches, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
 		}
 	}
 	var problems, sentences, fixes []string
-	reason := "BindingWarns"
+	reason := "Newer"
+	if len(outdated) > 0 {
+		reason = "Outdated"
+	}
+	if len(warns) > 0 {
+		reason = "BindingWarns"
+	}
 	if len(weak) > 0 {
 		reason = "NotDenying"
 		problem := "the binding %s doesn't deny every request that its policy rejects"
@@ -149,18 +173,40 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		}
 		sentences = append(sentences, fmt.Sprintf(warn, list(warns))+", so the core program stops the next time it starts")
 	}
+	if len(outdated) > 0 {
+		problem := "%s doesn't have %s=%d"
+		if len(outdated) > 1 {
+			problem = "%s don't have %s=%d"
+		}
+		sentences = append(sentences, fmt.Sprintf(problem, list(outdated), policyVersionAnnotation, policyVersion))
+	}
+	if len(newer) > 0 {
+		problem := "%s has a %s later than %d"
+		if len(newer) > 1 {
+			problem = "%s have a %s later than %d"
+		}
+		sentences = append(sentences, fmt.Sprintf(problem, list(newer), policyVersionAnnotation, policyVersion))
+	}
 	// The patches come before the restart, because restarting the core
 	// program while a binding warns stops it. The binding's validationActions
 	// would then hold both Warn and Deny, which the API server rejects.
 	if len(patches) > 0 {
 		fixes = append(fixes, "run "+list(patches))
 	}
-	if len(missing) > 0 {
-		if installs {
-			fixes = append(fixes, "run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again")
-		} else {
-			fixes = append(fixes, "apply config/policy.yaml")
-		}
+	install := "apply config/policy.yaml"
+	if len(outdated) > 0 || len(newer) > 0 {
+		install += " from this release"
+	}
+	if installs {
+		install = "run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again"
+	}
+	switch {
+	case len(newer) > 0:
+		// An upgrade that applies the policies before the core program looks
+		// the same as a rollback of the core program.
+		fixes = append(fixes, "upgrade the core program, or, if you rolled it back, "+install)
+	case len(missing) > 0 || len(outdated) > 0:
+		fixes = append(fixes, install)
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.False, Reason: reason,
