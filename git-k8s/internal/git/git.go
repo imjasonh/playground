@@ -348,34 +348,12 @@ func (r *Repo) Commit(ctx context.Context, sha string) (Commit, error) {
 	return Commit{Tree: tree, Time: t}, nil
 }
 
-// CommitTree makes a commit object, signed with key unless key is nil. The
-// same arguments always make the same commit, so two controllers that make
-// the same fix push the same commit. Signing keeps that true for Ed25519 and
-// RSA keys, whose signatures are deterministic, but not for ECDSA keys.
+// CommitTree is WriteCommit with id as the author and committer, at the
+// time unix in UTC. Two controllers that make the same fix push the same
+// commit, unless an ECDSA key signs it, as WriteCommit describes.
 func (r *Repo) CommitTree(ctx context.Context, tree string, parents []string, message string, id Identity, unix int64, key *SigningKey) (string, error) {
-	args := []string{"commit-tree"}
-	for _, p := range parents {
-		args = append(args, "-p", p)
-	}
-	date := fmt.Sprintf("@%d +0000", unix)
-	env := []string{
-		"GIT_AUTHOR_NAME=" + id.Name, "GIT_AUTHOR_EMAIL=" + id.Email, "GIT_AUTHOR_DATE=" + date,
-		"GIT_COMMITTER_NAME=" + id.Name, "GIT_COMMITTER_EMAIL=" + id.Email, "GIT_COMMITTER_DATE=" + date,
-	}
-	if key != nil {
-		path, remove, err := key.write()
-		if err != nil {
-			return "", fmt.Errorf("writing the signing key: %w", err)
-		}
-		defer remove()
-		args = append(args, "-S")
-		env = append(env, "GIT_CONFIG_COUNT=2",
-			"GIT_CONFIG_KEY_0=gpg.format", "GIT_CONFIG_VALUE_0=ssh",
-			"GIT_CONFIG_KEY_1=user.signingKey", "GIT_CONFIG_VALUE_1="+path)
-	}
-	args = append(args, "-F", "-", "--end-of-options", tree)
-	out, err := r.git.run(ctx, r.Dir, args, opts{stdin: []byte(message), env: env})
-	return strings.TrimSpace(string(out)), err
+	sig := Signature{Name: id.Name, Email: id.Email, Date: fmt.Sprintf("%d +0000", unix)}
+	return r.WriteCommit(ctx, NewCommit{Tree: tree, Parents: parents, Author: sig, Committer: sig, Message: message}, key)
 }
 
 // RefUpdate is one ref update in a push.

@@ -67,7 +67,7 @@ func (k *SigningKey) write() (string, func(), error) {
 	return path, remove, nil
 }
 
-// RemoveSigningKeys removes the keys that CommitTree wrote to os.TempDir
+// RemoveSigningKeys removes the keys that WriteCommit wrote to os.TempDir
 // but didn't remove because its process stopped, for example when its
 // container was killed. Call it when a program starts, before it signs.
 func RemoveSigningKeys() error {

@@ -530,7 +530,8 @@ g log --first-parent --format='%h %s (%an, committed by %cn)' "${squash_base}^..
 [[ "$(g show FETCH_HEAD:util/sub.go)" == "package util
 
 func Sub(a, b int) int { return a - b }" ]]
-echo "The gofmt check fixed c/squash, and main moved by one squashed commit without the fixer trailer."
+signed_by_git_k8s FETCH_HEAD
+echo "The gofmt check fixed c/squash, and main moved by one signed, squashed commit without the fixer trailer."
 echo "::endgroup::"
 
 echo "::group::A rebase landing copies a branch's commits onto its parent"
@@ -557,8 +558,11 @@ g log --graph --format='%h %s (%an, committed by %cn)' "${rebase_base}^..FETCH_H
 Add rebase-two.txt" ]]
 [[ "$(g rev-list --parents "${rebase_base}..FETCH_HEAD" | awk 'NF != 2')" == "" ]]
 [[ "$(g log --format='%an %cn' "${rebase_base}..FETCH_HEAD" | sort -u)" == "e2e git-k8s" ]]
+for commit in $(g rev-list "${rebase_base}..FETCH_HEAD"); do
+  signed_by_git_k8s "${commit}"
+done
 g cat-file -e FETCH_HEAD:main.txt
-echo "The base check merged main into c/rebase, and main moved by copies of its two commits, without the merge."
+echo "The base check merged main into c/rebase, and main moved by signed copies of its two commits, without the merge."
 echo "::endgroup::"
 
 echo "::group::A check can write only its own result"

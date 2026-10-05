@@ -23,17 +23,22 @@ const testTime = "1767323045 +0000"
 // branches with landing.
 func landAs(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing string) error {
 	t.Helper()
-	return landWith(t, srv, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"})
+	return landWith(t, srv, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, nil)
 }
 
-// landWith is landAs with id as the merge controller's identity.
-func landWith(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing string, id git.Identity) error {
+// landWith is landAs with id as the merge controller's identity. If signer
+// isn't nil, the GitRepository's signing Secret holds its key.
+func landWith(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing string, id git.Identity, signer *gittest.Signer) error {
 	t.Helper()
 	p := *b.Spec.Merge
 	p.Landing = landing
 	b.Spec.Merge = &p
 	repo, secret := srv.Repository("app", rules()...)
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
+	world := []any{repo, secret}
+	if signer != nil {
+		world = append(world, signer.Sign(repo))
+	}
+	ctx, _ := kube.Fake(t.Context(), b, world...)
 	m := &merger{
 		ident: id,
 		cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()},
@@ -293,6 +298,81 @@ func TestRebaseLanding(t *testing.T) {
 	msg := fmt.Sprintf("rebased c/x onto main, which moved from %s to %s", gitk8s.Short(main), gitk8s.Short(rebased))
 	if c == nil || c.Status != kube.True || c.Message != msg || b.Status.State != reasonLanded {
 		t.Errorf("Merged = %+v, state %q", c, b.Status.State)
+	}
+}
+
+// Squash and rebase landings sign the commits that they make with the
+// GitRepository's key, including a squashed commit that the merge
+// controller pushes to the branch for the checks.
+func TestLandingsSign(t *testing.T) {
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	id := git.Identity{Name: "git-k8s", Email: signer.Email}
+	for _, tt := range []struct {
+		name, landing string
+		history       bool
+		ref           string
+		commits       int
+	}{
+		{"squash", gitk8s.Squash, false, "main", 1},
+		{"rebase", gitk8s.Rebase, false, "main", 2},
+		{"squash for the checks", gitk8s.Squash, true, "c/x", 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w := branches(t, srv)
+			w.Write("y.txt", "y\n")
+			commitAsAna(w, "Add y")
+			moveParent(t, b, w, "m.txt", "m\n")
+			mergeParent(b, w)
+			refresh(t, b, w)
+			if tt.history {
+				withHistoryCheck(b)
+			}
+			main := b.Spec.ParentHead
+			if err := landWith(t, srv, b, tt.landing, id, signer); err != nil {
+				t.Fatal(err)
+			}
+			commits := strings.Fields(w.Git("rev-list", main+".."+w.Fetch(tt.ref)))
+			if len(commits) != tt.commits {
+				t.Fatalf("%s has %d commits that main didn't, want %d", tt.ref, len(commits), tt.commits)
+			}
+			for _, c := range commits {
+				if err := signer.Verify(w.Dir, c); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+}
+
+// A landing that can't read the signing key pushes nothing, but a landing
+// that makes no commits doesn't read the key.
+func TestLandingNeedsTheSigningKey(t *testing.T) {
+	broken := &gittest.Signer{Email: "git-k8s@example.com", Key: []byte("hunter2")}
+	id := git.Identity{Name: "git-k8s", Email: broken.Email}
+	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
+		t.Run(landing, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w := branches(t, srv)
+			moveParent(t, b, w, "m.txt", "m\n")
+			mergeParent(b, w)
+			refresh(t, b, w)
+			before := srv.Heads(t, "app")
+			err := landWith(t, srv, b, landing, id, broken)
+			if err == nil || !strings.Contains(err.Error(), "reading the signing key: Secret app-signing: the key isn't a private key") || strings.Contains(err.Error(), "hunter2") {
+				t.Fatalf("err = %v, want one that says the signing key isn't a key, without the Secret's data", err)
+			}
+			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+				t.Errorf("heads = %v, want %v", after, before)
+			}
+
+			moveParent(t, b, w, "x.txt", "x\n")
+			mergeParent(b, w)
+			refresh(t, b, w)
+			if err := landWith(t, srv, b, landing, id, broken); err != nil || b.Status.State != reasonMerged {
+				t.Errorf("landing a branch whose changes the parent has: state %q, %v; want %s", b.Status.State, err, reasonMerged)
+			}
+		})
 	}
 }
 
@@ -789,7 +869,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 				refresh(t, b, w)
 				withHistoryCheck(b)
 				head := b.Spec.Head
-				if err := landWith(t, srv, b, gitk8s.Squash, id); err != nil {
+				if err := landWith(t, srv, b, gitk8s.Squash, id, nil); err != nil {
 					t.Fatal(err)
 				}
 				squashed := w.Fetch("c/x")
@@ -817,7 +897,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			refresh(t, b, w)
 			withHistoryCheck(b)
 			head := b.Spec.Head
-			if err := landWith(t, srv, b, gitk8s.Squash, id); err != nil {
+			if err := landWith(t, srv, b, gitk8s.Squash, id, nil); err != nil {
 				t.Fatal(err)
 			}
 			heads := srv.Heads(t, "app")

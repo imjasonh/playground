@@ -185,18 +185,32 @@ type NewCommit struct {
 	Message   string
 }
 
-// WriteCommit makes a commit object and returns its SHA. Unlike CommitTree,
-// it sets the author and committer separately, with their time zones.
-func (r *Repo) WriteCommit(ctx context.Context, c NewCommit) (string, error) {
+// WriteCommit makes a commit object, signed with key unless key is nil, and
+// returns its SHA. Unlike CommitTree, it sets the author and committer
+// separately, with their time zones. The same arguments always make the
+// same commit, and signing keeps that true for Ed25519 and RSA keys, whose
+// signatures are deterministic, but not for ECDSA keys.
+func (r *Repo) WriteCommit(ctx context.Context, c NewCommit, key *SigningKey) (string, error) {
 	args := []string{"commit-tree"}
 	for _, p := range c.Parents {
 		args = append(args, "-p", p)
 	}
-	args = append(args, "-F", "-", "--end-of-options", c.Tree)
 	env := []string{
 		"GIT_AUTHOR_NAME=" + c.Author.Name, "GIT_AUTHOR_EMAIL=" + c.Author.Email, "GIT_AUTHOR_DATE=@" + c.Author.Date,
 		"GIT_COMMITTER_NAME=" + c.Committer.Name, "GIT_COMMITTER_EMAIL=" + c.Committer.Email, "GIT_COMMITTER_DATE=@" + c.Committer.Date,
 	}
+	if key != nil {
+		path, remove, err := key.write()
+		if err != nil {
+			return "", fmt.Errorf("writing the signing key: %w", err)
+		}
+		defer remove()
+		args = append(args, "-S")
+		env = append(env, "GIT_CONFIG_COUNT=2",
+			"GIT_CONFIG_KEY_0=gpg.format", "GIT_CONFIG_VALUE_0=ssh",
+			"GIT_CONFIG_KEY_1=user.signingKey", "GIT_CONFIG_VALUE_1="+path)
+	}
+	args = append(args, "-F", "-", "--end-of-options", c.Tree)
 	out, err := r.git.run(ctx, r.Dir, args, opts{stdin: []byte(c.Message), env: env})
 	return strings.TrimSpace(string(out)), err
 }

@@ -87,6 +87,30 @@ func TestCommitTreeSigns(t *testing.T) {
 	}
 }
 
+// A forge verifies a signature against the committer, so a commit that
+// another person wrote, such as a rebased one, verifies too.
+func TestWriteCommitSigns(t *testing.T) {
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	repo, c, head := fetched(t)
+	key, err := git.NewSigningKey(signer.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha, err := repo.WriteCommit(t.Context(), git.NewCommit{
+		Tree:      c.Tree,
+		Parents:   []string{head},
+		Author:    git.Signature{Name: "Ana Lima", Email: "ana@example.com", Date: "1700000000 -0800"},
+		Committer: git.Signature{Name: "git-k8s", Email: signer.Email, Date: fmt.Sprintf("%d +0000", c.Time)},
+		Message:   "Add y\n",
+	}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signer.Verify(repo.Dir, sha); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestSigningKeyStaysPrivate(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
 	repo, c, head := fetched(t)

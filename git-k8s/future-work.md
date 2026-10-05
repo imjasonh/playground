@@ -208,11 +208,12 @@ Questions to settle first:
 
 ## Sign commits in the mirror
 
-`check-base` and `check-gofmt` sign their commits with a key that they read
-from a Secret, so a compromised check can sign anything with it. With the
-[mirror](#run-an-in-cluster-git-mirror), the mirror can hold the key
-instead and sign for the checks, for example through a program that git's
-`gpg.ssh.program` setting runs, so that no check reads the Secret.
+`check-base`, `check-gofmt`, and the merge controller sign their commits
+with a key that they read from a Secret, so a compromised check can sign
+anything with it. With the [mirror](#run-an-in-cluster-git-mirror), the
+mirror can hold the key instead and sign for them, for example through a
+program that git's `gpg.ssh.program` setting runs, so that no check reads
+the Secret.
 
 With the mirror, every change reaches GitHub as a push from the mirror. For
 a repository that gets [tokens from Octo STS](README.md#github-repositories),

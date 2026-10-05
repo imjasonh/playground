@@ -101,11 +101,11 @@ func TestLogAndReplay(t *testing.T) {
 		Committer: git.Signature{Name: "git-k8s", Email: "git-k8s@example.com", Date: "1700000500 +0000"},
 		Message:   first.Message,
 	}
-	replayed, err := repo.WriteCommit(ctx, c)
+	replayed, err := repo.WriteCommit(ctx, c, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again, err := repo.WriteCommit(ctx, c); err != nil || again != replayed {
+	if again, err := repo.WriteCommit(ctx, c, nil); err != nil || again != replayed {
 		t.Errorf("WriteCommit isn't deterministic: %s then %s (%v)", replayed, again, err)
 	}
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/replayed", New: replayed}); err != nil {

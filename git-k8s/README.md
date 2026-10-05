@@ -615,8 +615,10 @@ nothing, such as a change that the parent already has.
 
 The merge controller commits as
 `git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and
-`-identity-email` flags change. It takes commit times from the commits that
-it copies, so making the same landing again makes the same commits.
+`-identity-email` flags change, and [signs](#sign-commits) the commits if
+the `GitRepository` names a signing key. It takes commit times from the
+commits that it copies, so making the same landing again makes the same
+commits.
 
 When the branch is one commit on top of the parent's head, a squash
 fast-forwards the parent to it. A rebase does the same for a branch with no
@@ -728,10 +730,12 @@ remote accept force pushes to proposal branches.
 ## Sign commits
 
 `check-base` and `check-gofmt` make commits: merges of a parent into a
-branch, and formatting fixes. Landing makes none, because it fast-forwards
-the parent to a commit that's already on the branch. To sign the checks'
-commits, make an SSH key for signing only, put it in its own Secret in the
-`GitRepository`'s namespace, and name the Secret in the `GitRepository`:
+branch, and formatting fixes. The merge controller makes the commits of
+[squash and rebase landings](#landing-methods). A fast-forward landing makes
+none, because it moves the parent to a commit that's already on the branch.
+To sign these commits, make an SSH key for signing only, put it in its own
+Secret in the `GitRepository`'s namespace, and name the Secret in the
+`GitRepository`:
 
 ```sh
 ssh-keygen -t ed25519 -N '' -C git-k8s -f git-k8s-signing
@@ -748,13 +752,14 @@ spec:
     name: app-signing       # ssh-privatekey key, for signing commits
 ```
 
-The checks sign with git's SSH signature format, `gpg.format=ssh`. Git runs
-`ssh-keygen` to sign, so the checks' image needs it, and the
-`cgr.dev/chainguard/git` image that [Install](#install) uses has it. The key
-must be unencrypted, in the OpenSSH format that `ssh-keygen` writes. Ed25519
-and RSA signatures come out the same every time, so a check still makes the
-same fix commit from the same inputs; ECDSA signatures don't. Without
-`signingKeyRef`, the checks' commits aren't signed.
+git-k8s signs with git's SSH signature format, `gpg.format=ssh`. Git runs
+`ssh-keygen` to sign, so the images of `git-k8s`, `check-base`, and
+`check-gofmt` need it, and the `cgr.dev/chainguard/git` image that
+[Install](#install) uses has it. The key must be unencrypted, in the OpenSSH
+format that `ssh-keygen` writes. Ed25519 and RSA signatures come out the
+same every time, so a check still makes the same fix commit from the same
+inputs, and a landing makes the same commits; ECDSA signatures don't.
+Without `signingKeyRef`, these commits aren't signed.
 
 git-k8s doesn't support keyless signing with
 [gitsign](https://github.com/sigstore/gitsign), which signs with a
@@ -775,31 +780,32 @@ supporting it needs.
 
 The key needs a Secret of its own, because the `secretRef` Secret holds the
 credentials for the remote, and each test Pod's init container gets some of
-its keys. A check reports an error instead of signing if `signingKeyRef`
-names the `secretRef` Secret.
+its keys. A check or a landing reports an error instead of signing if
+`signingKeyRef` names the `secretRef` Secret.
 
-Only `check-base` and `check-gofmt` read the signing Secret, through the
-`signing` package, which no other program links. They read it only to sign
-a commit that their policy lets them push. Other programs don't read the
-key, but some can:
+Only the core `git-k8s` program, `check-base`, and `check-gofmt` read the
+signing Secret, through the `signing` package, which no other program
+links. The checks read it only to sign a commit that their policy lets them
+push, and the merge controller only when a squash or rebase landing makes
+commits. Other programs don't read the key, but some can:
 
 - `generate` lets each program that reads `secretRef` Secrets get every
   Secret in the namespaces that it watches, which is every namespace unless
   you pass `-watch-namespace`. Those programs are the core `git-k8s`
   program, `check-base`, `check-gofmt`, and `check-risk`, so signing gives
-  `check-base` and `check-gofmt` no new permissions.
+  the programs that sign no new permissions.
 - `check-gotest` doesn't give its test Pods the signing Secret, but it can
   create Pods, and a Pod can mount any Secret in its namespace. The
   [admission policies](#install) let it create Pods only in namespaces that
   opt in to test Pods.
 
-For each commit, a check writes the key to a file with mode 0600 in a new
-directory with mode 0700 under `/tmp`, passes git the file's path, and
-removes the directory when the commit is done. `/tmp` is an `emptyDir`
-volume on the node's disk that outlives the container, so a check that's
-killed while it signs leaves the key there until the check restarts and
-removes it, or until the Pod is deleted. The key never appears in a
-command's arguments or environment, in a log, or in an error.
+For each commit, the program that signs it writes the key to a file with
+mode 0600 in a new directory with mode 0700 under `/tmp`, passes git the
+file's path, and removes the directory when the commit is done. `/tmp` is
+an `emptyDir` volume on the node's disk that outlives the container, so a
+program that's killed while it signs leaves the key there until the program
+restarts and removes it, or until the Pod is deleted. The key never appears
+in a command's arguments or environment, in a log, or in an error.
 
 ### Set up the forge
 
@@ -810,16 +816,16 @@ the commit's committer. On GitHub:
    **Settings** > **SSH and GPG keys** > **New SSH key**, set **Key type**
    to **Signing Key**, and add `git-k8s-signing.pub`. Or run
    `gh ssh-key add git-k8s-signing.pub --type signing` as that account.
-2. Set the `-identity-email` flag of `check-base` and `check-gofmt` to an
-   email address that the account has verified, such as its
-   `ID+USERNAME@users.noreply.github.com` address. GitHub marks a commit
-   **Verified** only when its committer email belongs to the account that
-   has the key. To pass a flag, add it after `--` in the `generate`
+2. Set the `-identity-email` flag of `git-k8s`, `check-base`, and
+   `check-gofmt` to an email address that the account has verified, such
+   as its `ID+USERNAME@users.noreply.github.com` address. GitHub marks a
+   commit **Verified** only when its committer email belongs to the account
+   that has the key. To pass a flag, add it after `--` in the `generate`
    command, as in [Install](#install).
 
 A GitHub App can't have a signing key. GitHub signs the commits that an App
-makes through its API, but the checks make commits with git, so they sign
-them with an account's key even when they push with an App's token. GitHub
+makes through its API, but git-k8s makes commits with git, so it signs them
+with an account's key even when it pushes with an App's token. GitHub
 verifies a signature no matter which credential pushed the commit.
 
 ### Protected branches
@@ -1019,8 +1025,6 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
-- Squash and rebase landings make unsigned commits, even from signed ones.
-  With a check that requires signed commits, use `FastForward`.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.
