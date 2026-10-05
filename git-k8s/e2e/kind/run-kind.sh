@@ -247,9 +247,10 @@ crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
 # the objects in config/policy.yaml. The service account e2e-deps stands in
 # for a controller that starts branches, and check-conflicts creates
-# resolve/BRANCH.
+# resolve/BRANCH. The test Pods' NetworkPolicy lets them reach go-cache.
 install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
-  "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github"
+  "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github" \
+  -go-cache-namespace=go-cache
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
   "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
@@ -1459,45 +1460,13 @@ echo "Four branches ran one at a time, in the order that they started waiting."
 echo "::endgroup::"
 
 echo "::group::Test Pods get modules and build outputs from go-cache"
-# This is the README's NetworkPolicy: test Pods reach DNS, go-cache, and the
-# git server, and nothing else.
-k apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: test-pods
-  namespace: ${NS}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: check-gotest
-  policyTypes: [Ingress, Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - {protocol: UDP, port: 53}
-        - {protocol: TCP, port: 53}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: go-cache
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: go-cache
-      ports:
-        - {protocol: TCP, port: 8080}
-    - to:
-        - ipBlock:
-            cidr: ${GATEWAY}/32
-      ports:
-        - {protocol: TCP, port: ${GIT_PORT}}
-EOF
+# With -go-cache-namespace, the core program's NetworkPolicy lets test Pods
+# reach go-cache, as well as the mirror and CoreDNS.
+policy_reaches_go_cache() {
+  [[ "$(k -n "${NS}" get networkpolicy tested-test-pods \
+    -o jsonpath='{.spec.egress[*].to[*].namespaceSelector.matchLabels.kubernetes\.io/metadata\.name}')" == *go-cache* ]]
+}
+eventually 30 policy_reaches_go_cache
 metrics() { k get --raw /api/v1/namespaces/go-cache/services/go-cache:http/proxy/metrics; }
 # metric prints the value of a sample, such as
 # go_cache_module_requests_total{result="hit"}, from the metrics in file $1.
@@ -1539,10 +1508,11 @@ eventually 60 no_test_pods
 metrics >"${WORKDIR}/metrics-1.txt"
 (($(grew "${WORKDIR}/metrics-0.txt" "${WORKDIR}/metrics-1.txt" "${MOD_FETCHED}") > 0))
 
-# A Pod that NetworkPolicies treat as a test Pod tries to reach the module
-# proxy itself. kind's network plugin enforces NetworkPolicies, except on
-# hosts that lack the kernel support that it needs. Like a test Pod, the
-# probe meets the restricted Pod Security Standard.
+# A Pod with check-gotest's controller label, which the core program's
+# NetworkPolicy selects, tries to reach the module proxy itself. kind's
+# network plugin enforces NetworkPolicies, except on hosts that lack the
+# kernel support that it needs. Like a test Pod, the probe meets the
+# restricted Pod Security Standard.
 k apply -f - <<EOF
 apiVersion: v1
 kind: Pod
@@ -1550,7 +1520,7 @@ metadata:
   name: np-probe
   namespace: ${NS}
   labels:
-    app.kubernetes.io/name: check-gotest
+    kube.imjasonh.github.io/controller: check-gotest
 spec:
   restartPolicy: Never
   activeDeadlineSeconds: 30
@@ -1612,7 +1582,6 @@ stored_again="$(grew "${m1}" "${m2}" "${PUT_CREATED}")"
 (($(metric "${m2}" "${PUT_DENIED}") == 0))
 echo "c/greet's Pod got example.com/greet through go-cache and stored ${stored} build outputs."
 echo "With the module proxy stopped, c/greet-docs's Pod got the module from go-cache's store, read ${read_back} build outputs, missed ${missed}, and stored ${stored_again}."
-k -n "${NS}" delete networkpolicy test-pods
 echo "::endgroup::"
 
 echo "::group::Only check-gotest's Pending Pods write to the build caches"

@@ -12,9 +12,9 @@ import (
 )
 
 func TestTestPodsPolicy(t *testing.T) {
-	defer func(ml, dl labels, dc cidrs, mns, dns, proxy string) {
-		mirrorLabels, dnsLabels, dnsCIDRs, *mirrorNS, *dnsNS, *goProxy = ml, dl, dc, mns, dns, proxy
-	}(mirrorLabels, dnsLabels, dnsCIDRs, *mirrorNS, *dnsNS, *goProxy)
+	defer func(ml, gl, dl labels, dc cidrs, mns, gns, dns, proxy string) {
+		mirrorLabels, goCacheLabels, dnsLabels, dnsCIDRs, *mirrorNS, *goCacheNS, *dnsNS, *goProxy = ml, gl, dl, dc, mns, gns, dns, proxy
+	}(mirrorLabels, goCacheLabels, dnsLabels, dnsCIDRs, *mirrorNS, *goCacheNS, *dnsNS, *goProxy)
 	set := func(name, value string) {
 		t.Helper()
 		if err := flag.Set(name, value); err != nil {
@@ -62,11 +62,13 @@ func TestTestPodsPolicy(t *testing.T) {
 	cgnat := dest{ip: "100.64.0.1"}
 	home := dest{ip: "192.168.1.1"}
 	nodeLocalDNS := dest{ip: "169.254.20.10"}
+	goCache := dest{ns: "go-cache", labels: map[string]string{"app.kubernetes.io/name": "go-cache"}, ip: "10.244.0.11"}
 
 	t.Log("Test Pods can reach only the mirror and the cluster's DNS Pods.")
 	check(
 		conn{mirror, "TCP", 8081, true}, // the port of kube.Serve in generate's Deployment
 		conn{mirror, "TCP", 8080, false},
+		conn{goCache, "TCP", goCachePort, false},
 		conn{gofmt, "TCP", mirrorPort, false},
 		conn{notMirror, "TCP", mirrorPort, false},
 		conn{coreDNS, "UDP", 53, true},
@@ -99,6 +101,28 @@ func TestTestPodsPolicy(t *testing.T) {
 		conn{home, "TCP", 80, false},
 	)
 	set("goproxy", "off")
+
+	t.Log("With -go-cache-namespace, test Pods can also reach go-cache's port on go-cache's Pods.")
+	set("go-cache-namespace", "go-cache")
+	otherCache := dest{ns: "go-cache", labels: map[string]string{"app": "cache"}, ip: "10.244.0.12"}
+	check(
+		conn{goCache, "TCP", 8080, true}, // go-cache's -addr, where its Service sends port 80
+		conn{goCache, "TCP", 80, false},
+		conn{goCache, "UDP", goCachePort, false},
+		conn{otherCache, "TCP", goCachePort, false},
+		conn{dest{ns: "default", labels: map[string]string{"app.kubernetes.io/name": "go-cache"}, ip: "10.244.1.8"}, "TCP", goCachePort, false},
+		conn{mirror, "TCP", mirrorPort, true},
+		conn{mirror, "TCP", goCachePort, false},
+		conn{coreDNS, "UDP", 53, true},
+		conn{public, "TCP", 443, false},
+	)
+	set("go-cache-labels", "app=cache")
+	check(
+		conn{otherCache, "TCP", goCachePort, true},
+		conn{goCache, "TCP", goCachePort, false},
+	)
+	set("go-cache-namespace", "")
+	check(conn{otherCache, "TCP", goCachePort, false})
 
 	t.Log("The flags choose the mirror's and the DNS servers' Pods, and DNS servers outside Pods.")
 	set("mirror-namespace", "vcs")

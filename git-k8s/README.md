@@ -938,15 +938,19 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   `GOPROXY=off`, so tests can't download modules, unless you
   [share modules and build outputs](#share-modules-and-build-outputs).
 - A NetworkPolicy that the core program owns lets the Pod reach only the
-  mirror and the cluster's DNS servers, and lets nothing reach it. When the
-  core program's `-goproxy` isn't `off`, the policy also lets the Pod reach
-  ports 80 and 443 on IPv4 addresses outside the private ranges
-  (`10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`), the shared address
-  space (`100.64.0.0/10`), and the link-local range (`169.254.0.0/16`).
-  Those ranges usually hold the cluster's Pods, Services, and nodes, and a
-  cloud's metadata server. If your cluster gives Pods, Services, or nodes
-  addresses outside those ranges, the policy lets test Pods reach those
-  addresses on ports 80 and 443 too, so leave `-goproxy` `off` there.
+  mirror and the cluster's DNS servers, and lets nothing reach it. With the
+  core program's `-go-cache-namespace`, the policy also lets the Pod reach
+  `go-cache`, as
+  [Share modules and build outputs](#share-modules-and-build-outputs)
+  describes. When the core program's `-goproxy` isn't `off`, the policy also
+  lets the Pod reach ports 80 and 443 on IPv4 addresses outside the private
+  ranges (`10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`), the shared
+  address space (`100.64.0.0/10`), and the link-local range
+  (`169.254.0.0/16`). Those ranges usually hold the cluster's Pods,
+  Services, and nodes, and a cloud's metadata server. If your cluster gives
+  Pods, Services, or nodes addresses outside those ranges, the policy lets
+  test Pods reach those addresses on ports 80 and 443 too, so leave
+  `-goproxy` `off` there.
 - If fetching fails, the check starts a new Pod 30 seconds later, and 60
   seconds after a second failure, so its three Pods outlast a restart of the
   core program.
@@ -1030,8 +1034,9 @@ it:
   such as the source files, the compiler and its flags, and the step's
   dependencies.
 
-Install `go-cache` with `generate`, apply `config/go-cache.yaml`, and set
-`check-gotest`'s `-go-cache` flag to `go-cache`'s URL:
+Install `go-cache` with `generate`, apply `config/go-cache.yaml`, set
+`check-gotest`'s `-go-cache` flag to `go-cache`'s URL, and set the core
+program's `-go-cache-namespace` flag to `go-cache`'s namespace:
 
 ```sh
 go run ./cmd/go-cache generate -registry=REGISTRY \
@@ -1041,7 +1046,17 @@ kubectl apply -f config/go-cache.yaml
 go run ./cmd/check-gotest generate -registry=REGISTRY \
   -base=cgr.dev/chainguard/git:latest \
   -- -go-cache=http://go-cache.go-cache | kubectl apply -f -
+go run ./cmd/git-k8s generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/git:latest \
+  -- -go-cache-namespace=go-cache | kubectl apply -f -
 ```
+
+Pass `-go-cache-namespace` with the core program's other flags. It makes
+the test Pods' [NetworkPolicy](#sandboxed-checks) let them reach port 8080
+on the Pods labeled `app.kubernetes.io/name=go-cache` in that namespace.
+NetworkPolicies match the port that a Service sends connections to, and
+`go-cache` listens on port 8080 behind its Service's port 80. If its Pods
+have other labels, also set the core program's `-go-cache-labels`.
 
 `go-cache` keeps modules and build outputs on the `emptyDir` volume at
 `/tmp`, and keeps their total size, with the writes in progress, under
@@ -1215,65 +1230,6 @@ The design leaves these risks:
   doesn't have without keeping them. That slows other namespaces' test
   Pods, but doesn't fail them. A `-max-size` above 4Gi leaves room for
   modules.
-
-### Restrict test Pods' network
-
-`check-gotest` doesn't add a NetworkPolicy, so a test can reach anything
-that the namespace's Pods can, including the internet. A test Pod needs to
-reach only DNS, the git remote, and `go-cache`, if you use it. This
-NetworkPolicy, in each namespace that has a `GitRepository`, allows that
-and nothing else:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: test-pods
-  namespace: NAMESPACE
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: check-gotest
-  policyTypes: [Ingress, Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - {protocol: UDP, port: 53}
-        - {protocol: TCP, port: 53}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: go-cache
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: go-cache
-      ports:
-        - {protocol: TCP, port: 8080}
-    - to:
-        - ipBlock:
-            cidr: GIT_REMOTE_IP/32
-      ports:
-        - {protocol: TCP, port: 443}
-```
-
-Replace `NAMESPACE`, and replace `GIT_REMOTE_IP` and `443` with the git
-remote's address and port. A remote whose address changes needs a wider
-block. Leave out the `go-cache` rule if you don't use it, and change the
-DNS rule if your cluster's DNS Pods have other labels. NetworkPolicies
-match the port that a Service forwards to, so the `go-cache` rule allows
-port 8080, which `go-cache` listens on, instead of the Service's port 80.
-
-The policy applies to the whole Pod, and the init container that fetches
-the head needs the remote, so tests can reach the remote too, without the
-credentials. A NetworkPolicy has no effect unless the cluster's network
-plugin enforces NetworkPolicies. The end-to-end test applies this policy,
-and reports whether the cluster enforced it.
 
 ### Agentic checks
 
@@ -2416,7 +2372,10 @@ If you set `check-gotest`'s `-goproxy`, set the same value on the core
 program. Otherwise, on a cluster that enforces NetworkPolicies, the test
 Pods' NetworkPolicy keeps them from reaching the proxy. A proxy inside the
 cluster also needs a NetworkPolicy of your own, as
-[Sandboxed checks](#sandboxed-checks) describes.
+[Sandboxed checks](#sandboxed-checks) describes. Likewise, if you set
+`check-gotest`'s `-go-cache`, set the core program's `-go-cache-namespace`,
+as [Share modules and build outputs](#share-modules-and-build-outputs)
+describes.
 
 `config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and

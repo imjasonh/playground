@@ -16,19 +16,22 @@ import (
 // NetworkPolicy, so that check-gotest, which creates Pods in the
 // repositories' namespaces, can't change NetworkPolicies.
 var (
-	goProxy  = flag.String("goproxy", "off", "check-gotest's -goproxy; unless it's off, test Pods can reach ports 80 and 443 on public IPv4 addresses")
-	mirrorNS = flag.String("mirror-namespace", "git-k8s", "namespace of this program's Pods, where test Pods reach the mirror")
-	dnsNS    = flag.String("dns-namespace", "kube-system", "namespace of the cluster's DNS Pods")
+	goProxy   = flag.String("goproxy", "off", "check-gotest's -goproxy; unless it's off, test Pods can reach ports 80 and 443 on public IPv4 addresses")
+	goCacheNS = flag.String("go-cache-namespace", "", "namespace of the go-cache Pods that check-gotest's -go-cache reaches; unless it's empty, test Pods can reach port 8080 on them")
+	mirrorNS  = flag.String("mirror-namespace", "git-k8s", "namespace of this program's Pods, where test Pods reach the mirror")
+	dnsNS     = flag.String("dns-namespace", "kube-system", "namespace of the cluster's DNS Pods")
 )
 
 var (
-	mirrorLabels = labels{"app.kubernetes.io/name": "git-k8s"}
-	dnsLabels    = labels{"k8s-app": "kube-dns"}
-	dnsCIDRs     cidrs
+	mirrorLabels  = labels{"app.kubernetes.io/name": "git-k8s"}
+	goCacheLabels = labels{"app.kubernetes.io/name": "go-cache"}
+	dnsLabels     = labels{"k8s-app": "kube-dns"}
+	dnsCIDRs      cidrs
 )
 
 func init() {
 	flag.Var(&mirrorLabels, "mirror-labels", "labels of this program's Pods, as KEY=VALUE[,KEY=VALUE]")
+	flag.Var(&goCacheLabels, "go-cache-labels", "labels of go-cache's Pods, as KEY=VALUE[,KEY=VALUE]")
 	flag.Var(&dnsLabels, "dns-labels", "labels of the cluster's DNS Pods, as KEY=VALUE[,KEY=VALUE]")
 	flag.Var(&dnsCIDRs, "dns-cidrs", "CIDRs of DNS servers that test Pods can also reach, such as NodeLocal DNSCache's 169.254.20.10/32, separated by commas")
 }
@@ -95,6 +98,10 @@ func (c *cidrs) Set(s string) error {
 // connection to, not the Service's port.
 const mirrorPort = 8081
 
+// goCachePort is the port that go-cache listens on by default, where its
+// Service sends connections.
+const goCachePort = 8080
+
 // privateRanges are the IPv4 ranges where a cluster's Pods, Services, and
 // nodes, and a cloud's metadata server, usually are: the private ranges,
 // the shared address space, and the link-local range.
@@ -106,7 +113,9 @@ var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "1
 // the policies of the repositories in a namespace are the same, and each
 // one covers every test Pod there. It lets the Pods
 // reach the mirror's port on this program's Pods, and port 53 on the DNS
-// Pods and -dns-cidrs, and lets nothing reach them. With -goproxy, it also
+// Pods and -dns-cidrs, and lets nothing reach them. With
+// -go-cache-namespace, it also lets them reach goCachePort on go-cache's
+// Pods, where they get modules and build outputs. With -goproxy, it also
 // lets them reach ports 80 and 443 on IPv4 addresses outside privateRanges,
 // which is where a public module proxy is. On a cluster that gives Pods,
 // Services, or nodes addresses outside privateRanges, that rule lets test
@@ -127,6 +136,12 @@ func testPodsPolicy(repo *gitk8s.GitRepository) *NetworkPolicy {
 			To:    dns,
 			Ports: []NetworkPolicyPort{{Protocol: "UDP", Port: 53}, {Protocol: "TCP", Port: 53}},
 		}},
+	}
+	if *goCacheNS != "" {
+		p.Spec.Egress = append(p.Spec.Egress, NetworkPolicyRule{
+			To:    []NetworkPolicyPeer{{NamespaceSelector: namespace(*goCacheNS), PodSelector: &LabelSelector{MatchLabels: maps.Clone(goCacheLabels)}}},
+			Ports: []NetworkPolicyPort{{Protocol: "TCP", Port: goCachePort}},
+		})
 	}
 	if *goProxy != "off" {
 		p.Spec.Egress = append(p.Spec.Egress, NetworkPolicyRule{
