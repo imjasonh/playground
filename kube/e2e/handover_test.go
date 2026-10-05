@@ -127,8 +127,11 @@ func showResults(w http.ResponseWriter, r *http.Request) {
 // the Report, which starts the cache that Get reads there.
 func readReport(t *testing.T, addr, ns, name string) {
 	t.Helper()
+	// The manager opens kube.Serve's listener before it runs the server, so
+	// a request to a server that never runs would wait forever.
+	hc := &http.Client{Timeout: 5 * time.Second}
 	e2e.Eventually(t, 30*time.Second, func() error {
-		resp, err := http.Get("http://" + addr + "/reports/" + ns + "/" + name)
+		resp, err := hc.Get("http://" + addr + "/reports/" + ns + "/" + name)
 		if err != nil {
 			return err
 		}
