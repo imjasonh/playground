@@ -233,7 +233,7 @@ delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods
 under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 `-timeout`, and `-goproxy` to change the rest.
 
-Both of a test Pod's containers meet the `restricted`
+All of a test Pod's containers meet the `restricted`
 [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 An admission policy keeps `check-gotest` to its own Pods, in namespaces that
 opt in to test Pods and enforce the `restricted` standard. See
@@ -386,9 +386,12 @@ defend against that as follows:
   more. Anyone who can create tokens for the namespace's `default` service
   account, which `check-gotest`'s Pods run as, can bind one to such a Pod
   while it's Pending, and write too. `generate` lets a check that runs Pods
-  create them in every namespace, so another such check could set the
-  label too, unless an admission policy keeps each check to Pods with its
-  own label. Namespaces don't share build caches.
+  create them in every namespace, but the `git-k8s-check-pods` policy in
+  `config/policy.yaml` keeps each check to Pods with its own label, so
+  another check's Pods can't write. They can read the build caches of a
+  namespace that opts in to test Pods, where they can already mount the
+  namespace's Secrets. Reads don't change what any Pod compiles.
+  Namespaces don't share build caches.
 
 The design leaves these risks:
 
