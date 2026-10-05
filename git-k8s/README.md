@@ -535,11 +535,11 @@ func main() {
 `in.Repo` fetches the branch and its parent into the program's local
 repository. A verdict with a `Fix` commit asks the framework to push it.
 Both need `Remote: credentials.Remote`, which reads the repository's
-Secret. A check makes a `Fix` commit with `in.CommitTree`, which also needs
-`SigningKey: signing.Key` to [sign it](#sign-commits). `generate` grants a
-program what its packages call, so a check that reads only the `GitBranch`,
-such as `check-approval`, leaves both out, and its program can't read
-Secrets.
+Secret. A check makes a `Fix` commit with `in.CommitTree`, or replays
+commits with `in.Replay`, which also need `SigningKey: signing.Key` to
+[sign the commits](#sign-commits). `generate` grants a program what its
+packages call, so a check that reads only the `GitBranch`, such as
+`check-approval`, leaves both out, and its program can't read Secrets.
 
 A check runs again when the branch's head changes, and with `UsesParent`,
 when the parent's head changes. `Always` runs it on every reconcile, for a
@@ -1275,6 +1275,10 @@ while the branch is under the limit, like any fix. When neither git nor the
 agent resolves the conflicts, the check fails with the reason and leaves the
 branch for a person, because a wrong resolution is worse than none.
 
+The check [signs](#sign-commits) the commits that it pushes, like any fix.
+A replay keeps the author of the commit that it replays, but git-k8s is its
+committer, so a forge verifies the replay with git-k8s's key.
+
 In a [merge queue](#merge-queue), the check's merges keep the branch's
 place, like other fixes, because each has the trailer and has the branch's
 head as its first parent. A replay takes the branch out of the queue when it
@@ -1716,16 +1720,16 @@ remote accept force pushes to proposal branches.
 
 ## Sign commits
 
-`check-base`, `check-gofmt`, and `check-review` make commits: merges of a
-parent into a branch, formatting fixes, and an agent's fixes. The merge
+`check-base`, `check-gofmt`, `check-review`, and `check-conflicts` make
+commits: merges of a parent into a branch, formatting fixes, an agent's
+fixes, and the commits that resolve conflicts and divergences. The merge
 controller makes the commits of
 [squash and rebase landings](#landing-methods), including those that it
 pushes to the branch for another round of checks. A fast-forward landing
 makes none, because it moves the parent to a commit that's already on the
-branch.
-To sign these commits, make an SSH key for signing only, put it in its own
-Secret in the `GitRepository`'s namespace, and name the Secret in the
-`GitRepository`:
+branch. To sign these commits, make an SSH key for signing only, put it in
+its own Secret in the `GitRepository`'s namespace, and name the Secret in
+the `GitRepository`:
 
 ```sh
 ssh-keygen -t ed25519 -N '' -C git-k8s -f git-k8s-signing
@@ -1744,12 +1748,13 @@ spec:
 
 git-k8s signs with git's SSH signature format, `gpg.format=ssh`. Git runs
 `ssh-keygen` to sign, so the images of `git-k8s`, `check-base`,
-`check-gofmt`, and `check-review` need it, and the `cgr.dev/chainguard/git`
-image that [Install](#install) uses has it. The key must be unencrypted, in
-the OpenSSH format that `ssh-keygen` writes. Ed25519 and RSA signatures come
-out the same every time, so a check still makes the same fix commit from the
-same inputs, and a landing makes the same commits; ECDSA signatures don't.
-Without `signingKeyRef`, these commits aren't signed.
+`check-gofmt`, `check-review`, and `check-conflicts` need it, and the
+`cgr.dev/chainguard/git` image that [Install](#install) uses has it. The key
+must be unencrypted, in the OpenSSH format that `ssh-keygen` writes. Ed25519
+and RSA signatures come out the same every time, so a check still makes the
+same fix commit from the same inputs, and a landing makes the same commits;
+ECDSA signatures don't. Without `signingKeyRef`, these commits aren't
+signed.
 
 git-k8s doesn't support keyless signing with
 [gitsign](https://github.com/sigstore/gitsign), which signs with a
@@ -1773,19 +1778,20 @@ credentials for the remote, and each test Pod's init container gets some of
 its keys. A check or a landing reports an error instead of signing if
 `signingKeyRef` names the `secretRef` Secret.
 
-Only the core `git-k8s` program, `check-base`, `check-gofmt`, and
-`check-review` read the signing Secret, through the `signing` package, which
-no other program links. The checks read it only to sign a commit that their
-policy lets them push, and the merge controller only when a squash or rebase
-landing makes commits. `check-review` commits its agent's changes in its own
-process, so agent Pods never get the key. Other programs don't read the key,
-but some can:
+Only the core `git-k8s` program, `check-base`, `check-gofmt`, `check-review`,
+and `check-conflicts` read the signing Secret, through the `signing` package,
+which no other program links. The checks read it only to sign a commit that
+their policy lets them push, and the merge controller only when a squash or
+rebase landing makes commits. `check-review` and `check-conflicts` commit
+their agents' changes in their own processes, so agent Pods never get the
+key. Other programs don't read the key, but some can:
 
 - `generate` lets each program that reads `secretRef` Secrets get every
   Secret in the namespaces that it watches, which is every namespace unless
   you pass `-watch-namespace`. Those programs are the core `git-k8s`
-  program, `check-base`, `check-gofmt`, `check-risk`, and `check-review`, so
-  signing gives the programs that sign no new permissions.
+  program, `check-base`, `check-gofmt`, `check-risk`, `check-review`, and
+  `check-conflicts`, so signing gives the programs that sign no new
+  permissions.
 - `check-gotest` doesn't give its test Pods the signing Secret, but it can
   create Pods, and a Pod can mount any Secret in its namespace. The
   [admission policies](#install) let it create Pods only in namespaces that
@@ -1808,8 +1814,8 @@ the commit's committer. On GitHub:
    **Settings** > **SSH and GPG keys** > **New SSH key**, set **Key type**
    to **Signing Key**, and add `git-k8s-signing.pub`. Or run
    `gh ssh-key add git-k8s-signing.pub --type signing` as that account.
-2. Set the `-identity-email` flag of `git-k8s`, `check-base`,
-   `check-gofmt`, and `check-review` to an email address that the account
+2. Set the `-identity-email` flag of `git-k8s`, `check-base`, `check-gofmt`,
+   `check-review`, and `check-conflicts` to an email address that the account
    has verified, such as its `ID+USERNAME@users.noreply.github.com` address.
    GitHub marks a commit **Verified** only when its committer email belongs
    to the account that has the key. To pass a flag, add it after `--` in the
@@ -1849,9 +1855,10 @@ protection rules and rulesets apply to those pushes:
   when it has nothing to change, so people have to sign with a key on their
   GitHub account and use a committer email that the account has verified.
 - **Require linear history** rejects the merge commits that `check-base`
-  makes. Leave it off for a parent whose merge policy lets `base` push and
-  lands branches by `FastForward`, the default. `Squash` and `Rebase`
-  landings add no merge commits to the parent.
+  and `check-conflicts` make. Leave it off for a parent whose merge policy
+  lets `base` or `conflicts` push and lands branches by `FastForward`, the
+  default. `Squash` and `Rebase` landings add no merge commits to the
+  parent.
 - **Block force pushes** affects git-k8s only on branches that land by
   `Squash` or `Rebase`, where it stops the merge controller from replacing
   their commits, as [Landing methods](#landing-methods) describes. git-k8s
