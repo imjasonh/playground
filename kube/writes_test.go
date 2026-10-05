@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -139,6 +140,128 @@ func TestReconcileSeesItsOwnStatusWrite(t *testing.T) {
 				t.Errorf("%d status writes after the events, want %d", got, n)
 			}
 		})
+	}
+}
+
+// applyStepper uses Apply to raise the status count of the object named
+// target by one in each reconcile of another object, up to n. It records the
+// count that each reconcile read.
+type applyStepper struct {
+	target string
+	n      int
+	mu     sync.Mutex
+	seen   []int
+}
+
+func (s *applyStepper) Reconcile(ctx context.Context, o *counted) error {
+	if o.Name == s.target {
+		return nil
+	}
+	cur := Get[counted](ctx, o.Namespace, s.target)
+	if cur == nil {
+		return nil
+	}
+	s.mu.Lock()
+	s.seen = append(s.seen, cur.Status.Count)
+	s.mu.Unlock()
+	next := &counted{Object: Meta(s.target, nil)}
+	next.Status.Count = cur.Status.Count
+	if next.Status.Count < s.n {
+		next.Status.Count++
+		RequeueAfter(ctx, time.Millisecond)
+	}
+	Apply(ctx, next)
+	return nil
+}
+
+func (s *applyStepper) counts() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.seen)
+}
+
+func TestReconcileSeesItsOwnStatusApply(t *testing.T) {
+	const n = 5
+	f, c := newFakeAPI(t, true)
+	// The fake API server holds back the watch events for status applies,
+	// so a reconcile can read an applied status only from the apply's
+	// response. The apply of the rest of the object changes nothing.
+	var held []string
+	f.mu.Lock()
+	f.objs["a"] = map[string]any{"metadata": map[string]any{"name": "a", "namespace": "ns", "uid": "a-uid", "resourceVersion": "1"}}
+	f.objs["t"] = map[string]any{"metadata": map[string]any{"name": "t", "namespace": "ns", "uid": "t-uid", "resourceVersion": "2"}}
+	f.rv = 2
+	f.write = func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Status any `json:"status"`
+		}
+		path, status := strings.CutSuffix(r.URL.Path, "/status")
+		if r.Method != http.MethodPatch || path != "/api/v1/namespaces/ns/configmaps/t" || json.NewDecoder(r.Body).Decode(&body) != nil {
+			http.Error(w, "unexpected write", http.StatusBadRequest)
+			return
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		o := f.objs["t"]
+		if status {
+			f.rv++
+			o = maps.Clone(o)
+			meta := maps.Clone(o["metadata"].(map[string]any))
+			meta["resourceVersion"] = strconv.Itoa(f.rv)
+			o["metadata"], o["status"] = meta, body.Status
+			f.objs["t"] = o
+			b, _ := json.Marshal(map[string]any{"type": client.Modified, "object": o})
+			held = append(held, string(b))
+		}
+		_ = json.NewEncoder(w).Encode(o)
+	}
+	f.mu.Unlock()
+	applies := func() []string {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return slices.Clone(held)
+	}
+
+	r := &applyStepper{target: "t", n: n}
+	ctl := For[counted](r, Named("apply-stepper"))
+	m := &Manager{client: c, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), DisableProtobuf: true}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- m.Run(ctx, ctl) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	})
+
+	waitFor(t, "reconciles", func() bool { return len(r.counts()) > n })
+	want := make([]int, n+1)
+	for i := range want {
+		want[i] = i
+	}
+	if got := r.counts()[:n+1]; !slices.Equal(got, want) {
+		t.Fatalf("reconciles read counts %v, want %v", got, want)
+	}
+	if got := len(applies()); got != n {
+		t.Errorf("%d status applies, want %d", got, n)
+	}
+
+	for _, e := range applies() {
+		f.events <- e
+	}
+	inf := ctl.(*controller[counted, *counted]).primary
+	waitFor(t, "the watch to deliver the applies", func() bool {
+		inf.store.mu.RLock()
+		defer inf.store.mu.RUnlock()
+		o := inf.store.objs["ns"]["t"]
+		return o != nil && o.Status.Count == n && len(inf.store.writes) == 0
+	})
+	if got := r.counts()[n+1:]; slices.ContainsFunc(got, func(v int) bool { return v != n }) {
+		t.Errorf("reconciles after the events read counts %v, want only %d", got, n)
+	}
+	if got := len(applies()); got != n {
+		t.Errorf("%d status applies after the events, want %d", got, n)
 	}
 }
 
