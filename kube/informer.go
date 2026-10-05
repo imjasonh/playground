@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -91,6 +92,10 @@ type informer[T any, P Resource[T]] struct {
 	m   *metrics
 
 	store store[T, P]
+	// sel is cfg.selector, parsed. ownWrites is false when the cache can't
+	// evaluate it, and then doesn't show this process's writes.
+	sel       selector
+	ownWrites bool
 	// pb decodes protobuf responses; nil means read JSON.
 	pb *protobuf.Plan
 
@@ -127,6 +132,11 @@ func newInformer[T any, P Resource[T]](id int, ti *typeInfo, res resolved, c *cl
 	}
 	if cfg.selector != "" {
 		inf.log = inf.log.With("selector", cfg.selector)
+	}
+	// parseSelector doesn't parse the > and < operators, and a selector
+	// with them would seem to match no object.
+	if sel, err := parseSelector(cfg.selector); err == nil && !strings.ContainsAny(cfg.selector, "<>") {
+		inf.sel, inf.ownWrites = sel, true
 	}
 	if cfg.protobuf {
 		inf.pb = protoPlan(ti, inf.log)
@@ -186,6 +196,43 @@ func (inf *informer[T, P]) owned(owner string) []any {
 		out[i] = o
 	}
 	return out
+}
+
+// begin prepares the cache for a write by this process to the object at k.
+// It returns the function to call with what the write stored, or nil if
+// the cache doesn't hold the object.
+func (inf *informer[T, P]) begin(k Key) func(*written) {
+	if !inf.res.namespaced {
+		k.Namespace = ""
+	}
+	if !inf.ownWrites || inf.cfg.namespace != "" && k.Namespace != inf.cfg.namespace {
+		return nil
+	}
+	f := inf.store.begin(k)
+	return func(w *written) { inf.store.end(f, inf.own(w)) }
+}
+
+// own decodes what a write stored as this cache holds it. It returns nil if
+// the write's result is unknown, and an ownWrite without an object if the
+// object is gone or doesn't match the cache's selector.
+func (inf *informer[T, P]) own(w *written) *ownWrite[T] {
+	switch {
+	case w == nil:
+		return nil
+	case w.gone:
+		return &ownWrite[T]{uid: w.uid}
+	}
+	obj := new(T)
+	if err := inf.check(json.Unmarshal(w.obj, obj)); err != nil {
+		return nil
+	}
+	inf.normalize(obj)
+	m := metaOf[T, P](obj)
+	ow := &ownWrite[T]{obj: obj, rv: m.ResourceVersion, uid: m.UID}
+	if !inf.sel.matches(m.Labels) {
+		ow.obj = nil
+	}
+	return ow
 }
 
 // waitSynced blocks until the first list completes. If the first attempt
@@ -250,6 +297,9 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 	rv, needSync := "", true
 	for ctx.Err() == nil {
 		var err error
+		if needSync {
+			inf.store.beginList()
+		}
 		switch {
 		case needSync && inf.streaming.Load():
 			var synced bool
@@ -455,7 +505,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 				continue
 			}
 			if typ == client.Deleted {
-				if old := inf.store.remove(m.Key()); old != nil {
+				if old := inf.store.remove(obj); old != nil {
 					obj = old
 				}
 				inf.notify(obj, nil, false)

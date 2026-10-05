@@ -241,6 +241,15 @@ func (g grants) add(group, resource, name string, verbs ...string) {
 	}
 }
 
+// addAll adds the permissions in other to g.
+func (g grants) addAll(other grants) {
+	for k, verbs := range other {
+		for v := range verbs {
+			g.add(k.group, k.resource, k.name, v)
+		}
+	}
+}
+
 // rules turns grants into RBAC rules, combining resources of a group that
 // need the same verbs.
 func (g grants) rules() []any {
@@ -290,6 +299,9 @@ type installPlan struct {
 	webhooks   bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
+	// defaultNS holds permissions in the default namespace, where events
+	// about cluster-scoped objects go.
+	defaultNS grants
 }
 
 // grantsFor returns where the permissions for ti's resources go. A program
@@ -301,11 +313,20 @@ func (p *installPlan) grantsFor(ti *typeInfo, watching bool) grants {
 	return p.cluster
 }
 
+// eventGrantsFor returns where the permissions to record events about ti's
+// objects go.
+func (p *installPlan) eventGrantsFor(ti *typeInfo, watching bool) grants {
+	if ti.scope == "Cluster" {
+		return p.defaultNS
+	}
+	return p.grantsFor(ti, watching)
+}
+
 // plan works out what the program needs. Controllers declare their types,
 // and the program's source shows the types its reconciles and webhooks
 // read and write.
 func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pkg string) (*installPlan, error) {
-	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}, defaultNS: grants{}}
 	cluster := p.cluster
 	watching := o.watchNamespace != ""
 	warned := map[string]bool{}
@@ -326,6 +347,12 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			types[k] = ti
 		}
 	}
+	var reconciled []*typeInfo
+	// creates holds the CRDs of types that the program defines and owns,
+	// which it creates if they're missing.
+	creates := map[string]bool{}
+	var patchIfOwns []func()
+	owns := false
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -337,6 +364,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			continue
 		}
 		addType(d.ti)
+		reconciled = append(reconciled, d.ti)
 		p.electLeader = o.replicas > 1 || o.shards > 1
 		group, plural := resourceName(d.ti)
 		own := grantsFor(d.ti)
@@ -346,7 +374,19 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			o.logf("%s has more than one version, so its rules stay in the ClusterRole", d.ti.kind)
 			own = cluster
 		}
-		own.add(group, plural, "", "get", "list", "watch", "patch")
+		own.add(group, plural, "", "get", "list", "watch")
+		owns = owns || len(d.owns) > 0
+		switch {
+		case d.finalizes || d.versioned:
+			own.add(group, plural, "", "patch")
+		case d.ti.scope != "Cluster":
+			// An owned object in another namespace, or a cluster-scoped
+			// one, can't carry an owner reference to a namespaced owner, so
+			// the framework adds a finalizer to the owner. The source
+			// doesn't show which namespace an owned object goes in, so
+			// owning any object counts.
+			patchIfOwns = append(patchIfOwns, func() { own.add(group, plural, "", "patch") })
+		}
 		if d.ti.status != nil {
 			own.add(group, plural+"/status", "", "patch")
 		}
@@ -359,21 +399,34 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			addType(oti)
 			g, r := resourceName(oti)
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
+			if oti.custom {
+				creates[r+"."+g] = true
+			}
 		}
 	}
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
 	o.logf("finding the types that %s reads and writes", pkg)
-	uses, warnings, err := analysis.Find(ctx, analysis.Config{
+	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
+		Calls: []string{"Eventf"},
 	})
 	if err != nil {
 		return nil, err
 	}
-	for _, w := range warnings {
-		o.logf("warning: %s; add its permissions to the ClusterRole yourself", w)
+	for _, u := range unresolved {
+		o.logf("warning: %s: can't tell which types this call passes to kube.%s; add its permissions to the ClusterRole yourself", u.Pos, u.Func)
+		owns = owns || u.Func == "Own"
 	}
 	for _, u := range uses {
+		if u.Func == "Eventf" {
+			// Eventf records events about the object being reconciled, and
+			// any controller's reconcile may call it.
+			for _, ti := range reconciled {
+				p.eventGrantsFor(ti, watching).add("events.k8s.io", "events", "", "create", "patch")
+			}
+			continue
+		}
 		ti := &typeInfo{}
 		if err := ti.parseTag(u.Type, u.Name, reflect.StructTag(u.Tag).Get("kube")); err != nil {
 			return nil, err
@@ -381,11 +434,27 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		addType(ti)
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
+		if u.Func == "Apply" && slices.Contains(u.Fields, "status") {
+			grantsFor(ti).add(g, r+"/status", "", "patch")
+		}
+		if ti.custom && u.Func == "Own" {
+			creates[r+"."+g] = true
+		}
+	}
+	if owns || slices.ContainsFunc(uses, func(u analysis.Use) bool { return u.Func == "Own" }) {
+		for _, grant := range patchIfOwns {
+			grant()
+		}
 	}
 	for _, crd := range crds {
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get", "patch")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions/status", crd, "patch")
+		delete(creates, crd)
+	}
+	for crd := range creates {
+		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
+		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get")
 	}
 	// The program deletes webhook configurations that an earlier version
 	// of it left, even when it has no webhooks itself.
@@ -405,6 +474,14 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
 	}
 	o.grantInstalls(p, installs, types)
+	switch {
+	case o.watchNamespace == "default":
+		p.watched.addAll(p.defaultNS)
+		clear(p.defaultNS)
+	case o.namespace == "default":
+		p.local.addAll(p.defaultNS)
+		clear(p.defaultNS)
+	}
 	if o.watchNamespace == o.namespace {
 		for k, verbs := range p.watched {
 			for v := range verbs {
@@ -535,8 +612,21 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	if len(p.watched) > 0 {
 		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
 	}
-	for _, ns := range slices.Sorted(maps.Keys(p.namespaces)) {
-		docs = append(docs, role(object{{"name", o.name}, {"namespace", ns}, {"labels", labels}}, p.namespaces[ns])...)
+	// Events about cluster-scoped objects go in the default namespace, which
+	// can also hold objects that Install applies, and one Role covers both.
+	namespaces := p.namespaces
+	if len(p.defaultNS) > 0 {
+		namespaces = maps.Clone(p.namespaces)
+		if namespaces == nil {
+			namespaces = map[string]grants{}
+		}
+		g := grants{}
+		g.addAll(namespaces["default"])
+		g.addAll(p.defaultNS)
+		namespaces["default"] = g
+	}
+	for _, ns := range slices.Sorted(maps.Keys(namespaces)) {
+		docs = append(docs, role(object{{"name", o.name}, {"namespace", ns}, {"labels", labels}}, namespaces[ns])...)
 	}
 	args := []string{"-addr=:8080"}
 	switch {
@@ -568,6 +658,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		{"name", o.name},
 		{"image", ref},
 		{"args", args},
+		{"env", []any{object{{"name", "KUBE_IMAGE"}, {"value", ref}}}},
 		{"ports", ports},
 		{"readinessProbe", probe("/readyz")},
 		{"livenessProbe", probe("/healthz")},
