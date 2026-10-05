@@ -16,7 +16,7 @@ var policies = []struct {
 	exposures []string
 }{
 	{"git-k8s-check-results", []string{"checks can write each other's results"}},
-	{"git-k8s-branches", []string{"git-k8s service accounts can approve branches", "checks can change GitBranch objects"}},
+	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks can change GitBranch objects"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
 	{"git-k8s-approvals", []string{"anyone who can patch a GitBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
 }
@@ -194,14 +194,22 @@ func list(items []string) string {
 // matchResources, so the core program's apply keeps any that someone adds, and
 // the patch removes them. params is set when the binding's policy reads
 // parameters. The API server ignores the paramRef of a binding whose policy
-// doesn't.
+// doesn't. For a binding without a paramRef, the API server evaluates a policy
+// that reads parameters without them, so the policy ignores the entries in the
+// git-k8s-checks ConfigMap, and the patch adds the paramRef from
+// config/policy.yaml.
 func denyPatch(b *admissionPolicyBinding, params bool) string {
 	var fields []string
 	if !slices.Contains(b.Spec.ValidationActions, "Deny") {
 		fields = append(fields, `"validationActions":["Deny"]`)
 	}
-	if params && b.Spec.ParamRef != nil && b.Spec.ParamRef.ParameterNotFoundAction != "Deny" {
-		fields = append(fields, `"paramRef":{"parameterNotFoundAction":"Deny"}`)
+	if params {
+		switch {
+		case b.Spec.ParamRef == nil:
+			fields = append(fields, `"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}`)
+		case b.Spec.ParamRef.ParameterNotFoundAction != "Deny":
+			fields = append(fields, `"paramRef":{"parameterNotFoundAction":"Deny"}`)
+		}
 	}
 	if b.Spec.MatchResources.limits() {
 		fields = append(fields, `"matchResources":null`)

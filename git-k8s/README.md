@@ -1595,8 +1595,9 @@ head:
   messages. It skips a commit whose replay changes nothing, such as one whose
   change the external repository's head already has. The check pushes to the
   side that didn't rewind, so the result can change commits to resolve
-  conflicts. If a commit can't be replayed by itself, such as a merge, or a
-  commit whose replay conflicts, or if the replays don't have every change
+  conflicts. If a commit can't be replayed by itself, such as a merge, a
+  commit whose replay conflicts, or a commit with an author that git refuses
+  or whose date git would change, or if the replays don't have every change
   that both sides made, the check replays the branch's whole change since
   `base` as one commit on top of the external repository's head instead.
   Git and the agent resolve that commit's conflicts as they resolve a
@@ -1822,8 +1823,11 @@ the Secret with the repository's credentials. A check's `Job` sets `Mirror`
 and the URL of the check's remote instead, and the check's `Running` result
 must name the run's Pod in its `pod` output, as `Run` does. `Run` builds a
 `Job` from a check's branch, so both start the same Pods, within the same
-`-max-pods` and `-max-runs-per-day` limits. For a check, the `Runner`'s
-name must be the check's name, and the `Job`'s namespace must opt in to
+`-max-pods` and `-max-runs-per-day` limits. The `Job`'s namespace must be
+the namespace of the object that the controller reconciles, because
+`RunJob` declares the Pod with `kube.Own`, which puts it there. The Secrets
+that the Pod reads must be in that namespace too. For a check, the
+`Runner`'s name must be the check's name, and that namespace must opt in to
 check Pods, as [Install](#install) describes.
 
 Call `RunJob` on each reconcile with the `JobState` that the last call
@@ -2547,15 +2551,19 @@ kubectl -n git-k8s rollout restart deployment/git-k8s
 
 `PoliciesInstalled` also turns `False` when no binding for a policy denies
 every request that the policy rejects. A binding can let some of them
-through when its `validationActions` doesn't hold `Deny`, when its policy
-reads parameters and its `paramRef.parameterNotFoundAction` isn't `Deny`,
-when its `matchResources` sets resource rules, or when a selector in its
-`matchResources` sets `matchLabels` or `matchExpressions`. The API server
-ignores the `paramRef` of a binding whose policy doesn't read parameters,
-such as the third and fourth policies, so the condition does too. The
-message gives a `kubectl patch` command that makes the binding from
-`config/policy.yaml` deny all of them again, without a restart. For a
-binding that someone set to `Warn`, the command is:
+through when its `validationActions` doesn't hold `Deny`, when its
+`matchResources` sets resource rules, or when a selector in its
+`matchResources` sets `matchLabels` or `matchExpressions`. If a binding's
+policy reads parameters, as the first two do, the binding also lets some
+through when its `paramRef.parameterNotFoundAction` isn't `Deny`, or when
+it has no `paramRef`. Without a `paramRef`, the API server evaluates the
+policy without parameters, so the policy ignores the entries in the
+`git-k8s-checks` ConfigMap. The API server ignores the `paramRef` of a
+binding whose policy doesn't read parameters, such as the third and fourth
+policies, so the condition does too. The message gives a `kubectl patch`
+command that makes the binding from `config/policy.yaml` deny all of them
+again, without a restart. For a binding that someone set to `Warn`, the
+command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
@@ -2634,11 +2642,13 @@ kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
 ```
 
 An entry overrides the `check-NAME` convention, so an entry with an empty
-value stops that service account from writing results. The policies ignore
-an entry for the core program's service account, `git-k8s.git-k8s`, so an
-entry can't let the core program write a result or stop it from changing
-`GitBranch` objects. The core program applies the ConfigMap without data, so
-restarting it keeps your entries.
+value stops that service account from writing results. The first two
+policies still treat that service account as a check, so it can't change a
+`GitBranch` or its status even if RBAC lets it patch them. The policies
+ignore an entry for the core program's service account, `git-k8s.git-k8s`,
+so an entry can't let the core program write a result or stop it from
+changing `GitBranch` objects. The core program applies the ConfigMap without
+data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
 service accounts write which results, so give that permission only to people
 who can install checks.
