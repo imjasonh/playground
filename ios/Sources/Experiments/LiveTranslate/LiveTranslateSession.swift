@@ -10,6 +10,11 @@ import UIKit
 /// A translation takes longer than the camera holds one frame, so results
 /// never wait on the frame that asked for them. They go into a memory keyed by
 /// source text, and every later frame that reads the same line shows them.
+///
+/// OCR runs on its own queue, so the preview updates on every camera frame.
+/// Between OCR passes, `LiveTranslateFollower` moves each overlay with its
+/// text, and each preview frame is published with the overlay positions for
+/// that same frame.
 final class LiveTranslateSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
@@ -25,6 +30,8 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     @Published private(set) var previewImage: UIImage?
     @Published private(set) var previewImageSize: CGSize = .zero
     @Published private(set) var overlays: [LiveTranslateOverlay] = []
+    /// Vision-normalized box of each overlay in the frame on screen, by overlay id.
+    @Published private(set) var overlayPositions: [String: CGRect] = [:]
     @Published private(set) var language: LiveTranslateLanguage = .english
     @Published private(set) var usingFrontCamera = false
     @Published private(set) var modelGate: AgentModelGate
@@ -34,7 +41,10 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "live-translate.session")
     private let outputQueue = DispatchQueue(label: "live-translate.output", qos: .userInitiated)
+    private let ocrQueue = DispatchQueue(label: "live-translate.ocr", qos: .userInitiated)
     private let previewContext = CIContext(options: [.useSoftwareRenderer: false])
+    /// Longer side of the grayscale frames the follower searches.
+    private static let followLongSide = 640
 
     private let stateLock = NSLock()
     private var cameraPosition: AVCaptureDevice.Position = .back
@@ -42,7 +52,15 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     private var lastAnalyzeTime: CFTimeInterval = 0
     private let analyzeInterval: CFTimeInterval = 0.22
     private var isAnalyzing = false
+    /// Newest frame waiting for the main thread. A slow render skips frames
+    /// instead of queueing them.
+    private var pendingFrame: PreviewFrame?
+    private var isPublishScheduled = false
     private var orientationObserver: NSObjectProtocol?
+
+    // Output queue only.
+    private var follower = LiveTranslateFollower()
+    private var frameNumber = 0
 
     // Main thread only.
     private var pipeline = LiveTranslatePipeline()
@@ -335,13 +353,15 @@ final class LiveTranslateSession: NSObject, ObservableObject {
 
     // MARK: - Tracking + overlays
 
-    private func handleOCR(observations: [LiveTranslateObservation], image: CGImage?) {
+    private func handleOCR(observations: [LiveTranslateObservation], image: CGImage, frame: Int) {
         guard runState == .running else { return }
         pipeline.ingest(observations)
-        if let image {
-            pipeline.sampleBackdrops { LiveTranslateColor.sample(image: image, visionBox: $0) }
-        }
+        pipeline.sampleBackdrops { LiveTranslateColor.sample(image: image, visionBox: $0) }
         overlays = pipeline.overlays
+        let boxes = Dictionary(uniqueKeysWithValues: overlays.map { ($0.id, $0.boundingBox) })
+        outputQueue.async { [weak self] in
+            self?.follower.rebase(boxes, from: frame)
+        }
         startNextBatch()
         maybeCopy()
         refreshStatus()
@@ -350,6 +370,10 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     private func clearTracking() {
         pipeline.clearTracking()
         overlays = []
+        overlayPositions = [:]
+        outputQueue.async { [weak self] in
+            self?.follower.reset()
+        }
     }
 
     // MARK: - Translation
@@ -493,43 +517,80 @@ extension LiveTranslateSession: AVCaptureVideoDataOutputSampleBufferDelegate {
             from: pixelBuffer,
             orientation: orientation
         )
-        let uprightSize = upright.extent.size
-        let previewCGImage = previewContext.createCGImage(upright, from: upright.extent)
-        if let previewCGImage {
-            let image = UIImage(cgImage: previewCGImage)
-            DispatchQueue.main.async { [weak self] in
-                self?.previewImage = image
-                self?.previewImageSize = uprightSize
+        guard let image = previewContext.createCGImage(upright, from: upright.extent) else { return }
+
+        frameNumber += 1
+        let number = frameNumber
+        if let gray = LiveTranslateGrayFrame(image: image, longSide: Self.followLongSide) {
+            follower.advance(to: gray, number: number)
+            if startAnalysisIfIdle() {
+                follower.hold(gray, for: number)
+                ocrQueue.async { [weak self] in
+                    self?.recognize(image, frame: number)
+                }
             }
         }
+        publish(PreviewFrame(
+            image: UIImage(cgImage: image),
+            size: upright.extent.size,
+            positions: follower.positions
+        ))
+    }
 
+    private func startAnalysisIfIdle() -> Bool {
         let now = CACurrentMediaTime()
         stateLock.lock()
-        let shouldAnalyze = !isAnalyzing && (now - lastAnalyzeTime) >= analyzeInterval
-        if shouldAnalyze {
-            isAnalyzing = true
-            lastAnalyzeTime = now
-        }
-        stateLock.unlock()
+        defer { stateLock.unlock() }
+        guard !isAnalyzing, now - lastAnalyzeTime >= analyzeInterval else { return false }
+        isAnalyzing = true
+        lastAnalyzeTime = now
+        return true
+    }
 
-        guard shouldAnalyze else { return }
-
-        do {
-            let observations = try LiveTranslateRecognizer.recognize(
-                pixelBuffer: pixelBuffer,
-                orientation: orientation
-            )
-            DispatchQueue.main.async { [weak self] in
-                self?.handleOCR(observations: observations, image: previewCGImage)
-            }
-        } catch {
-            DispatchQueue.main.async { [weak self] in
-                self?.statusMessage = "Vision error: \(error.localizedDescription)"
-            }
-        }
-
+    /// OCR queue.
+    private func recognize(_ image: CGImage, frame: Int) {
+        let result = Result { try LiveTranslateRecognizer.recognize(cgImage: image) }
         stateLock.lock()
         isAnalyzing = false
         stateLock.unlock()
+        DispatchQueue.main.async { [weak self] in
+            switch result {
+            case .success(let observations):
+                self?.handleOCR(observations: observations, image: image, frame: frame)
+            case .failure(let error):
+                self?.statusMessage = "Vision error: \(error.localizedDescription)"
+            }
+        }
     }
+
+    private func publish(_ frame: PreviewFrame) {
+        stateLock.lock()
+        pendingFrame = frame
+        let schedule = !isPublishScheduled
+        isPublishScheduled = true
+        stateLock.unlock()
+        guard schedule else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.showPendingFrame()
+        }
+    }
+
+    private func showPendingFrame() {
+        stateLock.lock()
+        let frame = pendingFrame
+        pendingFrame = nil
+        isPublishScheduled = false
+        stateLock.unlock()
+        guard let frame, runState == .running else { return }
+        previewImage = frame.image
+        previewImageSize = frame.size
+        overlayPositions = frame.positions
+    }
+}
+
+/// One camera frame ready to draw, with where each overlay sits in it.
+private struct PreviewFrame {
+    let image: UIImage
+    let size: CGSize
+    let positions: [String: CGRect]
 }
