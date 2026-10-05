@@ -173,12 +173,18 @@ func TestCherryPickConflicts(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
 	w.Write("a.txt", "one\n")
+	w.Write("b.txt", "1\n2\n3\n")
 	base := w.Commit("base")
 	w.Write("a.txt", "main\n")
+	w.Write("b.txt", "one\n2\n3\n")
 	parent := w.Commit("main edit")
 	w.Push("main")
 	w.Branch("c/x", base)
+	// The branch's own attributes would hide the conflict in a.txt and make
+	// one in b.txt, whose edits don't overlap.
+	w.Write(".gitattributes", "a.txt merge=union\nb.txt merge=binary\n")
 	w.Write("a.txt", "branch\n")
+	w.Write("b.txt", "1\n2\nthree\n")
 	head := w.Commit("branch edit")
 	w.Push("c/x")
 
@@ -190,6 +196,10 @@ func TestCherryPickConflicts(t *testing.T) {
 	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "c/x"); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo.Dir, "HEAD"), []byte("ref: refs/remotes/origin/c/x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	readAttributesFrom(t, repo, head)
 	if tree, conflicts, err := repo.CherryPick(ctx, head, base, parent); err != nil || tree != "" || !slices.Equal(conflicts, []string{"a.txt"}) {
 		t.Errorf("CherryPick = %q, %v, %v; want conflicts in a.txt", tree, conflicts, err)
 	}

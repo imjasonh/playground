@@ -154,9 +154,14 @@ func objectNames(names []string) bool {
 
 // CherryPick applies the change from parent to commit on top of onto,
 // without a worktree. It returns the resulting tree, or the paths that
-// conflict.
+// conflict. Attributes from the commits' .gitattributes files don't apply,
+// so a branch can't choose how its own conflicts merge.
 func (r *Repo) CherryPick(ctx context.Context, commit, parent, onto string) (tree string, conflicts []string, err error) {
-	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--merge-base=" + parent, "--end-of-options", onto, commit}
+	noAttrs, err := r.noAttributes(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	args := []string{noAttrs, "merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--merge-base=" + parent, "--end-of-options", onto, commit}
 	res, err := r.git.exec(ctx, r.Dir, args, opts{})
 	if err != nil {
 		return "", nil, err
