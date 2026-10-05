@@ -299,6 +299,11 @@ type installPlan struct {
 	webhooks   bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
+	// serves is set when the program serves HTTP for Serve.
+	serves bool
+	// tokens are the audiences that the program passes to RequestToken as
+	// constants, sorted.
+	tokens []string
 	// defaultNS holds permissions in the default namespace, where events
 	// about cluster-scoped objects go.
 	defaultNS grants
@@ -359,6 +364,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			return nil, err
 		}
 		p.webhooks = p.webhooks || d.webhooks
+		p.serves = p.serves || d.serves
 		installs = append(installs, d.installs...)
 		if !d.reconciles {
 			continue
@@ -409,7 +415,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
-		Calls: []string{"Eventf"},
+		Calls: []string{"Eventf", "RequestToken", "ReviewToken"}, Consts: map[string]int{"RequestToken": 1},
 	})
 	if err != nil {
 		return nil, err
@@ -419,12 +425,30 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		owns = owns || u.Func == "Own"
 	}
 	for _, u := range uses {
-		if u.Func == "Eventf" {
+		switch u.Func {
+		case "Eventf":
 			// Eventf records events about the object being reconciled, and
 			// any controller's reconcile may call it.
 			for _, ti := range reconciled {
 				p.eventGrantsFor(ti, watching).add("events.k8s.io", "events", "", "create", "patch")
 			}
+			continue
+		case "ReviewToken":
+			cluster.add("authentication.k8s.io", "tokenreviews", "", "create")
+			continue
+		case "RequestToken":
+			if u.Constant {
+				// RequestToken rejects an empty audience, and a projected
+				// token without one is for the API server.
+				if u.Value != "" {
+					p.tokens = append(p.tokens, u.Value)
+				}
+				continue
+			}
+			// RequestToken asks only for the service account that the
+			// program runs as, which the Deployment names.
+			o.logf("%s: RequestToken's audience isn't a constant, so the program may request tokens for its service account", u.Pos)
+			p.local.add("", "serviceaccounts/token", o.name, "create")
 			continue
 		}
 		ti := &typeInfo{}
@@ -441,6 +465,10 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			creates[r+"."+g] = true
 		}
 	}
+	// Find reports every call, and a projected volume can't hold two tokens
+	// at one path.
+	slices.Sort(p.tokens)
+	p.tokens = slices.Compact(p.tokens)
 	if owns || slices.ContainsFunc(uses, func(u analysis.Use) bool { return u.Func == "Own" }) {
 		for _, grant := range patchIfOwns {
 			grant()
@@ -492,6 +520,10 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	return p, nil
 }
+
+// tokenDir is where the program's container mounts its tokens for
+// RequestToken.
+const tokenDir = "/var/run/secrets/tokens"
 
 // grantsIn returns where the permissions for objects in namespace ns go,
 // or for cluster-scoped objects when ns is empty.
@@ -639,16 +671,28 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		args = append(args, "-namespace="+o.watchNamespace)
 	}
 	ports := []any{object{{"name", "http"}, {"containerPort", 8080}}}
+	var servicePorts []any
 	if p.webhooks {
 		args = append(args, "-webhook-addr=:9443", "-webhook-service="+o.namespace+"/"+o.name)
 		ports = append(ports, object{{"name", "webhook"}, {"containerPort", 9443}})
+		servicePorts = append(servicePorts, object{{"name", "webhook"}, {"port", 443}, {"targetPort", "webhook"}})
+	}
+	if p.serves {
+		args = append(args, "-serve-addr=:8081")
+		ports = append(ports, object{{"name", "serve"}, {"containerPort", 8081}})
+		servicePorts = append(servicePorts, object{{"name", "serve"}, {"port", 80}, {"targetPort", "serve"}})
+	}
+	if len(servicePorts) > 0 {
 		docs = append(docs, object{
 			{"apiVersion", "v1"}, {"kind", "Service"}, {"metadata", meta(o.name, true)},
 			{"spec", object{
 				{"selector", labels},
-				{"ports", []any{object{{"name", "webhook"}, {"port", 443}, {"targetPort", "webhook"}}}},
+				{"ports", servicePorts},
 			}},
 		})
+	}
+	if len(p.tokens) > 0 {
+		args = append(args, "-token-dir="+tokenDir)
 	}
 	args = append(args, o.args...)
 	probe := func(path string) object {
@@ -668,13 +712,33 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 			{"readOnlyRootFilesystem", true},
 			{"capabilities", object{{"drop", []string{"ALL"}}}},
 		}},
-		// The root file system is read-only, so give os.TempDir somewhere to
-		// write.
-		{"volumeMounts", []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}},
 	}
+	// The root file system is read-only, so give os.TempDir somewhere to
+	// write.
+	mounts := []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}
 	tmp := object{}
 	if o.tmpSize != "" {
 		tmp = object{{"sizeLimit", o.tmpSize}}
+	}
+	volumes := []any{object{{"name", "tmp"}, {"emptyDir", tmp}}}
+	if len(p.tokens) > 0 {
+		var sources []any
+		for _, aud := range p.tokens {
+			// The API server stretches a token of exactly 3607 seconds to
+			// a year, so don't ask for that.
+			sources = append(sources, object{{"serviceAccountToken", object{
+				{"audience", aud}, {"expirationSeconds", 3600}, {"path", tokenFile(aud)},
+			}}})
+		}
+		mounts = append(mounts, object{{"name", "tokens"}, {"mountPath", tokenDir}, {"readOnly", true}})
+		volumes = append(volumes, object{{"name", "tokens"}, {"projected", object{{"sources", sources}}}})
+	}
+	container = append(container, field{"volumeMounts", mounts})
+	if p.serves {
+		// The Service sends a Pod that's stopping new connections until its
+		// endpoints drop the Pod, and the program refuses them once it
+		// stops. The kubelet sleeps before it signals the program.
+		container = append(container, field{"lifecycle", object{{"preStop", object{{"sleep", object{{"seconds", 5}}}}}}})
 	}
 	docs = append(docs, object{
 		{"apiVersion", "apps/v1"}, {"kind", "Deployment"}, {"metadata", meta(o.name, true)},
@@ -687,7 +751,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 					{"serviceAccountName", o.name},
 					{"securityContext", object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}},
 					{"containers", []any{container}},
-					{"volumes", []any{object{{"name", "tmp"}, {"emptyDir", tmp}}}},
+					{"volumes", volumes},
 				}},
 			}},
 		}},

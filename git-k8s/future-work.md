@@ -45,7 +45,13 @@ GitHub, and any other forge, is a downstream copy:
   reports the branch as diverged, and leaves it to the
   [conflict resolution controller](#resolve-conflicts-in-a-controller).
 - The mirror holds the only credentials for external repositories, so no
-  other program reads Secrets.
+  other program reads Secrets. For a repository that gets
+  [tokens from Octo STS](README.md#github-repositories), only the mirror
+  requests tokens for the `GitRepository`'s `gitIdentity`, so the trust
+  policy's `subject_pattern` narrows to the mirror's service account. The
+  checks stop requesting tokens for Octo STS, so `generate` stops granting
+  them `create` on `serviceaccounts/token`, and the risk that
+  [Security](README.md#security) describes no longer applies to them.
 - Every ref change passes through the mirror, so it tells git-k8s about each
   one as it happens, and git-k8s reconciles the repository at once. Only the
   mirror polls, and only the external repository, to find pushes that people
@@ -75,8 +81,8 @@ Questions to settle first:
 The check-results admission policy keeps each check to its own entry in
 `status.checks` by looking at the service account that makes each write. A
 result carries no proof of which check wrote it, so the merge controller can
-trust results only as far as it trusts the policy. The policy might not be
-installed, and it recognizes checks only by their service account names.
+trust results only as far as it trusts the policy, its binding, and the
+`git-k8s-checks` ConfigMap that maps service accounts to checks.
 
 The decided fix is for checks to stop writing `status.checks`. A check sends
 each result to an endpoint in the core program, next to the mirror, with a
@@ -89,48 +95,29 @@ or on purpose, because it can't write results at all:
   `GitBranch` that declares no status, so kube doesn't write one and
   `generate` doesn't grant them access, and they read their earlier results
   through a second view.
-- The core program maps service accounts to checks, so a check no longer has
-  to run as `check-NAME` in the namespace `check-NAME`.
+- The core program finds the check for a token's service account the way the
+  check-results policy does, from the `git-k8s-checks` ConfigMap or the
+  `check-NAME` convention.
 - The admission policy stays as a backstop. People with write access to
   `GitBranch` status can still write a result, for example to unblock a
   branch whose check is broken.
 
 The endpoint uses the same token check as the mirror, so the two share it.
 
-## Get GitHub credentials from Octo STS
+## Support GitHub Enterprise Server
 
-For a GitHub repository, git-k8s uses a long-lived basic-auth Secret, such as
-a personal access token. [Octo STS](https://github.com/octo-sts/app)
-exchanges an OIDC token for a GitHub App installation token that expires
-within an hour. The token gets the permissions that a trust policy in the
-repository's `.github/chainguard/` directory grants to the identity in the
-OIDC token. This repository's dependency workflow uses it.
+A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)
+only for a repository on github.com, because the public Octo STS service
+issues tokens only for github.com. A repository on GitHub Enterprise Server
+needs a Secret.
 
-The decision is to use the public Octo STS service. With the mirror, only
-git-k8s's own components talk to GitHub: the mirror, to sync, and the program
-that reports check runs. Each exchanges its projected service account token,
-whose subject is `system:serviceaccount:NAMESPACE:NAME`, for a GitHub token,
-and gets a new one before the old one expires. A `GitRepository` names the
-trust policies to use instead of a Secret:
-
-- The mirror's identity gets `contents: write`, to sync branches in both
-  directions.
-- The identity that reports results gets `checks: write`, so each check's
-  result also shows as a check run on its commit, and on the commit's pull
-  request. Check runs copy git-k8s's results; they don't change them.
-
-Checks need no GitHub credentials at all. GitHub grants `contents: write` for
-a whole repository, not for branches, which is acceptable because only the
-mirror holds it.
-
-Questions to settle first:
-
-- How to test it. Octo STS fetches the cluster's OIDC discovery document and
-  keys, so the cluster's issuer has to be reachable from the public service,
-  as on GKE and EKS. A kind cluster's issuer isn't, so the end-to-end test
-  needs a fake token service.
-- Whether to support GitHub Enterprise Server, which the public service
-  doesn't reach.
+GitHub Enterprise Server needs its own Octo STS deployment, with a GitHub App
+on that server. The programs then need the deployment's token exchange URL
+and audience, and the server's web and REST API URLs. These can't be
+`GitRepository` fields, because a tenant could then choose where the programs
+send their service account tokens, and for which audience. They belong in
+program flags, like `-fake-github`, or in a cluster-scoped object that only
+administrators can change.
 
 ## Resolve conflicts in a controller
 
@@ -153,10 +140,14 @@ so every check runs again on it, and it counts toward the branch's
 
 The controller tries a resolution that git can make by itself first, such as
 one that `git rerere` recorded earlier. Otherwise, an agent can resolve the
-conflict, as described in [Add agentic operators](#add-agentic-operators). A
-local agent in a Pod that has both commits checked out from the mirror edits
-the conflicting files, builds the result, and pushes it. When neither works,
-the branch stays as it is, and the controller reports why.
+conflict, as described in
+[Run agents from a controller](README.md#run-agents-from-a-controller). The
+agent works in a Pod whose files are the merge of both commits, with
+conflict markers where they conflict, and edits the files that conflict. It
+has no shell, so it can't build or test the result. The controller commits
+the agent's files and pushes them, and the checks verify the result like any
+other head. When neither works, the branch stays as it is, and the
+controller reports why.
 
 Questions to settle first:
 
@@ -172,11 +163,11 @@ Questions to settle first:
 
 ## Land branches through a merge queue
 
-Branches land by fast-forward only. Each landing moves the parent, so no
-other open branch contains the parent's head anymore. `check-base` merges the
-parent into each of them, which changes their heads and runs every check
-again, including a `go test` Pod. With N open branches, each landing costs
-about N runs of every check.
+A branch lands only when it contains its parent's head. Each landing moves
+the parent, so no other open branch contains the parent's head anymore.
+`check-base` merges the parent into each of them, which changes their heads
+and runs every check again, including a `go test` Pod. With N open branches,
+each landing costs about N runs of every check.
 
 The proposed fix is a queue for each parent. A branch whose checks pass,
 apart from being behind its parent, joins the queue. Only the branch at the
@@ -202,24 +193,23 @@ Pods built. An in-cluster Go module proxy, and a shared build cache through
 Pods downloaded and compiled. A module proxy in the cluster also lets tests
 with dependencies run without giving them the internet through `-goproxy`.
 
-## Record who approved a branch
+## Require an approver who didn't write the change
 
-An approval is the `git-k8s.imjasonh.com/approve` annotation. Nothing
-records who set it, and anyone who can patch a `GitBranch` can approve it.
-
-The proposed fix is a ValidatingAdmissionPolicy rule. When the approve
-annotation changes, a `git-k8s.imjasonh.com/approved-by` annotation must
-equal `request.userInfo.username`, and `approved-by` can't change otherwise.
-`check-approval` then reports the approver in its outputs, so a gate can
-require, for example, that the approver isn't the commit's author.
+`check-approval` reports who approved a branch, but not who wrote it, so a
+gate can't require that someone other than the author approved. Reading
+commits takes the repository's credential, which can push to any branch and
+which `check-approval` doesn't have. With the
+[in-cluster git mirror](#run-an-in-cluster-git-mirror), it could read
+commits without one.
 
 Questions to settle first:
 
-- Whether an approval can take two annotations. A `kubectl` plugin could set
-  both, and a MutatingAdmissionPolicy could set `approved-by` by itself once
-  that API is generally available.
-- Who can approve. A policy parameter, such as a ConfigMap of groups, could
-  limit approvals to the people in them.
+- Whose authorship counts. The head is often a fix commit that a check
+  pushed, so the authors to compare are those of the branch's commits
+  without a `Git-K8s-Fixer` trailer.
+- How to trust an author. A commit's author email is whatever the person who
+  made the commit set, so the check needs verified commit signatures, and a
+  way to map each signer to the Kubernetes username in `approved-by`.
 
 ## Sign commits and respect protected branches
 
@@ -232,86 +222,34 @@ The proposed fix is for the mirror to sign the commits that git-k8s makes,
 with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
 through Sigstore, or with an SSH key that only the mirror holds.
 
-## Start waiting go test Pods in order
+## Run more agents
 
-`-max-pods` caps how many test Pods run at once, but the branches that wait
-start in no particular order. The count also comes from the cache, which
-hasn't seen Pods created moments earlier, so a burst of pushes can start a
-Pod or two over the cap.
+Other checks and controllers could run agents with the `agent` package that
+[Agentic checks](README.md#agentic-checks) describes:
 
-The proposed fix is to record when each branch started waiting, in the
-check's outputs, and start the branch that has waited longest. Counting the
-Pods that the process has created until the cache shows them keeps the cap
-exact.
+- A check that fixes failing tests and pushes the fix. Its agent can't run
+  the tests, because agents get no shell, so it works from the failures that
+  `check-gotest` reports, and `check-gotest` tests the fix on the new head.
+- A controller that writes a pull request's description from the branch's
+  change and commit log, and rewrites it when the head moves. It needs the
+  forge's API, such as GitHub's, which git-k8s doesn't call.
 
-## Install the admission policies with the core program
+## Run agents in Cursor's cloud
 
-`config/policy.yaml` is a separate install step. The `PoliciesInstalled`
-condition reports when it's missing, but nothing installs it. The core
-program could apply the policies when it starts, the way kube installs CRDs.
-That needs RBAC to write ValidatingAdmissionPolicies, which a compromised
-core program could use to weaken them. The core program already decides
-what lands, so that may be acceptable. Once checks send results to the core
-program instead of writing them, the check-results policy is a backstop, and
-the policy that stops controllers from approving branches matters most.
-
-## Support more ways to land
-
-Landing fast-forwards the parent to the branch's head, so the parent ends up
-at the commit that the checks tested. Squash and rebase landings, which many
-forges offer, make a commit that no check saw, so they need either another
-round of checks or a rule about which results still count.
-
-## Add agentic operators
-
-Some checks and controllers are better written as an AI agent than as code:
-
-- A check that reviews a branch's change and passes or fails it. The first
-  design called for one, but `check-approval` only reads a person's
-  approval.
-- A check that fixes a failing test and pushes the fix.
-- A controller that writes a pull request's description.
-- The [conflict resolution controller](#resolve-conflicts-in-a-controller),
-  when git can't resolve a conflict by itself.
-- The [dependency update controller](#update-dependencies-with-a-controller),
-  when an update breaks the build.
-
-The Cursor SDK (`@cursor/sdk`), which this repository's `nethack-agent` and
-`its-not-jaws` use, runs an agent with a Cursor API token.
-
-The decision is to start with local agents in Pods, and to add cloud agents
-later. A local agent runs in a sandboxed Pod for each branch, like
-`check-gotest`'s, with the branch checked out from the mirror as its working
-directory. The SDK is a Node package, so the Pod's image holds Node and a
-small runner, and the operator creates the Pod and reads its result, as
-`check-gotest` does with its test Pods. The agent sees only the files and
-tools that the operator gives it, which limits what it can do when the code
-that it reads tries to steer it.
-
-A cloud agent runs on Cursor's machines, against a repository that it can
-clone. The mirror is in the cluster, so a cloud agent would work on GitHub,
-the downstream copy. Its pushes reach git-k8s through the mirror's sync, and
-the conflict resolution controller coalesces any that race a change in the
-mirror. An interface that hides where the agent runs, with a fake for tests
-like `its-not-jaws`'s mock backend, lets operators move to cloud agents
-without other changes.
+[Agentic checks](README.md#agentic-checks) run a local agent in a Pod for
+each branch head. A cloud agent runs on Cursor's machines instead, against a
+repository that it can clone. The mirror is in the cluster, so a cloud agent
+would work on GitHub, the downstream copy. Its pushes reach git-k8s through
+the mirror's sync, and the conflict resolution controller coalesces any that
+race a change in the mirror. The runner runs agents through a backend, so a
+cloud backend can start a run from an agent Pod and report its verdict
+through the same result transport, without changes to the checks.
 
 Questions to settle first:
 
-- What it costs. The SDK reports each run's token usage, which
-  `nethack-agent` turns into a dollar cost. A budget for each branch, like
-  `maxAutomatedCommits`, and for each day, keeps a loop of runs from costing
-  too much.
-- How much to trust an agent. It reads code from the branch, which can tell
-  it what to do, so its results and fixes need the same limits as any
-  check's: token-authenticated results, the budget for automated commits,
-  and no credentials beyond the mirror.
-- Where the Cursor API token lives. A Secret that only the agent's Pod
-  mounts keeps it from every other program.
-- What to do when two runs disagree. An agent can give a different answer
-  each time, so a result for a commit stays until the commit changes.
-- How an operator follows a cloud agent's run, which happens outside the
-  cluster, and which GitHub branches a cloud agent may push to.
+- Whether an agent Pod waits for a cloud agent's run, which happens outside
+  the cluster, or the check follows the run itself.
+- Which GitHub branches a cloud agent may push to.
 
 ## Update dependencies with a controller
 
@@ -335,7 +273,7 @@ tell them apart from other branches.
 
 When an update breaks the build or the tests, a local agent can change the
 code to fit the dependency's new API, as described in
-[Add agentic operators](#add-agentic-operators), and push the change to the
+[Agentic checks](README.md#agentic-checks), and push the change to the
 branch, within the branch's budget for automated commits. When the agent
 can't fix it, the branch waits for a person.
 
@@ -356,10 +294,3 @@ Questions to settle first:
   often pulled within days, so a delay keeps most of them out.
 - What happens to a branch that hasn't landed when newer versions come out.
   The controller could push the newer versions to the same branch.
-
-## kube changes that git-k8s would use
-
-These belong in kube, in their own pull requests:
-
-- The mirror and the results endpoint need a TokenReview client, and events
-  from the mirror need a way to queue a reconcile from outside one.

@@ -1,17 +1,36 @@
+# The git-k8s-check-results and git-k8s-branches policies read this ConfigMap
+# to find checks that don't run as the service account check-NAME in the
+# namespace check-NAME. Each entry maps NAMESPACE.SERVICE_ACCOUNT to a
+# check's name, for example "ci.gofmt-bot: gofmt", and overrides that
+# convention. They ignore an entry for the core program's service account,
+# git-k8s.git-k8s, which is never a check. The core program applies this
+# ConfigMap without data, so it keeps the entries that you add.
+# While the ConfigMap is missing, those policies deny every write to
+# GitBranch objects, including people's.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-k8s-checks
+  namespace: git-k8s
+---
 # Each check controller can write only its own entry in a GitBranch's
 # status.checks, and no other service account, including the core
 # program's, can write status.checks at all. generate installs each program
 # in a namespace with a service account of the program's name, so
 # check-gofmt runs as system:serviceaccount:check-gofmt:check-gofmt and owns
-# status.checks.gofmt. A check installed under another name can't write
-# results. Server-side apply already keeps well-behaved controllers apart;
-# this policy stops a buggy or compromised one from writing another's result.
+# status.checks.gofmt. A check installed under another name or namespace
+# needs an entry in the git-k8s-checks ConfigMap to write results.
+# Server-side apply already keeps well-behaved controllers apart; this policy
+# stops a buggy or compromised one from writing another's result.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-results
 spec:
   failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
   matchConstraints:
     resourceRules:
       - apiGroups: ["git-k8s.imjasonh.com"]
@@ -24,8 +43,12 @@ spec:
   variables:
     - name: user
       expression: request.userInfo.username.split(":")
+    - name: account
+      expression: 'size(variables.user) == 4 ? variables.user[2] + "." + variables.user[3] : ""'
     - name: check
       expression: >-
+        variables.account == "git-k8s.git-k8s" ? "" :
+        params != null && has(params.data) && variables.account in params.data ? params.data[variables.account] :
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
     - name: old
@@ -56,22 +79,29 @@ metadata:
   name: git-k8s-check-results
 spec:
   policyName: git-k8s-check-results
+  paramRef:
+    name: git-k8s-checks
+    namespace: git-k8s
+    parameterNotFoundAction: Deny
   validationActions: [Deny]
 ---
-# The approve annotation on a GitBranch records a person's approval, so no
-# git-k8s service account can set or change it. This policy also stops
-# checks from changing a GitBranch's spec, labels, or annotations. RBAC lets
-# a check that owns objects, such as check-gotest, patch GitBranch objects,
-# because generate can't tell whether an owned object needs a finalizer on
-# its owner. kube adds that finalizer with a cleanup annotation, which this
-# policy denies, so a check can own only namespaced objects in the branch's
-# namespace.
+# The approve and approved-by annotations on a GitBranch record a person's
+# approval, so no git-k8s service account can set or change them, even one
+# that holds the approve verb. This policy also stops checks from changing a
+# GitBranch's spec, labels, or annotations. RBAC lets a check that owns
+# objects, such as check-gotest, patch GitBranch objects, because generate
+# can't tell whether an owned object needs a finalizer on its owner. kube
+# adds that finalizer with a cleanup annotation, which this policy denies, so
+# a check can own only namespaced objects in the branch's namespace.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-branches
 spec:
   failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
   matchConstraints:
     resourceRules:
       - apiGroups: ["git-k8s.imjasonh.com"]
@@ -84,8 +114,12 @@ spec:
   variables:
     - name: user
       expression: request.userInfo.username.split(":")
+    - name: account
+      expression: 'size(variables.user) == 4 ? variables.user[2] + "." + variables.user[3] : ""'
     - name: check
       expression: >-
+        variables.account == "git-k8s.git-k8s" ? "" :
+        params != null && has(params.data) && variables.account in params.data ? params.data[variables.account] :
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
     - name: core
@@ -99,8 +133,19 @@ spec:
         oldObject != null && has(oldObject.metadata.annotations) &&
         "git-k8s.imjasonh.com/approve" in oldObject.metadata.annotations ?
         oldObject.metadata.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: approver
+      expression: >-
+        has(object.metadata.annotations) && "git-k8s.imjasonh.com/approved-by" in object.metadata.annotations ?
+        object.metadata.annotations["git-k8s.imjasonh.com/approved-by"] : ""
+    - name: oldApprover
+      expression: >-
+        oldObject != null && has(oldObject.metadata.annotations) &&
+        "git-k8s.imjasonh.com/approved-by" in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations["git-k8s.imjasonh.com/approved-by"] : ""
   validations:
-    - expression: '!(variables.core || variables.check != "") || variables.approval == variables.oldApproval'
+    - expression: >-
+        !(variables.core || variables.check != "") ||
+        (variables.approval == variables.oldApproval && variables.approver == variables.oldApprover)
       message: git-k8s controllers can't approve branches
     - expression: >-
         variables.check == "" ||
@@ -117,6 +162,10 @@ metadata:
   name: git-k8s-branches
 spec:
   policyName: git-k8s-branches
+  paramRef:
+    name: git-k8s-checks
+    namespace: git-k8s
+    parameterNotFoundAction: Deny
   validationActions: [Deny]
 ---
 # generate lets a check that declares Pods with kube.Own, such as
@@ -305,4 +354,78 @@ metadata:
   name: git-k8s-check-pods
 spec:
   policyName: git-k8s-check-pods
+  validationActions: [Deny]
+---
+# Only a user with the approve verb on a GitBranch can set, change, or
+# remove its approve or approved-by annotation, and generate grants that
+# verb to no program. The request that sets or changes approve must set
+# approved-by to the username that sends it, and the request that removes
+# approve must remove approved-by, so approved-by names whoever approved.
+# A request that changes only approved-by takes over the approval, so
+# approve must name a commit, and the request must set approved-by to the
+# username that sends it.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: git-k8s-approvals
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["git-k8s.imjasonh.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["gitbranches"]
+  variables:
+    - name: annotations
+      expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'
+    - name: oldAnnotations
+      expression: 'oldObject != null && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}'
+    - name: approval
+      expression: >-
+        "git-k8s.imjasonh.com/approve" in variables.annotations ?
+        variables.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: oldApproval
+      expression: >-
+        "git-k8s.imjasonh.com/approve" in variables.oldAnnotations ?
+        variables.oldAnnotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: approver
+      expression: >-
+        "git-k8s.imjasonh.com/approved-by" in variables.annotations ?
+        variables.annotations["git-k8s.imjasonh.com/approved-by"] : ""
+    - name: oldApprover
+      expression: >-
+        "git-k8s.imjasonh.com/approved-by" in variables.oldAnnotations ?
+        variables.oldAnnotations["git-k8s.imjasonh.com/approved-by"] : ""
+  validations:
+    - expression: >-
+        (variables.approval == variables.oldApproval && variables.approver == variables.oldApprover) ||
+        authorizer.group("git-k8s.imjasonh.com").resource("gitbranches").namespace(request.namespace).name(request.name).check("approve").allowed()
+      reason: Forbidden
+      messageExpression: >-
+        "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on gitbranches, which " +
+        request.userInfo.username + " doesn't have for " + request.namespace + "/" + request.name
+    - expression: >-
+        variables.approval == variables.oldApproval || variables.approval == "" ||
+        variables.approver == request.userInfo.username
+      messageExpression: >-
+        "set git-k8s.imjasonh.com/approved-by to " + request.userInfo.username +
+        " when you set git-k8s.imjasonh.com/approve"
+    - expression: variables.approval == variables.oldApproval || variables.approval != "" || variables.approver == ""
+      message: remove git-k8s.imjasonh.com/approved-by when you remove git-k8s.imjasonh.com/approve
+    - expression: >-
+        variables.approval != variables.oldApproval || variables.approver == variables.oldApprover ||
+        (variables.approval != "" && variables.approver == request.userInfo.username)
+      messageExpression: >-
+        variables.approval == "" ?
+        "set git-k8s.imjasonh.com/approve when you set git-k8s.imjasonh.com/approved-by" :
+        "git-k8s.imjasonh.com/approved-by can change by itself only when you take over an approval by setting it to " +
+        request.userInfo.username
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-approvals
+spec:
+  policyName: git-k8s-approvals
   validationActions: [Deny]

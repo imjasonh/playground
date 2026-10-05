@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/imjasonh/playground/kube/internal/clone"
@@ -23,16 +26,22 @@ import (
 // k8s.Deployment in world, with only the fields that its type declares. An
 // object of the type itself hides one of another type with the same name.
 //
+// World can also hold FakeTokens for ReviewToken to accept. RequestToken
+// returns the tokens "fake-token-1", "fake-token-2", and so on, for the
+// service account test in the namespace default, and ReviewToken accepts
+// them for the requested audience. Trigger queues a reconcile of an object
+// that world holds, which Triggered reports, unless world holds
+// FakeStandby. Unlike in a cluster, Trigger doesn't check that a controller
+// in the program reconciles the object's kind. To test a Serve handler, use
+// FakeRequest instead.
+//
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {
 //		t.Fatal(err)
 //	}
 //	deps := kube.Owned[k8s.Deployment](rec)
 func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (context.Context, *Recorder) {
-	w := &fakeWorld{byType: map[reflect.Type]*memSource{}, tr: newTracker()}
-	for _, o := range append([]any{obj}, world...) {
-		w.add(o)
-	}
+	w := newFakeWorld(append([]any{obj}, world...))
 	ti, err := typeInfoFor[T, P]()
 	c := &core{name: "test", labels: newLabelKeys("test"), log: slog.Default()}
 	if err == nil {
@@ -51,7 +60,32 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 	return ctx, &Recorder{s: s}
 }
 
-// Recorder holds what a reconciler asked for in a Fake context.
+// FakeRequest returns a context for one request to a Serve handler in a unit
+// test. In it, Get, List, Fetch, ReviewToken, RequestToken, and Trigger use
+// world, as in a Fake context. Nothing that a reconcile in a Fake context
+// declares reaches this world, so test a handler that hands data to a
+// reconcile against a real API server. As in a cluster, the handler can only
+// read. A call of Own, Apply, Delete, or RequeueAfter cancels the context,
+// and the returned Recorder's Err returns the error.
+//
+//	ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{...})
+//	req := httptest.NewRequest("POST", "/probes/team/api", nil).WithContext(ctx)
+//	handler.ServeHTTP(httptest.NewRecorder(), req)
+//	if err := rec.Err(); err != nil {
+//		t.Error(err)
+//	}
+func FakeRequest(ctx context.Context, world ...any) (context.Context, *Recorder) {
+	ctx, s := newWebhookScope(ctx, newFakeWorld(world))
+	return ctx, &Recorder{s: s}
+}
+
+// FakeStandby, in the world of a Fake or FakeRequest context, makes the
+// context act as a replica that reconciles no objects, such as one that
+// doesn't hold the lease, so Trigger returns false.
+type FakeStandby struct{}
+
+// Recorder holds what a reconciler or a handler asked for in a Fake or
+// FakeRequest context.
 type Recorder struct {
 	s *scope
 }
@@ -59,8 +93,9 @@ type Recorder struct {
 // RequeueAfter returns the shortest duration passed to RequeueAfter, or zero.
 func (r *Recorder) RequeueAfter() time.Duration { return r.s.requeue }
 
-// Err returns the error that canceled the reconcile's context, if any, for
-// example a struct that doesn't embed Object.
+// Err returns the error that canceled the context, if any, for example
+// because a reconciled struct doesn't embed Object, or because a handler
+// called Apply.
 func (r *Recorder) Err() error { return r.s.err }
 
 // Events returns the events that the reconciler recorded with Eventf, in
@@ -93,13 +128,69 @@ func intentsOf[T any](r *Recorder, kind intentKind) []*T {
 	return out
 }
 
+// Triggered returns the keys of the objects of T's group and kind that
+// Trigger queued a reconcile for, through any type, in order.
+func Triggered[T any](r *Recorder) []Key {
+	ti, err := parseType(reflect.TypeFor[T]())
+	if err != nil {
+		return nil
+	}
+	w := r.s.w.(*fakeWorld)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []Key
+	for _, t := range w.triggers {
+		if t.group == ti.group && t.kind == ti.kind {
+			out = append(out, t.key)
+		}
+	}
+	return out
+}
+
+// FakeToken is a bearer token for ReviewToken to accept in a Fake context.
+// It's valid for Audiences, or, when Audiences is empty, only for the API
+// server's audience, "https://kubernetes.default.svc", like a token that
+// the API server issues without audiences.
+type FakeToken struct {
+	Token     string
+	User      UserInfo
+	Audiences []string
+}
+
 type fakeWorld struct {
+	tr *tracker
+	// standby is set when the world holds FakeStandby.
+	standby bool
+
+	// mu guards the fields below and each memSource's ti, merged, and
+	// objs. A memSource's objs don't change once merged is set, so its
+	// methods read them without mu.
+	mu     sync.Mutex
 	byType map[reflect.Type]*memSource
 	// types holds byType's keys in the order that the world added them.
 	types []reflect.Type
-	tr    *tracker
+	// tokens are the tokens that ReviewToken accepts, and requested counts
+	// the calls of RequestToken.
+	tokens    []FakeToken
+	requested int
+	triggers  []triggered
 }
 
+func newFakeWorld(objs []any) *fakeWorld {
+	w := &fakeWorld{byType: map[reflect.Type]*memSource{}, tr: newTracker()}
+	for _, o := range objs {
+		w.add(o)
+	}
+	return w
+}
+
+type triggered struct {
+	group, kind string
+	key         Key
+}
+
+// src returns the source of type t, adding it if needed. The caller holds
+// w.mu.
 func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
 	s := w.byType[t]
 	if s == nil {
@@ -117,6 +208,8 @@ func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
 // in the world's objects of other types of the same kind, converted to ti
 // through JSON, except where an object of ti has the same name.
 func (w *fakeWorld) read(ti *typeInfo) *memSource {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	s := w.src(ti.goType, ti)
 	if s.merged {
 		return s
@@ -153,6 +246,19 @@ func (w *fakeWorld) add(o any) {
 	if _, ok := o.(error); o == nil || ok {
 		return
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	switch t := o.(type) {
+	case FakeToken:
+		w.tokens = append(w.tokens, *clone.Of(&t))
+		return
+	case *FakeToken:
+		w.tokens = append(w.tokens, *clone.Of(t))
+		return
+	case FakeStandby, *FakeStandby:
+		w.standby = true
+		return
+	}
 	m := metaOfAny(o)
 	w.src(reflect.TypeOf(o).Elem(), nil).objs[m.Key()] = clone.Value(o)
 }
@@ -180,6 +286,66 @@ func (w *fakeWorld) resolve(_ context.Context, ti *typeInfo) (resolved, error) {
 }
 
 func (w *fakeWorld) deps() *tracker { return w.tr }
+
+// fakeAPIAudience is the API server's audience in a Fake context.
+const fakeAPIAudience = "https://kubernetes.default.svc"
+
+func (w *fakeWorld) reviewToken(_ context.Context, token string, want []string) (TokenReview, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, t := range w.tokens {
+		if t.Token != token {
+			continue
+		}
+		have := t.Audiences
+		if len(have) == 0 {
+			have = []string{fakeAPIAudience}
+		}
+		var both []string
+		for _, a := range want {
+			if slices.Contains(have, a) {
+				both = append(both, a)
+			}
+		}
+		if len(both) == 0 {
+			return TokenReview{Error: fmt.Sprintf("token audiences %q is invalid for the target audiences %q", have, want)}, nil
+		}
+		return TokenReview{Authenticated: true, User: *clone.Of(&t.User), Audiences: both}, nil
+	}
+	return TokenReview{Error: "invalid bearer token"}, nil
+}
+
+func (w *fakeWorld) requestToken(_ context.Context, audience string) (string, time.Time, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.requested++
+	t := FakeToken{
+		Token: fmt.Sprintf("fake-token-%d", w.requested),
+		User: UserInfo{
+			Username: "system:serviceaccount:default:test",
+			Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:default", "system:authenticated"},
+		},
+		Audiences: []string{audience},
+	}
+	w.tokens = append(w.tokens, t)
+	return t.Token, time.Now().Add(time.Hour), nil
+}
+
+func (w *fakeWorld) trigger(ti *typeInfo, k Key) bool {
+	if w.standby {
+		return false
+	}
+	if res, _ := w.resolve(context.Background(), ti); !res.namespaced {
+		k.Namespace = ""
+	}
+	if w.read(ti).peek(k) == nil {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.triggers = append(w.triggers, triggered{group: ti.group, kind: ti.kind, key: k})
+	return true
+}
 
 // memSource is an in-memory source for tests.
 type memSource struct {

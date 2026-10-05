@@ -126,13 +126,13 @@ func TestFresh(t *testing.T) {
 
 func TestMergePolicyDefaults(t *testing.T) {
 	var p *MergePolicy
-	if p.MaxCommits() != 5 || p.Check("gofmt") != nil {
-		t.Error("a nil policy has the default limit and no checks")
+	if p.MaxCommits() != 5 || p.MaxRuns() != 10 || p.Check("gofmt") != nil {
+		t.Error("a nil policy has the default limits and no checks")
 	}
 	zero := int32(0)
-	p = &MergePolicy{Checks: []CheckPolicy{{Name: "gofmt", MayPush: true}}, MaxAutomatedCommits: &zero}
-	if p.MaxCommits() != 0 {
-		t.Errorf("MaxCommits = %d, want an explicit 0", p.MaxCommits())
+	p = &MergePolicy{Checks: []CheckPolicy{{Name: "gofmt", MayPush: true}}, MaxAutomatedCommits: &zero, MaxAgentRuns: &zero}
+	if p.MaxCommits() != 0 || p.MaxRuns() != 0 {
+		t.Errorf("MaxCommits = %d and MaxRuns = %d, want explicit 0s", p.MaxCommits(), p.MaxRuns())
 	}
 	if c := p.Check("gofmt"); c == nil || !c.MayPush {
 		t.Errorf("Check(gofmt) = %+v", c)

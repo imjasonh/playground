@@ -23,7 +23,7 @@ func TestReportsWhyThePodDidntStart(t *testing.T) {
 		`the gotest check can't create or change Pods in namespace default, which doesn't have the label ` +
 		`git-k8s.imjasonh.com/check-pods=true (422 Invalid)`)
 	ctx, rec := kube.Fake(t.Context(), b, repo, denied)
-	if err := checks.NewReconciler[Branch](check, &checks.Config{}).Reconcile(ctx, b); err != nil {
+	if err := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{}).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
