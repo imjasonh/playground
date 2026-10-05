@@ -21,7 +21,10 @@ type Job struct {
 	// Name, with the Runner's Name, names the job's Pods. Use the name of
 	// the object that the job is for, such as a GitBranch.
 	Name string
-	// Namespace holds the job's Pods and the Secrets that they read.
+	// Namespace must be the namespace of the object that the caller
+	// reconciles. RunJob declares the job's Pods with kube.Own, which puts
+	// them in that object's namespace, and looks for them in Namespace. The
+	// Secrets that the Pods read must be there too.
 	Namespace string
 	// URL is the repository that the Pods fetch from.
 	URL string

@@ -865,8 +865,12 @@ Secret with the repository's credentials, the commits to check out, the
 task, the agent's tools, and the runner's image if it isn't
 `-agent-image`. `Run` builds a `Job` from a check's branch, so both start
 the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
-For a check, the `Runner`'s name must be the check's name, and the `Job`'s
-namespace must opt in to check Pods, as [Install](#install) describes.
+The `Job`'s namespace must be the namespace of the object that the
+controller reconciles, because `RunJob` declares the Pod with `kube.Own`,
+which puts it there. The Secrets that the Pod reads must be in that
+namespace too. For a check, the `Runner`'s name must be the check's name,
+and that namespace must opt in to check Pods, as [Install](#install)
+describes.
 
 Call `RunJob` on each reconcile with the `JobState` that the last call
 left. The state names the run's Pod and counts the runs that `RunJob`
