@@ -1610,19 +1610,21 @@ and changes to `status.checks` by service accounts other than the core
 program's, even when a role grants them status access. See
 [Install](#install).
 
-`check-gotest` runs tests in Pods, and `check-review` and `check-conflicts`
-run agents in Pods, so `generate` grants all three permission to create,
-patch, and delete Pods in every namespace. The `git-k8s-check-pods`
-admission policy keeps those Pods out of the `git-k8s` and `check-*`
-namespaces, and makes them run as their namespace's `default` service
-account. The core program doesn't map a `default` service account to a
-check unless the `git-k8s-checks` ConfigMap has an entry for it, so don't
-add one. Without that policy, any of them can run a Pod as another check's
-service account and mount a `git-k8s-results` token that the core program
-accepts as that check's. It can also run a Pod as the core program's
-service account, which writes every check's result. Anyone else who can
-create Pods in a check's namespace or in the `git-k8s` namespace can do the
-same, because the policy covers only checks.
+`check-gotest` runs tests in Pods, and `check-review`, `check-conflicts`,
+and `check-deps` run agents in Pods, so `generate` grants all four
+permission to create, patch, and delete Pods in every namespace. The
+`git-k8s-check-pods` admission policy keeps those Pods out of the `git-k8s`
+and `check-*` namespaces, and makes them run as their namespace's `default`
+service account. The core program doesn't map a `default` service account
+to a check unless the `git-k8s-checks` ConfigMap has an entry for it, so
+don't add one. Without that policy, any of them can run a Pod as another
+check's service account and mount a `git-k8s-results` token that the core
+program accepts as that check's. It can also run a Pod as the core
+program's service account, which writes every check's result. Anyone else
+who can create Pods in a check's namespace or in the `git-k8s` namespace can
+do the same, because the policy covers only checks. That includes
+`git-k8s-deps`, which runs update Pods, so `generate` lets it create Pods in
+every namespace.
 
 The tokens have the audience `git-k8s-results`, so a token sent to the core
 program can't call the API server, and a token for the API server can't send
@@ -1631,8 +1633,8 @@ can read the traffic between Pods can copy a token and send that check's
 results until the token expires, within an hour, or the check's Pod is
 deleted.
 
-`check-base`, `check-conflicts`, `check-gofmt`, `check-review`, and
-`check-risk` fetch or push, so they can also request tokens for their own
+`check-base`, `check-conflicts`, `check-deps`, `check-gofmt`, `check-review`,
+and `check-risk` fetch or push, so they can also request tokens for their own
 service accounts, to send to Octo STS. As [Security](#security) describes,
 whoever holds a token for one of them can then create a `git-k8s-results`
 token for it that isn't bound to its Pod and lasts as long as the API
@@ -2481,11 +2483,13 @@ shows how.
 
 `generate` also writes a Service for the core program, which routes port 80
 to the results endpoint on port 8081 of each replica, and mounts a token for
-the audience `git-k8s-results` in each check's Pod. The core program's
-container waits 5 seconds before it stops, so that the Service stops sending
-it results first. That wait needs Kubernetes 1.30 or later. If
-NetworkPolicies in the `git-k8s` namespace deny traffic by default, let the
-checks' Pods reach port 8081 of the core program's Pods.
+the audience `git-k8s-results` in each check's Pod. `git-k8s-deps` gets one
+too, because it imports the `checks` package. It doesn't send results, and
+the core program wouldn't accept them, because `git-k8s-deps` isn't a check.
+The core program's container waits 5 seconds before it stops, so that the
+Service stops sending it results first. That wait needs Kubernetes 1.30 or
+later. If NetworkPolicies in the `git-k8s` namespace deny traffic by
+default, let the checks' Pods reach port 8081 of the core program's Pods.
 
 `config/policy.yaml` holds four ValidatingAdmissionPolicies. The first
 rejects every write to `GitBranch` status by a check's service account, and
