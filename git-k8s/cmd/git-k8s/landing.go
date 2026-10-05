@@ -95,6 +95,11 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch, "parent", spec.Parent,
 		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", branch.New == "")
 	report(b, reasonLanded, true, "%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
+	kube.Eventf(ctx, kube.Normal, reasonLanded, "%s %s at %s onto %s, which moved from %s to %s",
+		verb, spec.Branch, gitk8s.Short(spec.Head), spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
+	if branch.New == "" {
+		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
+	}
 	kube.Trigger[gitk8s.GitRepository](ctx, b.Namespace, spec.Repository)
 	return true, nil
 }

@@ -485,12 +485,11 @@ another namespace's copy from the core program's volume.
 ## Events
 
 The controllers record an event about a `GitBranch` each time they push a
-fix to the branch, fast-forward its parent to it, or delete it, in the
-mirror's copy. The repositories controller then pushes the change to the
-external repository, as
+fix to the branch, land it on its parent, or delete it, in the mirror's
+copy. The repositories controller then pushes the change to the external
+repository, as
 [Sync with the external repository](#sync-with-the-external-repository)
-describes. Squash and rebase landings record no event, and only the
-`Merged` condition reports them. A branch without a parent takes no check
+describes. A branch without a parent takes no check
 results, so `check-conflicts` also records an event when it finds that such
 a branch diverged:
 
@@ -498,7 +497,7 @@ a branch diverged:
 | --- | --- | --- |
 | `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch, or `check-conflicts` pushed `resolve/BRANCH` for a diverged branch without a parent. |
 | `ResolvingDivergence` | `check-conflicts` | `check-conflicts` found a diverged branch without a parent, and pushed nothing. A `Warning` says what keeps the check from resolving the divergence. A `Normal` event says that the check waits for `resolve/BRANCH` to land, or that nothing is left to resolve. |
-| `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
+| `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch, or squashed or rebased the branch onto the parent. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 
 `kubectl describe gitbranch GITBRANCH` lists a branch's events. After the
