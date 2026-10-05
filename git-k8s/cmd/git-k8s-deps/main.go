@@ -12,8 +12,8 @@
 // version that go raised a requirement to is -min-age old too. When a newer
 // release comes out before the branch lands, the controller replaces the
 // branch's commit with a lease, so each module keeps one branch. It also
-// remakes a branch that falls behind the parent, unless checks pushed fixes
-// to it that still merge cleanly.
+// remakes a branch that falls behind the parent, unless the parent lands
+// branches through a merge queue and the branch still merges cleanly.
 //
 // The Pod's first init container fetches the parent with the repository's
 // credentials, the second runs go get without them, and a container from the
@@ -355,7 +355,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	reqs := requirements(mods)
 	stored, loaded := u.loadSeen(ctx, len(reqs) > 0, log)
 	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, reqs, owned, log)
-	writes, deletes, err := u.plan(ctx, local, parentHead, maxCommits(repo.Spec.Branches, parent), targets, failed, existing, owned)
+	writes, kept, deletes, err := u.plan(ctx, local, parentHead, mergePolicy(repo.Spec.Branches, parent), targets, failed, existing, owned)
 	if err != nil {
 		return err
 	}
@@ -373,6 +373,9 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 			continue
 		}
 		log.Info("deleted a branch that has no update left to make", "branch", d.branch, "head", gitk8s.Short(d.old))
+	}
+	for _, k := range kept {
+		u.deleteIfRetracted(ctx, local, remote, mods, k, log)
 	}
 	if loaded {
 		// kube writes objects in the order that they're declared and
@@ -442,14 +445,20 @@ func (u *updater) governs(rules []gitk8s.BranchRule, branch, parent string) bool
 	return r != nil && r.Parent == parent
 }
 
-// maxCommits returns how many automated commits the parent's merge policy
-// allows on each of its branches.
-func maxCommits(rules []gitk8s.BranchRule, parent string) int {
-	var p *gitk8s.MergePolicy
+// mergePolicy returns the parent's merge policy, or nil if its rule has none.
+func mergePolicy(rules []gitk8s.BranchRule, parent string) *gitk8s.MergePolicy {
 	if r := gitk8s.FindRule(rules, parent); r != nil {
-		p = r.Merge
+		return r.Merge
 	}
-	return p.MaxCommits()
+	return nil
+}
+
+// queues reports whether branches land on the parent through its merge
+// queue. It must agree with the merge controller, which queues branches when
+// the base check may merge the parent into them.
+func queues(policy *gitk8s.MergePolicy) bool {
+	c := policy.Check("base")
+	return c != nil && c.MayPush
 }
 
 // branches returns the module of each branch that the controller manages
@@ -647,12 +656,12 @@ func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, paren
 	return targets, failed
 }
 
-// plan returns the branches to create or replace with updates, and the
+// plan returns the branches to create or replace with updates, the
+// branches that stay behind the parent instead of being remade, and the
 // branches to delete. It leaves alone the branches of modules whose
 // versions it couldn't read, and the branches in existing that the
-// controller doesn't own. maxCommits is how many automated commits the
-// parent's merge policy allows on a branch.
-func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, maxCommits int, targets map[moduleMajor]update, failed map[moduleMajor]bool, existing map[moduleMajor]string, owned map[moduleMajor]ownedBranch) (writes, deletes []change, err error) {
+// controller doesn't own. policy is the parent's merge policy.
+func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, policy *gitk8s.MergePolicy, targets map[moduleMajor]update, failed map[moduleMajor]bool, existing map[moduleMajor]string, owned map[moduleMajor]ownedBranch) (writes, kept, deletes []change, err error) {
 	all := map[moduleMajor]bool{}
 	for m := range targets {
 		all[m] = true
@@ -681,15 +690,18 @@ func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, m
 			deletes = append(deletes, change{branch: c.branch, old: head})
 			continue
 		}
-		ok, err := current(ctx, repo, parentHead, head, up, o.fixes < maxCommits && o.fixes > 0)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !ok {
+		keep := queues(policy) && o.fixes < policy.MaxCommits()
+		ok, behind, err := current(ctx, repo, parentHead, head, up, keep)
+		switch {
+		case err != nil:
+			return nil, nil, nil, err
+		case !ok:
 			writes = append(writes, c)
+		case behind:
+			kept = append(kept, c)
 		}
 	}
-	return writes, deletes, nil
+	return writes, kept, deletes, nil
 }
 
 // ownedBranch is a branch that the controller owns. fixes counts the fixes
@@ -761,15 +773,18 @@ func updatedTo(c git.ListedCommit, m moduleMajor) string {
 }
 
 // current reports whether a branch's head already makes an update on the
-// parent. The branch must contain the parent's head, so that it can
-// fast-forward, unless keep is set: then it only has to merge cleanly with
-// the parent, which check-base can merge in. Remaking the update would drop
-// the fixes that checks such as check-deps pushed, so the controller sets
-// keep for branches with fixes and automated commits left for the merge.
-func current(ctx context.Context, repo *git.Repo, parentHead, head string, up update, keep bool) (bool, error) {
+// parent, and if it does, whether the branch is behind the parent. The
+// branch must contain the parent's head, so that it can fast-forward, unless
+// keep is set: then it only has to merge cleanly with the parent, which
+// check-base merges in at the front of the parent's merge queue. Remaking
+// the update would send the branch to the back of the queue and drop the
+// fixes that checks such as check-deps pushed, so the controller sets keep
+// for the branches of a parent with a queue that have automated commits
+// left for check-base's merge.
+func current(ctx context.Context, repo *git.Repo, parentHead, head string, up update, keep bool) (ok, behind bool, err error) {
 	entries, err := repo.LsTree(ctx, head)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	blobs := map[string]string{}
 	for _, e := range entries {
@@ -781,22 +796,22 @@ func current(ctx context.Context, repo *git.Repo, parentHead, head string, up up
 		p := path.Join(dir, "go.mod")
 		sha, ok := blobs[p]
 		if !ok {
-			return false, nil
+			return false, false, nil
 		}
 		data, err := repo.ReadBlob(ctx, sha)
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		if f, err := modfile.Parse(p, data, nil); err != nil || !requires(f, up.module, up.version) {
-			return false, nil
+			return false, false, nil
 		}
 	}
-	ok, err := repo.IsAncestor(ctx, parentHead, head)
+	ok, err = repo.IsAncestor(ctx, parentHead, head)
 	if err != nil || ok || !keep {
-		return ok, err
+		return ok, false, err
 	}
 	_, conflicts, err := repo.MergeTree(ctx, head, parentHead)
-	return err == nil && len(conflicts) == 0, err
+	return err == nil && len(conflicts) == 0, true, err
 }
 
 // requires reports whether f requires mod at exactly version.
@@ -928,12 +943,13 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 	}
 }
 
-// deleteIfRetracted deletes the branch that an update would replace when
-// the branch's go.mod files raise a requirement to a version that its
-// module retracts, the branch's own module included. Otherwise, plan
-// deletes a branch whose own version the module retracts only when target
-// finds no version to update to. The controller pushed such a branch before
-// the module retracted the version.
+// deleteIfRetracted deletes a branch whose go.mod files raise a requirement
+// to a version that its module retracts, the branch's own module included:
+// the branch that an update would replace, or a branch that stays behind
+// the parent instead of being remade. Otherwise, plan deletes a branch
+// whose own version the module retracts only when target finds no version
+// to update to. The controller pushed such a branch before the module
+// retracted the version.
 func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote git.Remote, mods map[string]*modFile, w change, log *slog.Logger) {
 	if w.old == "" {
 		return

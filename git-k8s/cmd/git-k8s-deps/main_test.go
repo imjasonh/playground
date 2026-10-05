@@ -298,6 +298,12 @@ func (f *fixture) moveMain(path, content string) string {
 	return f.b.Spec.Head
 }
 
+// noQueue drops mayPush from main's check-base, so that main has no merge
+// queue, and the controller remakes a branch that falls behind main.
+func (f *fixture) noQueue() {
+	f.rules[0].Merge.Checks[0].MayPush = false
+}
+
 // pushTo commits a file on a branch with message, pushes it, and returns
 // the branch's new head.
 func (f *fixture) pushTo(branch, path, content, message string) string {
@@ -918,6 +924,7 @@ func TestKeepsItsBranchesAfterARestart(t *testing.T) {
 				f.checkStays(head)
 				return
 			}
+			f.noQueue()
 			main := f.moveMain("README.md", "# app\n")
 			if head := f.update("v1.1.0"); f.work.Git("rev-parse", head+"^") != main {
 				t.Errorf("%s = %s, want an update on main at %s", greetBranch, head, main)
@@ -1132,13 +1139,42 @@ func TestReplacesABranchWhenANewerVersionComesOut(t *testing.T) {
 	}
 }
 
-func TestRemakesABranchBehindItsParent(t *testing.T) {
-	f := newFixture(t)
-	f.update("v1.1.0")
-	main := f.moveMain("README.md", "# app\n")
-	head := f.update("v1.1.0")
-	if got := f.work.Git("rev-parse", head+"^"); got != main {
-		t.Errorf("the update's parent = %s, want main at %s", got, main)
+func TestBranchesBehindTheirParent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// conflict makes main require another version of greet.
+		conflict bool
+		// limit is main's maxAutomatedCommits, if set.
+		limit   *int32
+		noQueue bool
+		kept    bool
+	}{
+		{name: "in main's merge queue", kept: true},
+		{name: "in main's merge queue, conflicts", conflict: true},
+		{name: "in main's merge queue, with no automated commits left", limit: new(int32)},
+		{name: "main has no merge queue", noQueue: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.rules[0].Merge.MaxAutomatedCommits = tc.limit
+			if tc.noQueue {
+				f.noQueue()
+			}
+			head := f.update("v1.1.0")
+			main := f.moveMain("README.md", "# app\n")
+			if tc.conflict {
+				f.proxy.publish(greet, "v1.0.1", longAgo, "")
+				main = f.moveMain("go.mod", modAt("v1.0.1"))
+			}
+			if tc.kept {
+				f.checkStays(head)
+				return
+			}
+			head = f.update("v1.1.0")
+			if got := f.work.Git("rev-parse", head+"^"); got != main {
+				t.Errorf("the update's parent = %s, want main at %s", got, main)
+			}
+		})
 	}
 }
 
@@ -1149,18 +1185,23 @@ func TestBranchesWithFixes(t *testing.T) {
 		conflict bool
 		limit    int32
 		// merge has check-base merge main into the branch.
-		merge bool
-		kept  bool
+		merge   bool
+		noQueue bool
+		kept    bool
 	}{
 		{name: "merges cleanly", kept: true},
 		{name: "has check-base's merge", merge: true, kept: true},
 		{name: "conflicts", conflict: true},
 		{name: "has no automated commits left", limit: 1},
+		{name: "main has no merge queue", noQueue: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			if tc.limit > 0 {
 				f.rules[0].Merge.MaxAutomatedCommits = &tc.limit
+			}
+			if tc.noQueue {
+				f.noQueue()
 			}
 			f.update("v1.1.0")
 			fix := f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
@@ -1879,9 +1920,12 @@ func TestDeletesABranchThatRaisesARetractedVersion(t *testing.T) {
 		version string
 		deleted bool
 	}{{
-		name:    "main moves, and the branch raises the retracted version",
-		pushed:  modWith(greet, "v1.1.0", other, "v1.5.0"),
-		again:   func(f *fixture) { f.moveMain("README.md", "# app\n") },
+		name:   "main moves, and the branch raises the retracted version",
+		pushed: modWith(greet, "v1.1.0", other, "v1.5.0"),
+		again: func(f *fixture) {
+			f.noQueue()
+			f.moveMain("README.md", "# app\n")
+		},
 		version: "v1.1.0",
 		deleted: true,
 	}, {
@@ -1966,6 +2010,7 @@ func TestKeepsABranchWhoseRetractionsItCantRead(t *testing.T) {
 			logs := captureLogs(t)
 			f.proxy.publish(other, "v1.6.0", longAgo, "retract v1.5.0\n")
 			tc.breakIt(f)
+			f.noQueue()
 			f.moveMain("README.md", "# app\n")
 			f.clock = f.clock.Add(f.u.interval / 2)
 			p = f.start()
@@ -2027,6 +2072,7 @@ func TestKeepsABranchWhoseUpdateFailsForAnotherReason(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(f)
 			}
+			f.noQueue()
 			f.moveMain("README.md", "# app\n")
 			f.clock = f.clock.Add(f.u.interval / 2)
 			p = f.start()
@@ -2036,6 +2082,48 @@ func TestKeepsABranchWhoseUpdateFailsForAnotherReason(t *testing.T) {
 			}
 			if strings.Contains(logs.String(), "deleted a branch") {
 				t.Errorf("logs = %q, want no deletion", logs)
+			}
+		})
+	}
+}
+
+func TestDeletesABranchInAMergeQueueThatRaisesARetractedVersion(t *testing.T) {
+	const other, third = "example.com/other", "example.com/third"
+	for _, tc := range []struct {
+		name    string
+		breakIt func(f *fixture)
+		deleted bool
+	}{
+		{name: "the branch raises the retracted version", deleted: true},
+		{name: "listing third fails", breakIt: func(f *fixture) { f.proxy.fail(third, "list", 500) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval = 100 * time.Hour
+			f.proxy.publish(third, "v1.0.0", longAgo, "")
+			f.proxy.publish(other, "v1.5.0", longAgo, "")
+			p := f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", third, "v1.0.0", other, "v1.5.0"))))
+			head := f.srv.Heads(t, "app")[greetBranch]
+			if head == "" {
+				t.Fatalf("the controller didn't push %s", greetBranch)
+			}
+
+			t.Log("other v1.6.0 retracts v1.5.0, and main moves. The branch keeps its place in main's merge queue instead of being remade, so the controller reads the retractions of the versions that the branch raises, third's before other's.")
+			logs := captureLogs(t)
+			f.proxy.publish(other, "v1.6.0", longAgo, "retract v1.5.0\n")
+			if tc.breakIt != nil {
+				tc.breakIt(f)
+			}
+			f.moveMain("README.md", "# app\n")
+			f.clock = f.clock.Add(f.u.interval / 2)
+			want, logged := head, "reading the retractions of a module that a branch raises failed"
+			if tc.deleted {
+				want, logged = "", "deleted a branch that raises a requirement to a version that its module retracts"
+			}
+			f.checkStays(want)
+			if !strings.Contains(logs.String(), logged) {
+				t.Errorf("logs = %q, want %q", logs, logged)
 			}
 		})
 	}

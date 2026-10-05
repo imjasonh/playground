@@ -1564,7 +1564,9 @@ that the update failed, and makes the update again after `-interval`. When
 the update would replace a branch whose `go.mod` files raise a requirement
 to a retracted version too, including the version of the branch's own
 module, for example because the controller pushed the branch before the
-module retracted the version, the controller deletes the branch.
+module retracted the version, the controller deletes the branch. It deletes
+a branch that stays behind its parent in a merge queue the same way, without
+making the update again, as [Branches](#branches) describes.
 
 When no module proxy has a module or version that an update raises a
 requirement to, the controller can't check the version, so it doesn't push
@@ -1628,16 +1630,24 @@ controller update the module, raise its `go` line to 1.17 or later and run
 
 When a newer version comes out before a branch lands, the controller replaces
 the branch's commit with an update to the newer version, so each module keeps
-one branch. It also remakes a branch that falls behind its parent, so that
-the branch can fast-forward the parent. Every push has a lease on the head
-that the controller read, so the controller never overwrites a push that it
+one branch. When the parent has no [merge queue](#merge-queue), the
+controller also remakes a branch that falls behind its parent, so that the
+branch can fast-forward the parent. Every push has a lease on the head that
+the controller read, so the controller never overwrites a push that it
 didn't see.
 
-A branch with fix commits from checks, such as `check-deps`, stays when it
-falls behind, so that the fixes aren't lost. It stays only while it merges
+When the parent has a merge queue, as in the example, a branch that falls
+behind stays instead. Remaking it would push a head that doesn't contain the
+one before, which sends the branch to the back of the queue, and would drop
+fix commits from checks, such as `check-deps`. `check-base` merges the parent
+in when the branch reaches the front. The branch stays only while it merges
 cleanly with the parent and has automated commits left under
-`maxAutomatedCommits`. With `mayPush: true`, `check-base` merges the parent
-in. A newer version still replaces the branch and its fixes.
+`maxAutomatedCommits` for that merge. Without a queue, `check-base` doesn't
+merge the parent in, so the controller remakes a branch that falls behind
+even when the branch has fixes, and the fixes are lost. While a branch stays
+behind its parent, the controller deletes it if it raises a requirement to a
+version that its module retracts. A newer version still replaces the branch
+and its fixes.
 
 The controller changes and deletes only branches whose commits beyond the
 parent are all its updates and checks' fixes. An update is a commit that the
