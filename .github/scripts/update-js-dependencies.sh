@@ -41,6 +41,10 @@ if [ "${#apps[@]}" -eq 0 ]; then
   fi
 fi
 
+# Discovery finds only top-level apps. manage-dependency-update.sh commits
+# these nested packages' manifests too.
+apps+=(git-k8s/agent/runner)
+
 for app in "${apps[@]}"; do
   echo "::group::Update and verify ${app}"
 
