@@ -2663,7 +2663,7 @@ eventually 60 idle
 echo "Four polls of the remote wrote nothing."
 echo "::endgroup::"
 
-echo "::group::No zombie lasts, and the programs' Pods meet the restricted Pod Security Standard"
+echo "::group::No zombie lasts, and the programs' Pods share a process namespace and meet the restricted Pod Security Standard"
 no_lasting_zombies
 # generate doesn't label the programs' namespaces, so their Pods get only the
 # cluster's default Pod Security level. A server-side dry run of the
@@ -2671,6 +2671,12 @@ no_lasting_zombies
 # holds every program that the groups installed except git-k8s and go-cache.
 programs=(git-k8s go-cache "${CHECKS[@]}")
 for program in "${programs[@]}"; do
+  shared="$(k -n "$(namespace_of "${program}")" get pods -l "app.kubernetes.io/name=${program}" \
+    -o jsonpath='{range .items[*]}{.spec.shareProcessNamespace}{"\n"}{end}')"
+  if [[ -z "${shared}" ]] || grep -qv '^true$' <<<"${shared}"; then
+    echo "${program}'s Pods don't all share a process namespace: ${shared}" >&2
+    exit 1
+  fi
   k label --dry-run=server --overwrite namespace "$(namespace_of "${program}")" \
     pod-security.kubernetes.io/enforce=restricted 2>&1 >/dev/null | tee "${WORKDIR}/pod-security.log"
   if grep -q violate "${WORKDIR}/pod-security.log"; then
@@ -2678,7 +2684,7 @@ for program in "${programs[@]}"; do
     exit 1
   fi
 done
-echo "No zombie on the nodes lasted 10 seconds, and the Pods of all ${#programs[@]} programs meet the restricted Pod Security Standard."
+echo "No zombie on the nodes lasted 10 seconds, and the Pods of all ${#programs[@]} programs share a process namespace and meet the restricted Pod Security Standard."
 echo "::endgroup::"
 
 echo "kind e2e passed"
