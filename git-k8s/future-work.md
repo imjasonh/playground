@@ -32,40 +32,20 @@ or on purpose, because it can't write results at all:
 
 The endpoint uses the same token check as the mirror, so the two share it.
 
-## Get GitHub credentials from Octo STS
+## Support GitHub Enterprise Server
 
-For a GitHub repository, git-k8s uses a long-lived basic-auth Secret, such as
-a personal access token. [Octo STS](https://github.com/octo-sts/app)
-exchanges an OIDC token for a GitHub App installation token that expires
-within an hour. The token gets the permissions that a trust policy in the
-repository's `.github/chainguard/` directory grants to the identity in the
-OIDC token. This repository's dependency workflow uses it.
+A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)
+only for a repository on github.com, because the public Octo STS service
+issues tokens only for github.com. A repository on GitHub Enterprise Server
+needs a Secret.
 
-The decision is to use the public Octo STS service. With the mirror, only
-git-k8s's own components talk to GitHub: the mirror, to sync, and the program
-that reports check runs. Each exchanges its projected service account token,
-whose subject is `system:serviceaccount:NAMESPACE:NAME`, for a GitHub token,
-and gets a new one before the old one expires. A `GitRepository` names the
-trust policies to use instead of a Secret:
-
-- The mirror's identity gets `contents: write`, to sync branches in both
-  directions.
-- The identity that reports results gets `checks: write`, so each check's
-  result also shows as a check run on its commit, and on the commit's pull
-  request. Check runs copy git-k8s's results; they don't change them.
-
-Checks need no GitHub credentials at all. GitHub grants `contents: write` for
-a whole repository, not for branches, which is acceptable because only the
-mirror holds it.
-
-Questions to settle first:
-
-- How to test it. Octo STS fetches the cluster's OIDC discovery document and
-  keys, so the cluster's issuer has to be reachable from the public service,
-  as on GKE and EKS. A kind cluster's issuer isn't, so the end-to-end test
-  needs a fake token service.
-- Whether to support GitHub Enterprise Server, which the public service
-  doesn't reach.
+GitHub Enterprise Server needs its own Octo STS deployment, with a GitHub App
+on that server. The programs then need the deployment's token exchange URL
+and audience, and the server's web and REST API URLs. These can't be
+`GitRepository` fields, because a tenant could then choose where the programs
+send their service account tokens, and for which audience. They belong in
+program flags, like `-fake-github`, or in a cluster-scoped object that only
+administrators can change.
 
 ## Resolve conflicts in a controller
 
@@ -133,11 +113,11 @@ Questions to settle first:
 
 ## Land branches through a merge queue
 
-Branches land by fast-forward only. Each landing moves the parent, so no
-other open branch contains the parent's head anymore. `check-base` merges the
-parent into each of them, which changes their heads and runs every check
-again, including a `go test` Pod. With N open branches, each landing costs
-about N runs of every check.
+A branch lands only when it contains its parent's head. Each landing moves
+the parent, so no other open branch contains the parent's head anymore.
+`check-base` merges the parent into each of them, which changes their heads
+and runs every check again, including a `go test` Pod. With N open branches,
+each landing costs about N runs of every check.
 
 The proposed fix is a queue for each parent. A branch whose checks pass,
 apart from being behind its parent, joins the queue. Only the branch at the
@@ -166,11 +146,10 @@ with dependencies run without giving them the internet through `-goproxy`.
 ## Require an approver who didn't write the change
 
 `check-approval` reports who approved a branch, but not who wrote it, so a
-gate can't require that someone other than the author approved. Reading
-commits takes the repository's credential, which can push to any branch and
-which `check-approval` doesn't have. With the
-[in-cluster git mirror](#run-an-in-cluster-git-mirror), it could read
-commits without one.
+gate can't require that someone other than the author approved.
+`check-approval` doesn't read commits today, but it could fetch them from the
+[mirror](README.md#the-mirror) with its mirror token, without the
+repository's credential.
 
 Questions to settle first:
 
@@ -214,13 +193,6 @@ core program could use to weaken them. The core program already decides
 what lands, so that may be acceptable. Once checks send results to the core
 program instead of writing them, the check-results policy is a backstop, and
 the policy that stops controllers from approving branches matters most.
-
-## Support more ways to land
-
-Landing fast-forwards the parent to the branch's head, so the parent ends up
-at the commit that the checks tested. Squash and rebase landings, which many
-forges offer, make a commit that no check saw, so they need either another
-round of checks or a rule about which results still count.
 
 ## Add agentic operators
 

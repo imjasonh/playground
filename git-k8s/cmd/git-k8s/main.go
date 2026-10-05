@@ -10,7 +10,12 @@
 // and a NetworkPolicy that limits what check-gotest's test Pods in the
 // repository's namespace can reach. The merge controller reads the check
 // results on each GitBranch, and when the parent's merge policy passes,
-// fast-forwards the parent to the branch.
+// lands the branch on the parent in the copy. It fast-forwards the parent
+// to the branch, or squashes or rebases the branch onto the parent.
+//
+// The check-runs controller copies the check results on each GitBranch to
+// GitHub as check runs, for repositories that name an Octo STS identity for
+// them.
 //
 // Check controllers run as separate programs, such as check-gofmt.
 package main
@@ -30,8 +35,11 @@ const mirrorDir = "/var/lib/git-k8s"
 func main() {
 	g := &git.Git{}
 	m := &mirror.Mirror{Git: g}
+	merge := &merger{mirror: m}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&m.Dir, "mirror-dir", mirrorDir, "writable directory for the mirror's copies of repositories, which one process at a time may use")
+	flag.StringVar(&merge.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
+	flag.StringVar(&merge.ident.Email, "identity-email", "git-k8s@users.noreply.github.com", "committer email of the commits that squash and rebase landings make")
 	flag.Func("branch-prefix", "let a controller start branches, as NAMESPACE/SERVICEACCOUNT=PREFIX, such as git-k8s-deps/git-k8s-deps=deps/; repeat for more", func(s string) error {
 		p, err := mirror.ParsePrefix(s)
 		if err != nil {
@@ -42,7 +50,8 @@ func main() {
 	})
 	kube.Main(
 		kube.For[gitk8s.GitRepository](&repositories{mirror: m}, kube.Named("repositories")),
-		kube.For[gitk8s.GitBranch](&merger{mirror: m}, kube.Named("merge")),
+		kube.For[gitk8s.GitBranch](merge, kube.Named("merge")),
+		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
 		kube.Serve(m),
 		kube.Volume(mirrorDir),
 	)

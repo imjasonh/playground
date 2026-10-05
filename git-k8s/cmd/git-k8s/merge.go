@@ -20,6 +20,7 @@ import (
 // CustomResourceDefinition.
 type merger struct {
 	mirror *mirror.Mirror
+	ident  git.Identity
 }
 
 // Merged condition reasons, which State repeats.
@@ -89,7 +90,7 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil
 	}
-	return m.land(ctx, repo, b)
+	return m.land(ctx, repo, b, results)
 }
 
 // diverged returns how branch diverged between the mirror's copy of repo
@@ -152,9 +153,10 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 }
 
 // land fast-forwards the parent to the branch's head in the mirror's copy
-// of repo. The repository controller then pushes the parent to the
+// of repo, or squashes or rebases the branch onto it when the merge policy
+// says to. The repository controller then pushes the parent to the
 // external repository.
-func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch) error {
+func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
 	if repo == nil {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, spec.Repository)
@@ -182,9 +184,15 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 		return err
 	}
 	if !ff {
-		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so %s can't fast-forward to it",
+		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so it can't land on %s",
 			spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), spec.Parent)
 		return nil
+	}
+	switch spec.Merge.Landing {
+	case gitk8s.Squash, gitk8s.Rebase:
+		if done, err := m.rewrite(ctx, local.Repo, b, results); err != nil || done {
+			return err
+		}
 	}
 	err = local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
 	if err != nil {

@@ -12,15 +12,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
@@ -52,6 +55,31 @@ type Remote struct {
 type Identity struct {
 	Name  string
 	Email string
+}
+
+// Written returns the identity as git writes it in a commit. git drops
+// spaces, ASCII control characters other than DEL, and ,:;<>"\' from the
+// start and the end of the name and the email, and <, >, and newlines from
+// the rest. Then it reads each byte that isn't part of valid UTF-8 as
+// Latin-1, and treats the bytes of noncharacters, such as U+FFFE, the same
+// way.
+func (id Identity) Written() Identity {
+	return Identity{Name: written(id.Name), Email: written(id.Email)}
+}
+
+func written(s string) string {
+	s = strings.TrimFunc(s, func(r rune) bool { return r <= ' ' || strings.ContainsRune(`,:;<>"\'`, r) })
+	s = strings.NewReplacer("\n", "", "<", "", ">", "").Replace(s)
+	var b strings.Builder
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && n == 1 || r&0xfffe == 0xfffe || r >= 0xfdd0 && r <= 0xfdef {
+			r, n = rune(s[0]), 1
+		}
+		b.WriteRune(r)
+		s = s[n:]
+	}
+	return b.String()
 }
 
 // Git runs git commands. The zero value runs "git" from PATH with a
@@ -525,8 +553,35 @@ type RefUpdate struct {
 // commit.
 var ErrRejected = errors.New("push rejected")
 
+// PushError is the error from Push when git or the remote rejects the
+// updates. It wraps ErrRejected.
+type PushError struct {
+	// Rejected maps each rejected ref to git's summary of why, such as
+	// "[rejected] (stale info)" for a lease that doesn't hold, or
+	// "[remote rejected] (deletion prohibited)".
+	Rejected map[string]string
+}
+
+func (e *PushError) Error() string {
+	var refs []string
+	for _, ref := range slices.Sorted(maps.Keys(e.Rejected)) {
+		refs = append(refs, ref+" "+e.Rejected[ref])
+	}
+	return fmt.Sprintf("%v: %s", ErrRejected, strings.Join(refs, "; "))
+}
+
+func (e *PushError) Unwrap() error { return ErrRejected }
+
+// Refused reports whether the remote refused to update ref for a reason of
+// its own, such as a rule against deleting the branch or replacing its
+// commits, and not because another update in an atomic push failed.
+func (e *PushError) Refused(ref string) bool {
+	reason, ok := strings.CutPrefix(e.Rejected[ref], "[remote rejected]")
+	return ok && !strings.Contains(reason, "atomic")
+}
+
 // Push updates refs on the remote atomically. Each update carries a lease,
-// so the push fails with ErrRejected unless every ref still points at the
+// so the push fails with a PushError unless every ref still points at the
 // commit that the update expects.
 func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) error {
 	args := []string{"push", "--porcelain", "--atomic"}
@@ -541,14 +596,19 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 	if err != nil {
 		return err
 	}
-	var rejected []string
+	// A rejected update's line is "!", "source:ref", and git's summary,
+	// separated by tabs. A source is a SHA, empty, or "(delete)", so the
+	// ref starts after the first colon.
+	rejected := map[string]string{}
 	for line := range strings.SplitSeq(string(res.stdout), "\n") {
 		if rest, ok := strings.CutPrefix(line, "!\t"); ok {
-			rejected = append(rejected, rest)
+			update, summary, _ := strings.Cut(rest, "\t")
+			_, ref, _ := strings.Cut(update, ":")
+			rejected[ref] = summary
 		}
 	}
 	if len(rejected) > 0 {
-		return fmt.Errorf("%w: %s", ErrRejected, strings.Join(rejected, "; "))
+		return &PushError{Rejected: rejected}
 	}
 	if res.code != 0 {
 		return &Error{Command: "push", Code: res.code, Stderr: res.stderr}

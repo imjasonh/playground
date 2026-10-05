@@ -4,10 +4,10 @@ git-k8s runs a branch workflow on Kubernetes. It tracks a git repository's
 branches as `GitBranch` objects, and keeps a copy of the repository on a git
 server in the cluster, the mirror. It runs checks on branches that propose
 changes to another branch, and checks can push commits that fix what they
-find. When the parent's merge policy passes, git-k8s fast-forwards
-the parent to the branch. The mirror pushes every change to the external
-repository, such as one on GitHub, and takes the changes that people push
-there.
+find. When the parent's merge policy passes, git-k8s lands the branch on the
+parent by fast-forward, squash, or rebase. The mirror pushes every change to
+the external repository, such as one on GitHub, and takes the changes that
+people push there.
 
 It's a rewrite of [imjasonh/git-k8s](https://github.com/imjasonh/git-k8s)
 on [`kube`](../kube/), the controller framework in this repository. The
@@ -62,7 +62,7 @@ Put credentials in `secretRef`, not in `url`, because
 `kubectl get gitrepositories` shows each URL.
 
 The `git-k8s` program, which this README calls the core program, serves the
-mirror and runs two controllers. Each check runs as its own program. The
+mirror and runs three controllers. Each check runs as its own program. The
 mirror is a `kube.Serve` handler, and each controller is a `kube.For`
 reconciler:
 
@@ -82,11 +82,15 @@ reconciler:
   result. Results record the commits they're for, and the merge controller
   ignores results for older commits.
 - The **merge** controller evaluates the merge policy's `when` expression
-  over the fresh results. When it passes, the controller fast-forwards the
-  parent in the mirror's copy, but only if the parent still points to the
-  commit that the checks saw, so it never overwrites a parent that moved in
-  the meantime. It then deletes the branch if the policy says to, and the
-  repositories controller pushes both changes to the external repository.
+  over the fresh results. When it passes, the controller lands the branch in
+  the mirror's copy, as [Landing methods](#landing-methods) describes, but
+  only if the parent still points to the commit that the checks saw, so it
+  never overwrites a parent that moved in the meantime. It then deletes the
+  branch if the policy says to, and the repositories controller pushes both
+  changes to the external repository.
+
+The core program's third controller, **check-runs**, copies check results to
+GitHub as check runs. See [Check runs](#check-runs).
 
 The checks and the merge controller read each branch's repository as a
 `gitk8s.Repository`, a `GitRepository` without its status, so the
@@ -432,14 +436,17 @@ proposes a controller that resolves divergence by itself.
 
 ### Credentials
 
-Only the core program reads Secrets. Each time the repositories controller
-fetches from or pushes to an external repository, it reads the Secret that
-`secretRef` names, and sends its `username` and `password` keys with HTTP
-basic auth, or `git` as the username if the Secret has none. Checks and test
-Pods reach only the mirror, with their own tokens, so `generate` doesn't let
-them read Secrets. The [`credentials`](credentials/credentials.go) package
-holds the only code that reads them, and is where other ways to
-authenticate belong.
+Only the core program reads Secrets or gets tokens from Octo STS. Each time
+the repositories controller fetches from or pushes to an external
+repository, it reads the Secret that `secretRef` names, and sends its
+`username` and `password` keys with HTTP basic auth, or `git` as the
+username if the Secret has none. For a repository on GitHub, it can use a
+token from Octo STS instead, as [GitHub repositories](#github-repositories)
+describes. Checks and test Pods reach only the mirror, with their own
+tokens, so `generate` doesn't let them read Secrets or request tokens. The
+[`credentials`](credentials/credentials.go) package holds the only code that
+reads Secrets or gets tokens for external repositories, and is where other
+ways to authenticate belong.
 
 The mirror reaches external repositories only over the network. A `url`
 that's a local path or a `file` URL fails, so a `GitRepository` can't read
@@ -447,11 +454,13 @@ another namespace's copy from the core program's volume.
 
 ## Events
 
-The controllers record an event about a `GitBranch` each time they change
-the branch or its parent in the mirror's copy. The repositories controller
-then pushes the change to the external repository, as
+The controllers record an event about a `GitBranch` each time they push a
+fix to the branch, fast-forward its parent to it, or delete it, in the
+mirror's copy. The repositories controller then pushes the change to the
+external repository, as
 [Sync with the external repository](#sync-with-the-external-repository)
-describes:
+describes. Squash and rebase landings record no event, and only the
+`Merged` condition reports them:
 
 | Reason | From | When |
 | --- | --- | --- |
@@ -483,6 +492,267 @@ history of the copy or of the external repository. `generate` grants
 program. A check that never pushes a fix, such as `check-approval`, gets the
 grant too, because the `checks` package that every check uses records
 `PushedFix`.
+
+## GitHub repositories
+
+For a repository on github.com, a `GitRepository` can name
+[Octo STS](https://github.com/octo-sts/app) identities instead of a Secret:
+
+```yaml
+spec:
+  url: https://github.com/OWNER/REPO.git
+  octoSTS:
+    gitIdentity: git-k8s              # instead of secretRef
+    checkRunsIdentity: git-k8s-checks
+```
+
+Octo STS exchanges a Kubernetes service account token for a GitHub token
+that works for one repository, expires within an hour, and has the
+permissions that a trust policy in the repository grants. Each identity is
+the name of a trust policy, `.github/chainguard/IDENTITY.sts.yaml`, on the
+repository's default branch. git-k8s uses the public Octo STS service at
+`https://octo-sts.dev`, which issues tokens only for github.com, so a
+repository on GitHub Enterprise Server needs a `secretRef`.
+
+`gitIdentity` replaces `secretRef`, so set only one of the two. Only the
+mirror uses tokens for it, to fetch from and push to the repository. The
+checks and `check-gotest`'s test Pods fetch from the mirror, so `gotest`
+works for a private repository too. The core program publishes
+[check runs](#check-runs) with tokens for `checkRunsIdentity`, and publishes
+none without it. The URL must have the form `https://github.com/OWNER/REPO`,
+with or without `.git`.
+
+### Set up Octo STS
+
+1. Install the [Octo STS GitHub App](https://github.com/apps/octo-sts) on the
+   repository's owner, with access to the repository.
+2. Find the cluster's OIDC issuer, which is the `issuer` field in the output
+   of this command:
+
+   ```sh
+   kubectl get --raw /.well-known/openid-configuration
+   ```
+
+   Octo STS downloads the issuer's discovery document and keys to verify
+   tokens, so the issuer must be a public HTTPS URL, as it is on GKE and EKS.
+
+3. On the repository's default branch, add a trust policy for each identity.
+   For `gitIdentity: git-k8s`, add `.github/chainguard/git-k8s.sts.yaml`:
+
+   ```yaml
+   issuer: ISSUER
+   subject: system:serviceaccount:git-k8s:git-k8s
+   audience: octo-sts.dev/NAMESPACE
+   permissions:
+     contents: write
+   ```
+
+   For `checkRunsIdentity: git-k8s-checks`, add
+   `.github/chainguard/git-k8s-checks.sts.yaml`:
+
+   ```yaml
+   issuer: ISSUER
+   subject: system:serviceaccount:git-k8s:git-k8s
+   audience: octo-sts.dev/NAMESPACE
+   permissions:
+     checks: write
+   ```
+
+   Replace the following:
+
+   - `ISSUER`: the cluster's issuer
+   - `NAMESPACE`: the `GitRepository`'s namespace
+
+4. Apply the `GitRepository`.
+
+A service account token's subject is `system:serviceaccount:NAMESPACE:NAME`.
+When you install the core program with `generate`, as [Install](#install)
+describes, it runs as the service account `git-k8s` in the namespace
+`git-k8s`. It's the only program that asks Octo STS for tokens, so both
+trust policies name only its service account. If you install it under
+another name or in another namespace, change `subject` to match.
+
+Each token's audience is `octo-sts.dev/` followed by the `GitRepository`'s
+namespace. The core program uses the same service account for every
+`GitRepository`, so the audience is the part of a token that names the
+namespace it's for. A trust policy that requires your namespace's audience
+refuses the tokens that git-k8s requests for a `GitRepository` in another
+namespace, even one that names your repository and identities. Without an
+`audience`, a trust policy accepts only `octo-sts.dev`, which git-k8s never
+requests.
+
+`contents: write` lets the mirror fetch and push. To land changes to files
+in `.github/workflows`, also grant `workflows: write`, because GitHub refuses
+a push that changes those files without it. `checks: write` lets the core
+program create and update check runs.
+
+The core program keeps each GitHub token in memory and gets a new one 10
+minutes before it expires. If an exchange fails, it uses the old token until
+a minute before it expires, and asks Octo STS again after 30 seconds. When
+the mirror can't get a token before its first fetch of a repository, the
+`GitRepository`'s `Ready` condition is `False` with the reason
+`CredentialsUnavailable`. After that, its `ExternalSynced` condition is
+`False` with the reason `SyncFailed`, and checks keep working on the copy.
+Both messages include Octo STS's answer, such as
+`unable to find trust policy for "git-k8s"`. Octo STS caches each trust
+policy, and the lack of one, for 5 minutes, so a change to a trust policy can
+take that long to apply.
+
+### Check runs
+
+When a `GitRepository` names a `checkRunsIdentity`, the core program's
+check-runs controller copies each check's result to GitHub as a check run on
+the commit that the result is for. GitHub shows a commit's check runs on the
+commit and on its pull requests. Each check run is named `git-k8s/CHECK`,
+after its check, and the controller updates it as the result changes:
+
+- A `Running` result shows as in progress.
+- `Passed` completes the check run as `success`.
+- `Failed` and `Error` complete it as `failure`.
+- `Fixed` completes it as `neutral`. The check pushed a fix commit, and the
+  check run on that commit decides.
+
+When a check starts again on a commit where it finished, the controller
+creates a new check run with the same name instead of starting the
+completed one again, which GitHub's documentation doesn't describe. GitHub
+shows the newest, and the old one keeps its result.
+
+A check run belongs to a commit, not to a branch. When two branches of a
+`GitRepository` are at the same commit, they share the check run for each
+check, and it shows the result that changed last, for either branch.
+
+The check run's title is the result's state. Its summary is the result's
+message, or the state when the result has no message, and its text lists the
+result's outputs. The controller puts the message and the outputs in code
+blocks, so GitHub shows what a check writes as it is, not as Markdown.
+
+Check controllers don't finish a check on a commit that its branch left. So
+when a branch moves, is deleted, or no longer has a result for a check
+before the check finishes, the controller updates the check run on the
+commit that the branch left. If another branch at that commit has a result
+for the check, the check run shows it, or the one that changed last if
+several do. Otherwise, the controller completes the check run as
+`cancelled`. A completed check run doesn't start again or become
+`cancelled`, so for another branch's result in progress, the controller
+creates a new check run. Every change to one of a repository's branches
+reconciles all of them, so this happens right away, unless the deleted
+branch was the repository's last.
+
+The controller keeps what it wrote only in memory. If the core program
+restarts after a branch leaves a commit and before the controller reconciles
+the change, the check run on that commit stays in
+progress. So does a check run that's in progress when the last of a
+repository's `GitBranch` objects is deleted or the `GitRepository` loses its
+`checkRunsIdentity`. After a restart, the controller finds each branch's
+check run on GitHub again, and writes the branch's result if the check run
+shows something else. It doesn't know which branch's result changed last
+before the restart, so a check run that several branches share shows the
+result of the branch that it reconciles last, until one of their results
+changes. Until the controller learns its app, it writes the result even to
+a check run that shows it, because the check run that it finds can be
+another app's. Branch protection reads only the check runs on a pull
+request's head commit, so a check run on a commit that no branch is at
+doesn't block a merge.
+
+The controller relies on the core program's one replica, which reconciles
+all of a repository's branches and keeps the only record of the check runs
+that they share. `generate` installs the core program with one replica
+because of the mirror's volume, as [Install](#install) describes.
+
+Check runs only copy results. The controller reads a check run only to see
+whether it already shows the result, so nothing that happens on GitHub, such
+as re-running a check run, changes a result or a merge. GitHub lets only the
+app that created a check run update it, so the controller creates its own
+beside a check run with the same name from another app. The controller
+remembers what it wrote, and writes a check run again only when a result
+changes, a branch leaves the check run's commit, or the program restarts, so
+a change that someone else makes to a check run can stay until then.
+
+Octo STS can have several GitHub Apps and issue the tokens for each
+repository and identity for a different one. So the controller learns each
+repository and identity's app from the check runs that it creates and
+updates. Octo STS's
+[sticky store](https://github.com/octo-sts/app#sticky-store) keeps a
+repository and identity on one app. If Octo STS moves them to another app,
+which can't update the old app's check runs, the controller creates new
+ones beside them.
+
+GitHub limits the requests that each installation of a GitHub App can make,
+and an installation is one owner's. When GitHub answers that an installation
+reached its limit, the controller stops publishing for that repository
+owner, for every app, until the time that GitHub gives, or for a minute. A
+reconcile also stops at the first request that GitHub doesn't answer, so a
+GitHub that doesn't answer holds up a repository's reconciles for one
+30-second timeout each, not one for each check. GitHub can carry out a
+request without its answer arriving, for example when the connection drops
+or a proxy answers with a `502` status. So when a request to create a check
+run gets no answer or a `5xx` status, the controller looks for the check run
+on GitHub before it writes again. When a request to update a check run gets
+no answer or a `5xx` status, the controller writes the check run again, even
+when the result doesn't change.
+
+The controller logs other errors from GitHub and tries again later, up to 5
+minutes apart. It keeps trying even when GitHub's answer can't change. For
+example, GitHub refuses with a `422` status to create a check run on a
+commit that it doesn't have, and the controller tries again until no
+branch's result is for that commit. When GitHub refuses with a `4xx` status
+to update the check run on a commit that a branch left, the controller logs
+the error and doesn't try again, so that the error doesn't delay the check
+run on the branch's new commit. Each reconcile of a repository's branches
+updates the check runs that deleted branches left, so while GitHub fails
+otherwise to update one, every branch's reconcile fails and tries again
+with its own backoff. Rate limits and errors don't hold back checks or
+landings.
+
+To show whether the check-runs identity works, the repositories controller
+sets the `CheckRunsTokenIssued` condition on the `GitRepository`, which is
+`False` with Octo STS's answer when Octo STS doesn't issue a token. The
+`GitRepository` stays `Ready` either way.
+
+### Security
+
+The core program keeps GitHub tokens in memory and passes them to git in its
+environment, so the tokens don't appear in process arguments, Kubernetes
+objects, or logs. The service account tokens that it sends to Octo STS are
+bound to its Pod and last an hour. `generate` lets the core program request
+tokens for its own service account, and for no other. The checks' only
+tokens are for the mirror, and `generate` mounts those, so the checks can't
+request tokens at all.
+
+The core program sends service account tokens only to Octo STS, and GitHub
+tokens only to GitHub. For tests, its `-fake-github` flag points it at a fake
+GitHub and Octo STS instead. It's a flag and not a `GitRepository` field, so
+only whoever installs the core program can choose where its tokens go. The
+end-to-end test's git server runs such a fake, which checks each service
+account token with a TokenReview, because Octo STS can't reach a kind
+cluster's issuer.
+
+A trust policy's audience ties it to one namespace, so anyone who can create
+a `GitRepository` in that namespace can use the trust policy's permissions.
+Grant that only to people who may push to the repository. The audience holds
+only the namespace's name, so a namespace that's deleted and created again
+with the same name gets the trust policies that named the old one.
+
+The rule that lets the core program request tokens, `create` on
+`serviceaccounts/token` for its own service account, also lets anyone who
+holds one of its service account tokens create more. Someone who can run
+`kubectl exec` in the core program's Pod, create Pods in its namespace, or
+read files on its node can get such a token. The tokens that they create
+can have any audience, needn't be bound to the Pod, and can last as long as
+the API server allows. A token with the audience
+`octo-sts.dev/` followed by a namespace gets the permissions of each trust
+policy that requires that audience and names the core program, such as
+`contents: write`. Whoever holds the core program's token can therefore push
+to the repositories of every namespace whose trust policies name it. The
+audiences keep namespaces apart from each other, but not from someone who
+can read the core program's token. Limit who can use `pods/exec` or create
+Pods in the namespace `git-k8s`, and if you manage the API server, set
+`--service-account-max-token-expiration`.
+
+GitHub grants `contents: write` for a whole repository, not for branches, so
+the mirror's tokens can push to any branch. Checks never hold them. A check
+pushes to the mirror, which applies the rules in
+[Who can fetch and push](#who-can-fetch-and-push).
 
 ## Checks
 
@@ -612,6 +882,13 @@ imports the package, so a check that reads only the `GitBranch`, such as
 `check-approval`, leaves `Remote` out, and its program gets no token. No
 check reads Secrets.
 
+Set `FilesOnly` in a check's `checks.Check` when its result for the branch's
+head also holds for any commit with the same files that builds on the same
+parent head, because the result doesn't depend on the branch's commits, such
+as their messages or authors. Squash and rebase landings count only such
+results for the commits that they make, as
+[Which results count](#which-results-count) describes.
+
 ### Sandboxed checks
 
 The checks that read files run in their controller's process. A check that
@@ -703,6 +980,153 @@ The repository controller compiles each `when` when it reads the
 `checks.gofmt.pased`, makes the `GitRepository` not `Ready` instead of
 holding branches back later. Each evaluation can cost at most 100,000, which
 stops an expression that loops over the checks many times.
+
+## Landing methods
+
+A merge policy's `landing` field sets how branches land on the branches that
+its rule matches. For example, this rule squashes each branch that lands on
+`main`:
+
+```yaml
+    - match: main
+      merge:
+        landing: Squash
+```
+
+- `FastForward`, the default, moves the parent to the branch's head, so the
+  parent ends up at the commit that the checks saw.
+- `Squash` makes one commit with the files at the branch's head, on top of
+  the parent's head.
+- `Rebase` copies each of the branch's commits onto the parent's head, in
+  order, and leaves out merge commits.
+
+Like a fast-forward, a squash or rebase lands only a branch that contains the
+parent's head, such as one that `check-base` merged the parent into.
+
+A squash keeps the author and message of the branch's only commit that isn't
+a merge or a check's fix. When the branch has several such commits, the
+message starts with the first one's subject and lists the subject of every
+commit that isn't a merge. It ends with the trailers of the commits that
+aren't fixes, such as `Signed-off-by`, and a `Co-authored-by` trailer for
+each of their authors besides the first. The squashed message never has a
+`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. A rebase keeps
+each commit's author and message, and leaves out a commit that changes
+nothing, such as a change that the parent already has.
+
+The merge controller commits as
+`git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and
+`-identity-email` flags change. It takes commit times from the commits that
+it copies, so making the same landing again makes the same commits.
+
+When the branch is one commit on top of the parent's head, a squash
+fast-forwards the parent to it. A rebase does the same for a branch with no
+merge commits after the parent's head, because copying its commits changes
+nothing. When the parent already has the files at the branch's head, a squash
+sets the branch's state to `Merged` and changes nothing. A rebase does that
+only when the parent already has every commit's change, because it leaves out
+each commit that changes nothing.
+
+A rebase can't copy every branch. It sets the branch's state to
+`NeedsRebase`, with a message that says why, when one of these happens:
+
+- Copying a commit conflicts. A branch whose merge commit resolved a
+  conflict with the parent does this, because the rebase leaves the merge
+  out.
+- A merge commit in the branch makes changes of its own, so the copies don't
+  end up with the files at the branch's head.
+- A commit has no parent, such as the first commit of an unrelated history.
+- A commit to copy has an author that git refuses, or whose date git would
+  change: it has no name that git accepts, no date that git can read, or a
+  time zone that git can't keep, such as `+9999`. Only tools that write
+  commit objects themselves make such commits.
+
+To land such a branch, rebase it yourself, or set `landing: Squash`. A squash
+also sets `NeedsRebase` when the commit whose author it keeps has such an
+author. To land that branch, rebase it yourself and give that commit a new
+author.
+
+Both landings also set `NeedsRebase` for a branch with more than 1,000
+commits that the parent doesn't have, or with more than 8 MiB of names,
+messages, and other text in those commits. The limits bound the work and
+memory that one branch takes, because a rebase runs two git commands for each
+commit that it copies, and the controller keeps every commit's message in
+memory. To land such a branch, squash it yourself into one commit on top of
+the parent's head. With `landing: Rebase`, rebasing it yourself so that it
+has no merge commits also works. The controller fast-forwards such a branch
+without reading its commits, so the limits don't apply.
+
+### Which results count
+
+Squash and rebase landings make commits that no check saw. A squashed commit
+has the files at the branch's head, on top of the parent's head, and so does
+the last commit of a rebase. Those are the files and the parent head that the
+checks saw, so a check that reads only files gives the new commit the same
+result. As with a fast-forward, no check sees a rebase's earlier commits.
+
+Other results depend on more than the files, such as those of a check that
+reads the commits' messages, authors, signatures, or trailers like
+`Signed-off-by`, or that counts the branch's commits. An agent that reviews
+commit messages as well as the change is another. So a result for the
+branch's head counts for the new commit only when its check sets `FilesOnly`
+in its `checks.Check`, which gives its results `filesOnly: true`. A check
+without `FilesOnly` costs one more round of checks, as the end of this section
+describes.
+
+The built-in checks set `FilesOnly`. `check-base` passes for any commit that
+builds on the parent's head, `check-gofmt` and `check-gotest` read only the
+files, and `check-risk` compares them with the parent's head.
+`check-approval` reads only the `GitBranch`, and an approval is for the
+change, which the new commit makes too. `maxAutomatedCommits` counts fix
+commits by their trailer, but it limits what checks push, and the gate
+doesn't read it.
+
+When the counted results pass the gate, the controller lands the new commit
+without another round of checks. It moves the parent to the commit in the
+mirror's copy, if the parent is still at the head that the checks saw. The
+same atomic update deletes the branch, if the branch is still at its head,
+or moves the branch to the new commit when `deleteMergedBranches` is off. A
+branch that stays is then at its parent's head, so it shows `Merged` instead
+of commits that the parent doesn't have. If the parent or the branch moved
+since the repositories controller listed them, the update changes neither,
+and the controller tries again.
+
+When the gate doesn't pass on the counted results alone, the controller
+moves the branch to the new commit in the mirror's copy instead, if the
+branch is still at its head, and sets the branch's state to `Rewritten`.
+The checks run on the new commit, and when the gate passes, the parent
+fast-forwards to it. `check-approval` passes only for the head that the
+annotation names, so a rewritten branch needs a new approval.
+
+A check with `mayPush: true` can push a fix on top of the new commit. While
+the parent doesn't move, a squash landing doesn't squash its own commit and
+the fixes after it again, so they land by fast-forward, with each fix as its
+own commit. Another squash would keep the fixes' files but drop their
+commits, so a check that reads commits could push the same fix forever.
+`maxAutomatedCommits` counts only the fixes after the squashed commit,
+because it doesn't have the trailers of the fixes before it.
+
+Moving a branch that stays, and rewriting a branch, replace the branch's
+commits in the mirror's copy, and then in the external repository. Before
+you push to a branch that the controller moved, reset your copy to the
+branch's new head.
+
+An external repository can refuse to replace a branch's commits or to
+delete the branch. Git's `receive.denyNonFastForwards` and
+`receive.denyDeletes` settings do that, and so do GitHub rules that block
+force pushes or deletions. The merge controller changes only the mirror's
+copy, so a refusal doesn't stop a landing or a rewrite, and the checks run
+on a rewritten branch's new commit in the copy. The mirror pushes each
+branch on its own, so the parent still reaches the external repository, and
+the external repository keeps the branch where it was. The
+`GitRepository`'s `ExternalSynced` condition is then `False` with the reason
+`SyncFailed` and a message such as
+`the external repository refused updates to c/auth ([remote rejected] (deletion prohibited))`,
+and the mirror tries again at each poll. A rewritten branch that the
+external repository refused still lands. If the merge policy deletes merged
+branches, the mirror then deletes the branch in the external repository,
+unless the external repository refuses that too. To clear the condition,
+let the external repository accept the update, such as by allowing force
+pushes to and deletions of proposal branches.
 
 ## Install
 
@@ -915,21 +1339,22 @@ a change:
   whose names start with `-`, so neither can pass git an option.
 
 The core program is the only program that reads Secrets or changes
-NetworkPolicies, which it does in every namespace. It holds the external
-repositories' credentials and decides what lands.
+NetworkPolicies, which it does in every namespace, and the only one that
+gets tokens from Octo STS. It holds the external repositories' credentials
+and decides what lands.
 
 Kubernetes RBAC is the trust boundary. Anyone who can write a
-`GitRepository` in a namespace chooses the external repository and the
-Secret that the core program uses there. Of the service accounts, only
-`check-gotest`'s can write the `gotest` result, but people who can write
-`GitBranch` status in a namespace can write it too. Such a result can name a
-Pod in that namespace for the mirror to let fetch the repository, but the
-mirror accepts only a `Pending` Pod with `check-gotest`'s controller label.
-Making such a Pod takes the right to create Pods in that namespace, which
-already lets a Pod mount the repository's Secret. Anyone who can create
-tokens for a check's service account can push as that check, and anyone who
-can create tokens for a controller's service account can do what its
-`-branch-prefix` allows.
+`GitRepository` in a namespace chooses the external repository, and the
+Secret or Octo STS identities that the core program uses there. Of the
+service accounts, only `check-gotest`'s can write the `gotest` result, but
+people who can write `GitBranch` status in a namespace can write it too.
+Such a result can name a Pod in that namespace for the mirror to let fetch
+the repository, but the mirror accepts only a `Pending` Pod with
+`check-gotest`'s controller label. Making such a Pod takes the right to
+create Pods in that namespace, which already lets a Pod mount the
+repository's Secret. Anyone who can create tokens for a check's service
+account can push as that check, and anyone who can create tokens for a
+controller's service account can do what its `-branch-prefix` allows.
 
 The mirror serves plain HTTP inside the cluster, so anything that can read
 Pod traffic can read tokens and repositories, and a token that leaks works
@@ -976,6 +1401,8 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 - Nothing resolves a divergence or a merge conflict by itself.
 - The test Pods' NetworkPolicy works only with a network plugin that
   enforces it.
+- Squash and rebase landings make unsigned commits, even from signed ones.
+  With a check that requires signed commits, use `FastForward`.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.

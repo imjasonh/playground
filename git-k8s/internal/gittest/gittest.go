@@ -44,6 +44,17 @@ func NewServer(t testing.TB, password string) *Server {
 	return &Server{URL: hs.URL, Username: s.Username, Password: password, Root: s.Root}
 }
 
+// Config sets an option in the configuration of a repository on the
+// server, such as receive.denyDeletes. The repository must exist.
+func (s *Server) Config(t testing.TB, repo, key, value string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", filepath.Join(s.Root, repo+".git"), "config", key, value)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config %s: %v\n%s", key, err, out)
+	}
+}
+
 // Remote returns the URL and credentials of a repository on the server.
 func (s *Server) Remote(repo string) git.Remote {
 	r := git.Remote{URL: s.URL + "/" + repo + ".git"}

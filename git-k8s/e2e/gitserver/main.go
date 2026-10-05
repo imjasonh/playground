@@ -17,6 +17,7 @@ import (
 func main() {
 	addr := flag.String("addr", ":8418", "address to serve on")
 	root := flag.String("root", "", "directory that holds the repositories")
+	kubeContext := flag.String("kube-context", "", "kubectl context whose API server reviews the service account tokens that a fake Octo STS under /github/ receives; without it, /github/ isn't served")
 	username := flag.String("username", "git-k8s", "username that requests must send")
 	flag.Parse()
 	password := os.Getenv("GITSERVER_PASSWORD")
@@ -27,6 +28,9 @@ func main() {
 		Addr:              *addr,
 		Handler:           &gitserver.Server{Root: *root, Username: *username, Password: password},
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+	if *kubeContext != "" {
+		srv.Handler = withGitHub(srv.Handler, *root, *username, password, *kubeContext)
 	}
 	log.Printf("serving %s on %s", *root, *addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -105,6 +105,8 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 	defer func() { kube.SetCondition(&repo.Status.Conditions, ready) }()
 	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx))
 
+	reportCheckRuns(ctx, repo)
+
 	interval, err := time.ParseDuration(cmp.Or(repo.Spec.PollInterval, "30s"))
 	if err != nil || interval < time.Second {
 		ready.Reason = "InvalidPollInterval"

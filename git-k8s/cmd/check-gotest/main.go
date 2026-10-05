@@ -88,7 +88,7 @@ const fetchAttempts = 3
 // that the attempts outlast a restart of the mirror.
 const fetchRetryDelay = 30 * time.Second
 
-var check = checks.Check{Name: gitk8s.GoTestCheck, Run: run}
+var check = checks.Check{Name: gitk8s.GoTestCheck, FilesOnly: true, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	attempt, named := 1, ""
