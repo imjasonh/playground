@@ -235,12 +235,29 @@ func TestFetchMergePush(t *testing.T) {
 	if !errors.Is(err, git.ErrRejected) {
 		t.Fatalf("push with a stale lease: err = %v, want ErrRejected", err)
 	}
+	var rejected *git.PushError
+	if !errors.As(err, &rejected) || rejected.Rejected["refs/heads/c/x"] != "[rejected] (stale info)" || rejected.Refused("refs/heads/c/x") {
+		t.Errorf("push with a stale lease: err = %#v, want a stale lease that the remote didn't refuse", err)
+	}
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/c/x", New: merge, Old: head}); err != nil {
 		t.Fatal(err)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != merge {
 		t.Errorf("c/x = %s, want %s", got, merge)
 	}
+
+	// A remote that refuses one update of an atomic push rejects the others
+	// too, but refuses only that one.
+	srv.Config(t, "app", "receive.denyDeletes", "true")
+	err = repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/main", New: merge, Old: parent}, git.RefUpdate{Ref: "refs/heads/c/x", Old: merge})
+	if !errors.As(err, &rejected) || !rejected.Refused("refs/heads/c/x") || rejected.Refused("refs/heads/main") ||
+		rejected.Rejected["refs/heads/c/x"] != "[remote rejected] (deletion prohibited)" {
+		t.Errorf("push that deletes a branch the remote won't delete: err = %v, want the remote to refuse only the deletion", err)
+	}
+	if heads := srv.Heads(t, "app"); heads["main"] != parent || heads["c/x"] != merge {
+		t.Errorf("heads = %v, want them as they were", heads)
+	}
+	srv.Config(t, "app", "receive.denyDeletes", "false")
 
 	// Deleting with a lease.
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/c/x", Old: merge}); err != nil {
@@ -324,6 +341,56 @@ func TestTreeEditing(t *testing.T) {
 	stats, err := repo.Numstat(ctx, head, commit)
 	if err != nil || len(stats) != 1 || stats[0] != (git.FileStat{Path: "pkg/x.go", Added: 1, Removed: 1}) {
 		t.Errorf("Numstat = %+v, %v", stats, err)
+	}
+}
+
+func TestWrittenIdentity(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := repo.Commit(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []git.Identity{
+		{Name: "git-k8s", Email: "git-k8s@example.com"},
+		{Name: "Zoë Lima", Email: "zoë@example.com"},
+		{Name: "git-k8s ", Email: "<git-k8s@example.com>"},
+		{Name: `"git-k8s"`, Email: " git-k8s@example.com\n"},
+		{Name: "'git-k8s',", Email: ";git-k8s@example.com:"},
+		{Name: "git\n-k8s", Email: "git-k8s@<example>.com"},
+		{Name: "\tgit, k8s\\", Email: "git-k8s@example.com\x7f"},
+		{Name: "Ana Lima\xff", Email: "\x01ana@example.com"},
+		{Name: "\xc3<\xa9", Email: "\xef\xbf\xbe@example.com"},
+		{Name: "git-k8s", Email: ""},
+		{Name: "\u00a0git-k8s Jr.\r", Email: "\rgit-k8s@example.com\u3000"},
+		{Name: "git\ufdd0k8s\uffff", Email: "\U0001fffe@example.com"},
+	} {
+		raw, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id, c.Time, nil)
+		if err != nil {
+			t.Errorf("CommitTree as %q: %v", id, err)
+			continue
+		}
+		if written, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id.Written(), c.Time, nil); err != nil || written != raw {
+			t.Errorf("CommitTree as %q = %s, %v; want %s, the commit as %q", id.Written(), written, err, raw, id)
+		}
+		log, err := repo.Log(ctx, base, raw, 1)
+		if err != nil || len(log) != 1 {
+			t.Fatalf("Log = %+v, %v", log, err)
+		}
+		if got := log[0].Committer; got != id.Written() {
+			t.Errorf("git writes %q as %q, but Written returns %q", id, got, id.Written())
+		}
 	}
 }
 

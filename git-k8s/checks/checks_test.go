@@ -225,6 +225,41 @@ func TestMissingSigningKeyIsReported(t *testing.T) {
 	}
 }
 
+func TestRecordsFilesOnly(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	runs := 0
+	check := touch(&runs)
+	check.FilesOnly = true
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.branch.Status.Checks.Result; res == nil || !res.Final() || !res.FilesOnly {
+		t.Fatalf("result = %+v, want a final result with filesOnly", res)
+	}
+
+	// A result with filesOnly from before the check stopped setting it
+	// must not count for a squashed commit, so the check runs again.
+	check.FilesOnly = false
+	for range 2 {
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if res := f.branch.Status.Checks.Result; res.FilesOnly || runs != 2 {
+		t.Fatalf("result = %+v after %d runs, want no filesOnly after 2 runs", res, runs)
+	}
+
+	// A result without filesOnly only costs a landing a round of checks, so
+	// a check that starts setting FilesOnly doesn't run again for it.
+	check.FilesOnly = true
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.branch.Status.Checks.Result; res.FilesOnly || runs != 2 {
+		t.Errorf("result = %+v after %d runs, want the same result without filesOnly", res, runs)
+	}
+}
+
 func TestRemovesResultWhenNotListed(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "other"})
 	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: "old", State: gitk8s.Passed}

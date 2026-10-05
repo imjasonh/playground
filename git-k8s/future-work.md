@@ -158,11 +158,11 @@ Questions to settle first:
 
 ## Land branches through a merge queue
 
-Branches land by fast-forward only. Each landing moves the parent, so no
-other open branch contains the parent's head anymore. `check-base` merges the
-parent into each of them, which changes their heads and runs every check
-again, including a `go test` Pod. With N open branches, each landing costs
-about N runs of every check.
+A branch lands only when it contains its parent's head. Each landing moves
+the parent, so no other open branch contains the parent's head anymore.
+`check-base` merges the parent into each of them, which changes their heads
+and runs every check again, including a `go test` Pod. With N open branches,
+each landing costs about N runs of every check.
 
 The proposed fix is a queue for each parent. A branch whose checks pass,
 apart from being behind its parent, joins the queue. Only the branch at the
@@ -256,13 +256,6 @@ core program could use to weaken them. The core program already decides
 what lands, so that may be acceptable. Once checks send results to the core
 program instead of writing them, the check-results policy is a backstop, and
 the policy that stops controllers from approving branches matters most.
-
-## Support more ways to land
-
-Landing fast-forwards the parent to the branch's head, so the parent ends up
-at the commit that the checks tested. Squash and rebase landings, which many
-forges offer, make a commit that no check saw, so they need either another
-round of checks or a rule about which results still count.
 
 ## Add agentic operators
 
