@@ -1,28 +1,31 @@
 {
-  "expectedLegal": false,
-  "notes": "warlord.notCharacter",
-  "list": {
-    "id": "656BF353-924A-42B2-93BD-A69D4811C78D",
-    "name": "Illegal warlord",
-    "catalogVersion": "11e-1",
-    "factionID": "leagues-of-votann",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : false,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "leagues-of-votann--brandfast-oathband"
     ],
-    "units": [
+    "factionID" : "leagues-of-votann",
+    "id" : "74758EA9-CDA7-433B-A531-D34671B66E7B",
+    "name" : "Illegal warlord",
+    "notes" : "",
+    "units" : [
       {
-        "id": "E7FCE737-9014-4B26-A62C-29291D21E681",
-        "datasheetID": "leagues-of-votann--hearthkyn-warriors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "leagues-of-votann--hearthkyn-warriors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "56FA87A9-0AC0-44FB-9FAB-257E8E0F8BD2",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "E7FCE737-9014-4B26-A62C-29291D21E681",
-    "notes": "",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "56FA87A9-0AC0-44FB-9FAB-257E8E0F8BD2"
+  },
+  "notes" : "warlord.notCharacter"
 }

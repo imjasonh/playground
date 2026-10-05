@@ -228,6 +228,10 @@ func (fp *fieldPlan) set(dst reflect.Value, f field) error {
 			return err
 		}
 		if fp.op == opTimePtr {
+			if t.IsZero() {
+				dst.SetZero()
+				return nil
+			}
 			dst.Set(reflect.New(timeType))
 			dst = dst.Elem()
 		}
@@ -342,9 +346,13 @@ func leUint32(b []byte) uint32 {
 	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 }
 
-// timeOf decodes a meta.v1.Time or MicroTime. Time has whole seconds in
+// timeOf decodes a meta.v1.Time or MicroTime. Kubernetes encodes the zero
+// time as an empty message, and as null in JSON. Time has whole seconds in
 // JSON, so it drops fractions here too.
 func timeOf(m *Message, b []byte) (time.Time, error) {
+	if len(b) == 0 {
+		return time.Time{}, nil
+	}
 	var sec, nanos int64
 	err := each(b, func(f field) error {
 		switch {
@@ -401,6 +409,9 @@ func messageJSON(m *Message, b []byte) (any, error) {
 	switch m.Name {
 	case "meta.v1.Time", "meta.v1.MicroTime":
 		t, err := timeOf(m, b)
+		if t.IsZero() {
+			return nil, err
+		}
 		if m.Name == "meta.v1.Time" {
 			return t.Format(time.RFC3339), err
 		}

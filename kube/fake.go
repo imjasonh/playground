@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"reflect"
 	"time"
 
@@ -14,7 +15,8 @@ import (
 // in a unit test. In it, obj is the object being reconciled, and Get, List,
 // Fetch, and Own read from world, which holds pointers to objects. Nothing is
 // sent to a cluster; the returned Recorder holds what the reconciler asked
-// for.
+// for. An error in world is what LastError returns, as if the previous
+// reconcile had failed with it.
 //
 // As in a cluster, a read sees the world's objects of every type of a kind.
 // A reconcile that reads a smaller type of Deployment sees each
@@ -32,12 +34,17 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 		w.add(o)
 	}
 	ti, err := typeInfoFor[T, P]()
-	c := &core{name: "test", labels: newLabelKeys("test")}
+	c := &core{name: "test", labels: newLabelKeys("test"), log: slog.Default()}
 	if err == nil {
 		c.ti = ti
 		c.res, _ = w.resolve(ctx, ti)
 	}
 	ctx, s := newScope(ctx, w, c, P(obj).object().Key())
+	for _, o := range world {
+		if last, ok := o.(error); ok {
+			s.lastErr = last
+		}
+	}
 	if err != nil {
 		s.fail(err)
 	}
@@ -56,10 +63,21 @@ func (r *Recorder) RequeueAfter() time.Duration { return r.s.requeue }
 // example a struct that doesn't embed Object.
 func (r *Recorder) Err() error { return r.s.err }
 
+// Events returns the events that the reconciler recorded with Eventf, in
+// order.
+func (r *Recorder) Events() []Event {
+	var out []Event
+	for _, e := range r.s.events {
+		out = append(out, e.Event)
+	}
+	return out
+}
+
 // Owned returns the objects of type T passed to Own, in order.
 func Owned[T any](r *Recorder) []*T { return intentsOf[T](r, intentOwn) }
 
-// Applied returns the objects of type T passed to Apply, in order.
+// Applied returns the objects of type T passed to Apply, in order. The
+// framework applies the status of each one too, as Apply describes.
 func Applied[T any](r *Recorder) []*T { return intentsOf[T](r, intentApply) }
 
 // Deleted returns the objects of type T passed to Delete, in order.
@@ -132,7 +150,7 @@ func (w *fakeWorld) read(ti *typeInfo) *memSource {
 }
 
 func (w *fakeWorld) add(o any) {
-	if o == nil {
+	if _, ok := o.(error); o == nil || ok {
 		return
 	}
 	m := metaOfAny(o)

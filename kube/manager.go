@@ -99,6 +99,7 @@ type Manager struct {
 	client  *client.Client
 	log     *slog.Logger
 	metrics *metrics
+	events  *eventWriter
 	tracker *tracker
 	ids     atomic.Int64
 	runCtx  context.Context
@@ -107,8 +108,10 @@ type Manager struct {
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
+	unshared    []cache // primary informers that aren't in caches
 	cacheDone   []chan struct{}
 	resolved    map[*typeInfo]resolved
+	crdCalls    map[*typeInfo]*crdCall
 	controllers []Controller
 	hooks       *webhookServer
 }
@@ -153,15 +156,7 @@ func Main(controllers ...Controller) {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
 		flag.PrintDefaults()
 	}
-	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
-	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
-	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
-	flag.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
-	flag.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
-	flag.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
-	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
-	flag.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
-	verbose := flag.Bool("v", false, "log debug messages")
+	verbose := m.flags(flag.CommandLine)
 	flag.Parse()
 	level := slog.LevelInfo
 	if *verbose {
@@ -175,6 +170,19 @@ func Main(controllers ...Controller) {
 		stop()
 		os.Exit(1)
 	}
+}
+
+// flags defines Main's flags on fs, and returns the value of -v.
+func (m *Manager) flags(fs *flag.FlagSet) *bool {
+	fs.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
+	fs.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
+	fs.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
+	fs.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
+	fs.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
+	fs.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
+	fs.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
+	fs.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
+	return fs.Bool("v", false, "log debug messages")
 }
 
 func (m *Manager) init() error {
@@ -200,9 +208,11 @@ func (m *Manager) init() error {
 		m.log.Info("connecting", "host", cfg.Host, "config", cfg.Source)
 	}
 	m.metrics = newMetrics()
+	m.events = newEventWriter(m.client, m.log, m.metrics)
 	m.tracker = newTracker()
 	m.caches = map[cacheKey]cache{}
 	m.resolved = map[*typeInfo]resolved{}
+	m.crdCalls = map[*typeInfo]*crdCall{}
 	m.metrics.gauge("kube_cache_objects", "Objects held in each cache.", func() []sample {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -252,7 +262,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		}
 		stops = append(stops, func() { srv.Close() })
 	}
-	stops = append(stops, m.waitForCaches)
+	stops = append(stops, m.waitForCaches, m.events.start())
 	for _, c := range controllers {
 		if err := c.prepare(ctx, m); err != nil {
 			return startFailed(err)
@@ -268,10 +278,12 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		// configurations whose webhooks no longer answer.
 		m.log.Warn("removing stale webhook configurations failed", "err", err)
 	}
-	var reconcilers []Controller
+	var reconcilers, others []Controller
 	for _, c := range controllers {
 		if c.reconciles() {
 			reconcilers = append(reconcilers, c)
+		} else {
+			others = append(others, c)
 		}
 	}
 	if len(reconcilers) > 0 && (m.LeaderElection || m.Shards > 1) {
@@ -295,7 +307,9 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	var wg sync.WaitGroup
 	stops = append(stops, wg.Wait)
 	if ctx.Err() == nil {
-		for _, c := range reconcilers {
+		// Reconcilers install their CustomResourceDefinitions in setup, and
+		// the objects that Install applies may need them.
+		for _, c := range slices.Concat(reconcilers, others) {
 			if err := c.setup(ctx, m); err != nil {
 				return startFailed(err)
 			}
@@ -420,6 +434,78 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 	return m.resolve(ctx, crd.ti)
 }
 
+// crdCall is one run of ensureCRD for a type. The caller that runs it sets
+// err and ctxErr, and then closes done.
+type crdCall struct {
+	done   chan struct{}
+	err    error
+	ctxErr error // the error of the caller's context, if the call failed
+}
+
+// ensureCRD creates the CustomResourceDefinition of a type that the program
+// defines and owns but doesn't reconcile, if it's missing. Concurrent callers
+// for a type wait for the first one and share its result. If the first one
+// fails after its context ends, a waiter whose context is live takes its
+// place. ensureCRD doesn't keep a failure, so the next caller tries again.
+func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
+	if !ti.custom {
+		return nil
+	}
+	for {
+		m.mu.Lock()
+		call, ok := m.crdCalls[ti]
+		if !ok {
+			call = &crdCall{done: make(chan struct{})}
+			m.crdCalls[ti] = call
+		}
+		m.mu.Unlock()
+		if !ok {
+			return m.runCRDCall(ctx, ti, call)
+		}
+		select {
+		case <-call.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if call.ctxErr == nil || ctx.Err() != nil {
+			return call.err
+		}
+	}
+}
+
+// runCRDCall runs call, the entry for ti in m.crdCalls. If the call fails or
+// panics, runCRDCall removes the entry before it closes call.done, so that a
+// waiter that tries again never finds the finished call.
+func (m *Manager) runCRDCall(ctx context.Context, ti *typeInfo, call *crdCall) error {
+	finished := false
+	defer func() {
+		if !finished {
+			call.err = fmt.Errorf("creating CustomResourceDefinition %s panicked", crdSpec{ti: ti}.name())
+		}
+		if call.err != nil {
+			call.ctxErr = ctx.Err()
+			m.mu.Lock()
+			delete(m.crdCalls, ti)
+			m.mu.Unlock()
+		}
+		close(call.done)
+	}()
+	if !m.reconciled(ti) {
+		call.err = m.createCRD(ctx, ti)
+	}
+	finished = true
+	return call.err
+}
+
+// reconciled reports whether a controller in the program reconciles ti's
+// type, and so installs the type's CustomResourceDefinition.
+func (m *Manager) reconciled(ti *typeInfo) bool {
+	return slices.ContainsFunc(m.controllers, func(c Controller) bool {
+		d, err := c.describe()
+		return err == nil && d.reconciles && d.ti.custom && d.ti.group == ti.group && d.ti.plural == ti.plural
+	})
+}
+
 // labelValue makes s a valid label value.
 func labelValue(s string) string {
 	s = strings.Map(func(r rune) rune {
@@ -462,15 +548,14 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 }
 
 // adopt registers a controller's primary informer as the shared cache for
-// its type when it watches the same objects that Get and List would.
+// its type when it watches the same objects that Get and List would, and
+// otherwise as an unshared one, so that the process's writes show in it.
 func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) {
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}
-	if cfg.namespace != key.namespace || cfg.selector != "" {
-		return
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.caches[key]; ok {
+	if _, ok := m.caches[key]; ok || cfg.namespace != key.namespace || cfg.selector != "" {
+		m.unshared = append(m.unshared, inf)
 		return
 	}
 	id := inf.id()
@@ -505,6 +590,9 @@ func (m *Manager) existing(ti *typeInfo) source {
 }
 
 func (m *Manager) children(ctx context.Context, c *core, ti *typeInfo) (source, error) {
+	if err := m.ensureCRD(ctx, ti); err != nil {
+		return nil, err
+	}
 	return m.childSource(ctx, c, ti, true)
 }
 
