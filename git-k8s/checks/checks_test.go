@@ -165,6 +165,33 @@ func TestPushesFixThenPasses(t *testing.T) {
 	}
 }
 
+func TestStaleRunsTheCheckAgain(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	f.work.Write("TOUCHED", "touched\n")
+	f.branch.Spec.Head = f.work.Commit("touch")
+	f.work.Push("c/x")
+	runs, stale := 0, false
+	check := touch(&runs)
+	check.Stale = func(_ context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+		if meta.Name != f.branch.Name || previous.Commit != spec.Head {
+			t.Errorf("Stale got %s with a result for %s, want %s with a result for its head", meta.Name, previous.Commit, f.branch.Name)
+		}
+		return stale
+	}
+	for i, step := range []struct {
+		stale bool
+		runs  int
+	}{{false, 1}, {false, 1}, {true, 2}} {
+		stale = step.stale
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatal(err)
+		}
+		if res := f.branch.Status.Checks.Result; runs != step.runs || res.State != gitk8s.Passed {
+			t.Errorf("reconcile %d with Stale returning %v: %d runs, result %+v; want %d runs and Passed", i, step.stale, runs, res, step.runs)
+		}
+	}
+}
+
 func TestRecordsFilesOnly(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	runs := 0

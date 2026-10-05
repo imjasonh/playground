@@ -11,6 +11,9 @@
 // GitHub as check runs, for repositories that name an Octo STS identity for
 // them.
 //
+// Unless -install-policies=false, the program installs the admission policies
+// in config/policy.yaml when it starts.
+//
 // Check controllers run as separate programs, such as check-gofmt. They
 // send their results to this program's results endpoint, and the results
 // controller writes each one to the entry of the check whose token sent it.
@@ -21,6 +24,7 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/config"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -28,14 +32,22 @@ import (
 func main() {
 	g := &git.Git{}
 	cache := &gitk8s.Cache{Git: g}
+	repos := &repositories{git: g}
 	m := &merger{cache: cache}
 	rs := &results{timeout: 10 * time.Second, poll: 100 * time.Millisecond}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&cache.Dir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	flag.StringVar(&m.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
 	flag.StringVar(&m.ident.Email, "identity-email", "git-k8s@users.noreply.github.com", "committer email of the commits that squash and rebase landings make")
+	flag.BoolVar(&repos.installPolicies, "install-policies", true, "install the admission policies in config/policy.yaml when the program starts")
 	kube.Main(
-		kube.For[gitk8s.GitRepository](&repositories{git: g}, kube.Named("repositories")),
+		kube.Install(func() []byte {
+			if !repos.installPolicies {
+				return nil
+			}
+			return config.Policy
+		}),
+		kube.For[gitk8s.GitRepository](repos, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](m, kube.Named("merge")),
 		kube.For[resultsBranch](rs, kube.Named("results")),
 		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),

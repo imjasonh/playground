@@ -32,6 +32,7 @@ const (
 	reasonNotFastForward   = "NotFastForward"
 	reasonLanded           = "Landed"
 	reasonMerged           = "Merged"
+	reasonQueued           = "Queued"
 )
 
 func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
@@ -40,9 +41,18 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	// controller's status write keeps server-side apply from making this
 	// controller a manager of the check results.
 	b.Status.Checks = nil
+	q, err := queue(ctx, b)
+	b.Status.Queue = q
+	if err != nil {
+		return err
+	}
+	queued := b.Status.Queued
+	b.Status.Queued = nil
 
 	spec := &b.Spec
 	switch {
+	case landed(b):
+		return nil
 	case spec.Parent == "":
 		b.Status.State = ""
 		return nil
@@ -66,6 +76,8 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	case err != nil && !anyPending(checks):
 		report(b, reasonInvalidGate, false, "when: %v", err)
 		return nil
+	case queues(spec.Merge):
+		return m.queued(ctx, b, queued, checks, results, err == nil && pass)
 	case err != nil || !pass:
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil

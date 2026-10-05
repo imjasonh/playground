@@ -82,7 +82,10 @@ is a `kube.For` reconciler:
   over the fresh results. When it passes, the controller lands the branch,
   as [Landing methods](#landing-methods) describes, with
   `git push --force-with-lease`, so a parent that moved in the meantime is
-  never overwritten. It then deletes the branch if the policy says to.
+  never overwritten. It then deletes the branch if the policy says to. When
+  the policy lets the `base` check push, branches whose gates pass wait in
+  the parent's [merge queue](#merge-queue), and only the branch at the front
+  lands.
 
 The core program's fourth controller, **check-runs**, copies check results
 to GitHub as check runs. See [Check runs](#check-runs).
@@ -100,13 +103,16 @@ amount of state.
 After a branch lands, `kubectl get gitbranches` shows what's still open:
 
 ```
-NAME                    BRANCH   HEAD                                       PARENT   STATE              AGE
-app-c-auth-f684729ccf   c/auth   d28547a6c959905ea8dc037ac37541167a50638c   main     WaitingForChecks   9s
-app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                               48s
+NAME                    BRANCH   HEAD                                       PARENT   STATE              QUEUE   AGE
+app-c-auth-f684729ccf   c/auth   d28547a6c959905ea8dc037ac37541167a50638c   main     WaitingForChecks           9s
+app-c-one-a7d8621874    c/one    04988fc4984947ac2af2b55d15bc96b8e49b5a2f   main     Queued             1       2s
+app-c-two-de141ef616    c/two    62ebc5163be79d7963293a7e4c6152a967ed9838   main     Queued             2       2s
+app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                                       48s
 ```
 
 The `Merged` condition's message explains a `WaitingForChecks` state, for
 example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`.
+`QUEUE` is a branch's place in its parent's [merge queue](#merge-queue).
 
 ## Events
 
@@ -410,7 +416,7 @@ branch, including the checks without `mayPush: true`.
 
 | Program | Check | What it does |
 | --- | --- | --- |
-| `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. |
+| `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
@@ -540,6 +546,13 @@ A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
 have at most 15 other outputs, or the framework reports `Error` and doesn't
 push the fix. The framework shortens messages and output values to 1,024
 bytes, the most that the core program accepts.
+
+A check runs again when the branch's head changes, and with `UsesParent`,
+when the parent's head changes. `Always` runs it on every reconcile, for a
+check that reads only the `GitBranch`. `Stale` runs it again when something
+that it reads with `kube.Get` makes a finished result out of date, the way
+`check-base` runs again when its branch reaches the front of the merge
+queue.
 
 Set `FilesOnly` in a check's `checks.Check` when its result for the branch's
 head also holds for any commit with the same files that builds on the same
@@ -1052,6 +1065,87 @@ The repository controller compiles each `when` when it reads the
 holding branches back later. Each evaluation can cost at most 100,000, which
 stops an expression that loops over the checks many times.
 
+## Merge queue
+
+Every landing moves the parent, so the other open branches fall behind it.
+If each of them merged the parent in, every landing would run every check
+again on every open branch. When a merge policy lets the `base` check push,
+branches land through a queue for each parent instead:
+
+1. A branch joins its parent's queue when its gate passes. The `base` check
+   passes a branch that's behind its parent but merges cleanly, with
+   `outputs.behind` set to `"true"`, so the branch needs no new commit to
+   join.
+2. When the branch reaches the front of the queue, the `base` check runs
+   again, merges the parent in, and pushes the merge. Every check then runs
+   on the new head. A branch that already contains the parent skips this
+   step.
+3. When the gate passes for the new head, the merge controller lands the
+   branch, as [Landing methods](#landing-methods) describes, and the next
+   branch moves to the front. When a squash or rebase landing first pushes
+   its commit to the branch for the checks, as
+   [Which results count](#which-results-count) describes, the branch stays
+   at the front while they run on it.
+
+The branches behind the front keep their heads, so each landing runs every
+check again on one branch, and only the checks that set `UsesParent`, such
+as `base` and `risk`, on the others. The parent's `status.queue` lists its
+queue, front first. Each queued branch's `status.queued` records when it
+joined, the head that the merge controller last kept in the queue, and its
+place, from 1 at the front, which the `QUEUE` column shows. A queued
+branch's state is `Queued`, and the `Merged` condition's message says what
+it waits for, such as `2 of 3 in main's queue`.
+
+A branch leaves the queue when one of these happens:
+
+- It lands.
+- Someone pushes a commit without a `Git-K8s-Fixer` trailer to it, or
+  pushes a head that doesn't contain the one before. Fix commits keep the
+  branch's place, including the `base` check's merge of the parent. The
+  merge controller trusts the trailer, so a person who adds it to a commit
+  keeps the branch's place, but the checks still run on the new head.
+- Its checks finish without its gate passing, such as a test that fails
+  after the merge of the parent. At the front, it leaves sooner, as soon
+  as the `base` check fails or the gate fails with its unfinished checks
+  counted as passing.
+- A squash or rebase landing sets its state to `NeedsRebase`, as
+  [Landing methods](#landing-methods) describes. The branch doesn't join
+  again until its head or its parent's head changes.
+- Someone deletes the branch, which deletes its `GitBranch`.
+- Its parent goes away, or the parent's merge policy goes away or can't be
+  evaluated.
+
+A branch that leaves joins at the back when its gate passes again.
+
+Three choices shape the queue:
+
+- **Where the queue lives.** The queue is in `GitBranch` status, so it
+  needs no new object type, and a controller that restarts continues from
+  the queue that it wrote. Only the merge controller's reconcile of the
+  parent writes `status.queue`, and kube runs one reconcile of an object at
+  a time. Each reconcile reads the last queue from the API server, because
+  the cache can lag a write, keeps the branches that are still queued in
+  their places, and adds new ones at the back. The front stays the front
+  until it leaves, even when several branches become ready at once.
+- **How it orders branches.** Branches keep the order in which they joined.
+  Branches that join between two reconciles of the parent go by
+  `status.queued.since`, which is to the second, then by name.
+- **Whether to merge or rebase.** The front catches up with the parent by
+  merging it in, as `check-base` did before the queue. A rebase rewrites
+  commits that people pushed, so their next push would conflict, and the
+  merge controller couldn't tell a check's rebase from a force push. A
+  squash or rebase landing still leaves the merge out of the parent.
+
+At the front, the `base` check merges the parent at the head that the
+repository controller listed. If the parent moved after that, the check
+waits for the next listing, because a merge of the older head would be
+behind as soon as it was pushed.
+
+Without `mayPush` on `base`, branches don't queue. Each one lands when its
+gate passes, and the `base` check fails a branch that's behind its parent.
+The queue lands one branch at a time; it doesn't test several branches
+together.
+
 ## Landing methods
 
 A merge policy's `landing` field sets how branches land on the branches that
@@ -1164,9 +1258,10 @@ them, the push changes neither, and the controller tries again.
 When the gate doesn't pass on the counted results alone, the controller
 pushes the new commit to the branch instead, with a lease on the branch's
 head, and sets the branch's state to `Rewritten`. The checks run on the new
-commit, and when the gate passes, the parent fast-forwards to it.
-`check-approval` passes only for the head that the annotation names, so a
-rewritten branch needs a new approval.
+commit, and when the gate passes, the parent fast-forwards to it. In a
+[merge queue](#merge-queue), the branch keeps its place at the front until
+then. `check-approval` passes only for the head that the annotation names,
+so a rewritten branch needs a new approval.
 
 A check with `mayPush: true` can push a fix on top of the new commit. While
 the parent doesn't move, a squash landing doesn't squash its own commit and
@@ -1206,7 +1301,6 @@ that has it. They keep local copies of repositories in `/tmp/git-k8s`, on
 the `emptyDir` volume that `generate` mounts at `/tmp`:
 
 ```sh
-kubectl apply -f config/policy.yaml
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
   go run "./cmd/${program}" generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
 done
@@ -1228,10 +1322,13 @@ checks' Pods reach port 8081 of the core program's Pods.
 rejects every write to `GitBranch` status by a check's service account, and
 every change to `status.checks` by a service account other than the core
 program's. Checks have no RBAC rule to write status, so this policy is a
-backstop for a role that grants one by mistake. The second stops every
-git-k8s service account from setting the `approve` and `approved-by`
-annotations, which are for people, and stops checks from changing
-`GitBranch` objects at all. RBAC also keeps every check except
+backstop for a role that grants one by mistake. A check that doesn't run as
+`check-NAME` in the namespace `check-NAME` needs an entry in the
+`git-k8s-checks` ConfigMap, as
+[Check service accounts](#check-service-accounts) describes. The second
+stops every git-k8s service account from setting the `approve` and
+`approved-by` annotations, which are for people, and stops checks from
+changing `GitBranch` objects at all. RBAC also keeps every check except
 `check-gotest` and `check-review`, which own Pods, from patching
 `GitBranch` objects. `generate` grants that permission to a check that owns
 objects, because it can't tell whether an owned object needs a finalizer on
@@ -1304,16 +1401,7 @@ describes.
 
 Without the policies, most of that doesn't hold, so the repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
-`False` until all four policies are installed with bindings that deny. It's
-also `False` while a policy's `git-k8s.imjasonh.com/policy-version`
-annotation isn't the version that the core program expects. If the
-annotation is missing, isn't a number, or is an earlier version, as with the
-policies of an earlier release, the reason is `Outdated`, and the message
-says to apply `config/policy.yaml` from the core program's release. If it's a
-later version, as with the policies of a later release, the reason is
-`Newer`, and the message says to upgrade the core program or, if you rolled
-it back, to apply `config/policy.yaml` from its release. The core program
-can't tell a rollback from an upgrade that applies the policies first.
+`False` until all four policies are installed with bindings that deny.
 
 Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
 or `review` must opt in to check Pods and enforce the `restricted` Pod
@@ -1333,14 +1421,154 @@ creates the Pod within about 5.5 minutes after you label the namespace,
 without a new push.
 
 If `check-gotest` or `check-review` already runs, label the namespaces of
-their repositories before you apply `config/policy.yaml`. Otherwise the
-policy denies their Pods until you do.
+their repositories before you upgrade the core program, which installs
+`config/policy.yaml` when it starts, or before you apply `config/policy.yaml`
+yourself. Otherwise the policy denies their Pods until you do.
+
+### Admission policies
+
+The core program installs `config/policy.yaml` when it starts, before it
+reconciles. It labels the policies, their bindings, and the `git-k8s-checks`
+ConfigMap with `kube.imjasonh.github.io/managed-by=git-k8s`, and applies
+them again each time it starts, but doesn't watch them. The first two
+policies name the core program's service account and read the
+`git-k8s-checks` ConfigMap in the `git-k8s` namespace, and the third keeps
+checks' Pods out of that namespace. Install the core program there, as
+`generate` does unless you set `-namespace`.
+
+If a policy or its binding goes missing, `PoliciesInstalled` turns `False`,
+and its message says to restart the core program. Only the replica that
+holds the leader election lease installs `config/policy.yaml`, so deleting a
+standby replica's Pod doesn't install it again. Restart the Deployment:
+
+```sh
+kubectl -n git-k8s rollout restart deployment/git-k8s
+```
+
+`PoliciesInstalled` also turns `False` while a policy's
+`git-k8s.imjasonh.com/policy-version` annotation isn't the version that the
+core program expects. If the annotation is missing, isn't a number, or is an
+earlier version, as with the policies of an earlier release, the reason is
+`Outdated`, and the message says to restart the core program, which installs
+the policies from its release. If it's a later version, as with the policies
+of a later release, the reason is `Newer`, and the message says to upgrade
+the core program or, if you rolled it back, to restart it. The core program
+can't tell a rollback from an upgrade that applies the policies first.
+
+`PoliciesInstalled` also turns `False` when no binding for a policy denies
+every request that the policy rejects. A binding can let some of them
+through when its `validationActions` doesn't hold `Deny`, when its policy
+reads parameters and its `paramRef.parameterNotFoundAction` isn't `Deny`,
+when its `matchResources` sets resource rules, or when a selector in its
+`matchResources` sets `matchLabels` or `matchExpressions`. The API server
+ignores the `paramRef` of a binding whose policy doesn't read parameters,
+such as the third and fourth policies, so the condition does too. The
+message gives a `kubectl patch` command that makes the binding from
+`config/policy.yaml` deny all of them again, without a restart. For a
+binding that someone set to `Warn`, the command is:
+
+```sh
+kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
+  -p '{"spec":{"validationActions":["Deny"]}}'
+```
+
+A binding set to `Warn` stops the core program the next time that it
+starts, whether you restart it or a node drain or an upgrade does. The core
+program's apply keeps the entries that others add to a binding's
+`validationActions`, so it adds `Deny` next to `Warn`, and the API server
+rejects a binding that has both. The core program exits, each replica that
+takes the lease after it exits too, and nothing lands until you patch or
+delete the binding. `PoliciesInstalled` reports a binding from
+`config/policy.yaml` set to `Warn` even while another binding for the same
+policy denies. To install the binding from `config/policy.yaml` again
+instead of patching it, delete the binding, and then restart the core
+program.
+
+For a binding that someone limited with `matchResources`, the command
+removes `matchResources`. Restarting the core program doesn't remove it,
+because `config/policy.yaml` sets no `matchResources`, and the core
+program's apply changes only the fields that the manifest sets.
+
+The condition doesn't compare the policies, or the bindings' other fields,
+with `config/policy.yaml`, so it doesn't report a policy with
+`failurePolicy: Ignore` or with a `matchConditions` entry that never
+matches. When the core program starts, its apply restores the fields that
+the manifest sets, such as `failurePolicy` and the validations. Applying
+`config/policy.yaml` yourself does too. Neither removes a `matchConditions`
+entry that someone adds under another name, because the API server merges
+that list by name. Remove such an entry with `kubectl edit`.
+
+`generate` grants the core program `create` and `patch` on each policy,
+binding, and ConfigMap in `config/policy.yaml`, by name, and `get` on the
+`git-k8s-checks` ConfigMap, which the bindings of the first two policies
+name as their parameter. The API server lets only someone who can read
+every ConfigMap create a policy whose parameter is a ConfigMap, and it
+checks that as `get` on a ConfigMap named `*`. No ConfigMap can have that
+name, so `generate` also grants `get` on the name `*`, and the core program
+still can't read any other ConfigMap.
+
+The core program can't create other admission policies, but a compromised
+core program could rewrite these policies, their bindings, and the
+`git-k8s-checks` ConfigMap, to weaken them or to deny other requests in the
+cluster. It already decides what lands, so it could land a branch without
+its checks anyway. To keep the policies out of its reach, for example in a
+cluster that manages admission policies separately, install it with
+`-install-policies=false`, which also leaves out the permissions, and apply
+`config/policy.yaml` yourself:
+
+```sh
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -install-policies=false |
+  kubectl apply -f -
+kubectl apply -f config/policy.yaml
+```
+
+With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
+says to apply `config/policy.yaml` instead of restarting the core program.
+For a policy from another release, it says to apply `config/policy.yaml`
+from the core program's release. The core program doesn't apply the manifest when it starts, so a binding set
+to `Warn` doesn't stop it, and the condition doesn't report one while another
+binding for the same policy denies.
+
+### Check service accounts
+
+The first two policies recognize a check by the service account that makes
+each write. `generate` installs `check-NAME` with the service account
+`check-NAME` in the namespace `check-NAME`, and the policies treat that
+service account as the check `NAME`. For a check that runs as another
+service account, such as a check installed with `generate -namespace=checks`,
+add an entry to the `git-k8s-checks` ConfigMap in the `git-k8s` namespace.
+Each key is `NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
+
+```sh
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"checks.check-approval":"approval"}}'
+```
+
+An entry overrides the `check-NAME` convention, so an entry with an empty
+value stops that service account from writing results. The policies ignore
+an entry for the core program's service account, `git-k8s.git-k8s`, so an
+entry can't stop the core program from writing results or changing
+`GitBranch` objects. The core program applies the ConfigMap without data, so
+restarting it keeps your entries.
+Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
+service accounts write which results, so give that permission only to people
+who can install checks.
+
+The third policy doesn't read the ConfigMap, so an entry doesn't change
+which Pods a check can write. A check that owns Pods and runs as another
+service account needs a policy of its own.
+
+While the ConfigMap is missing, the API server denies every create and update
+of a `GitBranch` or its status, including people's, with a message that says
+`no params found for policy binding`. To create the ConfigMap again, run
+`kubectl -n git-k8s create configmap git-k8s-checks`, or restart the core
+program with `kubectl -n git-k8s rollout restart deployment/git-k8s`. With
+`-install-policies=false`, apply `config/policy.yaml` instead.
 
 ### Upgrade from checks that write status
 
 If your installed checks write their own results to `GitBranch` status, as
-each did before the results endpoint, upgrade in this order, which the
-commands in [Install](#install) follow:
+each did before the results endpoint, upgrade in this order:
 
 1. Apply `config/policy.yaml`. The earlier policy stops the core program
    from writing results, and this one rejects the installed checks' status
@@ -1353,8 +1581,12 @@ commands in [Install](#install) follow:
 
 After step 2, a status write from an old check replaces all of
 `status.checks` with that check's entry, so make sure that the policy from
-step 1 is installed first. While the earlier policy is installed, the core
-program reports `PoliciesInstalled` as `False` with the reason `Outdated`.
+step 1 is installed first. The core program installs it when it starts, but
+only after it changes the CustomResourceDefinition. The earlier core program
+installs the earlier policy again each time it starts, so if it restarts
+before step 2, apply `config/policy.yaml` again. While the earlier policy is
+installed, the core program reports `PoliciesInstalled` as `False` with the
+reason `Outdated`.
 The results controller takes over a branch's results the first time it
 writes them, and server-side apply then removes the old checks from the
 branch's managed fields.
@@ -1406,6 +1638,12 @@ those lines when the check can push.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
+- An approval names one head, so a branch that needs one needs another after
+  the `base` check merges its parent in at the front of the queue. The
+  branch leaves the queue until someone approves the merge, then joins at
+  the back. While other branches keep landing, it might never land.
+- A check that doesn't finish at the front of a queue holds up the branches
+  behind it while the front can still land.
 - `check-review` reads repository credentials, so `generate` lets it read
   every Secret, including the Cursor API key, which only its agent Pods use.
   Like `check-gotest`, it can also create Pods in every namespace. Installing
