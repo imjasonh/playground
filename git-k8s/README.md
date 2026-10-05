@@ -1432,8 +1432,10 @@ remote accept force pushes to proposal branches.
 `check-base`, `check-gofmt`, and `check-review` make commits: merges of a
 parent into a branch, formatting fixes, and an agent's fixes. The merge
 controller makes the commits of
-[squash and rebase landings](#landing-methods). A fast-forward landing makes
-none, because it moves the parent to a commit that's already on the branch.
+[squash and rebase landings](#landing-methods), including those that it
+pushes to the branch for another round of checks. A fast-forward landing
+makes none, because it moves the parent to a commit that's already on the
+branch.
 To sign these commits, make an SSH key for signing only, put it in its own
 Secret in the `GitRepository`'s namespace, and name the Secret in the
 `GitRepository`:
