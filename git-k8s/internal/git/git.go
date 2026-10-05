@@ -236,7 +236,7 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 
 // Fetched returns the commit that the last Fetch of a branch found.
 func (r *Repo) Fetched(ctx context.Context, branch string) (string, error) {
-	return r.text(ctx, "rev-parse", "--verify", "refs/remotes/origin/"+branch+"^{commit}")
+	return r.text(ctx, "rev-parse", "--verify", "--end-of-options", "refs/remotes/origin/"+branch+"^{commit}")
 }
 
 // HasCommit reports whether the repository has the commit.
@@ -405,7 +405,7 @@ func (r *Repo) OnlyFixerCommits(ctx context.Context, base, head string) (bool, e
 	if ok, err := r.IsAncestor(ctx, base, head); err != nil || !ok {
 		return false, err
 	}
-	out, err := r.text(ctx, "rev-list", "--first-parent", "--invert-grep", "--grep=^"+FixerTrailer+":", head, "^"+base)
+	out, err := r.text(ctx, "rev-list", "--first-parent", "--invert-grep", "--grep=^"+FixerTrailer+":", "--end-of-options", head, "^"+base)
 	return err == nil && out == "", err
 }
 
