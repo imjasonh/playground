@@ -190,18 +190,6 @@ The proposed fix is for the mirror to sign the commits that git-k8s makes,
 with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
 through Sigstore, or with an SSH key that only the mirror holds.
 
-## Start waiting go test Pods in order
-
-`-max-pods` caps how many test Pods run at once, but the branches that wait
-start in no particular order. The count also comes from the cache, which
-hasn't seen Pods created moments earlier, so a burst of pushes can start a
-Pod or two over the cap.
-
-The proposed fix is to record when each branch started waiting, in the
-check's outputs, and start the branch that has waited longest. Counting the
-Pods that the process has created until the cache shows them keeps the cap
-exact.
-
 ## Install the admission policies with the core program
 
 `config/policy.yaml` is a separate install step. The `PoliciesInstalled`
