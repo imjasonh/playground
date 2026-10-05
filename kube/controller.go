@@ -151,7 +151,12 @@ func Resync(d time.Duration) Option { return func(o *options) { o.resync = d } }
 // framework learns owned types from calls to Own, so this is only needed to
 // delete owned objects of a type that no reconcile declares anymore, for
 // example after a code change, and to start that cache before the first
-// reconcile.
+// reconcile. If the program defines T but doesn't reconcile it, starting the
+// cache also creates T's CustomResourceDefinition if it's missing, so use
+// Owns when a reconcile calls Get or List for T before it first owns an
+// object of type T. If creating the CustomResourceDefinition fails at
+// startup, the program logs the error and starts anyway, and the next Own of
+// T tries again.
 func Owns[T any, P Resource[T]]() Option {
 	return func(o *options) { o.owns = append(o.owns, typeInfoFor[T, P]) }
 }
@@ -417,6 +422,9 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 		oti, err := own()
 		if err != nil {
 			return err
+		}
+		if err := m.ensureCRD(ctx, oti); err != nil {
+			c.log.Warn("creating the CustomResourceDefinition of an owned type failed; Own tries again", "type", oti.String(), "err", err)
 		}
 		if _, err := m.childSource(ctx, &c.core, oti, false); err != nil {
 			return fmt.Errorf("controller %s: %w", c.name, err)

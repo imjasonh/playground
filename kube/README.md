@@ -218,6 +218,57 @@ validation and display hints to the generated schema:
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
 
+A controller that reconciles the type installs its CustomResourceDefinition
+when the program starts, and later releases update it, as [Change a
+type](#change-a-type) describes. A program can also own a type that none of
+its controllers reconciles, such as the reports that
+[`examples/imagereport`](examples/imagereport/main.go) writes for people to
+read. If the cluster doesn't have the CRD, such a program creates it the first
+time that it owns an object of the type, or at startup with `kube.Owns`. If
+that fails at startup, the program logs the error and starts anyway, and its
+next `Own` of the type tries again.
+
+A program that owns a type without reconciling it never changes a CRD that
+exists, because only a program that reconciles the type knows all of the
+type's versions. If the CRD doesn't serve the owning program's version of the
+type, `Own` fails, and the framework retries the reconcile. If two programs
+try to create the CRD at the same time, one of them creates it, and both use
+it if it serves both of their versions.
+
+A program that only reads a type never creates its CRD. While the CRD is
+missing, `Get` and `List` of the type fail the reconcile, so a later `Own` in
+it does nothing, and the framework retries it. `Fetch` returns `nil` and
+doesn't fail the reconcile. If a reconcile calls `Get` or `List` for a type
+before it first owns an object of the type, declare the type with `kube.Owns`,
+so that the program creates the CRD when it starts.
+
+When a program that reconciles the type starts, it installs its own CRD over
+the created one. Until then, the CRD keeps the schema that it was created with,
+even when a later release of the program that created it changes the type. To
+update the CRD along with the type, reconcile the type, even with a
+`Reconcile` method that does nothing. The reconciling program can't take over
+the created CRD if the two programs disagree about the type:
+
+- If they declare different scopes, the reconciling program fails to start,
+  because a CRD's scope can't change.
+- If the created version isn't one that the reconciling program declares, as
+  its own version or with `kube.Version`, the reconciling program fails to
+  start.
+- If they set the `Domain` field of `kube.Manager` differently, the
+  reconciling program doesn't recognize the created CRD as the framework's. It
+  uses the CRD as it is and never updates it.
+
+To recover, make the declarations agree, and then delete the created CRD while
+it has no objects, because deleting a CRD deletes its objects. If only the
+version differs, you can instead declare the created version in the
+reconciling program with `kube.Version`, which keeps the objects.
+
+The created CRD has the schema of the owning program's struct, so declare every
+field of a type that you own. A struct that only reads the type can declare
+only the fields that it uses. To own a type without creating its CRD, give its
+`apiVersion` and `kind` instead of a group, as for a [built-in
+type](#built-in-types).
+
 ### More than one version
 
 When a type's fields change, clients of the old version can keep using it.
@@ -543,6 +594,9 @@ way, its service account needs these permissions:
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
   namespace.
+- `get` and `create` on `customresourcedefinitions`, for the types that it
+  defines and owns without reconciling them, so that it can create their
+  CRDs. Without `get`, it logs a warning and doesn't create them.
 - `get`, `list`, `create`, `update`, and `delete` on `leases`, with
   `-leader-elect` or `-shards`.
 - `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
@@ -591,9 +645,10 @@ go test -race ./...
 Without `KUBEBUILDER_ASSETS`, the end-to-end tests skip. CI downloads the
 binaries and runs them.
 
-One more test installs the website and podpolicy examples with `generate` in a
-[kind](https://kind.sigs.k8s.io/) cluster, and pushes their images to a local
-registry. It needs Docker and `kubectl`, and installs kind if it's missing:
+One more test installs the website, imagereport, and podpolicy examples with
+`generate` in a [kind](https://kind.sigs.k8s.io/) cluster, and pushes their
+images to a local registry. It needs Docker and `kubectl`, and installs kind if
+it's missing:
 
 ```sh
 KUBE_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -621,6 +676,7 @@ tests and end-to-end tests:
 | [`dnsrecord`](examples/dnsrecord/main.go) | external-dns, Crossplane | External resources, `Finalize`, `Permanent`, drift checks |
 | [`janitor`](examples/janitor/main.go) | hjacobs/kube-janitor | Time-based desired state with `RequeueAfter`, `Delete` |
 | [`podpolicy`](examples/podpolicy/main.go) | Kyverno and OPA Gatekeeper policies | Admission webhooks for Pods with `kube.Webhooks`, a patch that keeps undeclared fields |
+| [`imagereport`](examples/imagereport/main.go) | aquasecurity/trivy-operator | Creating the CRD of a type that it owns but doesn't reconcile, `kube.Owns` |
 
 ## Measurements
 

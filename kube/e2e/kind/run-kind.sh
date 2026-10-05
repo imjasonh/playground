@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install the website, janitor, and podpolicy examples in a kind cluster
-# with generate, which pushes their images to a local registry, and check
-# that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
-# sets when kube changes.
+# Install the website, imagereport, janitor, and podpolicy examples in a kind
+# cluster with generate, which pushes their images to a local registry, and
+# check that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1,
+# which CI sets when kube changes.
 #
 # KUBE_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -26,7 +26,7 @@ k() { kubectl --context "${CONTEXT}" "$@"; }
 diagnose() {
   echo "::group::Cluster state"
   k get nodes,websites,all -A -o wide || true
-  for ns in website podpolicy janitor; do
+  for ns in website imagereport janitor podpolicy; do
     k -n "${ns}" describe pods || true
     k -n "${ns}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${ns}" || true
   done
@@ -176,8 +176,28 @@ eventually 120 deployment_gone
 echo "Deleting the Website deletes what it owned."
 echo "::endgroup::"
 
-# podpolicy's webhook denies Pods whose images come from the local registry,
-# so janitor goes first.
+# podpolicy's webhooks deny Pods from this registry, so imagereport and
+# janitor go first.
+echo "::group::Install the imagereport example"
+generate imagereport -replicas=1 | k apply -f -
+k -n imagereport rollout status deployment/imagereport --timeout=180s
+
+# The program owns ImageReports without reconciling them, so it creates their
+# CRD with the rules that generate wrote.
+crd_created() {
+  [[ "$(k get crd imagereports.examples.kube.imjasonh.github.io \
+    -o jsonpath='{.metadata.labels.kube\.imjasonh\.github\.io/managed-by}')" == imagereport ]]
+}
+eventually 60 crd_created
+has_report() {
+  [[ "$(k -n "$1" get imagereport images -o jsonpath='{.images[*].image}' 2>/dev/null)" == *"$2"* ]]
+}
+eventually 60 has_report imagereport "/kube-e2e/imagereport@sha256:"
+eventually 60 has_report kube-system kube-apiserver
+k get imagereports -A
+echo "The program created the ImageReport CRD and reports pods' images."
+echo "::endgroup::"
+
 echo "::group::Install the janitor example"
 generate janitor | k apply -f -
 k -n janitor rollout status deployment/janitor --timeout=180s

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -265,6 +266,29 @@ func TestGrantsFor(t *testing.T) {
 		if got := p.grantsFor(tc.ti, tc.watching); !same(got, tc.want) {
 			t.Errorf("%s: got the wrong grants", tc.name)
 		}
+	}
+}
+
+// TestPlanCRDRules works out the rules of testdata/crdrules, which reads one
+// custom type and owns another without reconciling either. The program may
+// create the CRD of the type that it owns, and nothing for the type that it
+// reads.
+func TestPlanCRDRules(t *testing.T) {
+	var stderr bytes.Buffer
+	o := &generateOptions{program: "crdrules", name: "crdrules", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, stderr: &stderr}
+	p, err := o.plan(t.Context(), []Controller{For[configMapMeta](nop[configMapMeta]{})}, "github.com/imjasonh/playground/kube/testdata/crdrules")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, stderr.String())
+	}
+	got := map[string][]string{}
+	for k, verbs := range p.cluster {
+		if k.resource == "customresourcedefinitions" {
+			got[k.name] = slices.Sorted(maps.Keys(verbs))
+		}
+	}
+	want := map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("verbs on customresourcedefinitions by name = %v, want %v", got, want)
 	}
 }
 
