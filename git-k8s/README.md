@@ -1004,6 +1004,14 @@ while the branch is under the limit, like any fix. When neither git nor the
 agent resolves the conflicts, the check fails with the reason and leaves the
 branch for a person, because a wrong resolution is worse than none.
 
+In a [merge queue](#merge-queue), the check's merges keep the branch's
+place, like other fixes, because each has the trailer and has the branch's
+head as its first parent. A replay takes the branch out of the queue when it
+adds a commit without the trailer, or when the new head doesn't contain the
+old one. At the front, a merge of the parent that conflicts fails the `base`
+check, so the branch leaves the queue. It joins again at the back when its
+gate passes on the check's merge.
+
 A merge of the parent that has no conflicts passes, because merging it is
 `check-base`'s job. The check pushes a merge of the external repository's
 head even without conflicts, because nothing else merges it. While an agent
