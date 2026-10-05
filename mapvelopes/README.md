@@ -83,7 +83,7 @@ ZIP. The first line is bold on the delivery block when it has no digits.
 
 ## Develop and test
 
-Pinned in `rust-toolchain.toml` (Rust 1.88 + `wasm32-unknown-unknown`):
+Pinned in `rust-toolchain.toml` (Rust toolchain + `wasm32-unknown-unknown`):
 
 ```bash
 cd mapvelopes
@@ -106,8 +106,7 @@ hand:
 
 ```bash
 cd mapvelopes
-cargo +stable install worker-build@0.8.5
-npx wrangler deploy
+npx wrangler deploy   # the [build] command installs the matching worker-build
 npx wrangler secret put GOOGLE_MAPS_API_KEY
 ```
 

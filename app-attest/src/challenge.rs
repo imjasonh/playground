@@ -1,7 +1,5 @@
 //! One-time server challenges (replay protection).
 
-use rand_core::{OsRng, RngCore};
-
 use crate::b64;
 use crate::error::Error;
 use crate::store::{ChallengeRecord, ChallengeStore};
@@ -12,7 +10,7 @@ pub const CHALLENGE_TTL_SECONDS: u64 = 5 * 60;
 /// Fresh random challenge (32 bytes, unpadded base64url).
 pub fn generate() -> String {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    getrandom::fill(&mut bytes).expect("system random number generator");
     b64::encode_url(bytes)
 }
 

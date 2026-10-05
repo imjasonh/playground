@@ -6,7 +6,7 @@
 
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
-use p256::EncodedPoint;
+use p256::Sec1Point;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -438,8 +438,8 @@ fn cose_p256_key(cose: &[u8], require_alg: bool) -> Result<VerifyingKey, String>
     uncompressed[1..33].copy_from_slice(x);
     uncompressed[33..].copy_from_slice(y);
     let point =
-        EncodedPoint::from_bytes(uncompressed).map_err(|_| "invalid P-256 point".to_string())?;
-    VerifyingKey::from_encoded_point(&point).map_err(|_| "invalid P-256 public key".to_string())
+        Sec1Point::from_bytes(uncompressed).map_err(|_| "invalid P-256 point".to_string())?;
+    VerifyingKey::from_sec1_point(&point).map_err(|_| "invalid P-256 public key".to_string())
 }
 
 #[derive(Debug)]
@@ -628,7 +628,7 @@ mod tests {
     use super::*;
     use p256::ecdsa::signature::Signer;
     use p256::ecdsa::SigningKey;
-    use rand_core::OsRng;
+    use p256::elliptic_curve::Generate;
 
     fn encode_bstr(bytes: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
@@ -672,7 +672,7 @@ mod tests {
     }
 
     fn cose_from_vk(vk: &VerifyingKey) -> Vec<u8> {
-        let point = vk.to_encoded_point(false);
+        let point = vk.to_sec1_point(false);
         let bytes = point.as_bytes();
         let x = &bytes[1..33];
         let y = &bytes[33..65];
@@ -729,7 +729,7 @@ mod tests {
             origin: "https://example.com".into(),
             rp_name: "y".into(),
         };
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let vk = signing.verifying_key();
         let cose = cose_from_vk(vk);
         let cred_id = b"cred-1";
@@ -824,7 +824,7 @@ mod tests {
             origin: "https://example.com".into(),
             rp_name: "y".into(),
         };
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let vk = signing.verifying_key();
         let stored = Credential {
             id: b64url_encode(b"cred-1"),
@@ -898,7 +898,7 @@ mod tests {
             origin: "https://example.com".into(),
             rp_name: "y".into(),
         };
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let cose = cose_from_vk(signing.verifying_key());
         let cred_id = b"cred-1";
         let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
@@ -935,7 +935,7 @@ mod tests {
             origin: "https://example.com".into(),
             rp_name: "y".into(),
         };
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let vk = signing.verifying_key();
         let stored = Credential {
             id: b64url_encode(b"cred-1"),
@@ -969,7 +969,7 @@ mod tests {
     }
 
     fn cose_from_vk_no_alg(vk: &VerifyingKey) -> Vec<u8> {
-        let point = vk.to_encoded_point(false);
+        let point = vk.to_sec1_point(false);
         let bytes = point.as_bytes();
         let x = &bytes[1..33];
         let y = &bytes[33..65];
@@ -992,7 +992,7 @@ mod tests {
             origin: "https://example.com".into(),
             rp_name: "y".into(),
         };
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let cose = cose_from_vk_no_alg(signing.verifying_key());
         let cred_id = b"cred-1";
         let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));
@@ -1052,7 +1052,7 @@ mod tests {
             origin: "https://example.com".into(),
             rp_name: "y".into(),
         };
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let cose = cose_from_vk(signing.verifying_key());
         let cred_id = b"cred-1";
         let ad = auth_data(&rp.rp_id, 1, Some((cred_id, &cose)));

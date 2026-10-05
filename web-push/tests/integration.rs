@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use futures::executor::block_on;
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::Signature;
+use p256::elliptic_curve::Generate;
 use p256::SecretKey;
-use rand_core::OsRng;
 use serde_json::{json, Value};
 
 use web_push_worker::{
@@ -64,7 +64,7 @@ fn make_config() -> (ApiConfig, VapidKey) {
 /// Build a subscription tied to a freshly generated user-agent key pair, and
 /// return the private key + auth secret so the test can decrypt what it sends.
 fn make_subscription(endpoint: &str) -> (Subscription, SecretKey, [u8; 16]) {
-    let ua_secret = SecretKey::random(&mut OsRng);
+    let ua_secret = SecretKey::generate();
     let p256dh = b64::encode(ece::public_key_bytes(&ua_secret.public_key()));
     let auth = [0x42u8; 16];
     let sub_json = json!({

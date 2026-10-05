@@ -257,7 +257,7 @@ pub struct PackIndex {
 
 impl PackIndex {
     pub fn new(mut records: Vec<EntryRecord>) -> Self {
-        records.sort_by(|a, b| a.oid.cmp(&b.oid));
+        records.sort_by_key(|r| r.oid);
         PackIndex { records }
     }
 

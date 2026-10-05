@@ -216,10 +216,8 @@ fn parse_image_path(path: &str) -> Option<(String, ImageKind)> {
     }
     let (stem, kind) = if let Some(stem) = rest.strip_suffix(".bin") {
         (stem, ImageKind::Bin)
-    } else if let Some(stem) = rest.strip_suffix(".png") {
-        (stem, ImageKind::Png)
     } else {
-        return None;
+        (rest.strip_suffix(".png")?, ImageKind::Png)
     };
     let name = validate_name(stem)?;
     Some((name, kind))
