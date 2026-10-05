@@ -224,8 +224,9 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 // deleteBranch deletes a branch that just landed from the mirror's copy if
 // the merge policy says to, with a lease, so that a branch that moved since
 // it landed stays. The repository controller pushes the deletion to the
-// external repository, and the GitRepository's Synced condition reports the
-// external repository's reason if it refuses, as for a protected branch.
+// external repository, and the GitRepository's ExternalSynced condition
+// reports the external repository's reason if it refuses, as for a
+// protected branch.
 func deleteBranch(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) error {
 	if !b.Spec.Merge.DeleteMergedBranches {
 		return nil
