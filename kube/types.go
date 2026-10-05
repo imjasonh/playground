@@ -75,6 +75,12 @@ func (ti *typeInfo) String() string {
 	return ti.kind + "." + ti.apiVersion
 }
 
+// sameKind reports whether ti and o are types of the same objects, in any
+// version and with any fields.
+func (ti *typeInfo) sameKind(o *typeInfo) bool {
+	return ti.group == o.group && ti.kind == o.kind
+}
+
 var (
 	typeCache  sync.Map // reflect.Type -> *typeInfo or error
 	objectType = reflect.TypeFor[Object]()

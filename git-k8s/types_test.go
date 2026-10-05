@@ -1,6 +1,7 @@
 package gitk8s
 
 import (
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -33,6 +34,78 @@ func TestBranchObjectName(t *testing.T) {
 	}
 	if names[1] != BranchObjectName("app", "c/add") {
 		t.Error("BranchObjectName isn't deterministic")
+	}
+}
+
+// The API server matches a CustomResourceDefinition's patterns with Go's
+// regexp package, so this is what it accepts.
+func TestURLPattern(t *testing.T) {
+	field, _ := reflect.TypeFor[GitRepositorySpec]().FieldByName("URL")
+	pattern := regexp.MustCompile(field.Tag.Get("pattern"))
+	for _, u := range []string{
+		"https://git.example.com/app.git",
+		"http://172.18.0.1:18418/app.git",
+		"https://[2001:db8::1]/app.git",
+		"git://git.example.com/app.git",
+		"ssh://git@git.example.com:2222/app.git",
+		"ssh://git@[::1]:2222/app.git",
+		"ssh://example.com/~/app.git",
+		"https://git-k8s@git.example.com/app.git",
+		"git@github.com:imjasonh/playground.git",
+		"git@[172.18.0.1:2222]:app.git",
+		"git@[::1]:app.git",
+	} {
+		if !pattern.MatchString(u) {
+			t.Errorf("the pattern rejects %q", u)
+		}
+	}
+	for _, u := range []string{
+		"--upload-pack=touch /tmp/pwned",
+		"-oProxyCommand=touch /tmp/pwned",
+		"-git@git.example.com:app.git",
+		"git@-oProxyCommand=touch:app.git",
+		"ssh://-oProxyCommand=touch/app.git",
+		"ssh://git@-oProxyCommand=touch/app.git",
+		"ssh://-git@git.example.com/app.git",
+		"ext::sh -c touch% /tmp/pwned",
+		"fd::3",
+		"s3://bucket/app.git",
+		"HTTPS://git.example.com/app.git",
+		"git.example.com:app.git",
+		"file:///srv/git/app.git",
+		"/srv/git/app.git",
+		"app.git",
+		"",
+		"ssh://%2doProxyCommand=touch%20/tmp/pwned/r.git",
+		"ssh://%2DoProxyCommand=touch/r.git",
+		"ssh://git@%2doProxyCommand=touch/r.git",
+		"ssh://%2dgit@host.example/r.git",
+		"ssh://u%40h@%2doProxyCommand=touch/r.git",
+		"ssh://[-oProxyCommand=touch]/r.git",
+		"ssh://[-oProxyCommand=touch]:22/r.git",
+		"ssh://git@[-oProxyCommand=touch]/r.git",
+		"git@[-oProxyCommand=touch]:r.git",
+		"[-x@host.example]:r.git",
+		"git@%2doProxyCommand=touch:r.git",
+		"ssh://host.example:-oProxyCommand=touch/r.git",
+		"ssh://host.example:%2doProxyCommand=touch/r.git",
+		"ssh://\u2010oProxyCommand=touch/r.git",
+		"https://",
+		"file://",
+		"https://host.example/r.git\n--upload-pack=touch /tmp/pwned",
+		"https://ho\nst.example/r.git",
+		"https://host.example/r.git\x00x",
+		"ssh://[-x]@host.example/r.git",
+		"[-x@host.example:22]:r.git",
+		"git@host.example:-oProxyCommand=touch",
+		"git@host.example:",
+		"ssh://gi\nt@host.example/r.git",
+		"gi\nt@host.example:r.git",
+		"git@[host.example:-0]:r.git",
+	} {
+		if pattern.MatchString(u) {
+			t.Errorf("the pattern accepts %q", u)
+		}
 	}
 }
 

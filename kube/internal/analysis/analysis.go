@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -50,6 +51,9 @@ type Use struct {
 	Type, Name string
 	// Tag is the struct tag of the field that embeds Marker.
 	Tag string
+	// Fields are the names in the json tags of the type's exported fields,
+	// other than the field that embeds Marker.
+	Fields []string
 	// Pos is where the call is.
 	Pos string
 }
@@ -69,9 +73,11 @@ type listedPackage struct {
 // directly or through each other, and returns each call of one of Funcs
 // whose type argument embeds Marker. A call inside a generic function
 // counts once for each type that the function is instantiated with
-// anywhere in those packages. Find also returns warnings about calls whose
-// type arguments it can't tell.
-func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
+// anywhere in those packages. Find also returns the calls of Funcs whose
+// type arguments it can't tell, with only Func and Pos set. Pos is where
+// the program passes a type argument that Find can't tell, which can be a
+// call of a generic function that passes it on to one of Funcs.
+func Find(ctx context.Context, cfg Config) (uses, unresolved []Use, err error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern.
 	cmd.Dir, cmd.Env = cfg.Dir, cfg.Env
 	var stderr bytes.Buffer
@@ -125,7 +131,8 @@ func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 			}
 		}
 	}
-	return a.uses(), a.warnings, nil
+	uses, unresolved = a.uses()
+	return uses, unresolved, nil
 }
 
 // A node is a type parameter of a generic function: the function's full
@@ -135,9 +142,20 @@ type node struct {
 	index int
 }
 
+// A typeArg is a type that a type parameter is instantiated with, and
+// where. A nil t is a type argument that Find can't tell.
 type typeArg struct {
 	t   types.Type
 	pos string
+}
+
+// key tells type arguments apart: by type, or, for one that Find can't
+// tell, by where it is. No type string starts with "?".
+func (t typeArg) key() string {
+	if t.t == nil {
+		return "?" + t.pos
+	}
+	return types.TypeString(t.t, nil)
 }
 
 type analyzer struct {
@@ -147,9 +165,8 @@ type analyzer struct {
 	// parameters of the functions it passes it to.
 	edges map[node][]node
 	// concrete holds the types that each type parameter is instantiated
-	// with, by type string.
+	// with, by key.
 	concrete map[node]map[string]typeArg
-	warnings []string
 }
 
 func (a *analyzer) check(p *listedPackage) error {
@@ -219,22 +236,18 @@ func (a *analyzer) check(p *listedPackage) error {
 			to := node{fn.FullName(), j}
 			arg := inst.TypeArgs.At(j)
 			if tp, ok := arg.(*types.TypeParam); ok {
-				g := enclosing(id.Pos())
-				if g == nil || !ownsTypeParam(g, tp) {
-					if target {
-						a.warnings = append(a.warnings, fmt.Sprintf("%s: can't tell which types %s.%s is called with", pos, fn.Pkg().Name(), fn.Name()))
-					}
+				if g := enclosing(id.Pos()); g != nil && ownsTypeParam(g, tp) {
+					from := node{g.FullName(), tp.Index()}
+					a.edges[from] = append(a.edges[from], to)
 					continue
 				}
-				from := node{g.FullName(), tp.Index()}
-				a.edges[from] = append(a.edges[from], to)
-				continue
 			}
 			if hasTypeParam(arg) {
-				if target {
-					a.warnings = append(a.warnings, fmt.Sprintf("%s: can't tell which types %s.%s is called with", pos, fn.Pkg().Name(), fn.Name()))
-				}
-				continue
+				// A type parameter that the enclosing function doesn't
+				// declare belongs to a method's generic receiver type,
+				// whose instantiations Find doesn't follow. Find also
+				// doesn't substitute types into one such as Item[T].
+				arg = nil
 			}
 			a.add(to, typeArg{arg, pos})
 		}
@@ -279,7 +292,7 @@ func hasTypeParam(t types.Type) bool {
 }
 
 func (a *analyzer) add(n node, t typeArg) bool {
-	key := types.TypeString(t.t, nil)
+	key := t.key()
 	if _, ok := a.concrete[n][key]; ok {
 		return false
 	}
@@ -291,8 +304,9 @@ func (a *analyzer) add(n node, t typeArg) bool {
 }
 
 // uses follows the edges from each instantiated type parameter, then
-// reports the types that reach Funcs.
-func (a *analyzer) uses() []Use {
+// reports the types that reach Funcs, and the type arguments that Find
+// can't tell that reach them.
+func (a *analyzer) uses() (uses, unresolved []Use) {
 	queue := slices.Collect(maps.Keys(a.concrete))
 	for len(queue) > 0 {
 		n := queue[0]
@@ -307,16 +321,20 @@ func (a *analyzer) uses() []Use {
 			}
 		}
 	}
-	var out []Use
 	for _, f := range a.cfg.Funcs {
 		args := a.concrete[node{a.cfg.Package + "." + f, 0}]
 		for _, key := range slices.Sorted(maps.Keys(args)) {
-			if u, ok := a.use(f, args[key]); ok {
-				out = append(out, u)
+			t := args[key]
+			if t.t == nil {
+				unresolved = append(unresolved, Use{Func: f, Pos: t.pos})
+				continue
+			}
+			if u, ok := a.use(f, t); ok {
+				uses = append(uses, u)
 			}
 		}
 	}
-	return out
+	return uses, unresolved
 }
 
 // use describes a call of f with type argument t, if t embeds Marker.
@@ -336,10 +354,24 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 		}
 		ft, ok := types.Unalias(field.Type()).(*types.Named)
 		if ok && ft.Obj().Pkg() != nil && ft.Obj().Pkg().Path() == a.cfg.Package && ft.Obj().Name() == a.cfg.Marker {
-			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Pos: t.pos}, true
+			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Fields: jsonFields(st, i), Pos: t.pos}, true
 		}
 	}
 	return Use{}, false
+}
+
+// jsonFields returns the names in the json tags of st's exported fields,
+// other than field skip.
+func jsonFields(st *types.Struct, skip int) []string {
+	var out []string
+	for i := range st.NumFields() {
+		name, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ",")
+		if i == skip || !st.Field(i).Exported() || name == "" || name == "-" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 // String formats a use for messages.

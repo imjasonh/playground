@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 
+	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/subset"
 )
 
@@ -84,6 +86,132 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		}
 	}
 	return nil
+}
+
+// applyStatus applies the status of an Apply intent's object to its status
+// subresource, with the field manager that applied the rest of the object.
+// owns reports whether the response to the apply of the rest of the object
+// showed that the manager owns status fields, and is nil when that apply was
+// skipped. applyStatus records a non-empty status in applied, so a record
+// shows that the manager owns status fields.
+func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, manager string, owns *bool, applied map[appliedKey]uint64) error {
+	if !in.status {
+		return nil
+	}
+	body, empty, err := statusBody(in)
+	if err != nil {
+		return err
+	}
+	m := metaOfAny(in.obj)
+	ak := appliedKey{ti: in.ti, key: m.Key(), status: true}
+	h := hashOf(body, manager)
+	last, ok := c.lastApplied(key, ak)
+	skip := ok && last == h && in.observed != nil && matches(in.observed, body)
+	if empty {
+		// An empty status only gives up status fields that the manager owns.
+		// If the rest of the object needed no apply, the last successful
+		// reconcile applied it too, and recorded a status only if the
+		// manager then owned status fields.
+		skip = !ok
+		if owns != nil {
+			skip = !*owns
+		}
+	}
+	if !skip {
+		served, err := c.m.client.Serves(ctx, in.res.apiVersion, in.res.plural+"/status")
+		if err != nil {
+			return fmt.Errorf("applying status of %v %s: %w", in.ti, m.Key(), err)
+		}
+		if !served && !empty {
+			return fmt.Errorf("applying status of %v %s: the server doesn't serve %s/status in %s", in.ti, m.Key(), in.res.plural, in.res.apiVersion)
+		}
+		skip = !served
+	}
+	record := func(result string) {
+		if !empty {
+			applied[ak] = h
+		}
+		c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", result)
+	}
+	if skip {
+		record("skipped")
+		return nil
+	}
+	if err := c.m.apply(ctx, in.ti, m.Key(), in.res.path(m.Namespace, m.Name, "status"), manager, body, nil); err != nil {
+		// The kind may have stopped serving a status subresource since its
+		// discovery results were cached.
+		if client.IsNotFound(err) {
+			c.m.client.Forget(in.res.apiVersion)
+		}
+		return fmt.Errorf("applying status of %v %s: %w", in.ti, m.Key(), err)
+	}
+	record("applied")
+	c.log.Debug("applied status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
+	return nil
+}
+
+// fieldManagers is the part of an object that lists the managers of its
+// fields.
+type fieldManagers struct {
+	Metadata struct {
+		ManagedFields []struct {
+			Manager     string `json:"manager"`
+			Operation   string `json:"operation"`
+			Subresource string `json:"subresource"`
+		} `json:"managedFields"`
+	} `json:"metadata"`
+}
+
+// ownsStatus reports whether manager owns fields that it applied to the
+// status subresource. The API server removes a manager's entry once the
+// manager owns no fields.
+func (f *fieldManagers) ownsStatus(manager string) bool {
+	for _, e := range f.Metadata.ManagedFields {
+		if e.Manager == manager && e.Operation == "Apply" && e.Subresource == "status" {
+			return true
+		}
+	}
+	return false
+}
+
+// statusBody builds the server-side apply document for the status of an
+// Apply intent's object, and reports whether the status is empty.
+func statusBody(in intent) (map[string]any, bool, error) {
+	st, err := statusOf(in.obj)
+	if err != nil {
+		return nil, false, err
+	}
+	m := metaOfAny(in.obj)
+	meta := map[string]any{"name": m.Name}
+	if m.Namespace != "" {
+		meta["namespace"] = m.Namespace
+	}
+	uid := m.UID
+	if uid == "" && in.observed != nil {
+		uid = metaOfAny(in.observed).UID
+	}
+	if uid != "" {
+		meta["uid"] = uid
+	}
+	body := map[string]any{"apiVersion": in.ti.apiVersion, "kind": in.ti.kind, "metadata": meta}
+	if st != nil {
+		body["status"] = st
+	}
+	return body, st == nil, nil
+}
+
+// statusOf returns obj's status as Apply sends it, or nil if the status is
+// null or has no fields.
+func statusOf(obj any) (any, error) {
+	doc, err := toMap(obj)
+	if err != nil {
+		return nil, err
+	}
+	st := doc["status"]
+	if m, ok := st.(map[string]any); ok && len(m) == 0 {
+		return nil, nil
+	}
+	return st, nil
 }
 
 // containsJSON reports whether the JSON document have has every field of the
