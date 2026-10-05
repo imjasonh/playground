@@ -43,7 +43,7 @@ func TestGenerateVolume(t *testing.T) {
 	for kind, want := range map[string]string{
 		"PersistentVolumeClaim": `"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"2Gi"}}}`,
 		"Deployment":            `"strategy":{"type":"Recreate"}`,
-		"ClusterRole":           `{"apiGroups":[""],"resources":["events"],"verbs":["get","list","patch","watch"]}`,
+		"ClusterRole":           `{"apiGroups":[""],"resources":["events"],"verbs":["get","list","watch"]}`,
 	} {
 		if !strings.Contains(byKind[kind], want) {
 			t.Errorf("%s = %s, want %s", kind, byKind[kind], want)
