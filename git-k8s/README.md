@@ -142,7 +142,7 @@ package that every check uses records `PushedFix`.
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
-| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
+| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
@@ -152,11 +152,64 @@ branch can have, so two checks that undo each other's fixes stop. The same
 inputs always produce the same fix commit, so two retries of one fix push the
 same commit.
 
-To approve a branch:
+### Approve a branch
+
+An approval is two annotations on the `GitBranch`: `approve`, which names
+the commit, and `approved-by`, which names you. Set both in one request:
 
 ```sh
-kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA \
+  git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 ```
+
+The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
+
+- Setting, changing, or removing the `approve` or `approved-by` annotation
+  requires the `approve` verb on the `GitBranch`. `generate` grants that
+  verb to no program, so grant it to the people who approve:
+
+  ```sh
+  kubectl create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+  kubectl create rolebinding approver --role=approver --group=GROUP
+  ```
+
+- A request that sets or changes `approve` must set `approved-by` to the
+  username that sends it.
+- A request that removes `approve` must remove `approved-by` too.
+- A request that changes only `approved-by` takes over the approval, so
+  `approve` must name a commit, and the request must set `approved-by` to
+  the username that sends it.
+
+On Kubernetes 1.36 or later, `kubectl apply -f config/approved-by.yaml`
+installs a MutatingAdmissionPolicy that sets `approved-by` to your username
+when you set or change `approve`, and removes it when you remove `approve`,
+so one annotation approves:
+
+```sh
+kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+```
+
+The mutating policy leaves `approved-by` alone when the request changes it
+as well, and `git-k8s-approvals` checks every approval either way.
+
+To take over an existing approval of the same commit, set both annotations
+as in the first command. Setting only `approve` leaves that approval and its
+`approved-by` as they are. Admission policies see only the object that a
+request produces, so the mutating policy can't tell that the request set
+`approve` again. `check-approval` reports the new approver after a takeover.
+
+`check-approval` reports `approved-by` as `outputs.approver`, so a merge gate
+can require particular approvers:
+
+```yaml
+when: >-
+  checks.approval.passed &&
+  checks.approval.outputs.approver in ["alice@example.com", "bob@example.com"]
+```
+
+An approval without `approved-by`, such as one from before the policy was
+installed, still passes with an empty `outputs.approver`, so the branch waits
+at a gate like this one until someone approves it again.
 
 ### Write a check
 
@@ -537,7 +590,7 @@ To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
 
-`config/policy.yaml` holds three ValidatingAdmissionPolicies. The first lets
+`config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
 changing `status.checks`. A check must run as the service account
@@ -545,13 +598,14 @@ changing `status.checks`. A check must run as the service account
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
-the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all. RBAC also keeps every check except `check-gotest`,
-which owns the Pods that run tests, from patching `GitBranch` objects.
-`generate` grants that permission to a check that owns objects, because it
-can't tell whether an owned object needs a finalizer on its owner. The second
-policy denies the annotation that kube adds with that finalizer, so a check
-can own only namespaced objects in the branch's namespace.
+the `approve` and `approved-by` annotations, which are for people, and stops
+checks from changing `GitBranch` objects at all. RBAC also keeps every check
+except `check-gotest`, which owns the Pods that run tests, from patching
+`GitBranch` objects. `generate` grants that permission to a check that owns
+objects, because it can't tell whether an owned object needs a finalizer on
+its owner. The second policy denies the annotation that kube adds with that
+finalizer, so a check can own only namespaced objects in the branch's
+namespace.
 
 The third keeps each check to its own Pods. `generate` lets a check that
 declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
@@ -611,9 +665,12 @@ audience. A service that accepts those tokens must check which Pod a token is
 bound to, and that the Pod has the label of the check that the service
 trusts.
 
+The fourth checks who approves, as [Approve a branch](#approve-a-branch)
+describes.
+
 Without the policies, most of that doesn't hold, so the repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
-`False` until all three policies are installed with bindings that deny.
+`False` until all four policies are installed with bindings that deny.
 
 Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
 must opt in to test Pods and enforce the `restricted` Pod Security Standard,

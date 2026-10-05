@@ -1,0 +1,57 @@
+# When a request sets or changes a GitBranch's approve annotation, this
+# policy sets the approved-by annotation to the request's username, and when
+# a request removes approve, it removes approved-by, so people can approve
+# with one annotation. It leaves approved-by alone when the request changes
+# that too. MutatingAdmissionPolicy needs Kubernetes 1.36 or later. The
+# git-k8s-approvals policy in policy.yaml checks approvals either way, so
+# this policy ignores its own failures.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: git-k8s-approved-by
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: Never
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["git-k8s.imjasonh.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["gitbranches"]
+  variables:
+    - name: annotations
+      expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'
+    - name: oldAnnotations
+      expression: 'oldObject != null && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}'
+    - name: approval
+      expression: >-
+        "git-k8s.imjasonh.com/approve" in variables.annotations ?
+        variables.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: oldApproval
+      expression: >-
+        "git-k8s.imjasonh.com/approve" in variables.oldAnnotations ?
+        variables.oldAnnotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: approver
+      expression: >-
+        "git-k8s.imjasonh.com/approved-by" in variables.annotations ?
+        variables.annotations["git-k8s.imjasonh.com/approved-by"] : ""
+    - name: oldApprover
+      expression: >-
+        "git-k8s.imjasonh.com/approved-by" in variables.oldAnnotations ?
+        variables.oldAnnotations["git-k8s.imjasonh.com/approved-by"] : ""
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          variables.approval == variables.oldApproval || variables.approver != variables.oldApprover ? [] :
+          variables.approval != "" ?
+          [JSONPatch{op: "add", path: "/metadata/annotations/" + jsonpatch.escapeKey("git-k8s.imjasonh.com/approved-by"), value: request.userInfo.username}] :
+          "git-k8s.imjasonh.com/approved-by" in variables.annotations ?
+          [JSONPatch{op: "remove", path: "/metadata/annotations/" + jsonpatch.escapeKey("git-k8s.imjasonh.com/approved-by")}] : []
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-approved-by
+spec:
+  policyName: git-k8s-approved-by

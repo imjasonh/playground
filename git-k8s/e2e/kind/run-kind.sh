@@ -259,7 +259,8 @@ spec:
           - name: approval
         when: >-
           checks.base.passed && checks.gofmt.passed &&
-          (checks.risk.outputs.level == "low" || checks.approval.passed)
+          (checks.risk.outputs.level == "low" ||
+          (checks.approval.passed && checks.approval.outputs.approver == "alice"))
         deleteMergedBranches: true
     - match: c/**
       parent: main
@@ -372,11 +373,85 @@ sleep 6
 [[ "$(remote_head main)" == "${main_before}" ]]
 field '{.status.conditions[?(@.type=="Merged")].message}'
 echo
-k -n "${NS}" annotate gitbranch "$(branch_object c/auth)" "git-k8s.imjasonh.com/approve=${AUTH}"
+echo "c/auth waits for approval with a high risk rating."
+echo "::endgroup::"
+
+echo "::group::Approvals name the approver"
+k -n "${NS}" create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding alice --role=approver --user=alice
+k -n "${NS}" create role editor --verb=get,patch --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding bob --role=editor --user=bob
+roles_bound() {
+  k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as=alice >/dev/null &&
+    k -n "${NS}" auth can-i patch gitbranches.git-k8s.imjasonh.com --as=bob >/dev/null
+}
+eventually 30 roles_bound
+APPROVE=git-k8s.imjasonh.com/approve
+APPROVED_BY=git-k8s.imjasonh.com/approved-by
+annotate() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/auth)" "$@"; }
+# rejected passes if the API server rejects a server-side dry run of a
+# command with a message that contains $1.
+rejected() {
+  local want=$1 status=0
+  shift
+  "$@" --dry-run=server >"${WORKDIR}/rejected.txt" 2>&1 || status=$?
+  cat "${WORKDIR}/rejected.txt"
+  [[ ${status} -ne 0 ]] && grep -qF -- "${want}" "${WORKDIR}/rejected.txt"
+}
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
+# The gate wants alice's approval, so another approver's doesn't land c/auth.
+admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
+annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
+approved_by() {
+  [[ "$(field '{.status.checks.approval.state}')" == Passed ]] &&
+    [[ "$(field '{.status.checks.approval.outputs.approver}')" == "$1" ]]
+}
+eventually 60 approved_by "${admin}"
+gate_saw_approval() { field '{.status.conditions[?(@.type=="Merged")].message}' | grep -q 'approval Passed'; }
+eventually 60 gate_saw_approval
+[[ "$(field '{.status.state}')" == WaitingForChecks ]]
+[[ "$(remote_head main)" == "${main_before}" ]]
+rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
+rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
+echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
+echo "::endgroup::"
+
+echo "::group::A MutatingAdmissionPolicy sets approved-by"
+k apply -f "${ROOT}/config/approved-by.yaml"
+approved_by_after() {
+  annotate "$@" -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}'
+}
+# Without the mutating policy, removing approve alone is rejected.
+mutating_policy_ready() { approved_by_after "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
+eventually 60 mutating_policy_ready
+revoked="$(approved_by_after "${APPROVE}-")"
+# The mutating policy keeps an approved-by that the request changes.
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+approved="$(approved_by_after "${APPROVE}=${AUTH}")"
+echo "approved-by was '${revoked}' after ${admin} removed approve, and '${approved}' after they set it"
+[[ -z "${revoked}" && "${approved}" == "${admin}" ]]
+echo "${admin} removed and set approve alone, and the policy did the same to approved-by."
+echo "::endgroup::"
+
+echo "::group::Another approver can take over an approval"
+# Admission sees only the object that a request produces, so setting approve
+# to the commit that it already names changes nothing.
+unchanged="$(approved_by_after --as=alice "${APPROVE}=${AUTH}" --dry-run=server)"
+echo "approved-by is '${unchanged}' after alice set approve to the commit that it names"
+[[ "${unchanged}" == "${admin}" ]]
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "take over an approval by setting it to alice" annotate --as=alice "${APPROVED_BY}=bob"
+[[ "$(remote_head main)" == "${main_before}" ]]
+annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
 auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
 eventually 120 auth_landed
 eventually 60 branch_gone c/auth
-echo "c/auth waited with a high risk rating until it was approved, then landed."
+echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
 echo "::endgroup::"
 
 echo "::group::Two branches from the same commit both land"
@@ -438,29 +513,52 @@ patch_branch() {
     -H "Authorization: Bearer $1" -H 'Content-Type: application/merge-patch+json' \
     --data "$2" "${branch_url}"
 }
-approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-core_token="$(k -n git-k8s create token git-k8s)"
 # check-gotest owns Pods, so generate lets it patch GitBranch objects, and
-# only the policy stops it.
-gotest_token="$(k -n check-gotest create token check-gotest)"
-for bearer in "${gotest_token}" "${core_token}"; do
-  code="$(patch_branch "${bearer}" "${approve}")"
+# only the policies stop it. Even a controller with the approve verb that
+# names itself in approved-by can't approve.
+k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
+k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
+  --serviceaccount=check-gotest:check-gotest --serviceaccount=git-k8s:git-k8s
+controllers_can_approve() {
+  for sa in check-gotest git-k8s; do
+    k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as="system:serviceaccount:${sa}:${sa}" >/dev/null || return 1
+  done
+}
+eventually 30 controllers_can_approve
+# cant_approve passes if the API server rejects the service account $1's
+# patch $2 because controllers can't approve.
+cant_approve() {
+  local code
+  code="$(patch_branch "$(k -n "$1" create token "$1")" "$2")"
   cat "${WORKDIR}/patch.json"
   echo
-  [[ "${code}" == 422 ]]
-  grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+  [[ "${code}" == 422 ]] && grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+}
+for sa in check-gotest git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
+# git-k8s-approvals lets anyone with the approve verb take over an approval,
+# so on an approved branch only git-k8s-branches stops a controller that
+# names itself in approved-by.
+annotate_main() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object main)" "$@"; }
+annotate_main "${APPROVE}=$(remote_head main)" "${APPROVED_BY}=${admin}"
+for sa in check-gotest git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+done
+annotate_main "${APPROVE}-" "${APPROVED_BY}-"
+gotest_token="$(k -n check-gotest create token check-gotest)"
 code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
 grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
 # check-gofmt owns nothing, so generate doesn't let it patch GitBranch
 # objects at all.
+approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
 code="$(patch_branch "${token}" "${approve}")"
 cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 403 ]]
 grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch, a check can't change one, and check-gofmt can't patch one."
+echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt can't patch one."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
