@@ -403,7 +403,7 @@ func TestGenerateOwnedType(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "imagereport", "imagereport", "-replicas=1")
+	in := generateExample(t, reg, "examples/imagereport", "imagereport", "-replicas=1")
 	const crd = "imagereports.examples.kube.imjasonh.github.io"
 	var crdRules []any
 	for _, obj := range in.objects {
