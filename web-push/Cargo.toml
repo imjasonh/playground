@@ -30,6 +30,8 @@ p256 = { version = "0.14", default-features = false, features = ["ecdsa", "ecdh"
 # Random salts; p256's `getrandom` feature generates the ephemeral keys.
 getrandom = "0.4"
 async-trait = "0.1"
+# join_all sends a broadcast's pushes concurrently.
+futures = "0.3"
 
 # The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue, so
@@ -38,9 +40,6 @@ async-trait = "0.1"
 worker = "0.8"
 # getrandom reaches crypto.getRandomValues through wasm-bindgen.
 getrandom = { version = "0.4", features = ["wasm_js"] }
-
-[dev-dependencies]
-futures = "0.3"
 
 [profile.release]
 opt-level = "s"

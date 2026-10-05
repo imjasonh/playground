@@ -169,8 +169,17 @@ impl SubscriptionStore for KvSubscriptionStore {
                 builder = builder.cursor(c);
             }
             let response = builder.execute().await.map_err(kv_err)?;
-            for key in response.keys {
-                if let Some(text) = self.kv.get(&key.name).text().await.map_err(kv_err)? {
+            // Read the page's values concurrently rather than one KV round
+            // trip at a time.
+            let values = futures::future::join_all(
+                response
+                    .keys
+                    .iter()
+                    .map(|key| self.kv.get(&key.name).text()),
+            )
+            .await;
+            for text in values {
+                if let Some(text) = text.map_err(kv_err)? {
                     if let Ok(sub) = serde_json::from_str::<StoredSubscription>(&text) {
                         out.push(sub);
                     }
@@ -185,6 +194,28 @@ impl SubscriptionStore for KvSubscriptionStore {
             }
         }
         Ok(out)
+    }
+
+    /// Count keys without reading their values.
+    async fn count(&self) -> Result<usize, StoreError> {
+        let mut count = 0;
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut builder = self.kv.list().prefix(KEY_PREFIX.to_string());
+            if let Some(c) = cursor.take() {
+                builder = builder.cursor(c);
+            }
+            let response = builder.execute().await.map_err(kv_err)?;
+            count += response.keys.len();
+            if response.list_complete {
+                break;
+            }
+            cursor = response.cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(count)
     }
 }
 

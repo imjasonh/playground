@@ -60,6 +60,11 @@ pub trait SubscriptionStore {
     async fn delete(&self, id: &str) -> Result<(), StoreError>;
     /// List all stored subscriptions.
     async fn list(&self) -> Result<Vec<StoredSubscription>, StoreError>;
+    /// Count stored subscriptions. The default lists them; a store that can
+    /// count without reading every value overrides it.
+    async fn count(&self) -> Result<usize, StoreError> {
+        Ok(self.list().await?.len())
+    }
 }
 
 /// A simple in-memory store for tests and local runs.
