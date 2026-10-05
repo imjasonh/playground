@@ -33,23 +33,36 @@ func setup(t *testing.T, srv *gittest.Server, mainEdit, branchEdit string) (*Bra
 	return b, w
 }
 
-// reconcile runs the check. With a signer, the GitRepository names its key.
-func reconcile(t *testing.T, srv *gittest.Server, b *Branch, signer ...*gittest.Signer) error {
+// reconcile runs the check with world's objects. A Signer in world makes
+// the GitRepository name its key.
+func reconcile(t *testing.T, srv *gittest.Server, b *Branch, world ...any) error {
 	t.Helper()
 	repo, secret := srv.Repository("app")
-	world := []any{repo, secret}
-	for _, s := range signer {
-		world = append(world, s.Sign(repo))
+	objs := []any{repo, secret}
+	for _, o := range world {
+		if s, ok := o.(*gittest.Signer); ok {
+			o = s.Sign(repo)
+		}
+		objs = append(objs, o)
 	}
-	ctx, _ := kube.Fake(t.Context(), b, world...)
+	ctx, _ := kube.Fake(t.Context(), b, objs...)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	return checks.NewReconciler[Branch](check, cfg).Reconcile(ctx, b)
+}
+
+// at returns b's place in its parent's merge queue at its current head, as
+// the merge controller writes it.
+func at(b *Branch, position int32) *queued {
+	q := &queued{Object: kube.Meta(b.Name, nil)}
+	q.Namespace = b.Namespace
+	q.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: position}
+	return q
 }
 
 func TestMergesParentIn(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	b, w := setup(t, srv, "main\n", "branch\n")
-	if err := reconcile(t, srv, b); err != nil {
+	if err := reconcile(t, srv, b, at(b, 1)); err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
@@ -68,7 +81,7 @@ func TestMergesParentIn(t *testing.T) {
 	}
 
 	b.Spec.Head = fix
-	if err := reconcile(t, srv, b); err != nil {
+	if err := reconcile(t, srv, b, at(b, 1)); err != nil {
 		t.Fatal(err)
 	}
 	if res := b.Status.Checks.Result; res.State != gitk8s.Passed {
@@ -80,7 +93,7 @@ func TestSignsMerge(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	b, w := setup(t, srv, "main\n", "branch\n")
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
-	if err := reconcile(t, srv, b, signer); err != nil {
+	if err := reconcile(t, srv, b, signer, at(b, 1)); err != nil {
 		t.Fatal(err)
 	}
 	fix := w.Fetch("c/x")
@@ -89,6 +102,74 @@ func TestSignsMerge(t *testing.T) {
 	}
 	if err := signer.Verify(w.Dir, fix); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestMergesParentInAtTheFrontOfTheQueue(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, _ := setup(t, srv, "main\n", "branch\n")
+	head := b.Spec.Head
+	old := at(b, 1)
+	old.Status.Queued.Head = "0000000"
+	for _, step := range []struct {
+		name  string
+		world []any
+	}{
+		{"out of the queue", nil},
+		{"at the front at an older head", []any{old}},
+		{"second in the queue", []any{at(b, 2)}},
+	} {
+		if err := reconcile(t, srv, b, step.world...); err != nil {
+			t.Fatal(err)
+		}
+		res := b.Status.Checks.Result
+		if res.State != gitk8s.Passed || res.Outputs["behind"] != "true" || !strings.Contains(res.Message, "behind main") {
+			t.Errorf("%s: result = %+v, want Passed and behind", step.name, res)
+		}
+		if got := srv.Heads(t, "app")["c/x"]; got != head {
+			t.Fatalf("%s: c/x moved to %s before reaching the front of the queue", step.name, got)
+		}
+	}
+
+	t.Log("At the front, the passing result is stale, so the check runs again and merges main in.")
+	if err := reconcile(t, srv, b, at(b, 1)); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	if res.State != gitk8s.Fixed || srv.Heads(t, "app")["c/x"] != res.Outputs["fix"] {
+		t.Errorf("result = %+v, want Fixed with the merge pushed", res)
+	}
+}
+
+func TestWaitsForTheParentToBeListedAgain(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w := setup(t, srv, "main\n", "branch\n")
+	w.Branch("main", b.Spec.ParentHead)
+	w.Write("c.txt", "later\n")
+	w.Commit("main moves after it was listed")
+	w.Push("main")
+	head := b.Spec.Head
+	if err := reconcile(t, srv, b, at(b, 1)); err == nil || !strings.Contains(err.Error(), "waiting for the repository controller") {
+		t.Errorf("err = %v, want to wait for main to be listed again", err)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s; a merge of main's old head would need another merge", got)
+	}
+}
+
+func TestBehindFailsWithoutPush(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, _ := setup(t, srv, "main\n", "branch\n")
+	b.Spec.Merge.Checks[0].MayPush = false
+	head := b.Spec.Head
+	if err := reconcile(t, srv, b); err != nil {
+		t.Fatal(err)
+	}
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "doesn't let this check push") {
+		t.Errorf("result = %+v, want Failed because the policy doesn't let the check push the merge", res)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
 	}
 }
 

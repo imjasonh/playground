@@ -20,7 +20,8 @@ import (
 const testTime = "1767323045 +0000"
 
 // landAs runs the merge controller on b, with a merge policy that lands
-// branches with landing.
+// branches with landing. The policy queues branches, so b is at the front
+// of main's queue at its current head.
 func landAs(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing string) error {
 	t.Helper()
 	return landWith(t, srv, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, nil)
@@ -33,8 +34,9 @@ func landWith(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing st
 	p := *b.Spec.Merge
 	p.Landing = landing
 	b.Spec.Merge = &p
+	b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
 	repo, secret := srv.Repository("app", rules()...)
-	world := []any{repo, secret}
+	world := []any{repo, secret, parentOf(b, b.Spec.Branch)}
 	if signer != nil {
 		world = append(world, signer.Sign(repo))
 	}
@@ -533,6 +535,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 				t.Errorf("Merged = %+v, want reason %s and a message with %q", c, reasonNeedsRebase, tt.problem)
 			}
 
+			b.Generation++
 			b.Status.Checks = results
 			if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
 				t.Fatal(err)
@@ -748,6 +751,7 @@ func TestRemoteRefusesTheBranch(t *testing.T) {
 				if c := kube.FindCondition(b.Status.Conditions, "Merged"); c == nil || c.Reason != reasonLanded || c.Message != msg {
 					t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonLanded, msg)
 				}
+				b.Generation++
 				if tt.moved {
 					b.Spec.Head, b.Spec.ParentHead = landed, landed
 				} else {
@@ -828,6 +832,7 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 
 	t.Log("The checks pass on the squashed commit, which lands by fast-forward.")
 	w.Branch("c/x", squashed)
+	b.Generation++
 	refresh(t, b, w)
 	withHistoryCheck(b)
 	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
@@ -866,6 +871,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			// commit.
 			squash := func() {
 				t.Helper()
+				b.Generation++
 				refresh(t, b, w)
 				withHistoryCheck(b)
 				head := b.Spec.Head
@@ -894,6 +900,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			t.Log("dco pushes another fix, and the branch lands by fast-forward.")
 			w.Write("z.txt", "z, fixed\n")
 			w.Commit("Fix z\n\nGit-K8s-Fixer: dco")
+			b.Generation++
 			refresh(t, b, w)
 			withHistoryCheck(b)
 			head := b.Spec.Head

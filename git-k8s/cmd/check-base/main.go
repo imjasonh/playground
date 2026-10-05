@@ -4,9 +4,15 @@
 // parent in with a merge commit, and pushes the merge if the merge policy
 // lets it. A merge that conflicts fails the check, with the conflicting
 // paths in its message.
+//
+// A policy that lets the check push lands branches through the parent's merge
+// queue, so the check merges the parent in only at the front of the queue.
+// Until then, a branch that merges cleanly passes with outputs.behind set to
+// "true".
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -34,7 +40,29 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-var check = checks.Check{Name: "base", UsesParent: true, FilesOnly: true, Remote: credentials.Remote, SigningKey: signing.Key, Run: run}
+// queued is a GitBranch's place in its parent's merge queue, which the merge
+// controller writes.
+type queued struct {
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
+	Status      struct {
+		Queued *gitk8s.Queued `json:"queued,omitempty"`
+	} `json:"status,omitzero"`
+}
+
+// first reports whether the branch is at the front of its parent's merge
+// queue at head.
+func first(ctx context.Context, meta *kube.ObjectMeta, head string) bool {
+	b := kube.Get[queued](ctx, meta.Namespace, meta.Name)
+	return b != nil && b.Status.Queued != nil && b.Status.Queued.Position == 1 && b.Status.Queued.Head == head
+}
+
+// stale runs the check again when a branch that it passed as behind its
+// parent reaches the front of the queue.
+func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+	return previous.Outputs["behind"] == "true" && first(ctx, meta, spec.Head)
+}
+
+var check = checks.Check{Name: "base", UsesParent: true, FilesOnly: true, Stale: stale, Remote: credentials.Remote, SigningKey: signing.Key, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)
@@ -62,6 +90,20 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		v := checks.Fail("merging %s conflicts in %s", in.Spec.Parent, strings.Join(conflicts, ", "))
 		v.Outputs = map[string]string{"conflicts": strings.Join(conflicts, ",")}
 		return v, nil
+	}
+	if in.Policy.MayPush {
+		if !first(ctx, in.Meta, head) {
+			v := checks.Pass("behind %s at %s with no conflicts; waits for the front of %s's queue to merge it in",
+				in.Spec.Parent, gitk8s.Short(parentHead), in.Spec.Parent)
+			v.Outputs = map[string]string{"behind": "true"}
+			return v, nil
+		}
+		// A merge of a parent that moved after it was listed would be behind
+		// as soon as it was pushed, and the branch would merge again.
+		if tip, err := repo.Fetched(ctx, in.Spec.Parent); err != nil || tip != parentHead {
+			return checks.Verdict{}, cmp.Or(err, fmt.Errorf("%s moved to %s after it was listed at %s; waiting for the repository controller to list it again",
+				in.Spec.Parent, gitk8s.Short(tip), gitk8s.Short(parentHead)))
+		}
 	}
 	hc, err := repo.Commit(ctx, head)
 	if err != nil {

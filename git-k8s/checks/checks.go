@@ -62,6 +62,11 @@ type Check struct {
 	// Always runs the check on every reconcile, instead of only when the
 	// heads change. Use it for checks that read only the GitBranch object.
 	Always bool
+	// Stale, when set, reports whether a final result for the branch's
+	// current heads needs the check to run again anyway, for a check whose
+	// result depends on more than the heads. It can read objects with
+	// kube.Get, and a change to one of them calls it again.
+	Stale func(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool
 	// Remote returns a repository's URL and credentials. A check that calls
 	// Input.Repo or returns a Fix sets it to credentials.Remote. A check
 	// that leaves it nil doesn't link that package, so its program can't
@@ -183,7 +188,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	// A result with filesOnly from before the check stopped setting
 	// FilesOnly must not count for a squashed or rebased commit, so the
 	// check runs again. A result without filesOnly is only cautious.
-	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit && (r.check.FilesOnly || !cur.FilesOnly) {
+	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit && (r.check.FilesOnly || !cur.FilesOnly) &&
+		(r.check.Stale == nil || !r.check.Stale(ctx, meta, spec, cur)) {
 		return nil
 	}
 
