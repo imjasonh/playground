@@ -16,28 +16,32 @@ crate-type = ["cdylib", "rlib"]
 # `cargo test` exercises the same code the Worker runs.
 [dependencies]
 async-trait = "0.1"
-base64 = "0.22"
+# The SIMD engines (default `simd-unsafe` feature) do nothing on wasm32.
+base64 = { version = "0.23", default-features = false, features = ["std"] }
 ciborium = "0.2"
 der-parser = "10"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8", "pem"] }
-p384 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
-rand_core = { version = "0.6", features = ["getrandom"] }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8", "pem"] }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
+getrandom = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
-x509-parser = "0.17"
+sha2 = "0.11"
+x509-parser = "0.18"
 
 # The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
 # wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "0.8"
-getrandom = { version = "0.2", features = ["js"] }
+# getrandom reaches crypto.getRandomValues through wasm-bindgen.
+getrandom = { version = "0.4", features = ["wasm_js"] }
 js-sys = "0.3"
 
 [dev-dependencies]
 futures = "0.3"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8", "pem"] }
-rcgen = "0.13"
+# Tests generate throwaway signing keys and encode them as PKCS #8 PEM.
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8", "pem", "getrandom", "alloc"] }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic", "getrandom"] }
+rcgen = "0.14"
 
 [profile.release]
 opt-level = "s"
