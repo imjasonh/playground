@@ -10,7 +10,7 @@ import (
 )
 
 // policyNames are the ValidatingAdmissionPolicies in config/policy.yaml.
-var policyNames = []string{"git-k8s-check-results", "git-k8s-branches", "git-k8s-check-pods"}
+var policyNames = []string{"git-k8s-check-results", "git-k8s-branches", "git-k8s-check-pods", "git-k8s-approvals"}
 
 type admissionPolicy struct {
 	kube.Object `kube:"apiVersion=admissionregistration.k8s.io/v1,kind=ValidatingAdmissionPolicy,plural=validatingadmissionpolicies,scope=Cluster"`
@@ -24,8 +24,9 @@ type admissionPolicyBinding struct {
 	} `json:"spec"`
 }
 
-// policiesCondition reports whether the admission policies that keep checks
-// apart are installed, with bindings that deny the requests they reject.
+// policiesCondition reports whether the admission policies in
+// config/policy.yaml are installed, with bindings that deny the requests
+// they reject.
 // Reading them through the cache runs the reconcile again when they change.
 func policiesCondition(ctx context.Context) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
@@ -46,6 +47,6 @@ func policiesCondition(ctx context.Context) kube.Condition {
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-		Message: "the admission policies keep checks to their own results and Pods",
+		Message: "the admission policies keep checks to their own results and Pods, and check who approves branches",
 	}
 }

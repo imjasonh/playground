@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -58,7 +59,9 @@ type Controller interface {
 	// controller and registers its webhooks.
 	prepare(ctx context.Context, m *Manager) error
 	// setup and run start the reconcile loop, on a replica that holds the
-	// lease. Install's controller applies its objects in setup.
+	// lease. Install's controller applies its objects in setup. For a
+	// controller that doesn't reconcile, the manager also calls run on every
+	// replica, before it waits for the lease.
 	setup(ctx context.Context, m *Manager) error
 	run(ctx context.Context) error
 	reconciles() bool
@@ -84,6 +87,8 @@ type declared struct {
 	// framework migrates stored objects in every namespace.
 	versioned bool
 	owns      []*typeInfo
+	// serves is set when the controller serves HTTP for Serve.
+	serves bool
 	// installs are the objects that the controller applies when the
 	// program starts.
 	installs []installObject
@@ -212,6 +217,9 @@ type core struct {
 	// statusApplies holds a hash of the status that this controller last
 	// applied to each object.
 	statusApplies map[Key]uint64
+	// caughtUp holds, for each object, the tenure of its shard in which a
+	// write to the object that required the cached resource version succeeded.
+	caughtUp map[Key]uint64
 	// errs holds the error that each object's last reconcile failed with.
 	errs map[Key]error
 }
@@ -290,13 +298,15 @@ func (c *core) lastStatus(k Key) (uint64, bool) {
 }
 
 // setStatus records h as the hash of k's status. If ok is false, it forgets
-// k's status, and the status that this controller last applied to k.
+// k's status, the status that this controller last applied to k, and
+// whether k's cache caught up.
 func (c *core) setStatus(k Key, h uint64, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !ok {
 		delete(c.statuses, k)
 		delete(c.statusApplies, k)
+		delete(c.caughtUp, k)
 		return
 	}
 	if c.statuses == nil {
@@ -319,6 +329,24 @@ func (c *core) setStatusApply(k Key, h uint64) {
 		c.statusApplies = map[Key]uint64{}
 	}
 	c.statusApplies[k] = h
+}
+
+// hasCaughtUp reports whether a write to k that required the cached resource
+// version succeeded during tenure.
+func (c *core) hasCaughtUp(k Key, tenure uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.caughtUp[k]
+	return ok && t == tenure
+}
+
+func (c *core) setCaughtUp(k Key, tenure uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.caughtUp == nil {
+		c.caughtUp = map[Key]uint64{}
+	}
+	c.caughtUp[k] = tenure
 }
 
 func (c *core) lastError(k Key) error {
@@ -359,6 +387,9 @@ type controller[T any, P Resource[T]] struct {
 	opts    options
 	m       *Manager
 	primary *informer[T, P]
+	// borrowed is set when primary is a cache that something else started
+	// and runs, such as the cache that Get reads.
+	borrowed bool
 	// versions are the type's other served versions. conversion is set
 	// when any of them converts itself, through a webhook.
 	versions   []servedVersion
@@ -408,10 +439,16 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 		ns = c.opts.namespace
 	}
 	c.q = queue.New[Key](queue.Options{})
+	c.sh = m.sharder
 	cfg := m.informerConfig(c.res, ns, c.opts.selector, "")
 	c.primary = newInformer[T, P](m.newID(), ti, c.res, m.client, cfg, m.log, m.metrics)
-	c.primary.addHandler(c.onPrimary)
-	c.sh = m.sharder
+	// A handler or webhook that read the type before the controller
+	// started, or another controller of the type, may have started a cache
+	// of the same objects. Two caches of them see each write at different
+	// times, so the controller reads that one.
+	if shared, ok := m.adopt(ti, c.res, cfg, c.primary).(*informer[T, P]); ok && shared != c.primary {
+		c.primary, c.borrowed = shared, true
+	}
 	// Another replica may have reconciled a shard's keys since this one
 	// last held it, so forget what this replica last wrote for them, and
 	// how its last reconciles of them failed.
@@ -426,7 +463,15 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 			return true
 		})
 	})
-	m.adopt(ti, c.res, cfg, c.primary)
+	c.primary.addHandler(c.onPrimary)
+	if c.borrowed {
+		// A cache that has synced doesn't notify a new handler of the
+		// objects it already holds.
+		c.primary.store.each("", func(o *T) bool {
+			c.enqueue(metaOf[T, P](o).Key(), queue.Low)
+			return true
+		})
+	}
 	for _, own := range c.opts.owns {
 		oti, err := own()
 		if err != nil {
@@ -451,12 +496,14 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 }
 
 func (c *controller[T, P]) run(ctx context.Context) error {
-	informed := make(chan struct{})
-	go func() {
-		defer close(informed)
-		c.primary.run(ctx)
-	}()
-	defer func() { <-informed }()
+	if !c.borrowed {
+		informed := make(chan struct{})
+		go func() {
+			defer close(informed)
+			c.primary.run(ctx)
+		}()
+		defer func() { <-informed }()
+	}
 	select {
 	case <-c.primary.synced:
 	case <-ctx.Done():
@@ -519,7 +566,14 @@ func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	}
 	switch {
 	case new == nil:
-		c.enqueue(metaOf[T, P](old).Key(), queue.High)
+		// Reconciling a deleted object forgets what this replica recorded
+		// for it, but this replica doesn't reconcile objects in shards that
+		// it doesn't hold.
+		k := metaOf[T, P](old).Key()
+		c.m.tracker.forget(ref{c: &c.core, key: k})
+		c.setApplied(k, nil)
+		c.setStatus(k, 0, false)
+		c.enqueue(k, queue.High)
 	case old == nil || c.specChanged(old, new) || c.statusChanged(old, new):
 		c.enqueue(metaOf[T, P](new).Key(), p)
 	}
@@ -567,7 +621,11 @@ func (c *controller[T, P]) specChanged(old, new *T) bool {
 func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	start := time.Now()
 	requeue, err := c.reconcileKey(ctx, key)
-	c.setLastError(key, err)
+	// The retry of a stale reconcile redoes it from a newer copy of the
+	// object, so LastError keeps returning the error from before it.
+	if !errors.Is(err, errStale) {
+		c.setLastError(key, err)
+	}
 	elapsed := time.Since(start)
 	result := "success"
 	log := c.log.With("key", key.String(), "duration", elapsed.Round(time.Microsecond))
@@ -584,6 +642,17 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 		c.q.Forget(key)
 		result = "permanent_error"
 		log.Warn("reconcile failed; waiting for the object to change", "err", err)
+	case errors.Is(err, errStale):
+		d := c.q.Retry(key, queue.High)
+		result = "stale"
+		// A cache catches up within a few retries. More can mean that
+		// something else, such as a webhook, refuses the writes with 409
+		// Conflict, which no retry fixes.
+		level, failures := slog.LevelInfo, c.q.Failures(key)
+		if failures > 5 {
+			level = slog.LevelWarn
+		}
+		log.Log(ctx, level, "reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", failures)
 	default:
 		d := c.q.Retry(key, queue.High)
 		result = "error"
@@ -603,14 +672,23 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	}
 	obj := clone.Of(cached)
 	m := metaOf[T, P](obj)
+	pre := c.precondition(key, cached)
+	// A write to the object that required the cached resource version and
+	// succeeded shows that the cache had caught up, as a status write would,
+	// and the status may need no write.
+	defer func(orig string) {
+		if pre.rv != orig && !pre.diverged {
+			c.setCaughtUp(key, pre.tenure)
+		}
+	}(pre.rv)
 	if m.Deleting() {
 		if !slices.Contains(m.Finalizers, c.finalizer) {
 			return 0, nil
 		}
-		return c.finalize(ctx, key, cached, obj)
+		return c.finalize(ctx, key, cached, obj, pre)
 	}
 	if c.fin != nil && !slices.Contains(m.Finalizers, c.finalizer) {
-		if err := c.setFinalizer(ctx, obj, true, m.Annotations[c.labels.cleanup]); err != nil {
+		if err := c.setFinalizer(ctx, obj, true, m.Annotations[c.labels.cleanup], &pre.rv); err != nil {
 			return 0, fmt.Errorf("adding finalizer: %w", err)
 		}
 	}
@@ -624,15 +702,16 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	if err == nil {
 		// execute may have applied some documents before it failed, and the
 		// records don't show them, so the next reconcile sends every one.
-		if err = c.execute(ctx, key, obj, s); err != nil {
+		if err = c.execute(ctx, key, obj, s, &pre.rv); err != nil {
 			c.setApplied(key, nil)
 		}
 	}
 	c.m.tracker.retain(ref{c: &c.core, key: key}, s.deps)
-	if serr := c.writeStatus(ctx, cached, obj, err); serr != nil {
-		if err == nil {
+	if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil {
+		switch {
+		case err == nil:
 			err = fmt.Errorf("writing status: %w", serr)
-		} else {
+		case !errors.Is(serr, errStale):
 			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 	}
@@ -652,8 +731,9 @@ func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) er
 }
 
 // execute carries out a successful reconcile's intents, then deletes owned
-// objects that the reconcile no longer declared.
-func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *scope) error {
+// objects that the reconcile no longer declared. Writes to parent carry the
+// resource version that rv points to, as setFinalizer describes.
+func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *scope, rv *string) error {
 	pm := metaOf[T, P](parent)
 	var cleanup []string
 	for _, in := range s.intents {
@@ -667,7 +747,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		have := splitList(pm.Annotations[c.labels.cleanup])
 		want := slices.Sorted(maps.Keys(setOf(append(have, cleanup...))))
 		if !slices.Contains(pm.Finalizers, c.finalizer) || !slices.Equal(have, want) {
-			if err := c.setFinalizer(ctx, parent, true, strings.Join(want, ",")); err != nil {
+			if err := c.setFinalizer(ctx, parent, true, strings.Join(want, ","), rv); err != nil {
 				return fmt.Errorf("adding finalizer before creating objects that garbage collection can't delete: %w", err)
 			}
 		}
@@ -766,7 +846,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		if err := c.cleanupOwned(ctx, parent, keep); err != nil {
 			return err
 		}
-		if err := c.removeFinalizer(ctx, parent); err != nil {
+		if err := c.removeFinalizer(ctx, parent, rv); err != nil {
 			return err
 		}
 	}
@@ -871,11 +951,19 @@ func (c *controller[T, P]) body(in intent, parent *T) (map[string]any, error) {
 // Server-side apply creates objects that don't exist. The UID in the body
 // makes the apply fail instead, so a reconcile working from a stale cache
 // can't recreate an object that was just deleted.
-func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present bool, cleanup string) error {
+//
+// If rv points to a resource version, each write requires it and replaces
+// it with the version that the write leaves, so that the reconcile's status
+// write can still carry its precondition.
+func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present bool, cleanup string, rv *string) error {
 	m := metaOf[T, P](obj)
 	meta := map[string]any{"name": m.Name, "uid": m.UID}
 	if m.Namespace != "" {
 		meta["namespace"] = m.Namespace
+	}
+	conditional := rv != nil && *rv != ""
+	if conditional {
+		meta["resourceVersion"] = *rv
 	}
 	if present {
 		meta["finalizers"] = []string{c.finalizer}
@@ -889,10 +977,16 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 	}
 	path := c.res.path(m.Namespace, m.Name)
 	if err := c.m.apply(ctx, c.ti, m.Key(), path, c.name+"-finalizer", body, &out); err != nil {
+		if conditional && client.IsConflict(err) {
+			return fmt.Errorf("%w: %w", errStale, err)
+		}
 		if !present && replaced(err) {
 			return nil
 		}
 		return err
+	}
+	if conditional {
+		*rv = out.Metadata.ResourceVersion
 	}
 	if present {
 		m.Finalizers = out.Metadata.Finalizers
@@ -903,22 +997,39 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 	// by position, guarded by a test so a concurrent change fails instead of
 	// removing the wrong entry.
 	if i := slices.Index(out.Metadata.Finalizers, c.finalizer); i >= 0 {
-		patch, _ := json.Marshal([]map[string]any{
+		ops := []map[string]any{
 			{"op": "test", "path": fmt.Sprintf("/metadata/finalizers/%d", i), "value": c.finalizer},
 			{"op": "remove", "path": fmt.Sprintf("/metadata/finalizers/%d", i)},
-		})
-		if err := c.m.patch(ctx, c.ti, m.Key(), path, client.JSONPatch, patch); err != nil && !client.IsNotFound(err) {
+		}
+		if conditional {
+			// A patched resource version that isn't the stored one fails
+			// with a conflict, as the apply does. A failed test would fail
+			// as invalid instead.
+			ops = append(ops, map[string]any{"op": "replace", "path": "/metadata/resourceVersion", "value": *rv})
+		}
+		patch, _ := json.Marshal(ops)
+		if err := c.m.patch(ctx, c.ti, m.Key(), path, client.JSONPatch, patch, &out); err != nil {
+			switch {
+			case conditional && client.IsConflict(err):
+				return fmt.Errorf("%w: %w", errStale, err)
+			case client.IsNotFound(err):
+				return nil
+			}
 			return err
+		}
+		if conditional {
+			*rv = out.Metadata.ResourceVersion
 		}
 	}
 	return nil
 }
 
-// removeFinalizer removes the controller's finalizer from obj. The generate
-// command grants the permission that this takes only to controllers that
-// need it, so a denial names the option that grants it.
-func (c *controller[T, P]) removeFinalizer(ctx context.Context, obj *T) error {
-	err := c.setFinalizer(ctx, obj, false, "")
+// removeFinalizer removes the controller's finalizer from obj, and treats rv
+// as setFinalizer does. The generate command grants the permission that this
+// takes only to controllers that need it, so a denial names the option that
+// grants it.
+func (c *controller[T, P]) removeFinalizer(ctx context.Context, obj *T, rv *string) error {
+	err := c.setFinalizer(ctx, obj, false, "", rv)
 	switch {
 	case err == nil:
 		return nil
@@ -931,7 +1042,7 @@ func (c *controller[T, P]) removeFinalizer(ctx context.Context, obj *T) error {
 
 // finalize runs the Finalizer, deletes owned objects that garbage
 // collection can't, and removes the finalizer.
-func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T) (time.Duration, error) {
+func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T, pre precondition) (time.Duration, error) {
 	rctx, s := newScope(ctx, c.m, &c.core, key)
 	defer s.cancel(nil)
 	defer c.m.events.send(&c.core, metaOf[T, P](cached), "Finalize", s)
@@ -946,11 +1057,13 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 		err = c.cleanupOwned(ctx, obj, nil)
 	}
 	if err == nil {
-		err = c.removeFinalizer(ctx, obj)
+		// A status write follows the removal only if it fails, so the
+		// removal needn't carry the precondition.
+		err = c.removeFinalizer(ctx, obj, nil)
 	}
 	c.m.tracker.forget(ref{c: &c.core, key: key})
 	if err != nil {
-		if serr := c.writeStatus(ctx, cached, obj, err); serr != nil && !client.IsNotFound(serr) {
+		if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil && !client.IsNotFound(serr) && !errors.Is(serr, errStale) {
 			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 		return s.requeue, err
