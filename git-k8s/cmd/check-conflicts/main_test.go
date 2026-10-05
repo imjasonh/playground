@@ -645,10 +645,15 @@ func TestReachesTheRepositoryThroughTheMirror(t *testing.T) {
 	t.Run("the check pushes resolve/main to the mirror for a diverged branch without a parent", func(t *testing.T) {
 		srv := gittest.NewServer(t, "")
 		b, _, e, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
-		reconcileThroughMirror(t, srv, b, o)
+		rec, _ := reconcileThroughMirror(t, srv, b, o)
 		pushed := srv.Heads(t, "app")["resolve/main"]
-		if res := b.Status.Checks.Result; res.State != gitk8s.Running || pushed == "" || res.Outputs["diverged"] != e {
-			t.Errorf("result = %+v and resolve/main at %q, want Running after a push through the mirror", res, pushed)
+		events := []kube.Event{{Type: kube.Normal, Reason: "PushedFix",
+			Note: fmt.Sprintf("pushed %s to resolve/main, which lands on main with the external repository's head %s", gitk8s.Short(pushed), gitk8s.Short(e))}}
+		if got := rec.Events(); pushed == "" || !slices.Equal(got, events) {
+			t.Errorf("events = %+v and resolve/main at %q, want %+v after a push through the mirror", got, pushed, events)
+		}
+		if res := b.Status.Checks.Result; res != nil {
+			t.Errorf("result = %+v, want none, because main has no parent", res)
 		}
 	})
 }
@@ -2435,19 +2440,20 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	b, w, e, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
 	head := b.Spec.Head
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: head, State: gitk8s.Running}
 	rec, err := reconcile(t, srv, b, rules, o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := b.Status.Checks.Result
+	if res := b.Status.Checks.Result; res != nil {
+		t.Errorf("result = %+v, want none, because main has no parent", res)
+	}
 	pushed := srv.Heads(t, "app")["resolve/main"]
-	if res.State != gitk8s.Running || pushed == "" || !strings.HasPrefix(res.Message, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
-		t.Fatalf("result = %+v and resolve/main at %q, want Running after a push", res, pushed)
+	if pushed == "" {
+		t.Fatal("didn't push resolve/main")
 	}
-	if res.Commit != head || res.Outputs["diverged"] != e || res.Outputs["branch"] != "resolve/main" {
-		t.Errorf("result = %+v", res)
-	}
-	events := []kube.Event{{Type: kube.Normal, Reason: "PushedFix", Note: res.Message}}
+	events := []kube.Event{{Type: kube.Normal, Reason: "PushedFix",
+		Note: fmt.Sprintf("pushed %s to resolve/main, which lands on main with the external repository's head %s", gitk8s.Short(pushed), gitk8s.Short(e))}}
 	if got := rec.Events(); !slices.Equal(got, events) {
 		t.Errorf("events = %+v, want %+v", got, events)
 	}
@@ -2468,11 +2474,10 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 	if rec, err = reconcile(t, srv, b, rules, o, child); err != nil {
 		t.Fatal(err)
 	}
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "waiting for resolve/main, which holds the external repository's head") {
-		t.Errorf("result = %+v, want Running while resolve/main lands", res)
-	}
-	if got := rec.Events(); len(got) != 0 {
-		t.Errorf("events while resolve/main lands = %+v, want none", got)
+	events = []kube.Event{{Type: kube.Normal, Reason: "ResolvingDivergence",
+		Note: "waiting for resolve/main, which holds the external repository's head " + gitk8s.Short(e) + ", to land on main"}}
+	if got := rec.Events(); !slices.Equal(got, events) {
+		t.Errorf("events while resolve/main lands = %+v, want %+v", got, events)
 	}
 	if got := srv.Heads(t, "app")["resolve/main"]; got != pushed {
 		t.Errorf("resolve/main moved to %s while it lands", got)
@@ -2483,11 +2488,15 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 	w.Git("merge", "--quiet", "--no-edit", "-s", "ours", "--end-of-options", head)
 	b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	w.Push("main")
-	if _, err := reconcile(t, srv, b, rules, o, child); err != nil {
+	if rec, err = reconcile(t, srv, b, rules, o, child); err != nil {
 		t.Fatal(err)
 	}
-	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || !strings.HasPrefix(res.Message, "main contains the external repository's head") {
-		t.Errorf("result after resolve/main lands = %+v, want Passed", res)
+	events = []kube.Event{{Type: kube.Normal, Reason: "ResolvingDivergence", Note: "main contains the external repository's head " + gitk8s.Short(e)}}
+	if got := rec.Events(); !slices.Equal(got, events) {
+		t.Errorf("events after resolve/main lands = %+v, want %+v", got, events)
+	}
+	if got := srv.Heads(t, "app")["resolve/main"]; got != pushed {
+		t.Errorf("resolve/main moved to %s after it landed", got)
 	}
 }
 
@@ -2497,12 +2506,13 @@ func TestReusesALandedResolveBranch(t *testing.T) {
 	w.Branch("old", b.Spec.Head+"~1")
 	w.Push("resolve/main")
 	old := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
-	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+	rec, err := reconcile(t, srv, b, rules, o)
+	if err != nil {
 		t.Fatal(err)
 	}
 	pushed := srv.Heads(t, "app")["resolve/main"]
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || pushed == old {
-		t.Fatalf("result = %+v and resolve/main at %s, want a push over the landed branch", res, pushed)
+	if got := rec.Events(); pushed == old || len(got) != 1 || got[0].Reason != "PushedFix" {
+		t.Fatalf("events = %+v and resolve/main at %s, want a push over the landed branch", got, pushed)
 	}
 	w.Fetch("resolve/main")
 	if got := w.Git("log", "-1", "--format=%P", "--end-of-options", pushed); got != e {
@@ -2517,11 +2527,13 @@ func TestWaitsForAnUnlandedResolveBranch(t *testing.T) {
 	commit(w, "other work", map[string]string{"b.txt": "other\n"})
 	w.Push("resolve/main")
 	other := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
-	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+	rec, err := reconcile(t, srv, b, rules, o)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "waiting for resolve/main to land on main or be deleted") {
-		t.Errorf("result = %+v, want Running while resolve/main holds other work", res)
+	if got := rec.Events(); len(got) != 1 || got[0].Type != kube.Normal || got[0].Reason != "ResolvingDivergence" ||
+		!strings.HasPrefix(got[0].Note, "waiting for resolve/main to land on main or be deleted") {
+		t.Errorf("events = %+v, want one that says the check waits while resolve/main holds other work", got)
 	}
 	if got := srv.Heads(t, "app")["resolve/main"]; got != other {
 		t.Errorf("resolve/main moved to %s", got)
@@ -2586,11 +2598,15 @@ func TestLeavesADivergedParent(t *testing.T) {
 			if tc.edit != nil {
 				tc.edit(o)
 			}
-			if _, err := reconcile(t, srv, b, tc.rules, o); err != nil {
+			rec, err := reconcile(t, srv, b, tc.rules, o)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, tc.want) {
-				t.Errorf("result = %+v, want Failed with %q", res, tc.want)
+			if res := b.Status.Checks.Result; res != nil {
+				t.Errorf("result = %+v, want none, because main has no parent", res)
+			}
+			if got := rec.Events(); len(got) != 1 || got[0].Type != kube.Warning || got[0].Reason != "ResolvingDivergence" || !strings.Contains(got[0].Note, tc.want) {
+				t.Errorf("events = %+v, want a Warning with %q", got, tc.want)
 			}
 			if _, ok := srv.Heads(t, "app")["resolve/main"]; ok {
 				t.Error("pushed resolve/main")
@@ -2608,12 +2624,13 @@ func TestLimitsAResolveBranchByItsOwnRule(t *testing.T) {
 		{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "conflicts", MayPush: true}}, MaxAutomatedCommits: new(int32(0))}},
 		{Match: "**", Parent: "main"},
 	}
-	if _, err := reconcile(t, srv, b, limited, o); err != nil {
+	rec, err := reconcile(t, srv, b, limited, o)
+	if err != nil {
 		t.Fatal(err)
 	}
 	pushed := srv.Heads(t, "app")["resolve/main"]
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || pushed == "" || !strings.HasPrefix(res.Message, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
-		t.Errorf("result = %+v and resolve/main at %q, want Running after a push", res, pushed)
+	if got := rec.Events(); pushed == "" || len(got) != 1 || got[0].Reason != "PushedFix" || !strings.HasPrefix(got[0].Note, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
+		t.Errorf("events = %+v and resolve/main at %q, want a push", got, pushed)
 	}
 }
 
@@ -2622,8 +2639,9 @@ func TestHandlesARewoundParent(t *testing.T) {
 		name string
 		// heads makes main's head and the external repository's head on
 		// top of base, which has a.txt, or synced, which adds s.txt.
-		heads          func(w *gittest.Work, base, synced string) (head, e string)
-		state, rewound string
+		heads func(w *gittest.Work, base, synced string) (head, e string)
+		// eventType is Warning when the check fails, and Normal when it passes.
+		eventType string
 		// want is the message, with {head}, {e}, and {synced} for those
 		// commits.
 		want string
@@ -2635,8 +2653,8 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Branch("external", base)
 			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
 		},
-		state: gitk8s.Failed, rewound: "external",
-		want: "the external repository rewound main since it last synced with git-k8s at {synced}, and the merge controller moves main only to a commit that contains its head, so only the external repository can resolve the divergence: push a head there that replays each commit that landed on main since {synced} unchanged, or that contains main's head {head}",
+		eventType: kube.Warning,
+		want:      "the external repository rewound main since it last synced with git-k8s at {synced}, and the merge controller moves main only to a commit that contains its head, so only the external repository can resolve the divergence: push a head there that replays each commit that landed on main since {synced} unchanged, or that contains main's head {head}",
 	}, {
 		name: "when main rewound",
 		heads: func(w *gittest.Work, base, synced string) (string, string) {
@@ -2645,8 +2663,8 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Branch("external", synced)
 			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
 		},
-		state: gitk8s.Failed, rewound: "branch",
-		want: "main rewound in git-k8s since it last synced with the external repository at {synced}; replay the commits that the external repository added since then onto main's head {head}, and push the result to the external repository with a lease on its head {e}",
+		eventType: kube.Warning,
+		want:      "main rewound in git-k8s since it last synced with the external repository at {synced}; replay the commits that the external repository added since then onto main's head {head}, and push the result to the external repository with a lease on its head {e}",
 	}, {
 		name: "after the external repository replays main's commits",
 		heads: func(w *gittest.Work, base, synced string) (string, string) {
@@ -2655,8 +2673,8 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Branch("external", base)
 			return head, commit(w, "main edit", map[string]string{"a.txt": "main\n"})
 		},
-		state: gitk8s.Passed, rewound: "external",
-		want: "the external repository's head {e} keeps every change that main made since they last synced at {synced}",
+		eventType: kube.Normal,
+		want:      "the external repository's head {e} keeps every change that main made since they last synced at {synced}",
 	}, {
 		name: "after main replays the external repository's commits",
 		heads: func(w *gittest.Work, base, synced string) (string, string) {
@@ -2665,8 +2683,8 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Branch("external", synced)
 			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
 		},
-		state: gitk8s.Passed, rewound: "branch",
-		want: "main keeps every change that the external repository's head {e} made since they last synced at {synced}",
+		eventType: kube.Normal,
+		want:      "main keeps every change that the external repository's head {e} made since they last synced at {synced}",
 	}, {
 		name: "when both rewound",
 		heads: func(w *gittest.Work, base, _ string) (string, string) {
@@ -2675,8 +2693,8 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Branch("external", base)
 			return head, commit(w, "external edit", map[string]string{"b.txt": "external\n"})
 		},
-		state: gitk8s.Failed, rewound: "both",
-		want: "main rewound both in git-k8s and in the external repository since they last synced at {synced}, so the check leaves the divergence for a person",
+		eventType: kube.Warning,
+		want:      "main rewound both in git-k8s and in the external repository since they last synced at {synced}, so the check leaves the divergence for a person",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "")
@@ -2695,12 +2713,14 @@ func TestHandlesARewoundParent(t *testing.T) {
 			o.Namespace = "default"
 			o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + "main"}
 			syncedAt(w, o, "main", synced)
-			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+			rec, err := reconcile(t, srv, b, rules, o)
+			if err != nil {
 				t.Fatal(err)
 			}
-			want := strings.NewReplacer("{head}", gitk8s.Short(head), "{e}", gitk8s.Short(e), "{synced}", gitk8s.Short(synced)).Replace(tc.want)
-			if res := b.Status.Checks.Result; res.State != tc.state || res.Message != want || res.Outputs["rewound"] != tc.rewound {
-				t.Errorf("result = %+v, want %s with %q", res, tc.state, want)
+			want := []kube.Event{{Type: tc.eventType, Reason: "ResolvingDivergence",
+				Note: strings.NewReplacer("{head}", gitk8s.Short(head), "{e}", gitk8s.Short(e), "{synced}", gitk8s.Short(synced)).Replace(tc.want)}}
+			if got := rec.Events(); !slices.Equal(got, want) {
+				t.Errorf("events = %+v, want %+v", got, want)
 			}
 			heads := srv.Heads(t, "app")
 			if _, ok := heads["resolve/main"]; ok {
@@ -2717,12 +2737,13 @@ func TestPassesWhenTheExternalHeadContainsTheParent(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	b, w, _, _ := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
 	e, o := diverge(w, b.Name, "main", b.Spec.Head, map[string]string{"b.txt": "external\n"})
-	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+	rec, err := reconcile(t, srv, b, rules, o)
+	if err != nil {
 		t.Fatal(err)
 	}
-	want := "the external repository's head " + gitk8s.Short(e) + " already contains main's head"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want {
-		t.Errorf("result = %+v, want Passed with %q", res, want)
+	want := []kube.Event{{Type: kube.Normal, Reason: "ResolvingDivergence", Note: "the external repository's head " + gitk8s.Short(e) + " already contains main's head"}}
+	if got := rec.Events(); !slices.Equal(got, want) {
+		t.Errorf("events = %+v, want %+v", got, want)
 	}
 	if _, ok := srv.Heads(t, "app")["resolve/main"]; ok {
 		t.Error("pushed resolve/main")
@@ -2746,11 +2767,15 @@ func TestIgnoresParentsWithNothingToResolve(t *testing.T) {
 			if tc.diverged {
 				world = append(world, o)
 			}
-			if _, err := reconcile(t, srv, b, tc.rules, world...); err != nil {
+			rec, err := reconcile(t, srv, b, tc.rules, world...)
+			if err != nil {
 				t.Fatal(err)
 			}
 			if res := b.Status.Checks.Result; res != nil {
 				t.Errorf("result = %+v, want none", res)
+			}
+			if got := rec.Events(); len(got) != 0 {
+				t.Errorf("events = %+v, want none", got)
 			}
 			if _, ok := srv.Heads(t, "app")["resolve/main"]; ok {
 				t.Error("pushed resolve/main")
@@ -2799,12 +2824,13 @@ func TestSignsWhatItPushes(t *testing.T) {
 	t.Run("a branch that resolves a diverged parent", func(t *testing.T) {
 		srv := gittest.NewServer(t, "")
 		b, w, _, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
-		if _, err := reconcile(t, srv, b, rules, o, signer); err != nil {
+		rec, err := reconcile(t, srv, b, rules, o, signer)
+		if err != nil {
 			t.Fatal(err)
 		}
 		pushed := w.Fetch("resolve/main")
-		if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
-			t.Fatalf("result = %+v, want Running after pushing resolve/main at %s", res, pushed)
+		if got := rec.Events(); len(got) != 1 || got[0].Reason != "PushedFix" || !strings.HasPrefix(got[0].Note, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
+			t.Fatalf("events = %+v, want PushedFix for resolve/main at %s", got, pushed)
 		}
 		if err := signer.Verify(w.Dir, pushed); err != nil {
 			t.Error(err)
@@ -2814,12 +2840,13 @@ func TestSignsWhatItPushes(t *testing.T) {
 
 func TestReadsTheSigningKeyOnlyToPushAResolveBranch(t *testing.T) {
 	for _, tc := range []struct {
-		name, state, want string
-		rules             []gitk8s.BranchRule
+		name, want string
+		fails      bool
+		rules      []gitk8s.BranchRule
 	}{{
 		name:  "when the policy lets it push",
 		rules: rules,
-		state: gitk8s.Error,
+		fails: true,
 		want:  "Secret app-signing doesn't exist",
 	}, {
 		name: "when the policy doesn't let it push",
@@ -2827,8 +2854,7 @@ func TestReadsTheSigningKeyOnlyToPushAResolveBranch(t *testing.T) {
 			{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "conflicts"}}}},
 			{Match: "**", Parent: "main"},
 		},
-		state: gitk8s.Failed,
-		want:  "the policy doesn't let this check push resolve/main",
+		want: "the policy doesn't let this check push resolve/main",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "")
@@ -2836,14 +2862,16 @@ func TestReadsTheSigningKeyOnlyToPushAResolveBranch(t *testing.T) {
 			useRemote(t, srv.RemoteFor)
 			repo, _ := srv.Repository("app", tc.rules...)
 			repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
-			ctx, _ := kube.Fake(t.Context(), b, repo, o)
+			ctx, rec := kube.Fake(t.Context(), b, repo, o)
 			cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
-			err := newReconciler(cfg).Reconcile(ctx, b)
-			if (err != nil) != (tc.state == gitk8s.Error) {
+			if err := newReconciler(cfg).Reconcile(ctx, b); (err != nil) != tc.fails {
 				t.Errorf("Reconcile = %v", err)
 			}
-			if res := b.Status.Checks.Result; res.State != tc.state || !strings.Contains(res.Message, tc.want) {
-				t.Errorf("result = %+v, want %s with %q", res, tc.state, tc.want)
+			if res := b.Status.Checks.Result; res != nil {
+				t.Errorf("result = %+v, want none, because main has no parent", res)
+			}
+			if got := rec.Events(); len(got) != 1 || got[0].Type != kube.Warning || got[0].Reason != "ResolvingDivergence" || !strings.Contains(got[0].Note, tc.want) {
+				t.Errorf("events = %+v, want a Warning with %q", got, tc.want)
 			}
 			if _, ok := srv.Heads(t, "app")["resolve/main"]; ok {
 				t.Error("pushed resolve/main without a signature")

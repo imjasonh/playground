@@ -44,7 +44,7 @@ type website struct {
 		Domain   string            `json:"domain,omitempty" kube:"immutable,format=hostname" pattern:"^[a-z0-9.-]+$"`
 		Tier     string            `json:"tier,omitempty" kube:"enum=free|pro"`
 		Port     intOrString       `json:"port,omitzero"`
-		Env      map[string]string `json:"env,omitempty"`
+		Env      map[string]string `json:"env,omitempty" kube:"mapType=atomic"`
 		Extra    json.RawMessage   `json:"extra,omitempty"`
 		Data     []byte            `json:"data,omitempty"`
 		Tags     []string          `json:"tags" kube:"listType=set"`
@@ -106,6 +106,7 @@ func TestGenerate(t *testing.T) {
           "type": "string"
         }`,
 		`"x-kubernetes-list-type": "set"`,
+		`"x-kubernetes-map-type": "atomic"`,
 		`"required": [
         "image"
       ]`,

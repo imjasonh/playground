@@ -135,7 +135,9 @@ runs that reconcile again. You don't write watches, map functions, or field
 indexes, and each type's cache starts the first time a reconcile reads it.
 `Fetch` isn't recorded. Use it for large objects that you read rarely, such as
 the data of one Secret, so that the framework doesn't cache every object of
-the type.
+the type. A `Fetch` with a constant namespace and name needs permission to
+get only that object, as [Install in a cluster](#install-in-a-cluster)
+describes.
 
 `Own` makes the reconciled object the owner of the declared object. When
 both objects are in the same namespace, or the owner is cluster-scoped, the
@@ -333,6 +335,7 @@ validation and display hints to the generated schema:
 | `kube:"immutable"` | A validation rule that rejects changes after creation |
 | `kube:"optional"`, `kube:"required"` | Overrides the rule based on `json` tags |
 | `kube:"listType=map,listMapKey=name"` | Merges the list by key in server-side apply |
+| `kube:"mapType=atomic"` | Replaces the whole map or struct in server-side apply, so one manager owns it |
 | `kube:"column=Ready"` | A `kubectl get` column |
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
@@ -951,7 +954,10 @@ The command does the following:
    `Fetch`, `Own`, `Apply`, and `Delete`, and the type that each call uses,
    including calls inside generic helpers, whether the program calls
    `ReviewToken`, and the audiences that it passes to `RequestToken`. Only a
-   program that calls `Eventf` gets permission to write events.
+   program that calls `Eventf` gets permission to write events. A `Fetch`
+   that names its type, not a type parameter, and passes constants as the
+   namespace and name gets permission to get only that object, if the
+   type's `kube` tag says `scope=Namespaced` or `scope=Cluster`.
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
@@ -1118,7 +1124,8 @@ sends requests to standby replicas too.
 The `generate` command writes these rules. If you install the program another
 way, its service account needs these permissions:
 
-- `get`, `list`, and `watch` on every type that it reads.
+- `get`, `list`, and `watch` on every type that it reads. For `Fetch`, `get`
+  on each object that it fetches is enough.
 - `create`, `patch`, and `delete` on every type that it declares with `Own`,
   `Apply`, or `Delete`. Server-side apply needs `create` for objects that
   don't exist yet.

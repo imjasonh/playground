@@ -46,8 +46,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 }
 
 // testResult is the gotest check's entry in a GitBranch's status. Reading
-// it through its own type runs the check again when the entry changes, and
-// keeps the entry out of the check's status writes.
+// it through its own type runs the check again when the entry changes.
 type testResult struct {
 	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
 	Status      struct {

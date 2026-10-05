@@ -317,6 +317,83 @@ func main() {
 	}
 }
 
+// TestFindObjects finds the calls that pass their type argument and
+// constants as the namespace and name. A call through a generic function or a
+// function value, or with a namespace that isn't a constant, names no object.
+func TestFindObjects(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"go.mod": "module example.com/prog\n\ngo 1.26.0\n",
+		"fw/fw.go": `package fw
+
+type Object struct{}
+
+type Resource[T any] interface{ *T }
+
+func Fetch[T any, P Resource[T]](namespace, name string) *T { return nil }
+`,
+		"types/types.go": `package types
+
+import "example.com/prog/fw"
+
+type ConfigMap struct{ fw.Object }
+
+type Secret struct{ fw.Object }
+`,
+		"helpers/helpers.go": `package helpers
+
+import "example.com/prog/fw"
+
+const Namespace = "ns"
+
+// Fetch passes constants, but not a type, to fw.Fetch.
+func Fetch[T any, P fw.Resource[T]]() { fw.Fetch[T, P](Namespace, "helper") }
+`,
+		"main.go": `package main
+
+import (
+	"os"
+
+	"example.com/prog/fw"
+	"example.com/prog/helpers"
+	"example.com/prog/types"
+)
+
+func main() {
+	fw.Fetch[types.ConfigMap]("ns", "name")
+	fw.Fetch[types.ConfigMap]("ns", "name")
+	fw.Fetch[types.ConfigMap](helpers.Namespace, "other")
+	(fw.Fetch[types.ConfigMap, *types.ConfigMap])("ns", "paren")
+	fw.Fetch[types.ConfigMap](os.Args[0], "name")
+	f := fw.Fetch[types.ConfigMap]
+	f("ns", "value")
+	helpers.Fetch[types.Secret]()
+}
+`,
+	})
+	uses, unresolved, err := Find(t.Context(), Config{
+		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
+		Package: "example.com/prog/fw", Funcs: []string{"Fetch"}, Objects: map[string]int{"Fetch": 0}, Marker: "Object",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, u := range uses {
+		u.Pos = filepath.Base(u.Pos)
+		got = append(got, u.String())
+	}
+	want := []string{
+		"Fetch[example.com/prog/types.ConfigMap] at main.go:16:5",
+		`Fetch[example.com/prog/types.ConfigMap]("ns", "name") at main.go:12:5`,
+		`Fetch[example.com/prog/types.ConfigMap]("ns", "other") at main.go:14:5`,
+		`Fetch[example.com/prog/types.ConfigMap]("ns", "paren") at main.go:15:6`,
+		"Fetch[example.com/prog/types.Secret] at main.go:19:10",
+	}
+	if !reflect.DeepEqual(got, want) || len(unresolved) != 0 {
+		t.Errorf("uses =\n%s\nwant\n%s\nunresolved = %q", strings.Join(got, "\n"), strings.Join(want, "\n"), lines(unresolved))
+	}
+}
+
 func TestFindInExamples(t *testing.T) {
 	for _, tc := range []struct {
 		pkg  string

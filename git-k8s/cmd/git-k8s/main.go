@@ -1,4 +1,5 @@
-// Command git-k8s runs the core git-k8s controllers and the mirror.
+// Command git-k8s runs the core git-k8s controllers, the mirror, and the
+// results endpoint.
 //
 // The mirror keeps a copy of each GitRepository on a persistent volume and
 // serves it over git's smart HTTP protocol. Checks fetch from it and push
@@ -20,13 +21,19 @@
 // Unless -install-policies=false, the program installs the admission policies
 // in config/policy.yaml when it starts.
 //
-// Check controllers run as separate programs, such as check-gofmt.
+// Check controllers run as separate programs, such as check-gofmt. They
+// send their results to this program's results endpoint, and the results
+// controller writes each one to the entry of the check whose token sent it.
+// The results endpoint and the mirror share the program's HTTP server, and
+// each accepts only tokens for its own audience.
 package main
 
 import (
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
@@ -43,6 +50,7 @@ func main() {
 	m := &mirror.Mirror{Git: g}
 	repos := &repositories{mirror: m}
 	merge := &merger{mirror: m}
+	rs := &results{timeout: 10 * time.Second, poll: 100 * time.Millisecond}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&m.Dir, "mirror-dir", mirrorDir, "writable directory for the mirror's copies of repositories, which one process at a time may use")
 	flag.StringVar(&merge.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
@@ -74,8 +82,20 @@ func main() {
 		}),
 		kube.For[gitk8s.GitRepository](repos, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](merge, kube.Named("merge")),
+		kube.For[resultsBranch](rs, kube.Named("results")),
 		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
-		kube.Serve(m),
+		kube.Serve(serve(m, rs)),
 		kube.Volume(mirrorDir),
 	)
+}
+
+// serve routes check results to the results endpoint and every other
+// request to the mirror, because a program serves one handler. git's smart
+// HTTP protocol sends no PUT requests, so the mirror still serves a
+// repository in a namespace named results.
+func serve(m http.Handler, rs *results) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("PUT /results/", rs.handler())
+	mux.Handle("/", m)
+	return mux
 }

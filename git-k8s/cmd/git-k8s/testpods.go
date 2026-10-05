@@ -93,9 +93,9 @@ func (c *cidrs) Set(s string) error {
 	return nil
 }
 
-// mirrorPort is the port of this program's Pods that serves the mirror. A
-// NetworkPolicy matches the port of the Pod that a Service sends a
-// connection to, not the Service's port.
+// mirrorPort is the port of this program's Pods that serves the mirror and
+// the results endpoint. A NetworkPolicy matches the port of the Pod that a
+// Service sends a connection to, not the Service's port.
 const mirrorPort = 8081
 
 // goCachePort is the port that go-cache listens on by default, where its
