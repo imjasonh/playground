@@ -11,6 +11,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/signing"
 )
 
 // More Merged condition reasons, for squash and rebase landings.
@@ -33,7 +34,7 @@ const maxLandingCommits = 1000
 // rewrite lands a branch whose merge policy squashes or rebases it, and
 // reports the outcome. It does nothing and returns false when the branch's
 // head can land as it is, by fast-forward.
-func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) (bool, error) {
+func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *git.Repo, remote git.Remote, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) (bool, error) {
 	spec := &b.Spec
 	if keep, err := keepsHead(ctx, local, spec); err != nil || keep {
 		return false, err
@@ -42,7 +43,7 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 	if spec.Merge.Landing == gitk8s.Rebase {
 		verb = "rebased"
 	}
-	landed, problem, err := m.squashOrRebase(ctx, local, spec)
+	landed, problem, err := m.squashOrRebase(ctx, local, &writer{local: local, repo: repo}, spec)
 	switch {
 	case err != nil:
 		return false, err
@@ -69,7 +70,7 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 			var rejected *git.PushError
 			if errors.As(err, &rejected) && rejected.Refused(ref) {
 				report(b, reasonNeedsRebase, false, "can't push the %s commit %s to %s for %s to check, because the remote refused it: %s",
-					verb, gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "), rejected.Rejected[ref])
+					verb, gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "), rejected.Reason(ref))
 				return true, nil
 			}
 			return true, fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(landed), spec.Branch, err)
@@ -109,7 +110,7 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", !refused && branch.New == "")
 	msg := fmt.Sprintf("%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
 	if refused {
-		msg += settle(ctx, local, remote, b, branch, landed, rejected.Rejected[branch.Ref])
+		msg += settle(ctx, local, remote, b, branch, landed, rejected.Reason(branch.Ref))
 	}
 	report(b, reasonLanded, true, "%s", msg)
 	return true, nil
@@ -145,9 +146,31 @@ func keepsHead(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec)
 	return slices.Equal(parents, []string{spec.ParentHead}), err
 }
 
+// writer makes the commits of one squash or rebase landing, signed with the
+// key that the GitRepository names, if it names one. It reads the key when
+// it makes its first commit, so a landing that makes none doesn't read it,
+// and a rebase that makes many reads it once.
+type writer struct {
+	local *git.Repo
+	repo  *gitk8s.Repository
+	key   *git.SigningKey
+	read  bool
+}
+
+func (w *writer) commit(ctx context.Context, c git.NewCommit) (string, error) {
+	if !w.read {
+		key, err := signing.Key(ctx, w.repo)
+		if err != nil {
+			return "", fmt.Errorf("reading the signing key: %w", err)
+		}
+		w.key, w.read = key, true
+	}
+	return w.local.WriteCommit(ctx, c, w.key)
+}
+
 // squashOrRebase reads the branch's commits and squashes or rebases them
-// onto the parent's head. A problem says why it can't.
-func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec) (landed, problem string, err error) {
+// onto the parent's head with w. A problem says why it can't.
+func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, w *writer, spec *gitk8s.GitBranchSpec) (landed, problem string, err error) {
 	log, err := local.Log(ctx, spec.ParentHead, spec.Head, maxLandingCommits+1)
 	switch {
 	case errors.Is(err, git.ErrLogTooBig):
@@ -164,9 +187,9 @@ func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, spec *gitk
 		return "", "", err
 	}
 	if spec.Merge.Landing == gitk8s.Squash {
-		return m.squash(ctx, local, spec, log, parent)
+		return m.squash(ctx, w, spec, log, parent)
 	}
-	return m.rebase(ctx, local, spec, log, parent)
+	return m.rebase(ctx, local, w, spec, log, parent)
 }
 
 // squash returns a commit with the branch head's files on top of the
@@ -174,7 +197,7 @@ func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, spec *gitk
 // commit on the parent's head followed only by checks' fixes, and the
 // parent's head when the branch changes no files. A problem says why the
 // branch can't be squashed.
-func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
+func (m *merger) squash(ctx context.Context, w *writer, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
 	head := log[len(log)-1]
 	switch {
 	case m.fixedAfterSquash(spec, log):
@@ -186,7 +209,7 @@ func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 	if problem := copyProblem(from); problem != "" {
 		return "", problem, nil
 	}
-	landed, err = local.WriteCommit(ctx, git.NewCommit{
+	landed, err = w.commit(ctx, git.NewCommit{
 		Tree:      head.Tree,
 		Parents:   []string{spec.ParentHead},
 		Author:    from.Author,
@@ -286,7 +309,7 @@ func withoutFixerTrailers(msg string) string {
 // commit that changes nothing on top of the earlier ones, and returns the
 // parent's head when that leaves no commits. A problem says why the
 // branch can't be rebased.
-func (m *merger) rebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
+func (m *merger) rebase(ctx context.Context, local *git.Repo, w *writer, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
 	onto, tree, when := spec.ParentHead, parent.Tree, parent.Time
 	for _, c := range log {
 		switch {
@@ -312,7 +335,7 @@ func (m *merger) rebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 			return "", problem, nil
 		}
 		when = max(c.Time, when)
-		onto, err = local.WriteCommit(ctx, git.NewCommit{
+		onto, err = w.commit(ctx, git.NewCommit{
 			Tree:      picked,
 			Parents:   []string{onto},
 			Author:    c.Author,

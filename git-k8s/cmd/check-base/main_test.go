@@ -33,10 +33,19 @@ func setup(t *testing.T, srv *gittest.Server, mainEdit, branchEdit string) (*Bra
 	return b, w
 }
 
+// reconcile runs the check with world's objects. A Signer in world makes
+// the GitRepository name its key.
 func reconcile(t *testing.T, srv *gittest.Server, b *Branch, world ...any) error {
 	t.Helper()
 	repo, secret := srv.Repository("app")
-	ctx, _ := kube.Fake(t.Context(), b, append([]any{repo, secret}, world...)...)
+	objs := []any{repo, secret}
+	for _, o := range world {
+		if s, ok := o.(*gittest.Signer); ok {
+			o = s.Sign(repo)
+		}
+		objs = append(objs, o)
+	}
+	ctx, _ := kube.Fake(t.Context(), b, objs...)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	return checks.NewReconciler[Branch](check, cfg).Reconcile(ctx, b)
 }
@@ -77,6 +86,22 @@ func TestMergesParentIn(t *testing.T) {
 	}
 	if res := b.Status.Checks.Result; res.State != gitk8s.Passed {
 		t.Errorf("result after the merge = %+v, want Passed", res)
+	}
+}
+
+func TestSignsMerge(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w := setup(t, srv, "main\n", "branch\n")
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	if err := reconcile(t, srv, b, signer, at(b, 1)); err != nil {
+		t.Fatal(err)
+	}
+	fix := w.Fetch("c/x")
+	if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed merge %s", res, fix)
+	}
+	if err := signer.Verify(w.Dir, fix); err != nil {
+		t.Error(err)
 	}
 }
 
