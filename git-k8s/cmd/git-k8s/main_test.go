@@ -322,7 +322,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// git-k8s-checks ConfigMap. The patch adds the paramRef again.
 	bindings[0].Spec.ParamRef = nil
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so checks can write each other's results; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}'` {
+		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}'` {
 		t.Errorf("with git-k8s-check-results's binding without a paramRef, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Deny"}
