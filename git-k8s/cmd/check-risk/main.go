@@ -77,7 +77,7 @@ var (
 	sensitive = flag.String("sensitive", "", "comma-separated globs of paths that make a change high risk, such as auth/**,**/*.pem")
 )
 
-var check = checks.Check{Name: "risk", UsesParent: true, Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "risk", UsesParent: true, FilesOnly: true, Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)

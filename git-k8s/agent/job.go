@@ -335,8 +335,12 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		// kube creates a Pod right after the reconcile that declares it, so
 		// a Pod that an earlier reconcile declared and that doesn't exist
 		// means that creating it failed. Get runs this again once the Pod
-		// exists.
+		// exists. kube.LastError says why, except in the first reconcile
+		// after the program starts or takes over the branch's shard.
 		if !x.started && kube.Get[podPhase](ctx, x.job.Namespace, st.Pod) == nil {
+			if err := kube.LastError(ctx); err != nil {
+				return x.status("kube can't create Pod %s: %v", st.Pod, err)
+			}
 			return x.status("kube can't create Pod %s: the program's log says why, such as a ResourceQuota or LimitRange that doesn't allow its ephemeral-storage limit of %s", st.Pod, formatSize(x.r.podDisk()))
 		}
 		return x.status("started Pod %s", st.Pod)

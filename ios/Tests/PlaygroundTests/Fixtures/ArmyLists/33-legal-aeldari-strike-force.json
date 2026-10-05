@@ -1,143 +1,208 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "8B24895E-06C6-4D28-AD90-CEB6944AE375",
-    "name": "Aeldari Strike Force 1900pts",
-    "catalogVersion": "11e-1",
-    "factionID": "aeldari",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
-      "aeldari--spirit-conclave",
-      "aeldari--twilight-flickers"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "aeldari--path-of-the-outcast",
+      "aeldari--windrider-host"
     ],
-    "units": [
+    "factionID" : "aeldari",
+    "id" : "DE0E9A8A-A482-45A2-87BF-AA59C934E0F4",
+    "name" : "Aeldari Strike Force 1885pts",
+    "notes" : "stress seed=32 attach=true enh=true",
+    "units" : [
       {
-        "id": "4CDDDFF6-FED8-4464-A6C2-E1C2FBCBD282",
-        "datasheetID": "aeldari--bonesinger",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "aeldari--spirit-conclave--rune-of-mists"
+        "datasheetID" : "aeldari--bonesinger",
+        "enhancementIDs" : [
+          "aeldari--windrider-host--echoes-of-ulthanesh"
         ],
-        "attachedToUnitID": "692AE008-8973-444D-A0E4-4060EC1C7BD4"
+        "id" : "261280AC-341C-4104-AF0A-A2B371EB43C8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "612190E9-628C-4F41-8664-9AC06A4A7849",
-        "datasheetID": "aeldari--amallyn-shadowguide",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--shroud-runners",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7E229A9E-F9B8-49A5-A792-8AD3A8934E83",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B8D17CBE-D9DC-42A1-A932-E59DAFF5B190",
-        "datasheetID": "aeldari--howling-banshees",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--windriders",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DC099092-84D5-4009-ADDF-414572C9B151",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "692AE008-8973-444D-A0E4-4060EC1C7BD4",
-        "datasheetID": "aeldari--wraithlord",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--corsair-voidscarred",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6A243C66-992C-44EE-A3FC-547821BB0F0B",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9EF22C22-92DA-4440-87C3-C0A3C681811C",
-        "datasheetID": "aeldari--ynnari-incubi",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--ynnari-wyches",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A84524BF-B288-4CB9-8996-B60291178948",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "44EED478-9BCA-423A-88CB-95D7691F9B8D",
-        "datasheetID": "aeldari--falcon",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--storm-guardians",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "166D8358-E1E7-4AC1-9F16-06C8443BCC62",
+        "models" : 11,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A1F284BF-2D3D-4782-959E-9DA0F6321BA8",
-        "datasheetID": "aeldari--fire-dragons",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--ynnari-raider",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "34A635B2-DA55-4575-A503-261D8F03A5EE",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D3F0BDF8-C26C-4668-930A-47E59A076F05",
-        "datasheetID": "aeldari--ynnari-kabalite-warriors",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--firestorm",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "82E8C6CB-2DB1-4B70-9B5C-F96ACA4B9FD2",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "859AD7B3-6252-4FB1-B393-F6241033594A",
-        "datasheetID": "aeldari--warp-spiders",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--corsair-skyreavers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "80F75C92-D916-4D64-8101-A0E6F03E3600",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "FC1D63CA-4AF7-493D-B5A5-3C49974B9851",
-        "datasheetID": "aeldari--ynnari-venom",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--wraithknight-with-ghostglaive",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "AE42F416-0286-40F6-970A-4AAD4D08B634",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D18CF752-412B-4428-970A-1FF9A915262D",
-        "datasheetID": "aeldari--wraithknight-with-ghostglaive",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--warp-hunter",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8CC5272F-679E-48C0-9D2D-7A8FEF72DA2B",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "60615A29-D99A-46E0-BE84-14FB6E2BB65D",
-        "datasheetID": "aeldari--wraithseer",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--corsair-voidreavers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9AE77BFD-897C-422B-931C-4F8BF328DA10",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "3B4206AF-8BC7-4526-BF74-168FA642800F",
-        "datasheetID": "aeldari--starfangs",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--corsair-reaver-band",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "585CE4B6-A3A1-42A1-B9E3-2B4F4EFBEB33",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5601FFA1-DD68-4123-9005-CE266517A2B2",
-        "datasheetID": "aeldari--lynx",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--rangers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4603FD01-6372-4B07-8F4D-D78DEDC9B77C",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "60ACF31A-288A-4824-9578-7DD31AB1C82C",
-        "datasheetID": "aeldari--crimson-hunter",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "aeldari--guardian-defenders",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E4C72D31-46B4-41E9-953F-EA62CD2CC528",
+        "models" : 11,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "aeldari--falcon",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B281B18B-EEFB-4CDD-8B1A-25F25615A725",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "aeldari--ynnari-wyches",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "30D4378A-FEF0-42C4-B11C-04BE3CB53F46",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "4CDDDFF6-FED8-4464-A6C2-E1C2FBCBD282",
-    "notes": "stress seed=32 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "261280AC-341C-4104-AF0A-A2B371EB43C8"
+  },
+  "notes" : "auto-built"
 }

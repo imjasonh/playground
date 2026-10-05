@@ -55,7 +55,8 @@ for module in "${modules[@]}"; do
     # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
     # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
-    # sshapp KinD e2e is separate (see below) so unit tests stay fast.
+    # The kind end-to-end tests of git-k8s, kube, and sshapp run in parallel
+    # steps, in test-kind-e2e.sh.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -race -v -timeout 30m ./...
     elif [ "$module" = "kube" ]; then
@@ -70,73 +71,6 @@ for module in "${modules[@]}"; do
   else
     echo "::error title=Go tests failed::${module}: go test -race -v ./..."
     result=1
-  fi
-
-  # sshapp: KinD e2e for mux + hello (scale-up, registry menu, scale-to-zero).
-  # Needs Docker (present on ubuntu-latest). Skips outside CI when unset.
-  if [ "$module" = "sshapp" ]; then
-    echo "::group::KinD e2e for sshapp"
-    if ! command -v docker >/dev/null 2>&1; then
-      echo "::error title=sshapp KinD e2e::docker is required"
-      result=1
-    elif ! docker info >/dev/null 2>&1; then
-      echo "::error title=sshapp KinD e2e::docker daemon is not reachable"
-      result=1
-    elif (
-      cd "$module"
-      SSHAPP_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
-    ); then
-      echo "${module}: KinD e2e passed"
-    else
-      echo "::error title=sshapp KinD e2e failed::${module}: SSHAPP_KIND_E2E=1 go test ./e2e/"
-      result=1
-    fi
-    echo "::endgroup::"
-  fi
-
-  # kube: install the examples in a kind cluster with generate, which
-  # pushes their images to a local registry. Needs Docker.
-  if [ "$module" = "kube" ]; then
-    echo "::group::kind e2e for kube"
-    if ! command -v docker >/dev/null 2>&1; then
-      echo "::error title=kube kind e2e::docker is required"
-      result=1
-    elif ! docker info >/dev/null 2>&1; then
-      echo "::error title=kube kind e2e::docker daemon is not reachable"
-      result=1
-    elif (
-      cd "$module"
-      KUBE_KIND_E2E=1 go test -v -count=1 -timeout 20m ./e2e/kind/
-    ); then
-      echo "${module}: kind e2e passed"
-    else
-      echo "::error title=kube kind e2e failed::${module}: KUBE_KIND_E2E=1 go test ./e2e/kind/"
-      result=1
-    fi
-    echo "::endgroup::"
-  fi
-
-  # git-k8s: install the controllers and checks in a kind cluster with
-  # kube's generate command, and push branches to a git server that runs on
-  # the runner. Needs Docker and git.
-  if [ "$module" = "git-k8s" ]; then
-    echo "::group::kind e2e for git-k8s"
-    if ! command -v docker >/dev/null 2>&1; then
-      echo "::error title=git-k8s kind e2e::docker is required"
-      result=1
-    elif ! docker info >/dev/null 2>&1; then
-      echo "::error title=git-k8s kind e2e::docker daemon is not reachable"
-      result=1
-    elif (
-      cd "$module"
-      GIT_K8S_KIND_E2E=1 go test -v -count=1 -timeout 20m ./e2e/kind/
-    ); then
-      echo "${module}: kind e2e passed"
-    else
-      echo "::error title=git-k8s kind e2e failed::${module}: GIT_K8S_KIND_E2E=1 go test ./e2e/kind/"
-      result=1
-    fi
-    echo "::endgroup::"
   fi
 
   echo "::endgroup::"

@@ -1,86 +1,77 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "A7AD6AA3-1B6B-4D1E-B9EF-2BA712A8B802",
-    "name": "Space Marines Incursion 995pts",
-    "catalogVersion": "11e-1",
-    "factionID": "space-marines",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
-      "space-marines--vengeful-hosts"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "space-marines--deathwatch-support",
+      "space-marines--phobos-shadow-force"
     ],
-    "units": [
+    "factionID" : "space-marines",
+    "id" : "A4A9E52B-5455-40EA-952D-FB126F9E2C90",
+    "name" : "Space Marines Incursion 995pts",
+    "notes" : "stress seed=23 attach=true enh=true",
+    "units" : [
       {
-        "id": "F0077FD0-0A1C-4938-8C25-D96260F72E3E",
-        "datasheetID": "space-marines--judiciar",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "space-marines--vengeful-hosts--orksbane"
+        "attachedToUnitID" : "06FF9F94-BD00-4E7A-8FCE-21B6F1BA0263",
+        "datasheetID" : "space-marines--techmarine",
+        "enhancementIDs" : [
+          "space-marines--phobos-shadow-force--venator-omni-auspex"
         ],
-        "attachedToUnitID": "08BF3483-D30B-491F-8B40-D0424BFA0374"
+        "id" : "91993EFB-9C86-4FE9-BEED-94A5BF8DE71C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9438F6B4-D2D9-4CFE-AD1D-F0DDEC8D4BA2",
-        "datasheetID": "space-marines--land-speeder-storm",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--assault-intercessors-with-jump-packs",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4CAF6F04-64A0-4629-9D84-D4C62FCDC5BE",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "31054B51-B977-4F13-A037-F30FB8A82C36",
-        "datasheetID": "space-marines--inceptor-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--centurion-devastator-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5A672607-5F7E-46A0-93D0-672E1BDE0F5B",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "6B8B0CB3-59D3-45CF-9E19-05549749A812",
-        "datasheetID": "space-marines--imperial-space-marine",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--astraeus",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1862A7D7-4E2C-4EEE-B926-0E2A9B3A3557",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "534F9E2F-FA09-4C1F-A477-849B2EEFD836",
-        "datasheetID": "space-marines--chaplain-venerable-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "36BBA02F-69D7-49D0-B080-6432E858473A",
-        "datasheetID": "space-marines--fire-raptor-gunship",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "C71D78AB-A1B8-4D75-A24A-B0745503C753",
-        "datasheetID": "space-marines--repulsor",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "08BF3483-D30B-491F-8B40-D0424BFA0374",
-        "datasheetID": "space-marines--assault-intercessor-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-marines--assault-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "06FF9F94-BD00-4E7A-8FCE-21B6F1BA0263",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "F0077FD0-0A1C-4938-8C25-D96260F72E3E",
-    "notes": "stress seed=23 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "91993EFB-9C86-4FE9-BEED-94A5BF8DE71C"
+  },
+  "notes" : "auto-built"
 }
