@@ -913,10 +913,13 @@ func TestCheckResults(t *testing.T) {
 func TestBranches(t *testing.T) {
 	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-branches"))
 	const (
-		gotest  = "system:serviceaccount:check-gotest:check-gotest"
-		bot     = "system:serviceaccount:checks:bot"
-		core    = "system:serviceaccount:git-k8s:git-k8s"
-		approve = "git-k8s controllers can't approve branches"
+		gotest         = "system:serviceaccount:check-gotest:check-gotest"
+		bot            = "system:serviceaccount:checks:bot"
+		core           = "system:serviceaccount:git-k8s:git-k8s"
+		deps           = "system:serviceaccount:git-k8s-deps:git-k8s-deps"
+		otherDeps      = "system:serviceaccount:deps:git-k8s-deps"
+		approve        = "git-k8s controllers can't approve branches"
+		depsCantChange = "git-k8s-deps can't change GitBranch objects"
 	)
 	old := gitBranch(nil)
 	labeled := gitBranch(func(meta, _ map[string]any) { meta["labels"] = map[string]any{"e2e": "changed"} })
@@ -994,6 +997,32 @@ func TestBranches(t *testing.T) {
 		name: "the core program approves a branch",
 		r:    update(core, none, approvedBy(core)),
 		want: approve,
+	}, {
+		name: "git-k8s-deps updates a GitBranch without changing it",
+		r:    update(deps, none, old),
+	}, {
+		name: "git-k8s-deps adds a label",
+		r:    update(deps, none, labeled),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps changes a branch's spec",
+		r:    update(deps, none, moved),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps creates a GitBranch",
+		r:    request{user: deps, operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps approves a branch",
+		r:    update(deps, none, approvedBy(deps)),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps in another namespace adds a label",
+		r:    update(otherDeps, none, labeled),
+	}, {
+		name: "git-k8s-deps in another namespace with an empty entry adds a label",
+		r:    update(otherDeps, checksConfigMap("deps.git-k8s-deps", ""), labeled),
+		want: emptied(otherDeps),
 	}, {
 		name: "another service account in a check's namespace adds a label",
 		r:    update("system:serviceaccount:checks:deployer", checksConfigMap("checks.bot", ""), labeled),

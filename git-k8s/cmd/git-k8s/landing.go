@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"unicode"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -203,7 +204,10 @@ func (m *merger) fixedAfterSquash(spec *gitk8s.GitBranchSpec, log []git.LogEntry
 // commit's subject, keeps the trailers of the commits that aren't fixes,
 // such as Signed-off-by, and credits the other authors with
 // Co-authored-by trailers. The message never has the fixer trailer, so the
-// squashed commit doesn't count as a fix.
+// squashed commit doesn't count as a fix. It always has every line of log's
+// messages, fixes and merges included, that starts with the agent trailer.
+// check-risk rates a change by those lines and its results have filesOnly,
+// so its result for the branch's head counts for the squashed commit.
 func squashMessage(log []git.LogEntry) (from git.LogEntry, message string) {
 	var commits, people []git.LogEntry
 	for _, c := range log {
@@ -221,9 +225,11 @@ func squashMessage(log []git.LogEntry) (from git.LogEntry, message string) {
 	if len(people) == 0 {
 		people = commits
 	}
+	agents := agentLines(log)
 	first := people[0]
 	if len(people) == 1 {
-		return first, withoutFixerTrailers(first.Message)
+		join := slices.ContainsFunc(first.Trailers, func(t string) bool { return !fixerTrailer(t) })
+		return first, appendTrailers(withoutFixerTrailers(first.Message), agents, join)
 	}
 	var msg strings.Builder
 	msg.WriteString(first.Subject() + "\n\n")
@@ -234,6 +240,7 @@ func squashMessage(log []git.LogEntry) (from git.LogEntry, message string) {
 	for _, c := range people {
 		trailers = append(trailers, c.Trailers...)
 	}
+	trailers = append(trailers, agents...)
 	credited := map[string]bool{strings.ToLower(first.Author.Email): true}
 	for _, c := range people {
 		if email := strings.ToLower(c.Author.Email); !credited[email] {
@@ -253,15 +260,54 @@ func squashMessage(log []git.LogEntry) (from git.LogEntry, message string) {
 	return first, withoutFixerTrailers(msg.String())
 }
 
+// agentLines returns the lines of log's messages that start with the agent
+// trailer, without trailing spaces or repeats. check-risk counts a commit
+// with such a line, anywhere in its message, as a change from an AI agent.
+func agentLines(log []git.LogEntry) []string {
+	var lines []string
+	for _, c := range log {
+		for line := range strings.SplitSeq(c.Message, "\n") {
+			line = strings.TrimRightFunc(line, unicode.IsSpace)
+			if strings.HasPrefix(line, git.AgentTrailer+":") && !slices.Contains(lines, line) {
+				lines = append(lines, line)
+			}
+		}
+	}
+	return lines
+}
+
+// appendTrailers returns msg with each of trailers that isn't already one
+// of its lines added at the end. They join the trailers that msg ends with
+// when join is set, and start a paragraph otherwise.
+func appendTrailers(msg string, trailers []string, join bool) string {
+	have := map[string]bool{}
+	for line := range strings.SplitSeq(msg, "\n") {
+		have[strings.TrimRightFunc(line, unicode.IsSpace)] = true
+	}
+	missing := slices.DeleteFunc(slices.Clone(trailers), func(t string) bool { return have[t] })
+	if len(missing) == 0 {
+		return msg
+	}
+	sep := "\n\n"
+	if join {
+		sep = "\n"
+	}
+	return strings.TrimRight(msg, "\n") + sep + strings.Join(missing, "\n") + "\n"
+}
+
+// fixerTrailer reports whether git's trailer parser reads line as the fixer
+// trailer. The parser ignores the key's case and spaces before the colon,
+// and prints such a trailer as "Git-K8s-Fixer: x".
+func fixerTrailer(line string) bool {
+	key, _, ok := strings.Cut(line, ":")
+	return ok && strings.EqualFold(strings.TrimSpace(key), git.FixerTrailer)
+}
+
 // withoutFixerTrailers returns msg without the lines that git's trailer
-// parser reads as the fixer trailer. The parser ignores the key's case and
-// spaces before the colon, and prints such a trailer as "Git-K8s-Fixer: x".
+// parser reads as the fixer trailer.
 func withoutFixerTrailers(msg string) string {
 	lines := strings.Split(msg, "\n")
-	kept := slices.DeleteFunc(slices.Clone(lines), func(line string) bool {
-		key, _, ok := strings.Cut(line, ":")
-		return ok && strings.EqualFold(strings.TrimSpace(key), git.FixerTrailer)
-	})
+	kept := slices.DeleteFunc(slices.Clone(lines), fixerTrailer)
 	if len(kept) == len(lines) {
 		return msg
 	}

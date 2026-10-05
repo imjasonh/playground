@@ -397,7 +397,7 @@ func (x *run) commit(ctx context.Context, repo *git.Repo, res *Result) (string, 
 	for i, f := range res.Files {
 		paths[i] = f.Path
 	}
-	msg := fmt.Sprintf("Apply changes from the %s agent\n\n%s\n\n%s\n\n%s: %s\n", x.r.Name, res.Summary, strings.Join(paths, "\n"), git.FixerTrailer, x.r.Name)
+	msg := fmt.Sprintf("Apply changes from the %s agent\n\n%s\n\n%s\n\n%s: %s\n%s: %s\n", x.r.Name, res.Summary, strings.Join(paths, "\n"), git.FixerTrailer, x.r.Name, git.AgentTrailer, x.r.Name)
 	return x.in.CommitTree(ctx, tree, []string{head}, msg, c.Time)
 }
 

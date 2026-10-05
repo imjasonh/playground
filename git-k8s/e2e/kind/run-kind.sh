@@ -8,15 +8,17 @@
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
 # It plays the external repository: only the mirror in the core program
-# reaches it, and the checks and test Pods fetch and push through the
-# mirror. The script reaches the mirror through kubectl port-forward, with
-# service account tokens for the mirror's audience. Like a forge that
-# requires signed commits, the git server rejects a push that adds a commit
-# that isn't signed with its committer's key, so this test signs its own
-# commits, and git-k8s signs the commits that it makes.
+# and git-k8s-deps's update Pods reach it, and the checks, git-k8s-deps,
+# and test Pods fetch and push through the mirror. The script reaches the
+# mirror through kubectl port-forward, with service account tokens for the
+# mirror's audience. Like a forge that requires signed commits, the git
+# server rejects a push that adds a commit that isn't signed with its
+# committer's key, so this test signs its own commits, and git-k8s signs the
+# commits that it makes.
 #
-# A module proxy on this machine serves the one module that a tested branch
-# depends on, as go-cache's upstream.
+# The git server also serves a Go module proxy at /proxy/, without a
+# password. A second module proxy on this machine serves the one module that
+# the tested repository's branches depend on, as go-cache's upstream.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -79,6 +81,7 @@ diagnose() {
   k -n "${NS}" get pods,networkpolicies -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
+  k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-deps || true
   k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels || true
   k -n git-k8s get configmap git-k8s-checks -o yaml || true
   for program in git-k8s go-cache "${CHECKS[@]}"; do
@@ -203,7 +206,8 @@ ssh-keygen -q -t ed25519 -N '' -C "${IDENTITY}" -f "${WORKDIR}/git-k8s-key"
 printf 'e2e@example.com namespaces="git" %s\n%s namespaces="git" %s\n' \
   "$(cat "${WORKDIR}/e2e-key.pub")" "${IDENTITY}" "$(cat "${WORKDIR}/git-k8s-key.pub")" >"${ALLOWED_SIGNERS}"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  -allowed-signers="${ALLOWED_SIGNERS}" -kube-context="${CONTEXT}" >"${WORKDIR}/gitserver.log" 2>&1 &
+  -goproxy="${WORKDIR}/proxy" -allowed-signers="${ALLOWED_SIGNERS}" -kube-context="${CONTEXT}" \
+  >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -2104,10 +2108,216 @@ eventually 60 no_agent_pods
 echo "The git server rewound c/refused while the base check added a commit in the mirror, and the conflicts check replayed that commit onto the git server's head, so the commits that the rewind dropped stayed out."
 echo "::endgroup::"
 
+echo "::group::A controller keeps Go modules up to date on branches"
+# The deps repository requires example.com/greet from the git server's
+# module proxy. git-k8s-deps takes a version only once it's 20 seconds old,
+# both since git-k8s-deps first saw it and by the proxy's time for it, so
+# the versions that it should take are backdated.
+(cd "${ROOT}" && go build -o "${WORKDIR}/publish" ./e2e/publish)
+publish() {
+  local dir
+  dir="$(mktemp -d "${WORKDIR}/greet.XXXXXX")"
+  printf 'module example.com/greet\n\ngo 1.24\n' >"${dir}/go.mod"
+  printf 'package greet\n\n%s\n' "$3" >"${dir}/greet.go"
+  "${WORKDIR}/publish" -root="${WORKDIR}/proxy" -dir="${dir}" -version="$1" -time="$2"
+}
+long_ago=2020-01-01T00:00:00Z
+publish v1.0.0 "${long_ago}" 'func Hello() string { return "hello" }'
+DEPS="${WORKDIR}/deps"
+git init -q -b main "${DEPS}"
+dg() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${DEPS}" \
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
+}
+printf 'module example.com/deps\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n' >"${DEPS}/go.mod"
+# The fake agent replaces a line that holds FAKE AGENT FIX with the text
+# after it, which calls Hello as v1.1.0 declares it.
+cat >"${DEPS}/greeting.go" <<'GO'
+package deps
+
+import "example.com/greet"
+
+// Greeting greets the world.
+func Greeting() string {
+	return greet.Hello() + ", world" // FAKE AGENT FIX: return greet.Hello("world")
+}
+GO
+cat >"${DEPS}/greeting_test.go" <<'GO'
+package deps
+
+import "testing"
+
+func TestGreeting(t *testing.T) {
+	if got := Greeting(); got != "hello, world" {
+		t.Errorf("Greeting() = %q, want %q", got, "hello, world")
+	}
+}
+GO
+# The go command on PATH can be older than the module's go line, so use the
+# toolchain that git-k8s's go.mod selects.
+go_cmd="$(cd "${ROOT}" && go env GOROOT)/bin/go"
+(cd "${DEPS}" && GOPROXY="http://127.0.0.1:${GIT_PORT}/proxy" GOSUMDB=off GOFLAGS=-modcacherw \
+  GOMODCACHE="${WORKDIR}/modcache" "${go_cmd}" mod tidy)
+dg add -A
+dg commit -qm "Greet the world"
+dg push -q "${HOST_URL}/deps.git" HEAD:main
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: deps
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/deps.git
+  secretRef:
+    name: app-creds
+  signingKeyRef:
+    name: app-signing
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gotest
+          - name: deps
+            mayPush: true
+          - name: risk
+          - name: approval
+        when: >-
+          checks.base.passed && checks.gotest.passed && checks.deps.passed &&
+          (checks.risk.outputs.level == "low" || checks.approval.passed)
+        deleteMergedBranches: true
+    - match: deps/**
+      parent: main
+EOF
+CHECKS+=(check-deps git-k8s-deps)
+# Test Pods get modules only from go-cache, and the go-cache group stopped
+# its upstream. go-cache now fetches from the git server's module proxy,
+# which git-k8s-deps reads too, so test Pods get the versions that
+# git-k8s-deps takes.
+install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+  "-upstream=${CLUSTER_URL}/proxy" -max-size=512Mi
+install check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
+  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
+k -n go-cache rollout status deployment/go-cache --timeout=180s
+k -n check-deps rollout status deployment/check-deps --timeout=180s
+k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
+GREET_BRANCH="deps/go/example.com/greet@v1"
+deps_main_requires() {
+  dg fetch -q "${HOST_URL}/deps.git" main && dg show FETCH_HEAD:go.mod | grep -qx "require example.com/greet $1"
+}
+greet_branch_gone() { [[ -z "$(remote_head "${GREET_BRANCH}" deps)" && -z "$(branch_object "${GREET_BRANCH}" deps)" ]]; }
+no_deps_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=git-k8s-deps -o name)" ]]; }
+
+publish v1.0.1 "${long_ago}" '// Hello says hello.
+func Hello() string { return "hello" }'
+eventually 300 deps_main_requires v1.0.1
+dg log -1 --format=%B FETCH_HEAD
+dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Deps: go example.com/greet v1.0.1'
+signed_by_git_k8s FETCH_HEAD dg
+eventually 60 greet_branch_gone
+eventually 60 no_deps_pods
+echo "git-k8s-deps signed and pushed v1.0.1 to ${GREET_BRANCH}, which landed without approval because a patch release is low risk."
+
+# v1.1.0 changes Hello, so the update breaks the build until the agent fixes
+# the call. The proxy's time for v1.2.0 is years ahead, so it's too new to
+# take.
+deps_main="$(remote_head main deps)"
+publish v1.1.0 "${long_ago}" 'func Hello(name string) string { return "hello, " + name }'
+publish v1.2.0 2100-01-01T00:00:00Z '// Hello says hello to name.
+func Hello(name string) string { return "hello, " + name }'
+dep() { k -n "${NS}" get gitbranch "$(branch_object "${GREET_BRANCH}" deps)" -o jsonpath="{.status.checks.$1}"; }
+fixed_and_waiting() {
+  [[ -n "$(branch_object "${GREET_BRANCH}" deps)" ]] &&
+    dg fetch -q "${HOST_URL}/deps.git" "refs/heads/${GREET_BRANCH}" &&
+    dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Agent: deps' &&
+    [[ "$(dep gotest.commit)" == "$(dg rev-parse FETCH_HEAD)" && "$(dep gotest.state)" == Passed ]] &&
+    [[ "$(dep deps.commit)" == "$(dg rev-parse FETCH_HEAD)" && "$(dep deps.state)" == Passed ]] &&
+    [[ "$(dep risk.outputs.level)" == high && "$(dep approval.state)" == Failed ]]
+}
+eventually 600 fixed_and_waiting
+fixed="$(dg rev-parse FETCH_HEAD)"
+dg log -2 --format=%B FETCH_HEAD
+dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: deps'
+dg log -1 --format=%B FETCH_HEAD^ | grep -qx 'Git-K8s-Deps: go example.com/greet v1.1.0'
+signed_by_git_k8s FETCH_HEAD dg
+signed_by_git_k8s FETCH_HEAD^ dg
+dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
+sleep 6
+[[ "$(remote_head main deps)" == "${deps_main}" ]]
+# config/approved-by.yaml sets approved-by to whoever sets approve.
+approver="$(k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "${APPROVE}=${fixed}" \
+  -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}')"
+[[ "${approver}" == "${admin}" ]]
+deps_landed() { [[ "$(remote_head main deps)" == "${fixed}" ]]; }
+eventually 120 deps_landed
+eventually 60 greet_branch_gone
+eventually 60 no_deps_pods
+eventually 60 no_agent_pods
+sleep 12
+[[ -z "$(remote_head "${GREET_BRANCH}" deps)" ]]
+deps_main_requires v1.1.0
+echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix, and the fix landed once ${approver} approved it. v1.2.0 is too new, so no branch takes it."
+
+# git-k8s-deps doesn't have the approve verb, so git-k8s-approvals stops it
+# from approving. The API server reports only one of the policies that deny
+# a request, and not always the same one, so git-k8s-deps gets the verb here
+# and names itself in approved-by, which leaves git-k8s-branches as the only
+# policy that stops it.
+deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
+can_approve() {
+  [[ "$(k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com "--as=${deps_sa}" || true)" == "$1"* ]]
+}
+can_approve no
+k create clusterrolebinding git-k8s-e2e-deps-approve --clusterrole=git-k8s-e2e-approve \
+  --serviceaccount=git-k8s-deps:git-k8s-deps
+eventually 30 can_approve yes
+deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
+code="$(patch_branch "${deps_token}" '{}')"
+[[ "${code}" == 200 ]]
+for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
+  '{"metadata":{"labels":{"e2e":"changed"}}}'; do
+  code="$(patch_branch "${deps_token}" "${patch}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]]
+  grep -q "git-k8s-deps can't change GitBranch objects" "${WORKDIR}/patch.json"
+done
+k delete clusterrolebinding git-k8s-e2e-deps-approve
+echo "git-k8s-deps can't approve a GitBranch, even with the approve verb, or change one."
+
+can_i() { k auth can-i "$1" configmaps -n "$2" "--as=${deps_sa}" || true; }
+for verb in get create patch; do
+  [[ "$(can_i "${verb}" git-k8s-deps)" == yes ]]
+  [[ "$(can_i "${verb}" "${NS}")" == no* ]]
+done
+for verb in list delete; do
+  [[ "$(can_i "${verb}" git-k8s-deps)" == no* ]]
+done
+first_seen() { k -n git-k8s-deps get configmap git-k8s-deps-first-seen -o jsonpath='{.data.first-seen}'; }
+seen_line() { grep -F "${CLUSTER_URL}/proxy example.com/greet $1 " <<<"$(first_seen)"; }
+eventually 60 seen_line v1.2.0
+first_seen
+seen_v120="$(seen_line v1.2.0)"
+k -n git-k8s-deps rollout restart deployment/git-k8s-deps
+k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
+publish v1.2.1 2100-01-01T00:00:00Z '// Hello says hello to name.
+func Hello(name string) string { return "hello, " + name }'
+eventually 120 seen_line v1.2.1
+first_seen
+[[ "$(seen_line v1.2.0)" == "${seen_v120}" ]]
+echo "git-k8s-deps keeps when it first saw each version in a ConfigMap in its own namespace, the only one where it can read and write ConfigMaps, and kept v1.2.0's time through a restart."
+echo "::endgroup::"
+
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
   k -n "${NS}" get gitrepositories,gitbranches \
     -o jsonpath='{range .items[*]}{.kind}/{.metadata.name}={.metadata.resourceVersion} {end}'
+  k -n git-k8s-deps get configmap git-k8s-deps-first-seen \
+    -o jsonpath='{.kind}/{.metadata.name}={.metadata.resourceVersion}'
 }
 idle() {
   local before after

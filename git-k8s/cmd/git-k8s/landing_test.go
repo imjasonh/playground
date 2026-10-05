@@ -197,12 +197,47 @@ func TestSquashLanding(t *testing.T) {
 	}
 }
 
+// TestSquashKeepsAgentTrailers squashes a person's commit and an agent's
+// fix. check-risk's results count for the squashed commit, so it must still
+// count as a change from an agent.
+func TestSquashKeepsAgentTrailers(t *testing.T) {
+	f, b, w := branches(t)
+	w.Write("x.txt", "x, reviewed\n")
+	w.Commit("Apply changes from the review agent\n\nFix x.\n\nx.txt\n\nGit-K8s-Fixer: review\nGit-K8s-Agent: review")
+	refresh(t, f, b)
+	main := b.Spec.ParentHead
+	if err := landAs(t, f, b, gitk8s.Squash); err != nil {
+		t.Fatal(err)
+	}
+	squashed := w.Fetch("main")
+	if got, want := w.Git("log", "-1", "--format=%B", squashed), "add x\n\nGit-K8s-Agent: review"; got != want {
+		t.Errorf("squashed message = %q, want %q", got, want)
+	}
+	repo, err := (&git.Git{}).Open(t.Context(), filepath.Join(w.Dir, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, head := range []string{b.Spec.Head, squashed} {
+		if n, err := repo.CountCommits(t.Context(), main, head, git.AgentTrailer); err != nil || n != 1 {
+			t.Errorf("CountCommits(%s, %s) = %d, %v; want 1", gitk8s.Short(main), gitk8s.Short(head), n, err)
+		}
+	}
+}
+
 func TestSquashMessage(t *testing.T) {
 	ana := git.Signature{Name: "Ana Lima", Email: "ana@example.com", Date: "1700000000 -0800"}
 	bo := git.Signature{Name: "Bo Chen", Email: "bo@example.com", Date: "1700000100 +0000"}
 	anaSigned := "Signed-off-by: Ana Lima <ana@example.com>"
 	fix := git.LogEntry{Parents: []string{"p"}, Author: bo, Message: "Format Go files with gofmt\n\nGit-K8s-Fixer: gofmt\n", Trailers: []string{"Git-K8s-Fixer: gofmt"}}
 	merge := git.LogEntry{Parents: []string{"p", "q"}, Author: bo, Message: "Merge main into c/x\n\nGit-K8s-Fixer: base\n", Trailers: []string{"Git-K8s-Fixer: base"}}
+	agentFix := func(name string) git.LogEntry {
+		return git.LogEntry{
+			Parents:  []string{"p"},
+			Author:   bo,
+			Message:  "Apply changes from the " + name + " agent\n\nFix it.\n\nGit-K8s-Fixer: " + name + "\nGit-K8s-Agent: " + name + "\n",
+			Trailers: []string{"Git-K8s-Fixer: " + name, "Git-K8s-Agent: " + name},
+		}
+	}
 	for _, tt := range []struct {
 		name    string
 		log     []git.LogEntry
@@ -265,6 +300,59 @@ func TestSquashMessage(t *testing.T) {
 		log:     []git.LogEntry{{Parents: []string{"p", "q"}, Author: ana, Message: "Merge feature\n"}},
 		author:  ana,
 		message: "Merge feature\n",
+	}, {
+		name:    "one person's commit and an agent's fix",
+		log:     []git.LogEntry{{Parents: []string{"p"}, Author: ana, Message: "Add y\n\nWith a body.\n"}, agentFix("review")},
+		author:  ana,
+		message: "Add y\n\nWith a body.\n\nGit-K8s-Agent: review\n",
+	}, {
+		name: "one person's commit with a trailer, agents' fixes, and a merge with the agent trailer",
+		log: []git.LogEntry{
+			{Parents: []string{"p"}, Author: ana, Message: "Add y\n\n" + anaSigned + "\n", Trailers: []string{anaSigned}},
+			agentFix("review"),
+			{Parents: []string{"p", "q"}, Author: bo, Message: "Merge main into c/x\n\nGit-K8s-Fixer: base\nGit-K8s-Agent: base\n", Trailers: []string{"Git-K8s-Fixer: base", "Git-K8s-Agent: base"}},
+			agentFix("deps"),
+			agentFix("review"),
+		},
+		author:  ana,
+		message: "Add y\n\n" + anaSigned + "\nGit-K8s-Agent: review\nGit-K8s-Agent: base\nGit-K8s-Agent: deps\n",
+	}, {
+		name: "one person's commit with only a trailer like the fixer trailer, and an agent's fix",
+		log: []git.LogEntry{
+			{Parents: []string{"p"}, Author: ana, Message: "Add y\n\ngit-k8s-fixer: x\n", Trailers: []string{"git-k8s-fixer: x"}},
+			agentFix("review"),
+		},
+		author:  ana,
+		message: "Add y\n\nGit-K8s-Agent: review\n",
+	}, {
+		name: "one person's commit with the agent trailer",
+		log: []git.LogEntry{
+			{Parents: []string{"p"}, Author: ana, Message: "Add y\n\nGit-K8s-Agent: review\n", Trailers: []string{"Git-K8s-Agent: review"}},
+			{
+				Parents:  []string{"p"},
+				Author:   bo,
+				Message:  "Apply changes from the review agent\n\nGit-K8s-Fixer: review\nGit-K8s-Agent: review  \n",
+				Trailers: []string{"Git-K8s-Fixer: review", "Git-K8s-Agent: review"},
+			},
+		},
+		author:  ana,
+		message: "Add y\n\nGit-K8s-Agent: review\n",
+	}, {
+		name: "several commits and agents' fixes",
+		log: []git.LogEntry{
+			{Parents: []string{"p"}, Author: ana, Message: "Add y\n\n" + anaSigned + "\n", Trailers: []string{anaSigned}},
+			agentFix("review"),
+			{Parents: []string{"p"}, Author: bo, Message: "Add z\n"},
+			agentFix("review"),
+		},
+		author: ana,
+		message: "Add y\n\n* Add y\n* Apply changes from the review agent\n* Add z\n* Apply changes from the review agent\n\n" +
+			anaSigned + "\nGit-K8s-Agent: review\nCo-authored-by: Bo Chen <bo@example.com>\n",
+	}, {
+		name:    "only an agent's fix",
+		log:     []git.LogEntry{merge, agentFix("review")},
+		author:  bo,
+		message: "Apply changes from the review agent\n\nFix it.\n\nGit-K8s-Agent: review\n",
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
 			from, message := squashMessage(tt.log)

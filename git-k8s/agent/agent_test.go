@@ -304,7 +304,7 @@ func TestPushesTheAgentsChanges(t *testing.T) {
 		t.Errorf("a.txt = %q", got)
 	}
 	msg := f.work.Git("log", "-1", "--format=%P%n%B", fix)
-	if !strings.HasPrefix(msg, head+"\n") || !strings.Contains(msg, "1 added line holds DO NOT MERGE") || !strings.Contains(msg, git.FixerTrailer+": review") {
+	if !strings.HasPrefix(msg, head+"\n") || !strings.Contains(msg, "1 added line holds DO NOT MERGE") || !strings.HasSuffix(msg, git.FixerTrailer+": review\n"+git.AgentTrailer+": review") {
 		t.Errorf("fix's parent and message =\n%s", msg)
 	}
 }
