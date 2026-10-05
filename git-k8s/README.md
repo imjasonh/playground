@@ -2018,7 +2018,9 @@ protection rules and rulesets apply to those pushes:
 
 When GitHub refuses a check's commit or a landing, the reason that it gives
 shows up on the `GitBranch`. For a check's commit, the check's result in
-`status.checks` has state `Error` and the reason in its message. For a
+`status.checks` has state `Error` and the reason in its message, except for
+the commit that `check-conflicts` pushes to `resolve/BRANCH`, which a
+`Warning` `ResolvingDivergence` [event](#events) on `BRANCH` reports. For a
 landing, the `Synced` condition is `False` and has the reason in its
 message. git-k8s retries those pushes, waiting longer each time, up to about
 5 minutes. When GitHub refuses only what a squash or rebase landing pushes

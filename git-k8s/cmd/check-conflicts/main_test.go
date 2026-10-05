@@ -2673,12 +2673,13 @@ func TestSignsWhatItPushes(t *testing.T) {
 	t.Run("a branch that resolves a diverged parent", func(t *testing.T) {
 		srv := gittest.NewServer(t, "")
 		b, w, _, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
-		if _, err := reconcile(t, srv, b, rules, o, signer); err != nil {
+		rec, err := reconcile(t, srv, b, rules, o, signer)
+		if err != nil {
 			t.Fatal(err)
 		}
 		pushed := w.Fetch("resolve/main")
-		if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
-			t.Fatalf("result = %+v, want Running after pushing resolve/main at %s", res, pushed)
+		if got := rec.Events(); len(got) != 1 || got[0].Reason != "PushedFix" || !strings.HasPrefix(got[0].Note, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
+			t.Fatalf("events = %+v, want PushedFix for resolve/main at %s", got, pushed)
 		}
 		if err := signer.Verify(w.Dir, pushed); err != nil {
 			t.Error(err)
@@ -2688,12 +2689,13 @@ func TestSignsWhatItPushes(t *testing.T) {
 
 func TestReadsTheSigningKeyOnlyToPushAResolveBranch(t *testing.T) {
 	for _, tc := range []struct {
-		name, state, want string
-		rules             []gitk8s.BranchRule
+		name, want string
+		fails      bool
+		rules      []gitk8s.BranchRule
 	}{{
 		name:  "when the policy lets it push",
 		rules: rules,
-		state: gitk8s.Error,
+		fails: true,
 		want:  "Secret app-signing doesn't exist",
 	}, {
 		name: "when the policy doesn't let it push",
@@ -2701,22 +2703,23 @@ func TestReadsTheSigningKeyOnlyToPushAResolveBranch(t *testing.T) {
 			{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "conflicts"}}}},
 			{Match: "**", Parent: "main"},
 		},
-		state: gitk8s.Failed,
-		want:  "the policy doesn't let this check push resolve/main",
+		want: "the policy doesn't let this check push resolve/main",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "")
 			b, _, _, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
 			repo, secret := srv.Repository("app", tc.rules...)
 			repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
-			ctx, _ := kube.Fake(t.Context(), b, repo, secret, o)
+			ctx, rec := kube.Fake(t.Context(), b, repo, secret, o)
 			cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
-			err := newReconciler(cfg).Reconcile(ctx, b)
-			if (err != nil) != (tc.state == gitk8s.Error) {
+			if err := newReconciler(cfg).Reconcile(ctx, b); (err != nil) != tc.fails {
 				t.Errorf("Reconcile = %v", err)
 			}
-			if res := b.Status.Checks.Result; res.State != tc.state || !strings.Contains(res.Message, tc.want) {
-				t.Errorf("result = %+v, want %s with %q", res, tc.state, tc.want)
+			if res := b.Status.Checks.Result; res != nil {
+				t.Errorf("result = %+v, want none, because main has no parent", res)
+			}
+			if got := rec.Events(); len(got) != 1 || got[0].Type != kube.Warning || got[0].Reason != "ResolvingDivergence" || !strings.Contains(got[0].Note, tc.want) {
+				t.Errorf("events = %+v, want a Warning with %q", got, tc.want)
 			}
 			if _, ok := srv.Heads(t, "app")["resolve/main"]; ok {
 				t.Error("pushed resolve/main without a signature")
