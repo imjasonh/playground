@@ -15,8 +15,11 @@ import (
 // recorded.
 func mergeEvents(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch) ([]kube.Event, error) {
 	t.Helper()
+	if b.Status.Queued == nil {
+		b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
+	}
 	repo, secret := srv.Repository("app", rules()...)
-	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
+	ctx, rec := kube.Fake(t.Context(), b, repo, secret, parentOf(b, b.Spec.Branch))
 	err := (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b)
 	return rec.Events(), err
 }
@@ -27,6 +30,11 @@ func TestRecordsLandingEvents(t *testing.T) {
 		reasons []string
 	}{
 		"lands and deletes": {func(*gitk8s.GitBranch) {}, []string{reasonLanded, "DeletedBranch"}},
+		"lands without a queue": {func(b *gitk8s.GitBranch) {
+			p := *policy
+			p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt", MayPush: true}}
+			b.Spec.Merge = &p
+		}, []string{reasonLanded, "DeletedBranch"}},
 		"keeps the branch": {func(b *gitk8s.GitBranch) {
 			p := *policy
 			p.DeleteMergedBranches = false

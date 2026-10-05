@@ -175,8 +175,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	// A result with filesOnly from before the check stopped setting
 	// FilesOnly must not count for a squashed or rebased commit, so the
 	// check runs again. A result without filesOnly is only cautious.
-	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit &&
-		(r.check.FilesOnly || !cur.FilesOnly) && (r.check.Stale == nil || !r.check.Stale(ctx, meta, spec, cur)) {
+	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit && (r.check.FilesOnly || !cur.FilesOnly) &&
+		(r.check.Stale == nil || !r.check.Stale(ctx, meta, spec, cur)) {
 		return nil
 	}
 

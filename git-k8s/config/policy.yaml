@@ -69,6 +69,10 @@ spec:
         (has(oldObject.status) && has(oldObject.status.state) ? oldObject.status.state : "") &&
         (has(object.status) && has(object.status.conditions) ? object.status.conditions : []) ==
         (has(oldObject.status) && has(oldObject.status.conditions) ? oldObject.status.conditions : []) &&
+        (has(object.status) && has(object.status.queued) ? [object.status.queued] : []) ==
+        (has(oldObject.status) && has(oldObject.status.queued) ? [oldObject.status.queued] : []) &&
+        (has(object.status) && has(object.status.queue) ? object.status.queue : []) ==
+        (has(oldObject.status) && has(oldObject.status.queue) ? oldObject.status.queue : []) &&
         (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
         (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : []))
       messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
