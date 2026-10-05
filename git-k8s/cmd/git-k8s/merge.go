@@ -202,7 +202,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 	}
 	switch spec.Merge.Landing {
 	case gitk8s.Squash, gitk8s.Rebase:
-		if done, err := m.rewrite(ctx, local.Repo, b, results); err != nil || done {
+		if done, err := m.rewrite(ctx, repo, local.Repo, b, results); err != nil || done {
 			return err
 		}
 	}

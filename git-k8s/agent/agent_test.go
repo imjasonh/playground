@@ -21,6 +21,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -57,6 +58,9 @@ type fixture struct {
 	lastErr error
 	// remoteErr is what the check's remote returns, if it isn't nil.
 	remoteErr error
+	// signer, if it isn't nil, has the key that the repository names for
+	// signing commits.
+	signer *gittest.Signer
 
 	mu   sync.Mutex
 	body []byte
@@ -128,6 +132,9 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 		repo.Spec.PollInterval = f.poll
 	}
 	world := []any{repo}
+	if f.signer != nil {
+		world = append(world, f.signer.Sign(repo))
+	}
 	for _, p := range pods {
 		world = append(world, p)
 	}
@@ -139,7 +146,7 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	if err := f.remoteErr; err != nil {
 		remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) { return git.Remote{}, err }
 	}
-	check := checks.Check{Name: "review", Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	check := checks.Check{Name: "review", Remote: remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		v, res := f.r.Run(ctx, in, f.task)
 		f.result = res
 		return v, nil
@@ -299,6 +306,21 @@ func TestPushesTheAgentsChanges(t *testing.T) {
 	msg := f.work.Git("log", "-1", "--format=%P%n%B", fix)
 	if !strings.HasPrefix(msg, head+"\n") || !strings.Contains(msg, "1 added line holds DO NOT MERGE") || !strings.Contains(msg, git.FixerTrailer+": review") {
 		t.Errorf("fix's parent and message =\n%s", msg)
+	}
+}
+
+func TestSignsTheAgentsChanges(t *testing.T) {
+	f := newFixture(t, "")
+	f.task.Edit = true
+	f.signer = gittest.NewSigner(t, "git-k8s@example.com")
+	p := f.start()
+	f.reconcile(finished(p, f.serve(review(Fail, File{Path: "a.txt", Mode: "100644", Content: []byte("one\n")}), p.UID)))
+	fix := f.work.Fetch("c/x")
+	if res := f.state(); res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
+	}
+	if err := f.signer.Verify(f.work.Dir, fix); err != nil {
+		t.Error(err)
 	}
 }
 

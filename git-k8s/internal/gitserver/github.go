@@ -42,6 +42,9 @@ type GitHub struct {
 	// Username and Password are an administrator's credentials, which can
 	// fetch and push, and read and write check runs, in every repository.
 	Username, Password string
+	// AllowedSigners makes the repositories that the fake creates require
+	// signed commits, as it does for Server.
+	AllowedSigners string
 	// Verify checks a bearer token that the exchange receives and returns
 	// its claims.
 	Verify func(ctx context.Context, token string) (Claims, error)
@@ -326,7 +329,7 @@ func (g *GitHub) git(w http.ResponseWriter, r *http.Request) {
 	}
 	r = r.Clone(r.Context())
 	r.URL.Path, r.URL.RawPath = "/"+m[2]+"/"+m[3], ""
-	(&Server{Root: filepath.Join(g.Root, m[1])}).ServeHTTP(w, r)
+	(&Server{Root: filepath.Join(g.Root, m[1]), AllowedSigners: g.AllowedSigners}).ServeHTTP(w, r)
 }
 
 type checkRunRequest struct {

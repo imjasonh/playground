@@ -33,10 +33,15 @@ func branch(t *testing.T, srv *gittest.Server, files map[string]string) (*Branch
 	return b, w
 }
 
-func reconcile(t *testing.T, srv *gittest.Server, b *Branch) error {
+// reconcile runs the check. With a signer, the GitRepository names its key.
+func reconcile(t *testing.T, srv *gittest.Server, b *Branch, signer ...*gittest.Signer) error {
 	t.Helper()
 	repo, _ := srv.Repository("app")
-	ctx, _ := kube.Fake(t.Context(), b, repo)
+	world := []any{repo}
+	for _, s := range signer {
+		world = append(world, s.Sign(repo))
+	}
+	ctx, _ := kube.Fake(t.Context(), b, world...)
 	c := check
 	c.Remote = srv.RemoteFor
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
@@ -75,6 +80,22 @@ func TestFormatsGoFiles(t *testing.T) {
 	}
 	if res := b.Status.Checks.Result; res.State != gitk8s.Passed {
 		t.Errorf("result for the fix = %+v, want Passed", res)
+	}
+}
+
+func TestSignsFix(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w := branch(t, srv, map[string]string{"util/add.go": unformatted})
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	if err := reconcile(t, srv, b, signer); err != nil {
+		t.Fatal(err)
+	}
+	fix := w.Fetch("c/x")
+	if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
+	}
+	if err := signer.Verify(w.Dir, fix); err != nil {
+		t.Error(err)
 	}
 }
 

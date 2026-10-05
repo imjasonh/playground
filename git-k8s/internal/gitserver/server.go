@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Server serves the bare repositories under Root, so the repository at
@@ -26,6 +28,15 @@ type Server struct {
 	// Username and Password, when Password is set, are the credentials
 	// that every request needs.
 	Username, Password string
+	// AllowedSigners, when set, is the path of an allowed signers file, as
+	// ssh-keygen(1) describes. The repositories that the server creates
+	// then reject a push that adds a commit unless the key that the file
+	// lists for the commit's committer email signed it, as a forge that
+	// requires signed commits does.
+	AllowedSigners string
+
+	// mu keeps requests out of a repository until ensure has set it up.
+	mu sync.Mutex
 }
 
 var repoRE = regexp.MustCompile(`^/([A-Za-z0-9][-A-Za-z0-9_.]*\.git)/(info/refs|git-upload-pack|git-receive-pack)$`)
@@ -88,13 +99,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ensure makes sure dir is a repository, creating it when create is set.
 func (s *Server) ensure(dir string, create bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); err == nil {
 		return nil
 	}
 	if !create {
 		return fmt.Errorf("no repository %s", filepath.Base(dir))
 	}
-	return Init(dir)
+	err := Init(dir)
+	if err == nil && s.AllowedSigners != "" {
+		err = requireSignatures(dir, s.AllowedSigners)
+	}
+	if err != nil {
+		// The check above takes any directory with a HEAD as set up.
+		return errors.Join(err, os.RemoveAll(dir))
+	}
+	return nil
 }
 
 func (s *Server) run(w http.ResponseWriter, service, dir, protocol string, stdin io.Reader, extra ...string) {

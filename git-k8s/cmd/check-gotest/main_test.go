@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -139,6 +140,18 @@ func TestStartsSandboxedPod(t *testing.T) {
 	}
 	if mountsToken(tester) {
 		t.Error("the test container can read the token")
+	}
+}
+
+func TestPodNeverSeesSigningKey(t *testing.T) {
+	b, repo := branch()
+	repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
+	spec, err := json.Marshal(started(t, b, repo).Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(spec), "app-signing") {
+		t.Errorf("the test Pod refers to the signing key's Secret: %s", spec)
 	}
 }
 

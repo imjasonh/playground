@@ -25,6 +25,8 @@ package main
 
 import (
 	"flag"
+	"log/slog"
+	"os"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
@@ -54,6 +56,15 @@ func main() {
 		m.Prefixes = append(m.Prefixes, p)
 		return nil
 	})
+	// A container that's killed while a landing signs a commit leaves the
+	// key in os.TempDir, which generate puts on a volume that outlives the
+	// container. Outside a Pod, as in generate or a run with -kubeconfig,
+	// other processes can be signing in the same directory.
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		if err := git.RemoveSigningKeys(); err != nil {
+			slog.Warn("removing signing keys that an earlier run left", "err", err)
+		}
+	}
 	kube.Main(
 		kube.Install(func() []byte {
 			if !repos.installPolicies {

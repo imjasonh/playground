@@ -482,11 +482,11 @@ func TestFetchMergePush(t *testing.T) {
 	}
 	id := git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}
 	msg := "Merge main into c/x\n\n" + git.FixerTrailer + ": base\n"
-	merge, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000)
+	merge, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000)
+	again, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000, nil)
 	if err != nil || again != merge {
 		t.Errorf("CommitTree isn't deterministic: %s then %s (%v)", merge, again, err)
 	}
@@ -517,6 +517,9 @@ func TestFetchMergePush(t *testing.T) {
 	if !errors.As(err, &rejected) || !rejected.Refused("refs/heads/c/x") || rejected.Refused("refs/heads/main") ||
 		rejected.Rejected["refs/heads/c/x"] != "[remote rejected] (deletion prohibited)" {
 		t.Errorf("push that deletes a branch the remote won't delete: err = %v, want the remote to refuse only the deletion", err)
+	}
+	if got, want := rejected.Reason("refs/heads/c/x"), "[remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x"; got != want {
+		t.Errorf("Reason = %q, want %q", got, want)
 	}
 	if heads := srv.Heads(t, "app"); heads["main"] != parent || heads["c/x"] != merge {
 		t.Errorf("heads = %v, want them as they were", heads)
@@ -636,7 +639,7 @@ func TestTreeEditing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commit, err := repo.CommitTree(ctx, tree, []string{head}, "edit", git.Identity{Name: "a", Email: "a@example.com"}, c.Time)
+	commit, err := repo.CommitTree(ctx, tree, []string{head}, "edit", git.Identity{Name: "a", Email: "a@example.com"}, c.Time, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,12 +690,12 @@ func TestWrittenIdentity(t *testing.T) {
 		{Name: "\u00a0git-k8s Jr.\r", Email: "\rgit-k8s@example.com\u3000"},
 		{Name: "git\ufdd0k8s\uffff", Email: "\U0001fffe@example.com"},
 	} {
-		raw, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id, c.Time)
+		raw, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id, c.Time, nil)
 		if err != nil {
 			t.Errorf("CommitTree as %q: %v", id, err)
 			continue
 		}
-		if written, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id.Written(), c.Time); err != nil || written != raw {
+		if written, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id.Written(), c.Time, nil); err != nil || written != raw {
 			t.Errorf("CommitTree as %q = %s, %v; want %s, the commit as %q", id.Written(), written, err, raw, id)
 		}
 		log, err := repo.Log(ctx, base, raw, 1)

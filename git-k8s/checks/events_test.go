@@ -26,7 +26,7 @@ func TestRecordsAnEventForAPushedFix(t *testing.T) {
 			f.branch.Spec.Merge.MaxAutomatedCommits = test.limit
 			runs := 0
 			ctx, rec := kube.Fake(t.Context(), f.branch, f.repo)
-			if err := checks.NewReconciler[Branch](f.touch(&runs), f.cfg).Reconcile(ctx, f.branch); err != nil {
+			if err := checks.NewReconciler[Branch](touch(&runs), f.cfg).Reconcile(ctx, f.branch); err != nil {
 				t.Fatal(err)
 			}
 			var want []kube.Event
