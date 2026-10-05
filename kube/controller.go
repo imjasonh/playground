@@ -182,6 +182,8 @@ type core struct {
 	// statusApplies holds a hash of the status that this controller last
 	// applied to each object.
 	statusApplies map[Key]uint64
+	// errs holds the error that each object's last reconcile failed with.
+	errs map[Key]error
 }
 
 type appliedKey struct {
@@ -288,6 +290,37 @@ func (c *core) setStatusApply(k Key, h uint64) {
 	c.statusApplies[k] = h
 }
 
+func (c *core) lastError(k Key) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.errs[k]
+}
+
+// forgetErrors forgets the last reconcile error of each key that in matches,
+// including keys whose objects were deleted after the reconcile failed.
+func (c *core) forgetErrors(in func(Key) bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k := range c.errs {
+		if in(k) {
+			delete(c.errs, k)
+		}
+	}
+}
+
+func (c *core) setLastError(k Key, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err == nil {
+		delete(c.errs, k)
+		return
+	}
+	if c.errs == nil {
+		c.errs = map[Key]error{}
+	}
+	c.errs[k] = err
+}
+
 type controller[T any, P Resource[T]] struct {
 	core
 	r       Reconciler[T]
@@ -349,8 +382,10 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 	c.primary.addHandler(c.onPrimary)
 	c.sh = m.sharder
 	// Another replica may have reconciled a shard's keys since this one
-	// last held it, so forget what this replica last wrote for them.
+	// last held it, so forget what this replica last wrote for them, and
+	// how its last reconciles of them failed.
 	c.sh.onAcquire(func(i int) {
+		c.forgetErrors(func(k Key) bool { return c.sh.shardOf(k) == i })
 		c.primary.store.each("", func(o *T) bool {
 			if k := metaOf[T, P](o).Key(); c.sh.shardOf(k) == i {
 				c.setApplied(k, nil)
@@ -498,6 +533,7 @@ func (c *controller[T, P]) specChanged(old, new *T) bool {
 func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	start := time.Now()
 	requeue, err := c.reconcileKey(ctx, key)
+	c.setLastError(key, err)
 	elapsed := time.Since(start)
 	result := "success"
 	log := c.log.With("key", key.String(), "duration", elapsed.Round(time.Microsecond))
