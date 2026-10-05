@@ -10,6 +10,7 @@ require (
 	github.com/imjasonh/playground/kube v0.0.0-20261004045644-a7ef95f91176
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.41.0
+	golang.org/x/sync v0.23.0
 )
 
 require (
@@ -23,7 +24,6 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
-	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect

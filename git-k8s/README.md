@@ -601,8 +601,9 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   container that gets the repository's credentials, as environment
   variables from the Secret.
 - The test container runs `go test ./...` as user 65532 with no service
-  account token, no privileges, a read-only root file system, and
-  `GOPROXY=off`, so tests can't download modules.
+  account token, no privileges, and a read-only root file system. It has
+  `GOPROXY=off`, so tests can't download modules, unless you
+  [share modules and build outputs](#share-modules-and-build-outputs).
 - If fetching fails, the check starts a new Pod, up to three times.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
@@ -628,11 +629,274 @@ delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods
 under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 `-timeout`, and `-goproxy` to change the rest.
 
-Both of a test Pod's containers meet the `restricted`
+All of a test Pod's containers meet the `restricted`
 [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 An admission policy keeps `check-gotest` to its own Pods, in namespaces that
 opt in to test Pods and enforce the `restricted` standard. See
 [Install](#install).
+
+### Share modules and build outputs
+
+Each test Pod starts with an empty Go build cache, so it compiles every
+package that its tests use, including the standard library's. With
+`GOPROXY=off`, it also can't test a module that has dependencies.
+`go-cache`, a program in this module, fixes both for the test Pods that use
+it:
+
+- Its module proxy, at `/mod/`, fetches modules from `-upstream`,
+  `https://proxy.golang.org` by default, and keeps each version's files,
+  which never change. Test Pods download modules from it, so they don't
+  need the internet.
+- Its build caches, one at `/cache/NAMESPACE/REPOSITORY/` for each
+  `GitRepository`, hold what the go command compiled, by action ID. The go
+  command derives an action ID from everything that goes into a build step,
+  such as the source files, the compiler and its flags, and the step's
+  dependencies.
+
+Install `go-cache` with `generate`, apply `config/go-cache.yaml`, and set
+`check-gotest`'s `-go-cache` flag to `go-cache`'s URL:
+
+```sh
+go run ./cmd/go-cache generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/static:latest -replicas=1 -tmp-size=10Gi \
+  -- -max-size=8Gi | kubectl apply -f -
+kubectl apply -f config/go-cache.yaml
+go run ./cmd/check-gotest generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/git:latest \
+  -- -go-cache=http://go-cache.go-cache | kubectl apply -f -
+```
+
+`go-cache` keeps modules and build outputs on the `emptyDir` volume at
+`/tmp`, and keeps their total size, with the writes in progress, under
+`-max-size`, 4Gi by default. Before it writes a file, `go-cache` reserves
+room for it, and removes the least recently used files to make room. It
+writes at most 16 uploads at once, and at most 16 fetched modules in
+slots of their own. When writes in progress hold the room, or fetches
+hold all 16 fetch slots, `go-cache` serves a module that it doesn't have
+from `-upstream` without keeping it. When writes in progress hold the
+room, or uploads hold all 16 upload slots, `go-cache` answers an upload
+with `503 Service Unavailable`. An upload waits up to 30 seconds for a
+slot first. After a 503, the test Pod stops uploading, which only means that
+later Pods compile those outputs again. `go-cache` doesn't keep build
+outputs larger than 256 MiB. The kubelet evicts a Pod whose volume passes
+`-tmp-size`, so keep `-max-size` a little below it.
+Each replica would have its own store, so `-replicas=1` runs one. The
+volume survives restarts of `go-cache`'s container, but a new Pod, such as
+one that replaces a deleted or evicted Pod, starts with an empty store.
+That costs test Pods only the time to download and compile again.
+
+`generate` can't make what `config/go-cache.yaml` holds. It makes Services
+only for webhooks, so the file adds the Service that test Pods reach
+`go-cache` through. `generate` grants what a program calls through kube,
+and `go-cache` sends TokenReviews and gets Pods itself, so the file adds a
+ClusterRole that allows creating TokenReviews and getting Pods, and
+nothing else. `go-cache` can get any Pod by name, but can't list or watch
+Pods.
+
+With `-go-cache`, `check-gotest` adds three init containers to each test
+Pod, after the one that fetches the head:
+
+1. `cacheprog` runs `check-gotest`'s own image, which `generate` names in
+   the `KUBE_IMAGE` environment variable, and copies the `check-gotest`
+   binary to a volume. The binary is the Pod's `GOCACHEPROG`, the program
+   that the go command asks for build outputs.
+2. `build` runs the `check-gotest` binary from the volume in the Go image,
+   with the test container's environment. It lists the packages that
+   `go test` needs, and compiles the ones from GOROOT and the module cache
+   with `go list -export`, which neither links nor runs anything. Its
+   `GOCACHEPROG` reads outputs from the repository's build cache, with a
+   service account token that can only read it.
+3. `upload` sends what `build` compiled to the build cache, with a token
+   that can write to it. It runs `check-gotest`'s image, and doesn't mount
+   the branch's files.
+
+Test Pods run in the `GitBranch`'s namespace as its `default` service
+account and don't set `imagePullSecrets`, so each namespace that has a
+`GitRepository` must be able to pull `check-gotest`'s image. If pulling
+from `REGISTRY` needs credentials that the nodes don't have, add an image
+pull secret to the `default` service account in each of those namespaces.
+Without the secret, test Pods wait in `Init:ImagePullBackOff` until
+`-timeout` ends them, and the check fails.
+
+The test container downloads modules from `go-cache`, whatever `-goproxy`
+says. Its `GOCACHEPROG` reads the outputs that `build` left in the volume,
+and doesn't connect to `go-cache`. The test container compiles the
+packages that `build` didn't, such as the module's own packages, vendored
+packages, and modules that a `replace` directive points at a directory. It
+also links the test binaries and runs the `go vet` checks that `go test`
+runs. Test results stay in the Pod, so every test runs. If the go command
+fails in `build`, for example because `go.mod` doesn't parse, the check
+fails with its output. If `go-cache` is down, test Pods compile everything
+themselves, but can't download modules.
+
+#### Threat model
+
+Test Pods run untrusted code. Anyone who can push a branch controls its
+tests and the packages that they import. A shared build cache must not let
+that code change what another branch's Pod compiles, which could, for
+example, make a failing test on `main` pass. `go-cache` and `check-gotest`
+defend against that as follows:
+
+- Only what the go command compiles goes into the build cache. `build`
+  reads the branch's `go.mod`, `go.sum`, and imports, compiles packages
+  from GOROOT and the module cache, and runs nothing. `check-gotest` sets
+  `CGO_ENABLED=0` and `GOTOOLCHAIN=local`, so the go command runs no C
+  compiler and no toolchain that the branch asks for. `upload` sends only
+  what `build` compiled, before any of the branch's code runs.
+- Test code can't write to the build cache. The test container gets no
+  token, and its `GOCACHEPROG` doesn't connect to `go-cache`. Nothing
+  uploads after the tests start.
+- Only outputs that no branch can change are shared. An action ID covers
+  the files that the go command lists for a package, but not every file
+  that a build step reads. An assembly file can include a header from
+  another directory, so two branches can compile different outputs for one
+  action ID. `build` shares a package's outputs only when the package is in
+  GOROOT, which the Go image fixes, or in the module cache, where the go
+  command puts a module only after checking it against `go.sum`. The
+  package's assembly must include no file from outside its directory, and
+  every package that it imports must be shared too. The test container
+  compiles the rest itself, so a branch can't change what another branch's
+  Pod compiles. `go-cache` never replaces an entry, and answers an upload
+  of another output for an action ID that it has with `409 Conflict`.
+- Tokens name a repository and an access. Each token is a projected service
+  account token whose audience names the namespace, the repository, and
+  either reading or writing. It expires after 10 minutes, the shortest
+  lifetime that Kubernetes allows. `go-cache` checks each request's token
+  with a TokenReview for the audience that the request needs, and checks
+  that the token's service account is in the namespace in the URL.
+- Only `check-gotest`'s Pods write, and only before their tests start. The
+  kubelet binds each projected token to its Pod, and a TokenReview names
+  the Pod that a token is bound to. `go-cache` gets that Pod for each
+  write, and accepts the token only if the Pod has the UID that the token
+  names, has the label `kube.imjasonh.github.io/controller=check-gotest`,
+  isn't being deleted, and is Pending. kube puts that label on each Pod
+  that `check-gotest` creates. A Pod is Pending while its init containers
+  run, and `upload` is one of them. A token that isn't bound to a Pod
+  can't write. If `check-gotest` runs under another name, set
+  `go-cache`'s `-controller` flag to that name.
+- The namespace is the trust boundary. Anyone who can create Pods in a
+  namespace can create one with `check-gotest`'s label and a token for any
+  audience, so they can write the build caches of the namespace's
+  repositories. They can already mount the namespace's Secrets, including
+  the repositories' credentials, so the build cache doesn't let them do
+  more. Anyone who can create tokens for the namespace's `default` service
+  account, which `check-gotest`'s Pods run as, can bind one to such a Pod
+  while it's Pending, and write too. `generate` lets a check that runs Pods
+  create them in every namespace, but the `git-k8s-check-pods` policy in
+  `config/policy.yaml` keeps each check to Pods with its own label, so
+  another check's Pods can't write. The policy skips service accounts whose
+  namespace and name don't start with `check-`. If a check runs as such an
+  account and can create Pods, give it a policy of its own, as
+  [Check service accounts](#check-service-accounts) says. Without one, its
+  Pods can have `check-gotest`'s label and write. Other checks' Pods can
+  read the build caches of a namespace that opts in to test Pods, where
+  they can already mount the namespace's Secrets. Reads don't change what
+  any Pod compiles. Namespaces don't share build caches.
+
+The design leaves these risks:
+
+- The defense relies on the go command not running code from the files
+  that it reads. A bug that let a branch run code in `build` would let it
+  store any output under action IDs that the build cache doesn't have yet.
+- Sharing relies on action IDs covering every input but the files that
+  assembly includes. If a Go release let another build step read files
+  from outside a package's directory, `build` would have to leave out the
+  packages that do.
+- The module proxy doesn't check tokens. Any Pod that can reach `go-cache`
+  can download modules, and make `go-cache` fetch a module from
+  `-upstream`. The go command checks each module that it downloads against
+  `go.sum`, so a changed module fails the build. `proxy.golang.org` fetches
+  a module that it doesn't have from its origin, so a test can send data
+  out in module paths. If that matters, set `-upstream` to a proxy that
+  serves only the modules that you allow.
+- `go-cache` serves plain HTTP. Anyone who can watch the Pod network can
+  read build outputs, and use a token that writes until the token expires
+  or its Pod leaves Pending.
+- `go-cache` remembers a token's review for a minute, so a token that
+  reads works for up to a minute after its Pod is deleted. A token that
+  writes stops working when its Pod leaves Pending, because `go-cache`
+  gets the Pod for each write. `go-cache` denies a token that isn't a JWT
+  for the request's audience without a TokenReview, remembers denials
+  apart from the tokens that it accepts, and sends at most 8 TokenReviews
+  at once. A flood of bad tokens can hold up reviews of new tokens, but
+  not requests with tokens that it accepted in the last minute. It gets at
+  most 8 Pods at once, in slots of their own. Tokens bound to Pods that
+  fail the check can hold up writes, but `go-cache` remembers up to 1024
+  such Pods for 10 seconds each, so each costs at most one get every 10
+  seconds.
+- A namespace can fill the store and push other namespaces' entries out,
+  which slows their builds. Its tokens can name any repository, even one
+  that doesn't exist, so it can write as many entries as it likes.
+  Eviction doesn't change results, because a Pod that compiles an evicted
+  output again compiles the same output.
+- A write holds its room in the store until it ends. A namespace that
+  uploads slowly can take all 16 upload slots for up to 5 minutes,
+  `go-cache`'s read timeout, and hold up to 256 MiB of room with each,
+  4Gi in all. Meanwhile `go-cache` answers other uploads with 503. Module
+  fetches have slots of their own, but the uploads can hold all of the
+  default `-max-size` of 4Gi, and then `go-cache` serves modules that it
+  doesn't have without keeping them. That slows other namespaces' test
+  Pods, but doesn't fail them. A `-max-size` above 4Gi leaves room for
+  modules.
+
+### Restrict test Pods' network
+
+`check-gotest` doesn't add a NetworkPolicy, so a test can reach anything
+that the namespace's Pods can, including the internet. A test Pod needs to
+reach only DNS, the git remote, and `go-cache`, if you use it. This
+NetworkPolicy, in each namespace that has a `GitRepository`, allows that
+and nothing else:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-pods
+  namespace: NAMESPACE
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: check-gotest
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: go-cache
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: go-cache
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - ipBlock:
+            cidr: GIT_REMOTE_IP/32
+      ports:
+        - {protocol: TCP, port: 443}
+```
+
+Replace `NAMESPACE`, and replace `GIT_REMOTE_IP` and `443` with the git
+remote's address and port. A remote whose address changes needs a wider
+block. Leave out the `go-cache` rule if you don't use it, and change the
+DNS rule if your cluster's DNS Pods have other labels. NetworkPolicies
+match the port that a Service forwards to, so the `go-cache` rule allows
+port 8080, which `go-cache` listens on, instead of the Service's port 80.
+
+The policy applies to the whole Pod, and the init container that fetches
+the head needs the remote, so tests can reach the remote too, without the
+credentials. A NetworkPolicy has no effect unless the cluster's network
+plugin enforces NetworkPolicies. The end-to-end test applies this policy,
+and reports whether the cluster enforced it.
 
 ### Agentic checks
 
@@ -1561,6 +1825,9 @@ done
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+To give test Pods a module proxy and a shared build cache, also install
+`go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
+shows how.
 
 `config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
@@ -1819,8 +2086,11 @@ dependencies too, and runs these tests.
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
 git server on this machine, which Pods reach through the kind network's
-gateway, and pushes branches to it. It needs Docker, `kubectl`, and `git`,
-and installs kind if it's missing:
+gateway, and pushes branches to it. A module proxy on this machine serves
+`go-cache` a module that isn't on the internet. The test reads `go-cache`'s
+metrics to check that a test Pod got the module through it, and that a later
+Pod read its build outputs instead of compiling them. The test needs Docker,
+`kubectl`, and `git`, and installs kind if it's missing:
 
 ```sh
 GIT_K8S_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -1836,9 +2106,10 @@ key. The fake agent fails a change that adds a line with `DO NOT MERGE` in
 it, and deletes those lines when the check can push. When it can edit files,
 it also replaces each line that holds `FAKE AGENT FIX:` with the text after
 it. The git server also serves a Go module proxy. The test publishes module
-versions to it, and checks that `git-k8s-deps` lands a patch release without
-approval, that the fake agent fixes a release that breaks the tests, and
-that `git-k8s-deps` keeps when it first saw a version through a restart.
+versions to it, makes it `go-cache`'s upstream, and checks that
+`git-k8s-deps` lands a patch release without approval, that the fake agent
+fixes a release that breaks the tests, and that `git-k8s-deps` keeps when it
+first saw a version through a restart.
 
 ## Limitations
 
@@ -1848,7 +2119,8 @@ that `git-k8s-deps` keeps when it first saw a version through a restart.
   once every 5 seconds, or every `pollInterval` if that's shorter.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
-  NetworkPolicy, so a test can reach anything that the namespace's Pods can.
+  NetworkPolicy, so a test can reach anything that the namespace's Pods can
+  until you [add one](#restrict-test-pods-network).
 - An approval names one head, so a branch that needs one needs another after
   the `base` check merges its parent in at the front of the queue. The
   branch leaves the queue until someone approves the merge, then joins at

@@ -38,12 +38,27 @@ type SeccompProfile struct {
 }
 
 type Volume struct {
-	Name     string    `json:"name"`
-	EmptyDir *EmptyDir `json:"emptyDir,omitempty"`
+	Name      string     `json:"name"`
+	EmptyDir  *EmptyDir  `json:"emptyDir,omitempty"`
+	Projected *Projected `json:"projected,omitempty"`
 }
 
 type EmptyDir struct {
 	SizeLimit string `json:"sizeLimit,omitempty"`
+}
+
+type Projected struct {
+	Sources []VolumeProjection `json:"sources"`
+}
+
+type VolumeProjection struct {
+	ServiceAccountToken *ServiceAccountTokenProjection `json:"serviceAccountToken,omitempty"`
+}
+
+type ServiceAccountTokenProjection struct {
+	Audience          string `json:"audience,omitempty"`
+	ExpirationSeconds *int64 `json:"expirationSeconds,omitempty"`
+	Path              string `json:"path"`
 }
 
 type Container struct {
@@ -51,6 +66,7 @@ type Container struct {
 	Image                    string           `json:"image"`
 	ImagePullPolicy          string           `json:"imagePullPolicy,omitempty"`
 	Command                  []string         `json:"command,omitempty"`
+	Args                     []string         `json:"args,omitempty"`
 	WorkingDir               string           `json:"workingDir,omitempty"`
 	Env                      []EnvVar         `json:"env,omitempty"`
 	VolumeMounts             []VolumeMount    `json:"volumeMounts,omitempty"`
@@ -78,6 +94,7 @@ type SecretKeySelector struct {
 type VolumeMount struct {
 	Name      string `json:"name"`
 	MountPath string `json:"mountPath"`
+	ReadOnly  bool   `json:"readOnly,omitempty"`
 }
 
 type SecurityContext struct {
