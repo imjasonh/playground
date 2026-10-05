@@ -74,7 +74,7 @@ type podPhase struct {
 // fetching the source fails.
 const fetchAttempts = 3
 
-var check = checks.Check{Name: "gotest", Run: run}
+var check = checks.Check{Name: "gotest", FilesOnly: true, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	attempt := 1
