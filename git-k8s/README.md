@@ -688,6 +688,12 @@ that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
 parent, such as `base`, also set `parentCommit` to the parent's head.
 
+For a branch that lands by squash or rebase, also set `filesOnly` to `true`
+if the check sets `FilesOnly`, as the built-in checks do. Otherwise the
+result counts as `Pending` for the commit that the landing makes, as
+[Which results count](#which-results-count) describes. A check without
+`FilesOnly` runs again on a result with `filesOnly`.
+
 The results controller writes all of `status.checks` at once, from its
 cache, so a result that you write while it writes another result can be
 lost. Check that your result is there afterward.
