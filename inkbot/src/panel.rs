@@ -216,7 +216,7 @@ pub fn encode_bw_png(gray: &GrayImage, spec: PanelSpec) -> Result<(Vec<u8>, Vec<
         let mut encoder = png::Encoder::new(Cursor::new(&mut out), spec.width, spec.height);
         encoder.set_color(png::ColorType::Grayscale);
         encoder.set_depth(png::BitDepth::One);
-        encoder.set_compression(png::Compression::Default);
+        encoder.set_compression(png::Compression::Balanced);
         let mut writer = encoder
             .write_header()
             .map_err(|e| PanelError::Encode(e.to_string()))?;
