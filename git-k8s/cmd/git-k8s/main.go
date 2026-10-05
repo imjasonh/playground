@@ -11,6 +11,9 @@
 // GitHub as check runs, for repositories that name an Octo STS identity for
 // them.
 //
+// Unless -install-policies=false, the program installs the admission policies
+// in config/policy.yaml when it starts.
+//
 // Check controllers run as separate programs, such as check-gofmt.
 package main
 
@@ -20,6 +23,7 @@ import (
 	"os"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/config"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -27,11 +31,13 @@ import (
 func main() {
 	g := &git.Git{}
 	cache := &gitk8s.Cache{Git: g}
+	repos := &repositories{git: g}
 	m := &merger{cache: cache}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&cache.Dir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	flag.StringVar(&m.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
 	flag.StringVar(&m.ident.Email, "identity-email", "git-k8s@users.noreply.github.com", "committer email of the commits that squash and rebase landings make")
+	flag.BoolVar(&repos.installPolicies, "install-policies", true, "install the admission policies in config/policy.yaml when the program starts")
 	// A container that's killed while a landing signs a commit leaves the
 	// key in os.TempDir, which generate puts on a volume that outlives the
 	// container. Outside a Pod, as in generate or a run with -kubeconfig,
@@ -42,7 +48,13 @@ func main() {
 		}
 	}
 	kube.Main(
-		kube.For[gitk8s.GitRepository](&repositories{git: g}, kube.Named("repositories")),
+		kube.Install(func() []byte {
+			if !repos.installPolicies {
+				return nil
+			}
+			return config.Policy
+		}),
+		kube.For[gitk8s.GitRepository](repos, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](m, kube.Named("merge")),
 		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
 	)

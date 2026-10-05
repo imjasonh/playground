@@ -1,17 +1,36 @@
+# The git-k8s-check-results and git-k8s-branches policies read this ConfigMap
+# to find checks that don't run as the service account check-NAME in the
+# namespace check-NAME. Each entry maps NAMESPACE.SERVICE_ACCOUNT to a
+# check's name, for example "ci.gofmt-bot: gofmt", and overrides that
+# convention. They ignore an entry for the core program's service account,
+# git-k8s.git-k8s, which is never a check. The core program applies this
+# ConfigMap without data, so it keeps the entries that you add.
+# While the ConfigMap is missing, those policies deny every write to
+# GitBranch objects, including people's.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-k8s-checks
+  namespace: git-k8s
+---
 # Each check controller can write only its own entry in a GitBranch's
 # status.checks, and no other service account, including the core
 # program's, can write status.checks at all. generate installs each program
 # in a namespace with a service account of the program's name, so
 # check-gofmt runs as system:serviceaccount:check-gofmt:check-gofmt and owns
-# status.checks.gofmt. A check installed under another name can't write
-# results. Server-side apply already keeps well-behaved controllers apart;
-# this policy stops a buggy or compromised one from writing another's result.
+# status.checks.gofmt. A check installed under another name or namespace
+# needs an entry in the git-k8s-checks ConfigMap to write results.
+# Server-side apply already keeps well-behaved controllers apart; this policy
+# stops a buggy or compromised one from writing another's result.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-results
 spec:
   failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
   matchConstraints:
     resourceRules:
       - apiGroups: ["git-k8s.imjasonh.com"]
@@ -24,8 +43,12 @@ spec:
   variables:
     - name: user
       expression: request.userInfo.username.split(":")
+    - name: account
+      expression: 'size(variables.user) == 4 ? variables.user[2] + "." + variables.user[3] : ""'
     - name: check
       expression: >-
+        variables.account == "git-k8s.git-k8s" ? "" :
+        params != null && has(params.data) && variables.account in params.data ? params.data[variables.account] :
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
     - name: old
@@ -56,6 +79,10 @@ metadata:
   name: git-k8s-check-results
 spec:
   policyName: git-k8s-check-results
+  paramRef:
+    name: git-k8s-checks
+    namespace: git-k8s
+    parameterNotFoundAction: Deny
   validationActions: [Deny]
 ---
 # The approve and approved-by annotations on a GitBranch record a person's
@@ -72,6 +99,9 @@ metadata:
   name: git-k8s-branches
 spec:
   failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
   matchConstraints:
     resourceRules:
       - apiGroups: ["git-k8s.imjasonh.com"]
@@ -84,8 +114,12 @@ spec:
   variables:
     - name: user
       expression: request.userInfo.username.split(":")
+    - name: account
+      expression: 'size(variables.user) == 4 ? variables.user[2] + "." + variables.user[3] : ""'
     - name: check
       expression: >-
+        variables.account == "git-k8s.git-k8s" ? "" :
+        params != null && has(params.data) && variables.account in params.data ? params.data[variables.account] :
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
     - name: core
@@ -128,6 +162,10 @@ metadata:
   name: git-k8s-branches
 spec:
   policyName: git-k8s-branches
+  paramRef:
+    name: git-k8s-checks
+    namespace: git-k8s
+    parameterNotFoundAction: Deny
   validationActions: [Deny]
 ---
 # generate lets a check that declares Pods with kube.Own, such as

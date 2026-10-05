@@ -26,6 +26,9 @@ CHAINGUARD="${GIT_K8S_KIND_CHAINGUARD:-cgr.dev/chainguard}"
 PLATFORM="linux/$(go env GOARCH)"
 NS=git-k8s-e2e
 CHECKS=(check-base check-gofmt check-risk check-approval check-gotest)
+# check-approval runs in another namespace, so the admission policies
+# recognize it only through its entry in the git-k8s-checks ConfigMap.
+APPROVAL_NS=checks
 WORKDIR="$(mktemp -d)"
 WORK="${WORKDIR}/work"
 PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
@@ -44,6 +47,15 @@ k() { kubectl --context "${CONTEXT}" "$@"; }
 SIGN=(-c gpg.format=ssh -c "user.signingKey=${WORKDIR}/e2e-key" -c commit.gpgSign=true
   -c "gpg.ssh.allowedSignersFile=${ALLOWED_SIGNERS}")
 
+# namespace_of prints the namespace of program $1.
+namespace_of() {
+  if [[ "$1" == check-approval ]]; then
+    echo "${APPROVAL_NS}"
+  else
+    echo "$1"
+  fi
+}
+
 # g runs git in the working repository, without the machine's git config.
 g() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${WORK}" \
@@ -57,9 +69,11 @@ diagnose() {
   k -n "${NS}" get pods -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
+  k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels || true
+  k -n git-k8s get configmap git-k8s-checks -o yaml || true
   for program in git-k8s "${CHECKS[@]}"; do
-    k -n "${program}" describe pods || true
-    k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
+    k -n "$(namespace_of "${program}")" describe pods || true
+    k -n "$(namespace_of "${program}")" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
   done
   echo "--- git server log"
   cat "${WORKDIR}/gitserver.log" || true
@@ -196,9 +210,36 @@ GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
 crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
-# git-k8s installs the CustomResourceDefinitions that the checks watch.
+# git-k8s installs the CustomResourceDefinitions that the checks watch, and
+# the objects in config/policy.yaml.
 install git-k8s -- "-fake-github=${CLUSTER_URL}/github"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+# policies_applied passes once each object in config/policy.yaml has the label
+# that the core program sets when it applies them with the permissions that
+# generate grants it.
+policies_applied() {
+  local owners
+  owners="$(k get -f "${ROOT}/config/policy.yaml" \
+    -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.labels.kube\.imjasonh\.github\.io/managed-by}{"\n"}{end}')" &&
+    [[ -n "${owners}" ]] && ! grep -vq ' git-k8s$' <<<"${owners}"
+}
+eventually 60 policies_applied
+k get -f "${ROOT}/config/policy.yaml" --show-labels
+# generate grants those permissions by name, and only to a program that
+# installs the objects.
+[[ "$(k auth can-i patch validatingadmissionpolicies.admissionregistration.k8s.io/other \
+  --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
+policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
+if grep -F -e configmaps -e "${policy_names}" "${WORKDIR}/git-k8s-without-policies.yaml"; then
+  echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
+  exit 1
+fi
+# The policies ignore the entry for the core program. Without that, it would
+# make the core program the gofmt check, which can't create or change GitBranch
+# objects, so nothing would land.
+k -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\",\"git-k8s.git-k8s\":\"gofmt\"}}"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-base | check-gofmt) install "${program}" -- "-fake-github=${CLUSTER_URL}/github" ;;
@@ -206,13 +247,13 @@ for program in "${CHECKS[@]}"; do
     check-gotest)
       install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1
       ;;
+    check-approval) install "${program}" -namespace="${APPROVAL_NS}" ;;
     *) install "${program}" ;;
   esac
 done
 for program in "${CHECKS[@]}"; do
-  k -n "${program}" rollout status "deployment/${program}" --timeout=180s
+  k -n "$(namespace_of "${program}")" rollout status "deployment/${program}" --timeout=180s
 done
-k apply -f "${ROOT}/config/policy.yaml"
 echo "::endgroup::"
 
 echo "::group::Track a repository"
@@ -584,6 +625,22 @@ echo
 grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
 code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
 [[ "${code}" == 200 ]]
+approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
+code="$(patch_status '{"status":{"checks":{"approval":{"commit":"0000000","state":"Passed"}}}}' "${approval_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 200 ]]
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${approval_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q 'the approval check can only write status.checks.approval' "${WORKDIR}/patch.json"
+core_token="$(k -n git-k8s create token git-k8s)"
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${core_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
 # A service account with check-gofmt's permissions but another name isn't a
 # check, so it can't write any result.
 k -n "${NS}" create serviceaccount rogue
@@ -594,7 +651,7 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, and other service accounts can't write either."
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, the core program can't write a result despite its entry, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -641,15 +698,36 @@ gotest_token="$(k -n check-gotest create token check-gotest)"
 code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
 grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
-# check-gofmt owns nothing, so generate doesn't let it patch GitBranch
-# objects at all.
+# check-gofmt and check-approval own nothing, so generate doesn't let them
+# patch GitBranch objects at all.
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-code="$(patch_branch "${token}" "${approve}")"
-cat "${WORKDIR}/patch.json"
-echo
-[[ "${code}" == 403 ]]
-grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt can't patch one."
+for bearer in "${token}" "${approval_token}"; do
+  code="$(patch_branch "${bearer}" "${approve}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 403 ]]
+  grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
+done
+echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt and check-approval can't patch one."
+echo "::endgroup::"
+
+echo "::group::A check that the ConfigMap names can't change GitBranch objects"
+# bot has the permissions that generate gives check-gotest, so RBAC lets it
+# patch GitBranch objects. It runs in the namespace ${APPROVAL_NS}, so only
+# its entry in the git-k8s-checks ConfigMap makes it a check.
+k -n "${APPROVAL_NS}" create serviceaccount bot
+k create clusterrolebinding git-k8s-e2e-bot --clusterrole=check-gotest --serviceaccount="${APPROVAL_NS}:bot"
+k -n git-k8s patch configmap git-k8s-checks --type=merge -p "{\"data\":{\"${APPROVAL_NS}.bot\":\"bot\"}}"
+bot_token="$(k -n "${APPROVAL_NS}" create token bot)"
+bot_cant_change() {
+  local code
+  code="$(patch_branch "${bot_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]] && grep -q "the bot check can't change GitBranch objects" "${WORKDIR}/patch.json"
+}
+eventually 30 bot_cant_change
+echo "RBAC lets bot patch GitBranch objects, and the policy stops it as the bot check that its ConfigMap entry names."
 echo "::endgroup::"
 
 echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
