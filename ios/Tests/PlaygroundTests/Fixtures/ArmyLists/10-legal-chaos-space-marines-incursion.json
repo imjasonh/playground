@@ -1,78 +1,98 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "C3C11E34-2AD5-4132-85BA-9D82C5CC48E7",
-    "name": "Chaos Space Marines Incursion 1000pts",
-    "catalogVersion": "11e-1",
-    "factionID": "chaos-space-marines",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "chaos-space-marines--warpstrike-champions"
     ],
-    "units": [
+    "factionID" : "chaos-space-marines",
+    "id" : "80E5EC9F-1E65-44C6-81D7-FE353CB8AFC8",
+    "name" : "Chaos Space Marines Incursion 930pts",
+    "notes" : "stress seed=9 attach=true enh=true",
+    "units" : [
       {
-        "id": "A4D695C1-22EF-4930-9C04-F4FE384E8E10",
-        "datasheetID": "chaos-space-marines--cultist-firebrand",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "164BF73D-3406-444E-9F1C-86CE03A82513",
+        "datasheetID" : "chaos-space-marines--cultist-firebrand",
+        "enhancementIDs" : [
           "chaos-space-marines--warpstrike-champions--eye-of-the-warp"
         ],
-        "attachedToUnitID": "33736876-E960-447F-81B8-AE8BD71862AD"
+        "id" : "1BA511CB-222C-4415-806A-B98FE334AD67",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "6B83C817-EEEA-4195-9F99-282C0E120DE3",
-        "datasheetID": "chaos-space-marines--maulerfiend",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--chaos-rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DC570BB9-CE8A-4B6A-AD95-A09A7E271D30",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "50E6A17B-B245-4AAB-9266-A4F1D491262A",
-        "datasheetID": "chaos-space-marines--legionaries",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--fellgor-beastmen",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6A222C52-469F-4F8E-A3A2-86D6A9E48E6A",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EE18068F-6B0F-46A1-B928-30F58C761B5C",
-        "datasheetID": "chaos-space-marines--hell-talon",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--greater-brass-scorpion",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A873388D-933A-49A7-89AC-1405B8E7DC8D",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "87A1BA54-1E0B-42D9-AFE0-5D785121E505",
-        "datasheetID": "chaos-space-marines--defiler",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--accursed-cultists",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "164BF73D-3406-444E-9F1C-86CE03A82513",
+        "models" : 8,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2760EFF1-2BDE-4B7E-9F09-653E6699576F",
-        "datasheetID": "chaos-space-marines--raptors",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--dreadclaw-drop-pod",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "34B4B0D7-F30F-46E3-A579-B9E55902D5B6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "33736876-E960-447F-81B8-AE8BD71862AD",
-        "datasheetID": "chaos-space-marines--accursed-cultists",
-        "models": 8,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-space-marines--renegade-ogryn-beast-handler",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "82A63CE3-2F57-4813-9BC2-ED89BB85ECD8",
+        "models" : 4,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "A4D695C1-22EF-4930-9C04-F4FE384E8E10",
-    "notes": "stress seed=9 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "1BA511CB-222C-4415-806A-B98FE334AD67"
+  },
+  "notes" : "auto-built"
 }

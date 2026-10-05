@@ -786,7 +786,7 @@ func TestGenerateProbe(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "probe", "probe")
+	in := generateExample(t, reg, "examples/probe", "probe")
 	byKind := map[string]string{}
 	for _, obj := range in.objects {
 		b, _ := json.Marshal(obj)

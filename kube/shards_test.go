@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -324,6 +325,43 @@ func TestFinalizerRemovalShowsTheCacheCaughtUp(t *testing.T) {
 				t.Errorf("caught up = %v, want %v", got, tt.caughtUp)
 			}
 		})
+	}
+}
+
+// TestStaleReconcileKeepsTheLastError fails a reconcile's status write as
+// invalid, then fails the next one as stale, while writes to the object
+// require the cached resource version. The retry of a stale reconcile redoes
+// it, so LastError must still return the invalid write's error.
+func TestStaleReconcileKeepsTheLastError(t *testing.T) {
+	var code atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		http.Error(rw, "refused", int(code.Load()))
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testManager()
+	m.client, m.tracker = cl, newTracker()
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+	c.sh = &sharder{n: 1, shards: []*shard{{}}}
+
+	code.Store(http.StatusUnprocessableEntity)
+	c.process(t.Context(), w.Key())
+	invalid := c.lastError(w.Key())
+	if !client.IsInvalid(invalid) {
+		t.Fatalf("LastError = %v, want the invalid status write", invalid)
+	}
+	code.Store(http.StatusConflict)
+	c.process(t.Context(), w.Key())
+	if n := m.metrics.counter("kube_reconcile_total", "controller", c.name, "result", "stale"); n != 1 {
+		t.Fatalf("%v reconciles failed as stale, want 1", n)
+	}
+	if err := c.lastError(w.Key()); err != invalid {
+		t.Errorf("LastError after a stale reconcile = %v, want %v", err, invalid)
 	}
 }
 

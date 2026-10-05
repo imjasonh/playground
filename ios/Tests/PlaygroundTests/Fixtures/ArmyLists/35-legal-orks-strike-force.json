@@ -1,136 +1,199 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "CA950BD6-40DC-4B45-96AA-207FE9C8DF29",
-    "name": "Orks Strike Force 1980pts",
-    "catalogVersion": "11e-1",
-    "factionID": "orks",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "orks--blitz-brigade",
       "orks--dread-mob",
       "orks--flyboyz"
     ],
-    "units": [
+    "factionID" : "orks",
+    "id" : "0F0CB3B3-A2AB-4717-A48F-2FE22C0CA18B",
+    "name" : "Orks Strike Force 1860pts",
+    "notes" : "stress seed=34 attach=true enh=true",
+    "units" : [
       {
-        "id": "BC0C6BCA-E1C2-4FEE-AA62-28A21B3D58A7",
-        "datasheetID": "orks--mek",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "F5DFEE00-4C23-4D29-92E9-B0C068409D4C",
+        "datasheetID" : "orks--mad-dok-grotsnik",
+        "enhancementIDs" : [
           "orks--dread-mob--cybork-boosta"
         ],
-        "attachedToUnitID": null
+        "id" : "8010AB45-8F04-45B5-8166-C1B6B51C0399",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "11352974-C291-4447-9132-9ADFF3C8FD93",
-        "datasheetID": "orks--grot-mega-tank",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--nobz",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F5DFEE00-4C23-4D29-92E9-B0C068409D4C",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A98652AA-E8F3-48F6-A9E2-B112E0D5BC2F",
-        "datasheetID": "orks--gargantuan-squiggoth",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--dakkajet",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2BE632A2-5416-457C-90CA-287EDBDE4083",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B350BCE5-CA30-4412-9F0B-C4D38DB98E3E",
-        "datasheetID": "orks--trukk",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--rukkatrukk-squigbuggies",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "510B790F-5C75-47C5-BE2C-0967E86E96B6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "6E281F0D-561A-4CE0-8E41-78C55264A12C",
-        "datasheetID": "orks--big-mek-dakkarig",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--flash-gitz",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E788A5D1-565A-476F-9CA9-763BDC597D4D",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D36C4AB3-3056-4DD6-8BE5-E932B5166AD1",
-        "datasheetID": "orks--mek-gunz",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--hunta-rig",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6D34CC59-0D64-4355-AA4A-58F67834130A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E137EBB2-50F7-4E7D-8CF9-08B55DE9F069",
-        "datasheetID": "orks--beast-snagga-boyz",
-        "models": 20,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--blitza-bommer",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "63DFC1BC-42E4-401B-A861-85C4EE46482C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9A44B6A3-0A4F-4578-BEC1-653538B39A78",
-        "datasheetID": "orks--kill-tank",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--mek-gunz",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "49B74C48-4B25-460D-966E-E61DFF8D0300",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "C3EA1563-4F21-459E-8669-0DBD42193637",
-        "datasheetID": "orks--deffkoptas",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--wartrakks",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9FA50B9D-51C9-49AB-B4FD-C0FB26662EE2",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "64542CE0-201B-45F3-919C-372870557AD0",
-        "datasheetID": "orks--big-trakk",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--lifta-wagon",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E5AFEC3D-5B52-403B-8286-26AAFD3BCD0A",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7C0B8EAA-CE25-4553-B1C1-D4FBA4431624",
-        "datasheetID": "orks--tankbustas",
-        "models": 6,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--grot-tanks",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9B57CAC1-E15C-4CBB-804B-3E73D8519A8D",
+        "models" : 4,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "FD7CE77C-8DCD-42B6-9E55-B8F77E0036D7",
-        "datasheetID": "orks--wartrakks",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--boyz",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "41FA87F5-1090-48C8-AE3C-E291A6F44AEA",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "7FA49989-B4E4-4E18-9339-A5ED41EBD098",
-        "datasheetID": "orks--warbuggies",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--gunwagon",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5731C5B4-9A2D-496B-8CD5-C625961D5A4F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "FB9EAF0E-C956-4CF9-AB4B-87B8A7812CFA",
-        "datasheetID": "orks--squighog-boyz",
-        "models": 4,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "orks--lootas",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5D3200FD-8AA2-4B37-9AFD-257E5B540692",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "orks--battlewagon",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D32EBF32-CF3B-4B8D-98E8-A4A8DCEF8DF8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "orks--burna-bommer",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "39B418AA-8D6A-4CBA-86F5-ECF82F5A95D8",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "BC0C6BCA-E1C2-4FEE-AA62-28A21B3D58A7",
-    "notes": "stress seed=34 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "8010AB45-8F04-45B5-8166-C1B6B51C0399"
+  },
+  "notes" : "auto-built"
 }

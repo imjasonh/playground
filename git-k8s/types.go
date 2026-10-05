@@ -33,6 +33,12 @@ const RepositoryLabel = Group + "/repository"
 // characters.
 const ApproveAnnotation = Group + "/approve"
 
+// ApprovedByAnnotation on a GitBranch is the username of whoever approved
+// the commit in its ApproveAnnotation. The git-k8s-approvals admission
+// policy in config/policy.yaml makes it match the request that set the
+// approval or took it over.
+const ApprovedByAnnotation = Group + "/approved-by"
+
 // FixerTrailer is the commit trailer on every commit that a check pushes.
 // Its value is the check's name. MergePolicy.MaxAutomatedCommits limits how
 // many commits with this trailer a branch can have.
@@ -48,7 +54,13 @@ type GitRepository struct {
 
 // GitRepositorySpec says where a repository is and which branches to track.
 type GitRepositorySpec struct {
-	URL       string     `json:"url" kube:"minLength=1,column=URL" doc:"Remote URL. Controllers pass it to git, so https, http, git, and file URLs work."`
+	// git decodes %XX in a URL and strips brackets from its user and host
+	// before it passes them to ssh, so either could hide a leading "-". The
+	// pattern allows no "%" before the path, and brackets there only around
+	// an IP address or around an scp-like address's host:port. An scp-like
+	// address needs a user, because "@" is what tells it apart from git's
+	// <transport>::<address> syntax.
+	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^((https?|git|ssh)://([^-@/%\\[\\]\\x00-\\x1f\\x7f][^@/%\\[\\]\\x00-\\x1f\\x7f]*@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/|[^-@/:%\\[\\]\\x00-\\x1f\\x7f][^@/:%\\[\\]\\x00-\\x1f\\x7f]*@([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[([A-Za-z0-9_][A-Za-z0-9_.-]*(:[0-9]+)?|[0-9A-Fa-f:.]+)\\]):[^-\\x00-\\x1f\\x7f])[^\\x00-\\x1f\\x7f]*$" doc:"Remote URL: an https, http, git, or ssh URL, or an scp-like address with a user name, such as git@example.com:app.git. Without a user name, write an ssh:// URL, such as ssh://example.com/~/app.git."`
 	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, controllers send git."`
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`

@@ -24,10 +24,8 @@ func writeModule(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-func TestFind(t *testing.T) {
-	dir := writeModule(t, map[string]string{
-		"go.mod": "module example.com/prog\n\ngo 1.26.0\n",
-		"fw/fw.go": `package fw
+// fw is a framework package for the test modules.
+const fw = `package fw
 
 type Object struct{}
 
@@ -36,21 +34,22 @@ type Resource[T any] interface{ *T }
 func Get[T any, P Resource[T]]() *T     { return nil }
 func Own[T any, P Resource[T]](p P) P   { return p }
 func Other[T any]()                     {}
+`
 
-func Review() {}
-
-func Unreferenced() {}
-
-type Client struct{}
-
-func (Client) Request() {}
-`,
+func TestFind(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"go.mod":   "module example.com/prog\n\ngo 1.26.0\n",
+		"fw/fw.go": fw,
 		"types/types.go": `package types
 
 import "example.com/prog/fw"
 
 type Widget struct {
 	fw.Object ` + "`kube:\"group=example.dev\"`" + `
+	Spec      struct{} ` + "`json:\"spec\"`" + `
+	Status    struct{} ` + "`json:\"status,omitzero\"`" + `
+	Notes     string   ` + "`json:\"-\"`" + `
+	cache     string   ` + "`json:\"cache\"`" + `
 }
 
 type ConfigMap struct {
@@ -74,14 +73,6 @@ func fetch[T any, P fw.Resource[T]]() *T { return fw.Get[T, P]() }
 
 // Twice reaches fw.Get through another generic function.
 func Twice[T any, P fw.Resource[T]]() { fetch[T, P](); fetch[T, P]() }
-
-// Review refers to fw.Review twice, and calls a method with the name of
-// one of Funcs.
-func Review() func() {
-	fw.Client{}.Request()
-	fw.Review()
-	return fw.Review
-}
 `,
 		"main.go": `package main
 
@@ -104,9 +95,9 @@ func main() {
 }
 `,
 	})
-	uses, warnings, err := Find(t.Context(), Config{
+	uses, unresolved, err := Find(t.Context(), Config{
 		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
-		Package: "example.com/prog/fw", Funcs: []string{"Get", "Own", "Review", "Request", "Unreferenced"}, Marker: "Object",
+		Package: "example.com/prog/fw", Funcs: []string{"Get", "Own"}, Marker: "Object",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -119,19 +110,143 @@ func main() {
 		"Get example.com/prog/types.Gizmo Gizmo kube:\"group=example.dev,plural=gizmoes\"",
 		"Get example.com/prog/types.Widget Widget kube:\"group=example.dev\"",
 		"Own example.com/prog/types.ConfigMap ConfigMap kube:\"apiVersion=v1,kind=ConfigMap\"",
-		"Review   ",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("uses =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "main.go:11") || !strings.Contains(warnings[0], "fw.Get") {
-		t.Errorf("warnings = %q", warnings)
+	if got := lines(unresolved); !reflect.DeepEqual(got, []string{"Get main.go:11"}) {
+		t.Errorf("unresolved = %q", got)
 	}
 	if !strings.HasSuffix(uses[1].Pos, "main.go:14:5") {
 		t.Errorf("position = %s", uses[1].Pos)
 	}
-	if len(uses) == 4 && !strings.HasSuffix(uses[3].Pos, "helpers.go:14:5") {
-		t.Errorf("position of the first reference to fw.Review = %s", uses[3].Pos)
+	if got := uses[1].Fields; !reflect.DeepEqual(got, []string{"spec", "status"}) {
+		t.Errorf("Widget's fields = %q, want spec and status", got)
+	}
+	if got := uses[2].Fields; got != nil {
+		t.Errorf("ConfigMap's fields = %q, want none, because its field has no json tag", got)
+	}
+}
+
+// lines describes unresolved uses by function, file, and line.
+func lines(unresolved []Use) []string {
+	var out []string
+	for _, u := range unresolved {
+		pos := filepath.Base(u.Pos)
+		out = append(out, u.Func+" "+pos[:strings.LastIndex(pos, ":")])
+	}
+	return out
+}
+
+func TestFindUnresolved(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"go.mod":   "module example.com/prog\n\ngo 1.26.0\n",
+		"fw/fw.go": fw,
+		"main.go": `package main
+
+import "example.com/prog/fw"
+
+type Widget struct {
+	fw.Object ` + "`kube:\"group=example.dev\"`" + `
+}
+
+type Item[T any] struct {
+	fw.Object ` + "`kube:\"group=example.dev\"`" + `
+	Spec      T
+}
+
+func own[T any, P fw.Resource[T]](p P) { fw.Own[T, P](p) }
+
+func noop[T any]() {}
+
+type owner[T any, P fw.Resource[T]] struct{}
+
+func (owner[T, P]) direct(p P) { fw.Own[T, P](p) }
+
+func (owner[T, P]) helper(p P) { own[T, P](p) }
+
+func (owner[T, P]) neither() { noop[T](); fw.Other[T]() }
+
+func item[T any]() { own(&Item[T]{}) }
+
+func main() {
+	own(&Widget{})
+	o := owner[Widget, *Widget]{}
+	o.direct(&Widget{})
+	o.helper(&Widget{})
+	o.neither()
+	item[int]()
+}
+`,
+	})
+	uses, unresolved, err := Find(t.Context(), Config{
+		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
+		Package: "example.com/prog/fw", Funcs: []string{"Get", "Own"}, Marker: "Object",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uses) != 1 || uses[0].Func != "Own" || uses[0].Type != "example.com/prog.Widget" {
+		t.Errorf("uses = %q", uses)
+	}
+	want := []string{"Own main.go:20", "Own main.go:22", "Own main.go:26"}
+	if got := lines(unresolved); !reflect.DeepEqual(got, want) {
+		t.Errorf("unresolved = %q, want %q", got, want)
+	}
+	for _, u := range unresolved {
+		if u.Type != "" || u.Name != "" || u.Tag != "" {
+			t.Errorf("unresolved use %+v has a type", u)
+		}
+	}
+}
+
+func TestFindCalls(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"go.mod": "module example.com/prog\n\ngo 1.26.0\n",
+		"fw/fw.go": `package fw
+
+type Object struct{}
+
+type Recorder struct{}
+
+func Eventf(format string, args ...any)          {}
+func (Recorder) Eventf(format string, args ...any) {}
+func Unused()                                     {}
+`,
+		"helpers/helpers.go": `package helpers
+
+import "example.com/prog/fw"
+
+// Record is fw.Eventf, passed as a value.
+var Record = fw.Eventf
+`,
+		"main.go": `package main
+
+import (
+	"example.com/prog/fw"
+	"example.com/prog/helpers"
+)
+
+func main() {
+	fw.Eventf("a")
+	fw.Recorder{}.Eventf("b")
+	helpers.Record("c")
+}
+`,
+	})
+	uses, warnings, err := Find(t.Context(), Config{
+		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
+		Package: "example.com/prog/fw", Calls: []string{"Eventf", "Unused", "Missing"}, Marker: "Object",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, u := range uses {
+		got = append(got, u.String())
+	}
+	if len(got) != 2 || !strings.HasPrefix(got[0], "Eventf at ") || !strings.HasSuffix(got[0], filepath.Join("helpers", "helpers.go")+":6:17") || !strings.HasSuffix(got[1], "main.go:9:5") || len(warnings) != 0 {
+		t.Errorf("uses = %q, warnings = %q, want the function's two uses and not the method's", got, warnings)
 	}
 }
 
@@ -174,9 +289,9 @@ func main() {
 }
 `,
 	})
-	uses, warnings, err := Find(t.Context(), Config{
+	uses, unresolved, err := Find(t.Context(), Config{
 		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
-		Package: "example.com/prog/fw", Funcs: []string{"Token", "Value", "Only"},
+		Package: "example.com/prog/fw", Calls: []string{"Token", "Value", "Only"},
 		Consts: map[string]int{"Token": 1, "Value": 1, "Only": 1},
 	})
 	if err != nil {
@@ -188,16 +303,17 @@ func main() {
 		got = append(got, u.String())
 	}
 	want := []string{
-		"Token at main.go:15:5",
-		`Token("literal") at main.go:11:5`,
-		`Token("named") at helpers.go:7:19`,
-		`Token("paren") at main.go:13:6`,
-		"Value at main.go:16:10",
-		`Only("") at main.go:19:5`,
 		`Only("only") at main.go:18:5`,
+		`Only("") at main.go:19:5`,
+		`Token("named") at helpers.go:7:19`,
+		`Token("literal") at main.go:11:5`,
+		`Token("literal") at main.go:12:5`,
+		`Token("paren") at main.go:13:6`,
+		"Token at main.go:15:5",
+		"Value at main.go:16:10",
 	}
-	if !reflect.DeepEqual(got, want) || len(warnings) != 0 {
-		t.Errorf("uses =\n%s\nwant\n%s\nwarnings = %q", strings.Join(got, "\n"), strings.Join(want, "\n"), warnings)
+	if !reflect.DeepEqual(got, want) || len(unresolved) != 0 {
+		t.Errorf("uses =\n%s\nwant\n%s\nunresolved = %q", strings.Join(got, "\n"), strings.Join(want, "\n"), lines(unresolved))
 	}
 }
 
@@ -210,10 +326,10 @@ func TestFindInExamples(t *testing.T) {
 		{"github.com/imjasonh/playground/kube/examples/reloader", []string{"Get main.SecretMeta", "Get k8s.ConfigMap", "Apply main.Deployment"}},
 		{"github.com/imjasonh/playground/kube/examples/probe", []string{"Get main.Probe", `RequestToken "probe"`, "ReviewToken"}},
 	} {
-		uses, warnings, err := Find(t.Context(), Config{
+		uses, unresolved, err := Find(t.Context(), Config{
 			Dir: ".", Env: append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64"), Pattern: tc.pkg,
-			Package: "github.com/imjasonh/playground/kube", Funcs: []string{"Get", "List", "Fetch", "Own", "Apply", "Delete", "RequestToken", "ReviewToken"},
-			Consts: map[string]int{"RequestToken": 1}, Marker: "Object",
+			Package: "github.com/imjasonh/playground/kube", Funcs: []string{"Get", "List", "Fetch", "Own", "Apply", "Delete"},
+			Calls: []string{"Eventf", "RequestToken", "ReviewToken"}, Consts: map[string]int{"RequestToken": 1}, Marker: "Object",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -227,8 +343,8 @@ func TestFindInExamples(t *testing.T) {
 			name := u.Type[strings.LastIndex(u.Type, "/")+1:]
 			got = append(got, strings.TrimSpace(u.Func+" "+strings.Replace(name, tc.pkg[strings.LastIndex(tc.pkg, "/")+1:]+".", "main.", 1)))
 		}
-		if !reflect.DeepEqual(got, tc.want) || len(warnings) != 0 {
-			t.Errorf("%s: uses = %q, warnings = %q, want %q", tc.pkg, got, warnings, tc.want)
+		if !reflect.DeepEqual(got, tc.want) || len(unresolved) != 0 {
+			t.Errorf("%s: uses = %q, unresolved = %q, want %q", tc.pkg, got, lines(unresolved), tc.want)
 		}
 	}
 }

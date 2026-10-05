@@ -120,7 +120,8 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		}
 		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
 	}
-	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches aren't installed with bindings that deny") {
+	all := "git-k8s-check-results, git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals"
+	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, all+" aren't installed with bindings that deny") {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 
@@ -140,17 +141,19 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	for _, b := range bindings {
 		b.Spec.ValidationActions = []string{"Deny"}
 	}
-	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches don't have git-k8s.imjasonh.com/policy-version=2") {
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, all+" don't have git-k8s.imjasonh.com/policy-version=2") {
 		t.Errorf("with policies from an earlier release, which have no version, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Missing" || !strings.Contains(c.Message, ": "+policyNames[0]+" isn't installed") {
-		t.Errorf("with one binding that only warns and the other policy from an earlier release, PoliciesInstalled = %+v", c)
+		t.Errorf("with one binding that only warns and the other policies from an earlier release, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Deny"}
 	current, later := strconv.Itoa(policyVersion), strconv.Itoa(policyVersion+1)
-	policies[0].Annotations = map[string]string{policyVersionAnnotation: "1"}
-	policies[1].Annotations = map[string]string{policyVersionAnnotation: current}
+	for _, p := range policies {
+		p.Annotations = map[string]string{policyVersionAnnotation: current}
+	}
+	policies[0].Annotations[policyVersionAnnotation] = "1"
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, ": git-k8s-check-results doesn't have") {
 		t.Errorf("with one policy at an earlier version, PoliciesInstalled = %+v", c)
 	}
@@ -165,9 +168,11 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" || !strings.Contains(c.Message, ": git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 2") {
 		t.Errorf("with one policy at a later version, PoliciesInstalled = %+v", c)
 	}
-	policies[1].Annotations[policyVersionAnnotation] = later
+	for _, p := range policies {
+		p.Annotations[policyVersionAnnotation] = later
+	}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" ||
-		c.Message != "upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release: git-k8s-check-results and git-k8s-branches have a git-k8s.imjasonh.com/policy-version later than 2" {
+		c.Message != "upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release: "+all+" have a git-k8s.imjasonh.com/policy-version later than 2" {
 		t.Errorf("with policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	for _, p := range policies {

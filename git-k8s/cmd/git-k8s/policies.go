@@ -12,7 +12,7 @@ import (
 )
 
 // policyNames are the ValidatingAdmissionPolicies in config/policy.yaml.
-var policyNames = []string{"git-k8s-check-results", "git-k8s-branches"}
+var policyNames = []string{"git-k8s-check-results", "git-k8s-branches", "git-k8s-check-pods", "git-k8s-approvals"}
 
 // Each policy in config/policy.yaml has policyVersionAnnotation set to
 // policyVersion. Raise both when the core program needs a change to the
@@ -34,8 +34,9 @@ type admissionPolicyBinding struct {
 	} `json:"spec"`
 }
 
-// policiesCondition reports whether this release's admission policies are
-// installed, with bindings that deny the requests they reject.
+// policiesCondition reports whether this release's admission policies in
+// config/policy.yaml are installed, with bindings that deny the requests
+// they reject.
 // Reading them through the cache runs the reconcile again when they change.
 func policiesCondition(ctx context.Context) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
@@ -77,7 +78,7 @@ func policiesCondition(ctx context.Context) kube.Condition {
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-		Message: "the admission policies let no service account but the core program's write check results, and stop git-k8s controllers from approving branches",
+		Message: "the admission policies let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
 	}
 }
 
