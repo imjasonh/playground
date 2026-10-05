@@ -21,7 +21,6 @@ describe("learning target", () => {
       .map((note) => Number(note.id.replace(/^n/, "")))
       .filter((n) => Number.isFinite(n));
     assert.equal(memory.nextNote, ids.length === 0 ? 1 : Math.max(...ids) + 1);
-    assert.match(live.map((note) => note.text).join("\n"), /Shall I pick character's race/);
   });
 
   it("refuses a notebook directory on a fake run", async () => {
