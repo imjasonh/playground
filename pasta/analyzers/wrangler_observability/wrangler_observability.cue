@@ -1,7 +1,7 @@
 // wrangler_observability requires every Cloudflare Worker wrangler.toml
-// to keep Workers Logs (including invocation logs) and Workers Traces
-// enabled. Playground defaults to 100% head sampling; dial the rates
-// down before serious volume, but do not turn the blocks off.
+// to keep Workers Logs (including invocation logs), Workers Traces, and
+// Workers Issues enabled. Playground defaults to 100% head sampling; dial
+// the rates down before serious volume, but do not turn the blocks off.
 
 package wrangler_observability
 
@@ -14,8 +14,8 @@ _wranglerFile: ["wrangler.toml"]
 
 wrangler_observability: schema.#Analyzer & {
 	name:    "wrangler_observability"
-	version: "0.1.0"
-	doc:     "Require Workers Logs and Traces in every wrangler.toml"
+	version: "0.2.0"
+	doc:     "Require Workers Logs, Traces, and Issues in every wrangler.toml"
 	facts: {}
 
 	rules: {
@@ -104,6 +104,28 @@ wrangler_observability: schema.#Analyzer & {
 			diagnose: {
 				severity: "error"
 				message:  "wrangler.toml must enable [observability.traces] (enabled = true)"
+			}
+		}
+
+		missing_observability_issues: {
+			name:      "missing_observability_issues"
+			doc:       "Flag wrangler.toml without [observability.issues] enabled = true"
+			languages: [tomllang.Name]
+			requires: []
+			provides: []
+			file_match: _wranglerFile
+
+			match: {
+				node: "document"
+				where: [{
+					op: "not_matches"
+					args: ["@_root", "(?ms)^\\[observability\\.issues\\][^\\[]*\\benabled\\s*=\\s*true"]
+				}]
+			}
+
+			diagnose: {
+				severity: "error"
+				message:  "wrangler.toml must enable [observability.issues] (enabled = true)"
 			}
 		}
 	}

@@ -14,8 +14,8 @@ use futures::StreamExt;
 use serde_json::json;
 use worker::js_sys::Uint8Array;
 use worker::{
-    event, Context, Env, Fetch, Headers, Method, Request, RequestInit, RequestRedirect, Response,
-    Result, Url,
+    console_error, event, Context, Env, Fetch, Headers, Method, Request, RequestInit,
+    RequestRedirect, Response, Result, Url,
 };
 
 use crate::error::GuardError;
@@ -314,6 +314,11 @@ fn guard_error(err: &GuardError, cors: &CorsDecision) -> Result<Response> {
 }
 
 fn json_response(status: u16, value: serde_json::Value, cors: &CorsDecision) -> Result<Response> {
+    // Upstream failures surface as 502s. Log the detail at error level so
+    // Workers Issues records why the request failed and not only that it did.
+    if status >= 500 {
+        console_error!("HTTP {status}: {value}");
+    }
     let headers = Headers::new();
     let _ = headers.set("Content-Type", "application/json");
     apply_cors(&headers, cors);

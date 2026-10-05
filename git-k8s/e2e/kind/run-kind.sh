@@ -473,25 +473,46 @@ eventually 60 branch_gone c/auth
 echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
 echo "::endgroup::"
 
-echo "::group::Two branches from the same commit both land"
+echo "::group::Two branches behind main land through its queue in turn"
 fetch_main
 g checkout -q -B c/one FETCH_HEAD
 echo one >"${WORK}/one.txt"
 g add -A
 g commit -qm "Add one.txt"
+ONE="$(g rev-parse HEAD)"
 g checkout -q -B c/two FETCH_HEAD
 echo two >"${WORK}/two.txt"
 g add -A
 g commit -qm "Add two.txt"
+TWO="$(g rev-parse HEAD)"
+g checkout -q -B moved FETCH_HEAD
+echo three >"${WORK}/three.txt"
+g add -A
+g commit -qm "Add three.txt"
+MOVED="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:main
+timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranch "$(branch_object main)" --watch \
+  -o jsonpath='{.status.queue[*]}{"\n"}' >"${WORKDIR}/queues.txt" 2>&1 &
+queues_pid=$!
 g push -q "${HOST_URL}/app.git" c/one:c/one c/two:c/two
 both_landed() {
   branch_gone c/one && branch_gone c/two && fetch_main &&
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
-eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
+eventually 240 both_landed
+kill "${queues_pid}" 2>/dev/null || true
+wait "${queues_pid}" || true
+echo "main's queue as it changed:"
+cat "${WORKDIR}/queues.txt"
+grep -Eqx 'c/(one|two) c/(one|two)' "${WORKDIR}/queues.txt"
 g log --graph --oneline FETCH_HEAD
-echo "One branch landed, the base check merged main into the other, and it landed too."
+# Each branch merged main in once: the first merged MOVED and landed, and
+# the second merged the first's landing.
+[[ "$(g log --format=%s "${MOVED}..FETCH_HEAD" | grep -c '^Merge main into c/')" == 2 ]]
+[[ "$(g rev-parse FETCH_HEAD^2^2)" == "${MOVED}" ]]
+[[ "$(g rev-parse FETCH_HEAD^1 FETCH_HEAD^2^1 | sort)" == "$(printf '%s\n' "${ONE}" "${TWO}" | sort)" ]]
+g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
+echo "Both branches waited in main's queue, and each merged main in once, at the front, before it landed."
 echo "::endgroup::"
 
 # landing sets how branches land on main.
@@ -568,11 +589,15 @@ patch_status() {
     -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
     --data "$1" "${status_url}"
 }
-code="$(patch_status '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}')"
-cat "${WORKDIR}/patch.json"
-echo
-[[ "${code}" == 422 ]]
-grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
+for patch in '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}' \
+  '{"status":{"queued":{"since":"2026-01-01T00:00:00Z","head":"0000000"}}}' \
+  '{"status":{"queue":["c/x"]}}'; do
+  code="$(patch_status "${patch}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]]
+  grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
+done
 code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
 [[ "${code}" == 200 ]]
 approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
@@ -601,7 +626,7 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, the core program can't write a result despite its entry, and other service accounts can't write either."
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk or a merge queue, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, the core program can't write a result despite its entry, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"

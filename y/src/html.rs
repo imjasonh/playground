@@ -1387,7 +1387,7 @@ mod tests {
         let page = index_view(
             "y",
             "https://example.com",
-            &[p.clone()],
+            std::slice::from_ref(&p),
             &[],
             true,
             &[(3, 2)],
@@ -1426,7 +1426,7 @@ mod tests {
             "y",
             "https://example.com",
             &long,
-            &[long.clone()],
+            std::slice::from_ref(&long),
             &[],
             false,
             3,

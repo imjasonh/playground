@@ -364,11 +364,35 @@ func branches(t *testing.T, srv *gittest.Server) (*gitk8s.GitBranch, *gittest.Wo
 	return b, w
 }
 
+// merge reconciles b at the front of its parent's merge queue. A b that
+// isn't queued joined in an earlier reconcile.
 func merge(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch) error {
 	t.Helper()
+	_, err := mergeEvents(t, srv, b)
+	return err
+}
+
+// mergeIn reconciles b with parent as its parent's GitBranch, and returns
+// the Merged condition's message. Reads see the objects in world over b and
+// parent. b keeps its check results, which the merge controller leaves out
+// of its status write.
+func mergeIn(t *testing.T, srv *gittest.Server, parent, b *gitk8s.GitBranch, world ...any) string {
+	t.Helper()
+	results := b.Status.Checks
 	repo, secret := srv.Repository("app", rules()...)
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
-	return (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b)
+	ctx, _ := kube.Fake(t.Context(), b, append([]any{repo, secret, parent}, world...)...)
+	m := &merger{
+		ident: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"},
+		cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()},
+	}
+	if err := m.Reconcile(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	b.Status.Checks = results
+	if c := kube.FindCondition(b.Status.Conditions, "Merged"); c != nil {
+		return c.Message
+	}
+	return ""
 }
 
 func TestLandsAndDeletesBranch(t *testing.T) {
@@ -411,11 +435,8 @@ func TestWaitsForFreshPassingChecks(t *testing.T) {
 			b, _ := branches(t, srv)
 			edit(b)
 			main := b.Spec.ParentHead
-			if err := merge(t, srv, b); err != nil {
-				t.Fatal(err)
-			}
-			if b.Status.State != reasonWaitingForChecks {
-				t.Errorf("state = %q, want %s", b.Status.State, reasonWaitingForChecks)
+			if msg := mergeIn(t, srv, parentOf(b), b); b.Status.State != reasonWaitingForChecks || b.Status.Queued != nil {
+				t.Errorf("state = %q, queued %+v, %q; want %s, out of the queue", b.Status.State, b.Status.Queued, msg, reasonWaitingForChecks)
 			}
 			if got := srv.Heads(t, "app")["main"]; got != main {
 				t.Errorf("main moved to %s", got)

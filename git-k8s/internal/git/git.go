@@ -272,6 +272,11 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 	return err
 }
 
+// Fetched returns the commit that the last Fetch of a branch found.
+func (r *Repo) Fetched(ctx context.Context, branch string) (string, error) {
+	return r.text(ctx, "rev-parse", "--verify", "--end-of-options", "refs/remotes/origin/"+branch+"^{commit}")
+}
+
 // HasCommit reports whether the repository has the commit.
 func (r *Repo) HasCommit(ctx context.Context, sha string) (bool, error) {
 	res, err := r.git.exec(ctx, r.Dir, []string{"cat-file", "-e", "--end-of-options", sha + "^{commit}"}, opts{})
@@ -470,6 +475,19 @@ func (r *Repo) CountCommits(ctx context.Context, base, head string, trailers ...
 		return 0, err
 	}
 	return strconv.Atoi(out)
+}
+
+// OnlyFixerCommits reports whether head descends from base, and every
+// commit after base on head's first-parent history carries the fixer
+// trailer, so that checks made every change since base. A merge of the
+// parent into the branch has the branch as its first parent, so the parent's
+// own commits don't count.
+func (r *Repo) OnlyFixerCommits(ctx context.Context, base, head string) (bool, error) {
+	if ok, err := r.IsAncestor(ctx, base, head); err != nil || !ok {
+		return false, err
+	}
+	out, err := r.text(ctx, "rev-list", "--first-parent", "--invert-grep", "--grep=^"+FixerTrailer+":", "--end-of-options", head, "^"+base)
+	return err == nil && out == "", err
 }
 
 // ListedCommit is one commit that ListCommits lists.

@@ -572,7 +572,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                         kv_ops += 1;
                     }
                 }
-                if let Some((m, _)) = resp.metrics.as_mut() {
+                if let Some((m, _)) = resp.metrics.as_deref_mut() {
                     m.kv_ops += kv_ops;
                     m.backend_ms += crate::metrics::now_ms() - kv_start;
                 }
@@ -650,7 +650,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     if let Some(header) = resp.server_timing() {
         headers.set("Server-Timing", &header)?;
     }
-    if let Some((m, total_ms)) = &resp.metrics {
+    if let Some((m, total_ms)) = resp.metrics.as_deref() {
         worker::console_log!("{}", m.log_json(&method, &path, resp.status, *total_ms));
     }
     // Full bodies relay directly; streamed bodies (fetch packs, large blobs)

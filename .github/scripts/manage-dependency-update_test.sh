@@ -23,8 +23,9 @@ git init -q -b main repo
 cd repo
 git config user.name test
 git config user.email test@example.com
-mkdir -p gomod jsapp worker git-k8s/agent/runner
+mkdir -p gomod jsapp worker git-k8s/agent/runner .github/wrangler
 echo 'module gomod' > gomod/go.mod
+echo '{"devDependencies":{"wrangler":"4.0.0"}}' > .github/wrangler/package.json
 echo '{}' > jsapp/package.json
 echo '{}' > jsapp/package-lock.json
 echo '{}' > git-k8s/agent/runner/package.json
@@ -67,6 +68,11 @@ reset_tree
 echo '{"lockfileVersion":3}' > git-k8s/agent/runner/package-lock.json
 expect "nested npm package" true "$(detect)"
 expect "nested npm package staged" "M git-k8s/agent/runner/package-lock.json" "$(staged)"
+reset_tree
+
+echo '{"devDependencies":{"wrangler":"4.1.0"}}' > .github/wrangler/package.json
+expect "wrangler bump" true "$(detect)"
+expect "wrangler bump staged" "M .github/wrangler/package.json" "$(staged)"
 reset_tree
 
 mkdir newmod

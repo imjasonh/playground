@@ -13,12 +13,11 @@ use p256::ecdsa::signature::Signer;
 use p256::ecdsa::{Signature, SigningKey};
 use p256::pkcs8::DecodePrivateKey;
 use rcgen::{
-    BasicConstraints, CertificateParams, CustomExtension, DistinguishedName, DnType, IsCa, KeyPair,
-    KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384,
+    BasicConstraints, CertificateParams, CustomExtension, DistinguishedName, DnType, IsCa, Issuer,
+    KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use x509_parser::prelude::*;
 
 const APP_ID: &str = "TEAMIDTEST.io.github.imjasonh.playground";
 const NOW: u64 = 1_700_000_100;
@@ -42,9 +41,7 @@ fn cn_params(cn: &str, ca: bool) -> CertificateParams {
 }
 
 fn public_key_bytes(key: &KeyPair) -> Vec<u8> {
-    let der = key.public_key_der();
-    let (_, spki) = SubjectPublicKeyInfo::from_der(&der).expect("spki");
-    spki.subject_public_key.data.to_vec()
+    key.public_key_raw().to_vec()
 }
 
 fn nonce_extension(nonce: &[u8; 32]) -> CustomExtension {
@@ -86,7 +83,7 @@ fn mint_fixture_with_receipt(
     let int_key = keypair();
     let int_params = cn_params("Test App Attest Intermediate", true);
     let int_cert = int_params
-        .signed_by(&int_key, &root_cert, &root_key)
+        .signed_by(&int_key, &Issuer::from_params(&root_params, &root_key))
         .expect("intermediate");
 
     let leaf_key = keypair();
@@ -101,7 +98,7 @@ fn mint_fixture_with_receipt(
     let mut leaf_params = cn_params("credCert", false);
     leaf_params.custom_extensions = vec![nonce_extension(&nonce)];
     let leaf_cert = leaf_params
-        .signed_by(&leaf_key, &int_cert, &int_key)
+        .signed_by(&leaf_key, &Issuer::from_params(&int_params, &int_key))
         .expect("leaf");
 
     let attestation = attest::encode_attestation_object_with_receipt(
@@ -168,7 +165,7 @@ fn p384_intermediate_chain_verifies() {
     let int_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384).expect("P-384 intermediate");
     let int_params = cn_params("Test App Attest Intermediate P384", true);
     let int_cert = int_params
-        .signed_by(&int_key, &root_cert, &root_key)
+        .signed_by(&int_key, &Issuer::from_params(&root_params, &root_key))
         .expect("intermediate");
 
     let leaf_key = keypair();
@@ -176,7 +173,7 @@ fn p384_intermediate_chain_verifies() {
     let mut leaf_params = cn_params("credCert", false);
     leaf_params.custom_extensions = vec![nonce_extension(&[0xab; 32])];
     let leaf_cert = leaf_params
-        .signed_by(&leaf_key, &int_cert, &int_key)
+        .signed_by(&leaf_key, &Issuer::from_params(&int_params, &int_key))
         .expect("leaf");
 
     let leaf = certs::verify_chain(

@@ -299,8 +299,10 @@ async fn handle_home(req: &Request, db: &D1Database, site: &Site, now: u64) -> R
     let before = query(req, "before").and_then(|s| policy::parse_js_safe_id(&s));
     let posts = list_head_posts(db, 50, before).await?;
     let ids: Vec<i64> = posts.iter().map(|p| p.id).collect();
-    let images = images_for_posts(db, &ids).await?;
-    let replies = total_replies_by_head(db, &ids).await?;
+    // Both queries need only the post ids, so they share one D1 round trip.
+    let (images, replies) =
+        futures::join!(images_for_posts(db, &ids), total_replies_by_head(db, &ids));
+    let (images, replies) = (images?, replies?);
     let page = index_view(
         &site.title,
         &site.url,
@@ -319,10 +321,12 @@ async fn handle_post(
     now: u64,
     id: i64,
 ) -> Result<Response> {
-    let Some(post) = get_post(db, id).await? else {
+    // The thread lookup needs only the id, so it runs alongside get_post.
+    let (post, thread) = futures::join!(get_post(db, id), get_thread(db, id));
+    let Some(post) = post? else {
         return text(404, "not found");
     };
-    let thread = get_thread(db, id).await?;
+    let thread = thread?;
     let thread_posts = thread
         .as_ref()
         .map(|t| t.posts.clone())

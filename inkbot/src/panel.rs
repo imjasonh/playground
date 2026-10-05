@@ -32,7 +32,7 @@ impl Default for PanelSpec {
 
 impl PanelSpec {
     pub fn new(width: u32, height: u32) -> Result<Self, PanelError> {
-        if width == 0 || height == 0 || width % 8 != 0 {
+        if width == 0 || height == 0 || !width.is_multiple_of(8) {
             return Err(PanelError::BadSpec);
         }
         Ok(Self { width, height })
@@ -216,7 +216,7 @@ pub fn encode_bw_png(gray: &GrayImage, spec: PanelSpec) -> Result<(Vec<u8>, Vec<
         let mut encoder = png::Encoder::new(Cursor::new(&mut out), spec.width, spec.height);
         encoder.set_color(png::ColorType::Grayscale);
         encoder.set_depth(png::BitDepth::One);
-        encoder.set_compression(png::Compression::Default);
+        encoder.set_compression(png::Compression::Balanced);
         let mut writer = encoder
             .write_header()
             .map_err(|e| PanelError::Encode(e.to_string()))?;
