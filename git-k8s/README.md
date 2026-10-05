@@ -972,17 +972,17 @@ and changes to `status.checks` by service accounts other than the core
 program's, even when a role grants them status access. See
 [Install](#install).
 
-`check-gotest` runs tests in Pods, so `generate` grants it permission to
-create, patch, and delete Pods in every namespace. The `git-k8s-check-pods`
-admission policy keeps those Pods out of the `git-k8s` and `check-*`
-namespaces, and makes them run as their namespace's `default` service
-account, which the core program doesn't map to a check. Without that policy,
-`check-gotest` can run a Pod as another check's service account and mount a
-`git-k8s-results` token that the core program accepts as that check's. It
-can also run a Pod as the core program's service account, which writes every
-check's result. Anyone else who can create Pods in a check's namespace or in
-the `git-k8s` namespace can do the same, because the policy covers only
-checks.
+`check-gotest` runs tests in Pods, and `check-review` runs agents in Pods, so
+`generate` grants both permission to create, patch, and delete Pods in every
+namespace. The `git-k8s-check-pods` admission policy keeps those Pods out of
+the `git-k8s` and `check-*` namespaces, and makes them run as their
+namespace's `default` service account, which the core program doesn't map to
+a check. Without that policy, either check can run a Pod as another check's
+service account and mount a `git-k8s-results` token that the core program
+accepts as that check's. It can also run a Pod as the core program's service
+account, which writes every check's result. Anyone else who can create Pods
+in a check's namespace or in the `git-k8s` namespace can do the same,
+because the policy covers only checks.
 
 The tokens have the audience `git-k8s-results`, so a token sent to the core
 program can't call the API server, and a token for the API server can't send
@@ -991,20 +991,22 @@ can read the traffic between Pods can copy a token and send that check's
 results until the token expires, within an hour, or the check's Pod is
 deleted.
 
-`check-base`, `check-gofmt`, and `check-risk` fetch or push, so they can
-also request tokens for their own service accounts, to send to Octo STS. As
-[Security](#security) describes, whoever holds a token for one of them can
-then create a `git-k8s-results` token for it that isn't bound to its Pod and
-lasts as long as the API server allows, and send that check's results with
-the token.
+`check-base`, `check-gofmt`, `check-review`, and `check-risk` fetch or push,
+so they can also request tokens for their own service accounts, to send to
+Octo STS. As [Security](#security) describes, whoever holds a token for one
+of them can then create a `git-k8s-results` token for it that isn't bound to
+its Pod and lasts as long as the API server allows, and send that check's
+results with the token.
 
 kube doesn't fence writes, and the results controller writes all of
 `status.checks` at once, so a replica that hasn't noticed that its leader
 lease expired can put back earlier results. Checks other than `approval` run
 again on an earlier result, which is for earlier commits or isn't final. If
-someone removed the `approve` annotation, though, the replica can put back
-`approval`'s `Passed` result until `check-approval` sends `Failed` again, and
-the merge controller can merge the branch in that window.
+the agent's Pod is gone, `check-review` can then run its agent again, which
+costs as much as a new run. If someone removed the `approve` annotation,
+though, the replica can put back `approval`'s `Passed` result until
+`check-approval` sends `Failed` again, and the merge controller can merge
+the branch in that window.
 
 ### Write a result by hand
 
