@@ -244,8 +244,14 @@ k get -f "${ROOT}/config/policy.yaml" --show-labels
   --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
 policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
 generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
-if grep -F -e configmaps -e "${policy_names}" "${WORKDIR}/git-k8s-without-policies.yaml"; then
-  echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
+# The results endpoint reads the git-k8s-checks ConfigMap, so the one rule
+# that may name a ConfigMap or a policy is get on that ConfigMap alone. The
+# rule ends where the next rule or object starts.
+read_checks=$'- apiGroups:\n  - ""\n  resources:\n  - configmaps\n  resourceNames:\n  - git-k8s-checks\n  verbs:\n  - get\n-'
+without_policies="$(<"${WORKDIR}/git-k8s-without-policies.yaml")"
+if [[ "${without_policies}" != *"${read_checks}"* ]] ||
+  grep -F -e configmaps -e "${policy_names}" <<<"${without_policies/"${read_checks}"/-}"; then
+  echo "generate -- -install-policies=false must grant get on the git-k8s-checks ConfigMap, and nothing else that installs the policies" >&2
   exit 1
 fi
 # The policies ignore the entry for the core program. Without that, it would
@@ -738,6 +744,23 @@ code="$(send_result "${risk_token}" risk bearer)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 409 ]]
 grep -q "main has no parent, so it takes no check results" "${WORKDIR}/result.txt"
+# check-approval is the approval check through its entry in the ConfigMap.
+# The core program's entry names the gofmt check, but the core program is
+# never a check.
+approval_results_token="$(k -n "${APPROVAL_NS}" create token check-approval --audience=git-k8s-results)"
+code="$(send_result "${approval_results_token}" approval)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 409 ]]
+grep -q "main has no parent, so it takes no check results" "${WORKDIR}/result.txt"
+code="$(send_result "${approval_results_token}" gofmt)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 403 ]]
+grep -q "system:serviceaccount:${APPROVAL_NS}:check-approval is the approval check, so it can't write the gofmt check's result" "${WORKDIR}/result.txt"
+core_results_token="$(k -n git-k8s create token git-k8s --audience=git-k8s-results)"
+code="$(send_result "${core_results_token}" gofmt)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 403 ]]
+grep -q "system:serviceaccount:git-k8s:git-k8s isn't a check's service account" "${WORKDIR}/result.txt"
 kill "${PORT_FORWARD_PID}"
 PORT_FORWARD_PID=""
 
@@ -800,7 +823,7 @@ core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it, check-approval in the namespace ${APPROVAL_NS} is the approval check through its ConfigMap entry, the results endpoint refuses a check's token for another check's entry, the core program, despite its entry, and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
+echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"

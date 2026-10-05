@@ -15,10 +15,19 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
 // maxResultSize bounds the body of a request to the results endpoint.
 const maxResultSize = 256 << 10
+
+// The admission policies in config/policy.yaml read the same ConfigMap, and
+// name the same service account as the core program's.
+const (
+	checksNamespace = "git-k8s"
+	checksConfigMap = "git-k8s-checks"
+	coreAccount     = "git-k8s.git-k8s"
+)
 
 // resultsBranch is the part of a GitBranch that the results controller
 // writes. status.checks is an atomic map, so each write replaces all of its
@@ -80,8 +89,18 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, review.Error, http.StatusUnauthorized)
 		return
 	}
+	cm, err := kube.Fetch[k8s.ConfigMap](r.Context(), checksNamespace, checksConfigMap)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "reading the git-k8s-checks ConfigMap failed", "err", err)
+		http.Error(w, "can't read the git-k8s-checks ConfigMap now", http.StatusInternalServerError)
+		return
+	}
+	var entries map[string]string
+	if cm != nil {
+		entries = cm.Data
+	}
 	entry := r.PathValue("check")
-	check, ok := checkFor(review.User)
+	check, ok := checkFor(review.User, entries)
 	switch {
 	case !ok:
 		http.Error(w, review.User.Username+" isn't a check's service account", http.StatusForbidden)
@@ -240,15 +259,25 @@ func (rs *results) Reconcile(ctx context.Context, b *resultsBranch) error {
 	return nil
 }
 
-// checkFor returns the name of the check that runs as user. generate
-// installs each program in a namespace with a service account of the
-// program's name, so the gofmt check runs as the service account
-// check-gofmt in the namespace check-gofmt. Keep every mapping from service
-// accounts to checks in this function.
-func checkFor(user kube.UserInfo) (string, bool) {
+// checkFor returns the name of the check that runs as user. Each of entries,
+// the data of the git-k8s-checks ConfigMap, maps NAMESPACE.SERVICE_ACCOUNT
+// to a check's name, or to "" for a service account that isn't a check.
+// Without an entry, generate's convention applies: it installs each program
+// in a namespace with a service account of the program's name, so the gofmt
+// check runs as the service account check-gofmt in the namespace
+// check-gofmt. The core program's service account is never a check. The
+// check variable of the policies in config/policy.yaml maps service
+// accounts the same way, so change both together.
+func checkFor(user kube.UserInfo, entries map[string]string) (string, bool) {
 	ns, name, ok := user.ServiceAccount()
+	if !ok || ns+"."+name == coreAccount {
+		return "", false
+	}
+	if check, ok := entries[ns+"."+name]; ok {
+		return check, check != ""
+	}
 	check, isCheck := strings.CutPrefix(name, "check-")
-	if !ok || !isCheck || ns != name || check == "" {
+	if !isCheck || ns != name || check == "" {
 		return "", false
 	}
 	return check, true

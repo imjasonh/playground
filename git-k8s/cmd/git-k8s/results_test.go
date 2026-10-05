@@ -14,6 +14,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
 var branchKey = kube.Key{Namespace: "default", Name: "app-c-x"}
@@ -32,6 +33,13 @@ func listedBranch() *resultsBranch {
 func checkToken(check string) kube.FakeToken {
 	sa := "check-" + check
 	return kube.FakeToken{Token: check, User: kube.UserInfo{Username: "system:serviceaccount:" + sa + ":" + sa}, Audiences: []string{gitk8s.ResultsAudience}}
+}
+
+// checksEntries returns the git-k8s-checks ConfigMap with entries.
+func checksEntries(entries map[string]string) *k8s.ConfigMap {
+	cm := &k8s.ConfigMap{Object: kube.Meta(checksConfigMap, nil), Data: entries}
+	cm.Namespace = checksNamespace
+	return cm
 }
 
 // sendResult sends body, a result or raw JSON, to the results endpoint
@@ -70,11 +78,15 @@ func TestResultsEndpointRejects(t *testing.T) {
 	main := &resultsBranch{Object: kube.Meta("app-main", nil)}
 	main.Namespace, main.Spec = "default", gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: "p1"}
 	world := []any{
-		b, main, checkToken("base"), checkToken("gofmt"), checkToken("risk"),
+		b, main, checkToken("base"), checkToken("gofmt"), checkToken("risk"), checkToken("lint"),
 		kube.FakeToken{Token: "api", User: gofmtUser},
 		kube.FakeToken{Token: "ci", User: kube.UserInfo{Username: "system:serviceaccount:default:ci"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "elsewhere", User: kube.UserInfo{Username: "system:serviceaccount:default:check-gofmt"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "admin", User: kube.UserInfo{Username: "kubernetes-admin"}, Audiences: []string{gitk8s.ResultsAudience}},
+		kube.FakeToken{Token: "bot", User: kube.UserInfo{Username: "system:serviceaccount:ci:base-bot"}, Audiences: []string{gitk8s.ResultsAudience}},
+		kube.FakeToken{Token: "approval", User: kube.UserInfo{Username: "system:serviceaccount:checks:check-approval"}, Audiences: []string{gitk8s.ResultsAudience}},
+		kube.FakeToken{Token: "core", User: kube.UserInfo{Username: "system:serviceaccount:git-k8s:git-k8s"}, Audiences: []string{gitk8s.ResultsAudience}},
+		checksEntries(map[string]string{"ci.base-bot": "base", "checks.check-approval": "approval", "check-lint.check-lint": "", "git-k8s.git-k8s": "gofmt"}),
 	}
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	fresh := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
@@ -94,6 +106,10 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"a check's account name in another namespace", gofmt, "elsewhere", fresh, http.StatusForbidden, "isn't a check's service account"},
 		{"a person", gofmt, "admin", fresh, http.StatusForbidden, "kubernetes-admin isn't a check's service account"},
 		{"another check's entry", gofmt, "base", fresh, http.StatusForbidden, "system:serviceaccount:check-base:check-base is the base check, so it can't write the gofmt check's result"},
+		{"a check through its ConfigMap entry", "/results/default/app-c-x/base?generation=3", "bot", &base, http.StatusNoContent, ""},
+		{"another check's entry through a ConfigMap entry", gofmt, "approval", fresh, http.StatusForbidden, "system:serviceaccount:checks:check-approval is the approval check, so it can't write the gofmt check's result"},
+		{"a ConfigMap entry that says the account isn't a check", "/results/default/app-c-x/lint?generation=3", "lint", fresh, http.StatusForbidden, "system:serviceaccount:check-lint:check-lint isn't a check's service account"},
+		{"the core program, despite its ConfigMap entry", gofmt, "core", fresh, http.StatusForbidden, "system:serviceaccount:git-k8s:git-k8s isn't a check's service account"},
 		{"invalid JSON", gofmt, "gofmt", `{"commit":`, http.StatusBadRequest, "decoding the result"},
 		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"} {}`, http.StatusBadRequest, "the request has data after the result"},
 		{"a brace after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"}}`, http.StatusBadRequest, "the request has data after the result"},
@@ -127,6 +143,26 @@ func TestResultsEndpointRejects(t *testing.T) {
 	}
 	if len(rs.held) != 0 {
 		t.Errorf("holds %v after the requests ended", rs.held)
+	}
+}
+
+// Without the git-k8s-checks ConfigMap, only generate's convention maps
+// service accounts to checks.
+func TestResultsEndpointWithoutChecksConfigMap(t *testing.T) {
+	b := listedBranch()
+	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
+	b.Status.Checks = map[string]gitk8s.CheckResult{"base": base}
+	bot := kube.FakeToken{Token: "bot", User: kube.UserInfo{Username: "system:serviceaccount:ci:base-bot"}, Audiences: []string{gitk8s.ResultsAudience}}
+	rs := &results{timeout: time.Minute, poll: time.Millisecond}
+	const path = "/results/default/app-c-x/base?generation=3"
+	for token, code := range map[string]int{"base": http.StatusNoContent, "bot": http.StatusForbidden} {
+		ctx, rec := kube.FakeRequest(t.Context(), b, checkToken("base"), bot)
+		if w := sendResult(ctx, rs, path, token, &base); w.Code != code {
+			t.Errorf("with the %s token, got %d %q, want %d", token, w.Code, w.Body, code)
+		}
+		if err := rec.Err(); err != nil {
+			t.Error(err)
+		}
 	}
 }
 
@@ -388,19 +424,36 @@ func TestResultsReconcileRereadsTheCache(t *testing.T) {
 }
 
 func TestCheckFor(t *testing.T) {
-	for user, want := range map[string]string{
-		"system:serviceaccount:check-gofmt:check-gofmt":     "gofmt",
-		"system:serviceaccount:check-my-lint:check-my-lint": "my-lint",
-		"system:serviceaccount:default:check-gofmt":         "",
-		"system:serviceaccount:check-gofmt:default":         "",
-		"system:serviceaccount:check-:check-":               "",
-		"system:serviceaccount:git-k8s:git-k8s":             "",
-		"check-gofmt":                                       "",
-		"kubernetes-admin":                                  "",
+	entries := map[string]string{
+		"checks.check-approval": "approval",
+		"ci.gofmt-bot":          "gofmt",
+		"check-risk.check-risk": "",
+		"git-k8s.git-k8s":       "gofmt",
+	}
+	for _, tc := range []struct {
+		user    string
+		entries map[string]string
+		want    string
+	}{
+		{"system:serviceaccount:check-gofmt:check-gofmt", nil, "gofmt"},
+		{"system:serviceaccount:check-my-lint:check-my-lint", nil, "my-lint"},
+		{"system:serviceaccount:default:check-gofmt", nil, ""},
+		{"system:serviceaccount:check-gofmt:default", nil, ""},
+		{"system:serviceaccount:check-:check-", nil, ""},
+		{"system:serviceaccount:git-k8s:git-k8s", nil, ""},
+		{"system:serviceaccount:checks:check-approval", nil, ""},
+		{"check-gofmt", nil, ""},
+		{"kubernetes-admin", nil, ""},
+		{"system:serviceaccount:check-gofmt:check-gofmt", entries, "gofmt"},
+		{"system:serviceaccount:checks:check-approval", entries, "approval"},
+		{"system:serviceaccount:ci:gofmt-bot", entries, "gofmt"},
+		{"system:serviceaccount:check-risk:check-risk", entries, ""},
+		{"system:serviceaccount:git-k8s:git-k8s", entries, ""},
+		{"system:serviceaccount:ci:other-bot", entries, ""},
 	} {
-		got, ok := checkFor(kube.UserInfo{Username: user})
-		if got != want || ok != (want != "") {
-			t.Errorf("checkFor(%s) = %q, %v; want %q", user, got, ok, want)
+		got, ok := checkFor(kube.UserInfo{Username: tc.user}, tc.entries)
+		if got != tc.want || ok != (tc.want != "") {
+			t.Errorf("checkFor(%s, %v) = %q, %v; want %q", tc.user, tc.entries, got, ok, tc.want)
 		}
 	}
 }

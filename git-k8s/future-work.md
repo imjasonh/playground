@@ -169,18 +169,6 @@ The proposed fix is for the mirror to sign the commits that git-k8s makes,
 with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
 through Sigstore, or with an SSH key that only the mirror holds.
 
-## Map any service account to a check
-
-The results endpoint identifies a check only by the name of its service
-account. The service account `check-NAME` in the namespace `check-NAME`, as
-`generate` installs it, runs the check `NAME`, so a check that runs as
-another service account can't send results, even with an entry in the
-`git-k8s-checks` ConfigMap that the admission policies read.
-
-The proposed fix is for `checkFor`, the one function in the core program
-that maps service accounts to checks, to read that ConfigMap too, so that
-the two agree.
-
 ## Run more agents
 
 Other checks and controllers could run agents with the `agent` package that

@@ -1,10 +1,11 @@
-# The git-k8s-check-results and git-k8s-branches policies read this ConfigMap
-# to find checks that don't run as the service account check-NAME in the
-# namespace check-NAME. Each entry maps NAMESPACE.SERVICE_ACCOUNT to a
-# check's name, for example "ci.gofmt-bot: gofmt", and overrides that
-# convention. They ignore an entry for the core program's service account,
-# git-k8s.git-k8s, which is never a check. The core program applies this
-# ConfigMap without data, so it keeps the entries that you add.
+# The git-k8s-check-results and git-k8s-branches policies, and the core
+# program's results endpoint, read this ConfigMap to find checks that don't
+# run as the service account check-NAME in the namespace check-NAME. Each
+# entry maps NAMESPACE.SERVICE_ACCOUNT to a check's name, for example
+# "ci.gofmt-bot: gofmt", and overrides that convention. They ignore an entry
+# for the core program's service account, git-k8s.git-k8s, which is never a
+# check. The core program applies this ConfigMap without data, so it keeps
+# the entries that you add.
 # While the ConfigMap is missing, those policies deny every write to
 # GitBranch objects, including people's.
 apiVersion: v1
