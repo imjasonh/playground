@@ -202,8 +202,8 @@ pub fn check_max_metric(record: &DeviceRecord, max: Option<u32>) -> Result<(), E
 mod tests {
     use super::*;
     use p256::ecdsa::signature::Verifier;
+    use p256::elliptic_curve::Generate;
     use p256::pkcs8::EncodePrivateKey;
-    use rand_core::OsRng;
 
     #[test]
     fn team_id_splits_app_id() {
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn device_check_jwt_verifies() {
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let pem = signing
             .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
             .unwrap()

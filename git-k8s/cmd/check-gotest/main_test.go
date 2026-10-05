@@ -121,7 +121,7 @@ func TestStartsSandboxedPod(t *testing.T) {
 	if env["URL"] != "http://git-k8s.git-k8s.svc/default/app.git" || env["GIT_ALLOW_PROTOCOL"] != git.AllowProtocol {
 		t.Errorf("fetch container's environment = %v, want the copy on the mirror", env)
 	}
-	var token *ServiceAccountToken
+	var token *ServiceAccountTokenProjection
 	for _, v := range spec.Volumes {
 		if v.Name == "mirror-token" && v.Projected != nil && len(v.Projected.Sources) == 1 {
 			token = v.Projected.Sources[0].ServiceAccountToken

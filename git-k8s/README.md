@@ -87,7 +87,9 @@ reconciler:
   only if the parent still points to the commit that the checks saw, so it
   never overwrites a parent that moved in the meantime. It then deletes the
   branch if the policy says to, and the repositories controller pushes both
-  changes to the external repository.
+  changes to the external repository. When the policy lets the `base` check
+  push, branches whose gates pass wait in the parent's
+  [merge queue](#merge-queue), and only the branch at the front lands.
 
 The core program's third controller, **check-runs**, copies check results to
 GitHub as check runs. See [Check runs](#check-runs).
@@ -105,13 +107,16 @@ run, so the API server holds a bounded amount of state.
 After a branch lands, `kubectl get gitbranches` shows what's still open:
 
 ```
-NAME                    BRANCH   HEAD                                       PARENT   STATE              AGE
-app-c-auth-f684729ccf   c/auth   d28547a6c959905ea8dc037ac37541167a50638c   main     WaitingForChecks   9s
-app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                               48s
+NAME                    BRANCH   HEAD                                       PARENT   STATE              QUEUE   AGE
+app-c-auth-f684729ccf   c/auth   d28547a6c959905ea8dc037ac37541167a50638c   main     WaitingForChecks           9s
+app-c-one-a7d8621874    c/one    04988fc4984947ac2af2b55d15bc96b8e49b5a2f   main     Queued             1       2s
+app-c-two-de141ef616    c/two    62ebc5163be79d7963293a7e4c6152a967ed9838   main     Queued             2       2s
+app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                                       48s
 ```
 
 The `Merged` condition's message explains a `WaitingForChecks` state, for
 example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`.
+`QUEUE` is a branch's place in its parent's [merge queue](#merge-queue).
 
 ## The mirror
 
@@ -769,7 +774,7 @@ pushes to the mirror, which applies the rules in
 
 | Program | Check | What it does |
 | --- | --- | --- |
-| `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. |
+| `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
@@ -894,6 +899,13 @@ imports the package, so a check that reads only the `GitBranch`, such as
 `check-approval`, leaves `Remote` out, and its program gets no token. No
 check reads Secrets.
 
+A check runs again when the branch's head changes, and with `UsesParent`,
+when the parent's head changes. `Always` runs it on every reconcile, for a
+check that reads only the `GitBranch`. `Stale` runs it again when something
+that it reads with `kube.Get` makes a finished result out of date, the way
+`check-base` runs again when its branch reaches the front of the merge
+queue.
+
 Set `FilesOnly` in a check's `checks.Check` when its result for the branch's
 head also holds for any commit with the same files that builds on the same
 parent head, because the result doesn't depend on the branch's commits, such
@@ -913,8 +925,9 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   The token reaches git through the init container's environment, not the
   repository's configuration, which the test container can read.
 - The test container runs `go test ./...` as user 65532 with no service
-  account token, no privileges, a read-only root file system, and
-  `GOPROXY=off`, so tests can't download modules.
+  account token, no privileges, and a read-only root file system. It has
+  `GOPROXY=off`, so tests can't download modules, unless you
+  [share modules and build outputs](#share-modules-and-build-outputs).
 - A NetworkPolicy that the core program owns lets the Pod reach only the
   mirror and the cluster's DNS servers, and lets nothing reach it. When the
   core program's `-goproxy` isn't `off`, the policy also lets the Pod reach
@@ -984,11 +997,274 @@ kind's kindnet, don't filter a Pod's connections to its own node, which can
 include the API server. Test Pods have no service account token, so the API
 server gives them only what it gives anonymous requests.
 
-Both of a test Pod's containers meet the `restricted`
+All of a test Pod's containers meet the `restricted`
 [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 An admission policy keeps `check-gotest` to its own Pods, in namespaces that
 opt in to test Pods and enforce the `restricted` standard. See
 [Install](#install).
+
+### Share modules and build outputs
+
+Each test Pod starts with an empty Go build cache, so it compiles every
+package that its tests use, including the standard library's. With
+`GOPROXY=off`, it also can't test a module that has dependencies.
+`go-cache`, a program in this module, fixes both for the test Pods that use
+it:
+
+- Its module proxy, at `/mod/`, fetches modules from `-upstream`,
+  `https://proxy.golang.org` by default, and keeps each version's files,
+  which never change. Test Pods download modules from it, so they don't
+  need the internet.
+- Its build caches, one at `/cache/NAMESPACE/REPOSITORY/` for each
+  `GitRepository`, hold what the go command compiled, by action ID. The go
+  command derives an action ID from everything that goes into a build step,
+  such as the source files, the compiler and its flags, and the step's
+  dependencies.
+
+Install `go-cache` with `generate`, apply `config/go-cache.yaml`, and set
+`check-gotest`'s `-go-cache` flag to `go-cache`'s URL:
+
+```sh
+go run ./cmd/go-cache generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/static:latest -replicas=1 -tmp-size=10Gi \
+  -- -max-size=8Gi | kubectl apply -f -
+kubectl apply -f config/go-cache.yaml
+go run ./cmd/check-gotest generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/git:latest \
+  -- -go-cache=http://go-cache.go-cache | kubectl apply -f -
+```
+
+`go-cache` keeps modules and build outputs on the `emptyDir` volume at
+`/tmp`, and keeps their total size, with the writes in progress, under
+`-max-size`, 4Gi by default. Before it writes a file, `go-cache` reserves
+room for it, and removes the least recently used files to make room. It
+writes at most 16 uploads at once, and at most 16 fetched modules in
+slots of their own. When writes in progress hold the room, or fetches
+hold all 16 fetch slots, `go-cache` serves a module that it doesn't have
+from `-upstream` without keeping it. When writes in progress hold the
+room, or uploads hold all 16 upload slots, `go-cache` answers an upload
+with `503 Service Unavailable`. An upload waits up to 30 seconds for a
+slot first. After a 503, the test Pod stops uploading, which only means that
+later Pods compile those outputs again. `go-cache` doesn't keep build
+outputs larger than 256 MiB. The kubelet evicts a Pod whose volume passes
+`-tmp-size`, so keep `-max-size` a little below it.
+Each replica would have its own store, so `-replicas=1` runs one. The
+volume survives restarts of `go-cache`'s container, but a new Pod, such as
+one that replaces a deleted or evicted Pod, starts with an empty store.
+That costs test Pods only the time to download and compile again.
+
+`generate` can't make what `config/go-cache.yaml` holds. It makes Services
+only for webhooks, so the file adds the Service that test Pods reach
+`go-cache` through. `generate` grants what a program calls through kube,
+and `go-cache` sends TokenReviews and gets Pods itself, so the file adds a
+ClusterRole that allows creating TokenReviews and getting Pods, and
+nothing else. `go-cache` can get any Pod by name, but can't list or watch
+Pods.
+
+With `-go-cache`, `check-gotest` adds three init containers to each test
+Pod, after the one that fetches the head:
+
+1. `cacheprog` runs `check-gotest`'s own image, which `generate` names in
+   the `KUBE_IMAGE` environment variable, and copies the `check-gotest`
+   binary to a volume. The binary is the Pod's `GOCACHEPROG`, the program
+   that the go command asks for build outputs.
+2. `build` runs the `check-gotest` binary from the volume in the Go image,
+   with the test container's environment. It lists the packages that
+   `go test` needs, and compiles the ones from GOROOT and the module cache
+   with `go list -export`, which neither links nor runs anything. Its
+   `GOCACHEPROG` reads outputs from the repository's build cache, with a
+   service account token that can only read it.
+3. `upload` sends what `build` compiled to the build cache, with a token
+   that can write to it. It runs `check-gotest`'s image, and doesn't mount
+   the branch's files.
+
+Test Pods run in the `GitBranch`'s namespace as its `default` service
+account and don't set `imagePullSecrets`, so each namespace that has a
+`GitRepository` must be able to pull `check-gotest`'s image. If pulling
+from `REGISTRY` needs credentials that the nodes don't have, add an image
+pull secret to the `default` service account in each of those namespaces.
+Without the secret, test Pods wait in `Init:ImagePullBackOff` until
+`-timeout` ends them, and the check fails.
+
+The test container downloads modules from `go-cache`, whatever `-goproxy`
+says. Its `GOCACHEPROG` reads the outputs that `build` left in the volume,
+and doesn't connect to `go-cache`. The test container compiles the
+packages that `build` didn't, such as the module's own packages, vendored
+packages, and modules that a `replace` directive points at a directory. It
+also links the test binaries and runs the `go vet` checks that `go test`
+runs. Test results stay in the Pod, so every test runs. If the go command
+fails in `build`, for example because `go.mod` doesn't parse, the check
+fails with its output. If `go-cache` is down, test Pods compile everything
+themselves, but can't download modules.
+
+#### Threat model
+
+Test Pods run untrusted code. Anyone who can push a branch controls its
+tests and the packages that they import. A shared build cache must not let
+that code change what another branch's Pod compiles, which could, for
+example, make a failing test on `main` pass. `go-cache` and `check-gotest`
+defend against that as follows:
+
+- Only what the go command compiles goes into the build cache. `build`
+  reads the branch's `go.mod`, `go.sum`, and imports, compiles packages
+  from GOROOT and the module cache, and runs nothing. `check-gotest` sets
+  `CGO_ENABLED=0` and `GOTOOLCHAIN=local`, so the go command runs no C
+  compiler and no toolchain that the branch asks for. `upload` sends only
+  what `build` compiled, before any of the branch's code runs.
+- Test code can't write to the build cache. The test container gets no
+  token, and its `GOCACHEPROG` doesn't connect to `go-cache`. Nothing
+  uploads after the tests start.
+- Only outputs that no branch can change are shared. An action ID covers
+  the files that the go command lists for a package, but not every file
+  that a build step reads. An assembly file can include a header from
+  another directory, so two branches can compile different outputs for one
+  action ID. `build` shares a package's outputs only when the package is in
+  GOROOT, which the Go image fixes, or in the module cache, where the go
+  command puts a module only after checking it against `go.sum`. The
+  package's assembly must include no file from outside its directory, and
+  every package that it imports must be shared too. The test container
+  compiles the rest itself, so a branch can't change what another branch's
+  Pod compiles. `go-cache` never replaces an entry, and answers an upload
+  of another output for an action ID that it has with `409 Conflict`.
+- Tokens name a repository and an access. Each token is a projected service
+  account token whose audience names the namespace, the repository, and
+  either reading or writing. It expires after 10 minutes, the shortest
+  lifetime that Kubernetes allows. `go-cache` checks each request's token
+  with a TokenReview for the audience that the request needs, and checks
+  that the token's service account is in the namespace in the URL.
+- Only `check-gotest`'s Pods write, and only before their tests start. The
+  kubelet binds each projected token to its Pod, and a TokenReview names
+  the Pod that a token is bound to. `go-cache` gets that Pod for each
+  write, and accepts the token only if the Pod has the UID that the token
+  names, has the label `kube.imjasonh.github.io/controller=check-gotest`,
+  isn't being deleted, and is Pending. kube puts that label on each Pod
+  that `check-gotest` creates. A Pod is Pending while its init containers
+  run, and `upload` is one of them. A token that isn't bound to a Pod
+  can't write. If `check-gotest` runs under another name, set
+  `go-cache`'s `-controller` flag to that name.
+- The namespace is the trust boundary. Anyone who can create Pods in a
+  namespace can create one with `check-gotest`'s label and a token for any
+  audience, so they can write the build caches of the namespace's
+  repositories. They can already mount the namespace's Secrets, including
+  the repositories' credentials, so the build cache doesn't let them do
+  more. Anyone who can create tokens for the namespace's `default` service
+  account, which `check-gotest`'s Pods run as, can bind one to such a Pod
+  while it's Pending, and write too. `generate` lets a check that runs Pods
+  create them in every namespace, but the `git-k8s-check-pods` policy in
+  `config/policy.yaml` keeps each check to Pods with its own label, so
+  another check's Pods can't write. The policy skips service accounts whose
+  namespace and name don't start with `check-`. If a check runs as such an
+  account and can create Pods, give it a policy of its own, as
+  [Check service accounts](#check-service-accounts) says. Without one, its
+  Pods can have `check-gotest`'s label and write. Other checks' Pods can
+  read the build caches of a namespace that opts in to test Pods, where
+  they can already mount the namespace's Secrets. Reads don't change what
+  any Pod compiles. Namespaces don't share build caches.
+
+The design leaves these risks:
+
+- The defense relies on the go command not running code from the files
+  that it reads. A bug that let a branch run code in `build` would let it
+  store any output under action IDs that the build cache doesn't have yet.
+- Sharing relies on action IDs covering every input but the files that
+  assembly includes. If a Go release let another build step read files
+  from outside a package's directory, `build` would have to leave out the
+  packages that do.
+- The module proxy doesn't check tokens. Any Pod that can reach `go-cache`
+  can download modules, and make `go-cache` fetch a module from
+  `-upstream`. The go command checks each module that it downloads against
+  `go.sum`, so a changed module fails the build. `proxy.golang.org` fetches
+  a module that it doesn't have from its origin, so a test can send data
+  out in module paths. If that matters, set `-upstream` to a proxy that
+  serves only the modules that you allow.
+- `go-cache` serves plain HTTP. Anyone who can watch the Pod network can
+  read build outputs, and use a token that writes until the token expires
+  or its Pod leaves Pending.
+- `go-cache` remembers a token's review for a minute, so a token that
+  reads works for up to a minute after its Pod is deleted. A token that
+  writes stops working when its Pod leaves Pending, because `go-cache`
+  gets the Pod for each write. `go-cache` denies a token that isn't a JWT
+  for the request's audience without a TokenReview, remembers denials
+  apart from the tokens that it accepts, and sends at most 8 TokenReviews
+  at once. A flood of bad tokens can hold up reviews of new tokens, but
+  not requests with tokens that it accepted in the last minute. It gets at
+  most 8 Pods at once, in slots of their own. Tokens bound to Pods that
+  fail the check can hold up writes, but `go-cache` remembers up to 1024
+  such Pods for 10 seconds each, so each costs at most one get every 10
+  seconds.
+- A namespace can fill the store and push other namespaces' entries out,
+  which slows their builds. Its tokens can name any repository, even one
+  that doesn't exist, so it can write as many entries as it likes.
+  Eviction doesn't change results, because a Pod that compiles an evicted
+  output again compiles the same output.
+- A write holds its room in the store until it ends. A namespace that
+  uploads slowly can take all 16 upload slots for up to 5 minutes,
+  `go-cache`'s read timeout, and hold up to 256 MiB of room with each,
+  4Gi in all. Meanwhile `go-cache` answers other uploads with 503. Module
+  fetches have slots of their own, but the uploads can hold all of the
+  default `-max-size` of 4Gi, and then `go-cache` serves modules that it
+  doesn't have without keeping them. That slows other namespaces' test
+  Pods, but doesn't fail them. A `-max-size` above 4Gi leaves room for
+  modules.
+
+### Restrict test Pods' network
+
+`check-gotest` doesn't add a NetworkPolicy, so a test can reach anything
+that the namespace's Pods can, including the internet. A test Pod needs to
+reach only DNS, the git remote, and `go-cache`, if you use it. This
+NetworkPolicy, in each namespace that has a `GitRepository`, allows that
+and nothing else:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-pods
+  namespace: NAMESPACE
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: check-gotest
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: go-cache
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: go-cache
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - ipBlock:
+            cidr: GIT_REMOTE_IP/32
+      ports:
+        - {protocol: TCP, port: 443}
+```
+
+Replace `NAMESPACE`, and replace `GIT_REMOTE_IP` and `443` with the git
+remote's address and port. A remote whose address changes needs a wider
+block. Leave out the `go-cache` rule if you don't use it, and change the
+DNS rule if your cluster's DNS Pods have other labels. NetworkPolicies
+match the port that a Service forwards to, so the `go-cache` rule allows
+port 8080, which `go-cache` listens on, instead of the Service's port 80.
+
+The policy applies to the whole Pod, and the init container that fetches
+the head needs the remote, so tests can reach the remote too, without the
+credentials. A NetworkPolicy has no effect unless the cluster's network
+plugin enforces NetworkPolicies. The end-to-end test applies this policy,
+and reports whether the cluster enforced it.
 
 ### Agentic checks
 
@@ -1343,6 +1619,87 @@ The repository controller compiles each `when` when it reads the
 holding branches back later. Each evaluation can cost at most 100,000, which
 stops an expression that loops over the checks many times.
 
+## Merge queue
+
+Every landing moves the parent, so the other open branches fall behind it.
+If each of them merged the parent in, every landing would run every check
+again on every open branch. When a merge policy lets the `base` check push,
+branches land through a queue for each parent instead:
+
+1. A branch joins its parent's queue when its gate passes. The `base` check
+   passes a branch that's behind its parent but merges cleanly, with
+   `outputs.behind` set to `"true"`, so the branch needs no new commit to
+   join.
+2. When the branch reaches the front of the queue, the `base` check runs
+   again, merges the parent in, and pushes the merge. Every check then runs
+   on the new head. A branch that already contains the parent skips this
+   step.
+3. When the gate passes for the new head, the merge controller lands the
+   branch, as [Landing methods](#landing-methods) describes, and the next
+   branch moves to the front. When a squash or rebase landing first pushes
+   its commit to the branch for the checks, as
+   [Which results count](#which-results-count) describes, the branch stays
+   at the front while they run on it.
+
+The branches behind the front keep their heads, so each landing runs every
+check again on one branch, and only the checks that set `UsesParent`, such
+as `base` and `risk`, on the others. The parent's `status.queue` lists its
+queue, front first. Each queued branch's `status.queued` records when it
+joined, the head that the merge controller last kept in the queue, and its
+place, from 1 at the front, which the `QUEUE` column shows. A queued
+branch's state is `Queued`, and the `Merged` condition's message says what
+it waits for, such as `2 of 3 in main's queue`.
+
+A branch leaves the queue when one of these happens:
+
+- It lands.
+- Someone pushes a commit without a `Git-K8s-Fixer` trailer to it, or
+  pushes a head that doesn't contain the one before. Fix commits keep the
+  branch's place, including the `base` check's merge of the parent. The
+  merge controller trusts the trailer, so a person who adds it to a commit
+  keeps the branch's place, but the checks still run on the new head.
+- Its checks finish without its gate passing, such as a test that fails
+  after the merge of the parent. At the front, it leaves sooner, as soon
+  as the `base` check fails or the gate fails with its unfinished checks
+  counted as passing.
+- A squash or rebase landing sets its state to `NeedsRebase`, as
+  [Landing methods](#landing-methods) describes. The branch doesn't join
+  again until its head or its parent's head changes.
+- Someone deletes the branch, which deletes its `GitBranch`.
+- Its parent goes away, or the parent's merge policy goes away or can't be
+  evaluated.
+
+A branch that leaves joins at the back when its gate passes again.
+
+Three choices shape the queue:
+
+- **Where the queue lives.** The queue is in `GitBranch` status, so it
+  needs no new object type, and a controller that restarts continues from
+  the queue that it wrote. Only the merge controller's reconcile of the
+  parent writes `status.queue`, and kube runs one reconcile of an object at
+  a time. Each reconcile reads the last queue from the API server, because
+  the cache can lag a write, keeps the branches that are still queued in
+  their places, and adds new ones at the back. The front stays the front
+  until it leaves, even when several branches become ready at once.
+- **How it orders branches.** Branches keep the order in which they joined.
+  Branches that join between two reconciles of the parent go by
+  `status.queued.since`, which is to the second, then by name.
+- **Whether to merge or rebase.** The front catches up with the parent by
+  merging it in, as `check-base` did before the queue. A rebase rewrites
+  commits that people pushed, so their next push would conflict, and the
+  merge controller couldn't tell a check's rebase from a force push. A
+  squash or rebase landing still leaves the merge out of the parent.
+
+At the front, the `base` check merges the parent at the head that the
+repository controller listed. If the parent moved after that, the check
+waits for the next listing, because a merge of the older head would be
+behind as soon as it was pushed.
+
+Without `mayPush` on `base`, branches don't queue. Each one lands when its
+gate passes, and the `base` check fails a branch that's behind its parent.
+The queue lands one branch at a time; it doesn't test several branches
+together.
+
 ## Landing methods
 
 A merge policy's `landing` field sets how branches land on the branches that
@@ -1457,8 +1814,9 @@ When the gate doesn't pass on the counted results alone, the controller
 moves the branch to the new commit in the mirror's copy instead, if the
 branch is still at its head, and sets the branch's state to `Rewritten`.
 The checks run on the new commit, and when the gate passes, the parent
-fast-forwards to it. `check-approval` passes only for the head that the
-annotation names, so a rewritten branch needs a new approval.
+fast-forwards to it. In a [merge queue](#merge-queue), the branch keeps its
+place at the front until then. `check-approval` passes only for the head
+that the annotation names, so a rewritten branch needs a new approval.
 
 A check with `mayPush: true` can push a fix on top of the new commit. While
 the parent doesn't move, a squash landing doesn't squash its own commit and
@@ -1502,12 +1860,14 @@ that has git 2.43 or later:
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
   go run "./cmd/${program}" generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
 done
-kubectl apply -f config/policy.yaml
 ```
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+To give test Pods a module proxy and a shared build cache, also install
+`go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
+shows how.
 
 The core program keeps the mirror's copies on a PersistentVolumeClaim that
 `generate` adds for its `kube.Volume`, at
@@ -1576,8 +1936,8 @@ cluster also needs a NetworkPolicy of your own, as
 `config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
-changing `status.checks`. A check must run as the service account
-`check-NAME` in the namespace `check-NAME`, as `generate` installs it, to
+changing `status.checks`. A check that doesn't run as `check-NAME` in the
+namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap to
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
@@ -1675,8 +2035,138 @@ creates the Pod within about 5.5 minutes after you label the namespace,
 without a new push.
 
 If `check-gotest` or `check-review` already runs, label the namespaces of
-their repositories before you apply `config/policy.yaml`. Otherwise the
-policy denies their Pods until you do.
+their repositories before you upgrade the core program, which installs
+`config/policy.yaml` when it starts, or before you apply `config/policy.yaml`
+yourself. Otherwise the policy denies their Pods until you do.
+
+### Admission policies
+
+The core program installs `config/policy.yaml` when it starts, before it
+reconciles. It labels the policies, their bindings, and the `git-k8s-checks`
+ConfigMap with `kube.imjasonh.github.io/managed-by=git-k8s`, and applies
+them again each time it starts, but doesn't watch them. The first two
+policies name the core program's service account and read the
+`git-k8s-checks` ConfigMap in the `git-k8s` namespace, and the third keeps
+checks' Pods out of that namespace. Install the core program there, as
+`generate` does unless you set `-namespace`.
+
+If a policy or its binding goes missing, `PoliciesInstalled` turns `False`,
+and its message says to restart the core program. Only the replica that
+holds the leader election lease installs `config/policy.yaml`, so deleting a
+standby replica's Pod doesn't install it again. Restart the Deployment:
+
+```sh
+kubectl -n git-k8s rollout restart deployment/git-k8s
+```
+
+`PoliciesInstalled` also turns `False` when no binding for a policy denies
+every request that the policy rejects. A binding can let some of them
+through when its `validationActions` doesn't hold `Deny`, when its policy
+reads parameters and its `paramRef.parameterNotFoundAction` isn't `Deny`,
+when its `matchResources` sets resource rules, or when a selector in its
+`matchResources` sets `matchLabels` or `matchExpressions`. The API server
+ignores the `paramRef` of a binding whose policy doesn't read parameters,
+such as the third and fourth policies, so the condition does too. The
+message gives a `kubectl patch` command that makes the binding from
+`config/policy.yaml` deny all of them again, without a restart. For a
+binding that someone set to `Warn`, the command is:
+
+```sh
+kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
+  -p '{"spec":{"validationActions":["Deny"]}}'
+```
+
+A binding set to `Warn` stops the core program the next time that it
+starts, whether you restart it or a node drain or an upgrade does. The core
+program's apply keeps the entries that others add to a binding's
+`validationActions`, so it adds `Deny` next to `Warn`, and the API server
+rejects a binding that has both. The core program exits, each replica that
+takes the lease after it exits too, and nothing lands until you patch or
+delete the binding. `PoliciesInstalled` reports a binding from
+`config/policy.yaml` set to `Warn` even while another binding for the same
+policy denies. To install the binding from `config/policy.yaml` again
+instead of patching it, delete the binding, and then restart the core
+program.
+
+For a binding that someone limited with `matchResources`, the command
+removes `matchResources`. Restarting the core program doesn't remove it,
+because `config/policy.yaml` sets no `matchResources`, and the core
+program's apply changes only the fields that the manifest sets.
+
+The condition doesn't compare the policies, or the bindings' other fields,
+with `config/policy.yaml`, so it doesn't report a policy with
+`failurePolicy: Ignore` or with a `matchConditions` entry that never
+matches. When the core program starts, its apply restores the fields that
+the manifest sets, such as `failurePolicy` and the validations. Applying
+`config/policy.yaml` yourself does too. Neither removes a `matchConditions`
+entry that someone adds under another name, because the API server merges
+that list by name. Remove such an entry with `kubectl edit`.
+
+`generate` grants the core program `create` and `patch` on each policy,
+binding, and ConfigMap in `config/policy.yaml`, by name, and `get` on the
+`git-k8s-checks` ConfigMap, which the bindings of the first two policies
+name as their parameter. The API server lets only someone who can read
+every ConfigMap create a policy whose parameter is a ConfigMap, and it
+checks that as `get` on a ConfigMap named `*`. No ConfigMap can have that
+name, so `generate` also grants `get` on the name `*`, and the core program
+still can't read any other ConfigMap.
+
+The core program can't create other admission policies, but a compromised
+core program could rewrite these policies, their bindings, and the
+`git-k8s-checks` ConfigMap, to weaken them or to deny other requests in the
+cluster. It already decides what lands, so it could land a branch without
+its checks anyway. To keep the policies out of its reach, for example in a
+cluster that manages admission policies separately, install it with
+`-install-policies=false`, which also leaves out the permissions, and apply
+`config/policy.yaml` yourself:
+
+```sh
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -install-policies=false |
+  kubectl apply -f -
+kubectl apply -f config/policy.yaml
+```
+
+With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
+says to apply `config/policy.yaml` instead of restarting the core program.
+The core program doesn't apply the manifest when it starts, so a binding set
+to `Warn` doesn't stop it, and the condition doesn't report one while another
+binding for the same policy denies.
+
+### Check service accounts
+
+The first two policies recognize a check by the service account that makes
+each write. `generate` installs `check-NAME` with the service account
+`check-NAME` in the namespace `check-NAME`, and the policies treat that
+service account as the check `NAME`. For a check that runs as another
+service account, such as a check installed with `generate -namespace=checks`,
+add an entry to the `git-k8s-checks` ConfigMap in the `git-k8s` namespace.
+Each key is `NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
+
+```sh
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"checks.check-approval":"approval"}}'
+```
+
+An entry overrides the `check-NAME` convention, so an entry with an empty
+value stops that service account from writing results. The policies ignore
+an entry for the core program's service account, `git-k8s.git-k8s`, so an
+entry can't let the core program write a result or stop it from changing
+`GitBranch` objects. The core program applies the ConfigMap without data, so
+restarting it keeps your entries.
+Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
+service accounts write which results, so give that permission only to people
+who can install checks.
+
+The third policy doesn't read the ConfigMap, so an entry doesn't change
+which Pods a check can write. A check that owns Pods and runs as another
+service account needs a policy of its own.
+
+While the ConfigMap is missing, the API server denies every create and update
+of a `GitBranch` or its status, including people's, with a message that says
+`no params found for policy binding`. To create the ConfigMap again, run
+`kubectl -n git-k8s create configmap git-k8s-checks`, or restart the core
+program with `kubectl -n git-k8s rollout restart deployment/git-k8s`. With
+`-install-policies=false`, apply `config/policy.yaml` instead.
 
 ## Security model
 
@@ -1754,10 +2244,13 @@ The end-to-end test installs every program with `generate` in a
 git server on this machine as the external repository, which Pods reach
 through the kind network's gateway. It pushes branches to that git server,
 and to the mirror through `kubectl port-forward` with tokens from
-`kubectl create token`. It checks what test Pods can reach only if the
-cluster enforces NetworkPolicies, which kindnet does only on kernels with
-`nfnetlink_queue`. It needs Docker, `kubectl`, and `git`, and installs kind
-if it's missing:
+`kubectl create token`. A module proxy on this machine serves `go-cache` a
+module that isn't on the internet. The test reads `go-cache`'s metrics to
+check that a test Pod got the module through it, and that a later Pod read
+its build outputs instead of compiling them. It checks what test Pods can
+reach only if the cluster enforces NetworkPolicies, which kindnet does only
+on kernels with `nfnetlink_queue`. It needs Docker, `kubectl`, and `git`,
+and installs kind if it's missing:
 
 ```sh
 GIT_K8S_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -1785,6 +2278,12 @@ those lines when the check can push.
 - Nothing resolves a divergence or a merge conflict by itself.
 - The test Pods' NetworkPolicy works only with a network plugin that
   enforces it.
+- An approval names one head, so a branch that needs one needs another after
+  the `base` check merges its parent in at the front of the queue. The
+  branch leaves the queue until someone approves the merge, then joins at
+  the back. While other branches keep landing, it might never land.
+- A check that doesn't finish at the front of a queue holds up the branches
+  behind it while the front can still land.
 - `check-gotest` and `check-review` can create Pods in every namespace that
   opts in to check Pods. Installing them with `generate -watch-namespace`
   limits that to one namespace.

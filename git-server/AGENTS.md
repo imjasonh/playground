@@ -122,7 +122,7 @@ branch in the same PR as the feature (see `fetch_error_responses` in
 `TestServer::post_with_body`, no git client needed).
 
 Checking coverage locally (`cargo llvm-cov` needs rustc ≥ its own MSRV;
-current `cargo-llvm-cov` works with this crate's pinned 1.88):
+current `cargo-llvm-cov` works with this crate's pinned toolchain):
 
 ```bash
 rustup component add llvm-tools

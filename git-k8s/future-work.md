@@ -10,8 +10,8 @@ describes how git-k8s works today.
 The check-results admission policy keeps each check to its own entry in
 `status.checks` by looking at the service account that makes each write. A
 result carries no proof of which check wrote it, so the merge controller can
-trust results only as far as it trusts the policy. The policy might not be
-installed, and it recognizes checks only by their service account names.
+trust results only as far as it trusts the policy, its binding, and the
+`git-k8s-checks` ConfigMap that maps service accounts to checks.
 
 The decided fix is for checks to stop writing `status.checks`. A check sends
 each result to an endpoint in the core program, next to the mirror, with a
@@ -24,8 +24,9 @@ or on purpose, because it can't write results at all:
   `GitBranch` that declares no status, so kube doesn't write one and
   `generate` doesn't grant them access, and they read their earlier results
   through a second view.
-- The core program maps service accounts to checks, so a check no longer has
-  to run as `check-NAME` in the namespace `check-NAME`.
+- The core program finds the check for a token's service account the way the
+  check-results policy does, from the `git-k8s-checks` ConfigMap or the
+  `check-NAME` convention.
 - The admission policy stays as a backstop. People with write access to
   `GitBranch` status can still write a result, for example to unblock a
   branch whose check is broken.
@@ -115,37 +116,52 @@ Questions to settle first:
   claim and one replica, so a volume for each replica needs a StatefulSet,
   which `generate` doesn't write.
 
-## Land branches through a merge queue
+## Keep queued branches moving
 
-A branch lands only when it contains its parent's head. Each landing moves
-the parent, so no other open branch contains the parent's head anymore.
-`check-base` merges the parent into each of them, which changes their heads
-and runs every check again, including a `go test` Pod. With N open branches,
-each landing costs about N runs of every check.
+Three things can stop a branch in a merge queue from landing, or hold up the
+branches behind it:
 
-The proposed fix is a queue for each parent. A branch whose checks pass,
-apart from being behind its parent, joins the queue. Only the branch at the
-front merges the parent in, runs its checks again, and lands. The others wait
-instead of chasing the parent. Testing several queued branches together, and
-landing them all when they pass, cuts the cost further.
+- An approval names one head, so the front's merge of its parent needs a
+  new approval. The branch leaves the queue until it gets one, then joins at
+  the back. By the time it reaches the front again, other branches have
+  landed, so it merges the parent in and needs another approval. While
+  branches keep landing, it might never land.
+- A check that never finishes at the front, such as one whose controller
+  isn't running, holds up every branch behind it while the front can still
+  land.
+- A squash or rebase landing that pushes its commit to the front for the
+  checks holds the front until the repository controller lists that
+  commit. If someone pushes the branch's old head back before then, the
+  listing doesn't change, so the branch holds the front until its head or
+  its parent's head changes.
+
+The proposed fixes are an approval that still counts after a clean merge of
+the parent, and a time limit at the front of the queue, after which the
+branch leaves it.
 
 Questions to settle first:
 
-- Where the queue lives. It could be in each `GitBranch`'s status, written by
-  the merge controller, or in a new object for each parent.
-- How the queue orders branches, such as by when they were approved, by when
-  they passed, or by a priority field.
-- Whether queued branches merge the parent in, as `check-base` does, or
-  rebase onto it.
+- How `check-approval` learns that the commits since the approved head are
+  clean merges of the parent. It reads only the `GitBranch`, so it can't
+  read Secrets. It could trust an output of `check-base`, which would let a
+  compromised `check-base` carry an approval over to code that nobody
+  approved, or read the repository itself, which needs its credentials.
+- How long the front can wait, and whether a branch that runs out of time
+  goes to the back of the queue or waits for a new push.
 
-## Share build caches
+## Test queued branches together
 
-Each test Pod fetches its branch and builds it with an empty Go build cache.
-The mirror gives test Pods a nearby place to fetch from, but not what earlier
-Pods built. An in-cluster Go module proxy, and a shared build cache through
-`GOCACHEPROG` or a ReadWriteMany volume, let a test Pod reuse what earlier
-Pods downloaded and compiled. A module proxy in the cluster also lets tests
-with dependencies run without giving them the internet through `-goproxy`.
+The front of a merge queue lands one branch at a time, so each landing waits
+for a full run of every check. Testing the first few queued branches merged
+together, and landing them all when the checks pass, cuts the wait. When the
+checks fail, the queue has to find the branch that broke them, for example
+by testing each half of the batch.
+
+Questions to settle first:
+
+- Where the combined commit lives. A branch that git-k8s owns, such as
+  `queue/main`, would let the checks run on it as on any other branch.
+- How many branches go in a batch.
 
 ## Require an approver who didn't write the change
 
@@ -174,17 +190,6 @@ GitHub's branch rules have to let that identity push to protected branches.
 The proposed fix is for the mirror to sign the commits that git-k8s makes,
 with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
 through Sigstore, or with an SSH key that only the mirror holds.
-
-## Install the admission policies with the core program
-
-`config/policy.yaml` is a separate install step. The `PoliciesInstalled`
-condition reports when it's missing, but nothing installs it. The core
-program could apply the policies when it starts, the way kube installs CRDs.
-That needs RBAC to write ValidatingAdmissionPolicies, which a compromised
-core program could use to weaken them. The core program already decides
-what lands, so that may be acceptable. Once checks send results to the core
-program instead of writing them, the check-results policy is a backstop, and
-the policy that stops controllers from approving branches matters most.
 
 ## Run more agents
 

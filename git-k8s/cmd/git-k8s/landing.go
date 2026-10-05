@@ -72,6 +72,11 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, b *gitk8s.GitBran
 			"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.Head), "to", gitk8s.Short(landed))
 		report(b, reasonRewritten, false, "%s %s onto %s at %s as %s and moved %s there, because the results of %s might depend on the branch's commits",
 			verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "))
+		// A queued branch keeps its place while the checks run on the
+		// rewritten commits, so its place moves with it.
+		if q := b.Status.Queued; q != nil {
+			q.Head = landed
+		}
 		kube.Trigger[gitk8s.GitRepository](ctx, b.Namespace, spec.Repository)
 		return true, nil
 	}

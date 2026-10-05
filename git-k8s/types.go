@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
+	"time"
 
 	"github.com/imjasonh/playground/kube"
 )
@@ -213,6 +214,8 @@ type GitBranchSpec struct {
 type GitBranchStatus struct {
 	Checks             map[string]CheckResult `json:"checks,omitempty" doc:"Check results by check name. Each check controller writes only its own entry."`
 	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
+	Queued             *Queued                `json:"queued,omitempty" doc:"The branch's place in its parent's merge queue, while it waits to land."`
+	Queue              []string               `json:"queue,omitempty" doc:"Branches in this branch's merge queue, front first. The front branch is the only one that merges this branch in and lands."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
 	Diverged           *Divergence            `json:"diverged,omitempty" doc:"How the branch diverged between the mirror and the external repository, set only while it's diverged. The core program writes it."`
@@ -225,6 +228,13 @@ type Divergence struct {
 	Commit string `json:"commit" doc:"External repository's head of the branch, or empty if the external repository deleted the branch."`
 	Ref    string `json:"ref" doc:"Ref in the mirror that holds commit, or empty if commit is."`
 	Base   string `json:"base,omitempty" doc:"Head of the branch where the mirror and the external repository last synced, which the mirror keeps under refs/git-k8s/synced/heads/. Empty if they never synced."`
+}
+
+// Queued is a branch's place in its parent's merge queue.
+type Queued struct {
+	Since    time.Time `json:"since" doc:"When the branch joined the queue. Branches that join together land in this order, then by name."`
+	Head     string    `json:"head" doc:"Branch head when the merge controller last kept the branch in the queue. A later push that adds a commit without the Git-K8s-Fixer trailer, or that removes commits, takes the branch out of the queue."`
+	Position int32     `json:"position,omitempty" kube:"column=Queue" doc:"Place in the parent's queue, from 1 at the front. Unset until the parent's queue includes the branch."`
 }
 
 // Check result states.

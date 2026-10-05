@@ -15,6 +15,11 @@ func TestRecordsLandingEvents(t *testing.T) {
 		reasons []string
 	}{
 		"lands and deletes": {func(*gitk8s.GitBranch) {}, []string{reasonLanded, "DeletedBranch"}},
+		"lands without a queue": {func(b *gitk8s.GitBranch) {
+			p := *policy
+			p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt", MayPush: true}}
+			b.Spec.Merge = &p
+		}, []string{reasonLanded, "DeletedBranch"}},
 		"keeps the branch": {func(b *gitk8s.GitBranch) {
 			p := *policy
 			p.DeleteMergedBranches = false

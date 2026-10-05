@@ -80,7 +80,9 @@ func TestLandsWithOctoSTS(t *testing.T) {
 		"base":  {Commit: head, ParentCommit: main, State: gitk8s.Passed},
 		"gofmt": {Commit: head, State: gitk8s.Passed},
 	}
-	ctx, _ := kube.Fake(t.Context(), b, repo)
+	// policy queues branches, and only the front of main's queue lands.
+	b.Status.Queued = &gitk8s.Queued{Head: head, Position: 1}
+	ctx, _ := kube.Fake(t.Context(), b, repo, parentOf(b, "c/x"))
 	if err := (&merger{mirror: r.mirror}).Reconcile(ctx, b); err != nil || b.Status.State != reasonLanded {
 		t.Fatalf("err = %v, state = %q", err, b.Status.State)
 	}

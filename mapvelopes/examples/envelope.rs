@@ -15,7 +15,6 @@
 //! Without a usable key the example exits with an error.
 
 use std::env;
-use std::io::Read;
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -170,10 +169,11 @@ fn live_spec(
     size: EnvelopeSize,
     key: &str,
 ) -> Result<EnvelopeSpec, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(25))
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(25)))
         .user_agent("mapvelopes/0.1")
-        .build();
+        .build()
+        .into();
     let from_body = http_get(&agent, &geocode_url(&from.geocode_query(), key))?;
     let to_body = http_get(&agent, &geocode_url(&to.geocode_query(), key))?;
     let from_ll = parse_geocode(&from_body).map_err(|e| e.to_string())?;
@@ -191,10 +191,11 @@ fn live_spec(
 }
 
 fn http_get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, String> {
-    let resp = agent.get(url).call().map_err(|e| e.to_string())?;
-    let mut buf = Vec::new();
-    resp.into_reader()
-        .read_to_end(&mut buf)
-        .map_err(|e| e.to_string())?;
-    Ok(buf)
+    agent
+        .get(url)
+        .call()
+        .map_err(|e| e.to_string())?
+        .into_body()
+        .read_to_vec()
+        .map_err(|e| e.to_string())
 }

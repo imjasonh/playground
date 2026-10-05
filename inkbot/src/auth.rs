@@ -1,6 +1,6 @@
 //! Shared-secret Bearer auth and Slack request signing.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -337,15 +337,15 @@ mod tests {
     fn verifies_p384_key_with_sha256_hash() {
         use p384::ecdsa::signature::hazmat::PrehashSigner;
         use p384::ecdsa::{SigningKey, VerifyingKey};
-        use rand_core::OsRng;
+        use p384::elliptic_curve::Generate;
 
-        let signing_key = SigningKey::random(&mut OsRng);
+        let signing_key = SigningKey::generate();
         let verifying_key = VerifyingKey::from(&signing_key);
         let tbs = b"credCert TBS signed by App Attestation CA 1G";
         let digest = Sha256::digest(tbs);
         let signature: p384::ecdsa::Signature =
             signing_key.sign_prehash(&digest).expect("sign SHA-256");
-        let point = verifying_key.to_encoded_point(false);
+        let point = verifying_key.to_sec1_point(false);
         verify_p384_sha256(point.as_bytes(), tbs, signature.to_der().as_bytes())
             .expect("P-384 issuer + SHA-256, the Apple credCert combination");
     }

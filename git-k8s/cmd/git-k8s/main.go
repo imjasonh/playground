@@ -17,6 +17,9 @@
 // GitHub as check runs, for repositories that name an Octo STS identity for
 // them.
 //
+// Unless -install-policies=false, the program installs the admission policies
+// in config/policy.yaml when it starts.
+//
 // Check controllers run as separate programs, such as check-gofmt.
 package main
 
@@ -24,6 +27,7 @@ import (
 	"flag"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/config"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
@@ -35,11 +39,13 @@ const mirrorDir = "/var/lib/git-k8s"
 func main() {
 	g := &git.Git{}
 	m := &mirror.Mirror{Git: g}
+	repos := &repositories{mirror: m}
 	merge := &merger{mirror: m}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&m.Dir, "mirror-dir", mirrorDir, "writable directory for the mirror's copies of repositories, which one process at a time may use")
 	flag.StringVar(&merge.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
 	flag.StringVar(&merge.ident.Email, "identity-email", "git-k8s@users.noreply.github.com", "committer email of the commits that squash and rebase landings make")
+	flag.BoolVar(&repos.installPolicies, "install-policies", true, "install the admission policies in config/policy.yaml when the program starts")
 	flag.Func("branch-prefix", "let a controller start branches, as NAMESPACE/SERVICEACCOUNT=PREFIX, such as git-k8s-deps/git-k8s-deps=deps/; repeat for more", func(s string) error {
 		p, err := mirror.ParsePrefix(s)
 		if err != nil {
@@ -49,7 +55,13 @@ func main() {
 		return nil
 	})
 	kube.Main(
-		kube.For[gitk8s.GitRepository](&repositories{mirror: m}, kube.Named("repositories")),
+		kube.Install(func() []byte {
+			if !repos.installPolicies {
+				return nil
+			}
+			return config.Policy
+		}),
+		kube.For[gitk8s.GitRepository](repos, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](merge, kube.Named("merge")),
 		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
 		kube.Serve(m),

@@ -460,6 +460,12 @@ func TestFetchMergePush(t *testing.T) {
 	if err := repo.Fetch(ctx, remote, "main", "c/x"); err != nil {
 		t.Fatal(err)
 	}
+	if got, err := repo.Fetched(ctx, "main"); err != nil || got != parent {
+		t.Errorf("Fetched(main) = %q, %v; want %s", got, err, parent)
+	}
+	if got, err := repo.Fetched(ctx, "c/missing"); err == nil {
+		t.Errorf("Fetched(c/missing) = %q, want an error", got)
+	}
 	if ok, err := repo.HasCommit(ctx, head); err != nil || !ok {
 		t.Fatalf("HasCommit(head) = %v, %v", ok, err)
 	}
@@ -550,6 +556,48 @@ func TestMergeTreeConflicts(t *testing.T) {
 	_, conflicts, err := repo.MergeTree(ctx, head, parent)
 	if err != nil || !slices.Equal(conflicts, []string{"a.txt"}) {
 		t.Errorf("MergeTree conflicts = %v, %v; want [a.txt]", conflicts, err)
+	}
+}
+
+func TestOnlyFixerCommits(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Branch("c/x", base)
+	head := w.Commit("branch change")
+	w.Branch("main", base)
+	parent := w.Commit("parent change")
+	w.Push("main")
+	w.Branch("c/x", head)
+	w.Git("merge", "--quiet", "--no-ff", "-m", "Merge main into c/x\n\n"+git.FixerTrailer+": base", "main")
+	merge := w.Git("rev-parse", "HEAD")
+	fix := w.Commit("Format\n\n" + git.FixerTrailer + ": gofmt")
+	person := w.Commit("more work")
+	w.Push("c/x")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "c/x"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		base, head string
+		want       bool
+	}{
+		{"a merge of the parent and a fix", head, fix, true},
+		{"a merge of the parent", head, merge, true},
+		{"a person's commit after the fix", head, person, false},
+		{"a person's commit alone", fix, person, false},
+		{"a base that's only a second parent", parent, fix, false},
+		{"a base that's not an ancestor", fix, head, false},
+	} {
+		if got, err := repo.OnlyFixerCommits(ctx, tc.base, tc.head); err != nil || got != tc.want {
+			t.Errorf("%s: OnlyFixerCommits = %v, %v; want %v", tc.name, got, err, tc.want)
+		}
 	}
 }
 

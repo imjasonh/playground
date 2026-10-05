@@ -150,14 +150,14 @@ pub fn encode_auth_data(app_id: &str, counter: u32) -> Vec<u8> {
 mod tests {
     use super::*;
     use p256::ecdsa::{signature::Signer, Signature, SigningKey};
-    use rand_core::OsRng;
+    use p256::elliptic_curve::Generate;
 
     const APP_ID: &str = "TEAMIDTEST.io.github.imjasonh.playground";
 
     fn sign_assertion(app_id: &str, counter: u32, client_hash: &[u8; 32]) -> (Vec<u8>, Vec<u8>) {
-        let signing = SigningKey::random(&mut OsRng);
+        let signing = SigningKey::generate();
         let vk = signing.verifying_key();
-        let public_key = vk.to_encoded_point(false).as_bytes().to_vec();
+        let public_key = vk.to_sec1_point(false).as_bytes().to_vec();
         let auth = encode_auth_data(app_id, counter);
         let mut msg = auth.clone();
         msg.extend_from_slice(client_hash);
@@ -217,10 +217,10 @@ mod tests {
     fn rejects_wrong_signature() {
         let hash = [9u8; 32];
         let (_pk, obj) = sign_assertion(APP_ID, 1, &hash);
-        let other = SigningKey::random(&mut OsRng);
+        let other = SigningKey::generate();
         let other_pk = other
             .verifying_key()
-            .to_encoded_point(false)
+            .to_sec1_point(false)
             .as_bytes()
             .to_vec();
         let err = verify(&VerifyInput {

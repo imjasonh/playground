@@ -21,7 +21,9 @@ const testTime = "1767323045 +0000"
 
 // landAs runs the merge controller on b, with a merge policy that lands
 // branches with landing, and then syncs the mirror, which pushes what the
-// merge controller changed in its copy to the external repository.
+// merge controller changed in its copy to the external repository. The
+// policy queues branches, so b is at the front of main's queue at its
+// current head.
 func landAs(t *testing.T, f *fixture, b *gitk8s.GitBranch, landing string) error {
 	t.Helper()
 	return landWith(t, f, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"})
@@ -35,8 +37,9 @@ func landWith(t *testing.T, f *fixture, b *gitk8s.GitBranch, landing string, id 
 	p := *b.Spec.Merge
 	p.Landing = landing
 	b.Spec.Merge = &p
+	b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
 	before := f.srv.Heads(t, "app")
-	ctx, _ := kube.Fake(t.Context(), b, f.world(f.repo)...)
+	ctx, _ := kube.Fake(t.Context(), b, f.world(f.repo, parentOf(b, b.Spec.Branch))...)
 	err := (&merger{mirror: f.mirror, ident: id}).Reconcile(ctx, b)
 	if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 		t.Errorf("the merge controller changed the external repository's heads from %v to %v", before, after)
@@ -463,6 +466,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 				t.Errorf("Merged = %+v, want reason %s and a message with %q", c, reasonNeedsRebase, tt.problem)
 			}
 
+			b.Generation++
 			b.Status.Checks = results
 			if err := landAs(t, f, b, gitk8s.Squash); err != nil {
 				t.Fatal(err)
@@ -703,6 +707,7 @@ func TestExternalRepositoryRefusesTheRewrittenBranch(t *testing.T) {
 			}
 
 			t.Log("The checks pass on the new commit in the mirror, which lands by fast-forward.")
+			b.Generation++
 			b.Spec.Head = rewritten
 			b.Status.Checks = map[string]gitk8s.CheckResult{
 				"base":  {Commit: rewritten, ParentCommit: main, State: gitk8s.Passed, FilesOnly: true},
@@ -753,6 +758,7 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 
 	t.Log("The checks pass on the squashed commit, which lands by fast-forward.")
 	w.Branch("c/x", squashed)
+	b.Generation++
 	refresh(t, f, b)
 	withHistoryCheck(b)
 	if err := landAs(t, f, b, gitk8s.Squash); err != nil {
@@ -790,6 +796,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			// commit.
 			squash := func() {
 				t.Helper()
+				b.Generation++
 				refresh(t, f, b)
 				withHistoryCheck(b)
 				head := b.Spec.Head
@@ -818,6 +825,7 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			t.Log("dco pushes another fix, and the branch lands by fast-forward.")
 			w.Write("z.txt", "z, fixed\n")
 			w.Commit("Fix z\n\nGit-K8s-Fixer: dco")
+			b.Generation++
 			refresh(t, f, b)
 			withHistoryCheck(b)
 			head := b.Spec.Head

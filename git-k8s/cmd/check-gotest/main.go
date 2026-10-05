@@ -2,17 +2,20 @@
 //
 // For each branch head, the gotest check declares a Pod with kube.Own. An
 // init container fetches the head from the repository's copy on the mirror,
-// with a token that's bound to the Pod, and the test container runs go test
-// ./... as a non-root user, with no service account token, no privileges,
-// and a read-only root file system. Only the init container sees the token.
-// The mirror lets the token fetch only the branch's repository, and only
-// while the check's running result names the Pod and the Pod that has the
-// token's UID carries kube's controller label for this check and is
-// Pending, as a Pod is until its init containers finish. A NetworkPolicy
-// that the core program owns lets the Pods with that label reach only the
-// mirror and the cluster's DNS servers, so this program needs no permission
-// to change NetworkPolicies. The check reports the Pod's result, with the
-// end of the test output when the tests fail.
+// with a token for the mirror that's bound to the Pod, and the test
+// container runs go test ./... as a non-root user, with no service account
+// token, no privileges, and a read-only root file system. Only that init
+// container sees the token for the mirror. The mirror lets the token fetch
+// only the branch's repository, and only while the check's running result
+// names the Pod and the Pod that has the token's UID carries kube's
+// controller label for this check and is Pending, as a Pod is until its
+// init containers finish. A NetworkPolicy that the core program owns lets
+// the Pods with that label reach only the mirror, the cluster's DNS
+// servers, and what the core program's -goproxy and -go-cache allow, so
+// this program needs no permission to change NetworkPolicies. The check
+// reports the Pod's result, with the end of the test output when the tests
+// fail. With -go-cache, test Pods download modules from a go-cache server
+// and share build outputs through it; see addGoCache.
 //
 // kube deletes a Pod when the check stops declaring it, which happens after
 // the check records the Pod's result and when the branch moves to a new
@@ -27,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,8 +74,8 @@ var (
 // is what keeps the check from counting them.
 var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest", "app.kubernetes.io/component": "test"}
 
-// tokenDir holds the init container's token for the mirror.
-const tokenDir = "/var/run/secrets/git-k8s"
+// mirrorTokenDir holds the fetch container's token for the mirror.
+const mirrorTokenDir = "/var/run/secrets/git-k8s"
 
 // podPhase is what the check counts running test Pods by. Declaring only
 // the phase means that other changes to Pods don't run the check again.
@@ -127,6 +131,12 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	running := func(format string, args ...any) checks.Verdict {
 		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: outputs}
 	}
+	// take counts the Pod from the moment that it lets the branch start it,
+	// so build the Pod first, and one that can't be built takes no place.
+	p, err := testPod(in, name)
+	if err != nil {
+		return checks.Verdict{}, err
+	}
 	since := time.Now().UTC().Truncate(time.Microsecond)
 	if pod, t, ok := waiting(in.Previous, in.Spec.Head, "waiting", "queued"); ok && pod == name {
 		since = t
@@ -146,7 +156,7 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		kube.RequeueAfter(ctx, time.Second)
 		return running("starting Pod %s", name), nil
 	}
-	pod := kube.Own(ctx, testPod(in, name))
+	pod := kube.Own(ctx, p)
 	if pod == nil {
 		// outputs.queued keeps the branch's place in line until the Pod
 		// exists. Other branches count only outputs.waiting, so a Pod that
@@ -186,6 +196,9 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 			return checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg), nil
 		}
 		msg, _, _ = terminated(pod.Status.ContainerStatuses, "test")
+		if m, failed := goCacheFailure(pod); failed {
+			msg = m
+		}
 		out := tail(cmp.Or(msg, pod.Status.Message, pod.Status.Reason), 900)
 		v := checks.Fail("go test failed in Pod %s: %s", name, out)
 		if strings.Contains(out, "lookup disabled by GOPROXY=off") {
@@ -332,11 +345,11 @@ fi
 git checkout -q --detach FETCH_HEAD
 `
 
-func testPod(in *checks.Input, name string) *Pod {
+func testPod(in *checks.Input, name string) (*Pod, error) {
 	yes, no := true, false
 	user := int64(65532)
 	deadline := int64(timeout.Seconds())
-	tokenSeconds := int64(600)
+	expiry := int64(tokenSeconds)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,
 		ReadOnlyRootFilesystem:   &yes,
@@ -347,7 +360,7 @@ func testPod(in *checks.Input, name string) *Pod {
 		{Name: "URL", Value: strings.TrimSuffix(*mirrorURL, "/") + gitk8s.MirrorPath(in.Repository.Namespace, in.Repository.Name)},
 		{Name: "BRANCH", Value: in.Spec.Branch},
 		{Name: "HEAD", Value: in.Spec.Head},
-		{Name: "TOKEN_FILE", Value: tokenDir + "/token"},
+		{Name: "TOKEN_FILE", Value: mirrorTokenDir + "/token"},
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
@@ -369,7 +382,7 @@ func testPod(in *checks.Input, name string) *Pod {
 			{Name: "src", EmptyDir: &EmptyDir{}},
 			{Name: "tmp", EmptyDir: &EmptyDir{}},
 			{Name: "mirror-token", Projected: &Projected{Sources: []VolumeProjection{{
-				ServiceAccountToken: &ServiceAccountToken{Audience: gitk8s.MirrorAudience, ExpirationSeconds: &tokenSeconds, Path: "token"},
+				ServiceAccountToken: &ServiceAccountTokenProjection{Audience: gitk8s.MirrorAudience, ExpirationSeconds: &expiry, Path: "token"},
 			}}}},
 		},
 		InitContainers: []Container{{
@@ -378,7 +391,7 @@ func testPod(in *checks.Input, name string) *Pod {
 			ImagePullPolicy:          "IfNotPresent",
 			Command:                  []string{"sh", "-c", fetchScript},
 			Env:                      fetchEnv,
-			VolumeMounts:             append(slices.Clip(mounts), VolumeMount{Name: "mirror-token", MountPath: tokenDir, ReadOnly: true}),
+			VolumeMounts:             append(slices.Clip(mounts), VolumeMount{Name: "mirror-token", MountPath: mirrorTokenDir, ReadOnly: true}),
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 		}},
@@ -405,7 +418,15 @@ func testPod(in *checks.Input, name string) *Pod {
 			},
 		}},
 	}
-	return p
+	if err := addGoCache(p, in); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
-func main() { checks.Main[Branch](new(gotest).check()) }
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "cacheprog" {
+		os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	checks.Main[Branch](new(gotest).check())
+}

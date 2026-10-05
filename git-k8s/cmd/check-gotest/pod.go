@@ -54,11 +54,11 @@ type Projected struct {
 }
 
 type VolumeProjection struct {
-	ServiceAccountToken *ServiceAccountToken `json:"serviceAccountToken,omitempty"`
+	ServiceAccountToken *ServiceAccountTokenProjection `json:"serviceAccountToken,omitempty"`
 }
 
-type ServiceAccountToken struct {
-	Audience          string `json:"audience"`
+type ServiceAccountTokenProjection struct {
+	Audience          string `json:"audience,omitempty"`
 	ExpirationSeconds *int64 `json:"expirationSeconds,omitempty"`
 	Path              string `json:"path"`
 }
@@ -68,6 +68,7 @@ type Container struct {
 	Image                    string           `json:"image"`
 	ImagePullPolicy          string           `json:"imagePullPolicy,omitempty"`
 	Command                  []string         `json:"command,omitempty"`
+	Args                     []string         `json:"args,omitempty"`
 	WorkingDir               string           `json:"workingDir,omitempty"`
 	Env                      []EnvVar         `json:"env,omitempty"`
 	VolumeMounts             []VolumeMount    `json:"volumeMounts,omitempty"`

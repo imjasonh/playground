@@ -12,9 +12,13 @@
 # mirror. The script reaches the mirror through kubectl port-forward, with
 # service account tokens for the mirror's audience.
 #
+# A module proxy on this machine serves the one module that a tested branch
+# depends on, as go-cache's upstream.
+#
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
-# GIT_K8S_KIND_KEEP=1 keeps the cluster, registry, and git server afterward.
+# GIT_K8S_KIND_KEEP=1 keeps the cluster, registry, git server, and module
+# proxy afterward.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -27,6 +31,9 @@ CHAINGUARD="${GIT_K8S_KIND_CHAINGUARD:-cgr.dev/chainguard}"
 PLATFORM="linux/$(go env GOARCH)"
 NS=git-k8s-e2e
 CHECKS=(check-base check-gofmt check-risk check-approval check-gotest)
+# check-approval runs in another namespace, so the admission policies
+# recognize it only through its entry in the git-k8s-checks ConfigMap.
+APPROVAL_NS=checks
 WORKDIR="$(mktemp -d)"
 WORK="${WORKDIR}/work"
 PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
@@ -34,8 +41,18 @@ CREATED_CLUSTER=0
 CREATED_REGISTRY=0
 GIT_SERVER_PID=""
 PORT_FORWARD_PID=""
+MOD_PROXY_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
+
+# namespace_of prints the namespace of program $1.
+namespace_of() {
+  if [[ "$1" == check-approval ]]; then
+    echo "${APPROVAL_NS}"
+  else
+    echo "$1"
+  fi
+}
 
 # g runs git in the working repository, without the machine's git config.
 g() {
@@ -50,14 +67,18 @@ diagnose() {
   k -n "${NS}" get pods,networkpolicies -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
-  for program in git-k8s "${CHECKS[@]}"; do
-    k -n "${program}" describe pods || true
-    k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
+  k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels || true
+  k -n git-k8s get configmap git-k8s-checks -o yaml || true
+  for program in git-k8s go-cache "${CHECKS[@]}"; do
+    k -n "$(namespace_of "${program}")" describe pods || true
+    k -n "$(namespace_of "${program}")" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
   done
   echo "--- git server log"
   cat "${WORKDIR}/gitserver.log" || true
   echo "--- port-forward log"
   cat "${WORKDIR}/port-forward.log" || true
+  echo "--- module proxy log"
+  cat "${WORKDIR}/modproxy.log" || true
   echo "::endgroup::"
 }
 
@@ -70,12 +91,14 @@ finish() {
     kill "${PORT_FORWARD_PID}" 2>/dev/null || true
   fi
   if [[ "${GIT_K8S_KIND_KEEP:-}" == 1 ]]; then
-    echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server in ${WORKDIR}"
+    echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server and module proxy in ${WORKDIR}"
     exit "${status}"
   fi
-  if [[ -n "${GIT_SERVER_PID}" ]]; then
-    kill "${GIT_SERVER_PID}" 2>/dev/null || true
-  fi
+  for pid in "${GIT_SERVER_PID}" "${MOD_PROXY_PID}"; do
+    if [[ -n "${pid}" ]]; then
+      kill "${pid}" 2>/dev/null || true
+    fi
+  done
   if [[ ${CREATED_CLUSTER} -eq 1 ]]; then
     kind delete cluster --name "${CLUSTER}" || true
   fi
@@ -129,7 +152,7 @@ need timeout
 install_kind
 docker info >/dev/null
 
-echo "::group::Start a registry, a kind cluster, and a git server"
+echo "::group::Start a registry, a kind cluster, a git server, and a module proxy"
 # As in https://kind.sigs.k8s.io/docs/user/local-registry/: nodes pull
 # localhost:PORT/... from the registry container, which is on kind's
 # network.
@@ -170,6 +193,20 @@ CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
 listening() { (echo >"/dev/tcp/127.0.0.1/${GIT_PORT}") 2>/dev/null; }
 eventually 30 listening
 echo "Pods reach the git server at ${CLUSTER_URL}"
+# example.com/greet isn't on the internet, so test Pods can get it only
+# through go-cache.
+GREET="${WORKDIR}/modules/example.com/greet@v1.0.0"
+mkdir -p "${GREET}"
+printf 'module example.com/greet\n\ngo 1.24\n' >"${GREET}/go.mod"
+printf 'package greet\n\nfunc Hello(name string) string { return "Hello, " + name }\n' >"${GREET}/greet.go"
+(cd "${ROOT}" && go build -o "${WORKDIR}/modproxy" ./e2e/modproxy)
+"${WORKDIR}/modproxy" -addr=0.0.0.0:0 -dir="${WORKDIR}/modules" >"${WORKDIR}/modproxy.log" 2>&1 &
+MOD_PROXY_PID=$!
+mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${WORKDIR}/modproxy.log"; }
+mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
+eventually 30 mod_proxy_listening
+MOD_PORT="$(mod_port)"
+echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
 echo "::endgroup::"
 
 echo "::group::Install git-k8s and the checks with generate"
@@ -190,23 +227,54 @@ GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
 crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
-# git-k8s installs the CustomResourceDefinitions that the checks watch. The
-# service account e2e-deps stands in for a controller that starts branches.
+# git-k8s installs the CustomResourceDefinitions that the checks watch, and
+# the objects in config/policy.yaml. The service account e2e-deps stands in
+# for a controller that starts branches.
 install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" "-fake-github=${CLUSTER_URL}/github"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+  "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
+k apply -f "${ROOT}/config/go-cache.yaml"
+# policies_applied passes once each object in config/policy.yaml has the label
+# that the core program sets when it applies them with the permissions that
+# generate grants it.
+policies_applied() {
+  local owners
+  owners="$(k get -f "${ROOT}/config/policy.yaml" \
+    -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.labels.kube\.imjasonh\.github\.io/managed-by}{"\n"}{end}')" &&
+    [[ -n "${owners}" ]] && ! grep -vq ' git-k8s$' <<<"${owners}"
+}
+eventually 60 policies_applied
+k get -f "${ROOT}/config/policy.yaml" --show-labels
+# generate grants those permissions by name, and only to a program that
+# installs the objects.
+[[ "$(k auth can-i patch validatingadmissionpolicies.admissionregistration.k8s.io/other \
+  --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
+policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
+if grep -F -e configmaps -e "${policy_names}" "${WORKDIR}/git-k8s-without-policies.yaml"; then
+  echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
+  exit 1
+fi
+# The policies ignore the entry for the core program. Without that, it would
+# make the core program the gofmt check, which can't create or change GitBranch
+# objects, so nothing would land.
+k -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\",\"git-k8s.git-k8s\":\"gofmt\"}}"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1 \
+        -go-cache=http://go-cache.go-cache
       ;;
+    check-approval) install "${program}" -namespace="${APPROVAL_NS}" ;;
     *) install "${program}" ;;
   esac
 done
-for program in "${CHECKS[@]}"; do
-  k -n "${program}" rollout status "deployment/${program}" --timeout=180s
+for program in go-cache "${CHECKS[@]}"; do
+  k -n "$(namespace_of "${program}")" rollout status "deployment/${program}" --timeout=180s
 done
-k apply -f "${ROOT}/config/policy.yaml"
 echo "::endgroup::"
 
 echo "::group::Track a repository"
@@ -527,25 +595,46 @@ eventually 60 branch_gone c/auth
 echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
 echo "::endgroup::"
 
-echo "::group::Two branches from the same commit both land"
+echo "::group::Two branches behind main land through its queue in turn"
 fetch_main
 g checkout -q -B c/one FETCH_HEAD
 echo one >"${WORK}/one.txt"
 g add -A
 g commit -qm "Add one.txt"
+ONE="$(g rev-parse HEAD)"
 g checkout -q -B c/two FETCH_HEAD
 echo two >"${WORK}/two.txt"
 g add -A
 g commit -qm "Add two.txt"
+TWO="$(g rev-parse HEAD)"
+g checkout -q -B moved FETCH_HEAD
+echo three >"${WORK}/three.txt"
+g add -A
+g commit -qm "Add three.txt"
+MOVED="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:main
+timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranch "$(branch_object main)" --watch \
+  -o jsonpath='{.status.queue[*]}{"\n"}' >"${WORKDIR}/queues.txt" 2>&1 &
+queues_pid=$!
 g push -q "${HOST_URL}/app.git" c/one:c/one c/two:c/two
 both_landed() {
   branch_gone c/one && branch_gone c/two && fetch_main &&
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
-eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
+eventually 240 both_landed
+kill "${queues_pid}" 2>/dev/null || true
+wait "${queues_pid}" || true
+echo "main's queue as it changed:"
+cat "${WORKDIR}/queues.txt"
+grep -Eqx 'c/(one|two) c/(one|two)' "${WORKDIR}/queues.txt"
 g log --graph --oneline FETCH_HEAD
-echo "One branch landed, the base check merged main into the other, and it landed too."
+# Each branch merged main in once: the first merged MOVED and landed, and
+# the second merged the first's landing.
+[[ "$(g log --format=%s "${MOVED}..FETCH_HEAD" | grep -c '^Merge main into c/')" == 2 ]]
+[[ "$(g rev-parse FETCH_HEAD^2^2)" == "${MOVED}" ]]
+[[ "$(g rev-parse FETCH_HEAD^1 FETCH_HEAD^2^1 | sort)" == "$(printf '%s\n' "${ONE}" "${TWO}" | sort)" ]]
+g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
+echo "Both branches waited in main's queue, and each merged main in once, at the front, before it landed."
 echo "::endgroup::"
 
 # landing sets how branches land on main.
@@ -622,13 +711,33 @@ patch_status() {
     -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
     --data "$1" "${status_url}"
 }
-code="$(patch_status '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}')"
+for patch in '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}' \
+  '{"status":{"queued":{"since":"2026-01-01T00:00:00Z","head":"0000000"}}}' \
+  '{"status":{"queue":["c/x"]}}'; do
+  code="$(patch_status "${patch}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]]
+  grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
+done
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
+[[ "${code}" == 200 ]]
+approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
+code="$(patch_status '{"status":{"checks":{"approval":{"commit":"0000000","state":"Passed"}}}}' "${approval_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 200 ]]
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${approval_token}")"
 cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
-grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
-code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
-[[ "${code}" == 200 ]]
+grep -q 'the approval check can only write status.checks.approval' "${WORKDIR}/patch.json"
+core_token="$(k -n git-k8s create token git-k8s)"
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${core_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
 # A service account with check-gofmt's permissions but another name isn't a
 # check, so it can't write any result.
 k -n "${NS}" create serviceaccount rogue
@@ -639,7 +748,7 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, and other service accounts can't write either."
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk or a merge queue, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, the core program can't write a result despite its entry, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -686,15 +795,36 @@ gotest_token="$(k -n check-gotest create token check-gotest)"
 code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
 grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
-# check-gofmt owns nothing, so generate doesn't let it patch GitBranch
-# objects at all.
+# check-gofmt and check-approval own nothing, so generate doesn't let them
+# patch GitBranch objects at all.
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-code="$(patch_branch "${token}" "${approve}")"
-cat "${WORKDIR}/patch.json"
-echo
-[[ "${code}" == 403 ]]
-grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt can't patch one."
+for bearer in "${token}" "${approval_token}"; do
+  code="$(patch_branch "${bearer}" "${approve}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 403 ]]
+  grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
+done
+echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt and check-approval can't patch one."
+echo "::endgroup::"
+
+echo "::group::A check that the ConfigMap names can't change GitBranch objects"
+# bot has the permissions that generate gives check-gotest, so RBAC lets it
+# patch GitBranch objects. It runs in the namespace ${APPROVAL_NS}, so only
+# its entry in the git-k8s-checks ConfigMap makes it a check.
+k -n "${APPROVAL_NS}" create serviceaccount bot
+k create clusterrolebinding git-k8s-e2e-bot --clusterrole=check-gotest --serviceaccount="${APPROVAL_NS}:bot"
+k -n git-k8s patch configmap git-k8s-checks --type=merge -p "{\"data\":{\"${APPROVAL_NS}.bot\":\"bot\"}}"
+bot_token="$(k -n "${APPROVAL_NS}" create token bot)"
+bot_cant_change() {
+  local code
+  code="$(patch_branch "${bot_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]] && grep -q "the bot check can't change GitBranch objects" "${WORKDIR}/patch.json"
+}
+eventually 30 bot_cant_change
+echo "RBAC lets bot patch GitBranch objects, and the policy stops it as the bot check that its ConfigMap entry names."
 echo "::endgroup::"
 
 echo "::group::A branch that changes on both sides diverges until a commit has both heads"
@@ -1227,6 +1357,261 @@ burst_gone() {
 eventually 60 burst_gone
 eventually 60 no_test_pods
 echo "Four branches ran one at a time, in the order that they started waiting."
+echo "::endgroup::"
+
+echo "::group::Test Pods get modules and build outputs from go-cache"
+# This is the README's NetworkPolicy: test Pods reach DNS, go-cache, and the
+# git server, and nothing else.
+k apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-pods
+  namespace: ${NS}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: check-gotest
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: go-cache
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: go-cache
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - ipBlock:
+            cidr: ${GATEWAY}/32
+      ports:
+        - {protocol: TCP, port: ${GIT_PORT}}
+EOF
+metrics() { k get --raw /api/v1/namespaces/go-cache/services/go-cache:http/proxy/metrics; }
+# metric prints the value of a sample, such as
+# go_cache_module_requests_total{result="hit"}, from the metrics in file $1.
+metric() { awk -v sample="$2" '$1 == sample { print $2 }' "$1"; }
+# grew prints how much sample $3 grew from metrics file $1 to file $2.
+grew() { echo $(($(metric "$2" "$3") - $(metric "$1" "$3"))); }
+GET_HIT='go_cache_build_requests_total{method="GET",result="hit"}'
+GET_MISS='go_cache_build_requests_total{method="GET",result="miss"}'
+PUT_CREATED='go_cache_build_requests_total{method="PUT",result="created"}'
+PUT_DENIED='go_cache_build_requests_total{method="PUT",result="denied"}'
+MOD_FETCHED='go_cache_module_requests_total{result="fetched"}'
+MOD_HIT='go_cache_module_requests_total{result="hit"}'
+metrics >"${WORKDIR}/metrics-0.txt"
+
+t checkout -q -b c/greet "${fixed}"
+printf '\nrequire example.com/greet v1.0.0\n' >>"${TESTED}/go.mod"
+printf 'package tested\n\nimport "example.com/greet"\n\n// Greeting greets the cluster.\nfunc Greeting() string { return greet.Hello("kind") }\n' \
+  >"${TESTED}/greeting.go"
+cat >"${TESTED}/greeting_test.go" <<'GO'
+package tested
+
+import "testing"
+
+func TestGreeting(t *testing.T) {
+	if got := Greeting(); got != "Hello, kind" {
+		t.Errorf("Greeting() = %q, want %q", got, "Hello, kind")
+	}
+}
+GO
+GOPROXY="http://127.0.0.1:${MOD_PORT}" GOSUMDB=off GOFLAGS=-modcacherw GOMODCACHE="${WORKDIR}/gomodcache" \
+  go -C "${TESTED}" mod tidy
+t add -A
+t commit -qm "Greet the cluster"
+greet="$(t rev-parse HEAD)"
+t push -q "${HOST_URL}/tested.git" HEAD:c/greet
+greet_landed() { [[ "$(remote_head main tested)" == "${greet}" ]]; }
+eventually 300 greet_landed
+eventually 60 no_test_pods
+metrics >"${WORKDIR}/metrics-1.txt"
+(($(grew "${WORKDIR}/metrics-0.txt" "${WORKDIR}/metrics-1.txt" "${MOD_FETCHED}") > 0))
+
+# A Pod that NetworkPolicies treat as a test Pod tries to reach the module
+# proxy itself. kind's network plugin enforces NetworkPolicies, except on
+# hosts that lack the kernel support that it needs. Like a test Pod, the
+# probe meets the restricted Pod Security Standard.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: np-probe
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/name: check-gotest
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 30
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: probe
+      image: ${GO_IMAGE}
+      command: [go, mod, download, -x, example.com/greet@v1.0.0]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+      env:
+        - {name: HOME, value: /tmp}
+        - {name: GOFLAGS, value: -modcacherw}
+        - {name: GOPROXY, value: "http://${GATEWAY}:${MOD_PORT}"}
+        - {name: GOSUMDB, value: "off"}
+        - {name: GOTOOLCHAIN, value: local}
+EOF
+probe_phase() { k -n "${NS}" get pod np-probe -o jsonpath='{.status.phase}'; }
+probe_done() { [[ "$(probe_phase)" == Succeeded || "$(probe_phase)" == Failed ]]; }
+eventually 120 probe_done
+k -n "${NS}" logs np-probe --tail=5 || true
+if [[ "$(probe_phase)" == Succeeded ]]; then
+  echo "This cluster doesn't enforce NetworkPolicies, so test Pods could have reached the module proxy."
+else
+  echo "The NetworkPolicy kept a test Pod from reaching the module proxy."
+fi
+k -n "${NS}" delete pod np-probe
+
+# go-cache serves the module from its store now.
+kill "${MOD_PROXY_PID}"
+wait "${MOD_PROXY_PID}" 2>/dev/null || true
+MOD_PROXY_PID=""
+t checkout -q -b c/greet-docs
+printf '# tested\n\nGreeting greets the cluster.\n' >"${TESTED}/README.md"
+t add -A
+t commit -qm "Add a README"
+docs="$(t rev-parse HEAD)"
+t push -q "${HOST_URL}/tested.git" HEAD:c/greet-docs
+docs_landed() { [[ "$(remote_head main tested)" == "${docs}" ]]; }
+eventually 300 docs_landed
+eventually 60 no_test_pods
+metrics >"${WORKDIR}/metrics-2.txt"
+m1="${WORKDIR}/metrics-1.txt"
+m2="${WORKDIR}/metrics-2.txt"
+grep '^go_cache_' "${m2}"
+stored="$(grew "${WORKDIR}/metrics-0.txt" "${m1}" "${PUT_CREATED}")"
+read_back="$(grew "${m1}" "${m2}" "${GET_HIT}")"
+missed="$(grew "${m1}" "${m2}" "${GET_MISS}")"
+stored_again="$(grew "${m1}" "${m2}" "${PUT_CREATED}")"
+(($(grew "${m1}" "${m2}" "${MOD_HIT}") > 0 && $(grew "${m1}" "${m2}" "${MOD_FETCHED}") == 0))
+((read_back >= 100 && stored_again < 10))
+# go-cache turned away none of check-gotest's uploads.
+(($(metric "${m2}" "${PUT_DENIED}") == 0))
+echo "c/greet's Pod got example.com/greet through go-cache and stored ${stored} build outputs."
+echo "With the module proxy stopped, c/greet-docs's Pod got the module from go-cache's store, read ${read_back} build outputs, missed ${missed}, and stored ${stored_again}."
+k -n "${NS}" delete networkpolicy test-pods
+echo "::endgroup::"
+
+echo "::group::Only check-gotest's Pending Pods write to the build caches"
+# Two Pods get tokens that can write tested's build cache. check-gotest
+# doesn't own cache-writer, and a scheduling gate keeps it Pending, so it
+# never runs. cache-runner has check-gotest's label, and runs.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cache-writer
+  namespace: ${NS}
+spec:
+  schedulingGates:
+    - name: git-k8s.imjasonh.com/e2e
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: writer
+      image: ${GO_IMAGE}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cache-runner
+  namespace: ${NS}
+  labels:
+    kube.imjasonh.github.io/controller: check-gotest
+spec:
+  automountServiceAccountToken: false
+  terminationGracePeriodSeconds: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: runner
+      image: ${GO_IMAGE}
+      command: [sleep, "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+EOF
+# write_token prints a token that can write tested's build cache, bound to
+# the Pod named $1.
+write_token() {
+  k -n "${NS}" create token default --duration=10m \
+    --audience="git-k8s.imjasonh.com/go-cache/write/${NS}/tested" \
+    --bound-object-kind=Pod --bound-object-name="$1"
+}
+writer_token="$(write_token cache-writer)"
+cache_ip="$(k -n go-cache get service go-cache -o jsonpath='{.spec.clusterIP}')"
+probe_output="$(printf probe | sha256sum | cut -d ' ' -f 1)"
+# put_probe uploads an output with token $2 while its Pod is $1, from a
+# node, which reaches go-cache's Service like a test Pod. It writes the
+# response to /tmp/probe.txt on the node, logs the status and the body, and
+# prints the status.
+put_probe() {
+  local action code
+  action="$(printf '%s' "$1" | sha256sum | cut -d ' ' -f 1)"
+  code="$(docker exec "${CLUSTER}-control-plane" curl -sS -o /tmp/probe.txt -w '%{http_code}' -X PUT \
+    -H "Authorization: Bearer $2" -H "Go-Output-Id: ${probe_output}" \
+    --data-binary probe "http://${cache_ip}/cache/${NS}/tested/${action}")"
+  echo "A write while the Pod is $1: ${code} $(docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt)" >&2
+  echo "${code}"
+}
+pod_phase() { k -n "${NS}" get pod "$1" -o jsonpath='{.status.phase}'; }
+code="$(put_probe unlabeled "${writer_token}")"
+[[ "${code}" == 403 ]]
+docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-writer isn't check-gotest's" /tmp/probe.txt
+# Anyone who can create Pods in the namespace can set check-gotest's label.
+# go-cache remembers for 10 seconds that the Pod failed the check.
+k -n "${NS}" label pod cache-writer kube.imjasonh.github.io/controller=check-gotest
+[[ "$(pod_phase cache-writer)" == Pending ]]
+labeled() { [[ "$(put_probe labeled "${writer_token}")" == 201 ]]; }
+eventually 30 labeled
+k -n "${NS}" delete pod cache-writer
+code="$(put_probe deleted "${writer_token}")"
+[[ "${code}" == 403 ]]
+# check-gotest's Pods upload from an init container, while they're Pending.
+runner_running() { [[ "$(pod_phase cache-runner)" == Running ]]; }
+eventually 120 runner_running
+runner_token="$(write_token cache-runner)"
+code="$(put_probe running "${runner_token}")"
+[[ "${code}" == 403 ]]
+docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-runner is Running, not Pending" /tmp/probe.txt
+k -n "${NS}" delete pod cache-runner
+echo "go-cache turned away a token from a Pod without check-gotest's label, took it once the Pending Pod had the label, and turned it away once the Pod was gone. It turned away a token from a Running Pod with the label."
 echo "::endgroup::"
 
 echo "::group::A check can change only its own Pods"

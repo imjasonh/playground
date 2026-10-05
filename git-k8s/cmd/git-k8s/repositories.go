@@ -32,6 +32,8 @@ type repositories struct {
 	mirror *mirror.Mirror
 	// now is time.Now, except in tests.
 	now func() time.Time
+	// installPolicies is the -install-policies flag.
+	installPolicies bool
 
 	mu    sync.Mutex
 	polls map[string]poll
@@ -103,7 +105,7 @@ func (r *repositories) forget(key string) {
 func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository) error {
 	ready := kube.Condition{Type: "Ready", Status: kube.False}
 	defer func() { kube.SetCondition(&repo.Status.Conditions, ready) }()
-	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx))
+	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx, r.installPolicies))
 
 	reportCheckRuns(ctx, repo)
 

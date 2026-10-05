@@ -102,7 +102,7 @@ pub async fn handle(
 }
 
 async fn health(store: &dyn SubscriptionStore, config: &ApiConfig) -> ApiResponse {
-    let count = store.list().await.map(|v| v.len()).unwrap_or(0);
+    let count = store.count().await.unwrap_or(0);
     ApiResponse::json(
         200,
         json!({
@@ -228,68 +228,23 @@ async fn notify(
         },
     };
 
-    let mut results = Vec::with_capacity(targets.len());
-    let mut succeeded = 0usize;
-    let mut failed = 0usize;
-
-    for stored in &targets {
-        let message = WebPushMessage {
-            payload: payload.clone(),
-            ttl,
-            urgency,
-            topic: request.topic.clone(),
-        };
-
-        let push_request =
-            match config
-                .client
-                .build_request(&stored.subscription, &message, now_unix)
-            {
-                Ok(req) => req,
-                Err(e) => {
-                    failed += 1;
-                    results.push(json!({
-                        "id": stored.id,
-                        "endpoint": stored.subscription.endpoint,
-                        "ok": false,
-                        "error": e.to_string(),
-                    }));
-                    continue;
-                }
-            };
-
-        match sender.send(&push_request).await {
-            Ok(response) => {
-                let ok = response.is_success();
-                if ok {
-                    succeeded += 1;
-                } else {
-                    failed += 1;
-                }
-                let mut removed = false;
-                if response.is_gone() {
-                    let _ = store.delete(&stored.id).await;
-                    removed = true;
-                }
-                results.push(json!({
-                    "id": stored.id,
-                    "endpoint": stored.subscription.endpoint,
-                    "status": response.status,
-                    "ok": ok,
-                    "removed": removed,
-                }));
-            }
-            Err(e) => {
-                failed += 1;
-                results.push(json!({
-                    "id": stored.id,
-                    "endpoint": stored.subscription.endpoint,
-                    "ok": false,
-                    "error": e.to_string(),
-                }));
-            }
-        }
-    }
+    let message = WebPushMessage {
+        payload,
+        ttl,
+        urgency,
+        topic: request.topic,
+    };
+    // Each push goes to a different endpoint, so send them concurrently.
+    // join_all keeps `results` in subscription order.
+    let outcomes = futures::future::join_all(
+        targets
+            .iter()
+            .map(|stored| deliver(stored, &message, store, sender, config, now_unix)),
+    )
+    .await;
+    let succeeded = outcomes.iter().filter(|(ok, _)| *ok).count();
+    let failed = outcomes.len() - succeeded;
+    let results: Vec<Value> = outcomes.into_iter().map(|(_, result)| result).collect();
 
     ApiResponse::json(
         200,
@@ -300,6 +255,64 @@ async fn notify(
             "results": results,
         }),
     )
+}
+
+/// Send one push. Returns whether it succeeded, plus its `results` entry.
+async fn deliver(
+    stored: &StoredSubscription,
+    message: &WebPushMessage,
+    store: &dyn SubscriptionStore,
+    sender: &dyn PushSender,
+    config: &ApiConfig,
+    now_unix: u64,
+) -> (bool, Value) {
+    let push_request = match config
+        .client
+        .build_request(&stored.subscription, message, now_unix)
+    {
+        Ok(req) => req,
+        Err(e) => {
+            return (
+                false,
+                json!({
+                    "id": stored.id,
+                    "endpoint": stored.subscription.endpoint,
+                    "ok": false,
+                    "error": e.to_string(),
+                }),
+            )
+        }
+    };
+
+    match sender.send(&push_request).await {
+        Ok(response) => {
+            let ok = response.is_success();
+            let mut removed = false;
+            if response.is_gone() {
+                let _ = store.delete(&stored.id).await;
+                removed = true;
+            }
+            (
+                ok,
+                json!({
+                    "id": stored.id,
+                    "endpoint": stored.subscription.endpoint,
+                    "status": response.status,
+                    "ok": ok,
+                    "removed": removed,
+                }),
+            )
+        }
+        Err(e) => (
+            false,
+            json!({
+                "id": stored.id,
+                "endpoint": stored.subscription.endpoint,
+                "ok": false,
+                "error": e.to_string(),
+            }),
+        ),
+    }
 }
 
 #[cfg(test)]
