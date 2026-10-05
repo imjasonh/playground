@@ -241,6 +241,17 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		t.Errorf("with git-k8s-check-pods warning while admin-pods denies, and a paramRef that allows requests, PoliciesInstalled = %+v", c)
 	}
 	bindings[2].Spec.ValidationActions = []string{"Deny"}
+	// While git-k8s-check-pods is missing, the condition can't tell whether the
+	// policy reads parameters, so it doesn't give a patch for the paramRef of
+	// the binding that's left. The restart installs the policy again.
+	orphaned := slices.DeleteFunc(slices.Clone(world), func(o any) bool {
+		p, ok := o.(*admissionPolicy)
+		return ok && p.Name == "git-k8s-check-pods"
+	})
+	if c := reconcile(orphaned...); c.Status != kube.False || c.Reason != "Missing" ||
+		c.Message != "git-k8s-check-pods isn't fully installed, so checks that own Pods can write any Pod in the cluster; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again" {
+		t.Errorf("without git-k8s-check-pods, and with a paramRef that allows requests on its binding, PoliciesInstalled = %+v", c)
+	}
 	// Without a paramRef, the API server evaluates git-k8s-check-results
 	// without parameters, so the policy ignores the entries in the
 	// git-k8s-checks ConfigMap. The patch adds the paramRef again.
