@@ -532,6 +532,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		{"name", o.name},
 		{"image", ref},
 		{"args", args},
+		{"env", []any{object{{"name", "KUBE_IMAGE"}, {"value", ref}}}},
 		{"ports", ports},
 		{"readinessProbe", probe("/readyz")},
 		{"livenessProbe", probe("/healthz")},

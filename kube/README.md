@@ -628,7 +628,11 @@ The command does the following:
    Service for webhooks. With more than one replica, the Deployment runs the
    program with `-leader-elect`, or with `-shards` when you set `-shards`.
    The container's root file system is read-only, with an `emptyDir` volume
-   at `/tmp` for temporary files. `-tmp-size` limits the volume's size.
+   at `/tmp` for temporary files. `-tmp-size` limits the volume's size. The
+   `KUBE_IMAGE` environment variable holds the image's reference by digest,
+   so the program can start Pods that run its own image. A tool that changes
+   the container's image, such as kustomize's `images` field or
+   `kubectl set image`, has to change `KUBE_IMAGE` too.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.

@@ -1118,7 +1118,10 @@ quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `-leader-elect` or `-shards` when it has more than one replica. An `emptyDir`
 volume at `/tmp` gives `os.TempDir` somewhere to write. With `-tmp-size`, the
 volume has a size limit, and the kubelet evicts a Pod that writes more instead
-of letting it fill the node's disk.
+of letting it fill the node's disk. `KUBE_IMAGE` holds the image's reference
+by digest. A program can't otherwise learn which image it runs from without
+reading its own Pod, so this lets it start helper Pods or init containers
+that run its own binary.
 
 ### Testing
 
