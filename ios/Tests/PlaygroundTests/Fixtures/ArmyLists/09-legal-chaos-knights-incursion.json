@@ -1,60 +1,75 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "4689F3F8-8C19-458D-8AFE-73B33BFFC214",
-    "name": "Chaos Knights Incursion 900pts",
-    "catalogVersion": "11e-1",
-    "factionID": "chaos-knights",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "chaos-knights--hunting-warpack"
     ],
-    "units": [
+    "factionID" : "chaos-knights",
+    "id" : "47814263-A4FA-42B2-BCF2-25C3B4857257",
+    "name" : "Chaos Knights Incursion 875pts",
+    "notes" : "stress seed=8 attach=true enh=true",
+    "units" : [
       {
-        "id": "B929F26B-8857-45DC-87D6-643FE4088D33",
-        "datasheetID": "chaos-knights--knight-ruinator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-knights--knight-ruinator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "EE257C7E-F537-42BD-97BC-298E419C4DFF",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "418E051D-CB2D-45CA-B375-3153153077A6",
-        "datasheetID": "chaos-knights--war-dog-moirax",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-knights--war-dog-brigand",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8F87661A-7DA6-4D24-A4C5-80DB24423E0C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "84C4D635-E51F-4549-BB30-BC9C7B677FBD",
-        "datasheetID": "chaos-knights--war-dog-executioner",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-knights--war-dog-moirax",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "558363E5-2CDD-4C8C-B240-1E5D8A4E07CC",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "070F524F-B80C-43E6-ACE2-EF0EBCCE7930",
-        "datasheetID": "chaos-knights--war-dog-karnivore",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-knights--war-dog-huntsman",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8B786305-F2B2-4638-B025-30B854DC35B2",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5DBBDE64-E4DC-4244-BD45-72F4882EF8DF",
-        "datasheetID": "chaos-knights--war-dog-brigand",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "chaos-knights--war-dog-executioner",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B124394D-1796-480C-9E42-44D3AB018AE2",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "B929F26B-8857-45DC-87D6-643FE4088D33",
-    "notes": "stress seed=8 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "EE257C7E-F537-42BD-97BC-298E419C4DFF"
+  },
+  "notes" : "auto-built"
 }

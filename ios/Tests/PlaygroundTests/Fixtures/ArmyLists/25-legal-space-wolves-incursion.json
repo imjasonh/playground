@@ -1,87 +1,110 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "75077705-631D-44CA-A656-96829A3E6DBF",
-    "name": "Space Wolves Incursion 990pts",
-    "catalogVersion": "11e-1",
-    "factionID": "space-wolves",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
-      "space-wolves--legends-of-saga-and-song",
-      "space-wolves--subversion-assets"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "space-wolves--champions-of-fenris",
+      "space-wolves--saga-of-the-beastslayer"
     ],
-    "units": [
+    "factionID" : "space-wolves",
+    "id" : "4426BADB-8013-4F71-B575-486E500BC413",
+    "name" : "Space Wolves Incursion 970pts",
+    "notes" : "stress seed=24 attach=true enh=true",
+    "units" : [
       {
-        "id": "15DA5726-5D22-421B-BFCE-BB7BC6910012",
-        "datasheetID": "space-wolves--iron-priest",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "space-wolves--subversion-assets--shroud-field"
+        "attachedToUnitID" : "A692930E-07E7-4C40-AF21-4F6814671D3B",
+        "datasheetID" : "space-wolves--iron-priest",
+        "enhancementIDs" : [
+          "space-wolves--champions-of-fenris--a-giant-amongst-giants"
         ],
-        "attachedToUnitID": null
+        "id" : "BE18D447-CA7A-4142-A79B-24A761264785",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "BB6E8A9F-21CD-447F-BDD9-51AA3FF6754A",
-        "datasheetID": "space-wolves--land-raider-crusader",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--hammerfall-bunker",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E21577F7-EAF3-417F-BBF6-53689A14AF94",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1AC00B5F-6191-467F-9C29-7D3252089534",
-        "datasheetID": "space-wolves--inceptor-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--eradicator-squad-with-heavy-bolters",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E023001D-E379-4E89-A16E-328C6AD24680",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "200A9EDE-B918-4157-863E-2E4486B525EA",
-        "datasheetID": "space-wolves--suppressor-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--vanguard-veteran-squad-with-jump-packs",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0E8614B4-7345-4BC3-B782-4204E16B7CF0",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1221459C-BBB1-42C7-91BD-ADE3AE44252E",
-        "datasheetID": "space-wolves--assault-intercessor-squad",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--ballistus-dreadnought",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "ECF7AC01-072C-40EA-BDA8-C176D20EE363",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "2B29FFD9-679B-4676-AF8A-B9D346B723B8",
-        "datasheetID": "space-wolves--brutalis-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--scout-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "FAA0611F-9E62-430B-B351-87DCEB9AFF3D",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EF9C473A-3C52-4288-9BC1-85D4BA9AECB5",
-        "datasheetID": "space-wolves--skyclaws",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--thunderwolf-cavalry",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B8F4DFBB-AAC8-4018-994C-DD2F8F33BBFE",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "404BC85A-9DE3-4959-945A-EDB9F30060CD",
-        "datasheetID": "space-wolves--sternguard-veteran-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "space-wolves--assault-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A692930E-07E7-4C40-AF21-4F6814671D3B",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "15DA5726-5D22-421B-BFCE-BB7BC6910012",
-    "notes": "stress seed=24 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "BE18D447-CA7A-4142-A79B-24A761264785"
+  },
+  "notes" : "auto-built"
 }

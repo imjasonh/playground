@@ -1,150 +1,219 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "3F4520DB-82DC-484E-A37E-ADF28749087A",
-    "name": "Necrons Strike Force 1900pts",
-    "catalogVersion": "11e-1",
-    "factionID": "necrons",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
-      "necrons--awakened-dynasty"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "necrons--hand-of-the-dynasty"
     ],
-    "units": [
+    "factionID" : "necrons",
+    "id" : "DE757A7C-8ABA-4C34-87DA-3524639C32BD",
+    "name" : "Necrons Strike Force 1910pts",
+    "notes" : "stress seed=33 attach=true enh=true",
+    "units" : [
       {
-        "id": "31B47136-6D58-4BD8-B2D2-1CAE02AE4BEF",
-        "datasheetID": "necrons--royal-warden",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "necrons--awakened-dynasty--nether-realm-casket"
+        "attachedToUnitID" : "8006D140-FCC9-4146-81A4-77DF9591C4B3",
+        "datasheetID" : "necrons--royal-warden",
+        "enhancementIDs" : [
+
         ],
-        "attachedToUnitID": "BA547B86-17B8-41D2-8F45-83DFFF8445E1"
+        "id" : "539115F9-6110-435D-98B8-31B51384A330",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "BA547B86-17B8-41D2-8F45-83DFFF8445E1",
-        "datasheetID": "necrons--necron-warriors",
-        "models": 20,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--ophydian-destroyers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D03507CC-091B-4D73-91A5-0683AC36CC7A",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "FE85E830-257F-4648-B882-2AD1A81333DB",
-        "datasheetID": "necrons--immortals",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--annihilation-barge",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7E09B3BD-D5BB-4D87-A72D-8418DA605489",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E8E61EAB-E4D5-43FE-8877-92C5F27777C9",
-        "datasheetID": "necrons--tomb-citadel-walls",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--cryptothralls",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DC4855BD-B0D6-4419-ADF2-2E4FEF6D6AE7",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DD85EDE6-46F0-4A23-BC48-F052432873B6",
-        "datasheetID": "necrons--convergence-of-dominion",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--lokhust-heavy-destroyers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6A7B55D0-209E-446D-A347-F253256F768E",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "EA005008-7816-49E3-A518-115CD66AECFB",
-        "datasheetID": "necrons--tesseract-vault",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--triarch-stalker",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A874FF08-24CB-4BF2-89D9-8E15A54ABE0D",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "E49C44C2-5E40-41B4-AF6B-07D6583EE9A3",
-        "datasheetID": "necrons--flayed-ones",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--tesseract-ark",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1634C4F0-84CA-4223-9F11-2281560EA8A1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "81349118-AB93-496E-B9F5-445EFE437A0F",
-        "datasheetID": "necrons--canoptek-wraiths",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--canoptek-scarab-swarms",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "34C5A534-9A65-4B4B-A576-3CB56471B790",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "0A4D7417-0DBF-426A-AEE6-20D2E0958CB1",
-        "datasheetID": "necrons--immortals",
-        "models": 10,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--canoptek-tomb-sentinel",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "821FC699-615C-4CEC-9B07-1F40F66B0339",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "6BFDD2DD-ABA5-4786-88BF-CF07E80D663E",
-        "datasheetID": "necrons--canoptek-acanthrites",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--immortals",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8006D140-FCC9-4146-81A4-77DF9591C4B3",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "F7620255-9F17-4E41-99C3-75A56EE31CC5",
-        "datasheetID": "necrons--lokhust-destroyers",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--tesseract-vault",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "AEE9B8AD-5A65-4D0D-9765-B4EFB4BA759C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5E1CDD1A-A482-499B-92DF-1D6A56CF54CB",
-        "datasheetID": "necrons--cryptothralls",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--canoptek-acanthrites",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8CC4FE95-6B6E-4B6B-9D00-C6B690B42926",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "F84E6F8D-4EA3-4090-A6E8-E0D37602C070",
-        "datasheetID": "necrons--lokhust-heavy-destroyers",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--lychguard",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9AFE7C52-2271-4677-9327-E9695C91C6EC",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "D552BB55-55C7-49A0-896E-5BAF4E0F5E0E",
-        "datasheetID": "necrons--canoptek-tomb-crawlers",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--canoptek-reanimator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "584B6DAA-6D3C-4CE7-B9E6-CE2746C91B45",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "23E37683-1599-4BC4-92F5-8AC218D06DB4",
-        "datasheetID": "necrons--sentry-pylons",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--immortals",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "468A21B4-319E-459F-8F08-3C90F949A572",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "1573249A-A30C-4827-8D3D-0E94986D26D6",
-        "datasheetID": "necrons--ghost-ark",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "necrons--canoptek-spyders",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E4A6A76C-B756-4BA7-9572-F71759E6F4C7",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "necrons--skorpekh-destroyers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B278509A-212B-4B89-8B85-9F236BD4DBCE",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "necrons--convergence-of-dominion",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "30A3D13E-1B7F-451E-B17F-BE45DA17DB70",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "31B47136-6D58-4BD8-B2D2-1CAE02AE4BEF",
-    "notes": "stress seed=33 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "539115F9-6110-435D-98B8-31B51384A330"
+  },
+  "notes" : "auto-built"
 }
