@@ -609,7 +609,7 @@ func TestWritesShowInEveryCacheOfTheKind(t *testing.T) {
 	}
 	shows(t, 1, "1")
 	respond(http.StatusOK, object(2, "api"))
-	if err := m.patch(ctx, full.ti, k, path, client.JSONPatch, []byte(`[]`)); err != nil {
+	if err := m.patch(ctx, full.ti, k, path, client.JSONPatch, []byte(`[]`), nil); err != nil {
 		t.Fatal(err)
 	}
 	shows(t, 2, "")

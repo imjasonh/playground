@@ -172,12 +172,17 @@ fix is a second generated type, an apply configuration, for every API type.
 changes from the apiserver. By its nature, this watch stream is eventually
 consistent and provides no guarantee of how far behind the 'live' state of the
 apiserver it is" ([KEP-5647](https://github.com/kubernetes/enhancements/issues/5647)).
-A stale cache causes two kinds of mistakes. A reconcile that runs right after
-its own write can read the old object and act again. And a write based on a
-stale cache can target an object that no longer exists. Server-side apply
-creates objects that don't exist, so applying a finalizer to an object that
-was deleted a moment ago creates it again, and a status write meant for a
-deleted object can land on a new object with the same name.
+A stale cache causes three kinds of mistakes. A reconcile that runs right after
+its own write can read the old object and act again. A write based on a stale
+cache can target an object that no longer exists. Server-side apply creates
+objects that don't exist, so applying a finalizer to an object that was
+deleted a moment ago creates it again, and a status write meant for a deleted
+object can land on a new object with the same name. And a replica that takes
+over an object from another replica, after a failover or when shards move,
+can reconcile it before its cache has the other replica's last writes. A
+forced apply of a status computed from that cache removes what those writes
+added. kube makes such a write fail instead of waiting for the cache, as
+[Shards and leader election](#shards-and-leader-election) explains.
 
 ### Startup and resync storms
 
@@ -375,8 +380,11 @@ once per type with reflection, instead of generated `DeepCopy` methods.
 A manager keeps one informer for each type, namespace, and label selector that
 its controllers use, and controllers that read the same type with the same
 filters share it. An informer starts the first time a reconcile reads its
-type. On a replica with leader election or shards, informers start only after
-the replica first holds a shard, so standby replicas hold no caches.
+type. On a replica with leader election or shards, controllers start their
+informers only after the replica first holds a shard, so a standby holds only
+the caches that its webhooks and HTTP handlers read. When the replica takes
+over, a controller shares such a cache instead of starting a second informer
+for the same objects.
 
 The informer first tries a streaming list, which is a watch with
 `sendInitialEvents=true`, `resourceVersionMatch=NotOlderThan`, and
@@ -560,11 +568,17 @@ its own object.
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
 
-Every write that targets an object that must already exist carries its UID:
-status writes, finalizer changes, `Apply`, and deletes. An apply with a UID
-fails instead of creating an object, and a delete with a UID precondition
-fails if the name now belongs to a new object. A write based on a stale cache
-can't bring back a deleted object or touch its replacement.
+Finalizer changes, `Apply`, and deletes target an object that must already
+exist, so they carry its UID. An apply with a UID fails instead of creating an
+object, and a delete with a UID precondition fails if the name now belongs to
+a new object. Such a write based on a stale cache can't bring back a deleted
+object or touch its replacement. Status writes carry the UID too, but the API
+server ignores it on status writes to custom resources. A status write that
+requires the cached resource version, as
+[Shards and leader election](#shards-and-leader-election) describes, fails on
+a new object with the same name. Other status writes, including every one
+without leader election or shards, can land a status computed for a deleted
+object on a new object with the same name.
 
 `Reconcile` can change the reconciled object's status. After every reconcile,
 whether it succeeded or not, the framework sets `observedGeneration` and a
@@ -945,6 +959,60 @@ already running finish, as with any lease-based election. On shutdown,
 `Manager.Run` stops reconciles first and then releases its shards, so another
 replica takes over in about one retry period.
 
+The replica that takes over a shard may not have the previous holder's last
+writes in its cache yet. A status computed from that cache lacks what those
+writes added, and a forced apply of it would remove them. So after a replica
+acquires a shard, it sends each object's status write with the cached
+`resourceVersion` as a precondition, until one succeeds. That includes
+objects created after the takeover, because the cache can show an object as
+new before it shows the previous holder's writes to it. A reconcile that
+adds or removes the finalizer, or records owned kinds to clean up, writes
+the object before its status. Each such write carries the same
+precondition, and the next write requires the version that it returned. A
+write from a cache that's behind gets `409 Conflict`, which the framework
+tells apart from a deleted object, and the reconcile is retried. Such a
+retry is expected, so the framework logs it at the info level and counts it
+in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
+The framework doesn't record the failure for `kube.LastError`, so the retry
+sees the error from the reconcile before it. A webhook can also refuse a
+write with `409 Conflict`, though, and a cache catches up within a few
+retries. So after five failed reconciles of the object in a row, the
+framework logs each further one as a warning.
+One success is enough, whether of the status write or of a write before it,
+since the status may need no write. It shows that the cache had every earlier
+write when that reconcile started. After a hand-off, this replica is then the
+only one that writes the object's status, because the previous holder
+finished its reconciles before it released the shard. That isn't so after a
+lease loss. The previous holder's running reconciles finish, and a late
+status write from one of them replaces a newer status, because both replicas
+apply it with the same field manager.
+
+The precondition covers the controller's cache. A reconcile can also read the
+object with `kube.Get`, which reads the same cache unless the controller
+watches with `kube.WatchSelector`, or with `kube.WatchNamespace` and a
+namespace other than the manager's. Such a controller has a cache of its own.
+So until the first conditional write succeeds, the framework also compares the
+two caches when the reconcile starts. If the cache that `kube.Get` reads holds
+another version of the object, the framework doesn't write the status,
+doesn't count the reconcile's other writes as the success, and retries the
+reconcile. A reconcile that read the object with `kube.Get` also
+runs again when that cache catches up. A cache that doesn't hold the object's
+namespace can't return the object, so the framework doesn't compare it. The
+framework finds the cache that `kube.Get` reads by the controller's Go type. A
+reconcile that reads the object as another Go type of the same kind reads
+another cache, which the framework doesn't compare, so the precondition
+doesn't cover that read.
+
+Waiting for the cache to catch up before queuing the shard's keys would need a
+way to tell that it has. Clients may compare resource versions only for
+equality ([API concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)),
+so a replica can't tell that its cache passed the version that the previous
+holder last wrote. A new list of the type would show the current state, but it
+would cost a list for each acquired shard and hold back every key in the shard
+until it finished. The precondition costs a retry only when the object
+changed after the version that the reconcile read, because the cache was
+behind or because something else wrote the object during the reconcile.
+
 Sharding by lease, as Knative does, needs no component that labels objects,
 but every replica caches every object. Labeling objects with their shard, as
 kubernetes-controller-sharding does, would let each replica watch only its
@@ -980,6 +1048,180 @@ servers still using a certificate it signed keep working. Each replica applies
 the webhook configurations with the bundle, which is idempotent, and deletes
 configurations that its program no longer needs, so that a dropped webhook
 doesn't fail every request for its type.
+
+### HTTP endpoints
+
+`kube.Serve` returns a `Controller` that doesn't reconcile, so the manager runs
+it on every replica, not only on replicas that hold shards. It starts after the
+webhooks serve and before the replica competes for shards, and `/readyz` fails
+until it listens, so the Service sends requests only to replicas that can answer
+them.
+
+A Pod that's stopping stays in the Service's endpoints until the endpoints
+controller and kube-proxy notice. If the program stopped listening first, the
+connections that arrive in that time would be refused, and clients such as git
+don't retry. So `generate` gives a program that serves a `preStop` hook whose
+`sleep` action waits 5 seconds before the kubelet sends `SIGTERM`. The kubelet
+runs the sleep itself, so the image needs no shell, and the action is on by
+default in Kubernetes 1.30 and later. When the program stops, the server stops
+accepting connections and waits up to 10 seconds for requests in progress. Their
+contexts don't derive from the manager's, so they're canceled only when that
+time runs out. `Trigger` returns false once the manager's context is done, so a
+request that triggers a reconcile in that time answers `503`. A read whose cache
+hasn't synced waits until the time runs out and fails, because caches stop with
+the manager. The Pod's termination grace period, 30 seconds by default, covers
+the sleep, the wait, and the rest of stopping.
+
+The handler runs in the webhooks' read-only scope. Every replica serves, so a
+handler that wrote objects could race the reconcile on the replica that holds
+the object's shard. Writes stay in reconciles, where one replica at a time
+carries out the intents for an object. A handler that needs a change triggers a
+reconcile instead. As in a webhook, `Get` and `List` in a handler read the
+type's cache, and start it on a replica that doesn't have it yet, such as a
+standby.
+
+A program has one `kube.Serve`, so `generate` knows the one port to route, and
+one mux can serve many paths. `generate` runs the program with
+`-serve-addr=:8081` and routes port 80 of the program's Service there, so
+callers use `http://NAME.NAMESPACE.svc/`. It writes no NetworkPolicy, because it
+can't know which Pods call the program. A hook for any long-running function,
+like `controller-runtime`'s `Runnable`, would cover more uses, but `generate`
+couldn't tell whether the function listens, or on which port, and its scope
+would last as long as the program instead of one request.
+
+The server uses plain HTTP. The webhook server has TLS, but its certificate
+comes from a CA that only the API server is given, so callers couldn't verify
+it. Without TLS, tokens cross the Pod network unencrypted, and the audience
+check in `ReviewToken` limits a captured token to the server that it was issued
+for, until it expires.
+
+### Service account tokens
+
+`ReviewToken` creates a TokenReview. The API server authenticates a token that's
+valid for any audience in the review, and returns the audiences that the review
+and the token share. A token issued without an audience is valid for the API
+server's own audiences, so a server that names its own audience rejects the
+tokens that Pods use to call the API server, and a token issued for the server
+can't call the API server. The TokenReview API tells clients to treat a review
+that's authenticated without audiences as valid only for the API server, so
+`ReviewToken` reports it as unauthenticated. `ReviewToken` requires an audience.
+A review without one checks the token against the API server's audiences, so the
+server would accept any token that can call the API server, and over plain HTTP,
+anyone who captured one could act as the caller. `ReviewToken` doesn't cache
+reviews, so a token stops working as soon as the API server rejects it, for
+example when its Pod is deleted.
+
+`RequestToken` reads a token that the kubelet projects into the program's Pod
+when there's one for the audience. `generate` adds a `serviceAccountToken`
+source to a projected volume for each audience that the program passes to
+`RequestToken` as a constant, and runs the program with `-token-dir` set to the
+volume's path. Each token's file is named by the SHA-256 hash of its audience,
+because an audience can hold characters that a file name can't, such as `/`.
+The kubelet requests each token bound to the Pod and replaces the file when 80%
+of the token's lifetime has passed, so `RequestToken` reads the file on every
+call and returns the expiry from the token's `exp` claim. It returns an error
+instead if the token's `aud` claim doesn't hold the audience, because a
+hand-edited volume that put a token under another audience's name would
+otherwise have the program send it to the wrong server, which could replay it
+to the server that it's for. The volume asks for 3600 seconds, because the API
+server stretches a token of exactly 3607 seconds, the lifetime of the default
+service account token, to a year.
+
+For an audience without a file, `RequestToken` creates a TokenRequest for the
+program's own service account. The program learns which account that is from a
+SelfSubjectReview, which every authenticated user can create in Kubernetes 1.28
+and later, and caches the answer. Reading the namespace from the in-cluster
+token's directory and the account's name from the downward API would work only
+in a Pod, and would need a change to the Deployment. Decoding the program's own
+token would depend on the token's format, and the API server's answer doesn't.
+When the review names a Pod, because the program authenticates with its Pod's
+token, the new token is bound to that Pod, so it stops working when the Pod is
+deleted, like the tokens that the kubelet projects.
+
+`generate` grants `create` on `tokenreviews` in the ClusterRole when the program
+refers to `ReviewToken`. It grants `create` on `serviceaccounts/token` in the
+Role in the program's namespace only when the program refers to `RequestToken`
+other than in a call with a constant audience, with the program's own service
+account as the only resource name. RBAC can limit a `create` to one name here
+because the name is in the request's path. A `RequestToken` that took any
+account's name would need the rule for every account in the namespace, which
+would let the program act as any of them. Even for one account, the rule lets
+anyone who holds one of the account's tokens, such as the token in the
+program's Pod, create tokens for any audience. Those tokens needn't be bound to
+the Pod, and they can last as long as the API server allows. A projected token
+needs no rule, is always bound to the Pod, and lasts an hour, so `generate`
+mounts one for every audience that it can see in the source. For the same
+reason, when a TokenRequest is forbidden, `RequestToken`'s error names the token
+file that's missing, or the unset `-token-dir` flag, and says to rerun
+`generate`, instead of leaving a `403` whose obvious fix is to grant that rule.
+
+A program never requests a token for an audience that a less trusted user
+chooses along with the destination. Whoever chooses both can have the program
+send them a token for any server that trusts the cluster's tokens, including the
+API server, where the token carries the program's permissions. So a Probe in the
+probe example names only a URL, and every check sends a token for the audience
+`probe`, which the program sets.
+
+### Triggered reconciles
+
+`kube.Trigger` adds a key at high priority to the work queue of each controller
+in the program that reconciles the type's group and kind, so the reconcile
+starts ahead of resyncs and doesn't wait out a backoff. It adds the key only
+where the controller's cache holds the object and the replica holds the object's
+shard, and returns true if any controller added it. A trigger writes nothing to
+the API server, so it needs no RBAC rule.
+
+On a replica that doesn't hold the shard, `Trigger` returns false and doesn't
+pass the trigger on. That replica's workers would drop the key anyway, because
+they forget keys outside the replica's shards, and a standby that has never held
+a shard has no controller caches. An HTTP handler answers `503` with
+`Connection: close`, so the client's next try opens a new connection, which the
+Service can send to the replica that holds the shard. Two other designs would
+reach that replica from any replica. Patching an annotation on the object would
+let the watch deliver the trigger, but every trigger would be a write that each
+watcher of the type receives, and the program would need `patch` on the type
+even where it only reads. Forwarding the trigger to the shard's holder, found
+from its Lease, would need each replica's address in the Lease and an
+authenticated endpoint between replicas.
+
+A true result holds even if the replica loses the shard before a worker takes
+the key, because the replica that acquires a shard enqueues every cached key in
+it. It enqueues them at low priority, like a resync, so the triggered key loses
+its place ahead of the queue and waits with the rest of the shard.
+
+That replica doesn't have data that a handler kept in memory, though, such as a
+result that a client posts for the reconcile to write. A reconcile on the
+handler's replica doesn't make the data safe either. The framework carries out
+the reconcile's writes after `Reconcile` returns, and a write can fail. If the
+replica then loses the shard, the retry runs on the next holder, without the
+data. So a handler that answered once the reconcile read its data could confirm
+data that no replica holds. Instead, the handler keeps the data until `kube.Get`
+shows the written change, answers only then, and answers `503` if that doesn't
+happen in time. The client tries again, and its data reaches whichever replica
+holds the shard by then. The reconcile reads the data without removing it, so a
+retry on the same replica still finds it. It adds the data to what the object
+holds, because once the handler answers, later reconciles run without the data.
+
+The reconcile reads the object for that with `kube.Get`, after it reads the
+data, and doesn't add the data to the object that `Reconcile` receives. The
+framework reads that object from the cache before it calls `Reconcile`. When a
+trigger arrives during a reconcile, the queue runs the key again as soon as the
+reconcile and its status write finish, usually before the watch delivers the
+write, so the next reconcile receives the object from before it. Meanwhile, the
+handlers see the write in the cache, answer, and drop their data. A reconcile
+that added the data still pending to the object it received would write back
+the older list, and the forced status apply would remove data that clients were
+told was saved. Reading the data first closes that window without waiting for
+the cache. `kube.Get` reads one cache in handlers and reconciles, and that
+cache never goes back to an older version of an object. A handler drops data
+only after `kube.Get` shows it, so data that the reconcile no longer finds
+pending is in the object that its `kube.Get` returns.
+
+That argument covers one replica. When the shard moves, the next holder's cache
+may not have the data yet, and its reconcile would write the status without it.
+The precondition on that replica's first status write for the object, which
+[Shards and leader election](#shards-and-leader-election) describes, makes the
+write fail until the cache has the data.
 
 ### Versions and conversion
 
@@ -1141,6 +1383,15 @@ a Role in the watched namespace. A reconciled type with more than one version
 keeps its rules in the ClusterRole, because migrating its stored objects to a
 new version lists and patches them in every namespace.
 
+`ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
+first reference to each, and `generate` adds the rules that
+[Service account tokens](#service-account-tokens) describes. Any reference
+counts, so a program that passes one of them as a value still gets its rule.
+For `RequestToken`, the analysis also reports each constant that a call passes
+as the audience, from the type checker's constant values, and leaves those
+calls out of the first reference. A program whose calls all pass constants
+gets a projected token for each audience and no rule.
+
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
@@ -1158,10 +1409,13 @@ go-containerregistry with it, so the program in the cluster links only kube.
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
 `/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. An `emptyDir`
-volume at `/tmp` gives `os.TempDir` somewhere to write. With `-tmp-size`, the
-volume has a size limit, and the kubelet evicts a Pod that writes more instead
-of letting it fill the node's disk. `KUBE_IMAGE` holds the image's reference
+`-leader-elect` or `-shards` when it has more than one replica. A program that
+serves gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
+describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
+write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
+Pod that writes more instead of letting it fill the node's disk. A program that
+passes `RequestToken` constant audiences gets a read-only projected volume of
+tokens at `/var/run/secrets/tokens`. `KUBE_IMAGE` holds the image's reference
 by digest. A program can't otherwise learn which image it runs from without
 reading its own Pod, so this lets it start helper Pods or init containers
 that run its own binary.
@@ -1178,6 +1432,22 @@ a cluster. In a cluster, every type of a kind reads the same objects, so the
 fake converts the listed objects of one type through JSON for reads of
 another type of the same kind. A test doesn't fake an API server, so there's
 no fake behavior that can differ from a real server's.
+
+Token reviews are the one exception. `ReviewToken` accepts each
+`kube.FakeToken` in the list for the token's audiences, by the API server's
+rules for audiences, and `RequestToken` adds a token for the requested
+audience to the list. `Trigger` records the key for `kube.Triggered` when the
+list holds the object, unless the list holds `kube.FakeStandby`, which stands
+for a replica that holds no shard. `kube.Triggered` matches the object's group
+and kind, as a controller does. The fake can't tell whether the program runs a
+controller for that kind, so `Trigger` doesn't check.
+
+`kube.FakeRequest` gives a `kube.Serve` handler the same read-only scope that
+`Serve` gives each request, backed by the list. A handler that calls `Apply`
+fails its unit test as it would fail in a cluster, which it wouldn't with the
+scope of a reconcile. Each fake context has its own list, and a reconcile's
+intents don't change any list, so only the end-to-end tests can follow data
+from a handler through a reconcile.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
@@ -1233,6 +1503,17 @@ framework's tests check that:
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote. The website example writes its events with those
   rules, and podpolicy, which records none, gets no rule for them.
+- Two replicas of the probe example, with the rules that `generate` writes,
+  both serve, accept tokens for their own audience and refuse others, send a
+  token for their own service account from a token directory and review it,
+  and queue a trigger on the replica that holds the lease while the other
+  answers `503`. The probe gets no rule to request tokens.
+- `RequestToken` returns the token in the directory for its audience, and
+  requests a token for any other audience as a service account with only the
+  rule that `generate` writes for it.
+- A `kube.Serve` handler that hands posted results to the reconcile answers
+  once `Get` shows them in the status, even when a reconcile fails after
+  reading one, and answers `503` for a result that the reconcile never writes.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
@@ -1243,6 +1524,13 @@ that `kubectl describe` shows the Website's events, that reconciles continue
 after every controller pod is replaced, that imagereport creates its CRD with
 the rules that `generate` wrote and reports the images that pods run, and
 that the podpolicy webhooks deny and default pods through their Service.
+It also calls the probe example's API from a Pod with a projected token, and
+checks that each replica names the caller's Pod and refuses tokens for other
+audiences, that a Probe of the program's own `/whoami` succeeds with a token
+bound to the program's Pod, that the program may not request tokens, and that
+a trigger runs a check on the replica that holds the lease while the other
+answers `503`. Then it replaces every replica while the client calls the API
+through the Service in a loop, and checks that none of those requests fail.
 
 ## Measurements
 
@@ -1370,13 +1658,33 @@ offers:
   `k8s.io/api` v0.37.1. Regenerating it picks up new fields and kinds.
 - Shards divide reconciles, not memory. Labeling objects with their shard
   would let replicas watch only their own objects.
+- A replica that loses its lease lets running reconciles finish, so a late
+  status write can replace a newer one from the next holder. Canceling a
+  shard's reconciles when the lease is lost, and checking before each write
+  that the replica still holds the shard in the same tenure, would narrow the
+  window to one API call. Making every status write require the resource
+  version that the reconcile read would close it for status, at the cost of a
+  `409 Conflict` whenever another writer gets there first.
+- A status write that doesn't require the cached resource version can land on
+  an object that was deleted and recreated with the same name, because the API
+  server ignores the UID on status writes to custom resources.
 - `generate` can't follow the type parameter of a generic type, or a type
   argument that contains a type parameter, to the types that it stands for.
   It warns about those calls instead.
+- `generate` sees a `RequestToken` audience only when the call passes a
+  constant. A helper that takes the audience as a parameter gets the rule to
+  request tokens, though following constants through parameters, as the
+  analysis follows type parameters, would find the audiences.
 - `generate` builds images that hold only the program. ko copies a `kodata`
   directory into the image; kube programs use `embed` instead.
 - One cluster per manager.
 - Webhooks run for creates and updates, not deletes or connections.
+- `kube.Serve` serves plain HTTP, because its callers have no CA that would
+  let them verify a certificate.
+- `kube.Trigger` doesn't pass a trigger to the replica that holds the
+  object's shard, so clients retry until they reach it.
+- `ReviewToken` asks the API server on every call. A short cache would save
+  requests, but would accept a token for that long after its Pod is deleted.
 - `Fetch` isn't tracked, by design, so a change to a fetched object doesn't
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
