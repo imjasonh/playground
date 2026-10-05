@@ -3,8 +3,8 @@
 git-k8s runs a branch workflow on Kubernetes. It tracks a remote git
 repository's branches as `GitBranch` objects and runs checks on branches
 that propose changes to another branch. Checks can push commits that fix
-what they find. When the parent's merge policy passes, git-k8s fast-forwards
-the parent to the branch.
+what they find. When the parent's merge policy passes, git-k8s lands the
+branch on the parent by fast-forward, squash, or rebase.
 
 It's a rewrite of [imjasonh/git-k8s](https://github.com/imjasonh/git-k8s)
 on [`kube`](../kube/), the controller framework in this repository. The
@@ -75,10 +75,10 @@ program. Each controller is a `kube.For` reconciler:
   result. Results record the commits they're for, and the merge controller
   ignores results for older commits.
 - The **merge** controller evaluates the merge policy's `when` expression
-  over the fresh results. When it passes, the controller fast-forwards the
-  parent with `git push --force-with-lease`, so a parent that moved in the
-  meantime is never overwritten. It then deletes the branch if the policy
-  says to.
+  over the fresh results. When it passes, the controller lands the branch,
+  as [Landing methods](#landing-methods) describes, with
+  `git push --force-with-lease`, so a parent that moved in the meantime is
+  never overwritten. It then deletes the branch if the policy says to.
 
 The `git-k8s` program's third controller, **check-runs**, copies check
 results to GitHub as check runs. See [Check runs](#check-runs).
@@ -529,6 +529,13 @@ Secret. `generate` grants a program what its packages call, so a check that
 reads only the `GitBranch`, such as `check-approval`, leaves `Remote` out,
 and its program can't read Secrets.
 
+Set `FilesOnly` in a check's `checks.Check` when its result for the branch's
+head also holds for any commit with the same files that builds on the same
+parent head, because the result doesn't depend on the branch's commits, such
+as their messages or authors. Squash and rebase landings count only such
+results for the commits that they make, as
+[Which results count](#which-results-count) describes.
+
 ### Sandboxed checks
 
 The checks that read files run in their controller's process. A check that
@@ -892,6 +899,150 @@ The repository controller compiles each `when` when it reads the
 holding branches back later. Each evaluation can cost at most 100,000, which
 stops an expression that loops over the checks many times.
 
+## Landing methods
+
+A merge policy's `landing` field sets how branches land on the branches that
+its rule matches. For example, this rule squashes each branch that lands on
+`main`:
+
+```yaml
+    - match: main
+      merge:
+        landing: Squash
+```
+
+- `FastForward`, the default, moves the parent to the branch's head, so the
+  parent ends up at the commit that the checks saw.
+- `Squash` makes one commit with the files at the branch's head, on top of
+  the parent's head.
+- `Rebase` copies each of the branch's commits onto the parent's head, in
+  order, and leaves out merge commits.
+
+Like a fast-forward, a squash or rebase lands only a branch that contains the
+parent's head, such as one that `check-base` merged the parent into.
+
+A squash keeps the author and message of the branch's only commit that isn't
+a merge or a check's fix. When the branch has several such commits, the
+message starts with the first one's subject and lists the subject of every
+commit that isn't a merge. It ends with the trailers of the commits that
+aren't fixes, such as `Signed-off-by`, and a `Co-authored-by` trailer for
+each of their authors besides the first. The squashed message never has a
+`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. A rebase keeps
+each commit's author and message, and leaves out a commit that changes
+nothing, such as a change that the parent already has.
+
+The merge controller commits as
+`git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and
+`-identity-email` flags change. It takes commit times from the commits that
+it copies, so making the same landing again makes the same commits.
+
+When the branch is one commit on top of the parent's head, a squash
+fast-forwards the parent to it. A rebase does the same for a branch with no
+merge commits after the parent's head, because copying its commits changes
+nothing. When the parent already has the files at the branch's head, a squash
+sets the branch's state to `Merged` and pushes nothing. A rebase does that
+only when the parent already has every commit's change, because it leaves out
+each commit that changes nothing.
+
+A rebase can't copy every branch. It sets the branch's state to
+`NeedsRebase`, with a message that says why, when one of these happens:
+
+- Copying a commit conflicts. A branch whose merge commit resolved a
+  conflict with the parent does this, because the rebase leaves the merge
+  out.
+- A merge commit in the branch makes changes of its own, so the copies don't
+  end up with the files at the branch's head.
+- A commit has no parent, such as the first commit of an unrelated history.
+- A commit to copy has an author that git refuses, or whose date git would
+  change: it has no name that git accepts, no date that git can read, or a
+  time zone that git can't keep, such as `+9999`. Only tools that write
+  commit objects themselves make such commits.
+
+To land such a branch, rebase it yourself, or set `landing: Squash`. A squash
+also sets `NeedsRebase` when the commit whose author it keeps has such an
+author. To land that branch, rebase it yourself and give that commit a new
+author.
+
+Both landings also set `NeedsRebase` for a branch with more than 1,000
+commits that the parent doesn't have, or with more than 8 MiB of names,
+messages, and other text in those commits. The limits bound the work and
+memory that one branch takes, because a rebase runs two git commands for each
+commit that it copies, and the controller keeps every commit's message in
+memory. To land such a branch, squash it yourself into one commit on top of
+the parent's head. With `landing: Rebase`, rebasing it yourself so that it
+has no merge commits also works. The controller fast-forwards such a branch
+without reading its commits, so the limits don't apply.
+
+### Which results count
+
+Squash and rebase landings make commits that no check saw. A squashed commit
+has the files at the branch's head, on top of the parent's head, and so does
+the last commit of a rebase. Those are the files and the parent head that the
+checks saw, so a check that reads only files gives the new commit the same
+result. As with a fast-forward, no check sees a rebase's earlier commits.
+
+Other results depend on more than the files, such as those of a check that
+reads the commits' messages, authors, signatures, or trailers like
+`Signed-off-by`, or that counts the branch's commits. An agent that reviews
+commit messages as well as the change is another. So a result for the
+branch's head counts for the new commit only when its check sets `FilesOnly`
+in its `checks.Check`, which gives its results `filesOnly: true`. A check
+without `FilesOnly` costs one more round of checks, as the end of this section
+describes.
+
+The built-in checks set `FilesOnly`. `check-base` passes for any commit that
+builds on the parent's head, `check-gofmt` and `check-gotest` read only the
+files, and `check-risk` compares them with the parent's head.
+`check-approval` reads only the `GitBranch`, and an approval is for the
+change, which the new commit makes too. `maxAutomatedCommits` counts fix
+commits by their trailer, but it limits what checks push, and the gate
+doesn't read it.
+
+When the counted results pass the gate, the controller lands the new commit
+without another round of checks. It pushes the commit to the parent, with a
+lease on the parent's head. The same atomic push deletes the branch, with a
+lease on its head, or moves the branch to the new commit when
+`deleteMergedBranches` is off. A branch that stays is then at its parent's
+head, so it shows `Merged` instead of commits that the parent doesn't have.
+If the parent or the branch moved since the repositories controller listed
+them, the push changes neither, and the controller tries again.
+
+When the gate doesn't pass on the counted results alone, the controller
+pushes the new commit to the branch instead, with a lease on the branch's
+head, and sets the branch's state to `Rewritten`. The checks run on the new
+commit, and when the gate passes, the parent fast-forwards to it.
+`check-approval` passes only for the head that the annotation names, so a
+rewritten branch needs a new approval.
+
+A check with `mayPush: true` can push a fix on top of the new commit. While
+the parent doesn't move, a squash landing doesn't squash its own commit and
+the fixes after it again, so they land by fast-forward, with each fix as its
+own commit. Another squash would keep the fixes' files but drop their
+commits, so a check that reads commits could push the same fix forever.
+`maxAutomatedCommits` counts only the fixes after the squashed commit,
+because it doesn't have the trailers of the fixes before it.
+
+Moving a branch that stays, and pushing a rewritten branch, replace the
+branch's commits on the remote. Before you push to a branch that the
+controller moved, reset your copy to the remote's.
+
+A remote can refuse to replace a branch's commits or to delete the branch.
+Git's `receive.denyNonFastForwards` and `receive.denyDeletes` settings do
+that, and so do GitHub rules that block force pushes or deletions. When the
+remote refuses the branch's part of a landing push, the controller pushes
+the parent alone, with the same lease, as a fast-forward landing does. If
+the remote refused to delete the branch, the controller tries to move the
+branch to the parent's new head instead, so that it shows `Merged`. A branch
+that the controller can't change keeps its commits, and the `Merged`
+condition's message says why. It shows `Merged` once a check such as
+`check-base` merges the parent into it.
+
+If the remote refuses to replace the branch's commits with the new commit
+for the checks, the controller sets the branch's state to `NeedsRebase`
+instead of `Rewritten`. To land such a branch, squash or rebase it yourself
+onto the parent's head and push the result to a new branch, or let the
+remote accept force pushes to proposal branches.
+
 ## Install
 
 Each program installs with kube's `generate` command, which builds an image,
@@ -1065,6 +1216,8 @@ those lines when the check can push.
   every Secret, including the Cursor API key, which only its agent Pods use.
   Like `check-gotest`, it can also create Pods in every namespace. Installing
   it with `generate -watch-namespace` limits both to one namespace.
+- Squash and rebase landings make unsigned commits, even from signed ones.
+  With a check that requires signed commits, use `FastForward`.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.
