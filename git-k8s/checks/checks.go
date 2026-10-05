@@ -83,10 +83,11 @@ type Verdict struct {
 	State   string
 	Message string
 	Outputs map[string]string
-	// Fix, when set, is a commit on top of the branch's head that fixes
-	// what the check found. The framework pushes it when the check's policy
-	// allows and the branch has automated commits left, and reports Fixed;
-	// otherwise it reports Failed.
+	// Fix, when set, is a commit that fixes what the check found, such as a
+	// commit on top of the branch's head. The framework moves the branch to
+	// it with a lease on the head, even if it doesn't contain the head, when
+	// the check's policy allows and the branch has automated commits left,
+	// and reports Fixed; otherwise it reports Failed.
 	Fix string
 }
 

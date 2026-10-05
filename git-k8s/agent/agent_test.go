@@ -364,6 +364,7 @@ func TestRejectsResultsThatDontCheckOut(t *testing.T) {
 		{name: "usage", body: []byte(`{"verdict":"pass","usage":{"inputTokens":-1}}`), want: "negative usage"},
 		{name: "charge", body: []byte(`{"verdict":"pass","chargedCents":-1}`), want: "negative usage"},
 		{name: "files", body: review(Pass, File{Path: "a.txt", Mode: "100644"}), want: "it changes files, which its task doesn't allow"},
+		{name: "merge tree", body: []byte(`{"verdict":"pass","mergeTree":"` + strings.Repeat("4b", 20) + `"}`), want: "it names a merge tree, but its job merges nothing"},
 		{name: "error with files", edit: true, body: []byte(`{"verdict":"fail","error":"broke","files":[{"path":"a.txt","mode":"100644"}]}`), want: "it reports an error but also changes files"},
 		{name: "git dir", edit: true, body: review(Pass, File{Path: "sub/.GIT/config", Mode: "100644"}), want: "invalid path"},
 		{name: "mode", edit: true, body: review(Pass, File{Path: "sub", Mode: "160000"}), want: `the mode "160000"`},

@@ -21,12 +21,24 @@ const valid: Task = {
   terminationLog: "/dev/termination-log",
 };
 
+const merge: Task = {
+  ...valid,
+  edit: true,
+  tools: ["read", "edit"],
+  base: "fedcba9876543210fedcba9876543210fedcba98",
+  mergeName: "main",
+  mergeHead: "1111111111111111111111111111111111111111",
+  conflictsFile: "/input/conflicts",
+  mergeLogFile: "/input/merge-log.txt",
+  mergeDiffFile: "/input/merge.diff",
+  mergeChangesFile: "/input/merge-changes",
+};
+
 test("parses a task", () => {
   assert.deepEqual(parseTask(JSON.stringify(valid)), valid);
   const full = { ...valid, changesFile: "/input/changes" };
   assert.deepEqual(parseTask(JSON.stringify(full)), full);
-  const editing = { ...valid, edit: true, tools: ["read", "edit"] };
-  assert.deepEqual(parseTask(JSON.stringify(editing)), editing);
+  assert.deepEqual(parseTask(JSON.stringify(merge)), merge);
 });
 
 test("rejects tasks that aren't valid", () => {
@@ -45,6 +57,14 @@ test("rejects tasks that aren't valid", () => {
     [JSON.stringify({ ...valid, tools: ["read", "shell"] }), /tools can hold only read, grep, glob, ls, edit, delete/],
     [JSON.stringify({ ...valid, tools: [7] }), /tools can hold only/],
     [JSON.stringify({ ...valid, tools: ["read", "edit"] }), /tools can't hold edit unless the task edits files/],
+    [JSON.stringify({ ...merge, base: "" }), /base can't be empty in a merge/],
+    [JSON.stringify({ ...merge, mergeHead: "" }), /mergeHead can't be empty in a merge/],
+    [JSON.stringify({ ...merge, conflictsFile: undefined }), /conflictsFile can't be empty in a merge/],
+    [JSON.stringify({ ...merge, mergeDiffFile: undefined }), /mergeDiffFile can't be empty in a merge/],
+    [JSON.stringify({ ...merge, mergeChangesFile: "" }), /mergeChangesFile can't be empty in a merge/],
+    [JSON.stringify({ ...merge, mergeDiffFile: 7 }), /mergeDiffFile must be a string/],
+    [JSON.stringify({ ...merge, mergeName: 7 }), /mergeName must be a string/],
+    [JSON.stringify({ ...merge, mergeName: "" }), /mergeName can't be empty in a merge/],
   ];
   for (const [json, want] of cases) {
     assert.throws(() => parseTask(json), want, json);
