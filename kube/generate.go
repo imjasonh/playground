@@ -372,6 +372,9 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
+		if u.Func == "Apply" && slices.Contains(u.Fields, "status") {
+			grantsFor(ti).add(g, r+"/status", "", "patch")
+		}
 		if ti.custom && u.Func == "Own" {
 			creates[r+"."+g] = true
 		}

@@ -370,8 +370,6 @@ These belong in kube, in their own pull requests:
 - kube has no Events API, so landings and fix pushes show up only in logs and
   conditions. An event intent that kube carries out after a reconcile, and
   that groups repeats, would show them in `kubectl describe`.
-- `Apply` drops `status`, so a controller can write another controller's
-  status only by reconciling a view of its type, as each check does today.
 - The cache lags a controller's own writes, so a reconcile that runs just
   after a write can repeat work.
 - The mirror and the results endpoint need a TokenReview client, and events

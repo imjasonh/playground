@@ -45,6 +45,10 @@ import "example.com/prog/fw"
 
 type Widget struct {
 	fw.Object ` + "`kube:\"group=example.dev\"`" + `
+	Spec      struct{} ` + "`json:\"spec\"`" + `
+	Status    struct{} ` + "`json:\"status,omitzero\"`" + `
+	Notes     string   ` + "`json:\"-\"`" + `
+	cache     string   ` + "`json:\"cache\"`" + `
 }
 
 type ConfigMap struct {
@@ -114,6 +118,12 @@ func main() {
 	}
 	if !strings.HasSuffix(uses[1].Pos, "main.go:14:5") {
 		t.Errorf("position = %s", uses[1].Pos)
+	}
+	if got := uses[1].Fields; !reflect.DeepEqual(got, []string{"spec", "status"}) {
+		t.Errorf("Widget's fields = %q, want spec and status", got)
+	}
+	if got := uses[2].Fields; got != nil {
+		t.Errorf("ConfigMap's fields = %q, want none, because its field has no json tag", got)
 	}
 }
 

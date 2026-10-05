@@ -197,7 +197,9 @@ type core struct {
 
 	mu       sync.Mutex
 	children map[*typeInfo]source
-	applied  map[Key]map[appliedKey]uint64
+	// applied holds, for each reconciled object, hashes of the documents
+	// that its last successful reconcile applied.
+	applied map[Key]map[appliedKey]uint64
 	// statuses holds a hash of each object's status as this controller last
 	// wrote or confirmed it, to tell its own status writes from others'.
 	statuses map[Key]uint64
@@ -209,8 +211,9 @@ type core struct {
 }
 
 type appliedKey struct {
-	ti  *typeInfo
-	key Key
+	ti     *typeInfo
+	key    Key
+	status bool
 }
 
 // labelKeys are the label and annotation keys the framework uses, under a
@@ -612,7 +615,11 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 		err = s.err
 	}
 	if err == nil {
-		err = c.execute(ctx, key, obj, s)
+		// execute may have applied some documents before it failed, and the
+		// records don't show them, so the next reconcile sends every one.
+		if err = c.execute(ctx, key, obj, s); err != nil {
+			c.setApplied(key, nil)
+		}
 	}
 	c.m.tracker.retain(ref{c: &c.core, key: key}, s.deps)
 	if serr := c.writeStatus(ctx, cached, obj, err); serr != nil {
@@ -687,20 +694,32 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			// of it in an annotation, so matching it means the last apply
 			// sent this same body, even if this process didn't send it.
 			// Apply doesn't annotate objects that it doesn't own, and relies
-			// on what this process last applied.
+			// on what the last successful reconcile in this process applied.
 			if in.observed != nil && matches(in.observed, body) {
 				if last, ok := c.lastApplied(key, ak); in.kind == intentOwn || ok && last == h {
 					applied[ak] = h
 					c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
+					if err := c.applyStatus(ctx, key, in, manager, nil, applied); err != nil {
+						return err
+					}
 					continue
 				}
 			}
-			if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name), manager, true, body, nil); err != nil {
+			var resp fieldManagers
+			var out any
+			if in.status {
+				out = &resp
+			}
+			if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name), manager, true, body, out); err != nil {
 				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
 			}
 			applied[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
 			c.log.Debug("applied", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
+			owns := resp.ownsStatus(manager)
+			if err := c.applyStatus(ctx, key, in, manager, &owns, applied); err != nil {
+				return err
+			}
 		case intentDelete:
 			if err := c.delete(ctx, in.ti, in.res, m); err != nil {
 				return err

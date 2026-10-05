@@ -147,7 +147,9 @@ const (
 // SetCondition adds c to conds, or replaces the condition of the same type.
 // LastTransitionTime is set to now when the status changes and kept
 // otherwise, so a reconcile that observes the same state doesn't produce a
-// status write.
+// status write. SetCondition can keep only a time that conds holds, so to
+// apply a condition to another object, start conds from that object's copy of
+// the condition, which FindCondition returns.
 func SetCondition(conds *[]Condition, c Condition) {
 	for i, old := range *conds {
 		if old.Type != c.Type {
