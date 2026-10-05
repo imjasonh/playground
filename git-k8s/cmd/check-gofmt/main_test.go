@@ -36,14 +36,16 @@ func branch(t *testing.T, srv *gittest.Server, files map[string]string) (*Branch
 // reconcile runs the check. With a signer, the GitRepository names its key.
 func reconcile(t *testing.T, srv *gittest.Server, b *Branch, signer ...*gittest.Signer) error {
 	t.Helper()
-	repo, secret := srv.Repository("app")
-	world := []any{repo, secret}
+	repo, _ := srv.Repository("app")
+	world := []any{repo}
 	for _, s := range signer {
 		world = append(world, s.Sign(repo))
 	}
 	ctx, _ := kube.Fake(t.Context(), b, world...)
+	c := check
+	c.Remote = srv.RemoteFor
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
-	return checks.NewReconciler[Branch](check, cfg).Reconcile(ctx, b)
+	return checks.NewReconciler[Branch](c, cfg).Reconcile(ctx, b)
 }
 
 func TestFormatsGoFiles(t *testing.T) {

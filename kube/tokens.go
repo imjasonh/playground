@@ -141,6 +141,14 @@ func RequestToken(ctx context.Context, audience string) (token string, expires t
 	return s.w.requestToken(ctx, audience)
 }
 
+// tokenDir is where the container that generate writes mounts its tokens
+// for RequestToken.
+const tokenDir = "/var/run/secrets/tokens"
+
+// serviceAccountDir is where Kubernetes mounts the token of a Pod's service
+// account, which the program uses to call the API server.
+const serviceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
+
 // tokenFile is the name of the file in Manager.TokenDir that holds the
 // token for audience.
 func tokenFile(audience string) string {

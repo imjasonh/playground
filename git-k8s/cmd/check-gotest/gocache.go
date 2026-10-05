@@ -134,7 +134,7 @@ func setEnv(c *Container, name, value string) {
 // go.mod file that doesn't parse, and then the test container doesn't run.
 func goCacheFailure(pod *Pod) (string, bool) {
 	for _, name := range []string{"cacheprog", "build", "upload"} {
-		if msg, failed := terminated(pod.Status.InitContainerStatuses, name); failed {
+		if msg, _, failed := terminated(pod.Status.InitContainerStatuses, name); failed {
 			return name + ": " + msg, true
 		}
 	}

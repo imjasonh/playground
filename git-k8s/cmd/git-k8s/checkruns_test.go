@@ -21,7 +21,6 @@ import (
 	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
-	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
@@ -32,10 +31,11 @@ var sts = gitk8s.OctoSTS{GitIdentity: "git", CheckRunsIdentity: "checks"}
 func TestReportsCheckRunsToken(t *testing.T) {
 	gh, _, _ := newGitHub(t)
 	repo := gh.Repository("app", sts, rules()...)
+	r := newRepositories(t)
 	reconcile := func() *kube.Condition {
 		t.Helper()
 		ctx, _ := kube.Fake(t.Context(), repo)
-		if err := (&repositories{git: &git.Git{}}).Reconcile(ctx, repo); err != nil {
+		if err := r.Reconcile(ctx, repo); err != nil {
 			t.Fatal(err)
 		}
 		if c := kube.FindCondition(repo.Status.Conditions, "Ready"); c == nil || c.Status != kube.True {

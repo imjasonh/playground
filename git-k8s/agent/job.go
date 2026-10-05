@@ -33,8 +33,16 @@ type Job struct {
 	// Credentials names the Secret that holds the repository's username
 	// and password, or is nil if the repository needs none.
 	Credentials *gitk8s.SecretRef
-	Checkout    Checkout
-	Task        Task
+	// Mirror is true when URL is a repository's copy on the git-k8s mirror.
+	// The Pods then fetch with a token for the mirror that kube binds to
+	// each Pod, instead of with Credentials. The mirror accepts that token
+	// only from a Pending Pod that a check's Running result names in its
+	// pod output and whose controller label names that check's program, so
+	// a check's job sets Mirror, as Run's does, and a controller's job uses
+	// Credentials.
+	Mirror   bool
+	Checkout Checkout
+	Task     Task
 	// Tools are the agent's tools: any of read, grep, glob, and ls, and
 	// edit and delete if Task.Edit is set. Empty means all that Task
 	// allows. None of them runs commands, because the agent's container
@@ -332,6 +340,8 @@ func (j *Job) validate() error {
 	switch {
 	case j.Name == "" || j.Namespace == "" || j.URL == "" || c.Branch == "":
 		return errors.New("the job needs a name, a namespace, a repository URL, and a branch")
+	case j.Mirror && j.Credentials != nil:
+		return errors.New("a job that fetches from the mirror can't have credentials")
 	case !isCommit(c.Head) || c.Base != "" && !isCommit(c.Base):
 		return errors.New("the job's head and merge base must be commit SHAs")
 	case c.Merge != nil && (!isCommit(c.Merge.Commit) || c.Base == ""):

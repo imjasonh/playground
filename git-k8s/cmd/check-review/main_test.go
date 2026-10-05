@@ -2,6 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +20,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
+// reconcile runs the check on a branch whose copy a server serves like the
+// mirror: at /NAMESPACE/NAME.git, to requests with a token from
+// kube.RequestToken. The -mirror flag points to that server until the test
+// ends.
 func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder) {
 	t.Helper()
 	srv := gittest.NewServer(t, "")
@@ -25,14 +35,36 @@ func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder) {
 	w.Write("a.txt", "two\n")
 	head := w.Commit("change")
 	w.Push("c/x")
+	upstream, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	mirror := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		path, ok := strings.CutPrefix(r.URL.Path, "/default/")
+		switch {
+		case !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer fake-token-"):
+			http.Error(rw, "send a token for the mirror", http.StatusUnauthorized)
+		case !ok:
+			http.NotFound(rw, r)
+		default:
+			r.URL.Path = "/" + path
+			proxy.ServeHTTP(rw, r)
+		}
+	}))
+	t.Cleanup(mirror.Close)
+	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
+	if err := flag.Set("mirror", mirror.URL); err != nil {
+		t.Fatal(err)
+	}
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "review", MayPush: mayPush}}},
 	}
-	repo, secret := srv.Repository("app")
-	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
+	repo, _ := srv.Repository("app")
+	ctx, rec := kube.Fake(t.Context(), b, repo)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	if err := checks.NewReconciler[Branch](check, cfg).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
@@ -66,5 +98,29 @@ func TestEditsOnlyWhenItMayPush(t *testing.T) {
 		if task.Edit != mayPush || task.Instructions != instructions {
 			t.Errorf("with mayPush %t, the agent's task = %+v", mayPush, task)
 		}
+	}
+}
+
+func TestAgentPodsFetchFromTheMirror(t *testing.T) {
+	defer func(r *agent.Runner) { runner = r }(runner)
+	runner = &agent.Runner{Name: "review", Image: "agent-runner", GitImage: "git", Backend: "fake", Model: "composer-2.5", Secret: "cursor-api-key", Timeout: time.Minute}
+	_, rec := reconcile(t, false)
+	pods := kube.Owned[agent.Pod](rec)
+	if len(pods) != 1 {
+		t.Fatalf("%d Pods, want one", len(pods))
+	}
+	env := map[string]string{}
+	var secrets []string
+	for _, e := range pods[0].Spec.InitContainers[0].Env {
+		if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			secrets = append(secrets, e.ValueFrom.SecretKeyRef.Name)
+		}
+		env[e.Name] = e.Value
+	}
+	if want := flag.Lookup("mirror").Value.String() + "/default/app.git"; env["URL"] != want || env["TOKEN_FILE"] == "" {
+		t.Errorf("the prepare container fetches %q with token file %q, want %q with a token for the mirror", env["URL"], env["TOKEN_FILE"], want)
+	}
+	if !slices.Equal(secrets, []string{"cursor-api-key"}) {
+		t.Errorf("the prepare container reads Secrets %q, want only the API key's", secrets)
 	}
 }

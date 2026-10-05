@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "name": "gitk8sdeps301a14cfe6cce3fe",
+    "name": "gitk8sdeps3fafd04379552e22",
     "labels": {
       "app.kubernetes.io/name": "git-k8s-deps"
     }
@@ -48,7 +48,7 @@
         "command": [
           "sh",
           "-c",
-          "set -eu\ngit init -q --end-of-options \"$REPO\"\ncd \"$REPO\"\nif [ -n \"${GIT_PASSWORD:-}\" ]; then\n  git config credential.helper '!f() { echo \"username=${GIT_USERNAME:-git}\"; echo \"password=${GIT_PASSWORD}\"; }; f'\nfi\ngit fetch -q --depth=1 --end-of-options \"$URL\" \"refs/heads/$BRANCH\"\nif [ \"$(git rev-parse --verify --end-of-options FETCH_HEAD)\" != \"$HEAD\" ]; then\n  echo \"$BRANCH no longer points to $HEAD\" >&2\n  exit 3\nfi\ngit config --unset credential.helper || true\nprintf '* -text -eol -ident -filter -working-tree-encoding\\n' >.git/info/attributes\ngit switch -q --detach --end-of-options FETCH_HEAD\n"
+          "set -eu\ngit init -q --end-of-options \"$REPO\"\ncd \"$REPO\"\nif [ -n \"${GIT_PASSWORD:-}\" ]; then\n  git config credential.helper '!f() { echo \"username=${GIT_USERNAME:-git}\"; echo \"password=${GIT_PASSWORD}\"; }; f'\nfi\ngit fetch -q --depth=1 --end-of-options \"$URL\" \"refs/heads/$BRANCH\"\nfetched=$(git rev-parse --verify --end-of-options FETCH_HEAD)\nif [ \"$fetched\" != \"$HEAD\" ]; then\n  echo \"$BRANCH is at $fetched in the external repository, not at $HEAD\" >&2\n  exit 3\nfi\ngit config --unset credential.helper || true\nprintf '* -text -eol -ident -filter -working-tree-encoding\\n' >.git/info/attributes\ngit switch -q --detach --end-of-options FETCH_HEAD\n"
         ],
         "env": [
           {

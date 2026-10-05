@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/gate"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -19,14 +19,15 @@ import (
 // reconciles the full GitBranch type, so its manager installs the
 // CustomResourceDefinition.
 type merger struct {
-	ident git.Identity
-	cache *gitk8s.Cache
+	mirror *mirror.Mirror
+	ident  git.Identity
 }
 
 // Merged condition reasons, which State repeats.
 const (
 	reasonNoMergePolicy    = "NoMergePolicy"
 	reasonParentMissing    = "ParentMissing"
+	reasonDiverged         = "Diverged"
 	reasonWaitingForChecks = "WaitingForChecks"
 	reasonInvalidGate      = "InvalidGate"
 	reasonNotFastForward   = "NotFastForward"
@@ -46,6 +47,15 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	if err != nil {
 		return err
 	}
+
+	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	diverged, err := m.diverged(ctx, repo, b.Spec.Branch)
+	if err != nil {
+		// kube writes the status of a failed reconcile too, so b keeps its
+		// place in the queue.
+		return err
+	}
+	b.Status.Diverged = diverged
 	queued := b.Status.Queued
 	b.Status.Queued = nil
 
@@ -56,11 +66,23 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	case spec.Parent == "":
 		b.Status.State = ""
 		return nil
+	case diverged != nil:
+		// Landing the mirror's head would leave out the external
+		// repository's changes. Branches still land on a diverged parent,
+		// since the commit that resolves the parent can land on it from a
+		// child branch.
+		external := "has it at " + gitk8s.Short(diverged.Commit)
+		if diverged.Commit == "" {
+			external = "deleted it"
+		}
+		report(b, reasonDiverged, false, "%s changed both in the mirror and in the external repository, which %s; waiting for a commit that keeps both sides' changes",
+			spec.Branch, external)
+		return nil
 	case spec.Merge == nil:
 		report(b, reasonNoMergePolicy, false, "no branches rule that matches %s has a merge policy", spec.Parent)
 		return nil
 	case spec.ParentHead == "":
-		report(b, reasonParentMissing, false, "%s doesn't exist on the remote", spec.Parent)
+		report(b, reasonParentMissing, false, "%s doesn't exist in the mirror", spec.Parent)
 		return nil
 	case spec.Head == spec.ParentHead:
 		// A branch that's already merged can be new, such as one just
@@ -77,12 +99,25 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		report(b, reasonInvalidGate, false, "when: %v", err)
 		return nil
 	case queues(spec.Merge):
-		return m.queued(ctx, b, queued, checks, results, err == nil && pass)
+		return m.queued(ctx, repo, b, queued, checks, results, err == nil && pass)
 	case err != nil || !pass:
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil
 	}
-	return m.land(ctx, b, results)
+	return m.land(ctx, repo, b, results)
+}
+
+// diverged returns how branch diverged between the mirror's copy of repo
+// and the external repository, or nil if it didn't, or there's no copy.
+func (m *merger) diverged(ctx context.Context, repo *gitk8s.Repository, branch string) (*gitk8s.Divergence, error) {
+	if repo == nil {
+		return nil, nil
+	}
+	d, err := m.mirror.Divergence(ctx, repo, branch)
+	if errors.Is(err, mirror.ErrNotSynced) {
+		return nil, nil
+	}
+	return d, err
 }
 
 // evaluate reports whether a merge policy's gate passes.
@@ -131,21 +166,23 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 	return msg
 }
 
-// land fast-forwards the parent to the branch's head, or squashes or
-// rebases the branch onto it when the merge policy says to.
-func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
+// land fast-forwards the parent to the branch's head in the mirror's copy
+// of repo, or squashes or rebases the branch onto it when the merge policy
+// says to. The repository controller then pushes the parent to the
+// external repository.
+func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
-	repo, local, remote, unlock, err := m.open(ctx, b)
+	if repo == nil {
+		return fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, spec.Repository)
+	}
+	local, err := m.mirror.Open(ctx, repo)
 	if err != nil {
 		return err
 	}
-	defer unlock()
-	if err := local.Fetch(ctx, remote, spec.Branch, spec.Parent); err != nil {
-		return err
-	}
+	defer local.Close()
 	for _, sha := range []string{spec.Head, spec.ParentHead} {
 		if ok, err := local.HasCommit(ctx, sha); err != nil || !ok {
-			return errors.Join(err, fmt.Errorf("don't have %s after fetching; the branches moved, so waiting for the repository controller to list them again", gitk8s.Short(sha)))
+			return errors.Join(err, fmt.Errorf("the mirror doesn't have %s; waiting for the repository controller to list the branches again", gitk8s.Short(sha)))
 		}
 	}
 	contained, err := local.IsAncestor(ctx, spec.Head, spec.ParentHead)
@@ -167,11 +204,11 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[stri
 	}
 	switch spec.Merge.Landing {
 	case gitk8s.Squash, gitk8s.Rebase:
-		if done, err := m.rewrite(ctx, repo, local, remote, b, results); err != nil || done {
+		if done, err := m.rewrite(ctx, repo, local.Repo, b, results); err != nil || done {
 			return err
 		}
 	}
-	err = local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
+	err = local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
 	if err != nil {
 		return fmt.Errorf("fast-forwarding %s to %s: %w", spec.Parent, gitk8s.Short(spec.Head), err)
 	}
@@ -179,32 +216,18 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[stri
 		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head))
 	report(b, reasonLanded, true, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
 	kube.Eventf(ctx, kube.Normal, reasonLanded, "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
-	return deleteBranch(ctx, local, remote, b)
-}
-
-func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*gitk8s.Repository, *git.Repo, git.Remote, func(), error) {
-	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
-	if repo == nil {
-		return nil, nil, git.Remote{}, nil, fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
-	}
-	remote, err := credentials.Remote(ctx, repo)
-	if err != nil {
-		return nil, nil, remote, nil, err
-	}
-	local, unlock, err := m.cache.Open(ctx, repo)
-	if err != nil {
-		return nil, nil, remote, nil, err
-	}
-	return repo, local, remote, unlock, nil
+	err = deleteBranch(ctx, local, b)
+	kube.Trigger[gitk8s.GitRepository](ctx, b.Namespace, spec.Repository)
+	return err
 }
 
 // deleteBranch deletes a branch that just landed if the merge policy says
 // to, with a lease so that a branch that moved since it landed stays.
-func deleteBranch(ctx context.Context, local *git.Repo, remote git.Remote, b *gitk8s.GitBranch) error {
+func deleteBranch(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) error {
 	if !b.Spec.Merge.DeleteMergedBranches {
 		return nil
 	}
-	err := local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + b.Spec.Branch, Old: b.Spec.Head})
+	err := local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + b.Spec.Branch, Old: b.Spec.Head})
 	if errors.Is(err, git.ErrRejected) {
 		slog.Info("not deleting a branch that moved after it merged", "namespace", b.Namespace, "branch", b.Spec.Branch)
 		return nil

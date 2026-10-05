@@ -51,9 +51,9 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gomod"
+	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -81,7 +81,7 @@ var (
 // landing keeps every such line, and a rebase keeps each copied commit's
 // message, so the check can be FilesOnly. Its message doesn't count those
 // commits, because a squash makes one commit of them.
-var check = checks.Check{Name: "risk", UsesParent: true, FilesOnly: true, Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "risk", UsesParent: true, FilesOnly: true, Remote: mirror.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)

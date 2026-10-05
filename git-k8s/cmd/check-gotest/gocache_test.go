@@ -110,9 +110,10 @@ func TestEveryBranchReportsMissingImage(t *testing.T) {
 
 func TestNoGoCache(t *testing.T) {
 	b, repo := branch()
+	named(b, 1)
 	spec := kube.Owned[Pod](reconcileWith(t, b, repo))[0].Spec
 	test := spec.Containers[0]
-	if len(spec.InitContainers) != 1 || len(spec.Volumes) != 2 || env(test, "GOCACHEPROG") != "" || env(test, "GOPROXY") != "off" {
+	if len(spec.InitContainers) != 1 || len(spec.Volumes) != 3 || env(test, "GOCACHEPROG") != "" || env(test, "GOPROXY") != "off" {
 		t.Errorf("without -go-cache, the Pod changed: %+v", spec)
 	}
 }
@@ -120,6 +121,7 @@ func TestNoGoCache(t *testing.T) {
 func TestGoCachePod(t *testing.T) {
 	withGoCache(t)
 	b, repo := branch()
+	named(b, 1)
 	pods := kube.Owned[Pod](reconcileWith(t, b, repo))
 	if len(pods) != 1 {
 		t.Fatalf("owned Pods = %+v", pods)
@@ -136,7 +138,7 @@ func TestGoCachePod(t *testing.T) {
 	test := spec.Containers[0]
 	all := append(slices.Clone(spec.InitContainers), test)
 
-	t.Log("The tokens read or write only the repository's build cache, and only build and upload mount one.")
+	t.Log("The go-cache tokens read or write only the repository's build cache, and only build and upload mount one. Only fetch mounts the token for the mirror.")
 	audiences := map[string]string{}
 	for _, v := range spec.Volumes {
 		if v.Projected != nil {
@@ -148,6 +150,7 @@ func TestGoCachePod(t *testing.T) {
 		}
 	}
 	want := map[string]string{
+		"mirror-token":   gitk8s.MirrorAudience,
 		"go-cache-read":  gocache.ReadAudience("default", "app"),
 		"go-cache-write": gocache.WriteAudience("default", "app"),
 	}
@@ -161,6 +164,9 @@ func TestGoCachePod(t *testing.T) {
 		}
 		if (read != nil && !read.ReadOnly) || (write != nil && !write.ReadOnly) {
 			t.Errorf("container %s can write its token volume", c.Name)
+		}
+		if m := mount(c, "mirror-token"); (m != nil) != (c.Name == "fetch") || m != nil && !m.ReadOnly {
+			t.Errorf("container %s mounts the token for the mirror: %+v", c.Name, m)
 		}
 	}
 	if mount(fetch, "go-cache") != nil {
@@ -198,8 +204,8 @@ func TestGoCachePod(t *testing.T) {
 		if *sc.AllowPrivilegeEscalation || !*sc.ReadOnlyRootFilesystem || !slices.Equal(sc.Capabilities.Drop, []string{"ALL"}) {
 			t.Errorf("container %s isn't locked down: %+v", c.Name, sc)
 		}
-		if secret := slices.ContainsFunc(c.Env, func(e EnvVar) bool { return e.ValueFrom != nil }); secret != (c.Name == "fetch") {
-			t.Errorf("container %s sees the repository's credentials: %t", c.Name, secret)
+		if token := env(c, "TOKEN_FILE") != ""; token != (c.Name == "fetch") {
+			t.Errorf("container %s reads the token for the mirror: %t", c.Name, token)
 		}
 	}
 	if *spec.AutomountServiceAccountToken {
@@ -210,6 +216,7 @@ func TestGoCachePod(t *testing.T) {
 func TestReportsGoCacheFailure(t *testing.T) {
 	withGoCache(t)
 	b, repo := branch()
+	named(b, 1)
 	p := pod("Failed", &Terminated{}, nil)
 	s := ContainerStatus{Name: "build"}
 	s.State.Terminated = &Terminated{ExitCode: 1, Message: "go: errors parsing go.mod:\ngo.mod:3: unknown directive: bogus"}

@@ -1446,6 +1446,62 @@ files. The program runs as user 65532, the non-root user of distroless and
 Chainguard images. A generated Pod has no other containers until you or an
 admission webhook add one.
 
+`kube.Volume` is a `Controller` that does nothing at run time. Its `describe`
+method reports a directory, and `generate` writes a `ReadWriteOnce`
+PersistentVolumeClaim, mounts it there, and runs one replica with the
+`Recreate` strategy, so that a rollout stops the old Pod before it starts the
+new one. With one writer, the program needs no leader election, and its
+`kube.Serve` handler, which runs outside leader election, can write the same
+files as its reconciles. `fsGroup` makes the volume writable by the non-root
+user, and `fsGroupChangePolicy: OnRootMismatch` keeps the kubelet from walking
+every file on each start. `Volume` refuses the directories that the
+installation already uses, including the two where the Pod's tokens are
+mounted and the directories inside and above them, because a volume at the
+service account's directory stops Kubernetes from mounting the token there.
+`Volume` also refuses those directories under `/run`. In
+`cgr.dev/chainguard/static`, the default base image, and many others,
+`/var/run` is a symbolic link to `/run`, so the read-only token volume at
+`/var/run/secrets/tokens` hides a volume at `/run/secrets/tokens`, and the
+program's writes there fail. `generate` refuses `-volume-size` and
+`-storage-class` for a program without a volume, instead of ignoring them.
+
+`Recreate` waits for the old Pod only during a rollout. A Pod that's deleted
+otherwise, by `kubectl delete pod` or a node drain, gets a replacement from
+its ReplicaSet at once, while the old Pod stops. The old process reconciles
+until it gets `SIGTERM`, which comes after the 5-second `preStop` sleep of a
+program that serves, and which cancels its reconciles. Its requests in
+progress get up to 10 more seconds (`serveGrace`), and the kubelet kills it
+when the Pod's 30-second termination grace period ends. Until then, both
+processes can write the volume if the replacement runs on the same node,
+where Pods can share a `ReadWriteOnce` volume. While both reconcile, a late
+status write from the old process can replace a newer one from the
+replacement, the same exposure as a lost lease in
+[Shards and leader election](#shards-and-leader-election). When the old Pod's
+node stops responding, Kubernetes deletes the Pod after about five minutes
+and starts a replacement without knowing whether the old process stopped. The
+replacement can't use a local volume until the node comes back, or attach a
+volume that's attached to the old node until Kubernetes detaches it, but a
+volume that's mounted over the network, such as NFS, has no such guard. So a
+program with a volume must tolerate two processes at once, as git does with
+its lock files.
+
+A one-replica StatefulSet would be safer: it doesn't start a replacement
+until the old Pod is gone, even when the old Pod's node stops responding, and
+it can mount the same standalone claim. kube doesn't use one because
+`kubectl apply` doesn't delete objects. Turning an installed program's
+Deployment into a StatefulSet would leave the old Deployment running beside
+it, writing the same volume and status, until someone deleted it.
+`ReadWriteOncePod` would keep out a replacement on the same node, but only
+CSI drivers support it, and kind's default StorageClass isn't one.
+
+`kubectl apply` switches an earlier installation's Deployment to `Recreate`,
+because the strategy field's `retainKeys` patch strategy drops the keys that
+the patch leaves out. Server-side apply doesn't: the API server keeps the
+`rollingUpdate` field that it defaulted, which no field manager owns, and
+rejects it alongside `Recreate`. Neither deletes the PodDisruptionBudget, or
+the Role and RoleBinding for leader election, that the new installation
+leaves out, so the README says to delete them.
+
 ### Testing
 
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
@@ -1540,6 +1596,9 @@ framework's tests check that:
 - A `kube.Serve` handler that hands posted results to the reconcile answers
   once `Get` shows them in the status, even when a reconcile fails after
   reading one, and answers `503` for a result that the reconcile never writes.
+- `generate` gives the eventlog example a claim and one replica with the
+  `Recreate` strategy, and refuses `-replicas=2`, and the program keeps
+  serving the copy of an Event after the Event is deleted.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
@@ -1557,6 +1616,9 @@ bound to the program's Pod, that the program may not request tokens, and that
 a trigger runs a check on the replica that holds the lease while the other
 answers `503`. Then it replaces every replica while the client calls the API
 through the Service in a loop, and checks that none of those requests fail.
+And it checks that the eventlog example's claim binds, and that after a
+rollout replaces the program's Pod, the new Pod serves the copy of an Event
+that was deleted before the rollout.
 
 ## Measurements
 

@@ -5,79 +5,6 @@ section describes the problem, a proposed fix, and what to settle before
 building it, and notes the decisions made so far. The [README](README.md)
 describes how git-k8s works today.
 
-## Run an in-cluster git mirror
-
-Every program that fetches or pushes holds the repository's credential: the
-core program, `check-base`, `check-gofmt`, and `check-risk`. The credential
-can push to any branch, so a compromised check can push straight to a parent
-such as `main` and skip every merge gate. The admission policies protect only
-Kubernetes objects. These four programs can also read Secrets in every
-namespace, unless they're installed with kube's `generate -watch-namespace`.
-
-The same design has more costs:
-
-- Test Pods fetch from the remote, so no NetworkPolicy can block the rest of
-  their traffic.
-- Each of the four programs keeps its own copy of every repository.
-- The controllers poll remotes, so a push takes up to `pollInterval`, 30
-  seconds by default, to show up, and each poll lists every branch.
-
-The decided fix is a git mirror in the cluster that's the source of truth
-for each repository, and the only git server that checks and controllers use.
-GitHub, and any other forge, is a downstream copy:
-
-- The mirror keeps each repository on a PersistentVolume and serves it over
-  smart HTTP, at a path such as `/NAMESPACE/REPOSITORY.git`.
-- It syncs in both directions. It pushes every ref change to the external
-  repository, and fetches from the external repository to pick up branches
-  that people push there.
-- Checks and test Pods fetch only from the mirror, and checks push fixes only
-  to it. The mirror reads the commands at the start of each
-  `git-receive-pack` request and applies its caller's push rules. A check can
-  update only a branch that has a parent, never a parent, and only from the
-  old commit that the push names. A controller that starts branches, such as
-  the [dependency update controller](README.md#dependency-updates),
-  can also create branches under its own prefix. Only the merge controller
-  updates parents.
-- When a branch changes on both sides between syncs, such as a person's push
-  to GitHub and a check's fix pushed to the mirror, the mirror overwrites
-  neither. It keeps the external repository's head under a separate ref,
-  reports the branch as diverged, and leaves it to the
-  [conflicts check](README.md#resolve-conflicts). The check resolves a
-  diverged parent on a new branch under the prefix `resolve/`, so it needs
-  that prefix, like a controller that starts branches.
-- The mirror holds the only credentials for external repositories, so no
-  other program reads Secrets. For a repository that gets
-  [tokens from Octo STS](README.md#github-repositories), only the mirror
-  requests tokens for the `GitRepository`'s `gitIdentity`, so the trust
-  policy's `subject_pattern` narrows to the mirror's service account. The
-  checks stop requesting tokens for Octo STS, so `generate` stops granting
-  them `create` on `serviceaccounts/token`, and the risk that
-  [Security](README.md#security) describes no longer applies to them.
-- Every ref change passes through the mirror, so it tells git-k8s about each
-  one as it happens, and git-k8s reconciles the repository at once. Only the
-  mirror polls, and only the external repository, to find pushes that people
-  made there. git-k8s doesn't rely on GitHub webhooks.
-- A NetworkPolicy lets test Pods reach only the mirror and DNS.
-
-Questions to settle first:
-
-- When the mirror acknowledges a push from a check or the merge controller.
-  Acknowledging it before syncing it to GitHub keeps git-k8s working through
-  a GitHub outage, and acknowledging it after keeps the two from differing.
-  The conflicts check coalesces branches that differ, so acknowledging
-  first fits GitHub's role as a downstream copy.
-- How callers prove who they are. A projected service account token with an
-  audience such as `git-k8s`, checked with a TokenReview, maps a caller to
-  `check-NAME`. A test Pod runs without a service account token, so its init
-  container needs its own projected token bound to the Pod.
-- Where the mirror runs, in the core program or in its own Deployment. Its
-  repositories live on a PersistentVolume, so one replica writes at a time,
-  and backups matter.
-- How a ref change starts a reconcile. kube can't queue a key from outside a
-  reconcile, so either kube adds an API for it, or the mirror patches an
-  annotation on the `GitRepository`.
-
 ## Support GitHub Enterprise Server
 
 A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)
@@ -92,6 +19,34 @@ and audience, and the server's web and REST API URLs. These can't be
 send their service account tokens, and for which audience. They belong in
 program flags, like `-fake-github`, or in a cluster-scoped object that only
 administrators can change.
+
+## Keep the mirror up while it restarts
+
+The core program runs one replica, because only one process can write the
+mirror's copies. While it restarts, during a rollout or after its node
+fails, checks can't fetch, push, or send results, branches don't land, and
+test Pods retry their fetches. A volume that can't move between zones keeps
+the core program down while its zone is down.
+
+The proposed fix is several replicas, each with its own copy of every
+repository. One replica, the leader, takes pushes, and acknowledges a push
+once another replica has it too. The other replicas serve fetches, and one
+of them takes over when the leader stops. The results endpoint already
+works with several replicas: a replica that doesn't write a branch's results
+answers `503`, and the check tries again on a new connection.
+
+Questions to settle first:
+
+- How a replica catches up when it starts, such as by fetching from the
+  leader.
+- How to choose a new leader without losing a push that the old leader
+  acknowledged.
+- How a push that reaches another replica gets to the leader. `kube.Serve`
+  runs on every replica, and `kube.Trigger` queues a reconcile only on the
+  replica that reconciles the object.
+- How kube installs it. `generate` gives a program with a `kube.Volume` one
+  claim and one replica, so a volume for each replica needs a StatefulSet,
+  which `generate` doesn't write.
 
 ## Keep queued branches moving
 
@@ -119,10 +74,11 @@ branch leaves it.
 Questions to settle first:
 
 - How `check-approval` learns that the commits since the approved head are
-  clean merges of the parent. It reads only the `GitBranch`, so it can't
-  read Secrets. It could trust an output of `check-base`, which would let a
-  compromised `check-base` carry an approval over to code that nobody
-  approved, or read the repository itself, which needs its credentials.
+  clean merges of the parent. It reads only the `GitBranch`, so it gets no
+  token for the mirror. It could trust an output of `check-base`, which
+  would let a compromised `check-base` carry an approval over to code that
+  nobody approved, or read the repository itself from the mirror, with
+  `mirror.Remote`.
 - How long the front can wait, and whether a branch that runs out of time
   goes to the back of the queue or waits for a new push.
 
@@ -143,11 +99,10 @@ Questions to settle first:
 ## Require an approver who didn't write the change
 
 `check-approval` reports who approved a branch, but not who wrote it, so a
-gate can't require that someone other than the author approved. Reading
-commits takes the repository's credential, which can push to any branch and
-which `check-approval` doesn't have. With the
-[in-cluster git mirror](#run-an-in-cluster-git-mirror), it could read
-commits without one.
+gate can't require that someone other than the author approved.
+`check-approval` doesn't read commits today, but it could fetch them from the
+[mirror](README.md#the-mirror) with its mirror token, without the
+repository's credential.
 
 Questions to settle first:
 
@@ -163,18 +118,20 @@ Questions to settle first:
 `check-base`, `check-gofmt`, `check-review`, `check-conflicts`,
 `check-deps`, the merge controller, and `git-k8s-deps` sign their commits
 with a key that they read from a Secret, so a compromised check can sign
-anything with it. With the [mirror](#run-an-in-cluster-git-mirror), the
-mirror can hold the key instead and sign for them, for example through a
-program that git's `gpg.ssh.program` setting runs, so that none of them
-reads the Secret.
+anything with it. The key is also the only reason that the checks and
+`git-k8s-deps` can read Secrets, and `generate` lets them read every Secret
+in the namespaces that they watch, including the external repositories'
+credentials, which they don't use. The [mirror](README.md#the-mirror) could
+hold the key instead and sign for them, for example through a program that
+git's `gpg.ssh.program` setting runs, so that none of them reads Secrets.
 
-With the mirror, every change reaches GitHub as a push from the mirror. For
-a repository that gets [tokens from Octo STS](README.md#github-repositories),
-the mirror pushes as Octo STS's GitHub App. Branch protection rules and
-rulesets have to let that App push to protected branches without a pull
-request, by adding it to their bypass lists. An App can't have a signing
-key, so the commits stay signed with a bot account's key, with that
-account's email address as their committer.
+Every change reaches GitHub as a push from the mirror. For a repository
+that gets [tokens from Octo STS](README.md#github-repositories), the mirror
+pushes as Octo STS's GitHub App. Branch protection rules and rulesets have
+to let that App push to protected branches without a pull request, by
+adding it to their bypass lists. An App can't have a signing key, so the
+commits stay signed with a bot account's key, with that account's email
+address as their committer.
 
 ## Sign commits with gitsign
 
@@ -218,18 +175,22 @@ Questions to settle first:
   the cluster, or the check follows the run itself.
 - Which GitHub branches a cloud agent may push to.
 
-## Push dependency branches to the mirror
+## Let update Pods fetch from the mirror
 
-[`git-k8s-deps`](README.md#dependency-updates) pushes dependency branches
-with the repository's credentials, and its update Pods fetch with them too.
-So the controller reads Secrets, and only its own code keeps its pushes
-under its prefix. Once the [mirror](#run-an-in-cluster-git-mirror) exists,
-the core program gives the service account `git-k8s-deps` in the namespace
-`git-k8s-deps` the prefix `deps/`. The controller then pushes to the mirror
-with a projected service account token, and its update Pods fetch from the
-mirror with tokens bound to the Pods, like test Pods. Once the mirror also
-[signs commits](#sign-commits-in-the-mirror), the controller stops reading
-Secrets.
+[`git-k8s-deps`](README.md#update-pods) reads branches from the mirror and
+pushes its branches there, but its update Pods fetch the parent from the
+external repository with the repository's credentials. The mirror accepts a
+token that's bound to a Pod only from a check's Pod, which a `Running`
+result names. So an update Pod gets credentials that can push to any
+branch, a repository that gets tokens from Octo STS has to be public, and
+right after the parent moves, an update can find it at another commit in the
+external repository. The mirror could also accept a Pending Pod that a
+controller with a branch-name prefix names in a record that only the
+controller's service account can write, and that has the controller's label.
+Update Pods, and agent Pods that a controller starts with `RunJob`, could
+then fetch from the mirror with tokens bound to the Pods, like test Pods.
+Once the mirror also [signs commits](#sign-commits-in-the-mirror),
+`git-k8s-deps` stops reading Secrets.
 
 ## Update npm and Cargo dependencies
 

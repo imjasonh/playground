@@ -19,8 +19,8 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
@@ -62,7 +62,7 @@ func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpe
 	return previous.Outputs["behind"] == "true" && first(ctx, meta, spec.Head)
 }
 
-var check = checks.Check{Name: "base", UsesParent: true, FilesOnly: true, Stale: stale, Remote: credentials.Remote, SigningKey: signing.Key, Run: run}
+var check = checks.Check{Name: "base", UsesParent: true, FilesOnly: true, Stale: stale, Remote: mirror.Remote, SigningKey: signing.Key, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)

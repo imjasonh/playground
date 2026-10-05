@@ -79,8 +79,14 @@ var stuckReasons = []string{"CreateContainerConfigError", "ErrImagePull", "Image
 // InvalidImageName, counted from when the container can start.
 const stuckAfter = 5 * time.Minute
 
+// behindStatus is the status that the prepare container exits with when the
+// parent in the external repository isn't at the head that the controller
+// read from the mirror.
+const behindStatus = 3
+
 // prepareScript runs in the prepare container. It checks out the parent at
-// HEAD, or exits with status 3 if the parent moved. The attributes file
+// HEAD, or exits with behindStatus if the parent in the external repository
+// is at another commit. The attributes file
 // makes the files match their blobs, so the go.mod and go.sum files that
 // the update container reports differ from the parent's only where go
 // changed them. The repository goes in a directory that git init creates,
@@ -93,8 +99,9 @@ if [ -n "${GIT_PASSWORD:-}" ]; then
   git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
 fi
 git fetch -q --depth=1 --end-of-options "$URL" "refs/heads/$BRANCH"
-if [ "$(git rev-parse --verify --end-of-options FETCH_HEAD)" != "$HEAD" ]; then
-  echo "$BRANCH no longer points to $HEAD" >&2
+fetched=$(git rev-parse --verify --end-of-options FETCH_HEAD)
+if [ "$fetched" != "$HEAD" ]; then
+  echo "$BRANCH is at $fetched in the external repository, not at $HEAD" >&2
   exit 3
 fi
 git config --unset credential.helper || true
@@ -393,7 +400,11 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 		return nil
 	}
 	if t := container(st.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
-		return failAll("preparing the source in Pod %s failed: %s", pod.Name, exitMessage(t))
+		out := failAll("preparing the source in Pod %s failed: %s", pod.Name, exitMessage(t))
+		for _, o := range out {
+			o.behind = t.ExitCode == behindStatus
+		}
+		return out
 	}
 	t := container(st.InitContainerStatuses, "update").Terminated
 	switch {

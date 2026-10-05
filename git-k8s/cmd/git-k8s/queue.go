@@ -106,7 +106,7 @@ func position(ctx context.Context, b *gitk8s.GitBranch) (int32, int) {
 // at the front lands, after the base check merges the parent into it if
 // it's behind. A squash or rebase landing that pushes its commits to b for
 // the checks keeps b at the front while the checks run on them.
-func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
+func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
 	spec := &b.Spec
 	switch {
 	case reported(b, reasonRewritten):
@@ -121,7 +121,7 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 	base := checks["base"]
 	ready := pass && base.Passed
 	if q != nil && q.Head != spec.Head {
-		kept, err := m.fixedOnly(ctx, b, q.Head)
+		kept, err := m.fixedOnly(ctx, repo, b, q.Head)
 		if err != nil {
 			b.Status.Queued = q
 			return err
@@ -173,7 +173,7 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		report(b, reasonQueued, false, "first in %s's queue; waiting for the base check to merge %s in", spec.Parent, spec.Parent)
 	default:
 		report(b, reasonQueued, false, "first in %s's queue", spec.Parent)
-		if err := m.land(ctx, b, results); err != nil {
+		if err := m.land(ctx, repo, b, results); err != nil {
 			return err
 		}
 		if c := kube.FindCondition(b.Status.Conditions, "Merged"); c.Status == kube.True || c.Reason == reasonNeedsRebase {
@@ -229,19 +229,19 @@ func canPass(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) boo
 // fixedOnly reports whether checks pushed every commit that b gained since
 // its head was since, such as the base check's merge of the parent, so that
 // b keeps its place in the queue.
-func (m *merger) fixedOnly(ctx context.Context, b *gitk8s.GitBranch, since string) (bool, error) {
-	_, local, remote, unlock, err := m.open(ctx, b)
+func (m *merger) fixedOnly(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch, since string) (bool, error) {
+	if repo == nil {
+		return false, fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
+	}
+	local, err := m.mirror.Open(ctx, repo)
 	if err != nil {
 		return false, err
 	}
-	defer unlock()
-	if err := local.Fetch(ctx, remote, b.Spec.Branch); err != nil {
-		return false, err
-	}
+	defer local.Close()
 	if ok, err := local.HasCommit(ctx, b.Spec.Head); err != nil || !ok {
-		return false, errors.Join(err, fmt.Errorf("don't have %s after fetching; the branch moved, so waiting for the repository controller to list it again", gitk8s.Short(b.Spec.Head)))
+		return false, errors.Join(err, fmt.Errorf("the mirror doesn't have %s; waiting for the repository controller to list the branch again", gitk8s.Short(b.Spec.Head)))
 	}
-	// Fetching the head fetched every commit before it, so a missing earlier
+	// The copy prunes only commits that no ref has, so a missing earlier
 	// head means that a push removed it.
 	if ok, err := local.HasCommit(ctx, since); err != nil || !ok {
 		return false, err

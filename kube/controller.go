@@ -52,8 +52,8 @@ type Finalizer[T any] interface {
 }
 
 // Controller is a reconciler configured to run in a Manager. Create one
-// with For, with Webhooks for admission webhooks alone, or with Install for
-// objects to install.
+// with For, with Webhooks for admission webhooks alone, with Install for
+// objects to install, or with Volume for a persistent volume.
 type Controller interface {
 	// prepare runs on every replica before leader election. It checks the
 	// controller and registers its webhooks.
@@ -92,6 +92,9 @@ type declared struct {
 	// installs are the objects that the controller applies when the
 	// program starts.
 	installs []installObject
+	// volume is the directory of the persistent volume that Volume
+	// declares.
+	volume string
 }
 
 func (c *controller[T, P]) describe() (declared, error) {

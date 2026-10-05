@@ -4,10 +4,10 @@
 // A check calls Runner.Run on each reconcile, and Run declares a Pod for
 // each run with kube.Own:
 //
-//   - The prepare init container fetches the branch with the repository's
-//     credentials. It writes the head's files, the change from the merge
-//     base, and the commit log to volumes, and copies the Cursor API key
-//     from a Secret to a memory volume.
+//   - The prepare init container fetches the branch from the mirror, with a
+//     token for the mirror that kube binds to the Pod. It writes the head's
+//     files, the change from the merge base, and the commit log to volumes,
+//     and copies the Cursor API key from a Secret to a memory volume.
 //   - The agent init container runs the runner in runner/, which reads and
 //     deletes the key, runs the agent on the files, and writes the agent's
 //     result to a volume and the result's SHA-256 digest as its termination
@@ -22,10 +22,13 @@
 // Run turns those files into a fix commit, which the checks framework pushes
 // when the check's policy and the branch's maxAutomatedCommits allow.
 //
-// A controller, or a check that needs a Job that Run doesn't build, calls
-// Runner.RunJob. A Job names the repository, the commits to check out, the
-// task, and the agent's tools, and can have the agent resolve a merge's
-// conflicts. Run builds one from the check's branch.
+// A controller, or a check that needs a Job that Run doesn't build, such as
+// the conflicts check, calls Runner.RunJob. A Job names the repository, the
+// commits to check out, the task, and the agent's tools, and can have the
+// agent resolve a merge's conflicts. Run builds one from the check's
+// branch. The mirror accepts a token that's bound to a Pod only from a
+// check's Pod, so a check's Job sets Mirror, and a controller's Job names
+// the repository's URL and credentials.
 package agent
 
 import (
@@ -148,8 +151,10 @@ type Task struct {
 //
 // Run doesn't return errors, because a check that returns one reports Error
 // without outputs, and the outputs count the branch's runs for
-// maxAgentRuns. A check that calls Run needs Check.Remote, and isn't
-// FilesOnly, because the agent reads the subjects of the branch's commits.
+// maxAgentRuns. A check that calls Run sets Check.Remote to mirror.Remote,
+// because its Pods fetch from the remote's URL with tokens for the mirror.
+// It isn't FilesOnly, because the agent reads the subjects of the branch's
+// commits.
 func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.Verdict, *Result) {
 	st := &JobState{}
 	x := &run{r: r, in: in, job: r.checkJob(in, task, ""), st: st}
@@ -166,10 +171,22 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		if prev.State == gitk8s.Running && prev.Commit == head && last.Pod != "" {
 			*st = last
 			x.job.Checkout.Base = prev.Outputs["base"]
+			x.job.URL = prev.Outputs["url"]
 		}
 	}
 	if err := r.validate(); err != nil {
 		return x.running("can't start agents: %v", err), nil
+	}
+	// A reconcile that doesn't declare the run's Pod deletes it, so while
+	// the check can't reach the repository, such as when its token for the
+	// mirror can't be read, it follows the run with the URL in its outputs.
+	// Otherwise a new URL, such as from a changed -mirror, starts the run
+	// again in a new Pod.
+	if remote, err := in.Remote(ctx); err == nil {
+		x.job.URL = remote.URL
+	} else if x.job.URL == "" {
+		kube.RequeueAfter(ctx, 30*time.Second)
+		return x.running("reaching the repository: %v", err), nil
 	}
 	// A Pod's name covers its job, so a changed policy starts a new run
 	// instead of changing a Pod that can't change. startOrFollow restarts
@@ -206,14 +223,15 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 }
 
 // checkJob is the job for a check's run on the branch's change from base.
+// Its Pods fetch from the mirror, at the URL that Run sets from the check's
+// remote.
 func (r *Runner) checkJob(in *checks.Input, task Task, base string) *Job {
 	return &Job{
-		Name:        in.Meta.Name,
-		Namespace:   in.Meta.Namespace,
-		URL:         in.Repository.Spec.URL,
-		Credentials: in.Repository.Spec.SecretRef,
-		Checkout:    Checkout{Branch: in.Spec.Branch, Head: in.Spec.Head, Parent: in.Spec.Parent, Base: base},
-		Task:        task,
+		Name:      in.Meta.Name,
+		Namespace: in.Meta.Namespace,
+		Mirror:    true,
+		Checkout:  Checkout{Branch: in.Spec.Branch, Head: in.Spec.Head, Parent: in.Spec.Parent, Base: base},
+		Task:      task,
 	}
 }
 
@@ -268,8 +286,8 @@ func minutes(d time.Duration) string {
 	return "a minute"
 }
 
-// outputs hold the run's state and merge base, which the next reconcile
-// follows the run with, and its runs and Pod for people to read.
+// outputs hold the run's state, merge base, and URL, which the next
+// reconcile follows the run with, and its runs and Pod for people to read.
 func (x *run) outputs() map[string]string {
 	state, _ := x.st.MarshalText()
 	o := map[string]string{"state": string(state), "runs": strconv.Itoa(x.st.Runs)}
@@ -277,6 +295,9 @@ func (x *run) outputs() map[string]string {
 		o["pod"] = x.st.Pod
 		if base := x.job.Checkout.Base; base != "" {
 			o["base"] = base
+		}
+		if url := x.job.URL; url != "" {
+			o["url"] = url
 		}
 	}
 	return o

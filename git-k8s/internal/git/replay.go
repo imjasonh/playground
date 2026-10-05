@@ -105,7 +105,7 @@ func (r *Repo) Log(ctx context.Context, base, head string, limit int) ([]LogEntr
 	args := []string{"log", "-z", "--reverse", "--topo-order", "--date=raw", "--max-count=" + strconv.Itoa(limit),
 		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%ct%x00%B%x00%(trailers:only,unfold)", "--end-of-options", head, "^" + base}
 	out := &limitedWriter{n: MaxLogBytes}
-	_, err := r.git.run(ctx, r.Dir, args, opts{stdout: out})
+	_, err := r.git.run(ctx, r.Dir, args, opts{out: out})
 	if out.full {
 		// git dies when the write fails, so err doesn't say why.
 		return nil, ErrLogTooBig

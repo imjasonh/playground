@@ -147,8 +147,8 @@ func Run(ctx context.Context, controllers ...Controller) error {
 // Main instead builds the program into an image on Chainguard's static
 // base image, pushes it to REGISTRY, and writes YAML for kubectl apply that
 // installs it: a namespace, a service account, RBAC rules for the types and
-// APIs the program uses, a Deployment, and a Service for its webhooks and
-// its Serve handler.
+// APIs the program uses, a Deployment, a Service for its webhooks and its
+// Serve handler, and a PersistentVolumeClaim for its Volume.
 func Main(controllers ...Controller) {
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

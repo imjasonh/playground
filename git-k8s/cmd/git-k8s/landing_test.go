@@ -20,40 +20,58 @@ import (
 const testTime = "1767323045 +0000"
 
 // landAs runs the merge controller on b, with a merge policy that lands
-// branches with landing. The policy queues branches, so b is at the front
-// of main's queue at its current head.
-func landAs(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing string) error {
+// branches with landing, and then syncs the mirror, which pushes what the
+// merge controller changed in its copy to the external repository. The
+// policy queues branches, so b is at the front of main's queue at its
+// current head.
+func landAs(t *testing.T, f *fixture, b *gitk8s.GitBranch, landing string) error {
 	t.Helper()
-	return landWith(t, srv, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, nil)
+	return landWith(t, f, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, nil)
 }
 
 // landWith is landAs with id as the merge controller's identity. If signer
-// isn't nil, the GitRepository's signing Secret holds its key.
-func landWith(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch, landing string, id git.Identity, signer *gittest.Signer) error {
+// isn't nil, the GitRepository's signing Secret holds its key. Only the
+// sync may change the external repository, so landWith fails the test if
+// the merge controller does.
+func landWith(t *testing.T, f *fixture, b *gitk8s.GitBranch, landing string, id git.Identity, signer *gittest.Signer) error {
 	t.Helper()
 	p := *b.Spec.Merge
 	p.Landing = landing
 	b.Spec.Merge = &p
 	b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
-	repo, secret := srv.Repository("app", rules()...)
-	world := []any{repo, secret, parentOf(b, b.Spec.Branch)}
+	before := f.srv.Heads(t, "app")
+	world := f.world(f.repo, parentOf(b, b.Spec.Branch))
 	if signer != nil {
-		world = append(world, signer.Sign(repo))
+		world = append(world, signer.Sign(f.repo))
 	}
 	ctx, _ := kube.Fake(t.Context(), b, world...)
-	m := &merger{
-		ident: id,
-		cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()},
+	err := (&merger{mirror: f.mirror, ident: id}).Reconcile(ctx, b)
+	if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
+		t.Errorf("the merge controller changed the external repository's heads from %v to %v", before, after)
 	}
-	return m.Reconcile(ctx, b)
+	if err != nil {
+		return err
+	}
+	f.fetch()
+	return nil
 }
 
-// refresh pushes w's current commit to c/x and gives b fresh, passing results
-// for it, like the repositories controller and the checks do.
-func refresh(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) {
+// branches returns a fixture, its branch c/x from fixture.branches, and
+// its working repository.
+func branches(t *testing.T) (*fixture, *gitk8s.GitBranch, *gittest.Work) {
 	t.Helper()
-	w.Push("c/x")
-	b.Spec.Head = w.Git("rev-parse", "HEAD")
+	f := newFixture(t)
+	return f, f.branches(), f.work
+}
+
+// refresh pushes the working repository's current commit to c/x, syncs the
+// mirror, and gives b fresh, passing results for it, like the repositories
+// controller and the checks do.
+func refresh(t *testing.T, f *fixture, b *gitk8s.GitBranch) {
+	t.Helper()
+	f.work.Push("c/x")
+	f.fetch()
+	b.Spec.Head = f.work.Git("rev-parse", "HEAD")
 	b.Status.Checks = map[string]gitk8s.CheckResult{
 		"base":  {Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, FilesOnly: true},
 		"gofmt": {Commit: b.Spec.Head, State: gitk8s.Passed, FilesOnly: true},
@@ -144,20 +162,19 @@ func describeCommit(w *gittest.Work, sha string) string {
 }
 
 func TestSquashLanding(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, w := branches(t, srv)
+	f, b, w := branches(t)
 	w.Write("y.txt", "y\n")
 	commitAsAna(w, "Add y\n\nWith a body.\n\nSigned-off-by: Ana Lima <ana@example.com>")
 	moveParent(t, b, w, "m.txt", "m\n")
 	mergeParent(b, w)
 	w.Write("x.txt", "x, formatted\n")
 	w.Commit("Format Go files with gofmt\n\nGit-K8s-Fixer: gofmt")
-	refresh(t, b, w)
+	refresh(t, f, b)
 	main := b.Spec.ParentHead
-	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+	if err := landAs(t, f, b, gitk8s.Squash); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := srv.Heads(t, "app")["c/x"]; ok {
+	if _, ok := f.srv.Heads(t, "app")["c/x"]; ok {
 		t.Error("c/x wasn't deleted after it landed")
 	}
 	squashed := w.Fetch("main")
@@ -184,13 +201,12 @@ func TestSquashLanding(t *testing.T) {
 // fix. check-risk's results count for the squashed commit, so it must still
 // count as a change from an agent.
 func TestSquashKeepsAgentTrailers(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, w := branches(t, srv)
+	f, b, w := branches(t)
 	w.Write("x.txt", "x, reviewed\n")
 	w.Commit("Apply changes from the review agent\n\nFix x.\n\nx.txt\n\nGit-K8s-Fixer: review\nGit-K8s-Agent: review")
-	refresh(t, b, w)
+	refresh(t, f, b)
 	main := b.Spec.ParentHead
-	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+	if err := landAs(t, f, b, gitk8s.Squash); err != nil {
 		t.Fatal(err)
 	}
 	squashed := w.Fetch("main")
@@ -348,20 +364,19 @@ func TestSquashMessage(t *testing.T) {
 }
 
 func TestRebaseLanding(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, w := branches(t, srv)
+	f, b, w := branches(t)
 	w.Write("y.txt", "y\n")
 	commitAsAna(w, "Add y\n\nWith a body.")
 	moveParent(t, b, w, "m.txt", "m\n")
 	mergeParent(b, w)
 	w.Write("z.txt", "z\n")
 	w.Commit("add z")
-	refresh(t, b, w)
+	refresh(t, f, b)
 	main := b.Spec.ParentHead
-	if err := landAs(t, srv, b, gitk8s.Rebase); err != nil {
+	if err := landAs(t, f, b, gitk8s.Rebase); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := srv.Heads(t, "app")["c/x"]; ok {
+	if _, ok := f.srv.Heads(t, "app")["c/x"]; ok {
 		t.Error("c/x wasn't deleted after it landed")
 	}
 	rebased := w.Fetch("main")
@@ -410,18 +425,17 @@ func TestLandingsSign(t *testing.T) {
 		{"rebase for the checks", gitk8s.Rebase, true, "c/x", 2},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			w.Write("y.txt", "y\n")
 			commitAsAna(w, "Add y")
 			moveParent(t, b, w, "m.txt", "m\n")
 			mergeParent(b, w)
-			refresh(t, b, w)
+			refresh(t, f, b)
 			if tt.history {
 				withHistoryCheck(b)
 			}
 			main := b.Spec.ParentHead
-			if err := landWith(t, srv, b, tt.landing, id, signer); err != nil {
+			if err := landWith(t, f, b, tt.landing, id, signer); err != nil {
 				t.Fatal(err)
 			}
 			commits := strings.Fields(w.Git("rev-list", main+".."+w.Fetch(tt.ref)))
@@ -437,31 +451,30 @@ func TestLandingsSign(t *testing.T) {
 	}
 }
 
-// A landing that can't read the signing key pushes nothing, but a landing
-// that makes no commits doesn't read the key.
+// A landing that can't read the signing key changes nothing in the mirror's
+// copy, but a landing that makes no commits doesn't read the key.
 func TestLandingNeedsTheSigningKey(t *testing.T) {
 	broken := &gittest.Signer{Email: "git-k8s@example.com", Key: []byte("hunter2")}
 	id := git.Identity{Name: "git-k8s", Email: broken.Email}
 	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 		t.Run(landing, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			moveParent(t, b, w, "m.txt", "m\n")
 			mergeParent(b, w)
-			refresh(t, b, w)
-			before := srv.Heads(t, "app")
-			err := landWith(t, srv, b, landing, id, broken)
+			refresh(t, f, b)
+			before := f.mirrorHeads()
+			err := landWith(t, f, b, landing, id, broken)
 			if err == nil || !strings.Contains(err.Error(), "reading the signing key: Secret app-signing: the key isn't a private key") || strings.Contains(err.Error(), "hunter2") {
 				t.Fatalf("err = %v, want one that says the signing key isn't a key, without the Secret's data", err)
 			}
-			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
-				t.Errorf("heads = %v, want %v", after, before)
+			if after := f.mirrorHeads(); !maps.Equal(after, before) {
+				t.Errorf("the mirror's heads = %v, want %v", after, before)
 			}
 
 			moveParent(t, b, w, "x.txt", "x\n")
 			mergeParent(b, w)
-			refresh(t, b, w)
-			if err := landWith(t, srv, b, landing, id, broken); err != nil || b.Status.State != reasonMerged {
+			refresh(t, f, b)
+			if err := landWith(t, f, b, landing, id, broken); err != nil || b.Status.State != reasonMerged {
 				t.Errorf("landing a branch whose changes the parent has: state %q, %v; want %s", b.Status.State, err, reasonMerged)
 			}
 		})
@@ -470,15 +483,14 @@ func TestLandingNeedsTheSigningKey(t *testing.T) {
 
 // A rebase landing leaves out a commit whose change the parent already has.
 func TestRebaseLeavesOutChangesInTheParent(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, w := branches(t, srv)
+	f, b, w := branches(t)
 	w.Write("y.txt", "y\n")
 	w.Commit("add y")
 	moveParent(t, b, w, "y.txt", "y\n")
 	mergeParent(b, w)
-	refresh(t, b, w)
+	refresh(t, f, b)
 	main := b.Spec.ParentHead
-	if err := landAs(t, srv, b, gitk8s.Rebase); err != nil {
+	if err := landAs(t, f, b, gitk8s.Rebase); err != nil {
 		t.Fatal(err)
 	}
 	rebased := w.Fetch("main")
@@ -495,18 +507,17 @@ func TestRebaseLeavesOutChangesInTheParent(t *testing.T) {
 func TestRewriteFastForwards(t *testing.T) {
 	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 		t.Run(landing, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			if landing == gitk8s.Rebase {
 				w.Write("y.txt", "y\n")
 				w.Commit("add y")
-				refresh(t, b, w)
+				refresh(t, f, b)
 			}
 			main, head := b.Spec.ParentHead, b.Spec.Head
-			if err := landAs(t, srv, b, landing); err != nil {
+			if err := landAs(t, f, b, landing); err != nil {
 				t.Fatal(err)
 			}
-			heads := srv.Heads(t, "app")
+			heads := f.srv.Heads(t, "app")
 			if heads["main"] != head {
 				t.Errorf("main = %s, want %s", heads["main"], head)
 			}
@@ -523,23 +534,22 @@ func TestRewriteFastForwards(t *testing.T) {
 }
 
 // Without deleteMergedBranches, the branch moves to the landed commit in the
-// same push, so it stays in its parent.
+// same update, so it stays in its parent.
 func TestRewriteMovesAKeptBranch(t *testing.T) {
 	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 		t.Run(landing, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			moveParent(t, b, w, "m.txt", "m\n")
 			mergeParent(b, w)
-			refresh(t, b, w)
+			refresh(t, f, b)
 			p := *b.Spec.Merge
 			p.DeleteMergedBranches = false
 			b.Spec.Merge = &p
 			main := b.Spec.ParentHead
-			if err := landAs(t, srv, b, landing); err != nil {
+			if err := landAs(t, f, b, landing); err != nil {
 				t.Fatal(err)
 			}
-			heads := srv.Heads(t, "app")
+			heads := f.srv.Heads(t, "app")
 			if heads["main"] == main || heads["main"] == b.Spec.Head || heads["c/x"] != heads["main"] {
 				t.Errorf("main = %s, c/x = %s; want both at a new commit on %s", heads["main"], heads["c/x"], main)
 			}
@@ -554,16 +564,15 @@ func TestRewriteMovesAKeptBranch(t *testing.T) {
 func TestRewriteWithNothingToLand(t *testing.T) {
 	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 		t.Run(landing, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			moveParent(t, b, w, "x.txt", "x\n")
 			mergeParent(b, w)
-			refresh(t, b, w)
-			before := srv.Heads(t, "app")
-			if err := landAs(t, srv, b, landing); err != nil {
+			refresh(t, f, b)
+			before := f.srv.Heads(t, "app")
+			if err := landAs(t, f, b, landing); err != nil {
 				t.Fatal(err)
 			}
-			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+			if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 				t.Errorf("heads = %v, want %v", after, before)
 			}
 			c := kube.FindCondition(b.Status.Conditions, "Merged")
@@ -608,16 +617,15 @@ func TestRebaseNeedsRebase(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			tt.setup(t, b, w)
-			refresh(t, b, w)
+			refresh(t, f, b)
 			results := b.Status.Checks
-			before := srv.Heads(t, "app")
-			if err := landAs(t, srv, b, gitk8s.Rebase); err != nil {
+			before := f.srv.Heads(t, "app")
+			if err := landAs(t, f, b, gitk8s.Rebase); err != nil {
 				t.Fatal(err)
 			}
-			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+			if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 				t.Errorf("heads = %v, want %v", after, before)
 			}
 			c := kube.FindCondition(b.Status.Conditions, "Merged")
@@ -627,7 +635,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 
 			b.Generation++
 			b.Status.Checks = results
-			if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+			if err := landAs(t, f, b, gitk8s.Squash); err != nil {
 				t.Fatal(err)
 			}
 			squashed := w.Fetch("main")
@@ -673,8 +681,7 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 	} {
 		for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 			t.Run(name+"/"+landing, func(t *testing.T) {
-				srv := gittest.NewServer(t, "")
-				b, w := branches(t, srv)
+				f, b, w := branches(t)
 				w.Branch("c/x", b.Spec.ParentHead)
 				w.Write("y.txt", "y\n")
 				committer := tt.committer
@@ -684,10 +691,10 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 				odd := commitRaw(t, w, tt.author, committer)
 				moveParent(t, b, w, "m.txt", "m\n")
 				mergeParent(b, w)
-				refresh(t, b, w)
+				refresh(t, f, b)
 				main := b.Spec.ParentHead
-				before := srv.Heads(t, "app")
-				if err := landAs(t, srv, b, landing); err != nil {
+				before := f.srv.Heads(t, "app")
+				if err := landAs(t, f, b, landing); err != nil {
 					t.Fatal(err)
 				}
 				c := kube.FindCondition(b.Status.Conditions, "Merged")
@@ -697,7 +704,7 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 					}
 					return
 				}
-				if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+				if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 					t.Errorf("heads = %v, want %v", after, before)
 				}
 				msg := fmt.Sprintf("can't %s c/x onto main at %s, because %s's %s", strings.ToLower(landing), gitk8s.Short(main), gitk8s.Short(odd), tt.problem)
@@ -749,13 +756,12 @@ func TestLandingLimits(t *testing.T) {
 		"squash of one big commit on the parent": {landing: gitk8s.Squash, setup: bigOnParent, verb: "fast-forwarded"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			tt.setup(t, b, w)
-			refresh(t, b, w)
+			refresh(t, f, b)
 			main, head := b.Spec.ParentHead, b.Spec.Head
-			before := srv.Heads(t, "app")
-			if err := landAs(t, srv, b, tt.landing); err != nil {
+			before := f.srv.Heads(t, "app")
+			if err := landAs(t, f, b, tt.landing); err != nil {
 				t.Fatal(err)
 			}
 			c := kube.FindCondition(b.Status.Conditions, "Merged")
@@ -768,7 +774,7 @@ func TestLandingLimits(t *testing.T) {
 				}
 				return
 			}
-			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+			if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 				t.Errorf("heads = %v, want %v", after, before)
 			}
 			msg := fmt.Sprintf("can't %s c/x onto main at %s, because %s", strings.ToLower(tt.landing), gitk8s.Short(main), tt.problem)
@@ -779,132 +785,129 @@ func TestLandingLimits(t *testing.T) {
 	}
 }
 
-// A remote can refuse to delete a branch or to replace its commits. The
-// parent then lands alone, as in a fast-forward landing. A branch that the
-// remote won't delete moves to the landed commit if the remote lets it, so
-// the next listing shows it as Merged. A branch that stays where it was
-// shows Merged once check-base merges the parent into it.
-func TestRemoteRefusesTheBranch(t *testing.T) {
+// An external repository can refuse to delete a branch or to replace its
+// commits. The landing in the mirror's copy doesn't depend on that, so the
+// parent lands, and the sync pushes it to the external repository. The
+// external repository keeps the branch where it was, and ExternalSynced
+// says why.
+func TestExternalRepositoryRefusesTheBranch(t *testing.T) {
 	for name, tt := range map[string]struct {
-		deny  []string
-		keep  bool
-		moved bool
-		why   string
+		deny string
+		keep bool
+		why  string
 	}{
-		"deletion": {
-			deny:  []string{"receive.denyDeletes"},
-			moved: true,
-			why:   "delete it: [remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x",
-		},
-		"deletion and force push": {
-			deny: []string{"receive.denyDeletes", "receive.denyNonFastForwards"},
-			why:  "delete it: [remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x",
-		},
-		"force push to a branch that stays": {
-			deny: []string{"receive.denyNonFastForwards"},
-			keep: true,
-			why:  "move it: [remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first)",
-		},
+		"deletion":                          {deny: "receive.denyDeletes", why: "[remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x"},
+		"force push to a branch that stays": {deny: "receive.denyNonFastForwards", keep: true, why: "[remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first)"},
 	} {
 		for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 			t.Run(name+"/"+landing, func(t *testing.T) {
-				srv := gittest.NewServer(t, "")
-				b, w := branches(t, srv)
+				f, b, w := branches(t)
 				moveParent(t, b, w, "m.txt", "m\n")
 				mergeParent(b, w)
-				refresh(t, b, w)
+				refresh(t, f, b)
 				p := *b.Spec.Merge
 				p.DeleteMergedBranches = !tt.keep
 				b.Spec.Merge = &p
-				for _, key := range tt.deny {
-					srv.Config(t, "app", key, "true")
-				}
+				f.srv.Config(t, "app", tt.deny, "true")
 				main, head := b.Spec.ParentHead, b.Spec.Head
-				if err := landAs(t, srv, b, landing); err != nil {
+				if err := landAs(t, f, b, landing); err != nil {
 					t.Fatal(err)
 				}
-				heads := srv.Heads(t, "app")
-				landed := heads["main"]
+				copied := f.mirrorHeads()
+				landed := copied["main"]
 				if landed == main || landed == head {
-					t.Fatalf("main = %s, want a new commit on %s", landed, main)
+					t.Fatalf("main = %s in the mirror, want a new commit on %s", landed, main)
 				}
-				branch, left := head, "left c/x at "+gitk8s.Short(head)
-				if tt.moved {
-					branch, left = landed, "moved c/x there"
+				branch := ""
+				if tt.keep {
+					branch = landed
 				}
-				if heads["c/x"] != branch {
-					t.Errorf("c/x = %s, want %s", heads["c/x"], branch)
+				if copied["c/x"] != branch {
+					t.Errorf("c/x = %q in the mirror, want %q", copied["c/x"], branch)
 				}
 				verb := map[string]string{gitk8s.Squash: "squashed", gitk8s.Rebase: "rebased"}[landing]
-				msg := fmt.Sprintf("%s c/x onto main, which moved from %s to %s, and %s, because the remote refused to %s",
-					verb, gitk8s.Short(main), gitk8s.Short(landed), left, tt.why)
+				msg := fmt.Sprintf("%s c/x onto main, which moved from %s to %s", verb, gitk8s.Short(main), gitk8s.Short(landed))
 				if c := kube.FindCondition(b.Status.Conditions, "Merged"); c == nil || c.Reason != reasonLanded || c.Message != msg {
 					t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonLanded, msg)
 				}
-				b.Generation++
-				if tt.moved {
-					b.Spec.Head, b.Spec.ParentHead = landed, landed
-				} else {
-					b.Spec.ParentHead = w.Fetch("main")
-					mergeParent(b, w)
-					refresh(t, b, w)
+				if heads := f.srv.Heads(t, "app"); heads["main"] != landed || heads["c/x"] != head {
+					t.Errorf("external heads = %v, want main at %s and c/x at %s", heads, landed, head)
 				}
-				if err := landAs(t, srv, b, landing); err != nil {
-					t.Fatal(err)
-				}
-				if b.Status.State != reasonMerged {
-					t.Errorf("after the next listing, state = %q, want %s", b.Status.State, reasonMerged)
+				want := "the external repository refused updates to c/x (" + tt.why + ")"
+				if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.False || c.Message != want {
+					t.Errorf("ExternalSynced = %+v, want False and message %q", c, want)
 				}
 			})
 		}
 	}
 }
 
-// A remote that refuses to replace the branch's commits stops a squash or
-// rebase landing from pushing its commit to the branch for the checks. The
-// branch needs a person, instead of failing on every reconcile.
-func TestRemoteRefusesTheRewrittenBranch(t *testing.T) {
+// An external repository that refuses to replace the branch's commits
+// doesn't stop a squash or rebase landing whose gate needs results for the
+// new commits, because the merge controller moves the branch in the
+// mirror's copy, where the checks run. The external repository keeps the
+// branch's old head, and ExternalSynced says why, until the branch lands
+// and the sync deletes it there.
+func TestExternalRepositoryRefusesTheRewrittenBranch(t *testing.T) {
 	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
 		t.Run(landing, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			moveParent(t, b, w, "m.txt", "m\n")
 			mergeParent(b, w)
-			refresh(t, b, w)
+			refresh(t, f, b)
 			withHistoryCheck(b)
-			srv.Config(t, "app", "receive.denyNonFastForwards", "true")
-			before := srv.Heads(t, "app")
-			if err := landAs(t, srv, b, landing); err != nil {
+			f.srv.Config(t, "app", "receive.denyNonFastForwards", "true")
+			main, head := b.Spec.ParentHead, b.Spec.Head
+			if err := landAs(t, f, b, landing); err != nil {
 				t.Fatal(err)
 			}
-			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
-				t.Errorf("heads = %v, want %v", after, before)
+			rewritten := f.mirrorHeads()["c/x"]
+			if b.Status.State != reasonRewritten || rewritten == head {
+				t.Fatalf("state %q, c/x = %s in the mirror; want %s and a new commit", b.Status.State, rewritten, reasonRewritten)
 			}
-			verb := map[string]string{gitk8s.Squash: "squashed", gitk8s.Rebase: "rebased"}[landing]
-			c := kube.FindCondition(b.Status.Conditions, "Merged")
-			start, end := "can't push the "+verb+" commit ", " to c/x for dco to check, because the remote refused it: [remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first)"
-			if c == nil || c.Reason != reasonNeedsRebase || !strings.HasPrefix(c.Message, start) || !strings.HasSuffix(c.Message, end) {
-				t.Errorf("Merged = %+v, want reason %s and a message like %q", c, reasonNeedsRebase, start+"..."+end)
+			if heads := f.srv.Heads(t, "app"); heads["main"] != main || heads["c/x"] != head {
+				t.Errorf("external heads = %v, want main at %s and c/x at %s", heads, main, head)
+			}
+			want := "the external repository refused updates to c/x ([remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first))"
+			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.False || c.Message != want {
+				t.Errorf("ExternalSynced = %+v, want False and message %q", c, want)
+			}
+
+			t.Log("The checks pass on the new commit in the mirror, which lands by fast-forward.")
+			b.Generation++
+			b.Spec.Head = rewritten
+			b.Status.Checks = map[string]gitk8s.CheckResult{
+				"base":  {Commit: rewritten, ParentCommit: main, State: gitk8s.Passed, FilesOnly: true},
+				"gofmt": {Commit: rewritten, State: gitk8s.Passed, FilesOnly: true},
+				"dco":   {Commit: rewritten, State: gitk8s.Passed},
+			}
+			if err := landAs(t, f, b, landing); err != nil {
+				t.Fatal(err)
+			}
+			if heads := f.srv.Heads(t, "app"); heads["main"] != rewritten || heads["c/x"] != "" {
+				t.Errorf("external heads = %v, want main at %s and no c/x", heads, rewritten)
+			}
+			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.True {
+				t.Errorf("ExternalSynced = %+v, want True", c)
 			}
 		})
 	}
 }
 
-// When a check's result doesn't have filesOnly, a squash landing pushes the
-// squashed commit to the branch for the checks to run on, and lands it by
+// When a check's result doesn't have filesOnly, a squash landing moves the
+// branch to the squashed commit for the checks to run on, and lands it by
 // fast-forward once they pass.
 func TestHistoryResultsRewriteTheBranch(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, w := branches(t, srv)
+	f, b, w := branches(t)
 	w.Write("y.txt", "y\n")
 	w.Commit("add y")
-	refresh(t, b, w)
+	refresh(t, f, b)
 	withHistoryCheck(b)
 	main, head := b.Spec.ParentHead, b.Spec.Head
-	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+	if err := landAs(t, f, b, gitk8s.Squash); err != nil {
 		t.Fatal(err)
 	}
-	heads := srv.Heads(t, "app")
+	heads := f.srv.Heads(t, "app")
 	squashed := heads["c/x"]
 	if heads["main"] != main || squashed == head {
 		t.Fatalf("main = %s, c/x = %s; want main at %s and a squashed commit on c/x", heads["main"], squashed, main)
@@ -914,7 +917,7 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 		t.Errorf("squashed commit's parent and tree = %q, want %q", got, want)
 	}
 	c := kube.FindCondition(b.Status.Conditions, "Merged")
-	msg := fmt.Sprintf("squashed c/x onto main at %s as %s and pushed it to c/x, because the results of dco might depend on the branch's commits",
+	msg := fmt.Sprintf("squashed c/x onto main at %s as %s and moved c/x there, because the results of dco might depend on the branch's commits",
 		gitk8s.Short(main), gitk8s.Short(squashed))
 	if c == nil || c.Status != kube.False || c.Message != msg || b.Status.State != reasonRewritten {
 		t.Errorf("Merged = %+v, state %q", c, b.Status.State)
@@ -923,12 +926,12 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 	t.Log("The checks pass on the squashed commit, which lands by fast-forward.")
 	w.Branch("c/x", squashed)
 	b.Generation++
-	refresh(t, b, w)
+	refresh(t, f, b)
 	withHistoryCheck(b)
-	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+	if err := landAs(t, f, b, gitk8s.Squash); err != nil {
 		t.Fatal(err)
 	}
-	heads = srv.Heads(t, "app")
+	heads = f.srv.Heads(t, "app")
 	if heads["main"] != squashed {
 		t.Errorf("main = %s, want %s", heads["main"], squashed)
 	}
@@ -941,7 +944,7 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 }
 
 // A check whose result doesn't have filesOnly can push a fix to the commit
-// that a squash landing pushed to the branch. The merge controller squashes
+// that a squash landing moved the branch to. The merge controller squashes
 // again when a person adds a commit, but it lands its own commit and the
 // fixes after it by fast-forward. It recognizes its commit even when git
 // drops characters from its identity, such as the brackets in an email of
@@ -953,19 +956,18 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 		"quoted name":              {Name: `"git-k8s"`, Email: "git-k8s@example.com"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			main := b.Spec.ParentHead
 			// squash lands c/x by squash, checks that the merge controller
-			// pushed a squashed commit to c/x instead, and leaves w on that
+			// moved c/x to a squashed commit instead, and leaves w on that
 			// commit.
 			squash := func() {
 				t.Helper()
 				b.Generation++
-				refresh(t, b, w)
+				refresh(t, f, b)
 				withHistoryCheck(b)
 				head := b.Spec.Head
-				if err := landWith(t, srv, b, gitk8s.Squash, id, nil); err != nil {
+				if err := landWith(t, f, b, gitk8s.Squash, id, nil); err != nil {
 					t.Fatal(err)
 				}
 				squashed := w.Fetch("c/x")
@@ -991,13 +993,13 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			w.Write("z.txt", "z, fixed\n")
 			w.Commit("Fix z\n\nGit-K8s-Fixer: dco")
 			b.Generation++
-			refresh(t, b, w)
+			refresh(t, f, b)
 			withHistoryCheck(b)
 			head := b.Spec.Head
-			if err := landWith(t, srv, b, gitk8s.Squash, id, nil); err != nil {
+			if err := landWith(t, f, b, gitk8s.Squash, id, nil); err != nil {
 				t.Fatal(err)
 			}
-			heads := srv.Heads(t, "app")
+			heads := f.srv.Heads(t, "app")
 			if _, ok := heads["c/x"]; heads["main"] != head || ok {
 				t.Errorf("heads = %v, want main at %s and no c/x", heads, head)
 			}
@@ -1010,8 +1012,9 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 	}
 }
 
-// The pushes of squash and rebase landings carry leases on the listed heads,
-// so nothing changes when a branch moves after it's listed.
+// The ref updates of squash and rebase landings carry leases on the listed
+// heads, so nothing changes when a branch moves in the mirror after it's
+// listed.
 func TestRewriteNeedsTheListedHeads(t *testing.T) {
 	for name, tt := range map[string]struct {
 		move    string
@@ -1022,11 +1025,10 @@ func TestRewriteNeedsTheListedHeads(t *testing.T) {
 		"branch moved with a history check": {move: "c/x", history: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			srv := gittest.NewServer(t, "")
-			b, w := branches(t, srv)
+			f, b, w := branches(t)
 			w.Write("y.txt", "y\n")
 			w.Commit("add y")
-			refresh(t, b, w)
+			refresh(t, f, b)
 			if tt.history {
 				withHistoryCheck(b)
 			}
@@ -1038,12 +1040,13 @@ func TestRewriteNeedsTheListedHeads(t *testing.T) {
 			w.Write("z.txt", "z\n")
 			w.Commit("moves after the listing")
 			w.Push(tt.move)
-			before := srv.Heads(t, "app")
-			if err := landAs(t, srv, b, gitk8s.Squash); err == nil || !strings.Contains(err.Error(), "push rejected") {
-				t.Errorf("err = %v, want a rejected push", err)
+			f.fetch()
+			before := f.mirrorHeads()
+			if err := landAs(t, f, b, gitk8s.Squash); err == nil || !strings.Contains(err.Error(), "push rejected") {
+				t.Errorf("err = %v, want a rejected update", err)
 			}
-			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
-				t.Errorf("heads = %v, want %v", after, before)
+			if after := f.mirrorHeads(); !maps.Equal(after, before) {
+				t.Errorf("heads in the mirror = %v, want %v", after, before)
 			}
 		})
 	}

@@ -1,11 +1,12 @@
 // Package gitk8s defines the git-k8s API and the code that its controllers
 // share.
 //
-// People write GitRepository objects. The repository controller lists each
-// repository's branches and owns one GitBranch object for every branch that
-// the repository's rules select. Check controllers send their results to
-// the core program, which writes them to each GitBranch's status, and the
-// merge controller lands a branch on its parent when the parent's merge
+// People write GitRepository objects. The mirror in the core program keeps a
+// copy of each repository, and the repository controller syncs the copy with
+// the external repository and owns one GitBranch object for every branch
+// that the repository's rules select. Check controllers send their results
+// to the core program, which writes them to each GitBranch's status, and
+// the merge controller lands a branch on its parent when the parent's merge
 // policy allows.
 package gitk8s
 
@@ -46,8 +47,36 @@ const ApprovedByAnnotation = Group + "/approved-by"
 // many commits with this trailer a branch can have.
 const FixerTrailer = "Git-K8s-Fixer"
 
-// GitRepository is a remote git repository and the rules that select which
-// of its branches to track.
+// ControllerLabel is the label that kube puts on each object that a
+// controller declares with kube.Own. Its value is the controller's name,
+// which for a check is check- followed by the check's name.
+const ControllerLabel = "kube.imjasonh.github.io/controller"
+
+// GoTestCheck is the name of the check that runs a branch's tests in Pods
+// in the repository's namespace, and GoTestController is the name of its
+// controller. The mirror lets those Pods fetch the repository, and the core
+// program limits their network access.
+const (
+	GoTestCheck      = "gotest"
+	GoTestController = "check-" + GoTestCheck
+)
+
+// MirrorAudience is the audience of the service account tokens that
+// programs send to the mirror, the git server in the core program.
+const MirrorAudience = "git-k8s-mirror"
+
+// MirrorURL is the mirror's base URL when kube's generate installs the core
+// program, as the Service git-k8s in the namespace git-k8s.
+const MirrorURL = "http://git-k8s.git-k8s.svc"
+
+// MirrorPath returns the path of a GitRepository's copy on the mirror,
+// below the mirror's base URL.
+func MirrorPath(namespace, name string) string {
+	return "/" + namespace + "/" + name + ".git"
+}
+
+// GitRepository is an external git repository, which the mirror keeps a copy
+// of, and the rules that select which of its branches to track.
 type GitRepository struct {
 	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,shortName=gitrepo,category=git-k8s"`
 	Spec        GitRepositorySpec   `json:"spec"`
@@ -62,15 +91,15 @@ type GitRepositorySpec struct {
 	// an IP address or around an scp-like address's host:port. An scp-like
 	// address needs a user, because "@" is what tells it apart from git's
 	// <transport>::<address> syntax.
-	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^((https?|git|ssh)://([^-@/%\\[\\]\\x00-\\x1f\\x7f][^@/%\\[\\]\\x00-\\x1f\\x7f]*@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/|[^-@/:%\\[\\]\\x00-\\x1f\\x7f][^@/:%\\[\\]\\x00-\\x1f\\x7f]*@([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[([A-Za-z0-9_][A-Za-z0-9_.-]*(:[0-9]+)?|[0-9A-Fa-f:.]+)\\]):[^-\\x00-\\x1f\\x7f])[^\\x00-\\x1f\\x7f]*$" doc:"Remote URL: an https, http, git, or ssh URL, or an scp-like address with a user name, such as git@example.com:app.git. Without a user name, write an ssh:// URL, such as ssh://example.com/~/app.git."`
-	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, controllers send git."`
+	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^((https?|git|ssh)://([^-@/%\\[\\]\\x00-\\x1f\\x7f][^@/%\\[\\]\\x00-\\x1f\\x7f]*@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/|[^-@/:%\\[\\]\\x00-\\x1f\\x7f][^@/:%\\[\\]\\x00-\\x1f\\x7f]*@([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[([A-Za-z0-9_][A-Za-z0-9_.-]*(:[0-9]+)?|[0-9A-Fa-f:.]+)\\]):[^-\\x00-\\x1f\\x7f])[^\\x00-\\x1f\\x7f]*$" doc:"URL of the external repository, which the mirror reaches with git: an https, http, git, or ssh URL, or an scp-like address with a user name, such as git@example.com:app.git. Without a user name, write an ssh:// URL, such as ssh://example.com/~/app.git."`
+	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, the mirror sends git."`
 	// PollInterval is a Go duration.
-	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`
-	OctoSTS      *OctoSTS     `json:"octoSTS,omitempty" doc:"Trust policies that controllers use to exchange their service account tokens for GitHub tokens with Octo STS. The URL must be the https URL of a github.com repository, such as https://github.com/OWNER/REPO.git."`
-	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each remote branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
+	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often the mirror fetches the external repository's branches, such as 30s or 5m."`
+	OctoSTS      *OctoSTS     `json:"octoSTS,omitempty" doc:"Trust policies that the core program uses to exchange its service account tokens for GitHub tokens with Octo STS. The URL must be the https URL of a github.com repository, such as https://github.com/OWNER/REPO.git."`
+	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
 	// Only the programs that make commits read the Secret that SigningKeyRef
 	// names, through package signing.
-	SigningKeyRef *SecretRef `json:"signingKeyRef,omitempty" doc:"Secret in the same namespace with an ssh-privatekey key that holds an unencrypted private key in OpenSSH format, such as a kubernetes.io/ssh-auth Secret. It must name a different Secret from secretRef, because test Pods get keys from that Secret. Checks use it to sign the commits that they push, the merge controller to sign the commits of squash and rebase landings, and git-k8s-deps to sign its dependency updates. Without it, those commits aren't signed."`
+	SigningKeyRef *SecretRef `json:"signingKeyRef,omitempty" doc:"Secret in the same namespace with an ssh-privatekey key that holds an unencrypted private key in OpenSSH format, such as a kubernetes.io/ssh-auth Secret. It must name a different Secret from secretRef, so that the checks that sign commits never hold the external repository's credentials. Checks use it to sign the commits that they push, the merge controller to sign the commits of squash and rebase landings, and git-k8s-deps to sign its dependency updates. Without it, those commits aren't signed."`
 }
 
 // SecretRef names a Secret in the same namespace.
@@ -82,7 +111,7 @@ type SecretRef struct {
 // name of a trust policy file, .github/chainguard/IDENTITY.sts.yaml, on the
 // repository's default branch.
 type OctoSTS struct {
-	GitIdentity       string `json:"gitIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token fetches and pushes, instead of a Secret, so secretRef must be empty. Its trust policy needs contents: write."`
+	GitIdentity       string `json:"gitIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token the mirror fetches and pushes with, instead of a Secret, so secretRef must be empty. Its trust policy needs contents: write."`
 	CheckRunsIdentity string `json:"checkRunsIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token publishes check results as GitHub check runs. Its trust policy needs checks: write. Without it, git-k8s doesn't publish check runs."`
 }
 
@@ -98,11 +127,11 @@ type BranchRule struct {
 type MergePolicy struct {
 	Checks              []CheckPolicy `json:"checks,omitempty" doc:"Checks that run on every branch proposed to this one."`
 	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
-	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward|Squash|Rebase,default=FastForward" doc:"How to land a branch, which must contain the parent's head. FastForward moves the parent to the branch's head. Squash makes one commit with the head's files on top of the parent's head, and Rebase copies each of the branch's commits that isn't a merge onto it. The squashed commit, or the last rebased commit, has the files that the checks saw and builds on the parent head that they saw, so results with filesOnly count for it. When the gate needs other results, the merge controller pushes the new commits to the branch for the checks to run on."`
-	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer of the branch's commits that the parent doesn't have. The limit stops two checks that disagree from pushing forever. A squashed commit that the merge controller pushes to the branch leaves out the fixes before it, so the count starts again after it. The merge controller doesn't squash the fixes after its own commit again."`
+	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward|Squash|Rebase,default=FastForward" doc:"How to land a branch, which must contain the parent's head. FastForward moves the parent to the branch's head. Squash makes one commit with the head's files on top of the parent's head, and Rebase copies each of the branch's commits that isn't a merge onto it. The squashed commit, or the last rebased commit, has the files that the checks saw and builds on the parent head that they saw, so results with filesOnly count for it. When the gate needs other results, the merge controller moves the branch to the new commits for the checks to run on."`
+	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer of the branch's commits that the parent doesn't have. The limit stops two checks that disagree from pushing forever. A squashed commit that the merge controller moves the branch to leaves out the fixes before it, so the count starts again after it. The merge controller doesn't squash the fixes after its own commit again."`
 	MaxAgentRuns        *int32        `json:"maxAgentRuns,omitempty" kube:"min=0,max=1000,default=10" doc:"Most agent runs that each agentic check, such as review, can start on one branch. Each new head needs a run, so the limit caps the runs that one branch can start, not what they cost."`
-	// DeleteMergedBranches deletes a branch from the remote after it lands.
-	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch from the remote after it lands."`
+	// DeleteMergedBranches deletes a branch after it lands.
+	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch after it lands."`
 }
 
 // Check returns the policy for the named check, or nil if the policy doesn't
@@ -164,8 +193,8 @@ type Repository struct {
 }
 
 // GitBranch is one branch that a GitRepository tracks. The repository
-// controller owns these objects and writes their spec from what it lists on
-// the remote, so don't edit them by hand.
+// controller owns these objects and writes their spec from the mirror's copy
+// of the repository, so don't edit them by hand.
 //
 // Two controllers write a GitBranch's status, each a different part: the
 // core program's results controller writes Status.Checks with the results
@@ -181,9 +210,9 @@ type GitBranch struct {
 type GitBranchSpec struct {
 	Repository string       `json:"repository" doc:"Name of the GitRepository in the same namespace."`
 	Branch     string       `json:"branch" kube:"column=Branch" doc:"Branch name without refs/heads/."`
-	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to on the remote."`
+	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to in the mirror."`
 	Parent     string       `json:"parent,omitempty" kube:"column=Parent" doc:"Branch that this branch proposes changes to."`
-	ParentHead string       `json:"parentHead,omitempty" doc:"Commit that the parent points to on the remote, listed at the same time as head."`
+	ParentHead string       `json:"parentHead,omitempty" doc:"Commit that the parent points to in the mirror, listed at the same time as head."`
 	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent."`
 }
 
@@ -232,9 +261,10 @@ const (
 )
 
 // ResultsAudience is the audience of the service account tokens that checks
-// send with their results, and the only audience that the core program
-// accepts. Because it's a constant, generate mounts a token for it in each
-// check's Pod, and checks need no permission to create one.
+// send with their results. The core program's results endpoint accepts
+// tokens only for this audience, and its mirror only for MirrorAudience.
+// Because it's a constant, generate mounts a token for it in each check's
+// Pod, and checks need no permission to create one.
 const ResultsAudience = "git-k8s-results"
 
 // Limits on a result that the core program accepts from a check. The checks
