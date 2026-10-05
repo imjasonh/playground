@@ -200,7 +200,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -327,13 +327,14 @@ another top-level module with a relative path is also selected when that
 directory changes, so a change under `kube/` tests `git-k8s` too. `inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
 Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
-tests and firmware cross-builds instead.
+tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
+pinned Wrangler version) selects every Cloudflare Worker app.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
 | Go | `go.mod` | `go build ./...` → `go test -race ./...` |
-| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then the wrangler `[build]` command (with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
+| Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
 | site index | `.github/pages/index.html.tmpl`, `render-index.py`, `publish-site-index.sh`, or the index discovery/test scripts, via `discover-index.sh` | `python3 .github/scripts/render-index_test.py` and `bash .github/scripts/discover-index_test.sh` |
@@ -411,7 +412,7 @@ test workflow gates on:
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
 | Go | `go get -u ./...` | `go build ./...` → `go test -race ./...` |
-| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + the wrangler `[build]` command |
+| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 
@@ -440,6 +441,28 @@ to publish, from the same paths that the publish step commits.
 failure reporting. To test change detection, run
 `bash .github/scripts/manage-dependency-update_test.sh`. New apps are
 discovered automatically — no workflow edits are needed.
+
+### Dependabot (Cloudflare Worker apps)
+
+`cargo update` can't cross a semver-incompatible release, and `deps.yaml`
+doesn't manage toolchains or CI tools. For the Cloudflare Worker apps,
+`.github/dependabot.yml` covers the rest with weekly pull requests:
+
+- `cargo` updates bump requirements in each Worker's `Cargo.toml`. The
+  `worker` crate family and the RustCrypto crates are grouped, because each
+  family has to move together.
+- `rust-toolchain` updates bump the `channel` in every Worker's
+  `rust-toolchain.toml` in one pull request.
+- `npm` updates bump the Wrangler version in `.github/wrangler/package.json`,
+  which `deploy-workers.yml`, the Worker CI check, and the Worker e2e scripts
+  read.
+- `github-actions` updates cover `cloudflare/wrangler-action` only.
+
+worker-build has no pin of its own. Each Worker's `[build]` command installs
+the worker-build release that matches the locked `worker` crate
+(`cargo pkgid worker`), so a `worker` bump updates both. These pull requests
+run the normal `test.yml` checks for the Workers they touch (a Wrangler bump
+selects every Worker). Dependabot doesn't enable auto-merge.
 
 ## Adding a new browser app
 

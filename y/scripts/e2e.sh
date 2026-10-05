@@ -5,7 +5,9 @@
 #   Y_URL=https://... ./scripts/e2e.sh
 #                                 # against an already-running backend
 #
-# Local mode needs node/npx, the wasm32 target, and worker-build 0.8.5.
+# Local mode needs node/npx, the wasm32 target, and worker-build (the version
+# that matches the locked worker crate; see wrangler.toml [build]). Wrangler is
+# the version pinned in ../.github/wrangler/package.json.
 # It swaps in a temporary .dev.vars (restored on exit) and applies D1
 # migrations to an isolated persist directory.
 set -euo pipefail
@@ -42,9 +44,10 @@ EOF
   touch "$TMP/wrote-dev-vars"
 
   worker-build --release >/dev/null
+  WRANGLER="wrangler@$(node -p "require('../.github/wrangler/package.json').devDependencies.wrangler")"
 
-  npx -y wrangler@4.147.0 d1 migrations apply y --local --persist-to "$TMP/state" >/dev/null
-  npx -y wrangler@4.147.0 dev --port "$PORT" --local --persist-to "$TMP/state" \
+  npx -y "$WRANGLER" d1 migrations apply y --local --persist-to "$TMP/state" >/dev/null
+  npx -y "$WRANGLER" dev --port "$PORT" --local --persist-to "$TMP/state" \
     >"$TMP/wrangler.log" 2>&1 &
   WRANGLER_PID=$!
   Y_URL="http://127.0.0.1:${PORT}"

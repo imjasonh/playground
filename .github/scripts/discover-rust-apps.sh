@@ -8,7 +8,9 @@
 #     List every Rust app in the repo.
 #
 #   discover-rust-apps.sh --from-changes [path...]
-#     List Rust apps touched by the given paths (or stdin when no args).
+#     List Rust apps touched by the given paths (or stdin when no args). A
+#     change under .github/wrangler/ (the pinned Wrangler version) selects
+#     every Cloudflare Worker app, since all of them build and deploy with it.
 set -euo pipefail
 
 is_rust_app() {
@@ -63,6 +65,15 @@ collect_rust_apps_from_changes() {
   declare -A seen=()
   for path in "${paths[@]}"; do
     [[ -z "$path" ]] && continue
+    if [[ "$path" == .github/wrangler/* ]]; then
+      for dir in */; do
+        name="${dir%/}"
+        if is_rust_app "$name" && [[ -f "$name/wrangler.toml" ]]; then
+          apps+=("$name")
+        fi
+      done
+      continue
+    fi
     [[ "$path" != */* ]] && continue
     name="${path%%/*}"
     if [[ -n "${seen[$name]+x}" ]]; then

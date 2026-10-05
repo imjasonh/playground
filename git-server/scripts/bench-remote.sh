@@ -41,7 +41,8 @@ if [ -z "${GIT_SERVER_URL:-}" ]; then
   echo "==> no GIT_SERVER_URL; building Worker and starting wrangler dev (local workerd)"
   PORT="${PORT:-8787}"
   worker-build --release >/dev/null
-  npx -y wrangler@4 dev --port "$PORT" --local >"$TMP/wrangler.log" 2>&1 &
+  WRANGLER="wrangler@$(node -p "require('../.github/wrangler/package.json').devDependencies.wrangler")"
+  npx -y "$WRANGLER" dev --port "$PORT" --local >"$TMP/wrangler.log" 2>&1 &
   WRANGLER_PID=$!
   GIT_SERVER_URL="http://127.0.0.1:$PORT"
   for i in $(seq 1 60); do

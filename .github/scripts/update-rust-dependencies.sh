@@ -80,7 +80,9 @@ for app in "${apps[@]}"; do
   fi
 
   # Cloudflare Worker apps: same deploy build path as test-rust-apps.sh (wasm
-  # clippy/build plus wrangler [build] command with a decoy package.json).
+  # clippy/build plus `wrangler deploy --dry-run` with the pinned Wrangler).
+  # The helper removes its decoy package.json on exit, so a failure pull
+  # request never commits it.
   # Bash ignores `set -e` inside an `if` condition, so run the subshell as its
   # own command and check its status afterward.
   if [ -f "$app/wrangler.toml" ]; then
@@ -90,22 +92,15 @@ for app in "${apps[@]}"; do
       rustup target add wasm32-unknown-unknown
       cargo clippy --target wasm32-unknown-unknown -- -D warnings
       cargo build --release --target wasm32-unknown-unknown
-      # A leftover decoy would be committed with the failure pull request.
-      trap 'rm -f package.json package-lock.json' EXIT
-      printf '%s\n' '{"dependencies":{"wrangler":"4.107.0"}}' > package.json
-      build_cmd=$(
-        python3 -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('wrangler.toml').read_text())['build']['command'])"
-      )
-      bash -c "$build_cmd"
-      test -f build/worker/shim.mjs
+      bash "$repo_root/.github/scripts/check-worker-deploy-build.sh"
     )
     worker_status=$?
     if [ "$worker_status" -eq 0 ]; then
-      echo "- ✅ \`${app}\`: wasm + worker-build passed" >> "$GITHUB_STEP_SUMMARY"
+      echo "- ✅ \`${app}\`: wasm + wrangler deploy --dry-run passed" >> "$GITHUB_STEP_SUMMARY"
     else
       result=failure
-      echo "::error title=Worker build failed::${app}: wasm32 clippy/build or wrangler [build] command"
-      echo "- ❌ \`${app}\`: wasm + worker-build failed" >> "$GITHUB_STEP_SUMMARY"
+      echo "::error title=Worker build failed::${app}: wasm32 clippy/build or wrangler deploy --dry-run"
+      echo "- ❌ \`${app}\`: wasm + wrangler deploy --dry-run failed" >> "$GITHUB_STEP_SUMMARY"
     fi
   fi
 

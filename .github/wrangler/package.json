@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Pins the Wrangler version that deploy-workers.yml, the Worker CI checks, and the Worker e2e scripts use. Dependabot proposes bumps.",
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}
