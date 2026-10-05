@@ -1,16 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/config"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
+	"go.yaml.in/yaml/v3"
 )
 
 var policy = &gitk8s.MergePolicy{
@@ -242,6 +248,65 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 			!strings.HasSuffix(c.Message, `; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}'`)) {
 			t.Errorf("with matchResources %s, PoliciesInstalled = %+v", tc.matchResources, c)
 		}
+	}
+}
+
+// TestPoliciesMatchConfig checks PoliciesInstalled against the policies and
+// bindings in config/policy.yaml, which the core program installs.
+func TestPoliciesMatchConfig(t *testing.T) {
+	var world []any
+	var names []string
+	reads := map[string]bool{}
+	var bindings []*admissionPolicyBinding
+	dec := yaml.NewDecoder(bytes.NewReader(config.Policy))
+	for {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch doc["kind"] {
+		case "ValidatingAdmissionPolicy":
+			p := &admissionPolicy{}
+			if err := json.Unmarshal(b, p); err != nil {
+				t.Fatal(err)
+			}
+			names = append(names, p.Name)
+			reads[p.Name] = p.Spec.ParamKind != nil
+			world = append(world, p)
+		case "ValidatingAdmissionPolicyBinding":
+			binding := &admissionPolicyBinding{}
+			if err := json.Unmarshal(b, binding); err != nil {
+				t.Fatal(err)
+			}
+			bindings = append(bindings, binding)
+			world = append(world, binding)
+		}
+	}
+	var want []string
+	for _, p := range policies {
+		want = append(want, p.name)
+	}
+	if !slices.Equal(names, want) {
+		t.Errorf("config/policy.yaml holds the policies %v, but PoliciesInstalled reads %v", names, want)
+	}
+	for _, b := range bindings {
+		if (b.Spec.ParamRef != nil) != reads[b.Spec.PolicyName] {
+			t.Errorf("binding %s names parameters = %v, but its policy %s reads them = %v", b.Name, b.Spec.ParamRef != nil, b.Spec.PolicyName, reads[b.Spec.PolicyName])
+		}
+	}
+	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil)}
+	repo.Namespace = "default"
+	ctx, _ := kube.Fake(t.Context(), repo, world...)
+	if c := policiesCondition(ctx, true); c.Status != kube.True {
+		t.Errorf("with the objects in config/policy.yaml, PoliciesInstalled = %+v", c)
 	}
 }
 
