@@ -201,18 +201,22 @@ Questions to settle first:
   the cluster, or the check follows the run itself.
 - Which GitHub branches a cloud agent may push to.
 
-## Push dependency branches to the mirror
+## Let update Pods fetch from the mirror
 
-[`git-k8s-deps`](README.md#dependency-updates) pushes dependency branches
-with the repository's credentials, and its update Pods fetch with them too.
-So the controller reads Secrets, and only its own code keeps its pushes
-under its prefix. Once the [mirror](#run-an-in-cluster-git-mirror) exists,
-the core program gives the service account `git-k8s-deps` in the namespace
-`git-k8s-deps` the prefix `deps/`. The controller then pushes to the mirror
-with a projected service account token, and its update Pods fetch from the
-mirror with tokens bound to the Pods, like test Pods. Once the mirror also
-[signs commits](#sign-commits-in-the-mirror), the controller stops reading
-Secrets.
+[`git-k8s-deps`](README.md#update-pods) reads branches from the mirror and
+pushes its branches there, but its update Pods fetch the parent from the
+external repository with the repository's credentials. The mirror accepts a
+token that's bound to a Pod only from a check's Pod, which a `Running`
+result names. So an update Pod gets credentials that can push to any
+branch, a repository that gets tokens from Octo STS has to be public, and
+right after the parent moves, an update can find it at another commit in the
+external repository. The mirror could also accept a Pending Pod that a
+controller with a branch-name prefix names in a record that only the
+controller's service account can write, and that has the controller's label.
+Update Pods, and agent Pods that a controller starts with `RunJob`, could
+then fetch from the mirror with tokens bound to the Pods, like test Pods.
+Once the mirror also [signs commits](#sign-commits-in-the-mirror),
+`git-k8s-deps` stops reading Secrets.
 
 ## Update npm and Cargo dependencies
 

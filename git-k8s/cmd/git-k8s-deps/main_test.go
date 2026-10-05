@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -141,7 +142,7 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work) *fixture {
 		prefix:     "deps/", goProxy: fp.URL, goSumDB: "off",
 		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", resultImage: "registry.example.com/agent-runner:test",
 		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour,
-		now: func() time.Time { return f.clock }, resultPort: port,
+		now: func() time.Time { return f.clock }, remote: srv.RemoteFor, resultPort: port,
 	}
 	return f
 }
@@ -412,7 +413,39 @@ func (f *fixture) restart() {
 		cfg: old.cfg, checkEmail: old.checkEmail, prefix: old.prefix, goProxy: old.goProxy, goSumDB: old.goSumDB,
 		goImage: old.goImage, gitImage: old.gitImage, resultImage: old.resultImage, runtimeClass: old.runtimeClass,
 		timeout: old.timeout, sourceSize: old.sourceSize, goCacheSize: old.goCacheSize, maxPods: old.maxPods,
-		interval: old.interval, minAge: old.minAge, seenConfigMap: old.seenConfigMap, now: old.now, resultPort: old.resultPort,
+		interval: old.interval, minAge: old.minAge, seenConfigMap: old.seenConfigMap, now: old.now, remote: old.remote,
+		resultPort: old.resultPort,
+	}
+}
+
+// serveMirror serves the repositories on srv like the mirror: at
+// /default/NAME.git, to requests with a token from kube.RequestToken. It
+// sends srv's credentials, which the controller doesn't have. The -mirror
+// flag points to that server until the test ends.
+func serveMirror(t *testing.T, srv *gittest.Server) {
+	t.Helper()
+	upstream, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	m := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		path, ok := strings.CutPrefix(r.URL.Path, "/default/")
+		switch {
+		case !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer fake-token-"):
+			http.Error(rw, "send a token for the mirror", http.StatusUnauthorized)
+		case !ok:
+			http.NotFound(rw, r)
+		default:
+			r.URL.Path = "/" + path
+			r.SetBasicAuth(srv.Username, srv.Password)
+			proxy.ServeHTTP(rw, r)
+		}
+	}))
+	t.Cleanup(m.Close)
+	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
+	if err := flag.Set("mirror", m.URL); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1549,9 +1582,9 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 		{name: "another digest", result: result(updated("v1.1.0")), digest: "sha256:" + strings.Repeat("0", 64)},
 		{name: "the source doesn't check out", status: func(p *agent.Pod) {
 			p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
-				{Name: "prepare", State: terminated(&agent.Terminated{ExitCode: 3, Message: "main no longer points to 0123abcd"})},
+				{Name: "prepare", State: terminated(&agent.Terminated{ExitCode: 128, Message: "fatal: couldn't find remote ref refs/heads/main"})},
 			}}
-		}},
+		}, want: "preparing the source in Pod"},
 		{name: "the update container fails", status: func(p *agent.Pod) {
 			p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
 				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
@@ -1634,6 +1667,66 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 				t.Errorf("trying again starts Pod %s again, want a new Pod", p.Name)
 			}
 		})
+	}
+}
+
+// The mirror pushes a parent that moves to the external repository soon
+// after, so the first time on a head that an update Pod finds the parent at
+// another commit there, its updates run again after errorRetry instead of
+// -interval.
+func TestTriesAgainSoonWhenTheExternalRepositoryIsBehind(t *testing.T) {
+	behind := func(p *agent.Pod) *agent.Pod {
+		p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
+			{Name: "prepare", State: terminated(&agent.Terminated{ExitCode: behindStatus, Message: "main is at 0123abcd in the external repository, not at 4567cdef"})},
+		}}
+		return p
+	}
+	f := newFixture(t)
+	p := f.start()
+	if rec := f.checkBranch("", behind(p)); rec.RequeueAfter() != time.Second {
+		t.Errorf("RequeueAfter() = %v, want 1s, to stop declaring the Pod", rec.RequeueAfter())
+	}
+	if got := f.failure("v1.1.0"); !strings.Contains(got, "in the external repository, not at 4567cdef") {
+		t.Errorf("the update failed with %q, want why the prepare container stopped", got)
+	}
+	if rec := f.checkStays("", p); rec.RequeueAfter() != errorRetry {
+		t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), errorRetry)
+	}
+
+	t.Log("After errorRetry, a new Pod makes the update. When it finds main behind too, the update waits for -interval.")
+	f.clock = f.clock.Add(errorRetry)
+	again := f.start()
+	if again.Name == p.Name {
+		t.Errorf("trying again starts Pod %s again, want a new Pod", p.Name)
+	}
+	f.checkBranch("", behind(again))
+	if rec := f.checkStays("", again); rec.RequeueAfter() != f.u.interval {
+		t.Errorf("RequeueAfter() = %v, want the interval", rec.RequeueAfter())
+	}
+
+	t.Log("Once main moves, the first Pod that finds it behind gets errorRetry again.")
+	f.moveMain("app.go", "package app\n\n// Moved.\n")
+	p = f.start()
+	f.checkBranch("", behind(p))
+	if rec := f.checkStays("", p); rec.RequeueAfter() != errorRetry {
+		t.Errorf("RequeueAfter() = %v after main moved, want %v", rec.RequeueAfter(), errorRetry)
+	}
+}
+
+// Outside tests, the controller reaches repositories through the mirror
+// with a token from kube.RequestToken, and its update Pods fetch from the
+// external repository.
+func TestReachesRepositoriesThroughTheMirror(t *testing.T) {
+	f := newFixture(t)
+	f.u.remote = nil
+	serveMirror(t, f.srv)
+	p := f.start()
+	if got, want := env(p.Spec.InitContainers[0], "URL"), f.srv.Remote("app").URL; got != want {
+		t.Errorf("the prepare container's URL = %q, want the external repository's, %q", got, want)
+	}
+	f.finish(p, result(updated("v1.1.0")))
+	if head := f.srv.Heads(t, "app")[greetBranch]; head == "" {
+		t.Fatalf("the controller didn't push %s through the mirror", greetBranch)
 	}
 }
 

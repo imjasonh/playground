@@ -250,9 +250,11 @@ crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
 # the objects in config/policy.yaml. The service account e2e-deps stands in
-# for a controller that starts branches, and check-conflicts creates
+# for a controller that starts branches, and git-k8s-deps, which the deps
+# group installs, starts deps/ branches too. check-conflicts creates
 # resolve/BRANCH. The test Pods' NetworkPolicy lets them reach go-cache.
 install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
+  "-branch-prefix=git-k8s-deps/git-k8s-deps=deps/" \
   "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github" \
   -go-cache-namespace=go-cache
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
@@ -2221,6 +2223,20 @@ if k -n check-deps auth can-i create serviceaccounts/check-deps --subresource=to
   exit 1
 fi
 echo "check-deps can't list Secrets or create tokens."
+# git-k8s-deps reads and pushes branches through the mirror, under the
+# prefix that the core program gives it, and its update Pods get the
+# repository's credentials from the kubelet. It gets Secrets only by name,
+# for its signing key.
+if can_list_secrets git-k8s-deps; then
+  echo "git-k8s-deps can list Secrets" >&2
+  exit 1
+fi
+if k -n git-k8s-deps auth can-i create serviceaccounts/git-k8s-deps --subresource=token \
+  --as=system:serviceaccount:git-k8s-deps:git-k8s-deps; then
+  echo "git-k8s-deps can create tokens for its service account" >&2
+  exit 1
+fi
+echo "git-k8s-deps can't list Secrets or create tokens."
 GREET_BRANCH="deps/go/example.com/greet@v1"
 deps_main_requires() {
   dg fetch -q "${HOST_URL}/deps.git" main && dg show FETCH_HEAD:go.mod | grep -qx "require example.com/greet $1"

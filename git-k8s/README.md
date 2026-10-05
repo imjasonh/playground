@@ -2606,8 +2606,9 @@ approves the fix before it lands.
 in a Pod, as `check-gotest` runs tests. Each Pod makes up to 10 updates on
 one parent's head, and has three containers:
 
-- The `prepare` init container fetches the parent's head with the
-  repository's credentials. It's the only container that gets them.
+- The `prepare` init container fetches the parent's head from the external
+  repository with the repository's credentials. It's the only container that
+  gets them.
 - The `update` init container runs `go get`, and then `go mod tidy` in
   modules that were tidy, as user 65532 with no service account token, no
   privileges, and a read-only root file system. `GOPROXY` holds only the
@@ -2651,13 +2652,23 @@ TCP port 8080. A NetworkPolicy like the one in
 allows that. For `check-deps`'s agent Pods, allow requests from the
 namespace `check-deps` too.
 
-Until git-k8s has a mirror, the controller pushes with the repository's
-credentials, which can push to any branch, so it refuses to push branches
-outside its prefix. It reads the repository's Secret, so `generate` lets it
-read every Secret, and `config/policy.yaml` stops it from approving or
-changing `GitBranch` objects. [Push dependency branches to the
-mirror](future-work.md#push-dependency-branches-to-the-mirror) proposes the
-fix.
+The controller reads the parent's head from the mirror and pushes its
+branches there, so the core program must give its service account the
+controller's prefix, as [The mirror](#the-mirror) describes. The controller
+also refuses to push branches outside the prefix. It reads Secrets only to
+sign its commits, and `config/policy.yaml` stops it from approving or
+changing `GitBranch` objects.
+
+The mirror accepts a token that's bound to a Pod only from a check's Pod, so
+the `prepare` container fetches the parent from the external repository
+instead. When the parent moves, the mirror pushes it to the external
+repository soon after, but an update Pod can start in between. Then the
+`prepare` container finds the parent at another commit and exits with
+status 3. The first time that happens on a parent's head, the controller
+tries those updates again after a minute, or after `-interval` if that's
+shorter. After that, they wait for `-interval`, or until the parent moves.
+[Let update Pods fetch from the mirror](future-work.md#let-update-pods-fetch-from-the-mirror)
+proposes a fix.
 
 ### Install the dependency controller
 
@@ -2671,6 +2682,11 @@ containers from that image, and `check-deps` runs agents in it:
 go run ./cmd/git-k8s-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -result-image="${image}" | kubectl apply -f -
 go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
 ```
+
+Pass the core program `-branch-prefix=git-k8s-deps/git-k8s-deps=deps/`, with
+the controller's namespace, service account, and `-prefix`. The mirror
+refuses the controller until the core program gives its service account the
+prefix, as [The mirror](#the-mirror) describes.
 
 Upgrade the core program first, because it installs `config/policy.yaml`
 when it starts, and the second policy there stops `git-k8s-deps` from
@@ -3215,9 +3231,12 @@ and that `git-k8s-deps` keeps when it first saw a version through a restart.
 - The branch-name prefix `resolve/` lets `check-conflicts` fetch every
   repository's copy, and push under `resolve/` in each, even in a repository
   whose merge policies don't list the `conflicts` check.
-- Agent Pods that a controller starts with `RunJob` fetch from the external
-  repository with its credentials, because the mirror accepts a token that's
-  bound to a Pod only from a check's Pod.
+- Agent Pods that a controller starts with `RunJob`, and the update Pods of
+  `git-k8s-deps`, fetch from the external repository with its credentials,
+  because the mirror accepts a token that's bound to a Pod only from a check's
+  Pod. So with Octo STS, `git-k8s-deps` updates only a public repository, and
+  while the external repository is behind the mirror, its updates wait, as
+  [Update Pods](#update-pods) describes.
 - `git-k8s-deps` keeps at most 256 KiB of first-seen times in its ConfigMap,
   and drops the oldest first, so after a restart, a version whose time it
   dropped waits `-min-age` again. When a write leaves out times, it logs a
