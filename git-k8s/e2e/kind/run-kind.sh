@@ -389,6 +389,96 @@ signed_by_git_k8s() {
   "${run}" verify-commit "$1"
   [[ "$("${run}" log -1 --format='%G? %GS %ce' "$1")" == "G ${IDENTITY} ${IDENTITY}" ]]
 }
+# zombies prints each zombie process on the cluster's nodes, with its parent.
+# A process is a zombie from when it exits until its parent reaps it. In
+# /proc/PID/stat, the state and the parent's PID follow the command name,
+# which can contain spaces and ends at the last ")".
+zombies() {
+  local nodes node
+  nodes="$(kind get nodes --name "${CLUSTER}")"
+  [[ -n "${nodes}" ]]
+  for node in ${nodes}; do
+    docker exec "${node}" sh -c '
+      node=$1
+      for stat in /proc/[0-9]*/stat; do
+        read -r line 2>/dev/null <"${stat}" || continue
+        set -- ${line##*) }
+        if [ "$1" = Z ]; then
+          name="${line#*(}"
+          echo "${node}: process ${line%% *} (${name%)*}), a child of $2 ($(cat "/proc/$2/comm" 2>/dev/null))"
+        fi
+      done' sh "${node}"
+  done
+}
+# no_lasting_zombies fails if a zombie on the nodes is still one 10 seconds
+# later, because then its parent doesn't reap it.
+no_lasting_zombies() {
+  local before after lasting
+  before="$(zombies | sort)"
+  sleep 10
+  after="$(zombies | sort)"
+  lasting="$(comm -12 <(echo "${before}") <(echo "${after}"))"
+  if [[ -n "${lasting}" ]]; then
+    echo "These zombies lasted 10 seconds:" >&2
+    echo "${lasting}" >&2
+    return 1
+  fi
+}
+
+echo "::group::Failed git commands leave no zombies"
+# When a fetch or an ls-remote over HTTP fails, git exits without waiting for
+# its remote helper, which then becomes a child of PID 1. Moving a repository
+# away on the git server fails the core program's listings and check-risk's
+# fetches. A listing that fails keeps every GitBranch, so once c/gone's
+# result is removed, check-risk fetches c/gone again.
+g push -q "${HOST_URL}/zombie.git" main
+g checkout -q --detach
+echo gone >"${WORK}/gone.txt"
+g add gone.txt
+g commit -qm "Add gone.txt"
+gone="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/zombie.git" HEAD:refs/heads/c/gone
+g checkout -q main
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: zombie
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/zombie.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: risk
+        when: checks.risk.outputs.level == "none"
+    - match: c/**
+      parent: main
+EOF
+gone_risk() { k -n "${NS}" get gitbranch "$(branch_object c/gone zombie)" -o jsonpath="{.status.checks.risk.$1}"; }
+gone_checked() { [[ -n "$(branch_object c/gone zombie)" && "$(gone_risk commit)" == "${gone}" ]]; }
+eventually 120 gone_checked
+mv "${WORKDIR}/repos/zombie.git" "${WORKDIR}/repos/moved.git"
+k -n "${NS}" patch gitbranch "$(branch_object c/gone zombie)" --subresource=status --type=json \
+  -p '[{"op":"remove","path":"/status/checks/risk"}]'
+fetch_failed() { [[ "$(gone_risk state)" == Error && "$(gone_risk message)" == *"not found"* ]]; }
+eventually 60 fetch_failed
+gone_risk message
+echo
+list_failed() {
+  [[ "$(k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')" == ListFailed ]]
+}
+eventually 60 list_failed
+k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}'
+echo
+no_lasting_zombies
+k -n "${NS}" delete gitrepository zombie
+echo "The core program's listings and check-risk's fetch of a repository that moved failed, and no zombie on the nodes lasted 10 seconds."
+echo "::endgroup::"
 
 echo "::group::The git server rejects unsigned commits"
 g checkout -q -b c/unsigned
@@ -1842,6 +1932,23 @@ idle() {
 }
 eventually 60 idle
 echo "Four polls of the remote wrote nothing."
+echo "::endgroup::"
+
+echo "::group::No zombie lasts, and the programs' Pods meet the restricted Pod Security Standard"
+no_lasting_zombies
+# generate doesn't label the programs' namespaces, so their Pods get only the
+# cluster's default Pod Security level. A server-side dry run of the
+# restricted label warns about each Pod that violates it.
+programs=(git-k8s go-cache "${CHECKS[@]}" check-review check-conflicts check-deps git-k8s-deps)
+for program in "${programs[@]}"; do
+  k label --dry-run=server --overwrite namespace "$(namespace_of "${program}")" \
+    pod-security.kubernetes.io/enforce=restricted 2>&1 >/dev/null | tee "${WORKDIR}/pod-security.log"
+  if grep -q violate "${WORKDIR}/pod-security.log"; then
+    echo "${program}'s Pods violate the restricted Pod Security Standard" >&2
+    exit 1
+  fi
+done
+echo "No zombie on the nodes lasted 10 seconds, and the Pods of all ${#programs[@]} programs meet the restricted Pod Security Standard."
 echo "::endgroup::"
 
 echo "kind e2e passed"

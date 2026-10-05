@@ -877,7 +877,12 @@ The command does the following:
    replica, the Deployment runs the program with `-leader-elect`, or with
    `-shards` when you set `-shards`. The container's root file system is
    read-only, with an `emptyDir` volume at `/tmp` for temporary files.
-   `-tmp-size` limits the volume's size. A projected volume at
+   `-tmp-size` limits the volume's size. The Pod shares one process
+   namespace, so the pause container is PID 1 and reaps the processes that
+   the program's subprocesses leave behind, which a Go program doesn't do.
+   A container that you add to the Pod can see the program's processes and
+   their arguments, and if it runs as the same user, their environment
+   variables and files. A projected volume at
    `/var/run/secrets/tokens` holds a token for each constant audience that
    the program passes to `RequestToken`. The `KUBE_IMAGE` environment
    variable holds the image's reference by digest, so the program can start

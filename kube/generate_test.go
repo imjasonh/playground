@@ -214,6 +214,7 @@ func TestManifests(t *testing.T) {
 		`"args":["-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-v"]`,
 		`"env":[{"name":"KUBE_IMAGE","value":"ghcr.io/you/web-site@sha256:abc"}]`,
 		`"serviceAccountName":"web-site"`,
+		`"shareProcessNamespace":true`,
 		`"runAsNonRoot":true`,
 		`"readOnlyRootFilesystem":true`,
 		`"volumeMounts":[{"mountPath":"/tmp","name":"tmp"}]`,

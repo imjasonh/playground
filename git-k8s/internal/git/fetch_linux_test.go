@@ -15,9 +15,9 @@ import (
 )
 
 // A process that a git command leaves behind becomes a child of the nearest
-// subreaper, which in a container is PID 1, the Go program that ran the
-// command and never waits for it. The test becomes a subreaper to stand in
-// for PID 1.
+// subreaper, which in a container is PID 1. Where PID 1 is the Go program
+// that ran the command, it never waits for the process. The test becomes a
+// subreaper to stand in for PID 1.
 func TestFetchLeavesNoProcesses(t *testing.T) {
 	if err := unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0); err != nil {
 		t.Skipf("can't become a subreaper: %v", err)

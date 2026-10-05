@@ -753,6 +753,12 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 				{"metadata", object{{"labels", labels}}},
 				{"spec", object{
 					{"serviceAccountName", o.name},
+					// A process whose parent exits becomes a child of PID 1,
+					// which has to reap it once it exits. A Go program reaps
+					// only the processes that it starts, so the Pod uses a
+					// shared process namespace, where the pause container is
+					// PID 1 and reaps the rest.
+					{"shareProcessNamespace", true},
 					{"securityContext", object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}},
 					{"containers", []any{container}},
 					{"volumes", volumes},
