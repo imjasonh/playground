@@ -1260,8 +1260,8 @@ binaries and runs them.
 
 One more test installs the website, imagereport, janitor, probe, eventlog,
 and podpolicy examples with `generate` in a [kind](https://kind.sigs.k8s.io/)
-cluster, and pushes their images to a local registry. It needs Docker and
-`kubectl`, and installs kind if it's missing:
+cluster, and pushes their images to a local registry. It needs Docker,
+`kubectl`, and `curl`, and installs kind if it's missing:
 
 ```sh
 KUBE_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -1389,10 +1389,10 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 
 | Path | Contents |
 | --- | --- |
-| `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, events, webhooks, versions, shards, metrics, and fakes |
+| `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, events, webhooks, HTTP APIs, tokens, triggers, other objects to install, volumes, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, reads of a controller's own writes, shared status, status that `Apply` writes, changes that types can't see, panics, permanent errors, events, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, reads of a controller's own writes, shared status, status that `Apply` writes, changes that types can't see, panics, permanent errors, `LastError`, events, HTTP handlers and the data that they hand to reconciles, tokens, `Install`, volumes, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |
