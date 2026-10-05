@@ -695,8 +695,9 @@ kind and the messages it contains at a time.
 Some fields differ between the two encodings. A struct that `encoding/json`
 inlines, such as a Volume's VolumeSource, is a nested message. Times,
 quantities, and int-or-string values are messages in protobuf but strings or
-numbers in JSON. A few lists, such as a user's extra values, are messages that
-wrap a repeated field. The decoder sets times and quantities directly, and
+numbers in JSON. The zero time is an empty message in protobuf and `null` in
+JSON. A few lists, such as a user's extra values, are messages that wrap a
+repeated field. The decoder sets times and quantities directly, and
 converts other such values, or any field whose Go type has an `UnmarshalJSON`
 method, to the JSON value that the API server would send, and decodes that
 with `encoding/json`. A test creates an object of every type in the `k8s`
