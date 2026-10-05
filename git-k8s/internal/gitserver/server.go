@@ -133,11 +133,14 @@ func (s *Server) run(w http.ResponseWriter, service, dir, protocol string, stdin
 }
 
 // Init creates a bare repository at dir that lets clients fetch any commit
-// by SHA.
+// by SHA. Pushes to it don't start automatic maintenance, which runs in the
+// background and can still be writing to the repository when a test's
+// cleanup removes it.
 func Init(dir string) error {
 	for _, args := range [][]string{
 		{"init", "--quiet", "--bare", dir},
 		{"-C", dir, "config", "uploadpack.allowAnySHA1InWant", "true"},
+		{"-C", dir, "config", "receive.autoGC", "false"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
