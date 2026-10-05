@@ -38,7 +38,8 @@ const ApproveAnnotation = Group + "/approve"
 // approval or took it over.
 const ApprovedByAnnotation = Group + "/approved-by"
 
-// FixerTrailer is the commit trailer on every commit that a check pushes.
+// FixerTrailer is the commit trailer on every commit that a check pushes,
+// except a replay of another commit, which keeps that commit's message.
 // Its value is the check's name. MergePolicy.MaxAutomatedCommits limits how
 // many commits with this trailer a branch can have.
 const FixerTrailer = "Git-K8s-Fixer"
@@ -192,6 +193,16 @@ type GitBranchStatus struct {
 	Queue              []string               `json:"queue,omitempty" doc:"Branches in this branch's merge queue, front first. The front branch is the only one that merges this branch in and lands."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
+	Diverged           *Divergence            `json:"diverged,omitempty" doc:"How the branch diverged between the mirror and the external repository, set only while it's diverged. The core program writes it."`
+}
+
+// Divergence says how a branch diverged between the mirror and the
+// external repository: each side changed the branch since they last
+// synced, and neither side's head keeps the other side's changes.
+type Divergence struct {
+	Commit string `json:"commit" doc:"External repository's head of the branch, or empty if the external repository deleted the branch."`
+	Ref    string `json:"ref" doc:"Ref in the mirror that holds commit, or empty if commit is."`
+	Base   string `json:"base,omitempty" doc:"Head of the branch where the mirror and the external repository last synced, which the mirror keeps under refs/git-k8s/synced/heads/. Empty if they never synced."`
 }
 
 // Queued is a branch's place in its parent's merge queue.

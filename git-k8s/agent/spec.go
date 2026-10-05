@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -82,7 +83,13 @@ type podTask struct {
 	TerminationLog string `json:"terminationLog"`
 
 	// Only some jobs set these.
-	Tools []string `json:"tools,omitempty"`
+	Tools            []string `json:"tools,omitempty"`
+	MergeName        string   `json:"mergeName,omitempty"`
+	MergeHead        string   `json:"mergeHead,omitempty"`
+	ConflictsFile    string   `json:"conflictsFile,omitempty"`
+	MergeLogFile     string   `json:"mergeLogFile,omitempty"`
+	MergeDiffFile    string   `json:"mergeDiffFile,omitempty"`
+	MergeChangesFile string   `json:"mergeChangesFile,omitempty"`
 }
 
 // movedStatus is prepareScript's exit status when a branch no longer points
@@ -93,14 +100,26 @@ const movedStatus = 3
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
 // touches, the commit log, and the API key, if the Secret holds one, for
-// the agent container. It leaves .cursorignore files out of the head's
-// files and index, because Cursor reads them to hide files from the agent.
-// The git image has no commands but git and sh, so the script uses only
-// those and the shell's builtins, and git init's templates make .git/info.
-// The repository goes in a directory that git init creates, because git
+// the agent container. With MERGE_HEAD, it also fetches MERGE_REF, or
+// exits with status 3 if that no longer contains MERGE_HEAD, and writes the
+// files and index of HEAD's merge with MERGE_HEAD instead of the head's,
+// the paths that conflict, and the change from BASE to MERGE_HEAD, its
+// paths, and its log. It leaves .cursorignore files out of the files and
+// index, because Cursor reads them to hide files from the agent. The git
+// image has no commands but git and sh, so the script uses only those and
+// the shell's builtins, and git init's templates make .git/info. The
+// repository goes in a directory that git init creates, because git
 // refuses to use one that another user owns, such as the root of an
-// emptyDir volume. The attributes file makes the files match their
-// blobs, so the runner can tell which ones the agent changed.
+// emptyDir volume. The attributes file makes the files match their blobs,
+// so the runner can tell which ones the agent changed.
+//
+// The fetches take the last 50 commits, and fetch the rest of the history
+// only when MERGE_HEAD or BASE isn't in them. The merge reads attributes
+// from the empty tree instead of the commits, as git.Repo.Merge does, so
+// the branch's .gitattributes files can't change it, even with a git that
+// reads them from a tree. ATTRIBUTES holds more attributes for the merge,
+// which set merge=union for the paths whose conflicts git resolves by
+// keeping the lines of both sides.
 const prepareScript = `set -eu
 git init -q "$REPO"
 cd "$REPO"
@@ -112,11 +131,41 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
-if [ -n "${BASE:-}" ] && ! git cat-file -e --end-of-options "$BASE^{commit}" 2>/dev/null; then
+shallow() {
+  [ "$(git rev-parse --is-shallow-repository)" = true ]
+}
+if [ -n "${MERGE_HEAD:-}" ]; then
+  git fetch -q --depth=50 --end-of-options "$URL" "$MERGE_REF"
+  contains() {
+    git merge-base --is-ancestor --end-of-options "$MERGE_HEAD" FETCH_HEAD 2>/dev/null
+  }
+  if ! contains && shallow; then
+    git fetch -q --unshallow --end-of-options "$URL" "$MERGE_REF"
+  fi
+  if ! contains; then
+    echo "$MERGE_REF no longer contains $MERGE_HEAD" >&2
+    exit 3
+  fi
+fi
+if [ -n "${BASE:-}" ] && ! git cat-file -e --end-of-options "$BASE^{commit}" 2>/dev/null && shallow; then
   git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-git read-tree --end-of-options "$HEAD"
+printf '%s' "${ATTRIBUTES:-}" >>.git/info/attributes
+tree="$HEAD"
+if [ -n "${MERGE_HEAD:-}" ]; then
+  empty="$(git hash-object -t tree --stdin </dev/null)"
+  merge_tree() {
+    git --attr-source="$empty" -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" --end-of-options "$HEAD" "$MERGE_HEAD"
+  }
+  code=0
+  merge_tree >.git/merge || code=$?
+  [ "$code" -le 1 ] || exit "$code"
+  read -r tree <.git/merge
+  merge_tree -z >"$INPUT/conflicts" || [ "$?" -eq 1 ]
+  git log --format='%h %<(200,trunc)%s' -n 50 --end-of-options "$BASE..$MERGE_HEAD" >"$INPUT/merge-log.txt"
+fi
+git read-tree --end-of-options "$tree"
 git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
@@ -128,6 +177,10 @@ fi
 git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --end-of-options "$from" "$HEAD" >"$INPUT/change.diff"
 git diff --name-status -z --end-of-options "$from" "$HEAD" >"$INPUT/changes"
 git log --format='%h %<(200,trunc)%s' -n 50 --end-of-options "$range" >"$INPUT/log.txt"
+if [ -n "${MERGE_HEAD:-}" ]; then
+  git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --end-of-options "$BASE" "$MERGE_HEAD" >"$INPUT/merge.diff"
+  git diff --name-status -z --end-of-options "$BASE" "$MERGE_HEAD" >"$INPUT/merge-changes"
+fi
 umask 077
 printf '%s' "${CURSOR_API_KEY:-}" >"$KEY_FILE"
 `
@@ -177,6 +230,15 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh"},
+	}
+	if m := c.Merge; m != nil {
+		task.MergeName, task.MergeHead = cmp.Or(m.DisplayName, m.Name), m.Commit
+		task.ConflictsFile, task.MergeLogFile = inputDir+"/conflicts", inputDir+"/merge-log.txt"
+		task.MergeDiffFile, task.MergeChangesFile = inputDir+"/merge.diff", inputDir+"/merge-changes"
+		prepareEnv = append(prepareEnv, EnvVar{Name: "MERGE_REF", Value: m.Name}, EnvVar{Name: "MERGE_HEAD", Value: m.Commit})
+		if attributes, _ := git.UnionAttributes(c.Union); attributes != "" {
+			prepareEnv = append(prepareEnv, EnvVar{Name: "ATTRIBUTES", Value: attributes})
+		}
 	}
 	agentTask, _ := json.Marshal(task)
 	if ref := job.Credentials; ref != nil {
