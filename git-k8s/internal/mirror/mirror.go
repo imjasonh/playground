@@ -223,8 +223,9 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 		{"receive.hideRefs", "refs/git-k8s"},
 		{"receive.fsckObjects", "true"},
 		{"receive.maxInputSize", strconv.Itoa(maxPushSize)},
-		// Fetches and pushes would start maintenance in the background,
-		// where git's timeout doesn't apply. Sync runs it instead.
+		// Fetches into the copy and pushes to it would start maintenance
+		// and wait for it to finish, which would hold up a check's push.
+		// Sync runs maintenance instead.
 		{"maintenance.auto", "false"},
 		{"receive.autogc", "false"},
 		{"gitk8s.url", repo.Spec.URL},

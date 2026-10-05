@@ -1316,8 +1316,8 @@ func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 	}
 }
 
-// Fetches and pushes don't start git's maintenance, which would run in the
-// background. Sync runs it in the foreground when the copy needs it, even
+// Fetches and pushes don't start git's maintenance, which would hold them
+// up. Sync runs it in the foreground when the copy needs it, even
 // after a killed maintenance left its lock, which makes maintenance skip
 // the copy without an error.
 func TestSyncMaintainsCopy(t *testing.T) {

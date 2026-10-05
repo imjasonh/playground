@@ -440,12 +440,10 @@ func (r *Repo) FetchPrune(ctx context.Context, remote Remote, refspec string) er
 
 // Maintain runs git's automatic maintenance, such as packing loose
 // objects, if the repository needs it. It runs in the foreground, under
-// the command's timeout. Before git 2.47, the gc that maintenance starts
-// goes to the background unless gc.autoDetach is false.
+// the command's timeout, because Git sets gc.autoDetach to false for
+// every command.
 func (r *Repo) Maintain(ctx context.Context) error {
-	_, err := r.git.run(ctx, r.Dir, []string{"maintenance", "run", "--auto", "--quiet"}, opts{
-		env: []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=gc.autoDetach", "GIT_CONFIG_VALUE_0=false"},
-	})
+	_, err := r.run(ctx, "maintenance", "run", "--auto", "--quiet")
 	return err
 }
 

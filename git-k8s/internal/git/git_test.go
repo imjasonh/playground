@@ -39,8 +39,8 @@ func TestBearerToken(t *testing.T) {
 	}
 }
 
-// An error from running git names git's command, not the -C that the
-// command starts with.
+// An error from running git names git's command, not the -c and -C options
+// that the command starts with.
 func TestErrorNamesTheCommand(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
