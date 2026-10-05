@@ -135,7 +135,7 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 // rebases the branch onto it when the merge policy says to.
 func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
-	local, remote, unlock, err := m.open(ctx, b)
+	repo, local, remote, unlock, err := m.open(ctx, b)
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[stri
 	}
 	switch spec.Merge.Landing {
 	case gitk8s.Squash, gitk8s.Rebase:
-		if done, err := m.rewrite(ctx, local, remote, b, results); err != nil || done {
+		if done, err := m.rewrite(ctx, repo, local, remote, b, results); err != nil || done {
 			return err
 		}
 	}
@@ -182,20 +182,20 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[stri
 	return deleteBranch(ctx, local, remote, b)
 }
 
-func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*git.Repo, git.Remote, func(), error) {
+func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*gitk8s.Repository, *git.Repo, git.Remote, func(), error) {
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
 	if repo == nil {
-		return nil, git.Remote{}, nil, fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
+		return nil, nil, git.Remote{}, nil, fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
 	}
 	remote, err := credentials.Remote(ctx, repo)
 	if err != nil {
-		return nil, remote, nil, err
+		return nil, nil, remote, nil, err
 	}
 	local, unlock, err := m.cache.Open(ctx, repo)
 	if err != nil {
-		return nil, remote, nil, err
+		return nil, nil, remote, nil, err
 	}
-	return local, remote, unlock, nil
+	return repo, local, remote, unlock, nil
 }
 
 // deleteBranch deletes a branch that just landed if the merge policy says

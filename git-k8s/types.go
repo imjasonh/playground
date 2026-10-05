@@ -66,6 +66,9 @@ type GitRepositorySpec struct {
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`
 	OctoSTS      *OctoSTS     `json:"octoSTS,omitempty" doc:"Trust policies that controllers use to exchange their service account tokens for GitHub tokens with Octo STS. The URL must be the https URL of a github.com repository, such as https://github.com/OWNER/REPO.git."`
 	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each remote branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
+	// Only the programs that make commits read the Secret that SigningKeyRef
+	// names, through package signing.
+	SigningKeyRef *SecretRef `json:"signingKeyRef,omitempty" doc:"Secret in the same namespace with an ssh-privatekey key that holds an unencrypted private key in OpenSSH format, such as a kubernetes.io/ssh-auth Secret. It must name a different Secret from secretRef, because test Pods get keys from that Secret. Checks use it to sign the commits that they push, and the merge controller to sign the commits of squash and rebase landings. Without it, those commits aren't signed."`
 }
 
 // SecretRef names a Secret in the same namespace.

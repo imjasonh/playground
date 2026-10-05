@@ -51,6 +51,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -92,7 +93,7 @@ var union = patterns{"go.sum"}
 
 // The agent reads the subjects of the branch's commits, and a replay keeps
 // their authors and messages, so the check isn't FilesOnly.
-var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: credentials.Remote, Stale: stale, Run: run}
+var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: credentials.Remote, SigningKey: signing.Key, Stale: stale, Run: run}
 
 // stale reports whether the previous result is for another merge than the
 // one that the branch needs now: the branch diverged or stopped diverging,
@@ -324,7 +325,7 @@ func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target
 		msg += body + "\n\n"
 	}
 	msg += git.FixerTrailer + ": conflicts\n"
-	return repo.CommitTree(ctx, tree, parents, msg, in.Identity, max(hc.Time, tc.Time))
+	return in.CommitTree(ctx, tree, parents, msg, max(hc.Time, tc.Time))
 }
 
 // targetRepo returns the branch's repository with t's commit, which it
@@ -588,12 +589,16 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	if err != nil {
 		return fail(err)
 	}
+	key, err := signing.Key(ctx, repo)
+	if err != nil {
+		return fail(err)
+	}
 	msg := fmt.Sprintf("Resolve the divergence of %s from the external repository\n\n"+
 		"%s changed both in the in-cluster mirror and in the external repository\n"+
 		"since they last synced. This branch starts at the external repository's\n"+
 		"head, %s, and lands on %s through its merge gate after %s\n"+
 		"is merged into it.\n\n%s: conflicts\n", branch, branch, d.Commit, branch, branch, git.FixerTrailer)
-	commit, err := local.CommitTree(ctx, c.Tree, []string{d.Commit}, msg, r.cfg.Identity, c.Time)
+	commit, err := local.CommitTree(ctx, c.Tree, []string{d.Commit}, msg, r.cfg.Identity, c.Time, key)
 	if err != nil {
 		return fail(err)
 	}
@@ -647,5 +652,6 @@ func main() {
 	runner.AddFlags(flag.CommandLine)
 	flag.CommandLine.Lookup("agent-image").Usage = "image that runs the agent, built from agent/runner/Dockerfile; without it, the check resolves only what git can"
 	flag.Var(&union, "union", "comma-separated path patterns, in the gitattributes format, whose conflicts git resolves by keeping the lines of both sides")
+	checks.RemoveLeftoverSigningKeys()
 	kube.Main(kube.For[Branch](newReconciler(cfg), kube.Named("check-conflicts")))
 }

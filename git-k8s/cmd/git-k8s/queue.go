@@ -230,7 +230,7 @@ func canPass(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) boo
 // its head was since, such as the base check's merge of the parent, so that
 // b keeps its place in the queue.
 func (m *merger) fixedOnly(ctx context.Context, b *gitk8s.GitBranch, since string) (bool, error) {
-	local, remote, unlock, err := m.open(ctx, b)
+	_, local, remote, unlock, err := m.open(ctx, b)
 	if err != nil {
 		return false, err
 	}

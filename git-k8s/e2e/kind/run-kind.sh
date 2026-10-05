@@ -7,6 +7,9 @@
 #
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
+# Like a forge that requires signed commits, it rejects a push that adds a
+# commit that isn't signed with its committer's key, so this test signs its
+# own commits, and git-k8s signs the commits that it makes.
 # A module proxy on this machine serves the one module that a tested branch
 # depends on, as go-cache's upstream.
 #
@@ -32,12 +35,21 @@ APPROVAL_NS=checks
 WORKDIR="$(mktemp -d)"
 WORK="${WORKDIR}/work"
 PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
+# IDENTITY is the checks' default -identity-email, the committer of their
+# commits.
+IDENTITY=git-k8s@users.noreply.github.com
+ALLOWED_SIGNERS="${WORKDIR}/allowed_signers"
 CREATED_CLUSTER=0
 CREATED_REGISTRY=0
 GIT_SERVER_PID=""
 MOD_PROXY_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
+
+# SIGN makes git sign this test's commits with the e2e key, and check
+# signatures against the git server's allowed signers.
+SIGN=(-c gpg.format=ssh -c "user.signingKey=${WORKDIR}/e2e-key" -c commit.gpgSign=true
+  -c "gpg.ssh.allowedSignersFile=${ALLOWED_SIGNERS}")
 
 # namespace_of prints the namespace of program $1.
 namespace_of() {
@@ -51,7 +63,7 @@ namespace_of() {
 # g runs git in the working repository, without the machine's git config.
 g() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${WORK}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 
 diagnose() {
@@ -136,6 +148,7 @@ need docker
 need kubectl
 need go
 need git
+need ssh-keygen
 need curl
 install_kind
 docker info >/dev/null
@@ -173,8 +186,12 @@ GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{
   grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
+ssh-keygen -q -t ed25519 -N '' -C e2e@example.com -f "${WORKDIR}/e2e-key"
+ssh-keygen -q -t ed25519 -N '' -C "${IDENTITY}" -f "${WORKDIR}/git-k8s-key"
+printf 'e2e@example.com namespaces="git" %s\n%s namespaces="git" %s\n' \
+  "$(cat "${WORKDIR}/e2e-key.pub")" "${IDENTITY}" "$(cat "${WORKDIR}/git-k8s-key.pub")" >"${ALLOWED_SIGNERS}"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  -kube-context="${CONTEXT}" >"${WORKDIR}/gitserver.log" 2>&1 &
+  -allowed-signers="${ALLOWED_SIGNERS}" -kube-context="${CONTEXT}" >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -279,6 +296,8 @@ k create namespace "${NS}"
 k label namespace "${NS}" git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
 k -n "${NS}" create secret generic app-creds --type=kubernetes.io/basic-auth \
   --from-literal=username=git-k8s --from-literal=password="${PASSWORD}"
+k -n "${NS}" create secret generic app-signing --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey="${WORKDIR}/git-k8s-key"
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
 kind: GitRepository
@@ -289,6 +308,8 @@ spec:
   url: ${CLUSTER_URL}/app.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -357,6 +378,29 @@ branch_gone() {
   local head
   head="$(remote_head "$1")" && [[ -z "${head}" && -z "$(branch_object "$1")" ]]
 }
+# signed_by_git_k8s checks that commit $1 has a good signature from git-k8s's
+# key, and git-k8s as its committer. $2 is the function that runs git in the
+# repository that has the commit, g by default.
+signed_by_git_k8s() {
+  local run="${2:-g}"
+  "${run}" verify-commit "$1"
+  [[ "$("${run}" log -1 --format='%G? %GS %ce' "$1")" == "G ${IDENTITY} ${IDENTITY}" ]]
+}
+
+echo "::group::The git server rejects unsigned commits"
+g checkout -q -b c/unsigned
+echo unsigned >"${WORK}/unsigned.txt"
+g add -A
+g -c commit.gpgSign=false commit -qm "Add unsigned.txt"
+if g push -q "${HOST_URL}/app.git" HEAD:c/unsigned 2>"${WORKDIR}/push.log"; then
+  echo "the git server accepted an unsigned commit" >&2
+  exit 1
+fi
+cat "${WORKDIR}/push.log"
+grep -q "isn't signed with its committer's key" "${WORKDIR}/push.log"
+g checkout -q main
+echo "The git server rejected an unsigned commit, so git-k8s's commits land only if they're signed."
+echo "::endgroup::"
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
@@ -372,9 +416,10 @@ formatted_on_main() { fetch_main && [[ "$(g show FETCH_HEAD:util/add.go 2>/dev/n
 eventually 120 formatted_on_main
 # grep -q would exit at the first match and fail the pipeline with SIGPIPE.
 g log -1 --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: gofmt' >/dev/null
+signed_by_git_k8s FETCH_HEAD
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
-echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
+echo "The gofmt check pushed a signed fix, main fast-forwarded to it, and c/fmt was deleted."
 echo "::endgroup::"
 
 echo "::group::The fix, the landing, and the deletion are events"
@@ -529,14 +574,16 @@ wait "${queues_pid}" || true
 echo "main's queue as it changed:"
 cat "${WORKDIR}/queues.txt"
 grep -Eqx 'c/(one|two) c/(one|two)' "${WORKDIR}/queues.txt"
-g log --graph --oneline FETCH_HEAD
+g log --graph --format='%h %G? %GS %s' FETCH_HEAD
 # Each branch merged main in once: the first merged MOVED and landed, and
 # the second merged the first's landing.
 [[ "$(g log --format=%s "${MOVED}..FETCH_HEAD" | grep -c '^Merge main into c/')" == 2 ]]
 [[ "$(g rev-parse FETCH_HEAD^2^2)" == "${MOVED}" ]]
 [[ "$(g rev-parse FETCH_HEAD^1 FETCH_HEAD^2^1 | sort)" == "$(printf '%s\n' "${ONE}" "${TWO}" | sort)" ]]
 g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
-echo "Both branches waited in main's queue, and each merged main in once, at the front, before it landed."
+signed_by_git_k8s FETCH_HEAD
+signed_by_git_k8s FETCH_HEAD^2
+echo "Both branches waited in main's queue, and each merged main in once, at the front, with a signed merge, before it landed."
 echo "::endgroup::"
 
 # landing sets how branches land on main.
@@ -571,7 +618,8 @@ g log --first-parent --format='%h %s (%an, committed by %cn)' "${squash_base}^..
 [[ "$(g show FETCH_HEAD:util/sub.go)" == "package util
 
 func Sub(a, b int) int { return a - b }" ]]
-echo "The gofmt check fixed c/squash, and main moved by one squashed commit without the fixer trailer."
+signed_by_git_k8s FETCH_HEAD
+echo "The gofmt check fixed c/squash, and main moved by one signed, squashed commit without the fixer trailer."
 echo "::endgroup::"
 
 echo "::group::A rebase landing copies a branch's commits onto its parent"
@@ -598,8 +646,11 @@ g log --graph --format='%h %s (%an, committed by %cn)' "${rebase_base}^..FETCH_H
 Add rebase-two.txt" ]]
 [[ "$(g rev-list --parents "${rebase_base}..FETCH_HEAD" | awk 'NF != 2')" == "" ]]
 [[ "$(g log --format='%an %cn' "${rebase_base}..FETCH_HEAD" | sort -u)" == "e2e git-k8s" ]]
+for commit in $(g rev-list "${rebase_base}..FETCH_HEAD"); do
+  signed_by_git_k8s "${commit}"
+done
 g cat-file -e FETCH_HEAD:main.txt
-echo "The base check merged main into c/rebase, and main moved by copies of its two commits, without the merge."
+echo "The base check merged main into c/rebase, and main moved by signed copies of its two commits, without the merge."
 echo "::endgroup::"
 
 echo "::group::A check can write only its own result"
@@ -763,7 +814,7 @@ OCTO="${WORKDIR}/octo"
 git init -q -b main "${OCTO}"
 o() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${OCTO}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 issuer="$(k get --raw /.well-known/openid-configuration | sed -nE 's/.*"issuer":"([^"]*)".*/\1/p')"
 mkdir -p "${OCTO}/.github/chainguard"
@@ -803,6 +854,8 @@ spec:
   octoSTS:
     gitIdentity: git-k8s
     checkRunsIdentity: git-k8s-checks
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -840,6 +893,8 @@ fix_landed() {
 }
 eventually 120 fix_landed
 fix="$(octo_head main)"
+o fetch -q "${GITHUB_URL}/acme/octo.git" main
+signed_by_git_k8s "${fix}" o
 # check_run prints the status and conclusion of check $2's check run on
 # commit $1.
 check_run() {
@@ -852,7 +907,7 @@ check_runs_published() {
     "$(check_run "${fix}" base)" == "completed success" ]]
 }
 eventually 60 check_runs_published
-echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
+echo "check-gofmt pushed a signed fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
 
 k create namespace "${NS}-other"
 octo_repository "${NS}-other"
@@ -872,7 +927,7 @@ TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
 t() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${TESTED}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 printf 'module example.com/tested\n\ngo 1.24\n' >"${TESTED}/go.mod"
 printf 'package tested\n\nfunc Add(a, b int) int { return a + b }\n' >"${TESTED}/add.go"
@@ -1372,7 +1427,7 @@ REVIEWED="${WORKDIR}/reviewed"
 git init -q -b main "${REVIEWED}"
 rv() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${REVIEWED}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 printf 'Notes\n' >"${REVIEWED}/notes.txt"
 rv add -A
@@ -1388,6 +1443,8 @@ spec:
   url: ${CLUSTER_URL}/reviewed.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -1420,6 +1477,7 @@ fixed_on_main() {
 eventually 300 fixed_on_main
 rv log -1 --format=%B FETCH_HEAD
 rv log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: review'
+signed_by_git_k8s FETCH_HEAD rv
 marked_gone() { [[ -z "$(remote_head c/marked reviewed)" && -z "$(branch_object c/marked reviewed)" ]]; }
 eventually 60 marked_gone
 eventually 60 no_agent_pods
@@ -1448,7 +1506,7 @@ review d/marked message
 echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
-echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "The agent's signed fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Conflicts with a parent that moved are resolved before branches land"
@@ -1462,7 +1520,7 @@ CONFLICTED="${WORKDIR}/conflicted"
 mkdir "${CONFLICTED}"
 cf() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=http:https:git:ssh \
-    git -C "${CONFLICTED}" -c user.name=e2e -c user.email=e2e@example.com "$@"
+    git -C "${CONFLICTED}" -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 cf init -q -b main
 printf 'example.com/a v1.0.0 h1:a=\n' >"${CONFLICTED}/go.sum"
@@ -1480,6 +1538,8 @@ spec:
   url: ${CLUSTER_URL}/conflicted.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -1515,8 +1575,8 @@ landed_with() {
     [[ "$(cf show --end-of-options FETCH_HEAD:"$2")" == "$3" ]]
 }
 # merged_main checks that main's head, in FETCH_HEAD, is the conflicts
-# check's merge of the main that race_main pushed into the branch $1. It
-# saves the message instead of piping it to grep, because grep -q can exit
+# check's signed merge of the main that race_main pushed into the branch $1.
+# It saves the message instead of piping it to grep, because grep -q can exit
 # before git log finishes writing, and pipefail then fails on git's SIGPIPE.
 merged_main() {
   local message
@@ -1524,19 +1584,20 @@ merged_main() {
   echo "${message}"
   grep -qx 'Git-K8s-Fixer: conflicts' <<<"${message}"
   [[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "$(cf rev-parse --verify --end-of-options "$1") $(cf rev-parse --verify --end-of-options main)" ]]
+  signed_by_git_k8s FETCH_HEAD cf
 }
 
 race_main c/sum go.sum 'example.com/a v1.0.0 h1:a=\n' 'example.com/b v1.0.0 h1:b=' 'example.com/c v1.0.0 h1:c='
 eventually 300 landed_with c/sum go.sum "$(printf 'example.com/a v1.0.0 h1:a=\nexample.com/b v1.0.0 h1:b=\nexample.com/c v1.0.0 h1:c=')"
 merged_main c/sum
-echo "Git merged the go.sum conflict with its union driver, and c/sum landed."
+echo "Git merged the go.sum conflict with its union driver, the check signed the merge, and c/sum landed."
 
 cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds this line.'
 eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
 merged_main c/text
 eventually 60 no_agent_pods
-echo "The agent resolved the notes.txt conflict, and c/text landed."
+echo "The agent resolved the notes.txt conflict, the check signed its merge, and c/text landed."
 
 cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'

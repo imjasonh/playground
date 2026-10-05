@@ -17,14 +17,15 @@ import (
 
 // withGitHub serves h, and under /github/ a fake GitHub and Octo STS whose
 // repositories are under root/github.
-func withGitHub(h http.Handler, root, username, password, kubeContext string) http.Handler {
+func withGitHub(h http.Handler, root, username, password, allowedSigners, kubeContext string) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", h)
 	mux.Handle("/github/", http.StripPrefix("/github", &gitserver.GitHub{
-		Root:     filepath.Join(root, "github"),
-		Username: username,
-		Password: password,
-		Verify:   reviewer(kubeContext),
+		Root:           filepath.Join(root, "github"),
+		Username:       username,
+		Password:       password,
+		AllowedSigners: allowedSigners,
+		Verify:         reviewer(kubeContext),
 	}))
 	return mux
 }
