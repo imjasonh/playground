@@ -133,6 +133,15 @@ func (f *fixture) commit(ctx context.Context, in *checks.Input, files []agent.Fi
 	return fix
 }
 
+func TestRunsItsAgentAsTheCheck(t *testing.T) {
+	if runner.Name != check.Name {
+		t.Errorf("runner.Name = %q, want the check's name %q, which the check Pods policy requires the agent Pods' names to start with", runner.Name, check.Name)
+	}
+	if check.FilesOnly {
+		t.Error("check.FilesOnly is set, but the agent reads the subjects of the branch's commits")
+	}
+}
+
 func TestPassesOtherBranches(t *testing.T) {
 	noAgent(t)
 	f := newFixture(t, "c/x")

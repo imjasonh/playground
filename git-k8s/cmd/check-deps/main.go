@@ -92,6 +92,8 @@ var runAgent = func(ctx context.Context, in *checks.Input, task agent.Task) (che
 	return runner.Run(ctx, in, task)
 }
 
+// The agent reads the subjects of the branch's commits, so the check isn't
+// FilesOnly.
 var check = checks.Check{Name: "deps", Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {

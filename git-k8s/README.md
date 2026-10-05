@@ -1050,14 +1050,14 @@ in its `checks.Check`, which gives its results `filesOnly: true`. A check
 without `FilesOnly` costs one more round of checks, as the end of this section
 describes.
 
-The built-in checks set `FilesOnly`, except `check-review`, because the agent
-of an [agentic check](#agentic-checks) reads the subjects of the branch's
-commits. `check-base` passes for any commit that builds on the parent's head,
-`check-gofmt` and `check-gotest` read only the files, and `check-risk`
-compares them with the parent's head. `check-approval` reads only the
-`GitBranch`, and an approval is for the change, which the new commit makes
-too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
-what checks push, and the gate doesn't read it.
+The built-in checks set `FilesOnly`, except `check-review` and `check-deps`,
+because the agent of an [agentic check](#agentic-checks) reads the subjects
+of the branch's commits. `check-base` passes for any commit that builds on
+the parent's head, `check-gofmt` and `check-gotest` read only the files, and
+`check-risk` compares them with the parent's head. `check-approval` reads
+only the `GitBranch`, and an approval is for the change, which the new
+commit makes too. `maxAutomatedCommits` counts fix commits by their trailer,
+but it limits what checks push, and the gate doesn't read it.
 
 `check-risk` also rates a change `high` when one of its commits has a
 `Git-K8s-Agent` trailer, so its result depends on commit messages too. It
@@ -1355,6 +1355,11 @@ one parent's head, and has three containers:
   checks them against their digest, as
   [Agentic checks](#agentic-checks) describes.
 
+Update Pods run in the parent's namespace and meet the `restricted` Pod
+Security Standard. The `git-k8s-check-pods` policy applies only to checks'
+service accounts, so update Pods don't need the namespace to opt in to check
+Pods.
+
 The controller accepts only the `go.mod` and `go.sum` files next to the
 `go.mod` files that it asked to update. It rejects a `go.mod` file that
 changes anything other than its requirements and its `go` and `toolchain`
@@ -1393,10 +1398,10 @@ fix.
 ### Install the dependency controller
 
 To install `git-k8s-deps` and `check-deps`, build and push the agent runner's
-image, and create the `cursor-api-key` Secret in each namespace with
-dependency branches, as [Agentic checks](#agentic-checks) describes.
-`git-k8s-deps` runs its result containers from that image, and `check-deps`
-runs agents in it:
+image. In each namespace with dependency branches, create the
+`cursor-api-key` Secret and opt the namespace in to check Pods, as
+[Agentic checks](#agentic-checks) describes. `git-k8s-deps` runs its result
+containers from that image, and `check-deps` runs agents in it:
 
 ```sh
 go run ./cmd/git-k8s-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -result-image="${image}" | kubectl apply -f -
@@ -1545,9 +1550,10 @@ Without the policies, most of that doesn't hold, so the repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
 `False` until all four policies are installed with bindings that deny.
 
-Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
-or `review` must opt in to check Pods and enforce the `restricted` Pod
-Security Standard, or the third policy denies the check's Pods:
+Each namespace that holds a `GitRepository` whose merge policy lists
+`gotest`, `review`, or `deps` must opt in to check Pods and enforce the
+`restricted` Pod Security Standard, or the third policy denies the check's
+Pods:
 
 ```sh
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
@@ -1556,11 +1562,11 @@ kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-secur
 Replace `NAMESPACE` with the namespace of the `GitRepository`. The namespace
 can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
-`latest`. Until it has both labels, the branch's `gotest` or `review` result
-stays `Running`, and its message says why kube couldn't create the Pod. kube
-tries again with backoff that grows to 5 minutes, plus up to 10% jitter, so it
-creates the Pod within about 5.5 minutes after you label the namespace,
-without a new push.
+`latest`. Until it has both labels, the branch's `gotest` or `review` result,
+or a `deps` result that runs an agent, stays `Running`, and its message says
+why kube couldn't create the Pod. kube tries again with backoff that grows to
+5 minutes, plus up to 10% jitter, so it creates the Pod within about 5.5
+minutes after you label the namespace, without a new push.
 
 If `check-gotest` or `check-review` already runs, label the namespaces of
 their repositories before you upgrade the core program, which installs
