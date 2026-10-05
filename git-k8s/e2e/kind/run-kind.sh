@@ -1284,13 +1284,24 @@ echo "::endgroup::"
 
 echo "::group::The mirror checks a test Pod, not just its name"
 # A person writes a gotest result that names a Pod, as only check-gotest's
-# service account or a person can. The mirror lets a token that's bound to
-# the Pod fetch only while the Pod has check-gotest's controller label,
-# isn't being deleted, and is Pending, as check-gotest's Pods are while
-# their init container fetches. gotest-named stays Pending because its init
-# container waits. That container ignores SIGTERM, so a deleted Pod stays in
-# its 30-second grace period, while the API server still accepts its token.
-# gotest-running has no init container, so it runs.
+# service account or a person can. A result counts only on a branch whose
+# merge policy lists gotest, so the result goes on c/named in tested. Until
+# c/named is gone, check-gotest, which would replace the result, stops. The
+# mirror lets a token that's bound to the Pod fetch only while the Pod has
+# check-gotest's controller label, isn't being deleted, and is Pending, as
+# check-gotest's Pods are while their init container fetches. gotest-named
+# stays Pending because its init container waits. That container ignores
+# SIGTERM, so a deleted Pod stays in its 30-second grace period, while the
+# API server still accepts its token. gotest-running has no init container,
+# so it runs.
+k -n check-gotest scale deployment/check-gotest --replicas=0
+gotest_stopped() { [[ -z "$(k -n check-gotest get pods -o name)" ]]; }
+eventually 120 gotest_stopped
+t checkout -q -b c/named
+t commit -q --allow-empty -m "Name a test Pod"
+t push -q --end-of-options "${HOST_URL}/tested.git" HEAD:c/named
+named_listed() { [[ -n "$(branch_object c/named tested)" ]]; }
+eventually 60 named_listed
 k apply -f - <<EOF
 apiVersion: v1
 kind: Pod
@@ -1340,8 +1351,10 @@ named_waits() {
 eventually 120 named_waits
 k -n "${NS}" wait --for=condition=Ready pod/gotest-running --timeout=120s
 [[ "$(k -n "${NS}" get pod gotest-named -o jsonpath='{.status.phase}')" == Pending ]]
+# named_result writes a gotest result that names Pod $1 on branch $2 of
+# repository $3, or on c/named of tested.
 named_result() {
-  k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge \
+  k -n "${NS}" patch gitbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
     -p '{"status":{"checks":{"gotest":{"commit":"0000000","state":"Running","outputs":{"pod":"'"$1"'"}}}}}' >/dev/null
 }
 # pod_token prints a token for the mirror that's bound to Pod $1.
@@ -1349,16 +1362,26 @@ pod_token() {
   k -n "${NS}" create token default --audience=git-k8s-mirror --bound-object-kind=Pod \
     --bound-object-name="$1" --bound-object-uid="$(k -n "${NS}" get pod "$1" -o jsonpath='{.metadata.uid}')"
 }
+# tested_refs is info_refs for tested's copy.
+tested_refs() {
+  curl -sS -o "${WORKDIR}/mirror.txt" -w '%{http_code}' "$@" "${MIRROR}/tested.git/info/refs?service=git-upload-pack"
+}
+# main has no parent, so no merge policy applies to it, and a result on app's
+# main doesn't count. The mirror reads results in the order that they're
+# written, so once the result on c/named counts, it has read this one too.
+named_result gotest-named main app
 named_result gotest-named
 named_token="$(pod_token gotest-named)"
-named_fetch() { info_refs -H "Authorization: Bearer ${named_token}"; }
+named_fetch() { tested_refs -H "Authorization: Bearer ${named_token}"; }
 named_fetches() { [[ "$(named_fetch)" == 200 ]]; }
 eventually 30 named_fetches
+[[ "$(info_refs -H "Authorization: Bearer ${named_token}")" == 404 ]]
 k -n "${NS}" label pod gotest-named --overwrite kube.imjasonh.github.io/controller=check-other
 [[ "$(named_fetch)" == 404 ]]
 k -n "${NS}" label pod gotest-named kube.imjasonh.github.io/controller-
 [[ "$(named_fetch)" == 404 ]]
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${NS}" default)")" == 404 ]]
+[[ "$(tested_refs -H "Authorization: Bearer $(mirror_token "${NS}" default)")" == 404 ]]
 k -n "${NS}" label pod gotest-named kube.imjasonh.github.io/controller=check-gotest
 [[ "$(named_fetch)" == 200 ]]
 # Once gotest-named can't fetch, the mirror has the result that names
@@ -1367,6 +1390,7 @@ named_result gotest-running
 named_refused() { [[ "$(named_fetch)" == 404 ]]; }
 eventually 30 named_refused
 [[ "$(info_refs -H "Authorization: Bearer $(pod_token gotest-running)")" == 404 ]]
+[[ "$(tested_refs -H "Authorization: Bearer $(pod_token gotest-running)")" == 404 ]]
 named_result gotest-named
 eventually 30 named_fetches
 k -n "${NS}" delete pod gotest-named --wait=false
@@ -1374,7 +1398,12 @@ k -n "${NS}" delete pod gotest-named --wait=false
 k -n "${NS}" delete pod gotest-named gotest-running --grace-period=0 --force --ignore-not-found 2>/dev/null
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge \
   -p '{"status":{"checks":{"gotest":null}}}' >/dev/null
-echo "A Pending Pod that a gotest result names fetched with check-gotest's label, and not with another check's label, without the label, or while it was being deleted. A running Pod that the result named couldn't fetch, and neither could the same service account's token without a Pod."
+t push -q --delete --end-of-options "${HOST_URL}/tested.git" c/named
+named_gone() { [[ -z "$(branch_object c/named tested)" ]]; }
+eventually 60 named_gone
+k -n check-gotest scale deployment/check-gotest --replicas=1
+k -n check-gotest rollout status deployment/check-gotest --timeout=180s
+echo "A Pending Pod that a gotest result names fetched with check-gotest's label, and not with another check's label, without the label, or while it was being deleted. A running Pod that the result named couldn't fetch, and neither could the same service account's token without a Pod. Only a result on a branch whose merge policy lists gotest counted, and only in that branch's repository."
 echo "::endgroup::"
 
 echo "::group::A burst of branches takes turns under -max-pods=1"
