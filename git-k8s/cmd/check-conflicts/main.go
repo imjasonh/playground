@@ -601,7 +601,9 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		return fail(fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(commit), child, err))
 	}
 	slog.Info("pushed a branch that resolves a divergence", "namespace", b.Namespace, "branch", child, "parent", branch, "commit", gitk8s.Short(commit))
-	return report(gitk8s.Running, "pushed %s to %s, which lands on %s with the external repository's head %s", gitk8s.Short(commit), child, branch, gitk8s.Short(d.Commit))
+	pushed := fmt.Sprintf("pushed %s to %s, which lands on %s with the external repository's head %s", gitk8s.Short(commit), child, branch, gitk8s.Short(d.Commit))
+	kube.Eventf(ctx, kube.Normal, "PushedFix", "%s", pushed)
+	return report(gitk8s.Running, "%s", pushed)
 }
 
 // maxMessage leaves room in the checks framework's 1,024-byte messages for

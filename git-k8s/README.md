@@ -111,7 +111,7 @@ the remote:
 
 | Reason | From | When |
 | --- | --- | --- |
-| `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch. |
+| `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch, or `check-conflicts` pushed `resolve/BRANCH` for a diverged branch without a parent. |
 | `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 

@@ -2281,7 +2281,8 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	b, w, e, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
 	head := b.Spec.Head
-	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+	rec, err := reconcile(t, srv, b, rules, o)
+	if err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
@@ -2291,6 +2292,10 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 	}
 	if res.Commit != head || res.Outputs["diverged"] != e || res.Outputs["branch"] != "resolve/main" {
 		t.Errorf("result = %+v", res)
+	}
+	events := []kube.Event{{Type: kube.Normal, Reason: "PushedFix", Note: res.Message}}
+	if got := rec.Events(); !slices.Equal(got, events) {
+		t.Errorf("events = %+v, want %+v", got, events)
 	}
 	if got := srv.Heads(t, "app")["main"]; got != head {
 		t.Errorf("main moved to %s; only resolve/main may change", got)
@@ -2306,11 +2311,14 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 	child := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "resolve/main"), nil)}
 	child.Namespace = "default"
 	child.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "resolve/main", Head: pushed, Parent: "main", ParentHead: head}
-	if _, err := reconcile(t, srv, b, rules, o, child); err != nil {
+	if rec, err = reconcile(t, srv, b, rules, o, child); err != nil {
 		t.Fatal(err)
 	}
 	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "waiting for resolve/main, which holds the external repository's head") {
 		t.Errorf("result = %+v, want Running while resolve/main lands", res)
+	}
+	if got := rec.Events(); len(got) != 0 {
+		t.Errorf("events while resolve/main lands = %+v, want none", got)
 	}
 	if got := srv.Heads(t, "app")["resolve/main"]; got != pushed {
 		t.Errorf("resolve/main moved to %s while it lands", got)
