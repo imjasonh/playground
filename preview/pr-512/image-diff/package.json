@@ -1,0 +1,14 @@
+{
+  "name": "image-diff",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compare two images pixel by pixel in the browser",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

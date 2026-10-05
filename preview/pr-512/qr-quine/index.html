@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QR quine</title>
+    <style>
+      body {
+        margin: 0;
+        background: #fff;
+        color: #111;
+        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+        font-size: 1.125rem;
+        line-height: 1.5;
+      }
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 3rem;
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: 2.25rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+      }
+      p {
+        max-width: 62ch;
+        margin: 0 0 1rem;
+      }
+      button {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: inherit;
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      code {
+        font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+        font-size: 0.95em;
+      }
+      canvas {
+        display: block;
+        width: min(100%, 740px);
+        height: auto;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>QR quine</h1>
+      <p>
+        This symbol encodes this page's address. Scanning it opens this page,
+        which draws the same symbol.
+      </p>
+      <div id="qr"></div>
+      <p>
+        The data URL is this page with no server. Paste it into the address
+        bar. The iPhone Camera app reads that code and shows "No usable data
+        found". It does not open a <code>data:</code> URL.
+      </p>
+      <p><button id="copy" type="button">Copy the data URL</button></p>
+    </main>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
