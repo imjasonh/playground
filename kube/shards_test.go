@@ -268,6 +268,64 @@ func TestFinalizerPatchRequiresTheAppliedResourceVersion(t *testing.T) {
 	}
 }
 
+// TestConditionalFinalizerWritesShowAtOnce adds the controller's finalizer
+// and then removes it, while writes to the object require the cached
+// resource version. Another field manager also lists the finalizer, so the
+// removal patches it out after the apply. The controller's cache must show
+// each write once it returns, as it does for writes that don't require a
+// version.
+func TestConditionalFinalizerWritesShowAtOnce(t *testing.T) {
+	m := testManager()
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+	m.caches = map[cacheKey]cache{{ti: c.ti}: c.primary}
+	respond := func(rw http.ResponseWriter, rv string, finalizers []string) {
+		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+			"name": w.Name, "namespace": w.Namespace, "uid": w.UID, "resourceVersion": rv, "finalizers": finalizers,
+		}})
+	}
+	var applies atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Content-Type") {
+		case client.ApplyPatch:
+			respond(rw, fmt.Sprint(5+applies.Add(1)), []string{c.finalizer})
+		case client.JSONPatch:
+			respond(rw, "8", nil)
+		default:
+			http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.client = cl
+	shows := func(rv string, finalizers ...string) {
+		t.Helper()
+		got, _ := c.primary.get(w.Key()).(*widget)
+		if got == nil {
+			t.Fatal("the cache holds no object")
+		}
+		if got.ResourceVersion != rv || !slices.Equal(got.Finalizers, finalizers) {
+			t.Errorf("the cache holds resource version %s with finalizers %v, want %s with %v", got.ResourceVersion, got.Finalizers, rv, finalizers)
+		}
+	}
+
+	// As in a reconcile, setFinalizer gets a copy of the cached object, so
+	// only its writes can change what the cache holds.
+	rv := w.ResourceVersion
+	if err := c.setFinalizer(t.Context(), c.primary.get(w.Key()).(*widget), true, "", &rv); err != nil {
+		t.Fatal(err)
+	}
+	shows("6", c.finalizer)
+	if err := c.setFinalizer(t.Context(), c.primary.get(w.Key()).(*widget), false, "", &rv); err != nil {
+		t.Fatal(err)
+	}
+	shows("8")
+}
+
 // TestFinalizerRemovalShowsTheCacheCaughtUp reconciles an object whose status
 // needs no write and whose finalizer the framework removes, while writes to
 // the object require the cached resource version. The removal succeeds,
