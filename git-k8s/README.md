@@ -548,8 +548,22 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   [share modules and build outputs](#share-modules-and-build-outputs).
 - If fetching fails, the check starts a new Pod, up to three times.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
-  namespaces. A branch that would start another reports `Running` and waits
-  until one finishes.
+  namespaces. A branch that can't start its Pod yet reports `Running` and
+  records when it started waiting in `outputs.waiting`. When a Pod
+  finishes, the branch that has waited longest starts next. A new head, a
+  retry after a failed fetch, or a replacement for a deleted Pod waits
+  behind the branches that are already waiting. The times are in the
+  `GitBranch` status, so a restarted check keeps the order.
+- The check counts a Pod from the moment that it declares it, before its
+  cache shows the Pod, so a burst of pushes can't start more than
+  `-max-pods`. A Pod that never appears stops counting after a minute. If
+  the API server refuses a Pod, for example because the check Pod policy
+  denies it, other branches can then use its place while kube tries again.
+  Until the Pod exists, its branch keeps the time that it started waiting in
+  `outputs.queued`, so the branch still starts before the branches that
+  started waiting after it. With `-shards`, a replica doesn't count the Pods
+  that other replicas declared until its cache shows them, so replicas that
+  start Pods at the same moment can go over the limit.
 
 kube deletes a Pod when the check stops declaring it: after the check records
 the Pod's result, or when the branch moves to a new head. Owner references

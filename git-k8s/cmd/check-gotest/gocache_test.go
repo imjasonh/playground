@@ -73,7 +73,7 @@ func TestGoCacheNeedsImage(t *testing.T) {
 	t.Setenv("KUBE_IMAGE", "")
 	b, repo := branch()
 	ctx, rec := kube.Fake(t.Context(), b, repo)
-	if err := checks.NewReconciler[Branch](check, &checks.Config{}).Reconcile(ctx, b); err == nil || !strings.Contains(err.Error(), "KUBE_IMAGE") {
+	if err := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{}).Reconcile(ctx, b); err == nil || !strings.Contains(err.Error(), "KUBE_IMAGE") {
 		t.Errorf("Reconcile = %v, want an error about KUBE_IMAGE", err)
 	}
 	if res := b.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "KUBE_IMAGE") {

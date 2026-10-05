@@ -25,6 +25,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -58,8 +59,10 @@ var (
 	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
 )
 
-// testPodLabels are the labels on every test Pod.
-var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest"}
+// testPodLabels are the labels on every test Pod. generate gives the
+// check's own Pods the same app.kubernetes.io/name, so the component label
+// is what keeps the check from counting them.
+var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest", "app.kubernetes.io/component": "test"}
 
 // podPhase is what the check counts running test Pods by. Declaring only
 // the phase means that other changes to Pods don't run the check again.
@@ -74,9 +77,30 @@ type podPhase struct {
 // fetching the source fails.
 const fetchAttempts = 3
 
-var check = checks.Check{Name: "gotest", FilesOnly: true, Run: run}
+// declaredFor is how long the check counts a Pod that it declared but its
+// cache doesn't show. A Pod that the API server never created stops taking
+// a place after that.
+const declaredFor = time.Minute
 
-func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+// waitingLayout formats outputs.waiting and outputs.queued as a Kubernetes
+// MicroTime, which sorts as a string.
+const waitingLayout = "2006-01-02T15:04:05.000000Z07:00"
+
+// gotest is the gotest check. It runs at most -max-pods test Pods at once,
+// and when a place frees up, the branch that has waited longest gets it.
+type gotest struct {
+	mu sync.Mutex
+	// declared holds when this process first declared each test Pod that
+	// its cache didn't show yet. Counting them keeps workers that reconcile
+	// at the same moment from all taking the last place.
+	declared map[kube.Key]time.Time
+}
+
+func (g *gotest) check() checks.Check {
+	return checks.Check{Name: "gotest", FilesOnly: true, Run: g.run}
+}
+
+func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	attempt := 1
 	if p := in.Previous; p != nil && p.Commit == in.Spec.Head && p.State == gitk8s.Running {
 		if n, err := strconv.Atoi(p.Outputs["attempt"]); err == nil && n > 0 {
@@ -88,10 +112,16 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	running := func(format string, args ...any) checks.Verdict {
 		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: outputs}
 	}
-	if n := unfinishedPods(ctx, in.Meta.Namespace, name); *maxPods > 0 && n >= *maxPods {
-		// Listing the Pods runs this again when one of them finishes.
+	since := time.Now().UTC().Truncate(time.Microsecond)
+	if pod, t, ok := waiting(in.Previous, in.Spec.Head, "waiting", "queued"); ok && pod == name {
+		since = t
+	}
+	if !g.take(ctx, in.Meta.Key(), kube.Key{Namespace: in.Meta.Namespace, Name: name}, since) {
+		outputs["waiting"] = since.Format(waitingLayout)
+		// Listing the Pods runs this again when one of them finishes. The
+		// requeue covers declared Pods that never appear.
 		kube.RequeueAfter(ctx, time.Minute)
-		return running("waiting to start a Pod: %d test Pods are running, and -max-pods is %d", n, *maxPods), nil
+		return running("waiting to start a Pod: -max-pods is %d, and branches that have waited longer start first", *maxPods), nil
 	}
 	p, err := testPod(in, name)
 	if err != nil {
@@ -99,6 +129,10 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	}
 	pod := kube.Own(ctx, p)
 	if pod == nil {
+		// outputs.queued keeps the branch's place in line until the Pod
+		// exists. Other branches count only outputs.waiting, so a Pod that
+		// the API server refuses stops holding a place after declaredFor.
+		outputs["queued"] = since.Format(waitingLayout)
 		// kube creates the Pod after run returns, and retries with backoff
 		// when it can't, for example because an admission policy denies it.
 		if err := kube.LastError(ctx); err != nil {
@@ -138,20 +172,91 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	return running("Pod %s is %s", name, cmp.Or(pod.Status.Phase, "Pending")), nil
 }
 
-// unfinishedPods counts the test Pods in all namespaces that haven't
-// finished, or returns 0 if the Pod named name in namespace ns already
-// exists, because that Pod needs no new place.
-func unfinishedPods(ctx context.Context, ns, name string) int {
-	if *maxPods <= 0 || kube.Get[podPhase](ctx, ns, name) != nil {
-		return 0
+// take reports whether branch b can run its test Pod pod. It can if the
+// Pod exists or b declared it moments ago, or if a place is free for it
+// after the branches that have waited longer than since. take counts a Pod
+// that it lets b start until the cache shows the Pod.
+func (g *gotest) take(ctx context.Context, b, pod kube.Key, since time.Time) bool {
+	if *maxPods <= 0 {
+		return true
 	}
-	n := 0
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.declared == nil {
+		g.declared = map[kube.Key]time.Time{}
+	}
+	if kube.Get[podPhase](ctx, pod.Namespace, pod.Name) != nil {
+		delete(g.declared, pod)
+		return true
+	}
+	now := time.Now()
+	if t, ok := g.declared[pod]; ok && now.Sub(t) < declaredFor {
+		return true
+	}
+	seen := map[kube.Key]bool{}
+	free := *maxPods
 	for _, p := range kube.List[podPhase](ctx, kube.MatchingLabels(testPodLabels)) {
+		seen[p.Key()] = true
 		if p.Status.Phase != "Succeeded" && p.Status.Phase != "Failed" {
-			n++
+			free--
 		}
 	}
-	return n
+	for k, t := range g.declared {
+		if seen[k] || now.Sub(t) >= declaredFor {
+			delete(g.declared, k)
+		}
+	}
+	free -= len(g.declared)
+	if free <= 0 {
+		return false
+	}
+	for _, o := range kube.List[Branch](ctx) {
+		k, t, ok := waitingFor(ctx, o)
+		if _, declared := g.declared[k]; !ok || declared || seen[k] || o.Key() == b {
+			continue
+		}
+		if t.Before(since) || t.Equal(since) && o.Key().String() < b.String() {
+			free--
+		}
+	}
+	// After a failed read, ctx is canceled and kube creates no Pod, so take
+	// mustn't count one.
+	if free <= 0 || ctx.Err() != nil {
+		return false
+	}
+	g.declared[pod] = now
+	return true
+}
+
+// waiting returns the Pod that a result says its branch is waiting to start
+// at head, and when the branch started waiting, from the first of keys that
+// the result's outputs hold.
+func waiting(res *gitk8s.CheckResult, head string, keys ...string) (string, time.Time, bool) {
+	if res == nil || res.Commit != head || res.State != gitk8s.Running {
+		return "", time.Time{}, false
+	}
+	for _, k := range keys {
+		if t, err := time.Parse(time.RFC3339, res.Outputs[k]); err == nil {
+			return res.Outputs["pod"], t, true
+		}
+	}
+	return "", time.Time{}, false
+}
+
+// waitingFor returns the Pod that b is waiting to start and when it started
+// waiting. It skips branches that the check no longer runs on, including
+// branches whose GitRepository is gone, because nothing updates their
+// results, and a stale result holds up every branch behind it.
+func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
+	s := &b.Spec
+	if b.Deleting() || s.Parent == "" || s.Merge.Check("gotest") == nil || s.Head == "" || s.ParentHead == "" {
+		return kube.Key{}, time.Time{}, false
+	}
+	pod, since, ok := waiting(b.Status.Checks.Result, s.Head, "waiting")
+	if !ok || kube.Get[gitk8s.Repository](ctx, b.Namespace, s.Repository) == nil {
+		return kube.Key{}, time.Time{}, false
+	}
+	return kube.Key{Namespace: b.Namespace, Name: pod}, since, true
 }
 
 // podName names the Pod for one attempt at one head of a branch. The check
@@ -281,5 +386,5 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cacheprog" {
 		os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
-	checks.Main[Branch](check)
+	checks.Main[Branch](new(gotest).check())
 }
