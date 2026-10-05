@@ -79,8 +79,8 @@ const fetchAttempts = 3
 // a place after that.
 const declaredFor = time.Minute
 
-// waitingLayout formats outputs.waiting as a Kubernetes MicroTime, which
-// sorts as a string.
+// waitingLayout formats outputs.waiting and outputs.queued as a Kubernetes
+// MicroTime, which sorts as a string.
 const waitingLayout = "2006-01-02T15:04:05.000000Z07:00"
 
 // gotest is the gotest check. It runs at most -max-pods test Pods at once,
@@ -108,7 +108,7 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: outputs}
 	}
 	since := time.Now().UTC().Truncate(time.Microsecond)
-	if pod, t, ok := waiting(in.Previous, in.Spec.Head); ok && pod == name {
+	if pod, t, ok := waiting(in.Previous, in.Spec.Head, "waiting", "queued"); ok && pod == name {
 		since = t
 	}
 	if !g.take(ctx, in.Meta.Key(), kube.Key{Namespace: in.Meta.Namespace, Name: name}, since) {
@@ -120,6 +120,10 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	}
 	pod := kube.Own(ctx, testPod(in, name))
 	if pod == nil {
+		// outputs.queued keeps the branch's place in line until the Pod
+		// exists. Other branches count only outputs.waiting, so a Pod that
+		// the API server refuses stops holding a place after declaredFor.
+		outputs["queued"] = since.Format(waitingLayout)
 		// kube creates the Pod after run returns, and retries with backoff
 		// when it can't, for example because an admission policy denies it.
 		if err := kube.LastError(ctx); err != nil {
@@ -213,13 +217,18 @@ func (g *gotest) take(ctx context.Context, b, pod kube.Key, since time.Time) boo
 }
 
 // waiting returns the Pod that a result says its branch is waiting to start
-// at head, and when the branch started waiting.
-func waiting(res *gitk8s.CheckResult, head string) (string, time.Time, bool) {
+// at head, and when the branch started waiting, from the first of keys that
+// the result's outputs hold.
+func waiting(res *gitk8s.CheckResult, head string, keys ...string) (string, time.Time, bool) {
 	if res == nil || res.Commit != head || res.State != gitk8s.Running {
 		return "", time.Time{}, false
 	}
-	t, err := time.Parse(time.RFC3339, res.Outputs["waiting"])
-	return res.Outputs["pod"], t, err == nil
+	for _, k := range keys {
+		if t, err := time.Parse(time.RFC3339, res.Outputs[k]); err == nil {
+			return res.Outputs["pod"], t, true
+		}
+	}
+	return "", time.Time{}, false
 }
 
 // waitingFor returns the Pod that b is waiting to start and when it started
@@ -231,7 +240,7 @@ func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 	if b.Deleting() || s.Parent == "" || s.Merge.Check("gotest") == nil || s.Head == "" || s.ParentHead == "" {
 		return kube.Key{}, time.Time{}, false
 	}
-	pod, since, ok := waiting(b.Status.Checks.Result, s.Head)
+	pod, since, ok := waiting(b.Status.Checks.Result, s.Head, "waiting")
 	if !ok || kube.Get[gitk8s.Repository](ctx, b.Namespace, s.Repository) == nil {
 		return kube.Key{}, time.Time{}, false
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -442,11 +443,62 @@ func TestStopsCountingAPodThatNeverAppears(t *testing.T) {
 		t.Log("The API server never creates app-c-a's Pod.")
 		time.Sleep(declaredFor)
 		// app-c-a goes first, while the check still holds its expired entry.
-		if pods := kube.Owned[Pod](reconcileIn(t, r, first, repo, first, second)); len(pods) != 0 {
-			t.Errorf("owned Pods = %+v, want app-c-a to wait behind app-c-b once its Pod stops counting", pods)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, repo, first, second)); len(pods) != 1 {
+			t.Errorf("owned Pods = %+v, want app-c-a, which has waited longest, to take the free place again", pods)
 		}
-		if pods := kube.Owned[Pod](reconcileIn(t, r, second, repo, first, second)); len(pods) != 1 {
-			t.Errorf("owned Pods = %+v, want app-c-b's Pod", pods)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, second, repo, first, second)); len(pods) != 0 {
+			t.Errorf("owned Pods = %+v, want none while app-c-a's Pod may be on its way again", pods)
+		}
+	})
+}
+
+func TestKeepsItsPlaceWhenThePodIsRefused(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		defer func(n int) { *maxPods = n }(*maxPods)
+		*maxPods = 1
+		_, repo := branch()
+		start := time.Now()
+		first := waitingBranch("app-c-a", start)
+		second := waitingBranch("app-c-b", start.Add(time.Second))
+		third := waitingBranch("app-c-c", start.Add(2*time.Second))
+		since := first.Status.Checks.Result.Outputs["waiting"]
+		world := func(objs ...any) []any { return append([]any{repo, first, second, third}, objs...) }
+		r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, world()...)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-a's Pod", pods)
+		}
+
+		t.Log("The check Pod policy denies app-c-a's Pod, and kube tries again with backoff.")
+		denied := errors.New(`pods "` + podName("app-c-a", head, 1) + `" is forbidden: ` +
+			`ValidatingAdmissionPolicy 'git-k8s-check-pods' with binding 'git-k8s-check-pods' denied request (422 Invalid)`)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, world(denied)...)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-a to declare its Pod again", pods)
+		}
+		if pods := kube.Owned[Pod](reconcileIn(t, r, second, world()...)); len(pods) != 0 {
+			t.Fatalf("owned Pods = %+v, want app-c-b to wait while app-c-a's Pod may be on its way", pods)
+		}
+
+		t.Log("After a minute, app-c-a's Pod stops counting, so app-c-b doesn't wait out the backoff.")
+		time.Sleep(declaredFor)
+		if pods := kube.Owned[Pod](reconcileIn(t, r, second, world()...)); len(pods) != 1 {
+			t.Fatalf("owned Pods = %+v, want app-c-b's Pod", pods)
+		}
+		running := runningPod("default", podName("app-c-b", head, 1))
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, world(running, denied)...)); len(pods) != 0 {
+			t.Fatalf("owned Pods = %+v, want app-c-a to wait while app-c-b's Pod runs", pods)
+		}
+		if got := first.Status.Checks.Result.Outputs["waiting"]; got != since {
+			t.Errorf("outputs.waiting = %q, want %q, when app-c-a first started waiting", got, since)
+		}
+
+		t.Log("Someone labels the namespace, and app-c-b's Pod finishes.")
+		running.Status.Phase = "Succeeded"
+		if got := startedIn(t, r, repo, []*Branch{third, first, second}, []*Pod{running}); !slices.Equal(got, []string{"app-c-a"}) {
+			t.Errorf("started %v, want only app-c-a, which started waiting before app-c-c", got)
+		}
+		reconcileIn(t, r, first, world(running, runningPod("default", podName("app-c-a", head, 1)))...)
+		if outputs := first.Status.Checks.Result.Outputs; outputs["waiting"] != "" || outputs["queued"] != "" {
+			t.Errorf("outputs = %v, want no wait recorded once app-c-a's Pod exists", outputs)
 		}
 	})
 }

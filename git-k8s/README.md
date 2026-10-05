@@ -231,10 +231,14 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   `GitBranch` status, so a restarted check keeps the order.
 - The check counts a Pod from the moment that it declares it, before its
   cache shows the Pod, so a burst of pushes can't start more than
-  `-max-pods`. A Pod that never appears stops counting after a minute. With
-  `-shards`, a replica doesn't count the Pods that other replicas declared
-  until its cache shows them, so replicas that start Pods at the same
-  moment can go over the limit.
+  `-max-pods`. A Pod that never appears stops counting after a minute. If
+  the API server refuses a Pod, for example because the check Pod policy
+  denies it, other branches can then use its place while kube tries again.
+  Until the Pod exists, its branch keeps the time that it started waiting in
+  `outputs.queued`, so the branch still starts before the branches that
+  started waiting after it. With `-shards`, a replica doesn't count the Pods
+  that other replicas declared until its cache shows them, so replicas that
+  start Pods at the same moment can go over the limit.
 
 kube deletes a Pod when the check stops declaring it: after the check records
 the Pod's result, or when the branch moves to a new head. Owner references
