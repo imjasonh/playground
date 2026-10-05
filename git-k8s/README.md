@@ -56,7 +56,8 @@ URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
 Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
-shows each URL, and `check-gotest` copies it into its Pod specs.
+shows each URL, and `check-gotest` and `check-review` copy it into their Pod
+specs.
 
 The `git-k8s` program runs three controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
@@ -161,11 +162,12 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. The programs
 that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
-and `check-risk`. `check-gotest`'s test Pods fetch without credentials, so
-with Octo STS, `gotest` works only for a public repository. The `git-k8s`
-program publishes [check runs](#check-runs) with tokens for
-`checkRunsIdentity`, and publishes none without it. The URL must have the
-form `https://github.com/OWNER/REPO`, with or without `.git`.
+`check-risk`, and `check-review`, which pushes its agent's fixes. The test
+Pods of `check-gotest` and the agent Pods of `check-review` fetch without
+credentials, so with Octo STS, `gotest` and `review` work only for a public
+repository. The `git-k8s` program publishes [check runs](#check-runs) with
+tokens for `checkRunsIdentity`, and publishes none without it. The URL must
+have the form `https://github.com/OWNER/REPO`, with or without `.git`.
 
 ### Set up Octo STS
 
@@ -186,7 +188,7 @@ form `https://github.com/OWNER/REPO`, with or without `.git`.
 
    ```yaml
    issuer: ISSUER
-   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk)
+   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-review:check-review)
    audience: octo-sts.dev/NAMESPACE
    permissions:
      contents: write
@@ -236,10 +238,11 @@ before it expires. If an exchange fails, they use the old token until a
 minute before it expires, and ask Octo STS again after 30 seconds. When the
 `git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
 is `False` with the reason `CredentialsUnavailable`. When a check can't, it
-reports an `Error` result. Both messages include Octo STS's answer, such as
-`unable to find trust policy for "git-k8s"`. Octo STS caches each trust
-policy, and the lack of one, for 5 minutes, so a change to a trust policy can
-take that long to apply.
+reports an `Error` result, except `check-review`, which reports `Running` and
+tries again to push its agent's fix. The messages include Octo STS's answer,
+such as `unable to find trust policy for "git-k8s"`. Octo STS caches each
+trust policy, and the lack of one, for 5 minutes, so a change to a trust
+policy can take that long to apply.
 
 ### Check runs
 
