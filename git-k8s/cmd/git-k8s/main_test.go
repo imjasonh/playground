@@ -198,12 +198,8 @@ func branches(t *testing.T, srv *gittest.Server) (*gitk8s.GitBranch, *gittest.Wo
 // isn't queued joined in an earlier reconcile.
 func merge(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch) error {
 	t.Helper()
-	if b.Status.Queued == nil {
-		b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
-	}
-	repo, secret := srv.Repository("app", rules()...)
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret, parentOf(b, b.Spec.Branch))
-	return (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b)
+	_, err := mergeEvents(t, srv, b)
+	return err
 }
 
 // mergeIn reconciles b with parent as its parent's GitBranch, and returns
