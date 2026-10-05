@@ -44,7 +44,7 @@ func TestTestPodsPolicy(t *testing.T) {
 		t.Errorf("policy %s/%s, want app-test-pods in the repository's namespace, which kube.Own defaults to", policy.Namespace, policy.Name)
 	}
 	if want := map[string]string{"kube.imjasonh.github.io/controller": "check-gotest"}; !maps.Equal(policy.Spec.PodSelector.MatchLabels, want) {
-		t.Errorf("the policy selects %v, want the Pods that the mirror lets fetch, %v", policy.Spec.PodSelector.MatchLabels, want)
+		t.Errorf("the policy selects %v, want check-gotest's Pods, %v", policy.Spec.PodSelector.MatchLabels, want)
 	}
 	if !slices.Equal(policy.Spec.PolicyTypes, []string{"Ingress", "Egress"}) {
 		t.Errorf("policy types = %v; with no ingress rules, Ingress keeps everything from reaching the Pods", policy.Spec.PolicyTypes)

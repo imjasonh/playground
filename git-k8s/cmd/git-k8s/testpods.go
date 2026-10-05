@@ -102,9 +102,9 @@ var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "1
 
 // testPodsPolicy declares the NetworkPolicy, REPOSITORY-test-pods, that
 // repo owns for the test Pods in its namespace. It selects the Pods with
-// kube's controller label for check-gotest, which are the Pods that the
-// mirror lets fetch, so the policies of the repositories in a namespace are
-// the same, and each one covers every test Pod there. It lets the Pods
+// kube's controller label for check-gotest, which run a branch's code, so
+// the policies of the repositories in a namespace are the same, and each
+// one covers every test Pod there. It lets the Pods
 // reach the mirror's port on this program's Pods, and port 53 on the DNS
 // Pods and -dns-cidrs, and lets nothing reach them. With -goproxy, it also
 // lets them reach ports 80 and 443 on IPv4 addresses outside privateRanges,

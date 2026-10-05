@@ -32,6 +32,12 @@
 // other. When a side of such a branch rewound, resolve/BRANCH would bring
 // back the commits that the rewind removed, so the check pushes nothing,
 // and says how to resolve the divergence.
+//
+// The check and its agent Pods fetch from the mirror, which keeps the
+// external repository's heads and the heads where the two sides last
+// synced under refs/git-k8s/, and the check pushes to the mirror. The
+// mirror lets a check create no branches, so the core program's
+// -branch-prefix gives the check's service account the prefix resolve/.
 package main
 
 import (
@@ -49,8 +55,8 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -92,7 +98,7 @@ var union = patterns{"go.sum"}
 
 // The agent reads the subjects of the branch's commits, and a replay keeps
 // their authors and messages, so the check isn't FilesOnly.
-var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: credentials.Remote, Stale: stale, Run: run}
+var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: mirror.Remote, Stale: stale, Run: run}
 
 // stale reports whether the previous result is for another merge than the
 // one that the branch needs now: the branch diverged or stopped diverging,
@@ -493,7 +499,7 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		return fail(err)
 	}
 	defer unlock()
-	remote, err := credentials.Remote(ctx, repo)
+	remote, err := check.Remote(ctx, repo)
 	if err != nil {
 		return fail(err)
 	}

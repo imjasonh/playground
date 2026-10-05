@@ -4,8 +4,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"maps"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -93,13 +99,64 @@ var rules = []gitk8s.BranchRule{
 }
 
 // reconcile runs the controller on b with the repository app, which has
-// rules, and the objects in world.
+// rules, and the objects in world. The check reaches app on srv, as it
+// reaches the repository's copy on the mirror.
 func reconcile(t *testing.T, srv *gittest.Server, b *Branch, rules []gitk8s.BranchRule, world ...any) (*kube.Recorder, error) {
 	t.Helper()
-	repo, secret := srv.Repository("app", rules...)
-	ctx, rec := kube.Fake(t.Context(), b, append([]any{repo, secret}, world...)...)
+	useRemote(t, srv.RemoteFor)
+	repo, _ := srv.Repository("app", rules...)
+	ctx, rec := kube.Fake(t.Context(), b, append([]any{repo}, world...)...)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	return rec, newReconciler(cfg).Reconcile(ctx, b)
+}
+
+// useRemote makes the check reach repositories with remote instead of
+// mirror.Remote for the rest of the test.
+func useRemote(t *testing.T, remote func(context.Context, *gitk8s.Repository) (git.Remote, error)) {
+	r := check.Remote
+	t.Cleanup(func() { check.Remote = r })
+	check.Remote = remote
+}
+
+// wrongPassword reaches the repositories on srv with the wrong password,
+// so that git fails.
+func wrongPassword(srv *gittest.Server) func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+	return func(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+		r := srv.Remote(repo.Name)
+		r.Auth = &git.Auth{Username: srv.Username, Password: "wrong"}
+		return r, nil
+	}
+}
+
+// serveMirror serves the repositories on srv like the mirror: at
+// /default/NAME.git, to requests with a token from kube.RequestToken. The
+// -mirror flag points to that server until the test ends, and serveMirror
+// returns its URL.
+func serveMirror(t *testing.T, srv *gittest.Server) string {
+	t.Helper()
+	upstream, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	m := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		path, ok := strings.CutPrefix(r.URL.Path, "/default/")
+		switch {
+		case !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer fake-token-"):
+			http.Error(rw, "send a token for the mirror", http.StatusUnauthorized)
+		case !ok:
+			http.NotFound(rw, r)
+		default:
+			r.URL.Path = "/" + path
+			proxy.ServeHTTP(rw, r)
+		}
+	}))
+	t.Cleanup(m.Close)
+	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
+	if err := flag.Set("mirror", m.URL); err != nil {
+		t.Fatal(err)
+	}
+	return m.URL
 }
 
 // withAgent runs agents with the fake backend for the rest of the test.
@@ -448,7 +505,7 @@ func TestStartsAnAgent(t *testing.T) {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
 	want := stateOutputs(&agent.JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1})
-	maps.Copy(want, map[string]string{"conflicts": "a.txt,go.sum", "merge": b.Spec.ParentHead, "base": base, "union": "go.sum"})
+	maps.Copy(want, map[string]string{"conflicts": "a.txt,go.sum", "merge": b.Spec.ParentHead, "base": base, "union": "go.sum", "url": srv.Remote("app").URL})
 	if !maps.Equal(res.Outputs, want) {
 		t.Errorf("outputs = %v, want %v", res.Outputs, want)
 	}
@@ -502,9 +559,9 @@ func TestFollowsTheAgentWhileGitFails(t *testing.T) {
 	}
 	pod := kube.Owned[agent.Pod](rec)[0].Name
 
-	repo, secret := srv.Repository("app", rules...)
-	secret.Data["password"] = []byte("wrong")
-	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
+	useRemote(t, wrongPassword(srv))
+	repo, _ := srv.Repository("app", rules...)
+	ctx, rec := kube.Fake(t.Context(), b, repo)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
@@ -513,6 +570,65 @@ func TestFollowsTheAgentWhileGitFails(t *testing.T) {
 	if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || len(pods) != 1 || pods[0].Name != pod {
 		t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, pod)
 	}
+
+	t.Log("While the check can't get a token for the mirror, it follows the run at the URL in its outputs.")
+	useRemote(t, func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+		return git.Remote{}, errors.New("no token for the mirror")
+	})
+	ctx, rec = kube.Fake(t.Context(), b, repo)
+	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	res = b.Status.Checks.Result
+	if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || len(pods) != 1 || pods[0].Name != pod || res.Outputs["url"] != repo.Spec.URL {
+		t.Errorf("result = %+v and Pods %v, want Running with Pod %s and the URL %s", res, pods, pod, repo.Spec.URL)
+	}
+}
+
+func TestReachesTheRepositoryThroughTheMirror(t *testing.T) {
+	withAgent(t)
+	// reconcileThroughMirror runs the controller on b, with the objects in
+	// world, against a server like the mirror that serves the repository
+	// app on srv, and returns the copy's URL on that server.
+	reconcileThroughMirror := func(t *testing.T, srv *gittest.Server, b *Branch, world ...any) (*kube.Recorder, string) {
+		t.Helper()
+		copyURL := serveMirror(t, srv) + "/default/app.git"
+		repo, _ := srv.Repository("app", rules...)
+		ctx, rec := kube.Fake(t.Context(), b, append([]any{repo}, world...)...)
+		cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
+		if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
+			t.Fatal(err)
+		}
+		return rec, copyURL
+	}
+
+	t.Run("an agent Pod fetches from the mirror with a token of its own", func(t *testing.T) {
+		srv := gittest.NewServer(t, "")
+		b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+		rec, want := reconcileThroughMirror(t, srv, b)
+		pods := kube.Owned[agent.Pod](rec)
+		if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Outputs["url"] != want {
+			t.Fatalf("result = %+v and %d Pods, want Running with one Pod and the URL %s", res, len(pods), want)
+		}
+		if got, token := prepareEnv(pods[0], "URL"), prepareEnv(pods[0], "TOKEN_FILE"); got != want || token == "" {
+			t.Errorf("the Pod fetches from %q with TOKEN_FILE %q, want %s with a token", got, token, want)
+		}
+		for _, e := range pods[0].Spec.InitContainers[0].Env {
+			if s := e.ValueFrom; s != nil && s.SecretKeyRef != nil && s.SecretKeyRef.Name != "cursor-api-key" {
+				t.Errorf("the prepare container reads %s from the Secret %s", e.Name, s.SecretKeyRef.Name)
+			}
+		}
+	})
+
+	t.Run("the check pushes resolve/main to the mirror for a diverged branch without a parent", func(t *testing.T) {
+		srv := gittest.NewServer(t, "")
+		b, _, e, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
+		reconcileThroughMirror(t, srv, b, o)
+		pushed := srv.Heads(t, "app")["resolve/main"]
+		if res := b.Status.Checks.Result; res.State != gitk8s.Running || pushed == "" || res.Outputs["diverged"] != e {
+			t.Errorf("result = %+v and resolve/main at %q, want Running after a push through the mirror", res, pushed)
+		}
+	})
 }
 
 func TestStartsOverWhenTheRunCantGoOn(t *testing.T) {
@@ -691,7 +807,7 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 
 func TestKeepsTheRunsStateInItsOutputs(t *testing.T) {
 	st := agent.JobState{Runs: 2, Pod: "conflicts-app-c-x-2", Attempt: 2, UID: "uid-2", Refunded: "uid-1", Done: true}
-	got := readState(runOutputs(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), &st))
+	got := readState(runOutputs(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), "http://mirror/default/app.git", &st))
 	if *got != st {
 		t.Errorf("state after the outputs = %+v, want %+v", *got, st)
 	}
@@ -723,9 +839,9 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 	}
 
 	t.Log("The run finishes while git fails.")
-	repo, secret := srv.Repository("app", rules...)
-	secret.Data["password"] = []byte("wrong")
-	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
+	useRemote(t, wrongPassword(srv))
+	repo, _ := srv.Repository("app", rules...)
+	ctx, rec := kube.Fake(t.Context(), b, repo)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
@@ -775,8 +891,8 @@ func TestCommitsTheResultAgainWhenGitFailsToCommitIt(t *testing.T) {
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	repo, secret := srv.Repository("app", rules...)
-	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
+	repo, _ := srv.Repository("app", rules...)
+	ctx, rec := kube.Fake(t.Context(), b, repo)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	cfg.Git.Bin = bin
 	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
@@ -871,7 +987,7 @@ func TestCommitsTheAgentsResolution(t *testing.T) {
 			if !reflect.DeepEqual(job.Checkout, wantCheckout) {
 				t.Errorf("job's checkout = %+v, want %+v", job.Checkout, wantCheckout)
 			}
-			if job.Name != b.Name || job.Namespace != "default" || job.URL != repo.Spec.URL || !reflect.DeepEqual(job.Credentials, repo.Spec.SecretRef) ||
+			if job.Name != b.Name || job.Namespace != "default" || job.URL != repo.Spec.URL || !job.Mirror || job.Credentials != nil ||
 				job.Task != (agent.Task{Instructions: task, Edit: true}) || !slices.Equal(job.Tools, tools) || job.MaxRuns != 10 {
 				t.Errorf("job = %+v", job)
 			}

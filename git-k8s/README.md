@@ -58,8 +58,8 @@ set to those transports. Its git commands put `--end-of-options` before every
 URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
-Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
-shows each URL, and `check-conflicts` copies it into its agent Pods' specs.
+Put credentials in `secretRef`, not in `url`, because
+`kubectl get gitrepositories` shows each URL.
 
 The `git-k8s` program, which this README calls the core program, serves the
 mirror and runs three controllers. Each check runs as its own program. The
@@ -127,10 +127,11 @@ namespace `team` is at `http://git-k8s.git-k8s.svc/team/app.git`. The
 Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens. If you install the core program under another name or
 in another namespace, set `-mirror` to the mirror's base URL on `check-base`,
-`check-gofmt`, `check-risk`, `check-gotest`, and `check-review`. Also set the
-core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
-and labels, which it uses in the [test Pods' NetworkPolicy](#sandboxed-checks),
-and change the [agent Pods' NetworkPolicy](#agentic-checks) to match.
+`check-gofmt`, `check-risk`, `check-gotest`, `check-review`, and
+`check-conflicts`. Also set the core program's `-mirror-namespace` and
+`-mirror-labels` to its own namespace and labels, which it uses in the
+[test Pods' NetworkPolicy](#sandboxed-checks), and change the
+[agent Pods' NetworkPolicy](#agentic-checks) to match.
 
 ### Sync with the external repository
 
@@ -199,8 +200,8 @@ do:
 | Caller | Can fetch | Can push |
 | --- | --- | --- |
 | The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME` | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
-| A controller that starts branches, which the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
-| A Pod of a check, such as a test Pod of `check-gotest` or an agent Pod of `check-review`, with a token that's bound to the Pod | The repository of the branch that the Pod works on, while the check's `Running` result on that branch names the Pod, the branch's merge policy lists the check, and the Pod is `Pending` | Nothing |
+| A controller that starts branches, or a check such as `check-conflicts`, whose service account the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
+| A Pod of a check, such as a test Pod of `check-gotest` or an agent Pod of `check-review` or `check-conflicts`, with a token that's bound to the Pod | The repository of the branch that the Pod works on, while the check's `Running` result on that branch names the Pod, the branch's merge policy lists the check, and the Pod is `Pending` | Nothing |
 
 The merge controller is part of the core program and updates the copy
 directly, so it's the only thing that moves a parent.
@@ -213,13 +214,15 @@ git shows the reason to the person or program that pushed:
  ! [remote rejected] HEAD -> main (main is a parent branch, which only the merge controller updates)
 ```
 
-A check can't create or delete branches. git updates a branch only if it
-still points to the commit that the push expects, so a push never
-overwrites a change that the pusher hasn't seen. Pushes can't see or change
-the mirror's own refs under `refs/git-k8s/`, and git checks every object in
-a push with `receive.fsckObjects`. To resolve a divergence, fetches can see
-the external repository's heads under `refs/git-k8s/downstream/heads/`, and
-the heads where the copy and the external repository last synced under
+A check can't create or delete branches unless `-branch-prefix` names its
+service account, which gives the check a controller's rights as well as its
+own. git updates a branch only if it still points to the commit that the
+push expects, so a push never overwrites a change that the pusher hasn't
+seen. Pushes can't see or change the mirror's own refs under
+`refs/git-k8s/`, and git checks every object in a push with
+`receive.fsckObjects`. To resolve a divergence, fetches can see the external
+repository's heads under `refs/git-k8s/downstream/heads/`, and the heads
+where the copy and the external repository last synced under
 `refs/git-k8s/synced/heads/`.
 
 The mirror reads at most 1,000 ref updates and shallow commits, in at most
@@ -244,7 +247,8 @@ go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:la
 
 The controller reaches the mirror with `mirror.Remote`, as a check does, and
 a branches rule such as `match: deps/**` with `parent: main` tracks its
-branches.
+branches. `check-conflicts` needs the prefix `resolve/`, as
+[Resolve conflicts](#resolve-conflicts) describes.
 
 The mirror knows a controller only by the namespace and name of its service
 account. Anyone who can create Pods or tokens in that namespace can act as
@@ -256,10 +260,10 @@ is deleted, and it expires after 10 minutes. The mirror lets the Pod fetch
 only while a `Running` result of the check on one of the repository's
 branches names the Pod in its `pod` output, and the branch's merge policy
 lists the check. `check-gotest` records the Pod's name before it starts the
-Pod. The `agent` package names an agent Pod in the reconcile that declares
-it, and kube writes that result right after it creates the Pod. An agent
-Pod that fetches before the mirror sees the result fails to fetch, and the
-check tries again in a new Pod, as after any failed fetch.
+Pod. `check-review` and `check-conflicts` name an agent Pod in the reconcile
+that declares it, and kube writes that result right after it creates the
+Pod. An agent Pod that fetches before the mirror sees the result fails to
+fetch, and the check tries again in a new Pod, as after any failed fetch.
 
 A Pod's name is known before the Pod exists, so another program that
 creates Pods in the namespace could create a Pod with that name first. So
@@ -528,13 +532,11 @@ repository's default branch. git-k8s uses the public Octo STS service at
 `https://octo-sts.dev`, which issues tokens only for github.com, so a
 repository on GitHub Enterprise Server needs a `secretRef`.
 
-`gitIdentity` replaces `secretRef`, so set only one of the two. The mirror
-uses tokens for it, to fetch from and push to the repository, and so does
-`check-conflicts`. The other checks, `check-gotest`'s test Pods, and
-`check-review`'s agent Pods fetch from the mirror, so `gotest` and `review`
-work for a private repository too. The agent Pods of `check-conflicts` fetch
-without credentials, so for a private repository, `conflicts` resolves only
-what git can. The core program publishes
+`gitIdentity` replaces `secretRef`, so set only one of the two. Only the
+mirror uses tokens for it, to fetch from and push to the repository. The
+checks, `check-gotest`'s test Pods, and the agent Pods of `check-review` and
+`check-conflicts` fetch from the mirror, so `gotest`, `review`, and
+`conflicts` work for a private repository too. The core program publishes
 [check runs](#check-runs) with tokens for `checkRunsIdentity`, and publishes
 none without it. The URL must have the form `https://github.com/OWNER/REPO`,
 with or without `.git`.
@@ -558,7 +560,7 @@ with or without `.git`.
 
    ```yaml
    issuer: ISSUER
-   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-conflicts:check-conflicts)
+   subject: system:serviceaccount:git-k8s:git-k8s
    audience: octo-sts.dev/NAMESPACE
    permissions:
      contents: write
@@ -583,14 +585,11 @@ with or without `.git`.
 4. Apply the `GitRepository`.
 
 A service account token's subject is `system:serviceaccount:NAMESPACE:NAME`.
-When you install the programs with `generate`, as [Install](#install)
-describes, each one runs as the service account with the program's name, in
-the namespace with the same name. The core program and `check-conflicts` ask
-Octo STS for tokens for `gitIdentity`, so the trust policy in
-`git-k8s.sts.yaml` names both service accounts, and Octo STS matches
-`subject_pattern` against the whole subject. Only the core program asks for
-tokens for `checkRunsIdentity`. If you install them under other names or in
-other namespaces, change the subjects to match.
+When you install the core program with `generate`, as [Install](#install)
+describes, it runs as the service account `git-k8s` in the namespace
+`git-k8s`. It's the only program that asks Octo STS for tokens, so both
+trust policies name only its service account. If you install it under
+another name or in another namespace, change `subject` to match.
 
 Each token's audience is `octo-sts.dev/` followed by the `GitRepository`'s
 namespace. The core program uses the same service account for every
@@ -606,18 +605,17 @@ in `.github/workflows`, also grant `workflows: write`, because GitHub refuses
 a push that changes those files without it. `checks: write` lets the core
 program create and update check runs.
 
-The core program and `check-conflicts` keep each GitHub token in memory and
-get a new one 10 minutes before it expires. If an exchange fails, they use
-the old token until a minute before it expires, and ask Octo STS again after
-30 seconds. When the mirror can't get a token before its first fetch of a
-repository, the `GitRepository`'s `Ready` condition is `False` with the
-reason `CredentialsUnavailable`. After that, its `ExternalSynced` condition
-is `False` with the reason `SyncFailed`, and checks keep working on the copy.
-When `check-conflicts` can't get a token, it reports an `Error` result, or
-`Running` on a branch with a parent, and tries again. The messages include
-Octo STS's answer, such as `unable to find trust policy for "git-k8s"`. Octo
-STS caches each trust policy, and the lack of one, for 5 minutes, so a change
-to a trust policy can take that long to apply.
+The core program keeps each GitHub token in memory and gets a new one 10
+minutes before it expires. If an exchange fails, it uses the old token until
+a minute before it expires, and asks Octo STS again after 30 seconds. When
+the mirror can't get a token before its first fetch of a repository, the
+`GitRepository`'s `Ready` condition is `False` with the reason
+`CredentialsUnavailable`. After that, its `ExternalSynced` condition is
+`False` with the reason `SyncFailed`, and checks keep working on the copy.
+Both messages include Octo STS's answer, such as
+`unable to find trust policy for "git-k8s"`. Octo STS caches each trust
+policy, and the lack of one, for 5 minutes, so a change to a trust policy can
+take that long to apply.
 
 ### Check runs
 
@@ -977,7 +975,7 @@ creates Pods in every namespace that has a `GitBranch`, can't change
 NetworkPolicies. Each `GitRepository` owns one policy, `NAME-test-pods`. It
 selects the Pods in the repository's namespace that have kube's controller
 label for `check-gotest`, `kube.imjasonh.github.io/controller=check-gotest`,
-which are the Pods that the mirror lets fetch. The policies of the
+which are the Pods that run a branch's code. The policies of the
 `GitRepository` objects in a namespace are the same, so each one covers every
 test Pod there. The repositories controller declares the policy before the
 `GitBranch` objects, so it exists before `check-gotest` starts the first test
@@ -1476,7 +1474,7 @@ Pods and Cursor's API over HTTPS, and the check needs to reach the agent
 Pods on TCP port 8080. A NetworkPolicy matches IP addresses, not host names,
 so by itself it can't limit agent Pods to Cursor's API. This policy allows
 the agent Pods DNS, the mirror, HTTPS to any address, and requests from
-`check-review`:
+`check-review` and [`check-conflicts`](#resolve-conflicts):
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -1492,8 +1490,10 @@ spec:
   ingress:
     - from:
         - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: check-review
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [check-review, check-conflicts]
       ports:
         - port: 8080
   egress:
@@ -1761,11 +1761,23 @@ on its head. The check fails, and says which of these to do, until either
 side's head keeps every change that the other side made. Then it passes,
 because the mirror moves the other side to that head.
 
-Checks push with the repository's credentials, which can push to any
-branch. The mirror lets a check update only a branch that has a parent, so
-with the mirror, the core program must also give the service account
-`check-conflicts` in the namespace `check-conflicts` the branch-name prefix
-`resolve/`, which lets it create `resolve/BRANCH`.
+The check fetches from the mirror and pushes to it, as the other checks do,
+and its agent Pods fetch from the mirror with tokens that are bound to them,
+so `generate` doesn't let the check read Secrets. The mirror lets a check
+update only a branch that has a parent, and create none, so give the service
+account `check-conflicts` in the namespace `check-conflicts` the branch-name
+prefix `resolve/` when you install the core program:
+
+```sh
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=check-conflicts/check-conflicts=resolve/ | kubectl apply -f -
+```
+
+Pass it with the core program's other flags, such as the `-branch-prefix` of
+a controller that starts branches. Without the prefix, the mirror refuses to
+create `resolve/BRANCH`, and the check reports `Error` for a diverged branch
+without a parent. A prefix holds in every repository, so with it, the check
+can fetch every repository's copy, and create, update, and delete the
+branches under `resolve/` in each, as a controller that starts branches can.
 
 To install `check-conflicts`, build the agent runner's image as for
 `check-review`, and pass its digest with `-agent-image`. Without
@@ -1780,8 +1792,9 @@ comma-separated list of path patterns in the gitattributes format whose
 conflicts git resolves by keeping the lines of both sides. Its agent Pods run
 in their branch's namespace, as `check-review`'s do, so that namespace needs
 the Secret that holds the Cursor API key, and must opt in to check Pods, as
-[Install](#install) describes. The agent Pods also need the NetworkPolicy
-that `check-review`'s need, with ingress from the namespace `check-conflicts`.
+[Install](#install) describes. The agent Pods also need the
+[NetworkPolicy](#agentic-checks) that `check-review`'s need, which lets
+`check-conflicts` reach them too.
 
 ### Run agents from a controller
 
@@ -2464,10 +2477,12 @@ git-k8s divides what each program can do, so that no single check can land
 a change:
 
 - A check can push only to branches that have a parent whose merge policy
-  gives the check `mayPush: true`. Each push is a new head that every check
-  runs on again, so a compromised check can't move a parent or skip a merge
-  gate. It can't read Secrets or reach external repositories, and the
-  admission policies keep it to its own result.
+  gives the check `mayPush: true`, and to the branches under a prefix that
+  `-branch-prefix` gives it, such as `check-conflicts`' `resolve/`, except
+  parents. Each push is a new head that every check runs on again, so a
+  compromised check can't move a parent or skip a merge gate. It can't read
+  Secrets or reach external repositories, and the admission policies keep it
+  to its own result.
 - The test container, which runs the branch's code, has no token and no
   credentials, and the core program's NetworkPolicy lets it reach only the
   mirror and the cluster's DNS servers. `check-gotest` creates the Pod but
@@ -2568,7 +2583,6 @@ the branch's lines and then the other side's, and fails a conflict with
 - The core program runs one replica, so the mirror and the controllers are
   down while it restarts.
 - The mirror syncs branches, not tags.
-- Nothing resolves a divergence or a merge conflict by itself.
 - The test Pods' NetworkPolicy works only with a network plugin that
   enforces it.
 - An approval names one head, so a branch that needs one needs another after
@@ -2577,14 +2591,13 @@ the branch's lines and then the other side's, and fails a conflict with
   the back. While other branches keep landing, it might never land.
 - A check that doesn't finish at the front of a queue holds up the branches
   behind it while the front can still land.
-- `check-gotest` and `check-review` can create Pods in every namespace that
-  opts in to check Pods. Installing them with `generate -watch-namespace`
+- `check-gotest`, `check-review`, and `check-conflicts` can create Pods in
+  every namespace that opts in to check Pods, and `check-conflicts` can even
+  without `-agent-image`. Installing them with `generate -watch-namespace`
   limits that to one namespace.
-- `check-conflicts` reads repository credentials, so `generate` lets it read
-  every Secret, including the Cursor API key, which only its agent Pods use.
-  Like `check-gotest`, it can also create Pods in every namespace, even
-  without `-agent-image`. Installing it with `generate -watch-namespace`
-  limits its Secrets and Pods to one namespace.
+- The branch-name prefix `resolve/` lets `check-conflicts` fetch every
+  repository's copy, and push under `resolve/` in each, even in a repository
+  whose merge policies don't list the `conflicts` check.
 - Agent Pods that a controller starts with `RunJob` fetch from the external
   repository with its credentials, because the mirror accepts a token that's
   bound to a Pod only from a check's Pod.

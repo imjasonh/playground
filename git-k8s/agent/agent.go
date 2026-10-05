@@ -22,12 +22,13 @@
 // Run turns those files into a fix commit, which the checks framework pushes
 // when the check's policy and the branch's maxAutomatedCommits allow.
 //
-// A controller, or a check that needs a Job that Run doesn't build, calls
-// Runner.RunJob. A Job names the repository, the commits to check out, the
-// task, and the agent's tools, and can have the agent resolve a merge's
-// conflicts. Run builds one from the check's branch. The mirror accepts a
-// token that's bound to a Pod only from a check's Pod, so a controller's
-// Job names the repository's URL and credentials.
+// A controller, or a check that needs a Job that Run doesn't build, such as
+// the conflicts check, calls Runner.RunJob. A Job names the repository, the
+// commits to check out, the task, and the agent's tools, and can have the
+// agent resolve a merge's conflicts. Run builds one from the check's
+// branch. The mirror accepts a token that's bound to a Pod only from a
+// check's Pod, so a check's Job sets Mirror, and a controller's Job names
+// the repository's URL and credentials.
 package agent
 
 import (

@@ -48,8 +48,9 @@ var runJob = func(ctx context.Context, job *agent.Job, st *agent.JobState) agent
 
 // job is the agent's job that resolves the conflicts of merging t into the
 // branch's head, with base as the merge base, which is t.synced if
-// t.replay is set.
-func (t target) job(in *checks.Input, base string) *agent.Job {
+// t.replay is set. Its Pods fetch from url, the repository's copy on the
+// mirror.
+func (t target) job(in *checks.Input, base, url string) *agent.Job {
 	task := agent.Task{Instructions: instructions, Edit: true}
 	switch {
 	case t.replay:
@@ -58,10 +59,10 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 		task.Instructions = divergedInstructions + instructions
 	}
 	return &agent.Job{
-		Name:        in.Meta.Name,
-		Namespace:   in.Meta.Namespace,
-		URL:         in.Repository.Spec.URL,
-		Credentials: in.Repository.Spec.SecretRef,
+		Name:      in.Meta.Name,
+		Namespace: in.Meta.Namespace,
+		URL:       url,
+		Mirror:    true,
 		Checkout: agent.Checkout{
 			Branch: in.Spec.Branch,
 			Head:   in.Spec.Head,
@@ -87,7 +88,10 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 // branch last synced moved, when -union changed, because git might then
 // resolve every conflict, or when the run waits for a commit that t
 // already has. Then it updates the runs in outputs, which the new run
-// counts from.
+// counts from. While the check can't reach the mirror, such as when its
+// token for the mirror can't be read, it follows the run with the URL in
+// the previous outputs. Otherwise a new URL, such as from a changed
+// -mirror, starts a new run.
 func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]string) (checks.Verdict, bool) {
 	prev := in.Previous
 	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head {
@@ -102,16 +106,23 @@ func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]
 		!isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) || prev.Outputs["union"] != union.String() {
 		return checks.Verdict{}, false
 	}
+	url := prev.Outputs["url"]
+	if remote, err := in.Remote(ctx); err == nil {
+		url = remote.URL
+	}
+	if url == "" {
+		return checks.Verdict{}, false
+	}
 	pinned, base := t, prev.Outputs["base"]
 	pinned.commit = prev.Outputs["merge"]
 	pinned.replay = prev.Outputs["rewound"] == "external"
-	s := runJob(ctx, pinned.job(in, base), st)
+	s := runJob(ctx, pinned.job(in, base, url), st)
 	if s.Moved && pinned.commit != t.commit {
 		// RunJob gave back the run whose Pod found the branch moved.
 		maps.Copy(outputs, stateOutputs(&agent.JobState{Runs: st.Runs}))
 		return checks.Verdict{}, false
 	}
-	v := report(ctx, in, pinned, base, st, s)
+	v := report(ctx, in, pinned, base, url, st, s)
 	for _, k := range []string{"diverged", "rewound", "conflicts"} {
 		if prev.Outputs[k] != "" {
 			v.Outputs[k] = prev.Outputs[k]
@@ -139,12 +150,16 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 	case why != "":
 		return checks.Fail("%s", why)
 	}
+	remote, err := in.Remote(ctx)
+	if err != nil {
+		return retry(ctx, "reaching the repository: %v", err)
+	}
 	st := &agent.JobState{Runs: readState(outputs).Runs}
-	s := runJob(ctx, t.job(in, base), st)
+	s := runJob(ctx, t.job(in, base, remote.URL), st)
 	if !s.Done && st.Pod == "" {
 		s.Message = fmt.Sprintf("%s conflicts in %s; %s", t.action(), list, s.Message)
 	}
-	return report(ctx, in, t, base, st, s)
+	return report(ctx, in, t, base, remote.URL, st, s)
 }
 
 // unresolvable says why the agent can't resolve the conflicts of merging t
@@ -178,11 +193,12 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 }
 
 // report turns how the agent's run that merges t, with base as the merge
-// base, stands into the check's verdict. When the agent resolves the
-// conflicts, the verdict's fix is the merge that its files resolve.
-func report(ctx context.Context, in *checks.Input, t target, base string, st *agent.JobState, s agent.JobStatus) checks.Verdict {
+// base, from the repository at url, stands into the check's verdict. When
+// the agent resolves the conflicts, the verdict's fix is the merge that
+// its files resolve.
+func report(ctx context.Context, in *checks.Input, t target, base, url string, st *agent.JobState, s agent.JobStatus) checks.Verdict {
 	running := func(format string, args ...any) checks.Verdict {
-		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: runOutputs(t, base, st)}
+		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: runOutputs(t, base, url, st)}
 	}
 	if !s.Done {
 		return running("%s", s.Message)
@@ -247,14 +263,15 @@ func finished(ctx context.Context, v checks.Verdict) checks.Verdict {
 }
 
 // runOutputs hold what the next reconcile needs to follow the agent's run
-// that merges t, with base as the merge base.
-func runOutputs(t target, base string, st *agent.JobState) map[string]string {
+// that merges t, with base as the merge base, from the repository at url.
+func runOutputs(t target, base, url string, st *agent.JobState) map[string]string {
 	o := stateOutputs(st)
 	o["merge"] = t.commit
 	if st.Pod == "" {
 		return o
 	}
 	o["base"] = base
+	o["url"] = url
 	if len(union) > 0 {
 		o["union"] = union.String()
 	}

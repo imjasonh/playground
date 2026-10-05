@@ -34,8 +34,9 @@ type Job struct {
 	// The Pods then fetch with a token for the mirror that kube binds to
 	// each Pod, instead of with Credentials. The mirror accepts that token
 	// only from a Pending Pod that a check's Running result names in its
-	// pod output, so Run sets Mirror for a check's job, and a controller's
-	// job uses Credentials.
+	// pod output and whose controller label names that check's program, so
+	// a check's job sets Mirror, as Run's does, and a controller's job uses
+	// Credentials.
 	Mirror   bool
 	Checkout Checkout
 	Task     Task

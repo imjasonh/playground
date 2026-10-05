@@ -100,10 +100,11 @@ branch leaves it.
 Questions to settle first:
 
 - How `check-approval` learns that the commits since the approved head are
-  clean merges of the parent. It reads only the `GitBranch`, so it can't
-  read Secrets. It could trust an output of `check-base`, which would let a
-  compromised `check-base` carry an approval over to code that nobody
-  approved, or read the repository itself, which needs its credentials.
+  clean merges of the parent. It reads only the `GitBranch`, so it gets no
+  token for the mirror. It could trust an output of `check-base`, which
+  would let a compromised `check-base` carry an approval over to code that
+  nobody approved, or read the repository itself from the mirror, with
+  `mirror.Remote`.
 - How long the front can wait, and whether a branch that runs out of time
   goes to the back of the queue or waits for a new push.
 

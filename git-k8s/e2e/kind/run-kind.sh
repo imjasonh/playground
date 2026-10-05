@@ -229,8 +229,10 @@ crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
 # the objects in config/policy.yaml. The service account e2e-deps stands in
-# for a controller that starts branches.
-install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" "-fake-github=${CLUSTER_URL}/github"
+# for a controller that starts branches, and check-conflicts creates
+# resolve/BRANCH.
+install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
+  "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
   "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
@@ -1165,9 +1167,9 @@ else
   echo "The test Pods fetched from the mirror."
 fi
 # The core program owns a NetworkPolicy for each GitRepository that selects
-# the Pods with check-gotest's controller label. The mirror lets only Pods
-# with that label fetch, so the test Pods that fetched have it, even where
-# the cluster doesn't enforce the policy.
+# the Pods with check-gotest's controller label. The mirror lets a gotest
+# result's Pod fetch only with that label, so the test Pods that fetched
+# have it, even where the cluster doesn't enforce the policy.
 selects_test_pods() {
   [[ "$(k -n "${NS}" get networkpolicy "$1-test-pods" --ignore-not-found \
     -o jsonpath='{.spec.podSelector.matchLabels.kube\.imjasonh\.github\.io/controller}')" == check-gotest ]]
@@ -1810,6 +1812,18 @@ echo "::group::Conflicts with a parent that moved are resolved before branches l
 CHECKS+=(check-conflicts)
 install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
+# The check and its agent Pods fetch from the mirror, and the check pushes
+# to it, so check-conflicts needs no repository credentials either.
+conflicts_sa=system:serviceaccount:check-conflicts:check-conflicts
+if k auth can-i get secrets -n "${NS}" --as="${conflicts_sa}"; then
+  echo "check-conflicts can read Secrets" >&2
+  exit 1
+fi
+if k -n check-conflicts auth can-i create serviceaccounts/check-conflicts --subresource=token --as="${conflicts_sa}"; then
+  echo "check-conflicts can create tokens for its service account" >&2
+  exit 1
+fi
+echo "check-conflicts can't read Secrets or create tokens."
 CONFLICTED="${WORKDIR}/conflicted"
 mkdir "${CONFLICTED}"
 cf() {
@@ -1888,7 +1902,7 @@ race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds thi
 eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
 merged_main c/text
 eventually 60 no_agent_pods
-echo "The agent resolved the notes.txt conflict, and c/text landed."
+echo "The agent, in a Pod that fetched from the mirror, resolved the notes.txt conflict, and c/text landed."
 
 cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'
