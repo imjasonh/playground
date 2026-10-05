@@ -14,13 +14,16 @@
 // Unless -install-policies=false, the program installs the admission policies
 // in config/policy.yaml when it starts.
 //
-// Check controllers run as separate programs, such as check-gofmt.
+// Check controllers run as separate programs, such as check-gofmt. They
+// send their results to this program's results endpoint, and the results
+// controller writes each one to the entry of the check whose token sent it.
 package main
 
 import (
 	"flag"
 	"log/slog"
 	"os"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
@@ -33,6 +36,7 @@ func main() {
 	cache := &gitk8s.Cache{Git: g}
 	repos := &repositories{git: g}
 	m := &merger{cache: cache}
+	rs := &results{timeout: 10 * time.Second, poll: 100 * time.Millisecond}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
 	flag.StringVar(&cache.Dir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	flag.StringVar(&m.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
@@ -56,6 +60,8 @@ func main() {
 		}),
 		kube.For[gitk8s.GitRepository](repos, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](m, kube.Named("merge")),
+		kube.For[resultsBranch](rs, kube.Named("results")),
 		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
+		kube.Serve(rs.handler()),
 	)
 }

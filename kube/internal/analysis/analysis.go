@@ -45,6 +45,11 @@ type Config struct {
 	// Consts maps some of Calls to the index of a string parameter. For a
 	// call that passes a constant there, Find reports the constant.
 	Consts map[string]int
+	// Objects maps some of Funcs to the index of a namespace parameter,
+	// which a name parameter follows. For a call that passes its type
+	// argument itself, not a type parameter, and constants as the namespace
+	// and name, Find reports the constants.
+	Objects map[string]int
 	// Marker is a struct type in Package. Find reports the tag of the field
 	// through which a type argument embeds it.
 	Marker string
@@ -68,6 +73,10 @@ type Use struct {
 	// that Consts names, and Value is the constant.
 	Constant bool
 	Value    string
+	// Object is set for a call that names one object as Objects describes,
+	// and ObjectNamespace and ObjectName are the constants.
+	Object                      bool
+	ObjectNamespace, ObjectName string
 	// Pos is where the call is.
 	Pos string
 }
@@ -158,17 +167,24 @@ type node struct {
 }
 
 // A typeArg is a type that a type parameter is instantiated with, and
-// where. A nil t is a type argument that Find can't tell.
+// where. A nil t is a type argument that Find can't tell. object is set for
+// a call that names one object, in namespace ns with name name.
 type typeArg struct {
-	t   types.Type
-	pos string
+	t        types.Type
+	pos      string
+	object   bool
+	ns, name string
 }
 
-// key tells type arguments apart: by type, or, for one that Find can't
-// tell, by where it is. No type string starts with "?".
+// key tells type arguments apart: by type and the object that a call names,
+// or, for one that Find can't tell, by where it is. No type string starts
+// with "?" or holds a NUL byte.
 func (t typeArg) key() string {
-	if t.t == nil {
+	switch {
+	case t.t == nil:
 		return "?" + t.pos
+	case t.object:
+		return types.TypeString(t.t, nil) + "\x00" + t.ns + "\x00" + t.name
 	}
 	return types.TypeString(t.t, nil)
 }
@@ -234,6 +250,48 @@ func (a *analyzer) check(p *listedPackage) error {
 		}
 		return nil
 	}
+	// calls holds each call of one of Package's functions, by the called
+	// function's identifier.
+	calls := map[*ast.Ident]*ast.CallExpr{}
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			fun := ast.Unparen(call.Fun)
+			switch index := fun.(type) {
+			case *ast.IndexExpr:
+				fun = ast.Unparen(index.X)
+			case *ast.IndexListExpr:
+				fun = ast.Unparen(index.X)
+			}
+			var id *ast.Ident
+			switch fun := fun.(type) {
+			case *ast.Ident:
+				id = fun
+			case *ast.SelectorExpr:
+				id = fun.Sel
+			}
+			if fn, ok := info.Uses[id].(*types.Func); ok && fn.Pkg() != nil && fn.Pkg().Path() == a.cfg.Package {
+				calls[id] = call
+			}
+			return true
+		})
+	}
+	// constArg returns argument i of the call of id, if it's a string
+	// constant.
+	constArg := func(id *ast.Ident, i int) (string, bool) {
+		call := calls[id]
+		if call == nil || i >= len(call.Args) {
+			return "", false
+		}
+		v := info.Types[call.Args[i]].Value
+		if v == nil || v.Kind() != constant.String {
+			return "", false
+		}
+		return constant.StringVal(v), true
+	}
 	ids := slices.SortedFunc(maps.Keys(info.Instances), func(x, y *ast.Ident) int { return int(x.Pos() - y.Pos()) })
 	for _, id := range ids {
 		inst := info.Instances[id]
@@ -266,42 +324,24 @@ func (a *analyzer) check(p *listedPackage) error {
 				// doesn't substitute types into one such as Item[T].
 				arg = nil
 			}
-			a.add(to, typeArg{arg, pos})
-		}
-	}
-	// constArg holds the constant argument that Consts asks for, by the
-	// called function's identifier, for calls that pass one.
-	constArg := map[*ast.Ident]string{}
-	for _, f := range files {
-		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			var id *ast.Ident
-			switch fun := ast.Unparen(call.Fun).(type) {
-			case *ast.Ident:
-				id = fun
-			case *ast.SelectorExpr:
-				id = fun.Sel
-			}
-			fn, ok := info.Uses[id].(*types.Func)
-			if !ok || fn.Pkg() == nil || fn.Pkg().Path() != a.cfg.Package {
-				return true
-			}
-			if i, ok := a.cfg.Consts[fn.Name()]; ok && i < len(call.Args) {
-				if v := info.Types[call.Args[i]].Value; v != nil && v.Kind() == constant.String {
-					constArg[id] = constant.StringVal(v)
+			t := typeArg{t: arg, pos: pos}
+			if i, ok := a.cfg.Objects[fn.Name()]; ok && target && arg != nil {
+				if ns, ok := constArg(id, i); ok {
+					if name, ok := constArg(id, i+1); ok {
+						t.object, t.ns, t.name = true, ns, name
+					}
 				}
 			}
-			return true
-		})
+			a.add(to, t)
+		}
 	}
 	for id, obj := range info.Uses {
 		fn, ok := obj.(*types.Func)
 		if ok && fn.Pkg() != nil && fn.Pkg().Path() == a.cfg.Package && fn.Signature().Recv() == nil && slices.Contains(a.cfg.Calls, fn.Name()) {
 			u := Use{Func: fn.Name(), Pos: fset.Position(id.Pos()).String()}
-			u.Value, u.Constant = constArg[id]
+			if i, ok := a.cfg.Consts[fn.Name()]; ok {
+				u.Value, u.Constant = constArg(id, i)
+			}
 			a.calls = append(a.calls, u)
 		}
 	}
@@ -408,7 +448,10 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 		}
 		ft, ok := types.Unalias(field.Type()).(*types.Named)
 		if ok && ft.Obj().Pkg() != nil && ft.Obj().Pkg().Path() == a.cfg.Package && ft.Obj().Name() == a.cfg.Marker {
-			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Fields: jsonFields(st, i), Pos: t.pos}, true
+			return Use{
+				Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Fields: jsonFields(st, i),
+				Object: t.object, ObjectNamespace: t.ns, ObjectName: t.name, Pos: t.pos,
+			}, true
 		}
 	}
 	return Use{}, false
@@ -435,6 +478,9 @@ func (u Use) String() string {
 	}
 	if u.Type == "" {
 		return fmt.Sprintf("%s at %s", u.Func, u.Pos)
+	}
+	if u.Object {
+		return fmt.Sprintf("%s[%s](%q, %q) at %s", u.Func, strings.TrimPrefix(u.Type, "*"), u.ObjectNamespace, u.ObjectName, u.Pos)
 	}
 	return fmt.Sprintf("%s[%s] at %s", u.Func, strings.TrimPrefix(u.Type, "*"), u.Pos)
 }

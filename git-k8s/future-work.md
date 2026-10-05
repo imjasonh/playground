@@ -78,34 +78,6 @@ Questions to settle first:
   reconcile, so either kube adds an API for it, or the mirror patches an
   annotation on the `GitRepository`.
 
-## Authenticate check results with tokens
-
-The check-results admission policy keeps each check to its own entry in
-`status.checks` by looking at the service account that makes each write. A
-result carries no proof of which check wrote it, so the merge controller can
-trust results only as far as it trusts the policy, its binding, and the
-`git-k8s-checks` ConfigMap that maps service accounts to checks.
-
-The decided fix is for checks to stop writing `status.checks`. A check sends
-each result to an endpoint in the core program, next to the mirror, with a
-projected service account token. The core program verifies the token with a
-TokenReview, and writes the result to the entry of the check that the token
-proves, and no other. A check can't write another check's result, by mistake
-or on purpose, because it can't write results at all:
-
-- Checks lose write access to `GitBranch` status. They reconcile a view of
-  `GitBranch` that declares no status, so kube doesn't write one and
-  `generate` doesn't grant them access, and they read their earlier results
-  through a second view.
-- The core program finds the check for a token's service account the way the
-  check-results policy does, from the `git-k8s-checks` ConfigMap or the
-  `check-NAME` convention.
-- The admission policy stays as a backstop. People with write access to
-  `GitBranch` status can still write a result, for example to unblock a
-  branch whose check is broken.
-
-The endpoint uses the same token check as the mirror, so the two share it.
-
 ## Support GitHub Enterprise Server
 
 A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)

@@ -59,8 +59,9 @@ Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
 shows each URL, and `check-gotest`, `check-review`, `check-deps`,
 `check-conflicts`, and `git-k8s-deps` copy it into their Pod specs.
 
-The `git-k8s` program runs three controllers, and each check runs as its own
-program. Each controller is a `kube.For` reconciler:
+The core program, `git-k8s`, runs four controllers and an endpoint that
+accepts check results. Each check runs as its own program. Every controller
+is a `kube.For` reconciler:
 
 - The **repositories** controller lists each repository's branches with
   `git ls-remote` and declares a `GitBranch` for each tracked branch with
@@ -68,12 +69,15 @@ program. Each controller is a `kube.For` reconciler:
   parent's merge policy. When a branch disappears from the remote, kube
   deletes its `GitBranch`, because the reconcile stops declaring it. A remote
   can't be watched, so the controller asks to run again after `pollInterval`.
-- Each **check** controller is its own program. It reconciles `GitBranch`
-  objects through a view type that declares only the check's own entry in
-  `status.checks`. kube writes the view's status with server-side apply, so
-  each check manages one map key and never sees or rewrites another check's
-  result. Results record the commits they're for, and the merge controller
-  ignores results for older commits.
+- Each **check** controller reconciles a view of `GitBranch` without a
+  status, so it can't write status. It reads its last result through a view
+  that declares only its own entry in `status.checks`, so it never sees
+  another check's result. It sends each new result to the core program.
+  Results record the commits they're for, and the merge controller ignores
+  results for older commits.
+- The **results** controller writes check results to `status.checks`. Each
+  result goes to the entry of the check that sent it. See
+  [Check results](#check-results).
 - The **merge** controller evaluates the merge policy's `when` expression
   over the fresh results. When it passes, the controller lands the branch,
   as [Landing methods](#landing-methods) describes, with
@@ -83,8 +87,8 @@ program. Each controller is a `kube.For` reconciler:
   the parent's [merge queue](#merge-queue), and only the branch at the front
   lands.
 
-The `git-k8s` program's third controller, **check-runs**, copies check
-results to GitHub as check runs. See [Check runs](#check-runs).
+The core program's fourth controller, **check-runs**, copies check results
+to GitHub as check runs. See [Check runs](#check-runs).
 
 The checks and the merge controller read each branch's repository as a
 `gitk8s.Repository`, a `GitRepository` without its status, so the
@@ -113,11 +117,14 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 ## Events
 
 The controllers record an event about a `GitBranch` each time they change
-the remote:
+the remote. A branch without a parent takes no check results, so
+`check-conflicts` also records an event when it finds that such a branch
+diverged:
 
 | Reason | From | When |
 | --- | --- | --- |
 | `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch, or `check-conflicts` pushed `resolve/BRANCH` for a diverged branch without a parent. |
+| `ResolvingDivergence` | `check-conflicts` | `check-conflicts` found a diverged branch without a parent, and pushed nothing. A `Warning` says what keeps the check from resolving the divergence. A `Normal` event says that the check waits for `resolve/BRANCH` to land, or that nothing is left to resolve. |
 | `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 
@@ -385,13 +392,13 @@ STS are bound to the programs' Pods and last an hour. `generate` lets each
 program that fetches or pushes request tokens for its own service account,
 and for no other.
 
-The programs send service account tokens only to Octo STS, and GitHub tokens
-only to GitHub. For tests, the `-fake-github` flag points them at a fake
-GitHub and Octo STS instead. It's a flag and not a `GitRepository` field, so
-only whoever installs a program can choose where its tokens go. The
-end-to-end test's git server runs such a fake, which checks each service
-account token with a TokenReview, because Octo STS can't reach a kind
-cluster's issuer.
+The programs send the service account tokens for Octo STS only to Octo STS,
+and GitHub tokens only to GitHub. For tests, the `-fake-github` flag points
+them at a fake GitHub and Octo STS instead. It's a flag and not a
+`GitRepository` field, so only whoever installs a program can choose where
+its tokens go. The end-to-end test's git server runs such a fake, which
+checks each service account token with a TokenReview, because Octo STS can't
+reach a kind cluster's issuer.
 
 A trust policy's audience ties it to one namespace, so anyone who can create
 a `GitRepository` in that namespace can use the trust policy's permissions.
@@ -541,8 +548,10 @@ has changes from AI agents`.
 ### Write a check
 
 A check is a `checks.Check` and a view type that names its key in
-`status.checks`. This `main` package, next to the others in `cmd/`, is a
-complete check that fails branches without a `README.md`:
+`status.checks`. The framework reads the check's last result through the
+view, and sends each new result to the core program. This `main` package,
+next to the others in `cmd/`, is a complete check that fails branches
+without a `README.md`:
 
 ```go
 type Branch struct {
@@ -589,6 +598,12 @@ commits with `in.Replay`, which also need `SigningKey: signing.Key` to
 [sign the commits](#sign-commits). `generate` grants a program what its
 packages call, so a check that reads only the `GitBranch`, such as
 `check-approval`, leaves both out, and its program can't read Secrets.
+
+The core program accepts at most 16 outputs, with names of up to 63 bytes.
+A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
+have at most 15 other outputs, or the framework reports `Error` and doesn't
+push the fix. The framework shortens messages and output values to 1,024
+bytes, the most that the core program accepts.
 
 A check runs again when the branch's head changes, and with `UsesParent`,
 when the parent's head changes. `Always` runs it on every reconcile, for a
@@ -1363,12 +1378,15 @@ instead, with an empty commit on top that says why. The empty commit has the
 check's fix to `resolve/BRANCH`, including the `maxAutomatedCommits` of the
 rule that matches it. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
 merge gate, like any other branch. `check-base` merges `BRANCH` into it, or
-the conflicts check resolves that merge when it conflicts. The check waits
-while `resolve/BRANCH` holds work that hasn't landed, and passes once
-`BRANCH` contains the external repository's head, or when the external
-repository's head contains `BRANCH`'s head, because the mirror then moves
-`BRANCH` to it. To let the check resolve a diverged `main`, add the check to
-`main`'s policy, and give `resolve/main` the parent `main` with a rule:
+the conflicts check resolves that merge when it conflicts. `BRANCH` takes no
+check results, because it has no parent, so the check reports on it with
+`ResolvingDivergence` [events](#events) instead. The check waits while
+`resolve/BRANCH` holds work that hasn't landed, and reports that nothing is
+left to resolve once `BRANCH` contains the external repository's head, or
+when the external repository's head contains `BRANCH`'s head, because the
+mirror then moves `BRANCH` to it. To let the check resolve a diverged
+`main`, add the check to `main`'s policy, and give `resolve/main` the parent
+`main` with a rule:
 
 ```yaml
   branches:
@@ -1397,9 +1415,10 @@ that the rewind removed, the parent stays diverged until the external
 repository's head contains the parent's head again. If the parent rewound
 in git-k8s instead, replay the external repository's commits onto the
 parent's head, and push the result to the external repository with a lease
-on its head. The check fails, and says which of these to do, until either
-side's head keeps every change that the other side made. Then it passes,
-because the mirror moves the other side to that head.
+on its head. Until either side's head keeps every change that the other
+side made, the check records a `Warning` event that says which of these to
+do. Then it reports that nothing is left to resolve, because the mirror
+moves the other side to that head.
 
 Checks push with the repository's credentials, which can push to any
 branch. The mirror lets a check update only a branch that has a parent, so
@@ -1525,6 +1544,138 @@ its build scripts and tests, in the agent's container, which holds the
 Cursor API key and can reach Cursor's API. An agent that builds or tests
 code needs another sandbox, without the key. So an agent edits files, and
 the checks verify what the controller pushes, like any other head.
+
+## Check results
+
+Only the core program writes `status.checks`. A check sends each new result
+to the core program's results endpoint:
+
+1. The check reads the token that `generate` mounts in its Pod: a token for
+   the check's service account with the audience `git-k8s-results`, which
+   the kubelet renews before it expires.
+2. It sends the result and the token in a `PUT` request to
+   `RESULTS_URL/NAMESPACE/GITBRANCH/CHECK`. `RESULTS_URL` is the check's
+   `-results-url` flag, `http://git-k8s.git-k8s.svc/results` by default. The
+   request also names the `GitBranch` generation that the check read, and
+   the core program waits until its cache has the `GitBranch` at that
+   generation.
+3. The core program verifies the token with a TokenReview for that
+   audience, and maps the token's service account to a check. `generate`
+   installs each check with the service account `check-NAME` in the
+   namespace `check-NAME`, which maps to the check `NAME`. An entry in the
+   `git-k8s-checks` ConfigMap maps another service account to a check, as
+   [Check service accounts](#check-service-accounts) describes. If that
+   check isn't `CHECK`, the core program rejects the result.
+4. The core program also rejects a result for a branch without a parent, a
+   result for a check that the branch's merge policy doesn't list, a result
+   that isn't for the branch's current commits, a `Pending` result, and a
+   result over its size limits. The `checks` package sends an `Error`
+   result instead of one with a state or size that the core program
+   rejects, with a message that says why. The core program drops fields
+   that it doesn't know, as the API server does by default.
+5. The core program holds the result in memory and starts a reconcile of
+   the `GitBranch`. The results controller writes the result with
+   server-side apply, and the core program answers the request once its
+   cache shows the result.
+
+Only one replica of the core program writes a branch's results. With the two
+replicas that `generate` runs by default, that's the replica that holds the
+leader lease. If another replica gets the request, or the result isn't written
+within 10 seconds, the core program answers `503 Service Unavailable` and
+closes the connection, and the check tries again on a new connection. If 10
+tries fail, the check's reconcile fails, and kube retries it, which runs the
+check again. kube-proxy's iptables and nftables modes send each connection to
+a replica at random, so with N replicas, all 10 tries miss the one that
+writes the branch's results with probability `((N-1)/N)^10`. That's about 1
+in 1,000 with two replicas, 1 in 58 with three, and 1 in 9 with five.
+
+If the branch changed since the check read it, the core program answers
+`409 Conflict`, and the check drops the result, because the change runs the
+check again. If the core program rejects the result with `400 Bad Request`,
+or the token's service account with `403 Forbidden`, the check logs why and
+sends nothing more for that branch until the branch changes or the check
+restarts.
+
+### Security model
+
+The results endpoint and the `git-k8s-check-results` admission policy keep
+each check's service account to its own entry in `status.checks`.
+`generate` grants a program what its packages call, so a check's RBAC rules
+include nothing for `gitbranches/status`. A check needs no permission to
+create its results token, because it reads the token that `generate` mounts
+in its Pod. The core program writes only the entry of the check that the
+token's service account runs, so one check's token can't write another
+check's entry. The policy is a backstop. It rejects status writes by checks,
+and changes to `status.checks` by service accounts other than the core
+program's, even when a role grants them status access. See
+[Install](#install).
+
+`check-gotest` runs tests in Pods, and `check-review`, `check-conflicts`,
+and `check-deps` run agents in Pods, so `generate` grants all four
+permission to create, patch, and delete Pods in every namespace. The
+`git-k8s-check-pods` admission policy keeps those Pods out of the `git-k8s`
+and `check-*` namespaces, and makes them run as their namespace's `default`
+service account. The core program doesn't map a `default` service account
+to a check unless the `git-k8s-checks` ConfigMap has an entry for it, so
+don't add one. Without that policy, any of them can run a Pod as another
+check's service account and mount a `git-k8s-results` token that the core
+program accepts as that check's. It can also run a Pod as the core
+program's service account, which writes every check's result. Anyone else
+who can create Pods in a check's namespace or in the `git-k8s` namespace can
+do the same, because the policy covers only checks. That includes
+`git-k8s-deps`, which runs update Pods, so `generate` lets it create Pods in
+every namespace.
+
+The tokens have the audience `git-k8s-results`, so a token sent to the core
+program can't call the API server, and a token for the API server can't send
+results. The endpoint uses plain HTTP inside the cluster, so anything that
+can read the traffic between Pods can copy a token and send that check's
+results until the token expires, within an hour, or the check's Pod is
+deleted.
+
+`check-base`, `check-conflicts`, `check-deps`, `check-gofmt`, `check-review`,
+and `check-risk` fetch or push, so they can also request tokens for their own
+service accounts, to send to Octo STS. As [Security](#security) describes,
+whoever holds a token for one of them can then create a `git-k8s-results`
+token for it that isn't bound to its Pod and lasts as long as the API
+server allows, and send that check's results with the token.
+
+kube doesn't fence writes, and the results controller writes all of
+`status.checks` at once, so a replica that hasn't noticed that its leader
+lease expired can put back earlier results. Checks other than `approval` run
+again on an earlier result, which is for earlier commits or isn't final. If
+the agent's Pod is gone, `check-review` can then run its agent again, which
+costs as much as a new run. If someone removed the `approve` annotation,
+though, the replica can put back `approval`'s `Passed` result until
+`check-approval` sends `Failed` again, and the merge controller can merge
+the branch in that window.
+
+### Write a result by hand
+
+The results endpoint accepts only checks' tokens. People who can patch
+`gitbranches/status` can write a result directly instead, for example to
+unblock a branch whose check is broken:
+
+```sh
+kubectl patch gitbranch GITBRANCH --subresource=status --type=merge \
+  -p '{"status":{"checks":{"gotest":{"commit":"SHA","state":"Passed","message":"passed by hand"}}}}'
+```
+
+Replace `GITBRANCH` with the name of the `GitBranch` object, and `SHA` with
+the branch's head. Checks other than `approval` don't run again on commits
+that already have a `Passed`, `Failed`, or `Fixed` result, so the result
+stays until the branch moves. For a check whose result depends on the
+parent, such as `base`, also set `parentCommit` to the parent's head.
+
+For a branch that lands by squash or rebase, also set `filesOnly` to `true`
+if the check sets `FilesOnly`, as the built-in checks do. Otherwise the
+result counts as `Pending` for the commit that the landing makes, as
+[Which results count](#which-results-count) describes. A check without
+`FilesOnly` runs again on a result with `filesOnly`.
+
+The results controller writes all of `status.checks` at once, from its
+cache, so a result that you write while it writes another result can be
+lost. Check that your result is there afterward.
 
 ## Merge gates
 
@@ -1952,7 +2103,9 @@ and rulesets apply to those pushes:
 
 When GitHub refuses a check's commit or a landing, the reason that it gives
 shows up on the `GitBranch`. For a check's commit, the check's result in
-`status.checks` has state `Error` and the reason in its message. For a
+`status.checks` has state `Error` and the reason in its message, except for
+the commit that `check-conflicts` pushes to `resolve/BRANCH`, which a
+`Warning` `ResolvingDivergence` [event](#events) on `BRANCH` reports. For a
 landing, the `Synced` condition is `False` and has the reason in its
 message. git-k8s retries those pushes, waiting longer each time, up to about
 5 minutes. When GitHub refuses only what a squash or rebase landing pushes
@@ -2328,25 +2481,40 @@ To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
 
-`config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
-the service account of `check-NAME` change only `status.checks.NAME`, and
-stops every other service account, including the core program's, from
-changing `status.checks`. A check that doesn't run as `check-NAME` in the
-namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap to
-write results. Server-side apply already keeps the controllers' writes
-apart; the policy stops a buggy or compromised check from writing another
-check's result. It also stops every service account except the core program's
-from changing `status.diverged`, which names the commit that `check-conflicts`
-merges or replays. The second stops every git-k8s service account from setting
-the `approve` and `approved-by` annotations, which are for people, and stops
-checks and `git-k8s-deps` from changing `GitBranch` objects at all. RBAC
-also keeps every check except `check-gotest`, `check-review`, `check-deps`,
-and `check-conflicts`, which own Pods, from patching `GitBranch` objects.
+`generate` also writes a Service for the core program, which routes port 80
+to the results endpoint on port 8081 of each replica, and mounts a token for
+the audience `git-k8s-results` in each check's Pod. `git-k8s-deps` gets one
+too, because it imports the `checks` package. It doesn't send results, and
+the core program wouldn't accept them, because `git-k8s-deps` isn't a check.
+The core program's container waits 5 seconds before it stops, so that the
+Service stops sending it results first. That wait needs Kubernetes 1.30 or
+later. If NetworkPolicies in the `git-k8s` namespace deny traffic by
+default, let the checks' Pods reach port 8081 of the core program's Pods.
+
+`config/policy.yaml` holds four ValidatingAdmissionPolicies. The first
+rejects every write to `GitBranch` status by a check's service account, and
+every change to `status.checks` or `status.diverged` by a service account
+other than the core program's. `status.diverged` names the commit that
+`check-conflicts` merges or replays. Checks have no RBAC rule to write
+status, so this policy is a backstop for a role that grants one by mistake.
+A check that doesn't run as `check-NAME` in the namespace `check-NAME`
+needs an entry in the `git-k8s-checks` ConfigMap, as
+[Check service accounts](#check-service-accounts) describes. The second
+stops every git-k8s service account from setting the `approve` and
+`approved-by` annotations, which are for people, and stops checks and
+`git-k8s-deps` from changing `GitBranch` objects at all. RBAC also keeps
+every check except `check-gotest`, `check-review`, `check-deps`, and
+`check-conflicts`, which own Pods, from patching `GitBranch` objects.
 `generate` grants that permission to a program that owns objects, such as
 these checks and `git-k8s-deps`, because it can't tell whether an owned
 object needs a finalizer on its owner. The second policy denies the
 annotation that kube adds with that finalizer, so these programs can own
-only namespaced objects in the branch's namespace.
+only namespaced objects in the branch's namespace. The first two policies
+identify the core program and the checks by the service accounts that
+`generate` installs them with: `git-k8s` in the namespace `git-k8s`, and
+`check-NAME` in the namespace `check-NAME`. The second identifies
+`git-k8s-deps` the same way, as `git-k8s-deps` in the namespace
+`git-k8s-deps`.
 
 The third keeps each check to its own Pods. `generate` lets a check that
 declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
@@ -2459,6 +2627,16 @@ standby replica's Pod doesn't install it again. Restart the Deployment:
 kubectl -n git-k8s rollout restart deployment/git-k8s
 ```
 
+`PoliciesInstalled` also turns `False` while a policy's
+`git-k8s.imjasonh.com/policy-version` annotation isn't the version that the
+core program expects. If the annotation is missing, isn't a number, or is an
+earlier version, as with the policies of an earlier release, the reason is
+`Outdated`, and the message says to restart the core program, which installs
+the policies from its release. If it's a later version, as with the policies
+of a later release, the reason is `Newer`, and the message says to upgrade
+the core program or, if you rolled it back, to restart it. The core program
+can't tell a rollback from an upgrade that applies the policies first.
+
 `PoliciesInstalled` also turns `False` when no binding for a policy denies
 every request that the policy rejects. A binding can let some of them
 through when its `validationActions` doesn't hold `Deny`, when its
@@ -2509,11 +2687,11 @@ that list by name. Remove such an entry with `kubectl edit`.
 `generate` grants the core program `create` and `patch` on each policy,
 binding, and ConfigMap in `config/policy.yaml`, by name, and `get` on the
 `git-k8s-checks` ConfigMap, which the bindings of the first two policies
-name as their parameter. The API server lets only someone who can read
-every ConfigMap create a policy whose parameter is a ConfigMap, and it
-checks that as `get` on a ConfigMap named `*`. No ConfigMap can have that
-name, so `generate` also grants `get` on the name `*`, and the core program
-still can't read any other ConfigMap.
+name as their parameter, and which the results endpoint reads. The API
+server lets only someone who can read every ConfigMap create a policy whose
+parameter is a ConfigMap, and it checks that as `get` on a ConfigMap named
+`*`. No ConfigMap can have that name, so `generate` also grants `get` on the
+name `*`, and the core program still can't read any other ConfigMap.
 
 The core program can't create other admission policies, but a compromised
 core program could rewrite these policies, their bindings, and the
@@ -2521,8 +2699,9 @@ core program could rewrite these policies, their bindings, and the
 cluster. It already decides what lands, so it could land a branch without
 its checks anyway. To keep the policies out of its reach, for example in a
 cluster that manages admission policies separately, install it with
-`-install-policies=false`, which also leaves out the permissions, and apply
-`config/policy.yaml` yourself:
+`-install-policies=false`, which also leaves out the permissions except
+`get` on the `git-k8s-checks` ConfigMap, and apply `config/policy.yaml`
+yourself:
 
 ```sh
 go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -install-policies=false |
@@ -2532,19 +2711,22 @@ kubectl apply -f config/policy.yaml
 
 With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
 says to apply `config/policy.yaml` instead of restarting the core program.
-The core program doesn't apply the manifest when it starts, so a binding set
-to `Warn` doesn't stop it, and the condition doesn't report one while another
-binding for the same policy denies.
+For a policy from another release, it says to apply `config/policy.yaml`
+from the core program's release. The core program doesn't apply the
+manifest when it starts, so a binding set to `Warn` doesn't stop it, and the
+condition doesn't report one while another binding for the same policy
+denies.
 
 ### Check service accounts
 
-The first two policies recognize a check by the service account that makes
-each write. `generate` installs `check-NAME` with the service account
-`check-NAME` in the namespace `check-NAME`, and the policies treat that
-service account as the check `NAME`. For a check that runs as another
-service account, such as a check installed with `generate -namespace=checks`,
-add an entry to the `git-k8s-checks` ConfigMap in the `git-k8s` namespace.
-Each key is `NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
+The results endpoint and the first two policies recognize a check by its
+service account. `generate` installs `check-NAME` with the service account
+`check-NAME` in the namespace `check-NAME`, and the endpoint and the
+policies treat that service account as the check `NAME`. For a check that
+runs as another service account, such as a check installed with
+`generate -namespace=checks`, add an entry to the `git-k8s-checks`
+ConfigMap in the `git-k8s` namespace. Each key is
+`NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
 
 ```sh
 kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
@@ -2552,15 +2734,18 @@ kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
 ```
 
 An entry overrides the `check-NAME` convention, so an entry with an empty
-value stops that service account from writing results. The first two
+value stops that service account from sending results. The first two
 policies still treat that service account as a check, so it can't change a
-`GitBranch` or its status even if RBAC lets it patch them. The policies
-ignore an entry for the core program's service account, `git-k8s.git-k8s`,
-so an entry can't let the core program write a result or stop it from
-changing `GitBranch` objects. The core program applies the ConfigMap without
-data, so restarting it keeps your entries.
+`GitBranch` or its status even if RBAC lets it patch them. The endpoint and
+the policies ignore an entry for the core program's service account,
+`git-k8s.git-k8s`, so an entry can't make the core program a check, or stop
+it from writing results or changing `GitBranch` objects. Don't add an entry
+for a namespace's `default` service account, because the checks that own
+Pods run their Pods as that service account, as
+[Security model](#security-model) describes. The core program applies the
+ConfigMap without data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
-service accounts write which results, so give that permission only to people
+service accounts send which results, so give that permission only to people
 who can install checks.
 
 The third policy doesn't read the ConfigMap, so an entry doesn't change
@@ -2573,6 +2758,31 @@ of a `GitBranch` or its status, including people's, with a message that says
 `kubectl -n git-k8s create configmap git-k8s-checks`, or restart the core
 program with `kubectl -n git-k8s rollout restart deployment/git-k8s`. With
 `-install-policies=false`, apply `config/policy.yaml` instead.
+
+### Upgrade from checks that write status
+
+If your installed checks write their own results to `GitBranch` status, as
+each did before the results endpoint, upgrade in this order:
+
+1. Apply `config/policy.yaml`. The earlier policy stops the core program
+   from writing results, and this one rejects the installed checks' status
+   writes, so branches get no new results until step 3.
+2. Install the core program. It changes `status.checks` in the `GitBranch`
+   CustomResourceDefinition to an atomic map, which one field manager
+   writes as a whole, and starts the results endpoint.
+3. Install the checks. They lose their RBAC rule for `gitbranches/status`,
+   and send their results to the core program.
+
+After step 2, a status write from an old check replaces all of
+`status.checks` with that check's entry, so make sure that the policy from
+step 1 is installed first. The core program installs it when it starts, but
+only after it changes the CustomResourceDefinition. The earlier core program
+installs the earlier policy again each time it starts, so if it restarts
+before step 2, apply `config/policy.yaml` again. While the earlier policy is
+installed, the core program reports `PoliciesInstalled` as `False` with the
+reason `Outdated`. The results controller takes over a branch's results the
+first time it writes them, and server-side apply then removes the old checks
+from the branch's managed fields.
 
 ## Test
 
@@ -2628,10 +2838,10 @@ and that `git-k8s-deps` keeps when it first saw a version through a restart.
 
 ## Limitations
 
-- The controllers poll remotes; they don't receive webhooks. A check's status
-  write runs the repositories controller again, so a check's fix is listed
-  soon after the check pushes it. The controller lists a repository at most
-  once every 5 seconds, or every `pollInterval` if that's shorter.
+- The controllers poll remotes; they don't receive webhooks. Writing a
+  check's result runs the repositories controller again, so a check's fix is
+  listed soon after the check pushes it. The controller lists a repository
+  at most once every 5 seconds, or every `pollInterval` if that's shorter.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can

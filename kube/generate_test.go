@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"maps"
 	"reflect"
@@ -414,6 +415,44 @@ func TestPlanCRDRules(t *testing.T) {
 	want := map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("verbs on customresourcedefinitions by name = %v, want %v", got, want)
+	}
+}
+
+// TestPlanFetchNames works out the rules of testdata/fetchnames. A Fetch that
+// passes a type with a known scope, and constants as the namespace and name,
+// may get only that object. Every other Fetch may get every object of its
+// type.
+func TestPlanFetchNames(t *testing.T) {
+	var stderr bytes.Buffer
+	o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: &stderr}
+	p, err := o.plan(t.Context(), nil, "github.com/imjasonh/playground/kube/testdata/fetchnames")
+	if err != nil {
+		t.Fatalf("plan: %v\n%s", err, stderr.String())
+	}
+	got := map[string][]string{}
+	add := func(where string, g grants) {
+		for k, verbs := range g {
+			if slices.Contains([]string{"configmaps", "namespaces", "secrets", "serviceaccounts", "services", "gadgets"}, k.resource) {
+				got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+	}
+	add("cluster", p.cluster)
+	add("prog", p.local)
+	for ns, g := range p.namespaces {
+		add(ns, g)
+	}
+	want := map[string][]string{
+		`config configmaps "settings"`: {"get"},
+		`prog configmaps "own"`:        {"get"},
+		`cluster namespaces "team"`:    {"get"},
+		`cluster secrets ""`:           {"get"},
+		`cluster serviceaccounts ""`:   {"get"},
+		`cluster gadgets ""`:           {"get"},
+		`cluster services ""`:          {"get"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rules = %v, want %v", got, want)
 	}
 }
 

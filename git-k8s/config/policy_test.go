@@ -842,10 +842,13 @@ func TestCheckResults(t *testing.T) {
 	}
 	queued := withStatus(map[string]any{"queue": []any{"c/x"}})
 	merged := withStatus(map[string]any{"state": "Merged"})
+	diverged := withStatus(map[string]any{"diverged": map[string]any{"commit": "0000000", "ref": "refs/git-k8s/downstream/heads/main"}})
 	update := func(user string, params, object map[string]any) request {
 		return request{user: user, operation: "UPDATE", resource: "gitbranches", subresource: "status", namespace: "repos", params: params, object: object, oldObject: old}
 	}
-	only := func(check string) string { return "the " + check + " check can only write status.checks." + check }
+	sends := func(check string) string {
+		return "the " + check + " check can't write GitBranch status; it sends its results to the core program"
+	}
 	emptied := func(user string) string {
 		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
 	}
@@ -857,21 +860,35 @@ func TestCheckResults(t *testing.T) {
 	}{{
 		name: "a check writes its result",
 		r:    update(gotest, none, wrote("gotest")),
+		want: sends("gotest"),
 	}, {
 		name: "a check writes another check's result",
 		r:    update(gotest, none, wrote("race")),
-		want: only("gotest"),
+		want: sends("gotest"),
 	}, {
 		name: "a check writes a merge queue",
 		r:    update(gotest, none, queued),
-		want: only("gotest"),
+		want: sends("gotest"),
+	}, {
+		name: "a check writes status.diverged",
+		r:    update(gotest, none, diverged),
+		want: sends("gotest"),
+	}, {
+		name: "a check writes a status without changes",
+		r:    update(gotest, none, old),
+		want: sends("gotest"),
+	}, {
+		name: "a check whose entry names another check writes that check's result",
+		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", "race"), wrote("race")),
+		want: sends("race"),
 	}, {
 		name: "a check that only its entry names writes its result",
 		r:    update(bot, checksConfigMap("checks.bot", "bot"), wrote("bot")),
+		want: sends("bot"),
 	}, {
 		name: "a check that only its entry names writes a merge queue",
 		r:    update(bot, checksConfigMap("checks.bot", "bot"), queued),
-		want: only("bot"),
+		want: sends("bot"),
 	}, {
 		name: "a check whose entry is empty writes its result",
 		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), wrote("gotest")),
@@ -885,6 +902,12 @@ func TestCheckResults(t *testing.T) {
 		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", ""), merged),
 		want: emptied(gotest),
 	}, {
+		name: "the core program writes a result",
+		r:    update(core, none, wrote("gofmt")),
+	}, {
+		name: "the core program writes status.diverged",
+		r:    update(core, none, diverged),
+	}, {
 		name: "the core program writes a merge queue",
 		r:    update(core, none, queued),
 	}, {
@@ -893,14 +916,20 @@ func TestCheckResults(t *testing.T) {
 	}, {
 		name: "the core program writes a result despite an entry that names a check",
 		r:    update(core, checksConfigMap("git-k8s.git-k8s", "gofmt"), wrote("gofmt")),
-		want: core + " isn't a check's service account, so it can't write status.checks",
 	}, {
 		name: "another service account in a check's namespace writes a merge queue",
 		r:    update(deployer, checksConfigMap("checks.bot", ""), queued),
 	}, {
 		name: "another service account in a check's namespace writes a result",
 		r:    update(deployer, checksConfigMap("checks.bot", ""), wrote("bot")),
-		want: deployer + " isn't a check's service account, so it can't write status.checks",
+		want: deployer + " isn't the core program's service account, so it can't write status.checks",
+	}, {
+		name: "another service account writes status.diverged",
+		r:    update(deployer, none, diverged),
+		want: deployer + " isn't the core program's service account, so it can't write status.diverged",
+	}, {
+		name: "a person writes a result",
+		r:    update("alice@example.com", none, wrote("gofmt")),
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := p.admit(t, tt.r); got != tt.want {
