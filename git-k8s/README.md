@@ -56,8 +56,8 @@ URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
 Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
-shows each URL, and `check-gotest` and `check-review` copy it into their Pod
-specs.
+shows each URL, and `check-gotest`, `check-review`, and `check-conflicts` copy
+it into their Pod specs.
 
 The `git-k8s` program runs three controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
@@ -1067,9 +1067,11 @@ go run ./cmd/check-conflicts generate -registry=REGISTRY -base=cgr.dev/chainguar
 
 `check-conflicts` takes the same flags as `check-review`, and `-union`, a
 comma-separated list of path patterns in the gitattributes format whose
-conflicts git resolves by keeping the lines of both sides. Its agent Pods
-need the NetworkPolicy that `check-review`'s need, with ingress from the
-namespace `check-conflicts`.
+conflicts git resolves by keeping the lines of both sides. Its agent Pods run
+in their branch's namespace, as `check-review`'s do, so that namespace needs
+the Secret that holds the Cursor API key, and must opt in to check Pods, as
+[Install](#install) describes. The agent Pods also need the NetworkPolicy
+that `check-review`'s need, with ingress from the namespace `check-conflicts`.
 
 ### Run agents from a controller
 
@@ -1278,12 +1280,13 @@ in its `checks.Check`, which gives its results `filesOnly: true`. A check
 without `FilesOnly` costs one more round of checks, as the end of this section
 describes.
 
-The built-in checks set `FilesOnly`, except `check-review`, because the agent
-of an [agentic check](#agentic-checks) reads the subjects of the branch's
-commits. `check-base` passes for any commit that builds on the parent's head,
-`check-gofmt` and `check-gotest` read only the files, and `check-risk`
-compares them with the parent's head. `check-approval` reads only the
-`GitBranch`, and an approval is for the change, which the new commit makes
+The built-in checks set `FilesOnly`, except `check-review` and
+`check-conflicts`. The agent of an [agentic check](#agentic-checks) reads the
+subjects of the branch's commits, and `check-conflicts` replays commits with
+their authors and messages. `check-base` passes for any commit that builds on
+the parent's head, `check-gofmt` and `check-gotest` read only the files, and
+`check-risk` compares them with the parent's head. `check-approval` reads only
+the `GitBranch`, and an approval is for the change, which the new commit makes
 too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
 what checks push, and the gate doesn't read it.
 
@@ -1361,12 +1364,12 @@ apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
 the `approve` and `approved-by` annotations, which are for people, and stops
 checks from changing `GitBranch` objects at all. RBAC also keeps every check
-except `check-gotest` and `check-review`, which own Pods, from patching
-`GitBranch` objects. `generate` grants that permission to a check that owns
-objects, because it can't tell whether an owned object needs a finalizer on
-its owner. The second policy denies the annotation that kube adds with that
-finalizer, so a check can own only namespaced objects in the branch's
-namespace.
+except `check-gotest`, `check-review`, and `check-conflicts`, which own Pods,
+from patching `GitBranch` objects. `generate` grants that permission to a
+check that owns objects, because it can't tell whether an owned object needs a
+finalizer on its owner. The second policy denies the annotation that kube adds
+with that finalizer, so a check can own only namespaced objects in the
+branch's namespace.
 
 The third keeps each check to its own Pods. `generate` lets a check that
 declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
@@ -1434,8 +1437,10 @@ controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
 `False` until all four policies are installed with bindings that deny.
 
 Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
-or `review` must opt in to check Pods and enforce the `restricted` Pod
-Security Standard, or the third policy denies the check's Pods:
+or `review`, or lists `conflicts` with `mayPush: true` while `check-conflicts`
+runs with `-agent-image`, must opt in to check Pods and enforce the
+`restricted` Pod Security Standard, or the third policy denies the check's
+Pods:
 
 ```sh
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
@@ -1444,15 +1449,15 @@ kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-secur
 Replace `NAMESPACE` with the namespace of the `GitRepository`. The namespace
 can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
-`latest`. Until it has both labels, the branch's `gotest` or `review` result
-stays `Running`, and its message says why kube couldn't create the Pod. kube
-tries again with backoff that grows to 5 minutes, plus up to 10% jitter, so it
-creates the Pod within about 5.5 minutes after you label the namespace,
-without a new push.
+`latest`. Until it has both labels, the branch's `gotest`, `review`, or
+`conflicts` result stays `Running`, and its message says why kube couldn't
+create the Pod. kube tries again with backoff that grows to 5 minutes, plus up
+to 10% jitter, so it creates the Pod within about 5.5 minutes after you label
+the namespace, without a new push.
 
-If `check-gotest` or `check-review` already runs, label the namespaces of
-their repositories before you apply `config/policy.yaml`. Otherwise the
-policy denies their Pods until you do.
+If `check-gotest`, `check-review`, or `check-conflicts` already runs, label
+the namespaces of their repositories before you apply `config/policy.yaml`.
+Otherwise the policy denies their Pods until you do.
 
 ## Test
 

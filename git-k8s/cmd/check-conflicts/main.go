@@ -90,6 +90,8 @@ func divergence(ctx context.Context, meta *kube.ObjectMeta) *gitk8s.Divergence {
 
 var union = patterns{"go.sum"}
 
+// The agent reads the subjects of the branch's commits, and a replay keeps
+// their authors and messages, so the check isn't FilesOnly.
 var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: credentials.Remote, Stale: stale, Run: run}
 
 // stale reports whether the previous result is for another merge than the
