@@ -33,6 +33,19 @@ type installation struct {
 	// image and args are the Deployment's container image and arguments.
 	image string
 	args  []string
+	// namespace and serviceAccount are the Deployment's.
+	namespace, serviceAccount string
+	// tokens are the service account tokens in the Deployment's projected
+	// volume.
+	tokens []projectedToken
+	// serveAddr is where runInstalled's program serves its kube.Serve
+	// handler.
+	serveAddr string
+}
+
+type projectedToken struct {
+	Audience string `json:"audience"`
+	Path     string `json:"path"`
 }
 
 // generateExample runs the generate command of a program in the kube
@@ -61,13 +74,24 @@ func generateExample(t *testing.T, reg, program, namespace string, extra ...stri
 		in.objects = append(in.objects, obj)
 		if obj["kind"] == "Deployment" {
 			var d struct {
+				Metadata struct {
+					Namespace string `json:"namespace"`
+				} `json:"metadata"`
 				Spec struct {
 					Template struct {
 						Spec struct {
-							Containers []struct {
+							ServiceAccountName string `json:"serviceAccountName"`
+							Containers         []struct {
 								Image string   `json:"image"`
 								Args  []string `json:"args"`
 							} `json:"containers"`
+							Volumes []struct {
+								Projected struct {
+									Sources []struct {
+										ServiceAccountToken *projectedToken `json:"serviceAccountToken"`
+									} `json:"sources"`
+								} `json:"projected"`
+							} `json:"volumes"`
 						} `json:"spec"`
 					} `json:"template"`
 				} `json:"spec"`
@@ -76,6 +100,14 @@ func generateExample(t *testing.T, reg, program, namespace string, extra ...stri
 			_ = json.Unmarshal(b, &d)
 			c := d.Spec.Template.Spec.Containers[0]
 			in.image, in.args = c.Image, c.Args
+			in.namespace, in.serviceAccount = d.Metadata.Namespace, d.Spec.Template.Spec.ServiceAccountName
+			for _, v := range d.Spec.Template.Spec.Volumes {
+				for _, s := range v.Projected.Sources {
+					if s.ServiceAccountToken != nil {
+						in.tokens = append(in.tokens, *s.ServiceAccountToken)
+					}
+				}
+			}
 		}
 	}
 	if in.image == "" {
@@ -145,20 +177,32 @@ func (in installation) executable(t *testing.T, program string) string {
 	}
 }
 
-// serviceAccountKubeconfig writes a kubeconfig that authenticates as a
-// service account, with a token from the API server.
-func serviceAccountKubeconfig(t *testing.T, c *client.Client, namespace, name string) string {
+// serviceAccountToken returns a token from the API server for a service
+// account, for audiences, or for the API server when there are none.
+func serviceAccountToken(t *testing.T, c *client.Client, namespace, name string, audiences ...string) string {
 	t.Helper()
 	var tr struct {
 		Status struct {
 			Token string `json:"token"`
 		} `json:"status"`
 	}
+	spec := map[string]any{}
+	if len(audiences) > 0 {
+		spec["audiences"] = audiences
+	}
 	if err := c.Create(t.Context(), client.Path("v1", "serviceaccounts", namespace, name, "token"), map[string]any{
-		"apiVersion": "authentication.k8s.io/v1", "kind": "TokenRequest", "spec": map[string]any{},
+		"apiVersion": "authentication.k8s.io/v1", "kind": "TokenRequest", "spec": spec,
 	}, &tr); err != nil {
 		t.Fatal(err)
 	}
+	return tr.Status.Token
+}
+
+// serviceAccountKubeconfig writes a kubeconfig that authenticates as a
+// service account, with a token from the API server.
+func serviceAccountKubeconfig(t *testing.T, c *client.Client, namespace, name string) string {
+	t.Helper()
+	token := serviceAccountToken(t, c, namespace, name)
 	admin, err := os.ReadFile(e2e.Env(t).Kubeconfig)
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +235,7 @@ users:
 - name: sa
   user:
     token: %s
-`, cluster["server"], cluster["certificate-authority-data"], namespace, tr.Status.Token)
+`, cluster["server"], cluster["certificate-authority-data"], namespace, token)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +259,23 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
+// mountTokens writes the tokens of the Deployment's projected volume to a
+// directory, as the kubelet does, with tokens from the API server for the
+// Deployment's service account. Unlike the kubelet's, they aren't bound to
+// a Pod.
+func (in installation) mountTokens(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	c := e2e.Client(t)
+	for _, tok := range in.tokens {
+		token := serviceAccountToken(t, c, in.namespace, in.serviceAccount, tok.Audience)
+		if err := os.WriteFile(filepath.Join(dir, tok.Path), []byte(token), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 // runInstalled runs the installation's program the way its Deployment
 // does, with its service account's permissions, except that it listens on
 // the loopback interface and gives the API server a URL for its webhooks
@@ -231,6 +292,10 @@ func (in installation) runInstalled(t *testing.T, exe, kubeconfig string) *syncB
 			a = "-webhook-addr=" + hookAddr
 		case strings.HasPrefix(a, "-webhook-service="):
 			a = "-webhook-url=https://" + hookAddr
+		case strings.HasPrefix(a, "-serve-addr="):
+			a = "-serve-addr=" + in.serveAddr
+		case strings.HasPrefix(a, "-token-dir="):
+			a = "-token-dir=" + in.mountTokens(t)
 		}
 		args = append(args, a)
 	}

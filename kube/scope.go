@@ -26,6 +26,7 @@ type world interface {
 	fetch(ctx context.Context, ti *typeInfo, k Key) (any, error)
 	resolve(ctx context.Context, ti *typeInfo) (resolved, error)
 	deps() *tracker
+	services
 }
 
 type scopeKey struct{}
@@ -75,7 +76,7 @@ func newScope(ctx context.Context, w world, c *core, key Key) (context.Context, 
 }
 
 // newWebhookScope returns a context in which Get, List, and Fetch read from
-// the manager, for admission and conversion webhooks.
+// the manager, for admission and conversion webhooks and Serve handlers.
 func newWebhookScope(ctx context.Context, w world) (context.Context, *scope) {
 	s := &scope{w: w, webhook: true}
 	ctx, s.cancel = context.WithCancelCause(context.WithValue(ctx, scopeKey{}, s))
@@ -85,7 +86,7 @@ func newWebhookScope(ctx context.Context, w world) (context.Context, *scope) {
 // readOnly fails a webhook scope that's asked to change something.
 func (s *scope) readOnly(verb string) bool {
 	if s.webhook {
-		s.fail(fmt.Errorf("kube.%s can't be called in a webhook, which can only read", verb))
+		s.fail(fmt.Errorf("kube.%s can't be called in a webhook or a kube.Serve handler, which can only read", verb))
 	}
 	return s.webhook
 }
@@ -93,7 +94,7 @@ func (s *scope) readOnly(verb string) bool {
 func scopeFrom(ctx context.Context, verb string) *scope {
 	s, _ := ctx.Value(scopeKey{}).(*scope)
 	if s == nil {
-		panic(fmt.Sprintf("kube.%s called outside a reconcile or webhook: pass it the context that Reconcile, Finalize, Validate, or Default received, or a context from kube.Fake in a test", verb))
+		panic(fmt.Sprintf("kube.%s called outside a reconcile, webhook, or kube.Serve handler: pass it the context that Reconcile, Finalize, Validate, or Default received, the context of a kube.Serve request, or a context from kube.Fake or kube.FakeRequest in a test", verb))
 	}
 	return s
 }
@@ -436,6 +437,8 @@ func RequeueAfter(ctx context.Context, d time.Duration) {
 // next reconcile can see that one failed, for example because an admission
 // policy rejected an apply. The framework writes the status even when a
 // declaration fails, so that reconcile can report the error in the status.
+// When a write fails because the cache was behind, the framework retries the
+// reconcile, and LastError in the retry returns the error from before it.
 //
 // Each process keeps the errors in memory, so LastError returns nil in the
 // first reconcile after the process starts or acquires the object's shard.

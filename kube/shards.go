@@ -104,6 +104,7 @@ type shard struct {
 	name     string
 	obs      observation
 	held     bool
+	tenure   uint64    // counts this replica's acquisitions of the shard
 	renewed  time.Time // last successful write of the lease
 	draining bool      // releasing: no new reconciles start
 	inflight int
@@ -191,6 +192,17 @@ func (s *sharder) end(i int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.shards[i].inflight--
+}
+
+// tenure returns a number that changes each time this replica acquires k's
+// shard.
+func (s *sharder) tenure(k Key) uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.shards[s.shardOf(k)].tenure
 }
 
 // onAcquire calls fn with each shard this replica acquires from now on.
@@ -296,6 +308,7 @@ func (s *sharder) sync(ctx context.Context) {
 			}
 			s.mu.Lock()
 			sh.held, sh.draining, sh.renewed, sh.free = true, false, now, time.Time{}
+			sh.tenure++
 			fns := slices.Clone(s.acquired)
 			s.mu.Unlock()
 			s.log.Info("acquired shard", "shard", sh.name)

@@ -96,14 +96,19 @@ func (m *Manager) apply(ctx context.Context, ti *typeInfo, k Key, path, manager 
 	})
 }
 
-// patch sends a patch of patchType to path.
-func (m *Manager) patch(ctx context.Context, ti *typeInfo, k Key, path, patchType string, body []byte) error {
+// patch sends a patch of patchType to path, and decodes the response into
+// out unless out is nil.
+func (m *Manager) patch(ctx context.Context, ti *typeInfo, k Key, path, patchType string, body []byte, out any) error {
 	return m.track(ti, k, func() (*written, error) {
 		var resp json.RawMessage
 		if err := m.client.Patch(ctx, path, patchType, nil, body, &resp); err != nil {
 			return nil, err
 		}
-		return stored(resp, false), nil
+		w := stored(resp, false)
+		if out != nil {
+			return w, json.Unmarshal(resp, out)
+		}
+		return w, nil
 	})
 }
 
