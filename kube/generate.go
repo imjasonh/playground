@@ -118,6 +118,9 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
+	if err := parseProgramFlags(o.args); err != nil {
+		return fmt.Errorf("generate: the program's flags after --: %v", err)
+	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
 	for _, s := range strings.Split(*platforms, ",") {
 		p, err := v1.ParsePlatform(strings.TrimSpace(s))
@@ -161,6 +164,17 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	}
 	_, err = stdout.Write(out.Bytes())
 	return err
+}
+
+// parseProgramFlags parses the flags for the program in the Deployment into
+// the program's variables, as Main would, so that controllers' describe
+// methods see them.
+func parseProgramFlags(args []string) error {
+	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
+	(&Manager{}).flags(fs)
+	return fs.Parse(args)
 }
 
 // buildEnv is the environment for building and analyzing the program for
@@ -279,7 +293,10 @@ type installPlan struct {
 	// own namespace, and watched those in the namespace that it watches,
 	// when it watches one.
 	cluster, local, watched grants
-	webhooks                bool
+	// namespaces holds permissions in other namespaces, for the objects
+	// that Install applies there.
+	namespaces map[string]grants
+	webhooks   bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
 	// defaultNS holds permissions in the default namespace, where events
@@ -309,7 +326,7 @@ func (p *installPlan) eventGrantsFor(ti *typeInfo, watching bool) grants {
 // and the program's source shows the types its reconciles and webhooks
 // read and write.
 func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pkg string) (*installPlan, error) {
-	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, defaultNS: grants{}}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}, defaultNS: grants{}}
 	cluster := p.cluster
 	watching := o.watchNamespace != ""
 	warned := map[string]bool{}
@@ -321,6 +338,15 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
+	var installs []installObject
+	// types holds the program's types by API group and kind, so the rules
+	// for the objects that Install applies use the plurals that they declare.
+	types := map[string]*typeInfo{}
+	addType := func(ti *typeInfo) {
+		if k := ti.group + "/" + ti.kind; types[k] == nil || types[k].plural == "" {
+			types[k] = ti
+		}
+	}
 	var reconciled []*typeInfo
 	// creates holds the CRDs of types that the program defines and owns,
 	// which it creates if they're missing.
@@ -333,9 +359,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			return nil, err
 		}
 		p.webhooks = p.webhooks || d.webhooks
+		installs = append(installs, d.installs...)
 		if !d.reconciles {
 			continue
 		}
+		addType(d.ti)
 		reconciled = append(reconciled, d.ti)
 		p.electLeader = o.replicas > 1 || o.shards > 1
 		group, plural := resourceName(d.ti)
@@ -368,6 +396,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			crds = append(crds, plural+"."+group)
 		}
 		for _, oti := range d.owns {
+			addType(oti)
 			g, r := resourceName(oti)
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
 			if oti.custom {
@@ -402,6 +431,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		if err := ti.parseTag(u.Type, u.Name, reflect.StructTag(u.Tag).Get("kube")); err != nil {
 			return nil, err
 		}
+		addType(ti)
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
 		if u.Func == "Apply" && slices.Contains(u.Fields, "status") {
@@ -443,6 +473,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	if p.electLeader {
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
 	}
+	o.grantInstalls(p, installs, types)
 	switch {
 	case o.watchNamespace == "default":
 		p.watched.addAll(p.defaultNS)
@@ -460,6 +491,88 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		clear(p.watched)
 	}
 	return p, nil
+}
+
+// grantsIn returns where the permissions for objects in namespace ns go,
+// or for cluster-scoped objects when ns is empty.
+func (o *generateOptions) grantsIn(p *installPlan, ns string) grants {
+	switch ns {
+	case "":
+		return p.cluster
+	case o.namespace:
+		return p.local
+	case o.watchNamespace:
+		return p.watched
+	}
+	if p.namespaces[ns] == nil {
+		p.namespaces[ns] = grants{}
+	}
+	return p.namespaces[ns]
+}
+
+// lookupType returns the program's type for a kind in an API version, whose
+// plural may be one that resourceName can't guess. For a kind that isn't one
+// of the program's types, it returns a type with only the group and kind.
+func lookupType(types map[string]*typeInfo, apiVersion, kind string) *typeInfo {
+	group, _, ok := strings.Cut(apiVersion, "/")
+	if !ok {
+		group = ""
+	}
+	if ti := types[group+"/"+kind]; ti != nil {
+		return ti
+	}
+	return &typeInfo{group: group, kind: kind}
+}
+
+// grantInstalls grants the permissions to apply the objects that Install
+// applies: create and patch on each object by name. A server-side apply
+// names the object in its URL, so the API server checks create on that
+// name when the object doesn't exist yet. types holds the program's types
+// by API group and kind.
+func (o *generateOptions) grantInstalls(p *installPlan, objs []installObject, types map[string]*typeInfo) {
+	// params holds the group and resource of each policy's paramKind, by
+	// the policy's kind and name.
+	params := map[string]grantKey{}
+	for _, obj := range objs {
+		group, resource := resourceName(lookupType(types, obj.apiVersion, obj.kind))
+		o.grantsIn(p, obj.namespace).add(group, resource, obj.name, "create", "patch")
+		if group != "admissionregistration.k8s.io" {
+			continue
+		}
+		spec, _ := obj.body["spec"].(map[string]any)
+		if kind, ok := spec["paramKind"].(map[string]any); ok && strings.HasSuffix(obj.kind, "AdmissionPolicy") {
+			apiVersion, _ := kind["apiVersion"].(string)
+			k, _ := kind["kind"].(string)
+			ti := lookupType(types, apiVersion, k)
+			pg, pr := resourceName(ti)
+			params[obj.kind+"/"+obj.name] = grantKey{group: pg, resource: pr}
+			// The API server lets only someone who can get every object of a
+			// policy's paramKind create the policy. It checks get on the
+			// object named "*" in the namespace "*". ConfigMaps and custom
+			// resources can't have that name, so for them this rule passes the
+			// check without letting the program read any object. Objects of
+			// some other kinds, such as ClusterRoles, can have it.
+			if ti.custom || pg == "" && k == "ConfigMap" {
+				p.cluster.add(pg, pr, "*", "get")
+			} else {
+				o.logf("warning: the API server lets only someone who can get every %[1]s %[2]s create %[3]s %[4]s, and generate passes that check only for ConfigMaps and the program's custom types, so give the program get permission on every %[1]s %[2]s yourself", apiVersion, k, obj.kind, obj.name)
+			}
+		}
+		ref, ok := spec["paramRef"].(map[string]any)
+		if !ok || !strings.HasSuffix(obj.kind, "AdmissionPolicyBinding") {
+			continue
+		}
+		policy, _ := spec["policyName"].(string)
+		name, _ := ref["name"].(string)
+		param, ok := params[strings.TrimSuffix(obj.kind, "Binding")+"/"+policy]
+		if !ok || name == "" {
+			o.logf("warning: %s %s binds parameters that generate can't name, so put its policy, with a paramKind, earlier in the manifest and name the parameters in its paramRef, or give the program get permission on them yourself", obj.kind, obj.name)
+			continue
+		}
+		// Binding a policy to parameters needs permission to get them.
+		ns, _ := ref["namespace"].(string)
+		o.grantsIn(p, ns).add(param.group, param.resource, name, "get")
+	}
 }
 
 // manifests returns the objects that install the program.
@@ -499,8 +612,21 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	if len(p.watched) > 0 {
 		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
 	}
+	// Events about cluster-scoped objects go in the default namespace, which
+	// can also hold objects that Install applies, and one Role covers both.
+	namespaces := p.namespaces
 	if len(p.defaultNS) > 0 {
-		docs = append(docs, role(object{{"name", o.name}, {"namespace", "default"}, {"labels", labels}}, p.defaultNS)...)
+		namespaces = maps.Clone(p.namespaces)
+		if namespaces == nil {
+			namespaces = map[string]grants{}
+		}
+		g := grants{}
+		g.addAll(namespaces["default"])
+		g.addAll(p.defaultNS)
+		namespaces["default"] = g
+	}
+	for _, ns := range slices.Sorted(maps.Keys(namespaces)) {
+		docs = append(docs, role(object{{"name", o.name}, {"namespace", ns}, {"labels", labels}}, namespaces[ns])...)
 	}
 	args := []string{"-addr=:8080"}
 	switch {

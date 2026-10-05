@@ -667,10 +667,75 @@ go run ./examples/podpolicy generate -registry=ghcr.io/you -- -registries=ghcr.i
   kubectl apply -f -
 ```
 
+`generate` parses these flags as the program would, so it fails on a flag
+that the program doesn't define, and the function that you pass to
+[`kube.Install`](#install-other-objects) sees their values.
+
 go-containerregistry is kube's only dependency, and only `generate` uses it.
 The command builds the copy of the program for the image with the
 `kube_nogenerate` build tag, which leaves the command out, so the program in
 the cluster links only kube and the standard library.
+
+### Install other objects
+
+A program can install objects that it needs but doesn't reconcile, such as
+admission policies for its types, the way it installs its own
+CustomResourceDefinitions. Embed a manifest in the program, and pass a
+function that returns it to `kube.Install`:
+
+```go
+//go:embed policy.yaml
+var policy []byte
+
+func main() {
+	installPolicy := flag.Bool("install-policy", true, "install policy.yaml when the program starts")
+	kube.Main(
+		kube.Install(func() []byte {
+			if !*installPolicy {
+				return nil
+			}
+			return policy
+		}),
+		kube.For[Website](reconciler{}),
+	)
+}
+```
+
+The manifest is YAML documents separated by `---` lines, without anchors,
+aliases, or tags. Give each namespaced object its `metadata.namespace`, and
+put each admission policy before its bindings.
+
+When the program starts, after its controllers install their
+CustomResourceDefinitions and before they reconcile, it applies the objects in
+order with server-side apply and labels them with the program's name. It
+applies them again each time it starts, but doesn't watch them. Server-side
+apply sets only the fields in the manifest, so fields that others set keep
+their values. Entries that others add to a list that merges by key or value,
+such as a binding's `validationActions`, also stay. If the merged object isn't
+valid, such as a binding whose `validationActions` would hold both `Deny` and
+`Warn`, the apply fails and the program exits when it starts. The program
+doesn't delete an object that a later manifest leaves out.
+
+`generate` calls the function after it parses the flags after `--`, so
+`-- -install-policy=false` leaves out the policy and the permissions to apply
+it. For each object that the function returns, `generate` grants `create` and
+`patch` on that object by name. A server-side apply names the object in its
+request, so the API server checks `create` on that name, and the program
+can't create or change other objects of the same type. For an object in a
+namespace other than the program's own or the one that it watches,
+`generate` writes a Role and a RoleBinding in that namespace, which must
+exist before you apply the YAML.
+
+An admission policy with a `paramKind` needs more permissions. The API server
+lets you create the policy only if you can get every object of its
+`paramKind`, which it checks as `get` on an object named `*`. When the
+`paramKind` is ConfigMap or a custom type that the program defines, `generate`
+grants `get` on the name `*`. Objects of those kinds can't have that name, so
+the rule passes the check without letting the program read the parameters.
+Objects of some other kinds, such as ClusterRoles, can have the name `*`, so
+for any other `paramKind`, `generate` prints a warning, and you give the
+program the permission yourself. For a binding with a `paramRef`, `generate`
+grants `get` on the parameter object that the binding names.
 
 ### Replicas
 
@@ -722,6 +787,10 @@ way, its service account needs these permissions:
 - `get` and `create` on `customresourcedefinitions`, for the types that it
   defines and owns without reconciling them, so that it can create their
   CRDs. Without `get`, it logs a warning and doesn't create them.
+- `create` and `patch` on each object that `kube.Install` applies, by name.
+  For an admission policy with a `paramKind`, it also needs `get` on the name
+  `*` of that kind in every namespace, and for the policy's binding, `get` on
+  the parameter object.
 - `get`, `list`, `create`, `update`, and `delete` on `leases`, with
   `-leader-elect` or `-shards`.
 - `create` and `patch` on `events` in the `events.k8s.io` group, for a program

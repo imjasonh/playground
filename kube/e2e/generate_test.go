@@ -35,12 +35,12 @@ type installation struct {
 	args  []string
 }
 
-// generateExample runs an example's generate command and returns what it
-// wrote.
-func generateExample(t *testing.T, reg, example, namespace string, extra ...string) installation {
+// generateExample runs the generate command of a program in the kube
+// module, such as examples/website, and returns what it wrote.
+func generateExample(t *testing.T, reg, program, namespace string, extra ...string) installation {
 	t.Helper()
 	args := append([]string{
-		"run", "github.com/imjasonh/playground/kube/examples/" + example, "generate",
+		"run", "github.com/imjasonh/playground/kube/" + program, "generate",
 		"-registry=" + reg + "/e2e", "-base=" + reg + "/chainguard/static:latest",
 		"-platform=linux/amd64", "-namespace=" + namespace,
 	}, extra...)
@@ -305,7 +305,7 @@ func TestGenerateWebsite(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "website", "website-system")
+	in := generateExample(t, reg, "examples/website", "website-system")
 	if !slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("args = %q, want -leader-elect for two replicas", in.args)
 	}
@@ -359,7 +359,7 @@ func TestGenerateOneNamespace(t *testing.T) {
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
 	watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
-	in := generateExample(t, reg, "website", "website-one", "-replicas=1", "-watch-namespace="+watched)
+	in := generateExample(t, reg, "examples/website", "website-one", "-replicas=1", "-watch-namespace="+watched)
 	if !slices.Contains(in.args, "-namespace="+watched) {
 		t.Errorf("args = %q, want -namespace=%s", in.args, watched)
 	}
@@ -403,7 +403,7 @@ func TestGenerateOwnedType(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "imagereport", "imagereport", "-replicas=1")
+	in := generateExample(t, reg, "examples/imagereport", "imagereport", "-replicas=1")
 	const crd = "imagereports.examples.kube.imjasonh.github.io"
 	var crdRules []any
 	for _, obj := range in.objects {
@@ -463,7 +463,7 @@ func TestGenerateWebhooks(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "podpolicy", "podpolicy", "--", "-registries=ghcr.io/example/")
+	in := generateExample(t, reg, "examples/podpolicy", "podpolicy", "--", "-registries=ghcr.io/example/")
 	kinds := map[string]bool{}
 	for _, obj := range in.objects {
 		kinds[obj["kind"].(string)] = true

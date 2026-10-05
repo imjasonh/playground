@@ -51,13 +51,14 @@ type Finalizer[T any] interface {
 }
 
 // Controller is a reconciler configured to run in a Manager. Create one
-// with For, or with Webhooks for admission webhooks alone.
+// with For, with Webhooks for admission webhooks alone, or with Install for
+// objects to install.
 type Controller interface {
 	// prepare runs on every replica before leader election. It checks the
 	// controller and registers its webhooks.
 	prepare(ctx context.Context, m *Manager) error
 	// setup and run start the reconcile loop, on a replica that holds the
-	// lease.
+	// lease. Install's controller applies its objects in setup.
 	setup(ctx context.Context, m *Manager) error
 	run(ctx context.Context) error
 	reconciles() bool
@@ -83,6 +84,9 @@ type declared struct {
 	// framework migrates stored objects in every namespace.
 	versioned bool
 	owns      []*typeInfo
+	// installs are the objects that the controller applies when the
+	// program starts.
+	installs []installObject
 }
 
 func (c *controller[T, P]) describe() (declared, error) {
