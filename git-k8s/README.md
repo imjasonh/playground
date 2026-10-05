@@ -2806,12 +2806,15 @@ The checks keep local copies of repositories in `/tmp/git-k8s`, on the
 
 To upgrade an installation from before the mirror, apply it with
 `kubectl apply`, as the loop does, because server-side apply can't switch
-the core program's Deployment to the `Recreate` strategy. Then delete the
-Role, RoleBinding, and PodDisruptionBudget that the core program needed for
-two replicas:
+the core program's Deployment to the `Recreate` strategy. `kubectl apply`
+replaces the rules of the core program's Role in the `git-k8s` namespace,
+which drops the rules for leader election and keeps the ones for the
+`git-k8s-checks` ConfigMap and the core program's own tokens, so keep the
+Role and its RoleBinding. Then delete the PodDisruptionBudget that the core
+program needed for two replicas:
 
 ```sh
-kubectl -n git-k8s delete --ignore-not-found role,rolebinding,poddisruptionbudget git-k8s
+kubectl -n git-k8s delete --ignore-not-found poddisruptionbudget git-k8s
 ```
 
 If you set `check-gotest`'s `-goproxy`, set the same value on the core
