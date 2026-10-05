@@ -128,7 +128,12 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	// Keep the automatic maintenance that fetch starts in the foreground.
+	// Detached, it outlives the command and becomes a child of the
+	// container's PID 1, a Go program that never waits for it, so each
+	// fetch would leave a zombie. Git uses gc.autoDetach when
+	// maintenance.autoDetach isn't set.
+	cmd := exec.CommandContext(ctx, bin, append([]string{"-c", "gc.autoDetach=false"}, args...)...)
 	env := []string{
 		// Never prompt, and ignore system and user configuration so that
 		// results don't depend on the machine.
