@@ -449,8 +449,8 @@ func serveRefs(t *testing.T, sha string, refs ...string) string {
 	return "git://" + l.Addr().String() + "/app.git"
 }
 
-// Killing git leaves its remote helper running, holding git's stderr, until
-// the server responds.
+// Killing only git leaves its remote helper running, holding git's stderr
+// open until the server responds or stopDelay passes.
 func TestLsRemoteReturnsWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	release := make(chan struct{})
@@ -467,7 +467,7 @@ func TestLsRemoteReturnsWhenCanceled(t *testing.T) {
 
 	start := time.Now()
 	_, err := (&git.Git{}).LsRemote(ctx, git.Remote{URL: srv.URL + "/app.git"})
-	if d := time.Since(start); d > 10*time.Second {
+	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("ls-remote returned %v after it started", d.Round(time.Second))
 	}
 	if !errors.Is(err, context.Canceled) {
