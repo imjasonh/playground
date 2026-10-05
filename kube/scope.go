@@ -237,6 +237,10 @@ func List[T any, P Resource[T]](ctx context.Context, opts ...ListOption) []*T {
 // objects that you need rarely, such as the data of one Secret, so the
 // framework doesn't have to cache every object of that type. Fetch doesn't
 // run the reconcile again when the object changes.
+//
+// The generate command grants get on every object of T, or on only the
+// object that a call names if the call passes T itself and constants as the
+// namespace and name, and T's kube tag gives its scope.
 func Fetch[T any, P Resource[T]](ctx context.Context, namespace, name string) (*T, error) {
 	s := scopeFrom(ctx, "Fetch")
 	ti := typeFor[T, P](s)
