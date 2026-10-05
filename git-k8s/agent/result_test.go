@@ -177,3 +177,33 @@ func TestFetchLimitsResults(t *testing.T) {
 		t.Errorf("fetch = %v, want the redirect as an error", err)
 	}
 }
+
+func TestFetchResult(t *testing.T) {
+	body := []byte(`{"updates":[]}`)
+	sum := sha256.Sum256(body)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	r, host := serveOn(t, func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Authorization") != "Bearer uid" {
+			http.Error(w, "wrong UID", http.StatusUnauthorized)
+			return
+		}
+		w.Write(body)
+	})
+	ctx := t.Context()
+	if got, err := FetchResult(ctx, host, r.port, "uid", digest); err != nil || string(got) != string(body) {
+		t.Errorf("FetchResult = %q, %v; want %q", got, err, body)
+	}
+	if _, err := FetchResult(ctx, host, r.port, "other", digest); err == nil || errors.Is(err, ErrInvalidResult) {
+		t.Errorf("FetchResult with another UID = %v, want an error that fetching again can fix", err)
+	}
+	for _, d := range []string{"sha256:" + strings.Repeat("0", 64), "done"} {
+		if _, err := FetchResult(ctx, host, r.port, "uid", d); !errors.Is(err, ErrInvalidResult) {
+			t.Errorf("FetchResult with digest %q = %v, want ErrInvalidResult", d, err)
+		}
+	}
+
+	r, host = serveOn(t, func(w http.ResponseWriter, _ *http.Request) { w.Write(make([]byte, maxResult+1)) })
+	if _, err := FetchResult(ctx, host, r.port, "uid", digest); !errors.Is(err, ErrInvalidResult) {
+		t.Errorf("FetchResult of a large result = %v, want ErrInvalidResult", err)
+	}
+}

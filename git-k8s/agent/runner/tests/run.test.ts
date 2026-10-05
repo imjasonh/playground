@@ -109,6 +109,33 @@ test("reports the files that the agent changed", async () => {
   );
 });
 
+test("applies the fixes that the files name when it can edit", async () => {
+  const broken = "package app\n\nfunc Greet() string {\n\treturn greet.Hello() + \", world\" // FAKE AGENT FIX: return greet.Hello(\"world\")\n}\n";
+  const task = preparePod(
+    { "go.mod": "module example.com/app\n", "app/greet.go": broken },
+    { "go.mod": "module example.com/app\n\nrequire example.com/greet v1.1.0\n" },
+    { edit: true },
+  );
+  assert.equal(await runTask(task), 0);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "pass");
+  assert.equal(result.summary, "applied 1 fix");
+  assert.equal(result.reasoning, "The fake agent replaced 1 line that holds FAKE AGENT FIX: with the text after it.");
+  assert.deepEqual(
+    result.files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
+    [["app/greet.go", "package app\n\nfunc Greet() string {\n\treturn greet.Hello(\"world\")\n}\n"]],
+  );
+});
+
+test("doesn't apply fixes when it can't edit", async () => {
+  const task = preparePod({ "a.go": "a() // FAKE AGENT FIX: b()\n" }, { "b.txt": "fine\n" });
+  assert.equal(await runTask(task), 0);
+  const result = readResult(task);
+  assert.equal(result.summary, "no added lines hold DO NOT MERGE");
+  assert.deepEqual(result.files, []);
+});
+
 test("resolves a merge, and reports the files of the merge that the agent changed", async () => {
   const task = prepareMerge(
     { "a.txt": "one\ntwo\nthree\n", "keep.txt": "keep\n" },

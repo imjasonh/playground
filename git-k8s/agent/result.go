@@ -96,7 +96,39 @@ var client = &http.Client{
 // fetch gets the result that the result container of the Pod with this IP
 // and UID serves.
 func (r *Runner) fetch(ctx context.Context, ip, uid string) ([]byte, error) {
-	url := "http://" + net.JoinHostPort(ip, strconv.Itoa(r.resultPort())) + "/result"
+	return get(ctx, ip, r.resultPort(), uid)
+}
+
+// ErrInvalidResult is wrapped by errors from FetchResult for a result that
+// fetching again can't fix: one that's too large, or that doesn't match its
+// digest.
+var ErrInvalidResult = errors.New("invalid result")
+
+// FetchResult gets the file that the runner's serve command serves on port
+// in the Pod with this IP and UID, as Run gets an agent's result. It checks
+// the file against digest, "sha256:" and the file's SHA-256 in hex, which
+// the container that wrote the file reported in its termination message.
+// So programs that run other work in Pods can get results without giving
+// the Pods credentials.
+func FetchResult(ctx context.Context, ip string, port int, uid, digest string) ([]byte, error) {
+	if !isDigest(digest) {
+		return nil, fmt.Errorf("%w: the Pod reported %.80q, not a SHA-256 digest", ErrInvalidResult, digest)
+	}
+	body, err := get(ctx, ip, port, uid)
+	if errors.Is(err, errTooBig) {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidResult, err)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if sum := sha256.Sum256(body); digest != "sha256:"+hex.EncodeToString(sum[:]) {
+		return nil, fmt.Errorf("%w: its digest doesn't match the one that the Pod reported", ErrInvalidResult)
+	}
+	return body, nil
+}
+
+func get(ctx context.Context, ip string, port int, uid string) ([]byte, error) {
+	url := "http://" + net.JoinHostPort(ip, strconv.Itoa(port)) + "/result"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

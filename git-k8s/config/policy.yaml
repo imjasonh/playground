@@ -113,6 +113,10 @@ spec:
 # a check can own only namespaced objects in the branch's namespace. A check
 # whose entry in the git-k8s-checks ConfigMap is empty can't send results,
 # but it keeps its RBAC, so this policy still treats it as a check.
+#
+# git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
+# RBAC lets it patch GitBranch objects too, and the policy stops it the same
+# way.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -150,6 +154,8 @@ spec:
         params != null && has(params.data) && variables.account in params.data
     - name: core
       expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
+    - name: deps
+      expression: size(variables.user) == 4 && variables.user[2] == "git-k8s-deps" && variables.user[3] == "git-k8s-deps"
     - name: approval
       expression: >-
         has(object.metadata.annotations) && "git-k8s.imjasonh.com/approve" in object.metadata.annotations ?
@@ -183,6 +189,14 @@ spec:
       messageExpression: >-
         variables.check != "" ? "the " + variables.check + " check can't change GitBranch objects" :
         request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
+    - expression: >-
+        !variables.deps ||
+        (oldObject != null && object.spec == oldObject.spec &&
+        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
+        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+      message: git-k8s-deps can't change GitBranch objects
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

@@ -27,6 +27,10 @@ import (
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
 const FixerTrailer = "Git-K8s-Fixer"
 
+// AgentTrailer is the commit trailer that marks commits with changes that
+// an AI agent made.
+const AgentTrailer = "Git-K8s-Agent"
+
 // AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
 // with. It allows only the transports that a GitRepository's URL can name.
 // It leaves out file, which also covers plain paths, so git can't read a
@@ -198,7 +202,7 @@ func (g *Git) LsRemote(ctx context.Context, r Remote) (map[string]string, error)
 	for line := range strings.SplitSeq(string(out), "\n") {
 		sha, ref, _ := strings.Cut(line, "\t")
 		branch, isHead := strings.CutPrefix(ref, "refs/heads/")
-		if isHead && objectID(sha) && validBranch(branch) {
+		if isHead && objectID(sha) && ValidBranch(branch) {
 			heads[branch] = sha
 		}
 	}
@@ -211,9 +215,9 @@ func objectID(s string) bool {
 	return err == nil && (len(s) == 40 || len(s) == 64)
 }
 
-// validBranch reports whether refs/heads/name is a valid ref name, as git
+// ValidBranch reports whether refs/heads/name is a valid ref name, as git
 // check-ref-format checks, and name doesn't start with "-".
-func validBranch(name string) bool {
+func ValidBranch(name string) bool {
 	if name == "" || name[0] == '-' || strings.HasSuffix(name, ".") ||
 		strings.Contains(name, "..") || strings.Contains(name, "@{") ||
 		strings.ContainsAny(name, " ~^:?*[\\\x7f") ||
@@ -468,7 +472,18 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 // CountFixerCommits counts the commits in head but not in base that carry
 // the fixer trailer. With base "", it counts every commit in head.
 func (r *Repo) CountFixerCommits(ctx context.Context, base, head string) (int, error) {
-	args := []string{"rev-list", "--count", "--grep=^" + FixerTrailer + ":", "--end-of-options", head}
+	return r.CountCommits(ctx, base, head, FixerTrailer)
+}
+
+// CountCommits counts the commits in head but not in base that carry any
+// of the trailers, or every such commit if there are no trailers. With
+// base "", it counts commits in all of head's history.
+func (r *Repo) CountCommits(ctx context.Context, base, head string, trailers ...string) (int, error) {
+	args := []string{"rev-list", "--count"}
+	for _, t := range trailers {
+		args = append(args, "--grep=^"+t+":")
+	}
+	args = append(args, "--end-of-options", head)
 	if base != "" {
 		args = append(args, "^"+base)
 	}
@@ -490,6 +505,44 @@ func (r *Repo) OnlyFixerCommits(ctx context.Context, base, head string) (bool, e
 	}
 	out, err := r.text(ctx, "rev-list", "--first-parent", "--invert-grep", "--grep=^"+FixerTrailer+":", "--end-of-options", head, "^"+base)
 	return err == nil && out == "", err
+}
+
+// ListedCommit is one commit that ListCommits lists.
+type ListedCommit struct {
+	SHA string
+	// Committer is the committer's name and email as the commit has them,
+	// which match Identity.Written of the identity that made the commit.
+	Committer Identity
+	// Trailers are the trailers at the end of the message, as git parses
+	// them, such as "Git-K8s-Fixer: gofmt".
+	Trailers []string
+}
+
+// ListCommits lists the commits in head but not in base. It lists at most
+// limit commits, so a caller that asks for one more than it wants can tell
+// when there are too many.
+func (r *Repo) ListCommits(ctx context.Context, base, head string, limit int) ([]ListedCommit, error) {
+	out, err := r.run(ctx, "log", "-z", "--no-use-mailmap", "--max-count="+strconv.Itoa(limit),
+		"--format=%H%x00%cn%x00%ce%x00%(trailers:only,unfold)", "--end-of-options", head, "^"+base)
+	if err != nil {
+		return nil, err
+	}
+	// Each commit is 4 fields, each followed by a NUL. git stops printing a
+	// name or a trailer at a NUL inside it, so a commit can't add fields.
+	const n = 4
+	fields := strings.Split(string(out), "\x00")
+	if len(fields)%n != 1 {
+		return nil, fmt.Errorf("git log: unexpected output")
+	}
+	var commits []ListedCommit
+	for f := fields; len(f) > 1; f = f[n:] {
+		commits = append(commits, ListedCommit{
+			SHA:       f[0],
+			Committer: Identity{Name: f[1], Email: f[2]},
+			Trailers:  strings.FieldsFunc(f[3], func(r rune) bool { return r == '\n' }),
+		})
+	}
+	return commits, nil
 }
 
 // FileStat is one file's line counts from git diff --numstat. Binary files

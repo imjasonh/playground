@@ -1385,7 +1385,12 @@ a Role in its namespace. With `-watch-namespace`, the program runs with
 `scope=Namespaced`, or that the program defines without `scope=Cluster`, go in
 a Role in the watched namespace. A reconciled type with more than one version
 keeps its rules in the ClusterRole, because migrating its stored objects to a
-new version lists and patches them in every namespace.
+new version lists and patches them in every namespace. The rules for a type
+whose tag says `local` go in the Role in the program's namespace, so a program
+can keep state in a ConfigMap there without the right to read or write
+ConfigMaps anywhere else. Caches watch every namespace that the program
+watches, so the framework rejects a local type in `Get`, `List`, and `Own`, and
+`generate` rejects a controller that reconciles or owns one.
 
 `ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
 first reference to each, and `generate` adds the rules that

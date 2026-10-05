@@ -36,7 +36,7 @@ GitHub, and any other forge, is a downstream copy:
   `git-receive-pack` request and applies its caller's push rules. A check can
   update only a branch that has a parent, never a parent, and only from the
   old commit that the push names. A controller that starts branches, such as
-  the [dependency update controller](#update-dependencies-with-a-controller),
+  the [dependency update controller](README.md#dependency-updates),
   can also create branches under its own prefix. Only the merge controller
   updates parents.
 - When a branch changes on both sides between syncs, such as a person's push
@@ -160,12 +160,13 @@ Questions to settle first:
 
 ## Sign commits in the mirror
 
-`check-base`, `check-gofmt`, `check-review`, `check-conflicts`, and the
-merge controller sign their commits with a key that they read from a
-Secret, so a compromised check can sign anything with it. With the
-[mirror](#run-an-in-cluster-git-mirror), the mirror can hold the key instead
-and sign for them, for example through a program that git's
-`gpg.ssh.program` setting runs, so that no check reads the Secret.
+`check-base`, `check-gofmt`, `check-review`, `check-conflicts`,
+`check-deps`, the merge controller, and `git-k8s-deps` sign their commits
+with a key that they read from a Secret, so a compromised check can sign
+anything with it. With the [mirror](#run-an-in-cluster-git-mirror), the
+mirror can hold the key instead and sign for them, for example through a
+program that git's `gpg.ssh.program` setting runs, so that none of them
+reads the Secret.
 
 With the mirror, every change reaches GitHub as a push from the mirror. For
 a repository that gets [tokens from Octo STS](README.md#github-repositories),
@@ -217,46 +218,28 @@ Questions to settle first:
   the cluster, or the check follows the run itself.
 - Which GitHub branches a cloud agent may push to.
 
-## Update dependencies with a controller
+## Push dependency branches to the mirror
 
-This repository's dependency workflow updates every app's dependencies each
-day, and opens a pull request that merges when the tests pass. A dependency
-update controller could do the same for each repository that git-k8s tracks.
+[`git-k8s-deps`](README.md#dependency-updates) pushes dependency branches
+with the repository's credentials, and its update Pods fetch with them too.
+So the controller reads Secrets, and only its own code keeps its pushes
+under its prefix. Once the [mirror](#run-an-in-cluster-git-mirror) exists,
+the core program gives the service account `git-k8s-deps` in the namespace
+`git-k8s-deps` the prefix `deps/`. The controller then pushes to the mirror
+with a projected service account token, and its update Pods fetch from the
+mirror with tokens bound to the Pods, like test Pods. Once the mirror also
+[signs commits](#sign-commits-in-the-mirror), the controller stops reading
+Secrets.
 
-The proposed fix is a controller that polls for new versions of a
-repository's dependencies, such as with `go list -m -u all` for Go modules,
-on an interval that it sets with kube's `RequeueAfter`. When it finds
-updates, it applies them and pushes the result to a new branch in the mirror
-under its own prefix, such as `deps/`. The `GitRepository` tracks that prefix
-with the updated branch, such as `main`, as its parent.
+## Update npm and Cargo dependencies
 
-The decision is that dependency branches pass the same checks as any other
-branch, and land as soon as they do. They need a person's approval only when
-the change is risky, which the parent's merge gate already says, for example
-`checks.risk.outputs.level == "low" || checks.approval.passed`. So
-dependency branches need no gate of their own, and `when` doesn't need to
-tell them apart from other branches.
-
-When an update breaks the build or the tests, a local agent can change the
-code to fit the dependency's new API, as described in
-[Agentic checks](README.md#agentic-checks), and push the change to the
-branch, within the branch's budget for automated commits. When the agent
-can't fix it, the branch waits for a person.
-
-Questions to settle first:
-
-- How `check-risk` rates a dependency update. It counts changed lines today,
-  and lines in `go.sum` say little about risk. A new major version, a new
-  module, or code that the agent changed to fit a new API should make a
-  change high risk, and a patch release shouldn't.
-- Whether to update every dependency on one branch, as the dependency
-  workflow does, or each on its own branch. Separate branches keep one bad
-  update from holding back the rest, and keep each change small enough to
-  rate low risk.
-- Which ecosystems to support first. This repository's
-  `update-go-dependencies.sh`, `update-js-dependencies.sh`, and
-  `update-rust-dependencies.sh` show what each takes.
-- How long to wait before taking a new version. Compromised releases are
-  often pulled within days, so a delay keeps most of them out.
-- What happens to a branch that hasn't landed when newer versions come out.
-  The controller could push the newer versions to the same branch.
+[`git-k8s-deps`](README.md#dependency-updates) updates only Go modules. This
+repository's `.github/scripts/update-js-dependencies.sh` and
+`.github/scripts/update-rust-dependencies.sh` show what npm and Cargo take.
+The first raises the version ranges in `package.json` with
+`npm-check-updates` and runs `npm install`. The second runs `cargo update`,
+which changes only `Cargo.lock`, within the ranges in `Cargo.toml`. Each
+ecosystem needs a source of versions and their times for `-min-age`, an image
+with its tools for update Pods, a list of the files that the controller
+accepts from a Pod and that `check-deps`'s agent can't change, and
+`check-risk` rules for its manifests.
