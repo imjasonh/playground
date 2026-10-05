@@ -40,6 +40,8 @@ Answer fail only for problems that you can point to in the code, and name the fi
 
 var runner = &agent.Runner{Name: "review"}
 
+// The agent reads the subjects of the branch's commits, so the check isn't
+// FilesOnly.
 var check = checks.Check{Name: "review", Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {

@@ -664,9 +664,10 @@ tokens:
 
 - `maxAgentRuns` in the merge policy, 10 by default, is the most runs that
   each agentic check can start on one branch. Every new head needs a run,
-  including the check's own fixes and `check-base`'s merges of the parent.
-  A branch that has used them all reports `Running` until you raise the
-  limit.
+  including the check's own fixes, `check-base`'s merges of the parent, and
+  the commits that [squash and rebase landings](#which-results-count) push
+  to the branch. A branch that has used them all reports `Running` until you
+  raise the limit.
 - `-max-runs-per-day`, 100 by default, is the most runs that each replica
   starts in any 24 hours. The program counts them in memory, so the count
   starts over when it restarts, and a replica that takes over a shard
@@ -990,13 +991,14 @@ in its `checks.Check`, which gives its results `filesOnly: true`. A check
 without `FilesOnly` costs one more round of checks, as the end of this section
 describes.
 
-The built-in checks set `FilesOnly`. `check-base` passes for any commit that
-builds on the parent's head, `check-gofmt` and `check-gotest` read only the
-files, and `check-risk` compares them with the parent's head.
-`check-approval` reads only the `GitBranch`, and an approval is for the
-change, which the new commit makes too. `maxAutomatedCommits` counts fix
-commits by their trailer, but it limits what checks push, and the gate
-doesn't read it.
+The built-in checks set `FilesOnly`, except `check-review`, because the agent
+of an [agentic check](#agentic-checks) reads the subjects of the branch's
+commits. `check-base` passes for any commit that builds on the parent's head,
+`check-gofmt` and `check-gotest` read only the files, and `check-risk`
+compares them with the parent's head. `check-approval` reads only the
+`GitBranch`, and an approval is for the change, which the new commit makes
+too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
+what checks push, and the gate doesn't read it.
 
 When the counted results pass the gate, the controller lands the new commit
 without another round of checks. It pushes the commit to the parent, with a
