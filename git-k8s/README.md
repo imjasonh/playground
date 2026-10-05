@@ -2334,10 +2334,9 @@ only after it changes the CustomResourceDefinition. The earlier core program
 installs the earlier policy again each time it starts, so if it restarts
 before step 2, apply `config/policy.yaml` again. While the earlier policy is
 installed, the core program reports `PoliciesInstalled` as `False` with the
-reason `Outdated`.
-The results controller takes over a branch's results the first time it
-writes them, and server-side apply then removes the old checks from the
-branch's managed fields.
+reason `Outdated`. The results controller takes over a branch's results the
+first time it writes them, and server-side apply then removes the old checks
+from the branch's managed fields.
 
 ## Test
 
