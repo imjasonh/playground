@@ -37,6 +37,11 @@ export interface Result {
   durationMs: number;
   files: ChangedFile[];
   /**
+   * In a merge, the tree of the merge that git merge-tree wrote, which the
+   * agent's work tree started with. files change this tree.
+   */
+  mergeTree?: string;
+  /**
    * Why the run failed after the agent started. Then verdict is fail,
    * summary, reasoning, and files are empty, and usage and the costs are
    * what the agent used before it failed.

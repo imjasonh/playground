@@ -56,8 +56,8 @@ URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
 Put credentials in `secretRef`, not in `url`. `kubectl get gitrepositories`
-shows each URL, and `check-gotest` and `check-review` copy it into their Pod
-specs.
+shows each URL, and `check-gotest`, `check-review`, and `check-conflicts` copy
+it into their Pod specs.
 
 The `git-k8s` program runs three controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
@@ -117,7 +117,7 @@ the remote:
 
 | Reason | From | When |
 | --- | --- | --- |
-| `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch. |
+| `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch, or `check-conflicts` pushed `resolve/BRANCH` for a diverged branch without a parent. |
 | `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 
@@ -168,14 +168,15 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. The programs
 that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
-`check-risk`, and `check-review`. Before it starts each run, `check-review`
-fetches the branch and its parent to find their merge base, and it pushes
-its agent's fixes. The test Pods of `check-gotest` and the agent Pods of
-`check-review` fetch without credentials, so with Octo STS, `gotest` and
-`review` work only for a public repository. The `git-k8s` program publishes
-[check runs](#check-runs) with tokens for `checkRunsIdentity`, and
-publishes none without it. The URL must have the form
-`https://github.com/OWNER/REPO`, with or without `.git`.
+`check-risk`, `check-conflicts`, and `check-review`. Before it starts each
+run, `check-review` fetches the branch and its parent to find their merge
+base, and it pushes its agent's fixes. The test Pods of `check-gotest` and
+the agent Pods of `check-review` and `check-conflicts` fetch without
+credentials, so with Octo STS, `gotest` and `review` work only for a public
+repository, and for a private one, `conflicts` resolves only what git can.
+The `git-k8s` program publishes [check runs](#check-runs) with tokens for
+`checkRunsIdentity`, and publishes none without it. The URL must have the
+form `https://github.com/OWNER/REPO`, with or without `.git`.
 
 ### Set up Octo STS
 
@@ -196,7 +197,7 @@ publishes none without it. The URL must have the form
 
    ```yaml
    issuer: ISSUER
-   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-review:check-review)
+   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk|check-conflicts:check-conflicts|check-review:check-review)
    audience: octo-sts.dev/NAMESPACE
    permissions:
      contents: write
@@ -247,10 +248,11 @@ minute before it expires, and ask Octo STS again after 30 seconds. When the
 `git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
 is `False` with the reason `CredentialsUnavailable`. When a check can't, it
 reports an `Error` result, except `check-review`, which reports `Running` and
-tries again after 30 seconds. Until it gets a token, `check-review` can't
-find the merge base, so it doesn't start a run, and it can't commit or push
-an agent's fix. The messages include Octo STS's answer, such as
-`unable to find trust policy for "git-k8s"`. Octo STS caches each
+tries again after 30 seconds, and `check-conflicts` on a branch with a
+parent, which reports `Running` and tries again. Until it gets a token,
+`check-review` can't find the merge base, so it doesn't start a run, and it
+can't commit or push an agent's fix. The messages include Octo STS's answer,
+such as `unable to find trust policy for "git-k8s"`. Octo STS caches each
 trust policy, and the lack of one, for 5 minutes, so a change to a trust
 policy can take that long to apply.
 
@@ -422,6 +424,7 @@ branch, including the checks without `mayPush: true`.
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
+| `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. When a side of a diverged branch rewound, it replays the other side's commits onto that side's head instead of merging. See [Resolve conflicts](#resolve-conflicts). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
 the head and runs the checks again. Fix commits have a `Git-K8s-Fixer:
@@ -564,8 +567,9 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   container that gets the repository's credentials, as environment
   variables from the Secret.
 - The test container runs `go test ./...` as user 65532 with no service
-  account token, no privileges, a read-only root file system, and
-  `GOPROXY=off`, so tests can't download modules.
+  account token, no privileges, and a read-only root file system. It has
+  `GOPROXY=off`, so tests can't download modules, unless you
+  [share modules and build outputs](#share-modules-and-build-outputs).
 - If fetching fails, the check starts a new Pod, up to three times.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
@@ -591,11 +595,274 @@ delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods
 under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 `-timeout`, and `-goproxy` to change the rest.
 
-Both of a test Pod's containers meet the `restricted`
+All of a test Pod's containers meet the `restricted`
 [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 An admission policy keeps `check-gotest` to its own Pods, in namespaces that
 opt in to test Pods and enforce the `restricted` standard. See
 [Install](#install).
+
+### Share modules and build outputs
+
+Each test Pod starts with an empty Go build cache, so it compiles every
+package that its tests use, including the standard library's. With
+`GOPROXY=off`, it also can't test a module that has dependencies.
+`go-cache`, a program in this module, fixes both for the test Pods that use
+it:
+
+- Its module proxy, at `/mod/`, fetches modules from `-upstream`,
+  `https://proxy.golang.org` by default, and keeps each version's files,
+  which never change. Test Pods download modules from it, so they don't
+  need the internet.
+- Its build caches, one at `/cache/NAMESPACE/REPOSITORY/` for each
+  `GitRepository`, hold what the go command compiled, by action ID. The go
+  command derives an action ID from everything that goes into a build step,
+  such as the source files, the compiler and its flags, and the step's
+  dependencies.
+
+Install `go-cache` with `generate`, apply `config/go-cache.yaml`, and set
+`check-gotest`'s `-go-cache` flag to `go-cache`'s URL:
+
+```sh
+go run ./cmd/go-cache generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/static:latest -replicas=1 -tmp-size=10Gi \
+  -- -max-size=8Gi | kubectl apply -f -
+kubectl apply -f config/go-cache.yaml
+go run ./cmd/check-gotest generate -registry=REGISTRY \
+  -base=cgr.dev/chainguard/git:latest \
+  -- -go-cache=http://go-cache.go-cache | kubectl apply -f -
+```
+
+`go-cache` keeps modules and build outputs on the `emptyDir` volume at
+`/tmp`, and keeps their total size, with the writes in progress, under
+`-max-size`, 4Gi by default. Before it writes a file, `go-cache` reserves
+room for it, and removes the least recently used files to make room. It
+writes at most 16 uploads at once, and at most 16 fetched modules in
+slots of their own. When writes in progress hold the room, or fetches
+hold all 16 fetch slots, `go-cache` serves a module that it doesn't have
+from `-upstream` without keeping it. When writes in progress hold the
+room, or uploads hold all 16 upload slots, `go-cache` answers an upload
+with `503 Service Unavailable`. An upload waits up to 30 seconds for a
+slot first. After a 503, the test Pod stops uploading, which only means that
+later Pods compile those outputs again. `go-cache` doesn't keep build
+outputs larger than 256 MiB. The kubelet evicts a Pod whose volume passes
+`-tmp-size`, so keep `-max-size` a little below it.
+Each replica would have its own store, so `-replicas=1` runs one. The
+volume survives restarts of `go-cache`'s container, but a new Pod, such as
+one that replaces a deleted or evicted Pod, starts with an empty store.
+That costs test Pods only the time to download and compile again.
+
+`generate` can't make what `config/go-cache.yaml` holds. It makes Services
+only for webhooks, so the file adds the Service that test Pods reach
+`go-cache` through. `generate` grants what a program calls through kube,
+and `go-cache` sends TokenReviews and gets Pods itself, so the file adds a
+ClusterRole that allows creating TokenReviews and getting Pods, and
+nothing else. `go-cache` can get any Pod by name, but can't list or watch
+Pods.
+
+With `-go-cache`, `check-gotest` adds three init containers to each test
+Pod, after the one that fetches the head:
+
+1. `cacheprog` runs `check-gotest`'s own image, which `generate` names in
+   the `KUBE_IMAGE` environment variable, and copies the `check-gotest`
+   binary to a volume. The binary is the Pod's `GOCACHEPROG`, the program
+   that the go command asks for build outputs.
+2. `build` runs the `check-gotest` binary from the volume in the Go image,
+   with the test container's environment. It lists the packages that
+   `go test` needs, and compiles the ones from GOROOT and the module cache
+   with `go list -export`, which neither links nor runs anything. Its
+   `GOCACHEPROG` reads outputs from the repository's build cache, with a
+   service account token that can only read it.
+3. `upload` sends what `build` compiled to the build cache, with a token
+   that can write to it. It runs `check-gotest`'s image, and doesn't mount
+   the branch's files.
+
+Test Pods run in the `GitBranch`'s namespace as its `default` service
+account and don't set `imagePullSecrets`, so each namespace that has a
+`GitRepository` must be able to pull `check-gotest`'s image. If pulling
+from `REGISTRY` needs credentials that the nodes don't have, add an image
+pull secret to the `default` service account in each of those namespaces.
+Without the secret, test Pods wait in `Init:ImagePullBackOff` until
+`-timeout` ends them, and the check fails.
+
+The test container downloads modules from `go-cache`, whatever `-goproxy`
+says. Its `GOCACHEPROG` reads the outputs that `build` left in the volume,
+and doesn't connect to `go-cache`. The test container compiles the
+packages that `build` didn't, such as the module's own packages, vendored
+packages, and modules that a `replace` directive points at a directory. It
+also links the test binaries and runs the `go vet` checks that `go test`
+runs. Test results stay in the Pod, so every test runs. If the go command
+fails in `build`, for example because `go.mod` doesn't parse, the check
+fails with its output. If `go-cache` is down, test Pods compile everything
+themselves, but can't download modules.
+
+#### Threat model
+
+Test Pods run untrusted code. Anyone who can push a branch controls its
+tests and the packages that they import. A shared build cache must not let
+that code change what another branch's Pod compiles, which could, for
+example, make a failing test on `main` pass. `go-cache` and `check-gotest`
+defend against that as follows:
+
+- Only what the go command compiles goes into the build cache. `build`
+  reads the branch's `go.mod`, `go.sum`, and imports, compiles packages
+  from GOROOT and the module cache, and runs nothing. `check-gotest` sets
+  `CGO_ENABLED=0` and `GOTOOLCHAIN=local`, so the go command runs no C
+  compiler and no toolchain that the branch asks for. `upload` sends only
+  what `build` compiled, before any of the branch's code runs.
+- Test code can't write to the build cache. The test container gets no
+  token, and its `GOCACHEPROG` doesn't connect to `go-cache`. Nothing
+  uploads after the tests start.
+- Only outputs that no branch can change are shared. An action ID covers
+  the files that the go command lists for a package, but not every file
+  that a build step reads. An assembly file can include a header from
+  another directory, so two branches can compile different outputs for one
+  action ID. `build` shares a package's outputs only when the package is in
+  GOROOT, which the Go image fixes, or in the module cache, where the go
+  command puts a module only after checking it against `go.sum`. The
+  package's assembly must include no file from outside its directory, and
+  every package that it imports must be shared too. The test container
+  compiles the rest itself, so a branch can't change what another branch's
+  Pod compiles. `go-cache` never replaces an entry, and answers an upload
+  of another output for an action ID that it has with `409 Conflict`.
+- Tokens name a repository and an access. Each token is a projected service
+  account token whose audience names the namespace, the repository, and
+  either reading or writing. It expires after 10 minutes, the shortest
+  lifetime that Kubernetes allows. `go-cache` checks each request's token
+  with a TokenReview for the audience that the request needs, and checks
+  that the token's service account is in the namespace in the URL.
+- Only `check-gotest`'s Pods write, and only before their tests start. The
+  kubelet binds each projected token to its Pod, and a TokenReview names
+  the Pod that a token is bound to. `go-cache` gets that Pod for each
+  write, and accepts the token only if the Pod has the UID that the token
+  names, has the label `kube.imjasonh.github.io/controller=check-gotest`,
+  isn't being deleted, and is Pending. kube puts that label on each Pod
+  that `check-gotest` creates. A Pod is Pending while its init containers
+  run, and `upload` is one of them. A token that isn't bound to a Pod
+  can't write. If `check-gotest` runs under another name, set
+  `go-cache`'s `-controller` flag to that name.
+- The namespace is the trust boundary. Anyone who can create Pods in a
+  namespace can create one with `check-gotest`'s label and a token for any
+  audience, so they can write the build caches of the namespace's
+  repositories. They can already mount the namespace's Secrets, including
+  the repositories' credentials, so the build cache doesn't let them do
+  more. Anyone who can create tokens for the namespace's `default` service
+  account, which `check-gotest`'s Pods run as, can bind one to such a Pod
+  while it's Pending, and write too. `generate` lets a check that runs Pods
+  create them in every namespace, but the `git-k8s-check-pods` policy in
+  `config/policy.yaml` keeps each check to Pods with its own label, so
+  another check's Pods can't write. The policy skips service accounts whose
+  namespace and name don't start with `check-`. If a check runs as such an
+  account and can create Pods, give it a policy of its own, as
+  [Check service accounts](#check-service-accounts) says. Without one, its
+  Pods can have `check-gotest`'s label and write. Other checks' Pods can
+  read the build caches of a namespace that opts in to test Pods, where
+  they can already mount the namespace's Secrets. Reads don't change what
+  any Pod compiles. Namespaces don't share build caches.
+
+The design leaves these risks:
+
+- The defense relies on the go command not running code from the files
+  that it reads. A bug that let a branch run code in `build` would let it
+  store any output under action IDs that the build cache doesn't have yet.
+- Sharing relies on action IDs covering every input but the files that
+  assembly includes. If a Go release let another build step read files
+  from outside a package's directory, `build` would have to leave out the
+  packages that do.
+- The module proxy doesn't check tokens. Any Pod that can reach `go-cache`
+  can download modules, and make `go-cache` fetch a module from
+  `-upstream`. The go command checks each module that it downloads against
+  `go.sum`, so a changed module fails the build. `proxy.golang.org` fetches
+  a module that it doesn't have from its origin, so a test can send data
+  out in module paths. If that matters, set `-upstream` to a proxy that
+  serves only the modules that you allow.
+- `go-cache` serves plain HTTP. Anyone who can watch the Pod network can
+  read build outputs, and use a token that writes until the token expires
+  or its Pod leaves Pending.
+- `go-cache` remembers a token's review for a minute, so a token that
+  reads works for up to a minute after its Pod is deleted. A token that
+  writes stops working when its Pod leaves Pending, because `go-cache`
+  gets the Pod for each write. `go-cache` denies a token that isn't a JWT
+  for the request's audience without a TokenReview, remembers denials
+  apart from the tokens that it accepts, and sends at most 8 TokenReviews
+  at once. A flood of bad tokens can hold up reviews of new tokens, but
+  not requests with tokens that it accepted in the last minute. It gets at
+  most 8 Pods at once, in slots of their own. Tokens bound to Pods that
+  fail the check can hold up writes, but `go-cache` remembers up to 1024
+  such Pods for 10 seconds each, so each costs at most one get every 10
+  seconds.
+- A namespace can fill the store and push other namespaces' entries out,
+  which slows their builds. Its tokens can name any repository, even one
+  that doesn't exist, so it can write as many entries as it likes.
+  Eviction doesn't change results, because a Pod that compiles an evicted
+  output again compiles the same output.
+- A write holds its room in the store until it ends. A namespace that
+  uploads slowly can take all 16 upload slots for up to 5 minutes,
+  `go-cache`'s read timeout, and hold up to 256 MiB of room with each,
+  4Gi in all. Meanwhile `go-cache` answers other uploads with 503. Module
+  fetches have slots of their own, but the uploads can hold all of the
+  default `-max-size` of 4Gi, and then `go-cache` serves modules that it
+  doesn't have without keeping them. That slows other namespaces' test
+  Pods, but doesn't fail them. A `-max-size` above 4Gi leaves room for
+  modules.
+
+### Restrict test Pods' network
+
+`check-gotest` doesn't add a NetworkPolicy, so a test can reach anything
+that the namespace's Pods can, including the internet. A test Pod needs to
+reach only DNS, the git remote, and `go-cache`, if you use it. This
+NetworkPolicy, in each namespace that has a `GitRepository`, allows that
+and nothing else:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-pods
+  namespace: NAMESPACE
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: check-gotest
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: go-cache
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: go-cache
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - ipBlock:
+            cidr: GIT_REMOTE_IP/32
+      ports:
+        - {protocol: TCP, port: 443}
+```
+
+Replace `NAMESPACE`, and replace `GIT_REMOTE_IP` and `443` with the git
+remote's address and port. A remote whose address changes needs a wider
+block. Leave out the `go-cache` rule if you don't use it, and change the
+DNS rule if your cluster's DNS Pods have other labels. NetworkPolicies
+match the port that a Service forwards to, so the `go-cache` rule allows
+port 8080, which `go-cache` listens on, instead of the Service's port 80.
+
+The policy applies to the whole Pod, and the init container that fetches
+the head needs the remote, so tests can reach the remote too, without the
+credentials. A NetworkPolicy has no effect unless the cluster's network
+plugin enforces NetworkPolicies. The end-to-end test applies this policy,
+and reports whether the cluster enforced it.
 
 ### Agentic checks
 
@@ -857,6 +1124,246 @@ outputs, which count the branch's runs. It also returns the agent's
 `Result`, with the files that the agent changed, so a check can build
 another kind of commit from them with `agent.ApplyFiles`.
 
+### Resolve conflicts
+
+`check-conflicts` runs the `conflicts` check, which resolves two kinds of
+conflict that keep a branch from landing:
+
+- Merging the branch's parent into it conflicts, so `check-base` can't keep
+  the branch up to date. The check pushes a merge of the parent that
+  resolves the conflicts.
+- The branch diverged. It changed both in git-k8s and in the external repository
+  since they last synced, and the core program set `status.diverged` to the
+  external repository's head, the ref that holds it, and the head where the
+  sides last synced. The check fetches the external repository's head from
+  `status.diverged.ref`, and pushes a merge of it, or the replays that a rewind
+  needs, with a lease on the branch's head. If the external repository deleted
+  the branch, the check fails and leaves the branch for a person, who can push
+  the branch to the external repository again to keep its changes, or delete it
+  in git-k8s to drop them.
+
+When a branch diverged and also conflicts with its parent, the check
+resolves the divergence first, because merging the parent doesn't end it.
+
+The check compares each side's head with the head where the sides last
+synced, `status.diverged.base`. A side added the commits that its head has
+and `base` doesn't, and removed the commits that `base` has and its head
+doesn't. A side that removed commits rewound, for example with a force push.
+If neither side rewound, only a head that contains both heads keeps both
+sides' changes, so the check merges the external repository's head. If one
+side rewound, a commit that contains both heads brings back the commits that
+the rewound side removed, so the check never makes a merge commit. It
+replays the commits that the other side added since `base` onto the rewound
+side's head instead, and pushes the result with a lease on the branch's
+head:
+
+- If the external repository rewound, the check replays the branch's commits
+  onto the external repository's head one at a time, with their authors and
+  messages. It skips a commit whose replay changes nothing, such as one whose
+  change the external repository's head already has. The check pushes to the
+  side that didn't rewind, so the result can change commits to resolve
+  conflicts. If a commit can't be replayed by itself, such as a merge, or a
+  commit whose replay conflicts, or if the replays don't have every change
+  that both sides made, the check replays the branch's whole change since
+  `base` as one commit on top of the external repository's head instead.
+  Git and the agent resolve that commit's conflicts as they resolve a
+  merge's, with `base` as the merge base, and the agent's prompt says not to
+  bring back what the rewind removed. If a replay makes the same change as a
+  commit that the external repository removed, the check fails and leaves
+  the divergence for a person, because one commit would only hide the
+  replay.
+- If the branch rewound in git-k8s, the check replays the external
+  repository's commits onto the branch's head one at a time. It pushes the
+  result to the side that rewound, so the result needs a replay of each
+  commit that the external repository added, and every change that the
+  external repository made. A replay is a commit that removes and adds the
+  same lines in the same files as the original, ignoring the unchanged lines
+  around them, and a commit replays at most one commit. The comparison
+  ignores `.gitattributes` files, so that an attribute such as `-diff` can't
+  hide a replay. A merge commit, and a commit that changes no file, have no
+  replay. So the check resolves no conflicts here, and fails and leaves the
+  divergence for a person when a commit has no replay or doesn't replay
+  unchanged, or when the result doesn't have every change that the external
+  repository made.
+- If both sides rewound, the check replays the branch's commits onto the
+  external repository's head if that head has none of the commits that the
+  branch removed. Otherwise, it replays the external repository's commits onto
+  the branch's head if that head has none of the commits that the external
+  repository removed. In this case, it never replays the branch's whole
+  change as one commit, and fails when neither replay works.
+
+A head keeps a side's changes when it has none of the commits the side
+removed and no replay of one, a replay of each commit it added, and every
+change it made since `base`: merging the side into the head with `base` as
+the merge base is clean and changes nothing. A replay of a removed commit
+counts only if the side made the same change again, as a rebase does. A
+head built on a side that rewound to a new commit keeps that side's changes
+even where it resolved conflicts. In that case, merging either the side or
+the commit where the side and `base` meet into the head, with `base` as the
+merge base, must be clean and change nothing, so that the head brings back
+no change that the side removed. The merges can't see a replay of a removed
+commit whose change other removed commits undid, such as a secret and its
+revert that a force push dropped, so the rule also looks for replays of the
+removed commits. The search ignores `.gitattributes` files, so that an
+attribute such as `-diff` can't hide a replay. It can't find one inside a
+larger commit, such as a squash. No merge checks these replays, so a commit
+that makes a removed commit's change on another line also counts as one.
+The check passes when one side's head already keeps every change that the
+other side made.
+
+Branches diverge only with the in-cluster mirror that
+[Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
+end-to-end test can't make one diverge, and unit tests cover divergence
+instead. Until git-k8s has the mirror, the check pushes to the repository's
+URL. With the mirror, the check pushes through the mirror, and the mirror
+resolves a divergence between its copy and the external repository by the
+same rule. It moves one side to the other side's head only if that head
+keeps every change that the moving side made, so once one side's head keeps
+both sides' changes, such as after the check's push, the mirror moves the
+other side to it.
+
+Git resolves what it can by itself. Files that match `-union`, which is `go.sum`
+by default, merge with git's union driver, which keeps the lines of both sides.
+A union merge can make a file that doesn't work, such as a `go.sum` that lacks a
+line that the merged `go.mod` needs, so we recommend a gate that also needs a
+check that builds the result, such as `gotest`. The merge uses only the
+attributes that `-union` makes, not the `.gitattributes` files of either side,
+so a branch can't make git resolve its own conflicts, such as by marking a file
+`merge=union`. The check doesn't use `git rerere`, which replays resolutions
+that a person recorded in a working tree, or the `ours` and `theirs` options of
+git's merge strategy, which pick a side.
+
+When conflicts remain and the check has an agent image, an agent resolves them
+in a sandboxed Pod that `Runner.RunJob` starts, as described in [Run agents from
+a controller](#run-agents-from-a-controller). The Pod makes the same merge as
+the check, with the same `-union` attributes, so its files hold the conflicts
+that git left, in the diff3 style, which shows the merge base's lines between
+the two sides. The agent's prompt lists both sides' commits since the merge base
+and holds both sides' changes. The agent can edit files but not delete them, and
+it can't build or run the code. It answers fail when it can't tell how to keep
+both sides' changes.
+
+The check commits the agent's files as a merge whose parents are both heads,
+or, for a replay, as one commit on top of the external repository's head. It
+fails instead when the merge that the agent's Pod made doesn't have the same
+tree as the check's merge, when the agent changed a file that doesn't conflict,
+deleted a file, or gave a file a mode that the file has on neither side, or when
+a file still holds a conflict marker. A file holds one when a line starts with
+one of the merge's marker labels, or when more of its lines start like a marker
+than in its two sides together.
+
+The check runs an agent only when the policy lets it push, and only within
+`maxAutomatedCommits` and `maxAgentRuns`, which `RunJob` enforces as the job's
+`MaxRuns` over all of the branch's runs. It runs none for a merge with more than
+one merge base, for a conflict in a file that one side deleted or that isn't a
+regular file on both sides, or for a conflict that git can't mark, such as one
+in a binary file. It also runs none for a conflict in a `.cursorignore` file,
+because the agent's work tree leaves those files out, or for conflicts in more
+than 1,000 files or in files that hold more than 8 MiB, the most that a result
+can change.
+
+Each commit that the check pushes makes a new head, so every check runs
+again on it. A merge, and a replay of the branch's whole change as one
+commit, have a `Git-K8s-Fixer: conflicts` trailer and count toward
+`maxAutomatedCommits`. A replay of one commit keeps that commit's message,
+so it counts only if the original did, but the check pushes replays only
+while the branch is under the limit, like any fix. When neither git nor the
+agent resolves the conflicts, the check fails with the reason and leaves the
+branch for a person, because a wrong resolution is worse than none.
+
+In a [merge queue](#merge-queue), the check's merges keep the branch's
+place, like other fixes, because each has the trailer and has the branch's
+head as its first parent. A replay takes the branch out of the queue when it
+adds a commit without the trailer, or when the new head doesn't contain the
+old one. At the front, a merge of the parent that conflicts fails the `base`
+check, so the branch leaves the queue. It joins again at the back when its
+gate passes on the check's merge.
+
+A merge of the parent that has no conflicts passes, because merging it is
+`check-base`'s job. The check pushes a merge of the external repository's
+head even without conflicts, because nothing else merges it. While an agent
+runs, the check keeps following the run when the parent moves, so a parent
+that moves often doesn't restart it. The Pod merges the parent's head that
+the run started with, even if the parent moved past it before the Pod
+fetched the parent. If the run fails after the parent moved, the check runs
+again on the parent's new head. If the parent no longer contains the head
+that the run started with when the Pod fetches it, the agent doesn't run,
+and the check starts a new run on the parent's new head.
+
+The check doesn't rebase a branch onto its parent or onto the external
+repository's head. A rebase rewrites commits that checks and people already
+saw, such as the head that an approval names, and `check-base` already
+brings branches up to date with merges. The check replays commits only when
+a side rewound, because then a merge brings back what the rewind removed.
+
+A branch without a parent, such as `main`, has no merge gate, so a merge
+pushed to it would skip every check. When such a branch diverges, the check
+pushes the external repository's head to the branch `resolve/BRANCH`
+instead, with an empty commit on top that says why. The empty commit has the
+`Git-K8s-Fixer: conflicts` trailer, so the push follows the same rules as a
+check's fix to `resolve/BRANCH`, including the `maxAutomatedCommits` of the
+rule that matches it. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
+merge gate, like any other branch. `check-base` merges `BRANCH` into it, or
+the conflicts check resolves that merge when it conflicts. The check waits
+while `resolve/BRANCH` holds work that hasn't landed, and passes once
+`BRANCH` contains the external repository's head, or when the external
+repository's head contains `BRANCH`'s head, because the mirror then moves
+`BRANCH` to it. To let the check resolve a diverged `main`, add the check to
+`main`'s policy, and give `resolve/main` the parent `main` with a rule:
+
+```yaml
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: conflicts
+            mayPush: true
+          - name: gotest
+    - match: resolve/main
+      parent: main
+    - match: c/**
+      parent: main
+```
+
+`resolve/BRANCH` lands only once it contains `BRANCH`'s head, so it can't
+resolve a rewind, and the check pushes nothing when a side of a diverged
+parent rewound. The merge controller only moves a parent to a commit that
+contains the parent's head, so a parent that rewound in the external
+repository resolves only there, with a replay of each commit that landed on
+the parent since `base`, and every change that those commits made. If a
+commit can't be replayed unchanged, for example because it changes lines
+that the rewind removed, the parent stays diverged until the external
+repository's head contains the parent's head again. If the parent rewound
+in git-k8s instead, replay the external repository's commits onto the
+parent's head, and push the result to the external repository with a lease
+on its head. The check fails, and says which of these to do, until either
+side's head keeps every change that the other side made. Then it passes,
+because the mirror moves the other side to that head.
+
+Checks push with the repository's credentials, which can push to any
+branch. The mirror lets a check update only a branch that has a parent, so
+with the mirror, the core program must also give the service account
+`check-conflicts` in the namespace `check-conflicts` the branch-name prefix
+`resolve/`, which lets it create `resolve/BRANCH`.
+
+To install `check-conflicts`, build the agent runner's image as for
+`check-review`, and pass its digest with `-agent-image`. Without
+`-agent-image`, the check resolves only what git can, and runs no agent:
+
+```sh
+go run ./cmd/check-conflicts generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+```
+
+`check-conflicts` takes the same flags as `check-review`, and `-union`, a
+comma-separated list of path patterns in the gitattributes format whose
+conflicts git resolves by keeping the lines of both sides. Its agent Pods run
+in their branch's namespace, as `check-review`'s do, so that namespace needs
+the Secret that holds the Cursor API key, and must opt in to check Pods, as
+[Install](#install) describes. The agent Pods also need the NetworkPolicy
+that `check-review`'s need, with ingress from the namespace `check-conflicts`.
+
 ### Run agents from a controller
 
 A controller, or a check that needs a `Job` that `Run` doesn't build, runs
@@ -909,6 +1416,48 @@ find that the branch moved. If the run's Pod is deleted before the run is
 `Done`, kube creates it again and the agent runs again, so `RunJob` counts
 another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
 `RunJob` ends the run instead, and kube doesn't create the Pod again.
+
+`agent.UsageOutputs` turns what a run used into outputs like `Run`'s, and
+`agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
+a result can change, so a controller can skip a run whose result can't fit.
+
+For an agent that resolves a merge, set `Checkout.Merge` to the commit to merge
+into the head, and `Checkout.Base` to their merge base. In `Checkout.Merge`,
+`Name` is the full name of a ref that contains the commit, such as
+`refs/heads/main` or `refs/git-k8s/downstream/heads/main`, and `DisplayName` is
+how the prompt names it, such as `main`. `Checkout.Union` lists path patterns in
+the gitattributes format whose conflicts the merge resolves with git's union
+driver. The `prepare` container then writes the files of the merge that `git
+merge-tree --write-tree` makes with `merge.conflictStyle=diff3`, instead of the
+head's, which is the same merge as `git.Repo.Merge` with those patterns in
+`MergeOptions.Union`. Like `git.Repo.Merge`, the merge doesn't read the commits'
+`.gitattributes` files, so only `Checkout.Union` changes how files merge. Each
+conflict in a file holds the head's lines, the merge base's lines, and the
+merged commit's lines between conflict markers. A file that one side deleted and
+the other changed holds the changed version. The work tree leaves out
+`.cursorignore` files, as in any task, so when one of them conflicts, the runner
+fails the run before the agent starts. The prompt lists the paths that conflict,
+and holds the change from the merge base to the merged commit, its paths, and
+its commits, as well as the head's. The two diffs share the prompt's 200,000
+bytes for a diff, and each gets at least half of them. A review needs every path
+that its change touches, but a merge's agent needs only the conflicts, which the
+prompt lists in full. So a merge's prompt lists only the first 1,000 paths of
+each side's change, within 128 KiB, and says when it leaves some out. The run
+fails when more than 1,000 paths conflict, the most files that a result can
+change. With `Task.Edit`, the result's `Files` change the merge's files, and the
+controller builds the merge commit from them. The result's `MergeTree` names the
+tree of the Pod's merge. To build the commit, make the same merge, such as with
+`git.Repo.Merge`, and check that its tree is `MergeTree`, so that the commit
+holds the files that the agent saw.
+
+The branch must still point to the head when the Pod fetches it, because the
+controller pushes what the agent changes onto the head with a lease, which fails
+once the branch moves. The merged ref only has to contain the commit, because
+the merge is of the commit, so the run goes on when the ref moves past it. If
+the ref no longer contains the commit, the run waits as when the branch moves.
+While it waits, `JobStatus.Moved` is true, so a controller that keeps a run on
+the commits that it started with, as `check-conflicts` does, can tell when to
+start a new one.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and
@@ -1107,12 +1656,13 @@ in its `checks.Check`, which gives its results `filesOnly: true`. A check
 without `FilesOnly` costs one more round of checks, as the end of this section
 describes.
 
-The built-in checks set `FilesOnly`, except `check-review`, because the agent
-of an [agentic check](#agentic-checks) reads the subjects of the branch's
-commits. `check-base` passes for any commit that builds on the parent's head,
-`check-gofmt` and `check-gotest` read only the files, and `check-risk`
-compares them with the parent's head. `check-approval` reads only the
-`GitBranch`, and an approval is for the change, which the new commit makes
+The built-in checks set `FilesOnly`, except `check-review` and
+`check-conflicts`. The agent of an [agentic check](#agentic-checks) reads the
+subjects of the branch's commits, and `check-conflicts` replays commits with
+their authors and messages. `check-base` passes for any commit that builds on
+the parent's head, `check-gofmt` and `check-gotest` read only the files, and
+`check-risk` compares them with the parent's head. `check-approval` reads only
+the `GitBranch`, and an approval is for the change, which the new commit makes
 too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
 what checks push, and the gate doesn't read it.
 
@@ -1179,6 +1729,9 @@ done
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+To give test Pods a module proxy and a shared build cache, also install
+`go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
+shows how.
 
 `config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
@@ -1187,15 +1740,17 @@ changing `status.checks`. A check that doesn't run as `check-NAME` in the
 namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap to
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
-check's result. The second stops every git-k8s service account from setting
+check's result. It also stops every service account except the core program's
+from changing `status.diverged`, which names the commit that `check-conflicts`
+merges or replays. The second stops every git-k8s service account from setting
 the `approve` and `approved-by` annotations, which are for people, and stops
 checks from changing `GitBranch` objects at all. RBAC also keeps every check
-except `check-gotest` and `check-review`, which own Pods, from patching
-`GitBranch` objects. `generate` grants that permission to a check that owns
-objects, because it can't tell whether an owned object needs a finalizer on
-its owner. The second policy denies the annotation that kube adds with that
-finalizer, so a check can own only namespaced objects in the branch's
-namespace.
+except `check-gotest`, `check-review`, and `check-conflicts`, which own Pods,
+from patching `GitBranch` objects. `generate` grants that permission to a
+check that owns objects, because it can't tell whether an owned object needs a
+finalizer on its owner. The second policy denies the annotation that kube adds
+with that finalizer, so a check can own only namespaced objects in the
+branch's namespace.
 
 The third keeps each check to its own Pods. `generate` lets a check that
 declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
@@ -1263,8 +1818,10 @@ controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
 `False` until all four policies are installed with bindings that deny.
 
 Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
-or `review` must opt in to check Pods and enforce the `restricted` Pod
-Security Standard, or the third policy denies the check's Pods:
+or `review`, or lists `conflicts` with `mayPush: true` while `check-conflicts`
+runs with `-agent-image`, must opt in to check Pods and enforce the
+`restricted` Pod Security Standard, or the third policy denies the check's
+Pods:
 
 ```sh
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
@@ -1273,16 +1830,17 @@ kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-secur
 Replace `NAMESPACE` with the namespace of the `GitRepository`. The namespace
 can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
-`latest`. Until it has both labels, the branch's `gotest` or `review` result
-stays `Running`, and its message says why kube couldn't create the Pod. kube
-tries again with backoff that grows to 5 minutes, plus up to 10% jitter, so it
-creates the Pod within about 5.5 minutes after you label the namespace,
-without a new push.
+`latest`. Until it has both labels, the branch's `gotest`, `review`, or
+`conflicts` result stays `Running`, and its message says why kube couldn't
+create the Pod. kube tries again with backoff that grows to 5 minutes, plus up
+to 10% jitter, so it creates the Pod within about 5.5 minutes after you label
+the namespace, without a new push.
 
-If `check-gotest` or `check-review` already runs, label the namespaces of
-their repositories before you upgrade the core program, which installs
-`config/policy.yaml` when it starts, or before you apply `config/policy.yaml`
-yourself. Otherwise the policy denies their Pods until you do.
+If `check-gotest`, `check-review`, or `check-conflicts` already runs, label
+the namespaces of their repositories before you upgrade the core program,
+which installs `config/policy.yaml` when it starts, or before you apply
+`config/policy.yaml` yourself. Otherwise the policy denies their Pods until
+you do.
 
 ### Admission policies
 
@@ -1439,8 +1997,11 @@ dependencies too, and runs these tests.
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
 git server on this machine, which Pods reach through the kind network's
-gateway, and pushes branches to it. It needs Docker, `kubectl`, and `git`,
-and installs kind if it's missing:
+gateway, and pushes branches to it. A module proxy on this machine serves
+`go-cache` a module that isn't on the internet. The test reads `go-cache`'s
+metrics to check that a test Pod got the module through it, and that a later
+Pod read its build outputs instead of compiling them. The test needs Docker,
+`kubectl`, and `git`, and installs kind if it's missing:
 
 ```sh
 GIT_K8S_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -1453,7 +2014,10 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 The end-to-end test builds the agent runner's image with Docker, and runs
 `check-review` with the `fake` backend, which needs no API key. The fake
 agent fails a change that adds a line with `DO NOT MERGE` in it, and deletes
-those lines when the check can push.
+those lines when the check can push. It runs `check-conflicts` with the
+`fake` backend too. There, the fake agent resolves each conflict by keeping
+the branch's lines and then the other side's, and fails a conflict with
+`DO NOT MERGE` in it.
 
 ## Limitations
 
@@ -1463,17 +2027,20 @@ those lines when the check can push.
   once every 5 seconds, or every `pollInterval` if that's shorter.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
-  NetworkPolicy, so a test can reach anything that the namespace's Pods can.
+  NetworkPolicy, so a test can reach anything that the namespace's Pods can
+  until you [add one](#restrict-test-pods-network).
 - An approval names one head, so a branch that needs one needs another after
   the `base` check merges its parent in at the front of the queue. The
   branch leaves the queue until someone approves the merge, then joins at
   the back. While other branches keep landing, it might never land.
 - A check that doesn't finish at the front of a queue holds up the branches
   behind it while the front can still land.
-- `check-review` reads repository credentials, so `generate` lets it read
-  every Secret, including the Cursor API key, which only its agent Pods use.
-  Like `check-gotest`, it can also create Pods in every namespace. Installing
-  it with `generate -watch-namespace` limits both to one namespace.
+- `check-review` and `check-conflicts` read repository credentials, so
+  `generate` lets them read every Secret, including the Cursor API key,
+  which only their agent Pods use. Like `check-gotest`, they can also create
+  Pods in every namespace, and `check-conflicts` can even without
+  `-agent-image`. Installing them with `generate -watch-namespace` limits
+  their Secrets and Pods to one namespace.
 - Squash and rebase landings make unsigned commits, even from signed ones.
   With a check that requires signed commits, use `FastForward`.
 

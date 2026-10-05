@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addedLines } from "../src/backends/fake.js";
+import { addedLines, resolveConflicts } from "../src/backends/fake.js";
 import { gitBuffer, preparePod } from "./pod.js";
 
 test("finds the added lines and their numbers", () => {
@@ -47,4 +47,24 @@ test("reads the diffs that git writes", () => {
     { path: "a.txt", line: 11, text: "Y" },
     { path: "b/c.txt", line: 1, text: "Z" },
   ]);
+});
+
+test("resolves conflicts by keeping both sides, the branch's first", () => {
+  const conflict = (ours: string, base: string, theirs: string) => `<<<<<<< h\n${ours}||||||| b\n${base}=======\n${theirs}>>>>>>> m\n`;
+  const cases: [string, string | undefined][] = [
+    [`one\n${conflict("ours\n", "", "theirs\n")}two\n`, "one\nours\ntheirs\ntwo\n"],
+    [`${conflict("a\n", "x\n", "b\n")}=======\n${conflict("", "y\n", "c\nd\n")}`, "a\nb\n=======\nc\nd\n"],
+    ["<<<<<<< h\nours\n=======\ntheirs\n>>>>>>> m\n", "ours\ntheirs\n"],
+    ["<<<<<<< h\r\nours\r\n||||||| b\r\n=======\r\ntheirs\r\n>>>>>>> m\r\n", "ours\r\ntheirs\r\n"],
+    ["no conflicts\n", "no conflicts\n"],
+    [conflict("ours\n", "", "DO NOT MERGE\n"), undefined],
+    [conflict("ours\n", "DO NOT MERGE\n", "theirs\n"), undefined],
+    ["<<<<<<< h\nours\n||||||| b\n", undefined],
+    ["<<<<<<< h\n<<<<<<< h\n=======\n>>>>>>> m\n>>>>>>> m\n", undefined],
+    ["<<<<<<< h\nours\n>>>>>>> m\n", undefined],
+    ["<<<<<<< h\n=======\n=======\n>>>>>>> m\n", undefined],
+  ];
+  for (const [text, want] of cases) {
+    assert.equal(resolveConflicts(text), want, JSON.stringify(text));
+  }
 });

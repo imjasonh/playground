@@ -1,15 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import { AgentError, type AgentResponse, type Backend, type Spent } from "./backends/types.js";
 import { changedFiles, checkPaths } from "./changes.js";
-import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
+import { buildPrompt, diffLimits, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
 import { toolsFor } from "./tools.js";
-import { MAX_PATHS_BYTES, parseNameStatus } from "./touched.js";
+import { firstNameStatus, MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "./touched.js";
 import { errorMessage, redact, truncate } from "./text.js";
 import { parseVerdict } from "./verdict.js";
 
@@ -75,7 +75,24 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   }
   const diff = await readStart(task.diffFile, MAX_DIFF + 1);
   const commits = await readStart(task.logFile, MAX_LOG + 1);
-  const paths = task.changesFile ? parseNameStatus(await readStart(task.changesFile, MAX_PATHS_BYTES + 1)) : undefined;
+  const changes = task.changesFile ? await readStart(task.changesFile, MAX_PATHS_BYTES + 1) : undefined;
+  // A merge's agent resolves the conflicts, so it needs only the start of
+  // each side's list of paths, while a review needs the whole change.
+  const paths = changes && (task.mergeHead ? firstNameStatus(changes) : { paths: parseNameStatus(changes), more: false });
+  const merged = task.mergeHead && task.conflictsFile ? parseConflicts(await readStart(task.conflictsFile, MAX_PATHS_BYTES + 1)) : undefined;
+  const merge =
+    merged && task.mergeLogFile && task.mergeDiffFile && task.mergeChangesFile
+      ? {
+          conflicts: merged.paths,
+          log: await readStart(task.mergeLogFile, MAX_LOG + 1),
+          diff: await readStart(task.mergeDiffFile, MAX_DIFF + 1),
+          paths: firstNameStatus(await readStart(task.mergeChangesFile, MAX_PATHS_BYTES + 1)),
+        }
+      : undefined;
+  const ignored = merge?.conflicts.find((path) => posix.basename(path) === ".cursorignore");
+  if (ignored !== undefined) {
+    throw new Error(`the merge conflicts on ${ignored}, which the agent can't see, because its work tree leaves out .cursorignore files`);
+  }
   const index = task.edit ? await readFile(task.filesFile) : undefined;
   if (index) {
     checkPaths(index);
@@ -84,11 +101,12 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   let response: AgentResponse;
   try {
     response = await backends[task.backend]({
-      prompt: buildPrompt(task, diff, commits, paths),
-      diff: firstLines(diff, MAX_DIFF).text,
+      prompt: buildPrompt(task, diff, commits, paths, merge),
+      diff: firstLines(diff, diffLimits(diff, merge?.diff)[0]).text,
       cwd: task.workTree,
       edit: task.edit,
       tools: toolsFor(task),
+      conflicts: merge?.conflicts,
       model: task.model,
       apiKey: key,
       timeoutMs: task.timeoutSeconds * 1000,
@@ -96,19 +114,19 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
     });
   } catch (err) {
     if (err instanceof AgentError) {
-      return failure(err.message, err.spent, started, key);
+      return failure(err.message, err.spent, started, key, merged?.tree);
     }
     throw err;
   }
   try {
-    return await report(task, key, response, index, started);
+    return await report(task, key, response, index, started, merged?.tree);
   } catch (err) {
-    return failure(errorMessage(err), response, started, key);
+    return failure(errorMessage(err), response, started, key, merged?.tree);
   }
 }
 
 /** Builds the result of an agent's run from its response. */
-async function report(task: Task, key: string, response: AgentResponse, index: Buffer | undefined, started: number): Promise<Result> {
+async function report(task: Task, key: string, response: AgentResponse, index: Buffer | undefined, started: number, mergeTree?: string): Promise<Result> {
   const verdict = parseVerdict(response.text);
   const files: ChangedFile[] = [];
   if (index) {
@@ -138,11 +156,14 @@ async function report(task: Task, key: string, response: AgentResponse, index: B
   if (response.chargedCents !== undefined) {
     result.chargedCents = response.chargedCents;
   }
+  if (mergeTree !== undefined) {
+    result.mergeTree = mergeTree;
+  }
   return result;
 }
 
 /** The result of a run that failed after the agent started, with what the agent used. */
-function failure(message: string, spent: Spent, started: number, key: string): Result {
+function failure(message: string, spent: Spent, started: number, key: string, mergeTree?: string): Result {
   const result: Result = {
     verdict: "fail",
     summary: "",
@@ -158,6 +179,9 @@ function failure(message: string, spent: Spent, started: number, key: string): R
   }
   if (spent.chargedCents !== undefined) {
     result.chargedCents = spent.chargedCents;
+  }
+  if (mergeTree !== undefined) {
+    result.mergeTree = mergeTree;
   }
   return result;
 }
