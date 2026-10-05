@@ -254,6 +254,9 @@ func TestFetchMergePush(t *testing.T) {
 		rejected.Rejected["refs/heads/c/x"] != "[remote rejected] (deletion prohibited)" {
 		t.Errorf("push that deletes a branch the remote won't delete: err = %v, want the remote to refuse only the deletion", err)
 	}
+	if got, want := rejected.Reason("refs/heads/c/x"), "[remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x"; got != want {
+		t.Errorf("Reason = %q, want %q", got, want)
+	}
 	if heads := srv.Heads(t, "app"); heads["main"] != parent || heads["c/x"] != merge {
 		t.Errorf("heads = %v, want them as they were", heads)
 	}

@@ -391,13 +391,24 @@ func (e *PushError) Error() string {
 	for _, ref := range slices.Sorted(maps.Keys(e.Rejected)) {
 		refs = append(refs, ref+" "+e.Rejected[ref])
 	}
-	for _, msg := range e.Remote {
-		refs = append(refs, "remote: "+msg)
-	}
-	return fmt.Sprintf("%v: %s", ErrRejected, strings.Join(refs, "; "))
+	return fmt.Sprintf("%v: %s", ErrRejected, e.withRemote(refs))
 }
 
 func (e *PushError) Unwrap() error { return ErrRejected }
+
+// Reason returns git's summary of why ref's update was rejected, followed
+// by the remote's messages. A forge's summary only says that a rule refused
+// the push, and its messages name the rule.
+func (e *PushError) Reason(ref string) string {
+	return e.withRemote([]string{e.Rejected[ref]})
+}
+
+func (e *PushError) withRemote(parts []string) string {
+	for _, msg := range e.Remote {
+		parts = append(parts, "remote: "+msg)
+	}
+	return strings.Join(parts, "; ")
+}
 
 // Refused reports whether the remote refused to update ref for a reason of
 // its own, such as a rule against deleting the branch or replacing its

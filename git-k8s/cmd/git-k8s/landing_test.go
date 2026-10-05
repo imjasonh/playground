@@ -701,16 +701,16 @@ func TestRemoteRefusesTheBranch(t *testing.T) {
 		"deletion": {
 			deny:  []string{"receive.denyDeletes"},
 			moved: true,
-			why:   "delete it: [remote rejected] (deletion prohibited)",
+			why:   "delete it: [remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x",
 		},
 		"deletion and force push": {
 			deny: []string{"receive.denyDeletes", "receive.denyNonFastForwards"},
-			why:  "delete it: [remote rejected] (deletion prohibited)",
+			why:  "delete it: [remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/x",
 		},
 		"force push to a branch that stays": {
 			deny: []string{"receive.denyNonFastForwards"},
 			keep: true,
-			why:  "move it: [remote rejected] (non-fast-forward)",
+			why:  "move it: [remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first)",
 		},
 	} {
 		for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
@@ -788,7 +788,7 @@ func TestRemoteRefusesTheRewrittenBranch(t *testing.T) {
 			}
 			verb := map[string]string{gitk8s.Squash: "squashed", gitk8s.Rebase: "rebased"}[landing]
 			c := kube.FindCondition(b.Status.Conditions, "Merged")
-			start, end := "can't push the "+verb+" commit ", " to c/x for dco to check, because the remote refused it: [remote rejected] (non-fast-forward)"
+			start, end := "can't push the "+verb+" commit ", " to c/x for dco to check, because the remote refused it: [remote rejected] (non-fast-forward); remote: error: denying non-fast-forward refs/heads/c/x (you should pull first)"
 			if c == nil || c.Reason != reasonNeedsRebase || !strings.HasPrefix(c.Message, start) || !strings.HasSuffix(c.Message, end) {
 				t.Errorf("Merged = %+v, want reason %s and a message like %q", c, reasonNeedsRebase, start+"..."+end)
 			}

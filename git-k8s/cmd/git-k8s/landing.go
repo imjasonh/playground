@@ -70,7 +70,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 			var rejected *git.PushError
 			if errors.As(err, &rejected) && rejected.Refused(ref) {
 				report(b, reasonNeedsRebase, false, "can't push the %s commit %s to %s for %s to check, because the remote refused it: %s",
-					verb, gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "), rejected.Rejected[ref])
+					verb, gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "), rejected.Reason(ref))
 				return true, nil
 			}
 			return true, fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(landed), spec.Branch, err)
@@ -105,7 +105,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", !refused && branch.New == "")
 	msg := fmt.Sprintf("%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
 	if refused {
-		msg += settle(ctx, local, remote, b, branch, landed, rejected.Rejected[branch.Ref])
+		msg += settle(ctx, local, remote, b, branch, landed, rejected.Reason(branch.Ref))
 	}
 	report(b, reasonLanded, true, "%s", msg)
 	return true, nil
