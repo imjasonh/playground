@@ -201,7 +201,7 @@ const (
 // ResultsAudience is the audience of the service account tokens that checks
 // send with their results, and the only audience that the core program
 // accepts. Because it's a constant, generate mounts a token for it in each
-// check's Pod, and checks need no permission to create tokens.
+// check's Pod, and checks need no permission to create one.
 const ResultsAudience = "git-k8s-results"
 
 // Limits on a result that the core program accepts from a check. The checks

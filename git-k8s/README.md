@@ -369,13 +369,13 @@ STS are bound to the programs' Pods and last an hour. `generate` lets each
 program that fetches or pushes request tokens for its own service account,
 and for no other.
 
-The programs send service account tokens only to Octo STS, and GitHub tokens
-only to GitHub. For tests, the `-fake-github` flag points them at a fake
-GitHub and Octo STS instead. It's a flag and not a `GitRepository` field, so
-only whoever installs a program can choose where its tokens go. The
-end-to-end test's git server runs such a fake, which checks each service
-account token with a TokenReview, because Octo STS can't reach a kind
-cluster's issuer.
+The programs send the service account tokens for Octo STS only to Octo STS,
+and GitHub tokens only to GitHub. For tests, the `-fake-github` flag points
+them at a fake GitHub and Octo STS instead. It's a flag and not a
+`GitRepository` field, so only whoever installs a program can choose where
+its tokens go. The end-to-end test's git server runs such a fake, which
+checks each service account token with a TokenReview, because Octo STS can't
+reach a kind cluster's issuer.
 
 A trust policy's audience ties it to one namespace, so anyone who can create
 a `GitRepository` in that namespace can use the trust policy's permissions.
@@ -628,9 +628,9 @@ restarts.
 The results endpoint and the `git-k8s-check-results` admission policy keep
 each check's service account to its own entry in `status.checks`.
 `generate` grants a program what its packages call, so a check's RBAC rules
-include nothing for `gitbranches/status`. They don't let a check create
-tokens either, because the check reads the token that `generate` mounts in
-its Pod. The core program writes only the entry of the check that the
+include nothing for `gitbranches/status`. A check needs no permission to
+create its results token, because it reads the token that `generate` mounts
+in its Pod. The core program writes only the entry of the check that the
 token's service account runs, so one check's token can't write another
 check's entry. The policy is a backstop. It rejects status writes by checks,
 and changes to `status.checks` by service accounts other than the core
@@ -655,6 +655,13 @@ results. The endpoint uses plain HTTP inside the cluster, so anything that
 can read the traffic between Pods can copy a token and send that check's
 results until the token expires, within an hour, or the check's Pod is
 deleted.
+
+`check-base`, `check-gofmt`, and `check-risk` fetch or push, so they can
+also request tokens for their own service accounts, to send to Octo STS. As
+[Security](#security) describes, whoever holds a token for one of them can
+then create a `git-k8s-results` token for it that isn't bound to its Pod and
+lasts as long as the API server allows, and send that check's results with
+the token.
 
 kube doesn't fence writes, and the results controller writes all of
 `status.checks` at once, so a replica that hasn't noticed that its leader

@@ -612,9 +612,12 @@ echo
 [[ "${code}" == 403 ]]
 grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
 grep -q 'gitbranches/status' "${WORKDIR}/patch.json"
-# Checks read the token that generate mounts in their Pods, so they may not
-# create tokens.
-[[ "$(k auth can-i create serviceaccounts --subresource=token -n check-gofmt --as=system:serviceaccount:check-gofmt:check-gofmt)" == no ]]
+# Checks read the results token that generate mounts in their Pods. A check
+# that doesn't send tokens to Octo STS may not create tokens, and no check may
+# create one for another service account.
+[[ "$(k auth can-i create serviceaccounts/check-approval --subresource=token -n check-approval --as=system:serviceaccount:check-approval:check-approval)" == no ]]
+[[ "$(k auth can-i create serviceaccounts/check-risk --subresource=token -n check-risk --as=system:serviceaccount:check-gofmt:check-gofmt)" == no ]]
+[[ "$(k auth can-i create serviceaccounts/git-k8s --subresource=token -n git-k8s --as=system:serviceaccount:check-gofmt:check-gofmt)" == no ]]
 
 # The results endpoint takes a check's result only with a token for the
 # check's own service account and the endpoint's audience.
