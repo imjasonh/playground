@@ -130,16 +130,16 @@ func Main[V any, P interface {
 	cfg := &Config{}
 	cfg.AddFlags(flag.CommandLine)
 	if check.SigningKey != nil {
-		RemoveSigningKeys()
+		RemoveLeftoverSigningKeys()
 	}
 	kube.Main(For[V, P](check, cfg))
 }
 
-// RemoveSigningKeys removes the signing keys that an earlier run of the
-// program left, when the program runs in a Pod. Main calls it for a check
-// that signs commits. A program that signs commits but doesn't call Main
-// calls it before it starts its controllers.
-func RemoveSigningKeys() {
+// RemoveLeftoverSigningKeys removes the signing keys that an earlier run of
+// the program left, when the program runs in a Pod. Main calls it for a
+// check that signs commits. A program that signs commits but doesn't call
+// Main calls it before it starts its controllers.
+func RemoveLeftoverSigningKeys() {
 	// A container that's killed while it signs a commit leaves the key in
 	// os.TempDir, which generate puts on a volume that outlives the
 	// container. Outside a Pod, as in generate or a controller run with

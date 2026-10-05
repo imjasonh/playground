@@ -652,6 +652,6 @@ func main() {
 	runner.AddFlags(flag.CommandLine)
 	flag.CommandLine.Lookup("agent-image").Usage = "image that runs the agent, built from agent/runner/Dockerfile; without it, the check resolves only what git can"
 	flag.Var(&union, "union", "comma-separated path patterns, in the gitattributes format, whose conflicts git resolves by keeping the lines of both sides")
-	checks.RemoveSigningKeys()
+	checks.RemoveLeftoverSigningKeys()
 	kube.Main(kube.For[Branch](newReconciler(cfg), kube.Named("check-conflicts")))
 }
