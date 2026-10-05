@@ -1298,15 +1298,19 @@ kubectl -n git-k8s rollout restart deployment/git-k8s
 
 `PoliciesInstalled` also turns `False` when no binding for a policy denies
 every request that the policy rejects. A binding can let some of them
-through when its `validationActions` doesn't hold `Deny`, when its policy
-reads parameters and its `paramRef.parameterNotFoundAction` isn't `Deny`,
-when its `matchResources` sets resource rules, or when a selector in its
-`matchResources` sets `matchLabels` or `matchExpressions`. The API server
-ignores the `paramRef` of a binding whose policy doesn't read parameters,
-such as the third and fourth policies, so the condition does too. The
-message gives a `kubectl patch` command that makes the binding from
-`config/policy.yaml` deny all of them again, without a restart. For a
-binding that someone set to `Warn`, the command is:
+through when its `validationActions` doesn't hold `Deny`, when its
+`matchResources` sets resource rules, or when a selector in its
+`matchResources` sets `matchLabels` or `matchExpressions`. If a binding's
+policy reads parameters, as the first two do, the binding also lets some
+through when its `paramRef.parameterNotFoundAction` isn't `Deny`, or when
+it has no `paramRef`. Without a `paramRef`, the API server evaluates the
+policy without parameters, so the policy ignores the entries in the
+`git-k8s-checks` ConfigMap. The API server ignores the `paramRef` of a
+binding whose policy doesn't read parameters, such as the third and fourth
+policies, so the condition does too. The message gives a `kubectl patch`
+command that makes the binding from `config/policy.yaml` deny all of them
+again, without a restart. For a binding that someone set to `Warn`, the
+command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
