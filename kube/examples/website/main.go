@@ -5,8 +5,8 @@
 //
 // This is the most common shape of operator: one custom type that owns a
 // few built-in objects. It shows Own, pruning (remove the port and the
-// Service goes away), status computed from an owned object, and printer
-// columns:
+// Service goes away), status computed from an owned object, an event each
+// time the Ready condition's reason changes, and printer columns:
 //
 //	$ kubectl get websites
 //	NAME   READY   URL                         AGE
@@ -89,6 +89,9 @@ func (reconciler) Reconcile(ctx context.Context, site *Website) error {
 		default:
 			ready.Status, ready.Reason = kube.True, "Serving"
 		}
+	}
+	if old := kube.FindCondition(site.Status.Conditions, "Ready"); old == nil || old.Reason != ready.Reason {
+		kube.Eventf(ctx, kube.Normal, ready.Reason, "%d of %d replicas are ready", site.Status.ReadyReplicas, site.Spec.Replicas)
 	}
 	kube.SetCondition(&site.Status.Conditions, ready)
 	return nil

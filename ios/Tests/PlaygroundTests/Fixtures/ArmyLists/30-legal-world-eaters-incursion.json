@@ -1,94 +1,99 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "6283FB15-E192-4354-BEC0-4A2D877DA22F",
-    "name": "World Eaters Incursion 960pts",
-    "catalogVersion": "11e-1",
-    "factionID": "world-eaters",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "world-eaters--butchers-of-khorne",
       "world-eaters--vessels-of-wrath"
     ],
-    "units": [
+    "factionID" : "world-eaters",
+    "id" : "A2BFF41A-A7BB-4BF0-BB0D-61C99053D9C4",
+    "name" : "World Eaters Incursion 1000pts",
+    "notes" : "stress seed=29 attach=true enh=true",
+    "units" : [
       {
-        "id": "14AADEE7-CC78-49C3-9251-F6A8EA446089",
-        "datasheetID": "world-eaters--master-of-executions",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "9E23B962-C5CB-498D-87A4-2CD6C6045DF0",
+        "datasheetID" : "world-eaters--master-of-executions",
+        "enhancementIDs" : [
           "world-eaters--vessels-of-wrath--gateways-to-glory"
         ],
-        "attachedToUnitID": null
+        "id" : "9F94BFC6-AC3F-4BFB-B400-F3AE8B21258F",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B392CF0A-401C-4858-BEBA-393FB72FE690",
-        "datasheetID": "world-eaters--eightbound",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "world-eaters--khorne-berzerkers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9E23B962-C5CB-498D-87A4-2CD6C6045DF0",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A99294BE-1C4F-4354-9E2E-41742E07F634",
-        "datasheetID": "world-eaters--exalted-eightbound",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "world-eaters--exalted-eightbound",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "FCAF6AC7-1507-46F2-8DF3-BA3865E90C73",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "BD6F83BB-7193-47B9-A8E0-DE72B71416CD",
-        "datasheetID": "world-eaters--flesh-hounds",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "world-eaters--heldrake",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8AF7602F-83EB-4E21-83F9-2A7ABFE2E505",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "482F8E6A-1DA0-420D-A48B-9513F4262DC8",
-        "datasheetID": "world-eaters--heldrake",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "world-eaters--chaos-rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C80D35C3-0D63-413B-A9A4-910763A74604",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B8877E54-141D-41E8-B21D-E8F4A871A7B1",
-        "datasheetID": "world-eaters--chaos-spawn",
-        "models": 2,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "world-eaters--bloodletters",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "3632E74C-DF20-42CE-BF9D-FA775D3FF0B5",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "703E3144-CBD7-4E35-B7DC-2B8A00D536B6",
-        "datasheetID": "world-eaters--maulerfiend",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "AC323C89-4B51-40BF-AEC6-8FAAB459C3E5",
-        "datasheetID": "world-eaters--goremongers",
-        "models": 8,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
-      },
-      {
-        "id": "F707FFF0-3D66-441B-87EE-C947C3E3861B",
-        "datasheetID": "world-eaters--chaos-rhino",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "world-eaters--chaos-predator-annihilator",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "54B01ACA-E578-493E-85AA-0E554DDCB7D1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "14AADEE7-CC78-49C3-9251-F6A8EA446089",
-    "notes": "stress seed=29 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "9F94BFC6-AC3F-4BFB-B400-F3AE8B21258F"
+  },
+  "notes" : "auto-built"
 }

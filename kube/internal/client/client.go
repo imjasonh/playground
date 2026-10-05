@@ -226,6 +226,13 @@ type DeleteOptions struct {
 // Delete deletes the object at path. Deleting an object that doesn't exist
 // returns an error that satisfies IsNotFound.
 func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) error {
+	return c.DeleteInto(ctx, path, opts, nil)
+}
+
+// DeleteInto is like Delete, and decodes the response into out unless out
+// is nil. Depending on the type and the object, the response is a Status,
+// the object as it was deleted, or the object as it waits for finalizers.
+func (c *Client) DeleteInto(ctx context.Context, path string, opts DeleteOptions, out any) error {
 	body := map[string]any{"kind": "DeleteOptions", "apiVersion": "v1"}
 	if opts.Propagation != "" {
 		body["propagationPolicy"] = opts.Propagation
@@ -237,7 +244,7 @@ func (c *Client) Delete(ctx context.Context, path string, opts DeleteOptions) er
 	if err != nil {
 		return err
 	}
-	return c.Call(ctx, Request{Method: http.MethodDelete, Path: path, Body: b, ContentType: "application/json"}, nil)
+	return c.Call(ctx, Request{Method: http.MethodDelete, Path: path, Body: b, ContentType: "application/json"}, out)
 }
 
 // Path returns the URL path of a resource collection, object, or subresource.

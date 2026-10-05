@@ -1,62 +1,76 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "FB97CF49-FA5C-4CC4-B2F9-F551C09A9952",
-    "name": "Adeptus Custodes Incursion 980pts",
-    "catalogVersion": "11e-1",
-    "factionID": "adeptus-custodes",
-    "battleSizeID": "incursion",
-    "detachmentIDs": [
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
       "adeptus-custodes--null-maiden-vigil"
     ],
-    "units": [
+    "factionID" : "adeptus-custodes",
+    "id" : "D81C413C-AB77-4BEE-B939-79CE6B548795",
+    "name" : "Adeptus Custodes Incursion 995pts",
+    "notes" : "stress seed=1 attach=true enh=true",
+    "units" : [
       {
-        "id": "2AEF2E63-BBF5-4088-9967-CBD214ACFBA6",
-        "datasheetID": "adeptus-custodes--knight-centura",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
+        "attachedToUnitID" : "1AD4373E-7256-4F5E-932E-2BCDFAB86E35",
+        "datasheetID" : "adeptus-custodes--knight-centura",
+        "enhancementIDs" : [
           "adeptus-custodes--null-maiden-vigil--huntress-eye"
         ],
-        "attachedToUnitID": null
+        "id" : "B3AB6566-B88A-4452-B8FB-3B83D36FB024",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "53081414-6D9E-4EAE-8B73-B0968D150D2C",
-        "datasheetID": "adeptus-custodes--telemon-heavy-dreadnought",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "adeptus-custodes--anathema-psykana-rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0028A58A-6835-4691-8108-E0952802D0E0",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "8D39DC38-2EFE-4543-A23A-2C8DD4FA6531",
-        "datasheetID": "adeptus-custodes--custodian-guard",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "adeptus-custodes--orion-assault-dropship",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2EE7EE70-6E9D-43C4-9775-749434993F21",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "54D1A690-479C-4F21-B981-5D0294DC513C",
-        "datasheetID": "adeptus-custodes--venerable-land-raider",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "adeptus-custodes--allarus-custodians",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0CFEF1D8-797F-4539-9D9C-8D9C6B0F7141",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DB1729CE-9CC0-4F89-9371-CE30BAF1F6A1",
-        "datasheetID": "adeptus-custodes--custodian-guard-with-adrasite-and-pyrithite-spears",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "adeptus-custodes--prosecutors",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1AD4373E-7256-4F5E-932E-2BCDFAB86E35",
+        "models" : 4,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "2AEF2E63-BBF5-4088-9967-CBD214ACFBA6",
-    "notes": "stress seed=1 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "B3AB6566-B88A-4452-B8FB-3B83D36FB024"
+  },
+  "notes" : "auto-built"
 }
