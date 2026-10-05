@@ -1,8 +1,8 @@
 //! Assembling an HTTP push request (RFC 8030) with an aes128gcm-encrypted body
 //! (RFC 8291) and a VAPID `Authorization` header (RFC 8292).
 
-use p256::SecretKey;
 use p256::elliptic_curve::Generate;
+use p256::SecretKey;
 
 use crate::ece::{self, DEFAULT_RECORD_SIZE};
 use crate::error::Error;
