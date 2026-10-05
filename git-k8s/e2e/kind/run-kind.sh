@@ -186,7 +186,7 @@ for program in "${CHECKS[@]}"; do
     check-base | check-gofmt) install "${program}" -- "-fake-github=${CLUSTER_URL}/github" ;;
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1
       ;;
     *) install "${program}" ;;
   esac
@@ -781,6 +781,91 @@ fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+echo "::endgroup::"
+
+echo "::group::A burst of branches takes turns under -max-pods=1"
+# Each branch's test sleeps, so Pods that ran at once would overlap. The
+# branches start from main's parent, so they pass without landing.
+# c/burst-a sorts first, but it's pushed after the others are waiting.
+burst=(c/burst-b c/burst-c c/burst-d)
+for b in "${burst[@]}" c/burst-a; do
+  t checkout -q -b "${b}" "${tested_main}"
+  cat >"${TESTED}/slow_test.go" <<'GO'
+package tested
+
+import (
+	"testing"
+	"time"
+)
+
+func TestSlow(t *testing.T) { time.Sleep(5 * time.Second) }
+GO
+  t add slow_test.go
+  t commit -qm "Test slowly on ${b}"
+done
+# burst_results prints each tested branch's name, head, and gotest commit,
+# state, and waiting time.
+burst_results() {
+  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.outputs.waiting}{"\n"}{end}'
+}
+burst_checked() { [[ "$(burst_results | awk -F'|' '$1 ~ /^c\/burst-[bcd]$/ && $2 == $3' | wc -l)" -eq 3 ]]; }
+t push -q "${HOST_URL}/tested.git" "${burst[@]}"
+eventually 120 burst_checked
+t push -q "${HOST_URL}/tested.git" c/burst-a
+
+declare -A waited=() finished=()
+order=()
+most=0
+deadline=$((SECONDS + 600))
+while ((${#finished[@]} < 4)); do
+  if ((SECONDS >= deadline)); then
+    echo "timed out; started: ${order[*]}" >&2
+    exit 1
+  fi
+  running="$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest \
+    -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -cvE '^(Succeeded|Failed)$' || true)"
+  if ((running > most)); then
+    most=${running}
+  fi
+  while IFS='|' read -r branch head commit state since; do
+    if [[ "${branch}" != c/burst-* || "${commit}" != "${head}" ]]; then
+      continue
+    fi
+    if [[ -n "${since}" ]]; then
+      waited[${branch}]=${since}
+    elif [[ " ${order[*]} " != *" ${branch} "* ]]; then
+      order+=("${branch}")
+    fi
+    if [[ "${state}" == Passed || "${state}" == Failed ]]; then
+      finished[${branch}]=${state}
+    fi
+  done < <(burst_results)
+  sleep 1
+done
+for b in "${order[@]}"; do
+  echo "${b} started after waiting since ${waited[${b}]:-never}, and ${finished[${b}]}"
+done
+echo "Most test Pods running at once: ${most}"
+((most == 1))
+for b in "${order[@]}"; do
+  [[ "${finished[${b}]}" == Passed ]]
+done
+# Only the first branch found a free place. The others started in the order
+# that they started waiting, which put c/burst-a last.
+[[ ${#order[@]} -eq 4 && -z "${waited[${order[0]}]:-}" ]]
+for b in "${order[@]:1}"; do
+  [[ -n "${waited[${b}]:-}" ]]
+done
+by_wait="$(for b in "${order[@]:1}"; do echo "${waited[${b}]} ${b}"; done | LC_ALL=C sort | cut -d' ' -f2 | paste -sd' ')"
+[[ "${by_wait}" == "${order[*]:1}" && "${order[3]}" == c/burst-a ]]
+t push -q --delete "${HOST_URL}/tested.git" "${burst[@]}" c/burst-a
+burst_gone() {
+  local results
+  results="$(burst_results)" && [[ "${results}" != *c/burst-* ]]
+}
+eventually 60 burst_gone
+eventually 60 no_test_pods
+echo "Four branches ran one at a time, in the order that they started waiting."
 echo "::endgroup::"
 
 echo "::group::A check can change only its own Pods"
