@@ -2,7 +2,7 @@
 # Install git-k8s and its checks in a kind cluster with kube's generate
 # command, which pushes their images to a local registry, then push
 # branches to a git server and check that they're fixed, gated, and
-# fast-forwarded. go test ./e2e/kind runs this when GIT_K8S_KIND_E2E=1,
+# landed. go test ./e2e/kind runs this when GIT_K8S_KIND_E2E=1,
 # which CI sets when git-k8s changes.
 #
 # The git server runs on this machine and requires a password. Pods reach it
@@ -469,6 +469,69 @@ g log --graph --oneline FETCH_HEAD
 [[ "$(g rev-parse FETCH_HEAD^1 FETCH_HEAD^2^1 | sort)" == "$(printf '%s\n' "${ONE}" "${TWO}" | sort)" ]]
 g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
 echo "Both branches waited in main's queue, and each merged main in once, at the front, before it landed."
+echo "::endgroup::"
+
+# landing sets how branches land on main.
+landing() {
+  k -n "${NS}" patch gitrepository app --type=json \
+    -p "[{\"op\":\"add\",\"path\":\"/spec/branches/0/merge/landing\",\"value\":\"$1\"}]"
+}
+
+echo "::group::A squash landing lands one commit"
+landing Squash
+fetch_main
+squash_base="$(g rev-parse FETCH_HEAD)"
+g checkout -q -B c/squash FETCH_HEAD
+echo squash >"${WORK}/squash.txt"
+g add -A
+g commit -qm "Add squash.txt"
+printf 'package util\nfunc  Sub(a,b int)int{return a-b}\n' >"${WORK}/util/sub.go"
+g add -A
+g commit -qm "Add util.Sub"
+g push -q "${HOST_URL}/app.git" HEAD:c/squash
+squash_landed() { branch_gone c/squash && fetch_main && g cat-file -e FETCH_HEAD:util/sub.go; }
+eventually 180 squash_landed
+g log --first-parent --format='%h %s (%an, committed by %cn)' "${squash_base}^..FETCH_HEAD"
+[[ "$(g rev-list --count "${squash_base}..FETCH_HEAD")" == 1 ]]
+[[ "$(g rev-parse FETCH_HEAD^)" == "${squash_base}" ]]
+[[ "$(g log -1 --format='%an %cn' FETCH_HEAD)" == "e2e git-k8s" ]]
+[[ "$(g log -1 --format=%B FETCH_HEAD)" == "Add squash.txt
+
+* Add squash.txt
+* Add util.Sub
+* Format Go files with gofmt" ]]
+[[ "$(g show FETCH_HEAD:util/sub.go)" == "package util
+
+func Sub(a, b int) int { return a - b }" ]]
+echo "The gofmt check fixed c/squash, and main moved by one squashed commit without the fixer trailer."
+echo "::endgroup::"
+
+echo "::group::A rebase landing copies a branch's commits onto its parent"
+landing Rebase
+fetch_main
+g checkout -q -B c/rebase FETCH_HEAD
+echo one >"${WORK}/rebase-one.txt"
+g add -A
+g commit -qm "Add rebase-one.txt"
+echo two >"${WORK}/rebase-two.txt"
+g add -A
+g commit -qm "Add rebase-two.txt"
+g checkout -q -B moves FETCH_HEAD
+echo main >"${WORK}/main.txt"
+g add -A
+g commit -qm "Add main.txt"
+rebase_base="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:main
+g push -q "${HOST_URL}/app.git" c/rebase:c/rebase
+rebase_landed() { branch_gone c/rebase && fetch_main && g cat-file -e FETCH_HEAD:rebase-two.txt; }
+eventually 180 rebase_landed
+g log --graph --format='%h %s (%an, committed by %cn)' "${rebase_base}^..FETCH_HEAD"
+[[ "$(g log --reverse --format=%s "${rebase_base}..FETCH_HEAD")" == "Add rebase-one.txt
+Add rebase-two.txt" ]]
+[[ "$(g rev-list --parents "${rebase_base}..FETCH_HEAD" | awk 'NF != 2')" == "" ]]
+[[ "$(g log --format='%an %cn' "${rebase_base}..FETCH_HEAD" | sort -u)" == "e2e git-k8s" ]]
+g cat-file -e FETCH_HEAD:main.txt
+echo "The base check merged main into c/rebase, and main moved by copies of its two commits, without the merge."
 echo "::endgroup::"
 
 echo "::group::A check can write only its own result"

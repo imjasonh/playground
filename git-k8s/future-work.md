@@ -259,13 +259,6 @@ what lands, so that may be acceptable. Once checks send results to the core
 program instead of writing them, the check-results policy is a backstop, and
 the policy that stops controllers from approving branches matters most.
 
-## Support more ways to land
-
-Landing fast-forwards the parent to the branch's head, so the parent ends up
-at the commit that the checks tested. Squash and rebase landings, which many
-forges offer, make a commit that no check saw, so they need either another
-round of checks or a rule about which results still count.
-
 ## Add agentic operators
 
 Some checks and controllers are better written as an AI agent than as code:

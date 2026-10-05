@@ -61,7 +61,7 @@ func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpe
 	return previous.Outputs["behind"] == "true" && first(ctx, meta, spec.Head)
 }
 
-var check = checks.Check{Name: "base", UsesParent: true, Stale: stale, Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "base", UsesParent: true, FilesOnly: true, Stale: stale, Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)

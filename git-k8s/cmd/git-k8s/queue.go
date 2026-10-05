@@ -103,7 +103,7 @@ func position(ctx context.Context, b *gitk8s.GitBranch) (int32, int) {
 // behind it. A branch that leaves joins again at the back. Only the branch
 // at the front lands, after the base check merges the parent into it if
 // it's behind.
-func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, pass bool) error {
+func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
 	spec := &b.Spec
 	base := checks["base"]
 	ready := pass && base.Passed
@@ -160,7 +160,7 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		report(b, reasonQueued, false, "first in %s's queue; waiting for the base check to merge %s in", spec.Parent, spec.Parent)
 	default:
 		report(b, reasonQueued, false, "first in %s's queue", spec.Parent)
-		if err := m.land(ctx, b); err != nil {
+		if err := m.land(ctx, b, results); err != nil {
 			return err
 		}
 		if c := kube.FindCondition(b.Status.Conditions, "Merged"); c.Status == kube.True {
