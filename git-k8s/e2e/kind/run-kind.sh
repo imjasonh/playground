@@ -2,7 +2,7 @@
 # Install git-k8s and its checks in a kind cluster with kube's generate
 # command, which pushes their images to a local registry, then push
 # branches to a git server and check that they're fixed, gated, and
-# fast-forwarded. go test ./e2e/kind runs this when GIT_K8S_KIND_E2E=1,
+# landed. go test ./e2e/kind runs this when GIT_K8S_KIND_E2E=1,
 # which CI sets when git-k8s changes.
 #
 # The git server runs on this machine and requires a password. Pods reach it
@@ -152,7 +152,7 @@ GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  >"${WORKDIR}/gitserver.log" 2>&1 &
+  -kube-context="${CONTEXT}" >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -180,13 +180,14 @@ crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; 
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch.
-install git-k8s
+install git-k8s -- "-fake-github=${CLUSTER_URL}/github"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 for program in "${CHECKS[@]}"; do
   case "${program}" in
+    check-base | check-gofmt) install "${program}" -- "-fake-github=${CLUSTER_URL}/github" ;;
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1
       ;;
     *) install "${program}" ;;
   esac
@@ -206,6 +207,9 @@ g commit -qm "Initial commit"
 g push -q "${HOST_URL}/app.git" HEAD:main
 
 k create namespace "${NS}"
+# The gotest check runs Pods only in namespaces that opt in and enforce Pod
+# Security.
+k label namespace "${NS}" git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
 k -n "${NS}" create secret generic app-creds --type=kubernetes.io/basic-auth \
   --from-literal=username=git-k8s --from-literal=password="${PASSWORD}"
 k apply -f - <<EOF
@@ -231,7 +235,8 @@ spec:
           - name: approval
         when: >-
           checks.base.passed && checks.gofmt.passed &&
-          (checks.risk.outputs.level == "low" || checks.approval.passed)
+          (checks.risk.outputs.level == "low" ||
+          (checks.approval.passed && checks.approval.outputs.approver == "alice"))
         deleteMergedBranches: true
     - match: c/**
       parent: main
@@ -247,15 +252,44 @@ eventually 60 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
+echo "::group::The API server rejects a URL that git could read as an option"
+url_repository() {
+  cat <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: url-check
+  namespace: ${NS}
+spec:
+  url: '$1'
+EOF
+}
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
+  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+  if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
+    echo "the API server accepted ${url}" >&2
+    exit 1
+  fi
+  cat "${WORKDIR}/apply.err"
+  grep -q 'spec.url' "${WORKDIR}/apply.err"
+done
+url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
+echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
+echo "::endgroup::"
+
 # remote_head prints a branch's commit in repository $2, or app.
-remote_head() { git ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
+remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
     -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
-branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
+# A failed ls-remote prints nothing too, so it must not count as gone.
+branch_gone() {
+  local head
+  head="$(remote_head "$1")" && [[ -z "${head}" && -z "$(branch_object "$1")" ]]
+}
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
@@ -269,10 +303,27 @@ formatted='package util
 func Add(a, b int) int { return a + b }'
 formatted_on_main() { fetch_main && [[ "$(g show FETCH_HEAD:util/add.go 2>/dev/null)" == "${formatted}" ]]; }
 eventually 120 formatted_on_main
-g log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
+# grep -q would exit at the first match and fail the pipeline with SIGPIPE.
+g log -1 --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: gofmt' >/dev/null
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
 echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
+echo "::endgroup::"
+
+echo "::group::The fix, the landing, and the deletion are events"
+# has_event succeeds when controller $1 recorded an event with reason $2 and
+# message $3, and prints the message.
+has_event() {
+  k -n "${NS}" get events --field-selector "reportingComponent=$1,reason=$2" \
+    -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | grep -Fx -- "$3"
+}
+fmt_fix="$(g rev-parse FETCH_HEAD)"
+fmt_from="$(g rev-parse FETCH_HEAD~2)"
+eventually 30 has_event check-gofmt PushedFix "pushed ${fmt_fix:0:12} to c/fmt: 1 of 2 Go files need gofmt: util/add.go"
+eventually 30 has_event merge Landed "fast-forwarded main from ${fmt_from:0:12} to c/fmt at ${fmt_fix:0:12}"
+eventually 30 has_event merge DeletedBranch "deleted c/fmt at ${fmt_fix:0:12} after it landed on main"
+k -n "${NS}" get events --sort-by=.metadata.creationTimestamp
+echo "kubectl get events lists the gofmt check's fix and the merge controller's landing and deletion of c/fmt."
 echo "::endgroup::"
 
 echo "::group::A risky branch waits for approval"
@@ -298,11 +349,85 @@ sleep 6
 [[ "$(remote_head main)" == "${main_before}" ]]
 field '{.status.conditions[?(@.type=="Merged")].message}'
 echo
-k -n "${NS}" annotate gitbranch "$(branch_object c/auth)" "git-k8s.imjasonh.com/approve=${AUTH}"
+echo "c/auth waits for approval with a high risk rating."
+echo "::endgroup::"
+
+echo "::group::Approvals name the approver"
+k -n "${NS}" create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding alice --role=approver --user=alice
+k -n "${NS}" create role editor --verb=get,patch --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding bob --role=editor --user=bob
+roles_bound() {
+  k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as=alice >/dev/null &&
+    k -n "${NS}" auth can-i patch gitbranches.git-k8s.imjasonh.com --as=bob >/dev/null
+}
+eventually 30 roles_bound
+APPROVE=git-k8s.imjasonh.com/approve
+APPROVED_BY=git-k8s.imjasonh.com/approved-by
+annotate() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/auth)" "$@"; }
+# rejected passes if the API server rejects a server-side dry run of a
+# command with a message that contains $1.
+rejected() {
+  local want=$1 status=0
+  shift
+  "$@" --dry-run=server >"${WORKDIR}/rejected.txt" 2>&1 || status=$?
+  cat "${WORKDIR}/rejected.txt"
+  [[ ${status} -ne 0 ]] && grep -qF -- "${want}" "${WORKDIR}/rejected.txt"
+}
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
+# The gate wants alice's approval, so another approver's doesn't land c/auth.
+admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
+annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
+approved_by() {
+  [[ "$(field '{.status.checks.approval.state}')" == Passed ]] &&
+    [[ "$(field '{.status.checks.approval.outputs.approver}')" == "$1" ]]
+}
+eventually 60 approved_by "${admin}"
+gate_saw_approval() { field '{.status.conditions[?(@.type=="Merged")].message}' | grep -q 'approval Passed'; }
+eventually 60 gate_saw_approval
+[[ "$(field '{.status.state}')" == WaitingForChecks ]]
+[[ "$(remote_head main)" == "${main_before}" ]]
+rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
+rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
+echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
+echo "::endgroup::"
+
+echo "::group::A MutatingAdmissionPolicy sets approved-by"
+k apply -f "${ROOT}/config/approved-by.yaml"
+approved_by_after() {
+  annotate "$@" -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}'
+}
+# Without the mutating policy, removing approve alone is rejected.
+mutating_policy_ready() { approved_by_after "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
+eventually 60 mutating_policy_ready
+revoked="$(approved_by_after "${APPROVE}-")"
+# The mutating policy keeps an approved-by that the request changes.
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+approved="$(approved_by_after "${APPROVE}=${AUTH}")"
+echo "approved-by was '${revoked}' after ${admin} removed approve, and '${approved}' after they set it"
+[[ -z "${revoked}" && "${approved}" == "${admin}" ]]
+echo "${admin} removed and set approve alone, and the policy did the same to approved-by."
+echo "::endgroup::"
+
+echo "::group::Another approver can take over an approval"
+# Admission sees only the object that a request produces, so setting approve
+# to the commit that it already names changes nothing.
+unchanged="$(approved_by_after --as=alice "${APPROVE}=${AUTH}" --dry-run=server)"
+echo "approved-by is '${unchanged}' after alice set approve to the commit that it names"
+[[ "${unchanged}" == "${admin}" ]]
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "take over an approval by setting it to alice" annotate --as=alice "${APPROVED_BY}=bob"
+[[ "$(remote_head main)" == "${main_before}" ]]
+annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
 auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
 eventually 120 auth_landed
 eventually 60 branch_gone c/auth
-echo "c/auth waited with a high risk rating until it was approved, then landed."
+echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
 echo "::endgroup::"
 
 echo "::group::Two branches from the same commit both land"
@@ -321,9 +446,72 @@ both_landed() {
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
 eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: base'
+g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
 g log --graph --oneline FETCH_HEAD
 echo "One branch landed, the base check merged main into the other, and it landed too."
+echo "::endgroup::"
+
+# landing sets how branches land on main.
+landing() {
+  k -n "${NS}" patch gitrepository app --type=json \
+    -p "[{\"op\":\"add\",\"path\":\"/spec/branches/0/merge/landing\",\"value\":\"$1\"}]"
+}
+
+echo "::group::A squash landing lands one commit"
+landing Squash
+fetch_main
+squash_base="$(g rev-parse FETCH_HEAD)"
+g checkout -q -B c/squash FETCH_HEAD
+echo squash >"${WORK}/squash.txt"
+g add -A
+g commit -qm "Add squash.txt"
+printf 'package util\nfunc  Sub(a,b int)int{return a-b}\n' >"${WORK}/util/sub.go"
+g add -A
+g commit -qm "Add util.Sub"
+g push -q "${HOST_URL}/app.git" HEAD:c/squash
+squash_landed() { branch_gone c/squash && fetch_main && g cat-file -e FETCH_HEAD:util/sub.go; }
+eventually 180 squash_landed
+g log --first-parent --format='%h %s (%an, committed by %cn)' "${squash_base}^..FETCH_HEAD"
+[[ "$(g rev-list --count "${squash_base}..FETCH_HEAD")" == 1 ]]
+[[ "$(g rev-parse FETCH_HEAD^)" == "${squash_base}" ]]
+[[ "$(g log -1 --format='%an %cn' FETCH_HEAD)" == "e2e git-k8s" ]]
+[[ "$(g log -1 --format=%B FETCH_HEAD)" == "Add squash.txt
+
+* Add squash.txt
+* Add util.Sub
+* Format Go files with gofmt" ]]
+[[ "$(g show FETCH_HEAD:util/sub.go)" == "package util
+
+func Sub(a, b int) int { return a - b }" ]]
+echo "The gofmt check fixed c/squash, and main moved by one squashed commit without the fixer trailer."
+echo "::endgroup::"
+
+echo "::group::A rebase landing copies a branch's commits onto its parent"
+landing Rebase
+fetch_main
+g checkout -q -B c/rebase FETCH_HEAD
+echo one >"${WORK}/rebase-one.txt"
+g add -A
+g commit -qm "Add rebase-one.txt"
+echo two >"${WORK}/rebase-two.txt"
+g add -A
+g commit -qm "Add rebase-two.txt"
+g checkout -q -B moves FETCH_HEAD
+echo main >"${WORK}/main.txt"
+g add -A
+g commit -qm "Add main.txt"
+rebase_base="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:main
+g push -q "${HOST_URL}/app.git" c/rebase:c/rebase
+rebase_landed() { branch_gone c/rebase && fetch_main && g cat-file -e FETCH_HEAD:rebase-two.txt; }
+eventually 180 rebase_landed
+g log --graph --format='%h %s (%an, committed by %cn)' "${rebase_base}^..FETCH_HEAD"
+[[ "$(g log --reverse --format=%s "${rebase_base}..FETCH_HEAD")" == "Add rebase-one.txt
+Add rebase-two.txt" ]]
+[[ "$(g rev-list --parents "${rebase_base}..FETCH_HEAD" | awk 'NF != 2')" == "" ]]
+[[ "$(g log --format='%an %cn' "${rebase_base}..FETCH_HEAD" | sort -u)" == "e2e git-k8s" ]]
+g cat-file -e FETCH_HEAD:main.txt
+echo "The base check merged main into c/rebase, and main moved by copies of its two commits, without the merge."
 echo "::endgroup::"
 
 echo "::group::A check can write only its own result"
@@ -369,19 +557,165 @@ patch_branch() {
     -H "Authorization: Bearer $1" -H 'Content-Type: application/merge-patch+json' \
     --data "$2" "${branch_url}"
 }
-approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-core_token="$(k -n git-k8s create token git-k8s)"
-for bearer in "${token}" "${core_token}"; do
-  code="$(patch_branch "${bearer}" "${approve}")"
+# check-gotest owns Pods, so generate lets it patch GitBranch objects, and
+# only the policies stop it. Even a controller with the approve verb that
+# names itself in approved-by can't approve.
+k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
+k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
+  --serviceaccount=check-gotest:check-gotest --serviceaccount=git-k8s:git-k8s
+controllers_can_approve() {
+  for sa in check-gotest git-k8s; do
+    k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as="system:serviceaccount:${sa}:${sa}" >/dev/null || return 1
+  done
+}
+eventually 30 controllers_can_approve
+# cant_approve passes if the API server rejects the service account $1's
+# patch $2 because controllers can't approve.
+cant_approve() {
+  local code
+  code="$(patch_branch "$(k -n "$1" create token "$1")" "$2")"
   cat "${WORKDIR}/patch.json"
   echo
-  [[ "${code}" == 422 ]]
-  grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+  [[ "${code}" == 422 ]] && grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+}
+for sa in check-gotest git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
-code="$(patch_branch "${token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+# git-k8s-approvals lets anyone with the approve verb take over an approval,
+# so on an approved branch only git-k8s-branches stops a controller that
+# names itself in approved-by.
+annotate_main() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object main)" "$@"; }
+annotate_main "${APPROVE}=$(remote_head main)" "${APPROVED_BY}=${admin}"
+for sa in check-gotest git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+done
+annotate_main "${APPROVE}-" "${APPROVED_BY}-"
+gotest_token="$(k -n check-gotest create token check-gotest)"
+code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
-grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
+grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
+# check-gofmt owns nothing, so generate doesn't let it patch GitBranch
+# objects at all.
+approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
+code="$(patch_branch "${token}" "${approve}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 403 ]]
+grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
+echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt can't patch one."
+echo "::endgroup::"
+
+echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
+# The git server fakes GitHub and Octo STS under /github. Its token exchange
+# has the API server review each token, because Octo STS can't reach a kind
+# cluster's issuer.
+GITHUB_URL="${HOST_URL}/github"
+OCTO="${WORKDIR}/octo"
+git init -q -b main "${OCTO}"
+o() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${OCTO}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+issuer="$(k get --raw /.well-known/openid-configuration | sed -nE 's/.*"issuer":"([^"]*)".*/\1/p')"
+mkdir -p "${OCTO}/.github/chainguard"
+# The fake reads trust policies as JSON, which is also YAML.
+cat >"${OCTO}/.github/chainguard/git-k8s.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject_pattern": "system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt)",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"contents": "write"}
+}
+EOF
+cat >"${OCTO}/.github/chainguard/git-k8s-checks.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject": "system:serviceaccount:git-k8s:git-k8s",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"checks": "write"}
+}
+EOF
+printf 'module example.com/octo\n\ngo 1.24\n' >"${OCTO}/go.mod"
+printf 'package main\n\nfunc main() {}\n' >"${OCTO}/main.go"
+o add -A
+o commit -qm "Initial commit"
+o push -q "${GITHUB_URL}/acme/octo.git" HEAD:main
+# The GitBranch for c/fmt stays after the branch lands, without
+# deleteMergedBranches, so the check runs can be checked afterward.
+octo_repository() {
+  k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: octo
+  namespace: $1
+spec:
+  url: ${CLUSTER_URL}/github/acme/octo.git
+  octoSTS:
+    gitIdentity: git-k8s
+    checkRunsIdentity: git-k8s-checks
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gofmt
+            mayPush: true
+    - match: c/**
+      parent: main
+EOF
+}
+octo_repository "${NS}"
+# condition prints field $3 of condition $2 of the GitRepository octo in
+# namespace $1.
+condition() {
+  k -n "$1" get gitrepository octo -o jsonpath="{.status.conditions[?(@.type==\"$2\")].$3}"
+}
+octo_ready() {
+  [[ "$(condition "${NS}" Ready status)" == True && "$(condition "${NS}" CheckRunsTokenIssued status)" == True ]]
+}
+eventually 120 octo_ready
+
+o checkout -q -b c/fmt
+printf 'package main\nfunc  main() {}\n' >"${OCTO}/main.go"
+o commit -qam "Unformat main.go"
+unformatted="$(o rev-parse HEAD)"
+o push -q "${GITHUB_URL}/acme/octo.git" HEAD:c/fmt
+octo_head() { git ls-remote "${GITHUB_URL}/acme/octo.git" "refs/heads/$1" | cut -f1; }
+fix_landed() {
+  local main
+  main="$(octo_head main)"
+  [[ "${main}" != "$(o rev-parse main)" && "${main}" != "${unformatted}" && "${main}" == "$(octo_head c/fmt)" ]]
+}
+eventually 120 fix_landed
+fix="$(octo_head main)"
+# check_run prints the status and conclusion of check $2's check run on
+# commit $1.
+check_run() {
+  curl -fsS "${GITHUB_URL}/api/v3/repos/acme/octo/commits/$1/check-runs?check_name=git-k8s/$2" |
+    sed -nE 's/.*"status":"([a-z_]+)","conclusion":"([a-z_]*)".*/\1 \2/p'
+}
+check_runs_published() {
+  [[ "$(check_run "${unformatted}" gofmt)" == "completed neutral" &&
+    "$(check_run "${fix}" gofmt)" == "completed success" &&
+    "$(check_run "${fix}" base)" == "completed success" ]]
+}
+eventually 60 check_runs_published
+echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
+
+k create namespace "${NS}-other"
+octo_repository "${NS}-other"
+refused() {
+  [[ "$(condition "${NS}-other" Ready reason)" == CredentialsUnavailable &&
+    "$(condition "${NS}-other" Ready message)" == *"audience \"octo-sts.dev/${NS}\" did not match"* ]]
+}
+eventually 60 refused
+condition "${NS}-other" Ready message
+echo
+k delete namespace "${NS}-other" --wait=false
+echo "A GitRepository in another namespace can't use the trust policies, whose audience names ${NS}."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
@@ -438,7 +772,7 @@ broken_failed() { [[ -n "$(branch_object c/broken tested)" && "$(gotest c/broken
 eventually 300 broken_failed
 gotest c/broken message
 echo
-gotest c/broken message | grep -q -- '--- FAIL: TestAdd'
+gotest c/broken message | grep -- '--- FAIL: TestAdd' >/dev/null
 [[ "$(remote_head main tested)" == "${tested_main}" ]]
 # kube deletes a test Pod once the check stops declaring it.
 no_test_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
@@ -453,6 +787,170 @@ fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+echo "::endgroup::"
+
+echo "::group::A burst of branches takes turns under -max-pods=1"
+# Each branch's test sleeps, so Pods that ran at once would overlap. The
+# branches start from main's parent, so they pass without landing.
+# c/burst-a sorts first, but it's pushed after the others are waiting.
+burst=(c/burst-b c/burst-c c/burst-d)
+for b in "${burst[@]}" c/burst-a; do
+  t checkout -q -b "${b}" "${tested_main}"
+  cat >"${TESTED}/slow_test.go" <<'GO'
+package tested
+
+import (
+	"testing"
+	"time"
+)
+
+func TestSlow(t *testing.T) { time.Sleep(5 * time.Second) }
+GO
+  t add slow_test.go
+  t commit -qm "Test slowly on ${b}"
+done
+# burst_results prints each tested branch's name, head, and gotest commit,
+# state, and waiting time.
+burst_results() {
+  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.outputs.waiting}{"\n"}{end}'
+}
+burst_checked() { [[ "$(burst_results | awk -F'|' '$1 ~ /^c\/burst-[bcd]$/ && $2 == $3' | wc -l)" -eq 3 ]]; }
+t push -q "${HOST_URL}/tested.git" "${burst[@]}"
+eventually 120 burst_checked
+t push -q "${HOST_URL}/tested.git" c/burst-a
+
+declare -A waited=() finished=()
+order=()
+most=0
+deadline=$((SECONDS + 600))
+while ((${#finished[@]} < 4)); do
+  if ((SECONDS >= deadline)); then
+    echo "timed out; started: ${order[*]}" >&2
+    exit 1
+  fi
+  running="$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest \
+    -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -cvE '^(Succeeded|Failed)$' || true)"
+  if ((running > most)); then
+    most=${running}
+  fi
+  while IFS='|' read -r branch head commit state since; do
+    if [[ "${branch}" != c/burst-* || "${commit}" != "${head}" ]]; then
+      continue
+    fi
+    if [[ -n "${since}" ]]; then
+      waited[${branch}]=${since}
+    elif [[ " ${order[*]} " != *" ${branch} "* ]]; then
+      order+=("${branch}")
+    fi
+    if [[ "${state}" == Passed || "${state}" == Failed ]]; then
+      finished[${branch}]=${state}
+    fi
+  done < <(burst_results)
+  sleep 1
+done
+for b in "${order[@]}"; do
+  echo "${b} started after waiting since ${waited[${b}]:-never}, and ${finished[${b}]}"
+done
+echo "Most test Pods running at once: ${most}"
+((most == 1))
+for b in "${order[@]}"; do
+  [[ "${finished[${b}]}" == Passed ]]
+done
+# Only the first branch found a free place. The others started in the order
+# that they started waiting, which put c/burst-a last.
+[[ ${#order[@]} -eq 4 && -z "${waited[${order[0]}]:-}" ]]
+for b in "${order[@]:1}"; do
+  [[ -n "${waited[${b}]:-}" ]]
+done
+by_wait="$(for b in "${order[@]:1}"; do echo "${waited[${b}]} ${b}"; done | LC_ALL=C sort | cut -d' ' -f2 | paste -sd' ')"
+[[ "${by_wait}" == "${order[*]:1}" && "${order[3]}" == c/burst-a ]]
+t push -q --delete "${HOST_URL}/tested.git" "${burst[@]}" c/burst-a
+burst_gone() {
+  local results
+  results="$(burst_results)" && [[ "${results}" != *c/burst-* ]]
+}
+eventually 60 burst_gone
+eventually 60 no_test_pods
+echo "Four branches ran one at a time, in the order that they started waiting."
+echo "::endgroup::"
+
+echo "::group::A check can change only its own Pods"
+gotest_token="$(k -n check-gotest create token check-gotest)"
+# pod_request sends request $1 for the Pods path $2 under
+# /api/v1/namespaces/, with body $3, as check-gotest, without changing
+# anything.
+pod_request() {
+  local type=application/json
+  [[ "$1" == PATCH ]] && type=application/merge-patch+json
+  curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/pod.json" -w '%{http_code}' -X "$1" \
+    -H "Authorization: Bearer ${gotest_token}" -H "Content-Type: ${type}" \
+    --data "${3:-}" "${server}/api/v1/namespaces/$2?dryRun=All"
+}
+# gotest_pod prints a Pod named $3, or gotest-e2e if $3 is empty, that meets
+# the restricted Pod Security Standard, with the gotest check's label, that
+# runs as service account $1 on node $2, or on the node that the scheduler
+# picks if $2 is empty.
+gotest_pod() {
+  cat <<EOF
+{"apiVersion": "v1", "kind": "Pod",
+ "metadata": {"name": "${3:-gotest-e2e}", "labels": {"kube.imjasonh.github.io/controller": "check-gotest"}},
+ "spec": {"serviceAccountName": "$1", "nodeName": "${2:-}", "restartPolicy": "Never", "automountServiceAccountToken": false,
+  "securityContext": {"runAsNonRoot": true, "runAsUser": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
+  "containers": [{"name": "test", "image": "${GO_IMAGE}", "command": ["go", "version"],
+   "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}
+EOF
+}
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default)")"
+[[ "${code}" == 201 ]]
+code="$(pod_request POST check-gofmt/pods "$(gotest_pod check-gofmt)")"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can't change Pods in the namespaces of git-k8s programs" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod rogue)")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check's Pods must run as their namespace's default service account" "${WORKDIR}/pod.json"
+code="$(pod_request POST default/pods "$(gotest_pod default)")"
+[[ "${code}" == 422 ]]
+grep -q "can't create or change Pods in namespace default, which doesn't have the label git-k8s.imjasonh.com/check-pods=true" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default "${CLUSTER}-control-plane")")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can't assign its Pods to a node" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default "" review-e2e)")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check's new Pods need a name of the form gotest-ID, where ID has no hyphens" "${WORKDIR}/pod.json"
+k -n "${NS}" apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: other
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: other
+      image: ${GO_IMAGE}
+      command: [go, version]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+EOF
+code="$(pod_request PATCH "${NS}/pods/other" '{"metadata":{"labels":{"kube.imjasonh.github.io/controller":"check-gotest"}}}')"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
+code="$(pod_request DELETE "${NS}/pods/other")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
+k -n "${NS}" delete pod other
+echo "check-gotest can't run Pods in a program's namespace, as another service account, in a namespace that doesn't opt in, on a node that it names, or under another check's Pod name, and can't change or delete a Pod that it didn't create."
 echo "::endgroup::"
 
 echo "::group::An agent reviews branches in sandboxed Pods"

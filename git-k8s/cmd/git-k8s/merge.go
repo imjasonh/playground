@@ -19,6 +19,7 @@ import (
 // reconciles the full GitBranch type, so its manager installs the
 // CustomResourceDefinition.
 type merger struct {
+	ident git.Identity
 	cache *gitk8s.Cache
 }
 
@@ -69,7 +70,7 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil
 	}
-	return m.land(ctx, b)
+	return m.land(ctx, b, results)
 }
 
 // evaluate reports whether a merge policy's gate passes.
@@ -118,8 +119,9 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 	return msg
 }
 
-// land fast-forwards the parent to the branch's head.
-func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
+// land fast-forwards the parent to the branch's head, or squashes or
+// rebases the branch onto it when the merge policy says to.
+func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
 	local, remote, unlock, err := m.open(ctx, b)
 	if err != nil {
@@ -147,9 +149,15 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
 		return err
 	}
 	if !ff {
-		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so %s can't fast-forward to it",
+		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so it can't land on %s",
 			spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), spec.Parent)
 		return nil
+	}
+	switch spec.Merge.Landing {
+	case gitk8s.Squash, gitk8s.Rebase:
+		if done, err := m.rewrite(ctx, local, remote, b, results); err != nil || done {
+			return err
+		}
 	}
 	err = local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
 	if err != nil {
@@ -158,6 +166,7 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
 		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head))
 	report(b, reasonLanded, true, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
+	kube.Eventf(ctx, kube.Normal, reasonLanded, "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
 	return deleteBranch(ctx, local, remote, b)
 }
 
@@ -192,6 +201,7 @@ func deleteBranch(ctx context.Context, local *git.Repo, remote git.Remote, b *gi
 		return fmt.Errorf("deleting merged branch %s: %w", b.Spec.Branch, err)
 	}
 	slog.Info("deleted merged branch", "namespace", b.Namespace, "repository", b.Spec.Repository, "branch", b.Spec.Branch)
+	kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", b.Spec.Branch, gitk8s.Short(b.Spec.Head), b.Spec.Parent)
 	return nil
 }
 

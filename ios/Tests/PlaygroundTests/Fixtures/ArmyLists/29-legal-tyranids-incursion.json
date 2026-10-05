@@ -1,0 +1,121 @@
+{
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "tyranids--ambush-predators",
+      "tyranids--warrior-bioform-onslaught"
+    ],
+    "factionID" : "tyranids",
+    "id" : "9541FA25-65D6-4822-B272-3F3BF0CEA3C8",
+    "name" : "Tyranids Incursion 925pts",
+    "notes" : "stress seed=28 attach=true enh=true",
+    "units" : [
+      {
+        "attachedToUnitID" : "9392661B-7101-4C65-98B0-4DA787A38936",
+        "datasheetID" : "tyranids--winged-tyranid-prime",
+        "enhancementIDs" : [
+          "tyranids--warrior-bioform-onslaught--elevated-might"
+        ],
+        "id" : "72152A7A-7F4B-49A3-8B53-63ADE988C526",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--toxicrene",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "A56502B7-1D45-4220-82B9-E180964082C6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--pyrovores",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5B839FE8-0B78-41CE-803C-2B7E549585C1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--mucolid-spores",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "018C5D8C-6BFB-4BA7-AE1B-7BDDB9947D46",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--barbgaunts",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1799E57A-5A6D-431C-8C52-B16FFFA1EC31",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--termagants",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1D60DBEA-FBB4-4503-9A48-1FAA1B25AB78",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--gargoyles",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "9392661B-7101-4C65-98B0-4DA787A38936",
+        "models" : 20,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--hive-guard",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F93D1B01-8871-4FFB-866B-75B37A61DA3F",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tyranids--norn-emissary",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "CF2B594E-BDFA-4259-A464-E3F56F0FF8AE",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      }
+    ],
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "72152A7A-7F4B-49A3-8B53-63ADE988C526"
+  },
+  "notes" : "auto-built"
+}

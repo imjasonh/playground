@@ -1,0 +1,108 @@
+{
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "incursion",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "tau-empire--kroot-hunting-pack"
+    ],
+    "factionID" : "tau-empire",
+    "id" : "923612D8-2613-4756-AB05-401F7C8D28E6",
+    "name" : "T’au Empire Incursion 985pts",
+    "notes" : "stress seed=25 attach=true enh=true",
+    "units" : [
+      {
+        "datasheetID" : "tau-empire--kroot-flesh-shaper",
+        "enhancementIDs" : [
+          "tau-empire--kroot-hunting-pack--kroothawk-flock"
+        ],
+        "id" : "EB976994-F76E-439A-9049-B4A803BFA6ED",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--ghostkeel-battlesuit",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "60BF32D5-6379-4E52-A143-BC898A28FDC6",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--piranhas",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "8E8DB9E9-F54B-4EC4-B753-7DAE28B2FD42",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--kroot-hounds",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6C4B720B-0172-4B00-BDD5-5DACC258D9C5",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--crisis-fireknife-battlesuits",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7A20E881-581D-4878-B33B-EC1C3294DC9E",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--orca-dropship",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "3880F304-84EF-4E11-9951-01EC4BAECC51",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--pathfinder-team",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "260A2333-A345-4A23-AFA2-4F8F245FB06E",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "tau-empire--y-vahra-battlesuit",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C4698F56-EE4E-44E8-B5D3-C11B29790D01",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      }
+    ],
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "EB976994-F76E-439A-9049-B4A803BFA6ED"
+  },
+  "notes" : "auto-built"
+}

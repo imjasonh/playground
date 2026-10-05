@@ -24,6 +24,7 @@ type Server struct {
 	// Username and Password are the credentials it requires, if Password
 	// is set.
 	Username, Password string
+	root               string
 }
 
 // NewServer starts a git server that requires password, unless password is
@@ -36,7 +37,18 @@ func NewServer(t testing.TB, password string) *Server {
 	s := &gitserver.Server{Root: t.TempDir(), Username: "git-k8s", Password: password}
 	hs := httptest.NewServer(s)
 	t.Cleanup(hs.Close)
-	return &Server{URL: hs.URL, Username: s.Username, Password: password}
+	return &Server{URL: hs.URL, Username: s.Username, Password: password, root: s.Root}
+}
+
+// Config sets an option in the configuration of a repository on the
+// server, such as receive.denyDeletes. The repository must exist.
+func (s *Server) Config(t testing.TB, repo, key, value string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", filepath.Join(s.root, repo+".git"), "config", key, value)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config %s: %v\n%s", key, err, out)
+	}
 }
 
 // Remote returns the URL and credentials of a repository on the server.

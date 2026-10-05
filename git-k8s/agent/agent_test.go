@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -53,6 +54,8 @@ type fixture struct {
 	result *Result
 	// poll is the repository's pollInterval, if it isn't gittest's.
 	poll string
+	// lastErr is what kube.LastError returns, if it isn't nil.
+	lastErr error
 
 	mu   sync.Mutex
 	body []byte
@@ -126,6 +129,9 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	world := []any{repo, secret}
 	for _, p := range pods {
 		world = append(world, p)
+	}
+	if f.lastErr != nil {
+		world = append(world, f.lastErr)
 	}
 	ctx, rec := kube.Fake(f.t.Context(), f.b, world...)
 	check := checks.Check{Name: "review", Remote: credentials.Remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
@@ -697,6 +703,18 @@ func TestSaysWhenKubeCantCreateAPod(t *testing.T) {
 	if res := f.state(); res.State != gitk8s.Running || res.Message != want || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 1 {
 		t.Fatalf("result = %+v, want Running with the Pod declared", res)
 	}
+
+	t.Log("When kube has the last try's error, such as the check Pod policy's denial, the check reports it and declares the Pod again.")
+	f.lastErr = errors.New(`applying Pod.v1 default/` + p.Name + `: pods "` + p.Name + `" is forbidden: ` +
+		`ValidatingAdmissionPolicy 'git-k8s-check-pods' with binding 'git-k8s-check-pods' denied request: ` +
+		`the review check can't create or change Pods in namespace default, which doesn't have the label ` +
+		`git-k8s.imjasonh.com/check-pods=true (422 Invalid)`)
+	rec = f.reconcile()
+	want = "kube can't create Pod " + p.Name + ": " + f.lastErr.Error()
+	if res := f.state(); res.State != gitk8s.Running || res.Message != want || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatalf("result = %+v, want Running with kube's error and the Pod declared", res)
+	}
+	f.lastErr = nil
 	f.reconcile(p)
 	if res := f.state(); res.Message != "Pod "+p.Name+" is Pending" {
 		t.Errorf("result = %+v, want the Pod Pending once it exists", res)

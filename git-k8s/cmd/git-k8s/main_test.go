@@ -117,7 +117,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		}
 		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
 	}
-	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches") {
+	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results, git-k8s-branches, git-k8s-check-pods, git-k8s-approvals") {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 

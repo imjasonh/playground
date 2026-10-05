@@ -2,8 +2,14 @@ package git_test
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net"
+	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,6 +40,142 @@ func TestLsRemoteNeedsCredentials(t *testing.T) {
 	if _, err := g.LsRemote(t.Context(), wrong); err == nil {
 		t.Error("ls-remote with the wrong password succeeded")
 	}
+}
+
+func TestOptionURLsDontRunCommands(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	head := w.Commit("first")
+	w.Push("main")
+
+	ctx := t.Context()
+	g := &git.Git{}
+	repo, err := g.Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func(command string) error{
+		"ls-remote": func(command string) error {
+			_, err := g.LsRemote(ctx, git.Remote{URL: "--upload-pack=" + command})
+			return err
+		},
+		"fetch": func(command string) error {
+			return repo.Fetch(ctx, git.Remote{URL: "--upload-pack=" + command}, "main")
+		},
+		"push": func(command string) error {
+			return repo.Push(ctx, git.Remote{URL: "--receive-pack=" + command}, git.RefUpdate{Ref: "refs/heads/x", New: head})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "ran")
+			err := run("touch " + marker + "; false")
+			if _, statErr := os.Stat(marker); statErr == nil {
+				t.Fatal("git ran the command in the URL")
+			}
+			if err == nil || !strings.Contains(err.Error(), "blocked") {
+				t.Errorf("err = %v, want git to block the URL", err)
+			}
+		})
+	}
+}
+
+func TestOtherTransportsDontRun(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "ran")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	g := &git.Git{}
+	local, err := g.Open(t.Context(), filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, url := range []string{"evil::x", local.Dir, "file://" + local.Dir} {
+		_, err := g.LsRemote(t.Context(), git.Remote{URL: url})
+		if _, statErr := os.Stat(marker); statErr == nil {
+			t.Fatal("git ran the remote helper")
+		}
+		if err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("ls-remote %s: err = %v, want git to refuse the transport", url, err)
+		}
+	}
+}
+
+func TestLsRemoteSkipsUnsafeBranches(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("first")
+	w.Push("main")
+	// git branch refuses this name, but a server accepts a push to it.
+	w.Push("-x")
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": main}) {
+		t.Errorf("heads = %q, want only main", heads)
+	}
+
+	sha := strings.Repeat("1", 40)
+	url := serveRefs(t, sha,
+		"refs/heads/main",
+		"refs/heads/-x",
+		"refs/heads/main\n--output=/tmp/pwned\trefs/heads/injected",
+		"refs/heads/a b",
+		"refs/heads/a..b",
+	)
+	heads, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(heads, map[string]string{"main": sha}) {
+		t.Errorf("heads from a malicious server = %q, want only main", heads)
+	}
+}
+
+// serveRefs runs a git daemon whose one repository has refs, all pointing at
+// sha, and returns the repository's URL. It sends the ref names as they are,
+// as a malicious server can.
+func serveRefs(t *testing.T, sha string, refs ...string) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	var ad strings.Builder
+	for i, ref := range refs {
+		line := sha + " " + ref
+		if i == 0 {
+			line += "\x00"
+		}
+		fmt.Fprintf(&ad, "%04x%s\n", len(line)+5, line)
+	}
+	ad.WriteString("0000")
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				var size [4]byte
+				if _, err := io.ReadFull(c, size[:]); err != nil {
+					return
+				}
+				n, _ := strconv.ParseUint(string(size[:]), 16, 16)
+				if _, err := io.CopyN(io.Discard, c, int64(n)-4); err != nil {
+					return
+				}
+				// A client that asks for protocol version 2 accepts this
+				// version 0 advertisement, and sends a flush packet after it.
+				io.WriteString(c, ad.String())
+				io.Copy(io.Discard, c)
+			}()
+		}
+	}()
+	return "git://" + l.Addr().String() + "/app.git"
 }
 
 func TestFetchMergePush(t *testing.T) {
@@ -93,12 +235,29 @@ func TestFetchMergePush(t *testing.T) {
 	if !errors.Is(err, git.ErrRejected) {
 		t.Fatalf("push with a stale lease: err = %v, want ErrRejected", err)
 	}
+	var rejected *git.PushError
+	if !errors.As(err, &rejected) || rejected.Rejected["refs/heads/c/x"] != "[rejected] (stale info)" || rejected.Refused("refs/heads/c/x") {
+		t.Errorf("push with a stale lease: err = %#v, want a stale lease that the remote didn't refuse", err)
+	}
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/c/x", New: merge, Old: head}); err != nil {
 		t.Fatal(err)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != merge {
 		t.Errorf("c/x = %s, want %s", got, merge)
 	}
+
+	// A remote that refuses one update of an atomic push rejects the others
+	// too, but refuses only that one.
+	srv.Config(t, "app", "receive.denyDeletes", "true")
+	err = repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/main", New: merge, Old: parent}, git.RefUpdate{Ref: "refs/heads/c/x", Old: merge})
+	if !errors.As(err, &rejected) || !rejected.Refused("refs/heads/c/x") || rejected.Refused("refs/heads/main") ||
+		rejected.Rejected["refs/heads/c/x"] != "[remote rejected] (deletion prohibited)" {
+		t.Errorf("push that deletes a branch the remote won't delete: err = %v, want the remote to refuse only the deletion", err)
+	}
+	if heads := srv.Heads(t, "app"); heads["main"] != parent || heads["c/x"] != merge {
+		t.Errorf("heads = %v, want them as they were", heads)
+	}
+	srv.Config(t, "app", "receive.denyDeletes", "false")
 
 	// Deleting with a lease.
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/c/x", Old: merge}); err != nil {
@@ -186,6 +345,56 @@ func TestTreeEditing(t *testing.T) {
 	for _, path := range []string{".g\u200cit/hooks/post-checkout", "GIT~1/hooks/post-checkout"} {
 		if _, err := repo.ReplaceFiles(ctx, c.Tree, []git.TreeEntry{{Mode: "100644", SHA: blob, Path: path}}); err == nil {
 			t.Errorf("ReplaceFiles(%q) succeeded; want an error for a path that macOS or Windows reads as .git", path)
+		}
+	}
+}
+
+func TestWrittenIdentity(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := repo.Commit(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []git.Identity{
+		{Name: "git-k8s", Email: "git-k8s@example.com"},
+		{Name: "Zoë Lima", Email: "zoë@example.com"},
+		{Name: "git-k8s ", Email: "<git-k8s@example.com>"},
+		{Name: `"git-k8s"`, Email: " git-k8s@example.com\n"},
+		{Name: "'git-k8s',", Email: ";git-k8s@example.com:"},
+		{Name: "git\n-k8s", Email: "git-k8s@<example>.com"},
+		{Name: "\tgit, k8s\\", Email: "git-k8s@example.com\x7f"},
+		{Name: "Ana Lima\xff", Email: "\x01ana@example.com"},
+		{Name: "\xc3<\xa9", Email: "\xef\xbf\xbe@example.com"},
+		{Name: "git-k8s", Email: ""},
+		{Name: "\u00a0git-k8s Jr.\r", Email: "\rgit-k8s@example.com\u3000"},
+		{Name: "git\ufdd0k8s\uffff", Email: "\U0001fffe@example.com"},
+	} {
+		raw, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id, c.Time)
+		if err != nil {
+			t.Errorf("CommitTree as %q: %v", id, err)
+			continue
+		}
+		if written, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id.Written(), c.Time); err != nil || written != raw {
+			t.Errorf("CommitTree as %q = %s, %v; want %s, the commit as %q", id.Written(), written, err, raw, id)
+		}
+		log, err := repo.Log(ctx, base, raw, 1)
+		if err != nil || len(log) != 1 {
+			t.Fatalf("Log = %+v, %v", log, err)
+		}
+		if got := log[0].Committer; got != id.Written() {
+			t.Errorf("git writes %q as %q, but Written returns %q", id, got, id.Written())
 		}
 	}
 }

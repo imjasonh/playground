@@ -45,7 +45,7 @@ type Manager struct {
 	// a Lease reconciles. Caches start only after the replica first holds
 	// it, so standby replicas use almost no memory. A replica that loses the
 	// Lease stops reconciling and tries to take it back; it keeps serving
-	// webhooks.
+	// webhooks and the handler passed to Serve.
 	LeaderElection bool
 	// Shards splits the objects that controllers reconcile into this many
 	// groups, each held by one replica at a time through its own Lease, so
@@ -95,20 +95,33 @@ type Manager struct {
 	// webhooks of a manager that runs outside the cluster, for example
 	// "https://192.0.2.10:9443". It takes precedence over WebhookService.
 	WebhookURL string
+	// ServeAddr is where the manager serves the handler passed to Serve,
+	// over plain HTTP. It defaults to ":8081".
+	ServeAddr string
+	// TokenDir is a directory of service account tokens for RequestToken,
+	// each in a file named by the hex SHA-256 hash of its audience. The
+	// generate command mounts the program's tokens there from a projected
+	// volume, whose tokens the kubelet renews.
+	TokenDir string
 
 	client  *client.Client
 	log     *slog.Logger
 	metrics *metrics
+	events  *eventWriter
 	tracker *tracker
 	ids     atomic.Int64
 	runCtx  context.Context
 	started atomic.Bool
 	sharder *sharder
+	// self is the user that the program authenticates as, once known.
+	self atomic.Pointer[UserInfo]
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
+	unshared    []cache // primary informers that aren't in caches
 	cacheDone   []chan struct{}
 	resolved    map[*typeInfo]resolved
+	crdCalls    map[*typeInfo]*crdCall
 	controllers []Controller
 	hooks       *webhookServer
 }
@@ -127,13 +140,15 @@ func Run(ctx context.Context, controllers ...Controller) error {
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
 // they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
-// -webhook-addr, -webhook-service, -webhook-url, and -v for debug logs.
+// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, -token-dir,
+// and -v for debug logs.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
 // base image, pushes it to REGISTRY, and writes YAML for kubectl apply that
-// installs it: a namespace, a service account, RBAC rules for the types the
-// program uses, a Deployment, and a Service for its webhooks.
+// installs it: a namespace, a service account, RBAC rules for the types and
+// APIs the program uses, a Deployment, and a Service for its webhooks and
+// its Serve handler.
 func Main(controllers ...Controller) {
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -153,15 +168,7 @@ func Main(controllers ...Controller) {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
 		flag.PrintDefaults()
 	}
-	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
-	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
-	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
-	flag.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
-	flag.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
-	flag.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
-	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
-	flag.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
-	verbose := flag.Bool("v", false, "log debug messages")
+	verbose := m.flags(flag.CommandLine)
 	flag.Parse()
 	level := slog.LevelInfo
 	if *verbose {
@@ -175,6 +182,21 @@ func Main(controllers ...Controller) {
 		stop()
 		os.Exit(1)
 	}
+}
+
+// flags defines Main's flags on fs, and returns the value of -v.
+func (m *Manager) flags(fs *flag.FlagSet) *bool {
+	fs.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
+	fs.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
+	fs.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
+	fs.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
+	fs.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
+	fs.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
+	fs.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
+	fs.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
+	fs.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
+	fs.StringVar(&m.TokenDir, "token-dir", "", "directory of service account tokens for kube.RequestToken, by audience")
+	return fs.Bool("v", false, "log debug messages")
 }
 
 func (m *Manager) init() error {
@@ -200,9 +222,11 @@ func (m *Manager) init() error {
 		m.log.Info("connecting", "host", cfg.Host, "config", cfg.Source)
 	}
 	m.metrics = newMetrics()
+	m.events = newEventWriter(m.client, m.log, m.metrics)
 	m.tracker = newTracker()
 	m.caches = map[cacheKey]cache{}
 	m.resolved = map[*typeInfo]resolved{}
+	m.crdCalls = map[*typeInfo]*crdCall{}
 	m.metrics.gauge("kube_cache_objects", "Objects held in each cache.", func() []sample {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -237,11 +261,16 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			stops[i]()
 		}
 	}()
-	// startFailed reports a failure to start, unless ctx was canceled
-	// meanwhile, which stops the manager cleanly.
+	// startFailed reports a failure to start. If the caller stopped the
+	// manager meanwhile, it stops cleanly. If a server failed, which
+	// canceled ctx and so made this step fail, it reports the server's
+	// error.
 	startFailed := func(err error) error {
-		if ctx.Err() != nil {
+		switch {
+		case parent.Err() != nil:
 			return nil
+		case ctx.Err() != nil:
+			return context.Cause(ctx)
 		}
 		return err
 	}
@@ -252,7 +281,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		}
 		stops = append(stops, func() { srv.Close() })
 	}
-	stops = append(stops, m.waitForCaches)
+	stops = append(stops, m.waitForCaches, m.events.start())
 	for _, c := range controllers {
 		if err := c.prepare(ctx, m); err != nil {
 			return startFailed(err)
@@ -268,11 +297,22 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		// configurations whose webhooks no longer answer.
 		m.log.Warn("removing stale webhook configurations failed", "err", err)
 	}
-	var reconcilers []Controller
+	var reconcilers, others []Controller
 	for _, c := range controllers {
 		if c.reconciles() {
 			reconcilers = append(reconcilers, c)
+		} else {
+			others = append(others, c)
 		}
+	}
+	var servers sync.WaitGroup
+	stops = append(stops, servers.Wait)
+	for _, c := range others {
+		servers.Go(func() {
+			if err := c.run(ctx); err != nil {
+				cancel(fmt.Errorf("%s: %w", c.controllerName(), err))
+			}
+		})
 	}
 	if len(reconcilers) > 0 && (m.LeaderElection || m.Shards > 1) {
 		m.sharder = newSharder(m)
@@ -295,7 +335,9 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	var wg sync.WaitGroup
 	stops = append(stops, wg.Wait)
 	if ctx.Err() == nil {
-		for _, c := range reconcilers {
+		// Reconcilers install their CustomResourceDefinitions in setup, and
+		// the objects that Install applies may need them.
+		for _, c := range slices.Concat(reconcilers, others) {
 			if err := c.setup(ctx, m); err != nil {
 				return startFailed(err)
 			}
@@ -331,8 +373,9 @@ func (m *Manager) waitForCaches() {
 func (m *Manager) serve() (*http.Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
-	// A standby replica is ready once its webhooks serve: the Service must
-	// send webhook requests to it, though it doesn't reconcile.
+	// A standby replica is ready once its webhooks and Serve handler serve:
+	// the Service must send their requests to it, though it doesn't
+	// reconcile.
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		hooks := m.hooks
@@ -340,6 +383,12 @@ func (m *Manager) serve() (*http.Server, error) {
 		if !hooks.serving() {
 			http.Error(w, "webhooks are not serving", http.StatusServiceUnavailable)
 			return
+		}
+		for _, c := range m.controllers {
+			if !c.reconciles() && !c.synced() {
+				http.Error(w, c.controllerName()+" is not serving", http.StatusServiceUnavailable)
+				return
+			}
 		}
 		if m.started.Load() {
 			for _, c := range m.controllers {
@@ -420,6 +469,78 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 	return m.resolve(ctx, crd.ti)
 }
 
+// crdCall is one run of ensureCRD for a type. The caller that runs it sets
+// err and ctxErr, and then closes done.
+type crdCall struct {
+	done   chan struct{}
+	err    error
+	ctxErr error // the error of the caller's context, if the call failed
+}
+
+// ensureCRD creates the CustomResourceDefinition of a type that the program
+// defines and owns but doesn't reconcile, if it's missing. Concurrent callers
+// for a type wait for the first one and share its result. If the first one
+// fails after its context ends, a waiter whose context is live takes its
+// place. ensureCRD doesn't keep a failure, so the next caller tries again.
+func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
+	if !ti.custom {
+		return nil
+	}
+	for {
+		m.mu.Lock()
+		call, ok := m.crdCalls[ti]
+		if !ok {
+			call = &crdCall{done: make(chan struct{})}
+			m.crdCalls[ti] = call
+		}
+		m.mu.Unlock()
+		if !ok {
+			return m.runCRDCall(ctx, ti, call)
+		}
+		select {
+		case <-call.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if call.ctxErr == nil || ctx.Err() != nil {
+			return call.err
+		}
+	}
+}
+
+// runCRDCall runs call, the entry for ti in m.crdCalls. If the call fails or
+// panics, runCRDCall removes the entry before it closes call.done, so that a
+// waiter that tries again never finds the finished call.
+func (m *Manager) runCRDCall(ctx context.Context, ti *typeInfo, call *crdCall) error {
+	finished := false
+	defer func() {
+		if !finished {
+			call.err = fmt.Errorf("creating CustomResourceDefinition %s panicked", crdSpec{ti: ti}.name())
+		}
+		if call.err != nil {
+			call.ctxErr = ctx.Err()
+			m.mu.Lock()
+			delete(m.crdCalls, ti)
+			m.mu.Unlock()
+		}
+		close(call.done)
+	}()
+	if !m.reconciled(ti) {
+		call.err = m.createCRD(ctx, ti)
+	}
+	finished = true
+	return call.err
+}
+
+// reconciled reports whether a controller in the program reconciles ti's
+// type, and so installs the type's CustomResourceDefinition.
+func (m *Manager) reconciled(ti *typeInfo) bool {
+	return slices.ContainsFunc(m.controllers, func(c Controller) bool {
+		d, err := c.describe()
+		return err == nil && d.reconciles && d.ti.custom && d.ti.group == ti.group && d.ti.plural == ti.plural
+	})
+}
+
 // labelValue makes s a valid label value.
 func labelValue(s string) string {
 	s = strings.Map(func(r rune) rune {
@@ -461,17 +582,21 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 	return c
 }
 
-// adopt registers a controller's primary informer as the shared cache for
-// its type when it watches the same objects that Get and List would.
-func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) {
+// adopt returns the cache that a controller with the primary informer inf
+// reads. If inf watches the same objects that Get and List would, that's the
+// shared cache for its type: the one that already exists, or else inf, which
+// adopt registers as that cache. Otherwise adopt registers inf as an unshared
+// cache, so that the process's writes show in it.
+func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) cache {
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}
-	if cfg.namespace != key.namespace || cfg.selector != "" {
-		return
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.caches[key]; ok {
-		return
+	if cfg.namespace != key.namespace || cfg.selector != "" {
+		m.unshared = append(m.unshared, inf)
+		return inf
+	}
+	if c, ok := m.caches[key]; ok {
+		return c
 	}
 	id := inf.id()
 	inf.onChange(func(old, new *ObjectMeta, initial bool) {
@@ -480,6 +605,7 @@ func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cach
 		}
 	})
 	m.caches[key] = inf
+	return inf
 }
 
 func (m *Manager) source(ctx context.Context, ti *typeInfo) (source, error) {
@@ -505,6 +631,9 @@ func (m *Manager) existing(ti *typeInfo) source {
 }
 
 func (m *Manager) children(ctx context.Context, c *core, ti *typeInfo) (source, error) {
+	if err := m.ensureCRD(ctx, ti); err != nil {
+		return nil, err
+	}
 	return m.childSource(ctx, c, ti, true)
 }
 

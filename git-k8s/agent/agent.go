@@ -148,7 +148,8 @@ type Task struct {
 //
 // Run doesn't return errors, because a check that returns one reports Error
 // without outputs, and the outputs count the branch's runs for
-// maxAgentRuns. A check that calls Run needs Check.Remote.
+// maxAgentRuns. A check that calls Run needs Check.Remote, and isn't
+// FilesOnly, because the agent reads the subjects of the branch's commits.
 func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.Verdict, *Result) {
 	st := &JobState{}
 	x := &run{r: r, in: in, job: r.checkJob(in, task, ""), st: st}

@@ -10,7 +10,7 @@ import (
 )
 
 // policyNames are the ValidatingAdmissionPolicies in config/policy.yaml.
-var policyNames = []string{"git-k8s-check-results", "git-k8s-branches"}
+var policyNames = []string{"git-k8s-check-results", "git-k8s-branches", "git-k8s-check-pods", "git-k8s-approvals"}
 
 type admissionPolicy struct {
 	kube.Object `kube:"apiVersion=admissionregistration.k8s.io/v1,kind=ValidatingAdmissionPolicy,plural=validatingadmissionpolicies,scope=Cluster"`
@@ -24,8 +24,9 @@ type admissionPolicyBinding struct {
 	} `json:"spec"`
 }
 
-// policiesCondition reports whether the admission policies that keep checks
-// apart are installed, with bindings that deny the requests they reject.
+// policiesCondition reports whether the admission policies in
+// config/policy.yaml are installed, with bindings that deny the requests
+// they reject.
 // Reading them through the cache runs the reconcile again when they change.
 func policiesCondition(ctx context.Context) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
@@ -41,11 +42,11 @@ func policiesCondition(ctx context.Context) kube.Condition {
 	if len(missing) > 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.False, Reason: "Missing",
-			Message: fmt.Sprintf("apply config/policy.yaml: %s isn't installed with a binding that denies, so checks can write each other's results", strings.Join(missing, " and ")),
+			Message: fmt.Sprintf("apply config/policy.yaml to install %s with bindings that deny", strings.Join(missing, ", ")),
 		}
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-		Message: "the admission policies keep checks to their own results",
+		Message: "the admission policies keep checks to their own results and Pods, and check who approves branches",
 	}
 }

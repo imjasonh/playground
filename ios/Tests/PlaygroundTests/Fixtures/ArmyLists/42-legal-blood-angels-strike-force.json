@@ -1,111 +1,188 @@
 {
-  "expectedLegal": true,
-  "notes": "auto-built",
-  "list": {
-    "id": "849B5594-7E37-4978-BA20-FEC631D0D533",
-    "name": "Blood Angels Strike Force 1910pts",
-    "catalogVersion": "11e-1",
-    "factionID": "blood-angels",
-    "battleSizeID": "strike-force",
-    "detachmentIDs": [
-      "blood-angels--fulguris-task-force",
-      "blood-angels--headhunter-task-force"
+  "expectedLegal" : true,
+  "list" : {
+    "battleSizeID" : "strike-force",
+    "catalogVersion" : "11e-3",
+    "createdAt" : "2026-01-01T00:00:00Z",
+    "detachmentIDs" : [
+      "blood-angels--assault-brethren",
+      "blood-angels--gravis-linebreaker-force",
+      "blood-angels--phobos-shock-force"
     ],
-    "units": [
+    "factionID" : "blood-angels",
+    "id" : "4AD31A04-B34F-4F12-83DA-9AF9D9D7571C",
+    "name" : "Blood Angels Strike Force 1990pts",
+    "notes" : "stress seed=41 attach=true enh=true",
+    "units" : [
       {
-        "id": "14D01FB8-0886-42B9-B1F0-D71A16E21B8F",
-        "datasheetID": "blood-angels--judiciar",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [
-          "blood-angels--headhunter-task-force--firestorm-coordinators"
+        "attachedToUnitID" : "96B10EF3-8A90-446D-9FA1-FCE7A45AF8C5",
+        "datasheetID" : "blood-angels--techmarine",
+        "enhancementIDs" : [
+          "blood-angels--gravis-linebreaker-force--indefatigable-fortitude"
         ],
-        "attachedToUnitID": "DA273089-D31B-4C7C-A01E-B9BB1327A84D"
+        "id" : "BB8AC15D-CCB1-421F-A027-AFC12349A073",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "C2D3EAC9-A333-4A3C-920D-1F085081A666",
-        "datasheetID": "blood-angels--gladiator-lancer",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--assault-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "96B10EF3-8A90-446D-9FA1-FCE7A45AF8C5",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "A0A64C0F-B3B5-4D57-ADB0-D9A4BB789727",
-        "datasheetID": "blood-angels--astraeus",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--death-company-marines-with-jump-packs",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B47EC13B-B8AD-4F00-A591-A2ADE7FD92EB",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "FC174398-69FA-4291-B9B6-DDFFD16F0744",
-        "datasheetID": "blood-angels--land-raider-crusader",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--rhino-primaris",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0275DDEC-B9C1-4A29-9B8F-23322C5F5D4E",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "5E137C6F-9CE2-4B01-B207-EC3E14A3491E",
-        "datasheetID": "blood-angels--land-raider-redeemer",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--tarantula-sentry-battery",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "005855E8-E453-4AF4-8178-A8654B56E41C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "DA273089-D31B-4C7C-A01E-B9BB1327A84D",
-        "datasheetID": "blood-angels--sternguard-veteran-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--death-company-dreadnought-with-magna-grapple",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "2E97BA96-8ACD-41B8-9765-92B5B46C34BE",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "B443A47A-0187-4446-9C1E-1B09F9D63AA8",
-        "datasheetID": "blood-angels--hellblaster-squad",
-        "models": 5,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--rhino",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "0C2E4535-1A97-46B3-9D0C-FD0B14A358FF",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "05835D0E-D8AB-4DAC-B227-CE0B9B40105A",
-        "datasheetID": "blood-angels--gladiator-reaper",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--stormtalon-gunship",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1A845E4D-727B-49D1-931E-4818467F87EE",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "4D2472A0-0FBB-4B8D-9821-928FB651F337",
-        "datasheetID": "blood-angels--razorback",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--repulsor",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D84C677B-422C-4B3F-B9A9-FFC9CFA23EA1",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "9E8EF9CD-2C51-4EB7-8B0F-DAFCDF8CF308",
-        "datasheetID": "blood-angels--eradicator-squad",
-        "models": 3,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--relic-razorback",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C6673031-C560-4B6D-8F77-3BD7D9CB520C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
       },
       {
-        "id": "AA4591A0-C490-4EE2-B31D-6890734CC72D",
-        "datasheetID": "blood-angels--baal-predator",
-        "models": 1,
-        "optionIDs": [],
-        "enhancementIDs": [],
-        "attachedToUnitID": null
+        "datasheetID" : "blood-angels--gabriel-seth",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "64C05E85-A22F-4323-956D-4D1D93E28B4C",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "blood-angels--land-raider-redeemer",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "322EB293-2F21-443D-8BEC-5616D8126665",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "blood-angels--land-speeder",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B054E722-A46D-450F-B132-1D70E353AF12",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "blood-angels--sanguinary-guard",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5E83AC63-1428-491C-87B9-3478F6123AAD",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "blood-angels--heavy-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BC95E158-7481-41F5-8D96-5B7F57AFC1DF",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
       }
     ],
-    "warlordUnitID": "14D01FB8-0886-42B9-B1F0-D71A16E21B8F",
-    "notes": "stress seed=41 attach=True enh=True",
-    "createdAt": "2026-01-01T00:00:00Z",
-    "updatedAt": "2026-01-01T00:00:00Z"
-  }
+    "updatedAt" : "2026-01-01T00:00:00Z",
+    "warlordUnitID" : "BB8AC15D-CCB1-421F-A027-AFC12349A073"
+  },
+  "notes" : "auto-built"
 }
