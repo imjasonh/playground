@@ -2382,6 +2382,15 @@ cluster also needs a NetworkPolicy of your own, as
 as [Share modules and build outputs](#share-modules-and-build-outputs)
 describes.
 
+If you applied the `test-pods` NetworkPolicy that an earlier version of this
+README described, delete it from each namespace that has a `GitRepository`.
+A cluster allows any connection that one of a Pod's NetworkPolicies allows,
+so that policy still lets test Pods reach the git remote:
+
+```sh
+kubectl -n NAMESPACE delete --ignore-not-found networkpolicy test-pods
+```
+
 `config/policy.yaml` holds four ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
