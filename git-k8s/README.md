@@ -321,8 +321,9 @@ key, but some can:
   program, `check-base`, `check-gofmt`, and `check-risk`, so signing gives
   `check-base` and `check-gofmt` no new permissions.
 - `check-gotest` doesn't give its test Pods the signing Secret, but it can
-  create Pods in the namespaces that it watches, and a Pod can mount any
-  Secret in its namespace.
+  create Pods, and a Pod can mount any Secret in its namespace. The
+  [admission policies](#install) let it create Pods only in namespaces that
+  opt in to test Pods.
 
 For each commit, a check writes the key to a file with mode 0600 in a new
 directory with mode 0700 under `/tmp`, passes git the file's path, and
