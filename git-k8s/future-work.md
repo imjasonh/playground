@@ -81,8 +81,8 @@ Questions to settle first:
 The check-results admission policy keeps each check to its own entry in
 `status.checks` by looking at the service account that makes each write. A
 result carries no proof of which check wrote it, so the merge controller can
-trust results only as far as it trusts the policy. The policy might not be
-installed, and it recognizes checks only by their service account names.
+trust results only as far as it trusts the policy, its binding, and the
+`git-k8s-checks` ConfigMap that maps service accounts to checks.
 
 The decided fix is for checks to stop writing `status.checks`. A check sends
 each result to an endpoint in the core program, next to the mirror, with a
@@ -95,8 +95,9 @@ or on purpose, because it can't write results at all:
   `GitBranch` that declares no status, so kube doesn't write one and
   `generate` doesn't grant them access, and they read their earlier results
   through a second view.
-- The core program maps service accounts to checks, so a check no longer has
-  to run as `check-NAME` in the namespace `check-NAME`.
+- The core program finds the check for a token's service account the way the
+  check-results policy does, from the `git-k8s-checks` ConfigMap or the
+  `check-NAME` convention.
 - The admission policy stays as a backstop. People with write access to
   `GitBranch` status can still write a result, for example to unblock a
   branch whose check is broken.
@@ -211,17 +212,6 @@ GitHub's branch rules have to let that identity push to protected branches.
 The proposed fix is for the mirror to sign the commits that git-k8s makes,
 with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
 through Sigstore, or with an SSH key that only the mirror holds.
-
-## Install the admission policies with the core program
-
-`config/policy.yaml` is a separate install step. The `PoliciesInstalled`
-condition reports when it's missing, but nothing installs it. The core
-program could apply the policies when it starts, the way kube installs CRDs.
-That needs RBAC to write ValidatingAdmissionPolicies, which a compromised
-core program could use to weaken them. The core program already decides
-what lands, so that may be acceptable. Once checks send results to the core
-program instead of writing them, the check-results policy is a backstop, and
-the policy that stops controllers from approving branches matters most.
 
 ## Run more agents
 
