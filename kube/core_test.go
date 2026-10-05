@@ -540,6 +540,26 @@ func TestPermanent(t *testing.T) {
 	}
 }
 
+func TestFakeLastError(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	ctx, _ := Fake(t.Context(), parent)
+	if err := LastError(ctx); err != nil {
+		t.Errorf("LastError = %v, want nil", err)
+	}
+
+	denied := errorString("applying Pod.v1 shop/p: forbidden")
+	pod := &podMeta{Object: Meta("p", nil)}
+	pod.Namespace = "shop"
+	ctx, _ = Fake(t.Context(), parent, denied, pod)
+	if err := LastError(ctx); err != denied {
+		t.Errorf("LastError = %v, want %v", err, denied)
+	}
+	if pods := List[podMeta](ctx, InNamespace("shop")); len(pods) != 1 || pods[0].Name != "p" {
+		t.Errorf("List = %v, want the Pod and not the error", pods)
+	}
+}
+
 func TestMetricsFormat(t *testing.T) {
 	m := newMetrics()
 	m.inc("kube_reconcile_total", "controller", "w", "result", "success")

@@ -510,6 +510,17 @@ waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
 
+An intent that fails, for example because an admission policy rejects an
+apply, fails the reconcile in the same way. The framework stops carrying out
+the intents, writes the status that `Reconcile` set, and retries with backoff.
+`Reconcile` returned before the write failed, so it can't report the error.
+The controller keeps each object's last error in memory, and `kube.LastError`
+returns it to the next reconcile, which can put it in the status. That matters
+for a status without a `Synced` condition, such as one entry in a status that
+several controllers share. The errors are kept by namespace and name, so if an
+object is deleted and recreated before the controller reconciles the deletion,
+the new object's first reconcile can get the old object's error.
+
 ### Finalizers and cleanup
 
 When a reconciler has a `Finalize` method, the framework adds a finalizer to
@@ -527,6 +538,19 @@ annotation. When the owner is deleted, the framework deletes those objects by
 UID, then removes the finalizer. When a reconcile stops declaring such
 objects, the framework deletes any that remain and removes the finalizer, so
 the owner can then be deleted without the controller running.
+
+A controller without a `Finalize` method also removes its finalizer from
+objects, so a finalizer that an earlier version of the program added doesn't
+keep them from being deleted. Adding and removing a finalizer patch the
+object. Permission to patch an object also allows changes to its spec,
+labels, and annotations, so `generate` grants it only to a controller that
+can need it: one with a `Finalize` method, one with the
+`kube.RemovesFinalizer` option, or one whose type is namespaced in a program
+that declares owned objects. The source doesn't show which namespace an owned
+object goes in, so any owned object counts. When the API server forbids the
+removal and the controller has neither `Finalize` nor the option, the error
+names the option, because the likely cause is a finalizer that an earlier
+version of the program added.
 
 ### Custom resource definitions
 
@@ -601,11 +625,12 @@ in a manager are divided into shards by an FNV hash of namespace and name, and
 each shard is a `coordination.k8s.io/v1` Lease with a 15-second duration,
 renewed every 2 seconds. A worker reconciles a key only while its replica
 holds the key's shard, and a replica that acquires a shard enqueues every
-cached key in it and forgets what it last wrote for them, because another
-replica may have reconciled them since. Leader election is the case of one
-shard. Candidates measure a lease's expiry from when they saw its holder or
-renew time change, on their own clock, so clock skew between replicas doesn't
-give a shard two holders.
+cached key in it and forgets what it last wrote for them. It also forgets
+every reconcile error that it kept for the shard, including deleted objects'
+errors, because another replica may have reconciled the shard's keys since.
+Leader election is the case of one shard. Candidates measure a lease's expiry
+from when they saw its holder or renew time change, on their own clock, so
+clock skew between replicas doesn't give a shard two holders.
 
 With more than one shard, each replica also renews a membership Lease, and
 every replica lists the manager's Leases each retry period. Each computes the
@@ -749,8 +774,9 @@ kind and the messages it contains at a time.
 Some fields differ between the two encodings. A struct that `encoding/json`
 inlines, such as a Volume's VolumeSource, is a nested message. Times,
 quantities, and int-or-string values are messages in protobuf but strings or
-numbers in JSON. A few lists, such as a user's extra values, are messages that
-wrap a repeated field. The decoder sets times and quantities directly, and
+numbers in JSON. The zero time is an empty message in protobuf and `null` in
+JSON. A few lists, such as a user's extra values, are messages that wrap a
+repeated field. The decoder sets times and quantities directly, and
 converts other such values, or any field whose Go type has an `UnmarshalJSON`
 method, to the JSON value that the API server would send, and decodes that
 with `encoding/json`. A test creates an object of every type in the `k8s`
@@ -789,6 +815,18 @@ type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 needs `create` and `patch`, and `Delete` needs `delete`. `controller-gen`
 reads `+kubebuilder:rbac` comment markers, which people write and update by
 hand. These rules change when the calls do.
+
+A controller gets `get`, `list`, and `watch` on its own type, and `patch` on
+the type's `status` subresource if it has one. It gets `patch` on the type
+itself only when the framework writes the object: to add or remove the
+controller's finalizer, as [Finalizers and cleanup](#finalizers-and-cleanup)
+describes, or to migrate the stored objects of a type with more than one
+version. The `describe` method reports whether a controller has a `Finalize`
+method, the `kube.RemovesFinalizer` option, owned types, or more than one
+version, and the analysis reports whether the program calls `Own`, including
+calls whose type arguments it can't tell. A program that declares no owned
+objects, and whose controllers only write status, gets no permission to change
+the spec, labels, or annotations of the objects that they reconcile.
 
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in

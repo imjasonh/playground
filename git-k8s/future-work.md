@@ -367,10 +367,6 @@ Questions to settle first:
 
 These belong in kube, in their own pull requests:
 
-- `generate` grants `patch` on every reconciled type. kube removes a
-  finalizer that a controller no longer needs, which takes `patch`, so
-  dropping the grant needs another way to remove finalizers that an earlier
-  version of a program added.
 - kube has no Events API, so landings and fix pushes show up only in logs and
   conditions. An event intent that kube carries out after a reconcile, and
   that groups repeats, would show them in `kubectl describe`.

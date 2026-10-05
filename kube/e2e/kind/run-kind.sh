@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install the website, imagereport, and podpolicy examples in a kind cluster
-# with generate, which pushes their images to a local registry, and check
-# that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
-# sets when kube changes.
+# Install the website, imagereport, janitor, and podpolicy examples in a kind
+# cluster with generate, which pushes their images to a local registry, and
+# check that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1,
+# which CI sets when kube changes.
 #
 # KUBE_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -26,7 +26,7 @@ k() { kubectl --context "${CONTEXT}" "$@"; }
 diagnose() {
   echo "::group::Cluster state"
   k get nodes,websites,all -A -o wide || true
-  for ns in website imagereport podpolicy; do
+  for ns in website imagereport janitor podpolicy; do
     k -n "${ns}" describe pods || true
     k -n "${ns}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${ns}" || true
   done
@@ -176,7 +176,8 @@ eventually 120 deployment_gone
 echo "Deleting the Website deletes what it owned."
 echo "::endgroup::"
 
-# podpolicy's webhooks deny Pods from this registry, so this goes first.
+# podpolicy's webhooks deny Pods from this registry, so imagereport and
+# janitor go first.
 echo "::group::Install the imagereport example"
 generate imagereport -replicas=1 | k apply -f -
 k -n imagereport rollout status deployment/imagereport --timeout=180s
@@ -195,6 +196,48 @@ eventually 60 has_report imagereport "/kube-e2e/imagereport@sha256:"
 eventually 60 has_report kube-system kube-apiserver
 k get imagereports -A
 echo "The program created the ImageReport CRD and reports pods' images."
+echo "::endgroup::"
+
+echo "::group::Install the janitor example"
+generate janitor | k apply -f -
+k -n janitor rollout status deployment/janitor --timeout=180s
+# janitor has no Finalize method and owns nothing, so generate doesn't let it
+# patch namespaces.
+[[ "$(k auth can-i patch namespaces --as=system:serviceaccount:janitor:janitor)" == no ]]
+namespace_gone() { ! k get namespace "$1" >/dev/null 2>&1; }
+namespace_deleting() { [[ -n "$(k get namespace "$1" -o jsonpath='{.metadata.deletionTimestamp}')" ]]; }
+k apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: janitor-e2e
+  annotations:
+    janitor.examples.kube.imjasonh.github.io/ttl: 1s
+EOF
+eventually 120 namespace_gone janitor-e2e
+echo "janitor deletes an expired namespace without permission to patch it."
+
+# A finalizer that an earlier version of janitor added stays, because
+# removing it takes patch, and janitor's error names the option to add.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: janitor-stale
+  annotations:
+    janitor.examples.kube.imjasonh.github.io/ttl: 1s
+  finalizers:
+  - kube.imjasonh.github.io/janitor
+EOF
+names_option() {
+  [[ "$(k -n janitor logs -l app.kubernetes.io/name=janitor --tail=-1)" == *'pass kube.RemovesFinalizer() to kube.For'* ]]
+}
+eventually 120 namespace_deleting janitor-stale
+eventually 120 names_option
+[[ "$(k get namespace janitor-stale -o jsonpath='{.metadata.finalizers}')" == *kube.imjasonh.github.io/janitor* ]]
+k patch namespace janitor-stale --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'
+eventually 120 namespace_gone janitor-stale
+echo "janitor can't remove a finalizer that an earlier version added, and its error names kube.RemovesFinalizer."
 echo "::endgroup::"
 
 echo "::group::Install the podpolicy example"

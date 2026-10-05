@@ -303,6 +303,8 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	// creates holds the CRDs of types that the program defines and owns,
 	// which it creates if they're missing.
 	creates := map[string]bool{}
+	var patchIfOwns []func()
+	owns := false
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -321,7 +323,19 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			o.logf("%s has more than one version, so its rules stay in the ClusterRole", d.ti.kind)
 			own = cluster
 		}
-		own.add(group, plural, "", "get", "list", "watch", "patch")
+		own.add(group, plural, "", "get", "list", "watch")
+		owns = owns || len(d.owns) > 0
+		switch {
+		case d.finalizes || d.versioned:
+			own.add(group, plural, "", "patch")
+		case d.ti.scope != "Cluster":
+			// An owned object in another namespace, or a cluster-scoped
+			// one, can't carry an owner reference to a namespaced owner, so
+			// the framework adds a finalizer to the owner. The source
+			// doesn't show which namespace an owned object goes in, so
+			// owning any object counts.
+			patchIfOwns = append(patchIfOwns, func() { own.add(group, plural, "", "patch") })
+		}
 		if d.ti.status != nil {
 			own.add(group, plural+"/status", "", "patch")
 		}
@@ -340,15 +354,16 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
 	o.logf("finding the types that %s reads and writes", pkg)
-	uses, warnings, err := analysis.Find(ctx, analysis.Config{
+	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
 	})
 	if err != nil {
 		return nil, err
 	}
-	for _, w := range warnings {
-		o.logf("warning: %s; add its permissions to the ClusterRole yourself", w)
+	for _, u := range unresolved {
+		o.logf("warning: %s: can't tell which types this call passes to kube.%s; add its permissions to the ClusterRole yourself", u.Pos, u.Func)
+		owns = owns || u.Func == "Own"
 	}
 	for _, u := range uses {
 		ti := &typeInfo{}
@@ -359,6 +374,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
 		if ti.custom && u.Func == "Own" {
 			creates[r+"."+g] = true
+		}
+	}
+	if owns || slices.ContainsFunc(uses, func(u analysis.Use) bool { return u.Func == "Own" }) {
+		for _, grant := range patchIfOwns {
+			grant()
 		}
 	}
 	for _, crd := range crds {
