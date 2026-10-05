@@ -569,11 +569,15 @@ no_lasting_zombies() {
 }
 
 echo "::group::Failed git commands leave no zombies"
-# When a fetch or an ls-remote over HTTP fails, git exits without waiting for
-# its remote helper, which then becomes a child of PID 1. Moving a repository
-# away on the git server fails the core program's listings and check-risk's
-# fetches. A listing that fails keeps every GitBranch, so once c/gone's
-# result is removed, check-risk fetches c/gone again.
+# When a fetch over HTTP fails, git exits without waiting for its remote
+# helper, which then becomes a child of PID 1. Moving a repository away on
+# the git server fails the core program's fetches from it. Checks fetch from
+# the mirror, which refuses a check that none of the repository's merge
+# policies list. An invalid pollInterval keeps the core program from
+# changing the GitBranches, so c/gone's merge policy still lists risk, and
+# once c/gone's result is removed, check-risk fetches c/gone again. risk's
+# level is never none, so nothing lands, and the copy has no change that
+# deleting the GitRepository has to push.
 g push -q "${HOST_URL}/zombie.git" main
 g checkout -q --detach
 echo gone >"${WORK}/gone.txt"
@@ -606,21 +610,26 @@ gone_risk() { k -n "${NS}" get gitbranch "$(branch_object c/gone zombie)" -o jso
 gone_checked() { [[ -n "$(branch_object c/gone zombie)" && "$(gone_risk commit)" == "${gone}" ]]; }
 eventually 120 gone_checked
 mv "${WORKDIR}/repos/zombie.git" "${WORKDIR}/repos/moved.git"
+fetch_failed() { [[ "$(synced_condition reason zombie)" == SyncFailed && "$(synced_condition message zombie)" == *"not found"* ]]; }
+eventually 60 fetch_failed
+synced_condition message zombie
+echo
+k -n "${NS}" patch gitrepository zombie --type=json -p '[
+  {"op": "replace", "path": "/spec/pollInterval", "value": "0s"},
+  {"op": "remove", "path": "/spec/branches/0/merge"}]'
+invalid_poll_interval() {
+  [[ "$(k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')" == InvalidPollInterval ]]
+}
+eventually 60 invalid_poll_interval
 k -n "${NS}" patch gitbranch "$(branch_object c/gone zombie)" --subresource=status --type=json \
   -p '[{"op":"remove","path":"/status/checks/risk"}]'
-fetch_failed() { [[ "$(gone_risk state)" == Error && "$(gone_risk message)" == *"not found"* ]]; }
-eventually 60 fetch_failed
+risk_refused() { [[ "$(gone_risk state)" == Error && "$(gone_risk message)" == *"not found"* ]]; }
+eventually 60 risk_refused
 gone_risk message
-echo
-list_failed() {
-  [[ "$(k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')" == ListFailed ]]
-}
-eventually 60 list_failed
-k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}'
 echo
 no_lasting_zombies
 k -n "${NS}" delete gitrepository zombie
-echo "The core program's listings and check-risk's fetch of a repository that moved failed, and no zombie on the nodes lasted 10 seconds."
+echo "The core program's fetches of a repository that moved and check-risk's fetches that the mirror refused failed, and no zombie on the nodes lasted 10 seconds."
 echo "::endgroup::"
 
 echo "::group::The git server rejects unsigned commits"
