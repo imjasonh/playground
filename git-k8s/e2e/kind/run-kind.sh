@@ -168,7 +168,7 @@ ssh-keygen -q -t ed25519 -N '' -C "${IDENTITY}" -f "${WORKDIR}/git-k8s-key"
 printf 'e2e@example.com namespaces="git" %s\n%s namespaces="git" %s\n' \
   "$(cat "${WORKDIR}/e2e-key.pub")" "${IDENTITY}" "$(cat "${WORKDIR}/git-k8s-key.pub")" >"${ALLOWED_SIGNERS}"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  -allowed-signers="${ALLOWED_SIGNERS}" >"${WORKDIR}/gitserver.log" 2>&1 &
+  -allowed-signers="${ALLOWED_SIGNERS}" -kube-context="${CONTEXT}" >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -196,10 +196,11 @@ crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; 
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch.
-install git-k8s
+install git-k8s -- "-fake-github=${CLUSTER_URL}/github"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 for program in "${CHECKS[@]}"; do
   case "${program}" in
+    check-base | check-gofmt) install "${program}" -- "-fake-github=${CLUSTER_URL}/github" ;;
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
       install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
@@ -579,6 +580,119 @@ echo
 [[ "${code}" == 403 ]]
 grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
 echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt can't patch one."
+echo "::endgroup::"
+
+echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
+# The git server fakes GitHub and Octo STS under /github. Its token exchange
+# has the API server review each token, because Octo STS can't reach a kind
+# cluster's issuer.
+GITHUB_URL="${HOST_URL}/github"
+OCTO="${WORKDIR}/octo"
+git init -q -b main "${OCTO}"
+o() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${OCTO}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+issuer="$(k get --raw /.well-known/openid-configuration | sed -nE 's/.*"issuer":"([^"]*)".*/\1/p')"
+mkdir -p "${OCTO}/.github/chainguard"
+# The fake reads trust policies as JSON, which is also YAML.
+cat >"${OCTO}/.github/chainguard/git-k8s.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject_pattern": "system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt)",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"contents": "write"}
+}
+EOF
+cat >"${OCTO}/.github/chainguard/git-k8s-checks.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject": "system:serviceaccount:git-k8s:git-k8s",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"checks": "write"}
+}
+EOF
+printf 'module example.com/octo\n\ngo 1.24\n' >"${OCTO}/go.mod"
+printf 'package main\n\nfunc main() {}\n' >"${OCTO}/main.go"
+o add -A
+o commit -qm "Initial commit"
+o push -q "${GITHUB_URL}/acme/octo.git" HEAD:main
+# The GitBranch for c/fmt stays after the branch lands, without
+# deleteMergedBranches, so the check runs can be checked afterward.
+octo_repository() {
+  k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: octo
+  namespace: $1
+spec:
+  url: ${CLUSTER_URL}/github/acme/octo.git
+  octoSTS:
+    gitIdentity: git-k8s
+    checkRunsIdentity: git-k8s-checks
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gofmt
+            mayPush: true
+    - match: c/**
+      parent: main
+EOF
+}
+octo_repository "${NS}"
+# condition prints field $3 of condition $2 of the GitRepository octo in
+# namespace $1.
+condition() {
+  k -n "$1" get gitrepository octo -o jsonpath="{.status.conditions[?(@.type==\"$2\")].$3}"
+}
+octo_ready() {
+  [[ "$(condition "${NS}" Ready status)" == True && "$(condition "${NS}" CheckRunsTokenIssued status)" == True ]]
+}
+eventually 120 octo_ready
+
+o checkout -q -b c/fmt
+printf 'package main\nfunc  main() {}\n' >"${OCTO}/main.go"
+o commit -qam "Unformat main.go"
+unformatted="$(o rev-parse HEAD)"
+o push -q "${GITHUB_URL}/acme/octo.git" HEAD:c/fmt
+octo_head() { git ls-remote "${GITHUB_URL}/acme/octo.git" "refs/heads/$1" | cut -f1; }
+fix_landed() {
+  local main
+  main="$(octo_head main)"
+  [[ "${main}" != "$(o rev-parse main)" && "${main}" != "${unformatted}" && "${main}" == "$(octo_head c/fmt)" ]]
+}
+eventually 120 fix_landed
+fix="$(octo_head main)"
+# check_run prints the status and conclusion of check $2's check run on
+# commit $1.
+check_run() {
+  curl -fsS "${GITHUB_URL}/api/v3/repos/acme/octo/commits/$1/check-runs?check_name=git-k8s/$2" |
+    sed -nE 's/.*"status":"([a-z_]+)","conclusion":"([a-z_]*)".*/\1 \2/p'
+}
+check_runs_published() {
+  [[ "$(check_run "${unformatted}" gofmt)" == "completed neutral" &&
+    "$(check_run "${fix}" gofmt)" == "completed success" &&
+    "$(check_run "${fix}" base)" == "completed success" ]]
+}
+eventually 60 check_runs_published
+echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
+
+k create namespace "${NS}-other"
+octo_repository "${NS}-other"
+refused() {
+  [[ "$(condition "${NS}-other" Ready reason)" == CredentialsUnavailable &&
+    "$(condition "${NS}-other" Ready message)" == *"audience \"octo-sts.dev/${NS}\" did not match"* ]]
+}
+eventually 60 refused
+condition "${NS}-other" Ready message
+echo
+k delete namespace "${NS}-other" --wait=false
+echo "A GitRepository in another namespace can't use the trust policies, whose audience names ${NS}."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
