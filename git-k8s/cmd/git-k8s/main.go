@@ -6,6 +6,10 @@
 // GitBranch, and when the parent's merge policy passes, fast-forwards the
 // parent to the branch.
 //
+// The check-runs controller copies the check results on each GitBranch to
+// GitHub as check runs, for repositories that name an Octo STS identity for
+// them.
+//
 // Check controllers run as separate programs, such as check-gofmt.
 package main
 
@@ -25,5 +29,6 @@ func main() {
 	kube.Main(
 		kube.For[gitk8s.GitRepository](&repositories{git: g}, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](&merger{cache: cache}, kube.Named("merge")),
+		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
 	)
 }
