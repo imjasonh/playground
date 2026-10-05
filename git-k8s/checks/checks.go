@@ -150,7 +150,18 @@ func For[V any, P interface {
 	kube.Resource[V]
 	View
 }](check Check, cfg *Config, opts ...kube.Option) kube.Controller {
-	r := NewReconciler[V, P](check, cfg)
+	return ForReconciler[V, P](check, cfg, NewReconciler[V, P](check, cfg), opts...)
+}
+
+// ForReconciler returns a controller like For's that runs r on the check's
+// view of each GitBranch instead of NewReconciler's reconciler, for a check
+// that does more than run on the branches that its policy lists. r can call
+// NewReconciler's reconciler for those branches. The controller sends the
+// result that r sets in the view to the core program when it changes.
+func ForReconciler[V any, P interface {
+	kube.Resource[V]
+	View
+}](check Check, cfg *Config, r kube.Reconciler[V], opts ...kube.Option) kube.Controller {
 	s := &sender{check: check.Name, cfg: cfg, client: &http.Client{Timeout: 30 * time.Second}, delay: 100 * time.Millisecond}
 	return kube.For[branch](reconcileFunc(func(ctx context.Context, b *branch) error {
 		return runAndSend[V, P](ctx, r, s, b)

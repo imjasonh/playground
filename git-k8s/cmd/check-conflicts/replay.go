@@ -167,13 +167,13 @@ func resolveRewind(ctx context.Context, in *checks.Input, repo *git.Repo, t targ
 	return checks.Fail("the branch and %s both rewound since they last synced at %s, and each kept commits that the other removed, so the check leaves the divergence for a person", t.name, since)
 }
 
-// parentRewind returns the state and message of the result for branch, a
-// branch without a parent whose divergence d has a side that rewound since
-// the sides last synced. A commit that contains both heads brings back the
-// commits that the rewound side removed, and the merge controller moves
-// branch only to a commit that contains its head, so the check pushes
-// nothing, and says how to resolve the divergence in the external
-// repository instead.
+// parentRewind returns the state and message that the check reports for
+// branch, a branch without a parent whose divergence d has a side that
+// rewound since the sides last synced. A commit that contains both heads
+// brings back the commits that the rewound side removed, and the merge
+// controller moves branch only to a commit that contains its head, so the
+// check pushes nothing, and says how to resolve the divergence in the
+// external repository instead.
 func parentRewind(ctx context.Context, repo *git.Repo, branch, head string, d *gitk8s.Divergence, rewound string) (state, msg string, err error) {
 	ext, since := gitk8s.Short(d.Commit), gitk8s.Short(d.Base)
 	switch ok, err := repo.Keeps(ctx, head, d.Commit, d.Base); {

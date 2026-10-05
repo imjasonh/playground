@@ -117,11 +117,14 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 ## Events
 
 The controllers record an event about a `GitBranch` each time they change
-the remote:
+the remote. A branch without a parent takes no check results, so
+`check-conflicts` also records an event when it finds that such a branch
+diverged:
 
 | Reason | From | When |
 | --- | --- | --- |
 | `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch, or `check-conflicts` pushed `resolve/BRANCH` for a diverged branch without a parent. |
+| `ResolvingDivergence` | `check-conflicts` | `check-conflicts` found a diverged branch without a parent, and pushed nothing. A `Warning` says what keeps the check from resolving the divergence. A `Normal` event says that the check waits for `resolve/BRANCH` to land, or that nothing is left to resolve. |
 | `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 
@@ -1313,12 +1316,15 @@ instead, with an empty commit on top that says why. The empty commit has the
 check's fix to `resolve/BRANCH`, including the `maxAutomatedCommits` of the
 rule that matches it. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
 merge gate, like any other branch. `check-base` merges `BRANCH` into it, or
-the conflicts check resolves that merge when it conflicts. The check waits
-while `resolve/BRANCH` holds work that hasn't landed, and passes once
-`BRANCH` contains the external repository's head, or when the external
-repository's head contains `BRANCH`'s head, because the mirror then moves
-`BRANCH` to it. To let the check resolve a diverged `main`, add the check to
-`main`'s policy, and give `resolve/main` the parent `main` with a rule:
+the conflicts check resolves that merge when it conflicts. `BRANCH` takes no
+check results, because it has no parent, so the check reports on it with
+`ResolvingDivergence` [events](#events) instead. The check waits while
+`resolve/BRANCH` holds work that hasn't landed, and reports that nothing is
+left to resolve once `BRANCH` contains the external repository's head, or
+when the external repository's head contains `BRANCH`'s head, because the
+mirror then moves `BRANCH` to it. To let the check resolve a diverged
+`main`, add the check to `main`'s policy, and give `resolve/main` the parent
+`main` with a rule:
 
 ```yaml
   branches:
@@ -1347,9 +1353,10 @@ that the rewind removed, the parent stays diverged until the external
 repository's head contains the parent's head again. If the parent rewound
 in git-k8s instead, replay the external repository's commits onto the
 parent's head, and push the result to the external repository with a lease
-on its head. The check fails, and says which of these to do, until either
-side's head keeps every change that the other side made. Then it passes,
-because the mirror moves the other side to that head.
+on its head. Until either side's head keeps every change that the other
+side made, the check records a `Warning` event that says which of these to
+do. Then it reports that nothing is left to resolve, because the mirror
+moves the other side to that head.
 
 Checks push with the repository's credentials, which can push to any
 branch. The mirror lets a check update only a branch that has a parent, so
@@ -1491,13 +1498,13 @@ to the core program's results endpoint:
    installs each check with the service account `check-NAME` in the
    namespace `check-NAME`, which maps to the check `NAME`. If that check
    isn't `CHECK`, the core program rejects the result.
-4. The core program also rejects a result for a check that the branch's
-   merge policy doesn't list, a result that isn't for the branch's current
-   commits, a `Pending` result, and a result over its size limits. The
-   `checks` package sends an `Error` result instead of one with a state or
-   size that the core program rejects, with a message that says why. The
-   core program drops fields that it doesn't know, as the API server does
-   by default.
+4. The core program also rejects a result for a branch without a parent, a
+   result for a check that the branch's merge policy doesn't list, a result
+   that isn't for the branch's current commits, a `Pending` result, and a
+   result over its size limits. The `checks` package sends an `Error`
+   result instead of one with a state or size that the core program
+   rejects, with a message that says why. The core program drops fields
+   that it doesn't know, as the API server does by default.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
@@ -1535,17 +1542,18 @@ and changes to `status.checks` by service accounts other than the core
 program's, even when a role grants them status access. See
 [Install](#install).
 
-`check-gotest` runs tests in Pods, and `check-review` runs agents in Pods, so
-`generate` grants both permission to create, patch, and delete Pods in every
-namespace. The `git-k8s-check-pods` admission policy keeps those Pods out of
-the `git-k8s` and `check-*` namespaces, and makes them run as their
-namespace's `default` service account, which the core program doesn't map to
-a check. Without that policy, either check can run a Pod as another check's
-service account and mount a `git-k8s-results` token that the core program
-accepts as that check's. It can also run a Pod as the core program's service
-account, which writes every check's result. Anyone else who can create Pods
-in a check's namespace or in the `git-k8s` namespace can do the same,
-because the policy covers only checks.
+`check-gotest` runs tests in Pods, and `check-review` and `check-conflicts`
+run agents in Pods, so `generate` grants all three permission to create,
+patch, and delete Pods in every namespace. The `git-k8s-check-pods`
+admission policy keeps those Pods out of the `git-k8s` and `check-*`
+namespaces, and makes them run as their namespace's `default` service
+account, which the core program doesn't map to a check. Without that policy,
+any of them can run a Pod as another check's service account and mount a
+`git-k8s-results` token that the core program accepts as that check's. It
+can also run a Pod as the core program's service account, which writes
+every check's result. Anyone else who can create Pods in a check's
+namespace or in the `git-k8s` namespace can do the same, because the policy
+covers only checks.
 
 The tokens have the audience `git-k8s-results`, so a token sent to the core
 program can't call the API server, and a token for the API server can't send
@@ -1554,12 +1562,12 @@ can read the traffic between Pods can copy a token and send that check's
 results until the token expires, within an hour, or the check's Pod is
 deleted.
 
-`check-base`, `check-gofmt`, `check-review`, and `check-risk` fetch or push,
-so they can also request tokens for their own service accounts, to send to
-Octo STS. As [Security](#security) describes, whoever holds a token for one
-of them can then create a `git-k8s-results` token for it that isn't bound to
-its Pod and lasts as long as the API server allows, and send that check's
-results with the token.
+`check-base`, `check-conflicts`, `check-gofmt`, `check-review`, and
+`check-risk` fetch or push, so they can also request tokens for their own
+service accounts, to send to Octo STS. As [Security](#security) describes,
+whoever holds a token for one of them can then create a `git-k8s-results`
+token for it that isn't bound to its Pod and lasts as long as the API
+server allows, and send that check's results with the token.
 
 kube doesn't fence writes, and the results controller writes all of
 `status.checks` at once, so a replica that hasn't noticed that its leader

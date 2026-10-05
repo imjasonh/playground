@@ -164,6 +164,43 @@ func TestSendsNothingWhenNotListed(t *testing.T) {
 	}
 }
 
+type viewFunc func(context.Context, *view) error
+
+func (f viewFunc) Reconcile(ctx context.Context, v *view) error { return f(ctx, v) }
+
+// A check that passes its own reconciler to ForReconciler sends the result
+// that the reconciler sets, and nothing when the reconciler clears it, as
+// check-conflicts does on a branch without a parent.
+func TestSendsTheResultOfItsOwnReconciler(t *testing.T) {
+	e := &endpoint{}
+	f := newSendFixture(t, e)
+	check := f.r
+	f.r = viewFunc(func(ctx context.Context, v *view) error {
+		if v.Spec.Parent == "" {
+			v.Status.Checks.Result = nil
+			return nil
+		}
+		return check.Reconcile(ctx, v)
+	})
+	f.verdict = Pass("clean")
+	if err := f.runAndSend(f.context(t)); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.requests(); len(got) != 1 || got[0].result.State != gitk8s.Passed {
+		t.Fatalf("received %+v, want the check's Passed result", got)
+	}
+
+	t.Log("The reconciler clears the result of a branch without a parent, so the check sends nothing for it.")
+	f.view.Spec.Parent, f.view.Spec.ParentHead = "", ""
+	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Running}
+	if err := f.runAndSend(f.context(t)); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.requests(); len(got) != 1 || f.runs != 1 {
+		t.Errorf("%d runs sent %d results, want 1 run and 1 result", f.runs, len(got))
+	}
+}
+
 // A check that stopped setting FilesOnly runs again on its last result, and
 // sends the new one even if only filesOnly changed, so that the old result
 // stops counting for squashed and rebased commits.

@@ -31,7 +31,8 @@
 // resolve/BRANCH instead, and that branch lands through the gate like any
 // other. When a side of such a branch rewound, resolve/BRANCH would bring
 // back the commits that the rewind removed, so the check pushes nothing,
-// and says how to resolve the divergence.
+// and says how to resolve the divergence. A branch without a parent takes
+// no check results, so the check reports on it with events instead.
 package main
 
 import (
@@ -69,9 +70,8 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-// observed is a GitBranch's divergence. It's a type of its own because kube
-// applies the status of Branch, and the check mustn't write
-// status.diverged.
+// observed is a GitBranch's divergence. It's a type of its own because a
+// check's view of a GitBranch holds only the spec and the check's result.
 type observed struct {
 	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
 	Status      struct {
@@ -418,7 +418,7 @@ const resolvePrefix = "resolve/"
 
 // reconciler runs the conflicts check on branches with a parent, and
 // resolves the divergence of branches without one, which the checks
-// framework doesn't run checks on.
+// framework doesn't run checks on, and which take no check results.
 type reconciler struct {
 	check kube.Reconciler[Branch]
 	cfg   *checks.Config
@@ -439,6 +439,7 @@ func (r *reconciler) Reconcile(ctx context.Context, b *Branch) error {
 	if b.Spec.Parent != "" {
 		return r.check.Reconcile(ctx, b)
 	}
+	b.Status.Checks.Result = nil
 	return r.resolveParent(ctx, b)
 }
 
@@ -449,11 +450,13 @@ func (r *reconciler) Reconcile(ctx context.Context, b *Branch) error {
 // merged into it, by the base check, or by the conflicts check when the
 // merge conflicts. When a side rewound since the sides last synced,
 // parentRewind decides instead.
+//
+// The branch takes no check results, so resolveParent records each outcome
+// other than a push as a ResolvingDivergence event instead: a Warning when
+// it fails, and Normal when it waits or passes.
 func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
-	result := &b.Status.Checks.Result
 	d := divergence(ctx, &b.ObjectMeta)
 	if d == nil {
-		*result = nil
 		return nil
 	}
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
@@ -466,19 +469,19 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		policy = rule.Merge.Check("conflicts")
 	}
 	if policy == nil {
-		*result = nil
 		return nil
 	}
 	branch, child := b.Spec.Branch, resolvePrefix+b.Spec.Branch
-	res := &gitk8s.CheckResult{Commit: b.Spec.Head, Outputs: map[string]string{"branch": child}}
-	recordDivergence(d, res.Outputs)
-	*result = res
 	report := func(state, format string, args ...any) error {
-		res.State, res.Message = state, shorten(fmt.Sprintf(format, args...))
+		eventType := kube.Normal
+		if state == gitk8s.Failed {
+			eventType = kube.Warning
+		}
+		kube.Eventf(ctx, eventType, "ResolvingDivergence", format, args...)
 		return nil
 	}
 	fail := func(err error) error {
-		res.State, res.Message = gitk8s.Error, shorten(err.Error())
+		kube.Eventf(ctx, kube.Warning, "ResolvingDivergence", "%s", err)
 		return err
 	}
 	if err := validate(d, branch); err != nil {
@@ -524,7 +527,6 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 			return fail(err)
 		}
 		if rewound != "" {
-			res.Outputs["rewound"] = rewound
 			state, msg, err := parentRewind(ctx, local, branch, head, d, rewound)
 			if err != nil {
 				return fail(err)
@@ -601,9 +603,8 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		return fail(fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(commit), child, err))
 	}
 	slog.Info("pushed a branch that resolves a divergence", "namespace", b.Namespace, "branch", child, "parent", branch, "commit", gitk8s.Short(commit))
-	pushed := fmt.Sprintf("pushed %s to %s, which lands on %s with the external repository's head %s", gitk8s.Short(commit), child, branch, gitk8s.Short(d.Commit))
-	kube.Eventf(ctx, kube.Normal, "PushedFix", "%s", pushed)
-	return report(gitk8s.Running, "%s", pushed)
+	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s, which lands on %s with the external repository's head %s", gitk8s.Short(commit), child, branch, gitk8s.Short(d.Commit))
+	return nil
 }
 
 // maxMessage leaves room in the checks framework's 1,024-byte messages for
@@ -647,5 +648,5 @@ func main() {
 	runner.AddFlags(flag.CommandLine)
 	flag.CommandLine.Lookup("agent-image").Usage = "image that runs the agent, built from agent/runner/Dockerfile; without it, the check resolves only what git can"
 	flag.Var(&union, "union", "comma-separated path patterns, in the gitattributes format, whose conflicts git resolves by keeping the lines of both sides")
-	kube.Main(kube.For[Branch](newReconciler(cfg), kube.Named("check-conflicts")))
+	kube.Main(checks.ForReconciler[Branch](check, cfg, newReconciler(cfg)))
 }
