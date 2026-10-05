@@ -221,15 +221,18 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 	return err
 }
 
-// deleteBranch deletes a branch that just landed if the merge policy says
-// to, with a lease so that a branch that moved since it landed stays.
+// deleteBranch deletes a branch that just landed from the mirror's copy if
+// the merge policy says to, with a lease, so that a branch that moved since
+// it landed stays. The repository controller pushes the deletion to the
+// external repository, and the GitRepository's Synced condition reports the
+// external repository's reason if it refuses, as for a protected branch.
 func deleteBranch(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) error {
 	if !b.Spec.Merge.DeleteMergedBranches {
 		return nil
 	}
 	err := local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + b.Spec.Branch, Old: b.Spec.Head})
 	if errors.Is(err, git.ErrRejected) {
-		slog.Info("not deleting a branch that moved after it merged", "namespace", b.Namespace, "branch", b.Spec.Branch)
+		slog.Info("not deleting a merged branch that moved or was deleted since it landed", "namespace", b.Namespace, "branch", b.Spec.Branch, "err", err)
 		return nil
 	}
 	if err != nil {
