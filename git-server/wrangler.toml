@@ -11,10 +11,10 @@ name = "git"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-06-16"
 
-# Build the wasm Worker from Rust. The script wraps `worker-build --release`
-# (pinned to 0.8.x for worker 0.8 / wasm-bindgen 0.2.125 — see Cargo.toml) and
-# stashes any package.json created by wrangler-action so wasm-bindgen does not
-# embed it (worker-build still cannot parse the nested dependencies object).
+# Build the wasm Worker from Rust. The script installs the worker-build that
+# matches the locked `worker` crate, runs `worker-build --release`, and stashes
+# any package.json created by wrangler-action so wasm-bindgen does not embed it
+# (worker-build still cannot parse the nested dependencies object).
 [build]
 command = "bash scripts/worker-build.sh"
 
@@ -67,6 +67,9 @@ invocation_logs = true
 [observability.traces]
 enabled = true
 head_sampling_rate = 1
+
+[observability.issues]
+enabled = true
 
 # Optional (uncomment on Business/Enterprise zones, whose request-body cap is
 # higher than the Free/Pro 100 MB): the server-side per-push size limit, in

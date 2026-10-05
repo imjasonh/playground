@@ -490,7 +490,9 @@ mod tests {
             let pack = build_pack(&[(ObjType::Blob, b"x".to_vec())]);
             let id = install_pack(&store, "r", &pack).await;
             store.reset_op_counts();
-            let _ = Odb::open(&store, "r", &[id.clone()]).await.unwrap();
+            let _ = Odb::open(&store, "r", std::slice::from_ref(&id))
+                .await
+                .unwrap();
             assert_eq!(store.op_counts().class_b, 1, "cold open");
             store.reset_op_counts();
             let _ = Odb::open(&store, "r", &[id]).await.unwrap();

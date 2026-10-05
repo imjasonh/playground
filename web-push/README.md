@@ -110,8 +110,8 @@ known-answer test.
 
 ### Minimum supported Rust
 
-The crate targets Rust **1.88**, pinned in `rust-toolchain.toml` so local builds
-and CI use the same toolchain (and the `wasm32-unknown-unknown` target).
+The crate targets the Rust version pinned in `rust-toolchain.toml`, so local
+builds and CI use the same toolchain (and the `wasm32-unknown-unknown` target).
 `Cargo.lock` is committed for reproducible builds.
 
 ## Deploying
@@ -139,9 +139,8 @@ secrets on the account.
 To deploy or iterate manually (equivalent steps, done by hand):
 
 ```bash
-# Install tooling. worker-build is version-locked with the `worker` crate
-# (0.8.x) and bundles wasm-bindgen CLI 0.2.125 — match the pin in Cargo.toml.
-cargo +stable install worker-build@0.8.5
+# Install tooling. The wrangler.toml [build] command installs the worker-build
+# release that matches the locked `worker` crate.
 npm install -g wrangler
 
 # Provision KV + VAPID once, then deploy

@@ -29,18 +29,14 @@ worker = "0.8"
 # Used to consume the upstream response as a stream so the size cap can abort
 # before the whole body is buffered in memory.
 futures = "0.3"
-# Deploy pin: worker-build 0.8.x is version-locked with worker 0.8.x and
-# bundles wasm-bindgen CLI 0.2.125. The library schema must match that CLI
-# exactly — bump this in lock-step with worker-build in wrangler.toml.
-wasm-bindgen = "=0.2.125"
 
 [profile.release]
 opt-level = "s"
 lto = true
-# worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
-# custom section (for `reference-types` / externref catch wrappers).
-# `strip = true` (= "symbols") drops that section and fails bindgen with
-# "externref table required for catch wrappers" (workers-rs#1014).
+# wasm-bindgen needs the wasm `target_features` custom section (for
+# `reference-types` / externref catch wrappers). `strip = true` (= "symbols")
+# drops that section and fails bindgen with "externref table required for
+# catch wrappers" (workers-rs#1014).
 strip = "debuginfo"
 
 [lints.rust]
