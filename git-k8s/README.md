@@ -1162,8 +1162,9 @@ head:
   messages. It skips a commit whose replay changes nothing, such as one whose
   change the external repository's head already has. The check pushes to the
   side that didn't rewind, so the result can change commits to resolve
-  conflicts. If a commit can't be replayed by itself, such as a merge, or a
-  commit whose replay conflicts, or if the replays don't have every change
+  conflicts. If a commit can't be replayed by itself, such as a merge, a
+  commit whose replay conflicts, or a commit with an author that git refuses
+  or whose date git would change, or if the replays don't have every change
   that both sides made, the check replays the branch's whole change since
   `base` as one commit on top of the external repository's head instead.
   Git and the agent resolve that commit's conflicts as they resolve a

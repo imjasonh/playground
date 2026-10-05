@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -14,6 +15,29 @@ type Signature struct {
 	// Date is a time in git's raw format: seconds since the Unix epoch and
 	// a time zone offset, such as "1700000000 -0800".
 	Date string
+}
+
+// rawDate matches the author dates that git copies into a new commit
+// unchanged. Each is seconds since the Unix epoch and a time zone of four
+// digits with fewer than 60 minutes, such as "1700000000 -0800".
+var rawDate = regexp.MustCompile(`^[0-9]+ [+-][0-9]{2}[0-5][0-9]$`)
+
+// CopyProblem says why a new commit can't take s as its author, such as
+// "has no name", or returns "". git refuses a name with only spaces,
+// control characters, and ,:;<>"\', and Log and Replay get "" for a name
+// that git can't parse. git refuses or changes a date that rawDate doesn't
+// match, such as "", a time zone with five digits, or one with 60 or more
+// minutes.
+func (s Signature) CopyProblem() string {
+	switch {
+	case s.Name == "":
+		return "has no name"
+	case !strings.ContainsFunc(s.Name, func(r rune) bool { return r > ' ' && !strings.ContainsRune(`,:;<>"\'`, r) }):
+		return fmt.Sprintf("has no name that git accepts, only %q", s.Name)
+	case !rawDate.MatchString(s.Date):
+		return "has no date that git can copy"
+	}
+	return ""
 }
 
 // LogEntry is one commit that Log lists.
@@ -278,33 +302,40 @@ func (r *Repo) PatchIDs(ctx context.Context, commits []string) (map[string]strin
 // Replay commits tree with parent as its only parent, and with the author,
 // author date, and message of commit, which it replays. The committer is
 // id, at the later of commit's and parent's committer times, so the same
-// arguments always make the same commit.
-func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Identity) (string, error) {
+// arguments always make the same commit. When a new commit can't take
+// commit's author, Replay makes no commit and returns the problem that
+// Signature.CopyProblem gives.
+func (r *Repo) Replay(ctx context.Context, commit, parent, tree string, id Identity) (sha, problem string, err error) {
 	out, err := r.run(ctx, "show", "-s", "--date=raw", "--format=format:%an%x00%ae%x00%ad%x00%ct%x00%B", "--end-of-options", commit)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	f := strings.SplitN(string(out), "\x00", 5)
 	if len(f) != 5 {
-		return "", fmt.Errorf("git show: unexpected output %q", out)
+		return "", "", fmt.Errorf("git show: unexpected output %q", out)
+	}
+	author := Signature{Name: f[0], Email: f[1], Date: f[2]}
+	if problem = author.CopyProblem(); problem != "" {
+		return "", problem, nil
 	}
 	ct, err := strconv.ParseInt(f[3], 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("git show: unexpected committer time %q", f[3])
+		return "", "", fmt.Errorf("git show: unexpected committer time %q", f[3])
 	}
 	out, err = r.run(ctx, "show", "-s", "--format=format:%ct", "--end-of-options", parent)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	pct, err := strconv.ParseInt(string(out), 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("git show: unexpected committer time %q", out)
+		return "", "", fmt.Errorf("git show: unexpected committer time %q", out)
 	}
-	return r.WriteCommit(ctx, NewCommit{
+	sha, err = r.WriteCommit(ctx, NewCommit{
 		Tree:      tree,
 		Parents:   []string{parent},
-		Author:    Signature{Name: f[0], Email: f[1], Date: f[2]},
+		Author:    author,
 		Committer: Signature{Name: id.Name, Email: id.Email, Date: fmt.Sprintf("%d +0000", max(ct, pct))},
 		Message:   f[4],
 	})
+	return sha, "", err
 }

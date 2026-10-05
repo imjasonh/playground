@@ -421,12 +421,12 @@ func TestReplay(t *testing.T) {
 		t.Fatalf("Merge = %v, %v", conflicts, err)
 	}
 
-	replay, err := repo.Replay(ctx, original, onto, tree, id)
-	if err != nil {
-		t.Fatal(err)
+	replay, problem, err := repo.Replay(ctx, original, onto, tree, id)
+	if err != nil || problem != "" {
+		t.Fatalf("Replay = %s, %q, %v", replay, problem, err)
 	}
-	if again, err := repo.Replay(ctx, original, onto, tree, id); err != nil || again != replay {
-		t.Errorf("Replay again = %s, %v; want the same commit %s", again, err, replay)
+	if again, problem, err := repo.Replay(ctx, original, onto, tree, id); err != nil || problem != "" || again != replay {
+		t.Errorf("Replay again = %s, %q, %v; want the same commit %s", again, problem, err, replay)
 	}
 	if err := repo.Push(ctx, srv.Remote("app"), git.RefUpdate{Ref: "refs/heads/replay", New: replay}); err != nil {
 		t.Fatal(err)
@@ -441,6 +441,43 @@ func TestReplay(t *testing.T) {
 	}
 	if firstLine(authored) != "Ann Author <ann@example.com> 1577930645 +0100" {
 		t.Errorf("original's author = %q", firstLine(authored))
+	}
+}
+
+func TestReplayAuthorsThatGitRefuses(t *testing.T) {
+	for name, tt := range map[string]struct{ author, problem string }{
+		"no name":                    {"<ana@example.com> 1700000000 -0800", "has no name"},
+		"NUL in the author":          {"Ana\x00Lima <ana@example.com> 1700000000 -0800", "has no name"},
+		"only punctuation":           {",;: <ana@example.com> 1700000000 -0800", `has no name that git accepts, only ",;:"`},
+		"no date":                    {"Ana Lima <ana@example.com>", "has no date that git can copy"},
+		"time zone with five digits": {"Ana Lima <ana@example.com> 1700000000 +12345", "has no date that git can copy"},
+		"time zone with 99 minutes":  {"Ana Lima <ana@example.com> 1700000000 +9999", "has no date that git can copy"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			w := srv.NewWork(t, "app")
+			base := w.Commit("base")
+			w.Write("a.txt", "a\n")
+			w.Git("add", "-A")
+			raw := fmt.Sprintf("tree %s\nparent %s\nauthor %s\ncommitter Test Author <author@example.com> 1767323045 +0000\n\nAdd a\n", w.Git("write-tree"), base, tt.author)
+			path := filepath.Join(t.TempDir(), "commit")
+			if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			odd := w.Git("hash-object", "-t", "commit", "--literally", "-w", path)
+			w.Git("reset", "--quiet", "--hard", odd)
+			w.Push("main")
+			ctx := t.Context()
+			repo := fetched(t, srv, "main")
+			c, err := repo.Commit(ctx, odd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replay, problem, err := repo.Replay(ctx, odd, base, c.Tree, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"})
+			if err != nil || replay != "" || problem != tt.problem {
+				t.Errorf("Replay = %q, %q, %v; want no commit and the problem %q", replay, problem, err, tt.problem)
+			}
+		})
 	}
 }
 
