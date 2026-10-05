@@ -369,6 +369,7 @@ func TestManifestsVolume(t *testing.T) {
 	}
 	for _, s := range []string{
 		`"spec":{"replicas":1,"strategy":{"type":"Recreate"},"selector"`,
+		`"shareProcessNamespace":true`,
 		`"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"data","mountPath":"/var/lib/eventlog"}]`,
 		`"volumes":[{"name":"tmp","emptyDir":{}},{"name":"data","persistentVolumeClaim":{"claimName":"eventlog"}}]`,
