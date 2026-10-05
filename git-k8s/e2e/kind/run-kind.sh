@@ -1319,6 +1319,17 @@ AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
 CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
+# The agent Pods fetch from the mirror with tokens that kube binds to them,
+# so check-review needs no repository credentials.
+review_sa=system:serviceaccount:check-review:check-review
+if k auth can-i get secrets -n "${NS}" --as="${review_sa}"; then
+  echo "check-review can read Secrets" >&2
+  exit 1
+fi
+if k -n check-review auth can-i create serviceaccounts/check-review --subresource=token --as="${review_sa}"; then
+  echo "check-review can create tokens for its service account" >&2
+  exit 1
+fi
 REVIEWED="${WORKDIR}/reviewed"
 git init -q -b main "${REVIEWED}"
 rv() {
@@ -1399,7 +1410,7 @@ review d/marked message
 echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
-echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "check-review can't read Secrets or create tokens. The agent's fix, from a Pod that fetched from the mirror, landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"

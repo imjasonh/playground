@@ -122,9 +122,10 @@ namespace `team` is at `http://git-k8s.git-k8s.svc/team/app.git`. The
 Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens. If you install the core program under another name or
 in another namespace, set `-mirror` to the mirror's base URL on `check-base`,
-`check-gofmt`, `check-risk`, and `check-gotest`. Also set the core program's
-`-mirror-namespace` and `-mirror-labels` to its own namespace and labels,
-which it uses in the [test Pods' NetworkPolicy](#sandboxed-checks).
+`check-gofmt`, `check-risk`, `check-gotest`, and `check-review`. Also set the
+core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
+and labels, which it uses in the [test Pods' NetworkPolicy](#sandboxed-checks),
+and change the [agent Pods' NetworkPolicy](#agentic-checks) to match.
 
 ### Sync with the external repository
 
@@ -194,7 +195,7 @@ do:
 | --- | --- | --- |
 | The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME` | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
 | A controller that starts branches, which the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
-| A test Pod of `check-gotest`, with a token that's bound to the Pod | The repository of the branch that the Pod tests, while the `gotest` check's result names the Pod and the Pod is `Pending` | Nothing |
+| A Pod of a check, such as a test Pod of `check-gotest` or an agent Pod of `check-review`, with a token that's bound to the Pod | The repository of the branch that the Pod works on, while the check's `Running` result on that branch names the Pod, the branch's merge policy lists the check, and the Pod is `Pending` | Nothing |
 
 The merge controller is part of the core program and updates the copy
 directly, so it's the only thing that moves a parent.
@@ -245,24 +246,32 @@ account. Anyone who can create Pods or tokens in that namespace can act as
 the controller, which can fetch every repository, so only cluster
 administrators should control the namespace.
 
-A test Pod's token is bound to the Pod, so it stops working when the Pod is
-deleted, and it expires after 10 minutes. The mirror lets the Pod fetch only
-while a `Running` result of the `gotest` check on one of the repository's
-branches names the Pod in its `pod` output, so `check-gotest` records the
-Pod's name before it starts the Pod. Because the name is known before the
-Pod exists, another program that creates Pods in the namespace could create
-a Pod with that name first. So the mirror also checks the Pod itself: it
-reads the name and UID of the token's Pod from the TokenReview, gets that
-Pod, and refuses the request unless the Pod has that UID, has kube's label
-`kube.imjasonh.github.io/controller=check-gotest`, which kube puts on the
-Pods that `check-gotest` declares, isn't being deleted, and is `Pending`. A
-Pod is `Pending` while its init containers run, and only the init container
-that fetches the branch has the token, so the token stops working when the
-tests start. That's why `generate` lets the core program get Pods. The
-third admission policy in `config/policy.yaml` keeps other checks from
-setting the label, as [Install](#install) describes. Any other program that
-can create Pods in the namespace can set it, so the label means
-`check-gotest` only as long as those programs don't set it.
+A check Pod's token is bound to the Pod, so it stops working when the Pod
+is deleted, and it expires after 10 minutes. The mirror lets the Pod fetch
+only while a `Running` result of the check on one of the repository's
+branches names the Pod in its `pod` output, and the branch's merge policy
+lists the check. `check-gotest` records the Pod's name before it starts the
+Pod. The `agent` package names an agent Pod in the reconcile that declares
+it, and kube writes that result right after it creates the Pod. An agent
+Pod that fetches before the mirror sees the result fails to fetch, and the
+check tries again in a new Pod, as after any failed fetch.
+
+A Pod's name is known before the Pod exists, so another program that
+creates Pods in the namespace could create a Pod with that name first. So
+the mirror also checks the Pod itself, which is why `generate` lets the
+core program get Pods. It reads the name and UID of the token's Pod from
+the TokenReview, gets that Pod, and refuses the request unless the Pod has
+that UID, has kube's label `kube.imjasonh.github.io/controller=check-NAME`
+for a check `NAME` whose result names the Pod, isn't being deleted, and is
+`Pending`. kube puts that label on the Pods that `check-NAME` declares. Only
+the init container that fetches the branch has the token. A Pod is
+`Pending` while its init containers run, so a test Pod's token stops
+working when the tests start. An agent Pod's agent runs in a later init
+container, without the token. The third admission policy in
+`config/policy.yaml` keeps each check from setting another check's label,
+as [Install](#install) describes. Any other program that can create Pods in
+the namespace can set it, so the label means the check only as long as
+those programs don't set it.
 
 ### Divergence
 
@@ -442,8 +451,9 @@ repository, it reads the Secret that `secretRef` names, and sends its
 `username` and `password` keys with HTTP basic auth, or `git` as the
 username if the Secret has none. For a repository on GitHub, it can use a
 token from Octo STS instead, as [GitHub repositories](#github-repositories)
-describes. Checks and test Pods reach only the mirror, with their own
-tokens, so `generate` doesn't let them read Secrets or request tokens. The
+describes. Checks and their test Pods and agent Pods fetch only from the
+mirror, with their own tokens, so `generate` doesn't let the checks read
+Secrets or request tokens. The
 [`credentials`](credentials/credentials.go) package holds the only code that
 reads Secrets or gets tokens for external repositories, and is where other
 ways to authenticate belong.
@@ -516,8 +526,9 @@ repository on GitHub Enterprise Server needs a `secretRef`.
 
 `gitIdentity` replaces `secretRef`, so set only one of the two. Only the
 mirror uses tokens for it, to fetch from and push to the repository. The
-checks and `check-gotest`'s test Pods fetch from the mirror, so `gotest`
-works for a private repository too. The core program publishes
+checks, `check-gotest`'s test Pods, and `check-review`'s agent Pods fetch
+from the mirror, so `gotest` and `review` work for a private repository
+too. The core program publishes
 [check runs](#check-runs) with tokens for `checkRunsIdentity`, and publishes
 none without it. The URL must have the form `https://github.com/OWNER/REPO`,
 with or without `.git`.
@@ -988,13 +999,16 @@ reports `Running` until the Pod finishes. The `agent` package declares the
 Pods, so other checks can run agents the same way. Each Pod has three
 containers:
 
-- The `prepare` init container fetches the head with the repository's
-  credentials. It writes the head's files to a directory that isn't a git
-  repository, without the `.cursorignore` files that Cursor reads to hide
-  files from the agent. Next to it, it writes the change from the merge
-  base, the paths that the change touches, and the commit log. It also
-  copies the Cursor API key from a Secret to a memory volume. It's the only
-  container that gets the credentials or reads a Secret.
+- The `prepare` init container fetches the head from the mirror, with a
+  token for the mirror that's bound to the Pod, as
+  [Who can fetch and push](#who-can-fetch-and-push) describes. The token
+  reaches git through the container's environment, not the repository's
+  configuration. The container writes the head's files to a directory that
+  isn't a git repository, without the `.cursorignore` files that Cursor
+  reads to hide files from the agent. Next to it, it writes the change from
+  the merge base, the paths that the change touches, and the commit log. It
+  also copies the Cursor API key from a Secret to a memory volume. It's the
+  only container that gets the token or reads a Secret.
 - The `agent` init container runs the runner in `agent/runner`, a small
   Node program. The runner reads the key and deletes its file, then runs the
   agent in the directory of the head's files. The agent is offered only
@@ -1057,8 +1071,9 @@ and two costs in cents when the SDK reports them. `costCents` is the model
 token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
 what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
 0 for usage that a Cursor plan includes. `runs` counts the agent runs on
-the branch, and `pod` names the run's Pod. `state` holds what the check
-needs to follow the run.
+the branch, and `pod` names the run's Pod. `state`, `base`, and `url` hold
+what the check needs to follow the run, such as the URL that its Pods fetch
+from, so the check keeps the run's Pod while it can't reach the mirror.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
@@ -1174,11 +1189,12 @@ kubectl get pods --all-namespaces -l git-k8s.imjasonh.com/agent=review
 | `-source-size` | `2Gi` | Most disk space that each of an agent Pod's repository, files, and input can use |
 | `-storage-request` | `1Gi` | Ephemeral storage that each agent Pod requests, which the scheduler reserves on the Pod's node |
 
-Agent Pods need to reach the repository and Cursor's API over HTTPS, and
-the check needs to reach the agent Pods on TCP port 8080. A NetworkPolicy
-matches IP addresses, not host names, so by itself it can't limit agent
-Pods to Cursor's API. This policy allows the agent Pods DNS, HTTPS to any
-address, and requests from `check-review`:
+Agent Pods need to reach the mirror on TCP port 8081 of the core program's
+Pods and Cursor's API over HTTPS, and the check needs to reach the agent
+Pods on TCP port 8080. A NetworkPolicy matches IP addresses, not host names,
+so by itself it can't limit agent Pods to Cursor's API. This policy allows
+the agent Pods DNS, the mirror, HTTPS to any address, and requests from
+`check-review`:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -1204,17 +1220,27 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: git-k8s
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: git-k8s
+      ports:
+        - port: 8081
     - ports:
         - port: 443
 ```
 
-If the repository's URL has another port, allow that port too. To allow
-only Cursor's API and the repository, use a CNI plugin with DNS-based
+To allow only Cursor's API over HTTPS, use a CNI plugin with DNS-based
 rules, such as Cilium's `toFQDNs`.
 
 To write an agentic check, give an `agent.Runner` the check's name, register
-its flags, and call its `Run` method with a task. With a view type like the
-one in [Write a check](#write-a-check), but with the key `docs`, this is a
+its flags, and call its `Run` method with a task. Set the check's `Remote`
+to `mirror.Remote`, because `Run` gives the agent Pods the URL of the
+check's remote. With a view type like the one in
+[Write a check](#write-a-check), but with the key `docs`, this is a
 complete check:
 
 ```go
@@ -1230,7 +1256,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 
 func main() {
 	runner.AddFlags(flag.CommandLine)
-	checks.Main[Branch](checks.Check{Name: "docs", Remote: credentials.Remote, Run: run})
+	checks.Main[Branch](checks.Check{Name: "docs", Remote: mirror.Remote, Run: run})
 }
 ```
 
@@ -1242,13 +1268,17 @@ another kind of commit from them with `agent.ApplyFiles`.
 ### Run agents from a controller
 
 A controller, or a check that needs a `Job` that `Run` doesn't build, runs
-an agent with `Runner.RunJob`. Its `Job` names the repository, the
-Secret with the repository's credentials, the commits to check out, the
-task, the agent's tools, and the runner's image if it isn't
-`-agent-image`. `Run` builds a `Job` from a check's branch, so both start
-the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
-For a check, the `Runner`'s name must be the check's name, and the `Job`'s
-namespace must opt in to check Pods, as [Install](#install) describes.
+an agent with `Runner.RunJob`. Its `Job` names the repository, the commits
+to check out, the task, the agent's tools, and the runner's image if it
+isn't `-agent-image`. The mirror accepts a token that's bound to a Pod only
+from a check's Pod, so a controller's `Job` names the repository's URL and
+the Secret with the repository's credentials. A check's `Job` sets `Mirror`
+and the URL of the check's remote instead, and the check's `Running` result
+must name the run's Pod in its `pod` output, as `Run` does. `Run` builds a
+`Job` from a check's branch, so both start the same Pods, within the same
+`-max-pods` and `-max-runs-per-day` limits. For a check, the `Runner`'s
+name must be the check's name, and the `Job`'s namespace must opt in to
+check Pods, as [Install](#install) describes.
 
 Call `RunJob` on each reconcile with the `JobState` that the last call
 left. The state names the run's Pod and counts the runs that `RunJob`
@@ -1616,7 +1646,8 @@ namespace's Secrets, ConfigMaps, and PersistentVolumeClaims, run as its
 `default` service account, and mount tokens for that account with any
 audience. A service that accepts those tokens must check which Pod a token is
 bound to, and that the Pod has the label of the check that the service
-trusts. The mirror checks both for test Pods, as
+trusts. The mirror checks both for every check's Pods, such as
+`check-gotest`'s test Pods and `check-review`'s agent Pods, as
 [Who can fetch and push](#who-can-fetch-and-push) describes.
 
 The fourth checks who approves, as [Approve a branch](#approve-a-branch)
@@ -1663,6 +1694,10 @@ a change:
   can't change NetworkPolicies. The init container's token can fetch only
   the branch's repository, only before the test container starts, and stops
   working when the Pod is deleted.
+- An agent Pod's `agent` and `result` containers have no token and no git
+  credentials. Its `prepare` init container's token can fetch only the
+  branch's repository, and stops working when the Pod is deleted or the
+  agent finishes.
 - Tokens for the mirror have their own audience, `git-k8s-mirror`, so the
   API server doesn't accept them, and the mirror doesn't accept tokens for
   the API server. The kubelet renews each check's token, which lasts an
@@ -1679,13 +1714,14 @@ and decides what lands.
 Kubernetes RBAC is the trust boundary. Anyone who can write a
 `GitRepository` in a namespace chooses the external repository, and the
 Secret or Octo STS identities that the core program uses there. Of the
-service accounts, only `check-gotest`'s can write the `gotest` result, but
-people who can write `GitBranch` status in a namespace can write it too.
+service accounts, only `check-NAME`'s can write the `NAME` result, but
+people who can write `GitBranch` status in a namespace can write any result.
 Such a result can name a Pod in that namespace for the mirror to let fetch
-the repository, but the mirror accepts only a `Pending` Pod with
-`check-gotest`'s controller label. Making such a Pod takes the right to
-create Pods in that namespace, which already lets a Pod mount the
-repository's Secret. Anyone who can create tokens for a check's service
+the repository, but the mirror accepts only a `Pending` Pod with the
+controller label of a check whose result names it, on a branch whose merge
+policy lists the check. Making such a Pod takes the right to create Pods in
+that namespace, which already lets a Pod mount the repository's Secret.
+Anyone who can create tokens for a check's service
 account can push as that check, and anyone who can create tokens for a
 controller's service account can do what its `-branch-prefix` allows.
 
@@ -1749,10 +1785,12 @@ those lines when the check can push.
 - Nothing resolves a divergence or a merge conflict by itself.
 - The test Pods' NetworkPolicy works only with a network plugin that
   enforces it.
-- `check-review` reads repository credentials, so `generate` lets it read
-  every Secret, including the Cursor API key, which only its agent Pods use.
-  Like `check-gotest`, it can also create Pods in every namespace. Installing
-  it with `generate -watch-namespace` limits both to one namespace.
+- `check-gotest` and `check-review` can create Pods in every namespace that
+  opts in to check Pods. Installing them with `generate -watch-namespace`
+  limits that to one namespace.
+- Agent Pods that a controller starts with `RunJob` fetch from the external
+  repository with its credentials, because the mirror accepts a token that's
+  bound to a Pod only from a check's Pod.
 - Squash and rebase landings make unsigned commits, even from signed ones.
   With a check that requires signed commits, use `FastForward`.
 

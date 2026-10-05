@@ -122,12 +122,17 @@ func TestMayFetchAndPush(t *testing.T) {
 	m := &Mirror{Prefixes: []Prefix{{Namespace: "git-k8s-deps", ServiceAccount: "git-k8s-deps", Prefix: "deps/"}}}
 	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: rulesRepo.Spec}
 	repo.Namespace = "team"
+	// branch returns a branch in team whose merge policy lists check, and
+	// whose result for check names pod.
 	branch := func(name, repository, check, state, pod string) *gitk8s.GitBranch {
 		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: repository})}
 		b.Namespace = "team"
+		b.Spec.Merge = &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: check}}}
 		b.Status.Checks = map[string]gitk8s.CheckResult{check: {State: state, Outputs: map[string]string{"pod": pod}}}
 		return b
 	}
+	unlisted := branch("app-review-unlisted", "app", "review", gitk8s.Running, "review-unlisted")
+	unlisted.Spec.Merge.Checks[0].Name = gitk8s.GoTestCheck
 	// testPod returns a Pod in team with the UID uid-NAME, and with kube's
 	// controller label set to controller, unless controller is "".
 	testPod := func(name, controller, phase string) *k8s.Pod {
@@ -164,7 +169,15 @@ func TestMayFetchAndPush(t *testing.T) {
 		testPod("gotest-unknown", gitk8s.GoTestController, "Unknown"),
 		branch("app-starting", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-starting"),
 		branch("app-other-check", "app", "other", gitk8s.Running, "gotest-other-check"),
-		testPod("gotest-other-check", gitk8s.GoTestController, "Pending"))
+		testPod("gotest-other-check", gitk8s.GoTestController, "Pending"),
+		branch("app-review", "app", "review", gitk8s.Running, "review-1"),
+		testPod("review-1", "check-review", "Pending"),
+		branch("app-review-running", "app", "review", gitk8s.Running, "review-running"),
+		testPod("review-running", "check-review", "Running"),
+		branch("app-review-squatted", "app", "review", gitk8s.Running, "review-squatted"),
+		testPod("review-squatted", gitk8s.GoTestController, "Pending"),
+		unlisted,
+		testPod("review-unlisted", "check-review", "Pending"))
 	pod := func(ns, name string) caller.Caller {
 		return caller.Caller{Namespace: ns, Name: "default", Pod: name, PodUID: "uid-" + name}
 	}
@@ -198,6 +211,10 @@ func TestMayFetchAndPush(t *testing.T) {
 		{name: "a Pod in an unknown phase", who: pod("team", "gotest-unknown")},
 		{name: "a Pod that doesn't exist yet", who: pod("team", "gotest-starting")},
 		{name: "a Pod that another check's result names", who: pod("team", "gotest-other-check")},
+		{name: "the review check's Pending Pod", who: pod("team", "review-1"), mayFetch: true},
+		{name: "a review Pod whose agent has finished", who: pod("team", "review-running")},
+		{name: "a Pod with the gotest label that the review result names", who: pod("team", "review-squatted")},
+		{name: "a Pod that a result names on a branch whose policy doesn't list the check", who: pod("team", "review-unlisted")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := m.mayFetch(ctx, tc.who, r)

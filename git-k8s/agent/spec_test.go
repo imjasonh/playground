@@ -5,6 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,7 +42,7 @@ func TestStartsALockedDownPod(t *testing.T) {
 
 	secrets := map[string][]string{}
 	mounts := map[string][]string{}
-	var task, uid, port string
+	var task, uid, port, remote, tokenFile string
 	for _, c := range slices.Concat(spec.InitContainers, spec.Containers) {
 		sc := c.SecurityContext
 		if *sc.AllowPrivilegeEscalation || !*sc.ReadOnlyRootFilesystem || !slices.Equal(sc.Capabilities.Drop, []string{"ALL"}) || c.Resources.Limits["memory"] == "" ||
@@ -60,6 +64,10 @@ func TestStartsALockedDownPod(t *testing.T) {
 				task = e.Value
 			case e.Name == "PORT":
 				port = e.Value
+			case e.Name == "URL":
+				remote = e.Value
+			case e.Name == "TOKEN_FILE":
+				tokenFile = c.Name + " " + e.Value
 			}
 		}
 		for _, m := range c.VolumeMounts {
@@ -70,11 +78,14 @@ func TestStartsALockedDownPod(t *testing.T) {
 			mounts[c.Name] = append(mounts[c.Name], mount)
 		}
 	}
-	if want := map[string][]string{"prepare": {"app-creds/username?", "app-creds/password", "cursor-api-key/api-key?"}}; !reflect.DeepEqual(secrets, want) {
-		t.Errorf("Secrets = %v, want only the prepare container to read them, and the username and the API key to be optional", secrets)
+	if want := map[string][]string{"prepare": {"cursor-api-key/api-key?"}}; !reflect.DeepEqual(secrets, want) {
+		t.Errorf("Secrets = %v, want only the prepare container to read one, the optional API key", secrets)
+	}
+	if remote != f.srv.Remote("app").URL || tokenFile != "prepare /var/run/secrets/git-k8s/token" {
+		t.Errorf("the Pod fetches %q with token file %q, want the check's remote, with the prepare container's token for the mirror", remote, tokenFile)
 	}
 	want := map[string][]string{
-		"prepare": {"git:/git", "src:/src", "input:/input", "key:/key"},
+		"prepare": {"git:/git", "src:/src", "input:/input", "key:/key", "mirror-token:/var/run/secrets/git-k8s:ro"},
 		"agent":   {"src:/src:ro", "input:/input:ro", "key:/key", "result:/result", "tmp:/tmp"},
 		"result":  {"result:/result:ro"},
 	}
@@ -88,11 +99,22 @@ func TestStartsALockedDownPod(t *testing.T) {
 		t.Errorf("key volume = %+v, want it in memory", v)
 	}
 	sizes := map[string]string{}
+	var token *ServiceAccountToken
 	for _, v := range spec.Volumes {
-		sizes[v.Name] = v.EmptyDir.SizeLimit
+		switch {
+		case v.EmptyDir != nil:
+			sizes[v.Name] = v.EmptyDir.SizeLimit
+		case v.Name == "mirror-token" && v.Projected != nil && len(v.Projected.Sources) == 1:
+			token = v.Projected.Sources[0].ServiceAccountToken
+		default:
+			t.Errorf("volume %+v is neither an emptyDir nor the token for the mirror", v)
+		}
 	}
 	if want := map[string]string{"git": "2Gi", "src": "2Gi", "input": "2Gi", "key": "1Mi", "result": "64Mi", "tmp": "1Gi"}; !maps.Equal(sizes, want) {
 		t.Errorf("volume sizes = %v, want %v", sizes, want)
+	}
+	if token == nil || token.Audience != gitk8s.MirrorAudience || token.ExpirationSeconds == nil || *token.ExpirationSeconds != 600 || token.Path != "token" {
+		t.Errorf("token = %+v, want a token for the mirror that expires in 10 minutes", token)
 	}
 	for _, c := range spec.InitContainers {
 		if got := c.Resources.Limits["ephemeral-storage"]; got != "7488Mi" {
@@ -230,13 +252,20 @@ func TestMatchesTheRunner(t *testing.T) {
 	}
 }
 
-// runPrepare runs the script of c, a prepare container, with c's
+// runPrepare runs the script of p's prepare container, with the container's
 // environment and its volumes in a temporary directory, which it returns.
-// secrets holds the Secret keys that c reads. Like the kubelet, it leaves
-// out an optional key that secrets doesn't hold. The script's PATH also
-// holds commands, the paths of more programs.
-func runPrepare(t *testing.T, c Container, secrets map[string][]byte, commands ...string) (string, string, error) {
+// secrets holds the Secret keys that the container reads. Like the kubelet,
+// it leaves out an optional key that secrets doesn't hold, and writes token
+// to each service account token in a projected volume that the container
+// mounts. The script's PATH also holds commands, the paths of more
+// programs.
+func runPrepare(t *testing.T, p *Pod, secrets map[string][]byte, token string, commands ...string) (string, string, error) {
 	t.Helper()
+	c := p.Spec.InitContainers[0]
+	projected := map[string]*Projected{}
+	for _, v := range p.Spec.Volumes {
+		projected[v.Name] = v.Projected
+	}
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("sh isn't installed")
@@ -257,6 +286,16 @@ func runPrepare(t *testing.T, c Container, secrets map[string][]byte, commands .
 	for _, m := range c.VolumeMounts {
 		if err := os.MkdirAll(dir+m.MountPath, 0o755); err != nil {
 			t.Fatal(err)
+		}
+		if v := projected[m.Name]; v != nil {
+			for _, s := range v.Sources {
+				if s.ServiceAccountToken == nil {
+					continue
+				}
+				if err := os.WriteFile(filepath.Join(dir+m.MountPath, s.ServiceAccountToken.Path), []byte(token), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 		}
 	}
 	if c.Command[0] != "sh" {
@@ -316,11 +355,40 @@ func TestPrepareScript(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prepare := func(t *testing.T, head, base string) (string, string, error) {
-		r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
+	// The mirror serves the copy at /default/app.git to requests with the
+	// Pod's token, and here passes them on to srv with its password.
+	const token = "token-bound-to-the-pod"
+	upstream, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	mirror := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		path, ok := strings.CutPrefix(r.URL.Path, "/default/")
+		switch {
+		case r.Header.Get("Authorization") != "Bearer "+token:
+			http.Error(rw, "send the Pod's token", http.StatusUnauthorized)
+		case !ok:
+			http.NotFound(rw, r)
+		default:
+			r.URL.Path = "/" + path
+			r.SetBasicAuth(srv.Username, srv.Password)
+			proxy.ServeHTTP(rw, r)
+		}
+	}))
+	t.Cleanup(mirror.Close)
+
+	r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
+	// checkPod is the Pod of a check's job, which fetches from remote.
+	checkPod := func(remote, head, base string) *Pod {
 		spec := &gitk8s.GitBranchSpec{Branch: "c/x", Parent: "main", Head: head}
-		in := &checks.Input{Meta: &kube.ObjectMeta{Name: "app-c-x"}, Spec: spec, Repository: &gitk8s.Repository{Spec: repo.Spec}}
-		return runPrepare(t, r.jobPod(r.checkJob(in, Task{}, base), 1).Spec.InitContainers[0], data, evil)
+		in := &checks.Input{Meta: &kube.ObjectMeta{Name: "app-c-x"}, Spec: spec}
+		job := r.checkJob(in, Task{}, base)
+		job.URL = remote
+		return r.jobPod(job, 1)
+	}
+	prepare := func(t *testing.T, head, base string) (string, string, error) {
+		return runPrepare(t, checkPod(mirror.URL+"/default/app.git", head, base), data, token, evil)
 	}
 	read := func(path string) string {
 		t.Helper()
@@ -366,6 +434,14 @@ func TestPrepareScript(t *testing.T) {
 	if fi, err := os.Stat(dir + "/key/api-key"); err != nil || fi.Mode().Perm() != 0o600 || read(dir+"/key/api-key") != "key-123" {
 		t.Errorf("api-key = %v, %v; want key-123 that only its owner can read", fi, err)
 	}
+	if config := read(dir + "/git/repo/.git/config"); strings.Contains(config, token) {
+		t.Errorf("the repository's config holds the token:\n%s", config)
+	}
+
+	t.Log("The mirror refuses a token that isn't the Pod's.")
+	if _, out, err = runPrepare(t, checkPod(mirror.URL+"/default/app.git", head, base), data, "another-token", evil); err == nil {
+		t.Errorf("prepare succeeded with a token that the mirror refuses\n%s", out)
+	}
 
 	t.Log("Without a merge base, the change is every file.")
 	dir, out, err = prepare(t, head, "")
@@ -384,6 +460,19 @@ func TestPrepareScript(t *testing.T) {
 	}
 	if got := read(dir + "/key/api-key"); got != "" {
 		t.Errorf("api-key = %q, want it empty", got)
+	}
+
+	t.Log("A controller's job fetches the repository with its credentials.")
+	job := &Job{
+		Name: "app-c-x", Namespace: "default", URL: repo.Spec.URL, Credentials: repo.Spec.SecretRef,
+		Checkout: Checkout{Branch: "c/x", Head: head, Parent: "main", Base: base}, Task: Task{Instructions: "Review the change."},
+	}
+	dir, out, err = runPrepare(t, r.jobPod(job, 1), data, "", evil)
+	if err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	if got := read(dir + "/src/dir/b.txt"); got != "b\n" {
+		t.Errorf("dir/b.txt = %q", got)
 	}
 
 	t.Log("A branch that moved fails with status 3.")
@@ -409,8 +498,7 @@ func TestPrepareScript(t *testing.T) {
 		{"file://" + t.TempDir(), "transport 'file' not allowed"},
 		{t.TempDir(), "transport 'file' not allowed"},
 	} {
-		repo.Spec.URL = tc.url
-		if _, out, err = prepare(t, head, base); err == nil || !strings.Contains(out, tc.want) {
+		if _, out, err = runPrepare(t, checkPod(tc.url, head, base), data, token, evil); err == nil || !strings.Contains(out, tc.want) {
 			t.Errorf("prepare with URL %q = %v\n%s; want %q", tc.url, err, out, tc.want)
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {

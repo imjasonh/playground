@@ -27,6 +27,13 @@ const (
 	resultFile = "/result/result.json"
 )
 
+// tokenDir holds the prepare container's token for the mirror, which
+// expires after tokenSeconds.
+const (
+	tokenDir     = "/var/run/secrets/git-k8s"
+	tokenSeconds = 600
+)
+
 // podSlack is how much longer than the agent's timeout a Pod can run. It
 // covers pulling images, preparing the source, and waiting for the check
 // to fetch the result.
@@ -100,8 +107,15 @@ const movedStatus = 3
 // The repository goes in a directory that git init creates, because git
 // refuses to use one that another user owns, such as the root of an
 // emptyDir volume. The attributes file makes the files match their
-// blobs, so the runner can tell which ones the agent changed.
+// blobs, so the runner can tell which ones the agent changed. With
+// TOKEN_FILE, the script sends the token in that file, which has no
+// newline, as a bearer token from git's environment.
 const prepareScript = `set -eu
+if [ -n "${TOKEN_FILE:-}" ]; then
+  token=
+  IFS= read -r token <"$TOKEN_FILE" || [ -n "$token" ]
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="Authorization: Bearer $token"
+fi
 git init -q "$REPO"
 cd "$REPO"
 if [ -n "${GIT_PASSWORD:-}" ]; then
@@ -179,11 +193,34 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh"},
 	}
 	agentTask, _ := json.Marshal(task)
+	source := cmp.Or(r.SourceSize, defaultSourceSize)
+	volumes := []Volume{
+		{Name: "git", EmptyDir: &EmptyDir{SizeLimit: source}},
+		{Name: "src", EmptyDir: &EmptyDir{SizeLimit: source}},
+		{Name: "input", EmptyDir: &EmptyDir{SizeLimit: source}},
+		{Name: "key", EmptyDir: &EmptyDir{Medium: "Memory", SizeLimit: "1Mi"}},
+		{Name: "result", EmptyDir: &EmptyDir{SizeLimit: formatSize(resultSize)}},
+		{Name: "tmp", EmptyDir: &EmptyDir{SizeLimit: formatSize(tmpSize)}},
+	}
+	prepareMounts := []VolumeMount{
+		{Name: "git", MountPath: "/git"},
+		{Name: "src", MountPath: "/src"},
+		{Name: "input", MountPath: inputDir},
+		{Name: "key", MountPath: "/key"},
+	}
 	if ref := job.Credentials; ref != nil {
 		prepareEnv = append(prepareEnv,
 			EnvVar{Name: "GIT_USERNAME", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "username", Optional: &yes}}},
 			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
 		)
+	}
+	if job.Mirror {
+		seconds := int64(tokenSeconds)
+		volumes = append(volumes, Volume{Name: "mirror-token", Projected: &Projected{Sources: []VolumeProjection{{
+			ServiceAccountToken: &ServiceAccountToken{Audience: gitk8s.MirrorAudience, ExpirationSeconds: &seconds, Path: "token"},
+		}}}})
+		prepareMounts = append(prepareMounts, VolumeMount{Name: "mirror-token", MountPath: tokenDir, ReadOnly: true})
+		prepareEnv = append(prepareEnv, EnvVar{Name: "TOKEN_FILE", Value: tokenDir + "/token"})
 	}
 	// Without the Secret, the runner fails a cursor backend's run and says to
 	// check the Secret, instead of the Pod waiting for it until its deadline.
@@ -191,7 +228,6 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key", Optional: &yes}}})
 	port := r.resultPort()
 	image := cmp.Or(job.Image, r.Image)
-	source := cmp.Or(r.SourceSize, defaultSourceSize)
 	request := k8s.Quantity(cmp.Or(r.StorageRequest, defaultStorageRequest))
 	// The kubelet evicts a Pod whose volumes and logs use more than the
 	// Pod's ephemeral-storage limit, which is its init containers' limit, so
@@ -212,26 +248,14 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			FSGroup:        &user,
 			SeccompProfile: &SeccompProfile{Type: "RuntimeDefault"},
 		},
-		Volumes: []Volume{
-			{Name: "git", EmptyDir: &EmptyDir{SizeLimit: source}},
-			{Name: "src", EmptyDir: &EmptyDir{SizeLimit: source}},
-			{Name: "input", EmptyDir: &EmptyDir{SizeLimit: source}},
-			{Name: "key", EmptyDir: &EmptyDir{Medium: "Memory", SizeLimit: "1Mi"}},
-			{Name: "result", EmptyDir: &EmptyDir{SizeLimit: formatSize(resultSize)}},
-			{Name: "tmp", EmptyDir: &EmptyDir{SizeLimit: formatSize(tmpSize)}},
-		},
+		Volumes: volumes,
 		InitContainers: []Container{{
-			Name:            "prepare",
-			Image:           r.GitImage,
-			ImagePullPolicy: "IfNotPresent",
-			Command:         []string{"sh", "-c", prepareScript},
-			Env:             prepareEnv,
-			VolumeMounts: []VolumeMount{
-				{Name: "git", MountPath: "/git"},
-				{Name: "src", MountPath: "/src"},
-				{Name: "input", MountPath: inputDir},
-				{Name: "key", MountPath: "/key"},
-			},
+			Name:                     "prepare",
+			Image:                    r.GitImage,
+			ImagePullPolicy:          "IfNotPresent",
+			Command:                  []string{"sh", "-c", prepareScript},
+			Env:                      prepareEnv,
+			VolumeMounts:             prepareMounts,
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{

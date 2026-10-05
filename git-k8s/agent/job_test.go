@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -568,6 +569,8 @@ func TestValidatesJobs(t *testing.T) {
 			j.Checkout.Base = sha
 			j.Tools = []string{"read", "delete"}
 		},
+		func(j *Job) { j.Credentials = &gitk8s.SecretRef{Name: "app-creds"} },
+		func(j *Job) { j.Mirror = true },
 	} {
 		if err := job(change).validate(); err != nil {
 			t.Errorf("validate = %v, want a valid job", err)
@@ -580,6 +583,7 @@ func TestValidatesJobs(t *testing.T) {
 	}{
 		{"no name", func(j *Job) { j.Name = "" }, "needs a name, a namespace, a repository URL, and a branch"},
 		{"no branch", func(j *Job) { j.Checkout.Branch = "" }, "needs a name, a namespace, a repository URL, and a branch"},
+		{"mirror and credentials", func(j *Job) { j.Mirror, j.Credentials = true, &gitk8s.SecretRef{Name: "app-creds"} }, "fetches from the mirror can't have credentials"},
 		{"short head", func(j *Job) { j.Checkout.Head = "aaaaaaa" }, "must be commit SHAs"},
 		{"option head", func(j *Job) { j.Checkout.Head = "--" + sha[2:] }, "must be commit SHAs"},
 		{"uppercase base", func(j *Job) { j.Checkout.Base = strings.ToUpper(strings.Repeat("b", 40)) }, "must be commit SHAs"},

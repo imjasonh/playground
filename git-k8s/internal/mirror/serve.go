@@ -24,7 +24,7 @@ var pathRE = regexp.MustCompile(`^/([a-z0-9]([-a-z0-9]*[a-z0-9])?)/([a-z0-9]([-a
 // gitk8s.MirrorPath. Every request needs a service account token whose
 // audience is gitk8s.MirrorAudience as a bearer token. Run it with
 // kube.Serve: it reads GitRepository and GitBranch objects, checks tokens
-// with kube.ReviewToken, gets the Pod that a test Pod's token is bound to
+// with kube.ReviewToken, gets the Pod that a check Pod's token is bound to
 // with kube.Fetch, and calls kube.Trigger for a GitRepository after a push.
 func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A request may take this long to arrive, and its response as long

@@ -19,7 +19,6 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
@@ -56,6 +55,8 @@ type fixture struct {
 	poll string
 	// lastErr is what kube.LastError returns, if it isn't nil.
 	lastErr error
+	// remoteErr is what the check's remote returns, if it isn't nil.
+	remoteErr error
 
 	mu   sync.Mutex
 	body []byte
@@ -122,11 +123,11 @@ func (f *fixture) serve(body []byte, uid string) string {
 
 func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	f.t.Helper()
-	repo, secret := f.srv.Repository("app")
+	repo, _ := f.srv.Repository("app")
 	if f.poll != "" {
 		repo.Spec.PollInterval = f.poll
 	}
-	world := []any{repo, secret}
+	world := []any{repo}
 	for _, p := range pods {
 		world = append(world, p)
 	}
@@ -134,7 +135,11 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 		world = append(world, f.lastErr)
 	}
 	ctx, rec := kube.Fake(f.t.Context(), f.b, world...)
-	check := checks.Check{Name: "review", Remote: credentials.Remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	remote := f.srv.RemoteFor
+	if err := f.remoteErr; err != nil {
+		remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) { return git.Remote{}, err }
+	}
+	check := checks.Check{Name: "review", Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		v, res := f.r.Run(ctx, in, f.task)
 		f.result = res
 		return v, nil
@@ -623,6 +628,32 @@ func TestReportsWhatAFailedRunUsed(t *testing.T) {
 	}
 	if !maps.Equal(res.Outputs, want) {
 		t.Errorf("outputs = %v, want %v", res.Outputs, want)
+	}
+}
+
+func TestFollowsARunWithoutReachingTheRepository(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	if got, want := f.state().Outputs["url"], f.srv.Remote("app").URL; got != want {
+		t.Fatalf("url output = %q, want %q", got, want)
+	}
+
+	t.Log("While the check can't reach the repository, such as while its token for the mirror can't be read, it follows the run with the URL in its outputs, so kube keeps the Pod.")
+	f.remoteErr = errors.New("getting a token for the mirror: the token expired")
+	rec := f.reconcile(p)
+	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name {
+		t.Fatalf("owned Pods = %d, want only Pod %s", len(pods), p.Name)
+	}
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["pod"] != p.Name || res.Outputs["url"] != f.srv.Remote("app").URL {
+		t.Fatalf("result = %+v, want Running in Pod %s", res, p.Name)
+	}
+
+	t.Log("A run that hasn't started waits until the check can reach the repository.")
+	g := newFixture(t, "")
+	g.remoteErr = f.remoteErr
+	rec = g.reconcile()
+	if res := g.state(); len(kube.Owned[Pod](rec)) != 0 || res.State != gitk8s.Running || !strings.Contains(res.Message, "reaching the repository: getting a token for the mirror") {
+		t.Fatalf("result = %+v, want Running without a Pod until the check reaches the repository", res)
 	}
 }
 

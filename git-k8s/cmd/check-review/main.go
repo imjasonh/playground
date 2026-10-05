@@ -15,7 +15,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
+	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -42,7 +42,7 @@ var runner = &agent.Runner{Name: "review"}
 
 // The agent reads the subjects of the branch's commits, so the check isn't
 // FilesOnly.
-var check = checks.Check{Name: "review", Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "review", Remote: mirror.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	v, _ := runner.Run(ctx, in, agent.Task{Instructions: instructions, Edit: in.Policy.MayPush})
