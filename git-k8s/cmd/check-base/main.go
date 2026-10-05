@@ -33,7 +33,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-var check = checks.Check{Name: "base", UsesParent: true, Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "base", UsesParent: true, FilesOnly: true, Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)

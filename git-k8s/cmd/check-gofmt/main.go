@@ -38,7 +38,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-var check = checks.Check{Name: "gofmt", Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "gofmt", FilesOnly: true, Remote: credentials.Remote, Run: run}
 
 // formatted holds the SHAs of blobs that are already formatted. A blob's
 // formatting never changes, so later runs skip reading it.
