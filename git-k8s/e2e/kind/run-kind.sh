@@ -412,14 +412,17 @@ GOFMT_TOKEN="$(mirror_token check-gofmt check-gofmt)"
 # remote_head prints a branch's commit in repository $2, or app, in the
 # external repository.
 remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
-# mirror_head prints a ref's commit in the mirror's copy of app.
-mirror_head() { mg "${DEPS_TOKEN}" ls-remote "${MIRROR}/app.git" "$1" | cut -f1; }
-# synced_condition prints a field of app's ExternalSynced condition, which
-# says whether the external repository has every change in the mirror.
+# mirror_head prints a ref's commit in the mirror's copy of repository $2,
+# or app.
+mirror_head() { mg "${DEPS_TOKEN}" ls-remote "${MIRROR}/${2:-app}.git" "$1" | cut -f1; }
+# synced_condition prints a field of the ExternalSynced condition of
+# repository $2, or app, which says whether the external repository has
+# every change in the mirror.
 synced_condition() {
-  k -n "${NS}" get gitrepository app -o jsonpath="{.status.conditions[?(@.type==\"ExternalSynced\")].$1}"
+  k -n "${NS}" get gitrepository "${2:-app}" -o jsonpath="{.status.conditions[?(@.type==\"ExternalSynced\")].$1}"
 }
-in_sync() { [[ "$(synced_condition reason)" == InSync ]]; }
+# in_sync reports whether repository $1, or app, is in sync.
+in_sync() { [[ "$(synced_condition reason "${1:-app}")" == InSync ]]; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
@@ -939,7 +942,7 @@ echo "A push to the git server reached the mirror."
 # A wrong password keeps the mirror from reaching the git server while both
 # sides change.
 k -n "${NS}" patch secret app-creds --type=merge -p '{"stringData":{"password":"wrong"}}'
-sync_failed() { [[ "$(synced_condition reason)" == SyncFailed ]]; }
+sync_failed() { [[ "$(synced_condition reason "${1:-app}")" == SyncFailed ]]; }
 eventually 90 sync_failed
 synced_condition message
 echo
@@ -1990,6 +1993,86 @@ echo
 [[ "$(remote_head main conflicted)" == "${moved}" ]]
 eventually 60 no_agent_pods
 echo "The base check reported the notes.txt conflict on c/refused, and the agent refused to resolve it, so c/refused stays as it is."
+echo "::endgroup::"
+
+echo "::group::The conflicts check resolves a divergence and a rewind through the mirror"
+# c/refused can't land, so it stays while both sides change it. As with
+# deps/x, a wrong password keeps the mirror from the git server while a
+# commit goes to each side. The commit in the mirror comes from the base
+# check, which main's merge policy lets push to c/refused, and the commit in
+# the git server comes from a person.
+forward_mirror
+BASE_TOKEN="$(mirror_token check-base check-base)"
+# diverge_refused pushes commit $1 to c/refused in the mirror, and forces
+# commit $2 onto c/refused in the git server, while the mirror can't reach
+# the git server.
+diverge_refused() {
+  k -n "${NS}" patch secret app-creds --type=merge -p '{"stringData":{"password":"wrong"}}'
+  eventually 90 sync_failed conflicted
+  cf -c "http.extraHeader=Authorization: Bearer ${BASE_TOKEN}" push -q --end-of-options "${MIRROR}/conflicted.git" "$1:refs/heads/c/refused"
+  cf push -q --force --end-of-options "${HOST_URL}/conflicted.git" "$2:refs/heads/c/refused"
+  k -n "${NS}" patch secret app-creds --type=merge -p "{\"stringData\":{\"password\":\"${PASSWORD}\"}}"
+}
+# refused_resolved reports whether the mirror and the git server have
+# c/refused at the same commit, which is neither $1 nor $2, with no
+# divergence left, and fetches that commit into FETCH_HEAD.
+refused_resolved() {
+  local tip
+  tip="$(remote_head c/refused conflicted)"
+  [[ -n "${tip}" && "${tip}" != "$1" && "${tip}" != "$2" &&
+    "$(mirror_head refs/heads/c/refused conflicted)" == "${tip}" &&
+    -z "$(k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.diverged}')" ]] &&
+    in_sync conflicted &&
+    cf fetch -q --end-of-options "${HOST_URL}/conflicted.git" c/refused
+}
+
+cf switch -q -C in-mirror --end-of-options "${refused}"
+printf 'fix\n' >"${CONFLICTED}/fix.txt"
+cf add -A
+cf commit -qm "Add a fix" -m "Git-K8s-Fixer: base"
+base_fix="$(cf rev-parse --verify --end-of-options HEAD)"
+cf switch -q -C in-external --end-of-options "${refused}"
+printf 'person\n' >"${CONFLICTED}/person.txt"
+cf add -A
+cf commit -qm "Add a person's change"
+person="$(cf rev-parse --verify --end-of-options HEAD)"
+diverge_refused "${base_fix}" "${person}"
+eventually 300 refused_resolved "${base_fix}" "${person}"
+merge_message="$(cf log -1 --format=%B --end-of-options FETCH_HEAD)"
+echo "${merge_message}"
+[[ "$(head -n 1 <<<"${merge_message}")" == "Merge the external repository's c/refused into c/refused" ]]
+grep -qx 'Git-K8s-Fixer: conflicts' <<<"${merge_message}"
+[[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "${base_fix} ${person}" ]]
+signed_by_git_k8s FETCH_HEAD cf
+[[ "$(remote_head main conflicted)" == "${moved}" ]]
+merged="$(cf rev-parse --verify --end-of-options FETCH_HEAD)"
+echo "c/refused changed both in the mirror and in the git server, and the conflicts check pushed a signed merge of the git server's head to the mirror, which pushed it to the git server."
+
+# The git server rewinds c/refused, which drops the merge and the commits
+# under it, while the base check adds a commit in the mirror. A merge of
+# the two heads would bring back the dropped commits, so the check replays
+# the mirror's commit onto the git server's head instead.
+cf switch -q -C in-mirror --end-of-options "${merged}"
+printf 'fix\n' >"${CONFLICTED}/fix2.txt"
+cf add -A
+cf commit -qm "Add another fix" -m "Git-K8s-Fixer: base"
+base_fix2="$(cf rev-parse --verify --end-of-options HEAD)"
+cf switch -q -C in-external --end-of-options "${refused}"
+printf 'rewritten\n' >"${CONFLICTED}/rewritten.txt"
+cf add -A
+cf commit -qm "Rewrite the branch"
+rewritten="$(cf rev-parse --verify --end-of-options HEAD)"
+diverge_refused "${base_fix2}" "${rewritten}"
+eventually 300 refused_resolved "${base_fix2}" "${rewritten}"
+cf log -1 --format='%B%nauthor %an <%ae>, committer %cn <%ce>' --end-of-options FETCH_HEAD
+[[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "${rewritten}" ]]
+[[ "$(cf log -1 --format='%an %ae%n%B' --end-of-options FETCH_HEAD)" == "$(cf log -1 --format='%an %ae%n%B' --end-of-options "${base_fix2}")" ]]
+signed_by_git_k8s FETCH_HEAD cf
+[[ "$(cf show --end-of-options FETCH_HEAD:fix2.txt)" == fix && "$(cf show --end-of-options FETCH_HEAD:rewritten.txt)" == rewritten ]]
+[[ -z "$(cf ls-tree --name-only --end-of-options FETCH_HEAD fix.txt person.txt)" ]]
+[[ "$(remote_head main conflicted)" == "${moved}" ]]
+eventually 60 no_agent_pods
+echo "The git server rewound c/refused while the base check added a commit in the mirror, and the conflicts check replayed that commit onto the git server's head, so the commits that the rewind dropped stayed out."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
