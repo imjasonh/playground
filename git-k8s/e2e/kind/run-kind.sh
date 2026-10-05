@@ -152,7 +152,7 @@ GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  >"${WORKDIR}/gitserver.log" 2>&1 &
+  -kube-context="${CONTEXT}" >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -180,10 +180,11 @@ crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; 
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch.
-install git-k8s
+install git-k8s -- "-fake-github=${CLUSTER_URL}/github"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 for program in "${CHECKS[@]}"; do
   case "${program}" in
+    check-base | check-gofmt) install "${program}" -- "-fake-github=${CLUSTER_URL}/github" ;;
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
       install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
@@ -234,7 +235,8 @@ spec:
           - name: approval
         when: >-
           checks.base.passed && checks.gofmt.passed &&
-          (checks.risk.outputs.level == "low" || checks.approval.passed)
+          (checks.risk.outputs.level == "low" ||
+          (checks.approval.passed && checks.approval.outputs.approver == "alice"))
         deleteMergedBranches: true
     - match: c/**
       parent: main
@@ -347,11 +349,85 @@ sleep 6
 [[ "$(remote_head main)" == "${main_before}" ]]
 field '{.status.conditions[?(@.type=="Merged")].message}'
 echo
-k -n "${NS}" annotate gitbranch "$(branch_object c/auth)" "git-k8s.imjasonh.com/approve=${AUTH}"
+echo "c/auth waits for approval with a high risk rating."
+echo "::endgroup::"
+
+echo "::group::Approvals name the approver"
+k -n "${NS}" create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding alice --role=approver --user=alice
+k -n "${NS}" create role editor --verb=get,patch --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding bob --role=editor --user=bob
+roles_bound() {
+  k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as=alice >/dev/null &&
+    k -n "${NS}" auth can-i patch gitbranches.git-k8s.imjasonh.com --as=bob >/dev/null
+}
+eventually 30 roles_bound
+APPROVE=git-k8s.imjasonh.com/approve
+APPROVED_BY=git-k8s.imjasonh.com/approved-by
+annotate() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/auth)" "$@"; }
+# rejected passes if the API server rejects a server-side dry run of a
+# command with a message that contains $1.
+rejected() {
+  local want=$1 status=0
+  shift
+  "$@" --dry-run=server >"${WORKDIR}/rejected.txt" 2>&1 || status=$?
+  cat "${WORKDIR}/rejected.txt"
+  [[ ${status} -ne 0 ]] && grep -qF -- "${want}" "${WORKDIR}/rejected.txt"
+}
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
+# The gate wants alice's approval, so another approver's doesn't land c/auth.
+admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
+annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
+approved_by() {
+  [[ "$(field '{.status.checks.approval.state}')" == Passed ]] &&
+    [[ "$(field '{.status.checks.approval.outputs.approver}')" == "$1" ]]
+}
+eventually 60 approved_by "${admin}"
+gate_saw_approval() { field '{.status.conditions[?(@.type=="Merged")].message}' | grep -q 'approval Passed'; }
+eventually 60 gate_saw_approval
+[[ "$(field '{.status.state}')" == WaitingForChecks ]]
+[[ "$(remote_head main)" == "${main_before}" ]]
+rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
+rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
+echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
+echo "::endgroup::"
+
+echo "::group::A MutatingAdmissionPolicy sets approved-by"
+k apply -f "${ROOT}/config/approved-by.yaml"
+approved_by_after() {
+  annotate "$@" -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}'
+}
+# Without the mutating policy, removing approve alone is rejected.
+mutating_policy_ready() { approved_by_after "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
+eventually 60 mutating_policy_ready
+revoked="$(approved_by_after "${APPROVE}-")"
+# The mutating policy keeps an approved-by that the request changes.
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+approved="$(approved_by_after "${APPROVE}=${AUTH}")"
+echo "approved-by was '${revoked}' after ${admin} removed approve, and '${approved}' after they set it"
+[[ -z "${revoked}" && "${approved}" == "${admin}" ]]
+echo "${admin} removed and set approve alone, and the policy did the same to approved-by."
+echo "::endgroup::"
+
+echo "::group::Another approver can take over an approval"
+# Admission sees only the object that a request produces, so setting approve
+# to the commit that it already names changes nothing.
+unchanged="$(approved_by_after --as=alice "${APPROVE}=${AUTH}" --dry-run=server)"
+echo "approved-by is '${unchanged}' after alice set approve to the commit that it names"
+[[ "${unchanged}" == "${admin}" ]]
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "take over an approval by setting it to alice" annotate --as=alice "${APPROVED_BY}=bob"
+[[ "$(remote_head main)" == "${main_before}" ]]
+annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
 auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
 eventually 120 auth_landed
 eventually 60 branch_gone c/auth
-echo "c/auth waited with a high risk rating until it was approved, then landed."
+echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
 echo "::endgroup::"
 
 echo "::group::Two branches from the same commit both land"
@@ -413,29 +489,165 @@ patch_branch() {
     -H "Authorization: Bearer $1" -H 'Content-Type: application/merge-patch+json' \
     --data "$2" "${branch_url}"
 }
-approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-core_token="$(k -n git-k8s create token git-k8s)"
 # check-gotest owns Pods, so generate lets it patch GitBranch objects, and
-# only the policy stops it.
-gotest_token="$(k -n check-gotest create token check-gotest)"
-for bearer in "${gotest_token}" "${core_token}"; do
-  code="$(patch_branch "${bearer}" "${approve}")"
+# only the policies stop it. Even a controller with the approve verb that
+# names itself in approved-by can't approve.
+k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
+k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
+  --serviceaccount=check-gotest:check-gotest --serviceaccount=git-k8s:git-k8s
+controllers_can_approve() {
+  for sa in check-gotest git-k8s; do
+    k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as="system:serviceaccount:${sa}:${sa}" >/dev/null || return 1
+  done
+}
+eventually 30 controllers_can_approve
+# cant_approve passes if the API server rejects the service account $1's
+# patch $2 because controllers can't approve.
+cant_approve() {
+  local code
+  code="$(patch_branch "$(k -n "$1" create token "$1")" "$2")"
   cat "${WORKDIR}/patch.json"
   echo
-  [[ "${code}" == 422 ]]
-  grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+  [[ "${code}" == 422 ]] && grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+}
+for sa in check-gotest git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
+# git-k8s-approvals lets anyone with the approve verb take over an approval,
+# so on an approved branch only git-k8s-branches stops a controller that
+# names itself in approved-by.
+annotate_main() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object main)" "$@"; }
+annotate_main "${APPROVE}=$(remote_head main)" "${APPROVED_BY}=${admin}"
+for sa in check-gotest git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+done
+annotate_main "${APPROVE}-" "${APPROVED_BY}-"
+gotest_token="$(k -n check-gotest create token check-gotest)"
 code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
 grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
 # check-gofmt owns nothing, so generate doesn't let it patch GitBranch
 # objects at all.
+approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
 code="$(patch_branch "${token}" "${approve}")"
 cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 403 ]]
 grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch, a check can't change one, and check-gofmt can't patch one."
+echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt can't patch one."
+echo "::endgroup::"
+
+echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
+# The git server fakes GitHub and Octo STS under /github. Its token exchange
+# has the API server review each token, because Octo STS can't reach a kind
+# cluster's issuer.
+GITHUB_URL="${HOST_URL}/github"
+OCTO="${WORKDIR}/octo"
+git init -q -b main "${OCTO}"
+o() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${OCTO}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+issuer="$(k get --raw /.well-known/openid-configuration | sed -nE 's/.*"issuer":"([^"]*)".*/\1/p')"
+mkdir -p "${OCTO}/.github/chainguard"
+# The fake reads trust policies as JSON, which is also YAML.
+cat >"${OCTO}/.github/chainguard/git-k8s.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject_pattern": "system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt)",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"contents": "write"}
+}
+EOF
+cat >"${OCTO}/.github/chainguard/git-k8s-checks.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject": "system:serviceaccount:git-k8s:git-k8s",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"checks": "write"}
+}
+EOF
+printf 'module example.com/octo\n\ngo 1.24\n' >"${OCTO}/go.mod"
+printf 'package main\n\nfunc main() {}\n' >"${OCTO}/main.go"
+o add -A
+o commit -qm "Initial commit"
+o push -q "${GITHUB_URL}/acme/octo.git" HEAD:main
+# The GitBranch for c/fmt stays after the branch lands, without
+# deleteMergedBranches, so the check runs can be checked afterward.
+octo_repository() {
+  k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: octo
+  namespace: $1
+spec:
+  url: ${CLUSTER_URL}/github/acme/octo.git
+  octoSTS:
+    gitIdentity: git-k8s
+    checkRunsIdentity: git-k8s-checks
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gofmt
+            mayPush: true
+    - match: c/**
+      parent: main
+EOF
+}
+octo_repository "${NS}"
+# condition prints field $3 of condition $2 of the GitRepository octo in
+# namespace $1.
+condition() {
+  k -n "$1" get gitrepository octo -o jsonpath="{.status.conditions[?(@.type==\"$2\")].$3}"
+}
+octo_ready() {
+  [[ "$(condition "${NS}" Ready status)" == True && "$(condition "${NS}" CheckRunsTokenIssued status)" == True ]]
+}
+eventually 120 octo_ready
+
+o checkout -q -b c/fmt
+printf 'package main\nfunc  main() {}\n' >"${OCTO}/main.go"
+o commit -qam "Unformat main.go"
+unformatted="$(o rev-parse HEAD)"
+o push -q "${GITHUB_URL}/acme/octo.git" HEAD:c/fmt
+octo_head() { git ls-remote "${GITHUB_URL}/acme/octo.git" "refs/heads/$1" | cut -f1; }
+fix_landed() {
+  local main
+  main="$(octo_head main)"
+  [[ "${main}" != "$(o rev-parse main)" && "${main}" != "${unformatted}" && "${main}" == "$(octo_head c/fmt)" ]]
+}
+eventually 120 fix_landed
+fix="$(octo_head main)"
+# check_run prints the status and conclusion of check $2's check run on
+# commit $1.
+check_run() {
+  curl -fsS "${GITHUB_URL}/api/v3/repos/acme/octo/commits/$1/check-runs?check_name=git-k8s/$2" |
+    sed -nE 's/.*"status":"([a-z_]+)","conclusion":"([a-z_]*)".*/\1 \2/p'
+}
+check_runs_published() {
+  [[ "$(check_run "${unformatted}" gofmt)" == "completed neutral" &&
+    "$(check_run "${fix}" gofmt)" == "completed success" &&
+    "$(check_run "${fix}" base)" == "completed success" ]]
+}
+eventually 60 check_runs_published
+echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
+
+k create namespace "${NS}-other"
+octo_repository "${NS}-other"
+refused() {
+  [[ "$(condition "${NS}-other" Ready reason)" == CredentialsUnavailable &&
+    "$(condition "${NS}-other" Ready message)" == *"audience \"octo-sts.dev/${NS}\" did not match"* ]]
+}
+eventually 60 refused
+condition "${NS}-other" Ready message
+echo
+k delete namespace "${NS}-other" --wait=false
+echo "A GitRepository in another namespace can't use the trust policies, whose audience names ${NS}."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"

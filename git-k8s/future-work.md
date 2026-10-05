@@ -45,7 +45,13 @@ GitHub, and any other forge, is a downstream copy:
   reports the branch as diverged, and leaves it to the
   [conflict resolution controller](#resolve-conflicts-in-a-controller).
 - The mirror holds the only credentials for external repositories, so no
-  other program reads Secrets.
+  other program reads Secrets. For a repository that gets
+  [tokens from Octo STS](README.md#github-repositories), only the mirror
+  requests tokens for the `GitRepository`'s `gitIdentity`, so the trust
+  policy's `subject_pattern` narrows to the mirror's service account. The
+  checks stop requesting tokens for Octo STS, so `generate` stops granting
+  them `create` on `serviceaccounts/token`, and the risk that
+  [Security](README.md#security) describes no longer applies to them.
 - Every ref change passes through the mirror, so it tells git-k8s about each
   one as it happens, and git-k8s reconciles the repository at once. Only the
   mirror polls, and only the external repository, to find pushes that people
@@ -97,40 +103,20 @@ or on purpose, because it can't write results at all:
 
 The endpoint uses the same token check as the mirror, so the two share it.
 
-## Get GitHub credentials from Octo STS
+## Support GitHub Enterprise Server
 
-For a GitHub repository, git-k8s uses a long-lived basic-auth Secret, such as
-a personal access token. [Octo STS](https://github.com/octo-sts/app)
-exchanges an OIDC token for a GitHub App installation token that expires
-within an hour. The token gets the permissions that a trust policy in the
-repository's `.github/chainguard/` directory grants to the identity in the
-OIDC token. This repository's dependency workflow uses it.
+A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)
+only for a repository on github.com, because the public Octo STS service
+issues tokens only for github.com. A repository on GitHub Enterprise Server
+needs a Secret.
 
-The decision is to use the public Octo STS service. With the mirror, only
-git-k8s's own components talk to GitHub: the mirror, to sync, and the program
-that reports check runs. Each exchanges its projected service account token,
-whose subject is `system:serviceaccount:NAMESPACE:NAME`, for a GitHub token,
-and gets a new one before the old one expires. A `GitRepository` names the
-trust policies to use instead of a Secret:
-
-- The mirror's identity gets `contents: write`, to sync branches in both
-  directions.
-- The identity that reports results gets `checks: write`, so each check's
-  result also shows as a check run on its commit, and on the commit's pull
-  request. Check runs copy git-k8s's results; they don't change them.
-
-Checks need no GitHub credentials at all. GitHub grants `contents: write` for
-a whole repository, not for branches, which is acceptable because only the
-mirror holds it.
-
-Questions to settle first:
-
-- How to test it. Octo STS fetches the cluster's OIDC discovery document and
-  keys, so the cluster's issuer has to be reachable from the public service,
-  as on GKE and EKS. A kind cluster's issuer isn't, so the end-to-end test
-  needs a fake token service.
-- Whether to support GitHub Enterprise Server, which the public service
-  doesn't reach.
+GitHub Enterprise Server needs its own Octo STS deployment, with a GitHub App
+on that server. The programs then need the deployment's token exchange URL
+and audience, and the server's web and REST API URLs. These can't be
+`GitRepository` fields, because a tenant could then choose where the programs
+send their service account tokens, and for which audience. They belong in
+program flags, like `-fake-github`, or in a cluster-scoped object that only
+administrators can change.
 
 ## Resolve conflicts in a controller
 
@@ -206,24 +192,23 @@ Pods built. An in-cluster Go module proxy, and a shared build cache through
 Pods downloaded and compiled. A module proxy in the cluster also lets tests
 with dependencies run without giving them the internet through `-goproxy`.
 
-## Record who approved a branch
+## Require an approver who didn't write the change
 
-An approval is the `git-k8s.imjasonh.com/approve` annotation. Nothing
-records who set it, and anyone who can patch a `GitBranch` can approve it.
-
-The proposed fix is a ValidatingAdmissionPolicy rule. When the approve
-annotation changes, a `git-k8s.imjasonh.com/approved-by` annotation must
-equal `request.userInfo.username`, and `approved-by` can't change otherwise.
-`check-approval` then reports the approver in its outputs, so a gate can
-require, for example, that the approver isn't the commit's author.
+`check-approval` reports who approved a branch, but not who wrote it, so a
+gate can't require that someone other than the author approved. Reading
+commits takes the repository's credential, which can push to any branch and
+which `check-approval` doesn't have. With the
+[in-cluster git mirror](#run-an-in-cluster-git-mirror), it could read
+commits without one.
 
 Questions to settle first:
 
-- Whether an approval can take two annotations. A `kubectl` plugin could set
-  both, and a MutatingAdmissionPolicy could set `approved-by` by itself once
-  that API is generally available.
-- Who can approve. A policy parameter, such as a ConfigMap of groups, could
-  limit approvals to the people in them.
+- Whose authorship counts. The head is often a fix commit that a check
+  pushed, so the authors to compare are those of the branch's commits
+  without a `Git-K8s-Fixer` trailer.
+- How to trust an author. A commit's author email is whatever the person who
+  made the commit set, so the check needs verified commit signatures, and a
+  way to map each signer to the Kubernetes username in `approved-by`.
 
 ## Sign commits and respect protected branches
 
@@ -258,12 +243,6 @@ core program could use to weaken them. The core program already decides
 what lands, so that may be acceptable. Once checks send results to the core
 program instead of writing them, the check-results policy is a backstop, and
 the policy that stops controllers from approving branches matters most.
-
-## Support SSH keys
-
-The mirror authenticates to external repositories with HTTP basic auth, or
-for GitHub with Octo STS. Other forges often use SSH keys, which the mirror
-needs to support too.
 
 ## Support more ways to land
 
@@ -344,10 +323,3 @@ Questions to settle first:
   often pulled within days, so a delay keeps most of them out.
 - What happens to a branch that hasn't landed when newer versions come out.
   The controller could push the newer versions to the same branch.
-
-## kube changes that git-k8s would use
-
-These belong in kube, in their own pull requests:
-
-- The mirror and the results endpoint need a TokenReview client, and events
-  from the mirror need a way to queue a reconcile from outside one.

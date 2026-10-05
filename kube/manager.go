@@ -45,7 +45,7 @@ type Manager struct {
 	// a Lease reconciles. Caches start only after the replica first holds
 	// it, so standby replicas use almost no memory. A replica that loses the
 	// Lease stops reconciling and tries to take it back; it keeps serving
-	// webhooks.
+	// webhooks and the handler passed to Serve.
 	LeaderElection bool
 	// Shards splits the objects that controllers reconcile into this many
 	// groups, each held by one replica at a time through its own Lease, so
@@ -95,6 +95,14 @@ type Manager struct {
 	// webhooks of a manager that runs outside the cluster, for example
 	// "https://192.0.2.10:9443". It takes precedence over WebhookService.
 	WebhookURL string
+	// ServeAddr is where the manager serves the handler passed to Serve,
+	// over plain HTTP. It defaults to ":8081".
+	ServeAddr string
+	// TokenDir is a directory of service account tokens for RequestToken,
+	// each in a file named by the hex SHA-256 hash of its audience. The
+	// generate command mounts the program's tokens there from a projected
+	// volume, whose tokens the kubelet renews.
+	TokenDir string
 
 	client  *client.Client
 	log     *slog.Logger
@@ -105,6 +113,8 @@ type Manager struct {
 	runCtx  context.Context
 	started atomic.Bool
 	sharder *sharder
+	// self is the user that the program authenticates as, once known.
+	self atomic.Pointer[UserInfo]
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
@@ -130,13 +140,15 @@ func Run(ctx context.Context, controllers ...Controller) error {
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
 // they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
-// -webhook-addr, -webhook-service, -webhook-url, and -v for debug logs.
+// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, -token-dir,
+// and -v for debug logs.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
 // base image, pushes it to REGISTRY, and writes YAML for kubectl apply that
-// installs it: a namespace, a service account, RBAC rules for the types the
-// program uses, a Deployment, and a Service for its webhooks.
+// installs it: a namespace, a service account, RBAC rules for the types and
+// APIs the program uses, a Deployment, and a Service for its webhooks and
+// its Serve handler.
 func Main(controllers ...Controller) {
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -182,6 +194,8 @@ func (m *Manager) flags(fs *flag.FlagSet) *bool {
 	fs.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
 	fs.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
 	fs.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
+	fs.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
+	fs.StringVar(&m.TokenDir, "token-dir", "", "directory of service account tokens for kube.RequestToken, by audience")
 	return fs.Bool("v", false, "log debug messages")
 }
 
@@ -247,11 +261,16 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			stops[i]()
 		}
 	}()
-	// startFailed reports a failure to start, unless ctx was canceled
-	// meanwhile, which stops the manager cleanly.
+	// startFailed reports a failure to start. If the caller stopped the
+	// manager meanwhile, it stops cleanly. If a server failed, which
+	// canceled ctx and so made this step fail, it reports the server's
+	// error.
 	startFailed := func(err error) error {
-		if ctx.Err() != nil {
+		switch {
+		case parent.Err() != nil:
 			return nil
+		case ctx.Err() != nil:
+			return context.Cause(ctx)
 		}
 		return err
 	}
@@ -285,6 +304,15 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		} else {
 			others = append(others, c)
 		}
+	}
+	var servers sync.WaitGroup
+	stops = append(stops, servers.Wait)
+	for _, c := range others {
+		servers.Go(func() {
+			if err := c.run(ctx); err != nil {
+				cancel(fmt.Errorf("%s: %w", c.controllerName(), err))
+			}
+		})
 	}
 	if len(reconcilers) > 0 && (m.LeaderElection || m.Shards > 1) {
 		m.sharder = newSharder(m)
@@ -345,8 +373,9 @@ func (m *Manager) waitForCaches() {
 func (m *Manager) serve() (*http.Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
-	// A standby replica is ready once its webhooks serve: the Service must
-	// send webhook requests to it, though it doesn't reconcile.
+	// A standby replica is ready once its webhooks and Serve handler serve:
+	// the Service must send their requests to it, though it doesn't
+	// reconcile.
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		hooks := m.hooks
@@ -354,6 +383,12 @@ func (m *Manager) serve() (*http.Server, error) {
 		if !hooks.serving() {
 			http.Error(w, "webhooks are not serving", http.StatusServiceUnavailable)
 			return
+		}
+		for _, c := range m.controllers {
+			if !c.reconciles() && !c.synced() {
+				http.Error(w, c.controllerName()+" is not serving", http.StatusServiceUnavailable)
+				return
+			}
 		}
 		if m.started.Load() {
 			for _, c := range m.controllers {
@@ -547,16 +582,21 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 	return c
 }
 
-// adopt registers a controller's primary informer as the shared cache for
-// its type when it watches the same objects that Get and List would, and
-// otherwise as an unshared one, so that the process's writes show in it.
-func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) {
+// adopt returns the cache that a controller with the primary informer inf
+// reads. If inf watches the same objects that Get and List would, that's the
+// shared cache for its type: the one that already exists, or else inf, which
+// adopt registers as that cache. Otherwise adopt registers inf as an unshared
+// cache, so that the process's writes show in it.
+func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) cache {
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.caches[key]; ok || cfg.namespace != key.namespace || cfg.selector != "" {
+	if cfg.namespace != key.namespace || cfg.selector != "" {
 		m.unshared = append(m.unshared, inf)
-		return
+		return inf
+	}
+	if c, ok := m.caches[key]; ok {
+		return c
 	}
 	id := inf.id()
 	inf.onChange(func(old, new *ObjectMeta, initial bool) {
@@ -565,6 +605,7 @@ func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cach
 		}
 	})
 	m.caches[key] = inf
+	return inf
 }
 
 func (m *Manager) source(ctx context.Context, ti *typeInfo) (source, error) {
