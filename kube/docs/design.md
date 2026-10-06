@@ -1063,14 +1063,18 @@ connections that arrive in that time would be refused, and clients such as git
 don't retry. So `generate` gives a program that serves a `preStop` hook whose
 `sleep` action waits 5 seconds before the kubelet sends `SIGTERM`. The kubelet
 runs the sleep itself, so the image needs no shell, and the action is on by
-default in Kubernetes 1.30 and later. When the program stops, the server stops
-accepting connections and waits up to 10 seconds for requests in progress. Their
-contexts don't derive from the manager's, so they're canceled only when that
-time runs out. `Trigger` returns false once the manager's context is done, so a
-request that triggers a reconcile in that time answers `503`. A read whose cache
-hasn't synced waits until the time runs out and fails, because caches stop with
-the manager. The Pod's termination grace period, 30 seconds by default, covers
-the sleep, the wait, and the rest of stopping.
+default in Kubernetes 1.30 and later. A program with a `kube.Volume` gets no
+hook. As [Installation](#installation) describes, it runs one Pod, and a
+rollout stops that Pod before it starts the next. No other Pod can take the
+connections, so the sleep would only delay the new Pod by 5 seconds. When the
+program stops, the server stops accepting connections and waits up to 10
+seconds for requests in progress. Their contexts don't derive from the
+manager's, so they're canceled only when that time runs out. `Trigger` returns
+false once the manager's context is done, so a request that triggers a
+reconcile in that time answers `503`. A read whose cache hasn't synced waits
+until the time runs out and fails, because caches stop with the manager. The
+Pod's termination grace period, 30 seconds by default, covers any sleep, the
+wait, and the rest of stopping.
 
 The handler runs in the webhooks' read-only scope. Every replica serves, so a
 handler that wrote objects could race the reconcile on the replica that holds
@@ -1430,10 +1434,10 @@ but the kubelet restarts a container whose startup probe fails too many times,
 so a program whose caches are slow to sync could restart over and over. A
 startup probe on `/healthz` passes once the server listens, which can be
 before `/readyz` passes, so the Pod would still wait for the readiness probe.
-The liveness probe keeps Kubernetes' defaults. A program that serves gets the
-`preStop` sleep that [HTTP endpoints](#http-endpoints) describes. An
-`emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to write. With
-`-tmp-size`, the volume has a size limit, and the kubelet evicts a
+The liveness probe keeps Kubernetes' defaults. A program that serves and has
+no `kube.Volume` gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
+describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
+write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
 Pod that writes more instead of letting it fill the node's disk. A program that
 passes `RequestToken` constant audiences gets a read-only projected volume of
 tokens at `/var/run/secrets/tokens`. `KUBE_IMAGE` holds the image's reference
@@ -1479,10 +1483,11 @@ program's writes there fail. `generate` refuses `-volume-size` and
 
 `Recreate` waits for the old Pod only during a rollout. A Pod that's deleted
 otherwise, by `kubectl delete pod` or a node drain, gets a replacement from
-its ReplicaSet at once, while the old Pod stops. The old process reconciles
-until it gets `SIGTERM`, which comes after the 5-second `preStop` sleep of a
-program that serves, and which cancels its reconciles. Its requests in
-progress get up to 10 more seconds (`serveGrace`), and the kubelet kills it
+its ReplicaSet at once, while the old Pod stops. The kubelet sends the old
+process `SIGTERM` at once, because a program with a volume has no `preStop`
+sleep. `SIGTERM` cancels its reconciles, and a program that serves stops
+accepting connections, even if the replacement isn't ready yet. Its requests
+in progress get up to 10 more seconds (`serveGrace`), and the kubelet kills it
 when the Pod's 30-second termination grace period ends. Until then, both
 processes can write the volume if the replacement runs on the same node,
 where Pods can share a `ReadWriteOnce` volume. While both reconcile, a late
@@ -1609,8 +1614,8 @@ framework's tests check that:
   once `Get` shows them in the status, even when a reconcile fails after
   reading one, and answers `503` for a result that the reconcile never writes.
 - `generate` gives the eventlog example a claim and one replica with the
-  `Recreate` strategy, and refuses `-replicas=2`, and the program keeps
-  serving the copy of an Event after the Event is deleted.
+  `Recreate` strategy and no `preStop` sleep, and refuses `-replicas=2`, and
+  the program keeps serving the copy of an Event after the Event is deleted.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and

@@ -31,7 +31,9 @@ import (
 // requests in progress have 10 seconds to finish before their contexts are
 // canceled. Trigger returns false during that time. The generate command
 // has the kubelet wait 5 seconds before it stops the program, so that the
-// program's Service stops sending it connections first.
+// program's Service stops sending it connections first. A program with a
+// Volume doesn't wait, because it runs one Pod, and no other Pod takes the
+// connections while it stops.
 //
 // A program can have one Serve. To serve several paths, use one handler,
 // such as an http.ServeMux.
@@ -39,7 +41,7 @@ func Serve(h http.Handler) Controller { return &server{h: h} }
 
 // serveGrace is how long requests in progress have to finish once the
 // program stops. The Pod's termination grace period, 30 seconds by default,
-// must cover it and the preStop sleep that generate adds.
+// must cover it and any preStop sleep that generate adds.
 var serveGrace = 10 * time.Second
 
 type server struct {

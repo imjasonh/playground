@@ -829,10 +829,14 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
 	}
 	container = append(container, field{"volumeMounts", mounts})
-	if p.serves {
+	if p.serves && p.volume == "" {
 		// The Service sends a Pod that's stopping new connections until its
 		// endpoints drop the Pod, and the program refuses them once it
-		// stops. The kubelet sleeps before it signals the program.
+		// stops. The kubelet sleeps before it signals the program, so by
+		// then other Pods get the connections. A program with a volume runs
+		// one Pod, which a rollout stops before it starts the next, so a
+		// sleep would delay the new Pod without shortening the time that
+		// nothing serves.
 		container = append(container, field{"lifecycle", object{{"preStop", object{{"sleep", object{{"seconds", 5}}}}}}})
 	}
 	docs = append(docs, object{

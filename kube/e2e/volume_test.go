@@ -52,6 +52,11 @@ func TestGenerateVolume(t *testing.T) {
 	if !strings.Contains(byKind["Deployment"], `"replicas":1`) || byKind["PodDisruptionBudget"] != "" || slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("the program doesn't run one replica without leader election: args %q, Deployment %s, PodDisruptionBudget %s", in.args, byKind["Deployment"], byKind["PodDisruptionBudget"])
 	}
+	// The program serves, but no other Pod takes its connections while it
+	// stops, so it doesn't wait before it stops.
+	if strings.Contains(byKind["Deployment"], "preStop") {
+		t.Errorf("the Deployment has a preStop hook: %s", byKind["Deployment"])
+	}
 	in.apply(t, c)
 	in.args = append(in.args, "-dir="+t.TempDir())
 	in.serveAddr = freeAddr(t)

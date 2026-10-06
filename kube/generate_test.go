@@ -306,13 +306,34 @@ func TestManifestsServe(t *testing.T) {
 		if !strings.Contains(byKind["Service"], tc.service) {
 			t.Errorf("webhooks %v: Service = %s, want %s", tc.webhooks, byKind["Service"], tc.service)
 		}
-		if want := `"lifecycle":{"preStop":{"sleep":{"seconds":5}}}`; !strings.Contains(byKind["Deployment"], want) {
-			t.Errorf("webhooks %v: the Deployment lacks %s: %s", tc.webhooks, want, byKind["Deployment"])
-		}
 	}
-	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: true}) {
-		if b, _ := json.Marshal(d); strings.Contains(string(b), "preStop") {
-			t.Errorf("a program that doesn't serve waits before it stops: %s", b)
+}
+
+// TestManifestsPreStop checks that a program that serves sleeps before it
+// stops, so that its Service sends connections to other Pods first, unless
+// it has a volume. Then it runs one Pod, which a rollout stops before it
+// starts the next.
+func TestManifestsPreStop(t *testing.T) {
+	const sleep = `"lifecycle":{"preStop":{"sleep":{"seconds":5}}}`
+	o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1, volumeSize: "1Gi"}
+	for _, tc := range []struct {
+		name  string
+		plan  installPlan
+		sleep bool
+	}{
+		{"a program that serves", installPlan{serves: true}, true},
+		{"a program that serves and has webhooks", installPlan{serves: true, webhooks: true}, true},
+		{"a program that serves with a volume", installPlan{serves: true, volume: "/var/lib/prog"}, false},
+		{"a program with webhooks", installPlan{webhooks: true}, false},
+	} {
+		tc.plan.cluster, tc.plan.local = grants{}, grants{}
+		docs := o.manifests("ref", &tc.plan)
+		b, _ := json.Marshal(docs[len(docs)-1])
+		if tc.sleep && !strings.Contains(string(b), sleep) {
+			t.Errorf("%s: the Deployment lacks %s: %s", tc.name, sleep, b)
+		}
+		if !tc.sleep && strings.Contains(string(b), "preStop") {
+			t.Errorf("%s: the program waits before it stops: %s", tc.name, b)
 		}
 	}
 }
