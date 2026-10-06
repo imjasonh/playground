@@ -54,6 +54,7 @@ MOD_PROXY_PID=""
 PROBE_PID=""
 KIND_PID=""
 AGENT_IMAGE_PID=""
+ZOMBIES_PID=""
 # GENERATING has the PID of each pregenerate that the test hasn't waited for,
 # and GENERATED the exit status of each that it has.
 declare -A GENERATING=() GENERATED=()
@@ -113,7 +114,7 @@ finish() {
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
-  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${AGENT_IMAGE_PID}" "${GENERATING[@]}"; do
+  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${AGENT_IMAGE_PID}" "${ZOMBIES_PID}" "${GENERATING[@]}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" 2>/dev/null || true
     fi
@@ -2781,6 +2782,12 @@ first_seen
 echo "git-k8s-deps keeps when it first saw each version in a ConfigMap in its own namespace, the only one where it can read and write ConfigMaps, and kept v1.2.0's time through a restart."
 echo "::endgroup::"
 
+# The last zombie check takes 10 seconds, so it runs in the background while
+# the next group waits to see that nothing writes. It reads the nodes'
+# processes and writes nothing.
+no_lasting_zombies >"${WORKDIR}/zombies.log" 2>&1 &
+ZOMBIES_PID=$!
+
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
   k -n "${NS}" get gitrepositories,gitbranches \
@@ -2801,7 +2808,11 @@ echo "Four polls of the remote wrote nothing."
 echo "::endgroup::"
 
 echo "::group::No zombie lasts, and the programs' Pods share a process namespace and meet the restricted Pod Security Standard"
-no_lasting_zombies
+zombies_status=0
+wait "${ZOMBIES_PID}" || zombies_status=$?
+ZOMBIES_PID=""
+cat "${WORKDIR}/zombies.log"
+[[ ${zombies_status} -eq 0 ]]
 # generate doesn't label the programs' namespaces, so their Pods get only the
 # cluster's default Pod Security level. A server-side dry run of the
 # restricted label warns about each Pod that violates it. By now, CHECKS
