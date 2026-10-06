@@ -13,9 +13,10 @@
 // the Pods with that label reach only the mirror, the cluster's DNS
 // servers, and what the core program's -goproxy and -go-cache-namespace
 // allow, so this program needs no permission to change NetworkPolicies. The
-// check reports the Pod's result, with the end of the test output when the
-// tests fail. With -go-cache, test Pods download modules from a go-cache
-// server and share build outputs through it; see addGoCache.
+// check reports the Pod's result once the test container exits or an init
+// container fails, with the end of the test output when the tests fail.
+// With -go-cache, test Pods download modules from a go-cache server and
+// share build outputs through it; see addGoCache.
 //
 // kube deletes a Pod when the check stops declaring it, which happens after
 // the check records the Pod's result and when the branch moves to a new
@@ -78,7 +79,9 @@ var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest", 
 const mirrorTokenDir = "/var/run/secrets/git-k8s"
 
 // podPhase is what the check counts running test Pods by. Declaring only
-// the phase means that other changes to Pods don't run the check again.
+// the phase means that other changes to Pods don't run the check again. A
+// Pod counts until its phase is Succeeded or Failed, once the kubelet has
+// stopped it, even though run reports its result before then.
 type podPhase struct {
 	kube.Object `kube:"apiVersion=v1,kind=Pod,plural=pods,scope=Namespaced"`
 	Status      struct {
@@ -169,7 +172,7 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		}
 		return running("starting Pod %s", name), nil
 	}
-	switch pod.Status.Phase {
+	switch outcome(pod) {
 	case "Succeeded":
 		// The next reconcile finds this result final and declares no Pod,
 		// so kube deletes it.
@@ -303,6 +306,32 @@ func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 func podName(branch, head string, attempt int) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", branch, head, attempt)))
 	return "gotest-" + hex.EncodeToString(sum[:8])
+}
+
+// outcome returns the phase that the Pod ends in, Succeeded or Failed, as
+// soon as its containers show it, or "" until then. With restartPolicy
+// Never, an init container that fails fails the Pod, and the test
+// container's exit code decides the rest. The kubelet reports a
+// container's exit about a second before it sets the Pod's phase, which it
+// does only once it has stopped the Pod's sandbox.
+func outcome(pod *Pod) string {
+	if p := pod.Status.Phase; p == "Succeeded" || p == "Failed" {
+		return p
+	}
+	for _, s := range pod.Status.InitContainerStatuses {
+		if t := s.State.Terminated; t != nil && t.ExitCode != 0 {
+			return "Failed"
+		}
+	}
+	for _, s := range pod.Status.ContainerStatuses {
+		if t := s.State.Terminated; s.Name == "test" && t != nil {
+			if t.ExitCode != 0 {
+				return "Failed"
+			}
+			return "Succeeded"
+		}
+	}
+	return ""
 }
 
 // terminated returns the message and finish time of the named container if

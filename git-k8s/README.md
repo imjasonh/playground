@@ -992,7 +992,7 @@ results for the commits that they make, as
 The checks that read files run in their controller's process. A check that
 runs the branch's code, such as `go test`, runs it in a Pod instead.
 `check-gotest` declares one Pod for each head with `kube.Own`, and reports
-`Running` until the Pod finishes:
+`Running` until the test container exits or an init container fails:
 
 - An init container fetches the head from the mirror. It's the only
   container with a token for the mirror, and the token is bound to the Pod.
@@ -1024,11 +1024,12 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   core program.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
-  records when it started waiting in `outputs.waiting`. When a Pod
-  finishes, the branch that has waited longest starts next. A new head, a
-  retry after a failed fetch, or a replacement for a deleted Pod waits
-  behind the branches that are already waiting. The times are in the
-  `GitBranch` status, so a restarted check keeps the order.
+  records when it started waiting in `outputs.waiting`. When a Pod's phase
+  becomes `Succeeded` or `Failed`, or the Pod no longer exists, the branch
+  that has waited longest starts next. A new head, a retry after a failed
+  fetch, or a replacement for a deleted Pod waits behind the branches that
+  are already waiting. The times are in the `GitBranch` status, so a
+  restarted check keeps the order.
 - The check counts a Pod from the moment that it declares it, before its
   cache shows the Pod, so a burst of pushes can't start more than
   `-max-pods`. A Pod that never appears stops counting after a minute. If
@@ -1041,11 +1042,15 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   start Pods at the same moment can go over the limit.
 
 kube deletes a Pod when the check stops declaring it: after the check
-records the Pod's result, or when the branch moves to a new head. Owner
-references delete the Pods with their `GitBranch`. Set `-runtime-class` to
-run the Pods under a sandboxing runtime such as gVisor, and `-go-image`,
-`-git-image`, `-timeout`, and `-goproxy` to change the rest. If you set
-`-goproxy`, set the same value on the core program.
+records the Pod's result, or when the branch moves to a new head. The check
+records the result as soon as the Pod's status shows that the test
+container exited or an init container failed. The kubelet sets the Pod's
+phase about a second later, after it stops the Pod's sandbox, and the Pod
+counts toward `-max-pods` until then. Owner references delete the Pods with
+their `GitBranch`. Set `-runtime-class` to run the Pods under a sandboxing
+runtime such as gVisor, and `-go-image`, `-git-image`, `-timeout`, and
+`-goproxy` to change the rest. If you set `-goproxy`, set the same value on
+the core program.
 
 The core program owns the NetworkPolicy so that `check-gotest`, which
 creates Pods in every namespace that has a `GitBranch`, can't change

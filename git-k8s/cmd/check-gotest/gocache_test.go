@@ -215,15 +215,18 @@ func TestGoCachePod(t *testing.T) {
 
 func TestReportsGoCacheFailure(t *testing.T) {
 	withGoCache(t)
-	b, repo := branch()
-	named(b, 1)
-	p := pod("Failed", &Terminated{}, nil)
-	s := ContainerStatus{Name: "build"}
-	s.State.Terminated = &Terminated{ExitCode: 1, Message: "go: errors parsing go.mod:\ngo.mod:3: unknown directive: bogus"}
-	p.Status.InitContainerStatuses = append(p.Status.InitContainerStatuses, s)
-	reconcileWith(t, b, repo, p)
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "build: go: errors parsing go.mod") {
-		t.Errorf("result = %+v, want Failed with build's error", res)
+	// The Pod is Pending until the kubelet stops it.
+	for _, phase := range []string{"Pending", "Failed"} {
+		b, repo := branch()
+		named(b, 1)
+		p := pod(phase, &Terminated{}, nil)
+		s := ContainerStatus{Name: "build"}
+		s.State.Terminated = &Terminated{ExitCode: 1, Message: "go: errors parsing go.mod:\ngo.mod:3: unknown directive: bogus"}
+		p.Status.InitContainerStatuses = append(p.Status.InitContainerStatuses, s)
+		reconcileWith(t, b, repo, p)
+		if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "build: go: errors parsing go.mod") {
+			t.Errorf("%s Pod: result = %+v, want Failed with build's error", phase, res)
+		}
 	}
 }
 
