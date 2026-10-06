@@ -1049,10 +1049,10 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   the API server refuses a Pod, for example because the check Pod policy
   denies it, other branches can then use its place while kube tries again.
   Until the Pod exists, its branch keeps the time that it started waiting in
-  `outputs.queued`, so the branch still starts before the branches that
-  started waiting after it. With `-shards`, a replica doesn't count the Pods
-  that other replicas declared until its cache shows them, so replicas that
-  start Pods at the same moment can go over the limit.
+  `outputs.queued`, so the branch keeps its place in line. With `-shards`, a
+  replica doesn't count the Pods that other replicas declared until its
+  cache shows them, so replicas that start Pods at the same moment can go
+  over the limit.
 
 The check records a Pod's result as soon as the Pod's status shows that the
 test container exited or an init container failed. The kubelet sets the
