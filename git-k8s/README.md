@@ -1051,9 +1051,10 @@ head. The API server deletes a Pod in either phase at once, but waits for
 the kubelet to stop a running one. The kubelet sends the containers of a
 running Pod `SIGTERM`, and kills them when the Pod's termination grace
 period ends. A container's first process ignores `SIGTERM` unless it
-handles the signal, and the shell that fetches the head doesn't, so test
-Pods set the grace period to 2 seconds, the kubelet's minimum, instead of
-the default 30. Owner references delete the Pods with their `GitBranch`.
+handles the signal, and the shell that fetches the head without
+`-go-cache` doesn't, so test Pods set the grace period to 2 seconds, the
+kubelet's minimum, instead of the default 30. Owner references delete the
+Pods with their `GitBranch`.
 Set `-runtime-class` to run the Pods under a sandboxing runtime such as
 gVisor, and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change
 the rest. If you set `-goproxy`, set the same value on the core program.
@@ -1164,13 +1165,14 @@ ClusterRole that allows creating TokenReviews and getting Pods, and
 nothing else. `go-cache` can get any Pod by name, but can't list or watch
 Pods.
 
-With `-go-cache`, `check-gotest` adds three init containers to each test
-Pod, after the one that fetches the head:
+With `-go-cache`, a test Pod has three init containers:
 
-1. `cacheprog` runs `check-gotest`'s own image, which `generate` names in
-   the `KUBE_IMAGE` environment variable, and copies the `check-gotest`
-   binary to a volume. The binary is the Pod's `GOCACHEPROG`, the program
-   that the go command asks for build outputs.
+1. `fetch` runs `check-gotest`'s own image, which `generate` names in the
+   `KUBE_IMAGE` environment variable, instead of `-git-image`. It copies
+   the `check-gotest` binary to a volume, and then fetches the head with
+   git. The binary is the Pod's `GOCACHEPROG`, the program that the go
+   command asks for build outputs. Build `check-gotest` on an image that
+   has git, as [Install](#install) does.
 2. `build` runs the `check-gotest` binary from the volume in the Go image,
    with the test container's environment. It lists the packages that
    `go test` needs, and compiles the ones from GOROOT and the module cache
@@ -1214,6 +1216,15 @@ defend against that as follows:
   `CGO_ENABLED=0` and `GOTOOLCHAIN=local`, so the go command runs no C
   compiler and no toolchain that the branch asks for. `upload` sends only
   what `build` compiled, before any of the branch's code runs.
+- Only `check-gotest`'s code and git run before `build`. `fetch` copies
+  the `GOCACHEPROG` program from `check-gotest`'s image, and then runs git,
+  which runs none of the branch's code. A git bug that ran code from the
+  fetched objects could replace the program. That bug could change what
+  `build` runs anyway. `fetch` can write the go command's environment
+  file, which `build` reads from the `tmp` volume, and `GOFLAGS` in that
+  file can add `-toolexec`. So copying the program in an init container of
+  its own, which the kubelet would start about a second after `fetch`
+  exits, wouldn't keep git from changing what `build` runs.
 - Test code can't write to the build cache. The test container gets no
   token, and its `GOCACHEPROG` doesn't connect to `go-cache`. Nothing
   uploads after the tests start.
@@ -1266,9 +1277,10 @@ defend against that as follows:
 
 The design leaves these risks:
 
-- The defense relies on the go command not running code from the files
-  that it reads. A bug that let a branch run code in `build` would let it
-  store any output under action IDs that the build cache doesn't have yet.
+- The defense relies on git and the go command not running code from the
+  files that they read. A bug that let a branch run code in `fetch` or
+  `build` would let it store any output under action IDs that the build
+  cache doesn't have yet.
 - Sharing relies on action IDs covering every input but the files that
   assembly includes. If a Go release let another build step read files
   from outside a package's directory, `build` would have to leave out the
