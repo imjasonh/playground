@@ -84,13 +84,17 @@ them:
   one `Reconcile` method. The framework generates CRDs, tracks what each
   reconcile reads, applies declared objects with server-side apply, and caches
   only the fields that a type declares. It also serves admission and
-  conversion webhooks, splits work across replicas, and reads built-in types
-  as protobuf. `generate` pushes a program's image with go-containerregistry
-  and writes its install YAML, RBAC rules included (Go library).
+  conversion webhooks and HTTP APIs that check callers' service account
+  tokens, records events, splits work across replicas, and reads built-in
+  types as protobuf. `generate` pushes a program's image with
+  go-containerregistry and writes its install YAML, RBAC rules included
+  (Go library).
 - **[`git-k8s/`](git-k8s/)** — Kubernetes controllers built on `kube` that
-  track a git repository's branches as `GitBranch` objects, run checks that
-  can push fixes, such as merging the parent in or running `gofmt`, and
-  fast-forward a branch's parent when its merge gate passes (Go).
+  keep a copy of a git repository on a git server in the cluster, track its
+  branches as `GitBranch` objects, run checks that can push fixes, such as
+  merging the parent in or running `gofmt`, and land a branch on its parent
+  by fast-forward, squash, or rebase when the parent's merge policy passes
+  (Go).
 - **[`app-attest/`](app-attest/)** — Apple App Attest handshake and assertion
   verifier for Cloudflare Workers, in Rust. The Playground iOS **App Attest**
   experiment registers a device once; later `POST /v1/whoami` calls send a

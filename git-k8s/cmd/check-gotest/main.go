@@ -11,11 +11,11 @@
 // controller label for this check and is Pending, as a Pod is until its
 // init containers finish. A NetworkPolicy that the core program owns lets
 // the Pods with that label reach only the mirror, the cluster's DNS
-// servers, and what the core program's -goproxy and -go-cache allow, so
-// this program needs no permission to change NetworkPolicies. The check
-// reports the Pod's result, with the end of the test output when the tests
-// fail. With -go-cache, test Pods download modules from a go-cache server
-// and share build outputs through it; see addGoCache.
+// servers, and what the core program's -goproxy and -go-cache-namespace
+// allow, so this program needs no permission to change NetworkPolicies. The
+// check reports the Pod's result, with the end of the test output when the
+// tests fail. With -go-cache, test Pods download modules from a go-cache
+// server and share build outputs through it; see addGoCache.
 //
 // kube deletes a Pod when the check stops declaring it, which happens after
 // the check records the Pod's result and when the branch moves to a new
