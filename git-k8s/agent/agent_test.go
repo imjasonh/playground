@@ -206,7 +206,7 @@ func finished(p *Pod, digest string) *Pod {
 			{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
 			{Name: "agent", State: terminated(&Terminated{Reason: "Completed", Message: digest + "\n"})},
 		},
-		ContainerStatuses: []ContainerStatus{{Name: "result", State: ContainerState{Running: &struct{}{}}}},
+		ContainerStatuses: []ContainerStatus{{Name: "result", State: ContainerState{Running: &Running{}}}},
 	}
 	return p
 }
@@ -221,7 +221,7 @@ func TestReportsTheAgentsVerdict(t *testing.T) {
 	t.Log("Until the agent finishes, the check follows the Pod.")
 	p.Status = PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
 		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
-		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+		{Name: "agent", State: ContainerState{Running: &Running{}}},
 	}}
 	f.reconcile(p)
 	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "the agent is running in Pod "+p.Name) {
@@ -422,6 +422,23 @@ func TestKeepsTryingToFetch(t *testing.T) {
 	f.reconcile(p)
 	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["runs"] != "1" {
 		t.Errorf("result = %+v, want Passed from the same run", res)
+	}
+}
+
+func TestFetchesSoonWhileTheServerStarts(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.port = closedPort(t)
+	p := f.start()
+	finished(p, f.serve(review(Pass), p.UID))
+	server := &p.Status.ContainerStatuses[0].State.Running.StartedAt
+	*server = time.Now().Truncate(time.Second)
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "connection refused") || rec.RequeueAfter() != startupRetry {
+		t.Fatalf("result = %+v and RequeueAfter = %v, want Running and a retry after %v", res, rec.RequeueAfter(), startupRetry)
+	}
+	*server = time.Now().Add(-time.Minute)
+	if rec := f.reconcile(p); rec.RequeueAfter() != 5*time.Second {
+		t.Errorf("RequeueAfter = %v a minute after the result container started, want 5s", rec.RequeueAfter())
 	}
 }
 
@@ -1192,7 +1209,7 @@ func TestFollowsTheOldPodWhenTheBranchMovesBack(t *testing.T) {
 	p := f.start()
 	p.Status = PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
 		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
-		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+		{Name: "agent", State: ContainerState{Running: &Running{}}},
 	}}
 	f.reconcile(p)
 	f.newHead("one\nnext\n")

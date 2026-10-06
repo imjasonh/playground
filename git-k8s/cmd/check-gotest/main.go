@@ -13,13 +13,15 @@
 // the Pods with that label reach only the mirror, the cluster's DNS
 // servers, and what the core program's -goproxy and -go-cache-namespace
 // allow, so this program needs no permission to change NetworkPolicies. The
-// check reports the Pod's result, with the end of the test output when the
-// tests fail. With -go-cache, test Pods download modules from a go-cache
-// server and share build outputs through it; see addGoCache.
+// check reports the Pod's result once the test container exits or an init
+// container fails, with the end of the test output when the tests fail.
+// With -go-cache, test Pods download modules from a go-cache server and
+// share build outputs through it; see addGoCache.
 //
-// kube deletes a Pod when the check stops declaring it, which happens after
-// the check records the Pod's result and when the branch moves to a new
-// head. Owner references delete the Pods with their GitBranch.
+// kube deletes a Pod when the check stops declaring it: once the check has
+// recorded the Pod's result and the kubelet has stopped the Pod, or when the
+// branch moves to a new head. Owner references delete the Pods with their
+// GitBranch.
 package main
 
 import (
@@ -78,7 +80,9 @@ var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest", 
 const mirrorTokenDir = "/var/run/secrets/git-k8s"
 
 // podPhase is what the check counts running test Pods by. Declaring only
-// the phase means that other changes to Pods don't run the check again.
+// the phase means that other changes to Pods don't run the check again. A
+// Pod counts until its phase is Succeeded or Failed, once the kubelet has
+// stopped it, even though run reports its result before then.
 type podPhase struct {
 	kube.Object `kube:"apiVersion=v1,kind=Pod,plural=pods,scope=Namespaced"`
 	Status      struct {
@@ -115,10 +119,31 @@ type gotest struct {
 }
 
 func (g *gotest) check() checks.Check {
-	return checks.Check{Name: gitk8s.GoTestCheck, FilesOnly: true, Run: g.run}
+	return checks.Check{Name: gitk8s.GoTestCheck, FilesOnly: true, Stale: stopping, Run: g.run}
+}
+
+// stopping reports whether the Pod that a final result names hasn't
+// stopped yet. run keeps declaring the Pod until it has, because the API
+// server deletes a Pod whose phase is Succeeded or Failed at once, but
+// waits for the kubelet to stop one that's still running.
+func stopping(ctx context.Context, meta *kube.ObjectMeta, _ *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+	name := previous.Outputs["pod"]
+	if name == "" {
+		return false
+	}
+	p := kube.Get[podPhase](ctx, meta.Namespace, name)
+	return p != nil && p.Status.Phase != "Succeeded" && p.Status.Phase != "Failed"
 }
 
 func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	if p := in.Previous; p.Final() && p.Commit == in.Spec.Head {
+		// stopping found that the Pod that the result names hasn't stopped,
+		// so keep declaring the Pod, and keep the result.
+		if pod, err := testPod(in, p.Outputs["pod"]); err == nil {
+			kube.Own(ctx, pod)
+		}
+		return checks.Verdict{State: p.State, Message: p.Message, Outputs: p.Outputs}, nil
+	}
 	attempt, named := 1, ""
 	if p := in.Previous; p != nil && p.Commit == in.Spec.Head && p.State == gitk8s.Running {
 		if n, err := strconv.Atoi(p.Outputs["attempt"]); err == nil && n > 0 {
@@ -169,10 +194,10 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		}
 		return running("starting Pod %s", name), nil
 	}
-	switch pod.Status.Phase {
+	switch outcome(pod) {
 	case "Succeeded":
-		// The next reconcile finds this result final and declares no Pod,
-		// so kube deletes it.
+		// Once the kubelet stops the Pod, a reconcile finds this result
+		// final and declares no Pod, so kube deletes it.
 		kube.RequeueAfter(ctx, time.Second)
 		v := checks.Pass("go test passed in Pod %s", name)
 		v.Outputs = map[string]string{"pod": name}
@@ -193,7 +218,9 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 				outputs["pod"] = podName(in.Meta.Name, in.Spec.Head, attempt+1)
 				return running("fetching the source failed, so trying again: %s", msg), nil
 			}
-			return checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg), nil
+			v := checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg)
+			v.Outputs = map[string]string{"pod": name}
+			return v, nil
 		}
 		msg, _, _ = terminated(pod.Status.ContainerStatuses, "test")
 		if m, failed := goCacheFailure(pod); failed {
@@ -305,6 +332,32 @@ func podName(branch, head string, attempt int) string {
 	return "gotest-" + hex.EncodeToString(sum[:8])
 }
 
+// outcome returns the phase that the Pod ends in, Succeeded or Failed, as
+// soon as its containers show it, or "" until then. With restartPolicy
+// Never, an init container that fails fails the Pod, and the test
+// container's exit code decides the rest. The kubelet reports a
+// container's exit about a second before it sets the Pod's phase, which it
+// does only once it has stopped the Pod's sandbox.
+func outcome(pod *Pod) string {
+	if p := pod.Status.Phase; p == "Succeeded" || p == "Failed" {
+		return p
+	}
+	for _, s := range pod.Status.InitContainerStatuses {
+		if t := s.State.Terminated; t != nil && t.ExitCode != 0 {
+			return "Failed"
+		}
+	}
+	for _, s := range pod.Status.ContainerStatuses {
+		if t := s.State.Terminated; s.Name == "test" && t != nil {
+			if t.ExitCode != 0 {
+				return "Failed"
+			}
+			return "Succeeded"
+		}
+	}
+	return ""
+}
+
 // terminated returns the message and finish time of the named container if
 // it exited with an error.
 func terminated(statuses []ContainerStatus, name string) (string, time.Time, bool) {
@@ -349,6 +402,12 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	yes, no := true, false
 	user := int64(65532)
 	deadline := int64(timeout.Seconds())
+	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
+	// when the grace period ends. It raises a shorter grace period to 2
+	// seconds. A container's first process ignores SIGTERM unless it handles
+	// the signal, as fetch's shell doesn't, and the Pod counts toward
+	// -max-pods until its containers stop.
+	grace := int64(2)
 	expiry := int64(tokenSeconds)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,
@@ -367,10 +426,11 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	}
 	p := &Pod{Object: kube.Meta(name, maps.Clone(testPodLabels))}
 	p.Spec = PodSpec{
-		RestartPolicy:                "Never",
-		AutomountServiceAccountToken: &no,
-		ActiveDeadlineSeconds:        &deadline,
-		RuntimeClassName:             *runtimeClass,
+		RestartPolicy:                 "Never",
+		AutomountServiceAccountToken:  &no,
+		ActiveDeadlineSeconds:         &deadline,
+		TerminationGracePeriodSeconds: &grace,
+		RuntimeClassName:              *runtimeClass,
 		SecurityContext: &PodSecurityContext{
 			RunAsNonRoot:   &yes,
 			RunAsUser:      &user,

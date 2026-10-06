@@ -17,15 +17,16 @@ type Pod struct {
 }
 
 type PodSpec struct {
-	RestartPolicy                string              `json:"restartPolicy,omitempty"`
-	AutomountServiceAccountToken *bool               `json:"automountServiceAccountToken,omitempty"`
-	EnableServiceLinks           *bool               `json:"enableServiceLinks,omitempty"`
-	ActiveDeadlineSeconds        *int64              `json:"activeDeadlineSeconds,omitempty"`
-	RuntimeClassName             string              `json:"runtimeClassName,omitempty"`
-	SecurityContext              *PodSecurityContext `json:"securityContext,omitempty"`
-	Volumes                      []Volume            `json:"volumes,omitempty"`
-	InitContainers               []Container         `json:"initContainers,omitempty"`
-	Containers                   []Container         `json:"containers"`
+	RestartPolicy                 string              `json:"restartPolicy,omitempty"`
+	AutomountServiceAccountToken  *bool               `json:"automountServiceAccountToken,omitempty"`
+	EnableServiceLinks            *bool               `json:"enableServiceLinks,omitempty"`
+	ActiveDeadlineSeconds         *int64              `json:"activeDeadlineSeconds,omitempty"`
+	TerminationGracePeriodSeconds *int64              `json:"terminationGracePeriodSeconds,omitempty"`
+	RuntimeClassName              string              `json:"runtimeClassName,omitempty"`
+	SecurityContext               *PodSecurityContext `json:"securityContext,omitempty"`
+	Volumes                       []Volume            `json:"volumes,omitempty"`
+	InitContainers                []Container         `json:"initContainers,omitempty"`
+	Containers                    []Container         `json:"containers"`
 }
 
 type PodSecurityContext struct {
@@ -152,13 +153,17 @@ type ContainerStatus struct {
 
 type ContainerState struct {
 	Waiting    *Waiting    `json:"waiting,omitempty"`
-	Running    *struct{}   `json:"running,omitempty"`
+	Running    *Running    `json:"running,omitempty"`
 	Terminated *Terminated `json:"terminated,omitempty"`
 }
 
 type Waiting struct {
 	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+type Running struct {
+	StartedAt time.Time `json:"startedAt,omitzero"`
 }
 
 type Terminated struct {

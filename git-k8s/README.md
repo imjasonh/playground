@@ -992,7 +992,7 @@ results for the commits that they make, as
 The checks that read files run in their controller's process. A check that
 runs the branch's code, such as `go test`, runs it in a Pod instead.
 `check-gotest` declares one Pod for each head with `kube.Own`, and reports
-`Running` until the Pod finishes:
+`Running` until the test container exits or an init container fails:
 
 - An init container fetches the head from the mirror. It's the only
   container with a token for the mirror, and the token is bound to the Pod.
@@ -1024,11 +1024,12 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   core program.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
-  records when it started waiting in `outputs.waiting`. When a Pod
-  finishes, the branch that has waited longest starts next. A new head, a
-  retry after a failed fetch, or a replacement for a deleted Pod waits
-  behind the branches that are already waiting. The times are in the
-  `GitBranch` status, so a restarted check keeps the order.
+  records when it started waiting in `outputs.waiting`. When a Pod's phase
+  becomes `Succeeded` or `Failed`, or the Pod no longer exists, the branch
+  that has waited longest starts next. A new head, a retry after a failed
+  fetch, or a replacement for a deleted Pod waits behind the branches that
+  are already waiting. The times are in the `GitBranch` status, so a
+  restarted check keeps the order.
 - The check counts a Pod from the moment that it declares it, before its
   cache shows the Pod, so a burst of pushes can't start more than
   `-max-pods`. A Pod that never appears stops counting after a minute. If
@@ -1040,12 +1041,22 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   that other replicas declared until its cache shows them, so replicas that
   start Pods at the same moment can go over the limit.
 
-kube deletes a Pod when the check stops declaring it: after the check
-records the Pod's result, or when the branch moves to a new head. Owner
-references delete the Pods with their `GitBranch`. Set `-runtime-class` to
-run the Pods under a sandboxing runtime such as gVisor, and `-go-image`,
-`-git-image`, `-timeout`, and `-goproxy` to change the rest. If you set
-`-goproxy`, set the same value on the core program.
+The check records a Pod's result as soon as the Pod's status shows that the
+test container exited or an init container failed. The kubelet sets the
+Pod's phase about a second later, after it stops the Pod's sandbox, and the
+Pod counts toward `-max-pods` until then. kube deletes a Pod when the check
+stops declaring it: once the check has recorded the Pod's result and the
+Pod's phase is `Succeeded` or `Failed`, or when the branch moves to a new
+head. The API server deletes a Pod in either phase at once, but waits for
+the kubelet to stop a running one. The kubelet sends the containers of a
+running Pod `SIGTERM`, and kills them when the Pod's termination grace
+period ends. A container's first process ignores `SIGTERM` unless it
+handles the signal, and the shell that fetches the head doesn't, so test
+Pods set the grace period to 2 seconds, the kubelet's minimum, instead of
+the default 30. Owner references delete the Pods with their `GitBranch`.
+Set `-runtime-class` to run the Pods under a sandboxing runtime such as
+gVisor, and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change
+the rest. If you set `-goproxy`, set the same value on the core program.
 
 The core program owns the NetworkPolicy so that `check-gotest`, which
 creates Pods in every namespace that has a `GitBranch`, can't change
@@ -1340,6 +1351,22 @@ Anyone who can read the Pod or watch the cluster's network can read a
 result, but can't change it. The check also rejects a result with an
 unknown verdict, an invalid path, a file mode other than a regular file or a
 symbolic link, more than 1,000 files, or more than 8 MiB of file content.
+
+The kubelet reports the `result` container as running a moment before its
+server listens, so a check that fetches right away can find nothing
+listening. When the Pod refuses the connection less than 10 seconds after
+the container starts, the check tries again after a quarter second. After
+other failed fetches, it waits 5 seconds.
+
+kube deletes an agent Pod once the check has its result, or when the check
+stops declaring the Pod for another reason, such as a new head. The kubelet
+sends the Pod's containers `SIGTERM`, and kills them when the Pod's
+termination grace period ends. A container's first process ignores
+`SIGTERM` unless it handles the signal. The `prepare` container's shell
+doesn't, and the runner does only once the `result` container's server
+listens, so agent Pods set the grace period to 2 seconds, the kubelet's
+minimum, instead of the default 30. A Pod counts toward `-max-pods` until
+its containers stop.
 
 Each agent Pod's volumes have size limits. The repository, the head's
 files, and the agent's input can each use up to `-source-size`, 2Gi by
@@ -2792,11 +2819,15 @@ changes anything other than its requirements and its `go` and `toolchain`
 lines, but not one whose other directives `go get` sorted. The `go` command
 checks the `go.sum` checksums when it builds the branch. At most `-max-pods`
 update Pods run at once across all namespaces, and kube deletes each one once
-the controller has its result. When an update fails, the controller logs why
-and tries again after `-interval`. An update also fails when an image's name
-isn't valid, when kube still can't schedule the update Pod 5 minutes after
-creating it, and when a Secret is still missing or an image still can't be
-pulled 5 minutes after the container can start.
+the controller has its result. A deleted Pod counts until the kubelet stops
+its containers. Update Pods set a termination grace period of 2 seconds,
+the kubelet's minimum, instead of the default 30, because a container's
+first process ignores `SIGTERM` unless it handles the signal, as the shells
+in the `prepare` and `update` containers don't. When an update fails, the
+controller logs why and tries again after `-interval`. An update also fails
+when an image's name isn't valid, when kube still can't schedule the update
+Pod 5 minutes after creating it, and when a Secret is still missing or an
+image still can't be pulled 5 minutes after the container can start.
 
 Each update Pod's volumes have size limits. The repository can use up to
 `-source-size`, 2Gi by default, and the home directory, which holds Go's

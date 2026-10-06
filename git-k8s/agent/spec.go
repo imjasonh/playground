@@ -207,6 +207,12 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	user := int64(65532)
 	timeout := max(1, int64(math.Ceil(r.Timeout.Seconds())))
 	deadline := timeout + int64(podSlack/time.Second)
+	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
+	// when the grace period ends. It raises a shorter grace period to 2
+	// seconds. A container's first process ignores SIGTERM unless it handles
+	// the signal, as prepare's shell and the runner's run command don't, and
+	// the Pod counts toward -max-pods until its containers stop.
+	grace := int64(2)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,
 		ReadOnlyRootFilesystem:   &yes,
@@ -298,11 +304,12 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 
 	p := &Pod{Object: kube.Meta("", map[string]string{"app.kubernetes.io/name": "git-k8s-agent", agentLabel: r.Name})}
 	p.Spec = PodSpec{
-		RestartPolicy:                "Never",
-		AutomountServiceAccountToken: &no,
-		EnableServiceLinks:           &no,
-		ActiveDeadlineSeconds:        &deadline,
-		RuntimeClassName:             r.RuntimeClass,
+		RestartPolicy:                 "Never",
+		AutomountServiceAccountToken:  &no,
+		EnableServiceLinks:            &no,
+		ActiveDeadlineSeconds:         &deadline,
+		TerminationGracePeriodSeconds: &grace,
+		RuntimeClassName:              r.RuntimeClass,
 		SecurityContext: &PodSecurityContext{
 			RunAsNonRoot:   &yes,
 			RunAsUser:      &user,

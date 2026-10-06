@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -97,6 +98,27 @@ var client = &http.Client{
 // and UID serves.
 func (r *Runner) fetch(ctx context.Context, ip, uid string) ([]byte, error) {
 	return get(ctx, ip, r.resultPort(), uid)
+}
+
+// startupWindow is how long after the result container starts a refused
+// connection means that its server isn't listening yet, and startupRetry is
+// how long a controller waits to fetch again then.
+const (
+	startupWindow = 10 * time.Second
+	startupRetry  = 250 * time.Millisecond
+)
+
+// RetryFetchAfter returns how long a controller waits before it fetches a
+// result again after a fetch failed with err. The kubelet reports the result
+// container as running a moment before its server listens, so a controller
+// that fetches as soon as the Pod's status changes can find nothing
+// listening. If the Pod refused the connection less than startupWindow after
+// the container started, the wait is startupRetry. Otherwise it's retry.
+func RetryFetchAfter(err error, started, now time.Time, retry time.Duration) time.Duration {
+	if errors.Is(err, syscall.ECONNREFUSED) && now.Sub(started) < startupWindow {
+		return startupRetry
+	}
+	return retry
 }
 
 // ErrInvalidResult is wrapped by errors from FetchResult for a result that

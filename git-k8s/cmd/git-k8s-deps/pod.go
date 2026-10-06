@@ -186,6 +186,12 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 	yes, no := true, false
 	user := int64(65532)
 	deadline := max(1, int64(u.timeout.Seconds()))
+	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
+	// when the grace period ends. It raises a shorter grace period to 2
+	// seconds. A container's first process ignores SIGTERM unless it handles
+	// the signal, as the prepare and update containers' shells don't, and
+	// the Pod counts toward -max-pods until its containers stop.
+	grace := int64(2)
 	restricted := &agent.SecurityContext{
 		AllowPrivilegeEscalation: &no,
 		ReadOnlyRootFilesystem:   &yes,
@@ -213,11 +219,12 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 	disk := k8s.Quantity(formatSize(parseSize(u.sourceSize) + parseSize(u.goCacheSize) + resultSize + logSize))
 	p := &agent.Pod{Object: kube.Meta("", maps.Clone(podLabels))}
 	p.Spec = agent.PodSpec{
-		RestartPolicy:                "Never",
-		AutomountServiceAccountToken: &no,
-		EnableServiceLinks:           &no,
-		ActiveDeadlineSeconds:        &deadline,
-		RuntimeClassName:             u.runtimeClass,
+		RestartPolicy:                 "Never",
+		AutomountServiceAccountToken:  &no,
+		EnableServiceLinks:            &no,
+		ActiveDeadlineSeconds:         &deadline,
+		TerminationGracePeriodSeconds: &grace,
+		RuntimeClassName:              u.runtimeClass,
 		SecurityContext: &agent.PodSecurityContext{
 			RunAsNonRoot:   &yes,
 			RunAsUser:      &user,
@@ -427,7 +434,7 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 		return failAll("the result from Pod %s isn't valid: %v", pod.Name, err)
 	}
 	if err != nil {
-		kube.RequeueAfter(ctx, fetchRetry)
+		kube.RequeueAfter(ctx, agent.RetryFetchAfter(err, server.Running.StartedAt, u.clock(), fetchRetry))
 		return nil
 	}
 	out, err := parseResult(body, updates)
