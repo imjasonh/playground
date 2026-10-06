@@ -479,6 +479,10 @@ forward_mirror() {
     kill "${PORT_FORWARD_PID}" 2>/dev/null || true
     wait "${PORT_FORWARD_PID}" 2>/dev/null || true
   fi
+  # The background job truncates the log only once it starts, which can be
+  # after forwarding first reads it. Truncate it here, so forwarding can't
+  # match the last port-forward's lines.
+  : >"${WORKDIR}/port-forward.log"
   k -n git-k8s port-forward service/git-k8s :80 >"${WORKDIR}/port-forward.log" 2>&1 &
   PORT_FORWARD_PID=$!
   forwarding() { grep -qE '^Forwarding from 127[.]0[.]0[.]1:[0-9]+' "${WORKDIR}/port-forward.log"; }
