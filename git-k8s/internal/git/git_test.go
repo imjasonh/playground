@@ -2,9 +2,11 @@ package git_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
@@ -444,6 +447,75 @@ func serveRefs(t *testing.T, sha string, refs ...string) string {
 		}
 	}()
 	return "git://" + l.Addr().String() + "/app.git"
+}
+
+// Killing only git leaves its remote helper running, holding git's stderr
+// open until the server responds or stopDelay passes.
+func TestLsRemoteReturnsWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		select {
+		case <-release:
+		case <-time.After(20 * time.Second):
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	start := time.Now()
+	_, err := (&git.Git{}).LsRemote(ctx, git.Remote{URL: srv.URL + "/app.git"})
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("ls-remote returned %v after it started", d.Round(time.Second))
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want %v", err, context.Canceled)
+	}
+}
+
+// Commands in a repository run git with -C and the repository's directory
+// before the subcommand.
+func TestErrorsNameTheSubcommand(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "app.git")
+	if _, err := (&git.Git{}).Open(t.Context(), dir); err != nil {
+		t.Fatal(err)
+	}
+	for name, tt := range map[string]struct {
+		git  *git.Git
+		want error
+	}{
+		"timeout":        {&git.Git{Timeout: time.Nanosecond}, context.DeadlineExceeded},
+		"missing binary": {&git.Git{Bin: filepath.Join(t.TempDir(), "git")}, fs.ErrNotExist},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// Open doesn't run git for a repository that exists.
+			repo, err := tt.git.Open(t.Context(), dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = repo.Fetch(t.Context(), git.Remote{URL: "http://127.0.0.1:1/app.git"}, "main")
+			if !errors.Is(err, tt.want) || !strings.HasPrefix(err.Error(), "git fetch: ") {
+				t.Errorf("err = %v, want an error that starts with %q and wraps %v", err, "git fetch: ", tt.want)
+			}
+		})
+	}
+}
+
+// Merge puts --attr-source, and -c with its value, before merge-tree.
+func TestErrorsNameTheSubcommandAfterOptions(t *testing.T) {
+	repo, err := (&git.Git{}).Open(t.Context(), filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalled := wrap(t, repo, `case " $* " in *" merge-tree "*) exec sleep 60 ;; esac`)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, _, err = stalled.Merge(ctx, "HEAD", "HEAD", git.MergeOptions{})
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.HasPrefix(err.Error(), "git merge-tree: ") {
+		t.Errorf("err = %v, want an error that starts with %q and wraps %v", err, "git merge-tree: ", context.DeadlineExceeded)
+	}
 }
 
 func TestFetchMergePush(t *testing.T) {

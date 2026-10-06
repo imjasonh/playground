@@ -536,6 +536,105 @@ signed_by_git_k8s() {
   "${run}" verify-commit "$1"
   [[ "$("${run}" log -1 --format='%G? %GS %ce' "$1")" == "G ${IDENTITY} ${IDENTITY}" ]]
 }
+# zombies prints each zombie process on the cluster's nodes, with its parent.
+# A process is a zombie from when it exits until its parent reaps it. In
+# /proc/PID/stat, the state and the parent's PID follow the command name,
+# which can contain spaces and ends at the last ")".
+zombies() {
+  local nodes node
+  nodes="$(kind get nodes --name "${CLUSTER}")"
+  [[ -n "${nodes}" ]]
+  for node in ${nodes}; do
+    docker exec "${node}" sh -c '
+      node=$1
+      for stat in /proc/[0-9]*/stat; do
+        read -r line 2>/dev/null <"${stat}" || continue
+        set -- ${line##*) }
+        if [ "$1" = Z ]; then
+          name="${line#*(}"
+          echo "${node}: process ${line%% *} (${name%)*}), a child of $2 ($(cat "/proc/$2/comm" 2>/dev/null))"
+        fi
+      done' sh "${node}"
+  done
+}
+# no_lasting_zombies fails if a zombie on the nodes is still one 10 seconds
+# later, because then its parent doesn't reap it.
+no_lasting_zombies() {
+  local before after lasting
+  before="$(zombies | sort)"
+  sleep 10
+  after="$(zombies | sort)"
+  lasting="$(comm -12 <(echo "${before}") <(echo "${after}"))"
+  if [[ -n "${lasting}" ]]; then
+    echo "These zombies lasted 10 seconds:" >&2
+    echo "${lasting}" >&2
+    return 1
+  fi
+}
+
+echo "::group::Failed git commands leave no zombies"
+# When a fetch over HTTP fails, git exits without waiting for its remote
+# helper, which then becomes a child of PID 1. Moving a repository away on
+# the git server fails the core program's fetches from it. Checks fetch from
+# the mirror, which refuses a check that none of the repository's merge
+# policies list. An invalid pollInterval keeps the core program from
+# changing the GitBranches, so c/gone's merge policy still lists risk, and
+# once c/gone's result is removed, check-risk fetches c/gone again. risk's
+# level is never none, so nothing lands, and the copy has no change that
+# deleting the GitRepository has to push.
+g push -q "${HOST_URL}/zombie.git" main
+g checkout -q --detach
+echo gone >"${WORK}/gone.txt"
+g add gone.txt
+g commit -qm "Add gone.txt"
+gone="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/zombie.git" HEAD:refs/heads/c/gone
+g checkout -q main
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: zombie
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/zombie.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: risk
+        when: checks.risk.outputs.level == "none"
+    - match: c/**
+      parent: main
+EOF
+gone_risk() { k -n "${NS}" get gitbranch "$(branch_object c/gone zombie)" -o jsonpath="{.status.checks.risk.$1}"; }
+gone_checked() { [[ -n "$(branch_object c/gone zombie)" && "$(gone_risk commit)" == "${gone}" ]]; }
+eventually 120 gone_checked
+mv "${WORKDIR}/repos/zombie.git" "${WORKDIR}/repos/moved.git"
+fetch_failed() { [[ "$(synced_condition reason zombie)" == SyncFailed && "$(synced_condition message zombie)" == *"not found"* ]]; }
+eventually 60 fetch_failed
+synced_condition message zombie
+echo
+k -n "${NS}" patch gitrepository zombie --type=json -p '[
+  {"op": "replace", "path": "/spec/pollInterval", "value": "0s"},
+  {"op": "remove", "path": "/spec/branches/0/merge"}]'
+invalid_poll_interval() {
+  [[ "$(k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')" == InvalidPollInterval ]]
+}
+eventually 60 invalid_poll_interval
+k -n "${NS}" patch gitbranch "$(branch_object c/gone zombie)" --subresource=status --type=json \
+  -p '[{"op":"remove","path":"/status/checks/risk"}]'
+risk_refused() { [[ "$(gone_risk state)" == Error && "$(gone_risk message)" == *"not found"* ]]; }
+eventually 60 risk_refused
+gone_risk message
+echo
+no_lasting_zombies
+k -n "${NS}" delete gitrepository zombie
+echo "The core program's fetches of a repository that moved and check-risk's fetches that the mirror refused failed, and no zombie on the nodes lasted 10 seconds."
+echo "::endgroup::"
 
 echo "::group::The git server rejects unsigned commits"
 g checkout -q -b c/unsigned
@@ -1057,9 +1156,20 @@ for sa in check-gotest git-k8s; do
 done
 annotate_main "${APPROVE}-" "${APPROVED_BY}-"
 gotest_token="$(k -n check-gotest create token check-gotest)"
-code="$(patch_branch "${gotest_token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
-[[ "${code}" == 422 ]]
-grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
+# A finalizer would keep the GitBranch after its branch is deleted, and an
+# owner reference to a missing ConfigMap would make garbage collection
+# delete it. Without the core program's entries in managedFields, its
+# server-side applies would leave behind the fields that they stop setting.
+hold='{"metadata":{"finalizers":["example.com/hold"]}}'
+reown='{"metadata":{"ownerReferences":[{"apiVersion":"v1","kind":"ConfigMap","name":"gone","uid":"6d9e4f0c-0000-4000-8000-000000000000"}]}}'
+reset='{"metadata":{"managedFields":[{}]}}'
+for patch in '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "${reset}"; do
+  code="$(patch_branch "${gotest_token}" "${patch}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]]
+  grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
+done
 # check-gofmt and check-approval own nothing, so generate doesn't let them
 # patch GitBranch objects at all.
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
@@ -2516,7 +2626,7 @@ deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
 code="$(patch_branch "${deps_token}" '{}')"
 [[ "${code}" == 200 ]]
 for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
-  '{"metadata":{"labels":{"e2e":"changed"}}}'; do
+  '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "${reset}"; do
   code="$(patch_branch "${deps_token}" "${patch}")"
   cat "${WORKDIR}/patch.json"
   echo
@@ -2566,6 +2676,30 @@ idle() {
 }
 eventually 60 idle
 echo "Four polls of the remote wrote nothing."
+echo "::endgroup::"
+
+echo "::group::No zombie lasts, and the programs' Pods share a process namespace and meet the restricted Pod Security Standard"
+no_lasting_zombies
+# generate doesn't label the programs' namespaces, so their Pods get only the
+# cluster's default Pod Security level. A server-side dry run of the
+# restricted label warns about each Pod that violates it. By now, CHECKS
+# holds every program that the groups installed except git-k8s and go-cache.
+programs=(git-k8s go-cache "${CHECKS[@]}")
+for program in "${programs[@]}"; do
+  shared="$(k -n "$(namespace_of "${program}")" get pods -l "app.kubernetes.io/name=${program}" \
+    -o jsonpath='{range .items[*]}{.spec.shareProcessNamespace}{"\n"}{end}')"
+  if [[ -z "${shared}" ]] || grep -qv '^true$' <<<"${shared}"; then
+    echo "${program}'s Pods don't all share a process namespace: ${shared}" >&2
+    exit 1
+  fi
+  k label --dry-run=server --overwrite namespace "$(namespace_of "${program}")" \
+    pod-security.kubernetes.io/enforce=restricted 2>&1 >/dev/null | tee "${WORKDIR}/pod-security.log"
+  if grep -q violate "${WORKDIR}/pod-security.log"; then
+    echo "${program}'s Pods violate the restricted Pod Security Standard" >&2
+    exit 1
+  fi
+done
+echo "No zombie on the nodes lasted 10 seconds, and the Pods of all ${#programs[@]} programs share a process namespace and meet the restricted Pod Security Standard."
 echo "::endgroup::"
 
 echo "kind e2e passed"

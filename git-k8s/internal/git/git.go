@@ -166,10 +166,10 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		args = append([]string{"-C", dir}, args...)
 	}
 	// Keep the automatic maintenance that fetch starts in the foreground.
-	// Detached, it outlives the command and becomes a child of the
-	// container's PID 1, a Go program that never waits for it, so each
-	// fetch would leave a zombie. Git uses gc.autoDetach when
-	// maintenance.autoDetach isn't set.
+	// Detached, it outlives the command. It can still be writing to a cache
+	// while the cache is removed, and where PID 1 is a Go program, which
+	// never waits for it, each fetch leaves a zombie. Git uses gc.autoDetach
+	// when maintenance.autoDetach isn't set.
 	cmd := exec.CommandContext(ctx, bin, append([]string{"-c", "gc.autoDetach=false"}, args...)...)
 	// git runs in its own process group, and the group gets SIGTERM, so
 	// the commands that git started stop too. Otherwise the repack that

@@ -408,17 +408,17 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		vap.Annotations = nil
 	}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=2; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again" {
+		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=3; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again" {
 		t.Errorf("with policies from an earlier release, which have no version, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = false
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=2; apply config/policy.yaml from this release" {
+		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=3; apply config/policy.yaml from this release" {
 		t.Errorf("with policies from an earlier release that the program doesn't install, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=2; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
+		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=3; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
 		t.Errorf("with one binding that only warns and policies from an earlier release, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Deny"}
@@ -427,33 +427,33 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	vaps[0].Annotations[policyVersionAnnotation] = "1"
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-		c.Message != "git-k8s-check-results doesn't have git-k8s.imjasonh.com/policy-version=2; apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results doesn't have git-k8s.imjasonh.com/policy-version=3; apply config/policy.yaml from this release" {
 		t.Errorf("with one policy at an earlier version, PoliciesInstalled = %+v", c)
 	}
 	vaps[0].Annotations[policyVersionAnnotation] = later
 	for _, v := range []string{"v3", "99999999999999999999"} {
 		vaps[1].Annotations[policyVersionAnnotation] = v
 		if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-			c.Message != "git-k8s-branches doesn't have git-k8s.imjasonh.com/policy-version=2; git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 2; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+			c.Message != "git-k8s-branches doesn't have git-k8s.imjasonh.com/policy-version=3; git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 			t.Errorf("with one policy at a later version and the other at %q, which doesn't parse as an int, PoliciesInstalled = %+v", v, c)
 		}
 	}
 	vaps[1].Annotations[policyVersionAnnotation] = current
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" ||
-		c.Message != "git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 2; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("with one policy at a later version, PoliciesInstalled = %+v", c)
 	}
 	for _, vap := range vaps {
 		vap.Annotations[policyVersionAnnotation] = later
 	}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" ||
-		c.Message != all+" have a git-k8s.imjasonh.com/policy-version later than 2; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != all+" have a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("with policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	// Applying the policies from a later release installs the missing one too,
 	// so the fix for the later policies replaces the fix for the missing one.
 	if c := reconcile(world[2:]...); c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 2; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("without git-k8s-check-results, and with the other policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true

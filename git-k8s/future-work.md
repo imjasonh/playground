@@ -62,7 +62,7 @@ branches behind it:
   isn't running, holds up every branch behind it while the front can still
   land.
 - A squash or rebase landing that pushes its commit to the front for the
-  checks holds the front until the repository controller lists that
+  checks holds the front until the repositories controller lists that
   commit. If someone pushes the branch's old head back before then, the
   listing doesn't change, so the branch holds the front until its head or
   its parent's head changes.
@@ -100,8 +100,8 @@ Questions to settle first:
 
 `check-approval` reports who approved a branch, but not who wrote it, so a
 gate can't require that someone other than the author approved.
-`check-approval` doesn't read commits today, but it could fetch them from the
-[mirror](README.md#the-mirror) with its mirror token, without the
+`check-approval` doesn't read commits today, but with `mirror.Remote` it
+could fetch them from the [mirror](README.md#the-mirror) without the
 repository's credential.
 
 Questions to settle first:
