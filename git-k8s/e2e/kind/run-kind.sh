@@ -1020,6 +1020,46 @@ echo "approved-by was '${revoked}' after ${admin} removed approve, and '${approv
 echo "${admin} removed and set approve alone, and the policy did the same to approved-by."
 echo "::endgroup::"
 
+echo "::group::An approved branch waits at the front of main's queue for the base check"
+# main moves on, so c/auth is behind it, and so is c/ahead, another risky
+# branch from where main was.
+g checkout -q -B moved-again "${main_before}"
+echo again >"${WORK}/again.txt"
+g add -A
+g commit -qm "Add again.txt"
+g push -q "${HOST_URL}/app.git" HEAD:main
+g checkout -q -B c/ahead "${main_before}"
+main_before="$(g rev-parse moved-again)"
+mkdir -p "${WORK}/auth"
+printf 'package auth\n\n// First reports whether user goes first.\nfunc First(user string) bool { return user == "alice" }\n' \
+  >"${WORK}/auth/first.go"
+g add -A
+g commit -qm "Add auth.First"
+AHEAD="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:c/ahead
+# behind_main reports whether the base check found branch $1 behind main at
+# main_before, and the risk and gofmt checks finished with a high rating.
+behind_main() {
+  local object
+  object="$(branch_object "$1")" && [[ -n "${object}" ]] &&
+    [[ "$(k -n "${NS}" get gitbranch "${object}" -o jsonpath='{.status.checks.base.parentCommit} {.status.checks.base.outputs.behind} {.status.checks.risk.outputs.level} {.status.checks.gofmt.state}')" == "${main_before} true high Passed" ]]
+}
+eventually 120 behind_main c/auth
+eventually 120 behind_main c/ahead
+# With the base check stopped, the first branch in main's queue waits there
+# for the base check to merge main in, and the branches behind it wait too.
+k -n check-base scale deployment/check-base --replicas=0
+base_stopped() { [[ -z "$(k -n check-base get pods -o name)" ]]; }
+eventually 120 base_stopped
+k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/ahead)" --as=alice "${APPROVE}=${AHEAD}" "${APPROVED_BY}=alice"
+waiting_for_base() {
+  [[ "$(k -n "${NS}" get gitbranch "$(branch_object c/ahead)" -o jsonpath='{.status.conditions[?(@.type=="Merged")].message}')" == \
+    "first in main's queue; waiting for the base check to merge main in" ]]
+}
+eventually 60 waiting_for_base
+echo "alice approved c/ahead, which waits at the front of main's queue for the base check to merge main in."
+echo "::endgroup::"
+
 echo "::group::Another approver can take over an approval"
 # Admission sees only the object that a request produces, so setting approve
 # to the commit that it already names changes nothing.
@@ -1031,10 +1071,38 @@ rejected "requires the approve verb on gitbranches, which bob doesn't have" \
 rejected "take over an approval by setting it to alice" annotate --as=alice "${APPROVED_BY}=bob"
 [[ "$(remote_head main)" == "${main_before}" ]]
 annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
-auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
-eventually 120 auth_landed
-eventually 60 branch_gone c/auth
-echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
+queue_is() { [[ "$(k -n "${NS}" get gitbranch "$(branch_object main)" -o jsonpath='{.status.queue[*]}')" == "$1" ]]; }
+eventually 60 queue_is "c/ahead c/auth"
+echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth joined main's queue behind c/ahead."
+echo "::endgroup::"
+
+echo "::group::Approvals and risk ratings hold through the base check's merges"
+timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=app --watch \
+  -o jsonpath='{.spec.branch}: {.status.checks.approval.message}{"\n"}' >"${WORKDIR}/approvals.txt" 2>&1 &
+approvals_pid=$!
+k -n check-base scale deployment/check-base --replicas=1
+k -n check-base rollout status deployment/check-base --timeout=180s
+risky_landed() {
+  branch_gone c/ahead && branch_gone c/auth && fetch_main &&
+    g cat-file -e FETCH_HEAD:auth/first.go && g cat-file -e FETCH_HEAD:auth/policy.go
+}
+eventually 240 risky_landed
+kill "${approvals_pid}" 2>/dev/null || true
+wait "${approvals_pid}" || true
+g log --graph --format='%h %s' "${main_before}^..FETCH_HEAD"
+# The base check merged main into c/ahead at the front of the queue, and
+# then into c/auth, after c/ahead landed.
+[[ "$(g log -1 --format=%s FETCH_HEAD)" == "Merge main into c/auth" ]]
+[[ "$(g log -1 --format=%s FETCH_HEAD^2)" == "Merge main into c/ahead" ]]
+[[ "$(g rev-parse FETCH_HEAD^1 FETCH_HEAD^2^1 FETCH_HEAD^2^2)" == "$(printf '%s\n' "${AUTH}" "${AHEAD}" "${main_before}")" ]]
+# Each merge makes the change that alice approved, so it kept her approval
+# and check-risk's rating.
+grep -Fx "c/ahead: ${AHEAD:0:12} is approved by alice, and $(g rev-parse --short=12 FETCH_HEAD^2) makes the same change" "${WORKDIR}/approvals.txt"
+grep -Fx "c/auth: ${AUTH:0:12} is approved by alice, and $(g rev-parse --short=12 FETCH_HEAD) makes the same change" "${WORKDIR}/approvals.txt"
+k -n check-risk logs deployment/check-risk >"${WORKDIR}/risk.log"
+grep -E 'kept a result for the same change.+ branch=c/ahead ' "${WORKDIR}/risk.log"
+grep -E 'kept a result for the same change.+ branch=c/auth ' "${WORKDIR}/risk.log"
+echo "The base check merged main into c/ahead and then c/auth at the front of main's queue, and both landed with alice's approvals and check-risk's ratings of the commits before the merges."
 echo "::endgroup::"
 
 echo "::group::Two branches behind main land through its queue in turn"
