@@ -2022,12 +2022,14 @@ and kube retries it, which runs the check again.
 If the branch changed since the check read it, the core program answers
 `409 Conflict`, and the check drops the result, because the change runs the
 check again. That includes a `GitBranch` that was deleted and created
-again. If the `GitBranch` was deleted, the core program answers
-`404 Not Found` as soon as the API server shows that, and the check drops
-the result. Its reconcile succeeds, so kube doesn't run the check again. If
-the core program rejects the result with `400 Bad Request`, or the token's
-service account with `403 Forbidden`, the check logs why and sends nothing
-more for that branch until the branch changes or the check restarts.
+again. If the `GitBranch` was deleted, the core program answers `410 Gone`
+as soon as the API server shows that, and the check drops the result. Its
+reconcile succeeds, so kube doesn't run the check again. If the core
+program rejects the result with `400 Bad Request`, or the token's service
+account with `403 Forbidden`, the check logs why and sends nothing more for
+that branch until the branch changes or the check restarts. Any other
+answer, such as a `404 Not Found` from a `-results-url` with the wrong
+path, fails the check's reconcile, and kube retries it.
 
 ### Security model
 

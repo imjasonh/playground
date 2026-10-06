@@ -108,9 +108,10 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 			// check again.
 			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
 			return nil
-		case err == nil && code == http.StatusNotFound:
-			// The core program answers 404 only once the API server shows
-			// that the GitBranch is gone.
+		case err == nil && code == http.StatusGone:
+			// The core program answers 410 only once the API server shows
+			// that the GitBranch is gone. A 404 can come from a wrong
+			// -results-url, so it fails the reconcile like other answers.
 			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
 			return errGone
 		case err == nil && code == http.StatusBadRequest:

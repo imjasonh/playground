@@ -214,7 +214,7 @@ func (rs *results) gone(ctx context.Context, k kube.Key, generation int64) (int,
 		slog.WarnContext(ctx, "reading a GitBranch for a check's result failed", "namespace", k.Namespace, "branch", k.Name, "err", err)
 		return 0, ""
 	case b == nil:
-		return http.StatusNotFound, fmt.Sprintf("GitBranch %s doesn't exist", k)
+		return http.StatusGone, fmt.Sprintf("GitBranch %s doesn't exist", k)
 	case b.Generation < generation:
 		// A GitBranch's generation never decreases, so this one is another
 		// GitBranch with the same name, which the check runs on again.

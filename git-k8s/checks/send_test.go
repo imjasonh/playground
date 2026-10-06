@@ -236,16 +236,32 @@ func TestSendsErrorAndFails(t *testing.T) {
 }
 
 // A check's reconcile of a branch that's gone succeeds, even if the check
-// failed, because running the check again can't help.
+// failed, because running the check again can't help. Only a 410 says that
+// the branch is gone. A 404 can come from a wrong -results-url, so the
+// reconcile fails with the check's error and the 404, and kube retries it.
 func TestBranchGoneEndsReconcile(t *testing.T) {
-	e := &endpoint{codes: []int{http.StatusNotFound}}
-	f := newSendFixture(t, e)
-	f.err = errors.New("can't fetch c/x")
-	if err := f.runAndSend(f.context(t)); err != nil {
-		t.Errorf("err = %v, want none for a branch that's gone", err)
-	}
-	if got := e.requests(); len(got) != 1 || got[0].result.State != gitk8s.Error {
-		t.Errorf("received %+v, want one Error result", got)
+	for code, want := range map[int][]string{
+		http.StatusGone:     nil,
+		http.StatusNotFound: {"can't fetch c/x", "Not Found"},
+	} {
+		e := &endpoint{codes: []int{code}}
+		f := newSendFixture(t, e)
+		f.err = errors.New("can't fetch c/x")
+		err := f.runAndSend(f.context(t))
+		if want == nil && err != nil {
+			t.Errorf("after %d, err = %v, want none for a branch that's gone", code, err)
+		}
+		if want != nil && (err == nil || kube.IsPermanent(err)) {
+			t.Errorf("after %d, err = %v, want an error that kube retries", code, err)
+		}
+		for _, s := range want {
+			if err != nil && !strings.Contains(err.Error(), s) {
+				t.Errorf("after %d, err = %v, want it to say %q", code, err, s)
+			}
+		}
+		if got := e.requests(); len(got) != 1 || got[0].result.State != gitk8s.Error {
+			t.Errorf("after %d, received %+v, want one Error result", code, got)
+		}
 	}
 }
 
@@ -289,7 +305,8 @@ func TestSendAnswers(t *testing.T) {
 		{"retries 503s with the same token", []int{503, 503}, 3, ""},
 		{"gives up after 10 503s", []int{503, 503, 503, 503, 503, 503, 503, 503, 503, 503}, sendAttempts, "didn't write the lint check's result"},
 		{"drops a result that the core program doesn't take", []int{409}, 1, ""},
-		{"drops a result for a branch that's gone", []int{404}, 1, ""},
+		{"drops a result for a branch that's gone", []int{410}, 1, ""},
+		{"stops on a 404, which doesn't say that the branch is gone", []int{404}, 1, "Not Found"},
 		{"stops on other errors", []int{500}, 1, "Internal Server Error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

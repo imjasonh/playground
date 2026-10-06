@@ -1218,14 +1218,14 @@ cat "${WORKDIR}/result.txt"
 [[ "${code}" == 403 ]]
 grep -q "system:serviceaccount:git-k8s:git-k8s isn't a check's service account" "${WORKDIR}/result.txt"
 # A cache miss doesn't show that a GitBranch is gone, so the results
-# endpoint reads the API server, and answers 404 at once rather than after
+# endpoint reads the API server, and answers 410 at once rather than after
 # its 10-second wait for the cache.
 start="${SECONDS}"
 code="$(curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: Bearer ${risk_token}" \
   -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
   "${MIRROR%/"${NS}"}/results/${NS}/app-no-such-branch/risk?generation=1")"
 cat "${WORKDIR}/result.txt"
-[[ "${code}" == 404 ]]
+[[ "${code}" == 410 ]]
 grep -q "GitBranch ${NS}/app-no-such-branch doesn't exist" "${WORKDIR}/result.txt"
 ((SECONDS - start < 5))
 # Each endpoint accepts only tokens for its own audience, even from a check
@@ -1296,7 +1296,7 @@ core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The results endpoint answers 404 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
+echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The results endpoint answers 410 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"

@@ -215,7 +215,7 @@ func TestResultsEndpointOnStandby(t *testing.T) {
 }
 
 // A Get that can't read returns nil and cancels the request's context. The
-// branch may exist, so the endpoint answers 503 rather than 404. The fake
+// branch may exist, so the endpoint answers 503 rather than 410. The fake
 // can't fail a read, so the test cancels the context and leaves the branch
 // out of the world.
 func TestResultsEndpointCantRead(t *testing.T) {
@@ -275,11 +275,11 @@ func TestResultsEndpointBranchGone(t *testing.T) {
 		code  int
 		msg   string
 	}{
-		{"deleted", nil, "/results/default/app-c-x/gofmt?generation=3", nil, http.StatusNotFound, "GitBranch default/app-c-x doesn't exist"},
+		{"deleted", nil, "/results/default/app-c-x/gofmt?generation=3", nil, http.StatusGone, "GitBranch default/app-c-x doesn't exist"},
 		{
 			"deleted after the cache's generation", []any{listedBranch()}, "/results/default/app-c-x/gofmt?generation=4",
 			func(context.Context, string, string) (*resultsBranch, error) { return nil, nil },
-			http.StatusNotFound, "GitBranch default/app-c-x doesn't exist",
+			http.StatusGone, "GitBranch default/app-c-x doesn't exist",
 		},
 		{
 			"deleted and created again", []any{recreated}, "/results/default/app-c-x/gofmt?generation=3", nil,
@@ -384,7 +384,7 @@ func (c *changingCache) set(world context.Context) {
 }
 
 // A request that can't read the branch from the API server keeps waiting
-// for the cache, and then answers 503 rather than 404, because the branch
+// for the cache, and then answers 503 rather than 410, because the branch
 // may exist, so that the check tries again. A read that gets no answer
 // ends when the request stops waiting.
 func TestResultsEndpointCantFetch(t *testing.T) {
