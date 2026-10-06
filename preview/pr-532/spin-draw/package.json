@@ -1,0 +1,14 @@
+{
+  "name": "spin-draw",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Print a disc and trace numbered lines as it turns to draw a picture",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
