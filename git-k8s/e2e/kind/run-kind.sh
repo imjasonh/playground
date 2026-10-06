@@ -54,6 +54,7 @@ MOD_PROXY_PID=""
 PROBE_PID=""
 KIND_PID=""
 AGENT_IMAGE_PID=""
+GO_IMAGE_PID=""
 ZOMBIES_PID=""
 # GENERATING has the PID of each pregenerate that the test hasn't waited for,
 # and GENERATED the exit status of each that it has.
@@ -114,7 +115,8 @@ finish() {
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
-  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${AGENT_IMAGE_PID}" "${ZOMBIES_PID}" "${GENERATING[@]}"; do
+  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${AGENT_IMAGE_PID}" "${GO_IMAGE_PID}" "${ZOMBIES_PID}" \
+    "${GENERATING[@]}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" 2>/dev/null || true
     fi
@@ -339,11 +341,22 @@ if [[ -n "${KIND_PID}" ]]; then
   cat "${WORKDIR}/kind.log"
   [[ ${kind_status} -eq 0 ]]
 fi
-for node in $(kind get nodes --name "${CLUSTER}"); do
+NODES="$(kind get nodes --name "${CLUSTER}")"
+for node in ${NODES}; do
   docker exec "${node}" mkdir -p "/etc/containerd/certs.d/localhost:${PORT}"
   printf '[host."http://%s:5000"]\n' "${REGISTRY}" |
     docker exec -i "${node}" cp /dev/stdin "/etc/containerd/certs.d/localhost:${PORT}/hosts.toml"
 done
+# Test Pods run in the Go image, so the nodes pull it in the background, and
+# the group "Tests run in a sandboxed Pod" waits for them.
+pull_go_image() {
+  local node
+  for node in ${NODES}; do
+    docker exec "${node}" crictl pull "${GO_IMAGE}" || return
+  done
+}
+pull_go_image >"${WORKDIR}/go-image.log" 2>&1 &
+GO_IMAGE_PID=$!
 k version
 echo "Pods reach the git server at ${CLUSTER_URL}"
 echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
@@ -1593,6 +1606,11 @@ wait "${PROBE_PID}" || probe_status=$?
 PROBE_PID=""
 cat "${WORKDIR}/probe.log"
 [[ ${probe_status} -eq 0 ]]
+go_image_status=0
+wait "${GO_IMAGE_PID}" || go_image_status=$?
+GO_IMAGE_PID=""
+cat "${WORKDIR}/go-image.log"
+[[ ${go_image_status} -eq 0 ]]
 ENFORCED="$(cat "${WORKDIR}/enforced")"
 if [[ ${ENFORCED} -eq 0 ]]; then
   echo "This cluster doesn't enforce NetworkPolicies, so the test doesn't check what test Pods can reach."
