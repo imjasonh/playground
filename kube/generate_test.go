@@ -251,6 +251,23 @@ func TestManifests(t *testing.T) {
 	}
 }
 
+// TestManifestsProbes checks that the kubelet probes /readyz every second
+// and takes 30 failures in a row to make a ready Pod unready, and probes
+// /healthz with Kubernetes' defaults.
+func TestManifestsProbes(t *testing.T) {
+	o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1}
+	docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}})
+	b, _ := json.Marshal(docs[len(docs)-1])
+	for _, s := range []string{
+		`"readinessProbe":{"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":1,"failureThreshold":30}`,
+		`"livenessProbe":{"httpGet":{"path":"/healthz","port":"http"}}`,
+	} {
+		if !strings.Contains(string(b), s) {
+			t.Errorf("the Deployment lacks %s: %s", s, b)
+		}
+	}
+}
+
 func TestManifestsServe(t *testing.T) {
 	o := &generateOptions{program: "probe", name: "probe", namespace: "probe", replicas: 1, shards: 1}
 	for _, tc := range []struct {

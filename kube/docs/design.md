@@ -1418,10 +1418,22 @@ go-containerregistry with it, so the program in the cluster links only kube.
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
 `/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. A program that
-serves gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
-describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
-write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
+`-leader-elect` or `-shards` when it has more than one replica. `/readyz`
+fails while the program starts, and by default the kubelet probes again 10
+seconds after a failure, so a new Pod, and a rollout that waits for it, could
+wait up to 10 seconds longer than they need to. `/readyz` reads only memory,
+so the kubelet probes it every second. 30 failures in a row make a ready Pod
+unready, about as long as the default 3 failures 10 seconds apart, so a few
+probes that time out on a busy node don't take the Pod out of its Service. A
+startup probe on `/readyz` could probe often only while the program starts,
+but the kubelet restarts a container whose startup probe fails too many times,
+so a program whose caches are slow to sync could restart over and over. A
+startup probe on `/healthz` passes once the server listens, which can be
+before `/readyz` passes, so the Pod would still wait for the readiness probe.
+The liveness probe keeps Kubernetes' defaults. A program that serves gets the
+`preStop` sleep that [HTTP endpoints](#http-endpoints) describes. An
+`emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to write. With
+`-tmp-size`, the volume has a size limit, and the kubelet evicts a
 Pod that writes more instead of letting it fill the node's disk. A program that
 passes `RequestToken` constant audiences gets a read-only projected volume of
 tokens at `/var/run/secrets/tokens`. `KUBE_IMAGE` holds the image's reference

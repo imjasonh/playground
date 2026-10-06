@@ -970,8 +970,11 @@ The command does the following:
    more than one replica, a Service for webhooks and the `kube.Serve`
    handler, and a PersistentVolumeClaim for a `kube.Volume`. With more than
    one replica, the Deployment runs the program with `-leader-elect`, or
-   with `-shards` when you set `-shards`. The container's root file system
-   is read-only, with an `emptyDir` volume at `/tmp` for temporary files.
+   with `-shards` when you set `-shards`. The kubelet probes `/readyz` every
+   second, so a new Pod becomes ready within a second of `/readyz` passing,
+   and 30 failures in a row make a ready Pod unready. The container's root
+   file system is read-only, with an `emptyDir` volume at `/tmp` for
+   temporary files.
    `-tmp-size` limits the volume's size. The Pod shares one process
    namespace, so the pause container is PID 1 and reaps the processes that
    the program's subprocesses leave behind, which a Go program doesn't do.
