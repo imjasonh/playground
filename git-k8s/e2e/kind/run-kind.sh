@@ -139,17 +139,24 @@ finish() {
 }
 trap finish EXIT
 
-# eventually runs a command until it succeeds, for up to $1 seconds.
+# eventually runs a command until it succeeds, for up to $1 seconds. It
+# tries again after a quarter of a second, then half a second, then every
+# second, so a short wait ends soon and a long one doesn't keep a CPU busy
+# that the cluster needs.
 eventually() {
   local timeout=$1
   shift
-  local deadline=$((SECONDS + timeout))
+  local deadline=$((SECONDS + timeout)) pause=0.25
   until "$@"; do
     if ((SECONDS >= deadline)); then
       echo "timed out after ${timeout}s: $*" >&2
       return 1
     fi
-    sleep 2
+    sleep "${pause}"
+    case "${pause}" in
+      0.25) pause=0.5 ;;
+      0.5) pause=1 ;;
+    esac
   done
 }
 
