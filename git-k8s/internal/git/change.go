@@ -117,6 +117,10 @@ func (r *Repo) SameChange(ctx context.Context, a, b Change) (bool, error) {
 	return true, nil
 }
 
+// IsObjectName reports whether s is a full SHA-1 or SHA-256 object name in
+// lowercase hex.
+func IsObjectName(s string) bool { return objectNames([]string{s}) }
+
 // tree returns the name of a commit's tree.
 func (r *Repo) tree(ctx context.Context, commit string) (string, error) {
 	return r.text(ctx, "rev-parse", "--verify", "--end-of-options", commit+"^{tree}")
