@@ -231,6 +231,12 @@ MOD_PORT="$(mod_port)"
 # Docker network, which kind creates before the node.
 kind_network() { docker network inspect kind >/dev/null 2>&1; }
 eventually 120 kind_network
+# The nodes reach the registry on kind's network. Connecting a container to
+# a network briefly refuses connections to its published ports, so the
+# registry joins kind's network before anything pushes to it.
+if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY}")" == null ]]; then
+  docker network connect kind "${REGISTRY}"
+fi
 GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
   grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -328,9 +334,6 @@ for node in $(kind get nodes --name "${CLUSTER}"); do
   printf '[host."http://%s:5000"]\n' "${REGISTRY}" |
     docker exec -i "${node}" cp /dev/stdin "/etc/containerd/certs.d/localhost:${PORT}/hosts.toml"
 done
-if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY}")" == null ]]; then
-  docker network connect kind "${REGISTRY}"
-fi
 k version
 echo "Pods reach the git server at ${CLUSTER_URL}"
 echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
