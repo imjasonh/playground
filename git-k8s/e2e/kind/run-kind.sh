@@ -51,6 +51,7 @@ CREATED_REGISTRY=0
 GIT_SERVER_PID=""
 PORT_FORWARD_PID=""
 MOD_PROXY_PID=""
+PROBE_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -102,9 +103,11 @@ finish() {
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
-  if [[ -n "${PORT_FORWARD_PID}" ]]; then
-    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
-  fi
+  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}"; do
+    if [[ -n "${pid}" ]]; then
+      kill "${pid}" 2>/dev/null || true
+    fi
+  done
   if [[ "${GIT_K8S_KIND_KEEP:-}" == 1 ]]; then
     echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server and module proxy in ${WORKDIR}"
     exit "${status}"
@@ -635,6 +638,69 @@ no_lasting_zombies
 k -n "${NS}" delete gitrepository zombie
 echo "The core program's fetches of a repository that moved and check-risk's fetches that the mirror refused failed, and no zombie on the nodes lasted 10 seconds."
 echo "::endgroup::"
+
+# kindnet, kind's network plugin, enforces NetworkPolicies only where the
+# kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
+# egress tries to reach the git server until it can't. The plugin can take a
+# few seconds to apply the policy to a new Pod, so the test decides that the
+# cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
+# git server after 30 seconds. A try that can't connect lasts 20 seconds, so
+# the probe runs in the background during the next groups, and the group
+# "Tests run in a sandboxed Pod" waits for its answer. It starts after the
+# zombie group, because a failed fetch can leave a zombie in its Pod. The
+# test's own Pods, like check-gotest's, meet the restricted Pod Security
+# Standard, so they start in a namespace that enforces it.
+no_egress() {
+  ! timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
+    git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1
+}
+# probe_egress writes 1 to the file enforced if the cluster enforces
+# NetworkPolicies, and 0 if it doesn't.
+probe_egress() {
+  k apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: no-egress
+  namespace: ${NS}
+spec:
+  podSelector:
+    matchLabels:
+      e2e: no-egress
+  policyTypes: [Egress]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-egress
+  namespace: ${NS}
+  labels:
+    e2e: no-egress
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: probe
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "read -r _"]
+      stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      env:
+        - {name: HOME, value: /tmp}
+        - {name: GIT_TERMINAL_PROMPT, value: "0"}
+        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
+EOF
+  k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
+  if eventually 30 no_egress 2>/dev/null; then
+    echo 1 >"${WORKDIR}/enforced"
+  else
+    echo 0 >"${WORKDIR}/enforced"
+  fi
+  k -n "${NS}" delete pod/no-egress networkpolicy/no-egress --wait=false
+}
+probe_egress >"${WORKDIR}/probe.log" 2>&1 &
+PROBE_PID=$!
 
 echo "::group::The git server rejects unsigned commits"
 g checkout -q -b c/unsigned
@@ -1428,59 +1494,15 @@ echo "A GitRepository in another namespace can't use the trust policies, whose a
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
-# kindnet, kind's network plugin, enforces NetworkPolicies only where the
-# kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
-# egress tries to reach the git server until it can't. The plugin can take a
-# few seconds to apply the policy to a new Pod, so the test decides that the
-# cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
-# git server after 30 seconds. The test's own Pods, like check-gotest's,
-# meet the restricted Pod Security Standard, so they start in a namespace
-# that enforces it.
-k apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: no-egress
-  namespace: ${NS}
-spec:
-  podSelector:
-    matchLabels:
-      e2e: no-egress
-  policyTypes: [Egress]
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: no-egress
-  namespace: ${NS}
-  labels:
-    e2e: no-egress
-spec:
-  restartPolicy: Never
-  automountServiceAccountToken: false
-  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
-  containers:
-    - name: probe
-      image: ${GIT_IMAGE}
-      command: [dash, -c, "read -r _"]
-      stdin: true
-      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
-      env:
-        - {name: HOME, value: /tmp}
-        - {name: GIT_TERMINAL_PROMPT, value: "0"}
-        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
-EOF
-k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
-no_egress() {
-  ! timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
-    git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1
-}
-ENFORCED=1
-if ! eventually 30 no_egress 2>/dev/null; then
-  ENFORCED=0
+probe_status=0
+wait "${PROBE_PID}" || probe_status=$?
+PROBE_PID=""
+cat "${WORKDIR}/probe.log"
+[[ ${probe_status} -eq 0 ]]
+ENFORCED="$(cat "${WORKDIR}/enforced")"
+if [[ ${ENFORCED} -eq 0 ]]; then
   echo "This cluster doesn't enforce NetworkPolicies, so the test doesn't check what test Pods can reach."
 fi
-k -n "${NS}" delete pod/no-egress networkpolicy/no-egress --wait=false
 
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
