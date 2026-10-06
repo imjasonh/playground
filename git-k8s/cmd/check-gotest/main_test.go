@@ -767,66 +767,83 @@ func TestRetriesFailedFetch(t *testing.T) {
 	}
 }
 
-// TestFetchScript runs the fetch container on this machine against a server
+// eachFetch runs f with the fetch container that runs fetchScript, and
+// again with -go-cache, where the fetch container runs fetchSource.
+func eachFetch(t *testing.T, f func(t *testing.T)) {
+	t.Run("fetchScript", f)
+	t.Run("fetchSource", func(t *testing.T) {
+		withGoCache(t)
+		f(t)
+	})
+}
+
+// TestFetch runs the fetch container on this machine against a server
 // that, like the mirror, serves the copy at /NAMESPACE/NAME.git and requires
 // the Pod's token.
-func TestFetchScript(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	w := srv.NewWork(t, "app")
-	w.Write("go.mod", "module example.com/app\n")
-	commit := w.Commit("first")
-	w.Push("c/x")
+func TestFetch(t *testing.T) {
+	eachFetch(t, func(t *testing.T) {
+		srv := gittest.NewServer(t, "")
+		w := srv.NewWork(t, "app")
+		w.Write("go.mod", "module example.com/app\n")
+		commit := w.Commit("first")
+		w.Push("c/x")
 
-	const token = "token-bound-to-the-pod"
-	upstream, err := url.Parse(srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	proxy := httputil.NewSingleHostReverseProxy(upstream)
-	mirror := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		path, ok := strings.CutPrefix(r.URL.Path, "/default/")
-		switch {
-		case r.Header.Get("Authorization") != "Bearer "+token:
-			http.Error(rw, "send the Pod's token", http.StatusUnauthorized)
-		case !ok:
-			http.NotFound(rw, r)
-		default:
-			r.URL.Path = "/" + path
-			proxy.ServeHTTP(rw, r)
+		const token = "token-bound-to-the-pod"
+		upstream, err := url.Parse(srv.URL)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}))
-	t.Cleanup(mirror.Close)
-	defer func(u string) { *mirrorURL = u }(*mirrorURL)
-	*mirrorURL = mirror.URL + "/"
+		proxy := httputil.NewSingleHostReverseProxy(upstream)
+		mirror := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			path, ok := strings.CutPrefix(r.URL.Path, "/default/")
+			switch {
+			case r.Header.Get("Authorization") != "Bearer "+token:
+				http.Error(rw, "send the Pod's token", http.StatusUnauthorized)
+			case !ok:
+				http.NotFound(rw, r)
+			default:
+				r.URL.Path = "/" + path
+				proxy.ServeHTTP(rw, r)
+			}
+		}))
+		t.Cleanup(mirror.Close)
+		defer func(u string) { *mirrorURL = u }(*mirrorURL)
+		*mirrorURL = mirror.URL + "/"
 
-	b, repo := branch()
-	b.Spec.Head = commit
-	p := started(t, b, repo)
+		b, repo := branch()
+		b.Spec.Head = commit
+		p := started(t, b, repo)
 
-	dir, err := fetch(t, p, token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := gitIn(t, dir, "rev-parse", "HEAD"); got != commit {
-		t.Errorf("checked out %s, want %s", got, commit)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "repo", "go.mod")); err != nil {
-		t.Errorf("the fetch container didn't check out the head: %v", err)
-	}
-	if config, err := os.ReadFile(filepath.Join(dir, "repo", ".git", "config")); err != nil || strings.Contains(string(config), token) {
-		t.Errorf("the repository's config, which the test container reads, holds the token (%v):\n%s", err, config)
-	}
+		dir, err := fetch(t, p, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := gitIn(t, dir, "rev-parse", "HEAD"); got != commit {
+			t.Errorf("checked out %s, want %s", got, commit)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "repo", "go.mod")); err != nil {
+			t.Errorf("the fetch container didn't check out the head: %v", err)
+		}
+		if config, err := os.ReadFile(filepath.Join(dir, "repo", ".git", "config")); err != nil || strings.Contains(string(config), token) {
+			t.Errorf("the repository's config, which the test container reads, holds the token (%v):\n%s", err, config)
+		}
+		if goCache.url != "" {
+			if fi, err := os.Stat(filepath.Join(dir, "go-cache", "check-gotest")); err != nil || fi.Mode().Perm()&0o111 == 0 {
+				t.Errorf("fetch didn't install the GOCACHEPROG program in the go-cache volume: %v", err)
+			}
+		}
 
-	if _, err := fetch(t, p, "another-token"); err == nil {
-		t.Error("the fetch succeeded with a token that the mirror refuses")
-	}
+		if _, err := fetch(t, p, "another-token"); err == nil {
+			t.Error("the fetch succeeded with a token that the mirror refuses")
+		}
 
-	w.Write("b.go", "package app\n")
-	w.Commit("second")
-	w.Push("c/x")
-	if _, err := fetch(t, p, token); err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "no longer points to") {
-		t.Errorf("fetch after the branch moved = %v, want exit status 3", err)
-	}
+		w.Write("b.go", "package app\n")
+		w.Commit("second")
+		w.Push("c/x")
+		if _, err := fetch(t, p, token); err == nil || !strings.Contains(err.Error(), "exit status 3") || !strings.Contains(err.Error(), "no longer points to") {
+			t.Errorf("fetch after the branch moved = %v, want exit status 3", err)
+		}
+	})
 }
 
 func TestFetchRefusesUnsafeURLs(t *testing.T) {
@@ -839,25 +856,29 @@ func TestFetchRefusesUnsafeURLs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	defer func(u string) { *mirrorURL = u }(*mirrorURL)
-	for url, want := range map[string]string{
-		"--upload-pack=touch " + marker + "; false": "blocked",
-		"evil::x": "not allowed",
-	} {
-		*mirrorURL = url
-		b, repo := branch()
-		_, err := fetch(t, started(t, b, repo), "token")
-		if _, statErr := os.Stat(marker); statErr == nil {
-			t.Fatalf("fetching from %q ran a command", url)
+	eachFetch(t, func(t *testing.T) {
+		defer func(u string) { *mirrorURL = u }(*mirrorURL)
+		for url, want := range map[string]string{
+			"--upload-pack=touch " + marker + "; false": "blocked",
+			"evil::x": "not allowed",
+		} {
+			*mirrorURL = url
+			b, repo := branch()
+			_, err := fetch(t, started(t, b, repo), "token")
+			if _, statErr := os.Stat(marker); statErr == nil {
+				t.Fatalf("fetching from %q ran a command", url)
+			}
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("fetching from %q: err = %v, want %q", url, err, want)
+			}
 		}
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("fetching from %q: err = %v, want %q", url, err, want)
-		}
-	}
+	})
 }
 
 // fetch runs pod's fetch container on this machine with token in its token
-// file, and returns the directory that holds the checkout in repo.
+// file, and returns the directory that holds the checkout in repo. The
+// directory holds the go-cache volume too, and check-gotest's image is the
+// test binary.
 func fetch(t *testing.T, pod *Pod, token string) (string, error) {
 	t.Helper()
 	c := pod.Spec.InitContainers[0]
@@ -866,8 +887,24 @@ func fetch(t *testing.T, pod *Pod, token string) (string, error) {
 	if err := os.WriteFile(tokenFile, []byte(token), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	script := strings.ReplaceAll(c.Command[2], "/src/repo", filepath.Join(dir, "repo"))
-	cmd := exec.Command(c.Command[0], c.Command[1], script)
+	if err := os.Mkdir(filepath.Join(dir, "go-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	local := strings.NewReplacer("/src/repo", filepath.Join(dir, "repo"), goCacheDir, filepath.Join(dir, "go-cache"))
+	var cmd *exec.Cmd
+	if len(c.Command) > 0 {
+		cmd = exec.Command(c.Command[0], c.Command[1], local.Replace(c.Command[2]))
+	} else {
+		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := slices.Clone(c.Args)
+		for i := range args {
+			args[i] = local.Replace(args[i])
+		}
+		cmd = exec.Command(self, args...)
+	}
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}
 	for _, e := range c.Env {
 		switch e.Name {

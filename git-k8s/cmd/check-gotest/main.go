@@ -31,8 +31,10 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"maps"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,7 +65,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 
 var (
 	goImage      = flag.String("go-image", "cgr.dev/chainguard/go:latest", "image that runs go test")
-	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
+	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source without -go-cache; it needs git and sh")
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
 	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and other values need the same -goproxy on the core program")
@@ -203,7 +205,9 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		v.Outputs = map[string]string{"pod": name}
 		return v, nil
 	case "Failed":
-		msg, finished, failed := terminated(pod.Status.InitContainerStatuses, "fetch")
+		msg, finished, code := terminated(pod.Status.InitContainerStatuses, "fetch")
+		// A new Pod can't install the GOCACHEPROG program either.
+		failed := code != 0 && code != installStatus
 		delay := fetchRetryDelay << (attempt - 1)
 		if wait := delay - time.Since(finished); failed && attempt < fetchAttempts && wait > 0 {
 			// The failed Pod stays declared while the check waits, because
@@ -358,15 +362,15 @@ func outcome(pod *Pod) string {
 	return ""
 }
 
-// terminated returns the message and finish time of the named container if
-// it exited with an error.
-func terminated(statuses []ContainerStatus, name string) (string, time.Time, bool) {
+// terminated returns the message, finish time, and exit code of the named
+// container if it exited with an error. The exit code is 0 otherwise.
+func terminated(statuses []ContainerStatus, name string) (string, time.Time, int32) {
 	for _, s := range statuses {
 		if t := s.State.Terminated; s.Name == name && t != nil && t.ExitCode != 0 {
-			return cmp.Or(t.Message, t.Reason, fmt.Sprintf("exit code %d", t.ExitCode)), t.FinishedAt, true
+			return cmp.Or(t.Message, t.Reason, fmt.Sprintf("exit code %d", t.ExitCode)), t.FinishedAt, t.ExitCode
 		}
 	}
-	return "", time.Time{}, false
+	return "", time.Time{}, 0
 }
 
 // tail keeps the end of s, where go test prints its summary.
@@ -377,13 +381,14 @@ func tail(s string, n int) string {
 	return "..." + s[len(s)-n:]
 }
 
-// fetchScript runs in the init container. It checks out the branch at HEAD,
-// or exits with status 3 if the branch moved, which the next head's Pod
-// takes care of. The repository goes in a directory that the container
-// creates, because git refuses to use one that another user owns, such as
-// the root of an emptyDir volume. The token goes in git's environment, not
-// in the repository's config, which the test container can read. The git
-// image has no cat, so the shell reads the token, which has no newline.
+// fetchScript runs in the fetch container without -go-cache. It checks out
+// the branch at HEAD, or exits with status 3 if the branch moved, which the
+// next head's Pod takes care of. The repository goes in a directory that
+// the container creates, because git refuses to use one that another user
+// owns, such as the root of an emptyDir volume. The token goes in git's
+// environment, not in the repository's config, which the test container
+// can read. The git image has no cat, so the shell reads the token, which
+// has no newline.
 const fetchScript = `set -eu
 token=
 IFS= read -r token < "$TOKEN_FILE" || [ -n "$token" ]
@@ -398,6 +403,76 @@ fi
 git checkout -q --detach FETCH_HEAD
 `
 
+// installStatus is the exit status of a fetch container that couldn't
+// install the GOCACHEPROG program. Neither git nor fetchScript exits with
+// it.
+const installStatus = 4
+
+// fetchSource is the fetch container's command with -go-cache. It runs in
+// check-gotest's own image, which must have git but may have no shell, and
+// does what fetchScript does in -dir, including exiting with status 3 if
+// the branch moved. Before it fetches, -install copies this binary to a
+// path for build and the test container to run as GOCACHEPROG. That spares
+// the Pod an init container, which the kubelet starts about a second after
+// the one before it exits.
+func fetchSource(args []string, stderr io.Writer) int {
+	flags := flag.NewFlagSet("fetch", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	dir := flags.String("dir", "", "directory to check out the head in, which must not exist")
+	install := flags.String("install", "", "copy this binary to `path` before fetching")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *install != "" {
+		if err := installSelf(*install); err != nil {
+			fmt.Fprintln(stderr, "can't install the GOCACHEPROG program:", err)
+			return installStatus
+		}
+	}
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	token, err := os.ReadFile(os.Getenv("TOKEN_FILE"))
+	if err != nil {
+		return fail(err)
+	}
+	env := append(os.Environ(), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader",
+		"GIT_CONFIG_VALUE_0=Authorization: Bearer "+strings.TrimSpace(string(token)))
+	git := func(args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", *dir}, args...)...)
+		cmd.Env = env
+		cmd.Stderr = stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("git %s: %w", args[0], err)
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+	if err := os.Mkdir(*dir, 0o755); err != nil {
+		return fail(err)
+	}
+	if _, err := git("init", "-q"); err != nil {
+		return fail(err)
+	}
+	branch, head := os.Getenv("BRANCH"), os.Getenv("HEAD")
+	if _, err := git("fetch", "-q", "--depth=1", "--end-of-options", os.Getenv("URL"), "refs/heads/"+branch); err != nil {
+		return fail(err)
+	}
+	fetched, err := git("rev-parse", "FETCH_HEAD")
+	if err != nil {
+		return fail(err)
+	}
+	if fetched != head {
+		fmt.Fprintf(stderr, "%s no longer points to %s\n", branch, head)
+		return 3
+	}
+	if _, err := git("checkout", "-q", "--detach", "FETCH_HEAD"); err != nil {
+		return fail(err)
+	}
+	return 0
+}
+
 func testPod(in *checks.Input, name string) (*Pod, error) {
 	yes, no := true, false
 	user := int64(65532)
@@ -405,8 +480,8 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
 	// when the grace period ends. It raises a shorter grace period to 2
 	// seconds. A container's first process ignores SIGTERM unless it handles
-	// the signal, as fetch's shell doesn't, and the Pod counts toward
-	// -max-pods until its containers stop.
+	// the signal, as the shell that runs fetchScript doesn't, and the Pod
+	// counts toward -max-pods until its containers stop.
 	grace := int64(2)
 	expiry := int64(tokenSeconds)
 	restricted := &SecurityContext{
@@ -485,8 +560,13 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "cacheprog" {
-		os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "cacheprog":
+			os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "fetch":
+			os.Exit(fetchSource(os.Args[2:], os.Stderr))
+		}
 	}
 	checks.Main[Branch](new(gotest).check())
 }

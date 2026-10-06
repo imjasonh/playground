@@ -51,16 +51,20 @@ const (
 // addGoCache makes a test Pod download modules from go-cache, and share
 // build outputs with other test Pods through the repository's build cache.
 //
-// Three init containers run after fetch. cacheprog installs this binary,
-// which is the GOCACHEPROG program. build compiles the packages from GOROOT
-// and the module cache that go test needs, with the same toolchain, paths,
-// and environment as the test container, reading the build cache with a
-// token whose audience allows only reading; see gocache.Build. upload sends
-// what build compiled to go-cache, with a token whose audience allows
-// writing. upload never reads the branch's files, and none of the branch's
-// code has run yet. The test container compiles the module's own packages,
-// gets the rest from the go-cache volume, and has neither token, so tests
-// can't change what other Pods read.
+// fetch runs this binary instead of fetchScript, and installs it as the
+// GOCACHEPROG program before it fetches the source; see fetchSource. A git
+// bug that ran code from the fetched objects could already change what
+// build runs, through the go env file in the tmp volume, so fetch may
+// install the program too. Two init containers run after fetch. build
+// compiles the packages from GOROOT and the module cache that go test
+// needs, with the same toolchain, paths, and environment as the test
+// container, reading the build cache with a token whose audience allows
+// only reading; see gocache.Build. upload sends what build compiled to
+// go-cache, with a token whose audience allows writing. upload never reads
+// the branch's files, and none of the branch's code has run yet. The test
+// container compiles the module's own packages, gets the rest from the
+// go-cache volume, and has neither token, so tests can't change what other
+// Pods read.
 func addGoCache(p *Pod, in *checks.Input) error {
 	if goCache.url == "" {
 		return nil
@@ -86,6 +90,12 @@ func addGoCache(p *Pod, in *checks.Input) error {
 		token("go-cache-write", gocache.WriteAudience(ns, repo)),
 	)
 
+	fetch := &p.Spec.InitContainers[0]
+	fetch.Image = image
+	fetch.Command = nil
+	fetch.Args = []string{"fetch", "-dir=/src/repo", "-install=" + cacheprogPath}
+	fetch.VolumeMounts = append(slices.Clone(fetch.VolumeMounts), VolumeMount{Name: "go-cache", MountPath: goCacheDir})
+
 	test := &p.Spec.Containers[0]
 	setEnv(test, "GOPROXY", goCache.url+"/mod")
 	setEnv(test, "GOCACHEPROG", cacheprogPath+" cacheprog -dir="+outputsDir)
@@ -109,7 +119,6 @@ func addGoCache(p *Pod, in *checks.Input) error {
 		}
 	}
 	p.Spec.InitContainers = append(p.Spec.InitContainers,
-		helper("cacheprog", []VolumeMount{{Name: "go-cache", MountPath: goCacheDir}}, "-install="+cacheprogPath),
 		build,
 		helper("upload", []VolumeMount{
 			{Name: "go-cache", MountPath: goCacheDir, ReadOnly: true},
@@ -129,26 +138,28 @@ func setEnv(c *Container, name, value string) {
 	c.Env = append(c.Env, EnvVar{Name: name, Value: value})
 }
 
-// goCacheFailure returns the message of an init container that addGoCache
-// added, if one failed. build fails when the go command does, such as for a
-// go.mod file that doesn't parse, and then the test container doesn't run.
+// goCacheFailure returns the message of a step that addGoCache added, if
+// one failed: fetch's install of the GOCACHEPROG program, build, or upload.
+// build fails when the go command does, such as for a go.mod file that
+// doesn't parse, and then the test container doesn't run.
 func goCacheFailure(pod *Pod) (string, bool) {
-	for _, name := range []string{"cacheprog", "build", "upload"} {
-		if msg, _, failed := terminated(pod.Status.InitContainerStatuses, name); failed {
+	if msg, _, code := terminated(pod.Status.InitContainerStatuses, "fetch"); code == installStatus {
+		return "fetch: " + msg, true
+	}
+	for _, name := range []string{"build", "upload"} {
+		if msg, _, code := terminated(pod.Status.InitContainerStatuses, name); code != 0 {
 			return name + ": " + msg, true
 		}
 	}
 	return "", false
 }
 
-// cacheprog is check-gotest's part in a test Pod. By default, it's the
-// GOCACHEPROG program. With -install, it copies this binary to a path for
-// the go command to run, with -build, it compiles the packages that the
-// Pod can share, and with -upload, it uploads what -build compiled.
+// cacheprog is check-gotest's part in a test Pod after fetch. By default,
+// it's the GOCACHEPROG program. With -build, it compiles the packages that
+// the Pod can share, and with -upload, it uploads what -build compiled.
 func cacheprog(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("cacheprog", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	install := flags.String("install", "", "copy this binary to `path`, and exit")
 	build := flags.Bool("build", false, "compile the packages from GOROOT and the module cache that go test needs, sharing their outputs through -dir and -remote, and exit")
 	upload := flags.Bool("upload", false, "upload the outputs that the go command built in -dir while -share was set to -remote, and exit")
 	dir := flags.String("dir", "", "directory that holds the build outputs")
@@ -159,11 +170,6 @@ func cacheprog(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch {
-	case *install != "":
-		if err := installSelf(*install); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
 	case *build:
 		exe, err := os.Executable()
 		if err != nil {
