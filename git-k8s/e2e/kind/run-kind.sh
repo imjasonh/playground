@@ -938,7 +938,8 @@ waiting_for_approval() {
 }
 eventually 120 waiting_for_approval
 main_before="$(remote_head main)"
-sleep 6
+# Three polls later, c/auth still hasn't landed.
+sleep 3
 [[ "$(remote_head main)" == "${main_before}" ]]
 field '{.status.conditions[?(@.type=="Merged")].message}'
 echo
@@ -2723,7 +2724,8 @@ dg log -1 --format=%B FETCH_HEAD^ | grep -qx 'Git-K8s-Deps: go example.com/greet
 signed_by_git_k8s FETCH_HEAD dg
 signed_by_git_k8s FETCH_HEAD^ dg
 dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
-sleep 6
+# Three polls later, the fix still hasn't landed.
+sleep 3
 [[ "$(remote_head main deps)" == "${deps_main}" ]]
 # config/approved-by.yaml sets approved-by to whoever sets approve.
 approver="$(k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "${APPROVE}=${fixed}" \
@@ -2734,7 +2736,9 @@ eventually 120 deps_landed
 eventually 60 greet_branch_gone
 eventually 60 no_deps_pods
 eventually 60 no_agent_pods
-sleep 12
+# Six polls and six reconciles of git-k8s-deps later, no branch takes
+# v1.2.0.
+sleep 6
 [[ -z "$(remote_head "${GREET_BRANCH}" deps)" ]]
 deps_main_requires v1.1.0
 echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix, and the fix landed once ${approver} approved it. v1.2.0 is too new, so no branch takes it."
@@ -2805,7 +2809,7 @@ snapshot() {
 idle() {
   local before after
   before="$(snapshot)"
-  sleep 8
+  sleep 4
   after="$(snapshot)"
   echo "resource versions: ${after}"
   [[ "${before}" == "${after}" ]]
