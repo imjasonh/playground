@@ -30,9 +30,10 @@ const APIVersion = Group + "/v1alpha1"
 // GitRepository it belongs to.
 const RepositoryLabel = Group + "/repository"
 
-// ApproveAnnotation on a GitBranch approves one commit for the approval
-// check. Its value is the commit's SHA, or a prefix of at least seven
-// characters.
+// ApproveAnnotation on a GitBranch approves one commit's change for the
+// approval check. Its value is the commit's full SHA, which approves any
+// head that makes the same change, or a prefix of at least seven
+// characters, which approves only that commit.
 const ApproveAnnotation = Group + "/approve"
 
 // ApprovedByAnnotation on a GitBranch is the username of whoever approved

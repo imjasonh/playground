@@ -797,7 +797,7 @@ pushes to the mirror, which applies the rules in
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. The merge ignores `.gitattributes` files, so that a branch can't choose how its own conflicts merge. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
-| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
+| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, or a commit whose change the head makes too, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push that changes the code needs a new approval. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
 | `check-deps` | `deps` | On a dependency branch, passes when the `gotest` check passes. When the tests fail, it has an AI agent change the code to fit the new versions, and pushes the agent's fix. It passes on other branches. See [Dependency updates](#dependency-updates). |
@@ -819,6 +819,27 @@ the commit, and `approved-by`, which names you. Set both in one request:
 kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA \
   git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 ```
+
+An approval is for a change: what the approved commit changes on top of its
+merge base with the parent's head. `check-approval` passes for any head that
+makes the same change on top of its own merge base, as
+[Which results count](#which-results-count) defines, so the files that land
+are the parent's files with the approved change. An approval holds when
+`check-base` merges the parent into the branch at the front of the
+[merge queue](#merge-queue), after a rebase or a squash that doesn't resolve
+a conflict, and for the commit that a squash or rebase landing makes. A push
+that adds, removes, or changes code needs a new approval, and so does a
+merge that resolves a conflict.
+
+Only an approval that names the commit's full SHA follows the change to
+another head. One that names a shorter prefix holds only while the branch's
+head is that commit. You can approve a commit after the branch moves on from
+it, such as when `check-base` merges the parent in while you review the
+change. The check's message then names both commits, for example
+`1bd279367630 is approved by alice, and 9132990e9ac2 makes the same change`.
+To compare the changes, `check-approval` reads the repository from the
+[mirror](#the-mirror). If the mirror no longer has the approved commit, the
+check fails, and the branch needs a new approval.
 
 The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 
@@ -909,6 +930,14 @@ skips `go.mod` files in `testdata` and `vendor` directories. Its message
 lists every reason, for example `risk is high: adds module example.com/c;
 has changes from AI agents`.
 
+The check rates each change once. The rating holds when the parent moves,
+and for any head that makes the same change, such as `check-base`'s merge of
+the parent, a rebase, or a squash, as
+[Which results count](#which-results-count) describes. A rating that reads
+`go.mod` files at the merge base, which the check does for a change to a
+`go.mod` file, a symbolic link, or a submodule, holds only for the parent's
+head, so the check rates such a change again when the parent moves.
+
 ### Write a check
 
 A check is a `checks.Check` and a view type that names its key in
@@ -963,9 +992,8 @@ commits with `in.Replay`, which also need `SigningKey: signing.Key` to
 [sign the commits](#sign-commits). `generate` grants a program what its
 packages call. It mounts the mirror's token in the Pods of each program
 that uses `mirror.Remote`, and lets each program that uses `signing.Key`
-read Secrets. A check that reads only the `GitBranch`, such as
-`check-approval`, leaves both out, so its program gets no token for the
-mirror and can't read Secrets.
+read Secrets. A check that reads only the `GitBranch` leaves both out, so
+its program gets no token for the mirror and can't read Secrets.
 
 The core program accepts at most 16 outputs, with names of up to 63 bytes.
 A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
@@ -975,10 +1003,23 @@ bytes, the most that the core program accepts.
 
 A check runs again when the branch's head changes, and with `UsesParent`,
 when the parent's head changes. `Always` runs it on every reconcile, for a
-check that reads only the `GitBranch`. `Stale` runs it again when something
-that it reads with `kube.Get` makes a finished result out of date, the way
-`check-base` runs again when its branch reaches the front of the merge
-queue.
+check that reads more of the `GitBranch` than its heads, such as an
+annotation. `Stale` runs it again when something that it reads with
+`kube.Get` makes a finished result out of date, the way `check-base` runs
+again when its branch reaches the front of the merge queue.
+
+Set `SameChange` instead of `UsesParent` when the check's result is for the
+branch's change: what its head changes on top of its merge base with the
+parent's head. The framework keeps such a result, if it's `Passed` or
+`Failed` without a fix, for any later head that makes the same change, as
+[Which results count](#which-results-count) describes. So the check doesn't
+run again when the parent moves, or after a merge of the parent, a rebase,
+or a squash that makes the same change. A verdict that also depends on files
+at the merge base that the change doesn't touch sets `UsesParent` in its
+`checks.Verdict`, and holds only for the parent's head, as `check-risk`'s
+rating of a change to a `go.mod` file does. A check that compares changes
+in `Run` with `in.ChangeOf` and `in.SameChange`, as `check-approval` does,
+sets `MergeBase` in its verdict to the merge base that the verdict is for.
 
 Set `FilesOnly` in a check's `checks.Check` when its result for the branch's
 head also holds for any commit with the same files that builds on the same
@@ -2109,7 +2150,8 @@ kube doesn't fence writes, and the results controller writes all of
 `status.checks` at once. The core program runs one replica, but two of its
 Pods can overlap, as [Install](#install) describes, and the old Pod can put
 back earlier results. Checks other than `approval` run again on an earlier
-result, which is for earlier commits or isn't final. If the agent's Pod is
+result, which is for earlier commits or isn't final, or keep it for a head
+that makes the same change. If the agent's Pod is
 gone, `check-review` can then run its agent again, which costs as much as a
 new run. If someone removed the `approve` annotation, though, the old Pod
 can put back `approval`'s `Passed` result until `check-approval` sends
@@ -2131,7 +2173,8 @@ Replace `GITBRANCH` with the name of the `GitBranch` object, and `SHA` with
 the branch's head. Checks other than `approval` don't run again on commits
 that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
-parent, such as `base`, also set `parentCommit` to the parent's head.
+parent, such as `base`, or that keeps results for the same change, such as
+`risk`, also set `parentCommit` to the parent's head.
 
 For a branch that lands by squash or rebase, also set `filesOnly` to `true`
 if the check sets `FilesOnly`, as the built-in checks do. Otherwise the
@@ -2173,8 +2216,10 @@ branches land through a queue for each parent instead:
    join.
 2. When the branch reaches the front of the queue, the `base` check runs
    again, merges the parent in, and pushes the merge. Every check then runs
-   on the new head. A branch that already contains the parent skips this
-   step.
+   on the new head, except that checks with `SameChange`, such as `risk`,
+   keep their results when the merge makes the same change, and an approval
+   still holds, as [Which results count](#which-results-count) describes. A
+   branch that already contains the parent skips this step.
 3. When the gate passes for the new head, the merge controller lands the
    branch, as [Landing methods](#landing-methods) describes, and the next
    branch moves to the front. When a squash or rebase landing first pushes
@@ -2182,9 +2227,9 @@ branches land through a queue for each parent instead:
    [Which results count](#which-results-count) describes, the branch stays
    at the front while they run on it.
 
-The branches behind the front keep their heads, so each landing runs every
-check again on one branch, and only the checks that set `UsesParent`, such
-as `base` and `risk`, on the others. The parent's `status.queue` lists its
+The branches behind the front keep their heads, so each landing runs the
+checks again on one branch, and only the checks that set `UsesParent`, such
+as `base`, on the others. The parent's `status.queue` lists its
 queue, front first. Each queued branch's `status.queued` records when it
 joined, the head that the merge controller last kept in the queue, and its
 place, from 1 at the front, which the `QUEUE` column shows. A queued
@@ -2347,8 +2392,8 @@ The built-in checks set `FilesOnly`, except `check-review`, `check-deps`, and
 subjects of the branch's commits, and `check-conflicts` replays commits with
 their authors and messages. `check-base` passes for any commit that builds on
 the parent's head, `check-gofmt` and `check-gotest` read only the files, and
-`check-risk` compares them with the parent's head. `check-approval` reads only
-the `GitBranch`, and an approval is for the change, which the new commit makes
+`check-risk` compares them with the parent's head. `check-approval` compares
+only files, and an approval is for the change, which the new commit makes
 too. `maxAutomatedCommits` counts fix commits by their trailer, but it limits
 what checks push, and the gate doesn't read it.
 
@@ -2360,11 +2405,54 @@ commit gets the head's rating. A rebase keeps each commit's message but
 leaves out merge commits and commits that change nothing, so the head's
 rating is never lower than the new commit's. The check's message doesn't
 count those commits, because a squash makes one commit of them. If a squash
-dropped the trailers, `check-risk` would rate a rewritten branch's squashed
-commit `low` when it runs again, so the commit could land without a new
-approval, and the parent's history wouldn't show which changes came from
-agents. Dropping `FilesOnly` wouldn't fix that, because the check would read
-the same squashed message.
+dropped the trailers, `check-risk` would rate the squashed commit `low` when
+it rates it again, so the commit wouldn't need an approval, and the parent's
+history wouldn't show which changes came from agents. Dropping `FilesOnly`
+wouldn't fix that, because the check would read the same squashed message.
+
+Some results also hold for heads that the check didn't see. A check with
+`SameChange` in its `checks.Check`, such as `check-risk`, rates the branch's
+change: what its head changes on top of its merge base with the parent's
+head. Its `Passed` and `Failed` results name that merge base in `mergeBase`.
+When the parent or the head moves, and the head still makes the same change,
+the framework keeps the result without running the check. `check-approval`
+compares an approved commit's change with the head's the same way. A head
+makes the same change as an earlier head when both of these are true:
+
+- Merging the earlier head into the new head's merge base, with the earlier
+  head's merge base as the base, is clean and gives the new head's files.
+- The new head changes no file that the earlier head doesn't, and leaves each
+  file that it changes with the mode that the earlier head leaves it with.
+
+So a clean merge of the parent, such as `check-base`'s at the front of the
+[merge queue](#merge-queue), a rebase or a squash that doesn't resolve a
+conflict, and the commit that a squash or rebase landing makes all make the
+same change as the head before them. A commit that adds, removes, or changes
+code doesn't, and neither does a merge that resolves a conflict.
+
+The comparison is conservative: when it can't tell, the changes differ. They
+differ for any of these:
+
+- A head with no merge base with the parent's head, or with more than one.
+- A merge that conflicts, such as when the parent and the branch both change
+  a binary file or a submodule.
+- A change to a file that the parent renamed, or whose mode the parent
+  changed, since the earlier head's merge base.
+- A change whose list of files takes more than 8 MiB.
+
+The merge ignores `.gitattributes` files, as `check-base`'s does, so a branch
+can't make a conflicting merge clean. A comparison runs at most five git
+commands, however many commits the heads have. Each check's program
+remembers the merge bases and answers that it computes, up to 4,096 of each,
+and starts over when it has that many.
+
+A result that names a merge base counts for landing only while that merge
+base is the parent's head. A branch lands only when it contains the parent's
+head, so the files that land are then the parent's files with the change
+that the result is for. A verdict that also depends on files outside the
+change, such as `check-risk`'s rating of a change to a `go.mod` file, which
+compares the file with every `go.mod` file at the merge base, names the
+parent's head in `parentCommit` instead, so it holds only for that head.
 
 When the counted results pass the gate, the controller lands the new commit
 without another round of checks. It moves the parent to the commit in the
@@ -2381,8 +2469,8 @@ moves the branch to the new commit in the mirror's copy instead, if the
 branch is still at its head, and sets the branch's state to `Rewritten`.
 The checks run on the new commit, and when the gate passes, the parent
 fast-forwards to it. In a [merge queue](#merge-queue), the branch keeps its
-place at the front until then. `check-approval` passes only for the head
-that the annotation names, so a rewritten branch needs a new approval.
+place at the front until then. An approval of the branch's head that names
+its full SHA holds for the new commit, which makes the same change.
 
 A check with `mayPush: true` can push a fix on top of the new commit. While
 the parent doesn't move, a squash landing doesn't squash its own commit and
@@ -2980,6 +3068,12 @@ To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
 
+To upgrade, install the core program, `git-k8s`, before the checks, as this
+loop does. The core program updates the `GitBranch` CustomResourceDefinition
+when it starts, and an older one drops fields that newer checks send, such
+as a result's `mergeBase`. Without that field, `check-risk` rates a branch
+again each time it reconciles the branch.
+
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
 
@@ -3522,10 +3616,11 @@ and that `git-k8s-deps` keeps when it first saw a version through a restart.
 - The mirror syncs branches, not tags.
 - The test Pods' NetworkPolicy works only with a network plugin that
   enforces it.
-- An approval names one head, so a branch that needs one needs another after
-  the `base` check merges its parent in at the front of the queue. The
-  branch leaves the queue until someone approves the merge, then joins at
-  the back. While other branches keep landing, it might never land.
+- An approval holds only for heads that make the same change, as
+  [Which results count](#which-results-count) defines. When the `base`
+  check's merge of the parent at the front of the queue doesn't, such as
+  when the parent renamed a file that the branch changes, the branch leaves
+  the queue until someone approves the merge, then joins at the back.
 - A check that doesn't finish at the front of a queue holds up the branches
   behind it while the front can still land.
 - `check-base`, `check-gofmt`, `check-review`, `check-conflicts`,
