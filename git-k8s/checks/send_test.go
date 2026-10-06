@@ -235,6 +235,20 @@ func TestSendsErrorAndFails(t *testing.T) {
 	}
 }
 
+// A check's reconcile of a branch that's gone succeeds, even if the check
+// failed, because running the check again can't help.
+func TestBranchGoneEndsReconcile(t *testing.T) {
+	e := &endpoint{codes: []int{http.StatusNotFound}}
+	f := newSendFixture(t, e)
+	f.err = errors.New("can't fetch c/x")
+	if err := f.runAndSend(f.context(t)); err != nil {
+		t.Errorf("err = %v, want none for a branch that's gone", err)
+	}
+	if got := e.requests(); len(got) != 1 || got[0].result.State != gitk8s.Error {
+		t.Errorf("received %+v, want one Error result", got)
+	}
+}
+
 // The framework replaces a result that the core program doesn't accept
 // with an Error result that says why, so that the branch shows it.
 func TestSendsErrorForInvalidResult(t *testing.T) {
@@ -275,6 +289,7 @@ func TestSendAnswers(t *testing.T) {
 		{"retries 503s with the same token", []int{503, 503}, 3, ""},
 		{"gives up after 10 503s", []int{503, 503, 503, 503, 503, 503, 503, 503, 503, 503}, sendAttempts, "didn't write the lint check's result"},
 		{"drops a result that the core program doesn't take", []int{409}, 1, ""},
+		{"drops a result for a branch that's gone", []int{404}, 1, ""},
 		{"stops on other errors", []int{500}, 1, "Internal Server Error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

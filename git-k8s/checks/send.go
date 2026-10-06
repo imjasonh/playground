@@ -55,10 +55,19 @@ func runAndSend[V any, P interface {
 	prev := *result
 	err := r.Reconcile(ctx, obj)
 	if res := *result; res != nil && !res.Equal(prev) {
-		err = errors.Join(err, s.send(ctx, meta, res))
+		sendErr := s.send(ctx, meta, res)
+		if errors.Is(sendErr, errGone) {
+			// Running the check again can't help a branch that's gone.
+			return nil
+		}
+		err = errors.Join(err, sendErr)
 	}
 	return err
 }
+
+// errGone is what send returns when the core program answers that the
+// GitBranch is gone.
+var errGone = errors.New("the GitBranch is gone")
 
 // sender sends a check's results to the core program's results endpoint,
 // with a token for the check's service account.
@@ -79,6 +88,7 @@ type sender struct {
 // The core program answers 503 and closes the connection while it can't
 // write the result, as when its Pod starts or stops, so send tries again on
 // a new connection, which can reach the Pod that replaces a stopping one.
+// If the GitBranch is gone, send returns errGone.
 func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.CheckResult) error {
 	body, err := json.Marshal(res)
 	if err != nil {
@@ -98,6 +108,11 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 			// check again.
 			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
 			return nil
+		case err == nil && code == http.StatusNotFound:
+			// The core program answers 404 only once the API server shows
+			// that the GitBranch is gone.
+			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
+			return errGone
 		case err == nil && code == http.StatusBadRequest:
 			return kube.Permanent(fmt.Errorf("the core program rejected the %s check's result: %s", s.check, msg))
 		case err == nil && code == http.StatusForbidden:
