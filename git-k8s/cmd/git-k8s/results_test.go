@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -169,7 +171,10 @@ func TestResultsEndpointWithoutChecksConfigMap(t *testing.T) {
 
 func TestResultsEndpointTimesOut(t *testing.T) {
 	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
-	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond}
+	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond, fetch: func(context.Context, string, string) (*resultsBranch, error) {
+		t.Error("read the branch from the API server, although the cache has it")
+		return nil, nil
+	}}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "wasn't written in time") {
 		t.Errorf("got %d %q, want 503 because nothing wrote the result", w.Code, w.Body)
@@ -225,13 +230,24 @@ func TestResultsEndpointCantRead(t *testing.T) {
 }
 
 // A check that read a newer spec than this replica's cache has waits for
-// the cache, so that its result isn't checked against an older spec.
+// the cache, so that its result isn't checked against an older spec. The
+// API server shows the newer spec, so the request keeps waiting, and it
+// reads the API server at most once every refetch.
 func TestResultsEndpointWaitsForGeneration(t *testing.T) {
 	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
-	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond}
+	reads := 0
+	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond, refetch: time.Hour, fetch: func(context.Context, string, string) (*resultsBranch, error) {
+		reads++
+		b := listedBranch()
+		b.Generation = 4
+		return b, nil
+	}}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=4", "gofmt", &gitk8s.CheckResult{Commit: "h2", State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("got %d %q, want 503 while the cache has generation 3", w.Code, w.Body)
+	}
+	if reads != 1 {
+		t.Errorf("read the branch from the API server %d times, want once", reads)
 	}
 	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
 		t.Errorf("triggered %v before the cache had the spec that the check read", got)
@@ -241,25 +257,177 @@ func TestResultsEndpointWaitsForGeneration(t *testing.T) {
 	}
 }
 
-// A check can read a branch that this replica's cache doesn't have yet, so
-// the endpoint waits for the cache before it answers 404. The fake can't add
-// the branch during the request, so the test checks the wait.
+// A check can send a result for a branch that's gone, as when the merge
+// controller deletes a branch that landed while a check ran on it. The
+// cache doesn't show the branch at the generation that the check read, so
+// the request reads the API server, and answers at once rather than after
+// the wait for the cache.
+func TestResultsEndpointBranchGone(t *testing.T) {
+	recreated := listedBranch()
+	recreated.Generation = 1
+	for _, tc := range []struct {
+		name  string
+		world []any
+		path  string
+		// fetch, if set, is the API server's view of the branch, which
+		// is otherwise the cache's.
+		fetch func(context.Context, string, string) (*resultsBranch, error)
+		code  int
+		msg   string
+	}{
+		{"deleted", nil, "/results/default/app-c-x/gofmt?generation=3", nil, http.StatusNotFound, "GitBranch default/app-c-x doesn't exist"},
+		{
+			"deleted after the cache's generation", []any{listedBranch()}, "/results/default/app-c-x/gofmt?generation=4",
+			func(context.Context, string, string) (*resultsBranch, error) { return nil, nil },
+			http.StatusNotFound, "GitBranch default/app-c-x doesn't exist",
+		},
+		{
+			"deleted and created again", []any{recreated}, "/results/default/app-c-x/gofmt?generation=3", nil,
+			http.StatusConflict, "the check read generation 3 of GitBranch default/app-c-x, which is at generation 1, so it was deleted and created again",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, rec := kube.FakeRequest(t.Context(), append(tc.world, checkToken("gofmt"))...)
+			rs := &results{timeout: time.Minute, poll: time.Millisecond, refetch: time.Second, fetch: tc.fetch}
+			start := time.Now()
+			w := sendResult(ctx, rs, tc.path, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+			if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.msg) {
+				t.Errorf("got %d %q, want %d %q", w.Code, w.Body, tc.code, tc.msg)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Errorf("answered after %v, want an answer well under a second", elapsed)
+			}
+			if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
+				t.Errorf("triggered %v for a branch that's gone", got)
+			}
+			if len(rs.held) != 0 {
+				t.Errorf("holds %v after answering", rs.held)
+			}
+			if err := rec.Err(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+// A check can read a branch before this replica's cache has it. The API
+// server shows the branch, so the request waits for the cache, and once the
+// cache has the branch, the request hands its result off as usual.
 func TestResultsEndpointWaitsForBranch(t *testing.T) {
-	ctx, rec := kube.FakeRequest(t.Context(), checkToken("gofmt"))
-	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond}
-	start := time.Now()
-	w := sendResult(ctx, rs, "/results/default/app-c-y/gofmt?generation=1", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
-	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "GitBranch default/app-c-y doesn't exist") {
-		t.Errorf("got %d %q, want 404", w.Code, w.Body)
+	res := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
+	missing, _ := kube.FakeRequest(t.Context(), checkToken("gofmt"))
+	ctx := &changingCache{Context: t.Context(), world: missing}
+	var reads atomic.Int32
+	rs := &results{timeout: time.Minute, poll: time.Millisecond, refetch: time.Hour, fetch: func(context.Context, string, string) (*resultsBranch, error) {
+		reads.Add(1)
+		return listedBranch(), nil
+	}}
+	answered := make(chan *httptest.ResponseRecorder, 1)
+	go func() { answered <- sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", res) }()
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for !cond() {
+			select {
+			case w := <-answered:
+				t.Fatalf("got %d %q before the request %s", w.Code, w.Body, what)
+			case <-time.After(time.Millisecond):
+			}
+		}
 	}
-	if elapsed := time.Since(start); elapsed < rs.timeout {
-		t.Errorf("answered after %v, want a wait of %v for the cache to have the branch", elapsed, rs.timeout)
+	waitFor("read the API server", func() bool { return reads.Load() > 0 })
+
+	t.Log("The cache gets the branch, so the request holds its result and triggers a reconcile, which writes it.")
+	cached, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
+	ctx.set(cached)
+	waitFor("held its result", func() bool { return rs.heldFor(branchKey)["gofmt"] != nil })
+	b := listedBranch()
+	rctx, _ := kube.Fake(t.Context(), b)
+	if err := rs.Reconcile(rctx, b); err != nil {
+		t.Fatal(err)
 	}
-	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
-		t.Errorf("triggered %v for a branch that the cache doesn't have", got)
+	written, _ := kube.FakeRequest(t.Context(), b, checkToken("gofmt"))
+	ctx.set(written)
+	if w := <-answered; w.Code != http.StatusNoContent {
+		t.Errorf("got %d %q, want 204 once the cache shows the result", w.Code, w.Body)
 	}
-	if err := rec.Err(); err != nil {
-		t.Error(err)
+	if n := reads.Load(); n != 1 {
+		t.Errorf("read the branch from the API server %d times, want once", n)
+	}
+	if got, want := kube.Triggered[resultsBranch](rec), []kube.Key{branchKey}; !slices.Equal(got, want) {
+		t.Errorf("Triggered = %v, want %v", got, want)
+	}
+	if len(rs.held) != 0 {
+		t.Errorf("holds %v after answering", rs.held)
+	}
+}
+
+// changingCache is the context of a request that reads the world of a
+// FakeRequest context, which a test replaces while the request waits, as
+// if this replica's cache changed.
+type changingCache struct {
+	context.Context
+	mu    sync.Mutex
+	world context.Context
+}
+
+func (c *changingCache) Value(key any) any {
+	c.mu.Lock()
+	world := c.world
+	c.mu.Unlock()
+	return world.Value(key)
+}
+
+func (c *changingCache) set(world context.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.world = world
+}
+
+// A request that can't read the branch from the API server keeps waiting
+// for the cache, and then answers 503 rather than 404, because the branch
+// may exist, so that the check tries again. A read that gets no answer
+// ends when the request stops waiting.
+func TestResultsEndpointCantFetch(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  func(context.Context) error
+	}{
+		{"an error", func(context.Context) error { return errors.New("the API server is unavailable") }},
+		{"no answer", func(ctx context.Context) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Minute):
+				return errors.New("the API server didn't answer")
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, rec := kube.FakeRequest(t.Context(), checkToken("gofmt"))
+			reads := 0
+			rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond, refetch: time.Hour, fetch: func(ctx context.Context, _, _ string) (*resultsBranch, error) {
+				reads++
+				return nil, tc.err(ctx)
+			}}
+			start := time.Now()
+			w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+			elapsed := time.Since(start)
+			if w.Code != http.StatusServiceUnavailable || w.Header().Get("Connection") != "close" {
+				t.Errorf("got %d %q, want 503 and a closed connection", w.Code, w.Body)
+			}
+			if elapsed < rs.timeout || elapsed > rs.timeout+5*time.Second {
+				t.Errorf("answered after %v, want a wait of %v for the cache", elapsed, rs.timeout)
+			}
+			if reads != 1 {
+				t.Errorf("read the branch from the API server %d times, want once", reads)
+			}
+			if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
+				t.Errorf("triggered %v for a branch that the cache doesn't have", got)
+			}
+			if err := rec.Err(); err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
 

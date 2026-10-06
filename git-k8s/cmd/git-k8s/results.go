@@ -48,6 +48,13 @@ type results struct {
 	// poll is how often a waiting request looks for its result in the
 	// cache.
 	poll time.Duration
+	// refetch is how often a request that doesn't find the branch in the
+	// cache, at the generation that the check read, reads the branch from
+	// the API server to learn whether it's gone. The first miss reads it at
+	// once.
+	refetch time.Duration
+	// fetch is kube.Fetch, except in tests.
+	fetch func(ctx context.Context, namespace, name string) (*resultsBranch, error)
 	// checks holds the entries of the git-k8s-checks ConfigMap. Nil reads
 	// the ConfigMap for every request.
 	checks *caller.Checks
@@ -126,12 +133,20 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 }
 
 // write holds res for the results controller and answers once the cache
-// shows it in the branch's status. It answers 503 if that takes too long,
-// or 404 if the cache doesn't have the branch by then.
+// shows it in the branch's status. It answers 503 if that takes too long.
+//
+// Until this replica's cache has the branch at the generation that the
+// check read, the branch can look missing or the result stale, because the
+// check's cache can get a change first. So until then, write also reads the
+// branch from the API server, and answers as soon as that shows the branch
+// gone.
 func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, check string, res *gitk8s.CheckResult, generation int64) {
 	ctx := r.Context()
 	timeout := time.NewTimer(rs.timeout)
 	defer timeout.Stop()
+	// A read from the API server ends when the request stops waiting.
+	fetchCtx, cancel := context.WithTimeout(ctx, rs.timeout)
+	defer cancel()
 	poll := time.NewTicker(rs.poll)
 	defer poll.Stop()
 	held := false
@@ -140,6 +155,7 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 			rs.release(k, check, res)
 		}
 	}()
+	var fetched time.Time
 	for {
 		b := kube.Get[resultsBranch](ctx, k.Namespace, k.Name)
 		if b == nil && ctx.Err() != nil {
@@ -147,9 +163,8 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 			unavailable(w, "can't read the branch now")
 			return
 		}
-		// Until this replica's cache has the branch at the generation that
-		// the check read, the branch can look missing or the result stale.
-		if b != nil && b.Generation >= generation {
+		switch {
+		case b != nil && b.Generation >= generation:
 			if reason := rejection(&b.Spec, check, res); reason != "" {
 				http.Error(w, reason, http.StatusConflict)
 				return
@@ -166,20 +181,46 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 					return
 				}
 			}
+		case time.Since(fetched) >= rs.refetch:
+			fetched = time.Now()
+			if code, msg := rs.gone(fetchCtx, k, generation); code != 0 {
+				http.Error(w, msg, code)
+				return
+			}
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-timeout.C:
-			if b == nil {
-				http.Error(w, fmt.Sprintf("GitBranch %s doesn't exist", k), http.StatusNotFound)
-				return
-			}
 			unavailable(w, "the result wasn't written in time")
 			return
 		case <-poll.C:
 		}
 	}
+}
+
+// gone reads the branch from the API server. If the GitBranch that the
+// check read at generation is gone, it returns the status and the message
+// to answer with. Otherwise it returns 0, and the request keeps waiting for
+// the cache, as it does when the read fails.
+func (rs *results) gone(ctx context.Context, k kube.Key, generation int64) (int, string) {
+	fetch := kube.Fetch[resultsBranch]
+	if rs.fetch != nil {
+		fetch = rs.fetch
+	}
+	b, err := fetch(ctx, k.Namespace, k.Name)
+	switch {
+	case err != nil:
+		slog.WarnContext(ctx, "reading a GitBranch for a check's result failed", "namespace", k.Namespace, "branch", k.Name, "err", err)
+		return 0, ""
+	case b == nil:
+		return http.StatusNotFound, fmt.Sprintf("GitBranch %s doesn't exist", k)
+	case b.Generation < generation:
+		// A GitBranch's generation never decreases, so this one is another
+		// GitBranch with the same name, which the check runs on again.
+		return http.StatusConflict, fmt.Sprintf("the check read generation %d of GitBranch %s, which is at generation %d, so it was deleted and created again", generation, k, b.Generation)
+	}
+	return 0, ""
 }
 
 // unavailable answers 503 and closes the connection, so that the client's
