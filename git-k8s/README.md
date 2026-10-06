@@ -3160,15 +3160,17 @@ through when its `validationActions` doesn't hold `Deny`, when its
 `matchResources` sets resource rules, or when a selector in its
 `matchResources` sets `matchLabels` or `matchExpressions`. If a binding's
 policy reads parameters, as the first two do, the binding also lets some
-through when its `paramRef.parameterNotFoundAction` isn't `Deny`, or when
-it has no `paramRef`. Without a `paramRef`, the API server evaluates the
-policy without parameters, so the policy ignores the entries in the
-`git-k8s-checks` ConfigMap. The API server ignores the `paramRef` of a
-binding whose policy doesn't read parameters, such as the third and fourth
-policies, so the condition does too. The message gives a `kubectl patch`
-command that makes the binding from `config/policy.yaml` deny all of them
-again, without a restart. For a binding that someone set to `Warn`, the
-command is:
+through when its `paramRef.parameterNotFoundAction` isn't `Deny`, when it
+has no `paramRef`, or when its `paramRef` doesn't name the `git-k8s-checks`
+ConfigMap in the `git-k8s` namespace. Without a `paramRef`, the API server
+evaluates the policy without parameters, and with a `paramRef` to another
+ConfigMap, it evaluates the policy with that ConfigMap. Either way, the
+policy ignores the entries in the `git-k8s-checks` ConfigMap. The API
+server ignores the `paramRef` of a binding whose policy doesn't read
+parameters, such as the third and fourth policies, so the condition does
+too. The message gives a `kubectl patch` command that makes the binding
+from `config/policy.yaml` deny all of them again, without a restart. For a
+binding that someone set to `Warn`, the command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
