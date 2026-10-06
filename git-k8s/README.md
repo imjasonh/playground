@@ -2915,6 +2915,9 @@ To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
 
+To upgrade an installation from before the mirror, follow
+[Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
+
 The core program keeps the mirror's copies on a PersistentVolumeClaim that
 `generate` adds for its `kube.Volume`, at
 `/var/lib/git-k8s/NAMESPACE/NAME.git`. The claim asks for 1 GiB of the
@@ -2962,9 +2965,6 @@ others.
 
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
 `emptyDir` volume that `generate` mounts at `/tmp`.
-
-To upgrade an installation from before the mirror, follow
-[Upgrade from before the mirror](#upgrade-from-before-the-mirror).
 
 `generate` also writes a Service for the core program, which routes port 80
 to port 8081 of its Pod, where one handler serves both the mirror and the
