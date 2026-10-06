@@ -533,7 +533,7 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		return x.fail("the agent's result from Pod %s isn't valid: %v", st.Pod, err)
 	}
 	if err != nil {
-		kube.RequeueAfter(ctx, 5*time.Second)
+		kube.RequeueAfter(ctx, RetryFetchAfter(err, server.Running.StartedAt, time.Now(), 5*time.Second))
 		return x.status("fetching the agent's result from Pod %s: %v", st.Pod, err)
 	}
 	res, err := parseResult(body, digest, x.job.Task.Edit, x.job.Checkout.Merge != nil)

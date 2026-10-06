@@ -5,13 +5,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 )
@@ -205,5 +208,42 @@ func TestFetchResult(t *testing.T) {
 	r, host = serveOn(t, func(w http.ResponseWriter, _ *http.Request) { w.Write(make([]byte, maxResult+1)) })
 	if _, err := FetchResult(ctx, host, r.port, "uid", digest); !errors.Is(err, ErrInvalidResult) {
 		t.Errorf("FetchResult of a large result = %v, want ErrInvalidResult", err)
+	}
+}
+
+// closedPort returns a port on 127.0.0.1 that nothing listens on, like a
+// result container's before its server starts.
+func closedPort(t *testing.T) int {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port
+}
+
+func TestRetriesSoonWhileTheServerStarts(t *testing.T) {
+	_, refused := get(t.Context(), "127.0.0.1", closedPort(t), "uid")
+	if !errors.Is(refused, syscall.ECONNREFUSED) {
+		t.Fatalf("fetching from a closed port = %v, want a refused connection", refused)
+	}
+	r, host := serveOn(t, func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "wrong UID", http.StatusUnauthorized) })
+	_, unauthorized := r.fetch(t.Context(), host, "uid")
+	now := time.Now()
+	for _, tc := range []struct {
+		name    string
+		err     error
+		started time.Time
+		want    time.Duration
+	}{
+		{"refused as the server starts", refused, now.Add(-time.Second), startupRetry},
+		{"refused after the server had time to start", refused, now.Add(-startupWindow), time.Minute},
+		{"refused with no start time", refused, time.Time{}, time.Minute},
+		{"another error as the server starts", unauthorized, now.Add(-time.Second), time.Minute},
+	} {
+		if got := RetryFetchAfter(tc.err, tc.started, now, time.Minute); got != tc.want {
+			t.Errorf("%s: RetryFetchAfter = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

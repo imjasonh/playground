@@ -10,6 +10,7 @@ import (
 	"flag"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -208,9 +209,21 @@ func finished(p *agent.Pod, digest string) *agent.Pod {
 			{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
 			{Name: "update", State: terminated(&agent.Terminated{Reason: "Completed", Message: digest})},
 		},
-		ContainerStatuses: []agent.ContainerStatus{{Name: "result", State: agent.ContainerState{Running: &struct{}{}}}},
+		ContainerStatuses: []agent.ContainerStatus{{Name: "result", State: agent.ContainerState{Running: &agent.Running{}}}},
 	}
 	return p
+}
+
+// closedPort returns a port on 127.0.0.1 that nothing listens on, like a
+// result container's before its server starts.
+func closedPort(t *testing.T) int {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	return port
 }
 
 // finish serves body as p's result and reconciles with p finished.
@@ -537,7 +550,7 @@ func TestUpdatesAModule(t *testing.T) {
 		{Name: "prepare", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "CreateContainerError", Message: "context deadline exceeded"}}},
 	}}, {Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
 		{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
-		{Name: "update", State: agent.ContainerState{Running: &struct{}{}}},
+		{Name: "update", State: agent.ContainerState{Running: &agent.Running{}}},
 	}}} {
 		p.Status = status
 		if pods := kube.Owned[agent.Pod](f.reconcile(p)); len(pods) != 1 || pods[0].Name != p.Name {
@@ -551,7 +564,6 @@ func TestUpdatesAModule(t *testing.T) {
 	if pods := kube.Owned[agent.Pod](rec); len(pods) != 1 || rec.RequeueAfter() != fetchRetry {
 		t.Fatalf("owned Pods = %d and RequeueAfter() = %v, want the Pod and %v", len(pods), rec.RequeueAfter(), fetchRetry)
 	}
-
 	t.Log("Once it does, the controller pushes the update to the module's branch.")
 	rec = f.finish(p, result(updated("v1.1.0")))
 	if rec.RequeueAfter() != time.Second {
@@ -577,6 +589,21 @@ func TestUpdatesAModule(t *testing.T) {
 	t.Log("Then it stops declaring the Pod and leaves the branch alone.")
 	if rec := f.checkStays(head, p); rec.RequeueAfter() != time.Hour {
 		t.Errorf("RequeueAfter() = %v, want the interval", rec.RequeueAfter())
+	}
+}
+
+func TestFetchesSoonWhileTheServerStarts(t *testing.T) {
+	f := newFixture(t)
+	f.u.resultPort = closedPort(t)
+	p := finished(f.start(), f.serve(result(updated("v1.1.0")), ""))
+	server := &p.Status.ContainerStatuses[0].State.Running.StartedAt
+	*server = f.clock.Add(-time.Second)
+	if rec := f.reconcile(p); len(kube.Owned[agent.Pod](rec)) != 1 || rec.RequeueAfter() >= time.Second {
+		t.Errorf("RequeueAfter() = %v a second after the result container started, want the Pod and less than a second", rec.RequeueAfter())
+	}
+	*server = f.clock.Add(-time.Minute)
+	if rec := f.reconcile(p); rec.RequeueAfter() != fetchRetry {
+		t.Errorf("RequeueAfter() = %v a minute after the result container started, want %v", rec.RequeueAfter(), fetchRetry)
 	}
 }
 
@@ -1594,7 +1621,7 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 		{name: "the Pod runs out of time", status: func(p *agent.Pod) {
 			p.Status = agent.PodStatus{Phase: "Failed", Reason: "DeadlineExceeded", InitContainerStatuses: []agent.ContainerStatus{
 				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
-				{Name: "update", State: agent.ContainerState{Running: &struct{}{}}},
+				{Name: "update", State: agent.ContainerState{Running: &agent.Running{}}},
 			}}
 		}},
 		{name: "the result container stops", status: func(p *agent.Pod) {

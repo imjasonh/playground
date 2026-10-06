@@ -1346,6 +1346,12 @@ result, but can't change it. The check also rejects a result with an
 unknown verdict, an invalid path, a file mode other than a regular file or a
 symbolic link, more than 1,000 files, or more than 8 MiB of file content.
 
+The kubelet reports the `result` container as running a moment before its
+server listens, so a check that fetches right away can find nothing
+listening. When the Pod refuses the connection less than 10 seconds after
+the container starts, the check tries again after a quarter second. After
+other failed fetches, it waits 5 seconds.
+
 Each agent Pod's volumes have size limits. The repository, the head's
 files, and the agent's input can each use up to `-source-size`, 2Gi by
 default, and the agent's home directory up to 1Gi. The init containers'

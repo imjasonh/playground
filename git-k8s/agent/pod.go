@@ -152,13 +152,17 @@ type ContainerStatus struct {
 
 type ContainerState struct {
 	Waiting    *Waiting    `json:"waiting,omitempty"`
-	Running    *struct{}   `json:"running,omitempty"`
+	Running    *Running    `json:"running,omitempty"`
 	Terminated *Terminated `json:"terminated,omitempty"`
 }
 
 type Waiting struct {
 	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+type Running struct {
+	StartedAt time.Time `json:"startedAt,omitzero"`
 }
 
 type Terminated struct {

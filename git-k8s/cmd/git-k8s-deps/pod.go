@@ -427,7 +427,7 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 		return failAll("the result from Pod %s isn't valid: %v", pod.Name, err)
 	}
 	if err != nil {
-		kube.RequeueAfter(ctx, fetchRetry)
+		kube.RequeueAfter(ctx, agent.RetryFetchAfter(err, server.Running.StartedAt, u.clock(), fetchRetry))
 		return nil
 	}
 	out, err := parseResult(body, updates)

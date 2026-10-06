@@ -239,7 +239,7 @@ func TestRollsBackAJobsRunToAPodThatStillExists(t *testing.T) {
 	st := &JobState{}
 	running := PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
 		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
-		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+		{Name: "agent", State: ContainerState{Running: &Running{}}},
 	}}
 	p := f.startJob(job, st)
 	p.Status = running
@@ -367,7 +367,7 @@ func TestRestartsAJobsMovedPodThatsCreatedAgain(t *testing.T) {
 	again.UID = "uid-again"
 	again.Status = PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
 		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
-		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+		{Name: "agent", State: ContainerState{Running: &Running{}}},
 	}}
 	f.runJob(job, st, &again)
 	if st.Runs != 1 || st.UID != again.UID {
