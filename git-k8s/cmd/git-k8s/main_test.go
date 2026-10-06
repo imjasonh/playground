@@ -1151,6 +1151,35 @@ func TestGateExpression(t *testing.T) {
 	}
 }
 
+func TestLandsResultsForTheParentsHead(t *testing.T) {
+	f := newFixture(t)
+	b := f.branches()
+	p := *policy
+	p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt"}, {Name: "risk"}}
+	b.Spec.Merge = &p
+	low := map[string]string{"level": "low"}
+	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, MergeBase: strings.Repeat("1", 40), State: gitk8s.Passed, Outputs: low}
+	results := b.Status.Checks
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	if msg := kube.FindCondition(b.Status.Conditions, "Merged").Message; b.Status.State != reasonWaitingForChecks || msg != "checks: base Passed, gofmt Passed, risk Pending" {
+		t.Fatalf("state = %q, %q; want %s, because risk's result is for the change on top of another merge base", b.Status.State, msg, reasonWaitingForChecks)
+	}
+	if got := f.mirrorHeads()["main"]; got != b.Spec.ParentHead {
+		t.Fatalf("main moved to %s", got)
+	}
+
+	results["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, MergeBase: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: low}
+	b.Status.Checks = results
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	if b.Status.State != reasonLanded {
+		t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+	}
+}
+
 func TestNotFastForward(t *testing.T) {
 	f := newFixture(t)
 	b := f.branches()
