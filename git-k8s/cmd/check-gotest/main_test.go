@@ -241,9 +241,6 @@ func TestReportsResultBeforeThePodStops(t *testing.T) {
 	if rec.RequeueAfter() != time.Second {
 		t.Errorf("RequeueAfter = %v; the next reconcile deletes the Pod", rec.RequeueAfter())
 	}
-	if pods := kube.Owned[Pod](reconcileWith(t, b, repo, passed)); len(pods) != 0 {
-		t.Errorf("owned Pods = %+v, want none once the result is final, so kube deletes the Pod", pods)
-	}
 
 	b, repo = branch()
 	named(b, 1)
@@ -257,6 +254,41 @@ func TestReportsResultBeforeThePodStops(t *testing.T) {
 	reconcileWith(t, b, repo, pod("Pending", &Terminated{ExitCode: 128, Message: "fatal: unable to access", FinishedAt: time.Now()}, nil))
 	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.Contains(res.Message, "trying again at") {
 		t.Errorf("result = %+v, want Running, waiting to fetch again", res)
+	}
+}
+
+// TestKeepsAPodUntilItStops checks that the check declares a Pod after it
+// records the Pod's result, until the kubelet stops the Pod, so that the
+// API server deletes the Pod at once.
+func TestKeepsAPodUntilItStops(t *testing.T) {
+	for _, c := range []struct {
+		code  int32
+		phase string
+	}{{0, "Succeeded"}, {1, "Failed"}} {
+		b, repo := branch()
+		named(b, 1)
+		p := pod("Running", &Terminated{}, &Terminated{ExitCode: c.code, Message: "FAIL"})
+		reconcileWith(t, b, repo, p)
+		final := b.Status.Checks.Result
+		if !final.Final() {
+			t.Fatalf("result = %+v after the test container exited %d, want a final result", final, c.code)
+		}
+		if pods := kube.Owned[Pod](reconcileWith(t, b, repo, p)); len(pods) != 1 || pods[0].Name != p.Name || !b.Status.Checks.Result.Equal(final) {
+			t.Errorf("owned Pods = %d and result = %+v, want Pod %s while it stops, and the same result", len(pods), b.Status.Checks.Result, p.Name)
+		}
+		p.Status.Phase = c.phase
+		if pods := kube.Owned[Pod](reconcileWith(t, b, repo, p)); len(pods) != 0 {
+			t.Errorf("owned Pods = %+v, want none once the Pod is %s", pods, c.phase)
+		}
+		if pods := kube.Owned[Pod](reconcileWith(t, b, repo)); len(pods) != 0 {
+			t.Errorf("owned Pods = %+v, want none once the Pod is gone", pods)
+		}
+
+		p.Status.Phase = "Running"
+		b.Spec.Head = strings.Repeat("1", 40)
+		if pods := kube.Owned[Pod](reconcileWith(t, b, repo, p)); slices.ContainsFunc(pods, func(o *Pod) bool { return o.Name == p.Name }) {
+			t.Errorf("owned Pods = %+v after the branch moved, want none for the old head", pods)
+		}
 	}
 }
 
@@ -721,11 +753,14 @@ func TestRetriesFailedFetch(t *testing.T) {
 	}
 
 	named(b, 3)
-	last := pod("Failed", &Terminated{ExitCode: 128, Message: "fatal: unable to access", FinishedAt: time.Now()}, nil)
+	last := pod("Pending", &Terminated{ExitCode: 128, Message: "fatal: unable to access", FinishedAt: time.Now()}, nil)
 	last.Name = podName("app-c-x", head, 3)
 	reconcileWith(t, b, repo, last)
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "in 3 attempts") {
-		t.Errorf("result = %+v, want Failed after 3 attempts", res)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "in 3 attempts") || res.Outputs["pod"] != last.Name {
+		t.Errorf("result = %+v, want Failed after 3 attempts, naming Pod %s", res, last.Name)
+	}
+	if pods := kube.Owned[Pod](reconcileWith(t, b, repo, last)); len(pods) != 1 || pods[0].Name != last.Name {
+		t.Errorf("owned Pods = %+v, want the last attempt's Pod until the kubelet stops it", pods)
 	}
 }
 

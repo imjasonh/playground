@@ -1041,12 +1041,14 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   that other replicas declared until its cache shows them, so replicas that
   start Pods at the same moment can go over the limit.
 
-kube deletes a Pod when the check stops declaring it: after the check
-records the Pod's result, or when the branch moves to a new head. The check
-records the result as soon as the Pod's status shows that the test
-container exited or an init container failed. The kubelet sets the Pod's
-phase about a second later, after it stops the Pod's sandbox, and the Pod
-counts toward `-max-pods` until then. Owner references delete the Pods with
+The check records a Pod's result as soon as the Pod's status shows that the
+test container exited or an init container failed. The kubelet sets the
+Pod's phase about a second later, after it stops the Pod's sandbox, and the
+Pod counts toward `-max-pods` until then. kube deletes a Pod when the check
+stops declaring it: once the check has recorded the Pod's result and the
+Pod's phase is `Succeeded` or `Failed`, or when the branch moves to a new
+head. The API server deletes a Pod in either phase at once, but waits for
+the kubelet to stop a running one. Owner references delete the Pods with
 their `GitBranch`. Set `-runtime-class` to run the Pods under a sandboxing
 runtime such as gVisor, and `-go-image`, `-git-image`, `-timeout`, and
 `-goproxy` to change the rest. If you set `-goproxy`, set the same value on

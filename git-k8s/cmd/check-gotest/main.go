@@ -18,9 +18,10 @@
 // With -go-cache, test Pods download modules from a go-cache server and
 // share build outputs through it; see addGoCache.
 //
-// kube deletes a Pod when the check stops declaring it, which happens after
-// the check records the Pod's result and when the branch moves to a new
-// head. Owner references delete the Pods with their GitBranch.
+// kube deletes a Pod when the check stops declaring it: once the check has
+// recorded the Pod's result and the kubelet has stopped the Pod, or when the
+// branch moves to a new head. Owner references delete the Pods with their
+// GitBranch.
 package main
 
 import (
@@ -118,10 +119,31 @@ type gotest struct {
 }
 
 func (g *gotest) check() checks.Check {
-	return checks.Check{Name: gitk8s.GoTestCheck, FilesOnly: true, Run: g.run}
+	return checks.Check{Name: gitk8s.GoTestCheck, FilesOnly: true, Stale: stopping, Run: g.run}
+}
+
+// stopping reports whether the Pod that a final result names hasn't
+// stopped yet. run keeps declaring the Pod until it has, because the API
+// server deletes a Pod whose phase is Succeeded or Failed at once, but
+// waits for the kubelet to stop one that's still running.
+func stopping(ctx context.Context, meta *kube.ObjectMeta, _ *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+	name := previous.Outputs["pod"]
+	if name == "" {
+		return false
+	}
+	p := kube.Get[podPhase](ctx, meta.Namespace, name)
+	return p != nil && p.Status.Phase != "Succeeded" && p.Status.Phase != "Failed"
 }
 
 func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	if p := in.Previous; p.Final() && p.Commit == in.Spec.Head {
+		// stopping found that the Pod that the result names hasn't stopped,
+		// so keep declaring the Pod, and keep the result.
+		if pod, err := testPod(in, p.Outputs["pod"]); err == nil {
+			kube.Own(ctx, pod)
+		}
+		return checks.Verdict{State: p.State, Message: p.Message, Outputs: p.Outputs}, nil
+	}
 	attempt, named := 1, ""
 	if p := in.Previous; p != nil && p.Commit == in.Spec.Head && p.State == gitk8s.Running {
 		if n, err := strconv.Atoi(p.Outputs["attempt"]); err == nil && n > 0 {
@@ -174,8 +196,8 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	}
 	switch outcome(pod) {
 	case "Succeeded":
-		// The next reconcile finds this result final and declares no Pod,
-		// so kube deletes it.
+		// Once the kubelet stops the Pod, a reconcile finds this result
+		// final and declares no Pod, so kube deletes it.
 		kube.RequeueAfter(ctx, time.Second)
 		v := checks.Pass("go test passed in Pod %s", name)
 		v.Outputs = map[string]string{"pod": name}
@@ -196,7 +218,9 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 				outputs["pod"] = podName(in.Meta.Name, in.Spec.Head, attempt+1)
 				return running("fetching the source failed, so trying again: %s", msg), nil
 			}
-			return checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg), nil
+			v := checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg)
+			v.Outputs = map[string]string{"pod": name}
+			return v, nil
 		}
 		msg, _, _ = terminated(pod.Status.ContainerStatuses, "test")
 		if m, failed := goCacheFailure(pod); failed {
