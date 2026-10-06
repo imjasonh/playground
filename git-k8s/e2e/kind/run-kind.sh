@@ -51,6 +51,14 @@ CREATED_REGISTRY=0
 GIT_SERVER_PID=""
 PORT_FORWARD_PID=""
 MOD_PROXY_PID=""
+PROBE_PID=""
+KIND_PID=""
+AGENT_IMAGE_PID=""
+GO_IMAGE_PID=""
+ZOMBIES_PID=""
+# GENERATING has the PID of each pregenerate that the test hasn't waited for,
+# and GENERATED the exit status of each that it has.
+declare -A GENERATING=() GENERATED=()
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -99,12 +107,20 @@ diagnose() {
 
 finish() {
   local status=$?
+  # Deleting the cluster while kind creates it can leave a node behind, so
+  # let kind finish first.
+  if [[ -n "${KIND_PID}" ]]; then
+    wait "${KIND_PID}" 2>/dev/null || true
+  fi
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
-  if [[ -n "${PORT_FORWARD_PID}" ]]; then
-    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
-  fi
+  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${AGENT_IMAGE_PID}" "${GO_IMAGE_PID}" "${ZOMBIES_PID}" \
+    "${GENERATING[@]}"; do
+    if [[ -n "${pid}" ]]; then
+      kill "${pid}" 2>/dev/null || true
+    fi
+  done
   if [[ "${GIT_K8S_KIND_KEEP:-}" == 1 ]]; then
     echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server and module proxy in ${WORKDIR}"
     exit "${status}"
@@ -125,17 +141,24 @@ finish() {
 }
 trap finish EXIT
 
-# eventually runs a command until it succeeds, for up to $1 seconds.
+# eventually runs a command until it succeeds, for up to $1 seconds. It
+# tries again after a quarter of a second, then half a second, then every
+# second, so a short wait ends soon and a long one doesn't keep a CPU busy
+# that the cluster needs.
 eventually() {
   local timeout=$1
   shift
-  local deadline=$((SECONDS + timeout))
+  local deadline=$((SECONDS + timeout)) pause=0.25
   until "$@"; do
     if ((SECONDS >= deadline)); then
       echo "timed out after ${timeout}s: $*" >&2
       return 1
     fi
-    sleep 2
+    sleep "${pause}"
+    case "${pause}" in
+      0.25) pause=0.5 ;;
+      0.5) pause=1 ;;
+    esac
   done
 }
 
@@ -169,6 +192,19 @@ install_kind
 docker info >/dev/null
 
 echo "::group::Start a registry, a kind cluster, a git server, and a module proxy"
+# kind creates the cluster in the background while the test starts the
+# registry, the git server, and the module proxy, and copies images to the
+# registry.
+if ! kind get clusters 2>/dev/null | grep -x "${CLUSTER}" >/dev/null; then
+  CREATED_CLUSTER=1
+  kind create cluster --name "${CLUSTER}" --wait 120s --config - >"${WORKDIR}/kind.log" 2>&1 <<EOF &
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  kubeProxyMode: nftables
+EOF
+  KIND_PID=$!
+fi
 # As in https://kind.sigs.k8s.io/docs/user/local-registry/: nodes pull
 # localhost:PORT/... from the registry container, which is on kind's
 # network.
@@ -176,29 +212,7 @@ if [[ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY}" 2>/dev/null || tru
   docker run -d --restart=always -p "127.0.0.1:${PORT}:5000" --name "${REGISTRY}" registry:2
   CREATED_REGISTRY=1
 fi
-if ! kind get clusters 2>/dev/null | grep -x "${CLUSTER}" >/dev/null; then
-  kind create cluster --name "${CLUSTER}" --wait 120s --config - <<EOF
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-networking:
-  kubeProxyMode: nftables
-EOF
-  CREATED_CLUSTER=1
-fi
-for node in $(kind get nodes --name "${CLUSTER}"); do
-  docker exec "${node}" mkdir -p "/etc/containerd/certs.d/localhost:${PORT}"
-  printf '[host."http://%s:5000"]\n' "${REGISTRY}" |
-    docker exec -i "${node}" cp /dev/stdin "/etc/containerd/certs.d/localhost:${PORT}/hosts.toml"
-done
-if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY}")" == null ]]; then
-  docker network connect kind "${REGISTRY}"
-fi
-k version
 
-# Pods reach the git server on this machine through the gateway of kind's
-# Docker network.
-GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
-  grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
 ssh-keygen -q -t ed25519 -N '' -C e2e@example.com -f "${WORKDIR}/e2e-key"
@@ -210,10 +224,8 @@ GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_POR
   >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
-CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
 listening() { (echo >"/dev/tcp/127.0.0.1/${GIT_PORT}") 2>/dev/null; }
 eventually 30 listening
-echo "Pods reach the git server at ${CLUSTER_URL}"
 # example.com/greet isn't on the internet, so test Pods can get it only
 # through go-cache.
 GREET="${WORKDIR}/modules/example.com/greet@v1.0.0"
@@ -227,10 +239,27 @@ mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${WORKDIR}/modproxy
 mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
 eventually 30 mod_proxy_listening
 MOD_PORT="$(mod_port)"
-echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
-echo "::endgroup::"
+# Pods reach the git server on this machine through the gateway of kind's
+# Docker network, which kind creates before the node.
+kind_network() { docker network inspect kind >/dev/null 2>&1; }
+eventually 120 kind_network
+# The nodes reach the registry on kind's network. Connecting a container to
+# a network briefly refuses connections to its published ports, so the
+# registry joins kind's network before anything pushes to it.
+if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY}")" == null ]]; then
+  docker network connect kind "${REGISTRY}"
+fi
+GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
+  grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
+CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
+# The gotest check's Pods use these images. Copying them into the local
+# registry lets the nodes pull them without reaching the internet.
+GO_IMAGE="localhost:${PORT}/chainguard/go:latest"
+GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
 
-echo "::group::Install git-k8s with generate"
+# generate builds a program, pushes its image, and prints its manifests.
+# While kind creates the cluster, the test generates the programs whose
+# flags it knows, and the groups that install them apply their manifests.
 cd "${ROOT}"
 generate() {
   local program=$1
@@ -241,13 +270,34 @@ generate() {
 install() {
   generate "$@" | k apply -f -
 }
-# The gotest check's Pods use these images. Copying them into the local
-# registry lets the nodes pull them without reaching the internet.
-GO_IMAGE="localhost:${PORT}/chainguard/go:latest"
-GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
-crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
-crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
-crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
+# pregenerate NAME PROGRAM [FLAGS...] runs generate in the background, with
+# the manifests in NAME.yaml and the log in NAME.log.
+pregenerate() {
+  local name=$1
+  shift
+  generate "$@" >"${WORKDIR}/${name}.yaml" 2>"${WORKDIR}/${name}.log" &
+  GENERATING[${name}]=$!
+}
+# wait_generate NAME waits for pregenerate NAME to finish.
+wait_generate() {
+  if [[ -n "${GENERATING[$1]:-}" ]]; then
+    GENERATED[$1]=0
+    wait "${GENERATING[$1]}" || GENERATED[$1]=$?
+    unset "GENERATING[$1]"
+  fi
+}
+# generated NAME waits for pregenerate NAME, prints its log, and fails if
+# generate failed.
+generated() {
+  wait_generate "$1"
+  cat "${WORKDIR}/$1.log" >&2
+  return "${GENERATED[$1]}"
+}
+# install_generated NAME applies the manifests of pregenerate NAME.
+install_generated() {
+  generated "$1"
+  k apply -f "${WORKDIR}/$1.yaml"
+}
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
 # the objects in config/policy.yaml. It runs one replica, the only writer of
 # the mirror's volume, so no standby answers the checks' results with 503.
@@ -255,13 +305,67 @@ crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # branches, and git-k8s-deps, which the deps group installs, starts deps/
 # branches too. check-conflicts creates resolve/BRANCH. The test Pods'
 # NetworkPolicy lets them reach go-cache.
-install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
+pregenerate git-k8s git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
   "-branch-prefix=git-k8s-deps/git-k8s-deps=deps/" \
   "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github" \
   -go-cache-namespace=go-cache
-k -n git-k8s rollout status deployment/git-k8s --timeout=180s
-install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
+crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
+crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
+# The other programs share most of git-k8s's packages, so they start once
+# its generate has compiled them.
+wait_generate git-k8s
+pregenerate git-k8s-without-policies git-k8s -- -install-policies=false
+pregenerate go-cache go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
   "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
+for program in "${CHECKS[@]}"; do
+  case "${program}" in
+    check-risk) pregenerate "${program}" "${program}" -- '-sensitive=auth/**' ;;
+    check-gotest)
+      pregenerate "${program}" "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m \
+        -max-pods=1 -go-cache=http://go-cache.go-cache
+      ;;
+    check-approval) pregenerate "${program}" "${program}" -namespace="${APPROVAL_NS}" ;;
+    *) pregenerate "${program}" "${program}" ;;
+  esac
+done
+# The deps group installs go-cache again, with the git server's module
+# proxy as its upstream.
+pregenerate go-cache-deps go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+  "-upstream=${CLUSTER_URL}/proxy" -max-size=512Mi
+
+if [[ -n "${KIND_PID}" ]]; then
+  kind_status=0
+  wait "${KIND_PID}" || kind_status=$?
+  KIND_PID=""
+  cat "${WORKDIR}/kind.log"
+  [[ ${kind_status} -eq 0 ]]
+fi
+NODES="$(kind get nodes --name "${CLUSTER}")"
+for node in ${NODES}; do
+  docker exec "${node}" mkdir -p "/etc/containerd/certs.d/localhost:${PORT}"
+  printf '[host."http://%s:5000"]\n' "${REGISTRY}" |
+    docker exec -i "${node}" cp /dev/stdin "/etc/containerd/certs.d/localhost:${PORT}/hosts.toml"
+done
+# Test Pods run in the Go image, so the nodes pull it in the background, and
+# the group "Tests run in a sandboxed Pod" waits for them.
+pull_go_image() {
+  local node
+  for node in ${NODES}; do
+    docker exec "${node}" crictl pull "${GO_IMAGE}" || return
+  done
+}
+pull_go_image >"${WORKDIR}/go-image.log" 2>&1 &
+GO_IMAGE_PID=$!
+k version
+echo "Pods reach the git server at ${CLUSTER_URL}"
+echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
+echo "::endgroup::"
+
+echo "::group::Install git-k8s with generate"
+install_generated git-k8s
+k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+install_generated go-cache
 k apply -f "${ROOT}/config/go-cache.yaml"
 # policies_applied passes once each object in config/policy.yaml has the label
 # that the core program sets when it applies them with the permissions that
@@ -279,7 +383,7 @@ k get -f "${ROOT}/config/policy.yaml" --show-labels
 [[ "$(k auth can-i patch validatingadmissionpolicies.admissionregistration.k8s.io/other \
   --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
 policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
-generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
+generated git-k8s-without-policies
 # The results endpoint and the mirror read the git-k8s-checks ConfigMap, so
 # the one rule that may name a ConfigMap or a policy is get on that ConfigMap
 # alone. The rule ends where the next rule or object starts.
@@ -359,20 +463,25 @@ echo "::endgroup::"
 
 echo "::group::Install the checks"
 for program in "${CHECKS[@]}"; do
-  case "${program}" in
-    check-risk) install "${program}" -- '-sensitive=auth/**' ;;
-    check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1 \
-        -go-cache=http://go-cache.go-cache
-      ;;
-    check-approval) install "${program}" -namespace="${APPROVAL_NS}" ;;
-    *) install "${program}" ;;
-  esac
+  install_generated "${program}"
 done
 for program in go-cache "${CHECKS[@]}"; do
   k -n "$(namespace_of "${program}")" rollout status "deployment/${program}" --timeout=180s
 done
 echo "::endgroup::"
+
+# The agent group's image takes a while to build, so the test builds it and
+# pushes it to the registry in the background while the groups before that
+# one run.
+AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
+build_agent_image() {
+  docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
+  docker push -q "${AGENT_IMAGE}"
+  docker rmi "${AGENT_IMAGE}" >/dev/null || true
+  crane digest "${AGENT_IMAGE}" >"${WORKDIR}/agent-image.digest"
+}
+build_agent_image >"${WORKDIR}/agent-image.log" 2>&1 &
+AGENT_IMAGE_PID=$!
 
 echo "::group::Track a repository"
 git init -q -b main "${WORK}"
@@ -402,7 +511,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -600,7 +709,7 @@ spec:
   url: ${CLUSTER_URL}/zombie.git
   secretRef:
     name: app-creds
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -635,6 +744,69 @@ no_lasting_zombies
 k -n "${NS}" delete gitrepository zombie
 echo "The core program's fetches of a repository that moved and check-risk's fetches that the mirror refused failed, and no zombie on the nodes lasted 10 seconds."
 echo "::endgroup::"
+
+# kindnet, kind's network plugin, enforces NetworkPolicies only where the
+# kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
+# egress tries to reach the git server until it can't. The plugin can take a
+# few seconds to apply the policy to a new Pod, so the test decides that the
+# cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
+# git server after 30 seconds. A try that can't connect lasts 20 seconds, so
+# the probe runs in the background during the next groups, and the group
+# "Tests run in a sandboxed Pod" waits for its answer. It starts after the
+# zombie group, because a failed fetch can leave a zombie in its Pod. The
+# test's own Pods, like check-gotest's, meet the restricted Pod Security
+# Standard, so they start in a namespace that enforces it.
+no_egress() {
+  ! timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
+    git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1
+}
+# probe_egress writes 1 to the file enforced if the cluster enforces
+# NetworkPolicies, and 0 if it doesn't.
+probe_egress() {
+  k apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: no-egress
+  namespace: ${NS}
+spec:
+  podSelector:
+    matchLabels:
+      e2e: no-egress
+  policyTypes: [Egress]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-egress
+  namespace: ${NS}
+  labels:
+    e2e: no-egress
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: probe
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "read -r _"]
+      stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      env:
+        - {name: HOME, value: /tmp}
+        - {name: GIT_TERMINAL_PROMPT, value: "0"}
+        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
+EOF
+  k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
+  if eventually 30 no_egress 2>/dev/null; then
+    echo 1 >"${WORKDIR}/enforced"
+  else
+    echo 0 >"${WORKDIR}/enforced"
+  fi
+  k -n "${NS}" delete pod/no-egress networkpolicy/no-egress --wait=false
+}
+probe_egress >"${WORKDIR}/probe.log" 2>&1 &
+PROBE_PID=$!
 
 echo "::group::The git server rejects unsigned commits"
 g checkout -q -b c/unsigned
@@ -779,7 +951,8 @@ waiting_for_approval() {
 }
 eventually 120 waiting_for_approval
 main_before="$(remote_head main)"
-sleep 6
+# Three polls later, c/auth still hasn't landed.
+sleep 3
 [[ "$(remote_head main)" == "${main_before}" ]]
 field '{.status.conditions[?(@.type=="Merged")].message}'
 echo
@@ -1361,7 +1534,7 @@ spec:
     checkRunsIdentity: git-k8s-checks
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -1428,59 +1601,20 @@ echo "A GitRepository in another namespace can't use the trust policies, whose a
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
-# kindnet, kind's network plugin, enforces NetworkPolicies only where the
-# kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
-# egress tries to reach the git server until it can't. The plugin can take a
-# few seconds to apply the policy to a new Pod, so the test decides that the
-# cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
-# git server after 30 seconds. The test's own Pods, like check-gotest's,
-# meet the restricted Pod Security Standard, so they start in a namespace
-# that enforces it.
-k apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: no-egress
-  namespace: ${NS}
-spec:
-  podSelector:
-    matchLabels:
-      e2e: no-egress
-  policyTypes: [Egress]
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: no-egress
-  namespace: ${NS}
-  labels:
-    e2e: no-egress
-spec:
-  restartPolicy: Never
-  automountServiceAccountToken: false
-  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
-  containers:
-    - name: probe
-      image: ${GIT_IMAGE}
-      command: [dash, -c, "read -r _"]
-      stdin: true
-      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
-      env:
-        - {name: HOME, value: /tmp}
-        - {name: GIT_TERMINAL_PROMPT, value: "0"}
-        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
-EOF
-k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
-no_egress() {
-  ! timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
-    git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1
-}
-ENFORCED=1
-if ! eventually 30 no_egress 2>/dev/null; then
-  ENFORCED=0
+probe_status=0
+wait "${PROBE_PID}" || probe_status=$?
+PROBE_PID=""
+cat "${WORKDIR}/probe.log"
+[[ ${probe_status} -eq 0 ]]
+go_image_status=0
+wait "${GO_IMAGE_PID}" || go_image_status=$?
+GO_IMAGE_PID=""
+cat "${WORKDIR}/go-image.log"
+[[ ${go_image_status} -eq 0 ]]
+ENFORCED="$(cat "${WORKDIR}/enforced")"
+if [[ ${ENFORCED} -eq 0 ]]; then
   echo "This cluster doesn't enforce NetworkPolicies, so the test doesn't check what test Pods can reach."
 fi
-k -n "${NS}" delete pod/no-egress networkpolicy/no-egress --wait=false
 
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
@@ -1506,26 +1640,38 @@ if [[ ${ENFORCED} -eq 1 ]]; then
   # so this test passes only in a Pod that can't reach the git server,
   # CoreDNS's metrics port, or, if the node can reach the internet, a public
   # DNS server. kindnet doesn't filter a Pod's connections to its own node,
-  # which on a one-node cluster include the API server.
+  # which on a one-node cluster include the API server. The policy drops
+  # the connections, so each dial lasts its whole timeout, and the test dials
+  # all three at once. It dials addresses, not names, so the timeout is all
+  # for the connection, and 1.5 seconds lets the kernel send a lost SYN
+  # again, which it does after a second.
   cat >"${TESTED}/sandbox_test.go" <<GO
 package tested
 
 import (
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestSandbox(t *testing.T) {
-	if _, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local"); err != nil {
+	dns, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local")
+	if err != nil {
 		t.Fatalf("looking up CoreDNS: %v", err)
 	}
-	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153", "1.1.1.1:53"} {
-		if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
-			c.Close()
-			t.Errorf("the test Pod reached %s", addr)
-		}
+	var wg sync.WaitGroup
+	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", net.JoinHostPort(dns[0], "9153"), "1.1.1.1:53"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if c, err := net.DialTimeout("tcp", addr, 1500*time.Millisecond); err == nil {
+				c.Close()
+				t.Errorf("the test Pod reached %s", addr)
+			}
+		}()
 	}
+	wg.Wait()
 }
 GO
 fi
@@ -1543,7 +1689,7 @@ spec:
   url: ${CLUSTER_URL}/tested.git
   secretRef:
     name: app-creds
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2117,13 +2263,21 @@ echo "::endgroup::"
 echo "::group::An agent reviews branches in sandboxed Pods"
 # The fake backend fails added lines that hold DO NOT MERGE and deletes them
 # when the check may push, so the test needs no Cursor API key.
-AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
-docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
-docker push -q "${AGENT_IMAGE}"
-docker rmi "${AGENT_IMAGE}" >/dev/null || true
-AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
+agent_image_status=0
+wait "${AGENT_IMAGE_PID}" || agent_image_status=$?
+AGENT_IMAGE_PID=""
+cat "${WORKDIR}/agent-image.log"
+[[ ${agent_image_status} -eq 0 ]]
+AGENT_IMAGE="${AGENT_IMAGE}@$(<"${WORKDIR}/agent-image.digest")"
 CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+# The conflicts and deps groups install programs whose flags name the image.
+pregenerate check-conflicts check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" \
+  -backend=fake -timeout=5m
+pregenerate check-deps check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake \
+  -timeout=5m
+pregenerate git-k8s-deps git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
+  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=1s -min-age=5s -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
 # The agent Pods fetch from the mirror with tokens that kube binds to them,
 # so check-review needs no repository credentials. It gets Secrets only by
@@ -2159,7 +2313,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2228,7 +2382,7 @@ echo "::group::Conflicts with a parent that moved are resolved before branches l
 # conflicts by keeping the branch's lines and then the parent's, and fails a
 # conflict that holds DO NOT MERGE.
 CHECKS+=(check-conflicts)
-install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+install_generated check-conflicts
 k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
 # The check and its agent Pods fetch from the mirror, and the check pushes
 # to it, so check-conflicts needs no repository credentials either. It gets
@@ -2267,7 +2421,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2430,7 +2584,7 @@ echo "::endgroup::"
 
 echo "::group::A controller keeps Go modules up to date on branches"
 # The deps repository requires example.com/greet from the git server's
-# module proxy. git-k8s-deps takes a version only once it's 20 seconds old,
+# module proxy. git-k8s-deps takes a version only once it's 5 seconds old,
 # both since git-k8s-deps first saw it and by the proxy's time for it, so
 # the versions that it should take are backdated.
 (cd "${ROOT}" && go build -o "${WORKDIR}/publish" ./e2e/publish)
@@ -2493,7 +2647,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2517,11 +2671,9 @@ CHECKS+=(check-deps git-k8s-deps)
 # its upstream. go-cache now fetches from the git server's module proxy,
 # which git-k8s-deps reads too, so test Pods get the versions that
 # git-k8s-deps takes.
-install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
-  "-upstream=${CLUSTER_URL}/proxy" -max-size=512Mi
-install check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
-install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
-  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
+install_generated go-cache-deps
+install_generated check-deps
+install_generated git-k8s-deps
 k -n go-cache rollout status deployment/go-cache --timeout=180s
 k -n check-deps rollout status deployment/check-deps --timeout=180s
 k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
@@ -2593,7 +2745,8 @@ dg log -1 --format=%B FETCH_HEAD^ | grep -qx 'Git-K8s-Deps: go example.com/greet
 signed_by_git_k8s FETCH_HEAD dg
 signed_by_git_k8s FETCH_HEAD^ dg
 dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
-sleep 6
+# Three polls later, the fix still hasn't landed.
+sleep 3
 [[ "$(remote_head main deps)" == "${deps_main}" ]]
 # config/approved-by.yaml sets approved-by to whoever sets approve.
 approver="$(k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "${APPROVE}=${fixed}" \
@@ -2604,7 +2757,9 @@ eventually 120 deps_landed
 eventually 60 greet_branch_gone
 eventually 60 no_deps_pods
 eventually 60 no_agent_pods
-sleep 12
+# Six polls and six reconciles of git-k8s-deps later, no branch takes
+# v1.2.0.
+sleep 6
 [[ -z "$(remote_head "${GREET_BRANCH}" deps)" ]]
 deps_main_requires v1.1.0
 echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix, and the fix landed once ${approver} approved it. v1.2.0 is too new, so no branch takes it."
@@ -2659,6 +2814,12 @@ first_seen
 echo "git-k8s-deps keeps when it first saw each version in a ConfigMap in its own namespace, the only one where it can read and write ConfigMaps, and kept v1.2.0's time through a restart."
 echo "::endgroup::"
 
+# The last zombie check takes 10 seconds, so it runs in the background while
+# the next group waits to see that nothing writes. It reads the nodes'
+# processes and writes nothing.
+no_lasting_zombies >"${WORKDIR}/zombies.log" 2>&1 &
+ZOMBIES_PID=$!
+
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
   k -n "${NS}" get gitrepositories,gitbranches \
@@ -2669,7 +2830,7 @@ snapshot() {
 idle() {
   local before after
   before="$(snapshot)"
-  sleep 8
+  sleep 4
   after="$(snapshot)"
   echo "resource versions: ${after}"
   [[ "${before}" == "${after}" ]]
@@ -2679,7 +2840,11 @@ echo "Four polls of the remote wrote nothing."
 echo "::endgroup::"
 
 echo "::group::No zombie lasts, and the programs' Pods share a process namespace and meet the restricted Pod Security Standard"
-no_lasting_zombies
+zombies_status=0
+wait "${ZOMBIES_PID}" || zombies_status=$?
+ZOMBIES_PID=""
+cat "${WORKDIR}/zombies.log"
+[[ ${zombies_status} -eq 0 ]]
 # generate doesn't label the programs' namespaces, so their Pods get only the
 # cluster's default Pod Security level. A server-side dry run of the
 # restricted label warns about each Pod that violates it. By now, CHECKS
