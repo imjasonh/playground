@@ -53,6 +53,7 @@ PORT_FORWARD_PID=""
 MOD_PROXY_PID=""
 PROBE_PID=""
 KIND_PID=""
+AGENT_IMAGE_PID=""
 # GENERATING has the PID of each pregenerate that the test hasn't waited for,
 # and GENERATED the exit status of each that it has.
 declare -A GENERATING=() GENERATED=()
@@ -112,7 +113,7 @@ finish() {
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
-  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${GENERATING[@]}"; do
+  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${AGENT_IMAGE_PID}" "${GENERATING[@]}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" 2>/dev/null || true
     fi
@@ -446,6 +447,19 @@ for program in go-cache "${CHECKS[@]}"; do
   k -n "$(namespace_of "${program}")" rollout status "deployment/${program}" --timeout=180s
 done
 echo "::endgroup::"
+
+# The agent group's image takes a while to build, so the test builds it and
+# pushes it to the registry in the background while the groups before that
+# one run.
+AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
+build_agent_image() {
+  docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
+  docker push -q "${AGENT_IMAGE}"
+  docker rmi "${AGENT_IMAGE}" >/dev/null || true
+  crane digest "${AGENT_IMAGE}" >"${WORKDIR}/agent-image.digest"
+}
+build_agent_image >"${WORKDIR}/agent-image.log" 2>&1 &
+AGENT_IMAGE_PID=$!
 
 echo "::group::Track a repository"
 git init -q -b main "${WORK}"
@@ -2218,13 +2232,21 @@ echo "::endgroup::"
 echo "::group::An agent reviews branches in sandboxed Pods"
 # The fake backend fails added lines that hold DO NOT MERGE and deletes them
 # when the check may push, so the test needs no Cursor API key.
-AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
-docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
-docker push -q "${AGENT_IMAGE}"
-docker rmi "${AGENT_IMAGE}" >/dev/null || true
-AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
+agent_image_status=0
+wait "${AGENT_IMAGE_PID}" || agent_image_status=$?
+AGENT_IMAGE_PID=""
+cat "${WORKDIR}/agent-image.log"
+[[ ${agent_image_status} -eq 0 ]]
+AGENT_IMAGE="${AGENT_IMAGE}@$(<"${WORKDIR}/agent-image.digest")"
 CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+# The conflicts and deps groups install programs whose flags name the image.
+pregenerate check-conflicts check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" \
+  -backend=fake -timeout=5m
+pregenerate check-deps check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake \
+  -timeout=5m
+pregenerate git-k8s-deps git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
+  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
 # The agent Pods fetch from the mirror with tokens that kube binds to them,
 # so check-review needs no repository credentials. It gets Secrets only by
@@ -2329,7 +2351,7 @@ echo "::group::Conflicts with a parent that moved are resolved before branches l
 # conflicts by keeping the branch's lines and then the parent's, and fails a
 # conflict that holds DO NOT MERGE.
 CHECKS+=(check-conflicts)
-install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+install_generated check-conflicts
 k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
 # The check and its agent Pods fetch from the mirror, and the check pushes
 # to it, so check-conflicts needs no repository credentials either. It gets
@@ -2619,9 +2641,8 @@ CHECKS+=(check-deps git-k8s-deps)
 # which git-k8s-deps reads too, so test Pods get the versions that
 # git-k8s-deps takes.
 install_generated go-cache-deps
-install check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
-install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
-  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
+install_generated check-deps
+install_generated git-k8s-deps
 k -n go-cache rollout status deployment/go-cache --timeout=180s
 k -n check-deps rollout status deployment/check-deps --timeout=180s
 k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
