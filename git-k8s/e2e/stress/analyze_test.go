@@ -283,6 +283,14 @@ func TestAnalyze(t *testing.T) {
 		r.add("event", landed, eventRec{Type: "ADDED", NS: p.NS, EventTime: landed, Reason: "Landed", EvType: "Normal",
 			Note: fmt.Sprintf("fast-forwarded main from %040d to %s at %040d", i, b.Name, i+1), Object: gitk8s.BranchObjectName(b.Repo, b.Name)})
 	}
+	head := strings.Repeat("e", 40)
+	errs := map[string]checkResult{}
+	// More than eight checks, because Go's iteration order varies less for
+	// smaller maps.
+	for _, name := range []string{"risk", "gotest", "approval", "base", "gofmt", "vet", "lint", "license", "docs"} {
+		errs[name] = checkResult{Commit: head, State: "Error", Message: "failed"}
+	}
+	r.add("branch", at(5), branchRec{Type: "MODIFIED", NS: p.NS, Name: gitk8s.BranchObjectName("app", "c/f001"), Repo: "app", Branch: "c/f001", Head: head, Checks: errs})
 	r.close()
 	gone := gitk8s.BranchObjectName("app", "c/f003")
 	writeLogs(t, dir, map[string][]string{"check-gotest": {
@@ -308,6 +316,15 @@ func TestAnalyze(t *testing.T) {
 	}
 	if len(s.Waits.Gone) != 1 || len(s.Waits.Waits) != 0 {
 		t.Errorf("waits = %+v, want one 410 answer and no waits", s.Waits)
+	}
+	// Results that err in the same record are listed by check name, so that
+	// analyzing a run again writes the same summary.
+	var errChecks []string
+	for _, e := range s.Errors.ErrorResults {
+		errChecks = append(errChecks, strings.Fields(e)[3])
+	}
+	if want := []string{"approval", "base", "docs", "gofmt", "gotest", "license", "lint", "risk", "vet"}; !slices.Equal(errChecks, want) {
+		t.Errorf("error results = %q, want them for %q", s.Errors.ErrorResults, want)
 	}
 	md, err := os.ReadFile(filepath.Join(dir, "summary.md"))
 	if err != nil {

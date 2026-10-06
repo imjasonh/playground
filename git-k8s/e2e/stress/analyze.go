@@ -684,7 +684,8 @@ func summarize(run *runData) (*summary, []*branchStats, []*frontCycle) {
 		seen := map[string]bool{}
 		for _, rc := range recs {
 			br := rc.branch
-			for name, c := range br.Checks {
+			for _, name := range sortedKeys(br.Checks) {
+				c := br.Checks[name]
 				if !terminal(c.State) {
 					continue
 				}
