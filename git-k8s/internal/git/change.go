@@ -18,12 +18,12 @@ type Change struct {
 }
 
 // MaxChangeBytes is the most output that SameChange reads from git for the
-// names of the files that one change touches.
+// files that one change touches.
 const MaxChangeBytes = 8 << 20
 
 // errChangeTooBig is what changedFiles returns when git prints more than
 // MaxChangeBytes.
-var errChangeTooBig = fmt.Errorf("git diff-tree: more than %d MiB of file names", MaxChangeBytes>>20)
+var errChangeTooBig = fmt.Errorf("git diff-tree: more than %d MiB of changed files", MaxChangeBytes>>20)
 
 // SameChange reports whether b makes the same change as a, so that what
 // holds for a's change also holds for b's. Two things must be true:
@@ -34,16 +34,19 @@ var errChangeTooBig = fmt.Errorf("git diff-tree: more than %d MiB of file names"
 //     when b.Head merges a newer parent into a.Head, as the base check
 //     does, or when b.Head rebases or squashes a.Head without resolving a
 //     conflict.
-//   - b changes no file that a doesn't. The merge follows files that the
-//     parent renamed since a.Base, so a's change to one file can land in a
-//     file with another name, which path-based rules can treat
-//     differently. b can change fewer files, such as when the parent
-//     already has part of a's change.
+//   - b changes no file that a doesn't, and leaves each file that it
+//     changes with the mode that a leaves it with. The merge follows files
+//     that the parent renamed since a.Base, so a's change to one file can
+//     land in a file with another name, which path-based rules can treat
+//     differently. It also keeps a mode that the parent changed, such as
+//     an executable bit on a file whose text a changes. b can change fewer
+//     files, such as when the parent already has part of a's change.
 //
 // SameChange is conservative: when it can't tell, it reports that the
 // changes differ. That includes a change without a merge base, a merge that
 // conflicts, such as where both changes touch the same binary file or
-// submodule, and a change whose file names take more than MaxChangeBytes.
+// submodule, and a change whose list of files takes more than
+// MaxChangeBytes.
 // Attributes from the commits' .gitattributes files don't apply to the
 // merge, as with MergeTree, so a branch can't make clean a merge that would
 // conflict. SameChange doesn't compare the commits' messages, authors, or
@@ -106,12 +109,8 @@ func (r *Repo) SameChange(ctx context.Context, a, b Change) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	touched := make(map[string]bool, len(ours))
-	for _, p := range ours {
-		touched[p] = true
-	}
-	for _, p := range theirs {
-		if !touched[p] {
+	for p, mode := range theirs {
+		if m, ok := ours[p]; !ok || m != mode {
 			return false, nil
 		}
 	}
@@ -123,11 +122,12 @@ func (r *Repo) tree(ctx context.Context, commit string) (string, error) {
 	return r.text(ctx, "rev-parse", "--verify", "--end-of-options", commit+"^{tree}")
 }
 
-// changedFiles lists the paths of the files that c adds, removes, or
-// changes, including a file's mode. A renamed file is two paths.
-func (r *Repo) changedFiles(ctx context.Context, c Change) ([]string, error) {
+// changedFiles maps the path of each file that c adds, removes, or changes,
+// including a file whose mode it changes, to the file's mode at c.Head,
+// which is 000000 for a file that c removes. A renamed file is two paths.
+func (r *Repo) changedFiles(ctx context.Context, c Change) (map[string]string, error) {
 	out := &limitedWriter{n: MaxChangeBytes}
-	args := []string{"diff-tree", "-r", "-z", "--name-only", "--no-renames", "--end-of-options", c.Base, c.Head}
+	args := []string{"diff-tree", "-r", "-z", "--no-renames", "--end-of-options", c.Base, c.Head}
 	_, err := r.git.run(ctx, r.Dir, args, opts{out: out})
 	if out.full {
 		return nil, errChangeTooBig
@@ -135,13 +135,21 @@ func (r *Repo) changedFiles(ctx context.Context, c Change) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var paths []string
-	for p := range strings.SplitSeq(string(out.b), "\x00") {
-		if p != "" {
-			paths = append(paths, p)
-		}
+	files := map[string]string{}
+	text := strings.TrimSuffix(string(out.b), "\x00")
+	if text == "" {
+		return files, nil
 	}
-	return paths, nil
+	// Each file is ":OLDMODE NEWMODE OLDSHA NEWSHA STATUS" and its path.
+	fields := strings.Split(text, "\x00")
+	for i := 0; i < len(fields); i += 2 {
+		info := strings.Fields(fields[i])
+		if len(info) != 5 || i+1 == len(fields) {
+			return nil, fmt.Errorf("git diff-tree printed %q, which isn't a changed file", fields[i])
+		}
+		files[fields[i+1]] = info[1]
+	}
+	return files, nil
 }
 
 // FetchCommits fetches commits by name from the remote, such as a commit

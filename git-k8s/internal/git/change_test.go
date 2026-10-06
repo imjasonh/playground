@@ -182,6 +182,8 @@ func TestSameChange(t *testing.T) {
 		map[string]string{"a.txt": text(map[int]string{1: "one"}), ".gitattributes": "a.txt merge=union\n"})
 	unioned := merge(union, conflict)
 	modeDropped := commit(parent, "leave run.sh's mode", nil)
+	parentMode := chmod(start, "run.sh", 0o755)
+	scriptOnMode := merge(script, parentMode)
 	otherBin := commit(start, "change img.bin too", map[string]string{"img.bin": "\x00\x07\x07\x07"})
 	binKept := merge(bin, otherBin, "-X", "ours")
 	delDropped := commit(parent, "leave old.txt", nil)
@@ -243,6 +245,7 @@ func TestSameChange(t *testing.T) {
 		{"a merge that resolves a conflict with new code", change(start, head), change(conflict, rewritten), false},
 		{"a merge that a union attribute makes clean", change(start, union), change(conflict, unioned), false},
 		{"a rebase that drops a mode change", change(start, mode), change(parent, modeDropped), false},
+		{"a merge of a parent that made the changed file executable", change(start, script), change(parentMode, scriptOnMode), false},
 		{"a merge that resolves a conflict in a binary file", change(start, bin), change(otherBin, binKept), false},
 		{"a rebase that drops a deletion", change(start, del), change(parent, delDropped), false},
 		{"a deletion of a file that the parent changed", change(start, del), change(older, delResolved), false},
