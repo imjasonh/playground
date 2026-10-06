@@ -485,12 +485,11 @@ another namespace's copy from the core program's volume.
 ## Events
 
 The controllers record an event about a `GitBranch` each time they push a
-fix to the branch, fast-forward its parent to it, or delete it, in the
-mirror's copy. The repositories controller then pushes the change to the
-external repository, as
+fix to the branch, land it on its parent, or delete it, in the mirror's
+copy. The repositories controller then pushes the change to the external
+repository, as
 [Sync with the external repository](#sync-with-the-external-repository)
-describes. Squash and rebase landings record no event, and only the
-`Merged` condition reports them. A branch without a parent takes no check
+describes. A branch without a parent takes no check
 results, so `check-conflicts` also records an event when it finds that such
 a branch diverged:
 
@@ -498,7 +497,7 @@ a branch diverged:
 | --- | --- | --- |
 | `PushedFix` | `check-NAME` | A check pushed a fix commit to the branch, or `check-conflicts` pushed `resolve/BRANCH` for a diverged branch without a parent. |
 | `ResolvingDivergence` | `check-conflicts` | `check-conflicts` found a diverged branch without a parent, and pushed nothing. A `Warning` says what keeps the check from resolving the divergence. A `Normal` event says that the check waits for `resolve/BRANCH` to land, or that nothing is left to resolve. |
-| `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch. |
+| `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch, or squashed or rebased the branch onto the parent. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 
 `kubectl describe gitbranch GITBRANCH` lists a branch's events. After the
@@ -2990,7 +2989,16 @@ needs an entry in the `git-k8s-checks` ConfigMap, as
 [Check service accounts](#check-service-accounts) describes. The second
 stops every git-k8s service account from setting the `approve` and
 `approved-by` annotations, which are for people, and stops checks and
-`git-k8s-deps` from changing `GitBranch` objects at all. RBAC also keeps
+`git-k8s-deps` from changing a `GitBranch` object's spec, labels,
+annotations, finalizers, owner references, or `managedFields`. A finalizer
+that nobody removes would keep a deleted branch in its parent's merge
+queue, and an owner reference to a missing object would make garbage
+collection delete the `GitBranch` with its approval. The core program
+writes status with server-side apply. When it stops setting a field, the
+API server removes the field only if the core program's entry in
+`managedFields` lists it. Without those entries, a branch that leaves the
+merge queue would keep its place, and at the front of the queue it would
+block every other branch. RBAC also keeps
 every check except `check-gotest`, `check-review`, `check-deps`, and
 `check-conflicts`, which own Pods, from patching `GitBranch` objects.
 `generate` grants that permission to a program that owns objects, such as

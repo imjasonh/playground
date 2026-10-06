@@ -37,7 +37,7 @@ metadata:
     # in this file has its policyVersion, in cmd/git-k8s/policies.go. Raise
     # policyVersion and every policy's annotation together when the core
     # program needs a change to the policies.
-    git-k8s.imjasonh.com/policy-version: "2"
+    git-k8s.imjasonh.com/policy-version: "3"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -106,13 +106,19 @@ spec:
 # The approve and approved-by annotations on a GitBranch record a person's
 # approval, so no git-k8s service account can set or change them, even one
 # that holds the approve verb. This policy also stops checks from changing a
-# GitBranch's spec, labels, or annotations. RBAC lets a check that owns
-# objects, such as check-gotest, patch GitBranch objects, because generate
-# can't tell whether an owned object needs a finalizer on its owner. kube
-# adds that finalizer with a cleanup annotation, which this policy denies, so
-# a check can own only namespaced objects in the branch's namespace. A check
-# whose entry in the git-k8s-checks ConfigMap is empty can't send results,
-# but it keeps its RBAC, so this policy still treats it as a check.
+# GitBranch's spec, labels, annotations, finalizers, owner references, or
+# managedFields. A finalizer that nobody removes keeps a deleted branch in its
+# parent's merge queue, and an owner reference to a missing object makes
+# garbage collection delete the GitBranch with its approval. Without its
+# entries in managedFields, the core program's server-side applies leave
+# behind the fields that they stop setting, such as a branch's place in the
+# merge queue. RBAC lets a check that owns objects, such as check-gotest,
+# patch GitBranch objects, because generate can't tell whether an owned
+# object needs a finalizer on its owner. kube adds that finalizer with a
+# cleanup annotation, which this policy denies, so a check can own only
+# namespaced objects in the branch's namespace. A check whose entry in the
+# git-k8s-checks ConfigMap is empty can't send results, but it keeps its RBAC,
+# so this policy still treats it as a check.
 #
 # git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
 # RBAC lets it patch GitBranch objects too, and the policy stops it the same
@@ -122,7 +128,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-branches
   annotations:
-    git-k8s.imjasonh.com/policy-version: "2"
+    git-k8s.imjasonh.com/policy-version: "3"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -156,6 +162,19 @@ spec:
       expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
     - name: deps
       expression: size(variables.user) == 4 && variables.user[2] == "git-k8s-deps" && variables.user[3] == "git-k8s-deps"
+    - name: unchanged
+      expression: >-
+        oldObject != null && object.spec == oldObject.spec &&
+        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
+        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}) &&
+        (has(object.metadata.finalizers) ? object.metadata.finalizers : []) ==
+        (has(oldObject.metadata.finalizers) ? oldObject.metadata.finalizers : []) &&
+        (has(object.metadata.ownerReferences) ? object.metadata.ownerReferences : []) ==
+        (has(oldObject.metadata.ownerReferences) ? oldObject.metadata.ownerReferences : []) &&
+        (has(object.metadata.managedFields) ? object.metadata.managedFields : []) ==
+        (has(oldObject.metadata.managedFields) ? oldObject.metadata.managedFields : [])
     - name: approval
       expression: >-
         has(object.metadata.annotations) && "git-k8s.imjasonh.com/approve" in object.metadata.annotations ?
@@ -179,23 +198,11 @@ spec:
         !(variables.core || variables.checkAccount) ||
         (variables.approval == variables.oldApproval && variables.approver == variables.oldApprover)
       message: git-k8s controllers can't approve branches
-    - expression: >-
-        !variables.checkAccount ||
-        (oldObject != null && object.spec == oldObject.spec &&
-        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
-        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
-        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
-        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+    - expression: '!variables.checkAccount || variables.unchanged'
       messageExpression: >-
         variables.check != "" ? "the " + variables.check + " check can't change GitBranch objects" :
         request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
-    - expression: >-
-        !variables.deps ||
-        (oldObject != null && object.spec == oldObject.spec &&
-        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
-        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
-        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
-        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+    - expression: '!variables.deps || variables.unchanged'
       message: git-k8s-deps can't change GitBranch objects
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -231,7 +238,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-pods
   annotations:
-    git-k8s.imjasonh.com/policy-version: "2"
+    git-k8s.imjasonh.com/policy-version: "3"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -413,7 +420,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-approvals
   annotations:
-    git-k8s.imjasonh.com/policy-version: "2"
+    git-k8s.imjasonh.com/policy-version: "3"
 spec:
   failurePolicy: Fail
   matchConstraints:

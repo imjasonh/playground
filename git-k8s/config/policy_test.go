@@ -953,6 +953,25 @@ func TestBranches(t *testing.T) {
 	old := gitBranch(nil)
 	labeled := gitBranch(func(meta, _ map[string]any) { meta["labels"] = map[string]any{"e2e": "changed"} })
 	moved := gitBranch(func(_, spec map[string]any) { spec["head"] = "1111111" })
+	// A finalizer that nobody removes keeps a deleted branch's GitBranch,
+	// and its place in the merge queue, forever. An owner reference to an
+	// object that doesn't exist makes garbage collection delete the
+	// GitBranch, with its approval and its place in the queue.
+	finalized := gitBranch(func(meta, _ map[string]any) { meta["finalizers"] = []any{"example.com/hold"} })
+	reowned := gitBranch(func(meta, _ map[string]any) {
+		meta["ownerReferences"] = []any{map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "name": "gone", "uid": "6d9e4f0c-0000-4000-8000-000000000000"}}
+	})
+	// The core program's server-side applies remove only the fields that
+	// its entries in managedFields list, such as status.queued.
+	managed := gitBranch(func(meta, _ map[string]any) {
+		meta["managedFields"] = []any{map[string]any{
+			"manager": "repositories", "operation": "Apply", "apiVersion": "git-k8s.imjasonh.com/v1alpha1",
+			"fieldsType": "FieldsV1", "fieldsV1": map[string]any{"f:spec": map[string]any{"f:head": map[string]any{}}},
+		}, map[string]any{
+			"manager": "merge", "operation": "Apply", "apiVersion": "git-k8s.imjasonh.com/v1alpha1", "subresource": "status",
+			"fieldsType": "FieldsV1", "fieldsV1": map[string]any{"f:status": map[string]any{"f:queued": map[string]any{}}},
+		}}
+	})
 	approvedBy := func(user string) map[string]any {
 		return gitBranch(func(meta, _ map[string]any) {
 			meta["annotations"] = map[string]any{"git-k8s.imjasonh.com/approve": "0000000", "git-k8s.imjasonh.com/approved-by": user}
@@ -960,6 +979,9 @@ func TestBranches(t *testing.T) {
 	}
 	update := func(user string, params, object map[string]any) request {
 		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", params: params, object: object, oldObject: old}
+	}
+	updateManaged := func(user string, params, object map[string]any) request {
+		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", params: params, object: object, oldObject: managed}
 	}
 	cantChange := func(check string) string { return "the " + check + " check can't change GitBranch objects" }
 	emptied := func(user string) string {
@@ -977,6 +999,21 @@ func TestBranches(t *testing.T) {
 	}, {
 		name: "a check changes a branch's spec",
 		r:    update(gotest, none, moved),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check adds a finalizer",
+		r:    update(gotest, none, finalized),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check changes a branch's owner references",
+		r:    update(gotest, none, reowned),
+		want: cantChange("gotest"),
+	}, {
+		name: "a check updates a GitBranch without changing it",
+		r:    updateManaged(gotest, none, managed),
+	}, {
+		name: "a check resets a branch's managedFields",
+		r:    updateManaged(gotest, none, old),
 		want: cantChange("gotest"),
 	}, {
 		name: "a check creates a GitBranch",
@@ -1017,6 +1054,9 @@ func TestBranches(t *testing.T) {
 		name: "the core program adds a label",
 		r:    update(core, none, labeled),
 	}, {
+		name: "the core program adds a finalizer",
+		r:    update(core, none, finalized),
+	}, {
 		name: "the core program adds a label despite an entry that names a check",
 		r:    update(core, checksConfigMap("git-k8s.git-k8s", "gofmt"), labeled),
 	}, {
@@ -1036,6 +1076,18 @@ func TestBranches(t *testing.T) {
 	}, {
 		name: "git-k8s-deps changes a branch's spec",
 		r:    update(deps, none, moved),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps adds a finalizer",
+		r:    update(deps, none, finalized),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps changes a branch's owner references",
+		r:    update(deps, none, reowned),
+		want: depsCantChange,
+	}, {
+		name: "git-k8s-deps resets a branch's managedFields",
+		r:    updateManaged(deps, none, old),
 		want: depsCantChange,
 	}, {
 		name: "git-k8s-deps creates a GitBranch",
