@@ -1624,7 +1624,9 @@ if [[ ${ENFORCED} -eq 1 ]]; then
   # DNS server. kindnet doesn't filter a Pod's connections to its own node,
   # which on a one-node cluster include the API server. The policy drops
   # the connections, so each dial lasts its whole timeout, and the test dials
-  # all three at once.
+  # all three at once. It dials addresses, not names, so the timeout is all
+  # for the connection, and 1.5 seconds lets the kernel send a lost SYN
+  # again, which it does after a second.
   cat >"${TESTED}/sandbox_test.go" <<GO
 package tested
 
@@ -1636,15 +1638,16 @@ import (
 )
 
 func TestSandbox(t *testing.T) {
-	if _, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local"); err != nil {
+	dns, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local")
+	if err != nil {
 		t.Fatalf("looking up CoreDNS: %v", err)
 	}
 	var wg sync.WaitGroup
-	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153", "1.1.1.1:53"} {
+	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", net.JoinHostPort(dns[0], "9153"), "1.1.1.1:53"} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
+			if c, err := net.DialTimeout("tcp", addr, 1500*time.Millisecond); err == nil {
 				c.Close()
 				t.Errorf("the test Pod reached %s", addr)
 			}
