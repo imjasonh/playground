@@ -91,10 +91,13 @@ func front(ctx context.Context, k kube.Key, head string) bool {
 // branch behind it, and fronts go first. The rest of each queue waits in
 // line with the branches that aren't queued, because the base check merges
 // the parent into each of those branches when it reaches the front, which
-// runs the tests again, and their positions change at every landing.
-// Fronts, and then the other branches, go in the order that they started
-// waiting, then by key. Positions and waiting times are in the GitBranch
-// status, so a restarted check keeps the order.
+// runs the tests again, and their positions change at every landing. When
+// the fronts of -max-pods or more queues wait at once, they can take every
+// place, and the other branches wait until the queues drain, which they do
+// because a branch whose tests haven't passed can't join a queue. Fronts,
+// and then the other branches, go in the order that they started waiting,
+// then by key. Positions and waiting times are in the GitBranch status, so
+// a restarted check keeps the order.
 type turn struct {
 	front  bool
 	since  time.Time

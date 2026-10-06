@@ -1036,8 +1036,11 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   every branch behind it. The rest of a queue waits in line with the
   branches that aren't queued, because the `base` check merges the parent
   into each of those branches when it reaches the front, which runs the
-  tests again, and their places change at every landing. A branch counts as
-  the front once the merge controller keeps it in the queue at its head,
+  tests again, and their places change at every landing. When the fronts of
+  `-max-pods` or more queues wait at once, they can take every place. Other
+  branches then wait until the queues drain, which they do because a branch
+  whose tests haven't passed can't join a queue. A branch counts as the
+  front once the merge controller keeps it in the queue at its head,
   moments after the `base` check pushes its merge of the parent. The check
   reads places through a view of `GitBranch` that declares only
   `status.queued.head` and `status.queued.position`, so it still sees no
