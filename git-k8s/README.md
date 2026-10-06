@@ -3510,6 +3510,13 @@ serves a Go module proxy. The test publishes module versions to it, makes it
 without approval, that the fake agent fixes a release that breaks the tests,
 and that `git-k8s-deps` keeps when it first saw a version through a restart.
 
+The stress harness in `e2e/stress` measures how many branches git-k8s lands
+per minute, and where each branch's time goes, on a kind cluster that its
+`setup.sh` starts. Its scenarios push bursts of branches, some with
+conflicts, failing tests, or high risk, to one or more repositories. CI runs
+only its unit tests. To run a scenario, see
+[`e2e/stress/README.md`](e2e/stress/README.md).
+
 ## Limitations
 
 - The mirror polls external repositories; it doesn't receive webhooks. A
