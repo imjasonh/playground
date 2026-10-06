@@ -61,6 +61,57 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
+// queued is a GitBranch's position in its parent's merge queue, which the
+// merge controller writes. It declares only the position and the head that
+// the merge controller last kept in the queue, so the check sees nothing
+// else in the status, including other checks' results, and changes to the
+// rest of the status don't run the check again. generate grants list and
+// watch on GitBranches for it, which the check already has for Branch.
+type queued struct {
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
+	Status      struct {
+		Queued struct {
+			Head     string `json:"head"`
+			Position int32  `json:"position,omitempty"`
+		} `json:"queued,omitzero"`
+	} `json:"status,omitzero"`
+}
+
+// front reports whether branch k is at the front of its parent's merge
+// queue at head. When the base check pushes its merge of the parent to the
+// front, the branch counts again once the merge controller keeps it in the
+// queue at the merge, moments later.
+func front(ctx context.Context, k kube.Key, head string) bool {
+	q := kube.Get[queued](ctx, k.Namespace, k.Name)
+	return q != nil && q.Status.Queued.Position == 1 && q.Status.Queued.Head == head
+}
+
+// turn is a waiting branch's place in line for a test Pod. Only the front
+// of a merge queue lands, so a front that waits for a Pod holds up every
+// branch behind it, and fronts go first. The rest of each queue waits in
+// line with the branches that aren't queued, because the base check merges
+// the parent into each of those branches when it reaches the front, which
+// runs the tests again, and their positions change at every landing.
+// Fronts, and then the other branches, go in the order that they started
+// waiting, then by key. Positions and waiting times are in the GitBranch
+// status, so a restarted check keeps the order.
+type turn struct {
+	front  bool
+	since  time.Time
+	branch kube.Key
+}
+
+// before reports whether t comes before u.
+func (t turn) before(u turn) bool {
+	switch {
+	case t.front != u.front:
+		return t.front
+	case !t.since.Equal(u.since):
+		return t.since.Before(u.since)
+	}
+	return t.branch.String() < u.branch.String()
+}
+
 var (
 	goImage      = flag.String("go-image", "cgr.dev/chainguard/go:latest", "image that runs go test")
 	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
@@ -108,8 +159,9 @@ const declaredFor = time.Minute
 // MicroTime, which sorts as a string.
 const waitingLayout = "2006-01-02T15:04:05.000000Z07:00"
 
-// gotest is the gotest check. It runs at most -max-pods test Pods at once,
-// and when a place frees up, the branch that has waited longest gets it.
+// gotest is the gotest check. It runs at most -max-pods test Pods at once.
+// When a place frees up, the fronts of merge queues get it first, then the
+// branch that has waited longest; see turn.
 type gotest struct {
 	mu sync.Mutex
 	// declared holds when this process first declared each test Pod that
@@ -166,12 +218,12 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	if pod, t, ok := waiting(in.Previous, in.Spec.Head, "waiting", "queued"); ok && pod == name {
 		since = t
 	}
-	if !g.take(ctx, in.Meta.Key(), kube.Key{Namespace: in.Meta.Namespace, Name: name}, since) {
+	if !g.take(ctx, in.Meta.Key(), in.Spec.Head, kube.Key{Namespace: in.Meta.Namespace, Name: name}, since) {
 		outputs["waiting"] = since.Format(waitingLayout)
 		// Listing the Pods runs this again when one of them finishes. The
 		// requeue covers declared Pods that never appear.
 		kube.RequeueAfter(ctx, time.Minute)
-		return running("waiting to start a Pod: -max-pods is %d, and branches that have waited longer start first", *maxPods), nil
+		return running("waiting to start a Pod: -max-pods is %d, and the fronts of merge queues start first, then branches that have waited longer", *maxPods), nil
 	}
 	if named != name {
 		// The mirror lets a test Pod fetch only once a running result names
@@ -237,11 +289,12 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	return running("Pod %s is %s", name, cmp.Or(pod.Status.Phase, "Pending")), nil
 }
 
-// take reports whether branch b can run its test Pod pod. It can if the
-// Pod exists or b declared it moments ago, or if a place is free for it
-// after the branches that have waited longer than since. take counts a Pod
-// that it lets b start until the cache shows the Pod.
-func (g *gotest) take(ctx context.Context, b, pod kube.Key, since time.Time) bool {
+// take reports whether branch b can run its test Pod pod at head. It can if
+// the Pod exists or b declared it moments ago, or if a place is free for it
+// after the waiting branches whose turns come first, where b started
+// waiting at since. take counts a Pod that it lets b start until the cache
+// shows the Pod.
+func (g *gotest) take(ctx context.Context, b kube.Key, head string, pod kube.Key, since time.Time) bool {
 	if *maxPods <= 0 {
 		return true
 	}
@@ -273,14 +326,21 @@ func (g *gotest) take(ctx context.Context, b, pod kube.Key, since time.Time) boo
 	}
 	free -= len(g.declared)
 	if free <= 0 {
+		// Turns don't matter without a free place, and reading positions in
+		// the queues would run this again each time that one changes. A Pod
+		// that finishes runs this again.
 		return false
 	}
+	// Reading the positions runs this again when one changes, so a branch
+	// that reaches the front can take a free place before branches that
+	// have waited longer take it.
+	mine := turn{front: front(ctx, b, head), since: since, branch: b}
 	for _, o := range kube.List[Branch](ctx) {
 		k, t, ok := waitingFor(ctx, o)
 		if _, declared := g.declared[k]; !ok || declared || seen[k] || o.Key() == b {
 			continue
 		}
-		if t.Before(since) || t.Equal(since) && o.Key().String() < b.String() {
+		if (turn{front: front(ctx, o.Key(), o.Spec.Head), since: t, branch: o.Key()}).before(mine) {
 			free--
 		}
 	}

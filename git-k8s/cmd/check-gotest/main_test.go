@@ -383,10 +383,20 @@ func waitingBranch(name string, since time.Time) *Branch {
 	return b
 }
 
+// inQueue returns b's position in its parent's merge queue, where the merge
+// controller kept b at its head.
+func inQueue(b *Branch, position int32) *queued {
+	q := &queued{Object: kube.Meta(b.Name, nil)}
+	q.Namespace = b.Namespace
+	q.Status.Queued.Head = b.Spec.Head
+	q.Status.Queued.Position = position
+	return q
+}
+
 // startedIn reconciles each branch with r, in a world that holds repo, the
-// branches, and pods, and returns the branches that declared a Pod that
-// isn't in pods.
-func startedIn(t *testing.T, r kube.Reconciler[Branch], repo *gitk8s.GitRepository, branches []*Branch, pods []*Pod) []string {
+// branches, pods, and extra, and returns the branches that declared a Pod
+// that isn't in pods.
+func startedIn(t *testing.T, r kube.Reconciler[Branch], repo *gitk8s.GitRepository, branches []*Branch, pods []*Pod, extra ...any) []string {
 	t.Helper()
 	var started []string
 	for _, b := range branches {
@@ -397,6 +407,7 @@ func startedIn(t *testing.T, r kube.Reconciler[Branch], repo *gitk8s.GitReposito
 		for _, p := range pods {
 			world = append(world, p)
 		}
+		world = append(world, extra...)
 		for _, p := range kube.Owned[Pod](reconcileIn(t, r, b, world...)) {
 			if !slices.ContainsFunc(pods, func(o *Pod) bool { return o.Name == p.Name }) {
 				started = append(started, b.Name)
@@ -451,6 +462,110 @@ func TestBreaksTiesByName(t *testing.T) {
 	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
 	if got := startedIn(t, r, repo, branches, nil); !slices.Equal(got, []string{"app-c-a"}) {
 		t.Errorf("started %v, want only app-c-a", got)
+	}
+}
+
+func TestStartsTheFrontsOfQueuesFirst(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	_, repo := branch()
+	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	a, b := waitingBranch("app-c-a", start), waitingBranch("app-c-b", start.Add(time.Second))
+	c, d := waitingBranch("app-c-c", start.Add(2*time.Second)), waitingBranch("app-c-d", start.Add(3*time.Second))
+	e := waitingBranch("app-c-e", start.Add(4*time.Second))
+	c.Spec.Parent, d.Spec.Parent = "release", "dev"
+	// app-c-e is first in main's queue, and app-c-b is second. app-c-c is
+	// first in release's queue. app-c-d is first in dev's queue, but the base
+	// check has just pushed its merge of dev, and the merge controller hasn't
+	// kept app-c-d in the queue at the merge yet.
+	pushed := inQueue(d, 1)
+	pushed.Status.Queued.Head = strings.Repeat("1", 40)
+	positions := []any{inQueue(e, 1), inQueue(b, 2), inQueue(c, 1), pushed}
+	branches := []*Branch{a, b, c, d, e}
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	var pods []*Pod
+	for i, next := range []string{"app-c-c", "app-c-e", "app-c-a", "app-c-b", "app-c-d"} {
+		if i == 1 {
+			t.Log("A restarted check finds the order in the branches' statuses.")
+			r = checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+		}
+		if got := startedIn(t, r, repo, branches, pods, positions...); !slices.Equal(got, []string{next}) {
+			t.Fatalf("started %v, want only %s", got, next)
+		}
+		p := runningPod("default", podName(next, head, 1))
+		pods = append(pods, p)
+		if got := startedIn(t, r, repo, branches, pods, positions...); len(got) != 0 {
+			t.Fatalf("started %v while the Pod of %s runs", got, next)
+		}
+		p.Status.Phase = "Succeeded"
+	}
+}
+
+func TestStartsAFrontOnceTheQueueHasItsHead(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	_, repo := branch()
+	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	longest := waitingBranch("app-c-a", start)
+	merged := waitingBranch("app-c-b", start.Add(time.Second))
+	position := inQueue(merged, 1)
+	position.Status.Queued.Head = strings.Repeat("1", 40)
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	if pods := kube.Owned[Pod](reconcileIn(t, r, merged, repo, longest, position)); len(pods) != 0 {
+		t.Fatalf("owned Pods = %+v, want app-c-b to wait behind app-c-a while the queue has app-c-b's earlier head", pods)
+	}
+
+	t.Log("The merge controller keeps app-c-b at the front at its new head.")
+	position.Status.Queued.Head = merged.Spec.Head
+	if pods := kube.Owned[Pod](reconcileIn(t, r, merged, repo, longest, position)); len(pods) != 1 {
+		t.Fatalf("owned Pods = %+v, want app-c-b's Pod", pods)
+	}
+	if pods := kube.Owned[Pod](reconcileIn(t, r, longest, repo, merged, position)); len(pods) != 0 {
+		t.Errorf("owned Pods = %+v, want app-c-a to wait while app-c-b's Pod may be on its way", pods)
+	}
+}
+
+func TestKeepsTheLimitWhileFrontsWait(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 2
+	_, repo := branch()
+	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Microsecond)
+	world := []any{repo}
+	var branches []*Branch
+	for i := range 8 {
+		b := waitingBranch(fmt.Sprintf("app-c-%d", i), start.Add(time.Duration(i)*time.Second))
+		branches = append(branches, b)
+		world = append(world, b)
+		if i >= 5 {
+			b.Spec.Parent = fmt.Sprintf("parent-%d", i)
+			world = append(world, inQueue(b, 1))
+		}
+	}
+	// Every branch reconciles at once, as kube's workers do. The three that
+	// have waited least are at the fronts of three queues.
+	r := checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{})
+	copies := make([]Branch, len(branches))
+	owned := make([][]*Pod, len(branches))
+	var wg sync.WaitGroup
+	for i, b := range branches {
+		copies[i] = *b
+		wg.Go(func() {
+			ctx, rec := kube.Fake(t.Context(), &copies[i], world...)
+			if err := r.Reconcile(ctx, &copies[i]); err != nil {
+				t.Error(err)
+			}
+			owned[i] = kube.Owned[Pod](rec)
+		})
+	}
+	wg.Wait()
+	var started []string
+	for i, b := range branches {
+		if len(owned[i]) > 0 {
+			started = append(started, b.Name)
+		}
+	}
+	if want := []string{"app-c-5", "app-c-6"}; !slices.Equal(started, want) {
+		t.Errorf("started %v, want %v, the two fronts that have waited longest", started, want)
 	}
 }
 
