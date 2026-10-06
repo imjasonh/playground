@@ -1025,21 +1025,37 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
   records when it started waiting in `outputs.waiting`. When a Pod's phase
-  becomes `Succeeded` or `Failed`, or the Pod no longer exists, the branch
-  that has waited longest starts next. A new head, a retry after a failed
-  fetch, or a replacement for a deleted Pod waits behind the branches that
-  are already waiting. The times are in the `GitBranch` status, so a
-  restarted check keeps the order.
+  becomes `Succeeded` or `Failed`, or the Pod no longer exists, the next
+  branch starts. Branches at the front of a [merge queue](#merge-queue) go
+  first, then the branch that has waited longest. A new head, a retry after
+  a failed fetch, or a replacement for a deleted Pod waits behind the
+  branches that are already waiting, unless its branch is at the front of a
+  queue. The times and the places in the queues are in the `GitBranch`
+  status, so a restarted check keeps the order.
+- Only the front of a queue lands, so a front that waits for a Pod holds up
+  every branch behind it. The rest of a queue waits in line with the
+  branches that aren't queued, because the `base` check merges the parent
+  into each of those branches when it reaches the front, which runs the
+  tests again, and their places change at every landing. When the fronts of
+  `-max-pods` or more queues wait at once, every test Pod can go to a
+  front. Other branches then wait until the queues drain, which they do
+  because a branch whose tests haven't passed can't join a queue. A branch
+  counts as the front once the merge controller keeps it in the queue at
+  its head, moments after the `base` check pushes its merge of the parent.
+  The check reads the places in the queues through a view of `GitBranch`
+  that declares only `status.queued.head` and `status.queued.position`, so
+  it still sees no other check's result, and `generate` grants it no new
+  permissions, because it already lists and watches `GitBranch` objects.
 - The check counts a Pod from the moment that it declares it, before its
   cache shows the Pod, so a burst of pushes can't start more than
   `-max-pods`. A Pod that never appears stops counting after a minute. If
   the API server refuses a Pod, for example because the check Pod policy
   denies it, other branches can then use its place while kube tries again.
   Until the Pod exists, its branch keeps the time that it started waiting in
-  `outputs.queued`, so the branch still starts before the branches that
-  started waiting after it. With `-shards`, a replica doesn't count the Pods
-  that other replicas declared until its cache shows them, so replicas that
-  start Pods at the same moment can go over the limit.
+  `outputs.queued`, so the branch keeps its place in line. With `-shards`, a
+  replica doesn't count the Pods that other replicas declared until its
+  cache shows them, so replicas that start Pods at the same moment can go
+  over the limit.
 
 The check records a Pod's result as soon as the Pod's status shows that the
 test container exited or an init container failed. The kubelet sets the

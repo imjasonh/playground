@@ -1876,6 +1876,8 @@ echo "::endgroup::"
 echo "::group::A burst of branches takes turns under -max-pods=1"
 # Each branch's test sleeps, so Pods that ran at once would overlap. The
 # branches start from main's parent, so they pass without landing.
+# tested's merge policy has no base check, so the branches don't queue, and
+# none of them goes first as the front of a queue.
 # c/burst-a sorts first, but it's pushed after the others are waiting.
 burst=(c/burst-b c/burst-c c/burst-d)
 for b in "${burst[@]}" c/burst-a; do
