@@ -39,8 +39,8 @@ func TestStartsALockedDownPod(t *testing.T) {
 	if got := *spec.ActiveDeadlineSeconds; got != 60+1800 {
 		t.Errorf("activeDeadlineSeconds = %d, want the timeout and 30 minutes", got)
 	}
-	if g := spec.TerminationGracePeriodSeconds; g == nil || *g != 1 {
-		t.Error("the Pod's termination grace period isn't 1 second, so a Pod deleted while the agent ignores SIGTERM runs for 30 more seconds")
+	if g := spec.TerminationGracePeriodSeconds; g == nil || *g != 2 {
+		t.Error("the Pod's termination grace period isn't 2 seconds, the shortest the kubelet waits for an agent that ignores SIGTERM")
 	}
 
 	secrets := map[string][]string{}

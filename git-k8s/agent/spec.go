@@ -208,11 +208,11 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	timeout := max(1, int64(math.Ceil(r.Timeout.Seconds())))
 	deadline := timeout + int64(podSlack/time.Second)
 	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
-	// when the grace period ends. A container's first process ignores
-	// SIGTERM unless it handles the signal, as prepare's shell and the
-	// runner's run command don't, and the Pod counts toward -max-pods until
-	// its containers stop.
-	grace := int64(1)
+	// when the grace period ends. It raises a shorter grace period to 2
+	// seconds. A container's first process ignores SIGTERM unless it handles
+	// the signal, as prepare's shell and the runner's run command don't, and
+	// the Pod counts toward -max-pods until its containers stop.
+	grace := int64(2)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,
 		ReadOnlyRootFilesystem:   &yes,

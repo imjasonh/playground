@@ -403,10 +403,11 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	user := int64(65532)
 	deadline := int64(timeout.Seconds())
 	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
-	// when the grace period ends. A container's first process ignores
-	// SIGTERM unless it handles the signal, as fetch's shell doesn't, and
-	// the Pod counts toward -max-pods until its containers stop.
-	grace := int64(1)
+	// when the grace period ends. It raises a shorter grace period to 2
+	// seconds. A container's first process ignores SIGTERM unless it handles
+	// the signal, as fetch's shell doesn't, and the Pod counts toward
+	// -max-pods until its containers stop.
+	grace := int64(2)
 	expiry := int64(tokenSeconds)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,

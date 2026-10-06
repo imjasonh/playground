@@ -107,8 +107,8 @@ func TestStartsSandboxedPod(t *testing.T) {
 	if *spec.AutomountServiceAccountToken || !*spec.SecurityContext.RunAsNonRoot || spec.RestartPolicy != "Never" {
 		t.Errorf("Pod spec isn't locked down: %+v", spec)
 	}
-	if g := spec.TerminationGracePeriodSeconds; g == nil || *g != 1 {
-		t.Error("the Pod's termination grace period isn't 1 second, so a Pod deleted while fetch's shell ignores SIGTERM runs for 30 more seconds")
+	if g := spec.TerminationGracePeriodSeconds; g == nil || *g != 2 {
+		t.Error("the Pod's termination grace period isn't 2 seconds, the shortest the kubelet waits for fetch's shell, which ignores SIGTERM")
 	}
 	for _, c := range append(spec.InitContainers, spec.Containers...) {
 		sc := c.SecurityContext

@@ -187,11 +187,11 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 	user := int64(65532)
 	deadline := max(1, int64(u.timeout.Seconds()))
 	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
-	// when the grace period ends. A container's first process ignores
-	// SIGTERM unless it handles the signal, as the prepare and update
-	// containers' shells don't, and the Pod counts toward -max-pods until
-	// its containers stop.
-	grace := int64(1)
+	// when the grace period ends. It raises a shorter grace period to 2
+	// seconds. A container's first process ignores SIGTERM unless it handles
+	// the signal, as the prepare and update containers' shells don't, and
+	// the Pod counts toward -max-pods until its containers stop.
+	grace := int64(2)
 	restricted := &agent.SecurityContext{
 		AllowPrivilegeEscalation: &no,
 		ReadOnlyRootFilesystem:   &yes,
