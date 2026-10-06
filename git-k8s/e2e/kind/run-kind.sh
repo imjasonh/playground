@@ -498,7 +498,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -696,7 +696,7 @@ spec:
   url: ${CLUSTER_URL}/zombie.git
   secretRef:
     name: app-creds
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -1520,7 +1520,7 @@ spec:
     checkRunsIdentity: git-k8s-checks
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -1667,7 +1667,7 @@ spec:
   url: ${CLUSTER_URL}/tested.git
   secretRef:
     name: app-creds
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2291,7 +2291,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2399,7 +2399,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
@@ -2625,7 +2625,7 @@ spec:
     name: app-creds
   signingKeyRef:
     name: app-signing
-  pollInterval: 2s
+  pollInterval: 1s
   branches:
     - match: main
       merge:
