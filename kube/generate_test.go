@@ -215,6 +215,7 @@ func TestManifests(t *testing.T) {
 		`"args":["-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-v"]`,
 		`"env":[{"name":"KUBE_IMAGE","value":"ghcr.io/you/web-site@sha256:abc"}]`,
 		`"serviceAccountName":"web-site"`,
+		`"shareProcessNamespace":true`,
 		`"runAsNonRoot":true`,
 		`"readOnlyRootFilesystem":true`,
 		`"volumeMounts":[{"mountPath":"/tmp","name":"tmp"}]`,
@@ -368,6 +369,7 @@ func TestManifestsVolume(t *testing.T) {
 	}
 	for _, s := range []string{
 		`"spec":{"replicas":1,"strategy":{"type":"Recreate"},"selector"`,
+		`"shareProcessNamespace":true`,
 		`"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"data","mountPath":"/var/lib/eventlog"}]`,
 		`"volumes":[{"name":"tmp","emptyDir":{}},{"name":"data","persistentVolumeClaim":{"claimName":"eventlog"}}]`,

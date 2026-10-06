@@ -1429,6 +1429,23 @@ by digest. A program can't otherwise learn which image it runs from without
 reading its own Pod, so this lets it start helper Pods or init containers
 that run its own binary.
 
+The Pod sets `shareProcessNamespace`, so the pause container is PID 1, not
+the program. A process whose parent exits becomes a child of PID 1, which has
+to wait for it once it exits. A Go program waits only for the processes that
+it starts, so a Go program that's PID 1 leaves each of the others a zombie
+until the container restarts. A subprocess can leave such processes behind
+without its caller knowing. When a fetch over HTTP fails, for example, git
+exits without waiting for its remote helper. The pause container reaps these
+processes. `generate` sets the field for every program, because a program
+can't tell which of its dependencies run subprocesses or what those
+subprocesses leave behind. The kubelet still sends the stop signal to the
+program, and Pod Security doesn't restrict the field at any level. The other
+containers in the Pod can see the program's processes and their arguments,
+and if they run as the same user, the processes' environment variables and
+files. The program runs as user 65532, the non-root user of distroless and
+Chainguard images. A generated Pod has no other containers until you or an
+admission webhook add one.
+
 `kube.Volume` is a `Controller` that does nothing at run time. Its `describe`
 method reports a directory, and `generate` writes a `ReadWriteOnce`
 PersistentVolumeClaim, mounts it there, and runs one replica with the
