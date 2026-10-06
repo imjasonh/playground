@@ -52,6 +52,7 @@ GIT_SERVER_PID=""
 PORT_FORWARD_PID=""
 MOD_PROXY_PID=""
 PROBE_PID=""
+KIND_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -100,6 +101,11 @@ diagnose() {
 
 finish() {
   local status=$?
+  # Deleting the cluster while kind creates it can leave a node behind, so
+  # let kind finish first.
+  if [[ -n "${KIND_PID}" ]]; then
+    wait "${KIND_PID}" 2>/dev/null || true
+  fi
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
@@ -179,29 +185,19 @@ if [[ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY}" 2>/dev/null || tru
   docker run -d --restart=always -p "127.0.0.1:${PORT}:5000" --name "${REGISTRY}" registry:2
   CREATED_REGISTRY=1
 fi
+# kind creates the cluster in the background while the test starts the git
+# server and the module proxy, and copies images to the registry.
 if ! kind get clusters 2>/dev/null | grep -x "${CLUSTER}" >/dev/null; then
-  kind create cluster --name "${CLUSTER}" --wait 120s --config - <<EOF
+  CREATED_CLUSTER=1
+  kind create cluster --name "${CLUSTER}" --wait 120s --config - >"${WORKDIR}/kind.log" 2>&1 <<EOF &
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
   kubeProxyMode: nftables
 EOF
-  CREATED_CLUSTER=1
+  KIND_PID=$!
 fi
-for node in $(kind get nodes --name "${CLUSTER}"); do
-  docker exec "${node}" mkdir -p "/etc/containerd/certs.d/localhost:${PORT}"
-  printf '[host."http://%s:5000"]\n' "${REGISTRY}" |
-    docker exec -i "${node}" cp /dev/stdin "/etc/containerd/certs.d/localhost:${PORT}/hosts.toml"
-done
-if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY}")" == null ]]; then
-  docker network connect kind "${REGISTRY}"
-fi
-k version
 
-# Pods reach the git server on this machine through the gateway of kind's
-# Docker network.
-GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
-  grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
 ssh-keygen -q -t ed25519 -N '' -C e2e@example.com -f "${WORKDIR}/e2e-key"
@@ -213,10 +209,8 @@ GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_POR
   >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
-CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
 listening() { (echo >"/dev/tcp/127.0.0.1/${GIT_PORT}") 2>/dev/null; }
 eventually 30 listening
-echo "Pods reach the git server at ${CLUSTER_URL}"
 # example.com/greet isn't on the internet, so test Pods can get it only
 # through go-cache.
 GREET="${WORKDIR}/modules/example.com/greet@v1.0.0"
@@ -230,6 +224,36 @@ mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${WORKDIR}/modproxy
 mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
 eventually 30 mod_proxy_listening
 MOD_PORT="$(mod_port)"
+# The gotest check's Pods use these images. Copying them into the local
+# registry lets the nodes pull them without reaching the internet.
+GO_IMAGE="localhost:${PORT}/chainguard/go:latest"
+GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
+crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
+crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
+crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
+
+if [[ -n "${KIND_PID}" ]]; then
+  kind_status=0
+  wait "${KIND_PID}" || kind_status=$?
+  KIND_PID=""
+  cat "${WORKDIR}/kind.log"
+  [[ ${kind_status} -eq 0 ]]
+fi
+for node in $(kind get nodes --name "${CLUSTER}"); do
+  docker exec "${node}" mkdir -p "/etc/containerd/certs.d/localhost:${PORT}"
+  printf '[host."http://%s:5000"]\n' "${REGISTRY}" |
+    docker exec -i "${node}" cp /dev/stdin "/etc/containerd/certs.d/localhost:${PORT}/hosts.toml"
+done
+if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY}")" == null ]]; then
+  docker network connect kind "${REGISTRY}"
+fi
+k version
+# Pods reach the git server on this machine through the gateway of kind's
+# Docker network.
+GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
+  grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
+CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
+echo "Pods reach the git server at ${CLUSTER_URL}"
 echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
 echo "::endgroup::"
 
@@ -244,13 +268,6 @@ generate() {
 install() {
   generate "$@" | k apply -f -
 }
-# The gotest check's Pods use these images. Copying them into the local
-# registry lets the nodes pull them without reaching the internet.
-GO_IMAGE="localhost:${PORT}/chainguard/go:latest"
-GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
-crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
-crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
-crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch, and
 # the objects in config/policy.yaml. It runs one replica, the only writer of
 # the mirror's volume, so no standby answers the checks' results with 503.
