@@ -36,7 +36,9 @@ const AgentTrailer = "Git-K8s-Agent"
 // AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
 // with. It allows only the transports that a GitRepository's URL can name.
 // It leaves out file, which also covers plain paths, so git can't read a
-// local repository such as another GitRepository's cache.
+// local repository such as another GitRepository's cache. Commands that
+// read only local objects need it too, because a repository with a
+// promisor remote fetches the objects that it lacks.
 const AllowProtocol = "http:https:git:ssh"
 
 // Auth is a username and password for HTTP basic authentication, or a
@@ -490,9 +492,15 @@ func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
 }
 
 // MergeTree merges two commits without a worktree. It returns the merged
-// tree, or the paths that conflict.
+// tree, or the paths that conflict. Attributes from the commits'
+// .gitattributes files don't apply, so a branch can't choose how its own
+// conflicts merge.
 func (r *Repo) MergeTree(ctx context.Context, ours, theirs string) (tree string, conflicts []string, err error) {
-	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--end-of-options", ours, theirs}
+	noAttrs, err := r.noAttributes(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	args := []string{noAttrs, "merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--end-of-options", ours, theirs}
 	res, err := r.git.exec(ctx, r.Dir, args, opts{})
 	if err != nil {
 		return "", nil, err

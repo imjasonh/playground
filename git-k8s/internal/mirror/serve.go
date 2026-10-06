@@ -67,7 +67,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the mirror couldn't check the token; try again", http.StatusServiceUnavailable)
 		return
 	}
-	entries, err := caller.Checks(ctx)
+	entries, err := m.Checks.Entries(ctx)
 	if err != nil {
 		slog.Warn("reading the git-k8s-checks ConfigMap failed", "err", err)
 		http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)

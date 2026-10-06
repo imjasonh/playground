@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/imjasonh/playground/kube"
-	"github.com/imjasonh/playground/kube/k8s"
 )
 
 // ChecksNamespace and ChecksConfigMap name the git-k8s-checks ConfigMap,
@@ -44,16 +43,6 @@ type Caller struct {
 }
 
 func (c Caller) String() string { return c.Namespace + "/" + c.Name }
-
-// Checks returns the data of the git-k8s-checks ConfigMap, the entries that
-// Check takes, or no entries if the ConfigMap doesn't exist.
-func Checks(ctx context.Context) (map[string]string, error) {
-	cm, err := kube.Fetch[k8s.ConfigMap](ctx, ChecksNamespace, ChecksConfigMap)
-	if err != nil || cm == nil {
-		return nil, err
-	}
-	return cm.Data, nil
-}
 
 // Check returns the name of the check that the caller runs. Each of
 // entries, the data of the git-k8s-checks ConfigMap, maps

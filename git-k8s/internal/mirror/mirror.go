@@ -25,6 +25,7 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 )
 
@@ -52,6 +53,9 @@ type Mirror struct {
 	Dir string
 	// Prefixes let controllers other than checks start branches.
 	Prefixes []Prefix
+	// Checks holds the entries of the git-k8s-checks ConfigMap, which map
+	// callers to checks. Nil reads the ConfigMap for every request.
+	Checks *caller.Checks
 
 	// readTimeout is the longest that the mirror waits for the body of a
 	// request. Zero means Git.MaxDuration, by when git has stopped reading

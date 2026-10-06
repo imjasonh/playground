@@ -177,6 +177,11 @@ func TestScripts(t *testing.T) {
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
+	// Without telemetry off in home, the go command can start a telemetry
+	// process that outlives it and writes in home while the test removes it.
+	if out, err := run(home, "go telemetry off", goEnv); err != nil {
+		t.Fatalf("go telemetry off: %v\n%s", err, out)
+	}
 
 	srv := gittest.NewServer(t, "s3cret")
 	w := srv.NewWork(t, "app")

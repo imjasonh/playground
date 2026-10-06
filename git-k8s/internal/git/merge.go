@@ -95,7 +95,8 @@ func (r *Repo) Merge(ctx context.Context, ours, theirs string, o MergeOptions) (
 
 // noAttributes returns the option that makes git read attributes from the
 // empty tree. Without it, git reads them from the tree that attr.tree names
-// or, in some versions such as 2.43, from HEAD in a bare repository.
+// or, in some versions such as 2.43, from HEAD in a bare repository, and a
+// .gitattributes file there applies to every branch.
 func (r *Repo) noAttributes(ctx context.Context) (string, error) {
 	empty, err := r.git.run(ctx, r.Dir, []string{"hash-object", "-t", "tree", "--stdin"}, opts{stdin: []byte{}})
 	return "--attr-source=" + strings.TrimSpace(string(empty)), err

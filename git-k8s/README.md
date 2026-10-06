@@ -794,7 +794,7 @@ pushes to the mirror, which applies the rules in
 
 | Program | Check | What it does |
 | --- | --- | --- |
-| `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
+| `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. The merge ignores `.gitattributes` files, so that a branch can't choose how its own conflicts merge. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
@@ -3134,15 +3134,17 @@ through when its `validationActions` doesn't hold `Deny`, when its
 `matchResources` sets resource rules, or when a selector in its
 `matchResources` sets `matchLabels` or `matchExpressions`. If a binding's
 policy reads parameters, as the first two do, the binding also lets some
-through when its `paramRef.parameterNotFoundAction` isn't `Deny`, or when
-it has no `paramRef`. Without a `paramRef`, the API server evaluates the
-policy without parameters, so the policy ignores the entries in the
-`git-k8s-checks` ConfigMap. The API server ignores the `paramRef` of a
-binding whose policy doesn't read parameters, such as the third and fourth
-policies, so the condition does too. The message gives a `kubectl patch`
-command that makes the binding from `config/policy.yaml` deny all of them
-again, without a restart. For a binding that someone set to `Warn`, the
-command is:
+through when its `paramRef.parameterNotFoundAction` isn't `Deny`, when it
+has no `paramRef`, or when its `paramRef` doesn't name the `git-k8s-checks`
+ConfigMap in the `git-k8s` namespace. Without a `paramRef`, the API server
+evaluates the policy without parameters, and with a `paramRef` to another
+ConfigMap, it evaluates the policy with that ConfigMap. Either way, the
+policy ignores the entries in the `git-k8s-checks` ConfigMap. The API
+server ignores the `paramRef` of a binding whose policy doesn't read
+parameters, such as the third and fourth policies, so the condition does
+too. The message gives a `kubectl patch` command that makes the binding
+from `config/policy.yaml` deny all of them again, without a restart. For a
+binding that someone set to `Warn`, the command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
@@ -3178,11 +3180,12 @@ that list by name. Remove such an entry with `kubectl edit`.
 `generate` grants the core program `create` and `patch` on each policy,
 binding, and ConfigMap in `config/policy.yaml`, by name, and `get` on the
 `git-k8s-checks` ConfigMap, which the bindings of the first two policies
-name as their parameter, and which the results endpoint reads. The API
-server lets only someone who can read every ConfigMap create a policy whose
-parameter is a ConfigMap, and it checks that as `get` on a ConfigMap named
-`*`. No ConfigMap can have that name, so `generate` also grants `get` on the
-name `*`, and the core program still can't read any other ConfigMap.
+name as their parameter, and which the results endpoint and the mirror
+read. The API server lets only someone who can read every ConfigMap create
+a policy whose parameter is a ConfigMap, and it checks that as `get` on a
+ConfigMap named `*`. No ConfigMap can have that name, so `generate` also
+grants `get` on the name `*`, and the core program still can't read any
+other ConfigMap.
 
 The core program can't create other admission policies, but a compromised
 core program could rewrite these policies, their bindings, and the
@@ -3239,6 +3242,13 @@ ConfigMap without data, so restarting it keeps your entries.
 Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
 service accounts send which results, and which ones fetch and push as which
 checks, so give that permission only to people who can install checks.
+
+The results endpoint and the mirror read the ConfigMap at most once every 5
+seconds while reads succeed, so a change to an entry, such as emptying it,
+takes effect for them within 5 seconds. While reads fail, they use the
+entries from the last read that succeeded for up to 30 seconds after it.
+After that, the mirror answers `503 Service Unavailable` and the results
+endpoint answers `500 Internal Server Error` until a read succeeds.
 
 The third policy doesn't read the ConfigMap, so an entry doesn't change
 which Pods a check can write. A check that owns Pods and runs as another

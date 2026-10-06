@@ -359,7 +359,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	all := "git-k8s-check-results, git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals"
 	if c := reconcile(); c == nil || c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != all+" aren't fully installed, so any service account that can write GitBranch status can write check results, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, checks that own Pods can write any Pod in the cluster, anyone who can patch a GitBranch can approve it, and the approved-by annotation can name someone who didn't approve; apply config/policy.yaml" {
+		c.Message != all+" aren't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, checks that own Pods can write any Pod in the cluster, anyone who can patch a GitBranch can approve it, and the approved-by annotation can name someone who didn't approve; apply config/policy.yaml" {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -368,6 +368,11 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		t.Errorf("without the policies that the program installs, PoliciesInstalled = %+v", c)
 	}
 
+	// checksRef returns the paramRef from config/policy.yaml, with action as
+	// its parameterNotFoundAction.
+	checksRef := func(action string) *paramRef {
+		return &paramRef{Name: "git-k8s-checks", Namespace: "git-k8s", ParameterNotFoundAction: action}
+	}
 	var world []any
 	var vaps []*admissionPolicy
 	var bindings []*admissionPolicyBinding
@@ -379,7 +384,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		b.Spec.PolicyName, b.Spec.ValidationActions = p.name, []string{"Warn"}
 		if p.name == "git-k8s-check-results" || p.name == "git-k8s-branches" {
 			vap.Spec.ParamKind = &struct{}{}
-			b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Deny"}
+			b.Spec.ParamRef = checksRef("Deny")
 		}
 		vaps, bindings = append(vaps, vap), append(bindings, b)
 		world = append(world, vap, b)
@@ -413,7 +418,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	bindings[0].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results; "+all+" don't have git-k8s.imjasonh.com/policy-version=3; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
+		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=3; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
 		t.Errorf("with one binding that only warns and policies from an earlier release, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Deny"}
@@ -448,7 +453,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// Applying the policies from a later release installs the missing one too,
 	// so the fix for the later policies replaces the fix for the missing one.
 	if c := reconcile(world[2:]...); c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write GitBranch status can write check results; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("without git-k8s-check-results, and with the other policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -472,7 +477,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// still adds Deny next to Warn in the binding from config/policy.yaml.
 	admin := &admissionPolicyBinding{Object: kube.Meta("admin-branches", nil)}
 	admin.Spec.PolicyName, admin.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
-	admin.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Deny"}
+	admin.Spec.ParamRef = checksRef("Deny")
 	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "BindingWarns" ||
 		c.Message != "the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
@@ -485,7 +490,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// the reason for a warning that another binding hides.
 	bindings[0].Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
 	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results; the binding git-k8s-branches warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}' and `+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; the binding git-k8s-branches warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}' and `+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-check-results limited, and git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.MatchResources = nil
@@ -493,7 +498,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// request, so the message gives the consequences instead.
 	narrow := &admissionPolicyBinding{Object: kube.Meta("narrow-branches", nil)}
 	narrow.Spec.PolicyName, narrow.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
-	narrow.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Deny"}
+	narrow.Spec.ParamRef = checksRef("Deny")
 	narrow.Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
 	if c := reconcile(append([]any{narrow}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
 		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, and checks and git-k8s-deps can change GitBranch objects; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
@@ -506,14 +511,14 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	r.installPolicies = true
 	bindings[1].Spec.ValidationActions = []string{"Deny"}
 	for _, b := range bindings {
-		b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Allow"}
+		b.Spec.ParamRef = checksRef("Allow")
 	}
 	// The API server ignores the paramRef of a binding whose policy has no
 	// paramKind, so only the bindings of the policies that read parameters let
 	// requests through while the parameters are missing.
 	params := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"parameterNotFoundAction":"Deny"}}}'`
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so any service account that can write GitBranch status can write check results, git-k8s service accounts with the approve verb can approve branches, and checks and git-k8s-deps can change GitBranch objects; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
+		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, and checks and git-k8s-deps can change GitBranch objects; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
 		t.Errorf("with bindings that allow requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ParamRef.ParameterNotFoundAction = "Deny"
@@ -548,13 +553,79 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	// Without a paramRef, the API server evaluates git-k8s-check-results
 	// without parameters, so the policy ignores the entries in the
-	// git-k8s-checks ConfigMap. The patch adds the paramRef again.
+	// git-k8s-checks ConfigMap but enforces the rest. The patch adds the
+	// paramRef again.
+	addParams := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}'`
 	bindings[0].Spec.ParamRef = nil
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}'` {
+		c.Message != "the binding git-k8s-check-results has no paramRef, so git-k8s-check-results ignores the entries in the git-k8s-checks ConfigMap; run "+fmt.Sprintf(addParams, "git-k8s-check-results") {
 		t.Errorf("with git-k8s-check-results's binding without a paramRef, PoliciesInstalled = %+v", c)
 	}
-	bindings[0].Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Deny"}
+	bindings[1].Spec.ParamRef = nil
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the bindings git-k8s-check-results and git-k8s-branches have no paramRef, so git-k8s-check-results and git-k8s-branches ignore the entries in the git-k8s-checks ConfigMap; run "+fmt.Sprintf(addParams, "git-k8s-check-results")+" and "+fmt.Sprintf(addParams, "git-k8s-branches") {
+		t.Errorf("with the bindings of both policies that read parameters without a paramRef, PoliciesInstalled = %+v", c)
+	}
+	// A binding that only warns enforces nothing, with or without a paramRef.
+	bindings[0].Spec.ValidationActions = []string{"Warn"}
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, and the binding git-k8s-branches has no paramRef, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, and git-k8s-branches ignores the entries in the git-k8s-checks ConfigMap; the binding git-k8s-check-results warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"validationActions":["Deny"],"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}' and `+fmt.Sprintf(addParams, "git-k8s-branches") {
+		t.Errorf("with git-k8s-check-results's binding warning and git-k8s-branches's without a paramRef, PoliciesInstalled = %+v", c)
+	}
+	bindings[0].Spec.ValidationActions = []string{"Deny"}
+	bindings[0].Spec.ParamRef = checksRef("Deny")
+	// Another binding without a paramRef enforces git-k8s-branches while the
+	// binding from config/policy.yaml is missing.
+	unbound := slices.DeleteFunc(slices.Clone(world), func(o any) bool {
+		b, ok := o.(*admissionPolicyBinding)
+		return ok && b.Name == "git-k8s-branches"
+	})
+	bare := &admissionPolicyBinding{Object: kube.Meta("admin-branches", nil)}
+	bare.Spec.PolicyName, bare.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
+	if c := reconcile(append(unbound, bare)...); c.Status != kube.False || c.Reason != "Missing" ||
+		c.Message != "git-k8s-branches isn't fully installed, so git-k8s-branches ignores the entries in the git-k8s-checks ConfigMap; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again" {
+		t.Errorf("without git-k8s-branches's binding, and with admin-branches without a paramRef, PoliciesInstalled = %+v", c)
+	}
+	bindings[1].Spec.ParamRef = checksRef("Deny")
+	// With a paramRef that doesn't name git-k8s/git-k8s-checks, the API server
+	// evaluates git-k8s-check-results with another ConfigMap, so the policy
+	// ignores the entries in git-k8s-checks. The patch sets the paramRef from
+	// config/policy.yaml again.
+	for _, tc := range []struct {
+		does  string
+		ref   *paramRef
+		patch string
+	}{
+		{"names another ConfigMap", &paramRef{Name: "other-checks", Namespace: "git-k8s", ParameterNotFoundAction: "Deny"}, addParams},
+		{"names git-k8s-checks in another namespace", &paramRef{Name: "git-k8s-checks", Namespace: "default", ParameterNotFoundAction: "Deny"}, addParams},
+		{"names git-k8s-checks in the GitBranch's namespace", &paramRef{Name: "git-k8s-checks", ParameterNotFoundAction: "Deny"}, addParams},
+		{"selects ConfigMaps by label", &paramRef{Namespace: "git-k8s", Selector: &struct{}{}, ParameterNotFoundAction: "Deny"}, `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny","selector":null}}}'`},
+	} {
+		bindings[0].Spec.ParamRef = tc.ref
+		if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+			c.Message != "the binding git-k8s-check-results has a paramRef that doesn't name git-k8s/git-k8s-checks, so git-k8s-check-results ignores the entries in the git-k8s-checks ConfigMap; run "+fmt.Sprintf(tc.patch, "git-k8s-check-results") {
+			t.Errorf("with git-k8s-check-results's paramRef that %s, PoliciesInstalled = %+v", tc.does, c)
+		}
+	}
+	// While the other ConfigMap is missing, a paramRef that allows requests
+	// lets every request through.
+	bindings[0].Spec.ParamRef = &paramRef{Name: "other-checks", Namespace: "git-k8s", ParameterNotFoundAction: "Allow"}
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; run "+fmt.Sprintf(addParams, "git-k8s-check-results") {
+		t.Errorf("with git-k8s-check-results's paramRef to another ConfigMap that allows requests, PoliciesInstalled = %+v", c)
+	}
+	bindings[0].Spec.ParamRef.ParameterNotFoundAction = "Deny"
+	bindings[1].Spec.ParamRef = &paramRef{Name: "git-k8s-checks", Namespace: "default", ParameterNotFoundAction: "Deny"}
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the bindings git-k8s-check-results and git-k8s-branches have paramRefs that don't name git-k8s/git-k8s-checks, so git-k8s-check-results and git-k8s-branches ignore the entries in the git-k8s-checks ConfigMap; run "+fmt.Sprintf(addParams, "git-k8s-check-results")+" and "+fmt.Sprintf(addParams, "git-k8s-branches") {
+		t.Errorf("with the bindings of both policies that read parameters with paramRefs to other ConfigMaps, PoliciesInstalled = %+v", c)
+	}
+	bindings[0].Spec.ParamRef = nil
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the binding git-k8s-check-results has no paramRef, and the binding git-k8s-branches has a paramRef that doesn't name git-k8s/git-k8s-checks, so git-k8s-check-results and git-k8s-branches ignore the entries in the git-k8s-checks ConfigMap; run "+fmt.Sprintf(addParams, "git-k8s-check-results")+" and "+fmt.Sprintf(addParams, "git-k8s-branches") {
+		t.Errorf("with git-k8s-check-results's binding without a paramRef and git-k8s-branches's with a paramRef to another ConfigMap, PoliciesInstalled = %+v", c)
+	}
+	bindings[0].Spec.ParamRef, bindings[1].Spec.ParamRef = checksRef("Deny"), checksRef("Deny")
 
 	// The API server stores matchResources like these. It fills in matchPolicy
 	// and empty selectors when someone adds matchResources.
