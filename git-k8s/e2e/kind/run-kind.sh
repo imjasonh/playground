@@ -1055,10 +1055,12 @@ annotate_main "${APPROVE}-" "${APPROVED_BY}-"
 gotest_token="$(k -n check-gotest create token check-gotest)"
 # A finalizer would keep the GitBranch after its branch is deleted, and an
 # owner reference to a missing ConfigMap would make garbage collection
-# delete it.
+# delete it. Without the core program's entries in managedFields, its
+# server-side applies would leave behind the fields that they stop setting.
 hold='{"metadata":{"finalizers":["example.com/hold"]}}'
 reown='{"metadata":{"ownerReferences":[{"apiVersion":"v1","kind":"ConfigMap","name":"gone","uid":"6d9e4f0c-0000-4000-8000-000000000000"}]}}'
-for patch in '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}"; do
+reset='{"metadata":{"managedFields":[{}]}}'
+for patch in '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "${reset}"; do
   code="$(patch_branch "${gotest_token}" "${patch}")"
   cat "${WORKDIR}/patch.json"
   echo
@@ -2521,7 +2523,7 @@ deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
 code="$(patch_branch "${deps_token}" '{}')"
 [[ "${code}" == 200 ]]
 for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
-  '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}"; do
+  '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "${reset}"; do
   code="$(patch_branch "${deps_token}" "${patch}")"
   cat "${WORKDIR}/patch.json"
   echo

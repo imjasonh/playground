@@ -106,16 +106,19 @@ spec:
 # The approve and approved-by annotations on a GitBranch record a person's
 # approval, so no git-k8s service account can set or change them, even one
 # that holds the approve verb. This policy also stops checks from changing a
-# GitBranch's spec, labels, annotations, finalizers, or owner references. A
-# finalizer that nobody removes keeps a deleted branch in its parent's merge
-# queue, and an owner reference to a missing object makes garbage collection
-# delete the GitBranch with its approval. RBAC lets a check that owns
-# objects, such as check-gotest, patch GitBranch objects, because generate
-# can't tell whether an owned object needs a finalizer on its owner. kube
-# adds that finalizer with a cleanup annotation, which this policy denies, so
-# a check can own only namespaced objects in the branch's namespace. A check
-# whose entry in the git-k8s-checks ConfigMap is empty can't send results,
-# but it keeps its RBAC, so this policy still treats it as a check.
+# GitBranch's spec, labels, annotations, finalizers, owner references, or
+# managedFields. A finalizer that nobody removes keeps a deleted branch in its
+# parent's merge queue, and an owner reference to a missing object makes
+# garbage collection delete the GitBranch with its approval. Without its
+# entries in managedFields, the core program's server-side applies leave
+# behind the fields that they stop setting, such as a branch's place in the
+# merge queue. RBAC lets a check that owns objects, such as check-gotest,
+# patch GitBranch objects, because generate can't tell whether an owned
+# object needs a finalizer on its owner. kube adds that finalizer with a
+# cleanup annotation, which this policy denies, so a check can own only
+# namespaced objects in the branch's namespace. A check whose entry in the
+# git-k8s-checks ConfigMap is empty can't send results, but it keeps its RBAC,
+# so this policy still treats it as a check.
 #
 # git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
 # RBAC lets it patch GitBranch objects too, and the policy stops it the same
@@ -169,7 +172,9 @@ spec:
         (has(object.metadata.finalizers) ? object.metadata.finalizers : []) ==
         (has(oldObject.metadata.finalizers) ? oldObject.metadata.finalizers : []) &&
         (has(object.metadata.ownerReferences) ? object.metadata.ownerReferences : []) ==
-        (has(oldObject.metadata.ownerReferences) ? oldObject.metadata.ownerReferences : [])
+        (has(oldObject.metadata.ownerReferences) ? oldObject.metadata.ownerReferences : []) &&
+        (has(object.metadata.managedFields) ? object.metadata.managedFields : []) ==
+        (has(oldObject.metadata.managedFields) ? oldObject.metadata.managedFields : [])
     - name: approval
       expression: >-
         has(object.metadata.annotations) && "git-k8s.imjasonh.com/approve" in object.metadata.annotations ?

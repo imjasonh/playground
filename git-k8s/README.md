@@ -3018,10 +3018,15 @@ needs an entry in the `git-k8s-checks` ConfigMap, as
 stops every git-k8s service account from setting the `approve` and
 `approved-by` annotations, which are for people, and stops checks and
 `git-k8s-deps` from changing a `GitBranch` object's spec, labels,
-annotations, finalizers, or owner references. A finalizer that nobody
-removes would keep a deleted branch in its parent's merge queue, and an
-owner reference to a missing object would make garbage collection delete
-the `GitBranch` with its approval. RBAC also keeps
+annotations, finalizers, owner references, or `managedFields`. A finalizer
+that nobody removes would keep a deleted branch in its parent's merge
+queue, and an owner reference to a missing object would make garbage
+collection delete the `GitBranch` with its approval. The core program
+writes status with server-side apply. When it stops setting a field, the
+API server removes the field only if the core program's entry in
+`managedFields` lists it. Without those entries, a branch that leaves the
+merge queue would keep its place, and at the front of the queue it would
+block every other branch. RBAC also keeps
 every check except `check-gotest`, `check-review`, `check-deps`, and
 `check-conflicts`, which own Pods, from patching `GitBranch` objects.
 `generate` grants that permission to a program that owns objects, such as
