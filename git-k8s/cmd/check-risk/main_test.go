@@ -173,7 +173,7 @@ func TestRiskRatesEachChangeOnce(t *testing.T) {
 				return run(ctx, in)
 			}
 			r := checks.NewReconciler[Branch](counted, &checks.Config{CacheDir: t.TempDir()})
-			reconcile := func() *gitk8s.CheckResult {
+			reconcileRisk := func() *gitk8s.CheckResult {
 				t.Helper()
 				ctx, _ := kube.Fake(t.Context(), b, repo)
 				if err := r.Reconcile(ctx, b); err != nil {
@@ -181,20 +181,20 @@ func TestRiskRatesEachChangeOnce(t *testing.T) {
 				}
 				return b.Status.Checks.Result
 			}
-			first := reconcile()
+			first := reconcileRisk()
 
 			w.Branch("main", start)
 			w.Write("other.txt", "other\n")
 			w.Commit("land another branch")
 			w.Push("main")
 			b.Spec.ParentHead = w.Git("rev-parse", "HEAD")
-			reconcile()
+			reconcileRisk()
 
 			w.Branch("c/x", head)
 			w.Git("merge", "--quiet", "--no-edit", b.Spec.ParentHead)
 			w.Push("c/x")
 			b.Spec.Head = w.Git("rev-parse", "HEAD")
-			res := reconcile()
+			res := reconcileRisk()
 			if runs != c.runs || res.Commit != b.Spec.Head || res.Message != first.Message || !maps.Equal(res.Outputs, first.Outputs) {
 				t.Errorf("%d runs, result for the merge %+v; want %d runs and the first rating, %+v", runs, res, c.runs, first)
 			}

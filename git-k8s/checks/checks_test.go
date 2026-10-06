@@ -724,7 +724,7 @@ func TestRemembersMergeBasesAndChanges(t *testing.T) {
 	runs := 0
 	check := rate(&runs, false)
 	r := checks.NewReconciler[Branch](check, f.cfg)
-	reconcile := func() {
+	reconcileBranch := func() {
 		t.Helper()
 		ctx, _ := kube.Fake(t.Context(), f.branch, f.repo)
 		if err := r.Reconcile(ctx, f.branch); err != nil {
@@ -732,7 +732,7 @@ func TestRemembersMergeBasesAndChanges(t *testing.T) {
 		}
 	}
 	commands := f.countGit(t)
-	reconcile()
+	reconcileBranch()
 	first := f.branch.Status.Checks.Result
 
 	f.work.Branch("main", spec.ParentHead)
@@ -742,7 +742,7 @@ func TestRemembersMergeBasesAndChanges(t *testing.T) {
 	f.work.Branch("c/x", spec.Head)
 	f.work.Git("merge", "--quiet", "--no-edit", spec.ParentHead)
 	spec.Head = f.push("c/x")
-	reconcile()
+	reconcileBranch()
 	kept := f.branch.Status.Checks.Result
 	if runs != 1 || kept.Commit != spec.Head {
 		t.Fatalf("%d runs, result %+v; want 1 run and the result kept for the merge", runs, kept)
@@ -752,7 +752,7 @@ func TestRemembersMergeBasesAndChanges(t *testing.T) {
 	// behind, so a reconcile can see the first result again.
 	f.branch.Status.Checks.Result = first
 	before := commands()
-	reconcile()
+	reconcileBranch()
 	if got := f.branch.Status.Checks.Result; runs != 1 || !reflect.DeepEqual(got, kept) {
 		t.Errorf("%d runs, result %+v; want the kept result %+v", runs, got, kept)
 	}
