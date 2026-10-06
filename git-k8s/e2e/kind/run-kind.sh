@@ -53,6 +53,9 @@ PORT_FORWARD_PID=""
 MOD_PROXY_PID=""
 PROBE_PID=""
 KIND_PID=""
+# GENERATING has the PID of each pregenerate that the test hasn't waited for,
+# and GENERATED the exit status of each that it has.
+declare -A GENERATING=() GENERATED=()
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -109,7 +112,7 @@ finish() {
   if [[ ${status} -ne 0 ]]; then
     diagnose
   fi
-  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}"; do
+  for pid in "${PORT_FORWARD_PID}" "${PROBE_PID}" "${GENERATING[@]}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" 2>/dev/null || true
     fi
@@ -224,13 +227,94 @@ mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${WORKDIR}/modproxy
 mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
 eventually 30 mod_proxy_listening
 MOD_PORT="$(mod_port)"
+# Pods reach the git server on this machine through the gateway of kind's
+# Docker network, which kind creates before the node.
+kind_network() { docker network inspect kind >/dev/null 2>&1; }
+eventually 120 kind_network
+GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
+  grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
+CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
 # The gotest check's Pods use these images. Copying them into the local
 # registry lets the nodes pull them without reaching the internet.
 GO_IMAGE="localhost:${PORT}/chainguard/go:latest"
 GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
+
+# generate builds a program, pushes its image, and prints its manifests.
+# While kind creates the cluster, the test generates the programs whose
+# flags it knows, and the groups that install them apply their manifests.
+cd "${ROOT}"
+generate() {
+  local program=$1
+  shift
+  go run "./cmd/${program}" generate -registry="localhost:${PORT}/git-k8s-e2e" \
+    -base="${CHAINGUARD}/git:latest" -platform="${PLATFORM}" -replicas=1 "$@"
+}
+install() {
+  generate "$@" | k apply -f -
+}
+# pregenerate NAME PROGRAM [FLAGS...] runs generate in the background, with
+# the manifests in NAME.yaml and the log in NAME.log.
+pregenerate() {
+  local name=$1
+  shift
+  generate "$@" >"${WORKDIR}/${name}.yaml" 2>"${WORKDIR}/${name}.log" &
+  GENERATING[${name}]=$!
+}
+# wait_generate NAME waits for pregenerate NAME to finish.
+wait_generate() {
+  if [[ -n "${GENERATING[$1]:-}" ]]; then
+    GENERATED[$1]=0
+    wait "${GENERATING[$1]}" || GENERATED[$1]=$?
+    unset "GENERATING[$1]"
+  fi
+}
+# generated NAME waits for pregenerate NAME, prints its log, and fails if
+# generate failed.
+generated() {
+  wait_generate "$1"
+  cat "${WORKDIR}/$1.log" >&2
+  return "${GENERATED[$1]}"
+}
+# install_generated NAME applies the manifests of pregenerate NAME.
+install_generated() {
+  generated "$1"
+  k apply -f "${WORKDIR}/$1.yaml"
+}
+# git-k8s installs the CustomResourceDefinitions that the checks watch, and
+# the objects in config/policy.yaml. It runs one replica, the only writer of
+# the mirror's volume, so no standby answers the checks' results with 503.
+# The service account e2e-deps stands in for a controller that starts
+# branches, and git-k8s-deps, which the deps group installs, starts deps/
+# branches too. check-conflicts creates resolve/BRANCH. The test Pods'
+# NetworkPolicy lets them reach go-cache.
+pregenerate git-k8s git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
+  "-branch-prefix=git-k8s-deps/git-k8s-deps=deps/" \
+  "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github" \
+  -go-cache-namespace=go-cache
 crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
+# The other programs share most of git-k8s's packages, so they start once
+# its generate has compiled them.
+wait_generate git-k8s
+pregenerate git-k8s-without-policies git-k8s -- -install-policies=false
+pregenerate go-cache go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+  "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
+for program in "${CHECKS[@]}"; do
+  case "${program}" in
+    check-risk) pregenerate "${program}" "${program}" -- '-sensitive=auth/**' ;;
+    check-gotest)
+      pregenerate "${program}" "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m \
+        -max-pods=1 -go-cache=http://go-cache.go-cache
+      ;;
+    check-approval) pregenerate "${program}" "${program}" -namespace="${APPROVAL_NS}" ;;
+    *) pregenerate "${program}" "${program}" ;;
+  esac
+done
+# The deps group installs go-cache again, with the git server's module
+# proxy as its upstream.
+pregenerate go-cache-deps go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+  "-upstream=${CLUSTER_URL}/proxy" -max-size=512Mi
 
 if [[ -n "${KIND_PID}" ]]; then
   kind_status=0
@@ -248,40 +332,14 @@ if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "${REGISTRY
   docker network connect kind "${REGISTRY}"
 fi
 k version
-# Pods reach the git server on this machine through the gateway of kind's
-# Docker network.
-GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
-  grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
-CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
 echo "Pods reach the git server at ${CLUSTER_URL}"
 echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
 echo "::endgroup::"
 
 echo "::group::Install git-k8s with generate"
-cd "${ROOT}"
-generate() {
-  local program=$1
-  shift
-  go run "./cmd/${program}" generate -registry="localhost:${PORT}/git-k8s-e2e" \
-    -base="${CHAINGUARD}/git:latest" -platform="${PLATFORM}" -replicas=1 "$@"
-}
-install() {
-  generate "$@" | k apply -f -
-}
-# git-k8s installs the CustomResourceDefinitions that the checks watch, and
-# the objects in config/policy.yaml. It runs one replica, the only writer of
-# the mirror's volume, so no standby answers the checks' results with 503.
-# The service account e2e-deps stands in for a controller that starts
-# branches, and git-k8s-deps, which the deps group installs, starts deps/
-# branches too. check-conflicts creates resolve/BRANCH. The test Pods'
-# NetworkPolicy lets them reach go-cache.
-install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/" \
-  "-branch-prefix=git-k8s-deps/git-k8s-deps=deps/" \
-  "-branch-prefix=check-conflicts/check-conflicts=resolve/" "-fake-github=${CLUSTER_URL}/github" \
-  -go-cache-namespace=go-cache
+install_generated git-k8s
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
-install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
-  "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
+install_generated go-cache
 k apply -f "${ROOT}/config/go-cache.yaml"
 # policies_applied passes once each object in config/policy.yaml has the label
 # that the core program sets when it applies them with the permissions that
@@ -299,7 +357,7 @@ k get -f "${ROOT}/config/policy.yaml" --show-labels
 [[ "$(k auth can-i patch validatingadmissionpolicies.admissionregistration.k8s.io/other \
   --as=system:serviceaccount:git-k8s:git-k8s 2>/dev/null)" == no ]]
 policy_names="$(k get -f "${ROOT}/config/policy.yaml" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
-generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
+generated git-k8s-without-policies
 # The results endpoint and the mirror read the git-k8s-checks ConfigMap, so
 # the one rule that may name a ConfigMap or a policy is get on that ConfigMap
 # alone. The rule ends where the next rule or object starts.
@@ -379,15 +437,7 @@ echo "::endgroup::"
 
 echo "::group::Install the checks"
 for program in "${CHECKS[@]}"; do
-  case "${program}" in
-    check-risk) install "${program}" -- '-sensitive=auth/**' ;;
-    check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m -max-pods=1 \
-        -go-cache=http://go-cache.go-cache
-      ;;
-    check-approval) install "${program}" -namespace="${APPROVAL_NS}" ;;
-    *) install "${program}" ;;
-  esac
+  install_generated "${program}"
 done
 for program in go-cache "${CHECKS[@]}"; do
   k -n "$(namespace_of "${program}")" rollout status "deployment/${program}" --timeout=180s
@@ -2565,8 +2615,7 @@ CHECKS+=(check-deps git-k8s-deps)
 # its upstream. go-cache now fetches from the git server's module proxy,
 # which git-k8s-deps reads too, so test Pods get the versions that
 # git-k8s-deps takes.
-install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
-  "-upstream=${CLUSTER_URL}/proxy" -max-size=512Mi
+install_generated go-cache-deps
 install check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
   "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
