@@ -607,7 +607,10 @@ The `generate` command runs the program with `-serve-addr=:8081` and adds
 port 80 to the program's Service, which routes to the handler. It also
 gives the container a `preStop` hook that sleeps for 5 seconds, so the
 Service stops sending the Pod connections before the program stops. The
-hook's `sleep` action needs Kubernetes 1.30 or later. `generate` writes no
+hook's `sleep` action needs Kubernetes 1.30 or later. A program with a
+`kube.Volume` gets no hook. It runs one Pod, which a rollout stops before
+it starts the next, so no other Pod can take the connections, and the
+sleep would only make each rollout 5 seconds longer. `generate` writes no
 NetworkPolicy. If NetworkPolicies in the program's namespace deny traffic by
 default, allow the callers to reach port 8081 of the program's Pods.
 
@@ -852,19 +855,20 @@ A program with a volume runs one replica, without leader election, so its
 reconciles and its `kube.Serve` handler are the only writers and can share
 what's on disk. `generate` fails if you set `-replicas` or `-shards` above 1.
 The Deployment uses the `Recreate` strategy, so a rollout stops the old Pod
-before it starts the new one. While the Pod restarts, nothing reconciles or
-serves, so clients of the handler need to retry. Nothing answers the
-program's webhooks either. kube registers admission webhooks with
-`failurePolicy: Fail`, so until the new Pod is ready, the API server rejects
-the creates and updates that they cover, and requests that need the
-program's conversion webhook fail.
+before it starts the new one. The old Pod stops at once, without the
+`preStop` sleep that [Serve an HTTP API](#serve-an-http-api) describes.
+While the Pod restarts, nothing reconciles or serves, so clients of the
+handler need to retry. Nothing answers the program's webhooks either. kube
+registers admission webhooks with `failurePolicy: Fail`, so until the new
+Pod is ready, the API server rejects the creates and updates that they
+cover, and requests that need the program's conversion webhook fail.
 
 A Pod that's deleted instead of rolled out, for example by
 `kubectl delete pod` or a node drain, is replaced at once, and the old
 process can keep running for up to 30 seconds, the Pod's termination grace
 period. If the replacement runs on the same node, both processes can write
 the volume, because Pods on one node can share a `ReadWriteOnce` volume. Both
-reconcile too, so a late status write from the old process can replace a
+can reconcile too, so a late status write from the old process can replace a
 newer one from its replacement, as after a lost Lease (see
 [Trigger a reconcile](#trigger-a-reconcile)). Keep writes safe for two
 processes at once. To keep a file whole through a crash of the node, write a
@@ -970,8 +974,11 @@ The command does the following:
    more than one replica, a Service for webhooks and the `kube.Serve`
    handler, and a PersistentVolumeClaim for a `kube.Volume`. With more than
    one replica, the Deployment runs the program with `-leader-elect`, or
-   with `-shards` when you set `-shards`. The container's root file system
-   is read-only, with an `emptyDir` volume at `/tmp` for temporary files.
+   with `-shards` when you set `-shards`. The kubelet probes `/readyz` every
+   second, so a new Pod becomes ready within a second of `/readyz` passing,
+   and 30 failures in a row make a ready Pod unready. The container's root
+   file system is read-only, with an `emptyDir` volume at `/tmp` for
+   temporary files.
    `-tmp-size` limits the volume's size. The Pod shares one process
    namespace, so the pause container is PID 1 and reaps the processes that
    the program's subprocesses leave behind, which a Go program doesn't do.

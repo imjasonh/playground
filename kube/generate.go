@@ -768,13 +768,20 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	probe := func(path string) object {
 		return object{{"httpGet", object{{"path", path}, {"port", "http"}}}}
 	}
+	// A new Pod becomes ready at its first readiness probe that passes, and
+	// /readyz fails while the program starts. By default, the next probe
+	// comes 10 seconds after a failure. /readyz reads only memory, so probe
+	// every second. A ready Pod becomes unready after 30 failures in a row,
+	// about as long as the default 3 failures 10 seconds apart, so a few
+	// probes that time out on a busy node don't take it out of its Service.
+	readiness := append(probe("/readyz"), field{"periodSeconds", 1}, field{"failureThreshold", 30})
 	container := object{
 		{"name", o.name},
 		{"image", ref},
 		{"args", args},
 		{"env", []any{object{{"name", "KUBE_IMAGE"}, {"value", ref}}}},
 		{"ports", ports},
-		{"readinessProbe", probe("/readyz")},
+		{"readinessProbe", readiness},
 		{"livenessProbe", probe("/healthz")},
 		{"resources", object{{"requests", object{{"cpu", "50m"}, {"memory", "64Mi"}}}}},
 		{"securityContext", object{
@@ -822,10 +829,14 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
 	}
 	container = append(container, field{"volumeMounts", mounts})
-	if p.serves {
+	if p.serves && p.volume == "" {
 		// The Service sends a Pod that's stopping new connections until its
 		// endpoints drop the Pod, and the program refuses them once it
-		// stops. The kubelet sleeps before it signals the program.
+		// stops. The kubelet sleeps before it signals the program, so by
+		// then other Pods get the connections. A program with a volume runs
+		// one Pod, which a rollout stops before it starts the next, so a
+		// sleep would delay the new Pod without shortening the time that
+		// nothing serves.
 		container = append(container, field{"lifecycle", object{{"preStop", object{{"sleep", object{{"seconds", 5}}}}}}})
 	}
 	docs = append(docs, object{

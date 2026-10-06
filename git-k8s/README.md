@@ -2972,21 +2972,19 @@ each check's Pod, and a token for `git-k8s-mirror` in the Pod of each
 program that fetches from the mirror. `git-k8s-deps` gets a results token
 too, because it imports the `checks` package. It doesn't send results, and
 the core program wouldn't accept them, because `git-k8s-deps` isn't a check.
-The core program's container waits 5 seconds before it stops, so that the
-Service stops sending it requests first. That wait needs Kubernetes 1.30 or
-later. If NetworkPolicies in the `git-k8s` namespace deny traffic by
-default, let the Pods of the checks and `git-k8s-deps`, and the checks' test
-and agent Pods, reach port 8081 of the core program's Pod.
+If NetworkPolicies in the `git-k8s` namespace deny traffic by default, let
+the Pods of the checks and `git-k8s-deps`, and the checks' test and agent
+Pods, reach port 8081 of the core program's Pod.
 
-`config/policy.yaml` holds four ValidatingAdmissionPolicies. The first
-rejects every write to `GitBranch` status by a check's service account, and
-every change to `status.checks` or `status.diverged` by a service account
-other than the core program's. `status.diverged` names the commit that
-`check-conflicts` merges or replays. Checks have no RBAC rule to write
-status, so this policy is a backstop for a role that grants one by mistake.
-A check that doesn't run as `check-NAME` in the namespace `check-NAME`
-needs an entry in the `git-k8s-checks` ConfigMap, as
-[Check service accounts](#check-service-accounts) describes. The second
+`config/policy.yaml` holds four ValidatingAdmissionPolicies, which need
+Kubernetes 1.30 or later. The first rejects every write to `GitBranch`
+status by a check's service account, and every change to `status.checks` or
+`status.diverged` by a service account other than the core program's.
+`status.diverged` names the commit that `check-conflicts` merges or replays.
+Checks have no RBAC rule to write status, so this policy is a backstop for a
+role that grants one by mistake. A check that doesn't run as `check-NAME` in
+the namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap,
+as [Check service accounts](#check-service-accounts) describes. The second
 stops every git-k8s service account from setting the `approve` and
 `approved-by` annotations, which are for people, and stops checks and
 `git-k8s-deps` from changing a `GitBranch` object's spec, labels,
