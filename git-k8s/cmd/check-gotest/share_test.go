@@ -22,10 +22,16 @@ import (
 )
 
 // TestMain runs the test binary as check-gotest's image does, for the test
-// Pods that TestSharedOutputs runs.
+// Pods that TestSharedOutputs runs and the fetch containers that TestFetch
+// runs.
 func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == "cacheprog" {
-		os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "cacheprog":
+			os.Exit(cacheprog(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		case "fetch":
+			os.Exit(fetchSource(os.Args[2:], os.Stderr))
+		}
 	}
 	os.Exit(m.Run())
 }
@@ -115,8 +121,10 @@ func goCachePod(t *testing.T, url string) PodSpec {
 // files of branch as the fetched head. Each volume is an empty directory
 // in root, which a container sees at its mount paths, and check-gotest's
 // image is the test binary. Pods that run in one root see their volumes at
-// the same paths, as Pods in a cluster do. runPod returns the test
-// container's output, and whether the tests passed.
+// the same paths, as Pods in a cluster do. Instead of fetching, runPod
+// writes branch's files and installs the GOCACHEPROG program where fetch
+// would. It returns the test container's output, and whether the tests
+// passed.
 func runPod(t *testing.T, root string, spec PodSpec, branch map[string]string) (string, bool) {
 	t.Helper()
 	self, err := os.Executable()
@@ -148,26 +156,27 @@ func runPod(t *testing.T, root string, spec PodSpec, branch map[string]string) (
 			t.Fatal(err)
 		}
 	}
-	run := func(c Container) (string, error) {
+	// local returns where container c sees path on this machine.
+	local := func(c Container, path string) string {
 		mounts := slices.Clone(c.VolumeMounts)
 		slices.SortFunc(mounts, func(a, b VolumeMount) int { return len(b.MountPath) - len(a.MountPath) })
-		local := func(path string) string {
-			for _, m := range mounts {
-				if rest, ok := strings.CutPrefix(path, m.MountPath); ok && (rest == "" || rest[0] == '/') {
-					return volumes[m.Name] + rest
-				}
+		for _, m := range mounts {
+			if rest, ok := strings.CutPrefix(path, m.MountPath); ok && (rest == "" || rest[0] == '/') {
+				return volumes[m.Name] + rest
 			}
-			return path
 		}
+		return path
+	}
+	run := func(c Container) (string, error) {
 		// translate replaces the paths in a command-line argument or an
 		// environment variable, alone or as a flag's value.
 		translate := func(s string) string {
 			words := strings.Split(s, " ")
 			for i, w := range words {
 				if name, value, ok := strings.Cut(w, "="); ok && strings.HasPrefix(value, "/") {
-					words[i] = name + "=" + local(value)
+					words[i] = name + "=" + local(c, value)
 				} else if strings.HasPrefix(w, "/") {
-					words[i] = local(w)
+					words[i] = local(c, w)
 				}
 			}
 			return strings.Join(words, " ")
@@ -186,13 +195,20 @@ func runPod(t *testing.T, root string, spec PodSpec, branch map[string]string) (
 		}
 		cmd.Dir = t.TempDir()
 		if c.WorkingDir != "" {
-			cmd.Dir = local(c.WorkingDir)
+			cmd.Dir = local(c, c.WorkingDir)
 		}
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
 	for _, c := range spec.InitContainers {
 		if c.Name == "fetch" {
+			for _, arg := range c.Args {
+				if path, ok := strings.CutPrefix(arg, "-install="); ok {
+					if err := installSelf(local(c, path)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			continue
 		}
 		out, err := run(c)

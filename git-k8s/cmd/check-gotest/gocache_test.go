@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -81,7 +83,7 @@ func TestGoCacheNeedsImage(t *testing.T) {
 		t.Errorf("result = %+v, want Error about KUBE_IMAGE", res)
 	}
 	if pods := kube.Owned[Pod](rec); len(pods) != 0 {
-		t.Errorf("owned Pods = %+v, want none without the image for cacheprog and upload", pods)
+		t.Errorf("owned Pods = %+v, want none without the image for fetch and upload", pods)
 	}
 }
 
@@ -116,6 +118,9 @@ func TestNoGoCache(t *testing.T) {
 	if len(spec.InitContainers) != 1 || len(spec.Volumes) != 3 || env(test, "GOCACHEPROG") != "" || env(test, "GOPROXY") != "off" {
 		t.Errorf("without -go-cache, the Pod changed: %+v", spec)
 	}
+	if fetch := spec.InitContainers[0]; fetch.Image != *gitImage || !slices.Equal(fetch.Command, []string{"sh", "-c", fetchScript}) || len(fetch.Args) != 0 {
+		t.Errorf("without -go-cache, fetch should run fetchScript in -git-image: %+v", fetch)
+	}
 }
 
 func TestGoCachePod(t *testing.T) {
@@ -131,10 +136,10 @@ func TestGoCachePod(t *testing.T) {
 	for _, c := range spec.InitContainers {
 		names = append(names, c.Name)
 	}
-	if want := []string{"fetch", "cacheprog", "build", "upload"}; !slices.Equal(names, want) {
+	if want := []string{"fetch", "build", "upload"}; !slices.Equal(names, want) {
 		t.Fatalf("init containers = %v, want %v", names, want)
 	}
-	fetch, install, build, upload := spec.InitContainers[0], spec.InitContainers[1], spec.InitContainers[2], spec.InitContainers[3]
+	fetch, build, upload := spec.InitContainers[0], spec.InitContainers[1], spec.InitContainers[2]
 	test := spec.Containers[0]
 	all := append(slices.Clone(spec.InitContainers), test)
 
@@ -169,8 +174,12 @@ func TestGoCachePod(t *testing.T) {
 			t.Errorf("container %s mounts the token for the mirror: %+v", c.Name, m)
 		}
 	}
-	if mount(fetch, "go-cache") != nil {
-		t.Error("fetch mounts the go-cache volume")
+	t.Log("fetch runs check-gotest's image, which installs itself in the go-cache volume before it fetches.")
+	if want := []string{"fetch", "-dir=/src/repo", "-install=/go-cache/check-gotest"}; fetch.Image != testImage || len(fetch.Command) != 0 || !slices.Equal(fetch.Args, want) {
+		t.Errorf("fetch runs %s with command %q and args %q, want %s with args %q", fetch.Image, fetch.Command, fetch.Args, testImage, want)
+	}
+	if m := mount(fetch, "go-cache"); m == nil || m.ReadOnly || m.MountPath != "/go-cache" {
+		t.Errorf("fetch's go-cache mount = %+v, want a writable one at /go-cache", m)
 	}
 	if m := mount(upload, "go-cache"); m == nil || !m.ReadOnly || mount(upload, "src") != nil {
 		t.Errorf("upload should read the outputs and nothing from the branch: %+v", upload.VolumeMounts)
@@ -187,8 +196,8 @@ func TestGoCachePod(t *testing.T) {
 	if want := []string{"cacheprog", "-upload", "-dir=/go-cache/outputs", "-remote=" + remote, "-token-file=/var/run/secrets/go-cache/token"}; !slices.Equal(upload.Args, want) {
 		t.Errorf("upload's args = %q, want %q", upload.Args, want)
 	}
-	if want := []string{"cacheprog", "-install=/go-cache/check-gotest"}; install.Image != testImage || upload.Image != testImage || !slices.Equal(install.Args, want) {
-		t.Errorf("cacheprog and upload should run %s: %+v, %+v", testImage, install, upload)
+	if upload.Image != testImage {
+		t.Errorf("upload should run %s: %+v", testImage, upload)
 	}
 
 	t.Log("build compiles in the test container's environment, so their action IDs match.")
@@ -215,25 +224,54 @@ func TestGoCachePod(t *testing.T) {
 
 func TestReportsGoCacheFailure(t *testing.T) {
 	withGoCache(t)
-	// The Pod is Pending until the kubelet stops it.
-	for _, phase := range []string{"Pending", "Failed"} {
-		b, repo := branch()
-		named(b, 1)
+	buildFailed := func(phase string) *Pod {
 		p := pod(phase, &Terminated{}, nil)
 		s := ContainerStatus{Name: "build"}
 		s.State.Terminated = &Terminated{ExitCode: 1, Message: "go: errors parsing go.mod:\ngo.mod:3: unknown directive: bogus"}
 		p.Status.InitContainerStatuses = append(p.Status.InitContainerStatuses, s)
-		reconcileWith(t, b, repo, p)
-		if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "build: go: errors parsing go.mod") {
-			t.Errorf("%s Pod: result = %+v, want Failed with build's error", phase, res)
+		return p
+	}
+	installFailed := func(phase string) *Pod {
+		msg := "can't install the GOCACHEPROG program: open /go-cache/check-gotest: file exists"
+		return pod(phase, &Terminated{ExitCode: installStatus, Message: msg, FinishedAt: time.Now()}, nil)
+	}
+	// The Pod is Pending until the kubelet stops it.
+	for _, phase := range []string{"Pending", "Failed"} {
+		for _, c := range []struct {
+			pod  *Pod
+			want string
+		}{
+			{buildFailed(phase), "build: go: errors parsing go.mod"},
+			// A new Pod couldn't install the program either, so the check
+			// doesn't fetch again.
+			{installFailed(phase), "fetch: can't install the GOCACHEPROG program"},
+		} {
+			b, repo := branch()
+			named(b, 1)
+			reconcileWith(t, b, repo, c.pod)
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, c.want) {
+				t.Errorf("%s Pod: result = %+v, want Failed with %q", phase, res, c.want)
+			}
 		}
+	}
+
+	t.Log("When fetch exits with any other error, the check fetches again in a new Pod.")
+	b, repo := branch()
+	named(b, 1)
+	reconcileWith(t, b, repo, pod("Failed", &Terminated{ExitCode: 1, Message: "fatal: unable to access\ngit fetch: exit status 128", FinishedAt: time.Now()}, nil))
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.Contains(res.Message, "trying again at") {
+		t.Errorf("result = %+v, want Running, waiting to fetch again", res)
 	}
 }
 
-func TestCacheprogInstall(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "check-gotest")
-	if code := cacheprog([]string{"-install=" + path}, nil, io.Discard, io.Discard); code != 0 {
-		t.Fatalf("cacheprog -install = %d", code)
+func TestFetchInstallsFirst(t *testing.T) {
+	dir := t.TempDir()
+	path, repo, tokenFile := filepath.Join(dir, "check-gotest"), filepath.Join(dir, "repo"), filepath.Join(dir, "token")
+	t.Setenv("TOKEN_FILE", tokenFile)
+	args := []string{"-dir=" + repo, "-install=" + path}
+	var stderr bytes.Buffer
+	if code := fetchSource(args, &stderr); code != 1 || !strings.Contains(stderr.String(), tokenFile) {
+		t.Fatalf("fetch without a token file = %d, want 1; stderr:\n%s", code, stderr.String())
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -250,8 +288,17 @@ func TestCacheprogInstall(t *testing.T) {
 	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm()&0o111 == 0 {
 		t.Errorf("the copy isn't executable: %v", err)
 	}
-	if code := cacheprog([]string{"-install=" + path}, nil, io.Discard, io.Discard); code == 0 {
-		t.Error("installing over an existing file succeeded")
+
+	t.Log("If fetch can't install the program, it exits before it fetches.")
+	if err := os.WriteFile(tokenFile, []byte("token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stderr.Reset()
+	if code := fetchSource(args, &stderr); code != installStatus || !strings.Contains(stderr.String(), "can't install the GOCACHEPROG program") {
+		t.Errorf("fetch with %s already there = %d, want %d; stderr:\n%s", path, code, installStatus, stderr.String())
+	}
+	if _, err := os.Stat(repo); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("fetch made %s after it couldn't install the program: %v", repo, err)
 	}
 }
 
