@@ -2246,7 +2246,7 @@ pregenerate check-conflicts check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-g
 pregenerate check-deps check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake \
   -timeout=5m
 pregenerate git-k8s-deps git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
-  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
+  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=5s -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
 # The agent Pods fetch from the mirror with tokens that kube binds to them,
 # so check-review needs no repository credentials. It gets Secrets only by
@@ -2553,7 +2553,7 @@ echo "::endgroup::"
 
 echo "::group::A controller keeps Go modules up to date on branches"
 # The deps repository requires example.com/greet from the git server's
-# module proxy. git-k8s-deps takes a version only once it's 20 seconds old,
+# module proxy. git-k8s-deps takes a version only once it's 5 seconds old,
 # both since git-k8s-deps first saw it and by the proxy's time for it, so
 # the versions that it should take are backdated.
 (cd "${ROOT}" && go build -o "${WORKDIR}/publish" ./e2e/publish)
