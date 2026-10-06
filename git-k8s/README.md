@@ -3072,7 +3072,9 @@ To upgrade, install the core program, `git-k8s`, before the checks, as this
 loop does. The core program updates the `GitBranch` CustomResourceDefinition
 when it starts, and an older one drops fields that newer checks send, such
 as a result's `mergeBase`. Without that field, `check-risk` rates a branch
-again each time it reconciles the branch.
+again each time it reconciles the branch, and after the parent moves, a
+rating or an approval for the change on top of the parent's earlier head
+counts for landing until its check runs again.
 
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
