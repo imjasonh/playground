@@ -73,7 +73,7 @@ func TestGateProblems(t *testing.T) {
 
 func TestLandedApproval(t *testing.T) {
 	g := &gitRepo{dir: t.TempDir()}
-	run := func(args ...string) string {
+	mustGit := func(args ...string) string {
 		t.Helper()
 		out, err := g.git(nil, args...)
 		if err != nil {
@@ -92,15 +92,15 @@ func TestLandedApproval(t *testing.T) {
 		}
 		return sha
 	}
-	run("init", "-q", "-b", "main")
+	mustGit("init", "-q", "-b", "main")
 	base := commit(map[string]string{"a.txt": "a\n", "b.txt": "b\n"}, "Initial commit")
 	parent := commit(map[string]string{"b.txt": "b2\n"}, "Change b")
-	run("checkout", "-q", "-b", "c/x", base)
+	mustGit("checkout", "-q", "-b", "c/x", base)
 	// The reviewer approves head, and the base check merges main into it
 	// as merged. Then the developer pushes changed, which changes code.
 	head := commit(map[string]string{"feat.txt": "feat\n"}, "Add feat")
-	run("merge", "-q", "--no-ff", "-m", "Merge main into c/x", parent)
-	merged := run("rev-parse", "HEAD")
+	mustGit("merge", "-q", "--no-ff", "-m", "Merge main into c/x", parent)
+	merged := mustGit("rev-parse", "HEAD")
 	changed := commit(map[string]string{"feat.txt": "feat2\n"}, "Change feat")
 
 	for _, c := range []struct {
