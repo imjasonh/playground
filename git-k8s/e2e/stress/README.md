@@ -20,7 +20,7 @@ tests; they don't need a cluster.
 You need the following:
 
 - A Linux machine with Docker, [kind](https://kind.sigs.k8s.io/), `kubectl`,
-  and `git`.
+  and `git` version 2.40 or later.
 - The Go version in `git-k8s/go.mod`.
 - For CPU numbers, cgroup v2, which Docker uses on most current Linux
   distributions. Without it, a run notes that it isn't recording CPU.
@@ -144,7 +144,7 @@ error after it writes the run's summary.
 | `-repos` | The scenario's | Repositories, for `clean`, `nogotest`, `big`, and `parallel`. |
 | `-poll` | `2s` | Each GitRepository's `pollInterval`. `default` leaves it out, for the 30-second default. `poll30` always leaves it out. |
 | `-stagger` | The scenario's | The time between first pushes. Only `poll30` staggers them by default. |
-| `-approve-delay` | `15s` | How long the reviewer waits before it approves a high-risk head. |
+| `-approve-delay` | `15s` | How long the reviewer waits after `risk` rates a head high before it approves the head. The reviewer doesn't approve a head that `approval` already passes for, such as a merge of `main` into a head that it approved, when approvals follow the change. |
 | `-timeout` | `45m`, or `120m` for `big` | How long the burst can take. |
 | `-warmup` | `true` | Whether to land one branch in each repository before the burst. |
 | `-out` | `$GK_STRESS_STATE/runs/SCENARIO-TIME` | The run's directory. `report` and `chart` label each run with its directory's name. |
@@ -194,7 +194,7 @@ A run writes the following to its directory:
 | CPU | The kind node's CPU, by group, and the host's. |
 | Results that waited for the endpoint's timeout | Check reconciles that failed after the results endpoint's 10-second wait, which holds one of the check's workers. |
 | Results for deleted branches | The results endpoint's `410 Gone` answers for branches that landed and went away before their checks finished. |
-| Verification | Every planned branch landed, `main` has the expected files, `gofmt -l` and `go test ./...` pass on `main`, each landing passed the gate, each high-risk branch landed with an approval of its landed head, and each commit that a check pushed has a `Git-K8s-Fixer` trailer. |
+| Verification | Every planned branch landed, `main` has the expected files, `gofmt -l` and `go test ./...` pass on `main`, each landing passed the gate, and each commit that a check pushed has a `Git-K8s-Fixer` trailer. Each high-risk branch landed with an approval, made before the landing, of its landed head or of an earlier head whose change the landed head makes on top of the parent's head. Verification applies the earlier head's change with `git merge-tree` to check that. The summary counts both kinds of approval. |
 
 To summarize a run again from its records, for example after you change the
 analysis, run the following:

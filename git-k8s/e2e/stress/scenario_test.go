@@ -146,3 +146,42 @@ func TestGitRepository(t *testing.T) {
 		t.Errorf("landing = %v, want it left out", merge["landing"])
 	}
 }
+
+func TestNeedsApproval(t *testing.T) {
+	const head, old = "aaaaaaa1", "ccccccc3"
+	high := map[string]string{"level": "high"}
+	branch := func(checks map[string]checkResult) *branchRec {
+		return &branchRec{Head: head, Checks: checks}
+	}
+	for _, c := range []struct {
+		name     string
+		b        *branchRec
+		approved bool
+		want     bool
+	}{
+		{"high risk without an approval result", branch(map[string]checkResult{"risk": {Commit: head, State: "Passed", Outputs: high}}), false, true},
+		// On main, the approval check fails for each new head, such as the
+		// base check's merge of main into an approved head.
+		{"approval failed for the head", branch(map[string]checkResult{
+			"risk":     {Commit: head, State: "Passed", Outputs: high},
+			"approval": {Commit: head, State: "Failed"},
+		}), false, true},
+		{"approval passed for an earlier head", branch(map[string]checkResult{
+			"risk":     {Commit: head, State: "Passed", Outputs: high},
+			"approval": {Commit: old, State: "Passed"},
+		}), false, true},
+		{"approval that follows the change to the head", branch(map[string]checkResult{
+			"risk":     {Commit: head, MergeBase: old, State: "Passed", Outputs: high},
+			"approval": {Commit: head, MergeBase: old, State: "Passed"},
+		}), false, false},
+		{"head that the reviewer approved", branch(map[string]checkResult{"risk": {Commit: head, State: "Passed", Outputs: high}}), true, false},
+		{"low risk", branch(map[string]checkResult{"risk": {Commit: head, State: "Passed", Outputs: map[string]string{"level": "low"}}}), false, false},
+		{"rating of an earlier head", branch(map[string]checkResult{"risk": {Commit: old, State: "Passed", Outputs: high}}), false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := needsApproval(c.b, c.approved); got != c.want {
+				t.Errorf("needsApproval = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

@@ -668,8 +668,7 @@ func (rn *runner) step(ctx context.Context, br *branchRun, delay time.Duration) 
 			rn.async(br, func() error { return rn.resolve(br, obs.Head) })
 		}
 	case kindBigRisk, kindModRisk:
-		c := obs.Checks["risk"]
-		if c.Commit != obs.Head || c.Outputs["level"] != "high" || approved {
+		if !needsApproval(obs, approved) {
 			return
 		}
 		if br.approvalHead != obs.Head {
@@ -681,6 +680,20 @@ func (rn *runner) step(ctx context.Context, br *branchRun, delay time.Duration) 
 			rn.async(br, func() error { return rn.approve(ctx, br, name, head) })
 		}
 	}
+}
+
+// needsApproval reports whether the reviewer of a high-risk branch approves
+// the head in obs: risk rated that head high, the reviewer hasn't approved
+// it, which approved says, and the approval check doesn't pass for it. The
+// check can pass for a head that the reviewer didn't approve when approvals
+// follow the change, such as the base check's merge of main into a head
+// that the reviewer approved.
+func needsApproval(obs *branchRec, approved bool) bool {
+	risk, approval := obs.Checks["risk"], obs.Checks["approval"]
+	if risk.Commit != obs.Head || risk.Outputs["level"] != "high" || approved {
+		return false
+	}
+	return approval.Commit != obs.Head || approval.State != "Passed"
 }
 
 func (rn *runner) async(br *branchRun, f func() error) {

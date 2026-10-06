@@ -68,6 +68,7 @@ func (r *recorder) close() {
 type checkResult struct {
 	Commit       string            `json:"commit,omitempty"`
 	ParentCommit string            `json:"parentCommit,omitempty"`
+	MergeBase    string            `json:"mergeBase,omitempty"`
 	State        string            `json:"state,omitempty"`
 	Message      string            `json:"message,omitempty"`
 	Outputs      map[string]string `json:"outputs,omitempty"`
@@ -784,7 +785,8 @@ func tick(ctx context.Context, r *recorder, w *world) {
 // summarizeChecks writes a branch's check results in one string, such as
 // "base:P gofmt:F* gotest:R", where P, F, R, X, and E stand for Passed,
 // Failed, Running, Fixed, and Error, * marks a result for an older head or
-// parent head, and risk shows its level.
+// parent head, or for the change on top of a merge base other than the
+// parent's head, and risk shows its level.
 func summarizeChecks(b *branchRec) string {
 	names := make([]string, 0, len(b.Checks))
 	for name := range b.Checks {
@@ -795,7 +797,7 @@ func summarizeChecks(b *branchRec) string {
 	for _, name := range names {
 		c := b.Checks[name]
 		s := name + ":" + abbreviate(c.State)
-		if c.Commit != b.Head || (c.ParentCommit != "" && c.ParentCommit != b.ParentHead) {
+		if c.Commit != b.Head || (c.ParentCommit != "" && c.ParentCommit != b.ParentHead) || (c.MergeBase != "" && c.MergeBase != b.ParentHead) {
 			s += "*"
 		}
 		if level := c.Outputs["level"]; level != "" {

@@ -688,12 +688,12 @@ func summarize(run *runData) (*summary, []*branchStats, []*frontCycle) {
 				if !terminal(c.State) {
 					continue
 				}
-				if id := name + " " + c.Commit + " " + c.ParentCommit; !seen[id] {
+				if id := name + " " + c.Commit + " " + c.ParentCommit + " " + c.MergeBase; !seen[id] {
 					seen[id] = true
 					st.Results[name]++
 				}
 				if c.State == "Error" {
-					id := b.Name + " " + name + " " + c.Commit + " " + c.ParentCommit
+					id := b.Name + " " + name + " " + c.Commit + " " + c.ParentCommit + " " + c.MergeBase
 					if !errorSeen[id] {
 						errorSeen[id] = true
 						s.Errors.ErrorResults = append(s.Errors.ErrorResults, fmt.Sprintf("%s %s %s %s at %s: %s", rc.T.Format("15:04:05.000"), b.Repo, b.Name, name, short(c.Commit), c.Message))

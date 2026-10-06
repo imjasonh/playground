@@ -260,6 +260,9 @@ func summaryMarkdown(s *summary) string {
 			p("- %s\n", x)
 		}
 		p("\nFixer trailers on main: %s. Commits that checks pushed, by trailer: %s.\n\n", countList(v.FixerTrailers), countList(v.PushedFixes))
+		if v.DirectApprovals+v.CarriedApprovals > 0 {
+			p("High-risk branches that landed with an approval of the landed head: %d. With an approval of an earlier head that makes the same change: %d.\n\n", v.DirectApprovals, v.CarriedApprovals)
+		}
 		if err := v.err(); err != nil {
 			p("Problems:\n\n```\n%v\n```\n", err)
 		} else {

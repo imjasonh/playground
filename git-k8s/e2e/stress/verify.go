@@ -38,8 +38,13 @@ type verifyResult struct {
 	// FixProblems lists failing branches that landed without their fix.
 	FixProblems []string `json:"fixProblems,omitempty"`
 	// ApprovalProblems lists high-risk branches that landed without an
-	// approval of the landed head.
+	// approval of the landed head or of a commit whose change it makes.
 	ApprovalProblems []string `json:"approvalProblems,omitempty"`
+	// DirectApprovals counts high-risk branches that landed at the commit
+	// that the harness approved, and CarriedApprovals those that landed at
+	// another commit that makes the approved commit's change.
+	DirectApprovals  int `json:"directApprovals"`
+	CarriedApprovals int `json:"carriedApprovals"`
 	// FixerTrailers counts the commits on main by their Git-K8s-Fixer
 	// trailer, and PushedFixes counts every commit that a check pushed, from
 	// its PushedFix event, by trailer.
@@ -143,14 +148,20 @@ func (rn *runner) verify(ctx context.Context) *verifyResult {
 				v.FixProblems = append(v.FixProblems, fmt.Sprintf("%s landed at %s, which doesn't contain its fix %s", key, short(lr.Head), short(fix)))
 			}
 		case kindBigRisk, kindModRisk:
-			approved := false
+			approved := map[string]bool{}
 			for _, a := range run.actions {
-				if a.Action == "approve" && a.Repo == br.plan.Repo && a.Branch == br.plan.Name && a.Err == "" && a.Head == lr.Head && a.Start.Before(at) {
-					approved = true
+				if a.Action == "approve" && a.Repo == br.plan.Repo && a.Branch == br.plan.Name && a.Err == "" && a.Start.Before(at) {
+					approved[a.Head] = true
 				}
 			}
-			if !approved || !strings.HasPrefix(lr.Head, lr.Approve) || len(lr.Approve) < 7 {
-				v.ApprovalProblems = append(v.ApprovalProblems, fmt.Sprintf("%s landed at %s with approval %q", key, short(lr.Head), lr.Approve))
+			carried, problem := landedApproval(rn.repos[br.plan.Repo], lr, approved, parentAt[key])
+			switch {
+			case problem != "":
+				v.ApprovalProblems = append(v.ApprovalProblems, fmt.Sprintf("%s landed at %s with approval %q: %s", key, short(lr.Head), lr.Approve, problem))
+			case carried:
+				v.CarriedApprovals++
+			default:
+				v.DirectApprovals++
 			}
 		}
 	}
@@ -159,10 +170,63 @@ func (rn *runner) verify(ctx context.Context) *verifyResult {
 		"main's tree has each landed branch's files with the expected contents, including fixed tests, gofmt fixes, and resolved conflicts",
 		"gofmt -l and go test ./... pass on main",
 		"at each landing, the recorded results of the gate's checks passed for the landed head and parent head",
-		"each failing branch landed with its fix, and each high-risk branch with an approval of the landed head made before the landing",
+		"each failing branch landed with its fix, and each high-risk branch with an approval made before the landing, of the landed head or of a commit whose change merge-tree applies to the parent's head to make the landed head's tree",
+		"at each landing, every result that names a merge base names the parent's head",
 		"every commit that a check pushed has a Git-K8s-Fixer trailer that names the check",
 	}
 	return v
+}
+
+// landedApproval checks the approval that a high-risk branch landed with,
+// from lr, its GitBranch record from the landing. approved holds the heads
+// that the reviewer approved before the landing, and parent is the parent's
+// head that the branch landed on. The approval must name the landed head,
+// or name in full an approved head whose change the landed head makes on
+// top of parent, as sameChange checks. carried reports the second case.
+// landedApproval returns "" for the problem if the approval holds.
+func landedApproval(g *gitRepo, lr *branchRec, approved map[string]bool, parent string) (carried bool, problem string) {
+	switch {
+	case len(lr.Approve) >= 7 && strings.HasPrefix(lr.Head, lr.Approve) && approved[lr.Head]:
+		return false, ""
+	case len(lr.Approve) == 40 && approved[lr.Approve]:
+		return true, sameChange(g, lr.Approve, lr.Head, parent)
+	}
+	return false, "the approval doesn't name the landed head, or in full a head that the reviewer approved before the landing"
+}
+
+// sameChange checks, without git-k8s's code, that the commit landed has the
+// change of the commit approved on top of parent, the parent's head that the
+// branch landed on. It applies what approved changes on top of its merge
+// base with parent to parent with git merge-tree, and compares the result
+// with landed's tree. It returns "" if they match, and the problem
+// otherwise.
+func sameChange(g *gitRepo, approved, landed, parent string) string {
+	if parent == "" {
+		return "no parent head from the Landed event"
+	}
+	full, err := g.git(nil, "rev-parse", "--verify", parent+"^{commit}")
+	if err != nil {
+		return err.Error()
+	}
+	bases, err := g.git(nil, "merge-base", "--all", full, approved)
+	if err != nil {
+		return err.Error()
+	}
+	if strings.Contains(bases, "\n") || bases == "" {
+		return fmt.Sprintf("%s and %s don't have one merge base: %q", short(full), short(approved), bases)
+	}
+	tree, err := g.git(nil, "merge-tree", "--write-tree", "--merge-base="+bases, full, approved)
+	if err != nil {
+		return err.Error()
+	}
+	want, err := g.git(nil, "rev-parse", "--verify", landed+"^{tree}")
+	if err != nil {
+		return err.Error()
+	}
+	if tree != want {
+		return fmt.Sprintf("%s's change on top of %s has tree %s, but the landed head has %s", short(approved), short(full), short(tree), short(want))
+	}
+	return ""
 }
 
 // gateProblems checks a GitBranch record from a landing against the
@@ -195,6 +259,11 @@ func gateProblems(b *branchRec, gotest bool, parent string) []string {
 	}
 	if c := b.Checks["risk"]; c.ParentCommit != "" && !strings.HasPrefix(c.ParentCommit, parent) {
 		problems = append(problems, fmt.Sprintf("risk ran against %s, not the parent's head %s", short(c.ParentCommit), short(parent)))
+	}
+	for _, name := range []string{"base", "gofmt", "risk", "approval", "gotest"} {
+		if c, ok := b.Checks[name]; ok && c.MergeBase != "" && !strings.HasPrefix(c.MergeBase, parent) {
+			problems = append(problems, fmt.Sprintf("%s holds for the change on top of %s, not on top of the parent's head %s", name, short(c.MergeBase), short(parent)))
+		}
 	}
 	if level := b.Checks["risk"].Outputs["level"]; level != "low" {
 		if a := b.Checks["approval"]; a.State != "Passed" || a.Commit != b.Head {
