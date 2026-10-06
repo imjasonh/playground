@@ -540,6 +540,9 @@ func TestUpdatesAModule(t *testing.T) {
 	if a := p.Spec.AutomountServiceAccountToken; a == nil || *a {
 		t.Error("the Pod mounts a service account token")
 	}
+	if g := p.Spec.TerminationGracePeriodSeconds; g == nil || *g != 1 {
+		t.Error("the Pod's termination grace period isn't 1 second, so a Pod deleted while the update's shell ignores SIGTERM runs for 30 more seconds")
+	}
 	if got := f.srv.Heads(t, "app")[greetBranch]; got != "" {
 		t.Fatalf("the controller pushed %s before the Pod finished", greetBranch)
 	}

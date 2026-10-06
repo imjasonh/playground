@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "name": "gitk8sdeps3fafd04379552e22",
+    "name": "gitk8sdepsbea63571e0aa0e08",
     "labels": {
       "app.kubernetes.io/name": "git-k8s-deps"
     }
@@ -10,6 +10,7 @@
     "automountServiceAccountToken": false,
     "enableServiceLinks": false,
     "activeDeadlineSeconds": 60,
+    "terminationGracePeriodSeconds": 1,
     "runtimeClassName": "gvisor",
     "securityContext": {
       "runAsNonRoot": true,

@@ -17,14 +17,15 @@ type Pod struct {
 }
 
 type PodSpec struct {
-	RestartPolicy                string              `json:"restartPolicy,omitempty"`
-	AutomountServiceAccountToken *bool               `json:"automountServiceAccountToken,omitempty"`
-	ActiveDeadlineSeconds        *int64              `json:"activeDeadlineSeconds,omitempty"`
-	RuntimeClassName             string              `json:"runtimeClassName,omitempty"`
-	SecurityContext              *PodSecurityContext `json:"securityContext,omitempty"`
-	Volumes                      []Volume            `json:"volumes,omitempty"`
-	InitContainers               []Container         `json:"initContainers,omitempty"`
-	Containers                   []Container         `json:"containers"`
+	RestartPolicy                 string              `json:"restartPolicy,omitempty"`
+	AutomountServiceAccountToken  *bool               `json:"automountServiceAccountToken,omitempty"`
+	ActiveDeadlineSeconds         *int64              `json:"activeDeadlineSeconds,omitempty"`
+	TerminationGracePeriodSeconds *int64              `json:"terminationGracePeriodSeconds,omitempty"`
+	RuntimeClassName              string              `json:"runtimeClassName,omitempty"`
+	SecurityContext               *PodSecurityContext `json:"securityContext,omitempty"`
+	Volumes                       []Volume            `json:"volumes,omitempty"`
+	InitContainers                []Container         `json:"initContainers,omitempty"`
+	Containers                    []Container         `json:"containers"`
 }
 
 type PodSecurityContext struct {

@@ -1048,8 +1048,12 @@ Pod counts toward `-max-pods` until then. kube deletes a Pod when the check
 stops declaring it: once the check has recorded the Pod's result and the
 Pod's phase is `Succeeded` or `Failed`, or when the branch moves to a new
 head. The API server deletes a Pod in either phase at once, but waits for
-the kubelet to stop a running one. Owner references delete the Pods with
-their `GitBranch`. Set `-runtime-class` to run the Pods under a sandboxing
+the kubelet to stop a running one. The kubelet sends the containers of a
+running Pod `SIGTERM`, and kills them when the Pod's termination grace
+period ends. A container's first process ignores `SIGTERM` unless it
+handles the signal, and the shell that fetches the head doesn't, so test
+Pods set the grace period to 1 second instead of the default 30. Owner
+references delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods under a sandboxing
 runtime such as gVisor, and `-go-image`, `-git-image`, `-timeout`, and
 `-goproxy` to change the rest. If you set `-goproxy`, set the same value on
 the core program.
@@ -1353,6 +1357,15 @@ server listens, so a check that fetches right away can find nothing
 listening. When the Pod refuses the connection less than 10 seconds after
 the container starts, the check tries again after a quarter second. After
 other failed fetches, it waits 5 seconds.
+
+kube deletes an agent Pod once the check has its result, or when the check
+stops declaring the Pod for another reason, such as a new head. The kubelet
+sends the Pod's containers `SIGTERM`, and kills them when the Pod's
+termination grace period ends. A container's first process ignores
+`SIGTERM` unless it handles the signal. The `prepare` container's shell
+doesn't, and the runner does only once the `result` container's server
+listens, so agent Pods set the grace period to 1 second instead of the
+default 30. A Pod counts toward `-max-pods` until its containers stop.
 
 Each agent Pod's volumes have size limits. The repository, the head's
 files, and the agent's input can each use up to `-source-size`, 2Gi by
@@ -2805,7 +2818,11 @@ changes anything other than its requirements and its `go` and `toolchain`
 lines, but not one whose other directives `go get` sorted. The `go` command
 checks the `go.sum` checksums when it builds the branch. At most `-max-pods`
 update Pods run at once across all namespaces, and kube deletes each one once
-the controller has its result. When an update fails, the controller logs why
+the controller has its result. A deleted Pod counts until the kubelet stops
+its containers. Update Pods set a termination grace period of 1 second
+instead of the default 30, because a container's first process ignores
+`SIGTERM` unless it handles the signal, as the shells in the `prepare` and
+`update` containers don't. When an update fails, the controller logs why
 and tries again after `-interval`. An update also fails when an image's name
 isn't valid, when kube still can't schedule the update Pod 5 minutes after
 creating it, and when a Secret is still missing or an image still can't be

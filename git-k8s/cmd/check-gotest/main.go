@@ -402,6 +402,11 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	yes, no := true, false
 	user := int64(65532)
 	deadline := int64(timeout.Seconds())
+	// The kubelet sends a deleted Pod's containers SIGTERM and kills them
+	// when the grace period ends. A container's first process ignores
+	// SIGTERM unless it handles the signal, as fetch's shell doesn't, and
+	// the Pod counts toward -max-pods until its containers stop.
+	grace := int64(1)
 	expiry := int64(tokenSeconds)
 	restricted := &SecurityContext{
 		AllowPrivilegeEscalation: &no,
@@ -420,10 +425,11 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	}
 	p := &Pod{Object: kube.Meta(name, maps.Clone(testPodLabels))}
 	p.Spec = PodSpec{
-		RestartPolicy:                "Never",
-		AutomountServiceAccountToken: &no,
-		ActiveDeadlineSeconds:        &deadline,
-		RuntimeClassName:             *runtimeClass,
+		RestartPolicy:                 "Never",
+		AutomountServiceAccountToken:  &no,
+		ActiveDeadlineSeconds:         &deadline,
+		TerminationGracePeriodSeconds: &grace,
+		RuntimeClassName:              *runtimeClass,
 		SecurityContext: &PodSecurityContext{
 			RunAsNonRoot:   &yes,
 			RunAsUser:      &user,
