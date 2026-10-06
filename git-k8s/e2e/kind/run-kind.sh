@@ -182,15 +182,9 @@ install_kind
 docker info >/dev/null
 
 echo "::group::Start a registry, a kind cluster, a git server, and a module proxy"
-# As in https://kind.sigs.k8s.io/docs/user/local-registry/: nodes pull
-# localhost:PORT/... from the registry container, which is on kind's
-# network.
-if [[ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY}" 2>/dev/null || true)" != true ]]; then
-  docker run -d --restart=always -p "127.0.0.1:${PORT}:5000" --name "${REGISTRY}" registry:2
-  CREATED_REGISTRY=1
-fi
-# kind creates the cluster in the background while the test starts the git
-# server and the module proxy, and copies images to the registry.
+# kind creates the cluster in the background while the test starts the
+# registry, the git server, and the module proxy, and copies images to the
+# registry.
 if ! kind get clusters 2>/dev/null | grep -x "${CLUSTER}" >/dev/null; then
   CREATED_CLUSTER=1
   kind create cluster --name "${CLUSTER}" --wait 120s --config - >"${WORKDIR}/kind.log" 2>&1 <<EOF &
@@ -200,6 +194,13 @@ networking:
   kubeProxyMode: nftables
 EOF
   KIND_PID=$!
+fi
+# As in https://kind.sigs.k8s.io/docs/user/local-registry/: nodes pull
+# localhost:PORT/... from the registry container, which is on kind's
+# network.
+if [[ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY}" 2>/dev/null || true)" != true ]]; then
+  docker run -d --restart=always -p "127.0.0.1:${PORT}:5000" --name "${REGISTRY}" registry:2
+  CREATED_REGISTRY=1
 fi
 
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
