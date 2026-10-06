@@ -76,6 +76,23 @@ eventually() {
 # running reports whether the process with PID $1 runs the command $2, so a
 # PID that another process took after a reboot doesn't count.
 running() { [[ -n "$1" && "$(ps -p "$1" -o comm= 2>/dev/null)" == "$2" ]]; }
+# detach starts a server that outlives this script and logs to $1. The server
+# gets only stdin, stdout, and stderr. If it kept another of this script's file
+# descriptors, it would hold any lock that the caller took on that descriptor,
+# such as flock's, until the server exits.
+detach() {
+  local log=$1 fd
+  shift
+  (
+    for fd in /proc/"${BASHPID}"/fd/*; do
+      fd=${fd##*/}
+      if [[ ${fd} =~ ^[0-9]+$ ]] && ((fd > 2)); then
+        exec {fd}>&-
+      fi
+    done
+    exec setsid "$@" >>"${log}" 2>&1 </dev/null
+  ) &
+}
 
 echo "--- Registry ${REGISTRY} on 127.0.0.1:${PORT}"
 if [[ "$(docker inspect -f '{{.State.Running}}' "${REGISTRY}" 2>/dev/null || true)" != true ]]; then
@@ -175,8 +192,8 @@ if running "${GIT_SERVER_PID}" gitserver && [[ "$(saved GIT_PORT)" != "${GIT_POR
   GIT_SERVER_PID=""
 fi
 if ! running "${GIT_SERVER_PID}" gitserver; then
-  GITSERVER_PASSWORD="${PASSWORD}" setsid "${STATE}/bin/gitserver" -addr="0.0.0.0:${GIT_PORT}" \
-    -root="${STATE}/repos" >>"${STATE}/gitserver.log" 2>&1 </dev/null &
+  GITSERVER_PASSWORD="${PASSWORD}" detach "${STATE}/gitserver.log" "${STATE}/bin/gitserver" \
+    -addr="0.0.0.0:${GIT_PORT}" -root="${STATE}/repos"
   GIT_SERVER_PID=$!
 fi
 listening() { (echo >"/dev/tcp/127.0.0.1/${GIT_PORT}") 2>/dev/null; }
@@ -192,7 +209,7 @@ printf 'package greet\n\nfunc Hello(name string) string { return "Hello, " + nam
 mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${STATE}/modproxy.log" | tail -n 1; }
 if ! running "${MOD_PROXY_PID}" modproxy; then
   : >"${STATE}/modproxy.log"
-  setsid "${STATE}/bin/modproxy" -addr=0.0.0.0:0 -dir="${STATE}/modules" >>"${STATE}/modproxy.log" 2>&1 </dev/null &
+  detach "${STATE}/modproxy.log" "${STATE}/bin/modproxy" -addr=0.0.0.0:0 -dir="${STATE}/modules"
   MOD_PROXY_PID=$!
 fi
 mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
