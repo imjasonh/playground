@@ -1506,12 +1506,15 @@ if [[ ${ENFORCED} -eq 1 ]]; then
   # so this test passes only in a Pod that can't reach the git server,
   # CoreDNS's metrics port, or, if the node can reach the internet, a public
   # DNS server. kindnet doesn't filter a Pod's connections to its own node,
-  # which on a one-node cluster include the API server.
+  # which on a one-node cluster include the API server. The policy drops
+  # the connections, so each dial lasts its whole timeout, and the test dials
+  # all three at once.
   cat >"${TESTED}/sandbox_test.go" <<GO
 package tested
 
 import (
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1520,12 +1523,18 @@ func TestSandbox(t *testing.T) {
 	if _, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local"); err != nil {
 		t.Fatalf("looking up CoreDNS: %v", err)
 	}
+	var wg sync.WaitGroup
 	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153", "1.1.1.1:53"} {
-		if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
-			c.Close()
-			t.Errorf("the test Pod reached %s", addr)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
+				c.Close()
+				t.Errorf("the test Pod reached %s", addr)
+			}
+		}()
 	}
+	wg.Wait()
 }
 GO
 fi
