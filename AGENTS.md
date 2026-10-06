@@ -56,6 +56,7 @@ playground/
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
+├── spin-draw/             # printable discs you turn and trace to draw a picture
 ├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
@@ -86,6 +87,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `packfile-explorer/` | yes | Fetch a git packfile via the CORS proxy and explore objects/deltas; JS modules, npm scripts, tests |
 | `palette-swap/` | yes | Nearest-color palette swap in Wasm (scalar, portable simd, archsimd). Vendored wasm from `build-wasm.sh`. Go tests and a Node smoke test |
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
+| `spin-draw/` | yes | Print a disc and trace numbered lines as it turns; JS modules, npm scripts, tests |
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
@@ -719,6 +721,7 @@ bundle exec fastlane test
 | `packfile-explorer/` | Fetch a git packfile through the CORS proxy; index objects/deltas in IndexedDB and browse contents | Node test runner |
 | `palette-swap/` | Nearest-color palette swap comparing scalar Go, portable simd, and Wasm archsimd | Node smoke test of the vendored Wasm module, plus `go test` |
 | `population-rays/` | Directional 5° population slices (distance to N people) over Meta/CIESIN HRSL grids | Node test runner |
+| `spin-draw/` | Print a disc, pin it, and trace one numbered line each turn to draw a picture | Node test runner |
 | `sundial/` | Clock whose long shadow follows the sun; no shadow at night | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 
