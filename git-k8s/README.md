@@ -2003,7 +2003,9 @@ to the core program's results endpoint:
    `-results-url` flag, `http://git-k8s.git-k8s.svc/results` by default. The
    request also names the `GitBranch` generation that the check read, and
    the core program waits until its cache has the `GitBranch` at that
-   generation.
+   generation. The check's cache can get a `GitBranch` first, so until
+   then, the core program also reads the `GitBranch` from the API server,
+   at most once a second, to learn whether it's gone.
 3. The core program verifies the token with a TokenReview for that
    audience, and maps the token's service account to a check. `generate`
    installs each check with the service account `check-NAME` in the
@@ -2035,10 +2037,15 @@ and kube retries it, which runs the check again.
 
 If the branch changed since the check read it, the core program answers
 `409 Conflict`, and the check drops the result, because the change runs the
-check again. If the core program rejects the result with `400 Bad Request`,
-or the token's service account with `403 Forbidden`, the check logs why and
-sends nothing more for that branch until the branch changes or the check
-restarts.
+check again. That includes a `GitBranch` that was deleted and created
+again. If the `GitBranch` was deleted, the core program answers `410 Gone`
+as soon as the API server shows that, and the check drops the result. Its
+reconcile succeeds, so kube doesn't run the check again. If the core
+program rejects the result with `400 Bad Request`, or the token's service
+account with `403 Forbidden`, the check logs why and sends nothing more for
+that branch until the branch changes or the check restarts. Any other
+answer, such as a `404 Not Found` from a `-results-url` with the wrong
+path, fails the check's reconcile, and kube retries it.
 
 ### Security model
 
