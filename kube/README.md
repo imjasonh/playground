@@ -148,10 +148,24 @@ cases the framework adds a finalizer to the owner and deletes the owned
 objects itself. Either way, objects that a reconcile declared before and
 doesn't declare now are deleted.
 
+`Own` doesn't take over an object that the controller didn't create, because
+the framework would then delete it with its owner. If the declared object
+exists without the controller's labels, the reconcile fails with an error
+that names the object, and the object stays as it is. To take over such
+objects, for example ones from a manual install, pass `kube.Adopts()` to
+`kube.For`. Even with `kube.Adopts()`, a reconcile fails when it declares an
+object that the controller created for another owner.
+
 `Apply` manages only the fields you set on an object that the controller
 doesn't own, such as one annotation on someone else's Deployment. Fields that
 a later reconcile stops applying are removed, and the object isn't deleted
 with the reconciled object.
+
+`Apply` doesn't create objects, because nothing would own or delete them. If
+the object doesn't exist, the reconcile fails with an error that names it.
+The exception is a local type, which
+[Install in a cluster](#install-in-a-cluster) describes: `Apply` creates a
+local object that doesn't exist.
 
 If the type that you pass to `Apply` has a status, the framework applies the
 status too, so a controller can write its own fields in another controller's
@@ -1155,7 +1169,8 @@ way, its service account needs these permissions:
   on each object that it fetches is enough.
 - `create`, `patch`, and `delete` on every type that it declares with `Own`,
   `Apply`, or `Delete`. Server-side apply needs `create` for objects that
-  don't exist yet.
+  don't exist yet. `Own` and `Apply` also need `get`, to read an object that
+  no cache holds before they write it.
 - `patch` on the reconciled type's `status` subresource, for status.
 - `patch` on the reconciled type, for its finalizer and for migrations, when
   any of the following is true:
@@ -1262,7 +1277,7 @@ in a cluster has its own.
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
 
-The fakes differ from a cluster in two ways:
+The fakes differ from a cluster in three ways:
 
 - `Trigger` doesn't check that a controller in the program reconciles the
   object's kind, so it returns true for any object in the world unless the
@@ -1272,6 +1287,11 @@ The fakes differ from a cluster in two ways:
   handler through a reconcile to the handler's next `Get`. Test the hand-off
   in [Trigger a reconcile](#trigger-a-reconcile) against a real API server, as
   `TestServeHandsDataToReconcile` in `e2e/serve_test.go` does.
+- In a `kube.Fake` context, `Own` treats each object in the world as one that
+  the controller created, unless its `kube.OwnerAnnotation` names another
+  owner, and `Apply` doesn't need its object to be in the world. In a
+  cluster, `Own` fails for an object that the controller didn't create, and
+  `Apply` fails for an object that doesn't exist.
 
 The end-to-end tests run each example against a real `kube-apiserver` and
 `etcd`, without a kubelet or controller manager. To run them, download the
@@ -1400,6 +1420,9 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops calling `Apply` for it, and when the reconciled object is
   deleted.
+- `Own` reads an object that no cache holds before it first applies the
+  object. An object that another client creates between the read and the
+  apply is taken over, as if the controller had `kube.Adopts()`.
 - `generate` can't tell which namespace an owned object goes in, so a program
   that declares owned objects gets `patch` on every namespaced type that it
   reconciles, even when each owned object is in its owner's namespace and

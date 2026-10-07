@@ -138,6 +138,7 @@ type options struct {
 	selector  string
 	resync    time.Duration
 	owns      []func() (*typeInfo, error)
+	adopts    bool
 	finalizes bool
 	versions  []versionOption
 }
@@ -190,6 +191,16 @@ func Resync(d time.Duration) Option { return func(o *options) { o.resync = d } }
 func Owns[T any, P Resource[T]]() Option {
 	return func(o *options) { o.owns = append(o.owns, typeInfoFor[T, P]) }
 }
+
+// Adopts lets the controller take over an object that a reconcile declares
+// with Own when the object exists but the controller didn't create it, for
+// example an object from a manual install. Without the option, the
+// reconcile fails with an error that names the object, and the object stays
+// as it is. An adopted object gets the controller's labels and owner
+// reference, so it's deleted with its owner, or when a reconcile stops
+// declaring it. Even with the option, Own fails for an object that the
+// controller created for another owner.
+func Adopts() Option { return func(o *options) { o.adopts = true } }
 
 // RemovesFinalizer declares that objects can carry the controller's
 // finalizer from an earlier version of the program, for example one whose
@@ -812,6 +823,9 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		m := metaOfAny(in.obj)
 		switch in.kind {
 		case intentOwn, intentApply:
+			if err := c.readTarget(ctx, key, &in); err != nil {
+				return err
+			}
 			body, err := c.body(in, parent)
 			if err != nil {
 				return err
@@ -907,6 +921,54 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		}
 	}
 	return nil
+}
+
+// readTarget reads the object of an Own or Apply intent from the API server
+// when no cache holds it, and sets in.observed to the object, so that an
+// apply carries its UID. An Own intent fails for an object that the
+// controller didn't create for the owner key, unless the controller adopts
+// objects that it didn't create. An Apply intent fails for an object that
+// doesn't exist, because nothing would own or delete the object that the
+// apply created. Objects of local types are never cached, and Apply creates
+// them.
+func (c *controller[T, P]) readTarget(ctx context.Context, key Key, in *intent) error {
+	m := metaOfAny(in.obj)
+	if in.observed != nil || in.ti.local || in.kind == intentApply && m.UID != "" {
+		return nil
+	}
+	o, err := c.m.fetch(ctx, in.ti, m.Key())
+	if err != nil {
+		return fmt.Errorf("reading %v %s: %w", in.ti, m.Key(), err)
+	}
+	if in.kind == intentApply {
+		if o == nil {
+			return fmt.Errorf("kube.Apply: %v %s doesn't exist, and Apply doesn't create objects; declare an object for the reconciled object to own with Own", in.ti, m.Key())
+		}
+		in.observed = o
+		return nil
+	}
+	if o == nil {
+		return nil
+	}
+	om := metaOfAny(o)
+	owner, ok := om.Annotations[c.labels.owner]
+	switch {
+	case om.Labels[c.labels.controller] != c.name || !ok:
+		if !c.opts.adopts {
+			return fmt.Errorf("kube.Own: %v %s exists, and controller %s didn't create it; delete it, or pass kube.Adopts() to kube.For to take it over", in.ti, m.Key(), c.name)
+		}
+	case owner != key.String():
+		return errOwned(in.ti, m.Key(), owner)
+	default:
+		in.observed = o
+	}
+	return nil
+}
+
+// errOwned is the error for an Own of an object that the controller created
+// for another owner, which the object's owner annotation names.
+func errOwned(ti *typeInfo, k Key, owner string) error {
+	return fmt.Errorf("kube.Own: %v %s already has another owner, %s", ti, k, owner)
 }
 
 func (c *controller[T, P]) delete(ctx context.Context, ti *typeInfo, res resolved, m *ObjectMeta) error {

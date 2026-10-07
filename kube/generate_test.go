@@ -534,9 +534,9 @@ func TestPlanGrantsStatusOfAppliedTypes(t *testing.T) {
 		group, resource string
 		want            []string
 	}{
-		{"apps", "deployments", []string{"create", "patch"}},
+		{"apps", "deployments", []string{"create", "get", "patch"}},
 		{"apps", "deployments/status", []string{"patch"}},
-		{"", "configmaps", []string{"create", "patch"}},
+		{"", "configmaps", []string{"create", "get", "patch"}},
 		{"", "configmaps/status", nil},
 		{"", "pods", []string{"list", "watch"}},
 		{"", "pods/status", nil},

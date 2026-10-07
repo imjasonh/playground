@@ -580,6 +580,27 @@ framework skips objects whose owner UID label names another owner: an earlier
 object with that name, or an object of another kind whose controller has the
 same name.
 
+Server-side apply creates an object that doesn't exist and takes over one
+that does, so before it applies an object that no cache holds, the framework
+reads the object from the API server. For `Own`, an object without the
+controller label and the owner annotation is someone else's: a person's, or
+another program's. Taking it over would delete it with the owner, so the
+reconcile fails with an error that names the object, unless the controller
+has the `kube.Adopts` option. An object with the controller label whose owner
+annotation names another owner fails the reconcile even with the option,
+whether it comes from the cache or from the read, because otherwise two
+owners would take the object from each other on every reconcile. After the
+first apply, the cache of owned objects holds the object, so the read happens
+about once per object. An object that another client creates between the
+read and the apply is still taken over.
+
+For `Apply`, the read gives the document the target's UID, and a target that
+doesn't exist fails the reconcile, because nothing would own or delete an
+object that `Apply` created. A target that no cache holds is read on every
+reconcile, but the read lets the framework skip the apply by the same rule as
+for a cached target. No cache holds a local type, so the framework doesn't
+read one, and `Apply` creates a local object that doesn't exist.
+
 Finalizer changes, `Apply`, and deletes target an object that must already
 exist, so they carry its UID. An apply with a UID fails instead of creating an
 object, and a delete with a UID precondition fails if the name now belongs to
@@ -1360,11 +1381,11 @@ the compiler's export data. Each instantiation of `Get`, `List`, `Fetch`,
 function that contains the call. The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
-`get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
-needs `create` and `patch`, and `Delete` needs `delete`. A `Fetch` that
-passes a type with a known scope and constants as the namespace and name
-needs `get` on only that object, so the rule names it. The analysis reads
-the constants at the call, so a `Fetch` in a generic helper still needs
+`get`, `Own` needs `get`, `list`, `watch`, `create`, `patch`, and `delete`,
+`Apply` needs `get`, `create`, and `patch`, and `Delete` needs `delete`. A
+`Fetch` that passes a type with a known scope and constants as the namespace
+and name needs `get` on only that object, so the rule names it. The analysis
+reads the constants at the call, so a `Fetch` in a generic helper still needs
 `get` on every object of the type. When a type passed to
 `Apply` has a field whose `json` tag names it `status`, the rules also grant
 `patch` on the type's `status` subresource. `controller-gen` reads

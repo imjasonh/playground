@@ -479,6 +479,28 @@ func TestOwnBody(t *testing.T) {
 	}
 }
 
+func TestOwnRefusesAnotherOwnersObject(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	mine := &deploymentProjection{Object: Meta("mine", nil)}
+	mine.Namespace, mine.Annotations = "shop", map[string]string{OwnerAnnotation: "shop/w1"}
+	theirs := &deploymentProjection{Object: Meta("theirs", nil)}
+	theirs.Namespace, theirs.Annotations = "shop", map[string]string{OwnerAnnotation: "shop/w2"}
+	ctx, rec := Fake(t.Context(), parent, mine, theirs)
+	if Own(ctx, &deploymentProjection{Object: Meta("mine", nil)}) == nil || rec.Err() != nil {
+		t.Fatalf("Own of the owner's object failed: %v", rec.Err())
+	}
+	if Own(ctx, &deploymentProjection{Object: Meta("theirs", nil)}) != nil {
+		t.Error("Own returned another owner's object")
+	}
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "already has another owner, shop/w2") {
+		t.Errorf("Err = %v, want an error that names the other owner", err)
+	}
+	if got := Owned[deploymentProjection](rec); len(got) != 1 || got[0].Name != "mine" {
+		t.Errorf("Owned = %v, want only the owner's object", got)
+	}
+}
+
 func TestMatches(t *testing.T) {
 	observed := &deploymentProjection{Object: Meta("web", map[string]string{"app": "web", "extra": "x"})}
 	observed.Spec.Replicas = new(int32(3))

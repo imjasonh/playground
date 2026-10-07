@@ -319,6 +319,13 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 // their owner is. The framework doesn't apply desired's status, but changes
 // to an owned object, including its status, run the owner's reconcile again.
 //
+// Own doesn't take over an object that the controller didn't create. Before
+// the first write to an object that isn't in the controller's cache, the
+// framework reads the object from the API server. If it exists without the
+// controller's labels, the reconcile fails with an error that names it,
+// unless the controller has the Adopts option. If the controller created the
+// object for another owner, the reconcile fails even with Adopts.
+//
 // The namespace of desired defaults to the owner's. An owned object may be in
 // another namespace, or cluster-scoped; the framework then adds a finalizer
 // to the owner so it can delete the owned object itself.
@@ -347,6 +354,12 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 		return nil
 	}
 	observed := src.peek(m.Key())
+	if observed != nil {
+		if owner, ok := metaOfAny(observed).Annotations[s.c.labels.owner]; ok && owner != s.key.String() {
+			s.fail(errOwned(ti, m.Key(), owner))
+			return nil
+		}
+	}
 	s.intents = append(s.intents, intent{kind: intentOwn, ti: ti, res: res, obj: desired, observed: observed})
 	if observed == nil {
 		return nil
@@ -360,6 +373,11 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // returns nil, the framework applies the fields with server-side apply. The
 // object isn't deleted with the reconciled object, and fields that a later
 // reconcile stops applying are removed.
+//
+// The object must exist. If no cache holds it, the framework reads it from
+// the API server first, and if it doesn't exist, the reconcile fails, because
+// nothing would own or delete an object that Apply created. Apply still
+// creates a missing object of a local type.
 //
 // If desired's type has a status, the framework then applies the status to
 // the object's status subresource, in a second request with the same field

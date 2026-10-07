@@ -211,6 +211,11 @@ func TestApplyStatusWithoutSubresource(t *testing.T) {
 	e2e.Run(t, &kube.Manager{Name: "noter-e2e"}, kube.For[Widget](noter{}, kube.Named("noter")))
 	ns := e2e.Namespace(t, c)
 	remove(t, c, client.Path(group+"/v1", "widgets", ns, "w"))
+	if err := c.Create(t.Context(), client.Path("v1", "configmaps", ns, ""), map[string]any{
+		"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "w-notes"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
 	createWidget(t, c, ns, "w", 1)
 	state := func(size, status, message string) func() error {
 		return func() error {
@@ -520,10 +525,12 @@ func TestApplyGivesUpWhatAFailedReconcileApplied(t *testing.T) {
 	poll := client.Path(group+"/v1", "polls", ns, "p")
 	target := client.Path("v1", "configmaps", ns, "target")
 	remove(t, c, client.Path(group+"/v1", "widgets", ns, "w"), poll, target)
-	if err := c.Create(t.Context(), client.Path("v1", "configmaps", ns, ""), map[string]any{
-		"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "target"},
-	}, nil); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"target", "w-bad"} {
+		if err := c.Create(t.Context(), client.Path("v1", "configmaps", ns, ""), map[string]any{
+			"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": name},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 	e2e.Run(t, &kube.Manager{Name: "failing-voter-e2e", Namespace: ns}, kube.For[Poll](&tally{}, kube.Named("failing-tally")), kube.For[Widget](failingVoter{}, kube.Named("failing-voter")))
 	e2e.Eventually(t, 30*time.Second, func() error {
