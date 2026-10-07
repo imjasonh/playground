@@ -869,6 +869,48 @@ func TestMirrorFailureMakesExternalSyncedUnknown(t *testing.T) {
 	}
 }
 
+// A GitRepository's URL can name any server that the core program reaches,
+// and git prints the body of the server's error response. Conditions and the
+// errors that kube shows have git's own messages without the body.
+func TestReportsLeaveOutWhatTheServerSent(t *testing.T) {
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal-only: db_password=hunter2", http.StatusInternalServerError)
+	}))
+	t.Cleanup(hs.Close)
+	check := func(what, msg string) {
+		t.Helper()
+		if strings.Contains(msg, "hunter2") || !strings.Contains(msg, "The requested URL returned error: 500") {
+			t.Errorf("%s: %q, want git's own message without the server's", what, msg)
+		}
+	}
+
+	t.Log("The first fetch fails.")
+	f := newFixture(t)
+	f.repo.Spec.URL = hs.URL + "/app.git"
+	_, err := f.tryReconcile()
+	if err == nil {
+		t.Fatal("reconcile succeeded without fetching from the external repository")
+	}
+	check("the reconcile's error", err.Error())
+	check("Ready", f.condition("Ready").Message)
+	check("ExternalSynced", f.condition("ExternalSynced").Message)
+
+	t.Log("After a sync, the URL changes to the server's, so fetches and pushes fail.")
+	f = newFixture(t)
+	f.branches()
+	f.repo.Spec.URL = hs.URL + "/app.git"
+	f.fetch()
+	if c := f.condition("ExternalSynced"); c.Reason != "SyncFailed" {
+		t.Errorf("ExternalSynced = %+v, want the reason SyncFailed", c)
+	}
+	check("ExternalSynced", f.condition("ExternalSynced").Message)
+	err = f.finalize()
+	if err == nil {
+		t.Fatal("Finalize succeeded without pushing to the external repository")
+	}
+	check("Finalize's error", err.Error())
+}
+
 // A branch whose heads the mirror can't compare stays as it is on each
 // side and doesn't land, and the other branches still sync.
 func TestReportsBranchesItCantCompare(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -153,9 +154,13 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		default:
 			ready.Reason = "MirrorFailed"
 		}
+		err = brief(repo, err)
 		ready.Message = err.Error()
 		kube.SetCondition(&repo.Status.Conditions, kube.Condition{Type: "ExternalSynced", Status: kube.Unknown, Reason: ready.Reason, Message: ready.Message})
 		return err
+	}
+	if rep.Err != nil {
+		rep.Err = brief(repo, rep.Err)
 	}
 	p = r.polled(key, p, now, interval, rep, push)
 
@@ -220,6 +225,18 @@ func failures(failed map[string]error) string {
 	return strings.Join(parts, ", ")
 }
 
+// brief returns err, from a sync of repo, with git's output cut down to
+// git's own messages, for conditions and the errors that kube shows. repo's
+// URL can name any server that the core program reaches, so only the log
+// gets the whole error, with what the server sent.
+func brief(repo *gitk8s.GitRepository, err error) error {
+	short := git.Brief(err)
+	if short.Error() != err.Error() {
+		slog.Warn("syncing the repository failed", "namespace", repo.Namespace, "repository", repo.Name, "err", err)
+	}
+	return short
+}
+
 // noticeDivergence triggers a reconcile of each of repo's GitBranches whose
 // status.diverged doesn't match diverged, so the merge controller updates
 // it. A divergence doesn't move the branch's head in the mirror, so nothing
@@ -248,7 +265,7 @@ func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.GitRepository)
 		Remote: func() (git.Remote, error) { return credentials.Remote(ctx, spec) },
 	})
 	if err != nil {
-		return err
+		return brief(repo, err)
 	}
 	var unsynced []string
 	if len(rep.Pending) > 0 {
@@ -261,7 +278,7 @@ func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.GitRepository)
 		unsynced = append(unsynced, "couldn't be compared with the mirror on "+failures(rep.Failed))
 	}
 	if rep.Err != nil {
-		unsynced = append(unsynced, rep.Err.Error())
+		unsynced = append(unsynced, brief(repo, rep.Err).Error())
 	}
 	if len(unsynced) > 0 {
 		return fmt.Errorf("the mirror keeps its copy until the external repository has every change in it, but the external repository %s; to delete the copy and the changes, remove the finalizer %s",

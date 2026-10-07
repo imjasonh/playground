@@ -488,6 +488,25 @@ The mirror reaches external repositories only over the network. A `url`
 that's a local path or a `file` URL fails, so a `GitRepository` can't read
 another namespace's copy from the core program's volume.
 
+Over the network, though, the core program reaches any address that its Pod
+can, such as another namespace's Service, a node, or a cloud's metadata
+service. Whoever can create a `GitRepository` can make the core program send
+git's HTTP requests to those addresses, even when NetworkPolicies keep their
+own Pods from reaching them. The address can be in the `url`, or in a
+redirect from the server that the `url` names, because git follows a
+redirect of its first request. The `GitRepository`'s conditions show git's
+exit status and git's own messages, such as
+`fatal: unable to access 'https://10.0.0.1/app.git/': The requested URL returned error: 403`.
+They say whether the address answered, and with what HTTP status, but leave
+out the body of an error response, which git prints after `remote:`. The
+core program logs it instead.
+
+`generate` doesn't limit where the core program connects. To limit it, add
+an egress NetworkPolicy for the core program's Pod that allows only the API
+server, DNS, your external repositories, and Octo STS and GitHub if you use
+them. Without one, grant `create` on `gitrepositories` only to people who
+may send those requests.
+
 ## Events
 
 The controllers record an event about a `GitBranch` each time they push a
