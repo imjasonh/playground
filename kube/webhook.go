@@ -207,12 +207,22 @@ func (ws *webhookServer) start(ctx context.Context) error {
 	return nil
 }
 
+// stop stops accepting connections and gives requests in progress serveGrace
+// to finish. The API server sends a Pod that's stopping admission requests
+// until its endpoints drop the Pod, and fails the requests that a webhook
+// doesn't answer.
 func (ws *webhookServer) stop() {
 	if ws.stopRefresh != nil {
 		ws.stopRefresh()
 		<-ws.refreshed
 	}
-	if ws.srv != nil {
+	if ws.srv == nil {
+		return
+	}
+	ws.ready.Store(false)
+	ctx, cancel := context.WithTimeout(context.Background(), serveGrace)
+	defer cancel()
+	if err := ws.srv.Shutdown(ctx); err != nil {
 		ws.srv.Close()
 	}
 }

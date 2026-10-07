@@ -309,10 +309,10 @@ func TestManifestsServe(t *testing.T) {
 	}
 }
 
-// TestManifestsPreStop checks that a program that serves sleeps before it
-// stops, so that its Service sends connections to other Pods first, unless
-// it has a volume. Then it runs one Pod, which a rollout stops before it
-// starts the next.
+// TestManifestsPreStop checks that a program that serves or has webhooks
+// sleeps before it stops, so that its Service sends connections to other
+// Pods first, unless it has a volume. Then it runs one Pod, which a rollout
+// stops before it starts the next.
 func TestManifestsPreStop(t *testing.T) {
 	const sleep = `"lifecycle":{"preStop":{"sleep":{"seconds":5}}}`
 	o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1, volumeSize: "1Gi"}
@@ -324,7 +324,9 @@ func TestManifestsPreStop(t *testing.T) {
 		{"a program that serves", installPlan{serves: true}, true},
 		{"a program that serves and has webhooks", installPlan{serves: true, webhooks: true}, true},
 		{"a program that serves with a volume", installPlan{serves: true, volume: "/var/lib/prog"}, false},
-		{"a program with webhooks", installPlan{webhooks: true}, false},
+		{"a program with webhooks", installPlan{webhooks: true}, true},
+		{"a program with webhooks and a volume", installPlan{webhooks: true, volume: "/var/lib/prog"}, false},
+		{"a program that only reconciles", installPlan{}, false},
 	} {
 		tc.plan.cluster, tc.plan.local = grants{}, grants{}
 		docs := o.manifests("ref", &tc.plan)

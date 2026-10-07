@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/kube/internal/jsonpatch"
 )
@@ -62,6 +66,85 @@ func (gizmoReconciler) Reconcile(context.Context, *gizmo) error { return nil }
 
 func testManager() *Manager {
 	return &Manager{Domain: "kube.imjasonh.github.io", log: slog.Default(), metrics: newMetrics()}
+}
+
+func TestWebhookServerStopLetsRequestsFinish(t *testing.T) {
+	grace := serveGrace
+	serveGrace = time.Second
+	t.Cleanup(func() { serveGrace = grace })
+	ws := &webhookServer{m: testManager(), mux: http.NewServeMux()}
+	started := make(chan struct{}, 2)
+	finish, canceled := make(chan struct{}), make(chan struct{})
+	ws.handle("/finish", func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-finish
+		_, _ = io.WriteString(w, "finished")
+	})
+	ws.handle("/hang", func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-r.Context().Done()
+		close(canceled)
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ws.srv = &http.Server{Handler: ws.mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = ws.srv.Serve(ln) }()
+	ws.ready.Store(true)
+	post := func(path string) <-chan string {
+		body := make(chan string, 1)
+		go func() {
+			resp, err := http.Post("http://"+addr+path, "application/json", nil)
+			if err != nil {
+				body <- err.Error()
+				return
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			body <- string(b)
+		}()
+		return body
+	}
+	finished := post("/finish")
+	post("/hang")
+	<-started
+	<-started
+
+	stopping := time.Now()
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		ws.stop()
+	}()
+	waitFor(t, "the server to stop accepting connections", func() bool {
+		c, err := net.Dial("tcp", addr)
+		if err == nil {
+			c.Close()
+		}
+		return err != nil
+	})
+	if ws.serving() {
+		t.Error("the server is still ready once it stops")
+	}
+	close(finish)
+	if body := <-finished; body != "finished" {
+		t.Errorf("a request in progress when the server stopped got %q, want it to finish", body)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the context of a request that didn't finish wasn't canceled")
+	}
+	if d := time.Since(stopping); d < serveGrace {
+		t.Errorf("a request's context was canceled %v after the server stopped, want %v", d, serveGrace)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(30 * time.Second):
+		t.Fatal("stop didn't return")
+	}
 }
 
 func TestConvert(t *testing.T) {

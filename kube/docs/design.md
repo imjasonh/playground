@@ -1075,6 +1075,14 @@ the webhook configurations with the bundle, which is idempotent, and deletes
 configurations that its program no longer needs, so that a dropped webhook
 doesn't fail every request for its type.
 
+The API server sends admission requests to a Pod that's stopping until the
+Pod's endpoints drop it, and kube's webhooks have `failurePolicy: Fail`, so a
+request that a stopping program refuses or cuts off fails the create or
+update. So `generate` gives a program with webhooks the `preStop` sleep that
+[HTTP endpoints](#http-endpoints) describes, and when the program stops, the
+webhook server stops accepting connections and gives requests in progress up
+to 10 seconds (`serveGrace`) to finish.
+
 ### HTTP endpoints
 
 `kube.Serve` returns a `Controller` that doesn't reconcile, so the manager runs
@@ -1460,8 +1468,9 @@ but the kubelet restarts a container whose startup probe fails too many times,
 so a program whose caches are slow to sync could restart over and over. A
 startup probe on `/healthz` passes once the server listens, which can be
 before `/readyz` passes, so the Pod would still wait for the readiness probe.
-The liveness probe keeps Kubernetes' defaults. A program that serves and has
-no `kube.Volume` gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
+The liveness probe keeps Kubernetes' defaults. A program that serves or has
+webhooks, and has no `kube.Volume`, gets the `preStop` sleep that
+[HTTP endpoints](#http-endpoints)
 describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
 write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
 Pod that writes more instead of letting it fill the node's disk. A program that

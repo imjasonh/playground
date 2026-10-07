@@ -829,7 +829,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
 	}
 	container = append(container, field{"volumeMounts", mounts})
-	if p.serves && p.volume == "" {
+	if (p.serves || p.webhooks) && p.volume == "" {
 		// The Service sends a Pod that's stopping new connections until its
 		// endpoints drop the Pod, and the program refuses them once it
 		// stops. The kubelet sleeps before it signals the program, so by
