@@ -451,6 +451,77 @@ func TestRiskOfSquashedAgentCommits(t *testing.T) {
 	}
 }
 
+// TestRiskOfResolvedConflicts rates a branch, then lands a change on the
+// parent that conflicts with the branch's, then rates the merge that
+// resolves the conflict, with the message that check-conflicts gives it.
+// The merge doesn't make the branch's change, so the check rates it again.
+func TestRiskOfResolvedConflicts(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	for _, c := range []struct {
+		name, path, start, branch, main, resolved string
+		body, level, message                      string
+	}{{
+		name: "by git's union driver", path: "go.sum",
+		start: "a v1\n", branch: "a v1\nc v1\n", main: "a v1\nb v1\n", resolved: "a v1\nc v1\nb v1\n",
+		body:  "Git merged these files with its union driver, which keeps the lines of both sides:\n\ngo.sum\n\n" + git.FixerTrailer + ": conflicts",
+		level: "low", message: "risk is low: changes 0 lines in 1 files, not counting go.sum",
+	}, {
+		name: "by the agent", path: "a.txt",
+		start: "one\ntwo\nthree\n", branch: "one\nbranch\nthree\n", main: "one\nmain\nthree\n", resolved: "one\nbranch\nmain\nthree\n",
+		body:  "kept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts\n" + git.AgentTrailer + ": conflicts",
+		level: "high", message: "risk is high: has changes from AI agents",
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			w := srv.NewWork(t, "app")
+			w.Write(c.path, c.start)
+			start := w.Commit("main")
+			w.Push("main")
+			w.Branch("c/x", start)
+			w.Write(c.path, c.branch)
+			head := w.Commit("change")
+			w.Push("c/x")
+
+			b := &Branch{Object: kube.Meta("app-c-x", nil)}
+			b.Namespace = "default"
+			b.Spec = gitk8s.GitBranchSpec{
+				Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: start,
+				Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
+			}
+			repo, _ := srv.Repository("app")
+			risk := check
+			risk.Remote = srv.RemoteFor
+			r := checks.NewReconciler[Branch](risk, &checks.Config{CacheDir: t.TempDir()})
+			reconcileRisk := func() *gitk8s.CheckResult {
+				t.Helper()
+				ctx, _ := kube.Fake(t.Context(), b, repo)
+				if err := r.Reconcile(ctx, b); err != nil {
+					t.Fatal(err)
+				}
+				return b.Status.Checks.Result
+			}
+			if res := reconcileRisk(); res.Outputs["level"] != "low" {
+				t.Fatalf("result = %+v, want low risk for the branch's own change", res)
+			}
+
+			w.Branch("main", start)
+			w.Write(c.path, c.main)
+			b.Spec.ParentHead = w.Commit("land another branch")
+			w.Push("main")
+			w.Branch("c/x", head)
+			if _, err := w.TryGit("merge", "--quiet", "--no-edit", b.Spec.ParentHead); err == nil {
+				t.Fatalf("merging main into c/x succeeded, want a conflict in %s", c.path)
+			}
+			w.Write(c.path, c.resolved)
+			b.Spec.Head = w.Commit("Merge main into c/x\n\n" + c.body)
+			w.Push("c/x")
+			if res := reconcileRisk(); res.Commit != b.Spec.Head || res.Outputs["level"] != c.level || res.Message != c.message {
+				t.Errorf("result for the merge = %+v, want level %s and %q", res, c.level, c.message)
+			}
+		})
+	}
+}
+
 func TestRiskOfLinkedReplacements(t *testing.T) {
 	*maxLines, *sensitive = 10, ""
 	replaceA := func(dir string) string {

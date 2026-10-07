@@ -1822,7 +1822,9 @@ can change.
 Each commit that the check pushes makes a new head, so every check runs
 again on it. A merge, and a replay of the branch's whole change as one
 commit, have a `Git-K8s-Fixer: conflicts` trailer and count toward
-`maxAutomatedCommits`. A replay of one commit keeps that commit's message,
+`maxAutomatedCommits`. When the agent resolves the conflicts, the merge or
+replay also has a `Git-K8s-Agent: conflicts` trailer, which makes `check-risk`
+rate the branch high. A replay of one commit keeps that commit's message,
 so it counts only if the original did, but the check pushes replays only
 while the branch is under the limit, like any fix. When neither git nor the
 agent resolves the conflicts, the check fails with the reason and leaves the
