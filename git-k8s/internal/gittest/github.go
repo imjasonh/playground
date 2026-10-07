@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -30,14 +29,15 @@ const (
 // administrator's credentials.
 type GitHub struct {
 	*Server
+	// BaseURL is the fake's base URL, for the -fake-github flag.
+	BaseURL string
 	// Fake is the server, which records the tokens it issued and the check
 	// runs it holds.
 	Fake *gitserver.GitHub
 }
 
-// NewGitHub starts a fake GitHub and points the -fake-github flag at it
-// until the test ends, so the test binary must link package credentials.
-// The fake can't ask kube.Fake who a token belongs to, so its exchange
+// NewGitHub starts a fake GitHub. The fake can't ask kube.Fake who a token
+// belongs to, so its exchange
 // takes any token that kube.Fake's RequestToken returns as one with the
 // claims Issuer, Subject, and Audience. A test checks the audience that a
 // token really has with kube.ReviewToken.
@@ -58,31 +58,22 @@ func NewGitHub(t testing.TB) *GitHub {
 		},
 	}
 	base := Serve(t, fake)
-	return &GitHub{Server: &Server{URL: base + "/acme", Username: fake.Username, Password: fake.Password}, Fake: fake}
+	return &GitHub{Server: &Server{URL: base + "/acme", Username: fake.Username, Password: fake.Password}, BaseURL: base, Fake: fake}
 }
 
 // servers counts the servers that Serve started.
 var servers atomic.Int64
 
 // Serve serves h under a path that no other server in the test binary has,
-// points the -fake-github flag at that URL until the test ends, and returns
-// the URL. Package credentials caches GitHub tokens by the URL, and a
-// server can get the port of one that an earlier test closed, so without
-// the path, a test could get a token that only another test's fake accepts.
+// until the test ends, and returns the URL, for the -fake-github flag.
+// Package credentials caches GitHub tokens by the URL, and a server can get
+// the port of one that an earlier test closed, so without the path, a test
+// could get a token that only another test's fake accepts.
 func Serve(t testing.TB, h http.Handler) string {
 	t.Helper()
-	f := flag.Lookup("fake-github")
-	if f == nil {
-		t.Fatal("no -fake-github flag; the test must link package credentials")
-	}
 	path := fmt.Sprintf("/github-%d", servers.Add(1))
 	hs := httptest.NewServer(http.StripPrefix(path, h))
 	t.Cleanup(hs.Close)
-	old := f.Value.String()
-	if err := f.Value.Set(hs.URL + path); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { f.Value.Set(old) })
 	return hs.URL + path
 }
 
