@@ -3136,7 +3136,14 @@ without an error, so the mirror removes that lock once it's stale, like the
 others.
 
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
-`emptyDir` volume that `generate` mounts at `/tmp`.
+`emptyDir` volume that `generate` mounts at `/tmp`, and so does
+`git-k8s-deps`. Like the mirror, they turn off the maintenance that a fetch
+would start. Instead, at most once an hour for each copy, the reconcile that
+opens the copy deletes the refs that the copy no longer needs, such as those
+of deleted branches, and then runs maintenance if git says that the copy
+needs it. The reconcile logs any failure and goes on. The program removes a
+copy that no reconcile has opened for a week, such as the copy for a
+`GitRepository` that no longer exists.
 
 `generate` also writes a Service for the core program, which routes port 80
 to port 8081 of its Pod, where one handler serves both the mirror and the

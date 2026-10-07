@@ -201,7 +201,10 @@ func (u *updater) init() error {
 		}
 	}
 	u.proxy = newProxy(urls, u.interval/2, u.clock)
-	u.cache = &gitk8s.Cache{Git: &u.cfg.Git, Dir: u.cfg.CacheDir}
+	if u.remote == nil {
+		u.remote = mirror.Remote
+	}
+	u.cache = &gitk8s.Cache{Git: &u.cfg.Git, Dir: u.cfg.CacheDir, Remote: u.remote}
 	return nil
 }
 
@@ -338,11 +341,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	kube.RequeueAfter(ctx, u.interval)
 	log := slog.With("namespace", b.Namespace, "repository", repo.Name, "parent", parent)
 
-	remoteFor := mirror.Remote
-	if u.remote != nil {
-		remoteFor = u.remote
-	}
-	remote, err := remoteFor(ctx, repo)
+	remote, err := u.remote(ctx, repo)
 	if err != nil {
 		return err
 	}
