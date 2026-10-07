@@ -152,6 +152,9 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	if len(o.platforms) == 0 {
 		return errors.New("generate: -platform needs at least one platform")
 	}
+	if err := o.pinImageFlags(ctx); err != nil {
+		return err
+	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok || bi.Path == "" || bi.Path == "command-line-arguments" {
 		return errors.New("generate: can't tell which package to build; run go run PACKAGE generate from the program's module")
@@ -166,6 +169,9 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return err
 	}
 	docs := o.manifests(ref, p)
+	if err := o.pinImages(ctx, docs); err != nil {
+		return err
+	}
 	var out bytes.Buffer
 	fmt.Fprintf(&out, "# %s, built by %s generate from %s.\n", ref, o.program, bi.Path)
 	for i, d := range docs {
