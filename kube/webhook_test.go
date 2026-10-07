@@ -64,7 +64,7 @@ type gizmoReconciler struct{}
 func (gizmoReconciler) Reconcile(context.Context, *gizmo) error { return nil }
 
 func testManager() *Manager {
-	return &Manager{Domain: "kube.imjasonh.github.io", log: slog.Default(), metrics: newMetrics()}
+	return &Manager{log: slog.Default(), metrics: newMetrics()}
 }
 
 func TestConvert(t *testing.T) {

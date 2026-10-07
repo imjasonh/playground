@@ -364,10 +364,79 @@ func TestSpecChangedIgnoresStatusAndResourceVersion(t *testing.T) {
 	}
 }
 
+// Clusters store these keys on objects, and admission policies copy them, so
+// a change to one is a breaking change.
+func TestKeysAreStable(t *testing.T) {
+	keys := newLabelKeys()
+	for _, tc := range []struct{ got, want string }{
+		{ControllerLabel, "kube.imjasonh.github.io/controller"},
+		{OwnerUIDLabel, "kube.imjasonh.github.io/owner-uid"},
+		{OwnerAnnotation, "kube.imjasonh.github.io/owner"},
+		{FinalizerName("website"), "kube.imjasonh.github.io/website"},
+		{keys.controller, ControllerLabel},
+		{keys.ownerUID, OwnerUIDLabel},
+		{keys.owner, OwnerAnnotation},
+		{keys.applied, "kube.imjasonh.github.io/applied"},
+		{keys.cleanup, "kube.imjasonh.github.io/cleanup"},
+		{keys.managedBy, "kube.imjasonh.github.io/managed-by"},
+		{keys.leaseGroup, "kube.imjasonh.github.io/lease-group"},
+		{keys.leaseRole, "kube.imjasonh.github.io/lease-role"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("key = %q, want %q", tc.got, tc.want)
+		}
+	}
+}
+
+func TestDefaultName(t *testing.T) {
+	for _, tc := range []struct{ program, kind, want string }{
+		{"shop", "Website", "shop-website"},
+		{"website", "Website", "website"},
+		{"", "Website", "website"},
+		{"My_App", "Widget", "my-app-widget"},
+		{"e2e.test", "ConfigMap", "e2e.test-configmap"},
+		{"_tool.", "Widget", "tool-widget"},
+	} {
+		if got := defaultName(tc.program, tc.kind); got != tc.want {
+			t.Errorf("defaultName(%q, %q) = %q, want %q", tc.program, tc.kind, got, tc.want)
+		}
+	}
+	long, longer := defaultName(strings.Repeat("a", 44), "Widget"), defaultName(strings.Repeat("a", 45), "Widget")
+	for _, name := range []string{long, longer} {
+		if !nameRE.MatchString(name) || !strings.HasPrefix(name, strings.Repeat("a", 41)+"-") {
+			t.Errorf("long default name %q, want the first 41 characters and a hash", name)
+		}
+	}
+	if long == longer {
+		t.Errorf("two long program names both default to %q", long)
+	}
+}
+
+func TestDuplicateControllerNames(t *testing.T) {
+	m := testManager()
+	m.Name = "shop"
+	first, second := For[gizmo](gizmoReconciler{}), For[gizmo](gizmoReconciler{})
+	m.controllers = []Controller{first, second}
+	if err := first.prepare(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if c := first.(*controller[gizmo, *gizmo]); c.name != "shop-gizmo" || c.finalizer != FinalizerName("shop-gizmo") {
+		t.Errorf("name = %q, finalizer = %q, want shop-gizmo", c.name, c.finalizer)
+	}
+	if err := second.prepare(t.Context(), m); err == nil || !strings.Contains(err.Error(), `two controllers are named "shop-gizmo"`) || !strings.Contains(err.Error(), "kube.Named") {
+		t.Errorf("err = %v, want one about two controllers named shop-gizmo", err)
+	}
+	named := For[gizmo](gizmoReconciler{}, Named("gizmo-sizes"))
+	m.controllers = []Controller{first, named}
+	if err := named.prepare(t.Context(), m); err != nil || named.controllerName() != "gizmo-sizes" {
+		t.Errorf("named controller: name = %q, err = %v", named.controllerName(), err)
+	}
+}
+
 func TestOwnBody(t *testing.T) {
 	wti, _ := typeInfoFor[widget, *widget]()
 	dti, _ := typeInfoFor[deploymentProjection, *deploymentProjection]()
-	c := &controller[widget, *widget]{core: core{name: "widgets", ti: wti, res: resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, labels: newLabelKeys("kube.test")}}
+	c := &controller[widget, *widget]{core: core{name: "widgets", ti: wti, res: resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, labels: newLabelKeys()}}
 	parent := &widget{}
 	parent.Namespace, parent.Name, parent.UID = "shop", "w1", "uid-1"
 
@@ -386,10 +455,10 @@ func TestOwnBody(t *testing.T) {
 		t.Error("owned body has a uid")
 	}
 	labels := meta["labels"].(map[string]any)
-	if labels["app"] != "w1" || labels["kube.test/controller"] != "widgets" || labels["kube.test/owner-uid"] != "uid-1" {
+	if labels["app"] != "w1" || labels[ControllerLabel] != "widgets" || labels[OwnerUIDLabel] != "uid-1" {
 		t.Errorf("labels = %v", labels)
 	}
-	if meta["annotations"].(map[string]any)["kube.test/owner"] != "shop/w1" {
+	if meta["annotations"].(map[string]any)[OwnerAnnotation] != "shop/w1" {
 		t.Errorf("annotations = %v", meta["annotations"])
 	}
 	refs := meta["ownerReferences"].([]any)
@@ -415,6 +484,28 @@ func TestOwnBody(t *testing.T) {
 	meta = body["metadata"].(map[string]any)
 	if meta["uid"] != "target-uid" || meta["labels"] != nil || meta["ownerReferences"] != nil {
 		t.Errorf("apply body metadata = %v", meta)
+	}
+}
+
+func TestOwnRefusesAnotherOwnersObject(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	mine := &deploymentProjection{Object: Meta("mine", nil)}
+	mine.Namespace, mine.Annotations = "shop", map[string]string{OwnerAnnotation: "shop/w1"}
+	theirs := &deploymentProjection{Object: Meta("theirs", nil)}
+	theirs.Namespace, theirs.Annotations = "shop", map[string]string{OwnerAnnotation: "shop/w2"}
+	ctx, rec := Fake(t.Context(), parent, mine, theirs)
+	if Own(ctx, &deploymentProjection{Object: Meta("mine", nil)}) == nil || rec.Err() != nil {
+		t.Fatalf("Own of the owner's object failed: %v", rec.Err())
+	}
+	if Own(ctx, &deploymentProjection{Object: Meta("theirs", nil)}) != nil {
+		t.Error("Own returned another owner's object")
+	}
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "already has another owner, shop/w2") {
+		t.Errorf("Err = %v, want an error that names the other owner", err)
+	}
+	if got := Owned[deploymentProjection](rec); len(got) != 1 || got[0].Name != "mine" {
+		t.Errorf("Owned = %v, want only the owner's object", got)
 	}
 }
 

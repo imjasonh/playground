@@ -51,7 +51,7 @@ const FixerTrailer = "Git-K8s-Fixer"
 // ControllerLabel is the label that kube puts on each object that a
 // controller declares with kube.Own. Its value is the controller's name,
 // which for a check is check- followed by the check's name.
-const ControllerLabel = "kube.imjasonh.github.io/controller"
+const ControllerLabel = kube.ControllerLabel
 
 // GoTestCheck is the name of the check that runs a branch's tests in Pods
 // in the repository's namespace, and GoTestController is the name of its

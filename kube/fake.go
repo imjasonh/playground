@@ -48,7 +48,7 @@ import (
 func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (context.Context, *Recorder) {
 	w := newFakeWorld(append([]any{obj}, world...))
 	ti, err := typeInfoFor[T, P]()
-	c := &core{name: "test", labels: newLabelKeys("test"), log: slog.Default()}
+	c := &core{name: "test", labels: newLabelKeys(), log: slog.Default()}
 	if err == nil {
 		c.ti = ti
 		c.res, _ = w.resolve(ctx, ti)
