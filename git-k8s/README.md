@@ -1159,15 +1159,15 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   core program's `-go-cache-namespace`, the policy also lets the Pod reach
   `go-cache`, as
   [Share modules and build outputs](#share-modules-and-build-outputs)
-  describes. When the core program's `-goproxy` isn't `off`, the policy also
+  describes. With the core program's `-test-pod-internet`, the policy also
   lets the Pod reach ports 80 and 443 on IPv4 addresses outside the private
   ranges (`10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`), the shared
   address space (`100.64.0.0/10`), and the link-local range
   (`169.254.0.0/16`). Those ranges usually hold the cluster's Pods,
   Services, and nodes, and a cloud's metadata server. If your cluster gives
   Pods, Services, or nodes addresses outside those ranges, the policy lets
-  test Pods reach those addresses on ports 80 and 443 too, so leave
-  `-goproxy` `off` there.
+  test Pods reach those addresses on ports 80 and 443 too, so don't set
+  `-test-pod-internet` there.
 - If fetching fails, the check starts a new Pod 30 seconds later, and 60
   seconds after a second failure, so its three Pods outlast a restart of the
   core program.
@@ -1222,7 +1222,8 @@ kubelet's minimum, instead of the default 30. Owner references delete the
 Pods with their `GitBranch`.
 Set `-runtime-class` to run the Pods under a sandboxing runtime such as
 gVisor, and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change
-the rest. If you set `-goproxy`, set the same value on the core program.
+the rest. If `-goproxy` names a proxy outside the cluster, set the core
+program's `-test-pod-internet`.
 
 The test container runs the Go in `-go-image` with `GOTOOLCHAIN=local`, so
 the tests of a module that needs a newer Go fail until you set `-go-image`
@@ -3710,10 +3711,11 @@ order:
    On a cluster that enforces NetworkPolicies, the core program's
    NetworkPolicy then limits what test Pods can reach, as
    [Sandboxed checks](#sandboxed-checks) describes. If you set
-   `check-gotest`'s `-goproxy`, set the same value on the core program, and
-   if the proxy runs in the cluster, add a NetworkPolicy of your own that
-   lets test Pods reach it. If you set `check-gotest`'s `-go-cache`, set the
-   core program's `-go-cache-namespace`, as
+   `check-gotest`'s `-goproxy` to a proxy outside the cluster, set the core
+   program's `-test-pod-internet`. If the proxy runs in the cluster, add a
+   NetworkPolicy of your own that lets test Pods reach it. If you set
+   `check-gotest`'s `-go-cache`, set the core program's
+   `-go-cache-namespace`, as
    [Share modules and build outputs](#share-modules-and-build-outputs)
    describes.
 5. Map the checks' service accounts to their checks in the

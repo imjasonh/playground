@@ -11,10 +11,11 @@
 // controller label for this check and is Pending, as a Pod is until its
 // init containers finish. A NetworkPolicy that the core program owns lets
 // the Pods with that label reach only the mirror, the cluster's DNS
-// servers, and what the core program's -goproxy and -go-cache-namespace
-// allow, so this program needs no permission to change NetworkPolicies. The
-// check reports the Pod's result once the test container exits or an init
-// container fails, with the end of the test output when the tests fail.
+// servers, and what the core program's -test-pod-internet and
+// -go-cache-namespace allow, so this program needs no permission to change
+// NetworkPolicies. The check reports the Pod's result once the test
+// container exits or an init container fails, with the end of the test
+// output when the tests fail.
 // The Pod's volumes and containers have limits, and when the kubelet evicts
 // the Pod for going over one, the check fails with the kubelet's reason;
 // see resources. With -go-cache, test Pods download modules from a
@@ -124,7 +125,7 @@ var (
 	gitImage     = kube.Image("git-image", images.Git, "image that fetches the source without -go-cache; it needs git and sh")
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
-	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and other values need the same -goproxy on the core program")
+	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and a proxy outside the cluster needs the core program's -test-pod-internet")
 	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
 )
 
