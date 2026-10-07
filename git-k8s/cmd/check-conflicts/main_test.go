@@ -994,7 +994,7 @@ func TestCommitsTheAgentsResolution(t *testing.T) {
 			if got := w.Fetch("c/x"); got != fix {
 				t.Fatalf("c/x = %s, want the merge %s", got, fix)
 			}
-			want := head + " " + merged + "\n" + title + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts"
+			want := head + " " + merged + "\n" + title + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts\n" + git.AgentTrailer + ": conflicts"
 			if got := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix); got != want {
 				t.Errorf("merge's parents and message =\n%s\nwant\n%s", got, want)
 			}
@@ -1691,7 +1691,7 @@ func TestCommitsTheAgentsReplay(t *testing.T) {
 	wantMsg := e + "\nReplay c/x onto the external repository's c/x\n\n" +
 		"The external repository rewound c/x since it last synced with git-k8s,\n" +
 		"so this commit replays the changes that c/x made since then onto the\n" +
-		"external repository's head, as one commit:\n\n" + synced + ".." + head + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts"
+		"external repository's head, as one commit:\n\n" + synced + ".." + head + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts\n" + git.AgentTrailer + ": conflicts"
 	if got := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix); got != wantMsg {
 		t.Errorf("replay's parents and message =\n%s\nwant\n%s", got, wantMsg)
 	}

@@ -174,6 +174,8 @@ them from an XcodeGen `project.yml` that declares `platform: macOS`:
 - **[`onramp/`](onramp/)** — Onramp offline Mac can’t-get-online triage
   (playbooks + network toolbox; optional on-device chat). Same Sparkle CD path; see
   [`docs/onramp-design.md`](docs/onramp-design.md).
+- **[`roll/`](roll/)** — menu bar die. Click rolls. Control-click quits. No Dock
+  icon and no window. Same Sparkle CD path.
 
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
 release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).

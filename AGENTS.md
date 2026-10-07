@@ -41,6 +41,7 @@ playground/
 ├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
+├── roll/                  # menu bar die (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
@@ -114,6 +115,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
+| `roll/` | no | Menu bar die (XcodeGen + Sparkle); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -663,7 +665,7 @@ bundle exec fastlane test
   Still fine: empty states (when there is nothing to show), validation and error
   messages, status lines that report current values, and text-field placeholders.
 - **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
-- **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
+- **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`, `roll/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
 - **Foundation Models context**: when you add or change on-device Foundation Models chat, tools, `@Generable` types, or compaction in `ios/` (Army List, Live Translate, or a new FM experiment), read [`.cursor/skills/foundation-models-context/SKILL.md`](.cursor/skills/foundation-models-context/SKILL.md) and follow [TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window).
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 - **Do not write `blog-post.md` files.** Those are human-authored project
@@ -791,6 +793,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
 | `onramp/` | Onramp — offline can’t-get-online playbooks + network toolbox (+ optional chat); Sparkle CD | XCTest via `fastlane test` |
+| `roll/` | Menu bar die. Click rolls, Control-click quits. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
 
 > **`onramp` has its own agent guide:** read
 > [`onramp/AGENTS.md`](onramp/AGENTS.md) before working in that

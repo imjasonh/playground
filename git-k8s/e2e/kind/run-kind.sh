@@ -528,7 +528,7 @@ spec:
           checks.base.passed && checks.gofmt.passed &&
           (checks.risk.outputs.level == "low" ||
           (checks.approval.passed && checks.approval.outputs.approver == "alice"))
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: c/**
       parent: main
     - match: deps/**
@@ -956,7 +956,7 @@ main_before="$(remote_head main)"
 # Three polls later, c/auth still hasn't landed.
 sleep 3
 [[ "$(remote_head main)" == "${main_before}" ]]
-field '{.status.conditions[?(@.type=="Merged")].message}'
+field '{.status.conditions[?(@.type=="Landed")].message}'
 echo
 echo "c/auth waits for approval with a high risk rating."
 echo "::endgroup::"
@@ -996,7 +996,7 @@ approved_by() {
     [[ "$(field '{.status.checks.approval.outputs.approver}')" == "$1" ]]
 }
 eventually 60 approved_by "${admin}"
-gate_saw_approval() { field '{.status.conditions[?(@.type=="Merged")].message}' | grep -q 'approval Passed'; }
+gate_saw_approval() { field '{.status.conditions[?(@.type=="Landed")].message}' | grep -q 'approval Passed'; }
 eventually 60 gate_saw_approval
 [[ "$(field '{.status.state}')" == WaitingForChecks ]]
 [[ "$(remote_head main)" == "${main_before}" ]]
@@ -1055,7 +1055,7 @@ base_stopped() { [[ -z "$(k -n check-base get pods -o name)" ]]; }
 eventually 120 base_stopped
 k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/ahead)" --as=alice "${APPROVE}=${AHEAD}" "${APPROVED_BY}=alice"
 waiting_for_base() {
-  [[ "$(k -n "${NS}" get gitbranch "$(branch_object c/ahead)" -o jsonpath='{.status.conditions[?(@.type=="Merged")].message}')" == \
+  [[ "$(k -n "${NS}" get gitbranch "$(branch_object c/ahead)" -o jsonpath='{.status.conditions[?(@.type=="Landed")].message}')" == \
     "first in main's queue; waiting for the base check to merge main in" ]]
 }
 eventually 60 waiting_for_base
@@ -1600,7 +1600,7 @@ o add -A
 o commit -qm "Initial commit"
 o push -q "${GITHUB_URL}/acme/octo.git" HEAD:main
 # The GitBranch for c/fmt stays after the branch lands, without
-# deleteMergedBranches, so the check runs can be checked afterward.
+# deleteLandedBranches, so the check runs can be checked afterward.
 octo_repository() {
   k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
@@ -1776,7 +1776,7 @@ spec:
       merge:
         checks:
           - name: gotest
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: c/**
       parent: main
 EOF
@@ -2403,7 +2403,7 @@ spec:
         checks:
           - name: review
             mayPush: true
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: c/**
       parent: main
     - match: draft
@@ -2513,7 +2513,7 @@ spec:
             mayPush: true
           - name: conflicts
             mayPush: true
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: c/**
       parent: main
 EOF
@@ -2745,7 +2745,7 @@ spec:
         when: >-
           checks.base.passed && checks.gotest.passed && checks.deps.passed &&
           (checks.risk.outputs.level == "low" || checks.approval.passed)
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: deps/**
       parent: main
 EOF

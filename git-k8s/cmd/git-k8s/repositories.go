@@ -119,7 +119,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		if rule.Merge == nil || rule.Merge.When == "" {
 			continue
 		}
-		if _, err := gate.Parse(rule.Merge.When); err != nil {
+		if _, err := gate.Parse(rule.Merge.When, rule.Merge.Checks); err != nil {
 			ready.Reason = "InvalidMergePolicy"
 			ready.Message = fmt.Sprintf("branches rule %q: when: %v", rule.Match, err)
 			return kube.Permanent(errors.New(ready.Message))

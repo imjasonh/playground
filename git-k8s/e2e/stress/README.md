@@ -116,7 +116,7 @@ Each scenario gets its own namespace with one or more GitRepository objects.
 Each one's `main` policy has the `base`, `gofmt`, `risk`, `approval`, and
 `gotest` checks. A branch lands when `base`, `gofmt`, and `gotest` pass, and
 either `risk` rates it low or `approval` passes. The policy lets `base` and
-`gofmt` push, which gives it a merge queue, and sets `deleteMergedBranches`.
+`gofmt` push, which gives it a merge queue, and sets `deleteLandedBranches`.
 The GitRepositories poll every 2 seconds.
 
 Before the burst, the harness lands one branch in each repository to warm the

@@ -23,19 +23,6 @@ type merger struct {
 	ident  git.Identity
 }
 
-// Merged condition reasons, which State repeats.
-const (
-	reasonNoMergePolicy    = "NoMergePolicy"
-	reasonParentMissing    = "ParentMissing"
-	reasonDiverged         = "Diverged"
-	reasonWaitingForChecks = "WaitingForChecks"
-	reasonInvalidGate      = "InvalidGate"
-	reasonNotFastForward   = "NotFastForward"
-	reasonLanded           = "Landed"
-	reasonMerged           = "Merged"
-	reasonQueued           = "Queued"
-)
-
 func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	results := b.Status.Checks
 	// The results controller manages status.checks. Leaving it out of this
@@ -65,6 +52,7 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		return nil
 	case spec.Parent == "":
 		b.Status.State = ""
+		b.Status.Conditions = slices.DeleteFunc(b.Status.Conditions, func(c kube.Condition) bool { return c.Type == "Landed" })
 		return nil
 	case diverged != nil:
 		// Landing the mirror's head would leave out the external
@@ -75,20 +63,24 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		if diverged.Commit == "" {
 			external = "deleted it"
 		}
-		report(b, reasonDiverged, false, "%s changed both in the mirror and in the external repository, which %s; waiting for a commit that keeps both sides' changes",
+		report(b, gitk8s.MergeStateDiverged, "%s changed both in the mirror and in the external repository, which %s; waiting for a commit that keeps both sides' changes",
 			spec.Branch, external)
 		return nil
 	case spec.Merge == nil:
-		report(b, reasonNoMergePolicy, false, "no branches rule that matches %s has a merge policy", spec.Parent)
+		report(b, gitk8s.MergeStateNoMergePolicy, "no branches rule that matches %s has a merge policy", spec.Parent)
 		return nil
 	case spec.ParentHead == "":
-		report(b, reasonParentMissing, false, "%s doesn't exist in the mirror", spec.Parent)
+		report(b, gitk8s.MergeStateParentMissing, "%s doesn't exist in the mirror", spec.Parent)
 		return nil
 	case spec.Head == spec.ParentHead:
-		// A branch that's already merged can be new, such as one just
-		// created from the parent, so only a branch that this controller
-		// lands is deleted.
-		report(b, reasonMerged, true, "%s is at %s", spec.Parent, gitk8s.Short(spec.Head))
+		// A branch at its parent's head can be new, such as one just created
+		// from the parent, so it's Landed only if this controller landed it
+		// and it stayed.
+		if c := kube.FindCondition(b.Status.Conditions, "Landed"); c != nil && c.Status == kube.True {
+			report(b, gitk8s.MergeStateLanded, "%s", c.Message)
+			return nil
+		}
+		report(b, gitk8s.MergeStateNothingToLand, "%s is at %s", spec.Parent, gitk8s.Short(spec.Head))
 		return nil
 	}
 
@@ -96,12 +88,12 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	pass, err := evaluate(spec.Merge, checks)
 	switch {
 	case err != nil && !anyPending(checks):
-		report(b, reasonInvalidGate, false, "when: %v", err)
+		report(b, gitk8s.MergeStateInvalidGate, "when: %v", err)
 		return nil
 	case queues(spec.Merge):
 		return m.queued(ctx, repo, b, queued, checks, results, err == nil && pass)
 	case err != nil || !pass:
-		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		report(b, gitk8s.MergeStateWaitingForChecks, "%s", describe(spec.Merge, checks))
 		return nil
 	}
 	return m.land(ctx, repo, b, results)
@@ -130,7 +122,7 @@ func evaluate(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) (b
 		}
 		return true, nil
 	}
-	g, err := gate.Parse(policy.When)
+	g, err := gate.Parse(policy.When, policy.Checks)
 	if err != nil {
 		return false, err
 	}
@@ -190,7 +182,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 		return err
 	}
 	if contained {
-		report(b, reasonMerged, true, "%s already contains %s", spec.Parent, gitk8s.Short(spec.Head))
+		report(b, gitk8s.MergeStateNothingToLand, "%s already contains %s", spec.Parent, gitk8s.Short(spec.Head))
 		return nil
 	}
 	ff, err := local.IsAncestor(ctx, spec.ParentHead, spec.Head)
@@ -198,7 +190,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 		return err
 	}
 	if !ff {
-		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so it can't land on %s",
+		report(b, gitk8s.MergeStateNotFastForward, "%s doesn't contain %s at %s, so it can't land on %s",
 			spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), spec.Parent)
 		return nil
 	}
@@ -207,7 +199,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 	// lands.
 	checks := gitk8s.LandingGateChecks(spec.Merge, results, spec.Head, spec.ParentHead)
 	if pass, err := evaluate(spec.Merge, checks); err != nil || !pass {
-		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		report(b, gitk8s.MergeStateWaitingForChecks, "%s", describe(spec.Merge, checks))
 		return nil
 	}
 	switch spec.Merge.Landing {
@@ -216,52 +208,61 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 			return err
 		}
 	}
-	err = local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
+	deleted, err := fastForward(ctx, local, b)
 	if err != nil {
 		return fmt.Errorf("fast-forwarding %s to %s: %w", spec.Parent, gitk8s.Short(spec.Head), err)
 	}
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
-		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head))
-	report(b, reasonLanded, true, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
-	kube.Eventf(ctx, kube.Normal, reasonLanded, "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
-	err = deleteBranch(ctx, local, b)
+		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head), "deletedBranch", deleted)
+	report(b, gitk8s.MergeStateLanded, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
+	kube.Eventf(ctx, kube.Normal, "Landed", "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
+	if deleted {
+		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
+	}
 	kube.Trigger[gitk8s.GitRepository](ctx, b.Namespace, spec.Repository)
-	return err
-}
-
-// deleteBranch deletes a branch that just landed from the mirror's copy if
-// the merge policy says to, with a lease, so that a branch that moved since
-// it landed stays. The repository controller pushes the deletion to the
-// external repository, and the GitRepository's ExternalSynced condition
-// reports the external repository's reason if it refuses, as for a
-// protected branch.
-func deleteBranch(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) error {
-	if !b.Spec.Merge.DeleteMergedBranches {
-		return nil
-	}
-	err := local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + b.Spec.Branch, Old: b.Spec.Head})
-	if errors.Is(err, git.ErrRejected) {
-		slog.Info("not deleting a merged branch that moved or was deleted since it landed", "namespace", b.Namespace, "branch", b.Spec.Branch, "err", err)
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("deleting merged branch %s: %w", b.Spec.Branch, err)
-	}
-	slog.Info("deleted merged branch", "namespace", b.Namespace, "repository", b.Spec.Repository, "branch", b.Spec.Branch)
-	kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", b.Spec.Branch, gitk8s.Short(b.Spec.Head), b.Spec.Parent)
 	return nil
 }
 
-// report sets the Merged condition, and State to the condition's reason.
-func report(b *gitk8s.GitBranch, reason string, merged bool, format string, args ...any) {
+// fastForward moves the parent to the branch's head in the mirror's copy,
+// and reports whether it deleted the branch. When the merge policy deletes
+// landed branches, the deletion goes in the same update, with a lease on
+// the branch's head, so a landed branch can't stay because the controller
+// stopped or failed between two updates. If the branch moved or was deleted
+// since the repository controller listed it, the parent still moves to the
+// listed head, and the branch stays as it is. The repository controller
+// pushes the deletion to the external repository, and the GitRepository's
+// ExternalSynced condition reports the external repository's reason if it
+// refuses, as for a protected branch.
+func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) (bool, error) {
+	spec := &b.Spec
+	parent := git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead}
+	if !spec.Merge.DeleteLandedBranches {
+		return false, local.UpdateRefs(ctx, parent)
+	}
+	rejected := local.UpdateRefs(ctx, parent, git.RefUpdate{Ref: "refs/heads/" + spec.Branch, Old: spec.Head})
+	if !errors.Is(rejected, git.ErrRejected) {
+		return rejected == nil, rejected
+	}
+	// Either lease failed. If it was the parent's, this fails too.
+	if err := local.UpdateRefs(ctx, parent); err != nil {
+		return false, err
+	}
+	slog.Info("not deleting a landed branch that moved or was deleted since the repository controller listed it",
+		"namespace", b.Namespace, "branch", spec.Branch, "err", rejected)
+	return false, nil
+}
+
+// report sets the Landed condition, which is True only in
+// MergeStateLanded, and State to the condition's reason.
+func report(b *gitk8s.GitBranch, state gitk8s.MergeState, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if len(msg) > 1024 {
 		msg = msg[:1021] + "..."
 	}
-	c := kube.Condition{Type: "Merged", Status: kube.False, Reason: reason, Message: msg, ObservedGeneration: b.Generation}
-	if merged {
+	c := kube.Condition{Type: "Landed", Status: kube.False, Reason: string(state), Message: msg, ObservedGeneration: b.Generation}
+	if state == gitk8s.MergeStateLanded {
 		c.Status = kube.True
 	}
 	kube.SetCondition(&b.Status.Conditions, c)
-	b.Status.State = reason
+	b.Status.State = state
 }

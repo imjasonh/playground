@@ -72,12 +72,16 @@ func (Quantity) OpenAPISchema() map[string]any {
 
 // LabelSelector selects objects by label.
 type LabelSelector struct {
-	MatchLabels      map[string]string `json:"matchLabels,omitempty"`
-	MatchExpressions []struct {
-		Key      string   `json:"key"`
-		Operator string   `json:"operator"`
-		Values   []string `json:"values,omitempty"`
-	} `json:"matchExpressions,omitempty"`
+	MatchLabels      map[string]string          `json:"matchLabels,omitempty"`
+	MatchExpressions []LabelSelectorRequirement `json:"matchExpressions,omitempty"`
+}
+
+// LabelSelectorRequirement is one expression of a LabelSelector, such as a
+// label's key with the operator In and the values that it can have.
+type LabelSelectorRequirement struct {
+	Key      string   `json:"key"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values,omitempty"`
 }
 
 // TemplateMeta is the metadata of a pod template.
@@ -94,17 +98,21 @@ type PodTemplateSpec struct {
 
 // PodSpec describes a pod.
 type PodSpec struct {
-	Containers                    []Container       `json:"containers,omitempty"`
-	InitContainers                []Container       `json:"initContainers,omitempty"`
-	Volumes                       []Volume          `json:"volumes,omitempty"`
-	ServiceAccountName            string            `json:"serviceAccountName,omitempty"`
-	NodeName                      string            `json:"nodeName,omitempty"`
-	NodeSelector                  map[string]string `json:"nodeSelector,omitempty"`
-	RestartPolicy                 string            `json:"restartPolicy,omitempty"`
-	TerminationGracePeriodSeconds *int64            `json:"terminationGracePeriodSeconds,omitempty"`
-	ImagePullSecrets              []struct {
-		Name string `json:"name"`
-	} `json:"imagePullSecrets,omitempty"`
+	Containers                    []Container            `json:"containers,omitempty"`
+	InitContainers                []Container            `json:"initContainers,omitempty"`
+	Volumes                       []Volume               `json:"volumes,omitempty"`
+	ServiceAccountName            string                 `json:"serviceAccountName,omitempty"`
+	NodeName                      string                 `json:"nodeName,omitempty"`
+	NodeSelector                  map[string]string      `json:"nodeSelector,omitempty"`
+	RestartPolicy                 string                 `json:"restartPolicy,omitempty"`
+	TerminationGracePeriodSeconds *int64                 `json:"terminationGracePeriodSeconds,omitempty"`
+	ImagePullSecrets              []LocalObjectReference `json:"imagePullSecrets,omitempty"`
+}
+
+// LocalObjectReference names an object in the same namespace, such as the
+// Secret that holds the credentials for pulling a pod's images.
+type LocalObjectReference struct {
+	Name string `json:"name"`
 }
 
 // Container is one container in a pod.
@@ -133,11 +141,14 @@ type EnvVar struct {
 
 // EnvVarSource reads an environment variable's value from elsewhere.
 type EnvVarSource struct {
-	ConfigMapKeyRef *KeySelector `json:"configMapKeyRef,omitempty"`
-	SecretKeyRef    *KeySelector `json:"secretKeyRef,omitempty"`
-	FieldRef        *struct {
-		FieldPath string `json:"fieldPath"`
-	} `json:"fieldRef,omitempty"`
+	ConfigMapKeyRef *KeySelector         `json:"configMapKeyRef,omitempty"`
+	SecretKeyRef    *KeySelector         `json:"secretKeyRef,omitempty"`
+	FieldRef        *ObjectFieldSelector `json:"fieldRef,omitempty"`
+}
+
+// ObjectFieldSelector selects a field of the pod, such as metadata.name.
+type ObjectFieldSelector struct {
+	FieldPath string `json:"fieldPath"`
 }
 
 // KeySelector names one key of a ConfigMap or Secret.
@@ -184,40 +195,63 @@ type VolumeMount struct {
 
 // Volume is a pod volume.
 type Volume struct {
-	Name      string `json:"name"`
-	ConfigMap *struct {
-		Name     string `json:"name"`
-		Optional *bool  `json:"optional,omitempty"`
-	} `json:"configMap,omitempty"`
-	Secret *struct {
-		SecretName string `json:"secretName"`
-		Optional   *bool  `json:"optional,omitempty"`
-	} `json:"secret,omitempty"`
-	EmptyDir *struct {
-		Medium    string   `json:"medium,omitempty"`
-		SizeLimit Quantity `json:"sizeLimit,omitempty"`
-	} `json:"emptyDir,omitempty"`
-	PersistentVolumeClaim *struct {
-		ClaimName string `json:"claimName"`
-		ReadOnly  bool   `json:"readOnly,omitempty"`
-	} `json:"persistentVolumeClaim,omitempty"`
+	Name                  string                             `json:"name"`
+	ConfigMap             *ConfigMapVolumeSource             `json:"configMap,omitempty"`
+	Secret                *SecretVolumeSource                `json:"secret,omitempty"`
+	EmptyDir              *EmptyDirVolumeSource              `json:"emptyDir,omitempty"`
+	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+}
+
+// ConfigMapVolumeSource is a volume that holds a file for each key of a
+// ConfigMap.
+type ConfigMapVolumeSource struct {
+	Name     string `json:"name"`
+	Optional *bool  `json:"optional,omitempty"`
+}
+
+// SecretVolumeSource is a volume that holds a file for each key of a Secret.
+type SecretVolumeSource struct {
+	SecretName string `json:"secretName"`
+	Optional   *bool  `json:"optional,omitempty"`
+}
+
+// EmptyDirVolumeSource is an empty directory that lasts as long as the pod.
+type EmptyDirVolumeSource struct {
+	Medium    string   `json:"medium,omitempty"`
+	SizeLimit Quantity `json:"sizeLimit,omitempty"`
+}
+
+// PersistentVolumeClaimVolumeSource is the volume that a
+// PersistentVolumeClaim in the pod's namespace is bound to.
+type PersistentVolumeClaimVolumeSource struct {
+	ClaimName string `json:"claimName"`
+	ReadOnly  bool   `json:"readOnly,omitempty"`
 }
 
 // Probe checks a container's health.
 type Probe struct {
-	HTTPGet *struct {
-		Path string      `json:"path,omitempty"`
-		Port IntOrString `json:"port"`
-	} `json:"httpGet,omitempty"`
-	TCPSocket *struct {
-		Port IntOrString `json:"port"`
-	} `json:"tcpSocket,omitempty"`
-	Exec *struct {
-		Command []string `json:"command,omitempty"`
-	} `json:"exec,omitempty"`
-	InitialDelaySeconds int32 `json:"initialDelaySeconds,omitempty"`
-	PeriodSeconds       int32 `json:"periodSeconds,omitempty"`
-	FailureThreshold    int32 `json:"failureThreshold,omitempty"`
+	HTTPGet             *HTTPGetAction   `json:"httpGet,omitempty"`
+	TCPSocket           *TCPSocketAction `json:"tcpSocket,omitempty"`
+	Exec                *ExecAction      `json:"exec,omitempty"`
+	InitialDelaySeconds int32            `json:"initialDelaySeconds,omitempty"`
+	PeriodSeconds       int32            `json:"periodSeconds,omitempty"`
+	FailureThreshold    int32            `json:"failureThreshold,omitempty"`
+}
+
+// HTTPGetAction probes a container with an HTTP GET request.
+type HTTPGetAction struct {
+	Path string      `json:"path,omitempty"`
+	Port IntOrString `json:"port"`
+}
+
+// TCPSocketAction probes a container by opening a TCP connection to it.
+type TCPSocketAction struct {
+	Port IntOrString `json:"port"`
+}
+
+// ExecAction probes a container by running a command in it.
+type ExecAction struct {
+	Command []string `json:"command,omitempty"`
 }
 
 // Condition is the condition type that built-in objects use.
@@ -302,27 +336,36 @@ type Pod struct {
 // Node is a machine in the cluster.
 type Node struct {
 	kube.Object `kube:"apiVersion=v1,kind=Node,plural=nodes,scope=Cluster"`
-	Spec        struct {
-		Unschedulable bool `json:"unschedulable,omitempty"`
-		Taints        []struct {
-			Key    string `json:"key"`
-			Value  string `json:"value,omitempty"`
-			Effect string `json:"effect"`
-		} `json:"taints,omitempty"`
-	} `json:"spec,omitzero"`
-	Status struct {
+	Spec        NodeSpec `json:"spec,omitzero"`
+	Status      struct {
 		Capacity    map[string]Quantity `json:"capacity,omitempty"`
 		Allocatable map[string]Quantity `json:"allocatable,omitempty"`
 		Conditions  []Condition         `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
 }
 
+// NodeSpec describes a Node.
+type NodeSpec struct {
+	Unschedulable bool    `json:"unschedulable,omitempty"`
+	Taints        []Taint `json:"taints,omitempty"`
+}
+
+// Taint keeps pods that don't tolerate it off a node.
+type Taint struct {
+	Key    string `json:"key"`
+	Value  string `json:"value,omitempty"`
+	Effect string `json:"effect"`
+}
+
 // ResourceQuota limits the resources a namespace can use.
 type ResourceQuota struct {
 	kube.Object `kube:"apiVersion=v1,kind=ResourceQuota,plural=resourcequotas,scope=Namespaced"`
-	Spec        struct {
-		Hard map[string]Quantity `json:"hard,omitempty"`
-	} `json:"spec,omitzero"`
+	Spec        ResourceQuotaSpec `json:"spec,omitzero"`
+}
+
+// ResourceQuotaSpec describes a ResourceQuota.
+type ResourceQuotaSpec struct {
+	Hard map[string]Quantity `json:"hard,omitempty"`
 }
 
 // Deployment manages a replicated set of pods.
@@ -353,17 +396,20 @@ type DeploymentStatus struct {
 // Job runs pods until a number of them succeed.
 type Job struct {
 	kube.Object `kube:"apiVersion=batch/v1,kind=Job,plural=jobs,scope=Namespaced"`
-	Spec        struct {
-		BackoffLimit            *int32          `json:"backoffLimit,omitempty"`
-		TTLSecondsAfterFinished *int32          `json:"ttlSecondsAfterFinished,omitempty"`
-		Template                PodTemplateSpec `json:"template,omitzero"`
-	} `json:"spec,omitzero"`
-	Status struct {
+	Spec        JobSpec `json:"spec,omitzero"`
+	Status      struct {
 		Active     int32       `json:"active,omitempty"`
 		Succeeded  int32       `json:"succeeded,omitempty"`
 		Failed     int32       `json:"failed,omitempty"`
 		Conditions []Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
+}
+
+// JobSpec describes a Job.
+type JobSpec struct {
+	BackoffLimit            *int32          `json:"backoffLimit,omitempty"`
+	TTLSecondsAfterFinished *int32          `json:"ttlSecondsAfterFinished,omitempty"`
+	Template                PodTemplateSpec `json:"template,omitzero"`
 }
 
 // PolicyRule grants verbs on resources.
@@ -405,35 +451,54 @@ type RoleBinding struct {
 // Ingress routes HTTP traffic to Services.
 type Ingress struct {
 	kube.Object `kube:"apiVersion=networking.k8s.io/v1,kind=Ingress,plural=ingresses,scope=Namespaced"`
-	Spec        struct {
-		IngressClassName *string `json:"ingressClassName,omitempty"`
-		TLS              []struct {
-			Hosts      []string `json:"hosts,omitempty"`
-			SecretName string   `json:"secretName,omitempty"`
-		} `json:"tls,omitempty"`
-		Rules []IngressRule `json:"rules,omitempty"`
-	} `json:"spec,omitzero"`
+	Spec        IngressSpec `json:"spec,omitzero"`
+}
+
+// IngressSpec describes an Ingress.
+type IngressSpec struct {
+	IngressClassName *string       `json:"ingressClassName,omitempty"`
+	TLS              []IngressTLS  `json:"tls,omitempty"`
+	Rules            []IngressRule `json:"rules,omitempty"`
+}
+
+// IngressTLS names the Secret that holds the TLS certificate for some of an
+// Ingress's hosts.
+type IngressTLS struct {
+	Hosts      []string `json:"hosts,omitempty"`
+	SecretName string   `json:"secretName,omitempty"`
 }
 
 // IngressRule routes one host's paths.
 type IngressRule struct {
-	Host string `json:"host,omitempty"`
-	HTTP *struct {
-		Paths []IngressPath `json:"paths"`
-	} `json:"http,omitempty"`
+	Host string                `json:"host,omitempty"`
+	HTTP *HTTPIngressRuleValue `json:"http,omitempty"`
+}
+
+// HTTPIngressRuleValue lists the paths of an IngressRule.
+type HTTPIngressRuleValue struct {
+	Paths []IngressPath `json:"paths"`
 }
 
 // IngressPath routes one path to a Service port.
 type IngressPath struct {
-	Path     string `json:"path,omitempty"`
-	PathType string `json:"pathType"`
-	Backend  struct {
-		Service struct {
-			Name string `json:"name"`
-			Port struct {
-				Number int32  `json:"number,omitempty"`
-				Name   string `json:"name,omitempty"`
-			} `json:"port"`
-		} `json:"service"`
-	} `json:"backend"`
+	Path     string         `json:"path,omitempty"`
+	PathType string         `json:"pathType"`
+	Backend  IngressBackend `json:"backend"`
+}
+
+// IngressBackend is where an IngressPath sends its traffic.
+type IngressBackend struct {
+	Service IngressServiceBackend `json:"service"`
+}
+
+// IngressServiceBackend is a Service port that an Ingress sends traffic to.
+type IngressServiceBackend struct {
+	Name string             `json:"name"`
+	Port ServiceBackendPort `json:"port"`
+}
+
+// ServiceBackendPort is a port of a Service, by number or by name.
+type ServiceBackendPort struct {
+	Number int32  `json:"number,omitempty"`
+	Name   string `json:"name,omitempty"`
 }

@@ -482,7 +482,7 @@ func TestApplyGivesUpStatusAfterRestart(t *testing.T) {
 		return sa.Get(t.Context(), poll, &map[string]any{})
 	})
 	e2e.Run(t, &kube.Manager{Name: "poll-voter-e2e", Namespace: ns, Kubeconfig: kubeconfig}, kube.For[Widget](pollVoter{}, kube.Named("poll-voter")))
-	e2e.Eventually(t, 10*time.Second, state(map[string]int{"w": 3}, true, kube.False, `cannot patch resource "polls/status"`))
+	e2e.Eventually(t, 10*time.Second, state(map[string]int{"w": 3}, true, kube.False, "applying status of Poll."+group+"/v1 "+ns+"/p failed (403 Forbidden)"))
 
 	t.Log("Once allowed to patch the status, the voter withdraws its vote and owns no status fields.")
 	grant("widgets", "widgets/status", "polls", "polls/status")
