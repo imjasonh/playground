@@ -394,11 +394,23 @@ if [[ "${without_policies}" != *"${read_checks}"* ]] ||
   echo "generate -- -install-policies=false must grant get on the git-k8s-checks ConfigMap, and nothing else that installs the policies" >&2
   exit 1
 fi
-# The policies ignore the entry for the core program. Without that, it would
-# make the core program the gofmt check, which can't write GitBranch status
-# or change GitBranch objects, so nothing would land.
-k -n git-k8s patch configmap git-k8s-checks --type=merge \
-  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\",\"git-k8s.git-k8s\":\"gofmt\"}}"
+# The results endpoint and the mirror treat a service account as a check
+# only through its entry. The entries for the checks that later groups
+# install go in now too, because the core program caches the entries for 5
+# seconds, and a check that it rejects sends nothing more for a branch until
+# the branch changes. The policies ignore the entry for the core program.
+# Without that, it would make the core program the gofmt check, which can't
+# write GitBranch status or change GitBranch objects, so nothing would land.
+k -n git-k8s patch configmap git-k8s-checks --type=merge -p "data:
+  check-base.check-base: base
+  check-gofmt.check-gofmt: gofmt
+  check-risk.check-risk: risk
+  ${APPROVAL_NS}.check-approval: approval
+  check-gotest.check-gotest: gotest
+  check-review.check-review: review
+  check-conflicts.check-conflicts: conflicts
+  check-deps.check-deps: deps
+  git-k8s.git-k8s: gofmt"
 echo "::endgroup::"
 
 echo "::group::Upgrading moves check results to the core program"
@@ -843,6 +855,13 @@ cat "${WORKDIR}/mirror.txt"
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${APPROVAL_NS}" check-approval)")" == 200 ]]
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token git-k8s git-k8s)")" == 404 ]]
 cat "${WORKDIR}/mirror.txt"
+# Names don't make a check, because anyone who can create namespaces and
+# service accounts can choose them: check-approval in the namespace
+# check-approval has no entry, so it isn't the approval check.
+k create namespace check-approval
+k -n check-approval create serviceaccount check-approval
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token check-approval check-approval)")" == 404 ]]
+cat "${WORKDIR}/mirror.txt"
 # can_list_secrets reports whether service account $1, in namespace $2 or
 # the namespace of the same name, can list or watch the Secrets in NS. A
 # check that signs commits can get a Secret by name, for its signing key.
@@ -873,7 +892,7 @@ for program in check-base check-gofmt check-risk check-approval check-gotest; do
   fi
 done
 k -n git-k8s auth can-i create serviceaccounts/git-k8s --subresource=token --as=system:serviceaccount:git-k8s:git-k8s
-echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. It maps check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. It maps check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but not check-approval in the namespace check-approval, which has none, and never the core program. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
 echo "::endgroup::"
 
 echo "::group::A check can't push to a parent through the mirror"
@@ -1308,6 +1327,12 @@ code="$(send_result "${core_results_token}" gofmt)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 403 ]]
 grep -q "system:serviceaccount:git-k8s:git-k8s isn't a check's service account" "${WORKDIR}/result.txt"
+# Nor is check-approval in the namespace check-approval, which has no entry.
+squatter_results_token="$(k -n check-approval create token check-approval --audience=git-k8s-results)"
+code="$(send_result "${squatter_results_token}" approval)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 403 ]]
+grep -q "system:serviceaccount:check-approval:check-approval isn't a check's service account; add an entry for check-approval.check-approval to the git-k8s-checks ConfigMap" "${WORKDIR}/result.txt"
 # A cache miss doesn't show that a GitBranch is gone, so the results
 # endpoint reads the API server, and answers 410 at once rather than after
 # its 10-second wait for the cache.
@@ -1387,7 +1412,7 @@ core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The results endpoint answers 410 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
+echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The endpoint refuses check-approval in the namespace check-approval, which has no entry. The results endpoint answers 410 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
