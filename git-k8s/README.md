@@ -243,7 +243,8 @@ The mirror reads at most 1,000 ref updates and shallow commits, in at most
 1 MiB, at the start of a push, and a copy takes a pack of at most 256 MiB.
 The mirror stops reading a request that takes longer than git's timeout
 plus 10 seconds, 5 minutes 10 seconds with the default `-git-timeout`, and
-stops writing a response twice that long after the request starts. A client that sends a pack slowly keeps the copy
+stops writing a response twice that long
+after the request starts. A client that sends a pack slowly keeps the copy
 open until the first deadline, and a client that stops reading the response
 keeps it open until the second. While a copy is open, the mirror can't
 delete it, replace it, or switch it to a new URL, and the requests that
@@ -386,7 +387,8 @@ long stretch of history between two syncs. The mirror stops comparing a
 branch's heads after twice the longest that one git command can take, 10
 minutes 20 seconds with the default `-git-timeout`, or when one git command
 runs past that timeout, and leaves the branch as it is on each side, with
-the reason `CompareFailed`. It remembers what it decided about each branch, including
+the reason
+`CompareFailed`. It remembers what it decided about each branch, including
 a comparison that took too long, and doesn't compare that branch's heads
 again until either side's head moves or the core program restarts. To
 resolve a branch whose comparison took too long, push the same commit to
@@ -3138,9 +3140,9 @@ longest that maintenance can take, plus a minute: 1 hour, 1 minute, and 10
 seconds with the default `-maintenance-timeout`. A newer lock might belong
 to the other Pod. Until the mirror removes a lock, a sync or a
 landing that needs the locked ref fails and tries again later. The
-`GitRepository`'s `ExternalSynced` condition names the lock, with the reason
-`UpdateFailed` when the sync couldn't update a branch in the copy, or
-`SyncFailed` when the fetch couldn't record the external repository's head.
+`GitRepository`'s `ExternalSynced` condition names the lock, for example with
+the reason `UpdateFailed` when the sync couldn't update a branch in the copy,
+or `SyncFailed` when the fetch couldn't record the external repository's head.
 
 Git packs a copy's objects in its maintenance. A fetch or a push would
 start maintenance in the background, where git's timeout doesn't apply, so
