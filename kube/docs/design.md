@@ -423,7 +423,9 @@ or a delete, ends the skip. The informer warns again only about a new error,
 and the `kube_cache_undecodable_objects` gauge counts the objects that each
 cache skips. A paginated list decodes each item straight into `T`. The decoder
 keeps no copy of an item that fails, so after a failure the informer lists
-again, reading each item's bytes first.
+again, reading each item's bytes first. Admission webhooks deny an object that
+doesn't decode, and its conversions fail, so the API server doesn't store a
+partial object.
 
 A controller's `kube.WatchNamespace` and `kube.WatchSelector` options, and the
 manager's `Namespace` field, become query parameters, so the API server
@@ -1039,7 +1041,8 @@ shard's objects, at the cost of a sharder and a write to every object.
 A reconciler with a `Validate` or `Default` method, or a handler passed to
 `kube.Webhooks`, gets a validating or mutating webhook for its type, for
 `CREATE` and `UPDATE` with `matchPolicy: Equivalent`, so requests for other
-versions are converted first. Both methods receive the old object on updates.
+versions are converted first. Both methods receive the old object on updates,
+or nil if it doesn't decode, so that an update can fix such an object.
 The webhook decodes the request's object into the projection, so a mutating
 webhook can't send the whole object back without dropping the fields the
 projection lacks. Instead, it encodes the projection before and after

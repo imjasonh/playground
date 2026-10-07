@@ -128,10 +128,8 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	}
 	// The API server can store a different status than was sent, for example
 	// with defaults or another manager's fields, so record what it stored.
-	// Like the cache, tolerate fields whose JSON type doesn't match.
 	var written T
-	var te *json.UnmarshalTypeError
-	if err := json.Unmarshal(resp, &written); err == nil || errors.As(err, &te) {
+	if err := json.Unmarshal(resp, &written); err == nil {
 		if b, err := json.Marshal(reflect.ValueOf(&written).Elem().FieldByIndex(c.ti.status).Interface()); err == nil {
 			c.setStatus(key, hashJSON(b), true)
 		}

@@ -123,6 +123,30 @@ func TestConvert(t *testing.T) {
 	}
 }
 
+// gizmoV1beta2 has no conversion methods, and a tier that v2's tier doesn't
+// fit.
+type gizmoV1beta2 struct {
+	Object `kube:"group=test.kube.imjasonh.github.io,kind=Gizmo,version=v1beta2"`
+	Spec   struct {
+		Tier int `json:"tier,omitempty"`
+	} `json:"spec"`
+}
+
+func TestConvertFailsWhenAValueDoesntFit(t *testing.T) {
+	c := For[gizmo](gizmoReconciler{}, Version[gizmoV1](), Version[gizmoV1beta2]()).(*controller[gizmo, *gizmo])
+	if err := c.prepare(t.Context(), testManager()); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ obj, to string }{
+		{`{"apiVersion":"test.kube.imjasonh.github.io/v1","kind":"Gizmo","metadata":{},"spec":{"size":"4"},"status":{"seen":2}}`, "test.kube.imjasonh.github.io/v2"},
+		{`{"apiVersion":"test.kube.imjasonh.github.io/v2","kind":"Gizmo","metadata":{},"spec":{"replicas":1,"tier":"gold"}}`, "test.kube.imjasonh.github.io/v1beta2"},
+	} {
+		if out, err := c.convert(json.RawMessage(tc.obj), tc.to); err == nil {
+			t.Errorf("converting %s to %s = %s, want an error", tc.obj, tc.to, out)
+		}
+	}
+}
+
 func TestVersionsWithoutConversionMethods(t *testing.T) {
 	m := testManager()
 	c := For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()).(*controller[gizmo, *gizmo])
@@ -292,6 +316,49 @@ func TestValidate(t *testing.T) {
 	r := validate[configMapMeta, *configMapMeta](t.Context(), m, ti, labeler{}, &admissionRequest{Operation: "UPDATE", Object: frozen, OldObject: frozen})
 	if r.Allowed || r.Result == nil || r.Result.Message != "frozen ConfigMaps can't change" || r.Result.Code != 403 {
 		t.Errorf("update = %+v", r)
+	}
+}
+
+// olds records the old object that each webhook call receives.
+type olds struct{ got []*strictMap }
+
+func (o *olds) Validate(_ context.Context, _, old *strictMap) error {
+	o.got = append(o.got, old)
+	return nil
+}
+
+func (o *olds) Default(_ context.Context, _, old *strictMap) error {
+	o.got = append(o.got, old)
+	return nil
+}
+
+func TestWebhooksSeeOnlyObjectsThatDecode(t *testing.T) {
+	ti, err := typeInfoFor[strictMap, *strictMap]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := json.RawMessage(`{"metadata":{"name":"cm"},"data":{"count":1}}`)
+	// port's error stops encoding/json before it reaches targets.
+	partial := json.RawMessage(`{"metadata":{"name":"cm"},"data":{"port":3000000000,"targets":["a"]}}`)
+	o := &olds{}
+	m := testManager()
+	for _, call := range []func(*admissionRequest) *admissionResponse{
+		func(req *admissionRequest) *admissionResponse {
+			return validate[strictMap, *strictMap](t.Context(), m, ti, o, req)
+		},
+		func(req *admissionRequest) *admissionResponse {
+			return mutate[strictMap, *strictMap](t.Context(), m, ti, o, req)
+		},
+	} {
+		if r := call(&admissionRequest{Operation: "CREATE", Object: partial}); r.Allowed {
+			t.Errorf("creating an object that doesn't decode = %+v, want denied", r)
+		}
+		if r := call(&admissionRequest{Operation: "UPDATE", Object: good, OldObject: partial}); !r.Allowed {
+			t.Errorf("fixing an object that doesn't decode = %+v, want allowed", r.Result)
+		}
+	}
+	if len(o.got) != 2 || o.got[0] != nil || o.got[1] != nil {
+		t.Errorf("webhooks received old objects %v, want nil twice", o.got)
 	}
 }
 
