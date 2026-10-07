@@ -438,6 +438,21 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		},
 		want: "merging main conflicts on .cursorignore, which the agent can't see, because its work tree leaves out .cursorignore files",
 	}, {
+		name:  "in a file larger than the check reads",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			big := strings.Repeat("x", git.MaxBlobBytes) + "\n"
+			both(b, w, map[string]string{"big.txt": "main\n" + big}, map[string]string{"big.txt": "branch\n" + big})
+		},
+		want: "merging main conflicts on big.txt, which is larger than 8 MiB on one side, more than the check reads to look for conflict markers",
+	}, {
+		name:  "in a file larger than the check reads with its conflict markers",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			both(b, w, map[string]string{"big.txt": strings.Repeat("main\n", 1<<20)}, map[string]string{"big.txt": strings.Repeat("branch\n", 1<<20)})
+		},
+		want: "the files that conflict hold more than 8 MiB, more than the agent can change",
+	}, {
 		name:  "when the branch and main have two merge bases",
 		agent: true,
 		edit: func(b *Branch, w *gittest.Work) {
@@ -1070,6 +1085,34 @@ func TestRejectsABadResolution(t *testing.T) {
 				t.Errorf("c/x moved to %s", got)
 			}
 		})
+	}
+}
+
+// TestRejectsAResolutionTooBigToCheck checks a resolution of a conflict
+// with a side larger than git.MaxBlobBytes, for which unresolvable starts
+// no agent.
+func TestRejectsAResolutionTooBigToCheck(t *testing.T) {
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	small, err := repo.WriteBlob(ctx, []byte("one\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	big, err := repo.WriteBlob(ctx, []byte(strings.Repeat("two\n", git.MaxBlobBytes/4+1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := repo.ReplaceFiles(ctx, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", []git.TreeEntry{{Mode: "100644", SHA: small, Path: "a.txt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := git.Conflict{Path: "a.txt", Ours: &git.TreeEntry{Mode: "100644", SHA: small, Path: "a.txt"}, Theirs: &git.TreeEntry{Mode: "100644", SHA: big, Path: "a.txt"}}
+	err = checkResolved(ctx, repo, tree, c, "<<<<<<< ours")
+	if bad := (rejected{}); !errors.As(err, &bad) || !strings.Contains(err.Error(), "can't look for conflict markers in a.txt: git cat-file: more output than the limit of 8 MiB") {
+		t.Errorf("checkResolved = %v, want a rejection because a side is too big to read", err)
 	}
 }
 

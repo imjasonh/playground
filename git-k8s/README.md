@@ -1815,7 +1815,8 @@ regular file on both sides, or for a conflict that git can't mark, such as one
 in a binary file. It also runs none for a conflict in a `.cursorignore` file,
 because the agent's work tree leaves those files out, or for conflicts in more
 than 1,000 files or in files that hold more than 8 MiB, the most that a result
-can change.
+can change. Nor does it run one for a conflict in a file that's larger than 8
+MiB on either side, more than the check reads to look for conflict markers.
 
 Each commit that the check pushes makes a new head, so every check runs
 again on it. A merge, and a replay of the branch's whole change as one
