@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -54,7 +53,7 @@ var epoch = v1.Time{Time: time.Unix(0, 0).UTC()}
 // login or podman login, and returns its reference by digest. The
 // reference names an index with one image per platform.
 func Push(ctx context.Context, im Image) (string, error) {
-	opts := []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent("kube-generate")}
+	opts := options(ctx)
 	if !strings.HasPrefix(im.Path, "/") {
 		return "", fmt.Errorf("image: path %q must be absolute", im.Path)
 	}
