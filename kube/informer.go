@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -76,9 +77,19 @@ const (
 	// first event before the informer decides the server doesn't support
 	// streaming lists. Servers that do send at least the end bookmark at once.
 	firstEventTimeout = 15 * time.Second
+	// maxListCuts is how many streaming lists in a row may end before their
+	// end bookmark before the informer uses paginated lists instead.
+	maxListCuts = 3
 )
 
-var errStreamingUnsupported = errors.New("streaming lists are not supported")
+var (
+	errStreamingUnsupported = errors.New("streaming lists are not supported")
+	errListCut              = errors.New("the streaming list ended before its last event")
+	// errShortWatch is the error for a watch that ends within a second and
+	// without events, so that a server or proxy that ends every watch at
+	// once gets new watches with backoff, not in a tight loop.
+	errShortWatch = errors.New("the watch ended at once, without events")
+)
 
 // informer keeps a store in sync with the API server by listing and then
 // watching, and calls handlers for every change.
@@ -110,7 +121,20 @@ type informer[T any, P Resource[T]] struct {
 	lastErr     error
 	hasSynced   atomic.Bool
 	streaming   atomic.Bool
-	warned      atomic.Bool
+}
+
+// decodeError is the error for an object that doesn't decode as the
+// informer's type. meta names the object.
+type decodeError struct {
+	meta ObjectMeta
+	err  error
+}
+
+func (e *decodeError) Error() string { return e.err.Error() }
+
+// same reports whether o is about the same object as e, with the same error.
+func (e *decodeError) same(o *decodeError) bool {
+	return o != nil && o.meta.UID == e.meta.UID && o.err.Error() == e.err.Error()
 }
 
 func newInformer[T any, P Resource[T]](id int, ti *typeInfo, res resolved, c *client.Client, cfg informerConfig, log *slog.Logger, m *metrics) *informer[T, P] {
@@ -223,7 +247,7 @@ func (inf *informer[T, P]) own(w *written) *ownWrite[T] {
 		return &ownWrite[T]{uid: w.uid}
 	}
 	obj := new(T)
-	if err := inf.check(json.Unmarshal(w.obj, obj)); err != nil {
+	if err := json.Unmarshal(w.obj, obj); err != nil {
 		return nil
 	}
 	inf.normalize(obj)
@@ -262,9 +286,12 @@ func (inf *informer[T, P]) attemptFailed(err error) {
 	inf.attemptOnce.Do(func() { close(inf.attempted) })
 }
 
-func (inf *informer[T, P]) replaceAll(items map[Key]*T) {
+func (inf *informer[T, P]) replaceAll(items map[Key]*T, bad map[Key]*decodeError) {
 	initial := !inf.hasSynced.Load()
-	changes := inf.store.replace(items)
+	changes, fresh := inf.store.replace(items, bad)
+	for _, e := range fresh {
+		inf.warnSkipped(e)
+	}
 	inf.hasSynced.Store(true)
 	inf.syncOnce.Do(func() { close(inf.synced) })
 	inf.attemptOnce.Do(func() { close(inf.attempted) })
@@ -295,6 +322,7 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 	b := backoff{min: 800 * time.Millisecond, max: 30 * time.Second}
 	b.reset()
 	rv, needSync := "", true
+	cuts := 0
 	for ctx.Err() == nil {
 		var err error
 		if needSync {
@@ -306,6 +334,16 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 			rv, synced, err = inf.stream(ctx, "", true)
 			if errors.Is(err, errStreamingUnsupported) {
 				inf.log.Info("API server doesn't support streaming lists; using paginated lists")
+				inf.streaming.Store(false)
+				continue
+			}
+			if !errors.Is(err, errListCut) {
+				cuts = 0
+			} else if cuts++; cuts == maxListCuts {
+				// Something in between, such as a proxy with a short
+				// timeout, may cut every long streaming list. Each page of
+				// a paginated list is a shorter response.
+				inf.log.Info("streaming lists keep ending early; using paginated lists", "err", err)
 				inf.streaming.Store(false)
 				continue
 			}
@@ -388,40 +426,64 @@ func (inf *informer[T, P]) path() string {
 
 // relist does a paginated list and replaces the store's contents.
 func (inf *informer[T, P]) relist(ctx context.Context) (string, error) {
-	items := map[Key]*T{}
+	items, bad := map[Key]*T{}, map[Key]*decodeError{}
+	add := func(obj *T, err error) error {
+		var de *decodeError
+		switch {
+		case errors.As(err, &de):
+			bad[de.meta.Key()] = de
+		case err != nil:
+			return err
+		default:
+			items[metaOf[T, P](obj).Key()] = obj
+		}
+		return nil
+	}
+	// Decoding each item straight into T is fastest, but the decoder keeps
+	// no copy of an item that doesn't decode, whose metadata may not have
+	// decoded either. So after such an item, relist lists again, reading
+	// each item's bytes first, to name the items that it skips.
+	var raw, failed bool
 	decode := client.Items{
 		JSON: func(dec *json.Decoder) error {
+			if raw {
+				var b json.RawMessage
+				if err := dec.Decode(&b); err != nil {
+					return err
+				}
+				return add(inf.decodeJSON(b))
+			}
 			obj := new(T)
-			if err := inf.check(dec.Decode(obj)); err != nil {
+			if err := dec.Decode(obj); err != nil {
+				failed = true
 				return err
 			}
 			inf.normalize(obj)
-			items[metaOf[T, P](obj).Key()] = obj
-			return nil
+			return add(obj, nil)
 		},
-		Proto: func(raw []byte) error {
-			if inf.pb == nil {
-				return errors.New("the server sent protobuf without being asked")
-			}
-			obj := new(T)
-			if err := inf.pb.Unmarshal(raw, obj); err != nil {
-				return err
-			}
-			inf.normalize(obj)
-			items[metaOf[T, P](obj).Key()] = obj
-			return nil
-		},
+		Proto: func(b []byte) error { return add(inf.decodeProto(b)) },
 	}
-	rv, err := inf.c.ListItems(ctx, inf.path(), inf.query(), inf.accept(true), inf.cfg.pageSize, decode)
-	if client.IsGone(err) {
-		// The continue token expired between pages. List everything at once.
+	list := func() (string, error) {
 		clear(items)
-		rv, err = inf.c.ListItems(ctx, inf.path(), inf.query(), inf.accept(true), 0, decode)
+		clear(bad)
+		rv, err := inf.c.ListItems(ctx, inf.path(), inf.query(), inf.accept(true), inf.cfg.pageSize, decode)
+		if client.IsGone(err) {
+			// The continue token expired between pages. List everything at once.
+			clear(items)
+			clear(bad)
+			rv, err = inf.c.ListItems(ctx, inf.path(), inf.query(), inf.accept(true), 0, decode)
+		}
+		return rv, err
+	}
+	rv, err := list()
+	if failed {
+		raw = true
+		rv, err = list()
 	}
 	if err != nil {
 		return "", err
 	}
-	inf.replaceAll(items)
+	inf.replaceAll(items, bad)
 	return rv, nil
 }
 
@@ -454,12 +516,14 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 		return rv, false, err
 	}
 	defer w.Close()
+	start, events := time.Now(), 0
 
 	var items map[Key]*T
+	var bad map[Key]*decodeError
 	var first *time.Timer
 	var timedOut atomic.Bool
 	if initial {
-		items = map[Key]*T{}
+		items, bad = map[Key]*T{}, map[Key]*decodeError{}
 		first = time.AfterFunc(firstEventTimeout, func() {
 			timedOut.Store(true)
 			w.Close()
@@ -479,51 +543,80 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 			switch {
 			case first != nil && timedOut.Load():
 				return "", false, errStreamingUnsupported
-			case errors.Is(err, io.EOF):
-				return rv, synced, nil
 			case ctx.Err() != nil:
 				return rv, synced, ctx.Err()
+			case !synced:
+				return rv, false, fmt.Errorf("%w: %w", errListCut, err)
+			case errors.Is(err, io.EOF) && events == 0 && time.Since(start) < time.Second:
+				return rv, synced, errShortWatch
+			case errors.Is(err, io.EOF):
+				return rv, synced, nil
 			default:
 				return rv, synced, err
 			}
 		}
+		events++
 		inf.m.inc("kube_watch_events_total", "type", inf.ti.String())
 		switch typ {
 		case client.Added, client.Modified, client.Deleted:
 			obj, err := inf.decodeEvent(frame, w.Proto)
-			if err != nil {
+			var de *decodeError
+			var m *ObjectMeta
+			switch {
+			case err == nil:
+				m = metaOf[T, P](obj)
+			case errors.As(err, &de):
+				m = &de.meta
+			default:
 				return rv, synced, err
 			}
-			m := metaOf[T, P](obj)
 			rv = m.ResourceVersion
+			k := m.Key()
 			if items != nil {
-				if typ == client.Deleted {
-					delete(items, m.Key())
-				} else {
-					items[m.Key()] = obj
+				delete(items, k)
+				delete(bad, k)
+				switch {
+				case typ == client.Deleted:
+				case de != nil:
+					bad[k] = de
+				default:
+					items[k] = obj
 				}
 				continue
 			}
-			if typ == client.Deleted {
-				if old := inf.store.remove(obj); old != nil {
+			switch {
+			case typ == client.Deleted:
+				if old := inf.store.remove(m); old != nil {
 					obj = old
 				}
-				inf.notify(obj, nil, false)
-				continue
-			}
-			if old := inf.store.put(obj); inf.changed(old, obj) {
-				inf.notify(old, obj, false)
+				if obj != nil {
+					inf.notify(obj, nil, false)
+				}
+			case de != nil:
+				old, fresh := inf.store.skip(de)
+				if fresh {
+					inf.warnSkipped(de)
+				}
+				if old != nil {
+					inf.notify(old, nil, false)
+				}
+			default:
+				if old := inf.store.put(obj); inf.changed(old, obj) {
+					inf.notify(old, obj, false)
+				}
 			}
 		case client.Bookmark:
 			var annotations map[string]string
 			if w.Proto {
 				_, _, raw, err := protobuf.Unwrap(frame)
-				if err == nil {
-					rv, annotations, err = protobuf.Meta(raw)
-				}
 				if err != nil {
 					return rv, synced, err
 				}
+				om, err := protobuf.Meta(raw)
+				if err != nil {
+					return rv, synced, err
+				}
+				rv, annotations = om.ResourceVersion, om.Annotations
 			} else {
 				var b struct {
 					Object bookmark `json:"object"`
@@ -534,8 +627,8 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 				rv, annotations = b.Object.Metadata.ResourceVersion, b.Object.Metadata.Annotations
 			}
 			if items != nil && annotations[client.InitialEventsEndAnnotation] == "true" {
-				inf.replaceAll(items)
-				items, synced = nil, true
+				inf.replaceAll(items, bad)
+				items, bad, synced = nil, nil, true
 			}
 		case client.Error:
 			apiErr := client.FrameError(frame)
@@ -549,44 +642,70 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 
 // decodeEvent decodes the object in a watch event frame straight into T, in
 // one pass. Decoding the event into json.RawMessage first and then the
-// object nearly doubles the cost.
+// object nearly doubles the cost. If the object doesn't decode, decodeEvent
+// returns what decodeJSON or decodeProto does.
 func (inf *informer[T, P]) decodeEvent(frame []byte, proto bool) (*T, error) {
 	if proto {
-		if inf.pb == nil {
-			return nil, errors.New("the server sent protobuf without being asked")
-		}
 		_, _, raw, err := protobuf.Unwrap(frame)
 		if err != nil {
 			return nil, err
 		}
-		obj := new(T)
-		if err := inf.pb.Unmarshal(raw, obj); err != nil {
-			return nil, err
-		}
-		inf.normalize(obj)
-		return obj, nil
+		return inf.decodeProto(raw)
 	}
 	e := struct {
 		Object *T `json:"object"`
 	}{Object: new(T)}
-	if err := inf.check(json.Unmarshal(frame, &e)); err != nil {
-		return nil, err
+	if err := json.Unmarshal(frame, &e); err != nil {
+		var raw struct {
+			Object json.RawMessage `json:"object"`
+		}
+		if json.Unmarshal(frame, &raw) != nil {
+			return nil, err
+		}
+		return inf.decodeJSON(raw.Object)
 	}
 	inf.normalize(e.Object)
 	return e.Object, nil
 }
 
-// check tolerates a field whose JSON type doesn't match the Go type: the rest
-// of the object still decodes, and the mismatch is logged once per cache.
-func (inf *informer[T, P]) check(err error) error {
-	var te *json.UnmarshalTypeError
-	if errors.As(err, &te) {
-		if inf.warned.CompareAndSwap(false, true) {
-			inf.log.Warn("a field's JSON type doesn't match its Go type; the field is left empty", "err", err)
+// decodeJSON decodes an object. Any error leaves the object incomplete:
+// encoding/json stops at an error from a type's UnmarshalJSON, and returns
+// the same kind of error as for a field that it skips. If the object
+// doesn't decode but its metadata does, decodeJSON returns a *decodeError.
+func (inf *informer[T, P]) decodeJSON(b []byte) (*T, error) {
+	obj := new(T)
+	if err := json.Unmarshal(b, obj); err != nil {
+		var o struct {
+			Metadata ObjectMeta `json:"metadata"`
 		}
-		return nil
+		if json.Unmarshal(b, &o) != nil || o.Metadata.Name == "" {
+			return nil, err
+		}
+		return nil, &decodeError{meta: o.Metadata, err: err}
 	}
-	return err
+	inf.normalize(obj)
+	return obj, nil
+}
+
+// decodeProto is decodeJSON for protobuf.
+func (inf *informer[T, P]) decodeProto(b []byte) (*T, error) {
+	if inf.pb == nil {
+		return nil, errors.New("the server sent protobuf without being asked")
+	}
+	obj := new(T)
+	if err := inf.pb.Unmarshal(b, obj); err != nil {
+		m, merr := protobuf.Meta(b)
+		if merr != nil || m.Name == "" {
+			return nil, err
+		}
+		return nil, &decodeError{meta: ObjectMeta{Name: m.Name, Namespace: m.Namespace, UID: m.UID, ResourceVersion: m.ResourceVersion}, err: err}
+	}
+	inf.normalize(obj)
+	return obj, nil
+}
+
+func (inf *informer[T, P]) warnSkipped(e *decodeError) {
+	inf.log.Warn("object doesn't decode; skipping it", "key", e.meta.Key().String(), "resourceVersion", e.meta.ResourceVersion, "err", e.err)
 }
 
 func (inf *informer[T, P]) normalize(obj *T) {

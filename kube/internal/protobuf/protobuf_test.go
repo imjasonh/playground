@@ -2,6 +2,7 @@ package protobuf
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"reflect"
 	"strconv"
@@ -300,17 +301,33 @@ func TestFieldNamesMatchLikeEncodingJSON(t *testing.T) {
 	}
 }
 
+type numberOnly int
+
+func (n *numberOnly) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, (*int)(n)) }
+
+func TestJSONFieldErrorsFailTheMessage(t *testing.T) {
+	type numbers struct {
+		Name string     `json:"name"`
+		Port numberOnly `json:"port"`
+	}
+	var got numbers
+	err := testPlan[numbers](t).Unmarshal(enc{}.str(1, "web").msg(9, enc{}.uint(1, 1).str(3, "http")), &got)
+	if te := (*json.UnmarshalTypeError)(nil); !errors.As(err, &te) {
+		t.Errorf("Unmarshal = %v, want a *json.UnmarshalTypeError", err)
+	}
+}
+
 func TestEnvelopes(t *testing.T) {
 	object := append(append([]byte{}, Magic...), enc{}.
 		msg(1, enc{}.str(1, "v1").str(2, "Pod")).
-		msg(2, enc{}.msg(1, enc{}.str(1, "web").str(6, "42").msg(12, enc{}.str(1, "k8s.io/initial-events-end").str(2, "true"))))...)
+		msg(2, enc{}.msg(1, enc{}.str(1, "web").str(3, "shop").str(5, "uid-1").str(6, "42").uint(7, 3).msg(12, enc{}.str(1, "k8s.io/initial-events-end").str(2, "true"))))...)
 	apiVersion, kind, raw, err := Unwrap(object)
 	if err != nil || apiVersion != "v1" || kind != "Pod" {
 		t.Fatalf("Unwrap = %q %q %v", apiVersion, kind, err)
 	}
-	rv, annotations, err := Meta(raw)
-	if err != nil || rv != "42" || annotations["k8s.io/initial-events-end"] != "true" {
-		t.Errorf("Meta = %q %v %v", rv, annotations, err)
+	om, err := Meta(raw)
+	if err != nil || om.Name != "web" || om.Namespace != "shop" || om.UID != "uid-1" || om.ResourceVersion != "42" || om.Annotations["k8s.io/initial-events-end"] != "true" {
+		t.Errorf("Meta = %+v %v", om, err)
 	}
 	if _, _, _, err := Unwrap([]byte("{}")); err == nil {
 		t.Error("Unwrap accepted JSON")

@@ -20,6 +20,10 @@ const maxOwnWriteAge = time.Minute
 // Reads return what this process's own writes stored in place of the
 // watched object, until the watch delivers the event for the write or
 // maxOwnWriteAge passes.
+//
+// The store holds no version of an object whose latest version doesn't
+// decode as T. Readers see such an object as missing until a version
+// that decodes arrives.
 type store[T any, P Resource[T]] struct {
 	mu   sync.RWMutex
 	objs map[string]map[string]*T // namespace -> name -> object
@@ -28,8 +32,11 @@ type store[T any, P Resource[T]] struct {
 	// their owner. The store indexes children by its value.
 	ownerKey string
 	owners   map[string]map[Key]struct{}
-	writes   map[Key]*ownWrite[T]
-	flights  map[Key][]*flight
+	// skipped holds, by key, why each object that the store skips doesn't
+	// decode.
+	skipped map[Key]*decodeError
+	writes  map[Key]*ownWrite[T]
+	flights map[Key][]*flight
 	// listing is set from beginList until replace.
 	listing bool
 	// sweep is when end next forgets the writes that reads no longer return.
@@ -87,6 +94,14 @@ func (s *store[T, P]) len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.n
+}
+
+// undecodable returns how many objects the store skips because they don't
+// decode.
+func (s *store[T, P]) undecodable() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.skipped)
 }
 
 // each calls fn for every object in namespace ns, or in all namespaces when
@@ -147,8 +162,27 @@ func (s *store[T, P]) byOwner(owner string) []*T {
 func (s *store[T, P]) put(obj *T) (old *T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.observe(metaOf[T, P](obj), false)
+	m := metaOf[T, P](obj)
+	s.observe(m, false)
+	delete(s.skipped, m.Key())
 	return s.putLocked(obj)
+}
+
+// skip records that the object that e names, from a watch event, doesn't
+// decode, and removes the version that the store holds. It returns that
+// version, and whether the store wasn't already skipping the object with
+// the same error.
+func (s *store[T, P]) skip(e *decodeError) (old *T, fresh bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := e.meta.Key()
+	s.observe(&e.meta, true)
+	fresh = !e.same(s.skipped[k])
+	if s.skipped == nil {
+		s.skipped = map[Key]*decodeError{}
+	}
+	s.skipped[k] = e
+	return s.removeLocked(k), fresh
 }
 
 func (s *store[T, P]) putLocked(obj *T) (old *T) {
@@ -172,12 +206,12 @@ func (s *store[T, P]) putLocked(obj *T) (old *T) {
 	return old
 }
 
-// remove deletes the object that obj, from a watch event, names.
-func (s *store[T, P]) remove(obj *T) (old *T) {
+// remove deletes the object that m, from a watch event, describes.
+func (s *store[T, P]) remove(m *ObjectMeta) (old *T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := metaOf[T, P](obj)
 	s.observe(m, true)
+	delete(s.skipped, m.Key())
 	return s.removeLocked(m.Key())
 }
 
@@ -213,18 +247,26 @@ func (s *store[T, P]) beginList() {
 }
 
 // replace makes items the store's contents and returns the differences:
-// objects that were added, changed (by resource version), or removed.
+// objects that were added, changed (by resource version), or removed. bad
+// holds the listed objects that don't decode, which the store then skips.
+// replace also returns those that it wasn't already skipping with the same
+// error.
 //
 // Lists ask for the latest state, and the list began after beginList, so it
 // holds each write that the store returns, or a later version. replace
 // forgets those writes, because the watch that follows the list might never
 // deliver their events.
-func (s *store[T, P]) replace(items map[Key]*T) []change[T] {
+func (s *store[T, P]) replace(items map[Key]*T, bad map[Key]*decodeError) (changes []change[T], fresh []*decodeError) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	clear(s.writes)
 	s.listing = false
-	var changes []change[T]
+	for k, e := range bad {
+		if !e.same(s.skipped[k]) {
+			fresh = append(fresh, e)
+		}
+	}
+	s.skipped = bad
 	for _, byName := range s.objs {
 		for name, old := range byName {
 			k := Key{Namespace: metaOf[T, P](old).Namespace, Name: name}
@@ -242,7 +284,7 @@ func (s *store[T, P]) replace(items map[Key]*T) []change[T] {
 			changes = append(changes, change[T]{old: old, new: obj})
 		}
 	}
-	return changes
+	return changes, fresh
 }
 
 // begin records that this process is about to write the object at k.

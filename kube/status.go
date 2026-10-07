@@ -88,7 +88,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	// cached one. It needs no write when the cached status has every field of
 	// it, and this controller's last write applied the same status, which
 	// leaves no field that the reconcile stopped setting to remove.
-	if last, ok := c.lastStatusApply(key); ok && last == h && containsJSON(before, after) {
+	if last, ok := c.lastStatusApply(key, pre.tenure); ok && last == h && containsJSON(before, after) {
 		return nil
 	}
 	if pre.diverged {
@@ -122,16 +122,14 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		return err
 	}
 	c.m.metrics.inc("kube_status_writes_total", "controller", c.name)
-	c.setStatusApply(key, h)
+	c.setStatusApply(key, h, pre.tenure)
 	if pre.rv != "" {
 		c.setCaughtUp(key, pre.tenure)
 	}
 	// The API server can store a different status than was sent, for example
 	// with defaults or another manager's fields, so record what it stored.
-	// Like the cache, tolerate fields whose JSON type doesn't match.
 	var written T
-	var te *json.UnmarshalTypeError
-	if err := json.Unmarshal(resp, &written); err == nil || errors.As(err, &te) {
+	if err := json.Unmarshal(resp, &written); err == nil {
 		if b, err := json.Marshal(reflect.ValueOf(&written).Elem().FieldByIndex(c.ti.status).Interface()); err == nil {
 			c.setStatus(key, hashJSON(b), true)
 		}
@@ -145,7 +143,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 // showed that the manager owns status fields, and is nil when that apply was
 // skipped. applyStatus records a non-empty status in applied, so a record
 // shows that the manager owns status fields.
-func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, manager string, owns *bool, applied map[appliedKey]uint64) error {
+func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, manager string, owns *bool, applied *appliedRecord) error {
 	if !in.status {
 		return nil
 	}
@@ -156,7 +154,7 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 	m := metaOfAny(in.obj)
 	ak := appliedKey{ti: in.ti, key: m.Key(), status: true}
 	h := hashOf(body, manager)
-	last, ok := c.lastApplied(key, ak)
+	last, ok := c.lastApplied(key, ak, applied.tenure)
 	skip := ok && last == h && in.observed != nil && matches(in.observed, body)
 	if empty {
 		// An empty status only gives up status fields that the manager owns.
@@ -180,7 +178,7 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 	}
 	record := func(result string) {
 		if !empty {
-			applied[ak] = h
+			applied.hashes[ak] = h
 		}
 		c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", result)
 	}

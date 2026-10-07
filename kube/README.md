@@ -593,7 +593,8 @@ func (reconciler) Default(ctx context.Context, site, old *Website) error {
 ```
 
 The framework registers a validating and a mutating admission webhook for the
-type and calls the methods for every create and update. On a create, `old` is
+type and calls the methods for every create and update. On a create, and on
+an update of an object that doesn't decode as the type, `old` is
 `nil`. The person or program that made the request sees the error that
 `Validate` returns. `Default` changes the object in place, and the framework
 sends the API server a JSON patch of only the fields that changed, so a type

@@ -194,11 +194,11 @@ func TestStore(t *testing.T) {
 		t.Errorf("each(a) visited %d", n)
 	}
 
-	changes := s.replace(map[Key]*widget{
+	changes, _ := s.replace(map[Key]*widget{
 		{"a", "one"}:   cm("a", "one", "1", nil, "a/parent"),
 		{"a", "two"}:   cm("a", "two", "2", nil, ""),
 		{"c", "three"}: cm("c", "three", "1", nil, ""),
-	})
+	}, nil)
 	var got []string
 	for _, c := range changes {
 		switch {
@@ -217,7 +217,7 @@ func TestStore(t *testing.T) {
 	if got := len(s.byOwner("a/parent")); got != 1 {
 		t.Errorf("after replace, byOwner = %d, want 1", got)
 	}
-	if old := s.remove(cm("a", "one", "2", nil, "a/parent")); old == nil || len(s.byOwner("a/parent")) != 0 {
+	if old := s.remove(&cm("a", "one", "2", nil, "a/parent").ObjectMeta); old == nil || len(s.byOwner("a/parent")) != 0 {
 		t.Error("remove didn't unindex")
 	}
 }

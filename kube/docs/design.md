@@ -392,9 +392,16 @@ The informer first tries a streaming list, which is a watch with
 replaces the cache's contents in one step, then keeps reading the same watch.
 If the server rejects the parameters with `400` or `422`, or sends nothing for
 15 seconds, the informer switches to paginated lists of 500 objects and
-watches from the list's resource version. Watches ask for a random timeout
+watches from the list's resource version. It also switches after three
+streaming lists in a row end before the bookmark. Something in between, such
+as a proxy with a short timeout, may cut every long response, and each page
+of a paginated list is a short one. Watches ask for a random timeout
 between 5 and 10 minutes so that reconnects spread out, and resume from the
-last resource version they saw. A `410 Gone` starts a new list. Replacing the
+last resource version they saw. A streaming list that ends before the
+bookmark counts as a failure and waits out the backoff, from 0.8 to 30
+seconds. So does a watch that ends within a second without events, as in
+`client-go`, so that a server or proxy that ends every watch at once doesn't
+get a tight loop of requests. A `410 Gone` starts a new list. Replacing the
 cache's contents computes which objects were added, changed, or deleted while
 the informer was disconnected, and notifies controllers of exactly those.
 
@@ -406,8 +413,26 @@ costs two passes over the bytes. The informer instead
 scans each event's boundaries with a byte scanner at about 500 MB/s, reads
 the type from the event's prefix, and decodes the object straight into `T`.
 That uses 30% less CPU and allocates a third fewer bytes than decoding twice.
-A field whose JSON type doesn't match its Go type doesn't stop the watch. The
-rest of the object decodes, and the informer logs the mismatch once.
+
+An object that doesn't decode as `T` doesn't stop the informer. The API server
+accepts some values that Go rejects, such as `2024-01-01t10:00:00z` for a
+`time.Time`, or a number too big for an `int32` in an int-or-string field.
+After an error from a type's `UnmarshalJSON`, `encoding/json` stops and leaves
+the later fields empty, but it returns the same kind of error as for a field
+that it skips and decodes past. So the informer treats an object with any
+error as undecodable, instead of reconciling a partial object, which could
+prune children or overwrite status. It decodes the object's metadata, logs a
+warning with the key and the error, and skips the object. The cache drops the
+version that it held, so reconciles, `Get`, and `List` see the object as
+missing, and an object with the controller's finalizer stays until someone
+fixes it. The watch moves past the event, and the next version that decodes,
+or a delete, ends the skip. The informer warns again only about a new error,
+and the `kube_cache_undecodable_objects` gauge counts the objects that each
+cache skips. A paginated list decodes each item straight into `T`. The decoder
+keeps no copy of an item that fails, so after a failure the informer lists
+again, reading each item's bytes first. Admission webhooks deny an object that
+doesn't decode, and its conversions fail, so the API server doesn't store a
+partial object.
 
 A controller's `kube.WatchNamespace` and `kube.WatchSelector` options, and the
 manager's `Namespace` field, become query parameters, so the API server
@@ -993,6 +1018,12 @@ holds the key's shard, and a replica that acquires a shard enqueues every
 cached key in it and forgets what it last wrote for them. It also forgets
 every reconcile error that it kept for the shard, including deleted objects'
 errors, because another replica may have reconciled the shard's keys since.
+The records that let a reconcile skip an apply or a status write hold the
+tenure in which the reconcile that made them started, a count of the
+replica's acquisitions of the shard, and reconciles ignore records from other
+tenures. So a reconcile that starts before the replica forgets, or one from
+its last hold that's still running, can't skip a write because of a stale
+record.
 Leader election is the case of one shard. Candidates measure a lease's expiry
 from when they saw its holder or renew time change, on their own clock, so
 clock skew between replicas doesn't give a shard two holders.
@@ -1081,7 +1112,8 @@ shard's objects, at the cost of a sharder and a write to every object.
 A reconciler with a `Validate` or `Default` method, or a handler passed to
 `kube.Webhooks`, gets a validating or mutating webhook for its type, for
 `CREATE` and `UPDATE` with `matchPolicy: Equivalent`, so requests for other
-versions are converted first. Both methods receive the old object on updates.
+versions are converted first. Both methods receive the old object on updates,
+or nil if it doesn't decode, so that an update can fix such an object.
 The webhook decodes the request's object into the projection, so a mutating
 webhook can't send the whole object back without dropping the fields the
 projection lacks. Instead, it encodes the projection before and after
@@ -1119,6 +1151,14 @@ to a program that defaults them, so a program that only validates can't
 register a webhook that changes objects. Every program, even one without
 webhooks, gets `get` and `delete` on both names, to delete the configurations
 that an earlier version left.
+
+The API server sends admission requests to a Pod that's stopping until the
+Pod's endpoints drop it, and kube's webhooks have `failurePolicy: Fail`, so a
+request that a stopping program refuses or cuts off fails the create or
+update. So `generate` gives a program with webhooks the `preStop` sleep that
+[HTTP endpoints](#http-endpoints) describes, and when the program stops, the
+webhook server stops accepting connections and gives requests in progress up
+to 10 seconds (`serveGrace`) to finish.
 
 ### HTTP endpoints
 
@@ -1538,8 +1578,9 @@ but the kubelet restarts a container whose startup probe fails too many times,
 so a program whose caches are slow to sync could restart over and over. A
 startup probe on `/healthz` passes once the server listens, which can be
 before `/readyz` passes, so the Pod would still wait for the readiness probe.
-The liveness probe keeps Kubernetes' defaults. A program that serves and has
-no `kube.Volume` gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
+The liveness probe keeps Kubernetes' defaults. A program that serves or has
+webhooks, and has no `kube.Volume`, gets the `preStop` sleep that
+[HTTP endpoints](#http-endpoints)
 describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
 write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
 Pod that writes more instead of letting it fill the node's disk. A program that

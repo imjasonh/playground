@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +184,78 @@ func TestRemovesWebhooksThatTheProgramDropped(t *testing.T) {
 type noWebhooks struct{}
 
 func (noWebhooks) Reconcile(context.Context, *Gadget) error { return nil }
+
+// slowGadgets is gadgets, except that validating a Gadget named slow waits
+// until release is closed.
+type slowGadgets struct {
+	gadgets
+	validating, release chan struct{}
+}
+
+func (s slowGadgets) Validate(ctx context.Context, g, old *Gadget) error {
+	if g.Name == "slow" {
+		select {
+		case s.validating <- struct{}{}:
+		default:
+		}
+		<-s.release
+	}
+	return s.gadgets.Validate(ctx, g, old)
+}
+
+func TestWebhooksFinishRequestsWhenTheProgramStops(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	m := webhookManager(t, "draining-e2e", ns)
+	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
+	r := slowGadgets{validating: make(chan struct{}, 1), release: make(chan struct{})}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- m.Run(ctx, kube.For[Gadget](r)) }()
+	gadgetPath := func(name string) string { return client.Path(group+"/v1", "gadgets", ns, name) }
+	create := func(name string, size int) error {
+		return c.Create(t.Context(), gadgetPath(""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Gadget", "metadata": map[string]any{"name": name}, "spec": map[string]any{"size": size},
+		}, nil)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		err := create("huge", 11)
+		switch {
+		case err == nil:
+			_ = c.Delete(t.Context(), gadgetPath("huge"), client.DeleteOptions{})
+			return errors.New("the validating webhook isn't enforced yet")
+		case !strings.Contains(err.Error(), "size must be at most 10"):
+			return err
+		}
+		return nil
+	})
+
+	t.Log("The program stops while its webhook validates a create, and the create succeeds.")
+	created := make(chan error, 1)
+	go func() { created <- create("slow", 1) }()
+	select {
+	case <-r.validating:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the webhook didn't get the create")
+	}
+	cancel()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		conn, err := net.Dial("tcp", m.WebhookAddr)
+		if err != nil {
+			return nil
+		}
+		conn.Close()
+		return errors.New("the webhook server still accepts connections")
+	})
+	close(r.release)
+	if err := <-created; err != nil {
+		t.Errorf("creating a Gadget that the webhook was validating when the program stopped: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
 
 type Thing struct {
 	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,version=v2"`

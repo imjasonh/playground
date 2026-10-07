@@ -1,10 +1,8 @@
 package kube
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -219,8 +217,7 @@ func (c *controller[T, P]) convert(raw json.RawMessage, desired string) (json.Ra
 	if err != nil {
 		return nil, err
 	}
-	var te *json.UnmarshalTypeError
-	if err := json.Unmarshal(raw, from); err != nil && !errors.As(err, &te) {
+	if err := json.Unmarshal(raw, from); err != nil {
 		return nil, fmt.Errorf("decoding %s: %w", head.APIVersion, err)
 	}
 	hub, ok := from.(*T)
@@ -231,7 +228,7 @@ func (c *controller[T, P]) convert(raw json.RawMessage, desired string) (json.Ra
 				return nil, fmt.Errorf("converting %s to %s: %w", head.APIVersion, c.ti.apiVersion, err)
 			}
 		} else if err := roundTrip(from, hub); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("converting %s to %s: %w", head.APIVersion, c.ti.apiVersion, err)
 		}
 	}
 	var to any = hub
@@ -244,7 +241,7 @@ func (c *controller[T, P]) convert(raw json.RawMessage, desired string) (json.Ra
 				return nil, fmt.Errorf("converting %s to %s: %w", c.ti.apiVersion, desired, err)
 			}
 		} else if err := roundTrip(hub, to); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("converting %s to %s: %w", c.ti.apiVersion, desired, err)
 		}
 	}
 	out, err := generic(to)
@@ -274,16 +271,13 @@ func (c *controller[T, P]) versionObject(apiVersion string) (any, error) {
 }
 
 // roundTrip copies the fields of from into to by name, for versions that
-// don't convert themselves.
+// don't convert themselves. A field whose value doesn't fit to's field is an
+// error, so the API server rejects the request instead of storing an object
+// without the field.
 func roundTrip(from, to any) error {
 	b, err := json.Marshal(from)
 	if err != nil {
 		return err
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	var te *json.UnmarshalTypeError
-	if err := dec.Decode(to); err != nil && !errors.As(err, &te) {
-		return err
-	}
-	return nil
+	return json.Unmarshal(b, to)
 }

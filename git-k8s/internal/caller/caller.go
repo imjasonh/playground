@@ -47,26 +47,19 @@ func (c Caller) String() string { return c.Namespace + "/" + c.Name }
 // Check returns the name of the check that the caller runs. Each of
 // entries, the data of the git-k8s-checks ConfigMap, maps
 // NAMESPACE.SERVICE_ACCOUNT to a check's name, or to "" for a service
-// account that isn't a check. Without an entry, generate's convention
-// applies: it installs each program in a namespace with a service account
-// of the program's name, so the check NAME runs as the service account
-// check-NAME in the namespace check-NAME. The core program's service
-// account is never a check. The check variable of the policies in
-// config/policy.yaml maps service accounts the same way, so change both
-// together.
+// account that isn't a check. Only an entry makes the caller a check. A
+// service account's name doesn't, even check-NAME in the namespace
+// check-NAME, where generate installs the program check-NAME, because
+// anyone who can create a namespace can name it and its service accounts.
+// The core program's service account is never a check. The policies in
+// config/policy.yaml read the same entries, so change both together.
 func (c Caller) Check(entries map[string]string) (string, bool) {
 	account := c.Namespace + "." + c.Name
 	if account == coreAccount {
 		return "", false
 	}
-	if check, ok := entries[account]; ok {
-		return check, check != ""
-	}
-	name, ok := strings.CutPrefix(c.Name, "check-")
-	if !ok || name == "" || c.Namespace != c.Name {
-		return "", false
-	}
-	return name, true
+	check := entries[account]
+	return check, check != ""
 }
 
 // Identify reviews the bearer token in r's Authorization header with

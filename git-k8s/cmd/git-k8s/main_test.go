@@ -359,7 +359,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	all := "git-k8s-check-results, git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals"
 	if c := reconcile(); c == nil || c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != all+" aren't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, checks that own Pods can write any Pod in the cluster, anyone who can patch a GitBranch can approve it, and the approved-by annotation can name someone who didn't approve; apply config/policy.yaml" {
+		c.Message != all+" aren't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, anyone who can create or patch a GitBranch can change its merge policy, checks that own Pods can write any Pod in the cluster, anyone who can patch a GitBranch can approve it, and the approved-by annotation can name someone who didn't approve; apply config/policy.yaml" {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -408,17 +408,17 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		vap.Annotations = nil
 	}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=3; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again" {
+		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=4; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again" {
 		t.Errorf("with policies from an earlier release, which have no version, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = false
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=3; apply config/policy.yaml from this release" {
+		c.Message != all+" don't have git-k8s.imjasonh.com/policy-version=4; apply config/policy.yaml from this release" {
 		t.Errorf("with policies from an earlier release that the program doesn't install, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=3; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
+		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=4; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
 		t.Errorf("with one binding that only warns and policies from an earlier release, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Deny"}
@@ -427,33 +427,33 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	vaps[0].Annotations[policyVersionAnnotation] = "1"
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-		c.Message != "git-k8s-check-results doesn't have git-k8s.imjasonh.com/policy-version=3; apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results doesn't have git-k8s.imjasonh.com/policy-version=4; apply config/policy.yaml from this release" {
 		t.Errorf("with one policy at an earlier version, PoliciesInstalled = %+v", c)
 	}
 	vaps[0].Annotations[policyVersionAnnotation] = later
 	for _, v := range []string{"v3", "99999999999999999999"} {
 		vaps[1].Annotations[policyVersionAnnotation] = v
 		if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" ||
-			c.Message != "git-k8s-branches doesn't have git-k8s.imjasonh.com/policy-version=3; git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+			c.Message != "git-k8s-branches doesn't have git-k8s.imjasonh.com/policy-version=4; git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 4; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 			t.Errorf("with one policy at a later version and the other at %q, which doesn't parse as an int, PoliciesInstalled = %+v", v, c)
 		}
 	}
 	vaps[1].Annotations[policyVersionAnnotation] = current
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" ||
-		c.Message != "git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results has a git-k8s.imjasonh.com/policy-version later than 4; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("with one policy at a later version, PoliciesInstalled = %+v", c)
 	}
 	for _, vap := range vaps {
 		vap.Annotations[policyVersionAnnotation] = later
 	}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" ||
-		c.Message != all+" have a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != all+" have a git-k8s.imjasonh.com/policy-version later than 4; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("with policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	// Applying the policies from a later release installs the missing one too,
 	// so the fix for the later policies replaces the fix for the missing one.
 	if c := reconcile(world[2:]...); c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 3; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write GitBranch status can write check results and status.diverged, and checks that can write GitBranch status can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 4; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("without git-k8s-check-results, and with the other policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -465,12 +465,12 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		vap.Annotations[policyVersionAnnotation] = current
 	}
 	if c := reconcile(world...); c.Status != kube.True || c.Reason != "Installed" ||
-		c.Message != "the admission policies keep git-k8s service accounts from approving branches, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches" {
+		c.Message != "the admission policies keep git-k8s service accounts from approving branches, let only the core program create GitBranch objects or change their spec, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches" {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
 	}
 	bindings[1].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False ||
-		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, and checks and git-k8s-deps can change GitBranch objects; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, and anyone who can create or patch a GitBranch can change its merge policy; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with only git-k8s-branches warning, PoliciesInstalled = %+v", c)
 	}
 	// Another binding that denies enforces git-k8s-branches, but the next start
@@ -501,7 +501,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	narrow.Spec.ParamRef = checksRef("Deny")
 	narrow.Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
 	if c := reconcile(append([]any{narrow}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, and checks and git-k8s-deps can change GitBranch objects; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, and anyone who can create or patch a GitBranch can change its merge policy; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-branches warning while narrow-branches is limited, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = false
@@ -518,7 +518,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// requests through while the parameters are missing.
 	params := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"parameterNotFoundAction":"Deny"}}}'`
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, and checks and git-k8s-deps can change GitBranch objects; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
+		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so any service account that can write GitBranch status can write check results and status.diverged, checks that can write GitBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change GitBranch objects, and anyone who can create or patch a GitBranch can change its merge policy; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
 		t.Errorf("with bindings that allow requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ParamRef.ParameterNotFoundAction = "Deny"

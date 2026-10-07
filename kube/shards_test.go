@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -208,6 +209,113 @@ func TestRetakenShardRequiresTheResourceVersionAgain(t *testing.T) {
 		if meta["resourceVersion"] != "5" {
 			t.Errorf("status write %d required resource version %v, want the cached 5", i+1, meta["resourceVersion"])
 		}
+	}
+}
+
+// readyApplier applies a ConfigMap for each widget and marks the widget
+// ready.
+type readyApplier struct{}
+
+func (readyApplier) Reconcile(ctx context.Context, w *widget) error {
+	Apply(ctx, &cfgMap{Object: Meta(w.Name, nil), Data: map[string]string{"size": "1"}})
+	SetCondition(&w.Status.Conditions, Condition{Type: "Ready", Status: True, Reason: "Applied"})
+	return nil
+}
+
+// TestRetakenShardIgnoresWhatTheLastHoldWrote reconciles an object twice
+// while the replica holds its shard, and again after another replica held
+// the shard and this one took it back. The controller isn't set up, so
+// taking the shard back doesn't forget what the replica wrote in its last
+// hold. That's the state when a reconcile starts before the replica
+// forgets, or when a reconcile from the last hold records its writes after.
+// From the second reconcile on, the applied ConfigMap and the status each
+// have a field that the reconcile doesn't set. In the same hold, another
+// manager set it, and it needs no write. After the hand-off, the other
+// replica may have set it with the same field manager, so the reconcile
+// must write again to remove it.
+func TestRetakenShardIgnoresWhatTheLastHoldWrote(t *testing.T) {
+	api := &leaseAPI{}
+	var applies atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch && !strings.HasSuffix(r.URL.Path, "/status") {
+			applies.Add(1)
+			fmt.Fprint(rw, "{}")
+			return
+		}
+		api.ServeHTTP(rw, r)
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testManager()
+	m.client, m.tracker, m.Name, m.LeaseNamespace = cl, newTracker(), "widgets", "shop"
+	s := newSharder(m)
+	res := resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion, w.Generation = "shop", "w1", "u1", "5", 1
+	c := triggerable(t, m, res, w)
+	c.r, c.sh = readyApplier{}, s
+	cti, _ := typeInfoFor[cfgMap, *cfgMap]()
+	cms := newInformer[cfgMap, *cfgMap](2, cti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, nil, informerConfig{}, m.log, m.metrics)
+	cm := &cfgMap{Object: Meta("w1", nil)}
+	cm.APIVersion, cm.Kind, cm.Namespace, cm.UID, cm.ResourceVersion = "v1", "ConfigMap", "shop", "c1", "3"
+	cms.store.put(cm)
+	m.resolved = map[*typeInfo]resolved{c.ti: res}
+	m.caches = map[cacheKey]cache{{ti: cti}: cms}
+	// writes reconciles the widget and returns how many applies and status
+	// writes the reconciles have sent.
+	writes := func() (int, int) {
+		t.Helper()
+		if _, err := c.reconcileKey(t.Context(), w.Key()); err != nil {
+			t.Fatal(err)
+		}
+		return int(applies.Load()), len(api.statusWrites())
+	}
+	s.sync(t.Context())
+	if !s.owns(w.Key()) {
+		t.Fatal("the replica didn't take the free shard")
+	}
+	if a, st := writes(); a != 1 || st != 1 {
+		t.Fatalf("the first reconcile sent %d applies and %d status writes, want 1 and 1", a, st)
+	}
+
+	t.Log("The caches show what the writes stored, with a field from another manager.")
+	b, err := json.Marshal(api.statusWrites()[0]["status"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown := *w
+	if err := json.Unmarshal(b, &shown.Status); err != nil {
+		t.Fatal(err)
+	}
+	ready := FindCondition(shown.Status.Conditions, "Ready")
+	if ready == nil {
+		t.Fatalf("the status write %s has no Ready condition", b)
+	}
+	ready.Message = "set by another manager"
+	c.primary.store.put(&shown)
+	applied := *cm
+	applied.Data = map[string]string{"size": "1", "other": "set by another manager"}
+	cms.store.put(&applied)
+	if a, st := writes(); a != 1 || st != 1 {
+		t.Fatalf("a reconcile in the same hold sent %d applies and %d status writes in all, want 1 and 1", a, st)
+	}
+
+	t.Log("Another replica takes the shard and releases it, and this replica takes it back.")
+	api.setHolder("other")
+	s.sync(t.Context())
+	if s.owns(w.Key()) {
+		t.Fatal("the replica still holds the shard that another replica took")
+	}
+	api.setHolder("")
+	s.sync(t.Context())
+	if !s.owns(w.Key()) {
+		t.Fatal("the replica didn't take the released shard back")
+	}
+	if a, st := writes(); a != 2 || st != 2 {
+		t.Errorf("after the replica took the shard back, the reconciles sent %d applies and %d status writes in all, want 2 and 2", a, st)
 	}
 }
 
@@ -435,9 +543,9 @@ func TestDeleteForgetsAnObjectInAShardThatIsntHeld(t *testing.T) {
 	c := triggerable[widget](t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true})
 	c.sh = &sharder{n: 1, shards: []*shard{{}}}
 	k, ak := w.Key(), appliedKey{ti: c.ti, key: w.Key()}
-	c.setApplied(k, map[appliedKey]uint64{ak: 1})
+	c.setApplied(k, &appliedRecord{hashes: map[appliedKey]uint64{ak: 1}})
 	c.setStatus(k, 1, true)
-	c.setStatusApply(k, 1)
+	c.setStatusApply(k, 1, 0)
 	c.setCaughtUp(k, 0)
 	m.tracker.add(ref{c: &c.core, key: k}, dep{src: 1, ns: "shop", name: "config"}, nil)
 
@@ -445,13 +553,13 @@ func TestDeleteForgetsAnObjectInAShardThatIsntHeld(t *testing.T) {
 	if high, low := c.q.Len(); high+low != 0 {
 		t.Errorf("queue = %d high, %d low; want no reconcile", high, low)
 	}
-	if _, ok := c.lastApplied(k, ak); ok {
+	if _, ok := c.lastApplied(k, ak, 0); ok {
 		t.Error("the replica remembers what it applied for the deleted object")
 	}
 	if _, ok := c.lastStatus(k); ok {
 		t.Error("the replica remembers the deleted object's status")
 	}
-	if _, ok := c.lastStatusApply(k); ok {
+	if _, ok := c.lastStatusApply(k, 0); ok {
 		t.Error("the replica remembers the status that it applied to the deleted object")
 	}
 	if c.hasCaughtUp(k, 0) {

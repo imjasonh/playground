@@ -57,6 +57,8 @@ type cache interface {
 	run(ctx context.Context)
 	onChange(func(old, new *ObjectMeta, initial bool))
 	size() int
+	undecodable() int
+	filter() (namespace, selector string)
 	begin(k Key) func(*written)
 }
 
@@ -73,7 +75,12 @@ func (inf *informer[T, P]) onChange(h func(old, new *ObjectMeta, initial bool)) 
 	})
 }
 
-func (inf *informer[T, P]) size() int { return inf.store.len() }
+func (inf *informer[T, P]) size() int        { return inf.store.len() }
+func (inf *informer[T, P]) undecodable() int { return inf.store.undecodable() }
+
+func (inf *informer[T, P]) filter() (namespace, selector string) {
+	return inf.cfg.namespace, inf.cfg.selector
+}
 
 func (ti *typeInfo) String() string {
 	return ti.kind + "." + ti.apiVersion

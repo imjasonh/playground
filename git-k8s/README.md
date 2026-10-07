@@ -248,7 +248,7 @@ do:
 
 | Caller | Can fetch | Can push |
 | --- | --- | --- |
-| The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME`, or as a service account that the `git-k8s-checks` ConfigMap maps to `NAME`, as [Check service accounts](#check-service-accounts) describes | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
+| The check `NAME`, which runs as a service account that the `git-k8s-checks` ConfigMap maps to `NAME`, as [Check service accounts](#check-service-accounts) describes | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
 | A controller that starts branches, or a check such as `check-conflicts`, whose service account the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
 | A Pod of a check, such as a test Pod of `check-gotest` or an agent Pod of `check-review` or `check-conflicts`, with a token that's bound to the Pod | The repository of the branch that the Pod works on, while the check's `Running` result on that branch names the Pod, the branch's merge policy lists the check, and the Pod is `Pending` | Nothing |
 
@@ -893,9 +893,10 @@ a conflict, and for the commit that a squash or rebase landing makes. A push
 that adds, removes, or changes code needs a new approval, and so does a
 merge that resolves a conflict.
 
-Only an approval that names the commit's full SHA follows the change to
-another head. One that names a shorter prefix holds only while the branch's
-head is that commit. You can approve a commit after the branch moves on from
+`approve` must name the commit's full SHA, as `git rev-parse` prints it.
+Anyone who can push can make a commit whose SHA starts with a shorter
+prefix, so `check-approval` fails a prefix, and the `git-k8s-approvals`
+policy rejects one. You can approve a commit after the branch moves on from
 it, such as when `check-base` merges the parent in while you review the
 change. The check's message then names both commits, for example
 `1bd279367630 is approved by alice, and 9132990e9ac2 makes the same change`.
@@ -907,13 +908,19 @@ The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 
 - Setting, changing, or removing the `approve` or `approved-by` annotation
   requires the `approve` verb on the `GitBranch`. `generate` grants that
-  verb to no program, so grant it to the people who approve:
+  verb to no program, so grant it to the people who approve. The policy
+  checks for the verb in the `GitBranch` object's namespace, so run these
+  commands for each namespace that has a `GitRepository`:
 
   ```sh
-  kubectl create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
-  kubectl create rolebinding approver --role=approver --group=GROUP
+  kubectl -n NAMESPACE create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+  kubectl -n NAMESPACE create rolebinding approver --role=approver --group=GROUP
   ```
 
+  kubectl warns that `approve` isn't a standard resource verb. The warning
+  is expected, and kubectl creates the Role.
+
+- `approve` must be a commit's full SHA, in lowercase hexadecimal.
 - A request that sets or changes `approve` must set `approved-by` to the
   username that sends it.
 - A request that removes `approve` must remove `approved-by` too.
@@ -1110,6 +1117,26 @@ parent head, because the result doesn't depend on the branch's commits, such
 as their messages or authors. Squash and rebase landings count only such
 results for the commits that they make, as
 [Which results count](#which-results-count) describes.
+
+To install the check, save the package as `cmd/check-readme`, and install
+it the way that [Install](#install) installs the other checks. `generate`
+installs it with the service account `check-readme` in the namespace
+`check-readme`. Then map that service account to the check in the
+`git-k8s-checks` ConfigMap:
+
+```sh
+go run ./cmd/check-readme generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"check-readme.check-readme":"readme"}}'
+```
+
+Until the entry exists, the core program answers the check's results with
+`403 Forbidden` and a message that says `isn't a check's service account`,
+and the check sends nothing more for a branch until the branch changes or
+the check restarts. The mirror doesn't let it fetch or push either, as
+[Check service accounts](#check-service-accounts) describes. Last, add
+`readme` to `merge.checks` in the rule of each parent whose branches need
+it, as in [How it works](#how-it-works).
 
 ### Sandboxed checks
 
@@ -1671,7 +1698,9 @@ To install `check-review`, build the runner's image from
 Cursor API key under the key `api-key`, in each namespace with branches to
 review. Agent Pods meet the `restricted` Pod Security Standard and run in
 their branch's namespace, which must also opt in to check Pods, as
-[Install](#install) describes:
+[Install](#install) describes. Last, map the check's service account to
+`review` in the `git-k8s-checks` ConfigMap, as
+[Check service accounts](#check-service-accounts) describes:
 
 ```sh
 docker build -t REGISTRY/agent-runner agent/runner
@@ -1680,6 +1709,8 @@ image="$(docker inspect -f '{{index .RepoDigests 0}}' REGISTRY/agent-runner)"
 go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
 kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key=KEY
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"check-review.check-review":"review"}}'
 ```
 
 In a namespace without the Secret, each run fails before the agent starts.
@@ -2038,10 +2069,14 @@ branches under `resolve/` in each, as a controller that starts branches can.
 
 To install `check-conflicts`, build the agent runner's image as for
 `check-review`, and pass its digest with `-agent-image`. Without
-`-agent-image`, the check resolves only what git can, and runs no agent:
+`-agent-image`, the check resolves only what git can, and runs no agent.
+Then map the check's service account to `conflicts` in the
+`git-k8s-checks` ConfigMap:
 
 ```sh
 go run ./cmd/check-conflicts generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"check-conflicts.check-conflicts":"conflicts"}}'
 ```
 
 `check-conflicts` takes the same flags as `check-review`, and `-union`, a
@@ -2176,10 +2211,8 @@ to the core program's results endpoint:
    then, the core program also reads the `GitBranch` from the API server,
    at most once a second, to learn whether it's gone.
 3. The core program verifies the token with a TokenReview for that
-   audience, and maps the token's service account to a check. `generate`
-   installs each check with the service account `check-NAME` in the
-   namespace `check-NAME`, which maps to the check `NAME`. An entry in the
-   `git-k8s-checks` ConfigMap maps another service account to a check, as
+   audience, and rejects the result unless the `git-k8s-checks` ConfigMap
+   maps the token's service account to a check, as
    [Check service accounts](#check-service-accounts) describes. If that
    check isn't `CHECK`, the core program rejects the result.
 4. The core program also rejects a result for a branch without a parent, a
@@ -3142,11 +3175,14 @@ To install `git-k8s-deps` and `check-deps`, build and push the agent runner's
 image. In each namespace with dependency branches, create the
 `cursor-api-key` Secret and opt the namespace in to check Pods, as
 [Agentic checks](#agentic-checks) describes. `git-k8s-deps` runs its result
-containers from that image, and `check-deps` runs agents in it:
+containers from that image, and `check-deps` runs agents in it. Then map
+`check-deps`'s service account to `deps` in the `git-k8s-checks` ConfigMap:
 
 ```sh
 go run ./cmd/git-k8s-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -result-image="${image}" | kubectl apply -f -
 go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"check-deps.check-deps":"deps"}}'
 ```
 
 Pass the core program `-branch-prefix=git-k8s-deps/git-k8s-deps=deps/`, with
@@ -3204,12 +3240,23 @@ enough.
 Each program installs with kube's `generate` command, which builds an image,
 pushes it, and writes the YAML for its namespace, service account, RBAC
 rules, and Deployment. The programs run `git`, so build them on an image
-that has git 2.43 or later:
+that has git 2.43 or later. Then wait for the core program to create the
+`git-k8s-checks` ConfigMap, and map each check's service account to its
+check there, as [Check service accounts](#check-service-accounts) describes:
 
 ```sh
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
   go run "./cmd/${program}" generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
 done
+kubectl -n git-k8s wait --for=create configmap/git-k8s-checks --timeout=5m
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge -p '
+data:
+  check-base.check-base: base
+  check-gofmt.check-gofmt: gofmt
+  check-risk.check-risk: risk
+  check-approval.check-approval: approval
+  check-gotest.check-gotest: gotest
+'
 ```
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
@@ -3337,9 +3384,10 @@ status by a check's service account, and every change to `status.checks` or
 `status.diverged` by a service account other than the core program's.
 `status.diverged` names the commit that `check-conflicts` merges or replays.
 Checks have no RBAC rule to write status, so this policy is a backstop for a
-role that grants one by mistake. A check that doesn't run as `check-NAME` in
-the namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap,
-as [Check service accounts](#check-service-accounts) describes. The second
+role that grants one by mistake. It treats a service account as a check when
+the `git-k8s-checks` ConfigMap has an entry for it, as
+[Check service accounts](#check-service-accounts) describes, and when it's
+`check-NAME` in the namespace `check-NAME`, even without an entry. The second
 stops every git-k8s service account from setting the `approve` and
 `approved-by` annotations, which are for people, and stops checks and
 `git-k8s-deps` from changing a `GitBranch` object's spec, labels,
@@ -3358,7 +3406,13 @@ every check except `check-gotest`, `check-review`, `check-deps`, and
 these checks and `git-k8s-deps`, because it can't tell whether an owned
 object needs a finalizer on its owner. The second policy denies the
 annotation that kube adds with that finalizer, so these programs can own
-only namespaced objects in the branch's namespace. The first two policies
+only namespaced objects in the branch's namespace. The second policy also
+lets only the core program create a `GitBranch` or change its spec, which
+the core program copies from the `GitRepository`. The spec holds the
+parent's merge policy, so anyone else who could change it, such as an
+approver who can patch a `GitBranch`, could land the branch without its
+checks. People can still label and annotate `GitBranch` objects. To change
+a merge policy, change the `GitRepository`. The first two policies
 identify the core program and the checks by the service accounts that
 `generate` installs them with: `git-k8s` in the namespace `git-k8s`, and
 `check-NAME` in the namespace `check-NAME`. The second identifies
@@ -3566,25 +3620,32 @@ denies.
 
 ### Check service accounts
 
-The results endpoint, the [mirror](#the-mirror), and the first two policies
-recognize a check by its service account. `generate` installs `check-NAME`
-with the service account `check-NAME` in the namespace `check-NAME`, and the
-endpoint, the mirror, and the policies treat that service account as the
-check `NAME`. For a check that runs as another service account, such as a
-check installed with `generate -namespace=checks`, add an entry to the
-`git-k8s-checks` ConfigMap in the `git-k8s` namespace. Each key is
-`NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
+The results endpoint and the [mirror](#the-mirror) treat a service account
+as a check only when the `git-k8s-checks` ConfigMap in the `git-k8s`
+namespace has an entry for it. Each key is `NAMESPACE.SERVICE_ACCOUNT`, and
+its value is the check's name. A service account's name doesn't make it a
+check, because anyone who can create namespaces and service accounts can
+choose their names. `generate` installs `check-NAME` with the service
+account `check-NAME` in the namespace `check-NAME`, so [Install](#install)
+adds entries such as `check-gofmt.check-gofmt: gofmt`.
+
+To install checks in a shared namespace, create the namespace first. Then
+install each check with `generate -namespace=checks`, and add its entry:
 
 ```sh
+kubectl create namespace checks
+go run ./cmd/check-approval generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -namespace=checks | kubectl apply -f -
 kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
   -p '{"data":{"checks.check-approval":"approval"}}'
 ```
 
-An entry overrides the `check-NAME` convention, so an entry with an empty
-value stops that service account from sending results, and from fetching
-from the mirror or pushing to it as a check. The first two policies still
-treat that service account as a check, so it can't change a `GitBranch` or
-its status even if RBAC lets it patch them. The endpoint, the mirror, and
+An entry with an empty value says that the service account isn't a check,
+so it can't send results, or fetch from the mirror or push to it as a
+check. The first two policies treat a service account with an entry as a
+check even when the value is empty, and `check-NAME` in the namespace
+`check-NAME` as a check even without an entry. That only limits those
+service accounts: they can't change a `GitBranch` or its status even if
+RBAC lets them patch them. The endpoint, the mirror, and
 the policies ignore an entry for the core program's service account,
 `git-k8s.git-k8s`, so an entry can't make the core program a check, or stop
 it from writing results or changing `GitBranch` objects. Don't add an entry
@@ -3612,10 +3673,12 @@ name its service account.
 
 While the ConfigMap is missing, the API server denies every create and update
 of a `GitBranch` or its status, including people's, with a message that says
-`no params found for policy binding`. To create the ConfigMap again, run
-`kubectl -n git-k8s create configmap git-k8s-checks`, or restart the core
-program with `kubectl -n git-k8s rollout restart deployment/git-k8s`. With
-`-install-policies=false`, apply `config/policy.yaml` instead.
+`no params found for policy binding`, and the results endpoint and the
+mirror treat no service account as a check. To create the ConfigMap again,
+run `kubectl -n git-k8s create configmap git-k8s-checks`, or restart the
+core program with `kubectl -n git-k8s rollout restart deployment/git-k8s`.
+With `-install-policies=false`, apply `config/policy.yaml` instead. Then add
+the entries again.
 
 ### Upgrade from before the mirror
 
@@ -3655,7 +3718,9 @@ order:
    core program's `-go-cache-namespace`, as
    [Share modules and build outputs](#share-modules-and-build-outputs)
    describes.
-5. Install the checks. They lose their RBAC rule for `gitbranches/status`,
+5. Map the checks' service accounts to their checks in the
+   `git-k8s-checks` ConfigMap, as [Install](#install) does, and then
+   install the checks. They lose their RBAC rule for `gitbranches/status`,
    and send their results to the core program.
 6. If you applied the `test-pods` NetworkPolicy that an earlier version of
    this README described, delete it from each namespace that has a
@@ -3727,8 +3792,9 @@ and the programs that sign commits can read them, as
 Kubernetes RBAC is the trust boundary. Anyone who can write a
 `GitRepository` in a namespace chooses the external repository, and the
 Secret or Octo STS identities that the core program uses there. Of the
-service accounts, only `check-NAME`'s can write the `NAME` result, but
-people who can write `GitBranch` status in a namespace can write any result.
+service accounts, only those that the `git-k8s-checks` ConfigMap maps to
+`NAME` can write the `NAME` result, but people who can write `GitBranch`
+status in a namespace can write any result.
 Such a result can name a Pod in that namespace for the mirror to let fetch
 the repository, but the mirror accepts only a `Pending` Pod with the
 controller label of a check whose result names it, on a branch whose merge
