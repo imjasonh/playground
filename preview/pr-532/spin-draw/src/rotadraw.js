@@ -1,9 +1,11 @@
 // Geometry for a spin-draw disc.
 //
 // A picture is a list of polylines. The disc stores each piece rotated
-// about the pin. You align a number with a fixed dot, then trace the
-// line whose number is upright. Turning the disc by that piece's angle
-// puts the line back where it belongs on the paper.
+// about the pin. Pieces are shuffled onto the numbers, so the disc does
+// not lay the drawing out in stroke order. You align a number with a
+// fixed dot, then trace the line whose number is upright. Turning the
+// disc by that piece's angle puts the line back where it belongs on the
+// paper.
 
 export const REFERENCE_ANGLE = Math.PI / 2;
 
@@ -219,6 +221,42 @@ export function splitStrokes(strokes, count) {
   return pieces;
 }
 
+// FNV-1a over rounded coordinates. The same picture and line count
+// always get the same shuffle, so the screen and the print match.
+function hashStrokes(strokes, steps) {
+  let hash = (2166136261 ^ steps) >>> 0;
+  for (const stroke of strokes) {
+    for (const point of stroke) {
+      hash = Math.imul(hash ^ (Math.round(point.x * 1000) | 0), 16777619) >>> 0;
+      hash = Math.imul(hash ^ (Math.round(point.y * 1000) | 0), 16777619) >>> 0;
+    }
+    hash = Math.imul(hash ^ 0x2c, 16777619) >>> 0;
+  }
+  return hash;
+}
+
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return function next() {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function shufflePieces(pieces, seed) {
+  const order = pieces.map((_, index) => index);
+  const next = mulberry32(seed);
+  for (let i = order.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(next() * (i + 1));
+    const swap = order[i];
+    order[i] = order[j];
+    order[j] = swap;
+  }
+  return order.map((index) => pieces[index]);
+}
+
 export function buildDisc(strokes, options = {}) {
   const requested = clampInt(options.steps ?? 16, 1, 80);
   const radius = options.radius ?? 100;
@@ -238,7 +276,9 @@ export function buildDisc(strokes, options = {}) {
     };
   }
   const fitted = fitStrokes(clean, inner, outer);
-  const pieces = splitStrokes(fitted, requested);
+  const sequential = splitStrokes(fitted, requested);
+  const seed = options.seed ?? hashStrokes(fitted, sequential.length);
+  const pieces = shufflePieces(sequential, seed);
   const count = pieces.length;
   const steps = pieces.map((paper, index) => {
     const theta = (Math.PI * 2 * index) / count;
