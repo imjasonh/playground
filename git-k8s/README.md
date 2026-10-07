@@ -846,12 +846,17 @@ The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 
 - Setting, changing, or removing the `approve` or `approved-by` annotation
   requires the `approve` verb on the `GitBranch`. `generate` grants that
-  verb to no program, so grant it to the people who approve:
+  verb to no program, so grant it to the people who approve. The policy
+  checks for the verb in the `GitBranch` object's namespace, so run these
+  commands for each namespace that has a `GitRepository`:
 
   ```sh
-  kubectl create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
-  kubectl create rolebinding approver --role=approver --group=GROUP
+  kubectl -n NAMESPACE create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+  kubectl -n NAMESPACE create rolebinding approver --role=approver --group=GROUP
   ```
+
+  kubectl warns that `approve` isn't a standard resource verb. The warning
+  is expected, and kubectl creates the Role.
 
 - `approve` must be a commit's full SHA, in lowercase hexadecimal.
 - A request that sets or changes `approve` must set `approved-by` to the
