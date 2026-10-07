@@ -771,6 +771,9 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			if err != nil {
 				return err
 			}
+			if err := resolveImages(ctx, body, c.log); err != nil {
+				return &writeError{"applying", in.ti, m.Key(), err}
+			}
 			manager := c.name
 			if in.kind == intentApply {
 				manager = c.applyManager(key)

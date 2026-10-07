@@ -248,6 +248,9 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	if err := m.init(); err != nil {
 		return err
 	}
+	if err := m.resolveImageFlags(ctx); err != nil {
+		return err
+	}
 	parent := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	m.runCtx = ctx
