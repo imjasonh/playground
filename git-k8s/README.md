@@ -133,7 +133,7 @@ Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens, and where the core program also serves the
 [results endpoint](#check-results). If you install the core program under
 another name or in another namespace, set `-mirror` to the mirror's base URL
-on `check-base`, `check-gofmt`, `check-risk`, `check-gotest`,
+on `check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`,
 `check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps`, and set
 `-results-url` to the results endpoint's URL on every check. Also set the
 core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
@@ -188,6 +188,21 @@ diverged, the `GitRepository` stays, and its `Synced` condition says why. It
 also stays while the mirror can't compare a branch's heads. To delete it
 anyway, with the changes that the external repository lacks, remove the
 finalizer `kube.imjasonh.github.io/repositories`.
+
+Each `GitRepository` and `GitBranch` has a `Synced` condition, which kube
+sets after every reconcile of the object. After a reconcile succeeds,
+`Synced` is `True` with the reason `Reconciled`. After one fails, it's
+`False`, and its message says what failed. Its reason is then
+`ReconcileError`, or `PermanentError` for an error that retrying won't fix,
+such as an invalid `pollInterval`. After a `ReconcileError`, kube retries
+the reconcile with backoff. After a `PermanentError`, it reconciles the
+object again when the object changes. kube doesn't reconcile a
+`GitRepository` that's being deleted, so its other conditions, such as
+`ExternalSynced`, keep their values from before the deletion. If the
+deletion can't finish, `Synced` is `False`, and its message says why. For
+more about `Synced`, see
+[Read the real state, declare the desired state](../kube/README.md#read-the-real-state-declare-the-desired-state)
+in kube's README.
 
 The mirror syncs branches only. It doesn't fetch or push tags, and it takes
 pushes only to branches.
@@ -250,7 +265,7 @@ a dependency update controller that `generate` installs in the namespace
 `git-k8s-deps`:
 
 ```sh
-go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/ | kubectl apply -f -
 ```
 
 The controller reaches the mirror with `mirror.Remote`, as a check does, and
@@ -898,13 +913,18 @@ and rates the change `high` when any of these is true:
 - It changes more lines than `-max-lines`, 200 by default. Lines in `go.sum`
   and `go.work.sum` files don't count, because they're checksums that the
   `go` command checks, and the versions that they cover show in `go.mod`.
+- It changes a file that git treats as binary, such as one with a NUL byte
+  in its first 8,000 bytes, because git counts no lines in such a file.
 - It touches a path that matches a `-sensitive` glob.
 - A `go.mod` file that it changes requires a module that no `go.mod` file
   at the merge base requires, moves a module to an earlier version than the
   file required, to a new major version, or to a version that isn't a
   release, such as a pseudo-version, replaces a module with another module
   or with a directory outside the repository, stops replacing one, or
-  changes the `go` or `toolchain` line. A directory is outside the
+  changes the `go`, `toolchain`, or `godebug` lines. For a new `go.mod`
+  file, the check compares those lines with the ones in the `go.mod` file
+  of the module that its directory was in at the merge base, or with no
+  lines if the directory was in no module. A directory is outside the
   repository when its path is absolute, leads out of the repository from
   the `go.mod` file's directory, or goes through a symbolic link or a
   submodule, because the `go` command follows the link, which can point
@@ -914,9 +934,10 @@ and rates the change `high` when any of these is true:
   because that code is in the repository. Requiring a module that only a
   `go.mod` file in the repository declares isn't, because without a
   replacement, the `go` command downloads the module from the module proxy.
-- It adds or changes a symbolic link or a submodule that the directory of a
-  replacement in any `go.mod` file goes through, even when no `go.mod` file
-  changes.
+- It adds or changes a symbolic link that the directory of a replacement in
+  any `go.mod` file goes through, even when no `go.mod` file changes.
+- It adds or changes a submodule, whose files come from another repository,
+  or changes the `.gitmodules` file, which names that repository.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
@@ -935,8 +956,8 @@ and for any head that makes the same change, such as `check-base`'s merge of
 the parent, a rebase, or a squash, as
 [Which results count](#which-results-count) describes. A rating that reads
 `go.mod` files at the merge base, which the check does for a change to a
-`go.mod` file, a symbolic link, or a submodule, holds only for the parent's
-head, so the check rates such a change again when the parent moves.
+`go.mod` file or a symbolic link, holds only for the parent's head, so the
+check rates such a change again when the parent moves.
 
 ### Write a check
 
@@ -1816,7 +1837,9 @@ can change.
 Each commit that the check pushes makes a new head, so every check runs
 again on it. A merge, and a replay of the branch's whole change as one
 commit, have a `Git-K8s-Fixer: conflicts` trailer and count toward
-`maxAutomatedCommits`. A replay of one commit keeps that commit's message,
+`maxAutomatedCommits`. When the agent resolves the conflicts, the merge or
+replay also has a `Git-K8s-Agent: conflicts` trailer, which makes `check-risk`
+rate the branch high. A replay of one commit keeps that commit's message,
 so it counts only if the original did, but the check pushes replays only
 while the branch is under the limit, like any fix. When neither git nor the
 agent resolves the conflicts, the check fails with the reason and leaves the
@@ -3063,7 +3086,12 @@ done
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
-after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+after `--`, as in this command for `check-risk`:
+
+```sh
+go run ./cmd/check-risk generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -sensitive='auth/**' | kubectl apply -f -
+```
+
 To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.

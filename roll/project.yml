@@ -1,0 +1,91 @@
+name: Roll
+
+# Discovery marker for macOS apps: project.yml with platform: macOS
+# (see discover-macos-apps.sh).
+
+options:
+  bundleIdPrefix: io.github.imjasonh
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "2"
+    VERSIONING_SYSTEM: apple-generic
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
+targets:
+  Roll:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
+      - sdk: AppKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.roll
+        PRODUCT_NAME: Roll
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+    entitlements:
+      path: Roll.entitlements
+      properties:
+        com.apple.security.cs.disable-library-validation: true
+    info:
+      path: Roll-Info.plist
+      properties:
+        CFBundleName: Roll
+        CFBundleDisplayName: Roll
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSApplicationCategoryType: public.app-category.utilities
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+        ITSAppUsesNonExemptEncryption: false
+        SUFeedURL: https://imjasonh.github.io/playground/macos/roll/appcast.xml
+        SUPublicEDKey: pFvSb5Quq/HBMc9EvhTTD5zbctf7MCuAks0mXaZiZW0=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+
+  RollTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/RollTests
+    dependencies:
+      - target: Roll
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.roll.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Roll:
+    build:
+      targets:
+        Roll: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - RollTests
+    run:
+      config: Debug
+    archive:
+      config: Release

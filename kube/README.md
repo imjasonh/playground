@@ -118,11 +118,13 @@ the program may not list the type, `Reconcile` stops there, and the framework
 handles the error as if `Reconcile` had returned it. So `nil` from `Get`
 always means that the object doesn't exist. `Get` and `List` stop `Reconcile`
 with a panic that the framework recovers, so call them only in the goroutine
-that runs `Reconcile`. In the retry, `kube.LastError` returns the error, so
-the reconcile can report it in the status. Each process keeps the errors in
-memory, so `kube.LastError` returns `nil` after a restart or a shard move. An
-error from the API server can quote the values that it rejected, so if those
-values are secret, don't copy the error into a status.
+that runs `Reconcile`. An error from the API server can quote the values
+that it rejected, so the `Synced` condition names only the write that failed
+and the status code, such as `422 Invalid`, and the program logs the whole
+error. In the retry, `kube.LastError` returns the whole error, so the
+reconcile can report it in the status, but if the rejected values can be
+secret, don't copy it there. Each process keeps the errors in memory, so
+`kube.LastError` returns `nil` after a restart or a shard move.
 
 | Function | What it does |
 | --- | --- |
@@ -330,8 +332,11 @@ The kind defaults to the Go type name, the version to `v1`, and the scope to
 `plural`, `singular`, `scope=Cluster`, `shortName`, and `category`.
 
 A field is required when its `json` tag has neither `omitempty` nor `omitzero`
-and it isn't a pointer, slice, map, or interface. These field tags add
-validation and display hints to the generated schema:
+and it isn't a pointer, slice, map, or interface. The top-level `status` is
+never required, because the API server drops it from the objects that it
+creates. An integer field accepts only the values that its Go type can hold,
+so a `uint8` field rejects `-1` and `300`. These field tags add validation and
+display hints to the generated schema:
 
 | Tag | Effect |
 | --- | --- |
@@ -341,13 +346,31 @@ validation and display hints to the generated schema:
 | `kube:"enum=A\|AAAA\|CNAME"` | Allowed values |
 | `kube:"default=80"` | Default that the API server fills in |
 | `kube:"format=hostname"` | OpenAPI string format |
-| `kube:"immutable"` | A validation rule that rejects changes after creation |
+| `kube:"immutable"` | Validation rules that reject updates that change, set, or unset the field |
 | `kube:"optional"`, `kube:"required"` | Overrides the rule based on `json` tags |
-| `kube:"listType=map,listMapKey=name"` | Merges the list by key in server-side apply |
+| `kube:"listType=map,listMapKey=name,listMapKey=protocol"` | Merges the list by key in server-side apply |
 | `kube:"mapType=atomic"` | Replaces the whole map or struct in server-side apply, so one manager owns it |
 | `kube:"column=Ready"` | A `kubectl get` column |
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
+
+Commas separate `kube` options. To put a comma in a value, wrap the value in
+single quotes, and write a single quote inside it as two:
+`kube:"default='Hello, world'"`. Quote an `enum` value the same way to put a
+`|` or a comma in it: `kube:"enum='a|b'|c"`. Only `listMapKey` can be
+repeated, once for each field of the key. Any other repeated option is an
+error.
+
+An update can still add or remove a whole list item or map value, with its
+immutable fields. The top-level `status` and its fields can't be immutable,
+because the API server creates objects without their status.
+
+A type can supply its own schema with an `OpenAPISchema() map[string]any`
+method, as `k8s.IntOrString` and `k8s.Quantity` do. A list's element type can
+declare the fields that key the list with a `ListMapKeys() []string` method,
+as `kube.Condition` does, so that server-side apply merges every
+`[]kube.Condition` by `type`. A field's `listMapKey` options replace the keys
+that its element type declares.
 
 A controller that reconciles the type installs its CustomResourceDefinition
 when the program starts, and later releases update it, as [Change a

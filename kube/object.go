@@ -118,7 +118,7 @@ func (k Key) String() string {
 // Condition is one aspect of an object's observed state, in the standard
 // Kubernetes form. If an object's status has a Conditions []Condition field,
 // the framework keeps a condition of type Synced in it that says whether the
-// last reconcile succeeded, with the error message when it didn't.
+// last reconcile succeeded, and what failed when it didn't.
 type Condition struct {
 	// Type is the aspect, for example Ready or Synced.
 	Type string `json:"type"`

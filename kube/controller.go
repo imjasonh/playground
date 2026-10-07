@@ -883,7 +883,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 				out = &resp
 			}
 			if err := c.m.apply(ctx, in.ti, m.Key(), in.res.path(m.Namespace, m.Name), manager, body, out); err != nil {
-				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
+				return &writeError{"applying", in.ti, m.Key(), err}
 			}
 			applied[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
@@ -946,7 +946,7 @@ func (c *controller[T, P]) delete(ctx context.Context, ti *typeInfo, res resolve
 	}
 	err := c.m.delete(ctx, ti, m.Key(), res.path(m.Namespace, m.Name), client.DeleteOptions{UID: m.UID, Propagation: "Background"})
 	if err != nil && !client.IsNotFound(err) && !client.IsConflict(err) {
-		return fmt.Errorf("deleting %v %s: %w", ti, m.Key(), err)
+		return &writeError{"deleting", ti, m.Key(), err}
 	}
 	c.m.metrics.inc("kube_delete_total", "controller", c.name)
 	return nil
