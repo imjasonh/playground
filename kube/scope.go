@@ -486,7 +486,10 @@ func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 // RequeueAfter asks for another reconcile after d, even if nothing changes.
 // Use it when the desired state depends on time, such as an expiry, or on a
 // system outside Kubernetes that can't be watched. If you call it more than
-// once, the shortest duration wins.
+// once, the shortest duration wins. A duration that isn't positive is
+// ignored. RequeueAfter applies only to a reconcile that succeeds. When the
+// reconcile fails, the framework retries it with backoff instead, unless the
+// error comes from RetryAfter.
 func RequeueAfter(ctx context.Context, d time.Duration) {
 	s := scopeFrom(ctx, "RequeueAfter")
 	if s.readOnly("RequeueAfter") {
@@ -519,7 +522,8 @@ func LastError(ctx context.Context) error {
 
 // Permanent marks err as one that retrying won't fix, such as an invalid
 // spec. The framework reports it in the object's status and waits for the
-// object to change instead of retrying.
+// object to change instead of retrying. To retry it after a delay as well,
+// wrap it with RetryAfter.
 func Permanent(err error) error {
 	if err == nil {
 		return nil
@@ -536,6 +540,37 @@ func (e *permanentError) Unwrap() error { return e.err }
 func IsPermanent(err error) bool {
 	var p *permanentError
 	return errors.As(err, &p)
+}
+
+// RetryAfter marks err as one to retry after d instead of with exponential
+// backoff, for example because a rate limit says when to try again. The
+// framework reports err in the object's status as it does any error. An
+// error that is also permanent is retried after d, as well as when the
+// object changes. If err is nil, RetryAfter returns nil, and if d isn't
+// positive, it returns err unchanged.
+func RetryAfter(err error, d time.Duration) error {
+	if err == nil || d <= 0 {
+		return err
+	}
+	return &retryError{err, d}
+}
+
+type retryError struct {
+	err error
+	d   time.Duration
+}
+
+func (e *retryError) Error() string { return e.err.Error() }
+func (e *retryError) Unwrap() error { return e.err }
+
+// retryDelay returns the delay that RetryAfter added to err, or to an error
+// that err wraps, or zero.
+func retryDelay(err error) time.Duration {
+	var r *retryError
+	if errors.As(err, &r) {
+		return r.d
+	}
+	return 0
 }
 
 // metaOfAny returns the metadata of a *T held in an interface.

@@ -712,7 +712,12 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	case IsPermanent(err):
 		c.q.Forget(key)
 		result = "permanent_error"
-		log.Warn("reconcile failed; waiting for the object to change", "err", err)
+		if d := retryDelay(err); d > 0 {
+			c.q.AddAfter(key, queue.High, d)
+			log.Warn("reconcile failed; retrying after the delay that it asked for", "err", err, "retry", d)
+		} else {
+			log.Warn("reconcile failed; waiting for the object to change", "err", err)
+		}
 	case errors.Is(err, errStale):
 		d := c.q.Retry(key, queue.High)
 		result = "stale"
@@ -725,7 +730,12 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 		}
 		log.Log(ctx, level, "reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", failures)
 	default:
-		d := c.q.Retry(key, queue.High)
+		d := retryDelay(err)
+		if d > 0 {
+			c.q.RetryAfter(key, queue.High, d)
+		} else {
+			d = c.q.Retry(key, queue.High)
+		}
 		result = "error"
 		log.Warn("reconcile failed; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", c.q.Failures(key))
 	}

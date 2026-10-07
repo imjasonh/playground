@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -745,6 +746,92 @@ func TestPermanent(t *testing.T) {
 	var target errorString
 	if !errors.As(err, &target) {
 		t.Error("Permanent doesn't unwrap")
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	base := errorString("rate limited")
+	if RetryAfter(nil, time.Minute) != nil || RetryAfter(base, 0) != base || RetryAfter(base, -time.Second) != base {
+		t.Error("RetryAfter changed nil or an error without a delay")
+	}
+	err := RetryAfter(base, time.Minute)
+	if err.Error() != "rate limited" || !errors.Is(err, base) || retryDelay(err) != time.Minute || retryDelay(base) != 0 {
+		t.Errorf("RetryAfter(%v, 1m) = %v with delay %v", base, err, retryDelay(err))
+	}
+	if both := Permanent(err); !IsPermanent(both) || retryDelay(both) != time.Minute {
+		t.Errorf("Permanent(RetryAfter(...)) = %v, permanent %t, delay %v", both, IsPermanent(both), retryDelay(both))
+	}
+}
+
+// TestProcessRetryAfter checks when the controller retries a reconcile that
+// fails: after the delay from RetryAfter instead of the backoff, even for a
+// permanent error, and with backoff despite RequeueAfter.
+func TestProcessRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+			"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryRE := regexp.MustCompile(`retry=(\S+)`)
+	for _, tc := range []struct {
+		name    string
+		err     error
+		requeue time.Duration
+		result  string
+		// retry is the delay that the controller logs, or zero for none,
+		// and backoff means any delay under a second.
+		retry    time.Duration
+		backoff  bool
+		failures int
+	}{
+		{name: "error with a delay", err: RetryAfter(errorString("rate limited"), 30*time.Minute), result: "error", retry: 30 * time.Minute, failures: 1},
+		{name: "permanent error with a delay", err: RetryAfter(Permanent(errorString("no such zone")), time.Hour), result: "permanent_error", retry: time.Hour},
+		{name: "permanent error", err: Permanent(errorString("no such zone")), result: "permanent_error"},
+		{name: "error after RequeueAfter", err: errorString("failed"), requeue: time.Hour, result: "error", backoff: true, failures: 1},
+	} {
+		var logs bytes.Buffer
+		m := testManager()
+		m.log = slog.New(slog.NewTextHandler(&logs, nil))
+		m.client, m.tracker = cl, newTracker()
+		w := &widget{}
+		w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+		c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+		c.sh = &sharder{n: 1, shards: []*shard{{}}}
+		c.r = fakeReconciler{reconcile: func(ctx context.Context, _ *widget) error {
+			if tc.requeue > 0 {
+				RequeueAfter(ctx, tc.requeue)
+			}
+			return tc.err
+		}}
+
+		c.process(t.Context(), w.Key())
+		if n := m.metrics.counter("kube_reconcile_total", "controller", c.name, "result", tc.result); n != 1 {
+			t.Errorf("%s: %v reconciles with result %s, want 1", tc.name, n, tc.result)
+		}
+		var retry time.Duration
+		if match := retryRE.FindStringSubmatch(logs.String()); match != nil {
+			if retry, err = time.ParseDuration(match[1]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		switch {
+		case tc.backoff && (retry <= 0 || retry >= time.Second):
+			t.Errorf("%s: retry in %v, want a backoff under a second\n%s", tc.name, retry, logs.String())
+		case !tc.backoff && retry != tc.retry:
+			t.Errorf("%s: retry in %v, want %v\n%s", tc.name, retry, tc.retry, logs.String())
+		}
+		waiting := 0
+		if retry > 0 {
+			waiting = 1
+		}
+		if c.q.Waiting() != waiting || c.q.Failures(w.Key()) != tc.failures {
+			t.Errorf("%s: %d keys waiting with %d failures, want %d and %d", tc.name, c.q.Waiting(), c.q.Failures(w.Key()), waiting, tc.failures)
+		}
 	}
 }
 

@@ -108,7 +108,10 @@ no watch setup. The stripped binary in its image is 8.4 MiB.
 `Apply`, and `Delete`. The framework carries out the declarations after
 `Reconcile` returns `nil`. If `Reconcile` returns an error, the framework
 writes only status, and retries with exponential backoff from 50 ms to 5
-minutes. If a declaration fails, for example because an admission policy
+minutes, or after the delay that `kube.RetryAfter` added to the error, such
+as the wait that a rate limit asks for. `kube.RequeueAfter` applies only to a
+reconcile that succeeds.
+If a declaration fails, for example because an admission policy
 rejects an object, the framework writes the status that `Reconcile` set and
 retries in the same way. If `Get` or `List` can't read, for example because
 the program may not list the type, `Reconcile` stops there, and the framework
@@ -130,8 +133,9 @@ values are secret, don't copy the error into a status.
 | `kube.Apply(ctx, desired)` | Declares fields on an object that something else owns |
 | `kube.Delete(ctx, object)` | Declares that an object must be deleted |
 | `kube.Eventf(ctx, eventType, reason, format, args...)` | Records an event about the reconciled object; see [Record events](#record-events) |
-| `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay |
+| `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay, if this one succeeds |
 | `kube.Permanent(err)` | Marks an error that retrying won't fix |
+| `kube.RetryAfter(err, duration)` | Marks an error to retry after a delay instead of with backoff |
 | `kube.LastError(ctx)` | Returns the error that the previous reconcile of the object failed with, or `nil` |
 
 The framework records every `Get` and `List`. When an object that a reconcile
