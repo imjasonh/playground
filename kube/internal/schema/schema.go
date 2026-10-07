@@ -14,7 +14,7 @@
 //	kube:"enum=A|AAAA|CNAME"      allowed values
 //	kube:"default=80"             server-side default
 //	kube:"format=hostname"        OpenAPI string format
-//	kube:"immutable"              rejects changes after creation (CEL rule)
+//	kube:"immutable"              rejects updates that change, set, or unset it
 //	kube:"optional" / "required"  overrides the json tag rule
 //	kube:"listType=map,listMapKey=name,listMapKey=protocol"
 //	kube:"mapType=atomic"         server-side apply replaces the whole map
@@ -26,6 +26,11 @@
 // and two single quotes in it stand for one, as in kube:"default='a, b'".
 // Each enum value can be quoted the same way to hold a | or a comma. Only
 // listMapKey can be repeated, once for each key.
+//
+// The API server enforces the immutable option with CEL rules. A field of a
+// list item or a map value is created with its item, so an update can still
+// add or remove the whole item. The top-level status and its fields can't be immutable,
+// because the API server creates objects without their status.
 //
 // A type can supply its own schema with an OpenAPISchema() map[string]any
 // method, and an element type can make its slices server-side-apply maps
@@ -86,6 +91,14 @@ func Generate(t reflect.Type) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, p := range g.presence {
+		if p.path[0] == "status" {
+			return nil, fmt.Errorf("schema: %s: the top-level status and its fields can't be immutable, because the API server creates objects without their status", p.fpath)
+		}
+	}
+	if err := addPresenceRules(s, g.presence); err != nil {
+		return nil, err
+	}
 	props, _ := s["properties"].(map[string]any)
 	if props == nil {
 		props = map[string]any{}
@@ -112,6 +125,105 @@ func Generate(t reflect.Type) (*Result, error) {
 type gen struct {
 	seen    map[reflect.Type]bool
 	columns []Column
+	// presence holds the immutable fields that need a rule in the nearest
+	// object that exists whenever they can: the whole object, a list item,
+	// a map value, or a required field of one of those. path names the
+	// fields from that object to the field being generated.
+	presence []presence
+	path     []string
+}
+
+// presence is an immutable field that an update can add or remove.
+type presence struct {
+	// fpath is the field's path from the whole object, for errors.
+	fpath string
+	// path names the fields from the object that holds the rule.
+	path []string
+}
+
+// anchored returns the schema that gen returns, with rules that keep updates
+// from adding or removing the immutable fields within it.
+func (g *gen) anchored(gen func() (map[string]any, error)) (map[string]any, error) {
+	presence, path := g.presence, g.path
+	g.presence, g.path = nil, nil
+	defer func() { g.presence, g.path = presence, path }()
+	s, err := gen()
+	if err != nil {
+		return nil, err
+	}
+	return s, addPresenceRules(s, g.presence)
+}
+
+// addPresenceRules adds a rule to the object schema s for each field in ps.
+// The API server skips a field's own rules while the field is absent, so
+// self == oldSelf can't stop an update that adds or removes it.
+func addPresenceRules(s map[string]any, ps []presence) error {
+	for _, p := range ps {
+		var self, old []string
+		var ref, fieldPath string
+		for _, name := range p.path {
+			id, ok := celName(name)
+			if !ok {
+				return fmt.Errorf("schema: %s: immutable needs a CEL rule, and CEL can't name the field %q", p.fpath, name)
+			}
+			ref += "." + id
+			self = append(self, "has(self"+ref+")")
+			old = append(old, "has(oldSelf"+ref+")")
+			if strings.Contains(name, ".") {
+				fieldPath += "['" + name + "']"
+			} else {
+				fieldPath += "." + name
+			}
+		}
+		rule := self[0] + " == " + old[0]
+		if len(self) > 1 {
+			rule = "(" + strings.Join(self, " && ") + ") == (" + strings.Join(old, " && ") + ")"
+		}
+		addRule(s, map[string]any{"rule": rule, "message": "field is immutable", "fieldPath": fieldPath})
+	}
+	return nil
+}
+
+func addRule(s, rule map[string]any) {
+	rules, _ := s["x-kubernetes-validations"].([]any)
+	s["x-kubernetes-validations"] = append(slices.Clip(rules), rule)
+}
+
+var celReserved = []string{
+	"true", "false", "null", "in", "as", "break", "const", "continue", "else",
+	"for", "function", "if", "import", "let", "loop", "package", "namespace",
+	"return", "var", "void", "while",
+}
+
+// celName returns the identifier that names the property name in a CEL rule
+// of a CustomResourceDefinition, or false if a rule can't name it. It
+// escapes names the way the API server does.
+func celName(name string) (string, bool) {
+	if name == "" || '0' <= name[0] && name[0] <= '9' {
+		return "", false
+	}
+	if slices.Contains(celReserved, name) {
+		return "__" + name + "__", true
+	}
+	var b strings.Builder
+	for i := 0; i < len(name); i++ {
+		switch c := name[i]; {
+		case c == '_' && i+1 < len(name) && name[i+1] == '_':
+			b.WriteString("__underscores__")
+			i++
+		case c == '.':
+			b.WriteString("__dot__")
+		case c == '-':
+			b.WriteString("__dash__")
+		case c == '/':
+			b.WriteString("__slash__")
+		case c == '_' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9':
+			b.WriteByte(c)
+		default:
+			return "", false
+		}
+	}
+	return b.String(), true
 }
 
 type fieldTags struct {
@@ -271,7 +383,7 @@ func (g *gen) typeSchema(t reflect.Type, path string) (map[string]any, error) {
 		if t.Elem().Kind() == reflect.Uint8 {
 			return map[string]any{"type": "string", "format": "byte"}, nil
 		}
-		items, err := g.typeSchema(t.Elem(), path+"[*]")
+		items, err := g.anchored(func() (map[string]any, error) { return g.typeSchema(t.Elem(), path+"[*]") })
 		if err != nil {
 			return nil, err
 		}
@@ -288,7 +400,7 @@ func (g *gen) typeSchema(t reflect.Type, path string) (map[string]any, error) {
 		if t.Elem().Kind() == reflect.Interface {
 			return map[string]any{"type": "object", "x-kubernetes-preserve-unknown-fields": true}, nil
 		}
-		elem, err := g.typeSchema(t.Elem(), path+".*")
+		elem, err := g.anchored(func() (map[string]any, error) { return g.typeSchema(t.Elem(), path+".*") })
 		if err != nil {
 			return nil, err
 		}
@@ -369,17 +481,6 @@ func (g *gen) fields(t reflect.Type, path string, props map[string]any, required
 		if err != nil {
 			return fmt.Errorf("schema: %s: kube:%q: %w", fpath, f.Tag.Get("kube"), err)
 		}
-		s, err := g.schema(f.Type, fpath, tags)
-		if err != nil {
-			return err
-		}
-		props[name] = s
-		if col, ok := tags.opts["column"]; ok {
-			if col == "" {
-				col = f.Name
-			}
-			g.columns = append(g.columns, Column{Name: col, Type: columnType(f.Type, s), JSONPath: fpath})
-		}
 		_, optional := tags.opts["optional"]
 		_, forced := tags.opts["required"]
 		k := f.Type.Kind()
@@ -389,6 +490,27 @@ func (g *gen) fields(t reflect.Type, path string, props map[string]any, required
 			// The API server drops the top-level status from every object
 			// that it creates, so requiring it would reject every create.
 			req = false
+		}
+		if _, ok := tags.opts["immutable"]; ok && (len(g.path) > 0 || !req) {
+			g.presence = append(g.presence, presence{fpath, append(slices.Clone(g.path), name)})
+		}
+		var s map[string]any
+		if len(g.path) == 0 && req {
+			s, err = g.anchored(func() (map[string]any, error) { return g.schema(f.Type, fpath, tags) })
+		} else {
+			g.path = append(g.path, name)
+			s, err = g.schema(f.Type, fpath, tags)
+			g.path = g.path[:len(g.path)-1]
+		}
+		if err != nil {
+			return err
+		}
+		props[name] = s
+		if col, ok := tags.opts["column"]; ok {
+			if col == "" {
+				col = f.Name
+			}
+			g.columns = append(g.columns, Column{Name: col, Type: columnType(f.Type, s), JSONPath: fpath})
 		}
 		if req {
 			*required = append(*required, name)
@@ -487,7 +609,7 @@ func applyTags(s map[string]any, t reflect.Type, tags fieldTags) error {
 		case "format":
 			s["format"] = v
 		case "immutable":
-			s["x-kubernetes-validations"] = []any{map[string]any{"rule": "self == oldSelf", "message": "field is immutable"}}
+			addRule(s, map[string]any{"rule": "self == oldSelf", "message": "field is immutable"})
 		case "listType":
 			s["x-kubernetes-list-type"] = v
 		case "mapType":

@@ -335,7 +335,7 @@ display hints to the generated schema:
 | `kube:"enum=A\|AAAA\|CNAME"` | Allowed values |
 | `kube:"default=80"` | Default that the API server fills in |
 | `kube:"format=hostname"` | OpenAPI string format |
-| `kube:"immutable"` | A validation rule that rejects changes after creation |
+| `kube:"immutable"` | Validation rules that reject updates that change, set, or unset the field |
 | `kube:"optional"`, `kube:"required"` | Overrides the rule based on `json` tags |
 | `kube:"listType=map,listMapKey=name,listMapKey=protocol"` | Merges the list by key in server-side apply |
 | `kube:"mapType=atomic"` | Replaces the whole map or struct in server-side apply, so one manager owns it |
@@ -349,6 +349,11 @@ single quotes, and write a single quote inside it as two:
 `|` or a comma in it: `kube:"enum='a|b'|c"`. Only `listMapKey` can be
 repeated, once for each field of the key. Any other repeated option is an
 error.
+
+A field of a list item or a map value is created with its item, so an update
+can still add or remove a whole item that has an immutable field. The
+top-level `status` and its fields can't be immutable, because the API server
+creates objects without their status.
 
 A type can supply its own schema with an `OpenAPISchema() map[string]any`
 method, as `k8s.IntOrString` and `k8s.Quantity` do. A list's element type can

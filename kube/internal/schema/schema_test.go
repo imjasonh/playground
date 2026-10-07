@@ -344,6 +344,137 @@ func TestTagOptions(t *testing.T) {
 	}
 }
 
+type route struct {
+	Name   string `json:"name"`
+	Target string `json:"target,omitempty" kube:"immutable"`
+}
+
+type bucket struct {
+	object
+	Spec struct {
+		Zone     string `json:"zone,omitempty" kube:"immutable"`
+		Region   string `json:"region" kube:"immutable"`
+		Settings *struct {
+			Class        string `json:"class" kube:"immutable"`
+			StorageClass string `json:"storage-class,omitempty" kube:"immutable"`
+			Namespace    string `json:"namespace,omitempty" kube:"immutable"`
+		} `json:"settings,omitempty"`
+		Routes []route           `json:"routes,omitempty" kube:"listType=map,listMapKey=name"`
+		Peers  map[string]route  `json:"peers,omitempty"`
+		Tags   map[string]string `json:"tags,omitempty" kube:"immutable"`
+	} `json:"spec"`
+	Status struct {
+		Routes []route `json:"routes,omitempty" kube:"listType=map,listMapKey=name"`
+	} `json:"status,omitzero"`
+}
+
+type draft struct {
+	object
+	Spec struct {
+		Zone string `json:"zone" kube:"immutable"`
+	} `json:"spec,omitzero"`
+}
+
+func TestImmutable(t *testing.T) {
+	r, err := Generate(reflect.TypeFor[bucket]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := r.Schema["properties"].(map[string]any)["spec"].(map[string]any)
+	props := spec["properties"].(map[string]any)
+	fieldRule := []any{map[string]any{"rule": "self == oldSelf", "message": "field is immutable"}}
+	presence := func(rule, fieldPath string) map[string]any {
+		return map[string]any{"rule": rule, "message": "field is immutable", "fieldPath": fieldPath}
+	}
+	for _, tc := range []struct {
+		name   string
+		schema map[string]any
+		want   []any
+	}{
+		{"spec", spec, []any{
+			presence("has(self.zone) == has(oldSelf.zone)", ".zone"),
+			presence("(has(self.settings) && has(self.settings.class)) == (has(oldSelf.settings) && has(oldSelf.settings.class))", ".settings.class"),
+			presence("(has(self.settings) && has(self.settings.storage__dash__class)) == (has(oldSelf.settings) && has(oldSelf.settings.storage__dash__class))", ".settings.storage-class"),
+			presence("(has(self.settings) && has(self.settings.__namespace__)) == (has(oldSelf.settings) && has(oldSelf.settings.__namespace__))", ".settings.namespace"),
+			presence("has(self.tags) == has(oldSelf.tags)", ".tags"),
+		}},
+		{"spec.zone", props["zone"].(map[string]any), fieldRule},
+		{"spec.region", props["region"].(map[string]any), fieldRule},
+		{"spec.settings", props["settings"].(map[string]any), nil},
+		{"spec.tags", props["tags"].(map[string]any), fieldRule},
+		{"spec.routes[*]", props["routes"].(map[string]any)["items"].(map[string]any), []any{presence("has(self.target) == has(oldSelf.target)", ".target")}},
+		{"spec.peers.*", props["peers"].(map[string]any)["additionalProperties"].(map[string]any), []any{presence("has(self.target) == has(oldSelf.target)", ".target")}},
+		{"root", r.Schema, nil},
+	} {
+		if got, _ := tc.schema["x-kubernetes-validations"].([]any); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s rules = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+
+	r, err = Generate(reflect.TypeFor[draft]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{presence("(has(self.spec) && has(self.spec.zone)) == (has(oldSelf.spec) && has(oldSelf.spec.zone))", ".spec.zone")}
+	if got := r.Schema["x-kubernetes-validations"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("root rules of a type with an optional spec = %v, want %v", got, want)
+	}
+
+	type inStatus struct {
+		object
+		Status struct {
+			ID string `json:"id" kube:"immutable"`
+		} `json:"status,omitzero"`
+	}
+	type immutableStatus struct {
+		object
+		Status struct {
+			ID string `json:"id"`
+		} `json:"status" kube:"immutable"`
+	}
+	type unnamable struct {
+		object
+		Spec struct {
+			First string `json:"1st,omitempty" kube:"immutable"`
+		} `json:"spec"`
+	}
+	for _, tc := range []struct {
+		typ     reflect.Type
+		wantErr string
+	}{
+		{reflect.TypeFor[inStatus](), "schema: .status.id: the top-level status and its fields can't be immutable"},
+		{reflect.TypeFor[immutableStatus](), "schema: .status: the top-level status and its fields can't be immutable"},
+		{reflect.TypeFor[unnamable](), `schema: .spec.1st: immutable needs a CEL rule, and CEL can't name the field "1st"`},
+	} {
+		if _, err := Generate(tc.typ); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%v: err = %v, want %q", tc.typ, err, tc.wantErr)
+		}
+	}
+}
+
+func TestCELName(t *testing.T) {
+	for name, want := range map[string]string{
+		"zone":      "zone",
+		"_zone":     "_zone",
+		"a_b":       "a_b",
+		"a__b":      "a__underscores__b",
+		"a___b":     "a__underscores___b",
+		"a.b":       "a__dot__b",
+		"a-b/c":     "a__dash__b__slash__c",
+		"namespace": "__namespace__",
+		"if":        "__if__",
+		"1st":       "",
+		"":          "",
+		"a b":       "",
+		"zoné":      "",
+	} {
+		got, ok := celName(name)
+		if got != want || ok != (want != "") {
+			t.Errorf("celName(%q) = %q, %v, want %q", name, got, ok, want)
+		}
+	}
+}
+
 func TestErrors(t *testing.T) {
 	type badTag struct {
 		object

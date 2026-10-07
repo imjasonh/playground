@@ -828,6 +828,16 @@ else installed the CRD, for example a Helm chart, the controller leaves it
 alone. [CRD upgrades](#crd-upgrades) describes how it updates a CRD that
 already exists.
 
+The API server skips a field's rules while the field is absent, so
+`self == oldSelf` alone can't stop an update that sets or unsets the field.
+For an immutable field that can be absent, the generator also adds a rule
+such as `has(self.zone) == has(oldSelf.zone)` to the nearest object that's
+present whenever the field can be: the whole object, a list item, a map value,
+or a required field of one of those. The rule's `fieldPath` points its error
+at the field. An immutable field in the top-level `status` is an error,
+because the API server creates objects without their status, so the rule
+would keep the field from ever being set.
+
 A program can also own a custom type that none of its controllers reconciles,
 such as a report that it writes. It knows only the versions that it declares,
 so applying its CRD could drop the others, or replace a schema that a newer
