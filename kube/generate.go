@@ -8,6 +8,7 @@ package kube
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,8 +49,9 @@ var scopeVerbs = map[string][]string{
 }
 
 type generateOptions struct {
-	// program is the executable's name, which the program uses for itself
-	// at run time, and name is the same as a Kubernetes object name.
+	// program is the executable's name. name is the Kubernetes object name
+	// that the program computes at run time from its Manager's Name, which
+	// defaults to program.
 	program, name string
 	registry      string
 	base          string
@@ -60,6 +62,10 @@ type generateOptions struct {
 	replicasSet bool
 	shards      int
 	tag         string
+	// tags and ldflags are the build tags and linker flags of the program
+	// in the image.
+	tags    []string
+	ldflags string
 	// tmpSize is the size limit of the volume at /tmp, or empty for none.
 	tmpSize string
 	// volumeSize is the size of the persistent volume that Volume declares,
@@ -71,6 +77,10 @@ type generateOptions struct {
 	// watchNamespace is the one namespace that the program watches, or
 	// empty for every namespace.
 	watchNamespace string
+	// manager holds the fields of the program's Manager that the YAML
+	// follows. The program's flags default to them, so the Deployment's
+	// arguments set the flags whose fields are set.
+	manager Manager
 	// args are more arguments for the program in the Deployment.
 	args   []string
 	stderr io.Writer
@@ -87,9 +97,12 @@ func (o *generateOptions) logf(format string, args ...any) {
 // the program needs from its controllers and source, builds the program
 // into an image for each platform, pushes the image, and writes the YAML
 // that installs it to stdout.
-func generate(ctx context.Context, args []string, controllers []Controller, stdout, stderr io.Writer) error {
-	o := &generateOptions{program: filepath.Base(os.Args[0]), stderr: stderr}
-	o.name = objectName(o.program)
+func (m *Manager) generate(ctx context.Context, args []string, controllers []Controller, stdout, stderr io.Writer) error {
+	o := &generateOptions{program: filepath.Base(os.Args[0]), stderr: stderr, manager: Manager{
+		Name: m.Name, Namespace: m.Namespace, LeaseNamespace: m.LeaseNamespace,
+		LeaderElection: m.LeaderElection, Shards: m.Shards, Logger: m.Logger,
+	}}
+	o.name = objectName(cmp.Or(m.Name, o.program))
 	fs := flag.NewFlagSet(o.program+" generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.registry, "registry", "", "registry, and optionally a repository prefix, to push the image to, such as ghcr.io/you (required)")
@@ -97,12 +110,12 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	platforms := fs.String("platform", "linux/amd64,linux/arm64", "comma-separated platforms to build the image for")
 	fs.StringVar(&o.namespace, "namespace", o.name, "namespace to install the program in")
 	fs.IntVar(&o.replicas, "replicas", 2, "pods to run; more than one turns on leader election; a program with a kube.Volume runs one")
-	fs.IntVar(&o.shards, "shards", 1, "split reconciles across replicas in this many shards")
+	fs.IntVar(&o.shards, "shards", max(m.Shards, 1), "split reconciles across replicas in this many shards")
 	fs.StringVar(&o.tag, "tag", "latest", "tag for the image, in addition to its digest")
 	fs.StringVar(&o.tmpSize, "tmp-size", "", "size limit of the emptyDir volume at /tmp, such as 1Gi; empty means no limit")
 	fs.StringVar(&o.volumeSize, "volume-size", "1Gi", "size of the persistent volume of a program with a kube.Volume")
 	fs.StringVar(&o.storageClass, "storage-class", "", "StorageClass of the persistent volume of a program with a kube.Volume; empty means the cluster's default")
-	fs.StringVar(&o.watchNamespace, "watch-namespace", "", "namespace for the program to watch instead of every namespace; the rules for namespaced resources go in a Role there")
+	fs.StringVar(&o.watchNamespace, "watch-namespace", m.Namespace, "namespace for the program to watch instead of every namespace; the rules for namespaced resources go in a Role there")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: %s generate -registry=REGISTRY [flags] [-- PROGRAM_FLAGS] | kubectl apply -f -\n\n", o.program)
 		fmt.Fprintf(stderr, "Builds the program into an image, pushes it to REGISTRY/%s, and writes the YAML that installs it.\n", o.name)
@@ -135,11 +148,13 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return fmt.Errorf("generate: -tmp-size %q isn't a quantity, such as 512Mi or 2Gi", o.tmpSize)
 	case !quantity.MatchString(o.volumeSize):
 		return fmt.Errorf("generate: -volume-size %q isn't a quantity, such as 512Mi or 2Gi", o.volumeSize)
+	case objectName(o.namespace) != o.namespace:
+		return fmt.Errorf("generate: -namespace %q isn't a namespace name", o.namespace)
 	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
-	if err := parseProgramFlags(o.args); err != nil {
-		return fmt.Errorf("generate: the program's flags after --: %v", err)
+	if err := o.parseProgramFlags(); err != nil {
+		return fmt.Errorf("generate: %v", err)
 	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
 	for _, s := range strings.Split(*platforms, ",") {
@@ -155,6 +170,9 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	bi, ok := debug.ReadBuildInfo()
 	if !ok || bi.Path == "" || bi.Path == "command-line-arguments" {
 		return errors.New("generate: can't tell which package to build; run go run PACKAGE generate from the program's module")
+	}
+	if err := o.buildFlags(ctx, bi); err != nil {
+		return err
 	}
 
 	p, err := o.plan(ctx, controllers, bi.Path)
@@ -186,15 +204,45 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	return err
 }
 
+// generatedFlags are Main's flags that the Deployment's arguments set, each
+// with a hint for someone who passes it after --.
+var generatedFlags = map[string]string{
+	"leader-elect":    "; generate turns it on when -replicas or -shards is more than 1",
+	"metrics-addr":    "",
+	"serve-addr":      "",
+	"shards":          "; set -shards before -- instead",
+	"token-dir":       "",
+	"watch-namespace": "; set -watch-namespace before -- instead",
+	"webhook-addr":    "",
+	"webhook-service": "",
+}
+
 // parseProgramFlags parses the flags for the program in the Deployment into
 // the program's variables, as Main would, so that controllers' describe
-// methods see them.
-func parseProgramFlags(args []string) error {
+// methods see them. generate writes RBAC rules, ports, and probes for the
+// flags that the Deployment sets, so parseProgramFlags fails on one of those
+// in o.args, and on one that the program defines itself, which would take
+// the value that the Deployment sets for kube.
+func (o *generateOptions) parseProgramFlags() error {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
-	(&Manager{}).flags(fs)
-	return fs.Parse(args)
+	for _, name := range slices.Sorted(maps.Keys(generatedFlags)) {
+		if fs.Lookup(name) != nil {
+			return fmt.Errorf("the program defines -%s, which generate sets for kube.Main; give the program's flag another name", name)
+		}
+	}
+	(&Manager{Logger: o.manager.Logger}).flags(fs)
+	if err := fs.Parse(o.args); err != nil {
+		return fmt.Errorf("the program's flags after --: %v", err)
+	}
+	var err error
+	fs.Visit(func(f *flag.Flag) {
+		if hint, ok := generatedFlags[f.Name]; ok && err == nil {
+			err = fmt.Errorf("the program's flags after --: generate sets -%s itself%s", f.Name, hint)
+		}
+	})
+	return err
 }
 
 // buildEnv is the environment for building and analyzing the program for
@@ -205,6 +253,57 @@ func buildEnv(p v1.Platform) []string {
 		env = append(env, "GOARM="+strings.TrimPrefix(p.Variant, "v"))
 	}
 	return env
+}
+
+// buildFlags sets the build tags and linker flags of the program in the
+// image to those of the running program, which the go command takes from
+// its command line or GOFLAGS, plus the kube_nogenerate tag and -s -w,
+// which leave out the symbol table and debug information.
+func (o *generateOptions) buildFlags(ctx context.Context, bi *debug.BuildInfo) error {
+	ldflags, trimpath := "", false
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "-tags":
+			o.tags = strings.Split(s.Value, ",")
+		case "-ldflags":
+			ldflags = s.Value
+		case "-trimpath":
+			trimpath = s.Value == "true"
+		}
+	}
+	if trimpath && ldflags == "" {
+		// The go command doesn't record the linker flags of a program built
+		// with -trimpath, so take them from GOFLAGS. Those on the go
+		// command line are lost.
+		out, err := exec.CommandContext(ctx, "go", "env", "GOFLAGS").Output()
+		if err != nil {
+			return fmt.Errorf("generate: go env GOFLAGS: %w", err)
+		}
+		for _, f := range strings.Fields(string(out)) {
+			if v, ok := strings.CutPrefix(strings.TrimLeft(f, "-"), "ldflags="); ok {
+				ldflags = v
+			}
+		}
+		if ldflags == "" {
+			o.logf("warning: go doesn't record the linker flags of a program built with -trimpath, so the program in the image gets only -s -w; to pass others on, set -ldflags in GOFLAGS")
+		}
+	}
+	o.tags = append(o.tags, "kube_nogenerate")
+	o.ldflags = strings.TrimSpace(ldflags + " -s -w")
+	return nil
+}
+
+// build builds pkg for platform p into the file out.
+func (o *generateOptions) build(ctx context.Context, pkg string, p v1.Platform, out string) error {
+	tags := strings.Join(o.tags, ",")
+	o.logf("building %s for %s with -tags=%s -ldflags=%q", pkg, p, tags, o.ldflags)
+	cmd := exec.CommandContext(ctx, "go", "build", "-tags="+tags, "-trimpath", "-ldflags="+o.ldflags, "-o", out, pkg) // #nosec G204 -- the go command building the program's own package.
+	cmd.Env = buildEnv(p)
+	cmd.Stdout, cmd.Stderr = o.stderr, o.stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("generate: building %s for %s: %w", pkg, p, err)
+	}
+	return nil
 }
 
 // push builds pkg for each platform and pushes the image. It returns the
@@ -218,12 +317,8 @@ func (o *generateOptions) push(ctx context.Context, pkg string) (string, error) 
 	var exes []image.Executable
 	for _, p := range o.platforms {
 		out := filepath.Join(dir, strings.ReplaceAll(p.String(), "/", "-"), o.program)
-		o.logf("building %s for %s", pkg, p)
-		cmd := exec.CommandContext(ctx, "go", "build", "-tags=kube_nogenerate", "-trimpath", "-ldflags=-s -w", "-o", out, pkg) // #nosec G204 -- the go command building the program's own package.
-		cmd.Env = buildEnv(p)
-		cmd.Stdout, cmd.Stderr = o.stderr, o.stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("generate: building %s for %s: %w", pkg, p, err)
+		if err := o.build(ctx, pkg, p, out); err != nil {
+			return "", err
 		}
 		exes = append(exes, image.Executable{Platform: p, File: out})
 	}
@@ -316,7 +411,10 @@ type installPlan struct {
 	// namespaces holds permissions in other namespaces, for the objects
 	// that Install applies there.
 	namespaces map[string]grants
-	webhooks   bool
+	// webhooks is set when the program serves admission or conversion
+	// webhooks, validates when it validates objects with admission
+	// webhooks, and defaults when it defaults them.
+	webhooks, validates, defaults bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
 	// serves is set when the program serves HTTP for Serve.
@@ -352,6 +450,15 @@ func (p *installPlan) eventGrantsFor(ti *typeInfo, watching bool) grants {
 		return p.defaultNS
 	}
 	return p.grantsFor(ti, watching)
+}
+
+// admitter is a Controller that can serve admission webhooks. The program
+// registers validating webhooks in one configuration and mutating webhooks
+// in another.
+type admitter interface {
+	// admits reports whether the controller validates and defaults
+	// objects.
+	admits() (validates, defaults bool)
 }
 
 // plan works out what the program needs. Controllers declare their types,
@@ -391,6 +498,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			return nil, err
 		}
 		p.webhooks = p.webhooks || d.webhooks
+		if a, ok := c.(admitter); ok {
+			validates, defaults := a.admits()
+			p.validates = p.validates || validates
+			p.defaults = p.defaults || defaults
+		}
 		p.serves = p.serves || d.serves
 		installs = append(installs, d.installs...)
 		if d.volume != "" {
@@ -448,11 +560,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	if err := o.oneWriter(p.volume); err != nil {
 		return nil, err
 	}
-	p.electLeader = len(reconciled) > 0 && (o.replicas > 1 || o.shards > 1)
+	p.electLeader = len(reconciled) > 0 && (o.replicas > 1 || o.shards > 1 || o.manager.LeaderElection)
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
 	o.logf("finding the types that %s reads and writes", pkg)
 	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
-		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
+		Dir: ".", Env: buildEnv(o.platforms[0]), Tags: o.tags, Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
 		Calls: []string{"Eventf", "RequestToken", "ReviewToken"}, Consts: map[string]int{"RequestToken": 1},
 		Objects: map[string]int{"Fetch": 1},
@@ -518,9 +630,12 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			grant()
 		}
 	}
+	// The program applies the CRDs of the types that it reconciles, and
+	// server-side apply asks for permission to create a CRD by its name.
+	// It creates the CRDs of the types that it only owns with a POST, which
+	// RBAC can't limit to a name.
 	for _, crd := range crds {
-		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
-		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get", "patch")
+		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "create", "get", "patch")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions/status", crd, "patch")
 		delete(creates, crd)
 	}
@@ -528,22 +643,30 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get")
 	}
-	// The program deletes webhook configurations that an earlier version
-	// of it left, even when it has no webhooks itself.
-	config := labelValue(o.program)
+	// The program keeps its Leases and webhook certificate in its own
+	// namespace, and names its webhook configurations for that namespace.
+	ownNS := o.ownNamespace()
+	ownGrants := o.grantsIn(p, ownNS)
+	// The program applies a webhook configuration of each kind that it has
+	// webhooks of, and deletes one that an earlier version of it left.
+	config := installName(o.name, ownNS)
 	for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
 		cluster.add("admissionregistration.k8s.io", r, config, "get", "delete")
-		if p.webhooks {
-			cluster.add("admissionregistration.k8s.io", r, "", "create")
-			cluster.add("admissionregistration.k8s.io", r, config, "patch")
-		}
 	}
+	if p.validates {
+		cluster.add("admissionregistration.k8s.io", "validatingwebhookconfigurations", config, "create", "patch")
+	}
+	if p.defaults {
+		cluster.add("admissionregistration.k8s.io", "mutatingwebhookconfigurations", config, "create", "patch")
+	}
+	// The YAML creates the webhook certificate's Secret, and the program
+	// fills it in. Permission to create Secrets would let the program create
+	// a token for any service account in the namespace.
 	if p.webhooks {
-		p.local.add("", "secrets", "", "create")
-		p.local.add("", "secrets", config+"-webhook-tls", "get", "update")
+		ownGrants.add("", "secrets", o.name+"-webhook-tls", "get", "update")
 	}
 	if p.electLeader {
-		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
+		ownGrants.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
 	}
 	o.grantInstalls(p, installs, types)
 	switch {
@@ -576,6 +699,13 @@ func (o *generateOptions) oneWriter(dir string) error {
 	}
 	o.replicas = 1
 	return nil
+}
+
+// ownNamespace is where the program keeps its Leases and webhook
+// certificate: the Manager's LeaseNamespace, or else the namespace that it's
+// installed in.
+func (o *generateOptions) ownNamespace() string {
+	return cmp.Or(o.manager.LeaseNamespace, o.namespace)
 }
 
 // grantsIn returns where the permissions for objects in namespace ns go,
@@ -688,31 +818,45 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		return append(m, field{"labels", labels})
 	}
 	subjects := []any{object{{"kind", "ServiceAccount"}, {"name", o.name}, {"namespace", o.namespace}}}
-	docs := []object{
-		{{"apiVersion", "v1"}, {"kind", "Namespace"}, {"metadata", meta(o.namespace, false)}},
-		{{"apiVersion", "v1"}, {"kind", "ServiceAccount"}, {"metadata", meta(o.name, true)}},
-		{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRole"}, {"metadata", meta(o.name, false)}, {"rules", p.cluster.rules()}},
-		{
-			{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRoleBinding"}, {"metadata", meta(o.name, false)},
-			{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "ClusterRole"}, {"name", o.name}}},
+	// Objects outside the program's namespace are named for the namespace
+	// too, so that an installation in another namespace doesn't replace them.
+	shared := installName(o.name, o.namespace)
+	var docs []object
+	// Deleting the installation deletes its Namespace and everything in it,
+	// so the YAML creates only the program's own namespace, not one that
+	// -namespace names, which other programs may share.
+	if o.namespace == o.name {
+		docs = append(docs, object{{"apiVersion", "v1"}, {"kind", "Namespace"}, {"metadata", meta(o.namespace, false)}})
+	}
+	docs = append(docs,
+		object{{"apiVersion", "v1"}, {"kind", "ServiceAccount"}, {"metadata", meta(o.name, true)}},
+		object{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRole"}, {"metadata", meta(shared, false)}, {"rules", p.cluster.rules()}},
+		object{
+			{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRoleBinding"}, {"metadata", meta(shared, false)},
+			{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "ClusterRole"}, {"name", shared}}},
 			{"subjects", subjects},
 		},
-	}
-	role := func(m object, g grants) []object {
+	)
+	role := func(ns string, g grants) []object {
+		name := shared
+		if ns == o.namespace {
+			name = o.name
+		}
+		m := object{{"name", name}, {"namespace", ns}, {"labels", labels}}
 		return []object{
 			{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "Role"}, {"metadata", m}, {"rules", g.rules()}},
 			{
 				{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "RoleBinding"}, {"metadata", m},
-				{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "Role"}, {"name", o.name}}},
+				{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "Role"}, {"name", name}}},
 				{"subjects", subjects},
 			},
 		}
 	}
 	if len(p.local) > 0 {
-		docs = append(docs, role(meta(o.name, true), p.local)...)
+		docs = append(docs, role(o.namespace, p.local)...)
 	}
 	if len(p.watched) > 0 {
-		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
+		docs = append(docs, role(o.watchNamespace, p.watched)...)
 	}
 	// Events about cluster-scoped objects go in the default namespace, which
 	// can also hold objects that Install applies, and one Role covers both.
@@ -728,17 +872,23 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		namespaces["default"] = g
 	}
 	for _, ns := range slices.Sorted(maps.Keys(namespaces)) {
-		docs = append(docs, role(object{{"name", o.name}, {"namespace", ns}, {"labels", labels}}, namespaces[ns])...)
+		docs = append(docs, role(ns, namespaces[ns])...)
 	}
-	args := []string{"-addr=:8080"}
-	switch {
-	case p.electLeader && o.shards > 1:
-		args = append(args, fmt.Sprintf("-shards=%d", o.shards))
-	case p.electLeader:
+	args := []string{"-metrics-addr=:8080"}
+	// The program's flags default to its Manager's fields, so the arguments
+	// set -shards and -watch-namespace whenever those fields are set.
+	shards := 1
+	if p.electLeader {
+		shards = o.shards
+	}
+	if shards > 1 || o.manager.Shards > 1 {
+		args = append(args, fmt.Sprintf("-shards=%d", shards))
+	}
+	if p.electLeader && shards == 1 {
 		args = append(args, "-leader-elect")
 	}
-	if o.watchNamespace != "" {
-		args = append(args, "-namespace="+o.watchNamespace)
+	if o.watchNamespace != "" || o.manager.Namespace != "" {
+		args = append(args, "-watch-namespace="+o.watchNamespace)
 	}
 	ports := []any{object{{"name", "http"}, {"containerPort", 8080}}}
 	var servicePorts []any
@@ -746,6 +896,13 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		args = append(args, "-webhook-addr=:9443", "-webhook-service="+o.namespace+"/"+o.name)
 		ports = append(ports, object{{"name", "webhook"}, {"containerPort", 9443}})
 		servicePorts = append(servicePorts, object{{"name", "webhook"}, {"port", 443}, {"targetPort", "webhook"}})
+		// The program can't create Secrets, so the YAML creates the one
+		// that the program keeps its webhook certificate in.
+		docs = append(docs, object{
+			{"apiVersion", "v1"}, {"kind", "Secret"},
+			{"metadata", object{{"name", o.name + "-webhook-tls"}, {"namespace", o.ownNamespace()}, {"labels", labels}}},
+			{"type", "Opaque"},
+		})
 	}
 	if p.serves {
 		args = append(args, "-serve-addr=:8081")
@@ -811,7 +968,14 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		volumes = append(volumes, object{{"name", "tokens"}, {"projected", object{{"sources", sources}}}})
 	}
 	deployment := object{{"replicas", o.replicas}}
-	podSecurity := object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}
+	// The image keeps the base's user. With runAsNonRoot, the kubelet won't
+	// start a container whose user is root, or a name that it can't check,
+	// so the Pod names the user and group that the image uses when the base
+	// has none.
+	podSecurity := object{
+		{"runAsUser", 65532}, {"runAsGroup", 65532}, {"runAsNonRoot", true},
+		{"seccompProfile", object{{"type", "RuntimeDefault"}}},
+	}
 	if p.volume != "" {
 		claim := object{{"accessModes", []string{"ReadWriteOnce"}}}
 		if o.storageClass != "" {
@@ -822,10 +986,10 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		mounts = append(mounts, object{{"name", "data"}, {"mountPath", p.volume}})
 		volumes = append(volumes, object{{"name", "data"}, {"persistentVolumeClaim", object{{"claimName", o.name}}}})
 		deployment = append(deployment, field{"strategy", object{{"type", "Recreate"}}})
-		// The kubelet gives the volume to group 65532 and adds the group to
-		// the program's, so the non-root program can write volume types
-		// that support ownership. OnRootMismatch skips walking every file
-		// when the volume's root already belongs to the group.
+		// The kubelet gives the volume to group 65532, the program's group,
+		// so the program can write volume types that support ownership.
+		// OnRootMismatch skips walking every file when the volume's root
+		// already belongs to the group.
 		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
 	}
 	container = append(container, field{"volumeMounts", mounts})
@@ -867,27 +1031,6 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		})
 	}
 	return docs
-}
-
-// objectName makes s a valid name for a Namespace, Service, or other
-// Kubernetes object: lowercase letters, digits, and '-'.
-func objectName(s string) string {
-	s = strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r + 'a' - 'A'
-		}
-		return '-'
-	}, s)
-	if len(s) > 63 {
-		s = s[:63]
-	}
-	if s = strings.Trim(s, "-"); s == "" {
-		return "controller"
-	}
-	return s
 }
 
 // object is a JSON object with its keys in order, so the YAML reads like a

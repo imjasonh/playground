@@ -611,7 +611,8 @@ kube.Main(kube.For[Website](reconciler{}), kube.Webhooks[k8s.Pod](podPolicy{}))
 
 A webhook for a built-in type skips `kube-system` and the namespace of the
 webhook's Service, so that the controller's own Pods can start while its
-webhook is down. With `-namespace`, webhooks apply only in that namespace.
+webhook is down. With `-watch-namespace`, webhooks apply only in that
+namespace.
 [`examples/podpolicy`](examples/podpolicy/main.go) is a webhook for Pods.
 
 Every replica serves the webhooks over HTTPS, whether or not it holds a lease.
@@ -965,7 +966,7 @@ in a volume, and serves the copies.
 
 - `-kubeconfig`: the kubeconfig file. Without it, kube uses `$KUBECONFIG`,
   then the pod's service account, then `$HOME/.kube/config`.
-- `-namespace`: watch only one namespace.
+- `-watch-namespace`: watch only one namespace.
 - `-leader-elect`: reconcile only while this replica holds a Lease.
 - `-shards`: split reconciles across replicas into this many shards.
 - `-webhook-service`: the Service, as `name` or `namespace/name`, through
@@ -978,13 +979,38 @@ in a volume, and serves the copies.
 - `-token-dir`: a directory of service account tokens for
   `kube.RequestToken`, each in a file named by the hex SHA-256 hash of its
   audience, as `generate` mounts them.
-- `-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`, for
-  example on `:8080`.
-- `-v`: log debug messages.
+- `-metrics-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`,
+  for example on `:8080`.
+- `-log-level`: log messages at this level and above: `debug`, `info`,
+  `warn`, or `error`. The default is `info`.
 
-For more control, set the fields of a `kube.Manager` and call its `Run`
-method. `kube.For` takes options such as `kube.Workers(n)`,
-`kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
+If the program defines one of these flags itself on `flag.CommandLine`,
+`kube.Main` leaves out its own and logs a warning, and the manager doesn't
+read that flag.
+
+For more control, set the fields of a `kube.Manager` and call its `Main`
+method. Each flag defaults to its field's value, and a Manager with a
+`Logger` has no `-log-level`. `Setup`, if you set it, runs after `Main`
+reads the flags and before the manager connects to the cluster, so the
+program can check its own flags and stop at startup:
+
+```go
+zone := flag.String("zone", "", "DNS zone for the sites")
+m := &kube.Manager{Name: "sites"}
+m.Setup = func(context.Context) error {
+	if *zone == "" {
+		return errors.New("-zone is required")
+	}
+	return nil
+}
+m.Main(kube.For[Website](reconciler{}))
+```
+
+`generate` follows the Manager's `Name`, `Namespace`, `LeaseNamespace`,
+`LeaderElection`, and `Shards`. To run controllers without flags, signal
+handling, or `generate`, call the Manager's `Run` method. `kube.For` takes
+options such as `kube.Workers(n)`, `kube.WatchSelector(selector)`, and
+`kube.Resync(duration)`.
 
 Each controller has a name. The controller's finalizer is
 `kube.imjasonh.github.io/NAME`, the objects that it owns have the label
@@ -1026,24 +1052,31 @@ The command does the following:
    that names its type, not a type parameter, and passes constants as the
    namespace and name gets permission to get only that object, if the
    type's `kube` tag says `scope=Namespaced` or `scope=Cluster`.
-1. Builds the program for each platform with `CGO_ENABLED=0`.
+1. Builds the program for each platform with `CGO_ENABLED=0` and the build
+   tags and linker flags that the program was built with.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
-   program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
-   pushes the images and an index of them to `REGISTRY/PROGRAM` with
+   program at `/app/PROGRAM` as the entrypoint. The image keeps the base's
+   user, or runs as user 65532 if the base has none. It
+   pushes the images and an index of them to `REGISTRY/NAME` with
    [go-containerregistry](https://github.com/google/go-containerregistry),
    using the credentials from `docker login` or `podman login`.
-1. Writes YAML that installs the image by digest: a Namespace, a
-   ServiceAccount, a ClusterRole and a Role with only the rules that the
-   program needs, their bindings, a Deployment, a PodDisruptionBudget for
-   more than one replica, a Service for webhooks and the `kube.Serve`
-   handler, and a PersistentVolumeClaim for a `kube.Volume`. With more than
+1. Writes YAML that installs the image by digest: a Namespace if
+   `-namespace` is the default, a ServiceAccount, a ClusterRole and a Role
+   with only the rules that the program needs, their bindings, a
+   Deployment, a PodDisruptionBudget for more than one replica, a Service
+   for webhooks and the `kube.Serve` handler, an empty Secret that the
+   program keeps its webhook certificate in, and a PersistentVolumeClaim
+   for a `kube.Volume`. With more than
    one replica, the Deployment runs the program with `-leader-elect`, or
    with `-shards` when you set `-shards`. The kubelet probes `/readyz` every
    second, so a new Pod becomes ready within a second of `/readyz` passing,
    and 30 failures in a row make a ready Pod unready. The container's root
    file system is read-only, with an `emptyDir` volume at `/tmp` for
    temporary files.
-   `-tmp-size` limits the volume's size. The Pod shares one process
+   `-tmp-size` limits the volume's size. The Pod runs the program as user
+   and group 65532, whatever the base's user is, because the kubelet won't
+   start a container that must run as non-root when the image's user is
+   root or a name. The Pod shares one process
    namespace, so the pause container is PID 1 and reaps the processes that
    the program's subprocesses leave behind, which a Go program doesn't do.
    A container that you add to the Pod can see the program's processes and
@@ -1060,6 +1093,20 @@ The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
 When the program starts in the cluster, it installs its own
 CustomResourceDefinitions and webhook configurations.
+
+The installation's objects are named `NAME`, which is the `Name` of the
+program's `kube.Manager` or else the program's name, lowercased, with each
+character other than a letter or digit changed to `-`. Objects
+outside the program's namespace are named `NAME.NAMESPACE`, where
+`NAMESPACE` is the namespace that you install the program in, so that an
+installation in another namespace doesn't replace them: the ClusterRole and
+its binding, Roles in other namespaces, and the webhook configurations that
+the program installs. When you install in the namespace `NAME`, the default,
+they're named `NAME` too.
+
+The YAML creates the namespace only when it's `NAME`, so deleting an
+installation in another namespace, for example with `kubectl delete -f`,
+leaves that namespace and the other objects in it.
 
 A program watches every namespace unless you set `-watch-namespace`. Then
 it watches one namespace, and the rules for namespaced resources go in a
@@ -1087,14 +1134,14 @@ doesn't cover.
 | `-registry` | Required | Registry, and optionally a repository prefix, to push to |
 | `-base` | `cgr.dev/chainguard/static:latest` | Base image |
 | `-platform` | `linux/amd64,linux/arm64` | Platforms to build for |
-| `-namespace` | The program's name | Namespace to install in |
+| `-namespace` | `NAME` | Namespace to install in, which must exist unless it's the default |
 | `-replicas` | 2, or 1 with a `kube.Volume` | Pods to run |
-| `-shards` | 1 | Shards to split reconciles across |
+| `-shards` | 1, or the Manager's `Shards` | Shards to split reconciles across |
 | `-tag` | `latest` | Tag for the image, in addition to its digest |
 | `-tmp-size` | No limit | Size limit of the `emptyDir` volume at `/tmp`, such as `1Gi` |
 | `-volume-size` | `1Gi` | Size of the claim for a `kube.Volume` |
 | `-storage-class` | The cluster's default | StorageClass of the claim for a `kube.Volume` |
-| `-watch-namespace` | Every namespace | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
+| `-watch-namespace` | Every namespace, or the Manager's `Namespace` | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
 
 Flags after `--` go to the program in the Deployment:
 
@@ -1107,10 +1154,23 @@ go run ./examples/podpolicy generate -registry=ghcr.io/you -- -registries=ghcr.i
 that the program doesn't define, and the function that you pass to
 [`kube.Install`](#install-other-objects) sees their values.
 
+The Deployment sets some of `kube.Main`'s flags to match the RBAC rules,
+ports, and probes that `generate` writes: `-metrics-addr`, `-leader-elect`,
+`-shards`, `-watch-namespace`, `-webhook-addr`, `-webhook-service`,
+`-serve-addr`, and `-token-dir`. `generate` fails when you pass one of these
+after `--`, or when the program defines one itself. To watch one namespace
+or to set the shards, use the `generate` flag of the same name.
+
 go-containerregistry is kube's only dependency, and only `generate` uses it.
-The command builds the copy of the program for the image with the
+The command builds the copy of the program for the image with the program's
+own build tags and linker flags, which come from the go command line or
+`GOFLAGS`, so a version that `-ldflags=-X` sets reaches the image. It adds the
 `kube_nogenerate` build tag, which leaves the command out, so the program in
-the cluster links only kube and the standard library.
+the cluster links only kube and the standard library. It also adds `-s -w`,
+which leave out the symbol table and debug information. The command finds
+the program's calls with the same tags, so the rules cover the code in the
+image. Go doesn't record the linker flags of a program built with
+`-trimpath`, so for such a program `generate` takes them from `GOFLAGS`.
 
 ### Install other objects
 
@@ -1219,12 +1279,13 @@ way, its service account needs these permissions:
   declares with `Apply`, unless no version of the program has set that
   status.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
-  `customresourcedefinitions/status`, for its own types. To check and migrate
-  objects when a type changes, it also needs `list` on its own types in every
-  namespace.
-- `get` and `create` on `customresourcedefinitions`, for the types that it
-  defines and owns without reconciling them, so that it can create their
-  CRDs. Without `get`, it logs a warning and doesn't create them.
+  `customresourcedefinitions/status`, for the CRDs of its own types, by name.
+  To check and migrate objects when a type changes, it also needs `list` on
+  its own types in every namespace.
+- `create` on `customresourcedefinitions`, and `get` on their CRDs by name,
+  for the types that it defines and owns without reconciling them, so that it
+  can create their CRDs. Without `get`, it logs a warning and doesn't create
+  them.
 - `create` and `patch` on each object that `kube.Install` applies, by name.
   For an admission policy with a `paramKind`, it also needs `get` on the name
   `*` of that kind in every namespace, and for the policy's binding, `get` on
@@ -1234,9 +1295,15 @@ way, its service account needs these permissions:
 - `create` and `patch` on `events` in the `events.k8s.io` group, for a program
   that calls `Eventf`, in the namespaces of the reconciled objects, or in
   `default` for cluster-scoped ones.
-- `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
-  `patch`, and `delete` on `validatingwebhookconfigurations` and
-  `mutatingwebhookconfigurations`, for webhooks.
+- `get` and `delete` on its `validatingwebhookconfigurations` and
+  `mutatingwebhookconfigurations`, by name, so that it can delete one that an
+  earlier version left.
+- For webhooks, `get` and `update` on the Secret `NAME-webhook-tls` in its
+  namespace, and `create` and `patch` on its validating webhook configuration
+  when it validates objects, and on its mutating one when it defaults them.
+  The YAML that `generate` writes creates the Secret empty, and the program
+  fills it in. If the Secret doesn't exist, the program creates it, which
+  needs `create` on `secrets`.
 - `create` on `tokenreviews`, to check tokens with `ReviewToken`.
 - `create` on `serviceaccounts/token` for its own service account, in its
   namespace, to request tokens with `RequestToken`. The `generate` command

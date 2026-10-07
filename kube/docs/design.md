@@ -932,9 +932,13 @@ struct with the wrong scope or version would also create a CRD that the
 reconciling program can't take over. A program that owns the type can't write
 its objects without the CRD. The cost is two rules that `generate` writes for
 each owned type: `create` on `customresourcedefinitions`, and `get` on the
-CRD's name. RBAC can't limit `create` to a name, so this is the same `create`
-rule that reconciled types need. There's no `patch`. To own a type without
-creating its CRD, declare it with `apiVersion` and `kind`.
+CRD's name. There's no `patch`. RBAC can't limit a `POST` create to a name, so
+the `create` rule covers every CRD. A reconciled type's CRD needs `create` on
+only its name, because the program applies it, and the API server checks a
+server-side apply that creates an object as `create` on that name. Applying an
+owned type's CRD would narrow its rule the same way, but would change a CRD
+that another program created after the `get`. To own a type without creating
+its CRD, declare it with `apiVersion` and `kind`.
 
 ### Installed objects
 
@@ -1090,18 +1094,31 @@ Webhooks run inside a read-only scope. `Get` and `List` read caches without
 recording dependencies, and `Own`, `Apply`, `Delete`, and `RequeueAfter`
 reject the request with an error.
 
-Every replica serves webhooks, before it competes for shards. The first
+Every replica serves webhooks, before it competes for shards. The YAML that
+`generate` writes creates an empty Secret for the certificates. The first
 replica to start makes an ECDSA certificate authority valid for ten years and
-a serving certificate valid for one, and creates a Secret with both. The
-others read the Secret, including a replica that loses the race to create it.
-Each replica rereads the Secret every minute. The first to see the serving
-certificate within 30 days of expiry, or missing a host name it needs, writes
-a new one with the Secret's resource version as a precondition, so replicas
-agree. Replacing the CA keeps the old one in the bundle until it expires, so
-servers still using a certificate it signed keep working. Each replica applies
-the webhook configurations with the bundle, which is idempotent, and deletes
-configurations that its program no longer needs, so that a dropped webhook
-doesn't fail every request for its type.
+a serving certificate valid for one, and writes both to the Secret with the
+Secret's resource version as a precondition. The others read the Secret,
+including a replica whose write loses the race. When the Secret doesn't
+exist, as when the program runs outside a cluster, the first replica creates
+it instead. `generate` grants only `get` and `update` on the Secret, because
+permission to create Secrets would let the program mint a long-lived token
+for any service account in the namespace, with a Secret of type
+`kubernetes.io/service-account-token`. Each replica rereads the Secret every
+minute. The first to see the serving certificate within 30 days of expiry, or
+missing a host name it needs, writes a new one with the same precondition, so
+replicas agree. Replacing the CA keeps the old one in the bundle until it
+expires, so servers still using a certificate it signed keep working.
+
+Each replica applies the webhook configurations with the bundle, which is
+idempotent, and deletes configurations that its program no longer needs, so
+that a dropped webhook doesn't fail every request for its type. `generate`
+grants `create` and `patch` on the validating configuration's name only to a
+program that validates objects, and on the mutating configuration's name only
+to a program that defaults them, so a program that only validates can't
+register a webhook that changes objects. Every program, even one without
+webhooks, gets `get` and `delete` on both names, to delete the configurations
+that an earlier version left.
 
 ### HTTP endpoints
 
@@ -1399,9 +1416,11 @@ without a cluster. The types that `Reconcile` reads and writes are known only
 at run time, so `internal/analysis` finds them in the source. It runs `go list
 -deps -export` for the program's package, parses the packages that import
 kube, and type-checks them with `go/types`, importing every other package from
-the compiler's export data. Each instantiation of `Get`, `List`, `Fetch`,
-`Own`, `Apply`, or `Delete` names a type, or a type parameter of the generic
-function that contains the call. The analysis follows type parameters back
+the compiler's export data. It passes `go list` the build tags of the image's
+copy of the program, so it reads the same files as that build. Each
+instantiation of `Get`, `List`, `Fetch`, `Own`, `Apply`, or `Delete` names a
+type, or a type parameter of the generic function that contains the call.
+The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 `get`, `Own` needs `get`, `list`, `watch`, `create`, `patch`, and `delete`,
@@ -1439,7 +1458,7 @@ several controllers gets the rule for each reconciled type.
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
 a Role in its namespace. With `-watch-namespace`, the program runs with
-`-namespace`, and the rules for a type whose `kube` tag says
+`-watch-namespace` too, and the rules for a type whose `kube` tag says
 `scope=Namespaced`, or that the program defines without `scope=Cluster`, go in
 a Role in the watched namespace. A reconciled type with more than one version
 keeps its rules in the ClusterRole, because migrating its stored objects to a
@@ -1449,6 +1468,26 @@ can keep state in a ConfigMap there without the right to read or write
 ConfigMaps anywhere else. Caches watch every namespace that the program
 watches, so the framework rejects a local type in `Get`, `List`, and `Own`, and
 `generate` rejects a controller that reconciles or owns one.
+
+Every installation of a program in a cluster shares its cluster-scoped
+objects and the namespaces outside its own, so the names of the ClusterRole,
+its binding, the Roles in other namespaces, and the webhook configurations
+include the namespace that the program is installed in: `NAME.NAMESPACE`, or
+`NAME` in the namespace `NAME`, where `generate` installs by default. With the
+program's name alone, a second installation's `kubectl apply` would replace
+the first one's ClusterRoleBinding subjects, and its program would take over
+the first one's webhook configurations. The program names its webhook
+configurations with the same function as `generate`, from its own namespace.
+
+`Manager.Main` passes its Manager to `generate`, so the YAML follows the
+fields that the program sets, as the program does at run time. `Name` names
+the installation. `LeaseNamespace` is where the rules for the Leases and the
+webhook certificate go, and it names the webhook configurations. `Namespace`
+and `Shards` are the defaults of `-watch-namespace` and `-shards`, and with
+`LeaderElection`, one replica gets the rules for Leases too. The program's
+own flags default to the same fields, so when the program sets `Shards` or
+`Namespace`, the Deployment's arguments set `-shards` or `-watch-namespace`
+to the value that `generate` used, which may differ from the field.
 
 `ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
 first reference to each, and `generate` adds the rules that
@@ -1462,21 +1501,32 @@ gets a projected token for each audience and no rule.
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
-`/app/PROGRAM` to the base's image for that platform, sets the entrypoint and
-a non-root user, and pushes an index of the images. Each image names its base
+`/app/PROGRAM` to the base's image for that platform, sets the entrypoint, and
+pushes an index of the images. An image keeps its base's user, or runs as user
+65532 if the base has none. Each image names its base
 with the `org.opencontainers.image.base.name` and `.digest` annotations, and
 leaves out the base's own annotations, such as its title and source
 repository, which describe the base. Timestamps are the Unix
 epoch, so the same source and base give the same digest, and the Deployment
 names the image by digest. The copy of the program in the image is built with
-the `kube_nogenerate` build tag, which leaves out `generate` and
-go-containerregistry with it, so the program in the cluster links only kube.
+the build tags and linker flags that `debug.ReadBuildInfo` reports for the
+running program, so its tag-selected files, and a version that
+`-ldflags=-X` sets, match what the developer ran. `generate` adds `-s -w` to
+the linker flags, and the `kube_nogenerate` build tag, which leaves out
+`generate` and go-containerregistry with it, so the program in the cluster
+links only kube. The go command doesn't record the linker flags of a program
+built with `-trimpath`, so for such a program `generate` takes them from
+`GOFLAGS`. It warns when `GOFLAGS` has none, because linker flags on the go
+command line are lost.
 
 `internal/yaml` writes the YAML from ordered JSON, so the output is stable. It
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
-`/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. `/readyz`
+`/healthz`, as user and group 65532 with a read-only root file system, and
+with `-leader-elect` or `-shards` when it has more than one replica. The Pod
+sets `runAsNonRoot`, and with it the kubelet won't start a container whose
+image runs as root, or as a user name, which it can't check. A base can set
+either, so the Pod sets the user too. `/readyz`
 fails while the program starts, and by default the kubelet probes again 10
 seconds after a failure, so a new Pod, and a rollout that waits for it, could
 wait up to 10 seconds longer than they need to. `/readyz` reads only memory,
@@ -1655,7 +1705,11 @@ framework's tests check that:
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote. The website example writes its events with those
-  rules, and podpolicy, which records none, gets no rule for them.
+  rules and creates its CRD with a rule for that name only, and when
+  `GOFLAGS` sets a build tag, the program in its image has it too.
+  Podpolicy, which records no events, gets no rule for them, and fills in
+  the webhook certificate Secret that the YAML creates, with no rule to
+  create Secrets.
 - Two replicas of the probe example, with the rules that `generate` writes,
   both serve, accept tokens for their own audience and refuse others, send a
   token for their own service account from a token directory and review it,
@@ -1678,8 +1732,9 @@ kube-proxy. It pushes to a local registry as kind's
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
 that `kubectl describe` shows the Website's events, that reconciles continue
 after every controller pod is replaced, that imagereport creates its CRD with
-the rules that `generate` wrote and reports the images that pods run, and
-that the podpolicy webhooks deny and default pods through their Service.
+the rules that `generate` wrote and reports the images that pods run, that
+janitor starts on a base whose user is a name, and that the podpolicy
+webhooks deny and default pods through their Service.
 It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token

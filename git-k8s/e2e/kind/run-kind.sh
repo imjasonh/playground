@@ -463,6 +463,8 @@ echo "The core program's results controller took over status.checks from the old
 echo "::endgroup::"
 
 echo "::group::Install the checks"
+# generate creates only the namespace named for the program.
+k create namespace "${APPROVAL_NS}"
 for program in "${CHECKS[@]}"; do
   install_generated "${program}"
 done

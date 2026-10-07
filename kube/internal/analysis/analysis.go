@@ -32,6 +32,9 @@ type Config struct {
 	// Env is the go command's environment. GOOS, GOARCH, and CGO_ENABLED
 	// decide which files are part of the program.
 	Env []string
+	// Tags are the build tags, which also decide which files are part of
+	// the program. They replace any tags in GOFLAGS.
+	Tags []string
 	// Pattern names the program's main package.
 	Pattern string
 	// Package is the import path of the package that declares Funcs.
@@ -102,7 +105,7 @@ type listedPackage struct {
 // call of a generic function that passes it on to one of Funcs. After the
 // calls of Funcs, uses holds each use of one of Calls.
 func Find(ctx context.Context, cfg Config) (uses, unresolved []Use, err error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern.
+	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "-tags="+strings.Join(cfg.Tags, ","), "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern and build tags.
 	cmd.Dir, cmd.Env = cfg.Dir, cfg.Env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

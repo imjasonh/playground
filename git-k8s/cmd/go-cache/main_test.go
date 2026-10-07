@@ -1054,7 +1054,7 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 }
 
 func TestRunNeedsController(t *testing.T) {
-	err := run(slog.New(slog.DiscardHandler), "127.0.0.1:-1", "https://proxy.golang.org", t.TempDir(), "1Mi", "")
+	err := run(slog.New(slog.DiscardHandler), "127.0.0.1:-1", "", "https://proxy.golang.org", t.TempDir(), "1Mi", "")
 	if err == nil || err.Error() != "-controller can't be empty" {
 		t.Errorf("run with an empty -controller = %v, want an error about -controller", err)
 	}
@@ -1635,6 +1635,38 @@ func TestParseSize(t *testing.T) {
 	for _, s := range []string{"", "0", "-1Gi", "1.5Gi", "Gi", "1Gb", "99999999999Ti"} {
 		if got, err := parseSize(s); err == nil {
 			t.Errorf("parseSize(%q) = %d, want an error", s, got)
+		}
+	}
+}
+
+// TestServers checks that go-cache serves /healthz, /readyz, and /metrics on
+// -addr, and on -metrics-addr only when it's another address, which serves
+// nothing else.
+func TestServers(t *testing.T) {
+	s, _ := newTestServer(t, "", nil)
+	for _, tc := range []struct {
+		addr, metricsAddr string
+		want              int
+	}{
+		{":8080", "", 1},
+		{":8080", ":8080", 1},
+		{":8080", ":9090", 2},
+	} {
+		if got := len(s.servers(tc.addr, tc.metricsAddr)); got != tc.want {
+			t.Errorf("-addr=%s -metrics-addr=%s: %d servers, want %d", tc.addr, tc.metricsAddr, got, tc.want)
+		}
+	}
+	servers := s.servers(":8080", ":9090")
+	for i, want := range []map[string]int{
+		{"/healthz": http.StatusOK, "/readyz": http.StatusOK, "/metrics": http.StatusOK},
+		{"/healthz": http.StatusOK, "/readyz": http.StatusOK, "/metrics": http.StatusOK, "/mod/example.com/m/@v/list": http.StatusNotFound},
+	} {
+		srv := httptest.NewServer(servers[i].Handler)
+		t.Cleanup(srv.Close)
+		for path, code := range want {
+			if resp, body := do(t, http.MethodGet, srv.URL+path, "", nil, nil); resp.StatusCode != code {
+				t.Errorf("GET %s on %s = %s, want %d: %s", path, servers[i].Addr, resp.Status, code, body)
+			}
 		}
 	}
 }
