@@ -23,3 +23,14 @@ func objectName(s string) string {
 	}
 	return s
 }
+
+// installName names an object of the program called name, installed in
+// namespace, that isn't in that namespace, such as its ClusterRole and its
+// webhook configurations: name.namespace, so that installations in two
+// namespaces don't share the object, or name when namespace is name.
+func installName(name, namespace string) string {
+	if namespace == name {
+		return name
+	}
+	return name + "." + namespace
+}

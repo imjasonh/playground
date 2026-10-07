@@ -997,6 +997,15 @@ and running `generate` again without changes leaves the cluster as it was.
 When the program starts in the cluster, it installs its own
 CustomResourceDefinitions and webhook configurations.
 
+The installation's objects are named `NAME`, the program's name lowercased,
+with each character other than a letter or digit changed to `-`. Objects
+outside the program's namespace are named `NAME.NAMESPACE`, where
+`NAMESPACE` is the namespace that you install the program in, so that an
+installation in another namespace doesn't replace them: the ClusterRole and
+its binding, Roles in other namespaces, and the webhook configurations that
+the program installs. When you install in the namespace `NAME`, the default,
+they're named `NAME` too.
+
 A program watches every namespace unless you set `-watch-namespace`. Then
 it watches one namespace, and the rules for namespaced resources go in a
 Role there instead of the ClusterRole, so a program that reads Secrets, for

@@ -135,6 +135,8 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return fmt.Errorf("generate: -tmp-size %q isn't a quantity, such as 512Mi or 2Gi", o.tmpSize)
 	case !quantity.MatchString(o.volumeSize):
 		return fmt.Errorf("generate: -volume-size %q isn't a quantity, such as 512Mi or 2Gi", o.volumeSize)
+	case objectName(o.namespace) != o.namespace:
+		return fmt.Errorf("generate: -namespace %q isn't a namespace name", o.namespace)
 	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
@@ -530,7 +532,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	// The program deletes webhook configurations that an earlier version
 	// of it left, even when it has no webhooks itself.
-	config := o.name
+	config := installName(o.name, o.namespace)
 	for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
 		cluster.add("admissionregistration.k8s.io", r, config, "get", "delete")
 		if p.webhooks {
@@ -540,7 +542,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	if p.webhooks {
 		p.local.add("", "secrets", "", "create")
-		p.local.add("", "secrets", config+"-webhook-tls", "get", "update")
+		p.local.add("", "secrets", o.name+"-webhook-tls", "get", "update")
 	}
 	if p.electLeader {
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
@@ -688,31 +690,39 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		return append(m, field{"labels", labels})
 	}
 	subjects := []any{object{{"kind", "ServiceAccount"}, {"name", o.name}, {"namespace", o.namespace}}}
+	// Objects outside the program's namespace are named for the namespace
+	// too, so that an installation in another namespace doesn't replace them.
+	shared := installName(o.name, o.namespace)
 	docs := []object{
 		{{"apiVersion", "v1"}, {"kind", "Namespace"}, {"metadata", meta(o.namespace, false)}},
 		{{"apiVersion", "v1"}, {"kind", "ServiceAccount"}, {"metadata", meta(o.name, true)}},
-		{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRole"}, {"metadata", meta(o.name, false)}, {"rules", p.cluster.rules()}},
+		{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRole"}, {"metadata", meta(shared, false)}, {"rules", p.cluster.rules()}},
 		{
-			{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRoleBinding"}, {"metadata", meta(o.name, false)},
-			{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "ClusterRole"}, {"name", o.name}}},
+			{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRoleBinding"}, {"metadata", meta(shared, false)},
+			{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "ClusterRole"}, {"name", shared}}},
 			{"subjects", subjects},
 		},
 	}
-	role := func(m object, g grants) []object {
+	role := func(ns string, g grants) []object {
+		name := shared
+		if ns == o.namespace {
+			name = o.name
+		}
+		m := object{{"name", name}, {"namespace", ns}, {"labels", labels}}
 		return []object{
 			{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "Role"}, {"metadata", m}, {"rules", g.rules()}},
 			{
 				{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "RoleBinding"}, {"metadata", m},
-				{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "Role"}, {"name", o.name}}},
+				{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "Role"}, {"name", name}}},
 				{"subjects", subjects},
 			},
 		}
 	}
 	if len(p.local) > 0 {
-		docs = append(docs, role(meta(o.name, true), p.local)...)
+		docs = append(docs, role(o.namespace, p.local)...)
 	}
 	if len(p.watched) > 0 {
-		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
+		docs = append(docs, role(o.watchNamespace, p.watched)...)
 	}
 	// Events about cluster-scoped objects go in the default namespace, which
 	// can also hold objects that Install applies, and one Role covers both.
@@ -728,7 +738,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		namespaces["default"] = g
 	}
 	for _, ns := range slices.Sorted(maps.Keys(namespaces)) {
-		docs = append(docs, role(object{{"name", o.name}, {"namespace", ns}, {"labels", labels}}, namespaces[ns])...)
+		docs = append(docs, role(ns, namespaces[ns])...)
 	}
 	args := []string{"-addr=:8080"}
 	switch {

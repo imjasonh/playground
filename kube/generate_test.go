@@ -185,15 +185,22 @@ func TestManifests(t *testing.T) {
 		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		kinds = append(kinds, m["kind"].(string))
-		meta := m["metadata"].(map[string]any)
-		if m["kind"] != "Namespace" && meta["name"] != "web-site" {
-			t.Errorf("%s is named %v", m["kind"], meta["name"])
-		}
+		name := "web-site"
 		switch m["kind"] {
+		case "Namespace":
+			name = "sites"
+		case "ClusterRole", "ClusterRoleBinding":
+			name = "web-site.sites"
 		case "Deployment":
 			deployment = m
 		case "Service":
 			service = m
+		}
+		if got := m["metadata"].(map[string]any)["name"]; got != name {
+			t.Errorf("%s is named %v, want %s", m["kind"], got, name)
+		}
+		if ref, ok := m["roleRef"].(map[string]any); ok && ref["name"] != name {
+			t.Errorf("%s refers to %v, want %s", m["kind"], ref["name"], name)
 		}
 	}
 	want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Service", "Deployment", "PodDisruptionBudget"}
@@ -562,6 +569,36 @@ func TestPlanCRDRules(t *testing.T) {
 	}
 }
 
+// TestPlanWebhookNames checks the names in the rules for webhooks. The
+// webhook configurations are cluster-scoped, so their names include the
+// program's namespace. The certificate Secret is in that namespace.
+func TestPlanWebhookNames(t *testing.T) {
+	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 1, shards: 1, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard}
+	p, err := o.plan(t.Context(), []Controller{For[gizmo](validatingReconciler{})}, "github.com/imjasonh/playground/kube/examples/janitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for where, g := range map[string]grants{"cluster": p.cluster, "sites": p.local} {
+		for k, verbs := range g {
+			if strings.HasSuffix(k.resource, "webhookconfigurations") || k.resource == "secrets" {
+				got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+	}
+	want := map[string][]string{
+		`cluster validatingwebhookconfigurations ""`:               {"create"},
+		`cluster validatingwebhookconfigurations "web-site.sites"`: {"delete", "get", "patch"},
+		`cluster mutatingwebhookconfigurations ""`:                 {"create"},
+		`cluster mutatingwebhookconfigurations "web-site.sites"`:   {"delete", "get", "patch"},
+		`sites secrets ""`:                     {"create"},
+		`sites secrets "web-site-webhook-tls"`: {"get", "update"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rules = %v, want %v", got, want)
+	}
+}
+
 // TestPlanFetchNames works out the rules of testdata/fetchnames. A Fetch that
 // passes a type with a known scope, and constants as the namespace and name,
 // may get only that object. Every other Fetch may get every object of its
@@ -615,6 +652,12 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	role, binding := byKind["Role"], byKind["RoleBinding"]
 	if role == nil || role["metadata"].(map[string]any)["namespace"] != "team" {
 		t.Fatalf("Role = %v, want one in team", role)
+	}
+	if name := role["metadata"].(map[string]any)["name"]; name != "app.app-system" {
+		t.Errorf("the Role in team is named %v, want app.app-system", name)
+	}
+	if ref := binding["roleRef"].(map[string]any)["name"]; ref != "app.app-system" {
+		t.Errorf("the RoleBinding in team refers to %v, want app.app-system", ref)
 	}
 	if b, _ := json.Marshal(role["rules"]); string(b) != `[{"apiGroups":[""],"resources":["secrets"],"verbs":["get"]}]` {
 		t.Errorf("Role rules = %s", b)
@@ -803,7 +846,7 @@ func TestManifestsForInstalledObjects(t *testing.T) {
 			t.Errorf("%s subjects = %s", m.Metadata.Namespace, b)
 		}
 	}
-	if want := []string{"Role other/app", "RoleBinding other/app", "Role policies/app", "RoleBinding policies/app"}; !slices.Equal(roles, want) {
+	if want := []string{"Role other/app.app-system", "RoleBinding other/app.app-system", "Role policies/app.app-system", "RoleBinding policies/app.app-system"}; !slices.Equal(roles, want) {
 		t.Errorf("roles = %q, want %q", roles, want)
 	}
 }
@@ -877,6 +920,7 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-volume-size=lots"}, "-volume-size \"lots\" isn't a quantity"},
 		{[]string{"-registry=ghcr.io/you", "-volume-size=2Gi", "-storage-class=fast"}, "has no kube.Volume, so leave out -storage-class and -volume-size"},
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
+		{[]string{"-registry=ghcr.io/you", "-namespace=team.a"}, `-namespace "team.a" isn't a namespace name`},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
 		{[]string{"-registry=ghcr.io/you", "--", "-v", "-nope"}, "the program's flags after --: flag provided but not defined: -nope"},
 	} {

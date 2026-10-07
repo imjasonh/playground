@@ -352,7 +352,9 @@ func (ws *webhookServer) use(serving certs.Pair, bundle []byte) error {
 }
 
 // configurationName names the manager's webhook configurations.
-func (ws *webhookServer) configurationName() string { return objectName(ws.m.Name) }
+func (ws *webhookServer) configurationName() string {
+	return installName(objectName(ws.m.Name), ws.m.ownNamespace())
+}
 
 // applyConfigurations registers the validating and mutating webhooks, and
 // updates objects that embed the CA bundle. When the manager has no webhooks

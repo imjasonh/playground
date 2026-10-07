@@ -92,10 +92,22 @@ func (a *namesAPI) paths() []string {
 	return slices.Sorted(maps.Keys(a.objs))
 }
 
+func TestInstallName(t *testing.T) {
+	for _, tc := range []struct{ name, namespace, want string }{
+		{"website", "website", "website"},
+		{"website", "team-a", "website.team-a"},
+	} {
+		if got := installName(tc.name, tc.namespace); got != tc.want {
+			t.Errorf("installName(%q, %q) = %q, want %q", tc.name, tc.namespace, got, tc.want)
+		}
+	}
+}
+
 // TestObjectNamesForAnyProgramName runs a manager named like a program built
 // from cmd/Web_Site. The Leases, the webhook certificate Secret, and the
 // webhook configuration that it writes need lowercase names, or the API
-// server rejects them.
+// server rejects them. The webhook configuration is cluster-scoped, so its
+// name includes the manager's namespace.
 func TestObjectNamesForAnyProgramName(t *testing.T) {
 	api := &namesAPI{objs: map[string][]byte{}}
 	srv := httptest.NewServer(api)
@@ -126,7 +138,7 @@ func TestObjectNamesForAnyProgramName(t *testing.T) {
 
 	want := []string{
 		"/api/v1/namespaces/shop/secrets/web-site-webhook-tls",
-		"/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations/web-site",
+		"/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations/web-site.shop",
 		"/apis/coordination.k8s.io/v1/namespaces/shop/leases/" + s.memberName(),
 		"/apis/coordination.k8s.io/v1/namespaces/shop/leases/web-site-shard-0",
 		"/apis/coordination.k8s.io/v1/namespaces/shop/leases/web-site-shard-1",

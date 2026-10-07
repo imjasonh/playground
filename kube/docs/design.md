@@ -1396,6 +1396,16 @@ ConfigMaps anywhere else. Caches watch every namespace that the program
 watches, so the framework rejects a local type in `Get`, `List`, and `Own`, and
 `generate` rejects a controller that reconciles or owns one.
 
+Every installation of a program in a cluster shares its cluster-scoped
+objects and the namespaces outside its own, so the names of the ClusterRole,
+its binding, the Roles in other namespaces, and the webhook configurations
+include the namespace that the program is installed in: `NAME.NAMESPACE`, or
+`NAME` in the namespace `NAME`, where `generate` installs by default. With the
+program's name alone, a second installation's `kubectl apply` would replace
+the first one's ClusterRoleBinding subjects, and its program would take over
+the first one's webhook configurations. The program names its webhook
+configurations with the same function as `generate`, from its own namespace.
+
 `ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
 first reference to each, and `generate` adds the rules that
 [Service account tokens](#service-account-tokens) describes. Any reference
