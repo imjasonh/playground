@@ -913,13 +913,18 @@ and rates the change `high` when any of these is true:
 - It changes more lines than `-max-lines`, 200 by default. Lines in `go.sum`
   and `go.work.sum` files don't count, because they're checksums that the
   `go` command checks, and the versions that they cover show in `go.mod`.
+- It changes a file that git treats as binary, such as one with a NUL byte
+  in its first 8,000 bytes, because git counts no lines in such a file.
 - It touches a path that matches a `-sensitive` glob.
 - A `go.mod` file that it changes requires a module that no `go.mod` file
   at the merge base requires, moves a module to an earlier version than the
   file required, to a new major version, or to a version that isn't a
   release, such as a pseudo-version, replaces a module with another module
   or with a directory outside the repository, stops replacing one, or
-  changes the `go` or `toolchain` line. A directory is outside the
+  changes the `go`, `toolchain`, or `godebug` lines. For a new `go.mod`
+  file, the check compares those lines with the ones in the `go.mod` file
+  of the module that its directory was in at the merge base, or with no
+  lines if the directory was in no module. A directory is outside the
   repository when its path is absolute, leads out of the repository from
   the `go.mod` file's directory, or goes through a symbolic link or a
   submodule, because the `go` command follows the link, which can point
@@ -929,9 +934,10 @@ and rates the change `high` when any of these is true:
   because that code is in the repository. Requiring a module that only a
   `go.mod` file in the repository declares isn't, because without a
   replacement, the `go` command downloads the module from the module proxy.
-- It adds or changes a symbolic link or a submodule that the directory of a
-  replacement in any `go.mod` file goes through, even when no `go.mod` file
-  changes.
+- It adds or changes a symbolic link that the directory of a replacement in
+  any `go.mod` file goes through, even when no `go.mod` file changes.
+- It adds or changes a submodule, whose files come from another repository,
+  or changes the `.gitmodules` file, which names that repository.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
@@ -950,8 +956,8 @@ and for any head that makes the same change, such as `check-base`'s merge of
 the parent, a rebase, or a squash, as
 [Which results count](#which-results-count) describes. A rating that reads
 `go.mod` files at the merge base, which the check does for a change to a
-`go.mod` file, a symbolic link, or a submodule, holds only for the parent's
-head, so the check rates such a change again when the parent moves.
+`go.mod` file or a symbolic link, holds only for the parent's head, so the
+check rates such a change again when the parent moves.
 
 ### Write a check
 
@@ -1831,7 +1837,9 @@ can change.
 Each commit that the check pushes makes a new head, so every check runs
 again on it. A merge, and a replay of the branch's whole change as one
 commit, have a `Git-K8s-Fixer: conflicts` trailer and count toward
-`maxAutomatedCommits`. A replay of one commit keeps that commit's message,
+`maxAutomatedCommits`. When the agent resolves the conflicts, the merge or
+replay also has a `Git-K8s-Agent: conflicts` trailer, which makes `check-risk`
+rate the branch high. A replay of one commit keeps that commit's message,
 so it counts only if the original did, but the check pushes replays only
 while the branch is under the limit, like any fix. When neither git nor the
 agent resolves the conflicts, the check fails with the reason and leaves the
