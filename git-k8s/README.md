@@ -2208,8 +2208,11 @@ the branch's head. Checks other than `approval` don't run again on commits
 that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
 parent, such as `base`, or that keeps results for the same change, such as
-`risk`, set `scope` to `Parent` instead, and `parentCommit` to the parent's
-head.
+`risk`, set `scope` to `Parent` instead, `parentCommit` to the parent's
+head, and `mergeBase` to `null`. A merge patch keeps the fields of the
+earlier result that it doesn't set, such as the merge base of a `risk`
+result, and the API server rejects a result with the scope `Parent` and a
+merge base.
 
 For a branch that lands by squash or rebase, also set `filesOnly` to `true`
 if the check sets `FilesOnly`, as the built-in checks do. Otherwise the
