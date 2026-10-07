@@ -214,9 +214,9 @@ func TestResultsEndpointOnStandby(t *testing.T) {
 	}
 }
 
-// When the request's context has ended, the endpoint answers 503 rather than
-// 410, as kube.Serve does for a Get that can't read. The test cancels the
-// context and leaves the branch out of the world.
+// When the request's context has ended, the endpoint answers 503, as
+// kube.Serve does for a Get that can't read, rather than 410. The test
+// cancels the context and leaves the branch out of the world.
 func TestResultsEndpointCantRead(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(errors.New("reading GitBranches: forbidden"))
