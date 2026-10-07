@@ -2837,6 +2837,12 @@ controller update the module, raise its `go` line to 1.17 or later and run
 `go get` adds one, the file then lists every module that the build uses, and
 `check-risk` rates the change high.
 
+The controller skips a `go.mod` file that's larger than 8 MiB, and logs a
+warning. When the parent's list of files from `git ls-tree` is larger than
+16 MiB, about 150,000 files, the controller changes nothing for the parent
+until its head moves. It remakes a branch whose head has a `go.mod` file or
+a list of files larger than these limits.
+
 ### Branches
 
 When a newer version comes out before a branch lands, the controller replaces

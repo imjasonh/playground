@@ -369,6 +369,10 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 		return err
 	}
 	mods, err := readModules(ctx, local, parentHead, log)
+	if errors.Is(err, git.ErrTooBig) {
+		// The list stays too long until the parent's head moves.
+		return kube.Permanent(fmt.Errorf("reading the parent's go.mod files: %w", err))
+	}
 	if err != nil {
 		return err
 	}
@@ -545,7 +549,8 @@ type modFile struct {
 // line is older than 1.17: such a file lists only the requirements that
 // other requirements don't imply, so raised can't see every version that go
 // get raises. go get adds a go line to a file that has none, and the file
-// then lists every module that the build uses.
+// then lists every module that the build uses. It skips files larger than
+// git.MaxBlobBytes too.
 func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.Logger) (map[string]*modFile, error) {
 	entries, err := repo.LsTree(ctx, commit)
 	if err != nil {
@@ -564,6 +569,10 @@ func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.L
 			continue
 		}
 		data, err := repo.ReadBlob(ctx, e.SHA)
+		if errors.Is(err, git.ErrTooBig) {
+			log.Warn("skipping a go.mod file that's too large to read", "path", e.Path, "error", err)
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -805,9 +814,14 @@ func updatedTo(c git.ListedCommit, m moduleMajor) string {
 // the update would send the branch to the back of the queue and drop the
 // fixes that checks such as check-deps pushed, so the controller sets keep
 // for the branches of a parent with a queue that have automated commits
-// left for check-base's merge.
+// left for check-base's merge. A head whose list of files or go.mod file is
+// too large to read doesn't make the update, so the controller remakes the
+// branch.
 func current(ctx context.Context, repo *git.Repo, parentHead, head string, up update, keep bool) (ok, behind bool, err error) {
 	entries, err := repo.LsTree(ctx, head)
+	if errors.Is(err, git.ErrTooBig) {
+		return false, false, nil
+	}
 	if err != nil {
 		return false, false, err
 	}
@@ -824,6 +838,9 @@ func current(ctx context.Context, repo *git.Repo, parentHead, head string, up up
 			return false, false, nil
 		}
 		data, err := repo.ReadBlob(ctx, sha)
+		if errors.Is(err, git.ErrTooBig) {
+			return false, false, nil
+		}
 		if err != nil {
 			return false, false, err
 		}
