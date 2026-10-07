@@ -2360,9 +2360,9 @@ When the branch is one commit on top of the parent's head, a squash
 fast-forwards the parent to it. A rebase does the same for a branch with no
 merge commits after the parent's head, because copying its commits changes
 nothing. When the parent already has the files at the branch's head, a squash
-sets the branch's state to `NothingToLand` and changes nothing. A rebase does that
-only when the parent already has every commit's change, because it leaves out
-each commit that changes nothing.
+sets the branch's state to `NothingToLand` and changes nothing. A rebase does
+that only when the parent already has every commit's change, because it
+leaves out each commit that changes nothing.
 
 A rebase can't copy every branch. It sets the branch's state to
 `NeedsRebase`, with a message that says why, when one of these happens:
@@ -2483,9 +2483,9 @@ mirror's copy, if the parent is still at the head that the checks saw. The
 same atomic update deletes the branch, if the branch is still at its head,
 or moves the branch to the new commit when `deleteLandedBranches` is off. A
 branch that stays is then at its parent's head, so it stays `Landed` instead
-of showing commits that the parent doesn't have. If the parent or the branch moved
-since the repositories controller listed them, the update changes neither,
-and the controller tries again.
+of showing commits that the parent doesn't have. If the parent or the branch
+moved since the repositories controller listed them, the update changes
+neither, and the controller tries again.
 
 When the gate doesn't pass on the counted results alone, the controller
 moves the branch to the new commit in the mirror's copy instead, if the
