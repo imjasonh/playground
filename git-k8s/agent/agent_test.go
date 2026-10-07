@@ -25,10 +25,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is a review check's view of a TrackedBranch.
+// Branch is a review check's view of a Branch object.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
-	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"review,omitempty"`
@@ -36,7 +36,7 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
@@ -82,7 +82,7 @@ func newFixture(t *testing.T, password string) *fixture {
 	f := &fixture{t: t, srv: srv, work: w, base: main, task: Task{Instructions: "Review the change."}}
 	f.b = &Branch{Object: kube.Meta("app-c-x", nil)}
 	f.b.Namespace = "default"
-	f.b.Spec = gitk8s.TrackedBranchSpec{
+	f.b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "review", MayPush: true}}},
 	}
@@ -144,7 +144,7 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	ctx, rec := kube.Fake(f.t.Context(), f.b, world...)
 	remote := f.srv.RemoteFor
 	if err := f.remoteErr; err != nil {
-		remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) { return git.Remote{}, err }
+		remote = func(context.Context, *gitk8s.RepositoryView) (git.Remote, error) { return git.Remote{}, err }
 	}
 	check := checks.Check{Name: "review", Remote: remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		v, res := f.r.Run(ctx, in, f.task)

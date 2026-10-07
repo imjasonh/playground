@@ -22,7 +22,7 @@ import (
 // repository doesn't name one. It reads the Secret that SigningKeyRef names
 // with kube.Fetch, so it must run in a reconcile, and the Secret isn't
 // cached. It returns an error if SigningKeyRef names the SecretRef Secret.
-func Key(ctx context.Context, repo *gitk8s.Repository) (*git.SigningKey, error) {
+func Key(ctx context.Context, repo *gitk8s.RepositoryView) (*git.SigningKey, error) {
 	if repo.Spec.SigningKeyRef == nil {
 		return nil, nil
 	}

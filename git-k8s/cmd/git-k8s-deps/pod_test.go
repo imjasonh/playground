@@ -37,7 +37,7 @@ func TestPod(t *testing.T) {
 	}
 	b := &Branch{Object: kube.Meta("app-main", nil)}
 	b.Spec.Branch = "main"
-	repo := &gitk8s.Repository{Spec: gitk8s.TrackedRepositorySpec{URL: "https://git.example.com/app.git", SecretRef: &gitk8s.SecretRef{Name: "app-creds"}}}
+	repo := &gitk8s.RepositoryView{Spec: gitk8s.RepositorySpec{URL: "https://git.example.com/app.git", SecretRef: &gitk8s.SecretRef{Name: "app-creds"}}}
 	ups := []update{{module: greet, version: "v1.1.0", from: map[string]string{"tools": "v1.0.0", ".": "v1.0.0"}}}
 	p := u.pod(b, repo, "0123abcd", 0, ups)
 	var got strings.Builder
@@ -112,7 +112,7 @@ func TestPod(t *testing.T) {
 func TestPodName(t *testing.T) {
 	u := &updater{proxy: newProxy(nil, time.Hour, time.Now)}
 	b := &Branch{Object: kube.Meta("app-main", nil)}
-	if name := u.pod(b, &gitk8s.Repository{}, "0123abcd", 0, nil).Name; strings.Contains(name, "-") {
+	if name := u.pod(b, &gitk8s.RepositoryView{}, "0123abcd", 0, nil).Name; strings.Contains(name, "-") {
 		t.Errorf("the update Pod's name %s has a hyphen, so a check whose new Pods must be named NAME-ID could create a Pod with it first", name)
 	}
 }
@@ -135,7 +135,7 @@ func TestImagesByDigest(t *testing.T) {
 	want := map[string]string{"prepare": "IfNotPresent", "update": "IfNotPresent", "result": "IfNotPresent"}
 	for _, version := range []string{"@sha256:" + strings.Repeat("0", 64), ":test"} {
 		u.goImage, u.gitImage, u.resultImage = "registry.example.com/go"+version, "registry.example.com/git"+version, "registry.example.com/agent-runner"+version
-		p := u.pod(&Branch{Object: kube.Meta("app-main", nil)}, &gitk8s.Repository{}, "0123abcd", 0, nil)
+		p := u.pod(&Branch{Object: kube.Meta("app-main", nil)}, &gitk8s.RepositoryView{}, "0123abcd", 0, nil)
 		got := map[string]string{}
 		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
 			got[c.Name] = c.ImagePullPolicy

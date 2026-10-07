@@ -13,11 +13,11 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// queueEntry is a TrackedBranch as merge queues see it. It doesn't declare
+// queueEntry is a Branch object as merge queues see it. It doesn't declare
 // check results, so their changes don't reconcile a parent or the branches
 // in its queue.
 type queueEntry struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
 	Spec        struct {
 		Branch string `json:"branch"`
 		Parent string `json:"parent,omitempty"`
@@ -39,8 +39,8 @@ func queues(policy *gitk8s.MergePolicy) bool {
 // their places, so the front stays the front until it leaves. Branches that
 // join go to the back, in the order that they joined, then by name. Only a
 // parent whose merge policy queues branches has a queue.
-func queue(ctx context.Context, b *gitk8s.TrackedBranch) ([]string, error) {
-	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+func queue(ctx context.Context, b *gitk8s.Branch) ([]string, error) {
+	repo := kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, b.Spec.Repository)
 	if repo == nil {
 		return nil, nil
 	}
@@ -86,7 +86,7 @@ func queue(ctx context.Context, b *gitk8s.TrackedBranch) ([]string, error) {
 
 // position returns b's place in its parent's queue, from 1 at the front or 0
 // if the queue doesn't include b yet, and the queue's length.
-func position(ctx context.Context, b *gitk8s.TrackedBranch) (int32, int) {
+func position(ctx context.Context, b *gitk8s.Branch) (int32, int) {
 	parent := kube.Get[queueEntry](ctx, b.Namespace, gitk8s.BranchObjectName(b.Spec.Repository, b.Spec.Parent))
 	if parent == nil {
 		return 0, 0
@@ -106,7 +106,7 @@ func position(ctx context.Context, b *gitk8s.TrackedBranch) (int32, int) {
 // at the front lands, after the base check merges the parent into it if
 // it's behind. A squash or rebase landing that pushes its commits to b for
 // the checks keeps b at the front while the checks run on them.
-func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.TrackedBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
+func (m *merger) queued(ctx context.Context, repo *gitk8s.RepositoryView, b *gitk8s.Branch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
 	spec := &b.Spec
 	switch {
 	case reported(b, gitk8s.MergeStateRewritten):
@@ -187,13 +187,13 @@ func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.
 // landed reports whether this controller landed b at its current spec. Until
 // the repository controller lists b again, b's checks still pass for its
 // parent's old head, so b would otherwise join the queue again.
-func landed(b *gitk8s.TrackedBranch) bool {
+func landed(b *gitk8s.Branch) bool {
 	return reported(b, gitk8s.MergeStateLanded)
 }
 
 // reported reports whether this controller set b's Landed condition to
 // state at b's current spec. The spec changes when b or its parent moves.
-func reported(b *gitk8s.TrackedBranch, state gitk8s.MergeState) bool {
+func reported(b *gitk8s.Branch, state gitk8s.MergeState) bool {
 	c := kube.FindCondition(b.Status.Conditions, "Landed")
 	return c != nil && c.Reason == string(state) && c.ObservedGeneration == b.Generation
 }
@@ -230,9 +230,9 @@ func canPass(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) boo
 // fixedOnly reports whether checks pushed every commit that b gained since
 // its head was since, such as the base check's merge of the parent, so that
 // b keeps its place in the queue.
-func (m *merger) fixedOnly(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.TrackedBranch, since string) (bool, error) {
+func (m *merger) fixedOnly(ctx context.Context, repo *gitk8s.RepositoryView, b *gitk8s.Branch, since string) (bool, error) {
 	if repo == nil {
-		return false, fmt.Errorf("TrackedRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
+		return false, fmt.Errorf("the Repository object %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
 	}
 	local, err := m.mirror.Open(ctx, repo)
 	if err != nil {

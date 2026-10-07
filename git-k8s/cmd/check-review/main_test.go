@@ -59,7 +59,7 @@ func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder) {
 	}
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{
+	b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "review", MayPush: mayPush}}},
 	}

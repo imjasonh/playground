@@ -62,7 +62,7 @@ func (m *Mirror) prefixes(who caller.Caller) []string {
 // repo's merge policies lists, or a Pending Pod in repo's namespace that
 // such a check runs on one of repo's branches. An error means that the
 // mirror couldn't get the Pod.
-func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, check string, repo *gitk8s.Repository) (bool, error) {
+func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, check string, repo *gitk8s.RepositoryView) (bool, error) {
 	if len(m.prefixes(who)) > 0 {
 		return true, nil
 	}
@@ -81,7 +81,7 @@ func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, check string, 
 
 // mayPushAny reports whether who, which runs check, may push some branch of
 // repo.
-func (m *Mirror) mayPushAny(who caller.Caller, check string, repo *gitk8s.Repository) bool {
+func (m *Mirror) mayPushAny(who caller.Caller, check string, repo *gitk8s.RepositoryView) bool {
 	if len(m.prefixes(who)) > 0 {
 		return true
 	}
@@ -90,7 +90,7 @@ func (m *Mirror) mayPushAny(who caller.Caller, check string, repo *gitk8s.Reposi
 
 // listed reports whether a merge policy of repo lists check, and with
 // mayPush, lets it push.
-func listed(repo *gitk8s.Repository, check string, mayPush bool) bool {
+func listed(repo *gitk8s.RepositoryView, check string, mayPush bool) bool {
 	for _, rule := range repo.Spec.Branches {
 		if p := rule.Merge.Check(check); p != nil && (p.MayPush || !mayPush) {
 			return true
@@ -106,8 +106,8 @@ func listed(repo *gitk8s.Repository, check string, mayPush bool) bool {
 // that the check itself can't. Of the service accounts, config/policy.yaml
 // lets only a check's own write its result, but a check can name its Pod
 // before kube creates the Pod, so isCheckPod checks the Pod itself.
-func podChecks(ctx context.Context, repo *gitk8s.Repository, pod string) []string {
-	branches := kube.List[gitk8s.TrackedBranch](ctx, kube.InNamespace(repo.Namespace),
+func podChecks(ctx context.Context, repo *gitk8s.RepositoryView, pod string) []string {
+	branches := kube.List[gitk8s.Branch](ctx, kube.InNamespace(repo.Namespace),
 		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: repo.Name}))
 	var checks []string
 	for _, b := range branches {
@@ -153,7 +153,7 @@ func isCheckPod(ctx context.Context, who caller.Caller, checks []string) (bool, 
 
 // refuse returns why who, which runs check, may not make update c to repo,
 // or "" if it may.
-func (m *Mirror) refuse(who caller.Caller, check string, repo *gitk8s.Repository, c command) string {
+func (m *Mirror) refuse(who caller.Caller, check string, repo *gitk8s.RepositoryView, c command) string {
 	branch, ok := strings.CutPrefix(c.Ref, headsPrefix)
 	if !ok || branch == "" {
 		return "the mirror takes only branches, under refs/heads/"

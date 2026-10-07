@@ -53,7 +53,7 @@ func TestBranchObjectName(t *testing.T) {
 // The API server matches a CustomResourceDefinition's patterns with Go's
 // regexp package, so this is what it accepts.
 func TestURLPattern(t *testing.T) {
-	field, _ := reflect.TypeFor[TrackedRepositorySpec]().FieldByName("URL")
+	field, _ := reflect.TypeFor[RepositorySpec]().FieldByName("URL")
 	pattern := regexp.MustCompile(field.Tag.Get("pattern"))
 	for _, u := range []string{
 		"https://git.example.com/app.git",
@@ -278,7 +278,7 @@ func TestMergeStateEnum(t *testing.T) {
 			}
 		}
 	}
-	f, _ := reflect.TypeFor[TrackedBranchStatus]().FieldByName("State")
+	f, _ := reflect.TypeFor[BranchStatus]().FieldByName("State")
 	var enum []string
 	for opt := range strings.SplitSeq(f.Tag.Get("kube"), ",") {
 		if values, ok := strings.CutPrefix(opt, "enum="); ok {
@@ -293,7 +293,7 @@ func TestMergeStateEnum(t *testing.T) {
 }
 
 func TestChecksMapIsAtomic(t *testing.T) {
-	f, _ := reflect.TypeFor[TrackedBranchStatus]().FieldByName("Checks")
+	f, _ := reflect.TypeFor[BranchStatus]().FieldByName("Checks")
 	if got := f.Tag.Get("kube"); got != "mapType=atomic" {
 		t.Errorf("status.checks has kube tag %q; it must be an atomic map, so that the results controller owns every entry and can remove any of them", got)
 	}
@@ -315,16 +315,17 @@ func TestMergePolicyDefaults(t *testing.T) {
 }
 
 // kinds are the kinds that git-k8s defines. Their names make up the names
-// of their CustomResourceDefinitions, which can't change once objects exist.
-// They differ from Flux's: its source-controller defines GitRepository, with
-// the plural gitrepositories and the short name gitrepo, and kubectl
-// resolves a name that two groups share to only one of them.
+// of their CustomResourceDefinitions, which can't change once objects
+// exist, so each kind's tag gives its plural and singular instead of
+// leaving them to kube. Flux's source-controller defines a GitRepository
+// kind with the plural gitrepositories and the short name gitrepo, so
+// git-k8s doesn't use those names.
 var kinds = []struct {
-	typ                     reflect.Type
-	kind, plural, shortName string
+	typ                               reflect.Type
+	kind, plural, singular, shortName string
 }{
-	{reflect.TypeFor[TrackedRepository](), "TrackedRepository", "trackedrepositories", "gkrepo"},
-	{reflect.TypeFor[TrackedBranch](), "TrackedBranch", "trackedbranches", "gkbranch"},
+	{reflect.TypeFor[Repository](), "Repository", "repositories", "repository", "repo"},
+	{reflect.TypeFor[Branch](), "Branch", "branches", "branch", "branch"},
 }
 
 // tagOptions splits a kube struct tag into its options.
@@ -339,8 +340,8 @@ func tagOptions(tag string) map[string]string {
 
 // TestKindNames checks each kind's names, and that every view type in the
 // module, and every example of one in its docs, names a kind with its
-// plural. kube derives a plural that a kind's tag doesn't give, and the kind
-// e2e test checks the names of the CustomResourceDefinitions.
+// plural. The kind e2e test checks the names of the CustomResourceDefinitions
+// that the core program installs.
 func TestKindNames(t *testing.T) {
 	plurals := map[string]string{}
 	for _, k := range kinds {
@@ -348,11 +349,11 @@ func TestKindNames(t *testing.T) {
 		f, _ := k.typ.FieldByName("Object")
 		tag := f.Tag.Get("kube")
 		opts := tagOptions(tag)
-		if cmp.Or(opts["kind"], k.typ.Name()) != k.kind || cmp.Or(opts["plural"], k.plural) != k.plural {
-			t.Errorf("%s has kube tag %q, want the kind %s with the plural %s", k.typ.Name(), tag, k.kind, k.plural)
+		if cmp.Or(opts["kind"], k.typ.Name()) != k.kind || opts["plural"] != k.plural || opts["singular"] != k.singular {
+			t.Errorf("%s has kube tag %q, want the kind %s with the plural %s and the singular %s", k.typ.Name(), tag, k.kind, k.plural, k.singular)
 		}
-		if opts["group"]+"/"+opts["version"] != APIVersion || opts["shortName"] != k.shortName {
-			t.Errorf("%s has kube tag %q, want %s with the short name %s", k.typ.Name(), tag, APIVersion, k.shortName)
+		if opts["group"]+"/"+opts["version"] != APIVersion || opts["shortName"] != k.shortName || opts["category"] != "git-k8s" {
+			t.Errorf("%s has kube tag %q, want %s with the short name %s in the category git-k8s", k.typ.Name(), tag, APIVersion, k.shortName)
 		}
 	}
 	viewTag := regexp.MustCompile(`kube:"(apiVersion=` + regexp.QuoteMeta(Group) + `/[^"]*)"`)

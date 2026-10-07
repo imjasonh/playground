@@ -55,7 +55,7 @@ type repoPlan struct {
 	Name    string `json:"name"`
 	Landing string `json:"landing,omitempty"`
 	Gotest  bool   `json:"gotest"`
-	// Poll is the TrackedRepository's pollInterval, or "" for the default.
+	// Poll is the Repository object's pollInterval, or "" for the default.
 	Poll string `json:"poll,omitempty"`
 }
 
@@ -83,7 +83,7 @@ func (p *plan) repo(name string) repoPlan {
 	return repoPlan{}
 }
 
-// repoKey is the name of a TrackedRepository's repository on the git server.
+// repoKey is the name of a Repository object's repository on the git server.
 func repoKey(ns, repo string) string { return ns + "-" + repo }
 
 func buildPlan(scenario string, n, repos int, poll string) (plan, error) {
@@ -190,7 +190,7 @@ func buildPlan(scenario string, n, repos int, poll string) (plan, error) {
 		if n == 0 {
 			n = 8
 		}
-		// The TrackedRepository leaves pollInterval out, so it polls every 30
+		// The Repository object leaves pollInterval out, so it polls every 30
 		// seconds. Pushes come 7 seconds apart, so they land at different
 		// points in the poll cycle.
 		p.Repos = []repoPlan{{Name: "app", Gotest: false}}
@@ -384,11 +384,11 @@ func nodeCgroup(cluster string) (string, error) {
 }
 
 func (rn *runner) branchPath(name string) string {
-	return "/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/" + rn.plan.NS + "/trackedbranches/" + name
+	return "/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/" + rn.plan.NS + "/branches/" + name
 }
 
 // setup creates the namespace, the credentials, each repository on the git
-// server, and its TrackedRepository.
+// server, and its Repository object.
 func (rn *runner) setup(ctx context.Context) error {
 	ns := rn.plan.NS
 	if err := rn.k.apply(ctx, "/api/v1/namespaces/"+ns, map[string]any{
@@ -417,16 +417,16 @@ func (rn *runner) setup(ctx context.Context) error {
 			return err
 		}
 		rn.repos[rp.Name] = g
-		if err := rn.k.apply(ctx, "/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/"+ns+"/trackedrepositories/"+rp.Name,
-			trackedRepository(ns, rp, rn.env["CLUSTER_URL"]+"/"+key+".git")); err != nil {
-			return fmt.Errorf("applying TrackedRepository %s: %w", rp.Name, err)
+		if err := rn.k.apply(ctx, "/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/"+ns+"/repositories/"+rp.Name,
+			repository(ns, rp, rn.env["CLUSTER_URL"]+"/"+key+".git")); err != nil {
+			return fmt.Errorf("applying the Repository object %s: %w", rp.Name, err)
 		}
 	}
 	deadline := time.Now().Add(3 * time.Minute)
 	for _, rp := range rn.plan.Repos {
 		for rn.w.branch(ns, rp.Name, "main") == nil {
 			if time.Now().After(deadline) {
-				return fmt.Errorf("TrackedRepository %s didn't list main within 3 minutes", rp.Name)
+				return fmt.Errorf("the Repository object %s didn't list main within 3 minutes", rp.Name)
 			}
 			sleep(ctx, 200*time.Millisecond)
 		}
@@ -435,7 +435,7 @@ func (rn *runner) setup(ctx context.Context) error {
 	return nil
 }
 
-func trackedRepository(ns string, rp repoPlan, url string) map[string]any {
+func repository(ns string, rp repoPlan, url string) map[string]any {
 	checks := []map[string]any{{"name": "base", "mayPush": true}, {"name": "gofmt", "mayPush": true}, {"name": "risk"}, {"name": "approval"}}
 	when := `checks.base.passed && checks.gofmt.passed && (checks.risk.outputs.level == "low" || checks.approval.passed)`
 	if rp.Gotest {
@@ -458,7 +458,7 @@ func trackedRepository(ns string, rp repoPlan, url string) map[string]any {
 		spec["pollInterval"] = rp.Poll
 	}
 	return map[string]any{
-		"apiVersion": "git-k8s.imjasonh.com/v1alpha1", "kind": "TrackedRepository",
+		"apiVersion": "git-k8s.imjasonh.com/v1alpha1", "kind": "Repository",
 		"metadata": map[string]any{"name": rp.Name, "namespace": ns},
 		"spec":     spec,
 	}
@@ -516,13 +516,13 @@ func (rn *runner) warmup(ctx context.Context) error {
 		}
 	}
 	rn.note("warm-up landed after %s", time.Since(start).Round(time.Millisecond))
-	// Let the landing reach the git server and the TrackedBranches go away.
+	// Let the landing reach the git server and the Branch objects go away.
 	rn.waitQuiet(ctx, 60*time.Second)
 	return nil
 }
 
 // waitQuiet waits until each repository's main on the git server matches
-// main's TrackedBranch and only main's TrackedBranch is left, for up to max.
+// main's Branch object and only main's Branch object is left, for up to max.
 func (rn *runner) waitQuiet(ctx context.Context, max time.Duration) {
 	deadline := time.Now().Add(max)
 	for time.Now().Before(deadline) {
@@ -798,7 +798,7 @@ func (rn *runner) resolve(br *branchRun, conflicted string) error {
 	return err
 }
 
-// approve annotates br's TrackedBranch to approve head, as a reviewer would.
+// approve annotates br's Branch object to approve head, as a reviewer would.
 func (rn *runner) approve(ctx context.Context, br *branchRun, name, head string) error {
 	start := time.Now()
 	err := rn.k.mergePatch(ctx, rn.branchPath(name), map[string]any{
@@ -817,13 +817,13 @@ func (rn *runner) approve(ctx context.Context, br *branchRun, name, head string)
 }
 
 // settle waits for the landings to reach the git server and the landed
-// branches' TrackedBranches to go away.
+// branches' Branch objects to go away.
 func (rn *runner) settle(ctx context.Context) {
 	rn.waitQuiet(ctx, 90*time.Second)
 	rn.note("settled")
 }
 
-// dumpState writes the TrackedRepositories and TrackedBranches that are
+// dumpState writes the Repository and Branch objects that are
 // left, each Deployment's image, and the logs of git-k8s and the checks
 // since the scenario started.
 func (rn *runner) dumpState(ctx context.Context) {
@@ -836,7 +836,7 @@ func (rn *runner) dumpState(ctx context.Context) {
 		}
 		_ = os.WriteFile(filepath.Join(rn.out, name), out, 0o644)
 	}
-	kubectlTo("gitobjects.yaml", "-n", rn.plan.NS, "get", "trackedrepositories,trackedbranches", "-o", "yaml")
+	kubectlTo("gitobjects.yaml", "-n", rn.plan.NS, "get", "repositories,branches", "-o", "yaml")
 	kubectlTo("pods.txt", "get", "pods", "-A", "-o", "wide")
 	kubectlTo("images.txt", "get", "deployments", "-A", "-o",
 		`jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{.spec.template.spec.containers[0].image}{"\n"}{end}`)

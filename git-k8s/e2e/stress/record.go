@@ -105,7 +105,7 @@ type objectMeta struct {
 	} `json:"ownerReferences"`
 }
 
-type trackedBranch struct {
+type branchObject struct {
 	Metadata objectMeta `json:"metadata"`
 	Spec     struct {
 		Repository string `json:"repository"`
@@ -129,7 +129,7 @@ const (
 	approvedByAnnotation = "git-k8s.imjasonh.com/approved-by"
 )
 
-// branchRec is a TrackedBranch as one watch event showed it.
+// branchRec is a Branch object as one watch event showed it.
 type branchRec struct {
 	Type       string                 `json:"type"`
 	NS         string                 `json:"ns"`
@@ -151,7 +151,7 @@ type branchRec struct {
 	Deleting   bool                   `json:"deleting,omitempty"`
 }
 
-func toBranchRec(typ string, b *trackedBranch) *branchRec {
+func toBranchRec(typ string, b *branchObject) *branchRec {
 	r := &branchRec{
 		Type: typ, NS: b.Metadata.Namespace, Name: b.Metadata.Name, Repo: b.Spec.Repository, Branch: b.Spec.Branch,
 		Gen: b.Metadata.Generation, Head: b.Spec.Head, Parent: b.Spec.Parent, ParentHead: b.Spec.ParentHead,
@@ -352,7 +352,7 @@ func (w *world) notify() {
 	}
 }
 
-// branch returns the last record of the TrackedBranch for branch in repo, or
+// branch returns the last record of the Branch object for branch in repo, or
 // nil if there's none or it was deleted.
 func (w *world) branch(ns, repo, branch string) *branchRec {
 	w.mu.Lock()
@@ -376,11 +376,11 @@ func (w *world) extRef(repo, ref string) string {
 	return w.ext[repo+"/"+ref]
 }
 
-// startWatchers records TrackedBranches, Events, and Pods in namespaces that
+// startWatchers records Branch objects, Events, and Pods in namespaces that
 // start with w.prefix, and the uids of all Pods for the CPU sampler.
 func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
-	go k.watch(ctx, "/apis/git-k8s.imjasonh.com/v1alpha1/trackedbranches", func(typ string, raw json.RawMessage, at time.Time) {
-		var b trackedBranch
+	go k.watch(ctx, "/apis/git-k8s.imjasonh.com/v1alpha1/branches", func(typ string, raw json.RawMessage, at time.Time) {
+		var b branchObject
 		if err := json.Unmarshal(raw, &b); err != nil || !strings.HasPrefix(b.Metadata.Namespace, w.prefix) {
 			return
 		}
@@ -441,7 +441,7 @@ func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
 		if test {
 			pr.App = "test"
 			for _, o := range p.Metadata.OwnerReferences {
-				if o.Kind == "TrackedBranch" {
+				if o.Kind == "Branch" {
 					pr.Owner = o.Name
 				}
 			}
@@ -742,7 +742,7 @@ func readRef(dir, ref string) string {
 	return ""
 }
 
-// tick records a summary of every TrackedBranch in the scenario's namespaces
+// tick records a summary of every Branch object in the scenario's namespaces
 // once a second: each branch's state, head, check states, and place in the
 // queue, and the length of each parent's queue.
 func tick(ctx context.Context, r *recorder, w *world) {

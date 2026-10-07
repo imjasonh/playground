@@ -17,10 +17,10 @@ var policies = []struct {
 	name      string
 	exposures []string
 }{
-	{"git-k8s-check-results", []string{"any service account that can write TrackedBranch status can write check results and status.diverged", "checks that can write TrackedBranch status can change a branch's state and merge queue"}},
-	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change TrackedBranch objects", "anyone who can create or patch a TrackedBranch can change its merge policy"}},
+	{"git-k8s-check-results", []string{"any service account that can write the status of Branch objects can write check results and status.diverged", "checks that can write the status of Branch objects can change a branch's state and merge queue"}},
+	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change Branch objects", "anyone who can create or patch a Branch object can change its merge policy"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
-	{"git-k8s-approvals", []string{"anyone who can patch a TrackedBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
+	{"git-k8s-approvals", []string{"anyone who can patch a Branch object can approve it", "the approved-by annotation can name someone who didn't approve"}},
 }
 
 // Each policy in config/policy.yaml has policyVersionAnnotation set to
@@ -169,7 +169,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	if len(missing) == 0 && len(weak) == 0 && len(noParamRef) == 0 && len(otherParamRef) == 0 && len(warns) == 0 && len(outdated) == 0 && len(newer) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-			Message: "the admission policies keep git-k8s service accounts from approving branches, let only the core program create TrackedBranch objects or change their spec, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
+			Message: "the admission policies keep git-k8s service accounts from approving branches, let only the core program create Branch objects or change their spec, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
 		}
 	}
 	var problems, sentences, fixes []string

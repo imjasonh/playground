@@ -120,7 +120,7 @@ var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "1
 // which is where a public module proxy is. On a cluster that gives Pods,
 // Services, or nodes addresses outside privateRanges, that rule lets test
 // Pods reach them too.
-func testPodsPolicy(repo *gitk8s.TrackedRepository) *NetworkPolicy {
+func testPodsPolicy(repo *gitk8s.Repository) *NetworkPolicy {
 	dns := []NetworkPolicyPeer{{NamespaceSelector: namespace(*dnsNS), PodSelector: &LabelSelector{MatchLabels: maps.Clone(dnsLabels)}}}
 	for _, c := range dnsCIDRs {
 		dns = append(dns, NetworkPolicyPeer{IPBlock: &IPBlock{CIDR: c.String()}})

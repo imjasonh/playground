@@ -127,7 +127,7 @@ func (rn *runner) verify(ctx context.Context) *verifyResult {
 		v.Landed++
 		lr := landings[key]
 		if lr == nil {
-			v.GateViolations = append(v.GateViolations, key+": no TrackedBranch record with Landed reason Landed")
+			v.GateViolations = append(v.GateViolations, key+": no Branch object record with Landed reason Landed")
 			continue
 		}
 		if problems := gateProblems(lr, rn.plan.repo(br.plan.Repo).Gotest, parentAt[key]); len(problems) > 0 {
@@ -178,7 +178,7 @@ func (rn *runner) verify(ctx context.Context) *verifyResult {
 }
 
 // landedApproval checks the approval that a high-risk branch landed with,
-// from lr, its TrackedBranch record from the landing. approved holds the heads
+// from lr, its Branch object record from the landing. approved holds the heads
 // that the reviewer approved before the landing, and parent is the parent's
 // head that the branch landed on. The approval must name the landed head,
 // or name in full an approved head whose change the landed head makes on
@@ -229,7 +229,7 @@ func sameChange(g *gitRepo, approved, landed, parent string) string {
 	return ""
 }
 
-// gateProblems checks a TrackedBranch record from a landing against the
+// gateProblems checks a Branch object record from a landing against the
 // scenario's merge gate. parent is the parent's head that the branch landed
 // on, from the Landed event, or "" to use the record's. The repository
 // controller can move the record's parent head to the landed commit before

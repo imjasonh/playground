@@ -1,4 +1,4 @@
-# When a request sets or changes a TrackedBranch's approve annotation, this
+# When a request sets or changes a Branch object's approve annotation, this
 # policy sets the approved-by annotation to the request's username, and when
 # a request removes approve, it removes approved-by, so people can approve
 # with one annotation. It leaves approved-by alone when the request changes
@@ -17,7 +17,7 @@ spec:
       - apiGroups: ["git-k8s.imjasonh.com"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["trackedbranches"]
+        resources: ["branches"]
   variables:
     - name: annotations
       expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'

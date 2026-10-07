@@ -25,10 +25,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// branchResults is the check-runs controller's view of a TrackedBranch.
+// branchResults is the check-runs controller's view of a Branch object.
 // Reconcile never changes Status, so the controller never writes it.
 type branchResults struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
 	Spec        struct {
 		Repository string `json:"repository"`
 	} `json:"spec"`
@@ -37,7 +37,7 @@ type branchResults struct {
 	} `json:"status,omitzero"`
 }
 
-// checkRuns copies the check results on each TrackedBranch to GitHub as check
+// checkRuns copies the check results on each Branch object to GitHub as check
 // runs on the commits that they're for, for repositories that name an Octo
 // STS identity for check runs. A check's check run on a commit is named
 // git-k8s/CHECK, and branches at the same commit share it, so it shows the
@@ -50,7 +50,7 @@ type checkRuns struct {
 
 	mu sync.Mutex
 	// repos holds what the controller knows of each repository's check
-	// runs, by namespace and name, until the TrackedRepository is gone or names
+	// runs, by namespace and name, until the Repository object is gone or names
 	// no check-runs identity.
 	repos map[string]*repoRuns
 	// paused holds when each repository owner's rate limit ends. GitHub
@@ -154,7 +154,7 @@ func (c *checkRuns) clock() time.Time {
 
 func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	key := b.Namespace + "/" + b.Spec.Repository
-	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	repo := kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, b.Spec.Repository)
 	var rr *repoRuns
 	var listed []*branchResults
 	if publishes(repo) {
@@ -163,11 +163,11 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 			return err
 		}
 		defer rr.unlock()
-		// Another reconcile can see the TrackedRepository change while this
+		// Another reconcile can see the Repository object change while this
 		// one waits for the lock, and forget the repository first. This
-		// reconcile reads the TrackedRepository again, which then shows the
+		// reconcile reads the Repository object again, which then shows the
 		// change too, so that it doesn't publish after the forget.
-		repo = kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+		repo = kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, b.Spec.Repository)
 		if publishes(repo) {
 			// What a shared check run shows depends on every branch at
 			// its commit, and listing the branches reconciles this one
@@ -224,7 +224,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 
 // publishes reports whether the controller publishes check runs for repo,
 // which it does when repo exists and names a check-runs identity.
-func publishes(repo *gitk8s.Repository) bool {
+func publishes(repo *gitk8s.RepositoryView) bool {
 	return repo != nil && repo.Spec.OctoSTS != nil && repo.Spec.OctoSTS.CheckRunsIdentity != ""
 }
 
@@ -237,7 +237,7 @@ type runSync struct {
 	// and name.
 	external string
 	// branches holds the check results of each of the repository's
-	// TrackedBranches, by name.
+	// Branch objects, by name.
 	branches map[string]map[string]gitk8s.CheckResult
 }
 
@@ -608,7 +608,7 @@ func (rr *repoRuns) lock(ctx context.Context) error {
 
 func (rr *repoRuns) unlock() { <-rr.locked }
 
-// forget forgets a repository's check runs, when its TrackedRepository is gone
+// forget forgets a repository's check runs, when its Repository object is gone
 // or names no check-runs identity.
 func (c *checkRuns) forget(ctx context.Context, key string) error {
 	c.mu.Lock()
@@ -823,7 +823,7 @@ func rateLimitWait(resp *http.Response, message string, now time.Time) (time.Dur
 // or removes it when the repository has no such identity. The check-runs
 // controller's errors don't block landings and appear only in its logs, so
 // this shows a trust policy that doesn't work.
-func reportCheckRuns(ctx context.Context, repo *gitk8s.TrackedRepository) {
+func reportCheckRuns(ctx context.Context, repo *gitk8s.Repository) {
 	const typ = "CheckRunsTokenIssued"
 	sts := repo.Spec.OctoSTS
 	if sts == nil || sts.CheckRunsIdentity == "" {
@@ -831,7 +831,7 @@ func reportCheckRuns(ctx context.Context, repo *gitk8s.TrackedRepository) {
 		return
 	}
 	c := kube.Condition{Type: typ, Status: kube.True, Reason: "Issued", Message: "Octo STS issued a token for identity " + sts.CheckRunsIdentity}
-	if _, _, err := credentials.GitHubAPI(ctx, &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}, sts.CheckRunsIdentity); err != nil {
+	if _, _, err := credentials.GitHubAPI(ctx, &gitk8s.RepositoryView{Object: repo.Object, Spec: repo.Spec}, sts.CheckRunsIdentity); err != nil {
 		c.Status, c.Reason, c.Message = kube.False, "ExchangeFailed", err.Error()
 	}
 	kube.SetCondition(&repo.Status.Conditions, c)

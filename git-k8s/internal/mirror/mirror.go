@@ -1,5 +1,5 @@
-// Package mirror keeps a copy of each TrackedRepository and serves the copies
-// over git's smart HTTP protocol.
+// Package mirror keeps a copy of the repository that each Repository object
+// names, and serves the copies over git's smart HTTP protocol.
 //
 // The copy is the repository's source of truth. Checks and controllers fetch
 // from it and push to it, and Sync pushes their changes to the external
@@ -45,7 +45,7 @@ const maxPushSize = 256 << 20
 // external repository yet, which the mirror doesn't serve.
 var ErrNotSynced = errors.New("the mirror hasn't fetched the repository from its external repository yet")
 
-// Mirror keeps a bare repository for each TrackedRepository, at
+// Mirror keeps a bare repository for each Repository object, at
 // Dir/NAMESPACE/NAME.git. Its methods are safe for concurrent use. Only one
 // process at a time may use Dir.
 type Mirror struct {
@@ -93,7 +93,7 @@ type entry struct {
 	syncing sync.Mutex
 	dir     string
 	// repo is the copy, or nil if it isn't loaded. uid and url are the
-	// TrackedRepository's UID and the URL that the copy last synced with.
+	// Repository object's UID and the URL that the copy last synced with.
 	repo     *git.Repo
 	uid, url string
 	seeded   atomic.Bool
@@ -110,7 +110,7 @@ type entry struct {
 	maintainAfter time.Time
 }
 
-func (m *Mirror) entry(repo *gitk8s.Repository) *entry {
+func (m *Mirror) entry(repo *gitk8s.RepositoryView) *entry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := repo.Namespace + "/" + repo.Name
@@ -136,7 +136,7 @@ func (r *Repository) Close() { r.close() }
 
 // Open returns repo's copy. It fails with ErrNotSynced until Sync has
 // fetched the external repository into it.
-func (m *Mirror) Open(ctx context.Context, repo *gitk8s.Repository) (*Repository, error) {
+func (m *Mirror) Open(ctx context.Context, repo *gitk8s.RepositoryView) (*Repository, error) {
 	e := m.entry(repo)
 	e.mu.RLock()
 	if e.repo == nil || e.uid != repo.UID {
@@ -155,10 +155,10 @@ func (m *Mirror) Open(ctx context.Context, repo *gitk8s.Repository) (*Repository
 
 // load reads repo's copy from disk into e if e doesn't hold it. With create,
 // it creates the copy if there's none, or replaces one that belongs to
-// another TrackedRepository with the same name, and adopts a new URL by
+// another Repository object with the same name, and adopts a new URL by
 // forgetting what it knew of the old external repository. It reports
 // whether the copy needs a fetch because it's new or its URL changed.
-func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, create bool) (bool, error) {
+func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.RepositoryView, create bool) (bool, error) {
 	// Waiting for the write lock waits for every fetch and push of the
 	// copy, so take it only for a change.
 	e.mu.RLock()
@@ -204,7 +204,7 @@ func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, cr
 	return true, nil
 }
 
-// read sets e to the copy on disk if it belongs to the TrackedRepository with
+// read sets e to the copy on disk if it belongs to the Repository object with
 // uid, and clears e otherwise. It returns the UID that the copy on disk
 // belongs to, or "" if there's no complete copy.
 func (m *Mirror) read(ctx context.Context, e *entry, uid string) (string, error) {
@@ -235,7 +235,7 @@ func (m *Mirror) read(ctx context.Context, e *entry, uid string) (string, error)
 }
 
 // create makes an empty copy for repo, replacing whatever is at e.dir.
-func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) error {
+func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.RepositoryView) error {
 	if err := os.RemoveAll(e.dir); err != nil {
 		return err
 	}
@@ -338,8 +338,8 @@ func (e *entry) markSeeded(ctx context.Context) error {
 }
 
 // Delete deletes repo's copy, unless the copy belongs to another
-// TrackedRepository with the same name.
-func (m *Mirror) Delete(ctx context.Context, repo *gitk8s.Repository) error {
+// Repository object with the same name.
+func (m *Mirror) Delete(ctx context.Context, repo *gitk8s.RepositoryView) error {
 	e := m.entry(repo)
 	defer m.holdMaintenance(e)()
 	e.mu.Lock()

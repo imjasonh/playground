@@ -23,7 +23,7 @@ const maxLandingCommits = 1000
 // rewrite lands a branch whose merge policy squashes or rebases it in the
 // mirror's copy of repo, and reports the outcome. It does nothing and
 // returns false when the branch's head can land as it is, by fast-forward.
-func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *git.Repo, b *gitk8s.TrackedBranch, results map[string]gitk8s.CheckResult) (bool, error) {
+func (m *merger) rewrite(ctx context.Context, repo *gitk8s.RepositoryView, local *git.Repo, b *gitk8s.Branch, results map[string]gitk8s.CheckResult) (bool, error) {
 	spec := &b.Spec
 	if keep, err := keepsHead(ctx, local, spec); err != nil || keep {
 		return false, err
@@ -66,7 +66,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 		if q := b.Status.Queued; q != nil {
 			q.Head = landed
 		}
-		kube.Trigger[gitk8s.TrackedRepository](ctx, b.Namespace, spec.Repository)
+		kube.Trigger[gitk8s.Repository](ctx, b.Namespace, spec.Repository)
 		return true, nil
 	}
 
@@ -88,7 +88,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 	if branch.New == "" {
 		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
 	}
-	kube.Trigger[gitk8s.TrackedRepository](ctx, b.Namespace, spec.Repository)
+	kube.Trigger[gitk8s.Repository](ctx, b.Namespace, spec.Repository)
 	return true, nil
 }
 
@@ -97,7 +97,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 // for a branch that contains the parent's head, so a branch without merges
 // already builds on it, and a branch of one commit on top of it is already
 // squashed.
-func keepsHead(ctx context.Context, local *git.Repo, spec *gitk8s.TrackedBranchSpec) (bool, error) {
+func keepsHead(ctx context.Context, local *git.Repo, spec *gitk8s.BranchSpec) (bool, error) {
 	if spec.Merge.Landing == gitk8s.Rebase {
 		merges, err := local.HasMerge(ctx, spec.ParentHead, spec.Head)
 		return !merges, err
@@ -107,12 +107,12 @@ func keepsHead(ctx context.Context, local *git.Repo, spec *gitk8s.TrackedBranchS
 }
 
 // writer makes the commits of one squash or rebase landing, signed with the
-// key that the TrackedRepository names, if it names one. It reads the key when
+// key that the Repository object names, if it names one. It reads the key when
 // it makes its first commit, so a landing that makes none doesn't read it,
 // and a rebase that makes many reads it once.
 type writer struct {
 	local *git.Repo
-	repo  *gitk8s.Repository
+	repo  *gitk8s.RepositoryView
 	key   *git.SigningKey
 	read  bool
 }
@@ -130,7 +130,7 @@ func (w *writer) commit(ctx context.Context, c git.NewCommit) (string, error) {
 
 // squashOrRebase reads the branch's commits and squashes or rebases them
 // onto the parent's head with w. A problem says why it can't.
-func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, w *writer, spec *gitk8s.TrackedBranchSpec) (landed, problem string, err error) {
+func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, w *writer, spec *gitk8s.BranchSpec) (landed, problem string, err error) {
 	log, err := local.Log(ctx, spec.ParentHead, spec.Head, maxLandingCommits+1)
 	switch {
 	case errors.Is(err, git.ErrLogTooBig):
@@ -157,7 +157,7 @@ func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, w *writer,
 // commit on the parent's head followed only by checks' fixes, and the
 // parent's head when the branch changes no files. A problem says why the
 // branch can't be squashed.
-func (m *merger) squash(ctx context.Context, w *writer, spec *gitk8s.TrackedBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
+func (m *merger) squash(ctx context.Context, w *writer, spec *gitk8s.BranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
 	head := log[len(log)-1]
 	switch {
 	case m.fixedAfterSquash(spec, log):
@@ -184,7 +184,7 @@ func (m *merger) squash(ctx context.Context, w *writer, spec *gitk8s.TrackedBran
 // the branch, and has only checks' fixes after it. Squashing such a branch
 // again would leave out the fixes, so their count would start again, and a
 // check whose fix the squash undoes would push it forever.
-func (m *merger) fixedAfterSquash(spec *gitk8s.TrackedBranchSpec, log []git.LogEntry) bool {
+func (m *merger) fixedAfterSquash(spec *gitk8s.BranchSpec, log []git.LogEntry) bool {
 	first := log[0]
 	return slices.Equal(first.Parents, []string{spec.ParentHead}) && first.Committer == m.ident.Written() &&
 		!slices.ContainsFunc(log[1:], func(c git.LogEntry) bool { return !c.Fixer() })
@@ -314,7 +314,7 @@ func withoutFixerTrailers(msg string) string {
 // commit that changes nothing on top of the earlier ones, and returns the
 // parent's head when that leaves no commits. A problem says why the
 // branch can't be rebased.
-func (m *merger) rebase(ctx context.Context, local *git.Repo, w *writer, spec *gitk8s.TrackedBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
+func (m *merger) rebase(ctx context.Context, local *git.Repo, w *writer, spec *gitk8s.BranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
 	onto, tree, when := spec.ParentHead, parent.Tree, parent.Time
 	for _, c := range log {
 		switch {

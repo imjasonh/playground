@@ -84,7 +84,7 @@ func summaryMarkdown(s *summary) string {
 		}
 	}
 
-	p("\n## Where each branch's time went\n\nSeconds per landed branch. Pickup ends when the TrackedBranch exists, checks when the branch first joins the queue, queue counts time behind other branches, front counts time at the front, and out counts time after the branch left the queue until it joined again.\n\n")
+	p("\n## Where each branch's time went\n\nSeconds per landed branch. Pickup ends when the Branch object exists, checks when the branch first joins the queue, queue counts time behind other branches, front counts time at the front, and out counts time after the branch left the queue until it joined again.\n\n")
 	p("| Phase | n | p50 | p90 | max | mean |\n|---|---|---|---|---|---|\n")
 	for _, name := range []string{"pickup", "checks", "queue", "front", "out"} {
 		b.WriteString(distRow(name, s.Phases[name]))
@@ -170,7 +170,7 @@ func summaryMarkdown(s *summary) string {
 
 	if w := s.Waits; len(w.Waits) > 0 {
 		p("\n## Results that waited for the endpoint's timeout\n\n")
-		p("The results endpoint waits up to 10 seconds for a check's result to show in the TrackedBranch, and the check's worker waits too; each check has %d workers. These reconciles failed after such waits. Reason `gone` is a 404 for a TrackedBranch that was gone, which builds before the endpoint answered 410 sent only after the whole wait. Reason `timeout` means that each of the check's tries got a 503, because the core program didn't write the result in time; a 503 that a later try got past doesn't show in the logs. Seconds after the first push:\n\n", checkWorkers)
+		p("The results endpoint waits up to 10 seconds for a check's result to show in the Branch object, and the check's worker waits too; each check has %d workers. These reconciles failed after such waits. Reason `gone` is a 404 for a Branch object that was gone, which builds before the endpoint answered 410 sent only after the whole wait. Reason `timeout` means that each of the check's tries got a 503, because the core program didn't write the result in time; a 503 that a later try got past doesn't show in the logs. Seconds after the first push:\n\n", checkWorkers)
 		p("| Check | Branch | Reason | Reconcile started | Ended | Branch landed |\n|---|---|---|---|---|---|\n")
 		for _, x := range w.Waits {
 			landed := "not seen"
@@ -198,7 +198,7 @@ func summaryMarkdown(s *summary) string {
 			byCheck[g.Check]++
 		}
 		p("\n## Results for deleted branches\n\n")
-		p("The results endpoint answered 410 Gone for %d results whose TrackedBranches were gone (%s). It answers as soon as it sees that the TrackedBranch is gone, and the check's reconcile ends, so these requests don't hold a worker for the endpoint's 10-second wait. Seconds after the first push:\n\n", len(gone), countList(byCheck))
+		p("The results endpoint answered 410 Gone for %d results whose Branch objects were gone (%s). It answers as soon as it sees that the Branch object is gone, and the check's reconcile ends, so these requests don't hold a worker for the endpoint's 10-second wait. Seconds after the first push:\n\n", len(gone), countList(byCheck))
 		p("| Check | Branch | Answered | Branch landed |\n|---|---|---|---|\n")
 		for _, g := range gone {
 			landed := "not seen"
@@ -318,7 +318,7 @@ func frontsTSV(s *summary, cycles []*frontCycle) string {
 }
 
 // timeline renders a run's records as text, with times in seconds after
-// the first push: what the harness did, each change to a TrackedBranch, events,
+// the first push: what the harness did, each change to a Branch object, events,
 // the git server's main, test Pods' phases, and every fifth second's queue
 // lengths.
 func timeline(run *runData, start time.Time) string {

@@ -105,7 +105,7 @@ func TestMixedPlan(t *testing.T) {
 	}
 }
 
-func TestTrackedRepository(t *testing.T) {
+func TestRepository(t *testing.T) {
 	type check struct {
 		Name    string
 		MayPush bool
@@ -121,7 +121,7 @@ func TestTrackedRepository(t *testing.T) {
 		return cs, merge["when"].(string), spec
 	}
 
-	cs, when, spec := checksOf(trackedRepository("stress-x", repoPlan{Name: "rebase", Landing: "Rebase", Gotest: true, Poll: "2s"}, "http://git/x.git"))
+	cs, when, spec := checksOf(repository("stress-x", repoPlan{Name: "rebase", Landing: "Rebase", Gotest: true, Poll: "2s"}, "http://git/x.git"))
 	want := []check{{"base", true}, {"gofmt", true}, {"risk", false}, {"approval", false}, {"gotest", false}}
 	if !slices.Equal(cs, want) {
 		t.Errorf("checks = %v, want %v", cs, want)
@@ -134,7 +134,7 @@ func TestTrackedRepository(t *testing.T) {
 		t.Errorf("spec = %v", spec)
 	}
 
-	cs, when, spec = checksOf(trackedRepository("stress-x", repoPlan{Name: "app"}, "http://git/y.git"))
+	cs, when, spec = checksOf(repository("stress-x", repoPlan{Name: "app"}, "http://git/y.git"))
 	if len(cs) != 4 || strings.Contains(when, "gotest") {
 		t.Errorf("without gotest: checks = %v, when = %q", cs, when)
 	}

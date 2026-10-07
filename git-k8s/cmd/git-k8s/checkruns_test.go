@@ -67,7 +67,7 @@ func TestReportsCheckRunsToken(t *testing.T) {
 	}
 }
 
-// resultsOf returns the TrackedBranch of a branch of the TrackedRepository
+// resultsOf returns the Branch object of a branch of the Repository object
 // repo in namespace default, as the check-runs controller sees it, with
 // checks.
 func resultsOf(repo, branch string, checks map[string]gitk8s.CheckResult) *branchResults {
@@ -83,7 +83,7 @@ func resultsOf(repo, branch string, checks map[string]gitk8s.CheckResult) *branc
 type publisher struct {
 	t    *testing.T
 	gh   *gittest.GitHub
-	repo *gitk8s.TrackedRepository
+	repo *gitk8s.Repository
 	c    *checkRuns
 	// branches holds the results of each branch in the cluster.
 	branches map[string]map[string]gitk8s.CheckResult
@@ -134,7 +134,7 @@ func (p *publisher) reconcile(branch string) ([]string, error) {
 	ctx, rec := kube.Fake(p.t.Context(), b, world...)
 	err := p.c.Reconcile(ctx, b)
 	if !reflect.DeepEqual(b.Status.Checks, want) {
-		p.t.Errorf("the check-runs controller changed the TrackedBranch's status to %+v", b.Status)
+		p.t.Errorf("the check-runs controller changed the Branch object's status to %+v", b.Status)
 	}
 	p.requeue = rec.RequeueAfter()
 	return p.gh.Fake.Requests()[before:], err
@@ -433,7 +433,7 @@ func TestCheckRunsOfSeveralApps(t *testing.T) {
 			head := w.Commit("add x")
 			next := w.Commit("add y")
 			w.Push("c/x")
-			// lib is another TrackedRepository, for acme/lib or acme/app, whose
+			// lib is another Repository object, for acme/lib or acme/app, whose
 			// tokens act for another app.
 			lib := gh.Repository("lib", gitk8s.OctoSTS{CheckRunsIdentity: other.identity}, rules()...)
 			lib.Spec.URL = gh.Remote(other.repo).URL
@@ -510,7 +510,7 @@ func TestCheckRunsAfterIdentityChanges(t *testing.T) {
 		}
 	}
 
-	t.Log("When the TrackedRepository names an identity whose tokens act for another app, the controller writes that app's check run instead of trusting the first app's, which shows the result.")
+	t.Log("When the Repository object names an identity whose tokens act for another app, the controller writes that app's check run instead of trusting the first app's, which shows the result.")
 	p.repo.Spec.OctoSTS.CheckRunsIdentity = "other"
 	got, err := p.publish(passed(head))
 	if want := []string{"GET " + api + "commits/" + head + "/check-runs", "PATCH " + api + "check-runs/1", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
@@ -536,7 +536,7 @@ func TestCheckRunsAfterURLChanges(t *testing.T) {
 		return map[string]gitk8s.CheckResult{"gotest": {Commit: commit, State: gitk8s.Passed}}
 	}
 	// Before a restart, the controller published c/x's result when the
-	// TrackedRepository named acme/lib.
+	// Repository object named acme/lib.
 	repo.Spec.URL = gh.Remote("lib").URL
 	if _, err := (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(passed(libHead)); err != nil {
 		t.Fatal(err)
@@ -547,7 +547,7 @@ func TestCheckRunsAfterURLChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Log("When the TrackedRepository names a repository whose tokens act for another app, the controller finds that app's check run instead of looking only at the first app's.")
+	t.Log("When the Repository object names a repository whose tokens act for another app, the controller finds that app's check run instead of looking only at the first app's.")
 	repo.Spec.URL = gh.Remote("lib").URL
 	api := "/api/v3/repos/acme/lib/"
 	got, err := p.publish(passed(libHead))
@@ -1488,9 +1488,9 @@ func TestCheckRunsSurviveFailedReads(t *testing.T) {
 }
 
 // front puts handler in front of the fake GitHub and points the programs at
-// it until the test ends. It returns acme/app's TrackedRepository at the
+// it until the test ends. It returns acme/app's Repository object at the
 // front's URL. handler passes a request on to the fake by calling next.
-func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter, r *http.Request, next http.Handler)) *gitk8s.TrackedRepository {
+func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter, r *http.Request, next http.Handler)) *gitk8s.Repository {
 	t.Helper()
 	base := gittest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler(w, r, gh.Fake)
@@ -1500,8 +1500,8 @@ func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter,
 	return repo
 }
 
-// reconcileIn reconciles branch of the TrackedRepository repo with c under ctx,
-// in a cluster that holds objects and repo's TrackedBranches with the results
+// reconcileIn reconciles branch of the Repository object repo with c under ctx,
+// in a cluster that holds objects and repo's Branch objects with the results
 // in branches, and returns the reconcile's requeue.
 func reconcileIn(ctx context.Context, c *checkRuns, repo, branch string, branches map[string]map[string]gitk8s.CheckResult, objects ...any) (time.Duration, error) {
 	var b *branchResults
@@ -1967,7 +1967,7 @@ func TestCheckRunsForgetRepositories(t *testing.T) {
 		t.Fatalf("err = %v, known = %v; want the controller to know acme/app's check runs", err, known())
 	}
 
-	t.Log("When the TrackedRepository is gone, the controller drops what it knew of the repository's check runs.")
+	t.Log("When the Repository object is gone, the controller drops what it knew of the repository's check runs.")
 	if _, err := reconcileIn(t.Context(), p.c, "app", "c/x", p.branches); err != nil || known() {
 		t.Errorf("err = %v, known = %v; want the controller to know nothing of acme/app", err, known())
 	}
@@ -1975,7 +1975,7 @@ func TestCheckRunsForgetRepositories(t *testing.T) {
 		t.Fatalf("err = %v, known = %v; want the controller to know acme/app's check runs", err, known())
 	}
 
-	t.Log("When the TrackedRepository names no check-runs identity, the controller drops it too.")
+	t.Log("When the Repository object names no check-runs identity, the controller drops it too.")
 	p.repo.Spec.OctoSTS.CheckRunsIdentity = ""
 	if _, err := p.reconcile("c/x"); err != nil || known() {
 		t.Errorf("err = %v, known = %v; want the controller to know nothing of acme/app", err, known())
@@ -2025,7 +2025,7 @@ func TestCheckRunsForgetWhileReconcilesWait(t *testing.T) {
 	})
 }
 
-// TestCheckRunsStayForgotten checks a reconcile that read the TrackedRepository
+// TestCheckRunsStayForgotten checks a reconcile that read the Repository object
 // before it stopped naming a check-runs identity, and that gets the
 // repository's lock after another reconcile forgot the repository.
 func TestCheckRunsStayForgotten(t *testing.T) {
@@ -2043,14 +2043,14 @@ func TestCheckRunsStayForgotten(t *testing.T) {
 		return s.p.c.repos["default/app"] != nil
 	}
 
-	t.Log("The TrackedRepository stops naming a check-runs identity, and c/x's reconcile forgets acme/app.")
+	t.Log("The Repository object stops naming a check-runs identity, and c/x's reconcile forgets acme/app.")
 	s.p.repo = &unnamed
 	s.again("c/x")
 	if known() {
 		t.Fatal("the controller knows acme/app after c/x's reconcile forgot it")
 	}
 
-	t.Log("c/y's reconcile read the TrackedRepository before the change, and gets the lock only after c/x's reconcile forgot acme/app. It sends nothing, and the controller still knows nothing of acme/app.")
+	t.Log("c/y's reconcile read the Repository object before the change, and gets the lock only after c/x's reconcile forgot acme/app. It sends nothing, and the controller still knows nothing of acme/app.")
 	x := resultsOf("app", "c/x", s.p.branches["c/x"])
 	y := resultsOf("app", "c/y", s.p.branches["c/y"])
 	before, _ := kube.Fake(t.Context(), y, named, x)
@@ -2122,7 +2122,7 @@ func TestCheckRunErrors(t *testing.T) {
 	b := resultsOf("app", "c/x", checks)
 	ctx, _ := kube.Fake(t.Context(), b)
 	if err := (&checkRuns{}).Reconcile(ctx, b); err != nil {
-		t.Errorf("without the TrackedRepository: %v", err)
+		t.Errorf("without the Repository object: %v", err)
 	}
 }
 

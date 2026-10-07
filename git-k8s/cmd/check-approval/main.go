@@ -1,9 +1,10 @@
 // Command check-approval passes branches that a person approved.
 //
-// To approve a branch, annotate its TrackedBranch with the commit to approve
+// To approve a branch, annotate its Branch object with the commit to approve
 // and your username:
 //
-//	kubectl annotate --overwrite trackedbranch NAME git-k8s.imjasonh.com/approve=SHA \
+//	kubectl annotate --overwrite branches.git-k8s.imjasonh.com NAME \
+//	  git-k8s.imjasonh.com/approve=SHA \
 //	  git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 //
 // An approval is for a change: what the approved commit changes on top of
@@ -40,10 +41,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is this check's view of a TrackedBranch.
+// Branch is this check's view of a Branch object.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
-	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"approval,omitempty"`
@@ -51,7 +52,7 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 

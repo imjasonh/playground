@@ -76,7 +76,7 @@ func rate(t *testing.T, base, change map[string]string, messages ...string) *git
 
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{
+	b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
 	}
@@ -208,7 +208,7 @@ func TestRiskRatesEachChangeOnce(t *testing.T) {
 
 			b := &Branch{Object: kube.Meta("app-c-x", nil)}
 			b.Namespace = "default"
-			b.Spec = gitk8s.TrackedBranchSpec{
+			b.Spec = gitk8s.BranchSpec{
 				Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: start,
 				Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
 			}
@@ -484,7 +484,7 @@ func TestRiskOfResolvedConflicts(t *testing.T) {
 
 			b := &Branch{Object: kube.Meta("app-c-x", nil)}
 			b.Namespace = "default"
-			b.Spec = gitk8s.TrackedBranchSpec{
+			b.Spec = gitk8s.BranchSpec{
 				Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: start,
 				Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
 			}
@@ -648,7 +648,7 @@ func TestRiskOfAChangeTooBigToRead(t *testing.T) {
 	w.Push("c/x")
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{
+	b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
 	}

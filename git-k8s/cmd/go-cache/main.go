@@ -6,7 +6,7 @@
 // download modules without reaching the internet.
 //
 // A build cache, at /cache/NAMESPACE/REPOSITORY/, holds the outputs of the
-// go command's build steps for one TrackedRepository, by action ID. Reading or
+// go command's build steps for one Repository object, by action ID. Reading or
 // writing it takes a service account token from the repository's namespace
 // with an audience that grants that access, which go-cache checks with a
 // TokenReview. check-gotest gives the token that reads to the container

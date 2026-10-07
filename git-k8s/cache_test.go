@@ -16,7 +16,7 @@ import (
 )
 
 // open opens repo's local repository in c and unlocks it.
-func open(t *testing.T, c *gitk8s.Cache, repo *gitk8s.Repository) *git.Repo {
+func open(t *testing.T, c *gitk8s.Cache, repo *gitk8s.RepositoryView) *git.Repo {
 	t.Helper()
 	r, unlock, err := c.Open(t.Context(), repo)
 	if err != nil {
@@ -31,8 +31,8 @@ func TestCacheRemovesUnusedRepositories(t *testing.T) {
 		t.Skip("git isn't installed")
 	}
 	dir := t.TempDir()
-	repository := func(namespace, name string) *gitk8s.Repository {
-		r := &gitk8s.Repository{Object: kube.Meta(name, nil), Spec: gitk8s.TrackedRepositorySpec{URL: "https://git.example.com/" + name + ".git"}}
+	repository := func(namespace, name string) *gitk8s.RepositoryView {
+		r := &gitk8s.RepositoryView{Object: kube.Meta(name, nil), Spec: gitk8s.RepositorySpec{URL: "https://git.example.com/" + name + ".git"}}
 		r.Namespace = namespace
 		return r
 	}
@@ -99,7 +99,7 @@ func TestCacheTidiesRepositories(t *testing.T) {
 	w.Push("gone")
 	w.PushRef("refs/git-k8s/synced/heads/main")
 	g, _ := srv.Repository("app")
-	repo := &gitk8s.Repository{Object: g.Object, Spec: g.Spec}
+	repo := &gitk8s.RepositoryView{Object: g.Object, Spec: g.Spec}
 	remote := srv.Remote("app")
 	dir := t.TempDir()
 

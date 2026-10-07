@@ -36,7 +36,7 @@ func rules() []gitk8s.BranchRule {
 	return []gitk8s.BranchRule{{Match: "main", Merge: policy}, {Match: "c/**", Parent: "main"}}
 }
 
-// fixture is the TrackedRepository default/app, its external repository on a
+// fixture is the Repository object default/app, its external repository on a
 // git server, and the mirror's copy of it, which a server serves.
 type fixture struct {
 	t   *testing.T
@@ -44,7 +44,7 @@ type fixture struct {
 	// work makes commits, and pushes them to the external repository with
 	// Push or to the mirror with pushToMirror.
 	work   *gittest.Work
-	repo   *gitk8s.TrackedRepository
+	repo   *gitk8s.Repository
 	secret *k8s.Secret
 	mirror *mirror.Mirror
 	// mirrorURL is the copy's URL on a server that runs the mirror's
@@ -71,8 +71,8 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f.r = &repositories{mirror: m, now: func() time.Time { return f.now }}
 
-	// The handler gets its own TrackedRepository, which reconciles don't write.
-	served := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{URL: repo.Spec.URL, Branches: rules()}}
+	// The handler gets its own Repository object, which reconciles don't write.
+	served := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.RepositorySpec{URL: repo.Spec.URL, Branches: rules()}}
 	served.Namespace, served.UID = repo.Namespace, repo.UID
 	token := kube.FakeToken{Token: "pusher", User: kube.UserInfo{Username: "system:serviceaccount:test:pusher"}, Audiences: []string{gitk8s.MirrorAudience}}
 	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +120,7 @@ func (f *fixture) fetch(world ...any) *kube.Recorder {
 
 // merge reconciles b at the front of its parent's merge queue. A b that
 // isn't queued joined in an earlier reconcile.
-func (f *fixture) merge(b *gitk8s.TrackedBranch) (*kube.Recorder, error) {
+func (f *fixture) merge(b *gitk8s.Branch) (*kube.Recorder, error) {
 	if b.Status.Queued == nil {
 		b.Status.Queued = &gitk8s.Queued{Head: b.Spec.Head, Position: 1}
 	}
@@ -128,11 +128,11 @@ func (f *fixture) merge(b *gitk8s.TrackedBranch) (*kube.Recorder, error) {
 	return rec, (&merger{mirror: f.mirror}).Reconcile(ctx, b)
 }
 
-// mergeIn reconciles b with parent as its parent's TrackedBranch, and returns
+// mergeIn reconciles b with parent as its parent's Branch object, and returns
 // the Landed condition's message. Reads see the objects in world over b and
 // parent. b keeps its check results, which the merge controller leaves out
 // of its status write.
-func (f *fixture) mergeIn(parent, b *gitk8s.TrackedBranch, world ...any) string {
+func (f *fixture) mergeIn(parent, b *gitk8s.Branch, world ...any) string {
 	f.t.Helper()
 	results := b.Status.Checks
 	ctx, _ := kube.Fake(f.t.Context(), b, f.world(append([]any{f.repo, parent}, world...)...)...)
@@ -191,9 +191,9 @@ func (f *fixture) landInMirror(commit string) {
 	f.t.Helper()
 	parent := f.mirrorHeads()["main"]
 	f.mirrorGit("push", "--quiet", f.mirrorURL, commit+":refs/heads/c/landing")
-	b := &gitk8s.TrackedBranch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/landing"), map[string]string{gitk8s.RepositoryLabel: "app"})}
+	b := &gitk8s.Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/landing"), map[string]string{gitk8s.RepositoryLabel: "app"})}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "c/landing", Head: commit, Parent: "main", ParentHead: parent, Merge: policy}
+	b.Spec = gitk8s.BranchSpec{Repository: "app", Branch: "c/landing", Head: commit, Parent: "main", ParentHead: parent, Merge: policy}
 	pass(b)
 	if _, err := f.merge(b); err != nil || b.Status.State != gitk8s.MergeStateLanded {
 		f.t.Fatalf("landing %s on main: err = %v, state = %q", gitk8s.Short(commit), err, b.Status.State)
@@ -205,9 +205,9 @@ func (f *fixture) condition(typ string) *kube.Condition {
 }
 
 // branches pushes main and c/x, which adds a file on top of main, to the
-// external repository, syncs the mirror, and returns c/x's TrackedBranch with
+// external repository, syncs the mirror, and returns c/x's Branch object with
 // fresh, passing results for the policy's checks.
-func (f *fixture) branches() *gitk8s.TrackedBranch {
+func (f *fixture) branches() *gitk8s.Branch {
 	f.t.Helper()
 	w := f.work
 	main := w.Commit("main")
@@ -217,25 +217,25 @@ func (f *fixture) branches() *gitk8s.TrackedBranch {
 	head := w.Commit("add x")
 	w.Push("c/x")
 	f.fetch()
-	b := &gitk8s.TrackedBranch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), map[string]string{gitk8s.RepositoryLabel: "app"})}
+	b := &gitk8s.Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), map[string]string{gitk8s.RepositoryLabel: "app"})}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main, Merge: policy}
+	b.Spec = gitk8s.BranchSpec{Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main, Merge: policy}
 	pass(b)
 	return b
 }
 
 // pass gives b fresh, passing results for the policy's checks.
-func pass(b *gitk8s.TrackedBranch) {
+func pass(b *gitk8s.Branch) {
 	b.Status.Checks = map[string]gitk8s.CheckResult{
 		"base":  {Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed},
 		"gofmt": {Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed},
 	}
 }
 
-// owned returns the TrackedBranches that a reconcile declared, by branch.
-func owned(rec *kube.Recorder) map[string]*gitk8s.TrackedBranch {
-	got := map[string]*gitk8s.TrackedBranch{}
-	for _, b := range kube.Owned[gitk8s.TrackedBranch](rec) {
+// owned returns the Branch objects that a reconcile declared, by branch.
+func owned(rec *kube.Recorder) map[string]*gitk8s.Branch {
+	got := map[string]*gitk8s.Branch{}
+	for _, b := range kube.Owned[gitk8s.Branch](rec) {
 		got[b.Spec.Branch] = b
 	}
 	return got
@@ -267,7 +267,7 @@ func TestListsBranches(t *testing.T) {
 	rec := f.reconcile()
 	got := owned(rec)
 	if len(got) != 2 {
-		t.Fatalf("owned %d TrackedBranches, want 2: %+v", len(got), got)
+		t.Fatalf("owned %d Branch objects, want 2: %+v", len(got), got)
 	}
 	b := got["c/add"]
 	if b == nil || b.Name != gitk8s.BranchObjectName("app", "c/add") || b.Labels[gitk8s.RepositoryLabel] != "app" {
@@ -359,7 +359,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	all := "git-k8s-check-results, git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals"
 	if c := reconcile(); c == nil || c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != all+" aren't fully installed, so any service account that can write TrackedBranch status can write check results and status.diverged, checks that can write TrackedBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change TrackedBranch objects, anyone who can create or patch a TrackedBranch can change its merge policy, checks that own Pods can write any Pod in the cluster, anyone who can patch a TrackedBranch can approve it, and the approved-by annotation can name someone who didn't approve; apply config/policy.yaml" {
+		c.Message != all+" aren't fully installed, so any service account that can write the status of Branch objects can write check results and status.diverged, checks that can write the status of Branch objects can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change Branch objects, anyone who can create or patch a Branch object can change its merge policy, checks that own Pods can write any Pod in the cluster, anyone who can patch a Branch object can approve it, and the approved-by annotation can name someone who didn't approve; apply config/policy.yaml" {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -418,7 +418,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	bindings[0].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write TrackedBranch status can write check results and status.diverged, and checks that can write TrackedBranch status can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=5; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
+		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write the status of Branch objects can write check results and status.diverged, and checks that can write the status of Branch objects can change a branch's state and merge queue; "+all+" don't have git-k8s.imjasonh.com/policy-version=5; run "+fmt.Sprintf(warns, "git-k8s-check-results")+", then apply config/policy.yaml from this release" {
 		t.Errorf("with one binding that only warns and policies from an earlier release, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Deny"}
@@ -453,7 +453,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// Applying the policies from a later release installs the missing one too,
 	// so the fix for the later policies replaces the fix for the missing one.
 	if c := reconcile(world[2:]...); c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write TrackedBranch status can write check results and status.diverged, and checks that can write TrackedBranch status can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 5; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
+		c.Message != "git-k8s-check-results isn't fully installed, so any service account that can write the status of Branch objects can write check results and status.diverged, and checks that can write the status of Branch objects can change a branch's state and merge queue; git-k8s-branches, git-k8s-check-pods, and git-k8s-approvals have a git-k8s.imjasonh.com/policy-version later than 5; upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release" {
 		t.Errorf("without git-k8s-check-results, and with the other policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -465,12 +465,12 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		vap.Annotations[policyVersionAnnotation] = current
 	}
 	if c := reconcile(world...); c.Status != kube.True || c.Reason != "Installed" ||
-		c.Message != "the admission policies keep git-k8s service accounts from approving branches, let only the core program create TrackedBranch objects or change their spec, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches" {
+		c.Message != "the admission policies keep git-k8s service accounts from approving branches, let only the core program create Branch objects or change their spec, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches" {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
 	}
 	bindings[1].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False ||
-		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change TrackedBranch objects, and anyone who can create or patch a TrackedBranch can change its merge policy; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change Branch objects, and anyone who can create or patch a Branch object can change its merge policy; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with only git-k8s-branches warning, PoliciesInstalled = %+v", c)
 	}
 	// Another binding that denies enforces git-k8s-branches, but the next start
@@ -490,7 +490,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// the reason for a warning that another binding hides.
 	bindings[0].Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
 	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write TrackedBranch status can write check results and status.diverged, and checks that can write TrackedBranch status can change a branch's state and merge queue; the binding git-k8s-branches warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}' and `+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write the status of Branch objects can write check results and status.diverged, and checks that can write the status of Branch objects can change a branch's state and merge queue; the binding git-k8s-branches warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}' and `+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-check-results limited, and git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.MatchResources = nil
@@ -501,7 +501,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	narrow.Spec.ParamRef = checksRef("Deny")
 	narrow.Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
 	if c := reconcile(append([]any{narrow}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change TrackedBranch objects, and anyone who can create or patch a TrackedBranch can change its merge policy; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change Branch objects, and anyone who can create or patch a Branch object can change its merge policy; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-branches warning while narrow-branches is limited, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = false
@@ -518,7 +518,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// requests through while the parameters are missing.
 	params := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"parameterNotFoundAction":"Deny"}}}'`
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so any service account that can write TrackedBranch status can write check results and status.diverged, checks that can write TrackedBranch status can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change TrackedBranch objects, and anyone who can create or patch a TrackedBranch can change its merge policy; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
+		c.Message != "the bindings git-k8s-check-results and git-k8s-branches don't deny every request that their policies reject, so any service account that can write the status of Branch objects can write check results and status.diverged, checks that can write the status of Branch objects can change a branch's state and merge queue, git-k8s service accounts with the approve verb can approve branches, checks and git-k8s-deps can change Branch objects, and anyone who can create or patch a Branch object can change its merge policy; run "+fmt.Sprintf(params, "git-k8s-check-results")+" and "+fmt.Sprintf(params, "git-k8s-branches") {
 		t.Errorf("with bindings that allow requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ParamRef.ParameterNotFoundAction = "Deny"
@@ -569,7 +569,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// A binding that only warns enforces nothing, with or without a paramRef.
 	bindings[0].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, and the binding git-k8s-branches has no paramRef, so any service account that can write TrackedBranch status can write check results and status.diverged, checks that can write TrackedBranch status can change a branch's state and merge queue, and git-k8s-branches ignores the entries in the git-k8s-checks ConfigMap; the binding git-k8s-check-results warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"validationActions":["Deny"],"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}' and `+fmt.Sprintf(addParams, "git-k8s-branches") {
+		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, and the binding git-k8s-branches has no paramRef, so any service account that can write the status of Branch objects can write check results and status.diverged, checks that can write the status of Branch objects can change a branch's state and merge queue, and git-k8s-branches ignores the entries in the git-k8s-checks ConfigMap; the binding git-k8s-check-results warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"validationActions":["Deny"],"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny"}}}' and `+fmt.Sprintf(addParams, "git-k8s-branches") {
 		t.Errorf("with git-k8s-check-results's binding warning and git-k8s-branches's without a paramRef, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ValidationActions = []string{"Deny"}
@@ -598,7 +598,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}{
 		{"names another ConfigMap", &paramRef{Name: "other-checks", Namespace: "git-k8s", ParameterNotFoundAction: "Deny"}, addParams},
 		{"names git-k8s-checks in another namespace", &paramRef{Name: "git-k8s-checks", Namespace: "default", ParameterNotFoundAction: "Deny"}, addParams},
-		{"names git-k8s-checks in the TrackedBranch's namespace", &paramRef{Name: "git-k8s-checks", ParameterNotFoundAction: "Deny"}, addParams},
+		{"names git-k8s-checks in the Branch object's namespace", &paramRef{Name: "git-k8s-checks", ParameterNotFoundAction: "Deny"}, addParams},
 		{"selects ConfigMaps by label", &paramRef{Namespace: "git-k8s", Selector: &struct{}{}, ParameterNotFoundAction: "Deny"}, `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"paramRef":{"name":"git-k8s-checks","namespace":"git-k8s","parameterNotFoundAction":"Deny","selector":null}}}'`},
 	} {
 		bindings[0].Spec.ParamRef = tc.ref
@@ -611,7 +611,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// lets every request through.
 	bindings[0].Spec.ParamRef = &paramRef{Name: "other-checks", Namespace: "git-k8s", ParameterNotFoundAction: "Allow"}
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write TrackedBranch status can write check results and status.diverged, and checks that can write TrackedBranch status can change a branch's state and merge queue; run "+fmt.Sprintf(addParams, "git-k8s-check-results") {
+		c.Message != "the binding git-k8s-check-results doesn't deny every request that its policy rejects, so any service account that can write the status of Branch objects can write check results and status.diverged, and checks that can write the status of Branch objects can change a branch's state and merge queue; run "+fmt.Sprintf(addParams, "git-k8s-check-results") {
 		t.Errorf("with git-k8s-check-results's paramRef to another ConfigMap that allows requests, PoliciesInstalled = %+v", c)
 	}
 	bindings[0].Spec.ParamRef.ParameterNotFoundAction = "Deny"
@@ -637,7 +637,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		{`{"matchPolicy":"Equivalent","namespaceSelector":{"matchExpressions":[{"key":"kubernetes.io/metadata.name","operator":"NotIn","values":["app"]}]},"objectSelector":{}}`, true},
 		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{"matchLabels":{"tier":"web"}}}`, true},
 		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{},"resourceRules":[{"apiGroups":["apps"],"apiVersions":["*"],"operations":["UPDATE"],"resources":["deployments"]}]}`, true},
-		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{},"excludeResourceRules":[{"apiGroups":["git-k8s.imjasonh.com"],"apiVersions":["*"],"operations":["UPDATE"],"resources":["trackedbranches/status"]}]}`, true},
+		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{},"excludeResourceRules":[{"apiGroups":["git-k8s.imjasonh.com"],"apiVersions":["*"],"operations":["UPDATE"],"resources":["branches/status"]}]}`, true},
 	} {
 		bindings[0].Spec.MatchResources = nil
 		if err := json.Unmarshal([]byte(tc.matchResources), &bindings[0].Spec.MatchResources); err != nil {
@@ -728,7 +728,7 @@ func TestPoliciesMatchConfig(t *testing.T) {
 			}
 		}
 	}
-	repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil)}
+	repo := &gitk8s.Repository{Object: kube.Meta("app", nil)}
 	repo.Namespace = "default"
 	ctx, _ := kube.Fake(t.Context(), repo, world...)
 	if c := policiesCondition(ctx, true); c.Status != kube.True {
@@ -760,7 +760,7 @@ func TestFirstFetchFailureKeepsBranches(t *testing.T) {
 				t.Errorf("ExternalSynced = %+v, want Unknown with reason %s", c, tc.reason)
 			}
 			if len(owned(rec)) != 0 {
-				t.Error("declared TrackedBranches without fetching from the external repository")
+				t.Error("declared Branch objects without fetching from the external repository")
 			}
 		})
 	}
@@ -778,7 +778,7 @@ func TestExternalFailureBacksOff(t *testing.T) {
 	f.now = f.now.Add(5 * time.Minute)
 	rec := f.reconcile()
 	if len(owned(rec)) != 2 || rec.RequeueAfter() != 30*time.Second {
-		t.Errorf("owned %d TrackedBranches, requeue = %v; want 2 and a retry in 30s", len(owned(rec)), rec.RequeueAfter())
+		t.Errorf("owned %d Branch objects, requeue = %v; want 2 and a retry in 30s", len(owned(rec)), rec.RequeueAfter())
 	}
 	if got := ownedPolicies(rec); got != wantPolicy {
 		t.Errorf("while the external repository fails, owned NetworkPolicies: %q, want %q", got, wantPolicy)
@@ -869,7 +869,7 @@ func TestMirrorFailureMakesExternalSyncedUnknown(t *testing.T) {
 	}
 }
 
-// A TrackedRepository's URL can name any server that the core program reaches,
+// A Repository object's URL can name any server that the core program reaches,
 // and git prints the body of the server's error response. Conditions and the
 // errors that kube shows have git's own messages without the body.
 func TestReportsLeaveOutWhatTheServerSent(t *testing.T) {
@@ -947,7 +947,7 @@ func TestReportsBranchesItCantCompare(t *testing.T) {
 }
 
 // A sync with a branch that the mirror couldn't compare and a branch that
-// diverged reports CompareFailed. The TrackedBranch records a divergence, but
+// diverged reports CompareFailed. The Branch object records a divergence, but
 // only this condition names a branch that the mirror couldn't compare.
 func TestCompareFailedComesBeforeDiverged(t *testing.T) {
 	rep := &mirror.Report{
@@ -976,13 +976,13 @@ func TestUpdateFailedComesBeforeDiverged(t *testing.T) {
 }
 
 func TestInvalidPolicyIsPermanent(t *testing.T) {
-	for _, mod := range []func(*gitk8s.TrackedRepository){
-		func(r *gitk8s.TrackedRepository) { r.Spec.PollInterval = "1ms" },
-		func(r *gitk8s.TrackedRepository) {
+	for _, mod := range []func(*gitk8s.Repository){
+		func(r *gitk8s.Repository) { r.Spec.PollInterval = "1ms" },
+		func(r *gitk8s.Repository) {
 			r.Spec.Branches = []gitk8s.BranchRule{{Match: "main", Merge: &gitk8s.MergePolicy{When: "checks.base.passed &&"}}}
 		},
 	} {
-		repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
+		repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.RepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
 		repo.Namespace = "default"
 		mod(repo)
 		ctx, _ := kube.Fake(t.Context(), repo)
@@ -994,9 +994,9 @@ func TestInvalidPolicyIsPermanent(t *testing.T) {
 }
 
 // A when expression that names a check that its rule doesn't list makes the
-// TrackedRepository not Ready, instead of holding branches back later.
+// Repository object not Ready, instead of holding branches back later.
 func TestRejectsWhenForUnlistedCheck(t *testing.T) {
-	repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
+	repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.RepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
 	repo.Namespace = "default"
 	repo.Spec.Branches = []gitk8s.BranchRule{{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "gofmt"}}, When: "checks.gofmy.passed"}}}
 	ctx, _ := kube.Fake(t.Context(), repo)
@@ -1033,8 +1033,8 @@ func TestRecordsDivergence(t *testing.T) {
 	if got := owned(rec)["c/x"]; got == nil || got.Spec.Head != fix {
 		t.Errorf("c/x = %+v, want the mirror's head %s", got, fix)
 	}
-	if got, want := kube.Triggered[gitk8s.TrackedBranch](rec), []kube.Key{{Namespace: "default", Name: b.Name}}; !slices.Equal(got, want) {
-		t.Errorf("triggered TrackedBranches %v, want %v", got, want)
+	if got, want := kube.Triggered[gitk8s.Branch](rec), []kube.Key{{Namespace: "default", Name: b.Name}}; !slices.Equal(got, want) {
+		t.Errorf("triggered Branch objects %v, want %v", got, want)
 	}
 	if got := f.srv.Heads(t, "app")["c/x"]; got != person {
 		t.Errorf("the external repository has c/x at %s, want the person's %s", got, person)
@@ -1070,8 +1070,8 @@ func TestRecordsDivergence(t *testing.T) {
 	if c := f.condition("ExternalSynced"); c.Status != kube.True {
 		t.Errorf("ExternalSynced = %+v", c)
 	}
-	if got := kube.Triggered[gitk8s.TrackedBranch](rec); len(got) != 1 {
-		t.Errorf("triggered TrackedBranches %v, want c/x's, whose divergence ended", got)
+	if got := kube.Triggered[gitk8s.Branch](rec); len(got) != 1 {
+		t.Errorf("triggered Branch objects %v, want c/x's, whose divergence ended", got)
 	}
 	b.Spec.Head = resolved
 	pass(b)
@@ -1084,7 +1084,7 @@ func TestRecordsDivergence(t *testing.T) {
 }
 
 // A branch that changes in the mirror while a person deletes it in the
-// external repository diverges too, and the TrackedBranch says so.
+// external repository diverges too, and the Branch object says so.
 func TestRecordsDeletionAsDivergence(t *testing.T) {
 	f := newFixture(t)
 	b := f.branches()
@@ -1098,8 +1098,8 @@ func TestRecordsDeletionAsDivergence(t *testing.T) {
 	if c := f.condition("ExternalSynced"); c.Reason != "Diverged" || !strings.HasPrefix(c.Message, "c/x changed both") {
 		t.Errorf("ExternalSynced = %+v", c)
 	}
-	if got, want := kube.Triggered[gitk8s.TrackedBranch](rec), []kube.Key{{Namespace: "default", Name: b.Name}}; !slices.Equal(got, want) {
-		t.Errorf("triggered TrackedBranches %v, want %v", got, want)
+	if got, want := kube.Triggered[gitk8s.Branch](rec), []kube.Key{{Namespace: "default", Name: b.Name}}; !slices.Equal(got, want) {
+		t.Errorf("triggered Branch objects %v, want %v", got, want)
 	}
 	if _, ok := f.srv.Heads(t, "app")["c/x"]; ok {
 		t.Error("the mirror pushed c/x back to the external repository, which deleted it")
@@ -1181,8 +1181,8 @@ func TestLandsAndDeletesBranch(t *testing.T) {
 	if b.Status.Checks != nil {
 		t.Error("the merge controller must leave status.checks out of its status write")
 	}
-	if got, want := kube.Triggered[gitk8s.TrackedRepository](rec), []kube.Key{{Namespace: "default", Name: "app"}}; !slices.Equal(got, want) {
-		t.Errorf("triggered TrackedRepositories %v, want %v", got, want)
+	if got, want := kube.Triggered[gitk8s.Repository](rec), []kube.Key{{Namespace: "default", Name: "app"}}; !slices.Equal(got, want) {
+		t.Errorf("triggered Repository objects %v, want %v", got, want)
 	}
 
 	t.Log("The reconcile that the landing triggered pushes it to the external repository.")
@@ -1274,15 +1274,15 @@ func TestLandsABranchThatChangedAfterListing(t *testing.T) {
 }
 
 func TestWaitsForFreshPassingChecks(t *testing.T) {
-	for name, edit := range map[string]func(*gitk8s.TrackedBranch){
-		"pending": func(b *gitk8s.TrackedBranch) { delete(b.Status.Checks, "gofmt") },
-		"failed": func(b *gitk8s.TrackedBranch) {
+	for name, edit := range map[string]func(*gitk8s.Branch){
+		"pending": func(b *gitk8s.Branch) { delete(b.Status.Checks, "gofmt") },
+		"failed": func(b *gitk8s.Branch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
 		},
-		"stale head": func(b *gitk8s.TrackedBranch) {
+		"stale head": func(b *gitk8s.Branch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: "old", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 		},
-		"stale parent": func(b *gitk8s.TrackedBranch) {
+		"stale parent": func(b *gitk8s.Branch) {
 			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: "old", State: gitk8s.Passed}
 		},
 	} {
@@ -1394,12 +1394,12 @@ func TestParentMovedAfterListing(t *testing.T) {
 // from its parent, isn't Landed or deleted, because the merge controller
 // didn't land it.
 func TestBranchesWithNothingToLandStay(t *testing.T) {
-	for name, setup := range map[string]func(*gitk8s.TrackedBranch, *gittest.Work){
-		"at the parent's head": func(b *gitk8s.TrackedBranch, w *gittest.Work) {
+	for name, setup := range map[string]func(*gitk8s.Branch, *gittest.Work){
+		"at the parent's head": func(b *gitk8s.Branch, w *gittest.Work) {
 			w.Push("main")
 			b.Spec.ParentHead = b.Spec.Head
 		},
-		"behind the parent": func(b *gitk8s.TrackedBranch, w *gittest.Work) {
+		"behind the parent": func(b *gitk8s.Branch, w *gittest.Work) {
 			w.Write("y.txt", "y\n")
 			b.Spec.ParentHead = w.Commit("main moves past the branch")
 			w.Push("main")
@@ -1468,9 +1468,9 @@ func TestInvalidGateWithFinalResults(t *testing.T) {
 }
 
 func TestNoParentNoState(t *testing.T) {
-	b := &gitk8s.TrackedBranch{Object: kube.Meta("app-main", nil), Spec: gitk8s.TrackedBranchSpec{Repository: "app", Branch: "main", Head: "abc"}}
+	b := &gitk8s.Branch{Object: kube.Meta("app-main", nil), Spec: gitk8s.BranchSpec{Repository: "app", Branch: "main", Head: "abc"}}
 	b.Namespace = "default"
-	repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
+	repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.RepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
 	repo.Namespace = "default"
 	ctx, _ := kube.Fake(t.Context(), b, repo)
 	m := &merger{mirror: &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()}}

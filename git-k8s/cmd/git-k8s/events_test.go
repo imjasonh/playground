@@ -12,22 +12,22 @@ import (
 
 func TestRecordsLandingEvents(t *testing.T) {
 	for name, test := range map[string]struct {
-		edit    func(*gitk8s.TrackedBranch)
+		edit    func(*gitk8s.Branch)
 		reasons []string
 	}{
-		"lands and deletes": {func(*gitk8s.TrackedBranch) {}, []string{"Landed", "DeletedBranch"}},
-		"lands without a queue": {func(b *gitk8s.TrackedBranch) {
+		"lands and deletes": {func(*gitk8s.Branch) {}, []string{"Landed", "DeletedBranch"}},
+		"lands without a queue": {func(b *gitk8s.Branch) {
 			p := *policy
 			p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt", MayPush: true}}
 			b.Spec.Merge = &p
 		}, []string{"Landed", "DeletedBranch"}},
-		"keeps the branch": {func(b *gitk8s.TrackedBranch) {
+		"keeps the branch": {func(b *gitk8s.Branch) {
 			p := *policy
 			p.DeleteLandedBranches = false
 			b.Spec.Merge = &p
 		}, []string{"Landed"}},
-		"waits for checks": {func(b *gitk8s.TrackedBranch) { delete(b.Status.Checks, "gofmt") }, nil},
-		"nothing to land":  {func(b *gitk8s.TrackedBranch) { b.Spec.ParentHead = b.Spec.Head }, nil},
+		"waits for checks": {func(b *gitk8s.Branch) { delete(b.Status.Checks, "gofmt") }, nil},
+		"nothing to land":  {func(b *gitk8s.Branch) { b.Spec.ParentHead = b.Spec.Head }, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)

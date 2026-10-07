@@ -1,7 +1,7 @@
 // Command git-k8s-deps keeps the Go modules that repositories require up to
 // date, with a branch for each update.
 //
-// The controller reconciles the TrackedBranch of each branch that a
+// The controller reconciles the Branch object of each branch that a
 // repository's rules name as the parent of branches under the controller's
 // prefix, deps/ by default. Every -interval, it reads the parent's go.mod
 // files and asks module proxies for newer releases of the modules that they
@@ -62,11 +62,11 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is the controller's view of a TrackedBranch. It has no status, so the
+// Branch is the controller's view of a Branch object. It has no status, so the
 // controller writes none.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
-	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 }
 
 // configMap is the controller's view of a ConfigMap, which it reads and
@@ -132,7 +132,7 @@ type updater struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
 	// remote is mirror.Remote, except in tests.
-	remote func(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error)
+	remote func(ctx context.Context, repo *gitk8s.RepositoryView) (git.Remote, error)
 	// fetchConfigMap is kube.Fetch, and applyConfigMap is kube.Apply,
 	// except in tests.
 	fetchConfigMap func(ctx context.Context, namespace, name string) (*configMap, error)
@@ -334,7 +334,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 		return kube.Permanent(err)
 	}
 	parent := b.Spec.Branch
-	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	repo := kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, b.Spec.Repository)
 	if repo == nil || !u.isParent(repo.Spec.Branches, parent) {
 		u.forget(b.Key())
 		return nil
@@ -879,7 +879,7 @@ func requires(f *modfile.File, mod, version string) bool {
 // moves, and an update that waits for the versions that it raises gets none
 // until they're old enough. runPod forgets the outcomes and waits of
 // updates that writes don't need.
-func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change, log *slog.Logger) {
+func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.RepositoryView, st *state, writes []change, log *slog.Logger) {
 	now := u.clock()
 	wanted := map[module.Version]bool{}
 	for _, w := range writes {

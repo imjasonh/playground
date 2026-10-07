@@ -15,15 +15,15 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// merger reconciles TrackedBranch objects. It's the only controller that
-// reconciles the full TrackedBranch type, so its manager installs the
+// merger reconciles Branch objects. It's the only controller that
+// reconciles the full Branch type, so its manager installs the
 // CustomResourceDefinition.
 type merger struct {
 	mirror *mirror.Mirror
 	ident  git.Identity
 }
 
-func (m *merger) Reconcile(ctx context.Context, b *gitk8s.TrackedBranch) error {
+func (m *merger) Reconcile(ctx context.Context, b *gitk8s.Branch) error {
 	results := b.Status.Checks
 	// The results controller manages status.checks. Leaving it out of this
 	// controller's status write keeps server-side apply from making this
@@ -35,7 +35,7 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.TrackedBranch) error {
 		return err
 	}
 
-	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	repo := kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, b.Spec.Repository)
 	diverged, err := m.diverged(ctx, repo, b.Spec.Branch)
 	if err != nil {
 		// kube writes the status of a failed reconcile too, so b keeps its
@@ -101,7 +101,7 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.TrackedBranch) error {
 
 // diverged returns how branch diverged between the mirror's copy of repo
 // and the external repository, or nil if it didn't, or there's no copy.
-func (m *merger) diverged(ctx context.Context, repo *gitk8s.Repository, branch string) (*gitk8s.Divergence, error) {
+func (m *merger) diverged(ctx context.Context, repo *gitk8s.RepositoryView, branch string) (*gitk8s.Divergence, error) {
 	if repo == nil {
 		return nil, nil
 	}
@@ -162,10 +162,10 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 // of repo, or squashes or rebases the branch onto it when the merge policy
 // says to. The repository controller then pushes the parent to the
 // external repository.
-func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.TrackedBranch, results map[string]gitk8s.CheckResult) error {
+func (m *merger) land(ctx context.Context, repo *gitk8s.RepositoryView, b *gitk8s.Branch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
 	if repo == nil {
-		return fmt.Errorf("TrackedRepository %s/%s doesn't exist", b.Namespace, spec.Repository)
+		return fmt.Errorf("the Repository object %s/%s doesn't exist", b.Namespace, spec.Repository)
 	}
 	local, err := m.mirror.Open(ctx, repo)
 	if err != nil {
@@ -219,7 +219,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Tr
 	if deleted {
 		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
 	}
-	kube.Trigger[gitk8s.TrackedRepository](ctx, b.Namespace, spec.Repository)
+	kube.Trigger[gitk8s.Repository](ctx, b.Namespace, spec.Repository)
 	return nil
 }
 
@@ -230,10 +230,10 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Tr
 // stopped or failed between two updates. If the branch moved or was deleted
 // since the repository controller listed it, the parent still moves to the
 // listed head, and the branch stays as it is. The repository controller
-// pushes the deletion to the external repository, and the TrackedRepository's
+// pushes the deletion to the external repository, and the Repository object's
 // ExternalSynced condition reports the external repository's reason if it
 // refuses, as for a protected branch.
-func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.TrackedBranch) (bool, error) {
+func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.Branch) (bool, error) {
 	spec := &b.Spec
 	parent := git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead}
 	if !spec.Merge.DeleteLandedBranches {
@@ -254,7 +254,7 @@ func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.Tracke
 
 // report sets the Landed condition, which is True only in
 // MergeStateLanded, and State to the condition's reason.
-func report(b *gitk8s.TrackedBranch, state gitk8s.MergeState, format string, args ...any) {
+func report(b *gitk8s.Branch, state gitk8s.MergeState, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if len(msg) > 1024 {
 		msg = msg[:1021] + "..."

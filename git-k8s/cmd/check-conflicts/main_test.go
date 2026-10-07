@@ -51,7 +51,7 @@ func setup(t *testing.T, srv *gittest.Server, mainFiles, branchFiles map[string]
 	w.Push("c/x")
 	b = &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{
+	b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: parent,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "base", MayPush: true}, {Name: "conflicts", MayPush: true}}},
 	}
@@ -81,7 +81,7 @@ func commitAs(w *gittest.Work, author string, files map[string]string) string {
 
 // diverge pushes a commit on from that changes files to the ref that holds
 // the external repository's head of branch. It returns the commit, and the
-// divergence of the TrackedBranch called name.
+// divergence of the Branch object called name.
 func diverge(w *gittest.Work, name, branch, from string, files map[string]string) (string, *observed) {
 	w.Branch("external", from)
 	e := commit(w, "external edit", files)
@@ -134,7 +134,7 @@ func reconcile(t *testing.T, srv *gittest.Server, b *Branch, rules []gitk8s.Bran
 
 // useRemote makes the check reach repositories with remote instead of
 // mirror.Remote for the rest of the test.
-func useRemote(t *testing.T, remote func(context.Context, *gitk8s.Repository) (git.Remote, error)) {
+func useRemote(t *testing.T, remote func(context.Context, *gitk8s.RepositoryView) (git.Remote, error)) {
 	r := check.Remote
 	t.Cleanup(func() { check.Remote = r })
 	check.Remote = remote
@@ -142,8 +142,8 @@ func useRemote(t *testing.T, remote func(context.Context, *gitk8s.Repository) (g
 
 // wrongPassword reaches the repositories on srv with the wrong password,
 // so that git fails.
-func wrongPassword(srv *gittest.Server) func(context.Context, *gitk8s.Repository) (git.Remote, error) {
-	return func(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func wrongPassword(srv *gittest.Server) func(context.Context, *gitk8s.RepositoryView) (git.Remote, error) {
+	return func(_ context.Context, repo *gitk8s.RepositoryView) (git.Remote, error) {
 		r := srv.Remote(repo.Name)
 		r.Auth = &git.Auth{Username: srv.Username, Password: "wrong"}
 		return r, nil
@@ -609,7 +609,7 @@ func TestFollowsTheAgentWhileGitFails(t *testing.T) {
 	}
 
 	t.Log("While the check can't get a token for the mirror, it follows the run at the URL in its notes.")
-	useRemote(t, func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+	useRemote(t, func(context.Context, *gitk8s.RepositoryView) (git.Remote, error) {
 		return git.Remote{}, errors.New("no token for the mirror")
 	})
 	ctx, rec = kube.Fake(t.Context(), b, repo)
@@ -2484,7 +2484,7 @@ func parent(t *testing.T, srv *gittest.Server, mainFiles, externalFiles map[stri
 	e, o = diverge(w, "app-main", "main", base, externalFiles)
 	b = &Branch{Object: kube.Meta("app-main", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "main", Head: head}
+	b.Spec = gitk8s.BranchSpec{Repository: "app", Branch: "main", Head: head}
 	return b, w, e, o
 }
 
@@ -2522,7 +2522,7 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 
 	child := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "resolve/main"), nil)}
 	child.Namespace = "default"
-	child.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "resolve/main", Head: pushed, Parent: "main", ParentHead: head}
+	child.Spec = gitk8s.BranchSpec{Repository: "app", Branch: "resolve/main", Head: pushed, Parent: "main", ParentHead: head}
 	if rec, err = reconcile(t, srv, b, rules, o, child); err != nil {
 		t.Fatal(err)
 	}
@@ -2760,7 +2760,7 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Push("main")
 			b := &Branch{Object: kube.Meta("app-main", nil)}
 			b.Namespace = "default"
-			b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "main", Head: head}
+			b.Spec = gitk8s.BranchSpec{Repository: "app", Branch: "main", Head: head}
 			o := &observed{Object: kube.Meta("app-main", nil)}
 			o.Namespace = "default"
 			o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + "main"}

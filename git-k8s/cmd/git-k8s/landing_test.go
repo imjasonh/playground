@@ -24,16 +24,16 @@ const testTime = "1767323045 +0000"
 // merge controller changed in its copy to the external repository. The
 // policy queues branches, so b is at the front of main's queue at its
 // current head.
-func landAs(t *testing.T, f *fixture, b *gitk8s.TrackedBranch, landing string) error {
+func landAs(t *testing.T, f *fixture, b *gitk8s.Branch, landing string) error {
 	t.Helper()
 	return landWith(t, f, b, landing, git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, nil)
 }
 
 // landWith is landAs with id as the merge controller's identity. If signer
-// isn't nil, the TrackedRepository's signing Secret holds its key. Only the
+// isn't nil, the Repository object's signing Secret holds its key. Only the
 // sync may change the external repository, so landWith fails the test if
 // the merge controller does.
-func landWith(t *testing.T, f *fixture, b *gitk8s.TrackedBranch, landing string, id git.Identity, signer *gittest.Signer) error {
+func landWith(t *testing.T, f *fixture, b *gitk8s.Branch, landing string, id git.Identity, signer *gittest.Signer) error {
 	t.Helper()
 	p := *b.Spec.Merge
 	p.Landing = landing
@@ -58,7 +58,7 @@ func landWith(t *testing.T, f *fixture, b *gitk8s.TrackedBranch, landing string,
 
 // branches returns a fixture, its branch c/x from fixture.branches, and
 // its working repository.
-func branches(t *testing.T) (*fixture, *gitk8s.TrackedBranch, *gittest.Work) {
+func branches(t *testing.T) (*fixture, *gitk8s.Branch, *gittest.Work) {
 	t.Helper()
 	f := newFixture(t)
 	return f, f.branches(), f.work
@@ -67,7 +67,7 @@ func branches(t *testing.T) (*fixture, *gitk8s.TrackedBranch, *gittest.Work) {
 // refresh pushes the working repository's current commit to c/x, syncs the
 // mirror, and gives b fresh, passing results for it, like the repositories
 // controller and the checks do.
-func refresh(t *testing.T, f *fixture, b *gitk8s.TrackedBranch) {
+func refresh(t *testing.T, f *fixture, b *gitk8s.Branch) {
 	t.Helper()
 	f.work.Push("c/x")
 	f.fetch()
@@ -80,7 +80,7 @@ func refresh(t *testing.T, f *fixture, b *gitk8s.TrackedBranch) {
 
 // withHistoryCheck adds dco, a check whose passing result doesn't have
 // filesOnly, such as one that reads commit messages, to b's merge policy.
-func withHistoryCheck(b *gitk8s.TrackedBranch) {
+func withHistoryCheck(b *gitk8s.Branch) {
 	dco := gitk8s.CheckPolicy{Name: "dco"}
 	if p := *b.Spec.Merge; !slices.Contains(p.Checks, dco) {
 		p.Checks = append(p.Checks[:len(p.Checks):len(p.Checks)], dco)
@@ -90,7 +90,7 @@ func withHistoryCheck(b *gitk8s.TrackedBranch) {
 }
 
 // moveParent pushes a commit that writes a file to main, and leaves w on c/x.
-func moveParent(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work, path, content string) {
+func moveParent(t *testing.T, b *gitk8s.Branch, w *gittest.Work, path, content string) {
 	t.Helper()
 	head := w.Git("rev-parse", "HEAD")
 	w.Branch("main", b.Spec.ParentHead)
@@ -101,7 +101,7 @@ func moveParent(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work, path, co
 }
 
 // mergeParent merges main into c/x, like check-base.
-func mergeParent(b *gitk8s.TrackedBranch, w *gittest.Work) {
+func mergeParent(b *gitk8s.Branch, w *gittest.Work) {
 	w.Git("merge", "--quiet", "-m", "Merge main into c/x\n\nGit-K8s-Fixer: base", b.Spec.ParentHead)
 }
 
@@ -408,7 +408,7 @@ func TestRebaseLanding(t *testing.T) {
 }
 
 // Squash and rebase landings sign the commits that they make with the
-// TrackedRepository's key, including the squashed or rebased commits that the
+// Repository object's key, including the squashed or rebased commits that the
 // merge controller pushes to the branch for the checks.
 func TestLandingsSign(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
@@ -587,11 +587,11 @@ func TestRewriteWithNothingToLand(t *testing.T) {
 // lands it, because it only needs the head's files.
 func TestRebaseNeedsRebase(t *testing.T) {
 	for name, tt := range map[string]struct {
-		setup   func(*testing.T, *gitk8s.TrackedBranch, *gittest.Work)
+		setup   func(*testing.T, *gitk8s.Branch, *gittest.Work)
 		problem string
 	}{
 		"conflict resolved in a merge": {
-			setup: func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) {
+			setup: func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) {
 				moveParent(t, b, w, "x.txt", "main\n")
 				w.Git("merge", "--quiet", "--no-commit", "-s", "ours", b.Spec.ParentHead)
 				w.Write("x.txt", "x\nmain\n")
@@ -600,7 +600,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 			problem: "conflicts in x.txt",
 		},
 		"merge that changes files": {
-			setup: func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) {
+			setup: func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) {
 				moveParent(t, b, w, "m.txt", "m\n")
 				w.Git("merge", "--quiet", "--no-commit", "--no-ff", b.Spec.ParentHead)
 				w.Write("e.txt", "e\n")
@@ -609,7 +609,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 			problem: "because merge commits in the branch change files, and a rebase leaves merges out",
 		},
 		"unrelated history": {
-			setup: func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) {
+			setup: func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) {
 				root := w.Git("commit-tree", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "-m", "unrelated")
 				w.Git("merge", "--quiet", "--allow-unrelated-histories", "-m", "Merge unrelated", root)
 			},
@@ -721,17 +721,17 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 // needs a person. A branch that the landing keeps as it is still lands by
 // fast-forward, because the merge controller doesn't read its commits.
 func TestLandingLimits(t *testing.T) {
-	type setup func(*testing.T, *gitk8s.TrackedBranch, *gittest.Work)
+	type setup func(*testing.T, *gitk8s.Branch, *gittest.Work)
 	many := func(n int) setup {
-		return func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) { commitMany(t, w, n) }
+		return func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) { commitMany(t, w, n) }
 	}
-	big := func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) { commitBig(t, w) }
-	bigOnParent := func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) {
+	big := func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) { commitBig(t, w) }
+	bigOnParent := func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) {
 		w.Branch("c/x", b.Spec.ParentHead)
 		commitBig(t, w)
 	}
 	merged := func(s setup) setup {
-		return func(t *testing.T, b *gitk8s.TrackedBranch, w *gittest.Work) {
+		return func(t *testing.T, b *gitk8s.Branch, w *gittest.Work) {
 			s(t, b, w)
 			moveParent(t, b, w, "m.txt", "m\n")
 			mergeParent(b, w)

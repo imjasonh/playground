@@ -10,7 +10,7 @@ import (
 )
 
 func TestRemote(t *testing.T) {
-	repo := &gitk8s.Repository{Object: kube.Meta("app", nil)}
+	repo := &gitk8s.RepositoryView{Object: kube.Meta("app", nil)}
 	repo.Namespace = "team"
 	ctx, _ := kube.Fake(t.Context(), repo)
 	r, err := mirror.Remote(ctx, repo)

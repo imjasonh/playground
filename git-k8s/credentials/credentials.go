@@ -24,7 +24,7 @@ import (
 // program's service account for a token for OctoSTS.GitIdentity, so it must
 // run in a reconcile. The Secret isn't cached, and the GitHub token is
 // cached until shortly before it expires.
-func Remote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func Remote(ctx context.Context, repo *gitk8s.RepositoryView) (git.Remote, error) {
 	if sts := repo.Spec.OctoSTS; sts != nil && sts.GitIdentity != "" {
 		return octoSTSRemote(ctx, repo)
 	}

@@ -1,7 +1,7 @@
 # git-k8s
 
 git-k8s runs a branch workflow on Kubernetes. It tracks a git repository's
-branches as `TrackedBranch` objects, and keeps a copy of the repository on a git
+branches as `Branch` objects, and keeps a copy of the repository on a git
 server in the cluster, the mirror. It runs checks on branches that propose
 changes to another branch, and checks can push commits that fix what they
 find. When the parent's merge policy passes, git-k8s lands the branch on the
@@ -13,19 +13,25 @@ It's a rewrite of [imjasonh/git-k8s](https://github.com/imjasonh/git-k8s)
 on [`kube`](../kube/), the controller framework in this repository. The
 module imports `kube` at head with `replace github.com/imjasonh/playground/kube => ../kube`.
 
-The kinds are `TrackedRepository` and `TrackedBranch`, with the short names
-`gkrepo` and `gkbranch`, because Flux's source-controller already defines a
-`GitRepository` kind with the plural `gitrepositories` and the short name
-`gitrepo`. On a cluster that runs both, kubectl resolves each of those names
-to only one of the two kinds.
+git-k8s defines two kinds in the group `git-k8s.imjasonh.com`: `Repository`,
+with the short name `repo`, and `Branch`, with the short name `branch`. Both
+are in the category `git-k8s`, so `kubectl get git-k8s` lists the objects of
+both kinds. They used to be `GitRepository` and `GitBranch`, but Flux's
+source-controller defines a `GitRepository` kind with the same plural,
+`gitrepositories`, and short name, `gitrepo`, and on a cluster that runs
+both, kubectl resolves each of those names to only one of the two kinds.
+Crossplane's GitHub provider defines `Repository` and `Branch` kinds too, in
+the group `repo.github.upbound.io`, so the commands in this README use the
+full resource names, `repositories.git-k8s.imjasonh.com` and
+`branches.git-k8s.imjasonh.com`.
 
 ## How it works
 
-You write a `TrackedRepository`:
+You write a `Repository` object:
 
 ```yaml
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: TrackedRepository
+kind: Repository
 metadata:
   name: app
 spec:
@@ -65,9 +71,9 @@ set to `http:https`. Its git commands put `--end-of-options` before every
 URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
-Put credentials in `secretRef`, not in `url`. `kubectl get trackedrepositories`
-shows each URL, and `git-k8s-deps` copies it into the specs of its update
-Pods.
+Put credentials in `secretRef`, not in `url`.
+`kubectl get repositories.git-k8s.imjasonh.com` shows each URL, and
+`git-k8s-deps` copies it into the specs of its update Pods.
 
 The `git-k8s` program, which this README calls the core program, serves the
 mirror and an endpoint that accepts check results, and runs four
@@ -80,11 +86,11 @@ endpoint share one `kube.Serve` handler, and each controller is a
   source of truth, and checks fetch from it and push to it. The external
   repository is a downstream copy. See [The mirror](#the-mirror).
 - The **repositories** controller syncs each copy with its external
-  repository, and declares a `TrackedBranch` for each tracked branch in the copy
-  with `kube.Own`. The spec holds the branch's head, its parent's head, and
-  the parent's merge policy. When a branch disappears, kube deletes its
-  `TrackedBranch`, because the reconcile stops declaring it.
-- Each **check** controller reconciles a view of `TrackedBranch` without a
+  repository, and declares a `Branch` object for each tracked branch in the
+  copy with `kube.Own`. The spec holds the branch's head, its parent's head,
+  and the parent's merge policy. When a branch disappears, kube deletes its
+  `Branch` object, because the reconcile stops declaring it.
+- Each **check** controller reconciles a view of `Branch` objects without a
   status, so it can't write status. It reads its last result through a view
   that declares only its own entry in `status.checks`, so it never sees
   another check's result. It sends each new result to the core program.
@@ -108,7 +114,7 @@ The core program's fourth controller, **check-runs**, copies check results
 to GitHub as check runs. See [Check runs](#check-runs).
 
 The checks and the merge controller read each branch's repository as a
-`gitk8s.Repository`, a `TrackedRepository` without its status, so the
+`gitk8s.RepositoryView`, a `Repository` object without its status, so the
 repositories controller's status writes don't run them again.
 
 Git objects live in the mirror's copies, and each check that reads files
@@ -117,7 +123,8 @@ into Kubernetes objects. Apart from [events](#events), which the API server
 deletes after an hour by default, no object records a single push or check
 run, so the API server holds a bounded amount of state.
 
-After a branch lands, `kubectl get trackedbranches` shows what's still open:
+After a branch lands, `kubectl get branches.git-k8s.imjasonh.com` shows
+what's still open:
 
 ```
 NAME                    BRANCH   HEAD                                       PARENT   STATE              QUEUE   AGE
@@ -127,7 +134,7 @@ app-c-two-de141ef616    c/two    62ebc5163be79d7963293a7e4c6152a967ed9838   main
 app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                                       48s
 ```
 
-The `Landed` condition on each `TrackedBranch` that has a parent says whether
+The `Landed` condition on each `Branch` object that has a parent says whether
 the merge controller landed the branch, and `STATE` repeats the condition's
 reason. The condition is `True` only when the controller lands the branch,
 so `kubectl wait --for=condition=Landed` doesn't return for a branch that
@@ -152,9 +159,9 @@ is a branch's place in its parent's [merge queue](#merge-queue).
 
 ## The mirror
 
-The mirror serves the copy of each `TrackedRepository` at `/NAMESPACE/NAME.git`.
+The mirror serves each `Repository` object's copy at `/NAMESPACE/NAME.git`.
 `generate` installs the core program behind the Service `git-k8s` in the
-namespace `git-k8s`, so the copy of the `TrackedRepository` `app` in the
+namespace `git-k8s`, so the copy for the `Repository` object `app` in the
 namespace `team` is at `http://git-k8s.git-k8s.svc/team/app.git`. The
 Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens, and where the core program also serves the
@@ -173,7 +180,7 @@ and labels, which it uses in the
 The mirror acknowledges a push as soon as its copy has it, and syncs it to
 the external repository afterward, so git-k8s keeps working while the
 external repository is down. After each push, the mirror triggers a
-reconcile of the `TrackedRepository` with `kube.Trigger`, and the merge
+reconcile of the `Repository` object with `kube.Trigger`, and the merge
 controller does the same after each landing. The reconcile pushes each
 branch that changed only in the copy to the external repository with
 `git push --force-with-lease`, so it never overwrites a change that it
@@ -190,7 +197,7 @@ side deletes it on the other, unless the other side added commits to the
 branch since they last synced. Then the branch diverges, and neither side
 changes. See [Divergence](#divergence).
 
-The `ExternalSynced` condition on each `TrackedRepository` says whether the
+The `ExternalSynced` condition on each `Repository` object says whether the
 external repository has every change in the copy:
 
 | Status | Reason | Meaning |
@@ -207,21 +214,21 @@ After a fetch or a push fails, the controller tries again within 30
 seconds, or within `pollInterval` if that's shorter, and doesn't push until
 then. Until a copy has fetched from its external repository once, the
 mirror answers requests for it with `503 Service Unavailable`, and the
-`TrackedRepository`'s `Ready` condition says why, with the reason `FetchFailed`
+`Repository` object's `Ready` condition says why, with the reason `FetchFailed`
 or `CredentialsUnavailable`. Each git command stops after the core
 program's `-git-timeout`, 5 minutes by default, and git doesn't resume a
 fetch that stopped, so for an external repository whose first fetch takes
 longer, raise `-git-timeout`.
 
-When you delete a `TrackedRepository`, the controller pushes the copy's last
+When you delete a `Repository` object, the controller pushes the copy's last
 changes to the external repository and then deletes the copy. While the
 external repository lacks a change, because the sync fails or a branch
-diverged, the `TrackedRepository` stays, and its `Synced` condition says why. It
+diverged, the `Repository` object stays, and its `Synced` condition says why. It
 also stays while the mirror can't compare a branch's heads. To delete it
 anyway, with the changes that the external repository lacks, remove the
 finalizer `kube.imjasonh.github.io/repositories`.
 
-Each `TrackedRepository` and `TrackedBranch` has a `Synced` condition, which
+Each `Repository` object and `Branch` object has a `Synced` condition, which
 kube sets after every reconcile of the object. After a reconcile succeeds,
 `Synced` is `True` with the reason `Reconciled`. After one fails, it's
 `False`, and its message says what failed. Its reason is then
@@ -229,7 +236,7 @@ kube sets after every reconcile of the object. After a reconcile succeeds,
 such as an invalid `pollInterval`. After a `ReconcileError`, kube retries
 the reconcile with backoff. After a `PermanentError`, it reconciles the
 object again when the object changes. kube doesn't reconcile a
-`TrackedRepository` that's being deleted, so its other conditions, such as
+`Repository` object that's being deleted, so its other conditions, such as
 `ExternalSynced`, keep their values from before the deletion. If the
 deletion can't finish, `Synced` is `False`, and its message says why. For
 more about `Synced`, see
@@ -348,7 +355,7 @@ while a check pushes a fix on top of that commit to the mirror. The mirror
 overwrites neither side. It keeps the external repository's head at
 `refs/git-k8s/downstream/heads/BRANCH` in the copy, and the head where the
 two sides last synced at `refs/git-k8s/synced/heads/BRANCH`. The merge
-controller records both in the `TrackedBranch`'s status:
+controller records both in the `Branch` object's status:
 
 ```yaml
 status:
@@ -360,7 +367,7 @@ status:
 ```
 
 If the external repository deleted the branch, `commit` and `ref` are empty.
-If the copy deleted it, the branch has no `TrackedBranch`, and only the
+If the copy deleted it, the branch has no `Branch` object, and only the
 `ExternalSynced` condition lists it.
 
 The mirror compares each side's head with the head where they last synced,
@@ -475,7 +482,7 @@ git push --force-with-lease=refs/heads/c/auth:COPY_HEAD MIRROR HEAD:refs/heads/c
 Replace the following:
 
 - `MIRROR`: the copy's URL, such as `http://git-k8s.git-k8s.svc/team/app.git`
-- `COPY_HEAD`: the copy's head, which is the `TrackedBranch`'s `spec.head`
+- `COPY_HEAD`: the copy's head, which is the `Branch` object's `spec.head`
 - `COMMIT`: `status.diverged.commit`
 - `BASE`: `status.diverged.base`
 
@@ -528,16 +535,16 @@ reads credentials or gets tokens for external repositories, and is where
 other ways to authenticate belong.
 
 The mirror reaches external repositories only over the network. A `url`
-that's a local path or a `file` URL fails, so a `TrackedRepository` can't read
+that's a local path or a `file` URL fails, so a `Repository` object can't read
 another namespace's copy from the core program's volume.
 
 Over the network, though, the core program reaches any address that its Pod
 can, such as another namespace's Service, a node, or a cloud's metadata
-service. Whoever can create a `TrackedRepository` can make the core program send
+service. Whoever can create a `Repository` object can make the core program send
 git's HTTP requests to those addresses, even when NetworkPolicies keep their
 own Pods from reaching them. The address can be in the `url`, or in a
 redirect from the server that the `url` names, because git follows a
-redirect of its first request. The `TrackedRepository`'s conditions show git's
+redirect of its first request. The `Repository` object's conditions show git's
 exit status and git's own messages, such as
 `fatal: unable to access 'https://10.0.0.1/app.git/': The requested URL returned error: 403`.
 They say whether the address answered, and with what HTTP status, but leave
@@ -547,12 +554,12 @@ core program logs it instead.
 `generate` doesn't limit where the core program connects. To limit it, add
 an egress NetworkPolicy for the core program's Pod that allows only the API
 server, DNS, your external repositories, and Octo STS and GitHub if you use
-them. Without one, grant `create` on `trackedrepositories` only to people who
-may send those requests.
+them. Without one, grant `create` on `repositories.git-k8s.imjasonh.com`
+only to people who may send those requests.
 
 ## Events
 
-The controllers record an event about a `TrackedBranch` each time they push a
+The controllers record an event about a `Branch` object each time they push a
 fix to the branch, land it on its parent, or delete it, in the mirror's
 copy. The repositories controller then pushes the change to the external
 repository, as
@@ -568,9 +575,10 @@ a branch diverged:
 | `Landed` | `merge` | The merge controller fast-forwarded the parent to the branch, or squashed or rebased the branch onto the parent. |
 | `DeletedBranch` | `merge` | The merge controller deleted the branch after it landed. |
 
-`kubectl describe trackedbranch TRACKEDBRANCH` lists a branch's events. After
-the merge controller deletes a branch, the repositories controller deletes its
-`TrackedBranch`, so list the namespace's events instead:
+`kubectl describe branches.git-k8s.imjasonh.com BRANCH_OBJECT` lists the
+events about a `Branch` object. After the merge controller deletes a branch,
+the repositories controller deletes its `Branch` object, so list the
+namespace's events instead:
 
 ```sh
 kubectl get events --sort-by=.metadata.creationTimestamp
@@ -579,10 +587,10 @@ kubectl get events --sort-by=.metadata.creationTimestamp
 After `c/fmt` in the end-to-end test lands, the output looks like this:
 
 ```
-LAST SEEN   TYPE     REASON          OBJECT                           MESSAGE
-14s         Normal   PushedFix       trackedbranch/app-c-fmt-793d86522b   pushed 5d0c2e9a71b4 to c/fmt: 1 of 2 Go files need gofmt: util/add.go
-9s          Normal   Landed          trackedbranch/app-c-fmt-793d86522b   fast-forwarded main from 0e4f8a2c9d13 to c/fmt at 5d0c2e9a71b4
-9s          Normal   DeletedBranch   trackedbranch/app-c-fmt-793d86522b   deleted c/fmt at 5d0c2e9a71b4 after it landed on main
+LAST SEEN   TYPE     REASON          OBJECT                        MESSAGE
+14s         Normal   PushedFix       branch/app-c-fmt-793d86522b   pushed 5d0c2e9a71b4 to c/fmt: 1 of 2 Go files need gofmt: util/add.go
+9s          Normal   Landed          branch/app-c-fmt-793d86522b   fast-forwarded main from 0e4f8a2c9d13 to c/fmt at 5d0c2e9a71b4
+9s          Normal   DeletedBranch   branch/app-c-fmt-793d86522b   deleted c/fmt at 5d0c2e9a71b4 after it landed on main
 ```
 
 kube drops events when it falls behind on writing them, and the API server
@@ -595,7 +603,7 @@ grant too, because the `checks` package that every check uses records
 
 ## GitHub repositories
 
-For a repository on github.com, a `TrackedRepository` can name
+For a repository on github.com, a `Repository` object can name
 [Octo STS](https://github.com/octo-sts/app) identities instead of a Secret:
 
 ```yaml
@@ -620,7 +628,7 @@ checks, `git-k8s-deps`, `check-gotest`'s test Pods, and the agent Pods of
 `check-review`, `check-conflicts`, and `check-deps` fetch from the mirror, so
 `gotest`, `review`, `conflicts`, and `deps` work for a private repository
 too. The update Pods of `git-k8s-deps` fetch from the external repository,
-without credentials when the `TrackedRepository` has no `secretRef`, so with
+without credentials when the `Repository` object has no `secretRef`, so with
 Octo STS, `git-k8s-deps` updates only a public repository. The core program
 publishes [check runs](#check-runs) with tokens for `checkRunsIdentity`, and
 publishes none without it. The URL must have the form
@@ -665,9 +673,9 @@ publishes none without it. The URL must have the form
    Replace the following:
 
    - `ISSUER`: the cluster's issuer
-   - `NAMESPACE`: the `TrackedRepository`'s namespace
+   - `NAMESPACE`: the `Repository` object's namespace
 
-4. Apply the `TrackedRepository`.
+4. Apply the `Repository` object.
 
 A service account token's subject is `system:serviceaccount:NAMESPACE:NAME`.
 When you install the core program with `generate`, as [Install](#install)
@@ -676,11 +684,11 @@ describes, it runs as the service account `git-k8s` in the namespace
 trust policies name only its service account. If you install it under
 another name or in another namespace, change `subject` to match.
 
-Each token's audience is `octo-sts.dev/` followed by the `TrackedRepository`'s
+Each token's audience is `octo-sts.dev/` followed by the `Repository` object's
 namespace. The core program uses the same service account for every
-`TrackedRepository`, so the audience is the part of a token that names the
+`Repository` object, so the audience is the part of a token that names the
 namespace it's for. A trust policy that requires your namespace's audience
-refuses the tokens that git-k8s requests for a `TrackedRepository` in another
+refuses the tokens that git-k8s requests for a `Repository` object in another
 namespace, even one that names your repository and identities. Without an
 `audience`, a trust policy accepts only `octo-sts.dev`, which git-k8s never
 requests.
@@ -694,7 +702,7 @@ The core program keeps each GitHub token in memory and gets a new one 10
 minutes before it expires. If an exchange fails, it uses the old token until
 a minute before it expires, and asks Octo STS again after 30 seconds. When
 the mirror can't get a token before its first fetch of a repository, the
-`TrackedRepository`'s `Ready` condition is `False` with the reason
+`Repository` object's `Ready` condition is `False` with the reason
 `CredentialsUnavailable`. After that, its `ExternalSynced` condition is
 `False` with the reason `SyncFailed`, and checks keep working on the copy.
 Both messages include Octo STS's answer, such as
@@ -704,7 +712,7 @@ take that long to apply.
 
 ### Check runs
 
-When a `TrackedRepository` names a `checkRunsIdentity`, the core program's
+When a `Repository` object names a `checkRunsIdentity`, the core program's
 check-runs controller copies each check's result to GitHub as a check run on
 the commit that the result is for. GitHub shows a commit's check runs on the
 commit and on its pull requests. Each check run is named `git-k8s/CHECK`,
@@ -722,7 +730,7 @@ completed one again, which GitHub's documentation doesn't describe. GitHub
 shows the newest, and the old one keeps its result.
 
 A check run belongs to a commit, not to a branch. When two branches of a
-`TrackedRepository` are at the same commit, they share the check run for each
+`Repository` object are at the same commit, they share the check run for each
 check, and it shows the result that changed last, for either branch.
 
 The check run's title is the result's state. Its summary is the result's
@@ -746,7 +754,7 @@ The controller keeps what it wrote only in memory. If the core program
 restarts after a branch leaves a commit and before the controller reconciles
 the change, the check run on that commit stays in
 progress. So does a check run that's in progress when the last of a
-repository's `TrackedBranch` objects is deleted or the `TrackedRepository` loses
+repository's `Branch` objects is deleted or the `Repository` object loses
 its `checkRunsIdentity`. After a restart, the controller finds each branch's
 check run on GitHub again, and writes the branch's result if the check run
 shows something else. It doesn't know which branch's result changed last
@@ -809,9 +817,9 @@ with its own backoff. Rate limits and errors don't hold back checks or
 landings.
 
 To show whether the check-runs identity works, the repositories controller
-sets the `CheckRunsTokenIssued` condition on the `TrackedRepository`, which is
+sets the `CheckRunsTokenIssued` condition on the `Repository` object, which is
 `False` with Octo STS's answer when Octo STS doesn't issue a token. The
-`TrackedRepository` stays `Ready` either way.
+`Repository` object stays `Ready` either way.
 
 ### Security
 
@@ -826,13 +834,13 @@ those, so the checks can't request tokens at all.
 The core program sends the service account tokens for Octo STS only to Octo
 STS, and GitHub tokens only to GitHub. For tests, its `-fake-github` flag
 points it at a fake GitHub and Octo STS instead. It's a flag and not a
-`TrackedRepository` field, so only whoever installs the core program can choose
+`Repository` field, so only whoever installs the core program can choose
 where its tokens go. The end-to-end test's git server runs such a fake,
 which checks each service account token with a TokenReview, because Octo
 STS can't reach a kind cluster's issuer.
 
 A trust policy's audience ties it to one namespace, so anyone who can create
-a `TrackedRepository` in that namespace can use the trust policy's permissions.
+a `Repository` object in that namespace can use the trust policy's permissions.
 Grant that only to people who may push to the repository. The audience holds
 only the namespace's name, so a namespace that's deleted and created again
 with the same name gets the trust policies that named the old one.
@@ -865,7 +873,7 @@ pushes to the mirror, which applies the rules in
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. The merge ignores `.gitattributes` files, so that a branch can't choose how its own conflicts merge. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. It fails on a file that doesn't parse or is larger than 8 MiB, and on a head whose list of files from `git ls-tree` is larger than 16 MiB, about 150,000 files. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
-| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `TrackedBranch` names the branch's head, or a commit whose change the head makes too, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push that changes the code needs a new approval. See [Approve a branch](#approve-a-branch). |
+| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `Branch` object names the branch's head, or a commit whose change the head makes too, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push that changes the code needs a new approval. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and records the agent's summary and the run's token counts in its notes. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
 | `check-deps` | `deps` | On a dependency branch, passes when the `gotest` check passes. When the tests fail, it has an AI agent change the code to fit the new versions, and pushes the agent's fix. It passes on other branches. See [Dependency updates](#dependency-updates). |
@@ -880,11 +888,12 @@ fix push the same commit.
 
 ### Approve a branch
 
-An approval is two annotations on the `TrackedBranch`: `approve`, which names
+An approval is two annotations on the `Branch` object: `approve`, which names
 the commit, and `approved-by`, which names you. Set both in one request:
 
 ```sh
-kubectl annotate --overwrite trackedbranch TRACKEDBRANCH git-k8s.imjasonh.com/approve=SHA \
+kubectl annotate --overwrite branches.git-k8s.imjasonh.com BRANCH_OBJECT \
+  git-k8s.imjasonh.com/approve=SHA \
   git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 ```
 
@@ -913,13 +922,13 @@ check fails, and the branch needs a new approval.
 The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 
 - Setting, changing, or removing the `approve` or `approved-by` annotation
-  requires the `approve` verb on the `TrackedBranch`. `generate` grants that
+  requires the `approve` verb on the `Branch` object. `generate` grants that
   verb to no program, so grant it to the people who approve. The policy
-  checks for the verb in the `TrackedBranch` object's namespace, so run these
-  commands for each namespace that has a `TrackedRepository`:
+  checks for the verb in the `Branch` object's namespace, so run these
+  commands for each namespace that has a `Repository` object:
 
   ```sh
-  kubectl -n NAMESPACE create role approver --verb=get,list,watch,patch,approve --resource=trackedbranches.git-k8s.imjasonh.com
+  kubectl -n NAMESPACE create role approver --verb=get,list,watch,patch,approve --resource=branches.git-k8s.imjasonh.com
   kubectl -n NAMESPACE create rolebinding approver --role=approver --group=GROUP
   ```
 
@@ -940,7 +949,8 @@ when you set or change `approve`, and removes it when you remove `approve`,
 so one annotation approves:
 
 ```sh
-kubectl annotate --overwrite trackedbranch TRACKEDBRANCH git-k8s.imjasonh.com/approve=SHA
+kubectl annotate --overwrite branches.git-k8s.imjasonh.com BRANCH_OBJECT \
+  git-k8s.imjasonh.com/approve=SHA
 ```
 
 The mutating policy leaves `approved-by` alone when the request changes it
@@ -1033,8 +1043,8 @@ without a `README.md`:
 
 ```go
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
-	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"readme,omitempty"`
@@ -1042,7 +1052,7 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
@@ -1077,7 +1087,7 @@ commits with `in.Replay`, which also need `SigningKey: signing.Key` to
 [sign the commits](#sign-commits). `generate` grants a program what its
 packages call. It mounts the mirror's token in the Pods of each program
 that uses `mirror.Remote`, and lets each program that uses `signing.Key`
-read Secrets. A check that reads only the `TrackedBranch` leaves both out, so
+read Secrets. A check that reads only the `Branch` object leaves both out, so
 its program gets no token for the mirror and can't read Secrets.
 
 A verdict's `Outputs` are for merge gates, such as a risk level. Its `Notes`
@@ -1099,7 +1109,7 @@ note values to 1,024 bytes, the most that the core program accepts.
 
 A check runs again when the branch's head changes, and with `UsesParent`,
 when the parent's head changes. `Always` runs it on every reconcile, for a
-check that reads more of the `TrackedBranch` than its heads, such as an
+check that reads more of the `Branch` object than its heads, such as an
 annotation. `Stale` runs it again when something that it reads with
 `kube.Get` makes a finished result out of date, the way `check-base` runs
 again when its branch reaches the front of the merge queue.
@@ -1187,8 +1197,8 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   first, then the branch that has waited longest. A new head, a retry after
   a failed fetch, or a replacement for a deleted Pod waits behind the
   branches that are already waiting, unless its branch is at the front of a
-  queue. The times and the places in the queues are in the `TrackedBranch`
-  status, so a restarted check keeps the order.
+  queue. The times and the places in the queues are in the status of the
+  `Branch` objects, so a restarted check keeps the order.
 - Only the front of a queue lands, so a front that waits for a Pod holds up
   every branch behind it. The rest of a queue waits in line with the
   branches that aren't queued, because the `base` check merges the parent
@@ -1199,10 +1209,10 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   because a branch whose tests haven't passed can't join a queue. A branch
   counts as the front once the merge controller keeps it in the queue at
   its head, moments after the `base` check pushes its merge of the parent.
-  The check reads the places in the queues through a view of `TrackedBranch`
+  The check reads the places in the queues through a view of `Branch` objects
   that declares only `status.queued.head` and `status.queued.position`, so
   it still sees no other check's result, and `generate` grants it no new
-  permissions, because it already lists and watches `TrackedBranch` objects.
+  permissions, because it already lists and watches `Branch` objects.
 - The check counts a Pod from the moment that it declares it, before its
   cache shows the Pod, so a burst of pushes can't start more than
   `-max-pods`. A Pod that never appears stops counting after a minute. If
@@ -1227,7 +1237,7 @@ period ends. A container's first process ignores `SIGTERM` unless it
 handles the signal, and the shell that fetches the head without
 `-go-cache` doesn't, so test Pods set the grace period to 2 seconds, the
 kubelet's minimum, instead of the default 30. Owner references delete the
-Pods with their `TrackedBranch`.
+Pods with their `Branch` object.
 Set `-runtime-class` to run the Pods under a sandboxing runtime such as
 gVisor, and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change
 the rest. If you set `-goproxy`, set the same value on the core program.
@@ -1262,18 +1272,18 @@ counts each test Pod's limits, and a LimitRange with a smaller maximum for
 either resource rejects every test Pod.
 
 The core program owns the NetworkPolicy so that `check-gotest`, which
-creates Pods in every namespace that has a `TrackedBranch`, can't change
-NetworkPolicies. Each `TrackedRepository` owns one policy, `NAME-test-pods`. It
+creates Pods in every namespace that has a `Branch` object, can't change
+NetworkPolicies. Each `Repository` object owns one policy, `NAME-test-pods`. It
 selects the Pods in the repository's namespace that have kube's controller
 label for `check-gotest`, `kube.imjasonh.github.io/controller=check-gotest`,
 which are the Pods that run a branch's code. The policies of the
-`TrackedRepository` objects in a namespace are the same, so each one covers
+`Repository` objects in a namespace are the same, so each one covers
 every test Pod there. The repositories controller declares the policy before the
-`TrackedBranch` objects, so it exists before `check-gotest` starts the first
-test Pod for a new `TrackedRepository`. If someone deletes the policy, the next
-reconcile of the `TrackedRepository` that succeeds creates it again. When you
-delete the last `TrackedRepository` in a namespace, garbage collection deletes
-the policy with the `TrackedBranch` objects, before the test Pods that they own,
+`Branch` objects, so it exists before `check-gotest` starts the first
+test Pod for a new `Repository` object. If someone deletes the policy, the next
+reconcile of the `Repository` object that succeeds creates it again. When you
+delete the last `Repository` object in a namespace, garbage collection deletes
+the policy with the `Branch` objects, before the test Pods that they own,
 so a test Pod that's still running loses the policy's limits until it stops.
 
 The policy selects the cluster's DNS servers as the Pods labeled
@@ -1311,7 +1321,7 @@ it:
   which never change. Test Pods download modules from it, so they don't
   need the internet.
 - Its build caches, one at `/cache/NAMESPACE/REPOSITORY/` for each
-  `TrackedRepository`, hold what the go command compiled, by action ID. The go
+  `Repository` object, hold what the go command compiled, by action ID. The go
   command derives an action ID from everything that goes into a build step,
   such as the source files, the compiler and its flags, and the step's
   dependencies.
@@ -1385,9 +1395,9 @@ With `-go-cache`, a test Pod has three init containers:
    that can write to it. It runs `check-gotest`'s image, and doesn't mount
    the branch's files.
 
-Test Pods run in the `TrackedBranch`'s namespace as its `default` service
+Test Pods run in the `Branch` object's namespace as its `default` service
 account and don't set `imagePullSecrets`, so each namespace that has a
-`TrackedRepository` must be able to pull `check-gotest`'s image. If pulling
+`Repository` object must be able to pull `check-gotest`'s image. If pulling
 from `REGISTRY` needs credentials that the nodes don't have, add an image
 pull secret to the `default` service account in each of those namespaces.
 Without the secret, test Pods wait in `Init:ImagePullBackOff` until
@@ -1686,7 +1696,7 @@ its wait, and the check fetches the head again at once in a new Pod, which
 counts as a run.
 
 The check counts a branch's runs in its notes on the branch's
-`TrackedBranch`, so a branch that's deleted and then pushed again can start
+`Branch` object, so a branch that's deleted and then pushed again can start
 over at 0, and so can a branch with a new name. To cap what agents cost in
 money, also set a spend limit for the Cursor team or account that owns the
 API key.
@@ -2209,13 +2219,13 @@ to the core program's results endpoint:
    the check's service account with the audience `git-k8s-results`, which
    the kubelet renews before it expires.
 2. It sends the result and the token in a `PUT` request to
-   `RESULTS_URL/NAMESPACE/TRACKEDBRANCH/CHECK`. `RESULTS_URL` is the check's
+   `RESULTS_URL/NAMESPACE/BRANCH_OBJECT/CHECK`. `RESULTS_URL` is the check's
    `-results-url` flag, `http://git-k8s.git-k8s.svc/results` by default. The
-   request also names the `TrackedBranch` generation that the check read, and
-   the core program waits until its cache has the `TrackedBranch` at that
-   generation. The check's cache can get a `TrackedBranch` first, so until
-   then, the core program also reads the `TrackedBranch` from the API server,
-   at most once a second, to learn whether it's gone.
+   request also names the generation of the `Branch` object that the check
+   read, and the core program waits until its cache has the `Branch` object
+   at that generation. The check's cache can get a `Branch` object first, so
+   until then, the core program also reads the `Branch` object from the API
+   server, at most once a second, to learn whether it's gone.
 3. The core program verifies the token with a TokenReview for that
    audience, and rejects the result unless the `git-k8s-checks` ConfigMap
    maps the token's service account to a check, as
@@ -2230,7 +2240,7 @@ to the core program's results endpoint:
    result instead of one with a state or size that the core program
    rejects, with a message that says why.
 5. The core program holds the result in memory and starts a reconcile of
-   the `TrackedBranch`. The results controller writes the result with
+   the `Branch` object. The results controller writes the result with
    server-side apply, and the core program answers the request once its
    cache shows the result.
 
@@ -2246,8 +2256,8 @@ and kube retries it, which runs the check again.
 
 If the branch changed since the check read it, the core program answers
 `409 Conflict`, and the check drops the result, because the change runs the
-check again. That includes a `TrackedBranch` that was deleted and created
-again. If the `TrackedBranch` was deleted, the core program answers `410 Gone`
+check again. That includes a `Branch` object that was deleted and created
+again. If the `Branch` object was deleted, the core program answers `410 Gone`
 as soon as the API server shows that, and the check drops the result. Its
 reconcile succeeds, so kube doesn't run the check again. If the core
 program rejects the result with `400 Bad Request`, or the token's service
@@ -2270,7 +2280,7 @@ it's for, and which other fields it has:
   has no `parentCommit`, and it counts for a landing only while its merge
   base is the parent's head.
 
-The core program and the `TrackedBranch` schema reject a result without a scope
+The core program and the `Branch` schema reject a result without a scope
 or without the fields that its scope needs, so a missing field can't make a
 result count for more commits. The `checks` package sets the scope from the
 check's `UsesParent` and `SameChange`, and the verdict's `UsesParent` and
@@ -2282,7 +2292,7 @@ doesn't know, such as one from a later release, as `Pending`.
 The results endpoint and the `git-k8s-check-results` admission policy keep
 each check's service account to its own entry in `status.checks`.
 `generate` grants a program what its packages call, so a check's RBAC rules
-include nothing for `trackedbranches/status`. A check needs no permission to
+include nothing for `branches/status`. A check needs no permission to
 create its results token, because it reads the token that `generate` mounts
 in its Pod. The core program writes only the entry of the check that the
 token's service account runs, so one check's token can't write another
@@ -2338,16 +2348,16 @@ window.
 ### Write a result by hand
 
 The results endpoint accepts only checks' tokens. People who can patch
-`trackedbranches/status` can write a result directly instead, for example to
+`branches/status` can write a result directly instead, for example to
 unblock a branch whose check is broken:
 
 ```sh
-kubectl patch trackedbranch TRACKEDBRANCH --subresource=status --type=merge \
+kubectl patch branches.git-k8s.imjasonh.com BRANCH_OBJECT --subresource=status --type=merge \
   -p '{"status":{"checks":{"gotest":{"commit":"SHA","scope":"Head","state":"Passed","message":"passed by hand"}}}}'
 ```
 
-Replace `TRACKEDBRANCH` with the name of the `TrackedBranch` object, and `SHA`
-with the branch's head. Checks other than `approval` don't run again on commits
+Replace `BRANCH_OBJECT` with the name of the `Branch` object, and `SHA` with
+the branch's head. Checks other than `approval` don't run again on commits
 that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
 parent, such as `base`, or that keeps results for the same change, such as
@@ -2379,9 +2389,9 @@ one side decides it, even if the other side is an error, such as a missing
 output. Without `when`, every listed check must pass.
 
 The repositories controller compiles each `when` when it reads the
-`TrackedRepository`, so a syntax error, a misspelled field such as
+`Repository` object, so a syntax error, a misspelled field such as
 `checks.gofmt.pased`, or a check that the policy doesn't list, such as
-`checks.gofmy.passed`, makes the `TrackedRepository` not `Ready`, with the
+`checks.gofmy.passed`, makes the `Repository` object not `Ready`, with the
 reason `InvalidMergePolicy`, instead of holding branches back later. For a check
 whose name has a hyphen, write `checks["go-vet"].passed`, because CEL reads
 `checks.go-vet` as a subtraction. Each evaluation can cost at most 100,000,
@@ -2437,7 +2447,7 @@ A branch leaves the queue when one of these happens:
 - A squash or rebase landing sets its state to `NeedsRebase`, as
   [Landing methods](#landing-methods) describes. The branch doesn't join
   again until its head or its parent's head changes.
-- Someone deletes the branch, which deletes its `TrackedBranch`.
+- Someone deletes the branch, which deletes its `Branch` object.
 - Its parent goes away, or the parent's merge policy goes away or can't be
   evaluated.
 
@@ -2448,8 +2458,8 @@ its place while kube tries the reconcile again.
 
 Three choices shape the queue:
 
-- **Where the queue lives.** The queue is in `TrackedBranch` status, so it
-  needs no new object type, and a controller that restarts continues from
+- **Where the queue lives.** The queue is in the status of `Branch` objects,
+  so it needs no new object type, and a controller that restarts continues from
   the queue that it wrote. Only the merge controller's reconcile of the
   parent writes `status.queue`, and kube runs one reconcile of an object at
   a time. Each reconcile reads the last queue from the API server, because
@@ -2513,7 +2523,7 @@ such as a change that the parent already has.
 The merge controller commits as
 `git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and
 `-identity-email` flags change, and [signs](#sign-commits) the commits if
-the `TrackedRepository` names a signing key. It takes commit times from the
+the `Repository` object names a signing key. It takes commit times from the
 commits that it copies, so making the same landing again makes the same
 commits.
 
@@ -2677,7 +2687,7 @@ copy, so a refusal doesn't stop a landing or a rewrite, and the checks run
 on a rewritten branch's new commit in the copy. The mirror pushes each
 branch on its own, so the parent still reaches the external repository, and
 the external repository keeps the branch where it was. The
-`TrackedRepository`'s `ExternalSynced` condition is then `False` with the reason
+`Repository` object's `ExternalSynced` condition is then `False` with the reason
 `SyncFailed` and a message such as
 `the external repository refused updates to c/auth ([remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/auth)`,
 which ends with the messages that the external repository sent, and the
@@ -2699,8 +2709,8 @@ moves the branch to for another round of checks. A fast-forward landing
 makes none, because it moves the parent to a commit that's already on the
 branch. `git-k8s-deps` makes the commits of
 [dependency updates](#dependency-updates). To sign these commits, make an
-SSH key for signing only, put it in its own Secret in the `TrackedRepository`'s
-namespace, and name the Secret in the `TrackedRepository`:
+SSH key for signing only, put it in its own Secret in the `Repository` object's
+namespace, and name the Secret in the `Repository` object:
 
 ```sh
 ssh-keygen -t ed25519 -N '' -C git-k8s -f git-k8s-signing
@@ -2858,7 +2868,7 @@ GitHub's branch protection rules and rulesets apply to the mirror's pushes:
 
 When GitHub refuses the mirror's push of a check's commit, a landing, or a
 branch from `git-k8s-deps`, the change stays in the mirror's copy, and the
-reason that GitHub gives shows up on the `TrackedRepository`. Its
+reason that GitHub gives shows up on the `Repository` object. Its
 `ExternalSynced` condition is `False` with the reason `SyncFailed`, and its
 message names each branch that GitHub refused and ends with GitHub's
 messages, which name the rule. The mirror tries again at each poll, as
@@ -3162,7 +3172,7 @@ branches there, so the core program must give its service account the
 controller's prefix, as [The mirror](#the-mirror) describes. The controller
 also refuses to push branches outside the prefix. It reads Secrets only to
 sign its commits, and `config/policy.yaml` stops it from approving or
-changing `TrackedBranch` objects.
+changing `Branch` objects.
 
 The mirror accepts a token that's bound to a Pod only from a check's Pod, so
 the `prepare` container fetches the parent from the external repository
@@ -3198,14 +3208,14 @@ prefix, as [The mirror](#the-mirror) describes.
 
 Upgrade the core program first, because it installs `config/policy.yaml`
 when it starts, and the second policy there stops `git-k8s-deps` from
-changing `TrackedBranch` objects. With `-install-policies=false`, apply
+changing `Branch` objects. With `-install-policies=false`, apply
 `config/policy.yaml` instead. The policy recognizes `git-k8s-deps` as the
 service account `git-k8s-deps` in the namespace `git-k8s-deps`, where
 `generate` installs it unless you set `-namespace`. For another service
 account, add an entry with an empty value for it to the `git-k8s-checks`
 ConfigMap, as [Check service accounts](#check-service-accounts) describes.
 The policy then treats the service account as a check, which can't change
-`TrackedBranch` objects.
+`Branch` objects.
 
 `check-deps` takes `-prefix`, which must match the controller's, and the
 flags in the `check-review` table. It exits at startup when `-prefix` isn't a
@@ -3278,7 +3288,7 @@ To give test Pods a module proxy and a shared build cache, also install
 shows how.
 
 To upgrade, install the core program, `git-k8s`, before the checks, as this
-loop does. The core program updates the `TrackedBranch` CustomResourceDefinition
+loop does. The core program updates the `Branch` CustomResourceDefinition
 when it starts, and an older one rejects results with fields that it doesn't
 know, which newer checks can send. A check sends nothing more for a branch
 after a rejected result until the branch changes or the check restarts, so
@@ -3342,7 +3352,7 @@ longest that maintenance can take, plus a minute: 1 hour, 1 minute, and 10
 seconds with the default `-maintenance-timeout`. A newer lock might belong
 to the other Pod. Until the mirror removes a lock, a sync or a
 landing that needs the locked ref fails and tries again later. The
-`TrackedRepository`'s `ExternalSynced` condition names the lock, for example
+`Repository` object's `ExternalSynced` condition names the lock, for example
 with the reason `UpdateFailed` when the sync couldn't update a branch in the
 copy, or `SyncFailed` when the fetch couldn't record the external
 repository's head.
@@ -3372,7 +3382,7 @@ opens the copy deletes the refs that the copy no longer needs, such as those
 of deleted branches, and then runs maintenance if git says that the copy
 needs it. The reconcile logs any failure and goes on. The program removes a
 copy that no reconcile has opened for a week, such as the copy for a
-`TrackedRepository` that no longer exists.
+`Repository` object that no longer exists.
 
 `generate` also writes a Service for the core program, which routes port 80
 to port 8081 of its Pod, where one handler serves both the mirror and the
@@ -3386,8 +3396,8 @@ the Pods of the checks and `git-k8s-deps`, and the checks' test and agent
 Pods, reach port 8081 of the core program's Pod.
 
 `config/policy.yaml` holds four ValidatingAdmissionPolicies, which need
-Kubernetes 1.30 or later. The first rejects every write to `TrackedBranch`
-status by a check's service account, and every change to `status.checks` or
+Kubernetes 1.30 or later. The first rejects every status write to a `Branch`
+object by a check's service account, and every change to `status.checks` or
 `status.diverged` by a service account other than the core program's.
 `status.diverged` names the commit that `check-conflicts` merges or replays.
 Checks have no RBAC rule to write status, so this policy is a backstop for a
@@ -3397,29 +3407,29 @@ the `git-k8s-checks` ConfigMap has an entry for it, as
 `check-NAME` in the namespace `check-NAME`, even without an entry. The second
 stops every git-k8s service account from setting the `approve` and
 `approved-by` annotations, which are for people, and stops checks and
-`git-k8s-deps` from changing a `TrackedBranch` object's spec, labels,
+`git-k8s-deps` from changing a `Branch` object's spec, labels,
 annotations, finalizers, owner references, or `managedFields`. A finalizer
 that nobody removes would keep a deleted branch in its parent's merge
 queue, and an owner reference to a missing object would make garbage
-collection delete the `TrackedBranch` with its approval. The core program
+collection delete the `Branch` object with its approval. The core program
 writes status with server-side apply. When it stops setting a field, the
 API server removes the field only if the core program's entry in
 `managedFields` lists it. Without those entries, a branch that leaves the
 merge queue would keep its place, and at the front of the queue it would
 block every other branch. RBAC also keeps
 every check except `check-gotest`, `check-review`, `check-deps`, and
-`check-conflicts`, which own Pods, from patching `TrackedBranch` objects.
+`check-conflicts`, which own Pods, from patching `Branch` objects.
 `generate` grants that permission to a program that owns objects, such as
 these checks and `git-k8s-deps`, because it can't tell whether an owned
 object needs a finalizer on its owner. The second policy denies the
 annotation that kube adds with that finalizer, so these programs can own
 only namespaced objects in the branch's namespace. The second policy also
-lets only the core program create a `TrackedBranch` or change its spec, which
-the core program copies from the `TrackedRepository`. The spec holds the
+lets only the core program create a `Branch` object or change its spec, which
+the core program copies from the `Repository` object. The spec holds the
 parent's merge policy, so anyone else who could change it, such as an
-approver who can patch a `TrackedBranch`, could land the branch without its
-checks. People can still label and annotate `TrackedBranch` objects. To change
-a merge policy, change the `TrackedRepository`. The first two policies
+approver who can patch a `Branch` object, could land the branch without its
+checks. People can still label and annotate `Branch` objects. To change
+a merge policy, change the `Repository` object. The first two policies
 identify the core program and the checks by the service accounts that
 `generate` installs them with: `git-k8s` in the namespace `git-k8s`, and
 `check-NAME` in the namespace `check-NAME`. The second identifies
@@ -3490,10 +3500,10 @@ The fourth checks who approves, as [Approve a branch](#approve-a-branch)
 describes.
 
 Without the policies, most of that doesn't hold, so the repositories
-controller sets a `PoliciesInstalled` condition on each `TrackedRepository`.
+controller sets a `PoliciesInstalled` condition on each `Repository` object.
 It's `False` until all four policies are installed with bindings that deny.
 
-Each namespace that holds a `TrackedRepository` whose merge policy lists
+Each namespace that holds a `Repository` object whose merge policy lists
 `gotest`, `review`, or `deps`, or lists `conflicts` with `mayPush: true`
 while `check-conflicts` runs with `-agent-image`, must opt in to check Pods
 and enforce the
@@ -3504,7 +3514,7 @@ Pods:
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
 ```
 
-Replace `NAMESPACE` with the namespace of the `TrackedRepository`. The namespace
+Replace `NAMESPACE` with the namespace of the `Repository` object. The namespace
 can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
 `latest`. Until it has both labels, the branch's `gotest`, `review`, or
@@ -3651,11 +3661,11 @@ so it can't send results, or fetch from the mirror or push to it as a
 check. The first two policies treat a service account with an entry as a
 check even when the value is empty, and `check-NAME` in the namespace
 `check-NAME` as a check even without an entry. That only limits those
-service accounts: they can't change a `TrackedBranch` or its status even if
+service accounts: they can't change a `Branch` object or its status even if
 RBAC lets them patch them. The endpoint, the mirror, and
 the policies ignore an entry for the core program's service account,
 `git-k8s.git-k8s`, so an entry can't make the core program a check, or stop
-it from writing results or changing `TrackedBranch` objects. Don't add an entry
+it from writing results or changing `Branch` objects. Don't add an entry
 for a namespace's `default` service account, because the checks that own
 Pods run their Pods as that service account, as
 [Security model](#security-model) describes. The core program applies the
@@ -3679,8 +3689,8 @@ service account needs a policy of its own. The core program's
 name its service account.
 
 While the ConfigMap is missing, the API server denies every create and update
-of a `TrackedBranch` or its status, including people's, with a message that says
-`no params found for policy binding`, and the results endpoint and the
+of a `Branch` object or its status, including people's, with a message that
+says `no params found for policy binding`, and the results endpoint and the
 mirror treat no service account as a check. To create the ConfigMap again,
 run `kubectl -n git-k8s create configmap git-k8s-checks`, or restart the
 core program with `kubectl -n git-k8s rollout restart deployment/git-k8s`.
@@ -3700,9 +3710,9 @@ order:
    runs, label the namespaces of its repositories as [Install](#install)
    describes. From step 3 on, the `git-k8s-check-pods` policy denies the
    check's Pods in a namespace without the labels.
-3. Apply `config/policy.yaml`. If your checks write their own results to
-   `TrackedBranch` status, as each did before the results endpoint, the policy
-   rejects those writes, so branches get no new results until step 5.
+3. Apply `config/policy.yaml`. If your checks write their own results to the
+   status of `Branch` objects, as each did before the results endpoint, the
+   policy rejects those writes, so branches get no new results until step 5.
 4. Install the core program with `kubectl apply`, as the loop in
    [Install](#install) does, because server-side apply can't switch its
    Deployment to the `Recreate` strategy. `kubectl apply` replaces the rules
@@ -3727,11 +3737,11 @@ order:
    describes.
 5. Map the checks' service accounts to their checks in the
    `git-k8s-checks` ConfigMap, as [Install](#install) does, and then
-   install the checks. They lose their RBAC rule for `trackedbranches/status`,
+   install the checks. They lose their RBAC rule for `branches/status`,
    and send their results to the core program.
 6. If you applied the `test-pods` NetworkPolicy that an earlier version of
    this README described, delete it from each namespace that has a
-   `TrackedRepository`. A cluster allows any connection that one of a Pod's
+   `Repository` object. A cluster allows any connection that one of a Pod's
    NetworkPolicies allows, so that policy still lets test Pods reach the git
    remote:
 
@@ -3739,7 +3749,7 @@ order:
    kubectl -n NAMESPACE delete --ignore-not-found networkpolicy test-pods
    ```
 
-When the core program starts, it changes `status.checks` in the `TrackedBranch`
+When the core program starts, it changes `status.checks` in the `Branch`
 CustomResourceDefinition to an atomic map, which one field manager writes as
 a whole, and only then installs `config/policy.yaml`. From that change on, a
 status write from an old check that no policy rejects replaces all of
@@ -3785,7 +3795,7 @@ a change:
   and each endpoint accepts only its own, not the other's or the API
   server's. The kubelet renews each check's tokens, which last an hour.
 - The mirror runs git with `--end-of-options` before every argument that
-  comes from a `TrackedRepository` or a push, and doesn't sync or list branches
+  comes from a `Repository` object or a push, and doesn't sync or list branches
   whose names start with `-`, so neither can pass git an option.
 
 The core program is the only program that changes NetworkPolicies, which it
@@ -3797,11 +3807,11 @@ and the programs that sign commits can read them, as
 [Limitations](#limitations) describes.
 
 Kubernetes RBAC is the trust boundary. Anyone who can write a
-`TrackedRepository` in a namespace chooses the external repository, and the
+`Repository` object in a namespace chooses the external repository, and the
 Secret or Octo STS identities that the core program uses there. Of the
 service accounts, only those that the `git-k8s-checks` ConfigMap maps to
-`NAME` can write the `NAME` result, but people who can write `TrackedBranch`
-status in a namespace can write any result.
+`NAME` can write the `NAME` result, but people who can write the status of
+`Branch` objects in a namespace can write any result.
 Such a result can name a Pod in that namespace for the mirror to let fetch
 the repository, but the mirror accepts only a `Pending` Pod with the
 controller label of a check whose result names it, on a branch whose merge

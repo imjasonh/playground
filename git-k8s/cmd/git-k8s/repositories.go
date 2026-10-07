@@ -20,9 +20,9 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// repositories reconciles TrackedRepository objects. Each reconcile syncs the
+// repositories reconciles Repository objects. Each reconcile syncs the
 // repository's copy in the mirror with the external repository, and owns a
-// TrackedBranch for each of the copy's branches that the rules select, and the
+// Branch object for each of the copy's branches that the rules select, and the
 // NetworkPolicy of the test Pods in the repository's namespace.
 //
 // The mirror triggers a reconcile after each push to it, and the merge
@@ -55,7 +55,7 @@ type poll struct {
 // reach an external repository that failed.
 const retryInterval = 30 * time.Second
 
-// finalizer is the finalizer that kube adds to each TrackedRepository for the
+// finalizer is the finalizer that kube adds to each Repository object for the
 // repositories controller.
 var finalizer = kube.FinalizerName("repositories")
 
@@ -103,7 +103,7 @@ func (r *repositories) forget(key string) {
 	delete(r.polls, key)
 }
 
-func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.TrackedRepository) error {
+func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.Repository) error {
 	ready := kube.Condition{Type: "Ready", Status: kube.False}
 	defer func() { kube.SetCondition(&repo.Status.Conditions, ready) }()
 	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx, r.installPolicies))
@@ -132,7 +132,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.TrackedReposi
 	p := r.poll(key, repo.Spec.URL)
 	fetch := !now.Before(p.next)
 	push := fetch || p.failure == ""
-	spec := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
+	spec := &gitk8s.RepositoryView{Object: repo.Object, Spec: repo.Spec}
 	var credErr error
 	rep, err := r.mirror.Sync(ctx, spec, mirror.SyncOptions{
 		Fetch: fetch,
@@ -145,7 +145,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.TrackedReposi
 	})
 	if err != nil {
 		// Without a report, the error skips the declarations below, so the
-		// framework keeps every TrackedBranch instead of pruning them.
+		// framework keeps every Branch object instead of pruning them.
 		switch {
 		case credErr != nil:
 			ready.Reason = "CredentialsUnavailable"
@@ -165,11 +165,11 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.TrackedReposi
 	p = r.polled(key, p, now, interval, rep, push)
 
 	// kube applies declarations in order, so the test Pods' NetworkPolicy
-	// exists before the TrackedBranches that check-gotest starts test Pods for.
+	// exists before the Branch objects that check-gotest starts test Pods for.
 	kube.Own(ctx, testPodsPolicy(repo))
 	specs := gitk8s.DesiredBranches(repo.Name, repo.Spec.Branches, rep.Heads)
 	for _, spec := range specs {
-		kube.Own(ctx, &gitk8s.TrackedBranch{
+		kube.Own(ctx, &gitk8s.Branch{
 			Object: kube.Meta(gitk8s.BranchObjectName(repo.Name, spec.Branch), map[string]string{gitk8s.RepositoryLabel: repo.Name}),
 			Spec:   spec,
 		})
@@ -229,7 +229,7 @@ func failures(failed map[string]error) string {
 // git's own messages, for conditions and the errors that kube shows. repo's
 // URL can name any server that the core program reaches, so only the log
 // gets the whole error, with what the server sent.
-func brief(repo *gitk8s.TrackedRepository, err error) error {
+func brief(repo *gitk8s.Repository, err error) error {
 	short := git.Brief(err)
 	if short.Error() != err.Error() {
 		slog.Warn("syncing the repository failed", "namespace", repo.Namespace, "repository", repo.Name, "err", err)
@@ -237,18 +237,18 @@ func brief(repo *gitk8s.TrackedRepository, err error) error {
 	return short
 }
 
-// noticeDivergence triggers a reconcile of each of repo's TrackedBranches whose
+// noticeDivergence triggers a reconcile of each of repo's Branch objects whose
 // status.diverged doesn't match diverged, so the merge controller updates
 // it. A divergence doesn't move the branch's head in the mirror, so nothing
-// else changes the TrackedBranch.
-func noticeDivergence(ctx context.Context, repo *gitk8s.TrackedRepository, diverged map[string]string) {
-	branches := kube.List[gitk8s.TrackedBranch](ctx, kube.InNamespace(repo.Namespace),
+// else changes the Branch object.
+func noticeDivergence(ctx context.Context, repo *gitk8s.Repository, diverged map[string]string) {
+	branches := kube.List[gitk8s.Branch](ctx, kube.InNamespace(repo.Namespace),
 		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: repo.Name}))
 	for _, b := range branches {
 		want, ok := diverged[b.Spec.Branch]
 		have := b.Status.Diverged
 		if (have != nil) != ok || (have != nil && have.Commit != want) {
-			kube.Trigger[gitk8s.TrackedBranch](ctx, b.Namespace, b.Name)
+			kube.Trigger[gitk8s.Branch](ctx, b.Namespace, b.Name)
 		}
 	}
 }
@@ -256,9 +256,9 @@ func noticeDivergence(ctx context.Context, repo *gitk8s.TrackedRepository, diver
 // Finalize pushes the last changes in the mirror's copy of repo to the
 // external repository, and then deletes the copy. While the external
 // repository lacks a change that the mirror accepted, Finalize fails, and
-// the TrackedRepository stays.
-func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.TrackedRepository) error {
-	spec := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
+// the Repository object stays.
+func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.Repository) error {
+	spec := &gitk8s.RepositoryView{Object: repo.Object, Spec: repo.Spec}
 	rep, err := r.mirror.Sync(ctx, spec, mirror.SyncOptions{
 		Push:   true,
 		Final:  true,

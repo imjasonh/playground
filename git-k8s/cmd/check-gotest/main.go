@@ -23,7 +23,7 @@
 // kube deletes a Pod when the check stops declaring it: once the check has
 // recorded the Pod's result and the kubelet has stopped the Pod, or when the
 // branch moves to a new head. Owner references delete the Pods with their
-// TrackedBranch.
+// Branch object.
 package main
 
 import (
@@ -50,10 +50,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is this check's view of a TrackedBranch.
+// Branch is this check's view of a Branch object.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
-	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"gotest,omitempty"`
@@ -61,18 +61,19 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-// queued is a TrackedBranch's position in its parent's merge queue, which the
+// queued is a Branch object's position in its parent's merge queue, which the
 // merge controller writes. It declares only the position and the head that
 // the merge controller last kept in the queue, so the check sees nothing
 // else in the status, including other checks' results, and changes to the
 // rest of the status don't run the check again. generate grants list and
-// watch on TrackedBranches for it, which the check already has for Branch.
+// watch on Branch objects for it, which the check already has for its Branch
+// type.
 type queued struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
 	Status      struct {
 		Queued struct {
 			Head     string `json:"head"`
@@ -100,8 +101,8 @@ func front(ctx context.Context, k kube.Key, head string) bool {
 // place, and the other branches wait until the queues drain, which they do
 // because a branch whose tests haven't passed can't join a queue. Fronts,
 // and then the other branches, go in the order that they started waiting,
-// then by key. Positions and waiting times are in the TrackedBranch status, so
-// a restarted check keeps the order.
+// then by key. Positions and waiting times are in the status of the Branch
+// objects, so a restarted check keeps the order.
 type turn struct {
 	front  bool
 	since  time.Time
@@ -185,7 +186,7 @@ func (g *gotest) check() checks.Check {
 // stopped yet. run keeps declaring the Pod until it has, because the API
 // server deletes a Pod whose phase is Succeeded or Failed at once, but
 // waits for the kubelet to stop one that's still running.
-func stopping(ctx context.Context, meta *kube.ObjectMeta, _ *gitk8s.TrackedBranchSpec, previous *gitk8s.CheckResult) bool {
+func stopping(ctx context.Context, meta *kube.ObjectMeta, _ *gitk8s.BranchSpec, previous *gitk8s.CheckResult) bool {
 	name := previous.Pod
 	if name == "" {
 		return false
@@ -385,7 +386,7 @@ func waiting(res *gitk8s.CheckResult, head string, keys ...string) (string, time
 
 // waitingFor returns the Pod that b is waiting to start and when it started
 // waiting. It skips branches that the check no longer runs on, including
-// branches whose TrackedRepository is gone, because nothing updates their
+// branches whose Repository object is gone, because nothing updates their
 // results, and a stale result holds up every branch behind it.
 func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 	s := &b.Spec
@@ -393,7 +394,7 @@ func waitingFor(ctx context.Context, b *Branch) (kube.Key, time.Time, bool) {
 		return kube.Key{}, time.Time{}, false
 	}
 	pod, since, ok := waiting(b.Status.Checks.Result, s.Head, "waiting")
-	if !ok || kube.Get[gitk8s.Repository](ctx, b.Namespace, s.Repository) == nil {
+	if !ok || kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, s.Repository) == nil {
 		return kube.Key{}, time.Time{}, false
 	}
 	return kube.Key{Namespace: b.Namespace, Name: pod}, since, true
