@@ -122,7 +122,7 @@ func evaluate(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) (b
 		}
 		return true, nil
 	}
-	g, err := gate.Parse(policy.When)
+	g, err := gate.Parse(policy.When, policy.Checks)
 	if err != nil {
 		return false, err
 	}

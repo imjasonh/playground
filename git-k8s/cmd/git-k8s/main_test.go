@@ -910,6 +910,23 @@ func TestInvalidPolicyIsPermanent(t *testing.T) {
 	}
 }
 
+// A when expression that names a check that its rule doesn't list makes the
+// GitRepository not Ready, instead of holding branches back later.
+func TestRejectsWhenForUnlistedCheck(t *testing.T) {
+	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: "http://127.0.0.1:1/app.git"}}
+	repo.Namespace = "default"
+	repo.Spec.Branches = []gitk8s.BranchRule{{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "gofmt"}}, When: "checks.gofmy.passed"}}}
+	ctx, _ := kube.Fake(t.Context(), repo)
+	r := &repositories{mirror: &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()}}
+	if err := r.Reconcile(ctx, repo); !kube.IsPermanent(err) {
+		t.Errorf("err = %v, want a permanent error", err)
+	}
+	want := `branches rule "main": when: 1:7: the merge policy doesn't list a check named 'gofmy'`
+	if c := kube.FindCondition(repo.Status.Conditions, "Ready"); c == nil || c.Status != kube.False || c.Reason != "InvalidMergePolicy" || c.Message != want {
+		t.Errorf("Ready = %+v, want False, InvalidMergePolicy, and %q", c, want)
+	}
+}
+
 // A branch that changes in the mirror and in the external repository stays
 // as it is on each side, and doesn't land, until a commit that contains
 // both heads resolves it.
@@ -1357,7 +1374,7 @@ func TestInvalidGateWithFinalResults(t *testing.T) {
 	f := newFixture(t)
 	b := f.branches()
 	p := *policy
-	p.When = "checks.missing.passed"
+	p.When = "checks.gofmt.outputs.level == 'low'"
 	b.Spec.Merge = &p
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)

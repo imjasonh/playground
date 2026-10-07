@@ -2218,10 +2218,13 @@ one side decides it, even if the other side is an error, such as a missing
 output. Without `when`, every listed check must pass.
 
 The repositories controller compiles each `when` when it reads the
-`GitRepository`, so a syntax error or a misspelled field, such as
-`checks.gofmt.pased`, makes the `GitRepository` not `Ready` instead of
-holding branches back later. Each evaluation can cost at most 100,000, which
-stops an expression that loops over the checks many times.
+`GitRepository`, so a syntax error, a misspelled field such as
+`checks.gofmt.pased`, or a check that the policy doesn't list, such as
+`checks.gofmy.passed`, makes the `GitRepository` not `Ready`, with the reason
+`InvalidMergePolicy`, instead of holding branches back later. For a check
+whose name has a hyphen, write `checks["go-vet"].passed`, because CEL reads
+`checks.go-vet` as a subtraction. Each evaluation can cost at most 100,000,
+which stops an expression that loops over the checks many times.
 
 ## Merge queue
 
