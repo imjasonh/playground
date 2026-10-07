@@ -1714,10 +1714,10 @@ check_run() {
 # fix. The repositories controller syncs octo every second, and a sync
 # that's running when the push arrives can move c/fmt to the fix first.
 # Then the core program refuses the result, which isn't for c/fmt's head,
-# and the unformatted commit gets no gofmt check run. If it gets one, it's
-# neutral, and the check-runs controller creates it before the fix's gofmt
-# check run, so once the fix's check runs show their results, it doesn't
-# change.
+# and the unformatted commit might get no gofmt check run. If it gets one,
+# it's neutral, and the check-runs controller creates it before the fix's
+# gofmt check run, so once the fix's check runs show their results, it
+# doesn't change.
 check_runs_published() {
   [[ "$(check_run "${fix}" gofmt)" == "completed success" &&
     "$(check_run "${fix}" base)" == "completed success" ]] || return
