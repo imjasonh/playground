@@ -1136,12 +1136,14 @@ Each container can use up to `-cpu-limit` CPUs, 2 by default, and
 `-cpu-limit=0` removes the limit. Go 1.25 and later set `GOMAXPROCS` from
 that limit, and `go test` runs that many builds and test binaries at once,
 so the limit also bounds how many of them share the test container's 2Gi
-of memory. The scheduler reserves only a Pod's requests on its node, so a
-node can run low on disk space or memory while each Pod stays within its
-limits, and then the kubelet evicts Pods, first those that use more than
-they request. A ResourceQuota on `limits.cpu` or
-`limits.ephemeral-storage` counts each test Pod's limits, and a LimitRange
-with a smaller maximum for either resource rejects every test Pod.
+of memory.
+
+The scheduler reserves only a Pod's requests on its node. So a node can
+run low on disk space or memory while each Pod stays within its limits,
+and then the kubelet evicts Pods, first those that use more than they
+request. A ResourceQuota on `limits.cpu` or `limits.ephemeral-storage`
+counts each test Pod's limits, and a LimitRange with a smaller maximum for
+either resource rejects every test Pod.
 
 The core program owns the NetworkPolicy so that `check-gotest`, which
 creates Pods in every namespace that has a `GitBranch`, can't change
@@ -3111,11 +3113,13 @@ fetch the source in their Pods with the image in `-git-image`, and
 `check-gotest` and `git-k8s-deps` run Go with the one in `-go-image`. By
 default, those flags name Chainguard's `git` and `go` images by digest, so
 moving a tag, on the registry or on a mirror between it and your cluster,
-can't change what those Pods run. A container whose image is named by
-digest has the pull policy `IfNotPresent`. One whose image is named by tag
-has `Always`, so its node pulls the image each time the container starts,
-and every node runs the image that the tag names then. To run newer images,
-upgrade the programs, or set the flags.
+can't change what those Pods run. With `-go-cache`, `check-gotest`'s Pods
+fetch the source with `check-gotest`'s own image instead, which `generate`
+names by digest. A container whose image is named by digest has the pull
+policy `IfNotPresent`. One whose image is named by tag has `Always`, so its
+node pulls the image each time the container starts, and every node runs
+the image that the tag names then. To run newer images, upgrade the
+programs, or set the flags.
 
 The core program keeps the mirror's copies on a PersistentVolumeClaim that
 `generate` adds for its `kube.Volume`, at
