@@ -223,14 +223,14 @@ func TestPublishesCheckRuns(t *testing.T) {
 	})
 
 	t.Log("A fix is neutral, because the check's run on the fix decides.")
-	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Outputs: map[string]string{"fix": fix}}
+	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Fix: fix}
 	step(checks, []string{"PATCH " + api + "check-runs/3"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
 		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
 	})
 	if r := gh.Fake.CheckRuns("acme/app")[2]; r.Output.Text != "```\nfix: "+fix+"\n```" {
-		t.Errorf("text = %q, want the fix output", r.Output.Text)
+		t.Errorf("text = %q, want the fix", r.Output.Text)
 	}
 
 	t.Log("When the branch moves before a check finishes, the old commit's check run is cancelled.")
@@ -251,7 +251,7 @@ func TestPublishesCheckRuns(t *testing.T) {
 	})
 
 	t.Log("The controller forgets the check runs on a commit that the branch left, and when the branch comes back, the controller finds them on GitHub.")
-	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Outputs: map[string]string{"fix": fix}}}
+	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Fix: fix}}
 	step(checks, []string{"GET " + api + "commits/" + head + "/check-runs"}, runs(gh))
 }
 
@@ -2133,6 +2133,10 @@ func TestRunFor(t *testing.T) {
 	s := runFor(gitk8s.CheckResult{State: gitk8s.Passed, Outputs: map[string]string{"level": "low", "files": "3"}})
 	if s.Output.Text != "```\nfiles: 3\nlevel: low\n```" {
 		t.Errorf("text = %q", s.Output.Text)
+	}
+	s = runFor(gitk8s.CheckResult{State: gitk8s.Fixed, Outputs: map[string]string{"files": "x.go"}, Notes: map[string]string{"runs": "1"}, Pod: "gofmt-1", Fix: "4567cdef"})
+	if s.Output.Text != "```\nfix: 4567cdef\nfiles: x.go\n```" {
+		t.Errorf("text = %q, want the fix and the outputs, without the notes or the Pod", s.Output.Text)
 	}
 }
 

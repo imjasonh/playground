@@ -91,7 +91,7 @@ func TestSignsFix(t *testing.T) {
 		t.Fatal(err)
 	}
 	fix := w.Fetch("c/x")
-	if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Fix != fix {
 		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
 	}
 	if err := signer.Verify(w.Dir, fix); err != nil {

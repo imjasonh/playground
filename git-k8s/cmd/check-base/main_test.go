@@ -72,8 +72,8 @@ func TestMergesParentIn(t *testing.T) {
 		t.Fatalf("result = %+v, want Fixed for both heads", res)
 	}
 	fix := w.Fetch("c/x")
-	if fix != res.Outputs["fix"] {
-		t.Fatalf("c/x = %s, want %s", fix, res.Outputs["fix"])
+	if fix != res.Fix {
+		t.Fatalf("c/x = %s, want %s", fix, res.Fix)
 	}
 	if parents := w.Git("log", "-1", "--format=%P", fix); parents != b.Spec.Head+" "+b.Spec.ParentHead {
 		t.Errorf("merge parents = %q", parents)
@@ -99,7 +99,7 @@ func TestSignsMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	fix := w.Fetch("c/x")
-	if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Fix != fix {
 		t.Fatalf("result = %+v, want Fixed with the pushed merge %s", res, fix)
 	}
 	if err := signer.Verify(w.Dir, fix); err != nil {
@@ -138,7 +138,7 @@ func TestMergesParentInAtTheFrontOfTheQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	if res.State != gitk8s.Fixed || srv.Heads(t, "app")["c/x"] != res.Outputs["fix"] {
+	if res.State != gitk8s.Fixed || srv.Heads(t, "app")["c/x"] != res.Fix {
 		t.Errorf("result = %+v, want Fixed with the merge pushed", res)
 	}
 }

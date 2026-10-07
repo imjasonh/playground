@@ -1902,7 +1902,7 @@ k -n "${NS}" wait --for=condition=Ready pod/gotest-running --timeout=120s
 # repository $3, or on c/named of tested.
 named_result() {
   k -n "${NS}" patch gitbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
-    -p '{"status":{"checks":{"gotest":{"commit":"0000000","scope":"Head","state":"Running","outputs":{"pod":"'"$1"'"}}}}}' >/dev/null
+    -p '{"status":{"checks":{"gotest":{"commit":"0000000","scope":"Head","state":"Running","pod":"'"$1"'"}}}}' >/dev/null
 }
 # pod_token prints a token for the mirror that's bound to Pod $1.
 pod_token() {
@@ -1978,7 +1978,7 @@ done
 # burst_results prints each tested branch's name, head, and gotest commit,
 # state, and waiting time.
 burst_results() {
-  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.outputs.waiting}{"\n"}{end}'
+  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.notes.waiting}{"\n"}{end}'
 }
 burst_checked() { [[ "$(burst_results | awk -F'|' '$1 ~ /^c\/burst-[bcd]$/ && $2 == $3' | wc -l)" -eq 3 ]]; }
 t push -q "${HOST_URL}/tested.git" "${burst[@]}"
@@ -2441,10 +2441,10 @@ eventually 300 review_failed
 k -n "${NS}" get gitbranch "$(branch_object d/marked reviewed)" -o jsonpath='{.status.checks.review}'
 echo
 [[ "$(review d/marked message)" == "The change adds DO NOT MERGE at notes.txt:2." ]]
-[[ "$(review d/marked outputs.summary)" == "1 added line holds DO NOT MERGE" ]]
-[[ "$(review d/marked outputs.model)" == fake:composer-2.5 ]]
-[[ "$(review d/marked outputs.inputTokens)" -gt 0 ]]
-[[ "$(review d/marked outputs.runs)" == 1 ]]
+[[ "$(review d/marked notes.summary)" == "1 added line holds DO NOT MERGE" ]]
+[[ "$(review d/marked notes.model)" == fake:composer-2.5 ]]
+[[ "$(review d/marked notes.inputTokens)" -gt 0 ]]
+[[ "$(review d/marked notes.runs)" == 1 ]]
 eventually 60 no_agent_pods
 printf 'Notes\nDO NOT MERGE\nDO NOT MERGE EITHER\n' >"${REVIEWED}/notes.txt"
 rv commit -qam "Mark the notes again"
@@ -2574,7 +2574,7 @@ eventually 300 refused_failed
 k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.checks}'
 echo
 [[ "$(result c/refused conflicts message)" == "the agent couldn't resolve the conflicts: The conflicts in notes.txt hold DO NOT MERGE or aren't well formed, so the fake agent changed no files." ]]
-[[ "$(result c/refused conflicts outputs.runs)" == 1 ]]
+[[ "$(result c/refused conflicts notes.runs)" == 1 ]]
 [[ "$(remote_head c/refused conflicted)" == "${refused}" ]]
 [[ "$(remote_head main conflicted)" == "${moved}" ]]
 eventually 60 no_agent_pods

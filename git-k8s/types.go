@@ -285,12 +285,17 @@ const (
 )
 
 // Limits on a result that the core program accepts from a check. The checks
-// package shortens messages and output values to fit.
+// package shortens messages, output values, and note values to fit.
 const (
 	MaxMessageLength     = 1024
 	MaxOutputs           = 16
 	MaxOutputNameLength  = 63
 	MaxOutputValueLength = 1024
+	MaxNotes             = 32
+	MaxNoteNameLength    = 63
+	MaxNoteValueLength   = 1024
+	// MaxPodNameLength is the longest name that a Pod can have.
+	MaxPodNameLength = 253
 )
 
 // CheckResult is one check's result for one commit. OpenAPISchema
@@ -303,6 +308,9 @@ type CheckResult struct {
 	State        string            `json:"state"`
 	Message      string            `json:"message,omitempty"`
 	Outputs      map[string]string `json:"outputs,omitempty"`
+	Notes        map[string]string `json:"notes,omitempty"`
+	Pod          string            `json:"pod,omitempty"`
+	Fix          string            `json:"fix,omitempty"`
 	FilesOnly    bool              `json:"filesOnly,omitempty"`
 }
 
@@ -347,6 +355,9 @@ func (CheckResult) OpenAPISchema() map[string]any {
 			"state":        state,
 			"message":      str(""),
 			"outputs":      values("Values that merge gates can read, such as a risk level."),
+			"notes":        values("Other values that the check records, such as what its next run needs or what an agent's run used. Merge gates don't see them."),
+			"pod":          str("Pod that does the check's work, such as one that runs tests. While the result is Running, the mirror lets the Pod fetch the repository."),
+			"fix":          str("Commit that the check pushed to the branch to fix what it found, for a Fixed result."),
 			"filesOnly":    map[string]any{"type": "boolean", "description": "The result also holds for any commit with the same files that builds on the same parent head, because it doesn't depend on the branch's commits, such as their messages or authors. Only such results count for a commit that a squash or rebase landing makes."},
 		},
 		"x-kubernetes-validations": []any{
@@ -379,13 +390,14 @@ func (r *CheckResult) Final() bool {
 }
 
 // Equal reports whether r and o are the same result. A nil result equals
-// only nil, and empty outputs equal no outputs.
+// only nil, and empty outputs or notes equal none.
 func (r *CheckResult) Equal(o *CheckResult) bool {
 	if r == nil || o == nil {
 		return r == o
 	}
 	return r.Commit == o.Commit && r.Scope == o.Scope && r.ParentCommit == o.ParentCommit && r.MergeBase == o.MergeBase &&
-		r.State == o.State && r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs) && r.FilesOnly == o.FilesOnly
+		r.State == o.State && r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs) && maps.Equal(r.Notes, o.Notes) &&
+		r.Pod == o.Pod && r.Fix == o.Fix && r.FilesOnly == o.FilesOnly
 }
 
 // Short returns the first 12 characters of a commit SHA, for messages.

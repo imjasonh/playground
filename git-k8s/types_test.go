@@ -139,8 +139,8 @@ func TestFresh(t *testing.T) {
 }
 
 func TestEqual(t *testing.T) {
-	r := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}}
-	same := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}}
+	r := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}, Notes: map[string]string{"runs": "1"}}
+	same := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}, Notes: map[string]string{"runs": "1"}}
 	if !r.Equal(same) {
 		t.Error("results with the same fields aren't equal")
 	}
@@ -153,6 +153,10 @@ func TestEqual(t *testing.T) {
 		func(o *CheckResult) { o.Message = "fine" },
 		func(o *CheckResult) { o.Outputs = map[string]string{"level": "high"} },
 		func(o *CheckResult) { o.Outputs = nil },
+		func(o *CheckResult) { o.Notes = map[string]string{"runs": "2"} },
+		func(o *CheckResult) { o.Notes = nil },
+		func(o *CheckResult) { o.Pod = "gotest-1" },
+		func(o *CheckResult) { o.Fix = "f1" },
 		func(o *CheckResult) { o.FilesOnly = true },
 	} {
 		o := *same
@@ -168,9 +172,9 @@ func TestEqual(t *testing.T) {
 	if !missing.Equal(nil) {
 		t.Error("nil results aren't equal")
 	}
-	empty := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Outputs: map[string]string{}}
+	empty := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Outputs: map[string]string{}, Notes: map[string]string{}}
 	if !empty.Equal(&CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed}) {
-		t.Error("empty outputs don't equal no outputs, but they look the same after a status write")
+		t.Error("empty outputs and notes don't equal none, but they look the same after a status write")
 	}
 }
 

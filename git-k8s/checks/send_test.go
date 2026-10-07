@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -295,6 +296,59 @@ func TestSendsErrorForInvalidResult(t *testing.T) {
 	}
 }
 
+func TestSendsNotesAndPod(t *testing.T) {
+	e := &endpoint{}
+	f := newSendFixture(t, e)
+	f.verdict = Verdict{State: gitk8s.Running, Message: "testing", Pod: "lint-h1", Notes: map[string]string{"job": strings.Repeat("j", 2*gitk8s.MaxNoteValueLength)}}
+	if err := f.runAndSend(f.context(t)); err != nil {
+		t.Fatal(err)
+	}
+	got := e.requests()
+	if len(got) != 1 || got[0].result.Pod != "lint-h1" || len(got[0].result.Notes["job"]) != gitk8s.MaxNoteValueLength || got[0].result.Validate() != nil {
+		t.Errorf("received %+v, want a valid result with the Pod lint-h1 and the note job shortened to %d bytes", got, gitk8s.MaxNoteValueLength)
+	}
+}
+
+// An Error result keeps the check's notes, so that a check that counts its
+// runs in them, as agent does, doesn't count from zero after an error. It
+// keeps the previous result's notes when the check fails to run or when the
+// core program doesn't accept the verdict's notes.
+func TestErrorResultsKeepNotes(t *testing.T) {
+	previous := map[string]string{"runs": "3"}
+	outputs, notes := map[string]string{}, map[string]string{}
+	for i := range gitk8s.MaxOutputs + 1 {
+		outputs[fmt.Sprintf("output-%d", i)] = "v"
+	}
+	for i := range gitk8s.MaxNotes + 1 {
+		notes[fmt.Sprintf("note-%d", i)] = "v"
+	}
+	for _, tc := range []struct {
+		name    string
+		verdict Verdict
+		err     error
+		notes   map[string]string
+	}{
+		{"the check fails to run", Verdict{}, errors.New("no route to host"), previous},
+		{"too many outputs", Verdict{State: gitk8s.Failed, Outputs: outputs, Notes: map[string]string{"runs": "4"}, Pod: "lint-h1"}, nil, map[string]string{"runs": "4"}},
+		{"too many notes", Verdict{State: gitk8s.Passed, Notes: notes}, nil, previous},
+		{"a Pod name that's too long", Verdict{State: gitk8s.Running, Notes: map[string]string{"runs": "4"}, Pod: strings.Repeat("p", gitk8s.MaxPodNameLength+1)}, nil, map[string]string{"runs": "4"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &endpoint{}
+			f := newSendFixture(t, e)
+			f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h0", Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Notes: previous}
+			f.verdict, f.err = tc.verdict, tc.err
+			if err := f.runAndSend(f.context(t)); !errors.Is(err, tc.err) {
+				t.Errorf("err = %v, want %v", err, tc.err)
+			}
+			got := e.requests()
+			if len(got) != 1 || got[0].result.State != gitk8s.Error || !maps.Equal(got[0].result.Notes, tc.notes) || got[0].result.Pod != "" || got[0].result.Validate() != nil {
+				t.Errorf("received %+v, want a valid Error result with the notes %v and no Pod", got, tc.notes)
+			}
+		})
+	}
+}
+
 func TestSendAnswers(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -387,10 +441,10 @@ func TestShorten(t *testing.T) {
 			t.Errorf("shorten(%q, %d) = %q, want %q", tc.in, tc.n, got, tc.want)
 		}
 	}
-	if truncateOutputs(nil) != nil {
-		t.Error("truncateOutputs(nil) isn't nil")
+	if truncateValues(nil, gitk8s.MaxOutputValueLength) != nil {
+		t.Error("truncateValues(nil) isn't nil")
 	}
-	if got := truncateOutputs(map[string]string{"files": strings.Repeat("a.go ", 300)}); len(got["files"]) != gitk8s.MaxOutputValueLength {
+	if got := truncateValues(map[string]string{"files": strings.Repeat("a.go ", 300)}, gitk8s.MaxOutputValueLength); len(got["files"]) != gitk8s.MaxOutputValueLength {
 		t.Errorf("output of %d bytes, want %d", len(got["files"]), gitk8s.MaxOutputValueLength)
 	}
 }

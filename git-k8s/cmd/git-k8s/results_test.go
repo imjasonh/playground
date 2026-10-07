@@ -123,6 +123,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"no scope", gofmt, "gofmt", `{"commit":"h1","state":"Passed"}`, http.StatusBadRequest, "the result has no scope"},
 		{"a scope that the core program doesn't know", gofmt, "gofmt", `{"commit":"h1","scope":"Tree","state":"Passed"}`, http.StatusBadRequest, `scope "Tree" isn't Head, Parent, or Change`},
 		{"a scope without the field that it needs", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","state":"Passed"}`, http.StatusBadRequest, "a result with the scope Parent has parentCommit"},
+		{"a Fixed result without its fix", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Fixed}, http.StatusBadRequest, "the Fixed result has no fix"},
 		{"an invalid generation", "/results/default/app-c-x/gofmt?generation=new", "gofmt", fresh, http.StatusBadRequest, "generation"},
 		{"a check that the policy doesn't list", "/results/default/app-c-x/risk?generation=3", "risk", fresh, http.StatusConflict, "the merge policy for c/x doesn't list the risk check"},
 		{"a branch without a parent", "/results/default/app-main/gofmt", "gofmt", fresh, http.StatusConflict, "main has no parent, so it takes no check results"},

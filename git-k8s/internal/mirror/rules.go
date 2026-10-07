@@ -100,8 +100,7 @@ func listed(repo *gitk8s.Repository, check string, mayPush bool) bool {
 }
 
 // podChecks returns the checks whose running results on branches of repo
-// name pod in their pod output, which each check started to work on the
-// branch. A result counts only on a branch whose merge policy lists the
+// name pod as their Pod, which each check started to work on the branch. A result counts only on a branch whose merge policy lists the
 // check, where the checks framework runs it, so a check's Pods can't fetch
 // a repository that the check itself can't. Of the service accounts,
 // config/policy.yaml lets only a check's own write its result, but a check
@@ -113,7 +112,7 @@ func podChecks(ctx context.Context, repo *gitk8s.Repository, pod string) []strin
 	var checks []string
 	for _, b := range branches {
 		for check, r := range b.Status.Checks {
-			if r.State == gitk8s.Running && r.Outputs["pod"] == pod && b.Spec.Merge.Check(check) != nil && !slices.Contains(checks, check) {
+			if r.State == gitk8s.Running && r.Pod == pod && b.Spec.Merge.Check(check) != nil && !slices.Contains(checks, check) {
 				checks = append(checks, check)
 			}
 		}
