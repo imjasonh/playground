@@ -15,8 +15,10 @@
 // allow, so this program needs no permission to change NetworkPolicies. The
 // check reports the Pod's result once the test container exits or an init
 // container fails, with the end of the test output when the tests fail.
-// With -go-cache, test Pods download modules from a go-cache server and
-// share build outputs through it; see addGoCache.
+// The Pod's volumes and containers have limits, and when the kubelet evicts
+// the Pod for going over one, the check fails with the kubelet's reason;
+// see resources. With -go-cache, test Pods download modules from a
+// go-cache server and share build outputs through it; see addGoCache.
 //
 // kube deletes a Pod when the check stops declaring it: once the check has
 // recorded the Pod's result and the kubelet has stopped the Pod, or when the
@@ -46,7 +48,6 @@ import (
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
-	"github.com/imjasonh/playground/kube/k8s"
 )
 
 // Branch is this check's view of a GitBranch.
@@ -261,6 +262,12 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		v.Outputs = map[string]string{"pod": name}
 		return v, nil
 	case "Failed":
+		if s := pod.Status; s.Phase == "Failed" && s.Reason == "Evicted" {
+			kube.RequeueAfter(ctx, time.Second)
+			v := checks.Fail("Pod %s was evicted: %s", name, cmp.Or(strings.TrimSpace(s.Message), "no reason given"))
+			v.Outputs = map[string]string{"pod": name}
+			return v, nil
+		}
 		msg, finished, code := terminated(pod.Status.InitContainerStatuses, "fetch")
 		// A new Pod can't install the GOCACHEPROG program either.
 		failed := code != 0 && code != installStatus
@@ -578,8 +585,8 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 			SeccompProfile: &SeccompProfile{Type: "RuntimeDefault"},
 		},
 		Volumes: []Volume{
-			{Name: "src", EmptyDir: &EmptyDir{}},
-			{Name: "tmp", EmptyDir: &EmptyDir{}},
+			{Name: "src", EmptyDir: &EmptyDir{SizeLimit: sourceSize.String()}},
+			{Name: "tmp", EmptyDir: &EmptyDir{SizeLimit: goCacheSize.String()}},
 			{Name: "mirror-token", Projected: &Projected{Sources: []VolumeProjection{{
 				ServiceAccountToken: &ServiceAccountTokenProjection{Audience: gitk8s.MirrorAudience, ExpirationSeconds: &expiry, Path: "token"},
 			}}}},
@@ -593,6 +600,7 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 			VolumeMounts:             append(slices.Clip(mounts), VolumeMount{Name: "mirror-token", MountPath: mirrorTokenDir, ReadOnly: true}),
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
+			Resources:                resources("100m", "128Mi", "1Gi"),
 		}},
 		Containers: []Container{{
 			Name:            "test",
@@ -611,10 +619,7 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 			VolumeMounts:             mounts,
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
-			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "2Gi"},
-			},
+			Resources:                resources("100m", "256Mi", "2Gi"),
 		}},
 	}
 	if err := addGoCache(p, in); err != nil {

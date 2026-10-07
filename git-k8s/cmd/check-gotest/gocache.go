@@ -86,7 +86,7 @@ func addGoCache(p *Pod, in *checks.Input) error {
 		}}}}
 	}
 	p.Spec.Volumes = append(p.Spec.Volumes,
-		Volume{Name: "go-cache", EmptyDir: &EmptyDir{}},
+		Volume{Name: "go-cache", EmptyDir: &EmptyDir{SizeLimit: goCacheSize.String()}},
 		token("go-cache-read", gocache.ReadAudience(ns, repo)),
 		token("go-cache-write", gocache.WriteAudience(ns, repo)),
 	)
@@ -118,6 +118,7 @@ func addGoCache(p *Pod, in *checks.Input) error {
 			VolumeMounts:             mounts,
 			SecurityContext:          test.SecurityContext,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
+			Resources:                resources("100m", "128Mi", "1Gi"),
 		}
 	}
 	p.Spec.InitContainers = append(p.Spec.InitContainers,

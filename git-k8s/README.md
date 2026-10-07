@@ -1122,6 +1122,27 @@ to an image that has it. The default names an image by digest, as
 [Install](#install) describes, so it doesn't move to a newer Go until you
 upgrade `check-gotest`.
 
+Each test Pod's volumes have size limits. The repository can use up to
+`-source-size`, 2Gi by default, and the home directory, which holds Go's
+module and build caches and the tests' temporary files, up to
+`-go-cache-size`, 4Gi by default. With `-go-cache`, the build outputs that
+the Pod shares can use up to `-go-cache-size` too. Each container requests
+1Gi of ephemeral storage, and its limit covers all the volumes and 256Mi of
+logs. That's 6400Mi by default, and 10496Mi with `-go-cache`. When a Pod
+uses more than a limit, the kubelet evicts it, and the check fails with the
+kubelet's reason.
+
+Each container can use up to `-cpu-limit` CPUs, 2 by default, and
+`-cpu-limit=0` removes the limit. Go 1.25 and later set `GOMAXPROCS` from
+that limit, and `go test` runs that many builds and test binaries at once,
+so the limit also bounds how many of them share the test container's 2Gi
+of memory. The scheduler reserves only a Pod's requests on its node, so a
+node can run low on disk space or memory while each Pod stays within its
+limits, and then the kubelet evicts Pods, first those that use more than
+they request. A ResourceQuota on `limits.cpu` or
+`limits.ephemeral-storage` counts each test Pod's limits, and a LimitRange
+with a smaller maximum for either resource rejects every test Pod.
+
 The core program owns the NetworkPolicy so that `check-gotest`, which
 creates Pods in every namespace that has a `GitBranch`, can't change
 NetworkPolicies. Each `GitRepository` owns one policy, `NAME-test-pods`. It
