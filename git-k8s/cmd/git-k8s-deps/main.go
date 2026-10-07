@@ -109,7 +109,6 @@ const (
 
 type updater struct {
 	cfg          checks.Config
-	checkEmail   string
 	goProxy      string
 	goSumDB      string
 	goImage      string
@@ -151,7 +150,6 @@ type updater struct {
 
 func (u *updater) addFlags(fs *flag.FlagSet) {
 	u.cfg.AddFlags(fs)
-	fs.StringVar(&u.checkEmail, "check-identity-email", "git-k8s@users.noreply.github.com", "committer email of the fixes that checks push, their -identity-email")
 	fs.StringVar(&u.goProxy, "goproxy", "https://proxy.golang.org", "comma-separated URLs of the module proxies to read modules from")
 	fs.StringVar(&u.goSumDB, "gosumdb", "sum.golang.org", "GOSUMDB for go get, or off")
 	kube.ImageVar(fs, &u.goImage, "go-image", images.Go, "image that runs go get; it needs go, git, sh, base64, sha256sum, tail, and cut")
@@ -185,8 +183,8 @@ func (u *updater) init() error {
 		return fmt.Errorf("-source-size is %q, but it must be a size such as 2Gi", u.sourceSize)
 	case parseSize(u.goCacheSize) == 0:
 		return fmt.Errorf("-go-cache-size is %q, but it must be a size such as 4Gi", u.goCacheSize)
-	case u.cfg.Identity.Written().Email == "" || git.Identity{Email: u.checkEmail}.Written().Email == "":
-		return errors.New("-identity-email and -check-identity-email need values")
+	case u.cfg.Identity.Written().Email == "":
+		return errors.New("-identity-email needs a value")
 	}
 	urls, err := parseProxies(u.goProxy)
 	if err != nil {
@@ -763,24 +761,27 @@ func (u *updater) owned(ctx context.Context, repo *git.Repo, parentHead string, 
 }
 
 // ownership reports whether every commit that a module's branch has and its
-// parent doesn't is the controller's or a check's fix. The controller
-// committed its commits, whose last trailer is its trailer, and a check
-// committed each fix, which has the fixer trailer. Someone who amends or
-// squashes those commits becomes their committer, so the branch is theirs.
-// The merge controller commits as the controller does by default, so only
-// the last trailer, such as Co-authored-by or the agent trailer, shows that
-// a squash it pushed to the branch has a person's commit or an agent's fix.
+// parent doesn't is the controller's update or a check's fix. The checks
+// and the merge controller commit as the controller does, so all of those
+// commits have the controller's committer email. An update's last trailer
+// is the controller's trailer, and a fix has the fixer trailer. Someone
+// who amends or squashes those commits becomes their committer, so the
+// branch is theirs. Only the last trailer, such as Co-authored-by or the
+// agent trailer, shows that a squash that the merge controller pushed to
+// the branch has a person's commit or an agent's fix.
 func (u *updater) ownership(ctx context.Context, repo *git.Repo, parentHead string, m moduleMajor, head string) (b ownedBranch, owned bool, err error) {
 	commits, err := repo.ListCommits(ctx, parentHead, head, maxOwned+1)
 	if err != nil || len(commits) > maxOwned {
 		return ownedBranch{}, false, err
 	}
-	mine, checks := u.cfg.Identity.Written().Email, git.Identity{Email: u.checkEmail}.Written().Email
+	mine := u.cfg.Identity.Written().Email
 	for _, c := range commits {
 		switch {
-		case c.Committer.Email == checks && hasTrailer(c, git.FixerTrailer):
+		case c.Committer.Email != mine:
+			return ownedBranch{}, false, nil
+		case hasTrailer(c, git.FixerTrailer):
 			b.fixes++
-		case c.Committer.Email != mine || len(c.Trailers) == 0 || !strings.HasPrefix(c.Trailers[len(c.Trailers)-1], depsTrailer+":"):
+		case len(c.Trailers) == 0 || !strings.HasPrefix(c.Trailers[len(c.Trailers)-1], depsTrailer+":"):
 			return ownedBranch{}, false, nil
 		case b.version == "":
 			b.version = updatedTo(c, m)

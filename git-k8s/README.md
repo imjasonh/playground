@@ -2793,8 +2793,7 @@ the commit's committer. On GitHub:
 2. Set the `-identity-email` flag of `git-k8s`, `check-base`, `check-gofmt`,
    `check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps` to an
    email address that the account has verified, such as its
-   `ID+USERNAME@users.noreply.github.com` address, and set the
-   `-check-identity-email` flag of `git-k8s-deps` to the same address.
+   `ID+USERNAME@users.noreply.github.com` address.
    GitHub marks a commit **Verified** only when its committer email belongs
    to the account that has the key. To pass a flag, add it after `--` in the
    `generate` command, as in [Install](#install).
@@ -3041,8 +3040,9 @@ and its fixes.
 The controller changes and deletes only branches whose commits beyond the
 parent are all its updates and checks' fixes. An update is a commit that the
 controller committed, as its `-identity-email`, whose last trailer is its
-`Git-K8s-Deps` trailer. A fix is a commit that a check committed, as
-`-check-identity-email`, with a `Git-K8s-Fixer` trailer. To take over a
+`Git-K8s-Deps` trailer. A fix is a commit with a `Git-K8s-Fixer` trailer
+that a check committed as the same address. If the checks' `-identity-email`
+differs, the controller leaves branches with fixes alone. To take over a
 branch, push a commit of your own to it. Amending or squashing the branch's
 commits also makes you their committer, so the branch becomes yours. When
 no update is left for a module, for example because its branch landed or
@@ -3206,8 +3206,7 @@ takes these flags:
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-runner-image` | Required | Image that serves update results, built from `agent/runner/Dockerfile` |
-| `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
-| `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
+| `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates, and the committer email that it expects on checks' fixes |
 | `-interval` | `1h` | How often to look for newer versions |
 | `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it or pushes an update that raises a requirement to it |
 | `-seen-configmap` | `git-k8s-deps-first-seen` | Name of the ConfigMap in the controller's namespace that keeps when the controller first saw versions, or empty to keep the times only in memory |
