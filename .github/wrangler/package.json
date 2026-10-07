@@ -2,6 +2,6 @@
   "private": true,
   "description": "Pins the Wrangler version that deploy-workers.yml, the Worker CI checks, and the Worker e2e scripts use. The daily dependency update (deps.yaml) bumps it.",
   "devDependencies": {
-    "wrangler": "4.147.0"
+    "wrangler": "4.148.0"
   }
 }
