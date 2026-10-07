@@ -117,29 +117,32 @@ func TestPodName(t *testing.T) {
 	}
 }
 
-func TestPinsImages(t *testing.T) {
+func TestImagesByDigest(t *testing.T) {
 	u := &updater{}
-	u.addFlags(flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError))
+	fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
+	u.addFlags(fs)
 	if u.goImage != images.Go || u.gitImage != images.Git {
 		t.Errorf("-go-image and -git-image default to %s and %s, want %s and %s, which name their images by digest", u.goImage, u.gitImage, images.Go, images.Git)
 	}
+	t.Log("kube resolves the tag in an image flag before the program starts.")
+	for _, name := range []string{"go-image", "git-image", "result-image"} {
+		if err := fs.Set(name, "registry.example.com/Go"); err == nil {
+			t.Errorf("-%s takes registry.example.com/Go, which isn't an image reference, so it isn't an image flag", name)
+		}
+	}
+	t.Log("kube resolves the tags in the Pods that it applies too, so nodes run every image by digest, and pull each once.")
 	u.proxy = newProxy(nil, time.Hour, time.Now)
-	policies := func() map[string]string {
+	want := map[string]string{"prepare": "IfNotPresent", "update": "IfNotPresent", "result": "IfNotPresent"}
+	for _, version := range []string{"@sha256:" + strings.Repeat("0", 64), ":test"} {
+		u.goImage, u.gitImage, u.resultImage = "registry.example.com/go"+version, "registry.example.com/git"+version, "registry.example.com/agent-runner"+version
 		p := u.pod(&Branch{Object: kube.Meta("app-main", nil)}, &gitk8s.Repository{}, "0123abcd", 0, nil)
 		got := map[string]string{}
 		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
 			got[c.Name] = c.ImagePullPolicy
 		}
-		return got
-	}
-	u.resultImage = "registry.example.com/agent-runner@sha256:" + strings.Repeat("0", 64)
-	if got, want := policies(), map[string]string{"prepare": "IfNotPresent", "update": "IfNotPresent", "result": "IfNotPresent"}; !maps.Equal(got, want) {
-		t.Errorf("with images named by digest, the pull policies are %v, want %v", got, want)
-	}
-	t.Log("A tag can move, so a node pulls it each time a container starts.")
-	u.goImage, u.gitImage, u.resultImage = "registry.example.com/go:test", "registry.example.com/git:test", "registry.example.com/agent-runner:test"
-	if got, want := policies(), map[string]string{"prepare": "Always", "update": "Always", "result": "Always"}; !maps.Equal(got, want) {
-		t.Errorf("with images named by tag, the pull policies are %v, want %v", got, want)
+		if !maps.Equal(got, want) {
+			t.Errorf("with images %s, %s, and %s, the pull policies are %v, want %v", u.goImage, u.gitImage, u.resultImage, got, want)
+		}
 	}
 }
 

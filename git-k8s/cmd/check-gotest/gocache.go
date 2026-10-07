@@ -14,7 +14,6 @@ import (
 
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/gocache"
-	"github.com/imjasonh/playground/git-k8s/internal/images"
 )
 
 // goCache is where test Pods download modules and share build outputs,
@@ -93,7 +92,6 @@ func addGoCache(p *Pod, in *checks.Input) error {
 
 	fetch := &p.Spec.InitContainers[0]
 	fetch.Image = image
-	fetch.ImagePullPolicy = images.PullPolicy(image)
 	fetch.Command = nil
 	fetch.Args = []string{"fetch", "-dir=/src/repo", "-install=" + cacheprogPath}
 	fetch.VolumeMounts = append(slices.Clone(fetch.VolumeMounts), VolumeMount{Name: "go-cache", MountPath: goCacheDir})
@@ -113,7 +111,7 @@ func addGoCache(p *Pod, in *checks.Input) error {
 		return Container{
 			Name:                     name,
 			Image:                    image,
-			ImagePullPolicy:          images.PullPolicy(image),
+			ImagePullPolicy:          "IfNotPresent",
 			Args:                     append([]string{"cacheprog"}, args...),
 			VolumeMounts:             mounts,
 			SecurityContext:          test.SecurityContext,

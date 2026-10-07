@@ -148,12 +148,20 @@ func TestStartsSandboxedPod(t *testing.T) {
 	}
 }
 
-func TestPinsImages(t *testing.T) {
+func TestImagesByDigest(t *testing.T) {
+	defer func(goImg, gitImg string) { *goImage, *gitImage = goImg, gitImg }(*goImage, *gitImage)
 	for name, want := range map[string]string{"go-image": images.Go, "git-image": images.Git} {
 		if got := flag.Lookup(name).DefValue; got != want {
 			t.Errorf("-%s defaults to %s, want %s, which names its image by digest", name, got, want)
 		}
 	}
+	t.Log("kube resolves the tag in an image flag before the program starts.")
+	for _, name := range []string{"go-image", "git-image"} {
+		if err := flag.Lookup(name).Value.Set("registry.example.com/Go"); err == nil {
+			t.Errorf("-%s takes registry.example.com/Go, which isn't an image reference, so it isn't an image flag", name)
+		}
+	}
+	t.Log("kube resolves the tags in the Pods that it applies too, so nodes run every image by digest, and pull each once.")
 	policies := func() map[string]string {
 		t.Helper()
 		b, repo := branch()
@@ -164,19 +172,12 @@ func TestPinsImages(t *testing.T) {
 		}
 		return got
 	}
-	defer func(goImg, gitImg string) { *goImage, *gitImage = goImg, gitImg }(*goImage, *gitImage)
-	*goImage, *gitImage = images.Go, images.Git
-	if got, want := policies(), map[string]string{"fetch": "IfNotPresent", "test": "IfNotPresent"}; !maps.Equal(got, want) {
-		t.Errorf("with images named by digest, the pull policies are %v, want %v", got, want)
-	}
-	t.Log("A tag can move, so a node pulls it each time a container starts.")
 	*goImage, *gitImage = "registry.example.com/go:test", "registry.example.com/git:test"
-	if got, want := policies(), map[string]string{"fetch": "Always", "test": "Always"}; !maps.Equal(got, want) {
-		t.Errorf("with images named by tag, the pull policies are %v, want %v", got, want)
+	if got, want := policies(), map[string]string{"fetch": "IfNotPresent", "test": "IfNotPresent"}; !maps.Equal(got, want) {
+		t.Errorf("the pull policies are %v, want %v", got, want)
 	}
-	t.Log("With -go-cache, fetch and upload run check-gotest's own image, which KUBE_IMAGE names by digest.")
 	withGoCache(t)
-	if got, want := policies(), map[string]string{"fetch": "IfNotPresent", "build": "Always", "upload": "IfNotPresent", "test": "Always"}; !maps.Equal(got, want) {
+	if got, want := policies(), map[string]string{"fetch": "IfNotPresent", "build": "IfNotPresent", "upload": "IfNotPresent", "test": "IfNotPresent"}; !maps.Equal(got, want) {
 		t.Errorf("with -go-cache, the pull policies are %v, want %v", got, want)
 	}
 }

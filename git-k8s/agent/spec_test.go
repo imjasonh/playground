@@ -176,28 +176,31 @@ func TestRequestsStorage(t *testing.T) {
 	}
 }
 
-func TestPinsImages(t *testing.T) {
+func TestImagesByDigest(t *testing.T) {
 	r := &Runner{Name: "review"}
-	r.AddFlags(flag.NewFlagSet("check-review", flag.ContinueOnError))
+	fs := flag.NewFlagSet("check-review", flag.ContinueOnError)
+	r.AddFlags(fs)
 	if r.GitImage != images.Git {
 		t.Errorf("-git-image defaults to %s, want %s, which names its image by digest", r.GitImage, images.Git)
 	}
-	policies := func() map[string]string {
+	t.Log("kube resolves the tag in an image flag before the program starts.")
+	for _, name := range []string{"agent-image", "git-image"} {
+		if err := fs.Set(name, "registry.example.com/Runner"); err == nil {
+			t.Errorf("-%s takes registry.example.com/Runner, which isn't an image reference, so it isn't an image flag", name)
+		}
+	}
+	t.Log("kube resolves the tags in the Pods that it applies too, so nodes run every image by digest, and pull each once.")
+	want := map[string]string{"prepare": "IfNotPresent", "agent": "IfNotPresent", "result": "IfNotPresent"}
+	for _, version := range []string{"@sha256:" + strings.Repeat("0", 64), ":test"} {
+		r.Image, r.GitImage = "registry.example.com/agent-runner"+version, "registry.example.com/git"+version
 		p := r.jobPod(&Job{Name: "app-c-x", Namespace: "default"}, 1)
 		got := map[string]string{}
 		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
 			got[c.Name] = c.ImagePullPolicy
 		}
-		return got
-	}
-	r.Image = "registry.example.com/agent-runner@sha256:" + strings.Repeat("0", 64)
-	if got, want := policies(), map[string]string{"prepare": "IfNotPresent", "agent": "IfNotPresent", "result": "IfNotPresent"}; !maps.Equal(got, want) {
-		t.Errorf("with images named by digest, the pull policies are %v, want %v", got, want)
-	}
-	t.Log("A tag can move, so a node pulls it each time a container starts.")
-	r.Image, r.GitImage = "registry.example.com/agent-runner:test", "registry.example.com/git:test"
-	if got, want := policies(), map[string]string{"prepare": "Always", "agent": "Always", "result": "Always"}; !maps.Equal(got, want) {
-		t.Errorf("with images named by tag, the pull policies are %v, want %v", got, want)
+		if !maps.Equal(got, want) {
+			t.Errorf("with -agent-image=%s and -git-image=%s, the pull policies are %v, want %v", r.Image, r.GitImage, got, want)
+		}
 	}
 }
 

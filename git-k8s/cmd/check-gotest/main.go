@@ -120,8 +120,8 @@ func (t turn) before(u turn) bool {
 }
 
 var (
-	goImage      = flag.String("go-image", images.Go, "image that runs go test")
-	gitImage     = flag.String("git-image", images.Git, "image that fetches the source without -go-cache; it needs git and sh")
+	goImage      = kube.Image("go-image", images.Go, "image that runs go test")
+	gitImage     = kube.Image("git-image", images.Git, "image that fetches the source without -go-cache; it needs git and sh")
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
 	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and other values need the same -goproxy on the core program")
@@ -594,7 +594,7 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 		InitContainers: []Container{{
 			Name:                     "fetch",
 			Image:                    *gitImage,
-			ImagePullPolicy:          images.PullPolicy(*gitImage),
+			ImagePullPolicy:          "IfNotPresent",
 			Command:                  []string{"sh", "-c", fetchScript},
 			Env:                      fetchEnv,
 			VolumeMounts:             append(slices.Clip(mounts), VolumeMount{Name: "mirror-token", MountPath: mirrorTokenDir, ReadOnly: true}),
@@ -605,7 +605,7 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 		Containers: []Container{{
 			Name:            "test",
 			Image:           *goImage,
-			ImagePullPolicy: images.PullPolicy(*goImage),
+			ImagePullPolicy: "IfNotPresent",
 			Command:         []string{"go", "test", "./..."},
 			WorkingDir:      "/src/repo",
 			Env: []EnvVar{
