@@ -337,11 +337,25 @@ display hints to the generated schema:
 | `kube:"format=hostname"` | OpenAPI string format |
 | `kube:"immutable"` | A validation rule that rejects changes after creation |
 | `kube:"optional"`, `kube:"required"` | Overrides the rule based on `json` tags |
-| `kube:"listType=map,listMapKey=name"` | Merges the list by key in server-side apply |
+| `kube:"listType=map,listMapKey=name,listMapKey=protocol"` | Merges the list by key in server-side apply |
 | `kube:"mapType=atomic"` | Replaces the whole map or struct in server-side apply, so one manager owns it |
 | `kube:"column=Ready"` | A `kubectl get` column |
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
+
+Commas separate `kube` options. To put a comma in a value, wrap the value in
+single quotes, and write a single quote inside it as two:
+`kube:"default='Hello, world'"`. Quote an `enum` value the same way to put a
+`|` or a comma in it: `kube:"enum='a|b'|c"`. Only `listMapKey` can be
+repeated, once for each field of the key. Any other repeated option is an
+error.
+
+A type can supply its own schema with an `OpenAPISchema() map[string]any`
+method, as `k8s.IntOrString` and `k8s.Quantity` do. A list's element type can
+declare the fields that key the list with a `ListMapKeys() []string` method,
+as `kube.Condition` does, so that server-side apply merges every
+`[]kube.Condition` by `type`. A field's `listMapKey` options replace the keys
+that its element type declares.
 
 A controller that reconciles the type installs its CustomResourceDefinition
 when the program starts, and later releases update it, as [Change a

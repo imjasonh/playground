@@ -16,25 +16,33 @@
 //	kube:"format=hostname"        OpenAPI string format
 //	kube:"immutable"              rejects changes after creation (CEL rule)
 //	kube:"optional" / "required"  overrides the json tag rule
-//	kube:"listType=map,listMapKey=name"
+//	kube:"listType=map,listMapKey=name,listMapKey=protocol"
 //	kube:"mapType=atomic"         server-side apply replaces the whole map
 //	kube:"column=Ready"           adds a kubectl get column for the field
 //	pattern:"^[a-z]+$"            regular expression for strings
 //	doc:"..."                     description shown by kubectl explain
 //
+// Commas separate kube options. A value in single quotes can hold commas,
+// and two single quotes in it stand for one, as in kube:"default='a, b'".
+// Each enum value can be quoted the same way to hold a | or a comma. Only
+// listMapKey can be repeated, once for each key.
+//
 // A type can supply its own schema with an OpenAPISchema() map[string]any
 // method, and an element type can make its slices server-side-apply maps
-// keyed by some fields with a ListMapKeys() []string method.
+// keyed by some fields with a ListMapKeys() []string method. A field's
+// listMapKey options replace the keys that its element type declares.
 package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Column is an additional printer column for kubectl get.
@@ -107,22 +115,121 @@ type gen struct {
 }
 
 type fieldTags struct {
-	opts    map[string]string
-	pattern string
-	doc     string
+	// opts holds the kube options other than listMapKey, by name.
+	opts        map[string]string
+	enum        []string
+	listMapKeys []string
+	pattern     string
+	doc         string
 }
 
-func parseTags(f reflect.StructField) fieldTags {
+func parseTags(f reflect.StructField) (fieldTags, error) {
 	ft := fieldTags{opts: map[string]string{}, pattern: f.Tag.Get("pattern"), doc: f.Tag.Get("doc")}
-	for part := range strings.SplitSeq(f.Tag.Get("kube"), ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
+	opts, err := parseKubeTag(f.Tag.Get("kube"))
+	if err != nil {
+		return ft, err
+	}
+	for _, o := range opts {
+		v := ""
+		if len(o.values) > 0 {
+			v = o.values[0]
+		}
+		if o.name == "listMapKey" {
+			if v == "" {
+				return ft, errors.New("listMapKey needs a key")
+			}
+			if slices.Contains(ft.listMapKeys, v) {
+				return ft, fmt.Errorf("listMapKey=%s is repeated", v)
+			}
+			ft.listMapKeys = append(ft.listMapKeys, v)
 			continue
 		}
-		k, v, _ := strings.Cut(part, "=")
-		ft.opts[k] = v
+		if _, ok := ft.opts[o.name]; ok {
+			return ft, fmt.Errorf("option %s is repeated", o.name)
+		}
+		ft.opts[o.name] = v
+		if o.name == "enum" {
+			ft.enum = o.values
+		}
 	}
-	return ft
+	return ft, nil
+}
+
+type tagOption struct {
+	name string
+	// values is empty for an option without a value. Only enum can have
+	// more than one.
+	values []string
+}
+
+// parseKubeTag splits a kube field tag into its options, which commas
+// separate. An option is a name or name=value. A value that starts with a
+// single quote ends at the next single quote, and two single quotes in it
+// stand for one, so a quoted value can hold commas. An enum value is a list
+// of such values that | separates.
+func parseKubeTag(tag string) ([]tagOption, error) {
+	var opts []tagOption
+	for rest := tag; rest != ""; {
+		i := strings.IndexAny(rest, ",=")
+		if i < 0 {
+			i = len(rest)
+		}
+		o := tagOption{name: strings.TrimSpace(rest[:i])}
+		rest = rest[i:]
+		if strings.HasPrefix(rest, "=") {
+			for {
+				v, r, err := tagValue(rest[1:], o.name == "enum")
+				if err != nil {
+					return nil, fmt.Errorf("option %s: %w", o.name, err)
+				}
+				o.values = append(o.values, v)
+				if rest = r; !strings.HasPrefix(rest, "|") {
+					break
+				}
+			}
+		}
+		rest = strings.TrimPrefix(rest, ",")
+		if o.name != "" || o.values != nil {
+			opts = append(opts, o)
+		}
+	}
+	return opts, nil
+}
+
+// tagValue reads the value at the start of s, which ends at a comma or, in a
+// list, at a |. It returns the value and the rest of s, starting at the
+// comma or |.
+func tagValue(s string, list bool) (value, rest string, err error) {
+	end := ","
+	if list {
+		end = ",|"
+	}
+	q := strings.TrimLeftFunc(s, unicode.IsSpace)
+	if !strings.HasPrefix(q, "'") {
+		i := strings.IndexAny(s, end)
+		if i < 0 {
+			i = len(s)
+		}
+		return strings.TrimSpace(s[:i]), s[i:], nil
+	}
+	var b strings.Builder
+	for i := 1; i < len(q); i++ {
+		if q[i] != '\'' {
+			b.WriteByte(q[i])
+			continue
+		}
+		if i+1 < len(q) && q[i+1] == '\'' {
+			b.WriteByte('\'')
+			i++
+			continue
+		}
+		rest = strings.TrimLeftFunc(q[i+1:], unicode.IsSpace)
+		if rest != "" && !strings.ContainsRune(end, rune(rest[0])) {
+			return "", "", fmt.Errorf("%q follows the closing quote", rest)
+		}
+		return b.String(), rest, nil
+	}
+	return "", "", errors.New("the quoted value has no closing quote")
 }
 
 func (g *gen) schema(t reflect.Type, path string, tags fieldTags) (map[string]any, error) {
@@ -257,8 +364,11 @@ func (g *gen) fields(t reflect.Type, path string, props map[string]any, required
 		if name == "" {
 			name = f.Name
 		}
-		tags := parseTags(f)
 		fpath := path + "." + name
+		tags, err := parseTags(f)
+		if err != nil {
+			return fmt.Errorf("schema: %s: kube:%q: %w", fpath, f.Tag.Get("kube"), err)
+		}
 		s, err := g.schema(f.Type, fpath, tags)
 		if err != nil {
 			return err
@@ -356,8 +466,11 @@ func applyTags(s map[string]any, t reflect.Type, tags fieldTags) error {
 			}
 			s[k] = n
 		case "enum":
+			if len(tags.enum) == 0 {
+				return errors.New("schema: enum needs at least one value")
+			}
 			var vals []any
-			for e := range strings.SplitSeq(v, "|") {
+			for _, e := range tags.enum {
 				ev, err := scalar(typ, e)
 				if err != nil {
 					return fmt.Errorf("schema: enum value %q: %w", e, err)
@@ -377,15 +490,17 @@ func applyTags(s map[string]any, t reflect.Type, tags fieldTags) error {
 			s["x-kubernetes-validations"] = []any{map[string]any{"rule": "self == oldSelf", "message": "field is immutable"}}
 		case "listType":
 			s["x-kubernetes-list-type"] = v
-		case "listMapKey":
-			keys, _ := s["x-kubernetes-list-map-keys"].([]string)
-			s["x-kubernetes-list-map-keys"] = append(keys, v)
 		case "mapType":
 			s["x-kubernetes-map-type"] = v
 		case "column", "optional", "required":
 		default:
 			return fmt.Errorf("schema: unknown kube tag option %q on %v", k, t)
 		}
+	}
+	if len(tags.listMapKeys) > 0 {
+		// The field's keys replace the keys of the element type's
+		// ListMapKeys method.
+		s["x-kubernetes-list-map-keys"] = tags.listMapKeys
 	}
 	return nil
 }

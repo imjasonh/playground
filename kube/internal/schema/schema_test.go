@@ -251,6 +251,99 @@ func TestCRD(t *testing.T) {
 	}
 }
 
+func TestParseKubeTag(t *testing.T) {
+	for _, tc := range []struct {
+		tag     string
+		want    []tagOption
+		wantErr string
+	}{
+		{tag: "", want: nil},
+		{tag: "min=1,max=10", want: []tagOption{{"min", []string{"1"}}, {"max", []string{"10"}}}},
+		{tag: " min = 1 ,, immutable, ", want: []tagOption{{"min", []string{"1"}}, {"immutable", nil}}},
+		{tag: "default='hello, world'", want: []tagOption{{"default", []string{"hello, world"}}}},
+		{tag: "default= 'it''s' ,min=1", want: []tagOption{{"default", []string{"it's"}}, {"min", []string{"1"}}}},
+		{tag: "default=it's", want: []tagOption{{"default", []string{"it's"}}}},
+		{tag: "default=a|b", want: []tagOption{{"default", []string{"a|b"}}}},
+		{tag: "default=", want: []tagOption{{"default", []string{""}}}},
+		{tag: "default=''", want: []tagOption{{"default", []string{""}}}},
+		{tag: "enum=A | B", want: []tagOption{{"enum", []string{"A", "B"}}}},
+		{tag: "enum='a,b'|'c|d'|e,default=e", want: []tagOption{{"enum", []string{"a,b", "c|d", "e"}}, {"default", []string{"e"}}}},
+		{tag: "default='abc", wantErr: "option default: the quoted value has no closing quote"},
+		{tag: "default='a,min=1", wantErr: "no closing quote"},
+		{tag: "default='a'b", wantErr: `option default: "b" follows the closing quote`},
+		{tag: "enum='a'b|c", wantErr: `"b|c" follows the closing quote`},
+	} {
+		got, err := parseKubeTag(tc.tag)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("parseKubeTag(%q) = %v, %v, want error %q", tc.tag, got, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("parseKubeTag(%q) = %q, %v, want %q", tc.tag, got, err, tc.want)
+		}
+	}
+}
+
+type port struct {
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+}
+
+func TestTagOptions(t *testing.T) {
+	type tagged struct {
+		object
+		Spec struct {
+			Ports      []port      `json:"ports,omitempty" kube:"listType=map,listMapKey=name,listMapKey=protocol"`
+			Conditions []condition `json:"conditions,omitempty" kube:"listMapKey=status"`
+			Greeting   string      `json:"greeting,omitempty" kube:"default='hello, world'"`
+			Mode       string      `json:"mode,omitempty" kube:"enum='a,b'|'c|d'|e,default='a,b'"`
+		} `json:"spec"`
+	}
+	r, err := Generate(reflect.TypeFor[tagged]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	props := properties(t, r.Schema, "spec")
+	for _, tc := range []struct {
+		field, key string
+		want       any
+	}{
+		{"ports", "x-kubernetes-list-map-keys", []string{"name", "protocol"}},
+		{"conditions", "x-kubernetes-list-map-keys", []string{"status"}},
+		{"greeting", "default", "hello, world"},
+		{"mode", "enum", []any{"a,b", "c|d", "e"}},
+		{"mode", "default", "a,b"},
+	} {
+		if got := props[tc.field].(map[string]any)[tc.key]; !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s %s = %#v, want %#v", tc.field, tc.key, got, tc.want)
+		}
+	}
+
+	for _, tc := range []struct{ tag, wantErr string }{
+		{"enum=A|B,default=A,enum=C", "option enum is repeated"},
+		{"min=1,min=2", "option min is repeated"},
+		{"immutable,immutable", "option immutable is repeated"},
+		{"listType=map,listMapKey=name,listMapKey=name", "listMapKey=name is repeated"},
+		{"listMapKey", "listMapKey needs a key"},
+		{"enum", "enum needs at least one value"},
+		{"default=hello, world", `unknown kube tag option "world"`},
+		{"default='hello", `.spec.s: kube:"default='hello": option default: the quoted value has no closing quote`},
+	} {
+		typ := reflect.StructOf([]reflect.StructField{{
+			Name: "Spec",
+			Type: reflect.StructOf([]reflect.StructField{
+				{Name: "S", Type: reflect.TypeFor[string](), Tag: reflect.StructTag(`json:"s" kube:"` + tc.tag + `"`)},
+			}),
+			Tag: `json:"spec"`,
+		}})
+		if _, err := Generate(typ); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("kube:%q: err = %v, want %q", tc.tag, err, tc.wantErr)
+		}
+	}
+}
+
 func TestErrors(t *testing.T) {
 	type badTag struct {
 		object
