@@ -29,12 +29,12 @@ func GateChecks(policy *MergePolicy, results map[string]CheckResult, head, paren
 
 // LandingGateChecks returns what a merge gate sees of the checks that policy
 // lists, for a branch at head that lands on its parent at parentHead. What
-// lands is head's change on top of parentHead, so a fresh result with a
-// merge base counts only when the merge base is parentHead.
+// lands is head's change on top of parentHead, so a fresh result with the
+// scope Change counts only when its merge base is parentHead.
 func LandingGateChecks(policy *MergePolicy, results map[string]CheckResult, head, parentHead string) map[string]GateCheck {
 	out := GateChecks(policy, results, head, parentHead)
 	for name, c := range out {
-		if base := results[name].MergeBase; c.State != Pending && base != "" && base != parentHead {
+		if r := results[name]; c.State != Pending && r.Scope == ScopeChange && r.MergeBase != parentHead {
 			out[name] = GateCheck{State: Pending}
 		}
 	}

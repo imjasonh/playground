@@ -191,7 +191,7 @@ func TestPushesFixThenPasses(t *testing.T) {
 	if res == nil || res.State != gitk8s.Fixed || res.Commit != f.branch.Spec.Head {
 		t.Fatalf("result = %+v, want Fixed for the head", res)
 	}
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	if got := f.srv.Heads(t, "app")["c/x"]; got != fix {
 		t.Fatalf("c/x = %s, want the fix %s", got, fix)
 	}
@@ -204,8 +204,8 @@ func TestPushesFixThenPasses(t *testing.T) {
 	if err := f.reconcile(t, touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
-	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Passed || res.Commit != fix || res.ParentCommit != "" {
-		t.Errorf("result = %+v, want Passed for the fix and no parent commit", res)
+	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Passed || res.Commit != fix || res.Scope != gitk8s.ScopeHead || res.ParentCommit != "" {
+		t.Errorf("result = %+v, want Passed for the fix with the scope Head", res)
 	}
 
 	// A final result for the same head doesn't run the check again.
@@ -227,7 +227,7 @@ func TestSignsFixes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fix := f.work.Fetch("c/x")
-	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Fixed || res.Fix != fix {
 		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
 	}
 	if err := signer.Verify(f.work.Dir, fix); err != nil {
@@ -249,7 +249,7 @@ func TestSignsReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	fix := f.work.Fetch("c/x")
-	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Fixed || res.Fix != fix {
 		t.Fatalf("result = %+v, want Fixed with the pushed replays %s", res, fix)
 	}
 	for _, c := range []string{fix, fix + "~1"} {
@@ -361,7 +361,7 @@ func TestRecordsFilesOnly(t *testing.T) {
 
 func TestRemovesResultWhenNotListed(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "other"})
-	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: "old", State: gitk8s.Passed}
+	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: "old", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	runs := 0
 	if err := f.reconcile(t, touch(&runs)); err != nil {
 		t.Fatal(err)
@@ -418,9 +418,9 @@ func TestStopsAtAutomatedCommitLimit(t *testing.T) {
 	}
 }
 
-// The output fix counts toward the core program's limit, and the framework
-// checks the Fixed result before it pushes, so that a fix doesn't land with
-// an Error result.
+// The framework checks the Fixed result before it pushes, so that a fix
+// doesn't land with an Error result. The fix doesn't take one of the
+// outputs, and the Error result keeps the check's notes.
 func TestChecksFixedResultBeforePushing(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -431,10 +431,10 @@ func TestChecksFixedResultBeforePushing(t *testing.T) {
 		resultOutputs int
 		pushed        bool
 	}{
-		{"the most outputs", gitk8s.MaxOutputs, true, gitk8s.Error,
+		{"too many outputs", gitk8s.MaxOutputs + 1, true, gitk8s.Error,
 			"not pushing the fix because the core program wouldn't accept the Fixed result: the result has more than 16 outputs", 0, false},
-		{"room for the fix", gitk8s.MaxOutputs - 1, true, gitk8s.Fixed, "; pushed ", gitk8s.MaxOutputs, true},
-		{"no permission to push", gitk8s.MaxOutputs - 1, false, gitk8s.Failed, "doesn't let this check push", gitk8s.MaxOutputs - 1, false},
+		{"the most outputs", gitk8s.MaxOutputs, true, gitk8s.Fixed, "; pushed ", gitk8s.MaxOutputs, true},
+		{"no permission to push", gitk8s.MaxOutputs, false, gitk8s.Failed, "doesn't let this check push", gitk8s.MaxOutputs, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: tc.mayPush})
@@ -449,17 +449,22 @@ func TestChecksFixedResultBeforePushing(t *testing.T) {
 				for i := range tc.outputs {
 					v.Outputs[fmt.Sprintf("output-%d", i)] = "v"
 				}
+				v.Notes = map[string]string{"runs": "1"}
 				return v, err
 			}
 			if err := f.reconcile(t, check); err != nil {
 				t.Fatal(err)
 			}
 			res := f.branch.Status.Checks.Result
-			if res == nil || res.State != tc.state || !strings.Contains(res.Message, tc.msg) || len(res.Outputs) != tc.resultOutputs || !res.FilesOnly {
-				t.Errorf("result = %+v, want %s with filesOnly, %d outputs, and a message that contains %q", res, tc.state, tc.resultOutputs, tc.msg)
+			if res == nil || res.State != tc.state || !strings.Contains(res.Message, tc.msg) || len(res.Outputs) != tc.resultOutputs || res.Notes["runs"] != "1" || !res.FilesOnly {
+				t.Errorf("result = %+v, want %s with filesOnly, %d outputs, the note runs, and a message that contains %q", res, tc.state, tc.resultOutputs, tc.msg)
 			}
-			if pushed := f.srv.Heads(t, "app")["c/x"] != head; pushed != tc.pushed {
+			got := f.srv.Heads(t, "app")["c/x"]
+			if pushed := got != head; pushed != tc.pushed {
 				t.Errorf("pushed the fix: %v, want %v", pushed, tc.pushed)
+			}
+			if tc.pushed && res.Fix != got || !tc.pushed && res.Fix != "" {
+				t.Errorf("result's fix = %q with c/x at %s, want the pushed fix or none", res.Fix, got)
 			}
 		})
 	}
@@ -542,8 +547,8 @@ func TestWaitsForHeads(t *testing.T) {
 }
 
 // rate passes every branch, as a check that rates a change does, with the
-// number of its runs in the output run. It has touch's name, so the
-// fixture's policy runs it.
+// number of its runs in the output and note run. It has touch's name, so
+// the fixture's policy runs it.
 func rate(runs *int, usesParent bool) checks.Check {
 	return checks.Check{Name: "touch", SameChange: true, FilesOnly: true, Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		*runs++
@@ -553,6 +558,7 @@ func rate(runs *int, usesParent bool) checks.Check {
 		}
 		v := checks.Pass("rated %.7s on top of %.7s", change.Head, change.Base)
 		v.Outputs = map[string]string{"run": strconv.Itoa(*runs)}
+		v.Notes = map[string]string{"run": strconv.Itoa(*runs)}
 		v.UsesParent = usesParent
 		return v, nil
 	}}
@@ -582,8 +588,8 @@ func TestKeepsResultsForTheSameChange(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 		res := f.branch.Status.Checks.Result
-		if runs != wantRuns || res.State != gitk8s.Passed || res.Commit != spec.Head || res.MergeBase != wantBase || res.ParentCommit != "" ||
-			res.Outputs["run"] != strconv.Itoa(runs) {
+		if runs != wantRuns || res.State != gitk8s.Passed || res.Commit != spec.Head || res.Scope != gitk8s.ScopeChange || res.MergeBase != wantBase || res.ParentCommit != "" ||
+			res.Outputs["run"] != strconv.Itoa(runs) || res.Notes["run"] != strconv.Itoa(runs) {
 			t.Errorf("%s: %d runs, result %+v; want %d runs and run %d's result for %.7s on top of %.7s", name, runs, res, wantRuns, wantRuns, spec.Head, wantBase)
 		}
 	}
@@ -654,7 +660,7 @@ func TestTiesResultsToTheParentsHead(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if res := f.branch.Status.Checks.Result; runs != 1 || res.ParentCommit != f.branch.Spec.ParentHead || res.MergeBase != "" {
+			if res := f.branch.Status.Checks.Result; runs != 1 || res.Scope != gitk8s.ScopeParent || res.ParentCommit != f.branch.Spec.ParentHead || res.MergeBase != "" {
 				t.Fatalf("%d runs, result %+v; want 1 run and a result for the parent's head", runs, res)
 			}
 
@@ -676,7 +682,7 @@ func TestKeepsResultsFromBeforeSameChange(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	spec := &f.branch.Spec
 	start := spec.ParentHead
-	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: start, FilesOnly: true, State: gitk8s.Passed}
+	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: start, FilesOnly: true, State: gitk8s.Passed}
 	runs := 0
 	check := rate(&runs, false)
 	if err := f.reconcile(t, check); err != nil || runs != 0 {
@@ -690,8 +696,29 @@ func TestKeepsResultsFromBeforeSameChange(t *testing.T) {
 	if err := f.reconcile(t, check); err != nil {
 		t.Fatal(err)
 	}
-	if res := f.branch.Status.Checks.Result; runs != 1 || res.ParentCommit != "" || res.MergeBase != start {
+	if res := f.branch.Status.Checks.Result; runs != 1 || res.Scope != gitk8s.ScopeChange || res.ParentCommit != "" || res.MergeBase != start {
 		t.Errorf("%d runs, result %+v; want 1 run and a result for the change on top of %.7s", runs, res, start)
+	}
+}
+
+// A result with a scope that the framework doesn't know, such as one from a
+// later release, holds for no heads, so the check runs again.
+func TestRunsAgainForAnUnknownScope(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	spec := &f.branch.Spec
+	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: spec.Head, Scope: "Tree", FilesOnly: true, State: gitk8s.Passed}
+	runs := 0
+	check := checks.Check{Name: "touch", FilesOnly: true, Run: func(context.Context, *checks.Input) (checks.Verdict, error) {
+		runs++
+		return checks.Pass("clean"), nil
+	}}
+	for range 2 {
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if res := f.branch.Status.Checks.Result; runs != 1 || res.Scope != gitk8s.ScopeHead || res.Commit != spec.Head {
+		t.Errorf("%d runs, result %+v; want 1 run and a result for the head with the scope Head", runs, res)
 	}
 }
 
@@ -778,7 +805,7 @@ func TestRecordsAVerdictsMergeBase(t *testing.T) {
 		if err := f.reconcile(t, check); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if res := f.branch.Status.Checks.Result; runs != wantRuns || res.Commit != spec.Head || res.MergeBase != wantBase || res.ParentCommit != "" {
+		if res := f.branch.Status.Checks.Result; runs != wantRuns || res.Commit != spec.Head || res.Scope != gitk8s.ScopeChange || res.MergeBase != wantBase || res.ParentCommit != "" {
 			t.Errorf("%s: %d runs, result %+v; want %d runs and a result for %.7s on top of %.7s", name, runs, res, wantRuns, spec.Head, wantBase)
 		}
 	}
@@ -794,6 +821,30 @@ func TestRecordsAVerdictsMergeBase(t *testing.T) {
 	f.work.Git("merge", "--quiet", "--no-edit", spec.ParentHead)
 	spec.Head = f.push("c/x")
 	step("a merge of the parent", 2, spec.ParentHead)
+}
+
+// A verdict that uses the parent holds only for the parent's head, so its
+// merge base doesn't count, and the core program would reject a result
+// with both.
+func TestUsesParentOverMergeBase(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	spec := &f.branch.Spec
+	check := checks.Check{Name: "touch", Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+		base, err := in.MergeBase(ctx)
+		v := checks.Pass("compared with the parent")
+		v.MergeBase, v.UsesParent = base, true
+		return v, err
+	}}
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	res := f.branch.Status.Checks.Result
+	if res.State != gitk8s.Passed || res.Scope != gitk8s.ScopeParent || res.ParentCommit != spec.ParentHead || res.MergeBase != "" {
+		t.Errorf("result = %+v, want Passed for the parent's head %.7s", res, spec.ParentHead)
+	}
+	if err := res.Validate(); err != nil {
+		t.Error(err)
+	}
 }
 
 func TestChangeOf(t *testing.T) {

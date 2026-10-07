@@ -316,17 +316,17 @@ func TestMergesUnionPaths(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	b, w, _ := setup(t, srv, conflictingSum, map[string]string{"go.sum": "a v1\nc v1\n"})
 	head, parent := b.Spec.Head, b.Spec.ParentHead
-	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: stateOutputs(&agent.JobState{Runs: 3})}
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Notes: stateNotes(&agent.JobState{Runs: 3})}
 	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	if res.State != gitk8s.Fixed || fix == "" || !strings.HasPrefix(res.Message, "merging main conflicts in go.sum, which git merged with its union driver; pushed ") {
 		t.Fatalf("result = %+v, want Fixed with a pushed merge", res)
 	}
-	if res.Outputs["conflicts"] != "go.sum" || res.Outputs["merge"] != parent || readState(res.Outputs).Runs != 3 {
-		t.Errorf("outputs = %v, want the conflicts, the merged commit, and the earlier runs", res.Outputs)
+	if res.Outputs["conflicts"] != "go.sum" || res.Notes["merge"] != parent || readState(res.Notes).Runs != 3 {
+		t.Errorf("outputs = %v and notes = %v, want the conflicts, the merged commit, and the earlier runs", res.Outputs, res.Notes)
 	}
 	if got := w.Fetch("c/x"); got != fix {
 		t.Fatalf("c/x = %s, want the merge %s", got, fix)
@@ -470,7 +470,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		name:  "when the branch used all its agent runs",
 		agent: true,
 		edit: func(b *Branch, _ *gittest.Work) {
-			b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: stateOutputs(&agent.JobState{Runs: 10})}
+			b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Notes: stateNotes(&agent.JobState{Runs: 10})}
 		},
 		state: gitk8s.Running,
 		want:  "merging main conflicts in a.txt; not starting the agent: the job used all 10 of its runs",
@@ -512,7 +512,7 @@ func TestLeavesTheRunLimitsToRunJob(t *testing.T) {
 	b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 	three := int32(3)
 	b.Spec.Merge.MaxAgentRuns = &three
-	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: stateOutputs(&agent.JobState{Runs: 3})}
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Notes: stateNotes(&agent.JobState{Runs: 3})}
 	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestLeavesTheRunLimitsToRunJob(t *testing.T) {
 	}
 	res := b.Status.Checks.Result
 	want := "merging main conflicts in a.txt; not starting the agent: the job used all 3 of its runs"
-	if res.State != gitk8s.Running || res.Message != want || readState(res.Outputs).Runs != 3 {
+	if res.State != gitk8s.Running || res.Message != want || readState(res.Notes).Runs != 3 {
 		t.Errorf("result = %+v, want Running with %q and 3 runs", res, want)
 	}
 }
@@ -541,10 +541,10 @@ func TestStartsAnAgent(t *testing.T) {
 	if res.State != gitk8s.Running || len(pods) != 1 {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
-	want := stateOutputs(&agent.JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1})
-	maps.Copy(want, map[string]string{"conflicts": "a.txt,go.sum", "merge": b.Spec.ParentHead, "base": base, "union": "go.sum", "url": srv.Remote("app").URL})
-	if !maps.Equal(res.Outputs, want) {
-		t.Errorf("outputs = %v, want %v", res.Outputs, want)
+	want := stateNotes(&agent.JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1})
+	maps.Copy(want, map[string]string{"merge": b.Spec.ParentHead, "base": base, "union": "go.sum", "url": srv.Remote("app").URL})
+	if !maps.Equal(res.Notes, want) || !maps.Equal(res.Outputs, map[string]string{"conflicts": "a.txt,go.sum"}) || res.Pod != pods[0].Name {
+		t.Errorf("notes = %v, outputs = %v, and Pod = %q; want notes %v, the conflicts, and Pod %s", res.Notes, res.Outputs, res.Pod, want, pods[0].Name)
 	}
 	task := agentTask(t, pods[0])
 	if !task.Edit || task.Instructions != instructions || !slices.Equal(task.Tools, tools) || task.Base != base ||
@@ -581,8 +581,8 @@ func TestFollowsTheAgentWhileMainMoves(t *testing.T) {
 	if res.State != gitk8s.Running || len(pods) != 1 || pods[0].Name != pod {
 		t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, pod)
 	}
-	if res.Outputs["merge"] != started || res.Outputs["conflicts"] != "a.txt" || res.Outputs["runs"] != "1" {
-		t.Errorf("outputs = %v, want the run that merges main at %s", res.Outputs, started)
+	if res.Notes["merge"] != started || res.Outputs["conflicts"] != "a.txt" || res.Notes["runs"] != "1" {
+		t.Errorf("result = %+v, want the run that merges main at %s", res, started)
 	}
 }
 
@@ -608,7 +608,7 @@ func TestFollowsTheAgentWhileGitFails(t *testing.T) {
 		t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, pod)
 	}
 
-	t.Log("While the check can't get a token for the mirror, it follows the run at the URL in its outputs.")
+	t.Log("While the check can't get a token for the mirror, it follows the run at the URL in its notes.")
 	useRemote(t, func(context.Context, *gitk8s.Repository) (git.Remote, error) {
 		return git.Remote{}, errors.New("no token for the mirror")
 	})
@@ -617,7 +617,7 @@ func TestFollowsTheAgentWhileGitFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	res = b.Status.Checks.Result
-	if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || len(pods) != 1 || pods[0].Name != pod || res.Outputs["url"] != repo.Spec.URL {
+	if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || len(pods) != 1 || pods[0].Name != pod || res.Notes["url"] != repo.Spec.URL {
 		t.Errorf("result = %+v and Pods %v, want Running with Pod %s and the URL %s", res, pods, pod, repo.Spec.URL)
 	}
 }
@@ -644,7 +644,7 @@ func TestReachesTheRepositoryThroughTheMirror(t *testing.T) {
 		b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 		rec, want := reconcileThroughMirror(t, srv, b)
 		pods := kube.Owned[agent.Pod](rec)
-		if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Outputs["url"] != want {
+		if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Notes["url"] != want {
 			t.Fatalf("result = %+v and %d Pods, want Running with one Pod and the URL %s", res, len(pods), want)
 		}
 		if got, token := prepareEnv(pods[0], "URL"), prepareEnv(pods[0], "TOKEN_FILE"); got != want || token == "" {
@@ -693,11 +693,11 @@ func TestStartsOverWhenTheRunCantGoOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" || len(kube.Owned[agent.Pod](rec)) != 0 {
+	if res.State != gitk8s.Fixed || res.Notes["runs"] != "1" || len(kube.Owned[agent.Pod](rec)) != 0 {
 		t.Fatalf("result = %+v, want Fixed by git without a Pod, counting the run", res)
 	}
-	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
-		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
+	if got := w.Fetch("c/x"); got != res.Fix {
+		t.Errorf("c/x = %s, want the merge %s", got, res.Fix)
 	}
 }
 
@@ -739,7 +739,7 @@ func TestStartsOverWhenTheExternalHeadMovesDuringARun(t *testing.T) {
 	if _, err := reconcile(t, srv, b, rules, o); err != nil {
 		t.Fatal(err)
 	}
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Outputs["merge"] != e {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Notes["merge"] != e {
 		t.Fatalf("result = %+v, want Running for %s", res, gitk8s.Short(e))
 	}
 
@@ -756,7 +756,7 @@ func TestStartsOverWhenTheExternalHeadMovesDuringARun(t *testing.T) {
 	if got := (*jobs)[1].Checkout.Merge; !reflect.DeepEqual(got, want) {
 		t.Errorf("the second job merges %+v, want %+v", got, want)
 	}
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Outputs["merge"] != e2 || res.Outputs["diverged"] != e2 || res.Outputs["runs"] != "2" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Notes["merge"] != e2 || res.Notes["diverged"] != e2 || res.Notes["runs"] != "2" {
 		t.Errorf("result = %+v, want Running for %s, counting both runs", res, gitk8s.Short(e2))
 	}
 }
@@ -807,8 +807,8 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
 					t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, p.Name)
 				}
-				if st := readState(res.Outputs); res.Outputs["merge"] != started || st.UID != "uid-1" || st.Refunded != "uid-1" || st.Runs != 0 {
-					t.Errorf("outputs = %v, want the run that merges main at %s, given back", res.Outputs, started)
+				if st := readState(res.Notes); res.Notes["merge"] != started || st.UID != "uid-1" || st.Refunded != "uid-1" || st.Runs != 0 {
+					t.Errorf("notes = %v, want the run that merges main at %s, given back", res.Notes, started)
 				}
 			}
 			if tc.deploy {
@@ -823,7 +823,7 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 					t.Fatalf("result = %+v and Pods %v, want a new Pod", res, pods)
 				}
 				want := "preparing the source again in Pod " + pods[0].Name + ", because the run is still for the same commits after Pod " + p.Name + " found that c/x no longer points to " + b.Spec.Head + ", or " + msg
-				if res.State != gitk8s.Running || res.Message != want || res.Outputs["merge"] != started || res.Outputs["runs"] != "1" {
+				if res.State != gitk8s.Running || res.Message != want || res.Notes["merge"] != started || res.Notes["runs"] != "1" {
 					t.Fatalf("result = %+v, want Running with the run that merges main at %s in a new Pod", res, started)
 				}
 				p = pods[0]
@@ -837,21 +837,21 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 				t.Fatal(err)
 			}
 			res := b.Status.Checks.Result
-			if res.State != gitk8s.Running || res.Outputs["merge"] != moved || res.Outputs["runs"] != "1" || res.Outputs["pod"] == p.Name || readState(res.Outputs).Refunded != "" {
+			if res.State != gitk8s.Running || res.Notes["merge"] != moved || res.Notes["runs"] != "1" || res.Pod == p.Name || readState(res.Notes).Refunded != "" {
 				t.Fatalf("result = %+v, want Running with a new run that merges main at %s and counts once", res, moved)
 			}
-			if !slices.ContainsFunc(kube.Owned[agent.Pod](rec), func(q *agent.Pod) bool { return q.Name == res.Outputs["pod"] }) {
-				t.Errorf("the check didn't declare the new run's Pod %s", res.Outputs["pod"])
+			if !slices.ContainsFunc(kube.Owned[agent.Pod](rec), func(q *agent.Pod) bool { return q.Name == res.Pod }) {
+				t.Errorf("the check didn't declare the new run's Pod %s", res.Pod)
 			}
 		})
 	}
 }
 
-func TestKeepsTheRunsStateInItsOutputs(t *testing.T) {
+func TestKeepsTheRunsStateInItsNotes(t *testing.T) {
 	st := agent.JobState{Runs: 2, Pod: "conflicts-app-c-x-2", Attempt: 2, UID: "uid-2", Refunded: "uid-1", Done: true}
-	got := readState(runOutputs(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), "http://mirror/default/app.git", &st))
+	got := readState(runNotes(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), "http://mirror/default/app.git", &st))
 	if *got != st {
-		t.Errorf("state after the outputs = %+v, want %+v", *got, st)
+		t.Errorf("state after the notes = %+v, want %+v", *got, st)
 	}
 }
 
@@ -876,7 +876,7 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Outputs["pod"] == "" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Pod == "" {
 		t.Fatalf("result = %+v, want Running with the agent's Pod", res)
 	}
 
@@ -889,7 +889,7 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "fetching the branch and main to commit the agent's resolution: ") || readState(res.Outputs).Done || rec.RequeueAfter() != 30*time.Second {
+	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "fetching the branch and main to commit the agent's resolution: ") || readState(res.Notes).Done || rec.RequeueAfter() != 30*time.Second {
 		t.Fatalf("result = %+v and RequeueAfter = %v, want Running with the run not done, again in 30 seconds", res, rec.RequeueAfter())
 	}
 
@@ -899,11 +899,11 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	res = b.Status.Checks.Result
-	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" || !readState(res.Outputs).Done || rec.RequeueAfter() != time.Second {
+	if res.State != gitk8s.Fixed || res.Notes["runs"] != "1" || !readState(res.Notes).Done || rec.RequeueAfter() != time.Second {
 		t.Fatalf("result = %+v and RequeueAfter = %v, want Fixed by the agent's one run, done, and a reconcile in a second", res, rec.RequeueAfter())
 	}
-	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
-		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
+	if got := w.Fetch("c/x"); got != res.Fix {
+		t.Errorf("c/x = %s, want the merge %s", got, res.Fix)
 	}
 }
 
@@ -941,7 +941,7 @@ func TestCommitsTheResultAgainWhenGitFailsToCommitIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "committing the agent's resolution: ") || readState(res.Outputs).Done || rec.RequeueAfter() != 30*time.Second {
+	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "committing the agent's resolution: ") || readState(res.Notes).Done || rec.RequeueAfter() != 30*time.Second {
 		t.Fatalf("result = %+v and RequeueAfter = %v, want Running with the run not done, again in 30 seconds", res, rec.RequeueAfter())
 	}
 
@@ -950,11 +950,11 @@ func TestCommitsTheResultAgainWhenGitFailsToCommitIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	res = b.Status.Checks.Result
-	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" {
+	if res.State != gitk8s.Fixed || res.Notes["runs"] != "1" {
 		t.Fatalf("result = %+v, want Fixed by the agent's one run", res)
 	}
-	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
-		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
+	if got := w.Fetch("c/x"); got != res.Fix {
+		t.Errorf("c/x = %s, want the merge %s", got, res.Fix)
 	}
 }
 
@@ -994,17 +994,20 @@ func TestCommitsTheAgentsResolution(t *testing.T) {
 			}
 
 			res := b.Status.Checks.Result
-			fix := res.Outputs["fix"]
+			fix := res.Fix
 			if res.State != gitk8s.Fixed || fix == "" || res.Message != "the agent resolved the conflicts in a.txt; pushed "+gitk8s.Short(fix) {
 				t.Fatalf("result = %+v, want Fixed with the agent's merge", res)
 			}
 			for k, want := range map[string]string{
-				"merge": merged, "conflicts": "a.txt,go.sum", "runs": "1", "pod": "conflicts-app-c-x-1",
+				"merge": merged, "runs": "1",
 				"summary": "kept both lines", "model": "fake:composer-2.5", "inputTokens": "10", "outputTokens": "2", "costCents": "1.5",
 			} {
-				if got := res.Outputs[k]; got != want {
-					t.Errorf("outputs[%s] = %q, want %q", k, got, want)
+				if got := res.Notes[k]; got != want {
+					t.Errorf("notes[%s] = %q, want %q", k, got, want)
 				}
+			}
+			if res.Outputs["conflicts"] != "a.txt,go.sum" || res.Pod != "conflicts-app-c-x-1" {
+				t.Errorf("outputs = %v and Pod = %q, want the conflicts and the run's Pod", res.Outputs, res.Pod)
 			}
 			if got := w.Fetch("c/x"); got != fix {
 				t.Fatalf("c/x = %s, want the merge %s", got, fix)
@@ -1078,8 +1081,8 @@ func TestRejectsABadResolution(t *testing.T) {
 			if want := "can't commit the agent's resolution: " + tc.want; res.State != gitk8s.Failed || res.Message != want {
 				t.Errorf("result = %+v, want Failed with %q", res, want)
 			}
-			if res.Outputs["runs"] != "1" || res.Outputs["inputTokens"] != "10" {
-				t.Errorf("outputs = %v, want the run and what it used", res.Outputs)
+			if res.Notes["runs"] != "1" || res.Notes["inputTokens"] != "10" {
+				t.Errorf("notes = %v, want the run and what it used", res.Notes)
 			}
 			if got := srv.Heads(t, "app")["c/x"]; got != head {
 				t.Errorf("c/x moved to %s", got)
@@ -1174,8 +1177,8 @@ func TestReportsARunThatDoesntResolve(t *testing.T) {
 			if res.State != gitk8s.Failed || res.Message != tc.want {
 				t.Errorf("result = %+v, want Failed with %q", res, tc.want)
 			}
-			if res.Outputs["runs"] != "1" || res.Outputs["merge"] != b.Spec.ParentHead || res.Outputs["inputTokens"] != "10" || res.Outputs["model"] != "fake:composer-2.5" {
-				t.Errorf("outputs = %v, want the run and what it used", res.Outputs)
+			if res.Notes["runs"] != "1" || res.Notes["merge"] != b.Spec.ParentHead || res.Notes["inputTokens"] != "10" || res.Notes["model"] != "fake:composer-2.5" {
+				t.Errorf("notes = %v, want the run and what it used", res.Notes)
 			}
 			if got := srv.Heads(t, "app")["c/x"]; got != head {
 				t.Errorf("c/x moved to %s", got)
@@ -1209,12 +1212,12 @@ func TestMergesTheExternalHead(t *testing.T) {
 				t.Fatal(err)
 			}
 			res := b.Status.Checks.Result
-			fix := res.Outputs["fix"]
+			fix := res.Fix
 			if res.State != gitk8s.Fixed || fix == "" || !strings.HasPrefix(res.Message, tc.want) {
 				t.Fatalf("result = %+v, want Fixed with %q", res, tc.want)
 			}
-			if res.Outputs["diverged"] != e || res.Outputs["merge"] != e {
-				t.Errorf("outputs = %v, want the external head %s", res.Outputs, e)
+			if res.Notes["diverged"] != e || res.Notes["merge"] != e {
+				t.Errorf("notes = %v, want the external head %s", res.Notes, e)
 			}
 			if got := w.Fetch("c/x"); got != fix {
 				t.Fatalf("c/x = %s, want the merge %s", got, fix)
@@ -1231,7 +1234,7 @@ func TestMergesTheExternalHead(t *testing.T) {
 			if _, err := reconcile(t, srv, b, rules, o); err != nil {
 				t.Fatal(err)
 			}
-			if res := b.Status.Checks.Result; res.State != gitk8s.Passed || !strings.HasPrefix(res.Message, "contains the external repository's c/x at ") || res.Outputs["diverged"] != e {
+			if res := b.Status.Checks.Result; res.State != gitk8s.Passed || !strings.HasPrefix(res.Message, "contains the external repository's c/x at ") || res.Notes["diverged"] != e {
 				t.Errorf("result after the merge = %+v, want Passed", res)
 			}
 		})
@@ -1264,7 +1267,7 @@ func TestStartsAnAgentForTheExternalHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	pods := kube.Owned[agent.Pod](rec)
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Outputs["diverged"] != e || res.Outputs["conflicts"] != "a.txt" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Notes["diverged"] != e || res.Outputs["conflicts"] != "a.txt" {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
 	if task := agentTask(t, pods[0]); task.Instructions != divergedInstructions+instructions || task.MergeName != "the external repository's c/x" || task.MergeHead != e {
@@ -1348,8 +1351,8 @@ func TestLeavesABranchThatTheExternalRepositoryDeleted(t *testing.T) {
 	}
 	want := "the external repository deleted c/x, which changed in git-k8s since they last synced at " + gitk8s.Short(base) +
 		"; push c/x to the external repository again to keep its changes, or delete it in git-k8s to drop them"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["synced"] != base || res.Outputs["diverged"] != "" {
-		t.Errorf("result = %+v, want Failed with %q and the synced head in the outputs", res, want)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["synced"] != base || res.Notes["diverged"] != "" {
+		t.Errorf("result = %+v, want Failed with %q and the synced head in the notes", res, want)
 	}
 	if pods := kube.Owned[agent.Pod](rec); len(pods) != 0 {
 		t.Errorf("started %d agent Pods, want none", len(pods))
@@ -1373,27 +1376,27 @@ func TestRunsAgainForAnotherMerge(t *testing.T) {
 	synced := diverged(gitk8s.Divergence{Commit: "e1", Ref: downstream + "c/x", Base: "s1"})
 	deleted := diverged(gitk8s.Divergence{Base: "s1"})
 	for _, tc := range []struct {
-		name    string
-		outputs map[string]string
-		world   []any
-		want    bool
+		name  string
+		notes map[string]string
+		world []any
+		want  bool
 	}{
 		{name: "without a merge", want: false},
-		{name: "after merging main's head", outputs: map[string]string{"merge": "p1"}, want: false},
-		{name: "after merging an earlier head of main", outputs: map[string]string{"merge": "p0"}, want: true},
-		{name: "after merging the external head", outputs: map[string]string{"diverged": "e1", "merge": "e1"}, world: []any{o}, want: false},
-		{name: "after the branch diverged", outputs: map[string]string{"merge": "p1"}, world: []any{o}, want: true},
-		{name: "after the external head moved", outputs: map[string]string{"diverged": "e0", "merge": "e0"}, world: []any{o}, want: true},
-		{name: "after the divergence cleared", outputs: map[string]string{"diverged": "e1", "merge": "e1"}, want: true},
-		{name: "after resolving a divergence since the sides synced", outputs: map[string]string{"diverged": "e1", "synced": "s1", "merge": "e1"}, world: []any{synced}, want: false},
-		{name: "after the sides synced again", outputs: map[string]string{"diverged": "e1", "synced": "s0", "merge": "e1"}, world: []any{synced}, want: true},
-		{name: "after the external repository deleted the branch", outputs: map[string]string{"merge": "p1"}, world: []any{deleted}, want: true},
-		{name: "after failing on the deletion", outputs: map[string]string{"synced": "s1"}, world: []any{deleted}, want: false},
-		{name: "after the deletion cleared", outputs: map[string]string{"synced": "s1"}, want: true},
+		{name: "after merging main's head", notes: map[string]string{"merge": "p1"}, want: false},
+		{name: "after merging an earlier head of main", notes: map[string]string{"merge": "p0"}, want: true},
+		{name: "after merging the external head", notes: map[string]string{"diverged": "e1", "merge": "e1"}, world: []any{o}, want: false},
+		{name: "after the branch diverged", notes: map[string]string{"merge": "p1"}, world: []any{o}, want: true},
+		{name: "after the external head moved", notes: map[string]string{"diverged": "e0", "merge": "e0"}, world: []any{o}, want: true},
+		{name: "after the divergence cleared", notes: map[string]string{"diverged": "e1", "merge": "e1"}, want: true},
+		{name: "after resolving a divergence since the sides synced", notes: map[string]string{"diverged": "e1", "synced": "s1", "merge": "e1"}, world: []any{synced}, want: false},
+		{name: "after the sides synced again", notes: map[string]string{"diverged": "e1", "synced": "s0", "merge": "e1"}, world: []any{synced}, want: true},
+		{name: "after the external repository deleted the branch", notes: map[string]string{"merge": "p1"}, world: []any{deleted}, want: true},
+		{name: "after failing on the deletion", notes: map[string]string{"synced": "s1"}, world: []any{deleted}, want: false},
+		{name: "after the deletion cleared", notes: map[string]string{"synced": "s1"}, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, _ := kube.Fake(t.Context(), b, tc.world...)
-			prev := &gitk8s.CheckResult{State: gitk8s.Failed, Outputs: tc.outputs}
+			prev := &gitk8s.CheckResult{State: gitk8s.Failed, Notes: tc.notes}
 			if got := stale(ctx, &b.ObjectMeta, &b.Spec, prev); got != tc.want {
 				t.Errorf("stale = %t, want %t", got, tc.want)
 			}
@@ -1433,9 +1436,9 @@ func TestReplaysTheBranchOntoARewoundExternalHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
-	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" || res.Outputs["synced"] != synced {
+	if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "external" || res.Notes["synced"] != synced {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -1483,7 +1486,7 @@ func TestReplaysTheBranchOntoAnAmendedExternalHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
 	if res.State != gitk8s.Fixed || res.Message != want {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
@@ -1535,7 +1538,7 @@ func TestSkipsChangesThatTheRewoundExternalHeadHas(t *testing.T) {
 				t.Fatal(err)
 			}
 			res := b.Status.Checks.Result
-			fix := res.Outputs["fix"]
+			fix := res.Fix
 			want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + tc.want + "; pushed " + gitk8s.Short(fix)
 			if res.State != gitk8s.Fixed || res.Message != want {
 				t.Fatalf("result = %+v, want Fixed with %q", res, want)
@@ -1616,13 +1619,13 @@ func TestReplaysTheBranchAsOneCommit(t *testing.T) {
 				t.Fatal(err)
 			}
 			res := b.Status.Checks.Result
-			fix := res.Outputs["fix"]
+			fix := res.Fix
 			want := tc.want
 			if strings.Contains(want, "%s") {
 				want = fmt.Sprintf(want, gitk8s.Short(synced), gitk8s.Short(e))
 			}
 			want = fmt.Sprintf(tc.why, gitk8s.Short(stuck)) + "; " + want + "; pushed " + gitk8s.Short(fix)
-			if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" || res.Outputs["merge"] != e {
+			if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "external" || res.Notes["merge"] != e {
 				t.Fatalf("result = %+v, want Fixed with %q", res, want)
 			}
 			if got := w.Fetch("c/x"); got != fix {
@@ -1674,10 +1677,13 @@ func TestStartsAnAgentToReplayTheBranch(t *testing.T) {
 	if want := "replaying commit " + gitk8s.Short(b.Spec.Head) + " of the branch conflicts in a.txt; started Pod " + pods[0].Name; res.Message != want {
 		t.Errorf("message = %q, want %q", res.Message, want)
 	}
-	for k, want := range map[string]string{"rewound": "external", "merge": e, "base": synced, "synced": synced, "diverged": e, "conflicts": "a.txt"} {
-		if got := res.Outputs[k]; got != want {
-			t.Errorf("outputs[%s] = %q, want %q", k, got, want)
+	for k, want := range map[string]string{"rewound": "external", "merge": e, "base": synced, "synced": synced, "diverged": e} {
+		if got := res.Notes[k]; got != want {
+			t.Errorf("notes[%s] = %q, want %q", k, got, want)
 		}
+	}
+	if res.Outputs["conflicts"] != "a.txt" {
+		t.Errorf("outputs = %v, want the conflicts", res.Outputs)
 	}
 	task := agentTask(t, pods[0])
 	if task.Instructions != replayInstructions+instructions || task.Base != synced || task.MergeName != "the external repository's c/x" || task.MergeHead != e {
@@ -1694,7 +1700,7 @@ func TestStartsAnAgentToReplayTheBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, again := b.Status.Checks.Result, kube.Owned[agent.Pod](rec)
-	if res.State != gitk8s.Running || len(again) != 1 || again[0].Name != pods[0].Name || res.Outputs["rewound"] != "external" {
+	if res.State != gitk8s.Running || len(again) != 1 || again[0].Name != pods[0].Name || res.Notes["rewound"] != "external" {
 		t.Errorf("result = %+v and Pods %v, want Running with Pod %s", res, again, pods[0].Name)
 	}
 
@@ -1718,15 +1724,18 @@ func TestCommitsTheAgentsReplay(t *testing.T) {
 	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"a.txt": "one\nexternal\nthree\n", "go.sum": "a v1\nb v1\n"})
 	syncedAt(w, o, "c/x", synced)
 	resolved := agent.File{Path: "a.txt", Mode: "100644", Content: []byte("one\nbranch\nexternal\nthree\n")}
-	jobs := withJobs(t, finish(t, w, resolution(resolved)))
+	// The Cursor backend reports both costs.
+	result, charged := resolution(resolved), 0.5
+	result.ChargedCents = &charged
+	jobs := withJobs(t, finish(t, w, result))
 	if _, err := reconcile(t, srv, b, rules, o); err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "replaying commit " + gitk8s.Short(head) + " of the branch conflicts in a.txt, go.sum; the agent resolved the conflicts in a.txt; pushed " + gitk8s.Short(fix)
-	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" {
-		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "external" || res.Notes["chargedCents"] != "0.5" {
+		t.Fatalf("result = %+v, want Fixed with %q and both costs", res, want)
 	}
 	if got := w.Fetch("c/x"); got != fix {
 		t.Fatalf("c/x = %s, want the replay %s", got, fix)
@@ -1777,9 +1786,9 @@ func TestReplaysTheExternalCommitsOntoARewoundBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the commits that the external repository's c/x added since then onto it; pushed " + gitk8s.Short(fix)
-	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "branch" {
+	if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "branch" {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -1830,7 +1839,7 @@ func TestReplaysAnExternalCommitThatRepeatsAReplayedChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the commits that the external repository's c/x added since then onto it; pushed " + gitk8s.Short(fix)
 	if res.State != gitk8s.Fixed || res.Message != want {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
@@ -1905,7 +1914,7 @@ func TestLeavesARewoundBranchWhoseExternalCommitsDontReplay(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + ", and " + fmt.Sprintf(tc.why, gitk8s.Short(stuck)) + ", so the check leaves the divergence for a person"
-			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "branch" {
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "branch" {
 				t.Errorf("result = %+v, want Failed with %q", res, want)
 			}
 			if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -1931,9 +1940,9 @@ func TestResolvesADivergenceInWhichBothSidesRewound(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(s2) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
-	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "both" {
+	if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "both" {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -1966,7 +1975,7 @@ func TestLeavesADivergenceInWhichBothSidesKeptWhatTheOtherRemoved(t *testing.T) 
 		t.Fatal(err)
 	}
 	want := "the branch and the external repository's c/x both rewound since they last synced at " + gitk8s.Short(synced) + ", and each kept commits that the other removed, so the check leaves the divergence for a person"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "both" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "both" {
 		t.Errorf("result = %+v, want Failed with %q", res, want)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2008,9 +2017,9 @@ func TestReplaysAChangeThatTheRewoundExternalHeadMakesElsewhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the branch's commits since then onto it; pushed " + gitk8s.Short(fix)
-	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "external" {
+	if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "external" {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -2047,7 +2056,7 @@ func TestLeavesAnExternalChangeThatTheRewoundBranchMakesElsewhere(t *testing.T) 
 		t.Fatal(err)
 	}
 	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + ", and the branch with replays of the commits of the external repository's c/x doesn't have every change that the external repository's c/x made, so the check leaves the divergence for a person"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "branch" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "branch" {
 		t.Errorf("result = %+v, want Failed with %q", res, want)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2078,7 +2087,7 @@ func TestLeavesAFileThatTheRewoundBranchBringsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + ", and the branch with replays of the commits of the external repository's c/x doesn't have every change that the external repository's c/x made, so the check leaves the divergence for a person"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "branch" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "branch" {
 		t.Errorf("result = %+v, want Failed with %q", res, want)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2106,7 +2115,7 @@ func TestLeavesReplaysThatBringBackAFileThatTheRewindRemoved(t *testing.T) {
 	}
 	want := "the replays of the branch's commits onto the external repository's c/x don't have every change that both sides made; " +
 		"replaying the branch onto the external repository's c/x conflicts in s.txt; git can't resolve them, and the check runs no agent without -agent-image"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "external" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "external" {
 		t.Errorf("result = %+v, want Failed with %q", res, want)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2200,7 +2209,7 @@ func TestLeavesACopyOfARemovedCommit(t *testing.T) {
 				why = "commit " + gitk8s.Short(head) + " of the branch is a merge, which has no replay"
 			}
 			want := "the branch and the external repository's c/x both rewound since they last synced at " + gitk8s.Short(synced) + ", and " + why + ", so the check leaves the divergence for a person"
-			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "both" {
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "both" {
 				t.Errorf("result = %+v, want Failed with %q", res, want)
 			}
 			if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2260,7 +2269,7 @@ func TestLeavesAReplayOfACommitThatTheRewindRemoved(t *testing.T) {
 			}
 			want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(v) +
 				", and the replays of the branch's commits onto it make the same change as a commit that it removed, so the check leaves the divergence for a person"
-			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != tc.rewound {
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != tc.rewound {
 				t.Errorf("result = %+v, want Failed with %q", res, want)
 			}
 			if got := srv.Heads(t, "app")["c/x"]; got != b.Spec.Head {
@@ -2373,8 +2382,8 @@ func TestReplaysABranchThatMergedTheRewoundExternalHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
-	if res.State != gitk8s.Fixed || res.Outputs["rewound"] != "external" || !strings.Contains(res.Message, "is a merge, which has no replay") {
+	fix := res.Fix
+	if res.State != gitk8s.Fixed || res.Notes["rewound"] != "external" || !strings.Contains(res.Message, "is a merge, which has no replay") {
 		t.Fatalf("result = %+v, want Fixed with the branch replayed as one commit", res)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -2400,7 +2409,7 @@ func TestPassesWhenTheRewoundExternalHeadKeepsTheBranchsChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "the external repository's c/x at " + gitk8s.Short(e) + " keeps every change that the branch made since they last synced at " + gitk8s.Short(synced)
-	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want || res.Outputs["rewound"] != "both" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || res.Message != want || res.Notes["rewound"] != "both" {
 		t.Errorf("result = %+v, want Passed with %q", res, want)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2424,9 +2433,9 @@ func TestReplaysTheExternalCommitsWhenBothSidesRewound(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	fix := res.Outputs["fix"]
+	fix := res.Fix
 	want := "the branch rewound since it last synced at " + gitk8s.Short(s2) + "; replayed the commits that the external repository's c/x added since then onto it; pushed " + gitk8s.Short(fix)
-	if res.State != gitk8s.Fixed || res.Message != want || res.Outputs["rewound"] != "both" {
+	if res.State != gitk8s.Fixed || res.Message != want || res.Notes["rewound"] != "both" {
 		t.Fatalf("result = %+v, want Fixed with %q", res, want)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -2455,7 +2464,7 @@ func TestLeavesADivergenceInWhichBothSidesRewoundAndAReplayConflicts(t *testing.
 		t.Fatal(err)
 	}
 	want := "the branch and the external repository's c/x both rewound since they last synced at " + gitk8s.Short(s2) + ", and replaying commit " + gitk8s.Short(head) + " of the branch conflicts in a.txt, so the check leaves the divergence for a person"
-	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "both" {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "both" {
 		t.Errorf("result = %+v, want Failed with %q", res, want)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != head {
@@ -2836,7 +2845,7 @@ func TestSignsWhatItPushes(t *testing.T) {
 			t.Fatal(err)
 		}
 		fix := w.Fetch("c/x")
-		if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Fix != fix {
 			t.Fatalf("result = %+v, want Fixed with the pushed merge %s", res, fix)
 		}
 		if err := signer.Verify(w.Dir, fix); err != nil {
@@ -2855,7 +2864,7 @@ func TestSignsWhatItPushes(t *testing.T) {
 			t.Fatal(err)
 		}
 		fix := w.Fetch("c/x")
-		if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix || res.Outputs["rewound"] != "external" {
+		if res := b.Status.Checks.Result; res.State != gitk8s.Fixed || res.Fix != fix || res.Notes["rewound"] != "external" {
 			t.Fatalf("result = %+v, want Fixed with the pushed replays %s", res, fix)
 		}
 		for _, replay := range []string{fix, fix + "~1"} {

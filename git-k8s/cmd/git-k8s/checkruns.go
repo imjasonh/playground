@@ -525,12 +525,15 @@ func runFor(res gitk8s.CheckResult) runState {
 		// decides.
 		s.Conclusion = "neutral"
 	}
-	var outputs []string
-	for _, k := range slices.Sorted(maps.Keys(res.Outputs)) {
-		outputs = append(outputs, fmt.Sprintf("%s: %s", k, res.Outputs[k]))
+	var lines []string
+	if res.Fix != "" {
+		lines = append(lines, "fix: "+res.Fix)
 	}
-	if len(outputs) > 0 {
-		s.Output.Text = codeBlock(strings.Join(outputs, "\n"))
+	for _, k := range slices.Sorted(maps.Keys(res.Outputs)) {
+		lines = append(lines, fmt.Sprintf("%s: %s", k, res.Outputs[k]))
+	}
+	if len(lines) > 0 {
+		s.Output.Text = codeBlock(strings.Join(lines, "\n"))
 	}
 	return s
 }

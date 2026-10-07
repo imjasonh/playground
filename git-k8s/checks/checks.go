@@ -111,19 +111,32 @@ type Check struct {
 }
 
 // Verdict is the outcome of running a check. The framework shortens the
-// message and output values to fit the core program's limits, and reports
-// an Error result instead of a verdict that the core program doesn't
-// accept, such as one with more than gitk8s.MaxOutputs outputs.
+// message, output values, and note values to fit the core program's limits,
+// and reports an Error result instead of a verdict that the core program
+// doesn't accept, such as one with more than gitk8s.MaxOutputs outputs.
 type Verdict struct {
 	// State is Passed, Failed, or Running.
 	State   string
 	Message string
+	// Outputs are values that merge gates read, such as a risk level.
 	Outputs map[string]string
+	// Notes are other values that the check records, such as what its next
+	// run needs or what an agent's run used, and merge gates don't see them.
+	// They replace the previous result's notes, so a check that keeps a
+	// value copies it from Input.Previous. When the framework reports Error
+	// instead of the verdict, the result keeps the verdict's notes if the
+	// core program accepts them, and otherwise the previous result's notes,
+	// as it does when Run returns an error.
+	Notes map[string]string
+	// Pod names a Pod that does the check's work, such as one that runs
+	// tests. While the result is Running, the mirror lets that Pod fetch
+	// the repository.
+	Pod string
 	// Fix, when set, is a commit that fixes what the check found, such as a
 	// commit on top of the branch's head. The framework moves the branch to
 	// it with a lease on the head, even if it doesn't contain the head, when
 	// the check's policy allows and the branch has automated commits left,
-	// and reports Fixed, with the commit in the output fix; otherwise it
+	// and reports Fixed, with the commit in the result's fix; otherwise it
 	// reports Failed. It reports Error instead, and doesn't move the branch,
 	// if the core program wouldn't accept the Fixed result.
 	Fix string
@@ -134,9 +147,11 @@ type Verdict struct {
 	// MergeBase, for a check without SameChange, is the merge base of the
 	// branch's head and the parent's head that the verdict holds for, such
 	// as one that a check that compares changes found. The result records
-	// it, and the merge controller lands the branch only when it's the
-	// parent's head. When the parent moves, the check runs again unless the
-	// head's merge base with it stays the same.
+	// it with the scope Change, and the merge controller lands the branch
+	// only when it's the parent's head. When the parent moves, the check
+	// runs again unless the head's merge base with it stays the same. A
+	// verdict that depends on the parent's head holds only for that head,
+	// so its result has the scope Parent and no merge base.
 	MergeBase string
 }
 
@@ -327,35 +342,45 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir, Remote: r.check.Remote} })
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
 	defer in.release()
-	if final && !r.current(cur, spec) && cur.ParentCommit == "" && cur.MergeBase != "" {
+	if final && !r.current(cur, spec) && cur.Scope == gitk8s.ScopeChange {
 		if kept := r.keep(ctx, in, cur); kept != nil && !stale(kept) {
 			*result = kept
 			return nil
 		}
 	}
 
-	res := &gitk8s.CheckResult{Commit: spec.Head, FilesOnly: r.check.FilesOnly}
+	res := &gitk8s.CheckResult{Commit: spec.Head, Scope: gitk8s.ScopeHead, FilesOnly: r.check.FilesOnly}
 	if r.check.UsesParent || r.check.SameChange {
-		res.ParentCommit = spec.ParentHead
+		res.Scope, res.ParentCommit = gitk8s.ScopeParent, spec.ParentHead
 	}
 	v, err := r.check.Run(ctx, in)
 	if err != nil {
-		res.State, res.Message = gitk8s.Error, truncate(err.Error())
+		res.State, res.Message, res.Notes = gitk8s.Error, truncate(err.Error()), notes(cur)
 		*result = res
 		return err
 	}
-	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), truncateOutputs(v.Outputs)
+	res.State, res.Message = v.State, truncate(v.Message)
+	res.Outputs = truncateValues(v.Outputs, gitk8s.MaxOutputValueLength)
+	res.Notes = truncateValues(v.Notes, gitk8s.MaxNoteValueLength)
+	res.Pod = v.Pod
 	r.record(ctx, in, v, res)
 	reported, why := res, "the core program doesn't accept the check's result: "
 	if v.Fix != "" {
-		// If push doesn't push, it reports Failed with at most the Fixed
-		// result's outputs, so checking the Fixed result covers that one too.
+		// If push doesn't push, it reports Failed with the Fixed result's
+		// outputs, notes, and Pod, so checking the Fixed result covers that
+		// one too.
 		reported, why = fixed(res, v), "not pushing the fix because the core program wouldn't accept the Fixed result: "
 	}
 	if err := reported.Validate(); err != nil {
 		// Running the check again returns the same result, so report why in
 		// the result instead of failing the reconcile, which kube retries.
-		res.State, res.Message, res.Outputs = gitk8s.Error, truncate(why+err.Error()), nil
+		res.State, res.Message, res.Outputs, res.Pod = gitk8s.Error, truncate(why+err.Error()), nil, ""
+		if res.Validate() != nil {
+			// The core program rejects the verdict's notes, so keep the
+			// previous result's, such as how many times an agent ran, which
+			// the next run counts from.
+			res.Notes = notes(cur)
+		}
 		*result = res
 		return nil
 	}
@@ -373,18 +398,21 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 // current reports whether a final result holds for the branch's heads,
 // without reading the repository.
 func (r *reconciler[V, P]) current(cur *gitk8s.CheckResult, spec *gitk8s.GitBranchSpec) bool {
-	switch {
-	case cur.Commit != spec.Head:
+	if cur.Commit != spec.Head {
 		return false
-	case cur.ParentCommit != "":
+	}
+	switch cur.Scope {
+	case gitk8s.ScopeHead:
+		return !r.check.UsesParent && !r.check.SameChange
+	case gitk8s.ScopeParent:
 		return cur.ParentCommit == spec.ParentHead
-	case cur.MergeBase != "":
+	case gitk8s.ScopeChange:
 		// A merge base is an ancestor of the head, so when the parent's
 		// head is the merge base, it's still the head's merge base with
 		// the parent.
 		return cur.MergeBase == spec.ParentHead
 	}
-	return !r.check.UsesParent && !r.check.SameChange
+	return false
 }
 
 // keep checks a final result with a merge base, which current can't check
@@ -413,30 +441,32 @@ func (r *reconciler[V, P]) keep(ctx context.Context, in *Input, cur *gitk8s.Chec
 		return nil
 	}
 	kept := *cur
-	kept.Commit, kept.MergeBase, kept.Outputs = change.Head, change.Base, maps.Clone(cur.Outputs)
+	kept.Commit, kept.MergeBase, kept.Outputs, kept.Notes = change.Head, change.Base, maps.Clone(cur.Outputs), maps.Clone(cur.Notes)
 	slog.Info("kept a result for the same change", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch,
 		"from", gitk8s.Short(last.Head), "to", gitk8s.Short(change.Head), "mergeBase", gitk8s.Short(change.Base))
 	return &kept
 }
 
-// record notes in res what v holds for besides the branch's head: the
-// parent's head, or the head's merge base with it. A verdict of a check
-// with SameChange holds for the merge base if it's Passed or Failed, has
-// no fix, doesn't use the parent, and the head has one merge base;
-// otherwise it holds for the parent's head.
+// record sets res's scope to what v holds for besides the branch's head:
+// the parent's head, or the head's change on top of its merge base with
+// the parent's head. A verdict of a check with SameChange holds for the
+// change if it's Passed or Failed, has no fix, doesn't use the parent, and
+// the head has one merge base; otherwise it holds for the parent's head.
 func (r *reconciler[V, P]) record(ctx context.Context, in *Input, v Verdict, res *gitk8s.CheckResult) {
 	if v.UsesParent {
-		res.ParentCommit = in.Spec.ParentHead
+		res.Scope, res.ParentCommit = gitk8s.ScopeParent, in.Spec.ParentHead
 	}
 	switch {
 	case !r.check.SameChange:
-		res.MergeBase = v.MergeBase
+		if res.Scope == gitk8s.ScopeHead && v.MergeBase != "" {
+			res.Scope, res.MergeBase = gitk8s.ScopeChange, v.MergeBase
+		}
 		return
 	case r.check.UsesParent || v.UsesParent || v.Fix != "" || v.State != gitk8s.Passed && v.State != gitk8s.Failed:
 		return
 	}
 	if change, err := in.Change(ctx); err == nil && change.Base != "" {
-		res.ParentCommit, res.MergeBase = "", change.Base
+		res.Scope, res.ParentCommit, res.MergeBase = gitk8s.ScopeChange, "", change.Base
 	}
 }
 
@@ -484,13 +514,8 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 // fixed returns the result that push reports after it pushes v's fix.
 func fixed(res *gitk8s.CheckResult, v Verdict) *gitk8s.CheckResult {
 	f := *res
-	f.State = gitk8s.Fixed
+	f.State, f.Fix = gitk8s.Fixed, v.Fix
 	f.Message = truncate(fmt.Sprintf("%s; pushed %s", v.Message, gitk8s.Short(v.Fix)))
-	f.Outputs = maps.Clone(res.Outputs)
-	if f.Outputs == nil {
-		f.Outputs = map[string]string{}
-	}
-	f.Outputs["fix"] = v.Fix
 	return &f
 }
 
@@ -765,17 +790,25 @@ func (in *Input) release() {
 // truncate keeps messages to the size that the core program accepts.
 func truncate(s string) string { return shorten(s, gitk8s.MaxMessageLength) }
 
-// truncateOutputs keeps output values to the size that the core program
-// accepts.
-func truncateOutputs(outputs map[string]string) map[string]string {
-	if outputs == nil {
+// truncateValues keeps output or note values to n bytes, the most that the
+// core program accepts.
+func truncateValues(values map[string]string, n int) map[string]string {
+	if values == nil {
 		return nil
 	}
-	out := make(map[string]string, len(outputs))
-	for k, v := range outputs {
-		out[k] = shorten(v, gitk8s.MaxOutputValueLength)
+	out := make(map[string]string, len(values))
+	for k, v := range values {
+		out[k] = shorten(v, n)
 	}
 	return out
+}
+
+// notes returns a copy of a result's notes, or nil for no result.
+func notes(r *gitk8s.CheckResult) map[string]string {
+	if r == nil {
+		return nil
+	}
+	return maps.Clone(r.Notes)
 }
 
 // shorten returns s as valid UTF-8 of at most n bytes, ending in "..." if

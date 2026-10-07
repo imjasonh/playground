@@ -227,8 +227,8 @@ func (f *fixture) branches() *gitk8s.GitBranch {
 // pass gives b fresh, passing results for the policy's checks.
 func pass(b *gitk8s.GitBranch) {
 	b.Status.Checks = map[string]gitk8s.CheckResult{
-		"base":  {Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed},
-		"gofmt": {Commit: b.Spec.Head, State: gitk8s.Passed},
+		"base":  {Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed},
+		"gofmt": {Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed},
 	}
 }
 
@@ -1277,13 +1277,13 @@ func TestWaitsForFreshPassingChecks(t *testing.T) {
 	for name, edit := range map[string]func(*gitk8s.GitBranch){
 		"pending": func(b *gitk8s.GitBranch) { delete(b.Status.Checks, "gofmt") },
 		"failed": func(b *gitk8s.GitBranch) {
-			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
+			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
 		},
 		"stale head": func(b *gitk8s.GitBranch) {
-			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: "old", State: gitk8s.Passed}
+			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: "old", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 		},
 		"stale parent": func(b *gitk8s.GitBranch) {
-			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: "old", State: gitk8s.Passed}
+			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: "old", State: gitk8s.Passed}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1307,8 +1307,8 @@ func TestGateExpression(t *testing.T) {
 	p.Checks = append(p.Checks[:2:2], gitk8s.CheckPolicy{Name: "risk"}, gitk8s.CheckPolicy{Name: "approval"})
 	p.When = `checks.base.passed && checks.gofmt.passed && (checks.risk.outputs.level == "low" || checks.approval.passed)`
 	b.Spec.Merge = &p
-	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: map[string]string{"level": "high"}}
-	b.Status.Checks["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
+	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: map[string]string{"level": "high"}}
+	b.Status.Checks["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
 	results := b.Status.Checks
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
@@ -1317,7 +1317,7 @@ func TestGateExpression(t *testing.T) {
 		t.Fatalf("state = %q, conditions %+v", b.Status.State, b.Status.Conditions)
 	}
 
-	results["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Passed}
+	results["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	b.Status.Checks = results
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
@@ -1334,7 +1334,7 @@ func TestLandsResultsForTheParentsHead(t *testing.T) {
 	p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt"}, {Name: "risk"}}
 	b.Spec.Merge = &p
 	low := map[string]string{"level": "low"}
-	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, MergeBase: strings.Repeat("1", 40), State: gitk8s.Passed, Outputs: low}
+	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeChange, MergeBase: strings.Repeat("1", 40), State: gitk8s.Passed, Outputs: low}
 	results := b.Status.Checks
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
@@ -1346,7 +1346,7 @@ func TestLandsResultsForTheParentsHead(t *testing.T) {
 		t.Fatalf("main moved to %s", got)
 	}
 
-	results["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, MergeBase: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: low}
+	results["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeChange, MergeBase: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: low}
 	b.Status.Checks = results
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)

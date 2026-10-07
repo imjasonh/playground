@@ -308,7 +308,7 @@ administrators should control the namespace.
 A check Pod's token is bound to the Pod, so it stops working when the Pod
 is deleted, and it expires after 10 minutes. The mirror lets the Pod fetch
 only while a `Running` result of the check on one of the repository's
-branches names the Pod in its `pod` output, and the branch's merge policy
+branches names the Pod in its `pod` field, and the branch's merge policy
 lists the check. `check-gotest` records the Pod's name before it starts the
 Pod. `check-review` and `check-conflicts` name an agent Pod in the reconcile
 that declares it, and kube writes that result right after it creates the
@@ -721,8 +721,8 @@ check, and it shows the result that changed last, for either branch.
 
 The check run's title is the result's state. Its summary is the result's
 message, or the state when the result has no message, and its text lists the
-result's outputs. The controller puts the message and the outputs in code
-blocks, so GitHub shows what a check writes as it is, not as Markdown.
+result's `fix` and outputs. The controller puts the message and the text in
+code blocks, so GitHub shows what a check writes as it is, not as Markdown.
 
 Check controllers don't finish a check on a commit that its branch left. So
 when a branch moves, is deleted, or no longer has a result for a check
@@ -861,7 +861,7 @@ pushes to the mirror, which applies the rules in
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, or a commit whose change the head makes too, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push that changes the code needs a new approval. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
-| `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
+| `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and records the agent's summary and the run's token counts in its notes. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
 | `check-deps` | `deps` | On a dependency branch, passes when the `gotest` check passes. When the tests fail, it has an AI agent change the code to fit the new versions, and pushes the agent's fix. It passes on other branches. See [Dependency updates](#dependency-updates). |
 | `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. When a side of a diverged branch rewound, it replays the other side's commits onto that side's head instead of merging. See [Resolve conflicts](#resolve-conflicts). |
 
@@ -1067,11 +1067,22 @@ that uses `mirror.Remote`, and lets each program that uses `signing.Key`
 read Secrets. A check that reads only the `GitBranch` leaves both out, so
 its program gets no token for the mirror and can't read Secrets.
 
-The core program accepts at most 16 outputs, with names of up to 63 bytes.
-A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
-have at most 15 other outputs, or the framework reports `Error` and doesn't
-push the fix. The framework shortens messages and output values to 1,024
-bytes, the most that the core program accepts.
+A verdict's `Outputs` are for merge gates, such as a risk level. Its `Notes`
+are other values that the check records, such as what its next run needs or
+what an agent's run used, and gates don't see them. A result's notes replace
+the last result's, so a check that keeps a value copies it from
+`in.Previous`. An `Error` result keeps the verdict's notes, or the last
+result's when `Run` returns an error or the core program wouldn't accept the
+verdict's notes, so an error doesn't reset a count such as an agent's runs.
+A verdict's `Pod` names a Pod that does the check's work, which the mirror
+lets fetch the repository while the result is `Running`, as
+[Who can fetch and push](#who-can-fetch-and-push) describes. A `Fixed`
+result names the commit that the framework pushed in `fix`.
+
+The core program accepts at most 16 outputs and 32 notes, with names of up
+to 63 bytes. For a verdict with more, the framework reports `Error` and
+doesn't push its fix. The framework shortens messages, output values, and
+note values to 1,024 bytes, the most that the core program accepts.
 
 A check runs again when the branch's head changes, and with `UsesParent`,
 when the parent's head changes. `Always` runs it on every reconcile, for a
@@ -1137,7 +1148,7 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   core program.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
-  records when it started waiting in `outputs.waiting`. When a Pod's phase
+  records when it started waiting in `notes.waiting`. When a Pod's phase
   becomes `Succeeded` or `Failed`, or the Pod no longer exists, the next
   branch starts. Branches at the front of a [merge queue](#merge-queue) go
   first, then the branch that has waited longest. A new head, a retry after
@@ -1165,7 +1176,7 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   the API server refuses a Pod, for example because the check Pod policy
   denies it, other branches can then use its place while kube tries again.
   Until the Pod exists, its branch keeps the time that it started waiting in
-  `outputs.queued`, so the branch keeps its place in line. With `-shards`, a
+  `notes.queued`, so the branch keeps its place in line. With `-shards`, a
   replica doesn't count the Pods that other replicas declared until its
   cache shows them, so replicas that start Pods at the same moment can go
   over the limit.
@@ -1544,15 +1555,16 @@ second trailer makes `check-risk` rate the branch high. A fix leaves
 the run fails before the agent starts. Without `mayPush`, the agent's files
 are read-only.
 
-The check's outputs hold the agent's `summary`, the `model`, the run's
+The check's notes hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
 and two costs in cents when the SDK reports them. `costCents` is the model
 token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
 what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
 0 for usage that a Cursor plan includes. `runs` counts the agent runs on
-the branch, and `pod` names the run's Pod. `state`, `base`, and `url` hold
-what the check needs to follow the run, such as the URL that its Pods fetch
-from, so the check keeps the run's Pod while it can't reach the mirror.
+the branch, and the result's `pod` names the run's Pod. `state`, `base`, and
+`url` hold what the check needs to follow the run, such as the URL that its
+Pods fetch from, so the check keeps the run's Pod while it can't reach the
+mirror.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
@@ -1595,7 +1607,7 @@ and the agent runs again. The check counts that as another run. When
 `maxAgentRuns` or `-max-runs-per-day` allows no more, the check fails
 instead, and kube doesn't create the Pod again. A run that fails after the
 agent starts still reports the `model`, the token counts, and the costs in
-the check's outputs.
+the check's notes.
 
 A deploy can also run agents again. A Pod's spec can't change, so after a
 deploy that changes the agent Pods' spec, such as one with another
@@ -1611,7 +1623,7 @@ waits because the branch moved has no agent to start over, so a deploy ends
 its wait, and the check fetches the head again at once in a new Pod, which
 counts as a run.
 
-The check counts a branch's runs in its outputs on the branch's
+The check counts a branch's runs in its notes on the branch's
 `GitBranch`, so a branch that's deleted and then pushed again can start
 over at 0, and so can a branch with a new name. To cap what agents cost in
 money, also set a spend limit for the Cursor team or account that owns the
@@ -1744,11 +1756,11 @@ func main() {
 `Run` commits the agent's changes with `in.CommitTree`, so a check whose
 agent can edit needs `SigningKey: signing.Key`.
 
-`Run` never returns an error, because a check that returns one loses its
-outputs, which count the branch's runs. It also returns the agent's
-`Result`, with the files that the agent changed, so a check can build
-another kind of commit from them with `agent.ApplyFiles` and
-`in.CommitTree`.
+`Run` never returns an error, because a check that returns one keeps its
+last result's notes, which don't count a run that the call started. It
+also returns the agent's `Result`, with the files that the agent changed,
+so a check can build another kind of commit from them with
+`agent.ApplyFiles` and `in.CommitTree`.
 
 ### Resolve conflicts
 
@@ -2021,7 +2033,7 @@ isn't `-agent-image`. The mirror accepts a token that's bound to a Pod only
 from a check's Pod, so a controller's `Job` names the repository's URL and
 the Secret with the repository's credentials. A check's `Job` sets `Mirror`
 and the URL of the check's remote instead, and the check's `Running` result
-must name the run's Pod in its `pod` output, as `Run` does. `Run` builds a
+must name the run's Pod in its `pod` field, as `Run` does. `Run` builds a
 `Job` from a check's branch, so both start the same Pods, within the same
 `-max-pods` and `-max-runs-per-day` limits. The `Job`'s namespace must be
 the namespace of the object that the controller reconciles, because
@@ -2036,7 +2048,7 @@ started and didn't give back. `RunJob` changes it on each call, so store
 all of it after each call with the object that the job is for, such as in
 the object's status, so a controller that restarts follows the same run.
 `MarshalText` encodes the state as one string, such as for one of a check's
-outputs, and `UnmarshalText` decodes it. `RunJob` declares the Pod
+notes, and `UnmarshalText` decodes it. `RunJob` declares the Pod
 with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says
@@ -2068,7 +2080,7 @@ find that the branch moved. If the run's Pod is deleted before the run is
 another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
 `RunJob` ends the run instead, and kube doesn't create the Pod again.
 
-`agent.UsageOutputs` turns what a run used into outputs like `Run`'s, and
+`agent.UsageNotes` turns what a run used into notes like `Run`'s, and
 `agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
 a result can change, so a controller can skip a run whose result can't fit.
 
@@ -2143,11 +2155,12 @@ to the core program's results endpoint:
    check isn't `CHECK`, the core program rejects the result.
 4. The core program also rejects a result for a branch without a parent, a
    result for a check that the branch's merge policy doesn't list, a result
-   that isn't for the branch's current commits, a `Pending` result, and a
-   result over its size limits. The `checks` package sends an `Error`
+   that isn't for the branch's current commits, a `Pending` result, a
+   result without a [scope](#result-scopes) or without the fields that its
+   scope needs, a result with a field that the core program doesn't know,
+   and a result over its size limits. The `checks` package sends an `Error`
    result instead of one with a state or size that the core program
-   rejects, with a message that says why. The core program drops fields
-   that it doesn't know, as the API server does by default.
+   rejects, with a message that says why.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
@@ -2174,6 +2187,27 @@ account with `403 Forbidden`, the check logs why and sends nothing more for
 that branch until the branch changes or the check restarts. Any other
 answer, such as a `404 Not Found` from a `-results-url` with the wrong
 path, fails the check's reconcile, and kube retries it.
+
+### Result scopes
+
+A result is for the branch's head in `commit`. Its `scope` says what else
+it's for, and which other fields it has:
+
+- `Head`: the head with any parent head. The result has neither
+  `parentCommit` nor `mergeBase`.
+- `Parent`: the head with the parent's head in `parentCommit`, such as
+  `base`'s result. The result has no `mergeBase`.
+- `Change`: what the head changes on top of the merge base in `mergeBase`,
+  with any parent head, such as `risk`'s rating of the change. The result
+  has no `parentCommit`, and it counts for a landing only while its merge
+  base is the parent's head.
+
+The core program and the `GitBranch` schema reject a result without a scope
+or without the fields that its scope needs, so a missing field can't make a
+result count for more commits. The `checks` package sets the scope from the
+check's `UsesParent` and `SameChange`, and the verdict's `UsesParent` and
+`MergeBase`. The merge controller treats a result with a scope that it
+doesn't know, such as one from a later release, as `Pending`.
 
 ### Security model
 
@@ -2241,7 +2275,7 @@ unblock a branch whose check is broken:
 
 ```sh
 kubectl patch gitbranch GITBRANCH --subresource=status --type=merge \
-  -p '{"status":{"checks":{"gotest":{"commit":"SHA","state":"Passed","message":"passed by hand"}}}}'
+  -p '{"status":{"checks":{"gotest":{"commit":"SHA","scope":"Head","state":"Passed","message":"passed by hand"}}}}'
 ```
 
 Replace `GITBRANCH` with the name of the `GitBranch` object, and `SHA` with
@@ -2249,7 +2283,11 @@ the branch's head. Checks other than `approval` don't run again on commits
 that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
 parent, such as `base`, or that keeps results for the same change, such as
-`risk`, also set `parentCommit` to the parent's head.
+`risk`, set `scope` to `Parent` instead, `parentCommit` to the parent's
+head, and `mergeBase` to `null`. A merge patch keeps the fields of the
+earlier result that it doesn't set, such as the merge base of a `risk`
+result, and the API server rejects a result with the scope `Parent` and a
+merge base.
 
 For a branch that lands by squash or rebase, also set `filesOnly` to `true`
 if the check sets `FilesOnly`, as the built-in checks do. Otherwise the
@@ -3159,11 +3197,10 @@ shows how.
 
 To upgrade, install the core program, `git-k8s`, before the checks, as this
 loop does. The core program updates the `GitBranch` CustomResourceDefinition
-when it starts, and an older one drops fields that newer checks send, such
-as a result's `mergeBase`. Without that field, `check-risk` rates a branch
-again each time it reconciles the branch, and after the parent moves, a
-rating or an approval for the change on top of the parent's earlier head
-counts for landing until its check runs again.
+when it starts, and an older one rejects results with fields that it doesn't
+know, which newer checks can send. A check sends nothing more for a branch
+after a rejected result until the branch changes or the check restarts, so
+the branch waits for that check until then.
 
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
