@@ -3172,7 +3172,13 @@ every check except `check-gotest`, `check-review`, `check-deps`, and
 these checks and `git-k8s-deps`, because it can't tell whether an owned
 object needs a finalizer on its owner. The second policy denies the
 annotation that kube adds with that finalizer, so these programs can own
-only namespaced objects in the branch's namespace. The first two policies
+only namespaced objects in the branch's namespace. The second policy also
+lets only the core program create a `GitBranch` or change its spec, which
+the core program copies from the `GitRepository`. The spec holds the
+parent's merge policy, so anyone else who could change it, such as an
+approver who can patch a `GitBranch`, could land the branch without its
+checks. People can still label and annotate `GitBranch` objects. To change
+a merge policy, change the `GitRepository`. The first two policies
 identify the core program and the checks by the service accounts that
 `generate` installs them with: `git-k8s` in the namespace `git-k8s`, and
 `check-NAME` in the namespace `check-NAME`. The second identifies

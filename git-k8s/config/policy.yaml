@@ -123,6 +123,13 @@ spec:
 # git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
 # RBAC lets it patch GitBranch objects too, and the policy stops it the same
 # way.
+#
+# The core program copies each GitBranch's spec, including the parent's
+# merge policy, from the GitRepository, so this policy lets nobody else
+# create a GitBranch or change its spec, people included. Otherwise anyone
+# who can patch a GitBranch, such as an approver, could change its merge
+# policy and land it without its checks. People can still label and
+# annotate GitBranch objects.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -140,12 +147,13 @@ spec:
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE"]
         resources: ["gitbranches"]
-  matchConditions:
-    - name: service-accounts
-      expression: request.userInfo.username.startsWith("system:serviceaccount:")
   variables:
+    # Only a service account's username names a namespace and a service
+    # account, so a person named a:b:git-k8s:git-k8s isn't the core program.
     - name: user
-      expression: request.userInfo.username.split(":")
+      expression: >-
+        request.userInfo.username.startsWith("system:serviceaccount:") ?
+        request.userInfo.username.split(":") : []
     - name: account
       expression: 'size(variables.user) == 4 ? variables.user[2] + "." + variables.user[3] : ""'
     - name: check
@@ -204,6 +212,11 @@ spec:
         request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
     - expression: '!variables.deps || variables.unchanged'
       message: git-k8s-deps can't change GitBranch objects
+    - expression: variables.core || oldObject != null && object.spec == oldObject.spec
+      messageExpression: >-
+        oldObject == null ?
+        request.userInfo.username + " can't create GitBranch objects; only the core program creates them" :
+        request.userInfo.username + " can't change a GitBranch's spec; the core program copies it from the GitRepository"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

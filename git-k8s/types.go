@@ -214,7 +214,7 @@ type GitBranchSpec struct {
 	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to in the mirror."`
 	Parent     string       `json:"parent,omitempty" kube:"column=Parent" doc:"Branch that this branch proposes changes to."`
 	ParentHead string       `json:"parentHead,omitempty" doc:"Commit that the parent points to in the mirror, listed at the same time as head."`
-	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent."`
+	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent. The git-k8s-branches admission policy lets only the core program set it."`
 }
 
 // GitBranchStatus holds check results and the merge controller's state.

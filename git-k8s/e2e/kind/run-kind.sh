@@ -413,7 +413,8 @@ k patch crd gitbranches.git-k8s.imjasonh.com --type=json -p \
   '[{"op":"remove","path":"/spec/versions/0/schema/openAPIV3Schema/properties/status/properties/checks/x-kubernetes-map-type"}]'
 OLD=1111111111111111111111111111111111111111
 k create namespace git-k8s-upgrade
-k -n git-k8s-upgrade apply -f - <<EOF
+# Only the core program creates GitBranch objects.
+k -n git-k8s-upgrade create --as=system:serviceaccount:git-k8s:git-k8s -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
 kind: GitBranch
 metadata:
@@ -987,6 +988,27 @@ rejected "requires the approve verb on gitbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
 rejected "set ${APPROVE} to a commit's full SHA" annotate --as=alice "${APPROVE}=${AUTH:0:12}" "${APPROVED_BY}=alice"
+# Only the core program changes a GitBranch's spec, which holds the merge
+# policy, so neither alice, who can approve c/auth, nor bob, who can patch
+# it, can drop its checks. Nobody else creates a GitBranch either.
+for user in alice bob; do
+  rejected "${user} can't change a GitBranch's spec" k -n "${NS}" patch gitbranch "$(branch_object c/auth)" \
+    --as="${user}" --type=merge -p '{"spec":{"merge":{"when":"true"}}}'
+done
+rejected "can't create GitBranch objects; only the core program creates them" k -n "${NS}" create -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitBranch
+metadata:
+  name: app-c-forged
+spec:
+  repository: app
+  branch: c/forged
+  head: "${AUTH}"
+  parent: main
+  parentHead: "${main_before}"
+  merge:
+    when: "true"
+EOF
 # The gate wants alice's approval, so another approver's doesn't land c/auth.
 admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
 annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
@@ -1001,7 +1023,7 @@ eventually 60 gate_saw_approval
 [[ "$(remote_head main)" == "${main_before}" ]]
 rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
 rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
-echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
+echo "The policies rejected bad approvals, changes to c/auth's spec, and a GitBranch that a person created, and c/auth waited through ${admin}'s approval."
 echo "::endgroup::"
 
 echo "::group::A MutatingAdmissionPolicy sets approved-by"

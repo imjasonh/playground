@@ -1030,6 +1030,13 @@ func TestBranches(t *testing.T) {
 			meta["annotations"] = map[string]any{"git-k8s.imjasonh.com/approve": "0000000", "git-k8s.imjasonh.com/approved-by": user}
 		})
 	}
+	ungated := gitBranch(func(_, spec map[string]any) { spec["merge"] = map[string]any{"when": "true"} })
+	cantCreate := func(user string) string {
+		return user + " can't create GitBranch objects; only the core program creates them"
+	}
+	cantChangeSpec := func(user string) string {
+		return user + " can't change a GitBranch's spec; the core program copies it from the GitRepository"
+	}
 	update := func(user string, params, object map[string]any) request {
 		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", params: params, object: object, oldObject: old}
 	}
@@ -1163,6 +1170,39 @@ func TestBranches(t *testing.T) {
 	}, {
 		name: "a person adds a label",
 		r:    update("alice@example.com", checksConfigMap("checks.bot", ""), labeled),
+	}, {
+		name: "a person approves a branch",
+		r:    update("alice@example.com", none, approvedBy("alice@example.com")),
+	}, {
+		name: "a person changes a branch's merge policy",
+		r:    update("alice@example.com", none, ungated),
+		want: cantChangeSpec("alice@example.com"),
+	}, {
+		name: "a person changes a branch's head",
+		r:    update("alice@example.com", none, moved),
+		want: cantChangeSpec("alice@example.com"),
+	}, {
+		name: "a person creates a GitBranch",
+		r:    request{user: "alice@example.com", operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: ungated},
+		want: cantCreate("alice@example.com"),
+	}, {
+		name: "a person whose username splits like the core program's changes a branch's merge policy",
+		r:    update("a:b:git-k8s:git-k8s", none, ungated),
+		want: cantChangeSpec("a:b:git-k8s:git-k8s"),
+	}, {
+		name: "another service account changes a branch's merge policy",
+		r:    update("system:serviceaccount:checks:deployer", none, ungated),
+		want: cantChangeSpec("system:serviceaccount:checks:deployer"),
+	}, {
+		name: "another service account creates a GitBranch",
+		r:    request{user: "system:serviceaccount:checks:deployer", operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		want: cantCreate("system:serviceaccount:checks:deployer"),
+	}, {
+		name: "the core program changes a branch's spec",
+		r:    update(core, none, moved),
+	}, {
+		name: "the core program creates a GitBranch",
+		r:    request{user: core, operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := p.admit(t, tt.r); got != tt.want {
