@@ -1452,18 +1452,29 @@ func TestCheckRunsSurviveFailedReads(t *testing.T) {
 	s := newSharing(t, 2)
 	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
 
-	t.Log("A reconcile that can't read the cluster sends nothing and forgets nothing.")
+	t.Log("A reconcile that can't read the cluster stops at the read, so it sends nothing and forgets nothing.")
 	before := len(s.gh.Fake.Requests())
-	// Go picks at random between a free lock and an ended context, so a
-	// reconcile that went on to forget would forget only some of the time.
-	for range 20 {
-		b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
-		ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
-		kube.List[branchResults](ctx, kube.MatchingSelector("=broken"))
-		if rec.Err() == nil {
-			t.Fatal("the selector didn't fail the reconcile's reads")
-		}
-		s.p.c.Reconcile(ctx, b)
+	b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
+	ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
+	// A Get or List that can't read panics with an error that wraps the
+	// reconcile's.
+	stops := func(fn func()) (stopped bool) {
+		defer func() {
+			p := recover()
+			if err, ok := p.(error); ok && rec.Err() != nil && errors.Is(err, rec.Err()) {
+				stopped = true
+			} else if p != nil {
+				panic(p)
+			}
+		}()
+		fn()
+		return false
+	}
+	if !stops(func() { kube.List[branchResults](ctx, kube.MatchingSelector("=broken")) }) {
+		t.Fatal("the selector didn't stop the reconcile's reads")
+	}
+	if !stops(func() { _ = s.p.c.Reconcile(ctx, b) }) {
+		t.Error("the reconcile went on after its reads failed")
 	}
 	if got := s.gh.Fake.Requests()[before:]; len(got) > 0 {
 		t.Errorf("reconciles that couldn't read sent %q", got)

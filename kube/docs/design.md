@@ -458,7 +458,8 @@ processing if it was added meanwhile. Keys have one of two priorities. Changes
 are high priority. The initial list and periodic resyncs, every 10 hours by
 default, are low priority, so a restart with thousands of objects doesn't
 delay reaction to a change. Failed keys back off exponentially from 50 ms to
-5 minutes, with up to 10% random jitter, and `RequeueAfter` schedules a key on
+5 minutes, with up to 10% random jitter, unless the error has a delay from
+`kube.RetryAfter`. That delay and `RequeueAfter` schedule a key on
 a timer heap. The queue's tests use `testing/synctest`, so they check timing
 without sleeping.
 
@@ -598,11 +599,18 @@ controller's last status write sent the same status, there's nothing to add
 or remove. Server-side apply ignores annotations sent to the status
 subresource, so the record of the last write is in memory.
 
-A reconcile that returns an error is retried with backoff, and its intents are
-discarded. An error wrapped with `kube.Permanent` isn't retried; the object
+A reconcile that returns an error is retried with backoff, or after the delay
+that `kube.RetryAfter` added to the error, and its intents are discarded. An
+error wrapped with `kube.Permanent` without a delay isn't retried; the object
 waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
+
+`Get` and `List` use the same recovery. One that can't read panics with an
+unexported value, which the framework turns back into the read's error
+without reporting a panic. So `nil` from `Get` means only that the object
+doesn't exist, and callers have no error to check. A webhook rejects the
+request with the error, and `kube.Serve` answers 503.
 
 An intent that fails, for example because an admission policy rejects an
 apply, fails the reconcile in the same way. The framework stops carrying out

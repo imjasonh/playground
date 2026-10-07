@@ -42,9 +42,10 @@ type Defaulter[T any] interface {
 
 // Webhooks returns a Controller that serves admission webhooks for T without
 // reconciling it, for a type that another program reconciles, such as Pods.
-// h implements Validator[T], Defaulter[T], or both. To validate or default a
-// type that a controller reconciles, add the methods to its reconciler
-// instead.
+// h implements Validator[T], Defaulter[T], or both. Run fails if h implements
+// neither, or if it has a method named Validate or Default but doesn't
+// implement the matching interface. To validate or default a type that a
+// controller reconciles, add the methods to its reconciler instead.
 func Webhooks[T any, P Resource[T]](h any) Controller {
 	return &webhookController[T, P]{h: h}
 }
@@ -60,18 +61,45 @@ func (w *webhookController[T, P]) prepare(ctx context.Context, m *Manager) error
 		return err
 	}
 	w.ti = ti
-	v, _ := w.h.(Validator[T])
-	d, _ := w.h.(Defaulter[T])
-	if v == nil && d == nil {
-		return fmt.Errorf("kube.Webhooks[%s]: %T has neither a Validate(context.Context, *%s, *%s) error method nor a Default(context.Context, *%s) error method",
-			ti.kind, w.h, ti.goType.Name(), ti.goType.Name(), ti.goType.Name())
+	v, d, err := w.handlers(ti)
+	if err != nil {
+		return err
 	}
 	return registerAdmission[T, P](ctx, m, ti, v, d)
 }
 
 func (w *webhookController[T, P]) describe() (declared, error) {
 	ti, err := typeInfoFor[T, P]()
+	if err != nil {
+		return declared{}, err
+	}
+	_, _, err = w.handlers(ti)
 	return declared{ti: ti, webhooks: true}, err
+}
+
+// handlers returns h's Validate and Default methods, one of which may be nil.
+func (w *webhookController[T, P]) handlers(ti *typeInfo) (Validator[T], Defaulter[T], error) {
+	v, d, err := admissionMethods[T](w.h)
+	switch {
+	case err != nil:
+		return nil, nil, fmt.Errorf("kube.Webhooks[%s]: %w", ti.kind, err)
+	case v == nil && d == nil:
+		return nil, nil, fmt.Errorf("kube.Webhooks[%s]: %T has neither a Validate(context.Context, *%s, *%s) error method nor a Default(context.Context, *%s, *%s) error method",
+			ti.kind, w.h, ti.goType.Name(), ti.goType.Name(), ti.goType.Name(), ti.goType.Name())
+	}
+	return v, d, nil
+}
+
+// admissionMethods returns h's Validate and Default methods, either of which
+// may be nil, or an error if h has one of them without implementing the
+// interface.
+func admissionMethods[T any](h any) (Validator[T], Defaulter[T], error) {
+	v, err := optional[Validator[T]](h)
+	if err != nil {
+		return nil, nil, err
+	}
+	d, err := optional[Defaulter[T]](h)
+	return v, d, err
 }
 
 func (w *webhookController[T, P]) setup(context.Context, *Manager) error { return nil }
@@ -168,6 +196,10 @@ func serveAdmission(w http.ResponseWriter, r *http.Request, m *Manager, ti *type
 	resp := func() (resp *admissionResponse) {
 		defer func() {
 			if p := recover(); p != nil {
+				if err := readError(p); err != nil {
+					resp = deny(err)
+					return
+				}
 				m.log.Error("webhook panicked", "type", ti.String(), "panic", p, "stack", string(debug.Stack()))
 				resp = deny(fmt.Errorf("panic: %v", p))
 			}

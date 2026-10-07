@@ -102,14 +102,20 @@ func (c *controller[T, P]) describe() (declared, error) {
 	if err != nil {
 		return declared{}, err
 	}
+	v, def, err := c.methods()
+	if err != nil {
+		return declared{}, err
+	}
 	d := declared{ti: ti, reconciles: true}
 	d.finalizes = c.fin != nil || c.opts.finalizes
-	_, validates := c.r.(Validator[T])
-	_, defaults := c.r.(Defaulter[T])
-	d.webhooks = validates || defaults
+	d.webhooks = v != nil || def != nil
 	d.versioned = len(c.opts.versions) > 0
 	for _, vo := range c.opts.versions {
-		if _, ok := vo.newObj().(converter[T]); ok {
+		conv, err := optional[converter[T]](vo.newObj())
+		if err != nil {
+			return declared{}, fmt.Errorf("kube.Version: %w", err)
+		}
+		if conv != nil {
 			d.webhooks = true
 		}
 	}
@@ -189,7 +195,10 @@ func Owns[T any, P Resource[T]]() Option {
 // option.
 func RemovesFinalizer() Option { return func(o *options) { o.finalizes = true } }
 
-// For returns a controller that reconciles objects of type T with r.
+// For returns a controller that reconciles objects of type T with r. If r
+// has a method named Finalize, Validate, or Default but doesn't implement
+// Finalizer, Validator, or Defaulter, for example because the method has a
+// pointer receiver and r isn't a pointer, Run fails.
 func For[T any, P Resource[T]](r Reconciler[T], opts ...Option) Controller {
 	c := &controller[T, P]{r: r, opts: options{workers: 4, resync: 10 * time.Hour}}
 	if f, ok := r.(Finalizer[T]); ok {
@@ -199,6 +208,58 @@ func For[T any, P Resource[T]](r Reconciler[T], opts ...Option) Controller {
 		o(&c.opts)
 	}
 	return c
+}
+
+// optional returns v as an I, or the zero I if v has none of I's methods.
+// It returns an error if v has some of them but doesn't implement I, for
+// example because a method has another signature or only v's pointer type
+// has it, since the framework would otherwise ignore the method.
+func optional[I any](v any) (I, error) {
+	if i, ok := v.(I); ok || v == nil {
+		return i, nil
+	}
+	var zero I
+	t := reflect.TypeOf(v)
+	var has, lacks []string
+	it := reflect.TypeFor[I]()
+	for i := range it.NumMethod() {
+		want := it.Method(i)
+		sig := want.Name + strings.TrimPrefix(want.Type.String(), "func")
+		owner := t
+		m := reflect.Zero(t).MethodByName(want.Name)
+		if !m.IsValid() && t.Kind() != reflect.Pointer {
+			owner = reflect.PointerTo(t)
+			m = reflect.Zero(owner).MethodByName(want.Name)
+		}
+		switch {
+		case !m.IsValid():
+			lacks = append(lacks, sig)
+		case m.Type() != want.Type:
+			return zero, fmt.Errorf("%v has the method %s%s, but the framework calls %s", owner, want.Name, strings.TrimPrefix(m.Type().String(), "func"), sig)
+		case owner != t:
+			return zero, fmt.Errorf("%v doesn't have the method %s, but %v does, so pass a %v", t, sig, owner, owner)
+		default:
+			has = append(has, sig)
+		}
+	}
+	if len(has) > 0 {
+		return zero, fmt.Errorf("%v has the method %s but not %s", t, strings.Join(has, " and "), strings.Join(lacks, " and "))
+	}
+	return zero, nil
+}
+
+// methods returns the reconciler's Validate and Default methods, either of
+// which may be nil, or an error if it has Finalize, Validate, or Default
+// without implementing the interface.
+func (c *controller[T, P]) methods() (Validator[T], Defaulter[T], error) {
+	if _, err := optional[Finalizer[T]](c.r); err != nil {
+		return nil, nil, fmt.Errorf("kube: %w", err)
+	}
+	v, d, err := admissionMethods[T](c.r)
+	if err != nil {
+		return nil, nil, fmt.Errorf("kube: %w", err)
+	}
+	return v, d, nil
 }
 
 // core is the part of a controller that doesn't depend on its type.
@@ -431,8 +492,10 @@ func (c *controller[T, P]) prepare(ctx context.Context, m *Manager) error {
 	if err := c.prepareVersions(m); err != nil {
 		return err
 	}
-	v, _ := c.r.(Validator[T])
-	d, _ := c.r.(Defaulter[T])
+	v, d, err := c.methods()
+	if err != nil {
+		return err
+	}
 	return registerAdmission[T, P](ctx, m, ti, v, d)
 }
 
@@ -649,7 +712,12 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	case IsPermanent(err):
 		c.q.Forget(key)
 		result = "permanent_error"
-		log.Warn("reconcile failed; waiting for the object to change", "err", err)
+		if d := retryDelay(err); d > 0 {
+			c.q.AddAfter(key, queue.High, d)
+			log.Warn("reconcile failed; retrying after the delay that it asked for", "err", err, "retry", d)
+		} else {
+			log.Warn("reconcile failed; waiting for the object to change", "err", err)
+		}
 	case errors.Is(err, errStale):
 		d := c.q.Retry(key, queue.High)
 		result = "stale"
@@ -662,7 +730,12 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 		}
 		log.Log(ctx, level, "reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", failures)
 	default:
-		d := c.q.Retry(key, queue.High)
+		d := retryDelay(err)
+		if d > 0 {
+			c.q.RetryAfter(key, queue.High, d)
+		} else {
+			d = c.q.Retry(key, queue.High)
+		}
 		result = "error"
 		log.Warn("reconcile failed; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", c.q.Failures(key))
 	}
@@ -727,10 +800,14 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 }
 
 // call runs fn and turns a panic into an error, so one bad object can't
-// crash the controller.
+// crash the controller. A Get or List that can't read panics to stop fn,
+// and call returns the read's error.
 func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			if err = readError(r); err != nil {
+				return
+			}
 			c.log.Error("reconcile panicked", "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("panic: %v", r)
 		}
@@ -862,6 +939,11 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 }
 
 func (c *controller[T, P]) delete(ctx context.Context, ti *typeInfo, res resolved, m *ObjectMeta) error {
+	if m.Name == "" {
+		// Without a name, the path is the collection's, and a delete there
+		// deletes every object in it.
+		return fmt.Errorf("deleting a %v with no name", ti)
+	}
 	err := c.m.delete(ctx, ti, m.Key(), res.path(m.Namespace, m.Name), client.DeleteOptions{UID: m.UID, Propagation: "Background"})
 	if err != nil && !client.IsNotFound(err) && !client.IsConflict(err) {
 		return &writeError{"deleting", ti, m.Key(), err}

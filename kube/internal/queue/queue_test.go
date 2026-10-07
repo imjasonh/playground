@@ -151,6 +151,25 @@ func TestRetryBacksOff(t *testing.T) {
 	})
 }
 
+func TestRetryAfter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newQ(t)
+		start := time.Now()
+		q.RetryAfter("a", High, time.Hour)
+		k, _ := q.Get()
+		if k != "a" || time.Since(start) != time.Hour {
+			t.Errorf("got %q after %v, want a after 1h", k, time.Since(start))
+		}
+		q.Done(k)
+		if q.Failures("a") != 1 {
+			t.Errorf("Failures = %d, want 1", q.Failures("a"))
+		}
+		if d := q.Retry("a", High); d != 100*time.Millisecond {
+			t.Errorf("Retry after RetryAfter = %v, want the second backoff, 100ms", d)
+		}
+	})
+}
+
 func TestRetryCapsDelay(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := New[string](Options{BaseDelay: time.Second, MaxDelay: 5 * time.Second, Jitter: -1})

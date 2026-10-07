@@ -33,7 +33,8 @@ import (
 //	func (v *V) ConvertFrom(t *T) error // sets v from t
 //
 // Without the methods, the API server converts by changing only the
-// apiVersion, which works when the versions have the same fields. Conversion
+// apiVersion, which works when the versions have the same fields. *V needs
+// both methods or neither, with these signatures, or Run fails. Conversion
 // can't change metadata.
 //
 // When the stored version changes, the framework rewrites objects stored in
@@ -96,7 +97,11 @@ func (c *controller[T, P]) prepareVersions(m *Manager) error {
 			return fmt.Errorf("kube.Version: %v declares version %s twice", c.ti, vti.version)
 		}
 		seen[vti.version] = true
-		if _, ok := vo.newObj().(converter[T]); ok {
+		conv, err := optional[converter[T]](vo.newObj())
+		if err != nil {
+			return fmt.Errorf("kube.Version: %w", err)
+		}
+		if conv != nil {
 			c.conversion = true
 		}
 		c.versions = append(c.versions, servedVersion{ti: vti, newObj: vo.newObj})
