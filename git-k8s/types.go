@@ -86,13 +86,9 @@ type GitRepository struct {
 
 // GitRepositorySpec says where a repository is and which branches to track.
 type GitRepositorySpec struct {
-	// git decodes %XX in a URL and strips brackets from its user and host
-	// before it passes them to ssh, so either could hide a leading "-". The
-	// pattern allows no "%" before the path, and brackets there only around
-	// an IP address or around an scp-like address's host:port. An scp-like
-	// address needs a user, because "@" is what tells it apart from git's
-	// <transport>::<address> syntax.
-	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^((https?|git|ssh)://([^-@/%\\[\\]\\x00-\\x1f\\x7f][^@/%\\[\\]\\x00-\\x1f\\x7f]*@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/|[^-@/:%\\[\\]\\x00-\\x1f\\x7f][^@/:%\\[\\]\\x00-\\x1f\\x7f]*@([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[([A-Za-z0-9_][A-Za-z0-9_.-]*(:[0-9]+)?|[0-9A-Fa-f:.]+)\\]):[^-\\x00-\\x1f\\x7f])[^\\x00-\\x1f\\x7f]*$" doc:"URL of the external repository, which the mirror reaches with git: an https, http, git, or ssh URL, or an scp-like address with a user name, such as git@example.com:app.git. Without a user name, write an ssh:// URL, such as ssh://example.com/~/app.git."`
+	// git appends info/refs?service=... to the URL, which a query or a
+	// fragment would break.
+	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^https?://([^@/?#\\[\\]\\x00-\\x1f\\x7f]+@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/[^?#\\x00-\\x1f\\x7f]*$" doc:"URL of the external repository, which the mirror reaches with git over HTTP: an https or http URL without a query or a fragment, such as https://git.example.com/app.git."`
 	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, the mirror sends git."`
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often the mirror fetches the external repository's branches, such as 30s or 5m."`

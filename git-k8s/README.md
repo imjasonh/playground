@@ -50,11 +50,12 @@ branches that match no rule aren't tracked. A branch whose rule names a
 `parent` is a proposal to that parent. The parent's rule says what a proposal
 needs before it lands.
 
-`url` must be an `https://`, `http://`, `git://`, or `ssh://` URL, or an
-scp-like address with a user name, such as `git@example.com:app.git`. Without
-a user name, write an `ssh://` URL, such as `ssh://example.com/~/app.git`. The
+`url` must be an `https://` or `http://` URL without a query or a fragment,
+such as `https://git.example.com/app.git`. git-k8s authenticates to external
+repositories only over HTTP, so it doesn't take `ssh://` URLs or scp-like
+addresses, such as `git@example.com:app.git`, which git reaches over ssh. The
 API server rejects other URLs, and git-k8s runs git with `GIT_ALLOW_PROTOCOL`
-set to those transports. Its git commands put `--end-of-options` before every
+set to `http:https`. Its git commands put `--end-of-options` before every
 URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
