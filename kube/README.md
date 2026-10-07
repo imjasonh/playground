@@ -110,11 +110,13 @@ no watch setup. The stripped binary in its image is 8.4 MiB.
 writes only status, and retries with exponential backoff from 50 ms to 5
 minutes. If a declaration fails, for example because an admission policy
 rejects an object, the framework writes the status that `Reconcile` set and
-retries in the same way. In the retry, `kube.LastError` returns the error, so
-the reconcile can report it in the status. Each process keeps the errors in
-memory, so `kube.LastError` returns `nil` after a restart or a shard move. An
-error from the API server can quote the values that it rejected, so if those
-values are secret, don't copy the error into a status.
+retries in the same way. An error from the API server can quote the values
+that it rejected, so the `Synced` condition names only the write that failed
+and the status code, such as `422 Invalid`, and the program logs the whole
+error. In the retry, `kube.LastError` returns the whole error, so the
+reconcile can report it in the status, but if the rejected values can be
+secret, don't copy it there. Each process keeps the errors in memory, so
+`kube.LastError` returns `nil` after a restart or a shard move.
 
 | Function | What it does |
 | --- | --- |

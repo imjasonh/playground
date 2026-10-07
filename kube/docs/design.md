@@ -607,6 +607,11 @@ controller.
 An intent that fails, for example because an admission policy rejects an
 apply, fails the reconcile in the same way. The framework stops carrying out
 the intents, writes the status that `Reconcile` set, and retries with backoff.
+The API server's error can quote the values that it rejected, which can come
+from a Secret, so `Synced` names only the step, the object, and the status
+code, as in `applying ConfigMap.v1 shop/token failed (422 Invalid)`. A webhook
+can set any reason, so `Synced` shows the reason only if it's one word, like
+the API server's own reasons. The log keeps the whole error.
 `Reconcile` returned before the write failed, so it can't report the error.
 The controller keeps each object's last error in memory, and `kube.LastError`
 returns it to the next reconcile, which can put it in the status. That matters
