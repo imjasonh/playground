@@ -108,25 +108,36 @@ no watch setup. The stripped binary in its image is 8.4 MiB.
 `Apply`, and `Delete`. The framework carries out the declarations after
 `Reconcile` returns `nil`. If `Reconcile` returns an error, the framework
 writes only status, and retries with exponential backoff from 50 ms to 5
-minutes. If a declaration fails, for example because an admission policy
+minutes, or after the delay that `kube.RetryAfter` added to the error, such
+as the wait that a rate limit asks for. `kube.RequeueAfter` applies only to a
+reconcile that succeeds.
+If a declaration fails, for example because an admission policy
 rejects an object, the framework writes the status that `Reconcile` set and
-retries in the same way. In the retry, `kube.LastError` returns the error, so
-the reconcile can report it in the status. Each process keeps the errors in
-memory, so `kube.LastError` returns `nil` after a restart or a shard move. An
-error from the API server can quote the values that it rejected, so if those
-values are secret, don't copy the error into a status.
+retries in the same way. If `Get` or `List` can't read, for example because
+the program may not list the type, `Reconcile` stops there, and the framework
+handles the error as if `Reconcile` had returned it. So `nil` from `Get`
+always means that the object doesn't exist. `Get` and `List` stop `Reconcile`
+with a panic that the framework recovers, so call them only in the goroutine
+that runs `Reconcile`. An error from the API server can quote the values
+that it rejected, so the `Synced` condition names only the write that failed
+and the status code, such as `422 Invalid`, and the program logs the whole
+error. In the retry, `kube.LastError` returns the whole error, so the
+reconcile can report it in the status, but if the rejected values can be
+secret, don't copy it there. Each process keeps the errors in memory, so
+`kube.LastError` returns `nil` after a restart or a shard move.
 
 | Function | What it does |
 | --- | --- |
-| `kube.Get[T](ctx, namespace, name)` | Returns one object from a cache, or `nil` |
+| `kube.Get[T](ctx, namespace, name)` | Returns one object from a cache, or `nil` if it doesn't exist |
 | `kube.List[T](ctx, options...)` | Returns objects from a cache, sorted, filtered by namespace or label selector |
 | `kube.Fetch[T](ctx, namespace, name)` | Returns one object from the API server without caching its type |
 | `kube.Own(ctx, desired)` | Declares an object that the reconciled object owns, and returns it as observed |
 | `kube.Apply(ctx, desired)` | Declares fields on an object that something else owns |
 | `kube.Delete(ctx, object)` | Declares that an object must be deleted |
 | `kube.Eventf(ctx, eventType, reason, format, args...)` | Records an event about the reconciled object; see [Record events](#record-events) |
-| `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay |
+| `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay, if this one succeeds |
 | `kube.Permanent(err)` | Marks an error that retrying won't fix |
+| `kube.RetryAfter(err, duration)` | Marks an error to retry after a delay instead of with backoff |
 | `kube.LastError(ctx)` | Returns the error that the previous reconcile of the object failed with, or `nil` |
 
 The framework records every `Get` and `List`. When an object that a reconcile
@@ -148,10 +159,24 @@ cases the framework adds a finalizer to the owner and deletes the owned
 objects itself. Either way, objects that a reconcile declared before and
 doesn't declare now are deleted.
 
+`Own` doesn't take over an object that the controller didn't create, because
+the framework would then delete it with its owner. If the declared object
+exists without the controller's labels, the reconcile fails with an error
+that names the object, and the object stays as it is. To take over such
+objects, for example ones from a manual install, pass `kube.Adopts()` to
+`kube.For`. Even with `kube.Adopts()`, a reconcile fails when it declares an
+object that the controller created for another owner.
+
 `Apply` manages only the fields you set on an object that the controller
 doesn't own, such as one annotation on someone else's Deployment. Fields that
 a later reconcile stops applying are removed, and the object isn't deleted
 with the reconciled object.
+
+`Apply` doesn't create objects, because nothing would own or delete them. If
+the object doesn't exist, the reconcile fails with an error that names it.
+The exception is a local type, which
+[Install in a cluster](#install-in-a-cluster) describes: `Apply` creates a
+local object that doesn't exist.
 
 If the type that you pass to `Apply` has a status, the framework applies the
 status too, so a controller can write its own fields in another controller's
@@ -321,8 +346,11 @@ The kind defaults to the Go type name, the version to `v1`, and the scope to
 `plural`, `singular`, `scope=Cluster`, `shortName`, and `category`.
 
 A field is required when its `json` tag has neither `omitempty` nor `omitzero`
-and it isn't a pointer, slice, map, or interface. These field tags add
-validation and display hints to the generated schema:
+and it isn't a pointer, slice, map, or interface. The top-level `status` is
+never required, because the API server drops it from the objects that it
+creates. An integer field accepts only the values that its Go type can hold,
+so a `uint8` field rejects `-1` and `300`. These field tags add validation and
+display hints to the generated schema:
 
 | Tag | Effect |
 | --- | --- |
@@ -332,13 +360,31 @@ validation and display hints to the generated schema:
 | `kube:"enum=A\|AAAA\|CNAME"` | Allowed values |
 | `kube:"default=80"` | Default that the API server fills in |
 | `kube:"format=hostname"` | OpenAPI string format |
-| `kube:"immutable"` | A validation rule that rejects changes after creation |
+| `kube:"immutable"` | Validation rules that reject updates that change, set, or unset the field |
 | `kube:"optional"`, `kube:"required"` | Overrides the rule based on `json` tags |
-| `kube:"listType=map,listMapKey=name"` | Merges the list by key in server-side apply |
+| `kube:"listType=map,listMapKey=name,listMapKey=protocol"` | Merges the list by key in server-side apply |
 | `kube:"mapType=atomic"` | Replaces the whole map or struct in server-side apply, so one manager owns it |
 | `kube:"column=Ready"` | A `kubectl get` column |
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
+
+Commas separate `kube` options. To put a comma in a value, wrap the value in
+single quotes, and write a single quote inside it as two:
+`kube:"default='Hello, world'"`. Quote an `enum` value the same way to put a
+`|` or a comma in it: `kube:"enum='a|b'|c"`. Only `listMapKey` can be
+repeated, once for each field of the key. Any other repeated option is an
+error.
+
+An update can still add or remove a whole list item or map value, with its
+immutable fields. The top-level `status` and its fields can't be immutable,
+because the API server creates objects without their status.
+
+A type can supply its own schema with an `OpenAPISchema() map[string]any`
+method, as `k8s.IntOrString` and `k8s.Quantity` do. A list's element type can
+declare the fields that key the list with a `ListMapKeys() []string` method,
+as `kube.Condition` does, so that server-side apply merges every
+`[]kube.Condition` by `type`. A field's `listMapKey` options replace the keys
+that its element type declares.
 
 A controller that reconciles the type installs its CustomResourceDefinition
 when the program starts, and later releases update it, as [Change a
@@ -358,11 +404,11 @@ try to create the CRD at the same time, one of them creates it, and both use
 it if it serves both of their versions.
 
 A program that only reads a type never creates its CRD. While the CRD is
-missing, `Get` and `List` of the type fail the reconcile, so a later `Own` in
-it does nothing, and the framework retries it. `Fetch` returns `nil` and
-doesn't fail the reconcile. If a reconcile calls `Get` or `List` for a type
-before it first owns an object of the type, declare the type with `kube.Owns`,
-so that the program creates the CRD when it starts.
+missing, `Get` and `List` of the type stop the reconcile, and the framework
+retries it. `Fetch` returns `nil` and doesn't fail the reconcile. If a
+reconcile calls `Get` or `List` for a type before it first owns an object of
+the type, declare the type with `kube.Owns`, so that the program creates the
+CRD when it starts.
 
 When a program that reconciles the type starts, it installs its own CRD over
 the created one. Until then, the CRD keeps the schema that it was created with,
@@ -376,9 +422,6 @@ the created CRD if the two programs disagree about the type:
 - If the created version isn't one that the reconciling program declares, as
   its own version or with `kube.Version`, the reconciling program fails to
   start.
-- If they set the `Domain` field of `kube.Manager` differently, the
-  reconciling program doesn't recognize the created CRD as the framework's. It
-  uses the CRD as it is and never updates it.
 
 To recover, make the declarations agree, and then delete the created CRD while
 it has no objects, because deleting a CRD deletes its objects. If only the
@@ -569,7 +612,8 @@ kube.Main(kube.For[Website](reconciler{}), kube.Webhooks[k8s.Pod](podPolicy{}))
 
 A webhook for a built-in type skips `kube-system` and the namespace of the
 webhook's Service, so that the controller's own Pods can start while its
-webhook is down. With `-namespace`, webhooks apply only in that namespace.
+webhook is down. With `-watch-namespace`, webhooks apply only in that
+namespace.
 [`examples/podpolicy`](examples/podpolicy/main.go) is a webhook for Pods.
 
 Every replica serves the webhooks over HTTPS, whether or not it holds a lease.
@@ -595,7 +639,10 @@ Every replica serves the handler at `-serve-addr`, `:8081` by default,
 whether or not it holds a lease, and `/readyz` reports ready once it
 serves. As in a webhook, the handler can read with `Get`, `List`, and
 `Fetch` through the request's context, and calling `Own`, `Apply`, or
-`Delete` cancels the context with an error. To change the cluster in
+`Delete` cancels the context with an error. A `Get` or `List` that can't
+read stops the handler, so call them only in the handler's goroutine. The
+server then answers 503 Service Unavailable and closes the connection, or
+aborts the response if the handler has started it. To change the cluster in
 response to a request, trigger a reconcile and make the change there. A
 program can have one `kube.Serve`, so serve every path from one handler,
 such as an `http.ServeMux`.
@@ -920,7 +967,7 @@ in a volume, and serves the copies.
 
 - `-kubeconfig`: the kubeconfig file. Without it, kube uses `$KUBECONFIG`,
   then the pod's service account, then `$HOME/.kube/config`.
-- `-namespace`: watch only one namespace.
+- `-watch-namespace`: watch only one namespace.
 - `-leader-elect`: reconcile only while this replica holds a Lease.
 - `-shards`: split reconciles across replicas into this many shards.
 - `-webhook-service`: the Service, as `name` or `namespace/name`, through
@@ -933,13 +980,56 @@ in a volume, and serves the copies.
 - `-token-dir`: a directory of service account tokens for
   `kube.RequestToken`, each in a file named by the hex SHA-256 hash of its
   audience, as `generate` mounts them.
-- `-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`, for
-  example on `:8080`.
-- `-v`: log debug messages.
+- `-metrics-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`,
+  for example on `:8080`.
+- `-log-level`: log messages at this level and above: `debug`, `info`,
+  `warn`, or `error`. The default is `info`.
 
-For more control, set the fields of a `kube.Manager` and call its `Run`
-method. `kube.For` takes options such as `kube.Workers(n)`,
-`kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
+If the program defines one of these flags itself on `flag.CommandLine`,
+`kube.Main` leaves out its own and logs a warning, and the manager doesn't
+read that flag.
+
+For more control, set the fields of a `kube.Manager` and call its `Main`
+method. Each flag defaults to its field's value, and a Manager with a
+`Logger` has no `-log-level`. `Setup`, if you set it, runs after `Main`
+reads the flags and before the manager connects to the cluster, so the
+program can check its own flags and stop at startup:
+
+```go
+zone := flag.String("zone", "", "DNS zone for the sites")
+m := &kube.Manager{Name: "sites"}
+m.Setup = func(context.Context) error {
+	if *zone == "" {
+		return errors.New("-zone is required")
+	}
+	return nil
+}
+m.Main(kube.For[Website](reconciler{}))
+```
+
+`generate` follows the Manager's `Name`, `Namespace`, `LeaseNamespace`,
+`LeaderElection`, and `Shards`. To run controllers without flags, signal
+handling, or `generate`, call the Manager's `Run` method. `kube.For` takes
+options such as `kube.Workers(n)`, `kube.WatchSelector(selector)`, and
+`kube.Resync(duration)`.
+
+Each controller has a name. The controller's finalizer is
+`kube.imjasonh.github.io/NAME`, the objects that it owns have the label
+`kube.imjasonh.github.io/controller=NAME`, and `NAME` is its field manager and
+the reporting controller of its events. The name defaults to the program's
+name and the lowercase kind, joined by a hyphen, such as `shop-website` for a
+program named `shop` that reconciles Websites, or only the kind when the two
+are the same, such as `website`. Two controllers that reconcile or own the
+same type in a cluster need different names, or they remove each other's
+finalizers and delete each other's objects. `Run` fails when two controllers
+in one program have the same name. To set a name, or to keep the name when
+you rename the program, pass `kube.Named(name)` to `kube.For`.
+
+The labels, annotations, and finalizers that kube writes, all under
+`kube.imjasonh.github.io`, don't change between versions of kube, so admission
+policies and other programs can match on them. Go programs can use
+`kube.ControllerLabel`, `kube.OwnerUIDLabel`, `kube.OwnerAnnotation`, and
+`kube.FinalizerName(name)` instead of copying the strings.
 
 ### Install in a cluster
 
@@ -963,24 +1053,31 @@ The command does the following:
    that names its type, not a type parameter, and passes constants as the
    namespace and name gets permission to get only that object, if the
    type's `kube` tag says `scope=Namespaced` or `scope=Cluster`.
-1. Builds the program for each platform with `CGO_ENABLED=0`.
+1. Builds the program for each platform with `CGO_ENABLED=0` and the build
+   tags and linker flags that the program was built with.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
-   program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
-   pushes the images and an index of them to `REGISTRY/PROGRAM` with
+   program at `/app/PROGRAM` as the entrypoint. The image keeps the base's
+   user, or runs as user 65532 if the base has none. It
+   pushes the images and an index of them to `REGISTRY/NAME` with
    [go-containerregistry](https://github.com/google/go-containerregistry),
    using the credentials from `docker login` or `podman login`.
-1. Writes YAML that installs the image by digest: a Namespace, a
-   ServiceAccount, a ClusterRole and a Role with only the rules that the
-   program needs, their bindings, a Deployment, a PodDisruptionBudget for
-   more than one replica, a Service for webhooks and the `kube.Serve`
-   handler, and a PersistentVolumeClaim for a `kube.Volume`. With more than
+1. Writes YAML that installs the image by digest: a Namespace if
+   `-namespace` is the default, a ServiceAccount, a ClusterRole and a Role
+   with only the rules that the program needs, their bindings, a
+   Deployment, a PodDisruptionBudget for more than one replica, a Service
+   for webhooks and the `kube.Serve` handler, an empty Secret that the
+   program keeps its webhook certificate in, and a PersistentVolumeClaim
+   for a `kube.Volume`. With more than
    one replica, the Deployment runs the program with `-leader-elect`, or
    with `-shards` when you set `-shards`. The kubelet probes `/readyz` every
    second, so a new Pod becomes ready within a second of `/readyz` passing,
    and 30 failures in a row make a ready Pod unready. The container's root
    file system is read-only, with an `emptyDir` volume at `/tmp` for
    temporary files.
-   `-tmp-size` limits the volume's size. The Pod shares one process
+   `-tmp-size` limits the volume's size. The Pod runs the program as user
+   and group 65532, whatever the base's user is, because the kubelet won't
+   start a container that must run as non-root when the image's user is
+   root or a name. The Pod shares one process
    namespace, so the pause container is PID 1 and reaps the processes that
    the program's subprocesses leave behind, which a Go program doesn't do.
    A container that you add to the Pod can see the program's processes and
@@ -997,6 +1094,20 @@ The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
 When the program starts in the cluster, it installs its own
 CustomResourceDefinitions and webhook configurations.
+
+The installation's objects are named `NAME`, which is the `Name` of the
+program's `kube.Manager` or else the program's name, lowercased, with each
+character other than a letter or digit changed to `-`. Objects
+outside the program's namespace are named `NAME.NAMESPACE`, where
+`NAMESPACE` is the namespace that you install the program in, so that an
+installation in another namespace doesn't replace them: the ClusterRole and
+its binding, Roles in other namespaces, and the webhook configurations that
+the program installs. When you install in the namespace `NAME`, the default,
+they're named `NAME` too.
+
+The YAML creates the namespace only when it's `NAME`, so deleting an
+installation in another namespace, for example with `kubectl delete -f`,
+leaves that namespace and the other objects in it.
 
 A program watches every namespace unless you set `-watch-namespace`. Then
 it watches one namespace, and the rules for namespaced resources go in a
@@ -1015,22 +1126,23 @@ a local type only with `Fetch`, `Apply`, and `Delete`. `Get`, `List`, and
 `Own` read caches that watch every namespace that the program watches, so they
 fail the reconcile with a local type, and `generate` rejects a controller that
 reconciles or owns one. Give each local object the program's namespace:
-`Fetch` and `Apply` fail the reconcile when it's empty, rather than use the
-namespace of the object being reconciled, which the Role doesn't cover.
+`Fetch`, `Apply`, and `Delete` fail the reconcile when it's empty, rather
+than use the namespace of the object being reconciled, which the Role
+doesn't cover.
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-registry` | Required | Registry, and optionally a repository prefix, to push to |
 | `-base` | `cgr.dev/chainguard/static:latest` | Base image |
 | `-platform` | `linux/amd64,linux/arm64` | Platforms to build for |
-| `-namespace` | The program's name | Namespace to install in |
+| `-namespace` | `NAME` | Namespace to install in, which must exist unless it's the default |
 | `-replicas` | 2, or 1 with a `kube.Volume` | Pods to run |
-| `-shards` | 1 | Shards to split reconciles across |
+| `-shards` | 1, or the Manager's `Shards` | Shards to split reconciles across |
 | `-tag` | `latest` | Tag for the image, in addition to its digest |
 | `-tmp-size` | No limit | Size limit of the `emptyDir` volume at `/tmp`, such as `1Gi` |
 | `-volume-size` | `1Gi` | Size of the claim for a `kube.Volume` |
 | `-storage-class` | The cluster's default | StorageClass of the claim for a `kube.Volume` |
-| `-watch-namespace` | Every namespace | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
+| `-watch-namespace` | Every namespace, or the Manager's `Namespace` | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
 
 Flags after `--` go to the program in the Deployment:
 
@@ -1043,10 +1155,23 @@ go run ./examples/podpolicy generate -registry=ghcr.io/you -- -registries=ghcr.i
 that the program doesn't define, and the function that you pass to
 [`kube.Install`](#install-other-objects) sees their values.
 
+The Deployment sets some of `kube.Main`'s flags to match the RBAC rules,
+ports, and probes that `generate` writes: `-metrics-addr`, `-leader-elect`,
+`-shards`, `-watch-namespace`, `-webhook-addr`, `-webhook-service`,
+`-serve-addr`, and `-token-dir`. `generate` fails when you pass one of these
+after `--`, or when the program defines one itself. To watch one namespace
+or to set the shards, use the `generate` flag of the same name.
+
 go-containerregistry is kube's only dependency, and only `generate` uses it.
-The command builds the copy of the program for the image with the
+The command builds the copy of the program for the image with the program's
+own build tags and linker flags, which come from the go command line or
+`GOFLAGS`, so a version that `-ldflags=-X` sets reaches the image. It adds the
 `kube_nogenerate` build tag, which leaves the command out, so the program in
-the cluster links only kube and the standard library.
+the cluster links only kube and the standard library. It also adds `-s -w`,
+which leave out the symbol table and debug information. The command finds
+the program's calls with the same tags, so the rules cover the code in the
+image. Go doesn't record the linker flags of a program built with
+`-trimpath`, so for such a program `generate` takes them from `GOFLAGS`.
 
 ### Install other objects
 
@@ -1141,7 +1266,8 @@ way, its service account needs these permissions:
   on each object that it fetches is enough.
 - `create`, `patch`, and `delete` on every type that it declares with `Own`,
   `Apply`, or `Delete`. Server-side apply needs `create` for objects that
-  don't exist yet.
+  don't exist yet. `Own` and `Apply` also need `get`, to read an object that
+  no cache holds before they write it.
 - `patch` on the reconciled type's `status` subresource, for status.
 - `patch` on the reconciled type, for its finalizer and for migrations, when
   any of the following is true:
@@ -1154,12 +1280,13 @@ way, its service account needs these permissions:
   declares with `Apply`, unless no version of the program has set that
   status.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
-  `customresourcedefinitions/status`, for its own types. To check and migrate
-  objects when a type changes, it also needs `list` on its own types in every
-  namespace.
-- `get` and `create` on `customresourcedefinitions`, for the types that it
-  defines and owns without reconciling them, so that it can create their
-  CRDs. Without `get`, it logs a warning and doesn't create them.
+  `customresourcedefinitions/status`, for the CRDs of its own types, by name.
+  To check and migrate objects when a type changes, it also needs `list` on
+  its own types in every namespace.
+- `create` on `customresourcedefinitions`, and `get` on their CRDs by name,
+  for the types that it defines and owns without reconciling them, so that it
+  can create their CRDs. Without `get`, it logs a warning and doesn't create
+  them.
 - `create` and `patch` on each object that `kube.Install` applies, by name.
   For an admission policy with a `paramKind`, it also needs `get` on the name
   `*` of that kind in every namespace, and for the policy's binding, `get` on
@@ -1169,9 +1296,15 @@ way, its service account needs these permissions:
 - `create` and `patch` on `events` in the `events.k8s.io` group, for a program
   that calls `Eventf`, in the namespaces of the reconciled objects, or in
   `default` for cluster-scoped ones.
-- `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
-  `patch`, and `delete` on `validatingwebhookconfigurations` and
-  `mutatingwebhookconfigurations`, for webhooks.
+- `get` and `delete` on its `validatingwebhookconfigurations` and
+  `mutatingwebhookconfigurations`, by name, so that it can delete one that an
+  earlier version left.
+- For webhooks, `get` and `update` on the Secret `NAME-webhook-tls` in its
+  namespace, and `create` and `patch` on its validating webhook configuration
+  when it validates objects, and on its mutating one when it defaults them.
+  The YAML that `generate` writes creates the Secret empty, and the program
+  fills it in. If the Secret doesn't exist, the program creates it, which
+  needs `create` on `secrets`.
 - `create` on `tokenreviews`, to check tokens with `ReviewToken`.
 - `create` on `serviceaccounts/token` for its own service account, in its
   namespace, to request tokens with `RequestToken`. The `generate` command
@@ -1248,8 +1381,12 @@ in a cluster has its own.
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
 
-The fakes differ from a cluster in two ways:
+The fakes differ from a cluster in three ways:
 
+- A `Get` or `List` that can't read, such as a `Get` of a local type, panics
+  as in a cluster, but nothing recovers the panic, so the test fails with it.
+  To test a failed read, recover the panic. Its value is an error that wraps
+  `rec.Err()`.
 - `Trigger` doesn't check that a controller in the program reconciles the
   object's kind, so it returns true for any object in the world unless the
   world holds `kube.FakeStandby{}`.
@@ -1258,6 +1395,11 @@ The fakes differ from a cluster in two ways:
   handler through a reconcile to the handler's next `Get`. Test the hand-off
   in [Trigger a reconcile](#trigger-a-reconcile) against a real API server, as
   `TestServeHandsDataToReconcile` in `e2e/serve_test.go` does.
+- In a `kube.Fake` context, `Own` treats each object in the world as one that
+  the controller created, unless its `kube.OwnerAnnotation` names another
+  owner, and `Apply` doesn't need its object to be in the world. In a
+  cluster, `Own` fails for an object that the controller didn't create, and
+  `Apply` fails for an object that doesn't exist.
 
 The end-to-end tests run each example against a real `kube-apiserver` and
 `etcd`, without a kubelet or controller manager. To run them, download the
@@ -1386,6 +1528,9 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops calling `Apply` for it, and when the reconciled object is
   deleted.
+- `Own` reads an object that no cache holds before it first applies the
+  object. An object that another client creates between the read and the
+  apply is taken over, as if the controller had `kube.Adopts()`.
 - `generate` can't tell which namespace an owned object goes in, so a program
   that declares owned objects gets `patch` on every namespaced type that it
   reconciles, even when each owned object is in its owner's namespace and

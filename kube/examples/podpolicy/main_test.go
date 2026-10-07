@@ -101,7 +101,8 @@ func TestEndToEnd(t *testing.T) {
 	t.Cleanup(func() {
 		ctx := context.WithoutCancel(ctx)
 		for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
-			_ = c.Delete(ctx, client.Path("admissionregistration.k8s.io/v1", r, "", "podpolicy-e2e"), client.DeleteOptions{})
+			// The test's kubeconfig puts the manager in the namespace default.
+			_ = c.Delete(ctx, client.Path("admissionregistration.k8s.io/v1", r, "", "podpolicy-e2e.default"), client.DeleteOptions{})
 		}
 	})
 	e2e.Run(t, &kube.Manager{Name: "podpolicy-e2e", Namespace: ns, WebhookAddr: addr, WebhookURL: "https://" + addr}, kube.Webhooks[Pod](&testPolicy))

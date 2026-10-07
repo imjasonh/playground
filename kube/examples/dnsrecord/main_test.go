@@ -169,7 +169,7 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !slices.Contains(r.Finalizers, "kube.imjasonh.github.io/dnsrecord") {
+		if !slices.Contains(r.Finalizers, kube.FinalizerName("dnsrecord-e2e-dnsrecord")) {
 			return fmt.Errorf("finalizers = %v", r.Finalizers)
 		}
 		if r.Spec.TTL != 300 {

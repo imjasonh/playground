@@ -112,31 +112,35 @@ func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpe
 	if d != nil {
 		diverged, synced = d.Commit, d.Base
 	}
-	if diverged != previous.Outputs["diverged"] || synced != previous.Outputs["synced"] {
+	if diverged != previous.Notes["diverged"] || synced != previous.Notes["synced"] {
 		return true
 	}
-	merged := previous.Outputs["merge"]
+	merged := previous.Notes["merge"]
 	return d == nil && merged != "" && merged != spec.ParentHead
 }
 
+// record holds the outputs and notes that the check records as it works
+// toward a verdict. run adds the verdict's own outputs and notes to them.
+type record struct{ outputs, notes map[string]string }
+
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
-	outputs := map[string]string{}
+	rec := record{outputs: map[string]string{}, notes: map[string]string{}}
 	if prev := in.Previous; prev != nil {
 		// RunJob counts the branch's runs for maxAgentRuns in the agent's
 		// state, so every result keeps them.
-		if runs := readState(prev.Outputs).Runs; runs != 0 {
-			outputs = stateOutputs(&agent.JobState{Runs: runs})
+		if runs := readState(prev.Notes).Runs; runs != 0 {
+			rec.notes = stateNotes(&agent.JobState{Runs: runs})
 		}
 	}
-	v := resolveBranch(ctx, in, outputs)
-	maps.Copy(outputs, v.Outputs)
-	v.Outputs, v.Message = outputs, shorten(v.Message)
+	v := resolveBranch(ctx, in, rec)
+	maps.Copy(rec.outputs, v.Outputs)
+	maps.Copy(rec.notes, v.Notes)
+	v.Outputs, v.Notes, v.Message = rec.outputs, rec.notes, shorten(v.Message)
 	return v, nil
 }
 
-// retry reports a failure that can pass, such as a fetch that failed, and
-// runs the check again later. The check doesn't return errors, because the
-// framework reports an error without the outputs.
+// retry reports a failure that can pass, such as a fetch that failed, as
+// Running instead of Error, and runs the check again later.
 func retry(ctx context.Context, format string, args ...any) checks.Verdict {
 	kube.RequeueAfter(ctx, 30*time.Second)
 	return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...)}
@@ -175,11 +179,11 @@ func (t target) action() string {
 // neither side of a divergence rewound since the sides last synced, a
 // head that contains both heads keeps both sides' changes, so the check
 // merges the external repository's head.
-func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]string) checks.Verdict {
+func resolveBranch(ctx context.Context, in *checks.Input, rec record) checks.Verdict {
 	head := in.Spec.Head
 	t := target{commit: in.Spec.ParentHead, ref: "refs/heads/" + in.Spec.Parent, name: in.Spec.Parent}
 	if d := divergence(ctx, in.Meta); d != nil {
-		recordDivergence(d, outputs)
+		recordDivergence(d, rec.notes)
 		if err := validate(d, in.Spec.Branch); err != nil {
 			return checks.Fail("%v", err)
 		}
@@ -188,7 +192,7 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 		}
 		t = target{commit: d.Commit, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true, synced: d.Base}
 	}
-	if v, ok := follow(ctx, in, t, outputs); ok {
+	if v, ok := follow(ctx, in, t, rec); ok {
 		return v
 	}
 	repo, err := targetRepo(ctx, in, t)
@@ -200,8 +204,8 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 		case err != nil:
 			return retry(ctx, "%v", err)
 		case rewound != "":
-			outputs["rewound"] = rewound
-			return resolveRewind(ctx, in, repo, t, rewound, outputs)
+			rec.notes["rewound"] = rewound
+			return resolveRewind(ctx, in, repo, t, rewound, rec)
 		}
 	}
 	switch ok, err := repo.IsAncestor(ctx, t.commit, head); {
@@ -218,7 +222,7 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 	case ok:
 		return checks.Pass("%s at %s already contains the branch's head", t.name, gitk8s.Short(t.commit))
 	}
-	return resolve(ctx, in, repo, t, outputs)
+	return resolve(ctx, in, repo, t, rec)
 }
 
 // resolve merges t into the branch's head, or, if t.replay is set,
@@ -226,9 +230,9 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 // commit. It returns a verdict whose fix is a commit that git resolved,
 // or the verdict of the agent's run that resolves the conflicts that git
 // leaves.
-func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, outputs map[string]string) checks.Verdict {
+func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rec record) checks.Verdict {
 	head := in.Spec.Head
-	outputs["merge"] = t.commit
+	rec.notes["merge"] = t.commit
 	var o git.MergeOptions
 	var bases []string
 	if t.replay {
@@ -260,7 +264,7 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, ou
 		paths[i] = c.Path
 	}
 	list := strings.Join(paths, ", ")
-	outputs["conflicts"] = strings.Join(paths, ",")
+	rec.outputs["conflicts"] = strings.Join(paths, ",")
 	if len(union) > 0 {
 		o.Union = union
 		tree, rest, err := repo.Merge(ctx, head, t.commit, o)
@@ -289,7 +293,7 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, ou
 	if limit := in.Spec.Merge.MaxCommits(); n >= limit {
 		return checks.Fail("%s conflicts in %s; not running an agent because the branch already has %d automated commits, the limit", t.action(), list, n)
 	}
-	return startAgent(ctx, in, repo, t, bases, list, outputs)
+	return startAgent(ctx, in, repo, t, bases, list, rec.notes)
 }
 
 // fix returns v with the commit that mergeCommit makes of tree as its fix,
@@ -307,8 +311,9 @@ func fix(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, 
 
 // mergeCommit commits tree as a merge of t into the branch's head, or, if
 // t.replay is set, as a commit on top of t's commit that replays the
-// branch's changes since t.synced, with body in the message.
-func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string) (string, error) {
+// branch's changes since t.synced, with body in the message. The message
+// ends with the fixer trailer and then the trailers, each set to conflicts.
+func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string, trailers ...string) (string, error) {
 	hc, err := repo.Commit(ctx, in.Spec.Head)
 	if err != nil {
 		return "", err
@@ -331,6 +336,9 @@ func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target
 		msg += body + "\n\n"
 	}
 	msg += git.FixerTrailer + ": conflicts\n"
+	for _, k := range trailers {
+		msg += k + ": conflicts\n"
+	}
 	return in.CommitTree(ctx, tree, parents, msg, max(hc.Time, tc.Time))
 }
 
@@ -368,14 +376,14 @@ func fetchCommit(ctx context.Context, repo *git.Repo, remote git.Remote, commit,
 	return nil
 }
 
-// recordDivergence records d in outputs, so that stale can tell when it
+// recordDivergence records d in notes, so that stale can tell when it
 // changes.
-func recordDivergence(d *gitk8s.Divergence, outputs map[string]string) {
+func recordDivergence(d *gitk8s.Divergence, notes map[string]string) {
 	if d.Commit != "" {
-		outputs["diverged"] = d.Commit
+		notes["diverged"] = d.Commit
 	}
 	if d.Base != "" {
-		outputs["synced"] = d.Base
+		notes["synced"] = d.Base
 	}
 }
 
@@ -438,7 +446,7 @@ func newReconciler(cfg *checks.Config) *reconciler {
 		cfg:   cfg,
 		// The checks framework keeps its own Cache in cfg.CacheDir, and two
 		// Caches don't lock each other's repositories.
-		cache: &gitk8s.Cache{Git: &cfg.Git, Dir: filepath.Join(cfg.CacheDir, ".parents")},
+		cache: &gitk8s.Cache{Git: &cfg.Git, Dir: filepath.Join(cfg.CacheDir, ".parents"), Remote: check.Remote},
 	}
 }
 

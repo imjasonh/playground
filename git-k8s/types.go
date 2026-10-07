@@ -51,7 +51,7 @@ const FixerTrailer = "Git-K8s-Fixer"
 // ControllerLabel is the label that kube puts on each object that a
 // controller declares with kube.Own. Its value is the controller's name,
 // which for a check is check- followed by the check's name.
-const ControllerLabel = "kube.imjasonh.github.io/controller"
+const ControllerLabel = kube.ControllerLabel
 
 // GoTestCheck is the name of the check that runs a branch's tests in Pods
 // in the repository's namespace, and GoTestController is the name of its
@@ -86,13 +86,9 @@ type GitRepository struct {
 
 // GitRepositorySpec says where a repository is and which branches to track.
 type GitRepositorySpec struct {
-	// git decodes %XX in a URL and strips brackets from its user and host
-	// before it passes them to ssh, so either could hide a leading "-". The
-	// pattern allows no "%" before the path, and brackets there only around
-	// an IP address or around an scp-like address's host:port. An scp-like
-	// address needs a user, because "@" is what tells it apart from git's
-	// <transport>::<address> syntax.
-	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^((https?|git|ssh)://([^-@/%\\[\\]\\x00-\\x1f\\x7f][^@/%\\[\\]\\x00-\\x1f\\x7f]*@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/|[^-@/:%\\[\\]\\x00-\\x1f\\x7f][^@/:%\\[\\]\\x00-\\x1f\\x7f]*@([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[([A-Za-z0-9_][A-Za-z0-9_.-]*(:[0-9]+)?|[0-9A-Fa-f:.]+)\\]):[^-\\x00-\\x1f\\x7f])[^\\x00-\\x1f\\x7f]*$" doc:"URL of the external repository, which the mirror reaches with git: an https, http, git, or ssh URL, or an scp-like address with a user name, such as git@example.com:app.git. Without a user name, write an ssh:// URL, such as ssh://example.com/~/app.git."`
+	// git appends info/refs?service=... to the URL, which a query or a
+	// fragment would break.
+	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^https?://([^@/?#\\[\\]\\x00-\\x1f\\x7f]+@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/[^?#\\x00-\\x1f\\x7f]*$" doc:"URL of the external repository, which the mirror reaches with git over HTTP: an https or http URL without a query or a fragment, such as https://git.example.com/app.git."`
 	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, the mirror sends git."`
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often the mirror fetches the external repository's branches, such as 30s or 5m."`
@@ -127,12 +123,13 @@ type BranchRule struct {
 // MergePolicy is what a branch needs before it lands on its parent.
 type MergePolicy struct {
 	Checks              []CheckPolicy `json:"checks,omitempty" doc:"Checks that run on every branch proposed to this one."`
-	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
+	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. The expression can name only listed checks, and a name with a hyphen needs brackets, as in checks['go-vet']. Without an expression, every listed check must pass."`
 	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward|Squash|Rebase,default=FastForward" doc:"How to land a branch, which must contain the parent's head. FastForward moves the parent to the branch's head. Squash makes one commit with the head's files on top of the parent's head, and Rebase copies each of the branch's commits that isn't a merge onto it. The squashed commit, or the last rebased commit, has the files that the checks saw and builds on the parent head that they saw, so results with filesOnly count for it. When the gate needs other results, the merge controller moves the branch to the new commits for the checks to run on."`
 	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer of the branch's commits that the parent doesn't have. The limit stops two checks that disagree from pushing forever. A squashed commit that the merge controller moves the branch to leaves out the fixes before it, so the count starts again after it. The merge controller doesn't squash the fixes after its own commit again."`
 	MaxAgentRuns        *int32        `json:"maxAgentRuns,omitempty" kube:"min=0,max=1000,default=10" doc:"Most agent runs that each agentic check, such as review, can start on one branch. Each new head needs a run, so the limit caps the runs that one branch can start, not what they cost."`
-	// DeleteMergedBranches deletes a branch after it lands.
-	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch after it lands."`
+	// DeleteLandedBranches deletes a branch when the merge controller lands
+	// it.
+	DeleteLandedBranches bool `json:"deleteLandedBranches,omitempty" doc:"Delete a branch when the merge controller lands it."`
 }
 
 // Check returns the policy for the named check, or nil if the policy doesn't
@@ -220,7 +217,7 @@ type GitBranchSpec struct {
 // GitBranchStatus holds check results and the merge controller's state.
 type GitBranchStatus struct {
 	Checks             map[string]CheckResult `json:"checks,omitempty" kube:"mapType=atomic" doc:"Check results by check name. Checks send their results to the core program, which writes each one to the entry of the check that sent it."`
-	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
+	State              MergeState             `json:"state,omitempty" kube:"enum=Diverged|NoMergePolicy|ParentMissing|NothingToLand|WaitingForChecks|InvalidGate|Queued|NotFastForward|NeedsRebase|Rewritten|Landed,column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Landed condition's reason. Empty for a branch without a parent."`
 	Queued             *Queued                `json:"queued,omitempty" doc:"The branch's place in its parent's merge queue, while it waits to land."`
 	Queue              []string               `json:"queue,omitempty" doc:"Branches in this branch's merge queue, front first. The front branch is the only one that merges this branch in and lands."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
@@ -243,6 +240,51 @@ type Queued struct {
 	Head     string    `json:"head" doc:"Branch head when the merge controller last kept the branch in the queue. A later push that adds a commit without the Git-K8s-Fixer trailer, or that removes commits, takes the branch out of the queue."`
 	Position int32     `json:"position,omitempty" kube:"column=Queue" doc:"Place in the parent's queue, from 1 at the front. Unset until the parent's queue includes the branch."`
 }
+
+// MergeState says why a branch has or hasn't landed on its parent. The
+// merge controller sets it as the reason of the branch's Landed condition,
+// which is True only in MergeStateLanded.
+type MergeState string
+
+// Merge states, the values of GitBranchStatus.State.
+const (
+	// MergeStateDiverged means the branch changed both in the mirror and in
+	// the external repository, so it waits for a commit that keeps both
+	// sides' changes.
+	MergeStateDiverged MergeState = "Diverged"
+	// MergeStateNoMergePolicy means no branches rule that matches the
+	// parent has a merge policy.
+	MergeStateNoMergePolicy MergeState = "NoMergePolicy"
+	// MergeStateParentMissing means the parent doesn't exist in the mirror.
+	MergeStateParentMissing MergeState = "ParentMissing"
+	// MergeStateNothingToLand means the parent already has the branch's
+	// changes, such as when the branch was just created from it. The merge
+	// controller didn't land the branch, so it doesn't delete it.
+	MergeStateNothingToLand MergeState = "NothingToLand"
+	// MergeStateWaitingForChecks means the merge policy's gate doesn't pass
+	// yet.
+	MergeStateWaitingForChecks MergeState = "WaitingForChecks"
+	// MergeStateInvalidGate means the gate fails to evaluate after every
+	// check finished.
+	MergeStateInvalidGate MergeState = "InvalidGate"
+	// MergeStateQueued means the branch waits in its parent's merge queue.
+	MergeStateQueued MergeState = "Queued"
+	// MergeStateNotFastForward means the branch doesn't contain the
+	// parent's head, so it can't land.
+	MergeStateNotFastForward MergeState = "NotFastForward"
+	// MergeStateNeedsRebase means a squash or rebase landing can't copy the
+	// branch's commits onto the parent's head, so a person has to rebase
+	// them.
+	MergeStateNeedsRebase MergeState = "NeedsRebase"
+	// MergeStateRewritten means the merge controller moved the branch to
+	// the squashed or rebased commits instead of landing them, so that the
+	// checks whose results don't have filesOnly run on them.
+	MergeStateRewritten MergeState = "Rewritten"
+	// MergeStateLanded means the merge controller landed the branch on its
+	// parent. A branch that stays after it lands keeps this state while
+	// its head is the parent's head.
+	MergeStateLanded MergeState = "Landed"
+)
 
 // Check result states.
 const (
@@ -268,30 +310,120 @@ const (
 // Pod, and checks need no permission to create one.
 const ResultsAudience = "git-k8s-results"
 
+// Result scopes, which say what a result is for besides the branch head.
+const (
+	// ScopeHead means that the result is for the branch head with any
+	// parent head.
+	ScopeHead = "Head"
+	// ScopeParent means that the result is for the branch head with only
+	// the parent head in its ParentCommit, such as a merge of the parent.
+	ScopeParent = "Parent"
+	// ScopeChange means that the result is for what the branch head
+	// changes on top of its MergeBase, with any parent head, such as an
+	// approval of the change. A landing applies the change on top of the
+	// parent's head, so the result counts for a landing only when its
+	// MergeBase is the parent's head.
+	ScopeChange = "Change"
+)
+
 // Limits on a result that the core program accepts from a check. The checks
-// package shortens messages and output values to fit.
+// package shortens messages, output values, and note values to fit.
 const (
 	MaxMessageLength     = 1024
 	MaxOutputs           = 16
 	MaxOutputNameLength  = 63
 	MaxOutputValueLength = 1024
+	MaxNotes             = 32
+	MaxNoteNameLength    = 63
+	MaxNoteValueLength   = 1024
+	// MaxPodNameLength is the longest name that a Pod can have.
+	MaxPodNameLength = 253
 )
 
-// CheckResult is one check's result for one commit.
+// CheckResult is one check's result for one commit. OpenAPISchema
+// describes its fields.
 type CheckResult struct {
-	Commit       string            `json:"commit" doc:"Branch head that the result is for."`
-	ParentCommit string            `json:"parentCommit,omitempty" doc:"Parent head that the result is for, for checks whose results depend on the parent."`
-	MergeBase    string            `json:"mergeBase,omitempty" doc:"Merge base of the branch head and the parent's head, for a result that holds for what the branch head changes on top of it. Such a result counts for a landing only when the merge base is the parent's head."`
-	State        string            `json:"state" kube:"enum=Running|Passed|Failed|Fixed|Error"`
+	Commit       string            `json:"commit"`
+	Scope        string            `json:"scope"`
+	ParentCommit string            `json:"parentCommit,omitempty"`
+	MergeBase    string            `json:"mergeBase,omitempty"`
+	State        string            `json:"state"`
 	Message      string            `json:"message,omitempty"`
-	Outputs      map[string]string `json:"outputs,omitempty" doc:"Values that merge gates can read, such as a risk level."`
-	FilesOnly    bool              `json:"filesOnly,omitempty" doc:"The result also holds for any commit with the same files that builds on the same parent head, because it doesn't depend on the branch's commits, such as their messages or authors. Only such results count for a commit that a squash or rebase landing makes."`
+	Outputs      map[string]string `json:"outputs,omitempty"`
+	Notes        map[string]string `json:"notes,omitempty"`
+	Pod          string            `json:"pod,omitempty"`
+	Fix          string            `json:"fix,omitempty"`
+	FilesOnly    bool              `json:"filesOnly,omitempty"`
+}
+
+// OpenAPISchema returns the schema of a result in the GitBranch
+// CustomResourceDefinition. Its rules check the fields that each scope
+// needs, as Validate does.
+func (CheckResult) OpenAPISchema() map[string]any {
+	str := func(doc string) map[string]any {
+		s := map[string]any{"type": "string"}
+		if doc != "" {
+			s["description"] = doc
+		}
+		return s
+	}
+	commit := func(doc string) map[string]any {
+		s := str(doc)
+		s["minLength"] = 1
+		return s
+	}
+	values := func(doc string) map[string]any {
+		return map[string]any{"type": "object", "additionalProperties": str(""), "description": doc}
+	}
+	rule := func(rule, message string) map[string]any {
+		return map[string]any{"rule": rule, "message": message}
+	}
+	scope := str("What the result is for besides the branch head: Head for the branch head with any parent head, Parent for the branch head with the parent head in parentCommit, or Change for what the branch head changes on top of the merge base in mergeBase, with any parent head.")
+	// The rules compare scope, so its length bounds their estimated cost,
+	// which the API server multiplies by how many entries status.checks
+	// can hold.
+	scope["enum"] = []any{ScopeHead, ScopeParent, ScopeChange}
+	scope["maxLength"] = max(len(ScopeHead), len(ScopeParent), len(ScopeChange))
+	state := str("")
+	state["enum"] = []any{Running, Passed, Failed, Fixed, Error}
+	return map[string]any{
+		"type":     "object",
+		"required": []string{"commit", "scope", "state"},
+		"properties": map[string]any{
+			"commit":       commit("Branch head that the result is for."),
+			"scope":        scope,
+			"parentCommit": commit("Parent head that a result with the scope Parent is for."),
+			"mergeBase":    commit("Merge base of the branch head and the parent's head that a result with the scope Change is for. Such a result counts for a landing only when the merge base is the parent's head."),
+			"state":        state,
+			"message":      str(""),
+			"outputs":      values("Values that merge gates can read, such as a risk level."),
+			"notes":        values("Other values that the check records, such as what its next run needs or what an agent's run used. Merge gates don't see them."),
+			"pod":          str("Pod that does the check's work, such as one that runs tests. While the result is Running, the mirror lets the Pod fetch the repository."),
+			"fix":          str("Commit that the check pushed to the branch to fix what it found, for a Fixed result."),
+			"filesOnly":    map[string]any{"type": "boolean", "description": "The result also holds for any commit with the same files that builds on the same parent head, because it doesn't depend on the branch's commits, such as their messages or authors. Only such results count for a commit that a squash or rebase landing makes."},
+		},
+		"x-kubernetes-validations": []any{
+			rule("self.scope != 'Head' || !has(self.parentCommit) && !has(self.mergeBase)", "a result with the scope Head has neither parentCommit nor mergeBase"),
+			rule("self.scope != 'Parent' || has(self.parentCommit) && !has(self.mergeBase)", "a result with the scope Parent has parentCommit and not mergeBase"),
+			rule("self.scope != 'Change' || has(self.mergeBase) && !has(self.parentCommit)", "a result with the scope Change has mergeBase and not parentCommit"),
+		},
+	}
 }
 
 // Fresh reports whether r is for these branch and parent heads. A result
-// without a parent commit is for any parent head.
+// with a scope that Fresh doesn't know is for no heads, so that a later
+// release can add scopes that this one reads as Pending.
 func (r *CheckResult) Fresh(head, parentHead string) bool {
-	return r != nil && r.Commit == head && (r.ParentCommit == "" || r.ParentCommit == parentHead)
+	if r == nil || r.Commit != head {
+		return false
+	}
+	switch r.Scope {
+	case ScopeHead, ScopeChange:
+		return true
+	case ScopeParent:
+		return r.ParentCommit == parentHead
+	}
+	return false
 }
 
 // Final reports whether r's state won't change for its commits.
@@ -300,13 +432,14 @@ func (r *CheckResult) Final() bool {
 }
 
 // Equal reports whether r and o are the same result. A nil result equals
-// only nil, and empty outputs equal no outputs.
+// only nil, and empty outputs or notes equal none.
 func (r *CheckResult) Equal(o *CheckResult) bool {
 	if r == nil || o == nil {
 		return r == o
 	}
-	return r.Commit == o.Commit && r.ParentCommit == o.ParentCommit && r.MergeBase == o.MergeBase && r.State == o.State &&
-		r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs) && r.FilesOnly == o.FilesOnly
+	return r.Commit == o.Commit && r.Scope == o.Scope && r.ParentCommit == o.ParentCommit && r.MergeBase == o.MergeBase &&
+		r.State == o.State && r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs) && maps.Equal(r.Notes, o.Notes) &&
+		r.Pod == o.Pod && r.Fix == o.Fix && r.FilesOnly == o.FilesOnly
 }
 
 // Short returns the first 12 characters of a commit SHA, for messages.

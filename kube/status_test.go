@@ -430,3 +430,29 @@ func TestApplyStatus(t *testing.T) {
 	}
 	sends(6)
 }
+
+func TestSyncedConditionLeavesOutTheAPIServersMessage(t *testing.T) {
+	cm := &typeInfo{apiVersion: "v1", kind: "ConfigMap"}
+	key := Key{Namespace: "shop", Name: "token"}
+	invalid := &client.APIError{Code: 422, Reason: "Invalid", Message: `ConfigMap "token" is invalid: metadata.labels: Invalid value: "sk-live-1234!": a valid label must consist of alphanumeric characters`}
+	denied := &client.APIError{Code: 400, Reason: "token sk-live-1234 isn't allowed", Message: `admission webhook "tokens" denied the request: token sk-live-1234 isn't allowed`}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"rejected apply", &writeError{"applying", cm, key, invalid}, "applying ConfigMap.v1 shop/token failed (422 Invalid); see the program's log"},
+		{"wrapped", fmt.Errorf("finalizing: %w", &writeError{"deleting", cm, key, invalid}), "deleting ConfigMap.v1 shop/token failed (422 Invalid); see the program's log"},
+		{"reason that isn't a word", &writeError{"deleting", cm, key, denied}, "deleting ConfigMap.v1 shop/token failed (400); see the program's log"},
+		{"not from the API server", &writeError{"applying status of", cm, key, errorString("connection refused")}, "applying status of ConfigMap.v1 shop/token: connection refused"},
+		{"from Reconcile", errorString(`token "sk-live-1234" expired`), `token "sk-live-1234" expired`},
+	} {
+		if c := syncedCondition(tc.err, 1); c.Status != False || c.Reason != "ReconcileError" || c.Message != tc.want {
+			t.Errorf("%s: Synced = %+v, want message %q", tc.name, c, tc.want)
+		}
+	}
+	want := `applying ConfigMap.v1 shop/token: ConfigMap "token" is invalid: metadata.labels: Invalid value: "sk-live-1234!": a valid label must consist of alphanumeric characters (422 Invalid)`
+	if err := (&writeError{"applying", cm, key, invalid}); err.Error() != want || !client.IsInvalid(err) {
+		t.Errorf("the error for the log and LastError = %q, IsInvalid %v, want %q", err, client.IsInvalid(err), want)
+	}
+}

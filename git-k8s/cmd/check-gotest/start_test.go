@@ -30,8 +30,8 @@ func TestReportsWhyThePodDidntStart(t *testing.T) {
 	if want := "starting Pod " + name + "; the last try failed: " + denied.Error(); res.State != gitk8s.Running || res.Message != want {
 		t.Errorf("result = %+v, want Running with the message %q", res, want)
 	}
-	if res.Outputs["pod"] != name || res.Outputs["attempt"] != "1" {
-		t.Errorf("outputs = %v, want the same Pod and attempt", res.Outputs)
+	if res.Pod != name || res.Notes["attempt"] != "1" {
+		t.Errorf("result = %+v, want the same Pod and attempt", res)
 	}
 	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != name {
 		t.Errorf("owned Pods = %+v, want the Pod declared again", pods)

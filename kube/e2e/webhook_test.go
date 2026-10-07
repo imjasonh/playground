@@ -69,11 +69,16 @@ func webhookManager(t *testing.T, name, namespace string) *kube.Manager {
 		ctx := context.WithoutCancel(t.Context())
 		c := e2e.Client(t)
 		for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
-			_ = c.Delete(ctx, client.Path("admissionregistration.k8s.io/v1", r, "", name), client.DeleteOptions{})
+			_ = c.Delete(ctx, client.Path("admissionregistration.k8s.io/v1", r, "", configurationName(name)), client.DeleteOptions{})
 		}
 	})
 	return &kube.Manager{Name: name, Namespace: namespace, WebhookAddr: addr, WebhookURL: "https://" + addr}
 }
+
+// configurationName is the name of the webhook configurations of a manager
+// called name. The test's kubeconfig puts the manager in the namespace
+// default.
+func configurationName(name string) string { return name + ".default" }
 
 func TestAdmissionWebhooks(t *testing.T) {
 	c := e2e.Client(t)
@@ -152,7 +157,7 @@ func TestAdmissionWebhooks(t *testing.T) {
 func TestRemovesWebhooksThatTheProgramDropped(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
-	path := client.Path("admissionregistration.k8s.io/v1", "validatingwebhookconfigurations", "", "dropped-e2e")
+	path := client.Path("admissionregistration.k8s.io/v1", "validatingwebhookconfigurations", "", configurationName("dropped-e2e"))
 	m := webhookManager(t, "dropped-e2e", ns)
 	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
 	ctx, cancel := context.WithCancel(t.Context())

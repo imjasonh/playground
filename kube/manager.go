@@ -1,6 +1,7 @@
 package kube
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -24,12 +25,38 @@ import (
 	"github.com/imjasonh/playground/kube/internal/queue"
 )
 
+// Domain prefixes every label, annotation, and finalizer that the framework
+// writes on objects. These keys don't change between versions of the
+// framework, so admission policies and other programs can match on them.
+const Domain = "kube.imjasonh.github.io"
+
+// The framework writes these keys on each object that a controller declares
+// with Own.
+const (
+	// ControllerLabel's value is the name of the controller that owns the
+	// object.
+	ControllerLabel = Domain + "/controller"
+	// OwnerUIDLabel's value is the UID of the reconciled object that owns
+	// the object.
+	OwnerUIDLabel = Domain + "/owner-uid"
+	// OwnerAnnotation's value is the reconciled object that owns the object,
+	// as "namespace/name", or as its name if it's cluster-scoped.
+	OwnerAnnotation = Domain + "/owner"
+)
+
+// FinalizerName returns the finalizer of the controller with the given name.
+// The controller adds it to the objects it reconciles when it has a
+// Finalize method or owns objects that can't carry an owner reference.
+func FinalizerName(controller string) string { return Domain + "/" + controller }
+
 // Manager runs controllers against one cluster. The zero value is ready to
 // use; every field is optional.
 type Manager struct {
-	// Name identifies the program. It names the leader election lease and
-	// appears in the User-Agent and on CustomResourceDefinitions the manager
-	// installs. It defaults to the executable's name.
+	// Name identifies the program. It appears in the User-Agent and on
+	// CustomResourceDefinitions the manager installs. Lowercased, with
+	// characters other than letters and digits changed to '-', it names the
+	// manager's Leases, webhook certificate Secret, and webhook
+	// configurations. It defaults to the executable's name.
 	Name string
 	// Kubeconfig is the path of a kubeconfig file. When empty, the manager
 	// uses $KUBECONFIG, then the pod's service account, then
@@ -39,9 +66,6 @@ type Manager struct {
 	// and admission webhooks for namespaced types to objects in it. Empty
 	// means all namespaces.
 	Namespace string
-	// Domain prefixes the labels, annotations, and finalizers that the
-	// framework adds to objects. It defaults to "kube.imjasonh.github.io".
-	Domain string
 	// LeaderElection makes replicas take turns: only the replica that holds
 	// a Lease reconciles. Caches start only after the replica first holds
 	// it, so standby replicas use almost no memory. A replica that loses the
@@ -105,6 +129,13 @@ type Manager struct {
 	// volume, whose tokens the kubelet renews.
 	TokenDir string
 
+	// Setup, if set, runs first when Run starts, before the manager
+	// connects to the cluster, and Run returns its error. Main reads flags
+	// before it calls Run, so Setup can check the program's flags and
+	// prepare what its controllers need, and a mistake stops the program at
+	// startup. The generate command doesn't run it.
+	Setup func(ctx context.Context) error
+
 	client  *client.Client
 	log     *slog.Logger
 	metrics *metrics
@@ -138,22 +169,32 @@ func Run(ctx context.Context, controllers ...Controller) error {
 	return (&Manager{}).Run(ctx, controllers...)
 }
 
-// Main is a main function for a controller program. It reads flags,
-// stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
-// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
-// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, -token-dir,
-// and -v for debug logs.
+// Main is the Main method of a zero Manager.
+func Main(controllers ...Controller) {
+	(&Manager{}).Main(controllers...)
+}
+
+// Main is a main function for a controller program. It reads flags into
+// m's fields, stops on SIGINT or SIGTERM, runs controllers, and exits with
+// status 1 if they fail. Flags: -kubeconfig, -watch-namespace,
+// -leader-elect, -shards, -metrics-addr, -webhook-addr, -webhook-service,
+// -webhook-url, -serve-addr, -token-dir, and, if Logger is nil,
+// -log-level. Each flag defaults to its field's value. Main leaves out a
+// flag that the program defines itself on flag.CommandLine, and logs a
+// warning.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
 // base image, pushes it to REGISTRY, and writes YAML for kubectl apply that
-// installs it: a namespace, a service account, RBAC rules for the types and
-// APIs the program uses, a Deployment, a Service for its webhooks and its
-// Serve handler, and a PersistentVolumeClaim for its Volume.
-func Main(controllers ...Controller) {
+// installs it: a service account, RBAC rules for the types and APIs the
+// program uses, a Deployment, a Service for its webhooks and its Serve
+// handler, a PersistentVolumeClaim for its Volume, and its namespace,
+// unless -namespace names another. The YAML follows m's Name, Namespace,
+// LeaseNamespace, LeaderElection, and Shards.
+func (m *Manager) Main(controllers ...Controller) {
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		err := generate(ctx, os.Args[2:], controllers, os.Stdout, os.Stderr)
+		err := m.generate(ctx, os.Args[2:], controllers, os.Stdout, os.Stderr)
 		stop()
 		switch {
 		case errors.Is(err, flag.ErrHelp):
@@ -163,19 +204,19 @@ func Main(controllers ...Controller) {
 		}
 		return
 	}
-	m := &Manager{}
 	flag.Usage = func() {
 		name := filepath.Base(os.Args[0])
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
 		flag.PrintDefaults()
 	}
-	verbose := m.flags(flag.CommandLine)
+	level, skipped := m.flags(flag.CommandLine)
 	flag.Parse()
-	level := slog.LevelInfo
-	if *verbose {
-		level = slog.LevelDebug
+	if m.Logger == nil {
+		m.Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	}
-	m.Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	for _, name := range skipped {
+		m.Logger.Warn("the program defines this flag, so kube doesn't read it", "flag", "-"+name)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := m.Run(ctx, controllers...); err != nil {
@@ -185,27 +226,39 @@ func Main(controllers ...Controller) {
 	}
 }
 
-// flags defines Main's flags on fs, and returns the value of -v.
-func (m *Manager) flags(fs *flag.FlagSet) *bool {
-	fs.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
-	fs.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
-	fs.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
-	fs.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
-	fs.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
-	fs.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
-	fs.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
-	fs.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
-	fs.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
-	fs.StringVar(&m.TokenDir, "token-dir", "", "directory of service account tokens for kube.RequestToken, by audience")
-	return fs.Bool("v", false, "log debug messages")
+// flags defines Main's flags on fs, with m's fields as their defaults,
+// except those that fs already has, such as flags that the program defines
+// itself. It returns the value of -log-level, which it defines only if
+// m.Logger is nil, and the names of the flags that it skipped.
+func (m *Manager) flags(fs *flag.FlagSet) (level *slog.Level, skipped []string) {
+	own := flag.NewFlagSet("", flag.ContinueOnError)
+	own.StringVar(&m.Kubeconfig, "kubeconfig", m.Kubeconfig, "path to a kubeconfig file")
+	own.StringVar(&m.Namespace, "watch-namespace", m.Namespace, "watch only this namespace")
+	own.BoolVar(&m.LeaderElection, "leader-elect", m.LeaderElection, "reconcile only while holding a Lease")
+	own.IntVar(&m.Shards, "shards", max(m.Shards, 1), "split reconciles across replicas in this many shards, each held through a Lease")
+	own.StringVar(&m.Addr, "metrics-addr", m.Addr, "address for /healthz, /readyz, and /metrics, for example :8080")
+	own.StringVar(&m.WebhookAddr, "webhook-addr", cmp.Or(m.WebhookAddr, ":9443"), "address for HTTPS webhooks")
+	own.StringVar(&m.WebhookService, "webhook-service", m.WebhookService, "Service, as name or namespace/name, through which the API server reaches the webhooks")
+	own.StringVar(&m.WebhookURL, "webhook-url", m.WebhookURL, "base https URL through which the API server reaches the webhooks, outside the cluster")
+	own.StringVar(&m.ServeAddr, "serve-addr", cmp.Or(m.ServeAddr, ":8081"), "address for the HTTP handler passed to kube.Serve")
+	own.StringVar(&m.TokenDir, "token-dir", m.TokenDir, "directory of service account tokens for kube.RequestToken, by audience")
+	if m.Logger == nil {
+		level = new(slog.Level)
+		own.TextVar(level, "log-level", slog.LevelInfo, "log messages at this `level` and above: debug, info, warn, or error")
+	}
+	own.VisitAll(func(f *flag.Flag) {
+		if fs.Lookup(f.Name) != nil {
+			skipped = append(skipped, f.Name)
+			return
+		}
+		fs.Var(f.Value, f.Name, f.Usage)
+	})
+	return level, skipped
 }
 
 func (m *Manager) init() error {
 	if m.Name == "" {
 		m.Name = filepath.Base(os.Args[0])
-	}
-	if m.Domain == "" {
-		m.Domain = "kube.imjasonh.github.io"
 	}
 	m.log = m.Logger
 	if m.log == nil {
@@ -260,9 +313,15 @@ func (m *Manager) init() error {
 	return nil
 }
 
-// Run connects to the cluster and runs controllers until ctx is done. It
-// returns nil when ctx is canceled, or an error if setup fails.
+// Run runs Setup, connects to the cluster, and runs controllers until ctx
+// is done. It returns nil when ctx is canceled, or an error if Setup fails
+// or the manager can't start.
 func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
+	if m.Setup != nil {
+		if err := m.Setup(ctx); err != nil {
+			return err
+		}
+	}
 	if err := m.init(); err != nil {
 		return err
 	}

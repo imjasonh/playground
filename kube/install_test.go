@@ -86,12 +86,12 @@ func TestInstall(t *testing.T) {
 		t.Errorf("describe = %+v, want two objects to install", d)
 	}
 	in := c.(*installer)
-	if err := in.prepare(t.Context(), &Manager{Name: "my_app", Domain: "example.dev"}); err != nil {
+	if err := in.prepare(t.Context(), &Manager{Name: "my_app"}); err != nil {
 		t.Fatal(err)
 	}
 	for i, want := range []map[string]any{
-		{"team": "web", "example.dev/managed-by": "my_app"},
-		{"example.dev/managed-by": "my_app"},
+		{"team": "web", Domain + "/managed-by": "my_app"},
+		{Domain + "/managed-by": "my_app"},
 	} {
 		if got := in.objects[i].body["metadata"].(map[string]any)["labels"]; !reflect.DeepEqual(got, want) {
 			t.Errorf("object %d's labels = %v, want %v", i, got, want)

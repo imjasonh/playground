@@ -40,7 +40,7 @@ spec:
         when: >-
           checks.base.passed && checks.gofmt.passed &&
           (checks.risk.outputs.level == "low" || checks.approval.passed)
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: c/**
       parent: main
 ```
@@ -50,11 +50,12 @@ branches that match no rule aren't tracked. A branch whose rule names a
 `parent` is a proposal to that parent. The parent's rule says what a proposal
 needs before it lands.
 
-`url` must be an `https://`, `http://`, `git://`, or `ssh://` URL, or an
-scp-like address with a user name, such as `git@example.com:app.git`. Without
-a user name, write an `ssh://` URL, such as `ssh://example.com/~/app.git`. The
+`url` must be an `https://` or `http://` URL without a query or a fragment,
+such as `https://git.example.com/app.git`. git-k8s authenticates to external
+repositories only over HTTP, so it doesn't take `ssh://` URLs or scp-like
+addresses, such as `git@example.com:app.git`, which git reaches over ssh. The
 API server rejects other URLs, and git-k8s runs git with `GIT_ALLOW_PROTOCOL`
-set to those transports. Its git commands put `--end-of-options` before every
+set to `http:https`. Its git commands put `--end-of-options` before every
 URL, branch, and commit, so git can't read one as an option. git-k8s doesn't
 track branches whose names start with `-` or aren't valid ref names.
 
@@ -90,10 +91,11 @@ endpoint share one `kube.Serve` handler, and each controller is a
   over the fresh results. When it passes, the controller lands the branch in
   the mirror's copy, as [Landing methods](#landing-methods) describes, but
   only if the parent still points to the commit that the checks saw, so it
-  never overwrites a parent that moved in the meantime. It then deletes the
-  branch if the policy says to, and the repositories controller pushes both
-  changes to the external repository. When the policy lets the `base` check
-  push, branches whose gates pass wait in the parent's
+  never overwrites a parent that moved in the meantime. If the policy says
+  to, the same update deletes the branch, unless the branch moved since the
+  repositories controller listed it. The repositories controller pushes
+  both changes to the external repository. When the policy lets the `base`
+  check push, branches whose gates pass wait in the parent's
   [merge queue](#merge-queue), and only the branch at the front lands.
 
 The core program's fourth controller, **check-runs**, copies check results
@@ -119,9 +121,28 @@ app-c-two-de141ef616    c/two    62ebc5163be79d7963293a7e4c6152a967ed9838   main
 app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                                       48s
 ```
 
-The `Merged` condition's message explains a `WaitingForChecks` state, for
-example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`.
-`QUEUE` is a branch's place in its parent's [merge queue](#merge-queue).
+The `Landed` condition on each `GitBranch` that has a parent says whether
+the merge controller landed the branch, and `STATE` repeats the condition's
+reason. The condition is `True` only when the controller lands the branch,
+so `kubectl wait --for=condition=Landed` doesn't return for a branch that
+someone just created from its parent:
+
+| Status | Reason | Meaning |
+| --- | --- | --- |
+| `True` | `Landed` | The merge controller landed the branch. A branch that stays after it lands keeps this reason while its head is the parent's head. |
+| `False` | `WaitingForChecks` | The merge policy's gate doesn't pass yet. The message lists the checks' states, for example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`. |
+| `False` | `Queued` | The branch waits in its parent's [merge queue](#merge-queue). The message says what it waits for. |
+| `False` | `NothingToLand` | The parent already has the branch's changes, such as when someone created the branch from the parent. The merge controller didn't land the branch, so it doesn't delete it. |
+| `False` | `NotFastForward` | The branch doesn't contain the parent's head, so it can't land. |
+| `False` | `Rewritten` | A squash or rebase landing moved the branch to new commits for the checks to run on. See [Which results count](#which-results-count). |
+| `False` | `NeedsRebase` | A squash or rebase landing can't copy the branch's commits, for the reason in the message. See [Landing methods](#landing-methods). |
+| `False` | `InvalidGate` | The gate fails to evaluate after every check finished, for the reason in the message. See [Merge gates](#merge-gates). |
+| `False` | `Diverged` | The branch changed both in the mirror and in the external repository. See [Divergence](#divergence). |
+| `False` | `NoMergePolicy` | No branches rule that matches the parent has a merge policy. |
+| `False` | `ParentMissing` | The parent doesn't exist in the mirror. |
+
+A branch without a parent has no state and no `Landed` condition. `QUEUE`
+is a branch's place in its parent's [merge queue](#merge-queue).
 
 ## The mirror
 
@@ -133,7 +154,7 @@ Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens, and where the core program also serves the
 [results endpoint](#check-results). If you install the core program under
 another name or in another namespace, set `-mirror` to the mirror's base URL
-on `check-base`, `check-gofmt`, `check-risk`, `check-gotest`,
+on `check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`,
 `check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps`, and set
 `-results-url` to the results endpoint's URL on every check. Also set the
 core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
@@ -172,14 +193,19 @@ external repository has every change in the copy:
 | `False` | `Pending` | The external repository doesn't have the changes to the branches that the message lists yet. |
 | `False` | `Diverged` | The branches that the message lists changed on both sides. See [Divergence](#divergence). |
 | `False` | `CompareFailed` | The mirror couldn't compare the heads of the branches that the message lists, for the reasons in the message, such as a comparison that took too long. It leaves those branches as they are on each side, and they don't land. See [Divergence](#divergence). |
+| `False` | `UpdateFailed` | The mirror couldn't update the branches that the message lists in its copy, for the reasons in the message. For example, the copy can't take the external repository's new branch `a/b` while it has a branch `a`, because git doesn't allow both in one repository. The mirror still syncs the other branches, and tries those again at each sync. |
 | `False` | `SyncFailed` | Fetching from or pushing to the external repository failed, for the reason in the message. |
+| `Unknown` | `FetchFailed`, `CredentialsUnavailable`, or `MirrorFailed` | The last sync failed before the mirror could compare the two sides. The `Ready` condition has the same reason and message. |
 
 After a fetch or a push fails, the controller tries again within 30
 seconds, or within `pollInterval` if that's shorter, and doesn't push until
 then. Until a copy has fetched from its external repository once, the
 mirror answers requests for it with `503 Service Unavailable`, and the
 `GitRepository`'s `Ready` condition says why, with the reason `FetchFailed`
-or `CredentialsUnavailable`.
+or `CredentialsUnavailable`. Each git command stops after the core
+program's `-git-timeout`, 5 minutes by default, and git doesn't resume a
+fetch that stopped, so for an external repository whose first fetch takes
+longer, raise `-git-timeout`.
 
 When you delete a `GitRepository`, the controller pushes the copy's last
 changes to the external repository and then deletes the copy. While the
@@ -188,6 +214,21 @@ diverged, the `GitRepository` stays, and its `Synced` condition says why. It
 also stays while the mirror can't compare a branch's heads. To delete it
 anyway, with the changes that the external repository lacks, remove the
 finalizer `kube.imjasonh.github.io/repositories`.
+
+Each `GitRepository` and `GitBranch` has a `Synced` condition, which kube
+sets after every reconcile of the object. After a reconcile succeeds,
+`Synced` is `True` with the reason `Reconciled`. After one fails, it's
+`False`, and its message says what failed. Its reason is then
+`ReconcileError`, or `PermanentError` for an error that retrying won't fix,
+such as an invalid `pollInterval`. After a `ReconcileError`, kube retries
+the reconcile with backoff. After a `PermanentError`, it reconciles the
+object again when the object changes. kube doesn't reconcile a
+`GitRepository` that's being deleted, so its other conditions, such as
+`ExternalSynced`, keep their values from before the deletion. If the
+deletion can't finish, `Synced` is `False`, and its message says why. For
+more about `Synced`, see
+[Read the real state, declare the desired state](../kube/README.md#read-the-real-state-declare-the-desired-state)
+in kube's README.
 
 The mirror syncs branches only. It doesn't fetch or push tags, and it takes
 pushes only to branches.
@@ -235,8 +276,9 @@ where the copy and the external repository last synced under
 
 The mirror reads at most 1,000 ref updates and shallow commits, in at most
 1 MiB, at the start of a push, and a copy takes a pack of at most 256 MiB.
-The mirror stops reading a request that takes longer than git's 5-minute
-timeout plus 10 seconds, and stops writing a response 10 minutes 20 seconds
+The mirror stops reading a request that takes longer than git's timeout
+plus 10 seconds, 5 minutes 10 seconds with the default `-git-timeout`, and
+stops writing a response twice that long
 after the request starts. A client that sends a pack slowly keeps the copy
 open until the first deadline, and a client that stops reading the response
 keeps it open until the second. While a copy is open, the mirror can't
@@ -250,7 +292,7 @@ a dependency update controller that `generate` installs in the namespace
 `git-k8s-deps`:
 
 ```sh
-go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/ | kubectl apply -f -
 ```
 
 The controller reaches the mirror with `mirror.Remote`, as a check does, and
@@ -266,7 +308,7 @@ administrators should control the namespace.
 A check Pod's token is bound to the Pod, so it stops working when the Pod
 is deleted, and it expires after 10 minutes. The mirror lets the Pod fetch
 only while a `Running` result of the check on one of the repository's
-branches names the Pod in its `pod` output, and the branch's merge policy
+branches names the Pod in its `pod` field, and the branch's merge policy
 lists the check. `check-gotest` records the Pod's name before it starts the
 Pod. `check-review` and `check-conflicts` name an agent Pod in the reconcile
 that declares it, and kube writes that result right after it creates the
@@ -377,9 +419,10 @@ line also counts as one, and the branch diverges.
 
 Comparing the heads can take a long time when both sides rewrote the same
 long stretch of history between two syncs. The mirror stops comparing a
-branch's heads after 10 minutes 20 seconds, twice the longest that one git
-command can take, or when one git command runs past git's 5-minute
-timeout, and leaves the branch as it is on each side, with the reason
+branch's heads after twice the longest that one git command can take, 10
+minutes 20 seconds with the default `-git-timeout`, or when one git command
+runs past that timeout, and leaves the branch as it is on each side, with
+the reason
 `CompareFailed`. It remembers what it decided about each branch, including
 a comparison that took too long, and doesn't compare that branch's heads
 again until either side's head moves or the core program restarts. To
@@ -481,6 +524,25 @@ other ways to authenticate belong.
 The mirror reaches external repositories only over the network. A `url`
 that's a local path or a `file` URL fails, so a `GitRepository` can't read
 another namespace's copy from the core program's volume.
+
+Over the network, though, the core program reaches any address that its Pod
+can, such as another namespace's Service, a node, or a cloud's metadata
+service. Whoever can create a `GitRepository` can make the core program send
+git's HTTP requests to those addresses, even when NetworkPolicies keep their
+own Pods from reaching them. The address can be in the `url`, or in a
+redirect from the server that the `url` names, because git follows a
+redirect of its first request. The `GitRepository`'s conditions show git's
+exit status and git's own messages, such as
+`fatal: unable to access 'https://10.0.0.1/app.git/': The requested URL returned error: 403`.
+They say whether the address answered, and with what HTTP status, but leave
+out the body of an error response, which git prints after `remote:`. The
+core program logs it instead.
+
+`generate` doesn't limit where the core program connects. To limit it, add
+an egress NetworkPolicy for the core program's Pod that allows only the API
+server, DNS, your external repositories, and Octo STS and GitHub if you use
+them. Without one, grant `create` on `gitrepositories` only to people who
+may send those requests.
 
 ## Events
 
@@ -659,8 +721,8 @@ check, and it shows the result that changed last, for either branch.
 
 The check run's title is the result's state. Its summary is the result's
 message, or the state when the result has no message, and its text lists the
-result's outputs. The controller puts the message and the outputs in code
-blocks, so GitHub shows what a check writes as it is, not as Markdown.
+result's `fix` and outputs. The controller puts the message and the text in
+code blocks, so GitHub shows what a check writes as it is, not as Markdown.
 
 Check controllers don't finish a check on a commit that its branch left. So
 when a branch moves, is deleted, or no longer has a result for a check
@@ -795,11 +857,11 @@ pushes to the mirror, which applies the rules in
 | Program | Check | What it does |
 | --- | --- | --- |
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. The merge ignores `.gitattributes` files, so that a branch can't choose how its own conflicts merge. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
-| `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
+| `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. It fails on a file that doesn't parse or is larger than 8 MiB, and on a head whose list of files from `git ls-tree` is larger than 16 MiB, about 150,000 files. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, or a commit whose change the head makes too, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push that changes the code needs a new approval. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
-| `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
+| `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and records the agent's summary and the run's token counts in its notes. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
 | `check-deps` | `deps` | On a dependency branch, passes when the `gotest` check passes. When the tests fail, it has an AI agent change the code to fit the new versions, and pushes the agent's fix. It passes on other branches. See [Dependency updates](#dependency-updates). |
 | `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. When a side of a diverged branch rewound, it replays the other side's commits onto that side's head instead of merging. See [Resolve conflicts](#resolve-conflicts). |
 
@@ -898,13 +960,18 @@ and rates the change `high` when any of these is true:
 - It changes more lines than `-max-lines`, 200 by default. Lines in `go.sum`
   and `go.work.sum` files don't count, because they're checksums that the
   `go` command checks, and the versions that they cover show in `go.mod`.
+- It changes a file that git treats as binary, such as one with a NUL byte
+  in its first 8,000 bytes, because git counts no lines in such a file.
 - It touches a path that matches a `-sensitive` glob.
 - A `go.mod` file that it changes requires a module that no `go.mod` file
   at the merge base requires, moves a module to an earlier version than the
   file required, to a new major version, or to a version that isn't a
   release, such as a pseudo-version, replaces a module with another module
   or with a directory outside the repository, stops replacing one, or
-  changes the `go` or `toolchain` line. A directory is outside the
+  changes the `go`, `toolchain`, or `godebug` lines. For a new `go.mod`
+  file, the check compares those lines with the ones in the `go.mod` file
+  of the module that its directory was in at the merge base, or with no
+  lines if the directory was in no module. A directory is outside the
   repository when its path is absolute, leads out of the repository from
   the `go.mod` file's directory, or goes through a symbolic link or a
   submodule, because the `go` command follows the link, which can point
@@ -914,11 +981,16 @@ and rates the change `high` when any of these is true:
   because that code is in the repository. Requiring a module that only a
   `go.mod` file in the repository declares isn't, because without a
   replacement, the `go` command downloads the module from the module proxy.
-- It adds or changes a symbolic link or a submodule that the directory of a
-  replacement in any `go.mod` file goes through, even when no `go.mod` file
-  changes.
+- It adds or changes a symbolic link that the directory of a replacement in
+  any `go.mod` file goes through, even when no `go.mod` file changes.
+- It adds or changes a submodule, whose files come from another repository,
+  or changes the `.gitmodules` file, which names that repository.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
+- The check can't read all of it: the list of files that it changes is
+  larger than 8 MiB, the list of files in the head or at the merge base is
+  larger than 16 MiB, each about 150,000 files, or a `go.mod` file that the
+  check reads is larger than 8 MiB.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
   trailer, because no person wrote that code.
 
@@ -935,8 +1007,8 @@ and for any head that makes the same change, such as `check-base`'s merge of
 the parent, a rebase, or a squash, as
 [Which results count](#which-results-count) describes. A rating that reads
 `go.mod` files at the merge base, which the check does for a change to a
-`go.mod` file, a symbolic link, or a submodule, holds only for the parent's
-head, so the check rates such a change again when the parent moves.
+`go.mod` file or a symbolic link, holds only for the parent's head, so the
+check rates such a change again when the parent moves.
 
 ### Write a check
 
@@ -995,11 +1067,22 @@ that uses `mirror.Remote`, and lets each program that uses `signing.Key`
 read Secrets. A check that reads only the `GitBranch` leaves both out, so
 its program gets no token for the mirror and can't read Secrets.
 
-The core program accepts at most 16 outputs, with names of up to 63 bytes.
-A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
-have at most 15 other outputs, or the framework reports `Error` and doesn't
-push the fix. The framework shortens messages and output values to 1,024
-bytes, the most that the core program accepts.
+A verdict's `Outputs` are for merge gates, such as a risk level. Its `Notes`
+are other values that the check records, such as what its next run needs or
+what an agent's run used, and gates don't see them. A result's notes replace
+the last result's, so a check that keeps a value copies it from
+`in.Previous`. An `Error` result keeps the verdict's notes, or the last
+result's when `Run` returns an error or the core program wouldn't accept the
+verdict's notes, so an error doesn't reset a count such as an agent's runs.
+A verdict's `Pod` names a Pod that does the check's work, which the mirror
+lets fetch the repository while the result is `Running`, as
+[Who can fetch and push](#who-can-fetch-and-push) describes. A `Fixed`
+result names the commit that the framework pushed in `fix`.
+
+The core program accepts at most 16 outputs and 32 notes, with names of up
+to 63 bytes. For a verdict with more, the framework reports `Error` and
+doesn't push its fix. The framework shortens messages, output values, and
+note values to 1,024 bytes, the most that the core program accepts.
 
 A check runs again when the branch's head changes, and with `UsesParent`,
 when the parent's head changes. `Always` runs it on every reconcile, for a
@@ -1065,7 +1148,7 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   core program.
 - At most `-max-pods` test Pods, 10 by default, run at once across all
   namespaces. A branch that can't start its Pod yet reports `Running` and
-  records when it started waiting in `outputs.waiting`. When a Pod's phase
+  records when it started waiting in `notes.waiting`. When a Pod's phase
   becomes `Succeeded` or `Failed`, or the Pod no longer exists, the next
   branch starts. Branches at the front of a [merge queue](#merge-queue) go
   first, then the branch that has waited longest. A new head, a retry after
@@ -1093,7 +1176,7 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   the API server refuses a Pod, for example because the check Pod policy
   denies it, other branches can then use its place while kube tries again.
   Until the Pod exists, its branch keeps the time that it started waiting in
-  `outputs.queued`, so the branch keeps its place in line. With `-shards`, a
+  `notes.queued`, so the branch keeps its place in line. With `-shards`, a
   replica doesn't count the Pods that other replicas declared until its
   cache shows them, so replicas that start Pods at the same moment can go
   over the limit.
@@ -1472,15 +1555,16 @@ second trailer makes `check-risk` rate the branch high. A fix leaves
 the run fails before the agent starts. Without `mayPush`, the agent's files
 are read-only.
 
-The check's outputs hold the agent's `summary`, the `model`, the run's
+The check's notes hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
 and two costs in cents when the SDK reports them. `costCents` is the model
 token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
 what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
 0 for usage that a Cursor plan includes. `runs` counts the agent runs on
-the branch, and `pod` names the run's Pod. `state`, `base`, and `url` hold
-what the check needs to follow the run, such as the URL that its Pods fetch
-from, so the check keeps the run's Pod while it can't reach the mirror.
+the branch, and the result's `pod` names the run's Pod. `state`, `base`, and
+`url` hold what the check needs to follow the run, such as the URL that its
+Pods fetch from, so the check keeps the run's Pod while it can't reach the
+mirror.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
@@ -1523,7 +1607,7 @@ and the agent runs again. The check counts that as another run. When
 `maxAgentRuns` or `-max-runs-per-day` allows no more, the check fails
 instead, and kube doesn't create the Pod again. A run that fails after the
 agent starts still reports the `model`, the token counts, and the costs in
-the check's outputs.
+the check's notes.
 
 A deploy can also run agents again. A Pod's spec can't change, so after a
 deploy that changes the agent Pods' spec, such as one with another
@@ -1539,7 +1623,7 @@ waits because the branch moved has no agent to start over, so a deploy ends
 its wait, and the check fetches the head again at once in a new Pod, which
 counts as a run.
 
-The check counts a branch's runs in its outputs on the branch's
+The check counts a branch's runs in its notes on the branch's
 `GitBranch`, so a branch that's deleted and then pushed again can start
 over at 0, and so can a branch with a new name. To cap what agents cost in
 money, also set a spend limit for the Cursor team or account that owns the
@@ -1672,11 +1756,11 @@ func main() {
 `Run` commits the agent's changes with `in.CommitTree`, so a check whose
 agent can edit needs `SigningKey: signing.Key`.
 
-`Run` never returns an error, because a check that returns one loses its
-outputs, which count the branch's runs. It also returns the agent's
-`Result`, with the files that the agent changed, so a check can build
-another kind of commit from them with `agent.ApplyFiles` and
-`in.CommitTree`.
+`Run` never returns an error, because a check that returns one keeps its
+last result's notes, which don't count a run that the call started. It
+also returns the agent's `Result`, with the files that the agent changed,
+so a check can build another kind of commit from them with
+`agent.ApplyFiles` and `in.CommitTree`.
 
 ### Resolve conflicts
 
@@ -1811,12 +1895,15 @@ regular file on both sides, or for a conflict that git can't mark, such as one
 in a binary file. It also runs none for a conflict in a `.cursorignore` file,
 because the agent's work tree leaves those files out, or for conflicts in more
 than 1,000 files or in files that hold more than 8 MiB, the most that a result
-can change.
+can change. Nor does it run one for a conflict in a file that's larger than 8
+MiB on either side, more than the check reads to look for conflict markers.
 
 Each commit that the check pushes makes a new head, so every check runs
 again on it. A merge, and a replay of the branch's whole change as one
 commit, have a `Git-K8s-Fixer: conflicts` trailer and count toward
-`maxAutomatedCommits`. A replay of one commit keeps that commit's message,
+`maxAutomatedCommits`. When the agent resolves the conflicts, the merge or
+replay also has a `Git-K8s-Agent: conflicts` trailer, which makes `check-risk`
+rate the branch high. A replay of one commit keeps that commit's message,
 so it counts only if the original did, but the check pushes replays only
 while the branch is under the limit, like any fix. When neither git nor the
 agent resolves the conflicts, the check fails with the reason and leaves the
@@ -1946,7 +2033,7 @@ isn't `-agent-image`. The mirror accepts a token that's bound to a Pod only
 from a check's Pod, so a controller's `Job` names the repository's URL and
 the Secret with the repository's credentials. A check's `Job` sets `Mirror`
 and the URL of the check's remote instead, and the check's `Running` result
-must name the run's Pod in its `pod` output, as `Run` does. `Run` builds a
+must name the run's Pod in its `pod` field, as `Run` does. `Run` builds a
 `Job` from a check's branch, so both start the same Pods, within the same
 `-max-pods` and `-max-runs-per-day` limits. The `Job`'s namespace must be
 the namespace of the object that the controller reconciles, because
@@ -1961,7 +2048,7 @@ started and didn't give back. `RunJob` changes it on each call, so store
 all of it after each call with the object that the job is for, such as in
 the object's status, so a controller that restarts follows the same run.
 `MarshalText` encodes the state as one string, such as for one of a check's
-outputs, and `UnmarshalText` decodes it. `RunJob` declares the Pod
+notes, and `UnmarshalText` decodes it. `RunJob` declares the Pod
 with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says
@@ -1993,7 +2080,7 @@ find that the branch moved. If the run's Pod is deleted before the run is
 another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
 `RunJob` ends the run instead, and kube doesn't create the Pod again.
 
-`agent.UsageOutputs` turns what a run used into outputs like `Run`'s, and
+`agent.UsageNotes` turns what a run used into notes like `Run`'s, and
 `agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
 a result can change, so a controller can skip a run whose result can't fit.
 
@@ -2068,11 +2155,12 @@ to the core program's results endpoint:
    check isn't `CHECK`, the core program rejects the result.
 4. The core program also rejects a result for a branch without a parent, a
    result for a check that the branch's merge policy doesn't list, a result
-   that isn't for the branch's current commits, a `Pending` result, and a
-   result over its size limits. The `checks` package sends an `Error`
+   that isn't for the branch's current commits, a `Pending` result, a
+   result without a [scope](#result-scopes) or without the fields that its
+   scope needs, a result with a field that the core program doesn't know,
+   and a result over its size limits. The `checks` package sends an `Error`
    result instead of one with a state or size that the core program
-   rejects, with a message that says why. The core program drops fields
-   that it doesn't know, as the API server does by default.
+   rejects, with a message that says why.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
@@ -2099,6 +2187,27 @@ account with `403 Forbidden`, the check logs why and sends nothing more for
 that branch until the branch changes or the check restarts. Any other
 answer, such as a `404 Not Found` from a `-results-url` with the wrong
 path, fails the check's reconcile, and kube retries it.
+
+### Result scopes
+
+A result is for the branch's head in `commit`. Its `scope` says what else
+it's for, and which other fields it has:
+
+- `Head`: the head with any parent head. The result has neither
+  `parentCommit` nor `mergeBase`.
+- `Parent`: the head with the parent's head in `parentCommit`, such as
+  `base`'s result. The result has no `mergeBase`.
+- `Change`: what the head changes on top of the merge base in `mergeBase`,
+  with any parent head, such as `risk`'s rating of the change. The result
+  has no `parentCommit`, and it counts for a landing only while its merge
+  base is the parent's head.
+
+The core program and the `GitBranch` schema reject a result without a scope
+or without the fields that its scope needs, so a missing field can't make a
+result count for more commits. The `checks` package sets the scope from the
+check's `UsesParent` and `SameChange`, and the verdict's `UsesParent` and
+`MergeBase`. The merge controller treats a result with a scope that it
+doesn't know, such as one from a later release, as `Pending`.
 
 ### Security model
 
@@ -2166,7 +2275,7 @@ unblock a branch whose check is broken:
 
 ```sh
 kubectl patch gitbranch GITBRANCH --subresource=status --type=merge \
-  -p '{"status":{"checks":{"gotest":{"commit":"SHA","state":"Passed","message":"passed by hand"}}}}'
+  -p '{"status":{"checks":{"gotest":{"commit":"SHA","scope":"Head","state":"Passed","message":"passed by hand"}}}}'
 ```
 
 Replace `GITBRANCH` with the name of the `GitBranch` object, and `SHA` with
@@ -2174,7 +2283,11 @@ the branch's head. Checks other than `approval` don't run again on commits
 that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
 parent, such as `base`, or that keeps results for the same change, such as
-`risk`, also set `parentCommit` to the parent's head.
+`risk`, set `scope` to `Parent` instead, `parentCommit` to the parent's
+head, and `mergeBase` to `null`. A merge patch keeps the fields of the
+earlier result that it doesn't set, such as the merge base of a `risk`
+result, and the API server rejects a result with the scope `Parent` and a
+merge base.
 
 For a branch that lands by squash or rebase, also set `filesOnly` to `true`
 if the check sets `FilesOnly`, as the built-in checks do. Otherwise the
@@ -2198,10 +2311,13 @@ one side decides it, even if the other side is an error, such as a missing
 output. Without `when`, every listed check must pass.
 
 The repositories controller compiles each `when` when it reads the
-`GitRepository`, so a syntax error or a misspelled field, such as
-`checks.gofmt.pased`, makes the `GitRepository` not `Ready` instead of
-holding branches back later. Each evaluation can cost at most 100,000, which
-stops an expression that loops over the checks many times.
+`GitRepository`, so a syntax error, a misspelled field such as
+`checks.gofmt.pased`, or a check that the policy doesn't list, such as
+`checks.gofmy.passed`, makes the `GitRepository` not `Ready`, with the reason
+`InvalidMergePolicy`, instead of holding branches back later. For a check
+whose name has a hyphen, write `checks["go-vet"].passed`, because CEL reads
+`checks.go-vet` as a subtraction. Each evaluation can cost at most 100,000,
+which stops an expression that loops over the checks many times.
 
 ## Merge queue
 
@@ -2233,7 +2349,7 @@ as `base`, on the others. The parent's `status.queue` lists its
 queue, front first. Each queued branch's `status.queued` records when it
 joined, the head that the merge controller last kept in the queue, and its
 place, from 1 at the front, which the `QUEUE` column shows. A queued
-branch's state is `Queued`, and the `Merged` condition's message says what
+branch's state is `Queued`, and the `Landed` condition's message says what
 it waits for, such as `2 of 3 in main's queue`.
 
 A branch leaves the queue when one of these happens:
@@ -2337,9 +2453,9 @@ When the branch is one commit on top of the parent's head, a squash
 fast-forwards the parent to it. A rebase does the same for a branch with no
 merge commits after the parent's head, because copying its commits changes
 nothing. When the parent already has the files at the branch's head, a squash
-sets the branch's state to `Merged` and changes nothing. A rebase does that
-only when the parent already has every commit's change, because it leaves out
-each commit that changes nothing.
+sets the branch's state to `NothingToLand` and changes nothing. A rebase does
+that only when the parent already has every commit's change, because it
+leaves out each commit that changes nothing.
 
 A rebase can't copy every branch. It sets the branch's state to
 `NeedsRebase`, with a message that says why, when one of these happens:
@@ -2458,11 +2574,11 @@ When the counted results pass the gate, the controller lands the new commit
 without another round of checks. It moves the parent to the commit in the
 mirror's copy, if the parent is still at the head that the checks saw. The
 same atomic update deletes the branch, if the branch is still at its head,
-or moves the branch to the new commit when `deleteMergedBranches` is off. A
-branch that stays is then at its parent's head, so it shows `Merged` instead
-of commits that the parent doesn't have. If the parent or the branch moved
-since the repositories controller listed them, the update changes neither,
-and the controller tries again.
+or moves the branch to the new commit when `deleteLandedBranches` is off. A
+branch that stays is then at its parent's head, so it stays `Landed` instead
+of showing commits that the parent doesn't have. If the parent or the branch
+moved since the repositories controller listed them, the update changes
+neither, and the controller tries again.
 
 When the gate doesn't pass on the counted results alone, the controller
 moves the branch to the new commit in the mirror's copy instead, if the
@@ -2498,7 +2614,7 @@ the external repository keeps the branch where it was. The
 `the external repository refused updates to c/auth ([remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/auth)`,
 which ends with the messages that the external repository sent, and the
 mirror tries again at each poll. A rewritten branch that the
-external repository refused still lands. If the merge policy deletes merged
+external repository refused still lands. If the merge policy deletes landed
 branches, the mirror then deletes the branch in the external repository,
 unless the external repository refuses that too. To clear the condition,
 let the external repository accept the update, such as by allowing force
@@ -2670,7 +2786,7 @@ GitHub's branch protection rules and rulesets apply to the mirror's pushes:
   git-k8s only fast-forwards parents, and checks add commits on top of the
   branches that they check.
 - **Restrict deletions** on a branch keeps it in GitHub after
-  `deleteMergedBranches` deletes it in the mirror's copy.
+  `deleteLandedBranches` deletes it in the mirror's copy.
 
 When GitHub refuses the mirror's push of a check's commit, a landing, or a
 branch from `git-k8s-deps`, the change stays in the mirror's copy, and the
@@ -2831,6 +2947,12 @@ controller update the module, raise its `go` line to 1.17 or later and run
 `go mod tidy`. The controller updates a `go.mod` file that has no `go` line:
 `go get` adds one, the file then lists every module that the build uses, and
 `check-risk` rates the change high.
+
+The controller skips a `go.mod` file that's larger than 8 MiB, and logs a
+warning. When the parent's list of files from `git ls-tree` is larger than
+16 MiB, about 150,000 files, the controller changes nothing for the parent
+until its head moves. It remakes a branch whose head has a `go.mod` file or
+a list of files larger than these limits.
 
 ### Branches
 
@@ -3063,18 +3185,22 @@ done
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
-after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+after `--`, as in this command for `check-risk`:
+
+```sh
+go run ./cmd/check-risk generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -sensitive='auth/**' | kubectl apply -f -
+```
+
 To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
 
 To upgrade, install the core program, `git-k8s`, before the checks, as this
 loop does. The core program updates the `GitBranch` CustomResourceDefinition
-when it starts, and an older one drops fields that newer checks send, such
-as a result's `mergeBase`. Without that field, `check-risk` rates a branch
-again each time it reconciles the branch, and after the parent moves, a
-rating or an approval for the change on top of the parent's earlier head
-counts for landing until its check runs again.
+when it starts, and an older one rejects results with fields that it doesn't
+know, which newer checks can send. A check sends nothing more for a branch
+after a rejected result until the branch changes or the check restarts, so
+the branch waits for that check until then.
 
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
@@ -3102,30 +3228,47 @@ for example with `kubectl delete -f`, deletes the claim.
 
 A git that's killed while it holds a lock, for example when the Pod runs
 out of memory, leaves the lock file, and git can't update what the file
-locks until it's gone. A git command that runs past its 5-minute timeout,
-or whose request ends, gets `SIGTERM` and removes its own locks. Before
-each sync, the mirror removes the copy's lock files that are older than 6
-minutes and 10 seconds: the longest that a git command can take, plus a
-minute in case the volume's clock differs from the node's. A newer lock
-might belong to the other Pod. Until the mirror removes a lock, a sync or a
-landing that needs the locked ref fails and tries again later. When a sync
-fails, the `GitRepository`'s `Ready` condition (reason `MirrorFailed`) or
-`ExternalSynced` condition (reason `SyncFailed`) names the lock.
+locks until it's gone. A git command that runs past its timeout, or whose
+request ends, gets `SIGTERM` and removes its own locks. Before each sync,
+the mirror removes the copy's lock files that are older than the longest
+that a git command can take, plus a minute in case the volume's clock
+differs from the node's: 6 minutes and 10 seconds with the default
+`-git-timeout`. Maintenance holds the locks under `objects/` for as long as
+it runs, so the mirror removes those only once they're older than the
+longest that maintenance can take, plus a minute: 1 hour, 1 minute, and 10
+seconds with the default `-maintenance-timeout`. A newer lock might belong
+to the other Pod. Until the mirror removes a lock, a sync or a
+landing that needs the locked ref fails and tries again later. The
+`GitRepository`'s `ExternalSynced` condition names the lock, for example with
+the reason `UpdateFailed` when the sync couldn't update a branch in the copy,
+or `SyncFailed` when the fetch couldn't record the external repository's head.
 
 Git packs a copy's objects in its maintenance. A fetch or a push would
 start maintenance in the background, where git's timeout doesn't apply, so
-the mirror turns that off and runs maintenance itself at the end of each
-sync, when git says the copy needs it, and logs any failure. The sync
-waits for it. Maintenance that runs past the timeout gets `SIGTERM`, and so
-does the repack that it started, and the next sync starts over, so a copy
-whose repack takes longer than the timeout isn't repacked. Maintenance that
+the mirror turns that off and runs maintenance itself after each sync, when
+git says the copy needs it. It maintains one copy at a time, beside the
+copy's syncs, fetches, and pushes, which don't wait for it. Deleting a
+copy, replacing it, or switching it to a new URL stops its maintenance, and
+so does stopping the core program, which waits for git to exit. Maintenance
+that runs past the core program's `-maintenance-timeout`, 1 hour by
+default, gets `SIGTERM`, and so does the repack that it started. After
+maintenance fails or times out, the mirror logs why and skips that copy's
+maintenance for 6 hours, so a copy whose repack takes longer than the
+timeout isn't repacked until you raise it. Maintenance that
 gets `SIGKILL` instead, as when the Pod's grace period runs out, leaves
 `objects/maintenance.lock`, which makes later maintenance skip the copy
 without an error, so the mirror removes that lock once it's stale, like the
 others.
 
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
-`emptyDir` volume that `generate` mounts at `/tmp`.
+`emptyDir` volume that `generate` mounts at `/tmp`, and so does
+`git-k8s-deps`. Like the mirror, they turn off the maintenance that a fetch
+would start. Instead, at most once an hour for each copy, the reconcile that
+opens the copy deletes the refs that the copy no longer needs, such as those
+of deleted branches, and then runs maintenance if git says that the copy
+needs it. The reconcile logs any failure and goes on. The program removes a
+copy that no reconcile has opened for a week, such as the copy for a
+`GitRepository` that no longer exists.
 
 `generate` also writes a Service for the core program, which routes port 80
 to port 8081 of its Pod, where one handler serves both the mirror and the

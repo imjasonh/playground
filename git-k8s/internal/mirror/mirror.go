@@ -56,6 +56,9 @@ type Mirror struct {
 	// Checks holds the entries of the git-k8s-checks ConfigMap, which map
 	// callers to checks. Nil reads the ConfigMap for every request.
 	Checks *caller.Checks
+	// MaintenanceTimeout limits each run of git's maintenance on a copy,
+	// in place of Git's Timeout. Zero means 1 hour.
+	MaintenanceTimeout time.Duration
 
 	// readTimeout is the longest that the mirror waits for the body of a
 	// request. Zero means Git.MaxDuration, by when git has stopped reading
@@ -65,9 +68,21 @@ type Mirror struct {
 	// branch may take, which bounds how long a sync holds the copy. Zero
 	// means twice Git.MaxDuration.
 	compareTimeout time.Duration
+	// maintenanceRetry is how long Maintain skips a copy after its
+	// maintenance fails or times out. Zero means 6 hours.
+	maintenanceRetry time.Duration
 
+	// mu guards entries, the maintenance fields that follow, and those of
+	// each entry.
 	mu      sync.Mutex
 	entries map[string]*entry
+	// queue holds the copies that wait for Maintain, which wake tells
+	// about a new one. maintaining is the copy that Maintain is
+	// maintaining, and stopMaintaining stops that.
+	queue           []*entry
+	wake            chan struct{}
+	maintaining     *entry
+	stopMaintaining context.CancelFunc
 }
 
 type entry struct {
@@ -85,6 +100,14 @@ type entry struct {
 	// memo holds the copy's last decision for each branch. A new copy or
 	// URL starts with none.
 	memo memo
+
+	// queued reports whether the copy is in the Mirror's queue. held
+	// counts the changes to the copy that keep its maintenance from
+	// running, and maintainAfter is when Maintain may maintain the copy
+	// again after a failure.
+	queued        bool
+	held          int
+	maintainAfter time.Time
 }
 
 func (m *Mirror) entry(repo *gitk8s.Repository) *entry {
@@ -144,6 +167,7 @@ func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, cr
 	if current {
 		return false, nil
 	}
+	defer m.holdMaintenance(e)()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.repo == nil || e.uid != repo.UID {
@@ -229,7 +253,7 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 		{"receive.maxInputSize", strconv.Itoa(maxPushSize)},
 		// Fetches into the copy and pushes to it would start maintenance
 		// and wait for it to finish, which would hold up a check's push.
-		// Sync runs maintenance instead.
+		// Maintain runs maintenance instead.
 		{"maintenance.auto", "false"},
 		{"receive.autogc", "false"},
 		{"gitk8s.url", repo.Spec.URL},
@@ -247,13 +271,16 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 // copy at dir, which keep git from changing the refs, packed-refs, or
 // config that they lock, and make maintenance skip the copy without an
 // error. A lock is stale once it's older than the longest that a git
-// command can take. A newer one may belong to a git that's still running,
-// in this process or in the one that it replaces, which can run beside it
-// for a few seconds.
+// command can take, or for a lock under objects/, which maintenance holds
+// while it runs, the longest that maintenance can take. A newer one may
+// belong to a git that's still running, in this process or in the one that
+// it replaces, which can run beside it for a few seconds.
 func (m *Mirror) removeStaleLocks(dir string) {
 	// A network volume's clock can differ from the node's.
-	cutoff := time.Now().Add(-m.Git.MaxDuration() - time.Minute)
-	remove := func(path string, d fs.DirEntry) {
+	now := time.Now()
+	cutoff := now.Add(-m.Git.MaxDuration() - time.Minute)
+	objectsCutoff := now.Add(-max(m.Git.MaxDuration(), m.maintenanceGit().MaxDuration()) - time.Minute)
+	remove := func(path string, d fs.DirEntry, cutoff time.Time) {
 		if d.IsDir() || !strings.HasSuffix(d.Name(), ".lock") {
 			return
 		}
@@ -274,9 +301,9 @@ func (m *Mirror) removeStaleLocks(dir string) {
 		return
 	}
 	for _, d := range top {
-		remove(filepath.Join(dir, d.Name()), d)
+		remove(filepath.Join(dir, d.Name()), d, cutoff)
 	}
-	for _, sub := range []string{"refs", "objects"} {
+	for sub, cutoff := range map[string]time.Time{"refs": cutoff, "objects": objectsCutoff} {
 		_ = filepath.WalkDir(filepath.Join(dir, sub), func(path string, d fs.DirEntry, err error) error {
 			switch {
 			case err != nil:
@@ -284,7 +311,7 @@ func (m *Mirror) removeStaleLocks(dir string) {
 				// Thousands of loose objects, and never a lock.
 				return filepath.SkipDir
 			default:
-				remove(path, d)
+				remove(path, d, cutoff)
 			}
 			return nil
 		})
@@ -314,6 +341,7 @@ func (e *entry) markSeeded(ctx context.Context) error {
 // GitRepository with the same name.
 func (m *Mirror) Delete(ctx context.Context, repo *gitk8s.Repository) error {
 	e := m.entry(repo)
+	defer m.holdMaintenance(e)()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.repo == nil || e.uid != repo.UID {

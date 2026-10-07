@@ -109,6 +109,33 @@ func (s *scope) fail(err error) {
 	}
 }
 
+// failRead fails the scope with err and panics with the scope's first
+// error, so that a Get or List that can't read doesn't return.
+func (s *scope) failRead(err error) {
+	s.fail(err)
+	panic(readFailed{s.err})
+}
+
+// readFailed is the value that Get and List panic with when they can't
+// read. The framework recovers it where it calls Reconcile, Finalize,
+// Validate, Default, and Serve handlers.
+type readFailed struct{ err error }
+
+func (f readFailed) Error() string {
+	return fmt.Sprintf("kube.Get or kube.List can't read: %v; it stops its caller with this panic, which the framework recovers only in the goroutine that runs Reconcile, Finalize, Validate, Default, or a kube.Serve handler", f.err)
+}
+
+func (f readFailed) Unwrap() error { return f.err }
+
+// readError returns the error of a Get or List that panicked with p
+// because it couldn't read, or nil if p is another value.
+func readError(p any) error {
+	if f, ok := p.(readFailed); ok {
+		return f.err
+	}
+	return nil
+}
+
 func (s *scope) self() ref { return ref{c: s.c, key: s.key} }
 
 func (s *scope) track(d dep, sel selector) {
@@ -128,25 +155,25 @@ func typeFor[T any, P Resource[T]](s *scope) *typeInfo {
 	return ti
 }
 
-func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved, bool) {
-	if ti == nil || s.err != nil {
-		return nil, resolved{}, false
+// sourceFor returns the cache that Get and List read ti from, and panics
+// with readFailed if it can't or if the scope has already failed. A nil ti
+// means that typeFor failed the scope.
+func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved) {
+	if s.err != nil {
+		panic(readFailed{s.err})
 	}
 	if ti.local {
-		s.fail(Permanent(fmt.Errorf("kube: %v is local, so read it with Fetch", ti)))
-		return nil, resolved{}, false
+		s.failRead(Permanent(fmt.Errorf("kube: %v is local, so read it with Fetch", ti)))
 	}
 	res, err := s.w.resolve(ctx, ti)
 	if err != nil {
-		s.fail(err)
-		return nil, resolved{}, false
+		s.failRead(err)
 	}
 	src, err := s.w.source(ctx, ti)
 	if err != nil {
-		s.fail(fmt.Errorf("reading %v: %w", ti, err))
-		return nil, resolved{}, false
+		s.failRead(fmt.Errorf("reading %v: %w", ti, err))
 	}
-	return src, res, true
+	return src, res
 }
 
 // Get returns the object of type T with the given namespace and name, or
@@ -156,12 +183,20 @@ func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved, 
 // a watch, starting it the first time a reconcile reads type T. The returned
 // object is a copy that you can change. When the object later changes, the
 // reconcile that read it runs again.
+//
+// When Get can't read, for example because the program may not list T, it
+// doesn't return. It stops the reconcile with the error, and the framework
+// retries the reconcile. A Get after another call in the reconcile failed
+// stops it the same way. In a webhook, the error rejects the request, and
+// in a kube.Serve handler, the server answers 503 Service Unavailable. So
+// nil always means that the object doesn't exist.
+//
+// Get stops its caller with a panic that the framework recovers, so call it
+// only in the goroutine that runs Reconcile, Finalize, Validate, Default,
+// or the handler. In another goroutine, the panic crashes the program.
 func Get[T any, P Resource[T]](ctx context.Context, namespace, name string) *T {
 	s := scopeFrom(ctx, "Get")
-	src, res, ok := s.sourceFor(ctx, typeFor[T, P](s))
-	if !ok {
-		return nil
-	}
+	src, res := s.sourceFor(ctx, typeFor[T, P](s))
 	if !res.namespaced {
 		namespace = ""
 	}
@@ -198,8 +233,10 @@ func MatchingSelector(selector string) ListOption {
 }
 
 // List returns the objects of type T, sorted by namespace and name. Like
-// Get, it reads from a cache, returns copies, and runs the reconcile again
-// when the set of matching objects or any of them changes.
+// Get, it reads from a cache, returns copies, runs the reconcile again
+// when the set of matching objects or any of them changes, and stops its
+// caller when it can't read. An invalid selector stops the caller too, with
+// a permanent error.
 func List[T any, P Resource[T]](ctx context.Context, opts ...ListOption) []*T {
 	s := scopeFrom(ctx, "List")
 	var lo listOptions
@@ -210,15 +247,11 @@ func List[T any, P Resource[T]](ctx context.Context, opts ...ListOption) []*T {
 	if lo.selector != "" {
 		parsed, err := parseSelector(lo.selector)
 		if err != nil {
-			s.fail(Permanent(err))
-			return nil
+			s.failRead(Permanent(err))
 		}
 		sel = append(sel, parsed...)
 	}
-	src, res, ok := s.sourceFor(ctx, typeFor[T, P](s))
-	if !ok {
-		return nil
-	}
+	src, res := s.sourceFor(ctx, typeFor[T, P](s))
 	ns := lo.namespace
 	if !res.namespaced {
 		ns = ""
@@ -271,20 +304,7 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 		s.fail(err)
 		return resolved{}, false
 	}
-	switch {
-	case !res.namespaced:
-		m.Namespace = ""
-	case m.Namespace == "" && ti.local:
-		s.fail(Permanent(fmt.Errorf("kube.%s: %v is local, so %q needs the program's own namespace", verb, ti, m.Name)))
-		return resolved{}, false
-	case m.Namespace == "" && s.parentNS:
-		m.Namespace = s.key.Namespace
-	case m.Namespace == "":
-		s.fail(fmt.Errorf("kube.%s: %v %q needs a namespace because the object being reconciled is cluster-scoped", verb, ti, m.Name))
-		return resolved{}, false
-	}
-	if m.Name == "" {
-		s.fail(fmt.Errorf("kube.%s: %v needs a name", verb, ti))
+	if !s.locate(verb, ti, res, m) {
 		return resolved{}, false
 	}
 	for _, in := range s.intents {
@@ -319,6 +339,13 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 // their owner is. The framework doesn't apply desired's status, but changes
 // to an owned object, including its status, run the owner's reconcile again.
 //
+// Own doesn't take over an object that the controller didn't create. Before
+// the first write to an object that isn't in the controller's cache, the
+// framework reads the object from the API server. If it exists without the
+// controller's labels, the reconcile fails with an error that names it,
+// unless the controller has the Adopts option. If the controller created the
+// object for another owner, the reconcile fails even with Adopts.
+//
 // The namespace of desired defaults to the owner's. An owned object may be in
 // another namespace, or cluster-scoped; the framework then adds a finalizer
 // to the owner so it can delete the owned object itself.
@@ -347,6 +374,12 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 		return nil
 	}
 	observed := src.peek(m.Key())
+	if observed != nil {
+		if owner, ok := metaOfAny(observed).Annotations[s.c.labels.owner]; ok && owner != s.key.String() {
+			s.fail(errOwned(ti, m.Key(), owner))
+			return nil
+		}
+	}
 	s.intents = append(s.intents, intent{kind: intentOwn, ti: ti, res: res, obj: desired, observed: observed})
 	if observed == nil {
 		return nil
@@ -360,6 +393,11 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // returns nil, the framework applies the fields with server-side apply. The
 // object isn't deleted with the reconciled object, and fields that a later
 // reconcile stops applying are removed.
+//
+// The object must exist. If no cache holds it, the framework reads it from
+// the API server first, and if it doesn't exist, the reconcile fails, because
+// nothing would own or delete an object that Apply created. Apply still
+// creates a missing object of a local type.
 //
 // If desired's type has a status, the framework then applies the status to
 // the object's status subresource, in a second request with the same field
@@ -417,8 +455,32 @@ func (s *scope) writesStatus(ti *typeInfo, k Key) bool {
 	return ti.sameKind(s.c.ti) && k == s.key
 }
 
+// locate defaults m's namespace for Own, Apply, and Delete, and fails the
+// scope unless m then names one object.
+func (s *scope) locate(verb string, ti *typeInfo, res resolved, m *ObjectMeta) bool {
+	switch {
+	case !res.namespaced:
+		m.Namespace = ""
+	case m.Namespace == "" && ti.local:
+		s.fail(Permanent(fmt.Errorf("kube.%s: %v is local, so %q needs the program's own namespace", verb, ti, m.Name)))
+		return false
+	case m.Namespace == "" && s.parentNS:
+		m.Namespace = s.key.Namespace
+	case m.Namespace == "":
+		s.fail(fmt.Errorf("kube.%s: %v %q needs a namespace because the object being reconciled is cluster-scoped", verb, ti, m.Name))
+		return false
+	}
+	if m.Name == "" {
+		s.fail(fmt.Errorf("kube.%s: %v needs a name", verb, ti))
+		return false
+	}
+	return true
+}
+
 // Delete declares that obj should be deleted. After Reconcile returns nil,
-// the framework deletes it, if it still has the same UID.
+// the framework deletes it, if it still has the same UID. As in Own, obj's
+// namespace defaults to the reconciled object's. If obj has no name, or no
+// namespace that Delete can use, the reconcile fails.
 func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 	s := scopeFrom(ctx, "Delete")
 	if s.readOnly("Delete") {
@@ -433,13 +495,19 @@ func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 		s.fail(err)
 		return
 	}
+	if !s.locate("Delete", ti, res, &obj.object().ObjectMeta) {
+		return
+	}
 	s.intents = append(s.intents, intent{kind: intentDelete, ti: ti, res: res, obj: obj})
 }
 
 // RequeueAfter asks for another reconcile after d, even if nothing changes.
 // Use it when the desired state depends on time, such as an expiry, or on a
 // system outside Kubernetes that can't be watched. If you call it more than
-// once, the shortest duration wins.
+// once, the shortest duration wins. A duration that isn't positive is
+// ignored. RequeueAfter applies only to a reconcile that succeeds. When the
+// reconcile fails, the framework retries it with backoff instead, unless the
+// error comes from RetryAfter.
 func RequeueAfter(ctx context.Context, d time.Duration) {
 	s := scopeFrom(ctx, "RequeueAfter")
 	if s.readOnly("RequeueAfter") {
@@ -472,7 +540,8 @@ func LastError(ctx context.Context) error {
 
 // Permanent marks err as one that retrying won't fix, such as an invalid
 // spec. The framework reports it in the object's status and waits for the
-// object to change instead of retrying.
+// object to change instead of retrying. To retry it after a delay as well,
+// wrap it with RetryAfter.
 func Permanent(err error) error {
 	if err == nil {
 		return nil
@@ -489,6 +558,37 @@ func (e *permanentError) Unwrap() error { return e.err }
 func IsPermanent(err error) bool {
 	var p *permanentError
 	return errors.As(err, &p)
+}
+
+// RetryAfter marks err as one to retry after d instead of with exponential
+// backoff, for example because a rate limit says when to try again. The
+// framework reports err in the object's status as it does any error. An
+// error that is also permanent is retried after d, as well as when the
+// object changes. If err is nil, RetryAfter returns nil, and if d isn't
+// positive, it returns err unchanged.
+func RetryAfter(err error, d time.Duration) error {
+	if err == nil || d <= 0 {
+		return err
+	}
+	return &retryError{err, d}
+}
+
+type retryError struct {
+	err error
+	d   time.Duration
+}
+
+func (e *retryError) Error() string { return e.err.Error() }
+func (e *retryError) Unwrap() error { return e.err }
+
+// retryDelay returns the delay that RetryAfter added to err, or to an error
+// that err wraps, or zero.
+func retryDelay(err error) time.Duration {
+	var r *retryError
+	if errors.As(err, &r) {
+		return r.d
+	}
+	return 0
 }
 
 // metaOfAny returns the metadata of a *T held in an interface.

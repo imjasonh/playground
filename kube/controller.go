@@ -102,14 +102,20 @@ func (c *controller[T, P]) describe() (declared, error) {
 	if err != nil {
 		return declared{}, err
 	}
+	v, def, err := c.methods()
+	if err != nil {
+		return declared{}, err
+	}
 	d := declared{ti: ti, reconciles: true}
 	d.finalizes = c.fin != nil || c.opts.finalizes
-	_, validates := c.r.(Validator[T])
-	_, defaults := c.r.(Defaulter[T])
-	d.webhooks = validates || defaults
+	d.webhooks = v != nil || def != nil
 	d.versioned = len(c.opts.versions) > 0
 	for _, vo := range c.opts.versions {
-		if _, ok := vo.newObj().(converter[T]); ok {
+		conv, err := optional[converter[T]](vo.newObj())
+		if err != nil {
+			return declared{}, fmt.Errorf("kube.Version: %w", err)
+		}
+		if conv != nil {
 			d.webhooks = true
 		}
 	}
@@ -128,6 +134,13 @@ func (c *controller[T, P]) describe() (declared, error) {
 	return d, nil
 }
 
+// admits reports whether the reconciler validates and defaults objects.
+func (c *controller[T, P]) admits() (validates, defaults bool) {
+	_, validates = c.r.(Validator[T])
+	_, defaults = c.r.(Defaulter[T])
+	return validates, defaults
+}
+
 // Option configures a controller.
 type Option func(*options)
 
@@ -138,15 +151,27 @@ type options struct {
 	selector  string
 	resync    time.Duration
 	owns      []func() (*typeInfo, error)
+	adopts    bool
 	finalizes bool
 	versions  []versionOption
 }
 
-// Named sets the controller's name. The name appears in logs, metrics, and
-// events, is the field manager for server-side apply, and labels owned
-// objects. It defaults to the lowercase kind, for example "website". A name
-// has at most 50 lowercase letters, digits, '-', and '.', and starts and ends
-// with a letter or digit. Run fails with any other name.
+// Named sets the controller's name. The name is the value of ControllerLabel
+// on the objects that the controller owns, the end of its finalizer (see
+// FinalizerName), and its field manager for server-side apply. It also
+// appears in logs, metrics, and events. Two controllers that reconcile or own
+// the same type in a cluster need different names, or they remove each
+// other's finalizers and delete each other's objects. Run fails when two
+// controllers in one program have the same name.
+//
+// The name defaults to the program's name (Manager.Name) and the lowercase
+// kind, joined by '-', such as "shop-website" for a program named shop that
+// reconciles Websites. When the program has the kind's name, the default is
+// only the kind, such as "website". A default longer than 50 characters is
+// shortened and ends in a hash. Objects in clusters carry the name, so set
+// one to keep it when you rename the program. A name has at most 50
+// lowercase letters, digits, '-', and '.', and starts and ends with a letter
+// or digit. Run fails with any other name.
 func Named(name string) Option { return func(o *options) { o.name = name } }
 
 // Workers sets how many objects the controller reconciles at once. The
@@ -180,6 +205,16 @@ func Owns[T any, P Resource[T]]() Option {
 	return func(o *options) { o.owns = append(o.owns, typeInfoFor[T, P]) }
 }
 
+// Adopts lets the controller take over an object that a reconcile declares
+// with Own when the object exists but the controller didn't create it, for
+// example an object from a manual install. Without the option, the
+// reconcile fails with an error that names the object, and the object stays
+// as it is. An adopted object gets the controller's labels and owner
+// reference, so it's deleted with its owner, or when a reconcile stops
+// declaring it. Even with the option, Own fails for an object that the
+// controller created for another owner.
+func Adopts() Option { return func(o *options) { o.adopts = true } }
+
 // RemovesFinalizer declares that objects can carry the controller's
 // finalizer from an earlier version of the program, for example one whose
 // reconciler had a Finalize method. The framework removes a finalizer that
@@ -189,7 +224,10 @@ func Owns[T any, P Resource[T]]() Option {
 // option.
 func RemovesFinalizer() Option { return func(o *options) { o.finalizes = true } }
 
-// For returns a controller that reconciles objects of type T with r.
+// For returns a controller that reconciles objects of type T with r. If r
+// has a method named Finalize, Validate, or Default but doesn't implement
+// Finalizer, Validator, or Defaulter, for example because the method has a
+// pointer receiver and r isn't a pointer, Run fails.
 func For[T any, P Resource[T]](r Reconciler[T], opts ...Option) Controller {
 	c := &controller[T, P]{r: r, opts: options{workers: 4, resync: 10 * time.Hour}}
 	if f, ok := r.(Finalizer[T]); ok {
@@ -199,6 +237,58 @@ func For[T any, P Resource[T]](r Reconciler[T], opts ...Option) Controller {
 		o(&c.opts)
 	}
 	return c
+}
+
+// optional returns v as an I, or the zero I if v has none of I's methods.
+// It returns an error if v has some of them but doesn't implement I, for
+// example because a method has another signature or only v's pointer type
+// has it, since the framework would otherwise ignore the method.
+func optional[I any](v any) (I, error) {
+	if i, ok := v.(I); ok || v == nil {
+		return i, nil
+	}
+	var zero I
+	t := reflect.TypeOf(v)
+	var has, lacks []string
+	it := reflect.TypeFor[I]()
+	for i := range it.NumMethod() {
+		want := it.Method(i)
+		sig := want.Name + strings.TrimPrefix(want.Type.String(), "func")
+		owner := t
+		m := reflect.Zero(t).MethodByName(want.Name)
+		if !m.IsValid() && t.Kind() != reflect.Pointer {
+			owner = reflect.PointerTo(t)
+			m = reflect.Zero(owner).MethodByName(want.Name)
+		}
+		switch {
+		case !m.IsValid():
+			lacks = append(lacks, sig)
+		case m.Type() != want.Type:
+			return zero, fmt.Errorf("%v has the method %s%s, but the framework calls %s", owner, want.Name, strings.TrimPrefix(m.Type().String(), "func"), sig)
+		case owner != t:
+			return zero, fmt.Errorf("%v doesn't have the method %s, but %v does, so pass a %v", t, sig, owner, owner)
+		default:
+			has = append(has, sig)
+		}
+	}
+	if len(has) > 0 {
+		return zero, fmt.Errorf("%v has the method %s but not %s", t, strings.Join(has, " and "), strings.Join(lacks, " and "))
+	}
+	return zero, nil
+}
+
+// methods returns the reconciler's Validate and Default methods, either of
+// which may be nil, or an error if it has Finalize, Validate, or Default
+// without implementing the interface.
+func (c *controller[T, P]) methods() (Validator[T], Defaulter[T], error) {
+	if _, err := optional[Finalizer[T]](c.r); err != nil {
+		return nil, nil, fmt.Errorf("kube: %w", err)
+	}
+	v, d, err := admissionMethods[T](c.r)
+	if err != nil {
+		return nil, nil, fmt.Errorf("kube: %w", err)
+	}
+	return v, d, nil
 }
 
 // core is the part of a controller that doesn't depend on its type.
@@ -254,8 +344,7 @@ type statusApply struct {
 	hash, tenure uint64
 }
 
-// labelKeys are the label and annotation keys the framework uses, under a
-// configurable domain.
+// labelKeys are the label and annotation keys the framework uses.
 type labelKeys struct {
 	controller string // label: controller name, on owned objects
 	ownerUID   string // label: owner UID, on owned objects
@@ -267,16 +356,16 @@ type labelKeys struct {
 	leaseRole  string // label: shard or member
 }
 
-func newLabelKeys(domain string) labelKeys {
+func newLabelKeys() labelKeys {
 	return labelKeys{
-		controller: domain + "/controller",
-		ownerUID:   domain + "/owner-uid",
-		owner:      domain + "/owner",
-		applied:    domain + "/applied",
-		cleanup:    domain + "/cleanup",
-		managedBy:  domain + "/managed-by",
-		leaseGroup: domain + "/lease-group",
-		leaseRole:  domain + "/lease-role",
+		controller: ControllerLabel,
+		ownerUID:   OwnerUIDLabel,
+		owner:      OwnerAnnotation,
+		applied:    Domain + "/applied",
+		cleanup:    Domain + "/cleanup",
+		managedBy:  Domain + "/managed-by",
+		leaseGroup: Domain + "/lease-group",
+		leaseRole:  Domain + "/lease-role",
 	}
 }
 
@@ -433,6 +522,33 @@ type controller[T any, P Resource[T]] struct {
 
 var nameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,48}[a-z0-9])?$`)
 
+// defaultName is the name of a controller without the Named option: the
+// program's name and the kind, lowercase and joined by '-', or only the kind
+// when the program has the kind's name. To fit nameRE, a longer name keeps
+// its first 41 characters and adds '-' and a hash of the whole name.
+func defaultName(program, kind string) string {
+	kind = strings.ToLower(kind)
+	p := strings.Trim(strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r - 'A' + 'a'
+		}
+		return '-'
+	}, program), "-.")
+	if p == "" || p == kind {
+		return kind
+	}
+	name := p + "-" + kind
+	if len(name) <= 50 {
+		return name
+	}
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	return fmt.Sprintf("%s-%08x", strings.TrimRight(name[:41], "-."), h.Sum32())
+}
+
 func (c *controller[T, P]) controllerName() string { return c.name }
 
 func (c *controller[T, P]) synced() bool { return c.primary != nil && c.primary.hasSynced.Load() }
@@ -447,19 +563,29 @@ func (c *controller[T, P]) prepare(ctx context.Context, m *Manager) error {
 	c.ti, c.m = ti, m
 	c.name = c.opts.name
 	if c.name == "" {
-		c.name = strings.ToLower(ti.kind)
+		c.name = defaultName(m.Name, ti.kind)
 	}
 	if !nameRE.MatchString(c.name) {
 		return fmt.Errorf("kube: controller name %q must be at most 50 lowercase letters, digits, '-', or '.', and start and end with a letter or digit", c.name)
 	}
-	c.labels = newLabelKeys(m.Domain)
-	c.finalizer = m.Domain + "/" + c.name
+	for _, o := range m.controllers {
+		if o == Controller(c) {
+			break
+		}
+		if o.reconciles() && o.controllerName() == c.name {
+			return fmt.Errorf("kube: two controllers are named %q; give the one for %v another name with kube.Named", c.name, ti)
+		}
+	}
+	c.labels = newLabelKeys()
+	c.finalizer = FinalizerName(c.name)
 	c.log = m.log.With("controller", c.name)
 	if err := c.prepareVersions(m); err != nil {
 		return err
 	}
-	v, _ := c.r.(Validator[T])
-	d, _ := c.r.(Defaulter[T])
+	v, d, err := c.methods()
+	if err != nil {
+		return err
+	}
 	return registerAdmission[T, P](ctx, m, ti, v, d)
 }
 
@@ -676,7 +802,12 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	case IsPermanent(err):
 		c.q.Forget(key)
 		result = "permanent_error"
-		log.Warn("reconcile failed; waiting for the object to change", "err", err)
+		if d := retryDelay(err); d > 0 {
+			c.q.AddAfter(key, queue.High, d)
+			log.Warn("reconcile failed; retrying after the delay that it asked for", "err", err, "retry", d)
+		} else {
+			log.Warn("reconcile failed; waiting for the object to change", "err", err)
+		}
 	case errors.Is(err, errStale):
 		d := c.q.Retry(key, queue.High)
 		result = "stale"
@@ -689,7 +820,12 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 		}
 		log.Log(ctx, level, "reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", failures)
 	default:
-		d := c.q.Retry(key, queue.High)
+		d := retryDelay(err)
+		if d > 0 {
+			c.q.RetryAfter(key, queue.High, d)
+		} else {
+			d = c.q.Retry(key, queue.High)
+		}
 		result = "error"
 		log.Warn("reconcile failed; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", c.q.Failures(key))
 	}
@@ -754,10 +890,14 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 }
 
 // call runs fn and turns a panic into an error, so one bad object can't
-// crash the controller.
+// crash the controller. A Get or List that can't read panics to stop fn,
+// and call returns the read's error.
 func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			if err = readError(r); err != nil {
+				return
+			}
 			c.log.Error("reconcile panicked", "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("panic: %v", r)
 		}
@@ -795,6 +935,9 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		m := metaOfAny(in.obj)
 		switch in.kind {
 		case intentOwn, intentApply:
+			if err := c.readTarget(ctx, key, &in); err != nil {
+				return err
+			}
 			body, err := c.body(in, parent)
 			if err != nil {
 				return err
@@ -835,7 +978,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 				out = &resp
 			}
 			if err := c.m.apply(ctx, in.ti, m.Key(), in.res.path(m.Namespace, m.Name), manager, body, out); err != nil {
-				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
+				return &writeError{"applying", in.ti, m.Key(), err}
 			}
 			applied.hashes[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
@@ -855,7 +998,10 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 	for ti, src := range c.childSources() {
 		for _, o := range src.owned(key.String()) {
 			om := metaOfAny(o)
-			if declared[ti][om.Key()] || om.Deleting() {
+			// The owner annotation names only a namespace and name, so a
+			// child with another owner UID belongs to an earlier owner with
+			// this name, or to an owner of another type.
+			if declared[ti][om.Key()] || om.Deleting() || om.Labels[c.labels.ownerUID] != pm.UID {
 				continue
 			}
 			res, err := c.m.resolve(ctx, ti)
@@ -890,10 +1036,63 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 	return nil
 }
 
+// readTarget reads the object of an Own or Apply intent from the API server
+// when no cache holds it, and sets in.observed to the object, so that an
+// apply carries its UID. An Own intent fails for an object that the
+// controller didn't create for the owner key, unless the controller adopts
+// objects that it didn't create. An Apply intent fails for an object that
+// doesn't exist, because nothing would own or delete the object that the
+// apply created. Objects of local types are never cached, and Apply creates
+// them.
+func (c *controller[T, P]) readTarget(ctx context.Context, key Key, in *intent) error {
+	m := metaOfAny(in.obj)
+	if in.observed != nil || in.ti.local || in.kind == intentApply && m.UID != "" {
+		return nil
+	}
+	o, err := c.m.fetch(ctx, in.ti, m.Key())
+	if err != nil {
+		return fmt.Errorf("reading %v %s: %w", in.ti, m.Key(), err)
+	}
+	if in.kind == intentApply {
+		if o == nil {
+			return fmt.Errorf("kube.Apply: %v %s doesn't exist, and Apply doesn't create objects; declare an object for the reconciled object to own with Own", in.ti, m.Key())
+		}
+		in.observed = o
+		return nil
+	}
+	if o == nil {
+		return nil
+	}
+	om := metaOfAny(o)
+	owner, ok := om.Annotations[c.labels.owner]
+	switch {
+	case om.Labels[c.labels.controller] != c.name || !ok:
+		if !c.opts.adopts {
+			return fmt.Errorf("kube.Own: %v %s exists, and controller %s didn't create it; delete it, or pass kube.Adopts() to kube.For to take it over", in.ti, m.Key(), c.name)
+		}
+	case owner != key.String():
+		return errOwned(in.ti, m.Key(), owner)
+	default:
+		in.observed = o
+	}
+	return nil
+}
+
+// errOwned is the error for an Own of an object that the controller created
+// for another owner, which the object's owner annotation names.
+func errOwned(ti *typeInfo, k Key, owner string) error {
+	return fmt.Errorf("kube.Own: %v %s already has another owner, %s", ti, k, owner)
+}
+
 func (c *controller[T, P]) delete(ctx context.Context, ti *typeInfo, res resolved, m *ObjectMeta) error {
+	if m.Name == "" {
+		// Without a name, the path is the collection's, and a delete there
+		// deletes every object in it.
+		return fmt.Errorf("deleting a %v with no name", ti)
+	}
 	err := c.m.delete(ctx, ti, m.Key(), res.path(m.Namespace, m.Name), client.DeleteOptions{UID: m.UID, Propagation: "Background"})
 	if err != nil && !client.IsNotFound(err) && !client.IsConflict(err) {
-		return fmt.Errorf("deleting %v %s: %w", ti, m.Key(), err)
+		return &writeError{"deleting", ti, m.Key(), err}
 	}
 	c.m.metrics.inc("kube_delete_total", "controller", c.name)
 	return nil
@@ -1126,7 +1325,7 @@ func (c *controller[T, P]) cleanupOwned(ctx context.Context, obj *T, keep map[st
 		}
 		res := resolved{apiVersion: kind[:i], plural: r.Name, namespaced: r.Namespaced}
 		var owned []ObjectMeta
-		q := url.Values{"labelSelector": {c.labels.ownerUID + "=" + m.UID}}
+		q := url.Values{"labelSelector": {c.labels.ownerUID + "=" + m.UID + "," + c.labels.controller + "=" + c.name}}
 		_, err = c.m.client.ListAll(ctx, res.path("", ""), q, listAccept, 500, func(dec *json.Decoder) error {
 			var item struct {
 				Metadata ObjectMeta `json:"metadata"`

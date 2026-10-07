@@ -176,10 +176,8 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		}
 	}
 	if ctx.Err() != nil {
-		// When kube.Get or kube.List can't read, it returns nothing and
-		// the framework tries the reconcile again. The reconcile stops so
-		// that it doesn't forget the check runs of objects that it
-		// couldn't read.
+		// The reconcile's context ended, for example because the program
+		// is stopping, so nothing that it sends to GitHub would get there.
 		return ctx.Err()
 	}
 	if !publishes(repo) {
@@ -527,12 +525,15 @@ func runFor(res gitk8s.CheckResult) runState {
 		// decides.
 		s.Conclusion = "neutral"
 	}
-	var outputs []string
-	for _, k := range slices.Sorted(maps.Keys(res.Outputs)) {
-		outputs = append(outputs, fmt.Sprintf("%s: %s", k, res.Outputs[k]))
+	var lines []string
+	if res.Fix != "" {
+		lines = append(lines, "fix: "+res.Fix)
 	}
-	if len(outputs) > 0 {
-		s.Output.Text = codeBlock(strings.Join(outputs, "\n"))
+	for _, k := range slices.Sorted(maps.Keys(res.Outputs)) {
+		lines = append(lines, fmt.Sprintf("%s: %s", k, res.Outputs[k]))
+	}
+	if len(lines) > 0 {
+		s.Output.Text = codeBlock(strings.Join(lines, "\n"))
 	}
 	return s
 }

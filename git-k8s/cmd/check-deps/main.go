@@ -115,7 +115,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	case !in.Policy.MayPush:
 		return keepRuns(in, gitk8s.Failed, "go test failed, and the policy doesn't let the deps check push a fix"), nil
 	}
-	if p := in.Previous; p == nil || p.State != gitk8s.Running || p.Commit != in.Spec.Head || p.Outputs["pod"] == "" {
+	if p := in.Previous; p == nil || p.State != gitk8s.Running || p.Commit != in.Spec.Head || p.Pod == "" {
 		if v, ok := outOfCommits(ctx, in); ok {
 			return v, nil
 		}
@@ -178,8 +178,8 @@ func fixerCommits(ctx context.Context, in *checks.Input) (int, error) {
 // check's last result, which Runner.Run reads for maxAgentRuns.
 func keepRuns(in *checks.Input, state, format string, args ...any) checks.Verdict {
 	v := checks.Verdict{State: state, Message: fmt.Sprintf(format, args...)}
-	if p := in.Previous; p != nil && p.Outputs["runs"] != "" {
-		v.Outputs = map[string]string{"runs": p.Outputs["runs"]}
+	if p := in.Previous; p != nil && p.Notes["runs"] != "" {
+		v.Notes = map[string]string{"runs": p.Notes["runs"]}
 	}
 	return v
 }

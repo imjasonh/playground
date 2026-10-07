@@ -129,7 +129,7 @@ func unreplayed(ctx context.Context, repo *git.Repo, head, other, synced string)
 // side's head when Repo.Keeps says that the head keeps the side's
 // changes, so then the check passes, and the mirror resolves the
 // divergence by itself.
-func resolveRewind(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rewound string, outputs map[string]string) checks.Verdict {
+func resolveRewind(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rewound string, rec record) checks.Verdict {
 	head := in.Spec.Head
 	since := gitk8s.Short(t.synced)
 	switch ok, err := repo.Keeps(ctx, head, t.commit, t.synced); {
@@ -146,7 +146,7 @@ func resolveRewind(ctx context.Context, in *checks.Input, repo *git.Repo, t targ
 	}
 	switch rewound {
 	case "external":
-		return replayBranch(ctx, in, repo, t, rewound, outputs)
+		return replayBranch(ctx, in, repo, t, rewound, rec)
 	case "branch":
 		return replayExternal(ctx, in, repo, t)
 	}
@@ -156,7 +156,7 @@ func resolveRewind(ctx context.Context, in *checks.Input, repo *git.Repo, t targ
 	case err != nil:
 		return retry(ctx, "%v", err)
 	case ok:
-		return replayBranch(ctx, in, repo, t, rewound, outputs)
+		return replayBranch(ctx, in, repo, t, rewound, rec)
 	}
 	switch ok, err := removedNone(ctx, repo, head, t.commit, t.synced); {
 	case err != nil:
@@ -210,7 +210,7 @@ func parentRewind(ctx context.Context, repo *git.Repo, branch, head string, d *g
 // every change that both sides made, resolve replays all of them as one
 // commit, unless the branch rewound too. It fails when a replay makes the
 // same change as a commit that the external repository removed.
-func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rewound string, outputs map[string]string) checks.Verdict {
+func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rewound string, rec record) checks.Verdict {
 	since := gitk8s.Short(t.synced)
 	added, err := repo.Revs(ctx, in.Spec.Head, t.synced, t.commit)
 	if err != nil {
@@ -258,7 +258,7 @@ func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t targe
 		return checks.Fail("the branch and %s both rewound since they last synced at %s, and %s, so the check leaves the divergence for a person", t.name, since, why)
 	}
 	t.replay = true
-	v := resolve(ctx, in, repo, t, outputs)
+	v := resolve(ctx, in, repo, t, rec)
 	v.Message = why + "; " + v.Message
 	return v
 }

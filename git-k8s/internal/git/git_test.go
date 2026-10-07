@@ -8,13 +8,11 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -356,8 +354,10 @@ func TestOptionURLsDontRunCommands(t *testing.T) {
 func TestOtherTransportsDontRun(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran")
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"git-remote-evil", "ssh"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	g := &git.Git{}
@@ -365,10 +365,13 @@ func TestOtherTransportsDontRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, url := range []string{"evil::x", local.Dir, "file://" + local.Dir} {
+	for _, url := range []string{
+		"evil::x", local.Dir, "file://" + local.Dir,
+		"ssh://git@127.0.0.1/app.git", "git@127.0.0.1:app.git", "git://127.0.0.1:1/app.git",
+	} {
 		_, err := g.LsRemote(t.Context(), git.Remote{URL: url})
 		if _, statErr := os.Stat(marker); statErr == nil {
-			t.Fatal("git ran the remote helper")
+			t.Fatalf("for %s, git ran a program from PATH", url)
 		}
 		if err == nil || !strings.Contains(err.Error(), "not allowed") {
 			t.Errorf("ls-remote %s: err = %v, want git to refuse the transport", url, err)
@@ -391,8 +394,10 @@ func TestLsRemoteSkipsUnsafeBranches(t *testing.T) {
 	url := serveRefs(t, sha,
 		"refs/heads/main",
 		"refs/heads/-x",
-		"refs/heads/main\n--output=/tmp/pwned\trefs/heads/injected",
-		"refs/heads/a b",
+		// git's HTTP transport passes on each ref as "<sha> <name>" on a
+		// line of its own, so it splits this name into two refs.
+		"refs/heads/main\n"+sha+" refs/heads/--output=/tmp/pwned",
+		"refs/heads/a\tb",
 		"refs/heads/a..b",
 	)
 	heads, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: url})
@@ -404,49 +409,35 @@ func TestLsRemoteSkipsUnsafeBranches(t *testing.T) {
 	}
 }
 
-// serveRefs runs a git daemon whose one repository has refs, all pointing at
-// sha, and returns the repository's URL. It sends the ref names as they are,
-// as a malicious server can.
+// serveRefs runs a git HTTP server whose one repository has refs, all
+// pointing at sha, and returns the repository's URL. It sends the ref names
+// as they are, as a malicious server can.
 func serveRefs(t *testing.T, sha string, refs ...string) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { l.Close() })
 	var ad strings.Builder
+	pkt := func(line string) { fmt.Fprintf(&ad, "%04x%s\n", len(line)+5, line) }
+	pkt("# service=git-upload-pack")
+	ad.WriteString("0000")
 	for i, ref := range refs {
 		line := sha + " " + ref
 		if i == 0 {
 			line += "\x00"
 		}
-		fmt.Fprintf(&ad, "%04x%s\n", len(line)+5, line)
+		pkt(line)
 	}
 	ad.WriteString("0000")
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer c.Close()
-				var size [4]byte
-				if _, err := io.ReadFull(c, size[:]); err != nil {
-					return
-				}
-				n, _ := strconv.ParseUint(string(size[:]), 16, 16)
-				if _, err := io.CopyN(io.Discard, c, int64(n)-4); err != nil {
-					return
-				}
-				// A client that asks for protocol version 2 accepts this
-				// version 0 advertisement, and sends a flush packet after it.
-				io.WriteString(c, ad.String())
-				io.Copy(io.Discard, c)
-			}()
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app.git/info/refs" || r.URL.Query().Get("service") != "git-upload-pack" {
+			http.NotFound(w, r)
+			return
 		}
-	}()
-	return "git://" + l.Addr().String() + "/app.git"
+		// A client that asks for protocol version 2 accepts this version 0
+		// advertisement.
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		io.WriteString(w, ad.String())
+	}))
+	t.Cleanup(hs.Close)
+	return hs.URL + "/app.git"
 }
 
 // Killing only git leaves its remote helper running, holding git's stderr
