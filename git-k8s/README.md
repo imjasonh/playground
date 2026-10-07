@@ -250,7 +250,7 @@ a dependency update controller that `generate` installs in the namespace
 `git-k8s-deps`:
 
 ```sh
-go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/ | kubectl apply -f -
 ```
 
 The controller reaches the mirror with `mirror.Remote`, as a check does, and
@@ -3063,7 +3063,12 @@ done
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
-after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+after `--`, as in this command for `check-risk`:
+
+```sh
+go run ./cmd/check-risk generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -sensitive='auth/**' | kubectl apply -f -
+```
+
 To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
