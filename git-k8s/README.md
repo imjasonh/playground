@@ -2861,13 +2861,13 @@ external repository won't delete or rewrite.
 ## Dependency updates
 
 `git-k8s-deps` is a controller that keeps the Go modules that repositories
-require up to date. It pushes each update to its own branch under a prefix,
-`deps/` by default, and each branch lands through its parent's merge policy
+require up to date. It pushes each update to its own branch under
+`deps/`, and each branch lands through its parent's merge policy
 like any other branch. When an update breaks the tests, `check-deps` has an
 AI agent fix the code.
 
 To keep a parent's modules up to date, add a rule that matches branches
-under the prefix and names that parent. The parent's policy in this example
+under `deps/` and names that parent. The parent's policy in this example
 also lists the checks that dependency branches need:
 
 ```yaml
@@ -3070,7 +3070,7 @@ pushed under the person's own name.
 
 ### Agent fixes
 
-`check-deps` passes on branches outside its `-prefix`, so the parent's policy
+`check-deps` passes on branches outside `deps/`, so the parent's policy
 can list it for every branch. It also passes when the policy doesn't list
 `gotest`. On a dependency branch, it waits for the `gotest` check's result
 for the branch's current commits, and passes when the tests pass. When the
@@ -3185,9 +3185,9 @@ kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
 ```
 
 Pass the core program `-branch-prefix=git-k8s-deps/git-k8s-deps=deps/`, with
-the controller's namespace, service account, and `-prefix`. The mirror
-refuses the controller until the core program gives its service account the
-prefix, as [The mirror](#the-mirror) describes.
+the controller's namespace and service account. The mirror refuses the
+controller until the core program gives its service account the prefix
+`deps/`, as [The mirror](#the-mirror) describes.
 
 Upgrade the core program first, because it installs `config/policy.yaml`
 when it starts, and the second policy there stops `git-k8s-deps` from
@@ -3200,14 +3200,12 @@ ConfigMap, as [Check service accounts](#check-service-accounts) describes.
 The policy then treats the service account as a check, which can't change
 `GitBranch` objects.
 
-`check-deps` takes `-prefix`, which must match the controller's, and the
-flags in the `check-review` table. It exits at startup when `-prefix` isn't a
-branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
+`check-deps` takes the flags in the `check-review` table. `git-k8s-deps`
+takes these flags:
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-runner-image` | Required | Image that serves update results, built from `agent/runner/Dockerfile` |
-| `-prefix` | `deps/` | Branch-name prefix of the controller's branches, ending with `/` |
 | `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
 | `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
 | `-interval` | `1h` | How often to look for newer versions |

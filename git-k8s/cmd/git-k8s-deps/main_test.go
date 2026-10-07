@@ -140,7 +140,7 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work) *fixture {
 	f.u = &updater{
 		cfg:        checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
 		checkEmail: checksID.Email,
-		prefix:     "deps/", goProxy: fp.URL, goSumDB: "off",
+		goProxy:    fp.URL, goSumDB: "off",
 		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", runnerImage: "registry.example.com/agent-runner:test",
 		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour,
 		now: func() time.Time { return f.clock }, remote: srv.RemoteFor, resultPort: port,
@@ -423,7 +423,7 @@ func (f *fixture) checkStays(head string, world ...any) *kube.Recorder {
 func (f *fixture) restart() {
 	old := f.u
 	f.u = &updater{
-		cfg: old.cfg, checkEmail: old.checkEmail, prefix: old.prefix, goProxy: old.goProxy, goSumDB: old.goSumDB,
+		cfg: old.cfg, checkEmail: old.checkEmail, goProxy: old.goProxy, goSumDB: old.goSumDB,
 		goImage: old.goImage, gitImage: old.gitImage, runnerImage: old.runnerImage, runtimeClass: old.runtimeClass,
 		timeout: old.timeout, sourceSize: old.sourceSize, goCacheSize: old.goCacheSize, maxPods: old.maxPods,
 		interval: old.interval, minAge: old.minAge, seenConfigMap: old.seenConfigMap, now: old.now, remote: old.remote,
@@ -2519,7 +2519,7 @@ func TestRemakesABranchTooLargeToRead(t *testing.T) {
 }
 
 func TestRefusesToPushOtherBranches(t *testing.T) {
-	u := &updater{prefix: "deps/"}
+	u := &updater{}
 	for _, branch := range []string{"main", "deps", "deps/../main", "deps/go/x@v1.lock", "deps-x/go"} {
 		if err := u.push(t.Context(), nil, git.Remote{}, branch, "0123abcd", ""); err == nil {
 			t.Errorf("push(%q) = nil, want an error", branch)
@@ -2572,7 +2572,7 @@ func TestFlags(t *testing.T) {
 	if err := u.setup(); err != nil {
 		t.Fatalf("setup() with the defaults = %v", err)
 	}
-	if u.prefix != "deps/" || u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
+	if u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
 		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" || u.checkEmail != u.cfg.Identity.Email || u.checkEmail != "git-k8s@users.noreply.github.com" ||
 		u.seenObject != (kube.Key{Namespace: "git-k8s-deps", Name: "git-k8s-deps-first-seen"}) {
 		t.Errorf("the defaults = %+v", u)
@@ -2599,9 +2599,6 @@ func TestFlags(t *testing.T) {
 		{"-seen-configmap=" + strings.Repeat("b", 254)},
 		{"-identity-email=<>"},
 		{"-check-identity-email="},
-		{"-prefix=deps"},
-		{"-prefix="},
-		{"-prefix=deps..x/"},
 		{"-runner-image="},
 		{"-go-image="},
 		{"-gosumdb="},
@@ -2647,7 +2644,7 @@ func TestFlags(t *testing.T) {
 
 	t.Log("A reconcile reports a bad flag as a permanent error.")
 	f := newFixture(t)
-	f.u.prefix = "deps"
+	f.u.runnerImage = ""
 	repo, secret := f.srv.Repository("app", f.rules...)
 	ctx, _ := kube.Fake(t.Context(), f.b, repo, secret)
 	if err := f.u.Reconcile(ctx, f.b); !kube.IsPermanent(err) {

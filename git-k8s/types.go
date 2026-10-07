@@ -62,6 +62,11 @@ const (
 	GoTestController = "check-" + GoTestCheck
 )
 
+// DepsPrefix is the branch-name prefix of the branches that git-k8s-deps
+// pushes and check-deps fixes. The core program's -branch-prefix must give
+// it to git-k8s-deps's service account.
+const DepsPrefix = "deps/"
+
 // MirrorAudience is the audience of the service account tokens that
 // programs send to the mirror, the git server in the core program.
 const MirrorAudience = "git-k8s-mirror"

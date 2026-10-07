@@ -3,7 +3,7 @@
 //
 // The controller reconciles the GitBranch of each branch that a
 // repository's rules name as the parent of branches under the controller's
-// prefix, deps/ by default. Every -interval, it reads the parent's go.mod
+// prefix, deps/. Every -interval, it reads the parent's go.mod
 // files and asks module proxies for newer releases of the modules that they
 // require directly. For each module and major version with a release that's
 // at least -min-age old, it runs go get in a sandboxed Pod and pushes the
@@ -110,7 +110,6 @@ const (
 type updater struct {
 	cfg          checks.Config
 	checkEmail   string
-	prefix       string
 	goProxy      string
 	goSumDB      string
 	goImage      string
@@ -153,7 +152,6 @@ type updater struct {
 func (u *updater) addFlags(fs *flag.FlagSet) {
 	u.cfg.AddFlags(fs)
 	fs.StringVar(&u.checkEmail, "check-identity-email", "git-k8s@users.noreply.github.com", "committer email of the fixes that checks push, their -identity-email")
-	fs.StringVar(&u.prefix, "prefix", "deps/", "branch-name prefix of the branches that the controller pushes, ending with /")
 	fs.StringVar(&u.goProxy, "goproxy", "https://proxy.golang.org", "comma-separated URLs of the module proxies to read modules from")
 	fs.StringVar(&u.goSumDB, "gosumdb", "sum.golang.org", "GOSUMDB for go get, or off")
 	kube.ImageVar(fs, &u.goImage, "go-image", images.Go, "image that runs go get; it needs go, git, sh, base64, sha256sum, tail, and cut")
@@ -177,8 +175,6 @@ func (u *updater) setup() error {
 
 func (u *updater) init() error {
 	switch {
-	case !strings.HasSuffix(u.prefix, "/") || !git.ValidBranch(u.prefix+"go"):
-		return fmt.Errorf("-prefix is %q, but it must be a branch-name prefix that ends with /, such as deps/", u.prefix)
 	case u.runnerImage == "":
 		return errors.New("set -runner-image to the image that agent/runner/Dockerfile builds")
 	case u.goImage == "" || u.gitImage == "" || u.goSumDB == "":
@@ -248,8 +244,8 @@ type moduleMajor struct {
 
 // branch returns the name of the module's branch. Module paths can't hold
 // @, so no branch name is a directory of another, which git can't store.
-func (m moduleMajor) branch(prefix string) string {
-	return prefix + "go/" + m.path + "@" + m.major
+func (m moduleMajor) branch() string {
+	return gitk8s.DepsPrefix + "go/" + m.path + "@" + m.major
 }
 
 func compareModules(a, b moduleMajor) int {
@@ -368,7 +364,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	defer unlock()
 	names := []string{parent}
 	for m := range existing {
-		names = append(names, m.branch(u.prefix))
+		names = append(names, m.branch())
 	}
 	if err := fetchMissing(ctx, local, remote, heads, names); err != nil {
 		return err
@@ -466,8 +462,8 @@ func (u *updater) storeSeen(ctx context.Context, stored string, log *slog.Logger
 // isParent reports whether a rule makes branch the parent of branches under
 // the prefix.
 func (u *updater) isParent(rules []gitk8s.BranchRule, branch string) bool {
-	return !strings.HasPrefix(branch, u.prefix) && slices.ContainsFunc(rules, func(r gitk8s.BranchRule) bool {
-		return r.Parent == branch && strings.HasPrefix(r.Match, u.prefix)
+	return !strings.HasPrefix(branch, gitk8s.DepsPrefix) && slices.ContainsFunc(rules, func(r gitk8s.BranchRule) bool {
+		return r.Parent == branch && strings.HasPrefix(r.Match, gitk8s.DepsPrefix)
 	})
 }
 
@@ -500,7 +496,7 @@ func queues(policy *gitk8s.MergePolicy) bool {
 func (u *updater) branches(rules []gitk8s.BranchRule, parent string, heads map[string]string) map[moduleMajor]string {
 	out := map[moduleMajor]string{}
 	for name, head := range heads {
-		rest, ok := strings.CutPrefix(name, u.prefix+"go/")
+		rest, ok := strings.CutPrefix(name, gitk8s.DepsPrefix+"go/")
 		i := strings.LastIndex(rest, "@")
 		if !ok || i < 0 {
 			continue
@@ -666,7 +662,7 @@ func replaced(f *modfile.File, m module.Version) bool {
 func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, parent string, reqs map[moduleMajor]*requirement, owned map[moduleMajor]ownedBranch, log *slog.Logger) (map[moduleMajor]update, map[moduleMajor]bool) {
 	targets, failed := map[moduleMajor]update{}, map[moduleMajor]bool{}
 	for _, m := range slices.SortedFunc(maps.Keys(reqs), compareModules) {
-		name := m.branch(u.prefix)
+		name := m.branch()
 		if !git.ValidBranch(name) || !u.governs(rules, name, parent) {
 			continue
 		}
@@ -711,7 +707,7 @@ func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, p
 	for _, m := range slices.SortedFunc(maps.Keys(all), compareModules) {
 		head, exists := existing[m]
 		up, wanted := targets[m]
-		c := change{branch: m.branch(u.prefix), old: head, up: up}
+		c := change{branch: m.branch(), old: head, up: up}
 		switch {
 		case failed[m]:
 			continue
@@ -1210,8 +1206,8 @@ func message(up update) string {
 // push updates or deletes a branch with a lease on old. It refuses branches
 // outside the prefix, which the mirror refuses too.
 func (u *updater) push(ctx context.Context, repo *git.Repo, remote git.Remote, branch, commit, old string) error {
-	if !strings.HasPrefix(branch, u.prefix) || !git.ValidBranch(branch) {
-		return fmt.Errorf("not pushing %q, which isn't a branch under %s", branch, u.prefix)
+	if !strings.HasPrefix(branch, gitk8s.DepsPrefix) || !git.ValidBranch(branch) {
+		return fmt.Errorf("not pushing %q, which isn't a branch under %s", branch, gitk8s.DepsPrefix)
 	}
 	return repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + branch, New: commit, Old: old})
 }

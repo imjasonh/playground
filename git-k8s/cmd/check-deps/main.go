@@ -1,20 +1,19 @@
 // Command check-deps has an AI agent fix dependency branches whose tests
 // fail.
 //
-// git-k8s-deps pushes each dependency update to its own branch under a
-// prefix, deps/ by default. When the gotest check fails on such a branch,
+// git-k8s-deps pushes each dependency update to its own branch under
+// gitk8s.DepsPrefix, deps/. When the gotest check fails on such a branch,
 // and the merge policy lets the deps check push, the check runs a Cursor
 // agent in a sandboxed Pod with the agent package. The agent gets the test
 // output, the update's change from the merge base, and the head's files,
 // and can edit the code but not go.mod, go.sum, go.work, or go.work.sum
 // files. The check pushes the agent's changes as a fix, within the branch's
 // maxAutomatedCommits, and the tests run again on the new head. The check
-// passes when the tests pass, and on branches outside the prefix.
+// passes when the tests pass, and on branches outside deps/.
 package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"path"
@@ -24,7 +23,6 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
@@ -56,24 +54,6 @@ type testResult struct {
 	} `json:"status,omitzero"`
 }
 
-// prefix's default doesn't go through Set, so it has to be valid too.
-var prefix branchPrefix = "deps/"
-
-// branchPrefix is a -prefix flag, which must be a branch-name prefix that
-// ends with /, as git-k8s-deps requires of its own. Flag parsing stops on any
-// other value, so check-deps exits at startup.
-type branchPrefix string
-
-func (p *branchPrefix) String() string { return string(*p) }
-
-func (p *branchPrefix) Set(s string) error {
-	if !strings.HasSuffix(s, "/") || !git.ValidBranch(s+"go") {
-		return errors.New("it must be a branch-name prefix that ends with /, such as deps/")
-	}
-	*p = branchPrefix(s)
-	return nil
-}
-
 // instructions returns the agent's task for a branch whose tests fail with
 // the gotest check's message.
 func instructions(message string) string {
@@ -97,7 +77,7 @@ var runAgent = func(ctx context.Context, in *checks.Input, task agent.Task) (che
 var check = checks.Check{Name: "deps", Remote: mirror.Remote, SigningKey: signing.Key, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
-	if !strings.HasPrefix(in.Spec.Branch, string(prefix)) {
+	if !strings.HasPrefix(in.Spec.Branch, gitk8s.DepsPrefix) {
 		return keepRuns(in, gitk8s.Passed, "%s isn't a dependency branch", in.Spec.Branch), nil
 	}
 	if in.Spec.Merge.Check("gotest") == nil {
@@ -184,12 +164,7 @@ func keepRuns(in *checks.Input, state, format string, args ...any) checks.Verdic
 	return v
 }
 
-func addFlags(fs *flag.FlagSet) {
-	fs.Var(&prefix, "prefix", "branch-name prefix of dependency branches, ending with /, the same as git-k8s-deps's -prefix")
-	runner.AddFlags(fs)
-}
-
 func main() {
-	addFlags(flag.CommandLine)
+	runner.AddFlags(flag.CommandLine)
 	checks.Main[Branch](check)
 }
