@@ -1,10 +1,13 @@
 package kube
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -307,6 +310,40 @@ func TestWebhooksCantWrite(t *testing.T) {
 	r := validate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, writer{}, &admissionRequest{Operation: "CREATE", Object: json.RawMessage(`{"metadata":{"name":"cm"}}`)})
 	if r.Allowed || !strings.Contains(r.Result.Message, "kube.Own can't be called in a webhook") {
 		t.Errorf("response = %+v", r.Result)
+	}
+}
+
+type reader struct{ went *bool }
+
+func (r reader) Validate(ctx context.Context, cm, _ *configMapMeta) error {
+	Get[localConfigMap](ctx, "system", "state")
+	*r.went = true
+	return nil
+}
+
+// TestWebhooksRejectFailedReads stops a Validate with a Get that can't read.
+// The webhook rejects the request with the read's error and doesn't report a
+// panic.
+func TestWebhooksRejectFailedReads(t *testing.T) {
+	var logs bytes.Buffer
+	m := testManager()
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	ti, _ := typeInfoFor[configMapMeta, *configMapMeta]()
+	went := false
+	body := `{"request":{"uid":"u1","operation":"CREATE","object":{"metadata":{"name":"cm"}}}}`
+	rec := httptest.NewRecorder()
+	serveAdmission(rec, httptest.NewRequest(http.MethodPost, "/validate", strings.NewReader(body)), m, ti, func(ctx context.Context, req *admissionRequest) *admissionResponse {
+		return validate[configMapMeta, *configMapMeta](ctx, m, ti, reader{&went}, req)
+	})
+	var review admissionReview
+	if err := json.Unmarshal(rec.Body.Bytes(), &review); err != nil {
+		t.Fatal(err)
+	}
+	if r := review.Response; went || r == nil || r.Allowed || r.Result == nil || !strings.Contains(r.Result.Message, "is local") {
+		t.Errorf("went on = %v, response = %+v; want a rejection with the read's error", went, r)
+	}
+	if strings.Contains(logs.String(), "panicked") {
+		t.Errorf("the webhook reported a panic:\n%s", logs.String())
 	}
 }
 

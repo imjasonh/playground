@@ -727,10 +727,14 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 }
 
 // call runs fn and turns a panic into an error, so one bad object can't
-// crash the controller.
+// crash the controller. A Get or List that can't read panics to stop fn,
+// and call returns the read's error.
 func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			if err = readError(r); err != nil {
+				return
+			}
 			c.log.Error("reconcile panicked", "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("panic: %v", r)
 		}

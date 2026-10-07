@@ -176,10 +176,8 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		}
 	}
 	if ctx.Err() != nil {
-		// When kube.Get or kube.List can't read, it returns nothing and
-		// the framework tries the reconcile again. The reconcile stops so
-		// that it doesn't forget the check runs of objects that it
-		// couldn't read.
+		// The reconcile's context ended, for example because the program
+		// is stopping, so nothing that it sends to GitHub would get there.
 		return ctx.Err()
 	}
 	if !publishes(repo) {

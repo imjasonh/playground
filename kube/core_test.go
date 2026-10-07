@@ -1,8 +1,13 @@
 package kube
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/queue"
 )
 
@@ -545,7 +551,7 @@ func TestLocalTypes(t *testing.T) {
 		"Fetch without a namespace": func(ctx context.Context) { Fetch[localConfigMap](ctx, "", "state") },
 	} {
 		ctx, rec := Fake(t.Context(), parent, state)
-		use(ctx)
+		stopped(func() { use(ctx) })
 		if err := rec.Err(); !IsPermanent(err) || !strings.Contains(err.Error(), "is local") {
 			t.Errorf("%s: Err = %v, want an error that says the type is local", name, err)
 		}
@@ -564,6 +570,104 @@ func TestLocalTypes(t *testing.T) {
 	Delete(ctx, old)
 	if rec.Err() != nil || len(Applied[localConfigMap](rec)) != 1 || len(Deleted[localConfigMap](rec)) != 1 {
 		t.Errorf("Err = %v, Applied = %v, Deleted = %v", rec.Err(), Applied[localConfigMap](rec), Deleted[localConfigMap](rec))
+	}
+}
+
+// stopped runs fn and returns the error of the Get or List that stopped it,
+// or nil if fn returned. It passes any other panic on.
+func stopped(fn func()) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			if err = readError(p); err == nil {
+				panic(p)
+			}
+		}
+	}()
+	fn()
+	return nil
+}
+
+// TestFailedReadsStop checks that a read that fails, and every read after
+// it, stops the reconcile with the first error, so that nil from Get means
+// only that the object doesn't exist.
+func TestFailedReadsStop(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	pod := &podMeta{Object: Meta("p1", nil)}
+	pod.Namespace = "shop"
+	ctx, rec := Fake(t.Context(), parent, pod)
+	if err := stopped(func() {
+		if got := Get[podMeta](ctx, "shop", "missing"); got != nil {
+			t.Errorf("Get of a missing object = %v, want nil", got)
+		}
+	}); err != nil {
+		t.Errorf("a Get of a missing object stopped with %v", err)
+	}
+
+	went := false
+	first := stopped(func() {
+		List[podMeta](ctx, MatchingSelector("=broken"))
+		went = true
+	})
+	if went || !IsPermanent(first) || first != rec.Err() {
+		t.Errorf("a List with an invalid selector went on = %v and stopped with %v; Err = %v; want a stop with Err, a permanent error", went, first, rec.Err())
+	}
+	for name, read := range map[string]func(){
+		"Get":  func() { Get[podMeta](ctx, "shop", "p1") },
+		"List": func() { List[podMeta](ctx) },
+	} {
+		if err := stopped(read); err != first {
+			t.Errorf("%s after a failed read stopped with %v, want %v", name, err, first)
+		}
+	}
+}
+
+// TestFailedReadStopsTheReconcile fails a Get in a reconcile, as the API
+// server does when the program may not read a type. The reconcile must stop
+// at the Get, fail with the read's error, and retry, and the controller must
+// not report a panic.
+func TestFailedReadStopsTheReconcile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != client.ApplyPatch {
+			http.Error(rw, "forbidden", http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+			"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	m := testManager()
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	m.client, m.tracker = cl, newTracker()
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+	c.sh = &sharder{n: 1, shards: []*shard{{}}}
+	went := false
+	c.r = fakeReconciler{reconcile: func(ctx context.Context, _ *widget) error {
+		Get[podMeta](ctx, "shop", "p1")
+		went = true
+		return nil
+	}}
+
+	c.process(t.Context(), w.Key())
+	if went {
+		t.Error("the reconcile went on after a Get that couldn't read")
+	}
+	if err := c.lastError(w.Key()); !client.IsForbidden(err) {
+		t.Errorf("LastError = %v, want the read's error", err)
+	}
+	if n := m.metrics.counter("kube_reconcile_total", "controller", c.name, "result", "error"); n != 1 {
+		t.Errorf("%v reconciles failed and will retry, want 1", n)
+	}
+	if strings.Contains(logs.String(), "panicked") {
+		t.Errorf("the controller reported a panic:\n%s", logs.String())
 	}
 }
 

@@ -168,6 +168,10 @@ func serveAdmission(w http.ResponseWriter, r *http.Request, m *Manager, ti *type
 	resp := func() (resp *admissionResponse) {
 		defer func() {
 			if p := recover(); p != nil {
+				if err := readError(p); err != nil {
+					resp = deny(err)
+					return
+				}
 				m.log.Error("webhook panicked", "type", ti.String(), "panic", p, "stack", string(debug.Stack()))
 				resp = deny(fmt.Errorf("panic: %v", p))
 			}

@@ -128,6 +128,88 @@ func TestServeHandlerCanOnlyRead(t *testing.T) {
 	}
 }
 
+// TestServeAnswersFailedReads stops handlers with a Get that can't read. A
+// handler that hasn't started its response gets a 503 in place of what it
+// set up, and one that has gets its response aborted. Other panics pass
+// through.
+func TestServeAnswersFailedReads(t *testing.T) {
+	m := testManager()
+	m.ServeAddr = "127.0.0.1:0"
+	went := false
+	s := Serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/started":
+			w.WriteHeader(http.StatusOK)
+		case "/boom":
+			panic("boom")
+		}
+		Get[localConfigMap](r.Context(), "system", "state")
+		went = true
+	})).(*server)
+	m.controllers = []Controller{s}
+	if err := s.prepare(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	serve := func(path string) (rec *httptest.ResponseRecorder, p any) {
+		defer func() { p = recover() }()
+		rec = httptest.NewRecorder()
+		s.serveHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		return rec, nil
+	}
+
+	rec, p := serve("/")
+	if p != nil || went {
+		t.Errorf("the handler panicked with %v, went on = %v", p, went)
+	}
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Connection") != "close" || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
+		t.Errorf("got %d with headers %v, want 503, a closed connection, and a text body", rec.Code, rec.Header())
+	}
+	if _, p := serve("/started"); p != http.ErrAbortHandler {
+		t.Errorf("a handler that had started its response panicked with %v, want http.ErrAbortHandler", p)
+	}
+	if _, p := serve("/boom"); p != "boom" {
+		t.Errorf("a handler that panicked with boom panicked with %v", p)
+	}
+}
+
+// TestResponseWriterKeepsFeatures checks that a handler behind Serve's
+// ResponseWriter can still use what the server's supports, as the git-k8s
+// mirror does.
+func TestResponseWriterKeepsFeatures(t *testing.T) {
+	errs := make(chan error, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var rw http.ResponseWriter = &responseWriter{ResponseWriter: w}
+		rc := http.NewResponseController(rw)
+		err := errors.Join(rc.EnableFullDuplex(), rc.SetReadDeadline(time.Now().Add(time.Minute)), rc.SetWriteDeadline(time.Now().Add(time.Minute)))
+		if r.URL.Path == "/hijack" {
+			conn, buf, herr := rw.(http.Hijacker).Hijack()
+			if herr == nil {
+				_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nhijacked")
+				herr = buf.Flush()
+				conn.Close()
+			}
+			errs <- errors.Join(err, herr)
+			return
+		}
+		_, _ = io.WriteString(rw, "flushed")
+		rw.(http.Flusher).Flush()
+		errs <- errors.Join(err, rc.Flush())
+	}))
+	defer srv.Close()
+	for path, want := range map[string]string{"/": "flushed", "/hijack": "hijacked"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err := <-errs; err != nil || string(body) != want {
+			t.Errorf("%s: body = %q, err = %v; want %q", path, body, err, want)
+		}
+	}
+}
+
 func TestServeRun(t *testing.T) {
 	m := testManager()
 	m.Addr = "127.0.0.1:0"

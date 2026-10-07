@@ -110,7 +110,12 @@ no watch setup. The stripped binary in its image is 8.4 MiB.
 writes only status, and retries with exponential backoff from 50 ms to 5
 minutes. If a declaration fails, for example because an admission policy
 rejects an object, the framework writes the status that `Reconcile` set and
-retries in the same way. In the retry, `kube.LastError` returns the error, so
+retries in the same way. If `Get` or `List` can't read, for example because
+the program may not list the type, `Reconcile` stops there, and the framework
+handles the error as if `Reconcile` had returned it. So `nil` from `Get`
+always means that the object doesn't exist. `Get` and `List` stop `Reconcile`
+with a panic that the framework recovers, so call them only in the goroutine
+that runs `Reconcile`. In the retry, `kube.LastError` returns the error, so
 the reconcile can report it in the status. Each process keeps the errors in
 memory, so `kube.LastError` returns `nil` after a restart or a shard move. An
 error from the API server can quote the values that it rejected, so if those
@@ -118,7 +123,7 @@ values are secret, don't copy the error into a status.
 
 | Function | What it does |
 | --- | --- |
-| `kube.Get[T](ctx, namespace, name)` | Returns one object from a cache, or `nil` |
+| `kube.Get[T](ctx, namespace, name)` | Returns one object from a cache, or `nil` if it doesn't exist |
 | `kube.List[T](ctx, options...)` | Returns objects from a cache, sorted, filtered by namespace or label selector |
 | `kube.Fetch[T](ctx, namespace, name)` | Returns one object from the API server without caching its type |
 | `kube.Own(ctx, desired)` | Declares an object that the reconciled object owns, and returns it as observed |
@@ -358,11 +363,11 @@ try to create the CRD at the same time, one of them creates it, and both use
 it if it serves both of their versions.
 
 A program that only reads a type never creates its CRD. While the CRD is
-missing, `Get` and `List` of the type fail the reconcile, so a later `Own` in
-it does nothing, and the framework retries it. `Fetch` returns `nil` and
-doesn't fail the reconcile. If a reconcile calls `Get` or `List` for a type
-before it first owns an object of the type, declare the type with `kube.Owns`,
-so that the program creates the CRD when it starts.
+missing, `Get` and `List` of the type stop the reconcile, and the framework
+retries it. `Fetch` returns `nil` and doesn't fail the reconcile. If a
+reconcile calls `Get` or `List` for a type before it first owns an object of
+the type, declare the type with `kube.Owns`, so that the program creates the
+CRD when it starts.
 
 When a program that reconciles the type starts, it installs its own CRD over
 the created one. Until then, the CRD keeps the schema that it was created with,
@@ -594,7 +599,10 @@ Every replica serves the handler at `-serve-addr`, `:8081` by default,
 whether or not it holds a lease, and `/readyz` reports ready once it
 serves. As in a webhook, the handler can read with `Get`, `List`, and
 `Fetch` through the request's context, and calling `Own`, `Apply`, or
-`Delete` cancels the context with an error. To change the cluster in
+`Delete` cancels the context with an error. A `Get` or `List` that can't
+read stops the handler, so call them only in the handler's goroutine. The
+server then answers 503 Service Unavailable and closes the connection, or
+aborts the response if the handler has started it. To change the cluster in
 response to a request, trigger a reconcile and make the change there. A
 program can have one `kube.Serve`, so serve every path from one handler,
 such as an `http.ServeMux`.
@@ -1247,8 +1255,12 @@ in a cluster has its own.
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
 
-The fakes differ from a cluster in two ways:
+The fakes differ from a cluster in three ways:
 
+- A `Get` or `List` that can't read, such as a `Get` of a local type, panics
+  as in a cluster, but nothing recovers the panic, so the test fails with it.
+  To test a failed read, recover the panic. Its value is an error that wraps
+  `rec.Err()`.
 - `Trigger` doesn't check that a controller in the program reconciles the
   object's kind, so it returns true for any object in the world unless the
   world holds `kube.FakeStandby{}`.

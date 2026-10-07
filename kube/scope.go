@@ -109,6 +109,33 @@ func (s *scope) fail(err error) {
 	}
 }
 
+// failRead fails the scope with err and panics with the scope's first
+// error, so that a Get or List that can't read doesn't return.
+func (s *scope) failRead(err error) {
+	s.fail(err)
+	panic(readFailed{s.err})
+}
+
+// readFailed is the value that Get and List panic with when they can't
+// read. The framework recovers it where it calls Reconcile, Finalize,
+// Validate, Default, and Serve handlers.
+type readFailed struct{ err error }
+
+func (f readFailed) Error() string {
+	return fmt.Sprintf("kube.Get or kube.List can't read: %v; it stops its caller with this panic, which the framework recovers only in the goroutine that runs Reconcile, Finalize, Validate, Default, or a kube.Serve handler", f.err)
+}
+
+func (f readFailed) Unwrap() error { return f.err }
+
+// readError returns the error of a Get or List that panicked with p
+// because it couldn't read, or nil if p is another value.
+func readError(p any) error {
+	if f, ok := p.(readFailed); ok {
+		return f.err
+	}
+	return nil
+}
+
 func (s *scope) self() ref { return ref{c: s.c, key: s.key} }
 
 func (s *scope) track(d dep, sel selector) {
@@ -128,25 +155,25 @@ func typeFor[T any, P Resource[T]](s *scope) *typeInfo {
 	return ti
 }
 
-func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved, bool) {
-	if ti == nil || s.err != nil {
-		return nil, resolved{}, false
+// sourceFor returns the cache that Get and List read ti from, and panics
+// with readFailed if it can't or if the scope has already failed. A nil ti
+// means that typeFor failed the scope.
+func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved) {
+	if s.err != nil {
+		panic(readFailed{s.err})
 	}
 	if ti.local {
-		s.fail(Permanent(fmt.Errorf("kube: %v is local, so read it with Fetch", ti)))
-		return nil, resolved{}, false
+		s.failRead(Permanent(fmt.Errorf("kube: %v is local, so read it with Fetch", ti)))
 	}
 	res, err := s.w.resolve(ctx, ti)
 	if err != nil {
-		s.fail(err)
-		return nil, resolved{}, false
+		s.failRead(err)
 	}
 	src, err := s.w.source(ctx, ti)
 	if err != nil {
-		s.fail(fmt.Errorf("reading %v: %w", ti, err))
-		return nil, resolved{}, false
+		s.failRead(fmt.Errorf("reading %v: %w", ti, err))
 	}
-	return src, res, true
+	return src, res
 }
 
 // Get returns the object of type T with the given namespace and name, or
@@ -156,12 +183,20 @@ func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved, 
 // a watch, starting it the first time a reconcile reads type T. The returned
 // object is a copy that you can change. When the object later changes, the
 // reconcile that read it runs again.
+//
+// When Get can't read, for example because the program may not list T, it
+// doesn't return. It stops the reconcile with the error, and the framework
+// retries the reconcile. A Get after another call in the reconcile failed
+// stops it the same way. In a webhook, the error rejects the request, and
+// in a kube.Serve handler, the server answers 503 Service Unavailable. So
+// nil always means that the object doesn't exist.
+//
+// Get stops its caller with a panic that the framework recovers, so call it
+// only in the goroutine that runs Reconcile, Finalize, Validate, Default,
+// or the handler. In another goroutine, the panic crashes the program.
 func Get[T any, P Resource[T]](ctx context.Context, namespace, name string) *T {
 	s := scopeFrom(ctx, "Get")
-	src, res, ok := s.sourceFor(ctx, typeFor[T, P](s))
-	if !ok {
-		return nil
-	}
+	src, res := s.sourceFor(ctx, typeFor[T, P](s))
 	if !res.namespaced {
 		namespace = ""
 	}
@@ -198,8 +233,10 @@ func MatchingSelector(selector string) ListOption {
 }
 
 // List returns the objects of type T, sorted by namespace and name. Like
-// Get, it reads from a cache, returns copies, and runs the reconcile again
-// when the set of matching objects or any of them changes.
+// Get, it reads from a cache, returns copies, runs the reconcile again
+// when the set of matching objects or any of them changes, and stops its
+// caller when it can't read. An invalid selector stops the caller too, with
+// a permanent error.
 func List[T any, P Resource[T]](ctx context.Context, opts ...ListOption) []*T {
 	s := scopeFrom(ctx, "List")
 	var lo listOptions
@@ -210,15 +247,11 @@ func List[T any, P Resource[T]](ctx context.Context, opts ...ListOption) []*T {
 	if lo.selector != "" {
 		parsed, err := parseSelector(lo.selector)
 		if err != nil {
-			s.fail(Permanent(err))
-			return nil
+			s.failRead(Permanent(err))
 		}
 		sel = append(sel, parsed...)
 	}
-	src, res, ok := s.sourceFor(ctx, typeFor[T, P](s))
-	if !ok {
-		return nil
-	}
+	src, res := s.sourceFor(ctx, typeFor[T, P](s))
 	ns := lo.namespace
 	if !res.namespaced {
 		ns = ""

@@ -604,6 +604,12 @@ waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
 
+`Get` and `List` use the same recovery. One that can't read panics with an
+unexported value, which the framework turns back into the read's error
+without reporting a panic. So `nil` from `Get` means only that the object
+doesn't exist, and callers have no error to check. A webhook rejects the
+request with the error, and `kube.Serve` answers 503.
+
 An intent that fails, for example because an admission policy rejects an
 apply, fails the reconcile in the same way. The framework stops carrying out
 the intents, writes the status that `Reconcile` set, and retries with backoff.

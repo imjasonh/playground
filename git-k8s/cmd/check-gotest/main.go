@@ -351,8 +351,7 @@ func (g *gotest) take(ctx context.Context, b kube.Key, head string, pod kube.Key
 			free--
 		}
 	}
-	// After a failed read, ctx is canceled and kube creates no Pod, so take
-	// mustn't count one.
+	// Once ctx is canceled, kube creates no Pod, so take mustn't count one.
 	if free <= 0 || ctx.Err() != nil {
 		return false
 	}

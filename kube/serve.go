@@ -1,9 +1,11 @@
 package kube
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -23,9 +25,11 @@ import (
 // A request's context lets h call Get, List, Fetch, ReviewToken,
 // RequestToken, and Trigger. As in a webhook, h can only read. Calling Own,
 // Apply, Delete, or RequeueAfter cancels the request's context, with the
-// error as its cause. So does a Get or List that can't read, for example
-// because the program may not list a type. To change the cluster in response
-// to a request, call Trigger, and make the change in the reconcile.
+// error as its cause. A Get or List that can't read, for example because the
+// program may not list a type, stops h, and the server answers 503 Service
+// Unavailable and closes the connection. If h has already started its
+// response, the server aborts the response instead. To change the cluster in
+// response to a request, call Trigger, and make the change in the reconcile.
 //
 // When the program stops, the server stops accepting connections, and
 // requests in progress have 10 seconds to finish before their contexts are
@@ -122,8 +126,73 @@ func (s *server) run(ctx context.Context) error {
 func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, sc := newWebhookScope(r.Context(), s.m)
 	defer sc.cancel(nil)
-	s.h.ServeHTTP(w, r.WithContext(ctx))
-	if sc.err != nil {
-		s.m.log.Warn("a call in a kube.Serve handler failed", "method", r.Method, "path", r.URL.Path, "err", sc.err)
-	}
+	rw := &responseWriter{ResponseWriter: w}
+	defer func() {
+		p := recover()
+		err := readError(p)
+		if p != nil && err == nil {
+			panic(p)
+		}
+		if err == nil {
+			err = sc.err
+		}
+		if err == nil {
+			return
+		}
+		s.m.log.Warn("a call in a kube.Serve handler failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		switch {
+		case p == nil:
+		case rw.started:
+			// The client has received part of a response, so it can't get
+			// a 503 anymore.
+			panic(http.ErrAbortHandler)
+		default:
+			clear(w.Header())
+			w.Header().Set("Connection", "close")
+			http.Error(w, "the server couldn't read from the cluster; try again", http.StatusServiceUnavailable)
+		}
+	}()
+	s.h.ServeHTTP(rw, r.WithContext(ctx))
 }
+
+// responseWriter records whether a handler has started its response. Its
+// Flush, Hijack, ReadFrom, and Unwrap methods give the handler what the
+// server's ResponseWriter supports, through type assertions or
+// http.ResponseController.
+type responseWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (w *responseWriter) WriteHeader(code int) {
+	// An informational response, other than 101 Switching Protocols, comes
+	// before the response.
+	if code >= 200 || code == http.StatusSwitchingProtocols {
+		w.started = true
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *responseWriter) Write(b []byte) (int, error) {
+	w.started = true
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *responseWriter) ReadFrom(r io.Reader) (int64, error) {
+	w.started = true
+	return io.Copy(w.ResponseWriter, r)
+}
+
+func (w *responseWriter) Flush() { _ = w.FlushError() }
+
+func (w *responseWriter) FlushError() error {
+	w.started = true
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.started = true
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

@@ -159,7 +159,7 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 	for {
 		b := kube.Get[resultsBranch](ctx, k.Namespace, k.Name)
 		if b == nil && ctx.Err() != nil {
-			// A Get that can't read cancels the request's context.
+			// The client went away, or the program is stopping.
 			unavailable(w, "can't read the branch now")
 			return
 		}
