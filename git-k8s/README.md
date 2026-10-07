@@ -3241,11 +3241,19 @@ default, those flags name Chainguard's `git` and `go` images by digest, so
 moving a tag, on the registry or on a mirror between it and your cluster,
 can't change what those Pods run. With `-go-cache`, `check-gotest`'s Pods
 fetch the source with `check-gotest`'s own image instead, which `generate`
-names by digest. A container whose image is named by digest has the pull
-policy `IfNotPresent`. One whose image is named by tag has `Always`, so its
-node pulls the image each time the container starts, and every node runs
-the image that the tag names then. To run newer images, upgrade the
-programs, or set the flags.
+names by digest.
+
+`-git-image`, `-go-image`, `-agent-image`, and `-result-image` are kube
+image flags. If you set one to an image by tag, `generate` resolves the tag
+with your registry credentials, and writes the image by digest into the
+Deployment's arguments. A program that starts with a tag in one of those
+flags resolves it before it starts its controllers, or exits if it can't.
+So the Pods name every image by digest. Each container has the pull policy
+`IfNotPresent`, and a node pulls each image once. Pass digests where you
+can, so that nothing has to resolve a tag. To run newer images, upgrade the
+programs, or set the flags. For how kube resolves tags, see
+[Name images by digest](../kube/README.md#name-images-by-digest) in kube's
+README.
 
 The core program keeps the mirror's copies on a PersistentVolumeClaim that
 `generate` adds for its `kube.Volume`, at

@@ -1,5 +1,6 @@
 // Package image builds container images that add one static executable to
-// a base image, and pushes them, with go-containerregistry.
+// a base image, pushes them, and resolves image tags to digests, with
+// go-containerregistry.
 package image
 
 import (
