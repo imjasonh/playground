@@ -65,18 +65,18 @@ func (s *Server) Remote(repo string) git.Remote {
 }
 
 // RemoteFor returns the remote of the repository on the server with the
-// GitRepository's name. In tests, set checks.Check.Remote to it in place of
+// TrackedRepository's name. In tests, set checks.Check.Remote to it in place of
 // the mirror.
 func (s *Server) RemoteFor(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
 	return s.Remote(repo.Name), nil
 }
 
-// Repository returns a GitRepository in namespace default for repo on the
+// Repository returns a TrackedRepository in namespace default for repo on the
 // server, with rules, and the Secret that holds its credentials.
-func (s *Server) Repository(repo string, rules ...gitk8s.BranchRule) (*gitk8s.GitRepository, *k8s.Secret) {
-	r := &gitk8s.GitRepository{
+func (s *Server) Repository(repo string, rules ...gitk8s.BranchRule) (*gitk8s.TrackedRepository, *k8s.Secret) {
+	r := &gitk8s.TrackedRepository{
 		Object: kube.Meta(repo, nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: s.Remote(repo).URL, PollInterval: "30s", Branches: rules},
+		Spec:   gitk8s.TrackedRepositorySpec{URL: s.Remote(repo).URL, PollInterval: "30s", Branches: rules},
 	}
 	r.Namespace = "default"
 	secret := &k8s.Secret{

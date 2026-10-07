@@ -40,7 +40,7 @@ func TestListsWithOctoSTS(t *testing.T) {
 		t.Fatal(err)
 	}
 	heads := map[string]string{}
-	for _, b := range kube.Owned[gitk8s.GitBranch](rec) {
+	for _, b := range kube.Owned[gitk8s.TrackedBranch](rec) {
 		heads[b.Spec.Branch] = b.Spec.Head
 	}
 	if len(heads) != 2 || heads["main"] != main || heads["c/add"] != add {
@@ -73,9 +73,9 @@ func TestLandsWithOctoSTS(t *testing.T) {
 		}
 	}
 	sync()
-	b := &gitk8s.GitBranch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
+	b := &gitk8s.TrackedBranch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main, Merge: policy}
+	b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main, Merge: policy}
 	b.Status.Checks = map[string]gitk8s.CheckResult{
 		"base":  {Commit: head, Scope: gitk8s.ScopeParent, ParentCommit: main, State: gitk8s.Passed},
 		"gofmt": {Commit: head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed},

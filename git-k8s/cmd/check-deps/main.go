@@ -30,10 +30,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is this check's view of a GitBranch.
+// Branch is this check's view of a TrackedBranch.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"deps,omitempty"`
@@ -41,14 +41,14 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-// testResult is the gotest check's entry in a GitBranch's status. Reading
+// testResult is the gotest check's entry in a TrackedBranch's status. Reading
 // it through its own type runs the check again when the entry changes.
 type testResult struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
 	Status      struct {
 		Checks struct {
 			Gotest *gitk8s.CheckResult `json:"gotest,omitempty"`

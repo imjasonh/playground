@@ -15,15 +15,15 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// merger reconciles GitBranch objects. It's the only controller that
-// reconciles the full GitBranch type, so its manager installs the
+// merger reconciles TrackedBranch objects. It's the only controller that
+// reconciles the full TrackedBranch type, so its manager installs the
 // CustomResourceDefinition.
 type merger struct {
 	mirror *mirror.Mirror
 	ident  git.Identity
 }
 
-func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
+func (m *merger) Reconcile(ctx context.Context, b *gitk8s.TrackedBranch) error {
 	results := b.Status.Checks
 	// The results controller manages status.checks. Leaving it out of this
 	// controller's status write keeps server-side apply from making this
@@ -162,10 +162,10 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 // of repo, or squashes or rebases the branch onto it when the merge policy
 // says to. The repository controller then pushes the parent to the
 // external repository.
-func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
+func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.TrackedBranch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
 	if repo == nil {
-		return fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, spec.Repository)
+		return fmt.Errorf("TrackedRepository %s/%s doesn't exist", b.Namespace, spec.Repository)
 	}
 	local, err := m.mirror.Open(ctx, repo)
 	if err != nil {
@@ -219,7 +219,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 	if deleted {
 		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
 	}
-	kube.Trigger[gitk8s.GitRepository](ctx, b.Namespace, spec.Repository)
+	kube.Trigger[gitk8s.TrackedRepository](ctx, b.Namespace, spec.Repository)
 	return nil
 }
 
@@ -230,10 +230,10 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 // stopped or failed between two updates. If the branch moved or was deleted
 // since the repository controller listed it, the parent still moves to the
 // listed head, and the branch stays as it is. The repository controller
-// pushes the deletion to the external repository, and the GitRepository's
+// pushes the deletion to the external repository, and the TrackedRepository's
 // ExternalSynced condition reports the external repository's reason if it
 // refuses, as for a protected branch.
-func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) (bool, error) {
+func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.TrackedBranch) (bool, error) {
 	spec := &b.Spec
 	parent := git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead}
 	if !spec.Merge.DeleteLandedBranches {
@@ -254,7 +254,7 @@ func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBra
 
 // report sets the Landed condition, which is True only in
 // MergeStateLanded, and State to the condition's reason.
-func report(b *gitk8s.GitBranch, state gitk8s.MergeState, format string, args ...any) {
+func report(b *gitk8s.TrackedBranch, state gitk8s.MergeState, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if len(msg) > 1024 {
 		msg = msg[:1021] + "..."

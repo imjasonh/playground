@@ -32,7 +32,7 @@ func TestCacheRemovesUnusedRepositories(t *testing.T) {
 	}
 	dir := t.TempDir()
 	repository := func(namespace, name string) *gitk8s.Repository {
-		r := &gitk8s.Repository{Object: kube.Meta(name, nil), Spec: gitk8s.GitRepositorySpec{URL: "https://git.example.com/" + name + ".git"}}
+		r := &gitk8s.Repository{Object: kube.Meta(name, nil), Spec: gitk8s.TrackedRepositorySpec{URL: "https://git.example.com/" + name + ".git"}}
 		r.Namespace = namespace
 		return r
 	}

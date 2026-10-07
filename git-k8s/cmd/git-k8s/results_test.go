@@ -27,7 +27,7 @@ var branchKey = kube.Key{Namespace: "default", Name: "app-c-x"}
 func listedBranch() *resultsBranch {
 	b := &resultsBranch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace, b.Generation = "default", 3
-	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "c/x", Head: "h1", Parent: "main", ParentHead: "p1", Merge: policy}
+	b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "c/x", Head: "h1", Parent: "main", ParentHead: "p1", Merge: policy}
 	return b
 }
 
@@ -83,7 +83,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 	b.Status.Checks = map[string]gitk8s.CheckResult{"base": base}
 	gofmtUser := checkToken("gofmt").User
 	main := &resultsBranch{Object: kube.Meta("app-main", nil)}
-	main.Namespace, main.Spec = "default", gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: "p1"}
+	main.Namespace, main.Spec = "default", gitk8s.TrackedBranchSpec{Repository: "app", Branch: "main", Head: "p1"}
 	world := []any{
 		b, main, checkToken("base"), checkToken("gofmt"), checkToken("risk"), checkToken("lint"),
 		kube.FakeToken{Token: "api", User: gofmtUser},
@@ -233,7 +233,7 @@ func TestResultsEndpointOnStandby(t *testing.T) {
 // cancels the context and leaves the branch out of the world.
 func TestResultsEndpointCantRead(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
-	cancel(errors.New("reading GitBranches: forbidden"))
+	cancel(errors.New("reading TrackedBranches: forbidden"))
 	ctx, _ = kube.FakeRequest(ctx, checkToken("gofmt"), registered)
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
@@ -288,15 +288,15 @@ func TestResultsEndpointBranchGone(t *testing.T) {
 		code  int
 		msg   string
 	}{
-		{"deleted", nil, "/results/default/app-c-x/gofmt?generation=3", nil, http.StatusGone, "GitBranch default/app-c-x doesn't exist"},
+		{"deleted", nil, "/results/default/app-c-x/gofmt?generation=3", nil, http.StatusGone, "TrackedBranch default/app-c-x doesn't exist"},
 		{
 			"deleted after the cache's generation", []any{listedBranch()}, "/results/default/app-c-x/gofmt?generation=4",
 			func(context.Context, string, string) (*resultsBranch, error) { return nil, nil },
-			http.StatusGone, "GitBranch default/app-c-x doesn't exist",
+			http.StatusGone, "TrackedBranch default/app-c-x doesn't exist",
 		},
 		{
 			"deleted and created again", []any{recreated}, "/results/default/app-c-x/gofmt?generation=3", nil,
-			http.StatusConflict, "the check read generation 3 of GitBranch default/app-c-x, which is at generation 1, so it was deleted and created again",
+			http.StatusConflict, "the check read generation 3 of TrackedBranch default/app-c-x, which is at generation 1, so it was deleted and created again",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

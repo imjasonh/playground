@@ -26,7 +26,7 @@ func setup(t *testing.T, srv *gittest.Server, mainEdit, branchEdit string) (*Bra
 	w.Push("c/x")
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: parent,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "base", MayPush: true}}},
 	}
@@ -34,7 +34,7 @@ func setup(t *testing.T, srv *gittest.Server, mainEdit, branchEdit string) (*Bra
 }
 
 // reconcile runs the check with world's objects. A Signer in world makes
-// the GitRepository name its key.
+// the TrackedRepository name its key.
 func reconcile(t *testing.T, srv *gittest.Server, b *Branch, world ...any) error {
 	t.Helper()
 	repo, _ := srv.Repository("app")

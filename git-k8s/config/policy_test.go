@@ -178,7 +178,7 @@ func compile(t *testing.T, m manifest) *policy {
 // request is an admission request for a Pod, or for the resource that
 // resource names, or for one of its subresources. params is the ConfigMap
 // that the binding names, or nil if there's none. canApprove reports
-// whether user has the approve verb on the GitBranch named name.
+// whether user has the approve verb on the TrackedBranch named name.
 type request struct {
 	user        string
 	operation   string
@@ -216,7 +216,7 @@ func (p *policy) admit(t *testing.T, r request) string {
 	}
 	var authz authorizer
 	if r.canApprove {
-		authz.allow = "/git-k8s.imjasonh.com/gitbranches/" + r.namespace + "/" + r.name + "/approve"
+		authz.allow = "/git-k8s.imjasonh.com/trackedbranches/" + r.namespace + "/" + r.name + "/approve"
 	}
 	vars := map[string]any{}
 	activation := func() map[string]any {
@@ -865,9 +865,9 @@ func checksConfigMap(kv ...string) map[string]any {
 	return cm
 }
 
-// gitBranch returns a GitBranch for the branch main, after edit changes its
-// metadata and spec.
-func gitBranch(edit func(meta, spec map[string]any)) map[string]any {
+// trackedBranch returns a TrackedBranch for the branch main, after edit
+// changes its metadata and spec.
+func trackedBranch(edit func(meta, spec map[string]any)) map[string]any {
 	meta := map[string]any{"name": "app-main"}
 	spec := map[string]any{"branch": "main", "head": "0000000"}
 	if edit != nil {
@@ -884,9 +884,9 @@ func TestCheckResults(t *testing.T) {
 		core     = "system:serviceaccount:git-k8s:git-k8s"
 		deployer = "system:serviceaccount:checks:deployer"
 	)
-	old := gitBranch(nil)
+	old := trackedBranch(nil)
 	withStatus := func(status map[string]any) map[string]any {
-		b := gitBranch(nil)
+		b := trackedBranch(nil)
 		b["status"] = status
 		return b
 	}
@@ -897,13 +897,13 @@ func TestCheckResults(t *testing.T) {
 	merged := withStatus(map[string]any{"state": "Merged"})
 	diverged := withStatus(map[string]any{"diverged": map[string]any{"commit": "0000000", "ref": "refs/git-k8s/downstream/heads/main"}})
 	update := func(user string, params, object map[string]any) request {
-		return request{user: user, operation: "UPDATE", resource: "gitbranches", subresource: "status", namespace: "repos", params: params, object: object, oldObject: old}
+		return request{user: user, operation: "UPDATE", resource: "trackedbranches", subresource: "status", namespace: "repos", params: params, object: object, oldObject: old}
 	}
 	sends := func(check string) string {
-		return "the " + check + " check can't write GitBranch status; it sends its results to the core program"
+		return "the " + check + " check can't write TrackedBranch status; it sends its results to the core program"
 	}
 	emptied := func(user string) string {
-		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
+		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a TrackedBranch's status"
 	}
 	none := checksConfigMap()
 	for _, tt := range []struct {
@@ -1001,22 +1001,22 @@ func TestBranches(t *testing.T) {
 		deps           = "system:serviceaccount:git-k8s-deps:git-k8s-deps"
 		otherDeps      = "system:serviceaccount:deps:git-k8s-deps"
 		approve        = "git-k8s controllers can't approve branches"
-		depsCantChange = "git-k8s-deps can't change GitBranch objects"
+		depsCantChange = "git-k8s-deps can't change TrackedBranch objects"
 	)
-	old := gitBranch(nil)
-	labeled := gitBranch(func(meta, _ map[string]any) { meta["labels"] = map[string]any{"e2e": "changed"} })
-	moved := gitBranch(func(_, spec map[string]any) { spec["head"] = "1111111" })
-	// A finalizer that nobody removes keeps a deleted branch's GitBranch,
+	old := trackedBranch(nil)
+	labeled := trackedBranch(func(meta, _ map[string]any) { meta["labels"] = map[string]any{"e2e": "changed"} })
+	moved := trackedBranch(func(_, spec map[string]any) { spec["head"] = "1111111" })
+	// A finalizer that nobody removes keeps a deleted branch's TrackedBranch,
 	// and its place in the merge queue, forever. An owner reference to an
 	// object that doesn't exist makes garbage collection delete the
-	// GitBranch, with its approval and its place in the queue.
-	finalized := gitBranch(func(meta, _ map[string]any) { meta["finalizers"] = []any{"example.com/hold"} })
-	reowned := gitBranch(func(meta, _ map[string]any) {
+	// TrackedBranch, with its approval and its place in the queue.
+	finalized := trackedBranch(func(meta, _ map[string]any) { meta["finalizers"] = []any{"example.com/hold"} })
+	reowned := trackedBranch(func(meta, _ map[string]any) {
 		meta["ownerReferences"] = []any{map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "name": "gone", "uid": "6d9e4f0c-0000-4000-8000-000000000000"}}
 	})
 	// The core program's server-side applies remove only the fields that
 	// its entries in managedFields list, such as status.queued.
-	managed := gitBranch(func(meta, _ map[string]any) {
+	managed := trackedBranch(func(meta, _ map[string]any) {
 		meta["managedFields"] = []any{map[string]any{
 			"manager": "repositories", "operation": "Apply", "apiVersion": "git-k8s.imjasonh.com/v1alpha1",
 			"fieldsType": "FieldsV1", "fieldsV1": map[string]any{"f:spec": map[string]any{"f:head": map[string]any{}}},
@@ -1026,26 +1026,26 @@ func TestBranches(t *testing.T) {
 		}}
 	})
 	approvedBy := func(user string) map[string]any {
-		return gitBranch(func(meta, _ map[string]any) {
+		return trackedBranch(func(meta, _ map[string]any) {
 			meta["annotations"] = map[string]any{"git-k8s.imjasonh.com/approve": "0000000", "git-k8s.imjasonh.com/approved-by": user}
 		})
 	}
-	ungated := gitBranch(func(_, spec map[string]any) { spec["merge"] = map[string]any{"when": "true"} })
+	ungated := trackedBranch(func(_, spec map[string]any) { spec["merge"] = map[string]any{"when": "true"} })
 	cantCreate := func(user string) string {
-		return user + " can't create GitBranch objects; only the core program creates them"
+		return user + " can't create TrackedBranch objects; only the core program creates them"
 	}
 	cantChangeSpec := func(user string) string {
-		return user + " can't change a GitBranch's spec; the core program copies it from the GitRepository"
+		return user + " can't change a TrackedBranch's spec; the core program copies it from the TrackedRepository"
 	}
 	update := func(user string, params, object map[string]any) request {
-		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", params: params, object: object, oldObject: old}
+		return request{user: user, operation: "UPDATE", resource: "trackedbranches", namespace: "repos", params: params, object: object, oldObject: old}
 	}
 	updateManaged := func(user string, params, object map[string]any) request {
-		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", params: params, object: object, oldObject: managed}
+		return request{user: user, operation: "UPDATE", resource: "trackedbranches", namespace: "repos", params: params, object: object, oldObject: managed}
 	}
-	cantChange := func(check string) string { return "the " + check + " check can't change GitBranch objects" }
+	cantChange := func(check string) string { return "the " + check + " check can't change TrackedBranch objects" }
 	emptied := func(user string) string {
-		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
+		return user + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change TrackedBranch objects"
 	}
 	none := checksConfigMap()
 	for _, tt := range []struct {
@@ -1069,15 +1069,15 @@ func TestBranches(t *testing.T) {
 		r:    update(gotest, none, reowned),
 		want: cantChange("gotest"),
 	}, {
-		name: "a check updates a GitBranch without changing it",
+		name: "a check updates a TrackedBranch without changing it",
 		r:    updateManaged(gotest, none, managed),
 	}, {
 		name: "a check resets a branch's managedFields",
 		r:    updateManaged(gotest, none, old),
 		want: cantChange("gotest"),
 	}, {
-		name: "a check creates a GitBranch",
-		r:    request{user: gotest, operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		name: "a check creates a TrackedBranch",
+		r:    request{user: gotest, operation: "CREATE", resource: "trackedbranches", namespace: "repos", params: none, object: old},
 		want: cantChange("gotest"),
 	}, {
 		name: "a check approves a branch",
@@ -1085,7 +1085,7 @@ func TestBranches(t *testing.T) {
 		want: approve,
 	}, {
 		name: "a check writes its result",
-		r:    request{user: gotest, operation: "UPDATE", resource: "gitbranches", subresource: "status", namespace: "repos", params: none, object: labeled, oldObject: old},
+		r:    request{user: gotest, operation: "UPDATE", resource: "trackedbranches", subresource: "status", namespace: "repos", params: none, object: labeled, oldObject: old},
 	}, {
 		name: "a check whose entry names another check adds a label",
 		r:    update(gotest, checksConfigMap("check-gotest.check-gotest", "race"), labeled),
@@ -1127,7 +1127,7 @@ func TestBranches(t *testing.T) {
 		r:    update(core, none, approvedBy(core)),
 		want: approve,
 	}, {
-		name: "git-k8s-deps updates a GitBranch without changing it",
+		name: "git-k8s-deps updates a TrackedBranch without changing it",
 		r:    update(deps, none, old),
 	}, {
 		name: "git-k8s-deps adds a label",
@@ -1150,8 +1150,8 @@ func TestBranches(t *testing.T) {
 		r:    updateManaged(deps, none, old),
 		want: depsCantChange,
 	}, {
-		name: "git-k8s-deps creates a GitBranch",
-		r:    request{user: deps, operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		name: "git-k8s-deps creates a TrackedBranch",
+		r:    request{user: deps, operation: "CREATE", resource: "trackedbranches", namespace: "repos", params: none, object: old},
 		want: depsCantChange,
 	}, {
 		name: "git-k8s-deps approves a branch",
@@ -1182,8 +1182,8 @@ func TestBranches(t *testing.T) {
 		r:    update("alice@example.com", none, moved),
 		want: cantChangeSpec("alice@example.com"),
 	}, {
-		name: "a person creates a GitBranch",
-		r:    request{user: "alice@example.com", operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: ungated},
+		name: "a person creates a TrackedBranch",
+		r:    request{user: "alice@example.com", operation: "CREATE", resource: "trackedbranches", namespace: "repos", params: none, object: ungated},
 		want: cantCreate("alice@example.com"),
 	}, {
 		name: "a person whose username splits like the core program's changes a branch's merge policy",
@@ -1194,15 +1194,15 @@ func TestBranches(t *testing.T) {
 		r:    update("system:serviceaccount:checks:deployer", none, ungated),
 		want: cantChangeSpec("system:serviceaccount:checks:deployer"),
 	}, {
-		name: "another service account creates a GitBranch",
-		r:    request{user: "system:serviceaccount:checks:deployer", operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		name: "another service account creates a TrackedBranch",
+		r:    request{user: "system:serviceaccount:checks:deployer", operation: "CREATE", resource: "trackedbranches", namespace: "repos", params: none, object: old},
 		want: cantCreate("system:serviceaccount:checks:deployer"),
 	}, {
 		name: "the core program changes a branch's spec",
 		r:    update(core, none, moved),
 	}, {
-		name: "the core program creates a GitBranch",
-		r:    request{user: core, operation: "CREATE", resource: "gitbranches", namespace: "repos", params: none, object: old},
+		name: "the core program creates a TrackedBranch",
+		r:    request{user: core, operation: "CREATE", resource: "trackedbranches", namespace: "repos", params: none, object: old},
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := p.admit(t, tt.r); got != tt.want {
@@ -1221,10 +1221,10 @@ func TestApprovals(t *testing.T) {
 		fullSHA = "set git-k8s.imjasonh.com/approve to a commit's full SHA, in lowercase hexadecimal"
 	)
 	sha256 := strings.Repeat("0123456789abcdef", 4)
-	// approved returns a GitBranch with the approve and approved-by
+	// approved returns a TrackedBranch with the approve and approved-by
 	// annotations that aren't "", and the label e2e if label isn't "".
 	approved := func(approval, approver, label string) map[string]any {
-		return gitBranch(func(meta, _ map[string]any) {
+		return trackedBranch(func(meta, _ map[string]any) {
 			annotations := map[string]any{}
 			if approval != "" {
 				annotations["git-k8s.imjasonh.com/approve"] = approval
@@ -1240,7 +1240,7 @@ func TestApprovals(t *testing.T) {
 	}
 	unapproved := approved("", "", "")
 	update := func(user string, old, object map[string]any) request {
-		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", name: "app-main", canApprove: true, object: object, oldObject: old}
+		return request{user: user, operation: "UPDATE", resource: "trackedbranches", namespace: "repos", name: "app-main", canApprove: true, object: object, oldObject: old}
 	}
 	for _, tt := range []struct {
 		name string
@@ -1269,8 +1269,8 @@ func TestApprovals(t *testing.T) {
 		r:    update(alice, approved(sha, alice, ""), approved(sha[:12], alice, "")),
 		want: fullSHA,
 	}, {
-		name: "a person creates a GitBranch with a prefix approved",
-		r:    request{user: alice, operation: "CREATE", resource: "gitbranches", namespace: "repos", name: "app-main", canApprove: true, object: approved(sha[:7], alice, "")},
+		name: "a person creates a TrackedBranch with a prefix approved",
+		r:    request{user: alice, operation: "CREATE", resource: "trackedbranches", namespace: "repos", name: "app-main", canApprove: true, object: approved(sha[:7], alice, "")},
 		want: fullSHA,
 	}, {
 		name: "a person removes an approval",
@@ -1283,8 +1283,8 @@ func TestApprovals(t *testing.T) {
 		r:    update(bob, approved(sha, alice, ""), approved(sha, bob, "")),
 	}, {
 		name: "a person without the approve verb approves a commit",
-		r:    request{user: alice, operation: "UPDATE", resource: "gitbranches", namespace: "repos", name: "app-main", object: approved(sha, alice, ""), oldObject: unapproved},
-		want: "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on gitbranches, " +
+		r:    request{user: alice, operation: "UPDATE", resource: "trackedbranches", namespace: "repos", name: "app-main", object: approved(sha, alice, ""), oldObject: unapproved},
+		want: "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on trackedbranches, " +
 			"which alice@example.com doesn't have for repos/app-main",
 	}} {
 		t.Run(tt.name, func(t *testing.T) {

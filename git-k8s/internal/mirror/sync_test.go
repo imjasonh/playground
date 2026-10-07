@@ -22,7 +22,7 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// world is a mirror that keeps a copy of one GitRepository, default/app.
+// world is a mirror that keeps a copy of one TrackedRepository, default/app.
 type world struct {
 	t *testing.T
 	m *Mirror
@@ -37,10 +37,10 @@ type world struct {
 	remotes int
 
 	// srv runs the mirror's handler, which finds served as the
-	// GitRepository.
+	// TrackedRepository.
 	srv    *httptest.Server
 	mu     sync.Mutex
-	served *gitk8s.GitRepository
+	served *gitk8s.TrackedRepository
 }
 
 // newWorld returns a world whose external repository is on a git server
@@ -57,7 +57,7 @@ func newWorld(t *testing.T) *world {
 }
 
 func newWorldAt(t *testing.T, work *gittest.Work, remote git.Remote, pushURL string) *world {
-	repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: remote.URL}}
+	repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{URL: remote.URL}}
 	repo.Namespace, repo.UID = "default", "uid-1"
 	return &world{
 		t:       t,
@@ -186,7 +186,7 @@ func (w *world) serve() string {
 	w.t.Helper()
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.served = &gitk8s.GitRepository{Object: kube.Meta(w.repo.Name, nil), Spec: gitk8s.GitRepositorySpec{URL: w.repo.Spec.URL}}
+	w.served = &gitk8s.TrackedRepository{Object: kube.Meta(w.repo.Name, nil), Spec: gitk8s.TrackedRepositorySpec{URL: w.repo.Spec.URL}}
 	w.served.Namespace, w.served.UID = w.repo.Namespace, w.repo.UID
 	if w.srv == nil {
 		w.m.Prefixes = append(w.m.Prefixes, Prefix{Namespace: "test", ServiceAccount: "pusher"})
@@ -1460,7 +1460,7 @@ func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 	}
 }
 
-// TestSyncRefusesLocalURLs points GitRepositories in another namespace at
+// TestSyncRefusesLocalURLs points TrackedRepositories in another namespace at
 // default/app's copy on the mirror's disk. Fetching from the copy would let
 // that namespace read default/app, and pushing to it would skip the push
 // rules.
@@ -1471,7 +1471,7 @@ func TestSyncRefusesLocalURLs(t *testing.T) {
 	w.sync(SyncOptions{})
 	before := w.copyRefs("refs/")
 	for _, url := range []string{w.copyDir(), "file://" + w.copyDir()} {
-		thief := &gitk8s.Repository{Object: kube.Meta("thief", nil), Spec: gitk8s.GitRepositorySpec{URL: url}}
+		thief := &gitk8s.Repository{Object: kube.Meta("thief", nil), Spec: gitk8s.TrackedRepositorySpec{URL: url}}
 		thief.Namespace, thief.UID = "other", "uid-"+url
 		_, err := w.m.Sync(t.Context(), thief, SyncOptions{Remote: func() (git.Remote, error) { return git.Remote{URL: url}, nil }})
 		if !errors.Is(err, ErrNotSynced) || !strings.Contains(err.Error(), "not allowed") {
@@ -1534,7 +1534,7 @@ func TestSyncReplacesCopyOfDeletedRepository(t *testing.T) {
 	w.sync(SyncOptions{})
 	w.pushCopy("unsynced", w.commit(base, "unsynced"))
 
-	// The GitRepository is deleted without its finalizer, and another with
+	// The TrackedRepository is deleted without its finalizer, and another with
 	// the same name replaces it.
 	old := *w.repo
 	w.repo.UID = "uid-2"
@@ -1542,10 +1542,10 @@ func TestSyncReplacesCopyOfDeletedRepository(t *testing.T) {
 	wantHeads(t, "Report.Heads", rep.Heads, map[string]string{"main": base})
 	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"main": base})
 	if _, err := w.m.Open(t.Context(), &old); !errors.Is(err, ErrNotSynced) {
-		t.Errorf("Open of the deleted GitRepository = %v; want ErrNotSynced", err)
+		t.Errorf("Open of the deleted TrackedRepository = %v; want ErrNotSynced", err)
 	}
 
-	// Deleting the old GitRepository's copy leaves the new one's.
+	// Deleting the old TrackedRepository's copy leaves the new one's.
 	if err := w.m.Delete(t.Context(), &old); err != nil {
 		t.Fatal(err)
 	}

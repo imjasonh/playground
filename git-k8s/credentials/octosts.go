@@ -19,15 +19,15 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// fakeGitHub is a flag and not a GitRepository field so that only whoever
+// fakeGitHub is a flag and not a TrackedRepository field so that only whoever
 // installs a program, and no tenant, can send its service account tokens to
 // another server.
 var fakeGitHub = flag.String("fake-github", "", "base URL of a fake GitHub and Octo STS, for tests")
 
 // The audience of the service account tokens that a program sends to Octo
-// STS is audiencePrefix and the GitRepository's namespace. A program's
-// tokens are otherwise the same for every GitRepository, so a trust policy
-// that requires one namespace's audience keeps GitRepositories in other
+// STS is audiencePrefix and the TrackedRepository's namespace. A program's
+// tokens are otherwise the same for every TrackedRepository, so a trust policy
+// that requires one namespace's audience keeps TrackedRepositories in other
 // namespaces from using its identity.
 const audiencePrefix = "octo-sts.dev/"
 

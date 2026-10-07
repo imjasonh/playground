@@ -25,10 +25,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is this check's view of a GitBranch.
+// Branch is this check's view of a TrackedBranch.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"base,omitempty"`
@@ -36,14 +36,14 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-// queued is a GitBranch's place in its parent's merge queue, which the merge
-// controller writes.
+// queued is a TrackedBranch's place in its parent's merge queue, which the
+// merge controller writes.
 type queued struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
 	Status      struct {
 		Queued *gitk8s.Queued `json:"queued,omitempty"`
 	} `json:"status,omitzero"`
@@ -58,7 +58,7 @@ func first(ctx context.Context, meta *kube.ObjectMeta, head string) bool {
 
 // stale runs the check again when a branch that it passed as behind its
 // parent reaches the front of the queue.
-func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.TrackedBranchSpec, previous *gitk8s.CheckResult) bool {
 	return previous.Outputs["behind"] == "true" && first(ctx, meta, spec.Head)
 }
 

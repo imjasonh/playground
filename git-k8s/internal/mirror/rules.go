@@ -107,7 +107,7 @@ func listed(repo *gitk8s.Repository, check string, mayPush bool) bool {
 // lets only a check's own write its result, but a check can name its Pod
 // before kube creates the Pod, so isCheckPod checks the Pod itself.
 func podChecks(ctx context.Context, repo *gitk8s.Repository, pod string) []string {
-	branches := kube.List[gitk8s.GitBranch](ctx, kube.InNamespace(repo.Namespace),
+	branches := kube.List[gitk8s.TrackedBranch](ctx, kube.InNamespace(repo.Namespace),
 		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: repo.Name}))
 	var checks []string
 	for _, b := range branches {

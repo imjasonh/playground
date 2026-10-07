@@ -1,7 +1,7 @@
 // Command git-k8s-deps keeps the Go modules that repositories require up to
 // date, with a branch for each update.
 //
-// The controller reconciles the GitBranch of each branch that a
+// The controller reconciles the TrackedBranch of each branch that a
 // repository's rules name as the parent of branches under the controller's
 // prefix, deps/ by default. Every -interval, it reads the parent's go.mod
 // files and asks module proxies for newer releases of the modules that they
@@ -62,11 +62,11 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is the controller's view of a GitBranch. It has no status, so the
+// Branch is the controller's view of a TrackedBranch. It has no status, so the
 // controller writes none.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
 }
 
 // configMap is the controller's view of a ConfigMap, which it reads and

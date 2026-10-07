@@ -32,14 +32,14 @@ import (
 
 const head = "0123456789abcdef0123456789abcdef01234567"
 
-func branch() (*Branch, *gitk8s.GitRepository) {
+func branch() (*Branch, *gitk8s.TrackedRepository) {
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: "fedcba9876543210fedcba9876543210fedcba98",
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "gotest"}}},
 	}
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{
+	repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{
 		URL: "https://git.example.com/app.git", SecretRef: &gitk8s.SecretRef{Name: "app-creds"},
 	}}
 	repo.Namespace = "default"
@@ -55,7 +55,7 @@ func named(b *Branch, attempt int) {
 }
 
 // reconcileWith runs a new check with world holding the Pods that exist.
-func reconcileWith(t *testing.T, b *Branch, repo *gitk8s.GitRepository, pods ...*Pod) *kube.Recorder {
+func reconcileWith(t *testing.T, b *Branch, repo *gitk8s.TrackedRepository, pods ...*Pod) *kube.Recorder {
 	t.Helper()
 	world := []any{repo}
 	for _, p := range pods {
@@ -76,7 +76,7 @@ func reconcileIn(t *testing.T, r kube.Reconciler[Branch], b *Branch, world ...an
 
 // started returns the Pod that the check declares once its result names
 // the Pod.
-func started(t *testing.T, b *Branch, repo *gitk8s.GitRepository) *Pod {
+func started(t *testing.T, b *Branch, repo *gitk8s.TrackedRepository) *Pod {
 	t.Helper()
 	named(b, 1)
 	rec := reconcileWith(t, b, repo)
@@ -432,7 +432,7 @@ func inQueue(b *Branch, position int32) *queued {
 // startedIn reconciles each branch with r, in a world that holds repo, the
 // branches, pods, and extra, and returns the branches that declared a Pod
 // that isn't in pods.
-func startedIn(t *testing.T, r kube.Reconciler[Branch], repo *gitk8s.GitRepository, branches []*Branch, pods []*Pod, extra ...any) []string {
+func startedIn(t *testing.T, r kube.Reconciler[Branch], repo *gitk8s.TrackedRepository, branches []*Branch, pods []*Pod, extra ...any) []string {
 	t.Helper()
 	var started []string
 	for _, b := range branches {
@@ -839,7 +839,7 @@ func TestIgnoresBranchesThatNoLongerWait(t *testing.T) {
 		{"has no parent head", func(b *Branch) { b.Spec.ParentHead = "" }},
 		{"no longer runs the check", func(b *Branch) { b.Spec.Merge = nil }},
 		{"is being deleted", func(b *Branch) { b.DeletionTimestamp = &early }},
-		{"belongs to a GitRepository that's gone", func(b *Branch) { b.Spec.Repository = "gone" }},
+		{"belongs to a TrackedRepository that's gone", func(b *Branch) { b.Spec.Repository = "gone" }},
 	} {
 		stale := waitingBranch("app-c-a", early)
 		c.change(stale)

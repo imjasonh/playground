@@ -1,4 +1,4 @@
-// Package mirror keeps a copy of each GitRepository and serves the copies
+// Package mirror keeps a copy of each TrackedRepository and serves the copies
 // over git's smart HTTP protocol.
 //
 // The copy is the repository's source of truth. Checks and controllers fetch
@@ -45,7 +45,7 @@ const maxPushSize = 256 << 20
 // external repository yet, which the mirror doesn't serve.
 var ErrNotSynced = errors.New("the mirror hasn't fetched the repository from its external repository yet")
 
-// Mirror keeps a bare repository for each GitRepository, at
+// Mirror keeps a bare repository for each TrackedRepository, at
 // Dir/NAMESPACE/NAME.git. Its methods are safe for concurrent use. Only one
 // process at a time may use Dir.
 type Mirror struct {
@@ -93,7 +93,7 @@ type entry struct {
 	syncing sync.Mutex
 	dir     string
 	// repo is the copy, or nil if it isn't loaded. uid and url are the
-	// GitRepository's UID and the URL that the copy last synced with.
+	// TrackedRepository's UID and the URL that the copy last synced with.
 	repo     *git.Repo
 	uid, url string
 	seeded   atomic.Bool
@@ -155,7 +155,7 @@ func (m *Mirror) Open(ctx context.Context, repo *gitk8s.Repository) (*Repository
 
 // load reads repo's copy from disk into e if e doesn't hold it. With create,
 // it creates the copy if there's none, or replaces one that belongs to
-// another GitRepository with the same name, and adopts a new URL by
+// another TrackedRepository with the same name, and adopts a new URL by
 // forgetting what it knew of the old external repository. It reports
 // whether the copy needs a fetch because it's new or its URL changed.
 func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, create bool) (bool, error) {
@@ -204,7 +204,7 @@ func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, cr
 	return true, nil
 }
 
-// read sets e to the copy on disk if it belongs to the GitRepository with
+// read sets e to the copy on disk if it belongs to the TrackedRepository with
 // uid, and clears e otherwise. It returns the UID that the copy on disk
 // belongs to, or "" if there's no complete copy.
 func (m *Mirror) read(ctx context.Context, e *entry, uid string) (string, error) {
@@ -338,7 +338,7 @@ func (e *entry) markSeeded(ctx context.Context) error {
 }
 
 // Delete deletes repo's copy, unless the copy belongs to another
-// GitRepository with the same name.
+// TrackedRepository with the same name.
 func (m *Mirror) Delete(ctx context.Context, repo *gitk8s.Repository) error {
 	e := m.entry(repo)
 	defer m.holdMaintenance(e)()

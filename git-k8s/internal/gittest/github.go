@@ -86,10 +86,10 @@ func Serve(t testing.TB, h http.Handler) string {
 	return hs.URL + path
 }
 
-// Repository returns a GitRepository in namespace default for acme/repo,
+// Repository returns a TrackedRepository in namespace default for acme/repo,
 // with rules, that gets its credentials from the Octo STS identities in
 // sts.
-func (g *GitHub) Repository(repo string, sts gitk8s.OctoSTS, rules ...gitk8s.BranchRule) *gitk8s.GitRepository {
+func (g *GitHub) Repository(repo string, sts gitk8s.OctoSTS, rules ...gitk8s.BranchRule) *gitk8s.TrackedRepository {
 	r, _ := g.Server.Repository(repo, rules...)
 	r.Spec.SecretRef = nil
 	r.Spec.OctoSTS = &sts

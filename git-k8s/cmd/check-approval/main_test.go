@@ -23,12 +23,12 @@ func approve(t *testing.T, annotation, approver string, prior *gitk8s.CheckResul
 	if approver != "" {
 		b.Annotations[gitk8s.ApprovedByAnnotation] = approver
 	}
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: "fedcba9876543210fedcba9876543210fedcba98",
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "approval"}}},
 	}
 	b.Status.Checks.Result = prior
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil)}
+	repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil)}
 	repo.Namespace = "default"
 	ctx, _ := kube.Fake(t.Context(), b, repo)
 	if err := checks.NewReconciler[Branch](check, &checks.Config{}).Reconcile(ctx, b); err != nil {
@@ -109,7 +109,7 @@ func TestApprovalFollowsTheChange(t *testing.T) {
 
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: merge, Parent: "main", ParentHead: parent,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "approval"}}},
 	}

@@ -27,7 +27,7 @@ func TestTestPodsPolicy(t *testing.T) {
 		port     int32
 		want     bool
 	}
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil)}
+	repo := &gitk8s.TrackedRepository{Object: kube.Meta("app", nil)}
 	repo.Namespace = "default"
 	check := func(conns ...conn) {
 		t.Helper()

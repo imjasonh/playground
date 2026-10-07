@@ -7,7 +7,7 @@ describes how git-k8s works today.
 
 ## Support GitHub Enterprise Server
 
-A `GitRepository` gets [tokens from Octo STS](README.md#github-repositories)
+A `TrackedRepository` gets [tokens from Octo STS](README.md#github-repositories)
 only for a repository on github.com, because the public Octo STS service
 issues tokens only for github.com. A repository on GitHub Enterprise Server
 needs a Secret.
@@ -15,9 +15,9 @@ needs a Secret.
 GitHub Enterprise Server needs its own Octo STS deployment, with a GitHub App
 on that server. The programs then need the deployment's token exchange URL
 and audience, and the server's web and REST API URLs. These can't be
-`GitRepository` fields, because a tenant could then choose where the programs
-send their service account tokens, and for which audience. They belong in
-program flags, like `-fake-github`, or in a cluster-scoped object that only
+`TrackedRepository` fields, because a tenant could then choose where the
+programs send their service account tokens, and for which audience. They belong
+in program flags, like `-fake-github`, or in a cluster-scoped object that only
 administrators can change.
 
 ## Keep the mirror up while it restarts

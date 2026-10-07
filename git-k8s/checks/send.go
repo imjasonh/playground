@@ -29,12 +29,12 @@ const defaultResultsURL = "http://git-k8s.git-k8s.svc/results"
 // program can't write the result.
 const sendAttempts = 10
 
-// branch is the part of a GitBranch that a check controller reconciles. It
+// branch is the part of a TrackedBranch that a check controller reconciles. It
 // declares no status, so kube writes none, and generate doesn't let the
 // check write status.
 type branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
 }
 
 type reconcileFunc func(context.Context, *branch) error
@@ -66,8 +66,8 @@ func runAndSend[V any, P interface {
 }
 
 // errGone is what send returns when the core program answers that the
-// GitBranch is gone.
-var errGone = errors.New("the GitBranch is gone")
+// TrackedBranch is gone.
+var errGone = errors.New("the TrackedBranch is gone")
 
 // sender sends a check's results to the core program's results endpoint,
 // with a token for the check's service account.
@@ -84,11 +84,11 @@ type sender struct {
 	expires time.Time
 }
 
-// send sets res as the check's result on the GitBranch that meta describes.
+// send sets res as the check's result on the TrackedBranch that meta describes.
 // The core program answers 503 and closes the connection while it can't
 // write the result, as when its Pod starts or stops, so send tries again on
 // a new connection, which can reach the Pod that replaces a stopping one.
-// If the GitBranch is gone, send returns errGone.
+// If the TrackedBranch is gone, send returns errGone.
 func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.CheckResult) error {
 	body, err := json.Marshal(res)
 	if err != nil {
@@ -110,7 +110,7 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 			return nil
 		case err == nil && code == http.StatusGone:
 			// The core program answers 410 only once the API server shows
-			// that the GitBranch is gone. A 404 can come from a wrong
+			// that the TrackedBranch is gone. A 404 can come from a wrong
 			// -results-url, so it fails the reconcile like other answers.
 			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
 			return errGone

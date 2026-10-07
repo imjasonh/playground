@@ -10,7 +10,7 @@
 # check. The core program applies this ConfigMap without data, so it keeps
 # the entries that you add.
 # While the ConfigMap is missing, those policies deny every write to
-# GitBranch objects, including people's.
+# TrackedBranch objects, including people's.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -19,7 +19,7 @@ metadata:
 ---
 # Only the core program writes check results. Checks send their results to
 # its results endpoint, which writes each one to the entry of the check that
-# sent it, and checks have no RBAC rule to write GitBranch status. This
+# sent it, and checks have no RBAC rule to write TrackedBranch status. This
 # policy is the backstop if a role grants one: it rejects every status write
 # by a check's service account, and every change to status.checks or
 # status.diverged by a service account other than the core program's.
@@ -43,7 +43,7 @@ metadata:
     # in this file has its policyVersion, in cmd/git-k8s/policies.go. Raise
     # policyVersion and every policy's annotation together when the core
     # program needs a change to the policies.
-    git-k8s.imjasonh.com/policy-version: "4"
+    git-k8s.imjasonh.com/policy-version: "5"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -54,7 +54,7 @@ spec:
       - apiGroups: ["git-k8s.imjasonh.com"]
         apiVersions: ["*"]
         operations: ["UPDATE"]
-        resources: ["gitbranches/status"]
+        resources: ["trackedbranches/status"]
   matchConditions:
     - name: service-accounts
       expression: request.userInfo.username.startsWith("system:serviceaccount:")
@@ -84,8 +84,8 @@ spec:
   validations:
     - expression: '!variables.checkAccount'
       messageExpression: >-
-        variables.check != "" ? "the " + variables.check + " check can't write GitBranch status; it sends its results to the core program" :
-        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
+        variables.check != "" ? "the " + variables.check + " check can't write TrackedBranch status; it sends its results to the core program" :
+        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a TrackedBranch's status"
     - expression: variables.checkAccount || variables.core || variables.new == variables.old
       messageExpression: >-
         request.userInfo.username + " isn't the core program's service account, so it can't write status.checks"
@@ -109,39 +109,39 @@ spec:
     parameterNotFoundAction: Deny
   validationActions: [Deny]
 ---
-# The approve and approved-by annotations on a GitBranch record a person's
+# The approve and approved-by annotations on a TrackedBranch record a person's
 # approval, so no git-k8s service account can set or change them, even one
 # that holds the approve verb. This policy also stops checks from changing a
-# GitBranch's spec, labels, annotations, finalizers, owner references, or
+# TrackedBranch's spec, labels, annotations, finalizers, owner references, or
 # managedFields. A finalizer that nobody removes keeps a deleted branch in its
 # parent's merge queue, and an owner reference to a missing object makes
-# garbage collection delete the GitBranch with its approval. Without its
+# garbage collection delete the TrackedBranch with its approval. Without its
 # entries in managedFields, the core program's server-side applies leave
 # behind the fields that they stop setting, such as a branch's place in the
 # merge queue. RBAC lets a check that owns objects, such as check-gotest,
-# patch GitBranch objects, because generate can't tell whether an owned
+# patch TrackedBranch objects, because generate can't tell whether an owned
 # object needs a finalizer on its owner. kube adds that finalizer with a
 # cleanup annotation, which this policy denies, so a check can own only
 # namespaced objects in the branch's namespace. A check whose entry in the
 # git-k8s-checks ConfigMap is empty can't send results, but it keeps its RBAC,
 # so this policy still treats it as a check.
 #
-# git-k8s-deps reconciles each parent's GitBranch and owns update Pods, so
-# RBAC lets it patch GitBranch objects too, and the policy stops it the same
+# git-k8s-deps reconciles each parent's TrackedBranch and owns update Pods, so
+# RBAC lets it patch TrackedBranch objects too, and the policy stops it the same
 # way.
 #
-# The core program copies each GitBranch's spec, including the parent's
-# merge policy, from the GitRepository, so this policy lets nobody else
-# create a GitBranch or change its spec, people included. Otherwise anyone
-# who can patch a GitBranch, such as an approver, could change its merge
+# The core program copies each TrackedBranch's spec, including the parent's
+# merge policy, from the TrackedRepository, so this policy lets nobody else
+# create a TrackedBranch or change its spec, people included. Otherwise anyone
+# who can patch a TrackedBranch, such as an approver, could change its merge
 # policy and land it without its checks. People can still label and
-# annotate GitBranch objects.
+# annotate TrackedBranch objects.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-branches
   annotations:
-    git-k8s.imjasonh.com/policy-version: "4"
+    git-k8s.imjasonh.com/policy-version: "5"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -152,7 +152,7 @@ spec:
       - apiGroups: ["git-k8s.imjasonh.com"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["gitbranches"]
+        resources: ["trackedbranches"]
   variables:
     # Only a service account's username names a namespace and a service
     # account, so a person named a:b:git-k8s:git-k8s isn't the core program.
@@ -214,15 +214,15 @@ spec:
       message: git-k8s controllers can't approve branches
     - expression: '!variables.checkAccount || variables.unchanged'
       messageExpression: >-
-        variables.check != "" ? "the " + variables.check + " check can't change GitBranch objects" :
-        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
+        variables.check != "" ? "the " + variables.check + " check can't change TrackedBranch objects" :
+        request.userInfo.username + ", a check whose entry in the git-k8s-checks ConfigMap is empty, can't change TrackedBranch objects"
     - expression: '!variables.deps || variables.unchanged'
-      message: git-k8s-deps can't change GitBranch objects
+      message: git-k8s-deps can't change TrackedBranch objects
     - expression: variables.core || oldObject != null && object.spec == oldObject.spec
       messageExpression: >-
         oldObject == null ?
-        request.userInfo.username + " can't create GitBranch objects; only the core program creates them" :
-        request.userInfo.username + " can't change a GitBranch's spec; the core program copies it from the GitRepository"
+        request.userInfo.username + " can't create TrackedBranch objects; only the core program creates them" :
+        request.userInfo.username + " can't change a TrackedBranch's spec; the core program copies it from the TrackedRepository"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -257,7 +257,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-pods
   annotations:
-    git-k8s.imjasonh.com/policy-version: "4"
+    git-k8s.imjasonh.com/policy-version: "5"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -426,7 +426,7 @@ spec:
   policyName: git-k8s-check-pods
   validationActions: [Deny]
 ---
-# Only a user with the approve verb on a GitBranch can set, change, or
+# Only a user with the approve verb on a TrackedBranch can set, change, or
 # remove its approve or approved-by annotation, and generate grants that
 # verb to no program. A new approve value must be a commit's full SHA,
 # because anyone who can push can make a commit whose SHA starts with a
@@ -441,7 +441,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-approvals
   annotations:
-    git-k8s.imjasonh.com/policy-version: "4"
+    git-k8s.imjasonh.com/policy-version: "5"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -449,7 +449,7 @@ spec:
       - apiGroups: ["git-k8s.imjasonh.com"]
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["gitbranches"]
+        resources: ["trackedbranches"]
   variables:
     - name: annotations
       expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'
@@ -474,10 +474,10 @@ spec:
   validations:
     - expression: >-
         (variables.approval == variables.oldApproval && variables.approver == variables.oldApprover) ||
-        authorizer.group("git-k8s.imjasonh.com").resource("gitbranches").namespace(request.namespace).name(request.name).check("approve").allowed()
+        authorizer.group("git-k8s.imjasonh.com").resource("trackedbranches").namespace(request.namespace).name(request.name).check("approve").allowed()
       reason: Forbidden
       messageExpression: >-
-        "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on gitbranches, which " +
+        "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on trackedbranches, which " +
         request.userInfo.username + " doesn't have for " + request.namespace + "/" + request.name
     - expression: >-
         variables.approval == variables.oldApproval || variables.approval == "" ||

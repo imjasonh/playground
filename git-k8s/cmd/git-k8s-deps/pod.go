@@ -60,7 +60,7 @@ const (
 )
 
 // allowProtocol is GIT_ALLOW_PROTOCOL for git in update Pods: the
-// transports that a GitRepository's URL can name. It leaves out remote
+// transports that a TrackedRepository's URL can name. It leaves out remote
 // helpers, which git runs as programs, and file, which covers local paths.
 const allowProtocol = "http:https"
 
@@ -181,7 +181,7 @@ func updateLines(updates []update) string {
 }
 
 // pod declares the Pod that makes updates on the parent's head. Its name
-// covers the parent's GitBranch, the attempt, and the Pod's spec.
+// covers the parent's TrackedBranch, the attempt, and the Pod's spec.
 func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt int, updates []update) *agent.Pod {
 	yes, no := true, false
 	user := int64(65532)

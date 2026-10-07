@@ -37,7 +37,7 @@ func TestPod(t *testing.T) {
 	}
 	b := &Branch{Object: kube.Meta("app-main", nil)}
 	b.Spec.Branch = "main"
-	repo := &gitk8s.Repository{Spec: gitk8s.GitRepositorySpec{URL: "https://git.example.com/app.git", SecretRef: &gitk8s.SecretRef{Name: "app-creds"}}}
+	repo := &gitk8s.Repository{Spec: gitk8s.TrackedRepositorySpec{URL: "https://git.example.com/app.git", SecretRef: &gitk8s.SecretRef{Name: "app-creds"}}}
 	ups := []update{{module: greet, version: "v1.1.0", from: map[string]string{"tools": "v1.0.0", ".": "v1.0.0"}}}
 	p := u.pod(b, repo, "0123abcd", 0, ups)
 	var got strings.Builder

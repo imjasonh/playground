@@ -17,7 +17,7 @@ import (
 func TestKey(t *testing.T) {
 	signer := gittest.NewSigner(t, "git-k8s@example.com")
 	repository := func() *gitk8s.Repository {
-		r := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: "http://git.example.com/app.git"}}
+		r := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.TrackedRepositorySpec{URL: "http://git.example.com/app.git"}}
 		r.Namespace = "default"
 		return r
 	}

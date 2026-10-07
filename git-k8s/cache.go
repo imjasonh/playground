@@ -22,7 +22,7 @@ var DefaultCacheDir = filepath.Join(os.TempDir(), "git-k8s")
 
 const (
 	// cacheIdle is how long a local repository goes unopened before Open
-	// removes it, such as the repository of a GitRepository that no longer
+	// removes it, such as the repository of a TrackedRepository that no longer
 	// exists.
 	cacheIdle = 7 * 24 * time.Hour
 	// cacheTidy is how often Open looks for idle repositories, and how
@@ -30,7 +30,7 @@ const (
 	cacheTidy = time.Hour
 )
 
-// Cache keeps a local bare repository for each GitRepository, so that
+// Cache keeps a local bare repository for each TrackedRepository, so that
 // controllers fetch only objects they don't have yet. Open maintains the
 // repositories, and removes the ones that go unopened for a week.
 type Cache struct {
@@ -39,7 +39,7 @@ type Cache struct {
 	// must be writable. Open leaves alone the directories in Dir whose
 	// names start with a dot, where another Cache can keep its own.
 	Dir string
-	// Remote reaches a GitRepository's repository, so that Open can tell
+	// Remote reaches a TrackedRepository's repository, so that Open can tell
 	// which refs a local repository still needs. If Remote is nil, Open
 	// keeps every ref.
 	Remote func(context.Context, *Repository) (git.Remote, error)

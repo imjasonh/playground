@@ -1,20 +1,20 @@
 // Command git-k8s runs the core git-k8s controllers, the mirror, and the
 // results endpoint.
 //
-// The mirror keeps a copy of each GitRepository on a persistent volume and
+// The mirror keeps a copy of each TrackedRepository on a persistent volume and
 // serves it over git's smart HTTP protocol. Checks fetch from it and push
 // fixes to it, and it refuses the pushes that their merge policies don't
 // allow.
 //
 // The repositories controller syncs each copy with the external repository
-// and owns a GitBranch for every branch that the repository's rules select,
+// and owns a TrackedBranch for every branch that the repository's rules select,
 // and a NetworkPolicy that limits what check-gotest's test Pods in the
 // repository's namespace can reach. The merge controller reads the check
-// results on each GitBranch, and when the parent's merge policy passes,
+// results on each TrackedBranch, and when the parent's merge policy passes,
 // lands the branch on the parent in the copy. It fast-forwards the parent
 // to the branch, or squashes or rebases the branch onto the parent.
 //
-// The check-runs controller copies the check results on each GitBranch to
+// The check-runs controller copies the check results on each TrackedBranch to
 // GitHub as check runs, for repositories that name an Octo STS identity for
 // them.
 //
@@ -100,8 +100,8 @@ func main() {
 			}
 			return config.Policy
 		}),
-		kube.For[gitk8s.GitRepository](repos, kube.Named("repositories")),
-		kube.For[gitk8s.GitBranch](merge, kube.Named("merge")),
+		kube.For[gitk8s.TrackedRepository](repos, kube.Named("repositories")),
+		kube.For[gitk8s.TrackedBranch](merge, kube.Named("merge")),
 		kube.For[resultsBranch](rs, kube.Named("results")),
 		kube.For[branchResults](&checkRuns{}, kube.Named("check-runs")),
 		kube.Serve(serve(m, rs)),

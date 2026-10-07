@@ -190,7 +190,7 @@ func position(b *branchRec) int {
 
 // branchStats is one planned branch's way from its first push to its
 // landing. The phases are in seconds and add up to Total: Pickup until the
-// GitBranch exists, Checks until the branch first joins the queue, Queue
+// TrackedBranch exists, Checks until the branch first joins the queue, Queue
 // behind other branches, Front at the front of the queue, and Out after the
 // branch left the queue until it joined again.
 type branchStats struct {
@@ -270,7 +270,7 @@ func (st *branchStats) walk(recs []record, end time.Time) {
 // frontCycle is the work that landed one branch after it reached the front
 // of the queue, in seconds: Handoff from the later of the last landing and
 // the branch joining the queue until the branch is first in it, Merge until
-// the base check pushed its merge of the parent, List until the GitBranch
+// the base check pushed its merge of the parent, List until the TrackedBranch
 // has the merge as its head, Checks until the gate passes for the head, and
 // Land until the branch landed. Cycle is the time since the repository's
 // last landing, and Busy says whether the branch was already queued then,
@@ -411,7 +411,7 @@ type errorSummary struct {
 type resultWait struct {
 	Check  string `json:"check"`
 	Branch string `json:"branch"`
-	// Reason is "gone" for a 404 for a GitBranch that was gone, which
+	// Reason is "gone" for a 404 for a TrackedBranch that was gone, which
 	// builds before the endpoint answered 410 sent only after the timeout,
 	// and "timeout" for 503s, on every try, for a result that the core
 	// program didn't write in time.
@@ -424,7 +424,7 @@ type resultWait struct {
 }
 
 // goneAnswer is a check's result that the results endpoint answered 410
-// for, because the GitBranch was gone. At is in seconds after the first
+// for, because the TrackedBranch was gone. At is in seconds after the first
 // push.
 type goneAnswer struct {
 	Check  string   `json:"check"`
@@ -443,7 +443,7 @@ type stall struct {
 
 // waitSummary describes the checks' reconciles that failed after the
 // results endpoint's whole timeout, and the results that it didn't take
-// because their GitBranches were gone.
+// because their TrackedBranches were gone.
 type waitSummary struct {
 	Waits     []resultWait   `json:"waits,omitempty"`
 	MaxAtOnce map[string]int `json:"maxAtOnce,omitempty"`
@@ -1431,15 +1431,15 @@ func logLevels(dir string, es *errorSummary) {
 const checkWorkers = 4
 
 // waitRE matches a check's warning that a reconcile failed after the results
-// endpoint's whole 10-second wait: a 404 for a GitBranch that was gone, from
-// builds before the endpoint answered 410, or 503s, on every try, for a
+// endpoint's whole 10-second wait: a 404 for a TrackedBranch that was gone,
+// from builds before the endpoint answered 410, or 503s, on every try, for a
 // result that the core program didn't write in time.
-var waitRE = regexp.MustCompile(`\btime=(\S+) .*\bkey=(\S+) duration=(\S+) err=".*(Not Found: GitBranch \S+ doesn't exist|the result wasn't written in time)`)
+var waitRE = regexp.MustCompile(`\btime=(\S+) .*\bkey=(\S+) duration=(\S+) err=".*(Not Found: TrackedBranch \S+ doesn't exist|the result wasn't written in time)`)
 
 // goneRE matches a check's note that the results endpoint answered 410
-// because the GitBranch was gone. The endpoint answers as soon as the API
-// server shows that the GitBranch is gone, and the reconcile ends.
-var goneRE = regexp.MustCompile(`didn't take a result"? .*\bbranch=(\S+) reason="GitBranch \S+ doesn't exist"`)
+// because the TrackedBranch was gone. The endpoint answers as soon as the API
+// server shows that the TrackedBranch is gone, and the reconcile ends.
+var goneRE = regexp.MustCompile(`didn't take a result"? .*\bbranch=(\S+) reason="TrackedBranch \S+ doesn't exist"`)
 
 // timeRE matches the time of a log line: the time that kubectl logs
 // --timestamps adds after the --prefix, the time attribute of slog's text
@@ -1465,8 +1465,8 @@ func logTime(line string) (time.Time, bool) {
 // resultWaits finds, from the logs that the run saved, the checks'
 // reconciles that failed after the results endpoint's whole timeout, the
 // times when they held every worker of a check, and the results that the
-// endpoint answered 410 for. landed holds when each GitBranch landed, and
-// names each planned branch's repository and branch, by the GitBranch's
+// endpoint answered 410 for. landed holds when each TrackedBranch landed, and
+// names each planned branch's repository and branch, by the TrackedBranch's
 // name.
 func resultWaits(dir string, start time.Time, landed map[string]time.Time, names map[string]string, cycles []*frontCycle) waitSummary {
 	ws := waitSummary{MaxAtOnce: map[string]int{}}

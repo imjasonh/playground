@@ -1,10 +1,14 @@
 package gitk8s
 
 import (
+	"cmp"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -49,7 +53,7 @@ func TestBranchObjectName(t *testing.T) {
 // The API server matches a CustomResourceDefinition's patterns with Go's
 // regexp package, so this is what it accepts.
 func TestURLPattern(t *testing.T) {
-	field, _ := reflect.TypeFor[GitRepositorySpec]().FieldByName("URL")
+	field, _ := reflect.TypeFor[TrackedRepositorySpec]().FieldByName("URL")
 	pattern := regexp.MustCompile(field.Tag.Get("pattern"))
 	for _, u := range []string{
 		"https://git.example.com/app.git",
@@ -274,7 +278,7 @@ func TestMergeStateEnum(t *testing.T) {
 			}
 		}
 	}
-	f, _ := reflect.TypeFor[GitBranchStatus]().FieldByName("State")
+	f, _ := reflect.TypeFor[TrackedBranchStatus]().FieldByName("State")
 	var enum []string
 	for opt := range strings.SplitSeq(f.Tag.Get("kube"), ",") {
 		if values, ok := strings.CutPrefix(opt, "enum="); ok {
@@ -289,7 +293,7 @@ func TestMergeStateEnum(t *testing.T) {
 }
 
 func TestChecksMapIsAtomic(t *testing.T) {
-	f, _ := reflect.TypeFor[GitBranchStatus]().FieldByName("Checks")
+	f, _ := reflect.TypeFor[TrackedBranchStatus]().FieldByName("Checks")
 	if got := f.Tag.Get("kube"); got != "mapType=atomic" {
 		t.Errorf("status.checks has kube tag %q; it must be an atomic map, so that the results controller owns every entry and can remove any of them", got)
 	}
@@ -307,5 +311,76 @@ func TestMergePolicyDefaults(t *testing.T) {
 	}
 	if c := p.Check("gofmt"); c == nil || !c.MayPush {
 		t.Errorf("Check(gofmt) = %+v", c)
+	}
+}
+
+// kinds are the kinds that git-k8s defines. Their names make up the names
+// of their CustomResourceDefinitions, which can't change once objects exist.
+// They differ from Flux's: its source-controller defines GitRepository, with
+// the plural gitrepositories and the short name gitrepo, and kubectl
+// resolves a name that two groups share to only one of them.
+var kinds = []struct {
+	typ                     reflect.Type
+	kind, plural, shortName string
+}{
+	{reflect.TypeFor[TrackedRepository](), "TrackedRepository", "trackedrepositories", "gkrepo"},
+	{reflect.TypeFor[TrackedBranch](), "TrackedBranch", "trackedbranches", "gkbranch"},
+}
+
+// tagOptions splits a kube struct tag into its options.
+func tagOptions(tag string) map[string]string {
+	opts := map[string]string{}
+	for opt := range strings.SplitSeq(tag, ",") {
+		name, value, _ := strings.Cut(opt, "=")
+		opts[name] = value
+	}
+	return opts
+}
+
+// TestKindNames checks each kind's names, and that every view type in the
+// module, and every example of one in its docs, names a kind with its
+// plural. kube derives a plural that a kind's tag doesn't give, and the kind
+// e2e test checks the names of the CustomResourceDefinitions.
+func TestKindNames(t *testing.T) {
+	plurals := map[string]string{}
+	for _, k := range kinds {
+		plurals[k.kind] = k.plural
+		f, _ := k.typ.FieldByName("Object")
+		tag := f.Tag.Get("kube")
+		opts := tagOptions(tag)
+		if cmp.Or(opts["kind"], k.typ.Name()) != k.kind || cmp.Or(opts["plural"], k.plural) != k.plural {
+			t.Errorf("%s has kube tag %q, want the kind %s with the plural %s", k.typ.Name(), tag, k.kind, k.plural)
+		}
+		if opts["group"]+"/"+opts["version"] != APIVersion || opts["shortName"] != k.shortName {
+			t.Errorf("%s has kube tag %q, want %s with the short name %s", k.typ.Name(), tag, APIVersion, k.shortName)
+		}
+	}
+	viewTag := regexp.MustCompile(`kube:"(apiVersion=` + regexp.QuoteMeta(Group) + `/[^"]*)"`)
+	views := 0
+	scan := func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if ext := filepath.Ext(path); ext != ".go" && ext != ".md" {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range viewTag.FindAllSubmatch(src, -1) {
+			views++
+			opts := tagOptions(string(m[1]))
+			if plural, ok := plurals[opts["kind"]]; !ok || opts["plural"] != plural || opts["apiVersion"] != APIVersion || opts["scope"] != "Namespaced" {
+				t.Errorf("%s: view tag %q doesn't name a kind at %s with its plural", path, m[1], APIVersion)
+			}
+		}
+		return nil
+	}
+	if err := filepath.WalkDir(".", scan); err != nil {
+		t.Fatal(err)
+	}
+	if views == 0 {
+		t.Error("found no view types")
 	}
 }

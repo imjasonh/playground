@@ -51,7 +51,7 @@ func setup(t *testing.T, srv *gittest.Server, mainFiles, branchFiles map[string]
 	w.Push("c/x")
 	b = &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: parent,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "base", MayPush: true}, {Name: "conflicts", MayPush: true}}},
 	}
@@ -81,7 +81,7 @@ func commitAs(w *gittest.Work, author string, files map[string]string) string {
 
 // diverge pushes a commit on from that changes files to the ref that holds
 // the external repository's head of branch. It returns the commit, and the
-// divergence of the GitBranch called name.
+// divergence of the TrackedBranch called name.
 func diverge(w *gittest.Work, name, branch, from string, files map[string]string) (string, *observed) {
 	w.Branch("external", from)
 	e := commit(w, "external edit", files)
@@ -2484,7 +2484,7 @@ func parent(t *testing.T, srv *gittest.Server, mainFiles, externalFiles map[stri
 	e, o = diverge(w, "app-main", "main", base, externalFiles)
 	b = &Branch{Object: kube.Meta("app-main", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: head}
+	b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "main", Head: head}
 	return b, w, e, o
 }
 
@@ -2522,7 +2522,7 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 
 	child := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "resolve/main"), nil)}
 	child.Namespace = "default"
-	child.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "resolve/main", Head: pushed, Parent: "main", ParentHead: head}
+	child.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "resolve/main", Head: pushed, Parent: "main", ParentHead: head}
 	if rec, err = reconcile(t, srv, b, rules, o, child); err != nil {
 		t.Fatal(err)
 	}
@@ -2760,7 +2760,7 @@ func TestHandlesARewoundParent(t *testing.T) {
 			w.Push("main")
 			b := &Branch{Object: kube.Meta("app-main", nil)}
 			b.Namespace = "default"
-			b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: head}
+			b.Spec = gitk8s.TrackedBranchSpec{Repository: "app", Branch: "main", Head: head}
 			o := &observed{Object: kube.Meta("app-main", nil)}
 			o.Namespace = "default"
 			o.Status.Diverged = &gitk8s.Divergence{Commit: e, Ref: downstream + "main"}

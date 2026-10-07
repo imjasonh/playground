@@ -1,12 +1,12 @@
 // Package checks runs check controllers.
 //
-// A check controller reads GitBranch objects through its own view type,
+// A check controller reads TrackedBranch objects through its own view type,
 // which declares the branch's spec and only the check's entry in
 // status.checks:
 //
 //	type Branch struct {
-//		kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-//		Spec        gitk8s.GitBranchSpec `json:"spec"`
+//		kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+//		Spec        gitk8s.TrackedBranchSpec `json:"spec"`
 //		Status      struct {
 //			Checks struct {
 //				Result *gitk8s.CheckResult `json:"gofmt,omitempty"`
@@ -14,11 +14,11 @@
 //		} `json:"status,omitzero"`
 //	}
 //
-//	func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+//	func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
 //		return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 //	}
 //
-// The controller reconciles a view of GitBranch without a status, so it
+// The controller reconciles a view of TrackedBranch without a status, so it
 // can't write status. It reads the check's last result through the check's
 // view, and sends each new result to the core program with a token for the
 // check's service account. The core program writes the result to the
@@ -48,10 +48,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// View is a check's view of a GitBranch. Parts returns the branch's
+// View is a check's view of a TrackedBranch. Parts returns the branch's
 // metadata, its spec, and the check's entry in its status.
 type View interface {
-	Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult)
+	Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult)
 }
 
 // Check is a check that runs on branches.
@@ -86,14 +86,14 @@ type Check struct {
 	// the branch, and the check runs on them before they land.
 	FilesOnly bool
 	// Always runs the check on every reconcile, instead of only when the
-	// heads change. Use it for checks that read more of the GitBranch
+	// heads change. Use it for checks that read more of the TrackedBranch
 	// object than its heads, such as an annotation.
 	Always bool
 	// Stale, when set, reports whether a final result for the branch's
 	// current heads needs the check to run again anyway, for a check whose
 	// result depends on more than the heads. It can read objects with
 	// kube.Get, and a change to one of them calls it again.
-	Stale func(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool
+	Stale func(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.TrackedBranchSpec, previous *gitk8s.CheckResult) bool
 	// Remote returns a repository's URL and credentials. A check that calls
 	// Input.Repo or returns a Fix sets it to mirror.Remote, which reaches
 	// the repository's copy on the mirror. A check that leaves it nil
@@ -220,7 +220,7 @@ func RemoveLeftoverSigningKeys() {
 	}
 }
 
-// For returns a controller that runs check on every GitBranch whose merge
+// For returns a controller that runs check on every TrackedBranch whose merge
 // policy lists it, and sends each new result to the core program. The
 // controller's name is check- followed by the check's name.
 func For[V any, P interface {
@@ -231,7 +231,7 @@ func For[V any, P interface {
 }
 
 // ForReconciler returns a controller like For's that runs r on the check's
-// view of each GitBranch instead of NewReconciler's reconciler, for a check
+// view of each TrackedBranch instead of NewReconciler's reconciler, for a check
 // that does more than run on the branches that its policy lists. r can call
 // NewReconciler's reconciler for those branches. The controller sends the
 // result that r sets in the view to the core program when it changes.
@@ -337,7 +337,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 
 	repo := kube.Get[gitk8s.Repository](ctx, meta.Namespace, spec.Repository)
 	if repo == nil {
-		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
+		return fmt.Errorf("TrackedRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir, Remote: r.check.Remote} })
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
@@ -397,7 +397,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 
 // current reports whether a final result holds for the branch's heads,
 // without reading the repository.
-func (r *reconciler[V, P]) current(cur *gitk8s.CheckResult, spec *gitk8s.GitBranchSpec) bool {
+func (r *reconciler[V, P]) current(cur *gitk8s.CheckResult, spec *gitk8s.TrackedBranchSpec) bool {
 	if cur.Commit != spec.Head {
 		return false
 	}
@@ -522,7 +522,7 @@ func fixed(res *gitk8s.CheckResult, v Verdict) *gitk8s.CheckResult {
 // Input is what a check sees of a branch.
 type Input struct {
 	Meta       *kube.ObjectMeta
-	Spec       *gitk8s.GitBranchSpec
+	Spec       *gitk8s.TrackedBranchSpec
 	Policy     gitk8s.CheckPolicy
 	Repository *gitk8s.Repository
 	// Previous is the check's last result, which can be for other commits.

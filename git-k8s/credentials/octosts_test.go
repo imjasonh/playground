@@ -36,7 +36,7 @@ func newGitHub(t *testing.T) (*gittest.GitHub, *gittest.Work, string) {
 	return gh, w, main
 }
 
-func remote(ctx context.Context, repo *gitk8s.GitRepository) (git.Remote, error) {
+func remote(ctx context.Context, repo *gitk8s.TrackedRepository) (git.Remote, error) {
 	return Remote(ctx, &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec})
 }
 
@@ -59,7 +59,7 @@ func TestOctoSTSRemote(t *testing.T) {
 		t.Errorf("listing with the GitHub token: heads = %v, err = %v", heads, err)
 	}
 
-	t.Log("The service account token's audience names the GitRepository's namespace.")
+	t.Log("The service account token's audience names the TrackedRepository's namespace.")
 	for aud, want := range map[string]bool{"octo-sts.dev/default": true, "octo-sts.dev/other": false, "octo-sts.dev": false} {
 		if tr, err := kube.ReviewToken(ctx, "fake-token-1", aud); err != nil || tr.Authenticated != want {
 			t.Errorf("review for audience %s = %+v, %v; want authenticated %v", aud, tr, err, want)
@@ -71,7 +71,7 @@ func TestOctoSTSRemote(t *testing.T) {
 		t.Fatal(err)
 	}
 	if tr, err := kube.ReviewToken(ctx, "fake-token-1", "octo-sts.dev/other"); err != nil || !tr.Authenticated {
-		t.Errorf("a GitRepository in namespace other asked for a token for another audience: %+v, %v", tr, err)
+		t.Errorf("a TrackedRepository in namespace other asked for a token for another audience: %+v, %v", tr, err)
 	}
 }
 
@@ -180,12 +180,12 @@ func (s *exchangeServer) requests() []string {
 }
 
 // serve points the -fake-github flag at s until the test ends, and returns
-// a GitRepository for acme/app on it.
-func serve(t *testing.T, s *exchangeServer) *gitk8s.GitRepository {
+// a TrackedRepository for acme/app on it.
+func serve(t *testing.T, s *exchangeServer) *gitk8s.TrackedRepository {
 	base := gittest.Serve(t, s)
-	repo := &gitk8s.GitRepository{
+	repo := &gitk8s.TrackedRepository{
 		Object: kube.Meta("app", nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: base + "/acme/app.git", OctoSTS: &gitk8s.OctoSTS{GitIdentity: "git"}},
+		Spec:   gitk8s.TrackedRepositorySpec{URL: base + "/acme/app.git", OctoSTS: &gitk8s.OctoSTS{GitIdentity: "git"}},
 	}
 	repo.Namespace = "default"
 	return repo
@@ -257,7 +257,7 @@ func TestMisconfiguredOctoSTSIsPermanent(t *testing.T) {
 	both.Spec.SecretRef = &gitk8s.SecretRef{Name: "app-creds"}
 	elsewhere := gh.Repository("app", gitk8s.OctoSTS{GitIdentity: "git"})
 	elsewhere.Spec.URL = "https://gitlab.com/acme/app.git"
-	for _, repo := range []*gitk8s.GitRepository{both, elsewhere} {
+	for _, repo := range []*gitk8s.TrackedRepository{both, elsewhere} {
 		ctx, _ := kube.Fake(t.Context(), repo)
 		if _, err := remote(ctx, repo); !kube.IsPermanent(err) {
 			t.Errorf("url %s, secretRef %v: err = %v, want a permanent error", repo.Spec.URL, repo.Spec.SecretRef, err)

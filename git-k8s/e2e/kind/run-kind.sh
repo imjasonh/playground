@@ -85,7 +85,7 @@ g() {
 diagnose() {
   echo "::group::Cluster state"
   k get nodes -o wide || true
-  k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
+  k -n "${NS}" get trackedrepositories,trackedbranches -o yaml || true
   k -n "${NS}" get pods,networkpolicies -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
@@ -400,7 +400,8 @@ fi
 # seconds, and a check that it rejects sends nothing more for a branch until
 # the branch changes. The policies ignore the entry for the core program.
 # Without that, it would make the core program the gofmt check, which can't
-# write GitBranch status or change GitBranch objects, so nothing would land.
+# write TrackedBranch status or change TrackedBranch objects, so nothing
+# would land.
 k -n git-k8s patch configmap git-k8s-checks --type=merge -p "data:
   check-base.check-base: base
   check-gofmt.check-gofmt: gofmt
@@ -421,14 +422,14 @@ echo "::group::Upgrading moves check results to the core program"
 k -n git-k8s scale deployment/git-k8s --replicas=0
 no_core_pods() { [[ -z "$(k -n git-k8s get pods -l app.kubernetes.io/name=git-k8s -o name)" ]]; }
 eventually 120 no_core_pods
-k patch crd gitbranches.git-k8s.imjasonh.com --type=json -p \
+k patch crd trackedbranches.git-k8s.imjasonh.com --type=json -p \
   '[{"op":"remove","path":"/spec/versions/0/schema/openAPIV3Schema/properties/status/properties/checks/x-kubernetes-map-type"}]'
 OLD=1111111111111111111111111111111111111111
 k create namespace git-k8s-upgrade
-# Only the core program creates GitBranch objects.
+# Only the core program creates TrackedBranch objects.
 k -n git-k8s-upgrade create --as=system:serviceaccount:git-k8s:git-k8s -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitBranch
+kind: TrackedBranch
 metadata:
   name: app-c-old
 spec:
@@ -444,7 +445,7 @@ EOF
 for check in gofmt risk; do
   k -n git-k8s-upgrade apply --server-side --subresource=status --field-manager="check-${check}" -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitBranch
+kind: TrackedBranch
 metadata:
   name: app-c-old
 status:
@@ -456,13 +457,13 @@ status:
 EOF
 done
 status_managers() {
-  k -n git-k8s-upgrade get gitbranch app-c-old \
+  k -n git-k8s-upgrade get trackedbranch app-c-old \
     -o jsonpath='{range .metadata.managedFields[?(@.subresource=="status")]}{.manager} {end}'
 }
 echo "Status managers before the upgrade: $(status_managers)"
 k -n git-k8s scale deployment/git-k8s --replicas=1
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
-old_field() { k -n git-k8s-upgrade get gitbranch app-c-old -o jsonpath="$1"; }
+old_field() { k -n git-k8s-upgrade get trackedbranch app-c-old -o jsonpath="$1"; }
 upgraded() {
   local managers
   managers=" $(status_managers) "
@@ -517,7 +518,7 @@ k -n "${NS}" create secret generic app-signing --type=kubernetes.io/ssh-auth \
   --from-file=ssh-privatekey="${WORKDIR}/git-k8s-key"
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: app
   namespace: ${NS}
@@ -548,34 +549,39 @@ spec:
     - match: deps/**
 EOF
 repository_ready() {
-  [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" == True ]]
+  [[ "$(k -n "${NS}" get trackedrepository app -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" == True ]]
 }
 eventually 120 repository_ready
 policies_installed() {
-  [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].status}')" == True ]]
+  [[ "$(k -n "${NS}" get trackedrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].status}')" == True ]]
 }
 eventually 60 policies_installed
 # A policy from another release makes the condition False until the core
 # program restarts, which applies the policies from its own release again.
 k annotate validatingadmissionpolicy git-k8s-check-results git-k8s.imjasonh.com/policy-version=1 --overwrite
 policies_outdated() {
-  [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].reason}')" == Outdated ]]
+  [[ "$(k -n "${NS}" get trackedrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].reason}')" == Outdated ]]
 }
 eventually 60 policies_outdated
-outdated="$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].message}')"
+outdated="$(k -n "${NS}" get trackedrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].message}')"
 echo "${outdated}"
 [[ "${outdated}" == *"rollout restart deployment/git-k8s"* ]]
 k -n git-k8s rollout restart deployment/git-k8s
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 eventually 120 policies_installed
-k -n "${NS}" get gitrepositories,gitbranches
+# The short names reach both kinds, and the group's only
+# CustomResourceDefinitions are theirs.
+k get gkrepo,gkbranch -A
+crds="$(k get crds -o jsonpath='{range .items[?(@.spec.group=="git-k8s.imjasonh.com")]}{.metadata.name}{"\n"}{end}' | sort | xargs)"
+echo "CustomResourceDefinitions in git-k8s.imjasonh.com: ${crds}"
+[[ "${crds}" == "trackedbranches.git-k8s.imjasonh.com trackedrepositories.git-k8s.imjasonh.com" ]]
 echo "::endgroup::"
 
 echo "::group::The API server takes only http and https URLs"
 url_repository() {
   cat <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: url-check
   namespace: ${NS}
@@ -638,13 +644,13 @@ mirror_head() { mg "${DEPS_TOKEN}" ls-remote "${MIRROR}/${2:-app}.git" "$1" | cu
 # repository $2, or app, which says whether the external repository has
 # every change in the mirror.
 synced_condition() {
-  k -n "${NS}" get gitrepository "${2:-app}" -o jsonpath="{.status.conditions[?(@.type==\"ExternalSynced\")].$1}"
+  k -n "${NS}" get trackedrepository "${2:-app}" -o jsonpath="{.status.conditions[?(@.type==\"ExternalSynced\")].$1}"
 }
 # in_sync reports whether repository $1, or app, is in sync.
 in_sync() { [[ "$(synced_condition reason "${1:-app}")" == InSync ]]; }
-# branch_object prints the GitBranch for a branch of repository $2, or app.
+# branch_object prints the TrackedBranch for a branch of repository $2, or app.
 branch_object() {
-  k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
+  k -n "${NS}" get trackedbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
     -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
@@ -703,10 +709,10 @@ echo "::group::Failed git commands leave no zombies"
 # the git server fails the core program's fetches from it. Checks fetch from
 # the mirror, which refuses a check that none of the repository's merge
 # policies list. An invalid pollInterval keeps the core program from
-# changing the GitBranches, so c/gone's merge policy still lists risk, and
+# changing the TrackedBranches, so c/gone's merge policy still lists risk, and
 # once c/gone's result is removed, check-risk fetches c/gone again. risk's
 # level is never none, so nothing lands, and the copy has no change that
-# deleting the GitRepository has to push.
+# deleting the TrackedRepository has to push.
 g push -q "${HOST_URL}/zombie.git" main
 g checkout -q --detach
 echo gone >"${WORK}/gone.txt"
@@ -717,7 +723,7 @@ g push -q "${HOST_URL}/zombie.git" HEAD:refs/heads/c/gone
 g checkout -q main
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: zombie
   namespace: ${NS}
@@ -735,7 +741,7 @@ spec:
     - match: c/**
       parent: main
 EOF
-gone_risk() { k -n "${NS}" get gitbranch "$(branch_object c/gone zombie)" -o jsonpath="{.status.checks.risk.$1}"; }
+gone_risk() { k -n "${NS}" get trackedbranch "$(branch_object c/gone zombie)" -o jsonpath="{.status.checks.risk.$1}"; }
 gone_checked() { [[ -n "$(branch_object c/gone zombie)" && "$(gone_risk commit)" == "${gone}" ]]; }
 eventually 120 gone_checked
 mv "${WORKDIR}/repos/zombie.git" "${WORKDIR}/repos/moved.git"
@@ -743,21 +749,21 @@ fetch_failed() { [[ "$(synced_condition reason zombie)" == SyncFailed && "$(sync
 eventually 60 fetch_failed
 synced_condition message zombie
 echo
-k -n "${NS}" patch gitrepository zombie --type=json -p '[
+k -n "${NS}" patch trackedrepository zombie --type=json -p '[
   {"op": "replace", "path": "/spec/pollInterval", "value": "0s"},
   {"op": "remove", "path": "/spec/branches/0/merge"}]'
 invalid_poll_interval() {
-  [[ "$(k -n "${NS}" get gitrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')" == InvalidPollInterval ]]
+  [[ "$(k -n "${NS}" get trackedrepository zombie -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')" == InvalidPollInterval ]]
 }
 eventually 60 invalid_poll_interval
-k -n "${NS}" patch gitbranch "$(branch_object c/gone zombie)" --subresource=status --type=json \
+k -n "${NS}" patch trackedbranch "$(branch_object c/gone zombie)" --subresource=status --type=json \
   -p '[{"op":"remove","path":"/status/checks/risk"}]'
 risk_refused() { [[ "$(gone_risk state)" == Error && "$(gone_risk message)" == *"not found"* ]]; }
 eventually 60 risk_refused
 gone_risk message
 echo
 no_lasting_zombies
-k -n "${NS}" delete gitrepository zombie
+k -n "${NS}" delete trackedrepository zombie
 echo "The core program's fetches of a repository that moved and check-risk's fetches that the mirror refused failed, and no zombie on the nodes lasted 10 seconds."
 echo "::endgroup::"
 
@@ -964,7 +970,7 @@ g add -A
 g commit -qm "Add auth.Allow"
 AUTH="$(g rev-parse HEAD)"
 g push -q "${HOST_URL}/app.git" HEAD:c/auth
-field() { k -n "${NS}" get gitbranch "$(branch_object c/auth)" -o jsonpath="$1"; }
+field() { k -n "${NS}" get trackedbranch "$(branch_object c/auth)" -o jsonpath="$1"; }
 waiting_for_approval() {
   [[ -n "$(branch_object c/auth)" ]] &&
     [[ "$(field '{.status.state}')" == WaitingForChecks ]] &&
@@ -983,18 +989,18 @@ echo "c/auth waits for approval with a high risk rating."
 echo "::endgroup::"
 
 echo "::group::Approvals name the approver"
-k -n "${NS}" create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create role approver --verb=get,list,watch,patch,approve --resource=trackedbranches.git-k8s.imjasonh.com
 k -n "${NS}" create rolebinding alice --role=approver --user=alice
-k -n "${NS}" create role editor --verb=get,patch --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create role editor --verb=get,patch --resource=trackedbranches.git-k8s.imjasonh.com
 k -n "${NS}" create rolebinding bob --role=editor --user=bob
 roles_bound() {
-  k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as=alice >/dev/null &&
-    k -n "${NS}" auth can-i patch gitbranches.git-k8s.imjasonh.com --as=bob >/dev/null
+  k -n "${NS}" auth can-i approve trackedbranches.git-k8s.imjasonh.com --as=alice >/dev/null &&
+    k -n "${NS}" auth can-i patch trackedbranches.git-k8s.imjasonh.com --as=bob >/dev/null
 }
 eventually 30 roles_bound
 APPROVE=git-k8s.imjasonh.com/approve
 APPROVED_BY=git-k8s.imjasonh.com/approved-by
-annotate() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/auth)" "$@"; }
+annotate() { k -n "${NS}" annotate --overwrite trackedbranch "$(branch_object c/auth)" "$@"; }
 # rejected passes if the API server rejects a server-side dry run of a
 # command with a message that contains $1.
 rejected() {
@@ -1006,20 +1012,20 @@ rejected() {
 }
 rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
 rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
-rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+rejected "requires the approve verb on trackedbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
 rejected "set ${APPROVE} to a commit's full SHA" annotate --as=alice "${APPROVE}=${AUTH:0:12}" "${APPROVED_BY}=alice"
-# Only the core program changes a GitBranch's spec, which holds the merge
+# Only the core program changes a TrackedBranch's spec, which holds the merge
 # policy, so neither alice, who can approve c/auth, nor bob, who can patch
-# it, can drop its checks. Nobody else creates a GitBranch either.
+# it, can drop its checks. Nobody else creates a TrackedBranch either.
 for user in alice bob; do
-  rejected "${user} can't change a GitBranch's spec" k -n "${NS}" patch gitbranch "$(branch_object c/auth)" \
+  rejected "${user} can't change a TrackedBranch's spec" k -n "${NS}" patch trackedbranch "$(branch_object c/auth)" \
     --as="${user}" --type=merge -p '{"spec":{"merge":{"when":"true"}}}'
 done
-rejected "can't create GitBranch objects; only the core program creates them" k -n "${NS}" create -f - <<EOF
+rejected "can't create TrackedBranch objects; only the core program creates them" k -n "${NS}" create -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitBranch
+kind: TrackedBranch
 metadata:
   name: app-c-forged
 spec:
@@ -1045,7 +1051,7 @@ eventually 60 gate_saw_approval
 [[ "$(remote_head main)" == "${main_before}" ]]
 rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
 rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
-echo "The policies rejected bad approvals, changes to c/auth's spec, and a GitBranch that a person created, and c/auth waited through ${admin}'s approval."
+echo "The policies rejected bad approvals, changes to c/auth's spec, and a TrackedBranch that a person created, and c/auth waited through ${admin}'s approval."
 echo "::endgroup::"
 
 echo "::group::A MutatingAdmissionPolicy sets approved-by"
@@ -1087,7 +1093,7 @@ g push -q "${HOST_URL}/app.git" HEAD:c/ahead
 behind_main() {
   local object
   object="$(branch_object "$1")" && [[ -n "${object}" ]] &&
-    [[ "$(k -n "${NS}" get gitbranch "${object}" -o jsonpath='{.status.checks.base.parentCommit} {.status.checks.base.outputs.behind} {.status.checks.risk.outputs.level} {.status.checks.gofmt.state}')" == "${main_before} true high Passed" ]]
+    [[ "$(k -n "${NS}" get trackedbranch "${object}" -o jsonpath='{.status.checks.base.parentCommit} {.status.checks.base.outputs.behind} {.status.checks.risk.outputs.level} {.status.checks.gofmt.state}')" == "${main_before} true high Passed" ]]
 }
 eventually 120 behind_main c/auth
 eventually 120 behind_main c/ahead
@@ -1096,9 +1102,9 @@ eventually 120 behind_main c/ahead
 k -n check-base scale deployment/check-base --replicas=0
 base_stopped() { [[ -z "$(k -n check-base get pods -o name)" ]]; }
 eventually 120 base_stopped
-k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/ahead)" --as=alice "${APPROVE}=${AHEAD}" "${APPROVED_BY}=alice"
+k -n "${NS}" annotate --overwrite trackedbranch "$(branch_object c/ahead)" --as=alice "${APPROVE}=${AHEAD}" "${APPROVED_BY}=alice"
 waiting_for_base() {
-  [[ "$(k -n "${NS}" get gitbranch "$(branch_object c/ahead)" -o jsonpath='{.status.conditions[?(@.type=="Landed")].message}')" == \
+  [[ "$(k -n "${NS}" get trackedbranch "$(branch_object c/ahead)" -o jsonpath='{.status.conditions[?(@.type=="Landed")].message}')" == \
     "first in main's queue; waiting for the base check to merge main in" ]]
 }
 eventually 60 waiting_for_base
@@ -1111,18 +1117,18 @@ echo "::group::Another approver can take over an approval"
 unchanged="$(approved_by_after --as=alice "${APPROVE}=${AUTH}" --dry-run=server)"
 echo "approved-by is '${unchanged}' after alice set approve to the commit that it names"
 [[ "${unchanged}" == "${admin}" ]]
-rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+rejected "requires the approve verb on trackedbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "take over an approval by setting it to alice" annotate --as=alice "${APPROVED_BY}=bob"
 [[ "$(remote_head main)" == "${main_before}" ]]
 annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
-queue_is() { [[ "$(k -n "${NS}" get gitbranch "$(branch_object main)" -o jsonpath='{.status.queue[*]}')" == "$1" ]]; }
+queue_is() { [[ "$(k -n "${NS}" get trackedbranch "$(branch_object main)" -o jsonpath='{.status.queue[*]}')" == "$1" ]]; }
 eventually 60 queue_is "c/ahead c/auth"
 echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth joined main's queue behind c/ahead."
 echo "::endgroup::"
 
 echo "::group::Approvals and risk ratings hold through the base check's merges"
-timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=app --watch \
+timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get trackedbranches -l git-k8s.imjasonh.com/repository=app --watch \
   -o jsonpath='{.spec.branch}: {.status.checks.approval.message}{"\n"}' >"${WORKDIR}/approvals.txt" 2>&1 &
 approvals_pid=$!
 k -n check-base scale deployment/check-base --replicas=1
@@ -1168,7 +1174,7 @@ g add -A
 g commit -qm "Add three.txt"
 MOVED="$(g rev-parse HEAD)"
 g push -q "${HOST_URL}/app.git" HEAD:main
-timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranch "$(branch_object main)" --watch \
+timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get trackedbranch "$(branch_object main)" --watch \
   -o jsonpath='{.status.queue[*]}{"\n"}' >"${WORKDIR}/queues.txt" 2>&1 &
 queues_pid=$!
 g push -q "${HOST_URL}/app.git" c/one:c/one c/two:c/two
@@ -1196,7 +1202,7 @@ echo "::endgroup::"
 
 # landing sets how branches land on main.
 landing() {
-  k -n "${NS}" patch gitrepository app --type=json \
+  k -n "${NS}" patch trackedrepository app --type=json \
     -p "[{\"op\":\"add\",\"path\":\"/spec/branches/0/merge/landing\",\"value\":\"$1\"}]"
 }
 
@@ -1266,7 +1272,7 @@ server="$(k config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
 k config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' |
   base64 -d >"${WORKDIR}/ca.crt"
 token="$(k -n check-gofmt create token check-gofmt)"
-status_url="${server}/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/${NS}/gitbranches/$(branch_object main)/status?dryRun=All"
+status_url="${server}/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/${NS}/trackedbranches/$(branch_object main)/status?dryRun=All"
 patch_status() {
   curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/patch.json" -w '%{http_code}' -X PATCH \
     -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
@@ -1282,7 +1288,7 @@ for bearer in "${token}" "${approval_token}"; do
   echo
   [[ "${code}" == 403 ]]
   grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
-  grep -q 'gitbranches/status' "${WORKDIR}/patch.json"
+  grep -q 'trackedbranches/status' "${WORKDIR}/patch.json"
 done
 # Checks read the tokens for the results endpoint and the mirror that generate
 # mounts in their Pods, so no check may create tokens, for its own service
@@ -1336,7 +1342,7 @@ code="$(send_result "${squatter_results_token}" approval)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 403 ]]
 grep -q "system:serviceaccount:check-approval:check-approval isn't a check's service account; add an entry for check-approval.check-approval to the git-k8s-checks ConfigMap" "${WORKDIR}/result.txt"
-# A cache miss doesn't show that a GitBranch is gone, so the results
+# A cache miss doesn't show that a TrackedBranch is gone, so the results
 # endpoint reads the API server, and answers 410 at once rather than after
 # its 10-second wait for the cache.
 start="${SECONDS}"
@@ -1345,7 +1351,7 @@ code="$(curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authori
   "${MIRROR%/"${NS}"}/results/${NS}/app-no-such-branch/risk?generation=1")"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 410 ]]
-grep -q "GitBranch ${NS}/app-no-such-branch doesn't exist" "${WORKDIR}/result.txt"
+grep -q "TrackedBranch ${NS}/app-no-such-branch doesn't exist" "${WORKDIR}/result.txt"
 ((SECONDS - start < 5))
 # Each endpoint accepts only tokens for its own audience, even from a check
 # that the other endpoint accepts.
@@ -1368,7 +1374,7 @@ metadata:
   name: git-k8s-e2e-status
 rules:
   - apiGroups: [git-k8s.imjasonh.com]
-    resources: [gitbranches/status]
+    resources: [trackedbranches/status]
     verbs: [patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1395,12 +1401,12 @@ status_rejected() { [[ "$(patch_status "$1" "$2")" == 422 ]] && grep -q "$3" "${
 for patch in "${result}" '{"status":{"checks":{"risk":{"commit":"0000000","scope":"Head","state":"Passed"}}}}' \
   '{"status":{"queued":{"since":"2026-01-01T00:00:00Z","head":"0000000"}}}' \
   '{"status":{"queue":["c/x"]}}' "${diverged}"; do
-  eventually 30 status_rejected "${patch}" "${token}" "the gofmt check can't write GitBranch status"
+  eventually 30 status_rejected "${patch}" "${token}" "the gofmt check can't write TrackedBranch status"
   cat "${WORKDIR}/patch.json"
   echo
 done
 # check-approval is a check only through its entry in the ConfigMap.
-eventually 30 status_rejected "${approval_result}" "${approval_token}" "the approval check can't write GitBranch status"
+eventually 30 status_rejected "${approval_result}" "${approval_token}" "the approval check can't write TrackedBranch status"
 cat "${WORKDIR}/patch.json"
 echo
 eventually 30 status_rejected "${result}" "${rogue_token}" "system:serviceaccount:${NS}:rogue isn't the core program's service account"
@@ -1413,28 +1419,28 @@ echo
 core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${result}" "${core_token}")" == 200 ]]
 [[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
-k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
+k -n "${NS}" patch trackedbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The endpoint refuses check-approval in the namespace check-approval, which has no entry. The results endpoint answers 410 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
+echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The endpoint refuses check-approval in the namespace check-approval, which has no entry. The results endpoint answers 410 at once for a TrackedBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write TrackedBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
-branch_url="${server}/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/${NS}/gitbranches/$(branch_object main)?dryRun=All"
+branch_url="${server}/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/${NS}/trackedbranches/$(branch_object main)?dryRun=All"
 patch_branch() {
   curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/patch.json" -w '%{http_code}' -X PATCH \
     -H "Authorization: Bearer $1" -H 'Content-Type: application/merge-patch+json' \
     --data "$2" "${branch_url}"
 }
-# check-gotest owns Pods, so generate lets it patch GitBranch objects, and
+# check-gotest owns Pods, so generate lets it patch TrackedBranch objects, and
 # only the policies stop it. Even a controller with the approve verb that
 # names a full SHA and itself in approved-by, which git-k8s-approvals
 # allows, can't approve.
-k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
+k create clusterrole git-k8s-e2e-approve --verb=approve --resource=trackedbranches.git-k8s.imjasonh.com
 k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
   --serviceaccount=check-gotest:check-gotest --serviceaccount=git-k8s:git-k8s
 controllers_can_approve() {
   for sa in check-gotest git-k8s; do
-    k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as="system:serviceaccount:${sa}:${sa}" >/dev/null || return 1
+    k -n "${NS}" auth can-i approve trackedbranches.git-k8s.imjasonh.com --as="system:serviceaccount:${sa}:${sa}" >/dev/null || return 1
   done
 }
 eventually 30 controllers_can_approve
@@ -1453,14 +1459,14 @@ done
 # git-k8s-approvals lets anyone with the approve verb take over an approval,
 # so on an approved branch only git-k8s-branches stops a controller that
 # names itself in approved-by.
-annotate_main() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object main)" "$@"; }
+annotate_main() { k -n "${NS}" annotate --overwrite trackedbranch "$(branch_object main)" "$@"; }
 annotate_main "${APPROVE}=$(remote_head main)" "${APPROVED_BY}=${admin}"
 for sa in check-gotest git-k8s; do
   cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
 annotate_main "${APPROVE}-" "${APPROVED_BY}-"
 gotest_token="$(k -n check-gotest create token check-gotest)"
-# A finalizer would keep the GitBranch after its branch is deleted, and an
+# A finalizer would keep the TrackedBranch after its branch is deleted, and an
 # owner reference to a missing ConfigMap would make garbage collection
 # delete it. Without the core program's entries in managedFields, its
 # server-side applies would leave behind the fields that they stop setting.
@@ -1472,10 +1478,10 @@ for patch in '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "$
   cat "${WORKDIR}/patch.json"
   echo
   [[ "${code}" == 422 ]]
-  grep -q "the gotest check can't change GitBranch objects" "${WORKDIR}/patch.json"
+  grep -q "the gotest check can't change TrackedBranch objects" "${WORKDIR}/patch.json"
 done
 # check-gofmt and check-approval own nothing, so generate doesn't let them
-# patch GitBranch objects at all.
+# patch TrackedBranch objects at all.
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
 for bearer in "${token}" "${approval_token}"; do
   code="$(patch_branch "${bearer}" "${approve}")"
@@ -1487,9 +1493,9 @@ done
 echo "Neither a check nor the core controller can approve a branch or take over its approval, a check can't change one, and check-gofmt and check-approval can't patch one."
 echo "::endgroup::"
 
-echo "::group::A check that the ConfigMap names can't change GitBranch objects or their status"
+echo "::group::A check that the ConfigMap names can't change TrackedBranch objects or their status"
 # bot has the permissions that generate gives check-gotest, so RBAC lets it
-# patch GitBranch objects. generate gives no check a role to write their
+# patch TrackedBranch objects. generate gives no check a role to write their
 # status, so another role lets bot write it, and only the policy stops it. bot
 # runs in the namespace ${APPROVAL_NS}, so only its entry in the
 # git-k8s-checks ConfigMap makes it a check.
@@ -1502,7 +1508,7 @@ metadata:
   name: git-k8s-e2e-bot-status
 rules:
   - apiGroups: [git-k8s.imjasonh.com]
-    resources: [gitbranches/status]
+    resources: [trackedbranches/status]
     verbs: [patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1529,7 +1535,7 @@ bot_cant_change() {
   echo
   [[ "${code}" == 422 ]] && grep -qF "$1" "${WORKDIR}/patch.json"
 }
-eventually 30 bot_cant_change "the bot check can't change GitBranch objects"
+eventually 30 bot_cant_change "the bot check can't change TrackedBranch objects"
 # bot_cant_write_status passes if the API server rejects bot's patch of a
 # merge queue with the message $1.
 bot_cant_write_status() {
@@ -1539,16 +1545,16 @@ bot_cant_write_status() {
   echo
   [[ "${code}" == 422 ]] && grep -qF "$1" "${WORKDIR}/patch.json"
 }
-eventually 30 bot_cant_write_status "the bot check can't write GitBranch status; it sends its results to the core program"
+eventually 30 bot_cant_write_status "the bot check can't write TrackedBranch status; it sends its results to the core program"
 # An empty entry stops bot from sending results, and RBAC still lets it patch
-# GitBranch objects and their status.
+# TrackedBranch objects and their status.
 k -n git-k8s patch configmap git-k8s-checks --type=merge -p "{\"data\":{\"${APPROVAL_NS}.bot\":\"\"}}"
 eventually 30 bot_cant_change \
-  "system:serviceaccount:${APPROVAL_NS}:bot, a check whose entry in the git-k8s-checks ConfigMap is empty, can't change GitBranch objects"
+  "system:serviceaccount:${APPROVAL_NS}:bot, a check whose entry in the git-k8s-checks ConfigMap is empty, can't change TrackedBranch objects"
 eventually 30 bot_cant_write_status \
-  "system:serviceaccount:${APPROVAL_NS}:bot, a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a GitBranch's status"
+  "system:serviceaccount:${APPROVAL_NS}:bot, a check whose entry in the git-k8s-checks ConfigMap is empty, can't write a TrackedBranch's status"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-bot-status
-echo "RBAC lets bot patch GitBranch objects and, through a role that generate gives no check, their status, and the policies stop it both as the bot check that its ConfigMap entry names and after the entry is emptied."
+echo "RBAC lets bot patch TrackedBranch objects and, through a role that generate gives no check, their status, and the policies stop it both as the bot check that its ConfigMap entry names and after the entry is emptied."
 echo "::endgroup::"
 
 echo "::group::A branch that changes on both sides diverges until a commit has both heads"
@@ -1583,7 +1589,7 @@ IN_EXTERNAL="$(g rev-parse HEAD)"
 g push -q "${HOST_URL}/app.git" HEAD:deps/x
 k -n "${NS}" patch secret app-creds --type=merge -p "{\"stringData\":{\"password\":\"${PASSWORD}\"}}"
 
-diverged() { k -n "${NS}" get gitbranch "$(branch_object deps/x)" -o jsonpath="{.status.diverged.$1}"; }
+diverged() { k -n "${NS}" get trackedbranch "$(branch_object deps/x)" -o jsonpath="{.status.diverged.$1}"; }
 DOWNSTREAM=refs/git-k8s/downstream/heads/deps/x
 recorded() {
   [[ "$(diverged commit)" == "${IN_EXTERNAL}" && "$(diverged ref)" == "${DOWNSTREAM}" &&
@@ -1649,12 +1655,12 @@ printf 'package main\n\nfunc main() {}\n' >"${OCTO}/main.go"
 o add -A
 o commit -qm "Initial commit"
 o push -q "${GITHUB_URL}/acme/octo.git" HEAD:main
-# The GitBranch for c/fmt stays after the branch lands, without
+# The TrackedBranch for c/fmt stays after the branch lands, without
 # deleteLandedBranches, so the check runs can be checked afterward.
 octo_repository() {
   k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: octo
   namespace: $1
@@ -1679,10 +1685,10 @@ spec:
 EOF
 }
 octo_repository "${NS}"
-# condition prints field $3 of condition $2 of the GitRepository octo in
+# condition prints field $3 of condition $2 of the TrackedRepository octo in
 # namespace $1.
 condition() {
-  k -n "$1" get gitrepository octo -o jsonpath="{.status.conditions[?(@.type==\"$2\")].$3}"
+  k -n "$1" get trackedrepository octo -o jsonpath="{.status.conditions[?(@.type==\"$2\")].$3}"
 }
 octo_ready() {
   [[ "$(condition "${NS}" Ready status)" == True && "$(condition "${NS}" CheckRunsTokenIssued status)" == True ]]
@@ -1728,7 +1734,7 @@ eventually 60 refused
 condition "${NS}-other" Ready message
 echo
 k delete namespace "${NS}-other" --wait=false
-echo "A GitRepository in another namespace can't use the trust policies, whose audience names ${NS}."
+echo "A TrackedRepository in another namespace can't use the trust policies, whose audience names ${NS}."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
@@ -1812,7 +1818,7 @@ t push -q "${HOST_URL}/tested.git" HEAD:main
 tested_main="$(t rev-parse HEAD)"
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: tested
   namespace: ${NS}
@@ -1835,7 +1841,7 @@ t checkout -q -b c/broken
 printf 'package tested\n\nfunc Add(a, b int) int { return a - b }\n' >"${TESTED}/add.go"
 t commit -qam "Break Add"
 t push -q "${HOST_URL}/tested.git" HEAD:c/broken
-gotest() { k -n "${NS}" get gitbranch "$(branch_object "$1" tested)" -o jsonpath="{.status.checks.gotest.$2}"; }
+gotest() { k -n "${NS}" get trackedbranch "$(branch_object "$1" tested)" -o jsonpath="{.status.checks.gotest.$2}"; }
 broken_failed() { [[ -n "$(branch_object c/broken tested)" && "$(gotest c/broken state)" == Failed ]]; }
 eventually 300 broken_failed
 gotest c/broken message
@@ -1860,7 +1866,7 @@ if [[ ${ENFORCED} -eq 1 ]]; then
 else
   echo "The test Pods fetched from the mirror."
 fi
-# The core program owns a NetworkPolicy for each GitRepository that selects
+# The core program owns a NetworkPolicy for each TrackedRepository that selects
 # the Pods with check-gotest's controller label. The mirror lets a gotest
 # result's Pod fetch only with that label, so the test Pods that fetched
 # have it, even where the cluster doesn't enforce the policy.
@@ -1877,7 +1883,7 @@ done
 k -n "${NS}" delete networkpolicy tested-test-pods
 tested_selects_test_pods() { selects_test_pods tested; }
 eventually 60 tested_selects_test_pods
-echo "Each GitRepository's NetworkPolicy selects check-gotest's Pods, check-gotest can't change NetworkPolicies, and the core program created a deleted policy again."
+echo "Each TrackedRepository's NetworkPolicy selects check-gotest's Pods, check-gotest can't change NetworkPolicies, and the core program created a deleted policy again."
 echo "::endgroup::"
 
 echo "::group::The mirror checks a test Pod, not just its name"
@@ -1952,7 +1958,7 @@ k -n "${NS}" wait --for=condition=Ready pod/gotest-running --timeout=120s
 # named_result writes a gotest result that names Pod $1 on branch $2 of
 # repository $3, or on c/named of tested.
 named_result() {
-  k -n "${NS}" patch gitbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
+  k -n "${NS}" patch trackedbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
     -p '{"status":{"checks":{"gotest":{"commit":"0000000","scope":"Head","state":"Running","pod":"'"$1"'"}}}}' >/dev/null
 }
 # pod_token prints a token for the mirror that's bound to Pod $1.
@@ -1994,7 +2000,7 @@ eventually 30 named_fetches
 k -n "${NS}" delete pod gotest-named --wait=false
 [[ "$(named_fetch)" == 404 ]]
 k -n "${NS}" delete pod gotest-named gotest-running --grace-period=0 --force --ignore-not-found 2>/dev/null
-k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge \
+k -n "${NS}" patch trackedbranch "$(branch_object main)" --subresource=status --type=merge \
   -p '{"status":{"checks":{"gotest":null}}}' >/dev/null
 t push -q --delete --end-of-options "${HOST_URL}/tested.git" c/named
 named_gone() { [[ -z "$(branch_object c/named tested)" ]]; }
@@ -2029,7 +2035,7 @@ done
 # burst_results prints each tested branch's name, head, and gotest commit,
 # state, and waiting time.
 burst_results() {
-  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.notes.waiting}{"\n"}{end}'
+  k -n "${NS}" get trackedbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.notes.waiting}{"\n"}{end}'
 }
 burst_checked() { [[ "$(burst_results | awk -F'|' '$1 ~ /^c\/burst-[bcd]$/ && $2 == $3' | wc -l)" -eq 3 ]]; }
 t push -q "${HOST_URL}/tested.git" "${burst[@]}"
@@ -2436,7 +2442,7 @@ rv commit -qm "Add notes"
 rv push -q "${HOST_URL}/reviewed.git" HEAD:main HEAD:draft
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: reviewed
   namespace: ${NS}
@@ -2464,7 +2470,7 @@ spec:
     - match: d/**
       parent: draft
 EOF
-review() { k -n "${NS}" get gitbranch "$(branch_object "$1" reviewed)" -o jsonpath="{.status.checks.review.$2}"; }
+review() { k -n "${NS}" get trackedbranch "$(branch_object "$1" reviewed)" -o jsonpath="{.status.checks.review.$2}"; }
 no_agent_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=git-k8s-agent -o name)" ]]; }
 
 rv checkout -q -b c/marked
@@ -2489,7 +2495,7 @@ rv commit -qam "Mark the notes"
 rv push -q "${HOST_URL}/reviewed.git" HEAD:d/marked
 review_failed() { [[ -n "$(branch_object d/marked reviewed)" && "$(review d/marked state)" == Failed ]]; }
 eventually 300 review_failed
-k -n "${NS}" get gitbranch "$(branch_object d/marked reviewed)" -o jsonpath='{.status.checks.review}'
+k -n "${NS}" get trackedbranch "$(branch_object d/marked reviewed)" -o jsonpath='{.status.checks.review}'
 echo
 [[ "$(review d/marked message)" == "The change adds DO NOT MERGE at notes.txt:2." ]]
 [[ "$(review d/marked notes.summary)" == "1 added line holds DO NOT MERGE" ]]
@@ -2544,7 +2550,7 @@ cf commit -qm "Add go.sum and notes"
 cf push -q --end-of-options "${HOST_URL}/conflicted.git" HEAD:main
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: conflicted
   namespace: ${NS}
@@ -2567,7 +2573,7 @@ spec:
     - match: c/**
       parent: main
 EOF
-result() { k -n "${NS}" get gitbranch "$(branch_object "$1" conflicted)" -o jsonpath="{.status.checks.$2.$3}"; }
+result() { k -n "${NS}" get trackedbranch "$(branch_object "$1" conflicted)" -o jsonpath="{.status.checks.$2.$3}"; }
 # race_main sets the file $2 to $3 and then $4 on a new branch $1 from main,
 # and to $3 and then $5 on main. It pushes main first, so that the branch
 # conflicts with main when git-k8s first sees it.
@@ -2622,7 +2628,7 @@ refused_failed() {
     "$(result c/refused base outputs.conflicts)" == notes.txt ]]
 }
 eventually 300 refused_failed
-k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.checks}'
+k -n "${NS}" get trackedbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.checks}'
 echo
 [[ "$(result c/refused conflicts message)" == "the agent couldn't resolve the conflicts: The conflicts in notes.txt hold DO NOT MERGE or aren't well formed, so the fake agent changed no files." ]]
 [[ "$(result c/refused conflicts notes.runs)" == 1 ]]
@@ -2658,7 +2664,7 @@ refused_resolved() {
   tip="$(remote_head c/refused conflicted)"
   [[ -n "${tip}" && "${tip}" != "$1" && "${tip}" != "$2" &&
     "$(mirror_head refs/heads/c/refused conflicted)" == "${tip}" &&
-    -z "$(k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.diverged}')" ]] &&
+    -z "$(k -n "${NS}" get trackedbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.diverged}')" ]] &&
     in_sync conflicted &&
     cf fetch -q --end-of-options "${HOST_URL}/conflicted.git" c/refused
 }
@@ -2770,7 +2776,7 @@ dg commit -qm "Greet the world"
 dg push -q "${HOST_URL}/deps.git" HEAD:main
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
-kind: GitRepository
+kind: TrackedRepository
 metadata:
   name: deps
   namespace: ${NS}
@@ -2861,7 +2867,7 @@ deps_main="$(remote_head main deps)"
 publish v1.1.0 "${long_ago}" 'func Hello(name string) string { return "hello, " + name }'
 publish v1.2.0 2100-01-01T00:00:00Z '// Hello says hello to name.
 func Hello(name string) string { return "hello, " + name }'
-dep() { k -n "${NS}" get gitbranch "$(branch_object "${GREET_BRANCH}" deps)" -o jsonpath="{.status.checks.$1}"; }
+dep() { k -n "${NS}" get trackedbranch "$(branch_object "${GREET_BRANCH}" deps)" -o jsonpath="{.status.checks.$1}"; }
 fixed_and_waiting() {
   [[ -n "$(branch_object "${GREET_BRANCH}" deps)" ]] &&
     dg fetch -q "${HOST_URL}/deps.git" "refs/heads/${GREET_BRANCH}" &&
@@ -2882,7 +2888,7 @@ dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
 sleep 3
 [[ "$(remote_head main deps)" == "${deps_main}" ]]
 # config/approved-by.yaml sets approved-by to whoever sets approve.
-approver="$(k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "${APPROVE}=${fixed}" \
+approver="$(k -n "${NS}" annotate trackedbranch "$(branch_object "${GREET_BRANCH}" deps)" "${APPROVE}=${fixed}" \
   -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}')"
 [[ "${approver}" == "${admin}" ]]
 deps_landed() { [[ "$(remote_head main deps)" == "${fixed}" ]]; }
@@ -2904,7 +2910,7 @@ echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix
 # git-k8s-branches as the only policy that stops it.
 deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
 can_approve() {
-  [[ "$(k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com "--as=${deps_sa}" || true)" == "$1"* ]]
+  [[ "$(k -n "${NS}" auth can-i approve trackedbranches.git-k8s.imjasonh.com "--as=${deps_sa}" || true)" == "$1"* ]]
 }
 can_approve no
 k create clusterrolebinding git-k8s-e2e-deps-approve --clusterrole=git-k8s-e2e-approve \
@@ -2919,10 +2925,10 @@ for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"${fixed}\",\"${AP
   cat "${WORKDIR}/patch.json"
   echo
   [[ "${code}" == 422 ]]
-  grep -q "git-k8s-deps can't change GitBranch objects" "${WORKDIR}/patch.json"
+  grep -q "git-k8s-deps can't change TrackedBranch objects" "${WORKDIR}/patch.json"
 done
 k delete clusterrolebinding git-k8s-e2e-deps-approve
-echo "git-k8s-deps can't approve a GitBranch, even with the approve verb, or change one."
+echo "git-k8s-deps can't approve a TrackedBranch, even with the approve verb, or change one."
 
 can_i() { k auth can-i "$1" configmaps -n "$2" "--as=${deps_sa}" || true; }
 for verb in get create patch; do
@@ -2955,7 +2961,7 @@ ZOMBIES_PID=$!
 
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
-  k -n "${NS}" get gitrepositories,gitbranches \
+  k -n "${NS}" get trackedrepositories,trackedbranches \
     -o jsonpath='{range .items[*]}{.kind}/{.metadata.name}={.metadata.resourceVersion} {end}'
   k -n git-k8s-deps get configmap git-k8s-deps-first-seen \
     -o jsonpath='{.kind}/{.metadata.name}={.metadata.resourceVersion}'

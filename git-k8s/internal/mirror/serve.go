@@ -23,10 +23,10 @@ var pathRE = regexp.MustCompile(`^/([a-z0-9]([-a-z0-9]*[a-z0-9])?)/([a-z0-9]([-a
 // ServeHTTP serves each copy over git's smart HTTP protocol at
 // gitk8s.MirrorPath. Every request needs a service account token whose
 // audience is gitk8s.MirrorAudience as a bearer token. Run it with
-// kube.Serve: it reads GitRepository and GitBranch objects, checks tokens
-// with kube.ReviewToken, gets the git-k8s-checks ConfigMap and the Pod that
-// a check Pod's token is bound to with kube.Fetch, and calls kube.Trigger
-// for a GitRepository after a push.
+// kube.Serve: it reads TrackedRepository and TrackedBranch objects, checks
+// tokens with kube.ReviewToken, gets the git-k8s-checks ConfigMap and the
+// Pod that a check Pod's token is bound to with kube.Fetch, and calls
+// kube.Trigger for a TrackedRepository after a push.
 func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A request may take this long to arrive, and its response as long
 	// again. Without a write deadline, a client that stops reading blocks
@@ -84,7 +84,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !may {
-		http.Error(w, fmt.Sprintf("no GitRepository %s/%s that %s may fetch", namespace, name, who), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("no TrackedRepository %s/%s that %s may fetch", namespace, name, who), http.StatusNotFound)
 		return
 	}
 	if service == "receive-pack" && !m.mayPushAny(who, check, repo) {
@@ -164,7 +164,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// git doesn't retry a push, so the mirror took it either way. If
 		// this replica doesn't reconcile the repository now, the next poll
 		// syncs the push.
-		queued := kube.Trigger[gitk8s.GitRepository](ctx, namespace, name)
+		queued := kube.Trigger[gitk8s.TrackedRepository](ctx, namespace, name)
 		slog.Info("served a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "triggered", queued)
 	}
 }

@@ -26,14 +26,14 @@ func branch(t *testing.T, srv *gittest.Server, files map[string]string) (*Branch
 	w.Push("c/x")
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "gofmt", MayPush: true}}},
 	}
 	return b, w
 }
 
-// reconcile runs the check. With a signer, the GitRepository names its key.
+// reconcile runs the check. With a signer, the TrackedRepository names its key.
 func reconcile(t *testing.T, srv *gittest.Server, b *Branch, signer ...*gittest.Signer) error {
 	t.Helper()
 	repo, _ := srv.Repository("app")

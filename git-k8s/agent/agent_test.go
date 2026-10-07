@@ -25,10 +25,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is a review check's view of a GitBranch.
+// Branch is a review check's view of a TrackedBranch.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=TrackedBranch,plural=trackedbranches,scope=Namespaced"`
+	Spec        gitk8s.TrackedBranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"review,omitempty"`
@@ -36,7 +36,7 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.TrackedBranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
@@ -82,7 +82,7 @@ func newFixture(t *testing.T, password string) *fixture {
 	f := &fixture{t: t, srv: srv, work: w, base: main, task: Task{Instructions: "Review the change."}}
 	f.b = &Branch{Object: kube.Meta("app-c-x", nil)}
 	f.b.Namespace = "default"
-	f.b.Spec = gitk8s.GitBranchSpec{
+	f.b.Spec = gitk8s.TrackedBranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "review", MayPush: true}}},
 	}
