@@ -151,7 +151,8 @@ type Task struct {
 // It also returns the agent's result once the run finishes.
 //
 // Run doesn't return errors, because a check that returns one reports Error
-// without outputs, and the outputs count the branch's runs for
+// with the previous result's notes, which would lose what the call changed
+// in the run's state, such as the count of the branch's runs for
 // maxAgentRuns. A check that calls Run sets Check.Remote to mirror.Remote,
 // because its Pods fetch from the remote's URL with tokens for the mirror.
 // It isn't FilesOnly, because the agent reads the subjects of the branch's
@@ -162,17 +163,17 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	head := in.Spec.Head
 	if prev := in.Previous; prev != nil {
 		var last JobState
-		if err := last.UnmarshalText([]byte(prev.Outputs["state"])); err != nil || prev.Outputs["state"] == "" {
-			// The runs output counts the runs too, so maxAgentRuns still
+		if err := last.UnmarshalText([]byte(prev.Notes["state"])); err != nil || prev.Notes["state"] == "" {
+			// The runs note counts the runs too, so maxAgentRuns still
 			// holds when the state is missing or doesn't decode.
-			last.Runs, _ = strconv.Atoi(prev.Outputs["runs"])
+			last.Runs, _ = strconv.Atoi(prev.Notes["runs"])
 		}
 		last.Runs = max(last.Runs, 0)
 		st.Runs = last.Runs
 		if prev.State == gitk8s.Running && prev.Commit == head && last.Pod != "" {
 			*st = last
-			x.job.Checkout.Base = prev.Outputs["base"]
-			x.job.URL = prev.Outputs["url"]
+			x.job.Checkout.Base = prev.Notes["base"]
+			x.job.URL = prev.Notes["url"]
 		}
 	}
 	if err := r.validate(); err != nil {
@@ -180,7 +181,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	}
 	// A reconcile that doesn't declare the run's Pod deletes it, so while
 	// the check can't reach the repository, such as when its token for the
-	// mirror can't be read, it follows the run with the URL in its outputs.
+	// mirror can't be read, it follows the run with the URL in its notes.
 	// Otherwise a new URL, such as from a changed -mirror, starts the run
 	// again in a new Pod.
 	if remote, err := in.Remote(ctx); err == nil {
@@ -204,7 +205,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		}
 		if base == head {
 			v := checks.Pass("the branch has no changes against %s", in.Spec.Parent)
-			v.Outputs = x.outputs()
+			v.Notes = x.notes()
 			return v, nil
 		}
 		x.job.Checkout.Base = base
@@ -216,7 +217,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	case s.Result == nil:
 		v := checks.Fail("%s", s.Message)
 		if s.Failed != nil {
-			v.Outputs = UsageOutputs(s.Failed)
+			v.Notes = UsageNotes(s.Failed)
 		}
 		return x.done(ctx, v), nil
 	}
@@ -287,25 +288,24 @@ func minutes(d time.Duration) string {
 	return "a minute"
 }
 
-// outputs hold the run's state, merge base, and URL, which the next
-// reconcile follows the run with, and its runs and Pod for people to read.
-func (x *run) outputs() map[string]string {
+// notes hold the run's state, merge base, and URL, which the next
+// reconcile follows the run with, and its runs for people to read.
+func (x *run) notes() map[string]string {
 	state, _ := x.st.MarshalText()
-	o := map[string]string{"state": string(state), "runs": strconv.Itoa(x.st.Runs)}
+	n := map[string]string{"state": string(state), "runs": strconv.Itoa(x.st.Runs)}
 	if x.st.Pod != "" {
-		o["pod"] = x.st.Pod
 		if base := x.job.Checkout.Base; base != "" {
-			o["base"] = base
+			n["base"] = base
 		}
 		if url := x.job.URL; url != "" {
-			o["url"] = url
+			n["url"] = url
 		}
 	}
-	return o
+	return n
 }
 
 func (x *run) running(format string, args ...any) checks.Verdict {
-	return checks.Verdict{State: gitk8s.Running, Message: shorten(fmt.Sprintf(format, args...)), Outputs: x.outputs()}
+	return checks.Verdict{State: gitk8s.Running, Message: shorten(fmt.Sprintf(format, args...)), Notes: x.notes(), Pod: x.st.Pod}
 }
 
 // done finishes the run with v.
@@ -314,13 +314,13 @@ func (x *run) done(ctx context.Context, v checks.Verdict) checks.Verdict {
 	// kube deletes it.
 	kube.RequeueAfter(ctx, time.Second)
 	v.Message = shorten(v.Message)
-	if v.Outputs == nil {
-		v.Outputs = map[string]string{}
+	if v.Notes == nil {
+		v.Notes = map[string]string{}
 	}
 	state, _ := x.st.MarshalText()
-	v.Outputs["state"] = string(state)
-	v.Outputs["runs"] = strconv.Itoa(x.st.Runs)
-	v.Outputs["pod"] = x.st.Pod
+	v.Notes["state"] = string(state)
+	v.Notes["runs"] = strconv.Itoa(x.st.Runs)
+	v.Pod = x.st.Pod
 	return v
 }
 
@@ -358,15 +358,15 @@ func (x *run) verdict(ctx context.Context, res *Result) (checks.Verdict, *Result
 		}
 		v.Fix = fix
 	}
-	v.Outputs = UsageOutputs(res)
-	v.Outputs["summary"] = res.Summary
+	v.Notes = UsageNotes(res)
+	v.Notes["summary"] = res.Summary
 	return x.done(ctx, v), res
 }
 
-// UsageOutputs returns the outputs that say what a run used, such as its
+// UsageNotes returns the notes that say what a run used, such as its
 // model, its tokens, and its cost.
-func UsageOutputs(res *Result) map[string]string {
-	o := map[string]string{
+func UsageNotes(res *Result) map[string]string {
+	n := map[string]string{
 		"model":            res.Model,
 		"inputTokens":      strconv.FormatInt(res.Usage.InputTokens, 10),
 		"outputTokens":     strconv.FormatInt(res.Usage.OutputTokens, 10),
@@ -374,12 +374,12 @@ func UsageOutputs(res *Result) map[string]string {
 		"cacheWriteTokens": strconv.FormatInt(res.Usage.CacheWriteTokens, 10),
 	}
 	if res.CostCents != nil {
-		o["costCents"] = strconv.FormatFloat(*res.CostCents, 'f', -1, 64)
+		n["costCents"] = strconv.FormatFloat(*res.CostCents, 'f', -1, 64)
 	}
 	if res.ChargedCents != nil {
-		o["chargedCents"] = strconv.FormatFloat(*res.ChargedCents, 'f', -1, 64)
+		n["chargedCents"] = strconv.FormatFloat(*res.ChargedCents, 'f', -1, 64)
 	}
-	return o
+	return n
 }
 
 // commit makes a commit on the branch's head with the agent's changes, or

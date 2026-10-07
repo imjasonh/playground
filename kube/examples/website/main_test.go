@@ -185,7 +185,7 @@ func TestEndToEnd(t *testing.T) {
 			return err
 		}
 		for _, e := range events.Items {
-			if e.Type == kube.Normal && e.Reason == "Serving" && e.Note == "2 of 2 replicas are ready" && e.ReportingController == "website" &&
+			if e.Type == kube.Normal && e.Reason == "Serving" && e.Note == "2 of 2 replicas are ready" && e.ReportingController == "website-e2e-website" &&
 				e.Regarding.Kind == "Website" && e.Regarding.Name == "blog" && e.Regarding.UID == site.UID {
 				return nil
 			}

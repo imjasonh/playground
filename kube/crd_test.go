@@ -278,7 +278,7 @@ func TestCreateCRD(t *testing.T) {
 			if fm := r.query.Get("fieldManager"); fm != "owner" {
 				t.Errorf("%s: created the CRD as field manager %q, want owner", tc.name, fm)
 			}
-			if l := crd.Metadata.Labels[newLabelKeys(m.Domain).managedBy]; l != "owner" {
+			if l := crd.Metadata.Labels[newLabelKeys().managedBy]; l != "owner" {
 				t.Errorf("%s: created the CRD with managed-by label %q, want owner", tc.name, l)
 			}
 			if len(crd.Spec.Versions) != 1 || crd.storage() != "v2" {
@@ -311,7 +311,7 @@ func TestPlanCRDOfAnotherProgram(t *testing.T) {
 		{"a newer version that another program created", "owner", "v3", other + "; declare v3 with kube.Version"},
 	} {
 		var live liveCRD
-		live.Metadata.Labels = map[string]string{newLabelKeys(m.Domain).managedBy: tc.by}
+		live.Metadata.Labels = map[string]string{newLabelKeys().managedBy: tc.by}
 		live.Spec.Versions = []map[string]any{{"name": tc.version, "served": true, "storage": true}}
 		live.Status.StoredVersions = []string{tc.version}
 		_, err := m.planCRD(t.Context(), crdSpec{ti: gizmos}, &live, map[string]any{})

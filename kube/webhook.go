@@ -166,7 +166,7 @@ func (ws *webhookServer) start(ctx context.Context) error {
 			"set Manager.WebhookService (-webhook-service) to a Service that routes port 443 to the webhook port, " +
 			"or Manager.WebhookURL (-webhook-url) when running outside the cluster")
 	}
-	ws.secret = Key{Namespace: m.ownNamespace(), Name: labelValue(m.Name) + "-webhook-tls"}
+	ws.secret = Key{Namespace: m.ownNamespace(), Name: objectName(m.Name) + "-webhook-tls"}
 	if err := ws.refresh(ctx); err != nil {
 		return err
 	}
@@ -278,7 +278,7 @@ func (ws *webhookServer) refresh(ctx context.Context) error {
 				TypeMeta: TypeMeta{APIVersion: "v1", Kind: "Secret"},
 				Metadata: ObjectMeta{
 					Name: ws.secret.Name, Namespace: ws.secret.Namespace,
-					Labels: map[string]string{newLabelKeys(ws.m.Domain).managedBy: labelValue(ws.m.Name)},
+					Labels: map[string]string{newLabelKeys().managedBy: labelValue(ws.m.Name)},
 				},
 				Type: "Opaque",
 				Data: map[string][]byte{"ca.crt": ca.Cert, "ca.key": ca.Key, "tls.crt": serving.Cert, "tls.key": serving.Key},
@@ -352,7 +352,9 @@ func (ws *webhookServer) use(serving certs.Pair, bundle []byte) error {
 }
 
 // configurationName names the manager's webhook configurations.
-func (ws *webhookServer) configurationName() string { return labelValue(ws.m.Name) }
+func (ws *webhookServer) configurationName() string {
+	return installName(objectName(ws.m.Name), ws.m.ownNamespace())
+}
 
 // applyConfigurations registers the validating and mutating webhooks, and
 // updates objects that embed the CA bundle. When the manager has no webhooks
@@ -360,7 +362,7 @@ func (ws *webhookServer) configurationName() string { return labelValue(ws.m.Nam
 // version of the program left behind: its webhooks would fail every request.
 func (ws *webhookServer) applyConfigurations(ctx context.Context) error {
 	c := ws.m.client
-	keys := newLabelKeys(ws.m.Domain)
+	keys := newLabelKeys()
 	ws.mu.Lock()
 	kinds := []struct {
 		kind, resource string
@@ -425,7 +427,7 @@ func (ws *webhookServer) webhookName(ti *typeInfo, plural string) string {
 	}
 	name := plural + "." + g
 	if strings.Count(name, ".") < 2 {
-		name += "." + ws.m.Domain
+		name += "." + Domain
 	}
 	return name
 }

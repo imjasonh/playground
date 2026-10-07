@@ -106,7 +106,7 @@ func (in *installer) prepare(_ context.Context, m *Manager) error {
 		if labels == nil {
 			labels = map[string]any{}
 		}
-		labels[newLabelKeys(m.Domain).managedBy] = labelValue(m.Name)
+		labels[newLabelKeys().managedBy] = labelValue(m.Name)
 		meta["labels"] = labels
 	}
 	in.objects = objs

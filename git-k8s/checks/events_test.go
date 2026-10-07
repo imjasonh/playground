@@ -31,7 +31,7 @@ func TestRecordsAnEventForAPushedFix(t *testing.T) {
 			}
 			var want []kube.Event
 			if test.pushes {
-				fix := f.branch.Status.Checks.Result.Outputs["fix"]
+				fix := f.branch.Status.Checks.Result.Fix
 				want = []kube.Event{{Type: kube.Normal, Reason: "PushedFix", Note: fmt.Sprintf("pushed %s to c/x: not touched", gitk8s.Short(fix))}}
 			}
 			if got := rec.Events(); !slices.Equal(got, want) {

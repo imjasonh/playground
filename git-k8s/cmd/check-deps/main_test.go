@@ -63,7 +63,7 @@ func newFixture(t *testing.T, branch string) *fixture {
 	}
 	return &fixture{
 		t: t, srv: srv, work: w, b: b,
-		test: &gitk8s.CheckResult{Commit: head, State: gitk8s.Failed, Message: testOutput},
+		test: &gitk8s.CheckResult{Commit: head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Message: testOutput},
 		cfg:  &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}},
 	}
 }
@@ -139,7 +139,7 @@ func (f *fixture) agentThat(verdict string, files ...agent.File) *agent.Task {
 	replaceAgent(f.t, func(ctx context.Context, in *checks.Input, t agent.Task) (checks.Verdict, *agent.Result) {
 		*task = t
 		res := &agent.Result{Verdict: verdict, Summary: "updated Greet", Reasoning: reasoning, Files: files}
-		v := checks.Verdict{State: gitk8s.Passed, Message: reasoning, Outputs: map[string]string{"summary": res.Summary, "runs": "1"}}
+		v := checks.Verdict{State: gitk8s.Passed, Message: reasoning, Notes: map[string]string{"summary": res.Summary, "runs": "1"}}
 		if verdict == agent.Fail {
 			v.State = gitk8s.Failed
 		}
@@ -186,9 +186,9 @@ func TestRunsItsAgentAsTheCheck(t *testing.T) {
 func TestPassesOtherBranches(t *testing.T) {
 	noAgent(t)
 	f := newFixture(t, "c/x")
-	f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Failed, Outputs: map[string]string{"runs": "2"}}
+	f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Notes: map[string]string{"runs": "2"}}
 	rec := f.reconcile()
-	if res := f.result(); res.State != gitk8s.Passed || res.Message != "c/x isn't a dependency branch" || len(res.Outputs) != 1 || res.Outputs["runs"] != "2" || len(kube.Owned[agent.Pod](rec)) != 0 {
+	if res := f.result(); res.State != gitk8s.Passed || res.Message != "c/x isn't a dependency branch" || len(res.Notes) != 1 || res.Notes["runs"] != "2" || len(kube.Owned[agent.Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Passed with the count of agent runs and without a Pod", res)
 	}
 }
@@ -257,7 +257,7 @@ func TestFollowsTheTests(t *testing.T) {
 			f := newFixture(t, depsBranch)
 			f.test = nil
 			if tc.testState != "" {
-				f.test = &gitk8s.CheckResult{Commit: f.b.Spec.Head, State: tc.testState, Message: testOutput}
+				f.test = &gitk8s.CheckResult{Commit: f.b.Spec.Head, Scope: gitk8s.ScopeHead, State: tc.testState, Message: testOutput}
 				if tc.older {
 					f.test.Commit = "0123abcd"
 				}
@@ -266,14 +266,14 @@ func TestFollowsTheTests(t *testing.T) {
 			if tc.noTests {
 				f.b.Spec.Merge.Checks = f.b.Spec.Merge.Checks[1:]
 			}
-			f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Fixed, Outputs: map[string]string{"runs": "3", "fix": "4567cdef"}}
+			f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", Scope: gitk8s.ScopeHead, State: gitk8s.Fixed, Notes: map[string]string{"runs": "3", "summary": "updated Greet"}, Fix: "4567cdef"}
 			rec := f.reconcile()
 			res := f.result()
 			if res.State != tc.state || res.Message != tc.message || len(kube.Owned[agent.Pod](rec)) != 0 {
 				t.Fatalf("result = %+v, want %s with %q and no Pod", res, tc.state, tc.message)
 			}
-			if len(res.Outputs) != 1 || res.Outputs["runs"] != "3" {
-				t.Errorf("outputs = %v, want only the count of agent runs", res.Outputs)
+			if len(res.Notes) != 1 || res.Notes["runs"] != "3" || res.Fix != "" {
+				t.Errorf("result = %+v, want only the count of agent runs and no fix", res)
 			}
 		})
 	}
@@ -303,7 +303,7 @@ func TestStartsAnAgentThatCanEdit(t *testing.T) {
 	f := newFixture(t, depsBranch)
 	rec := f.reconcile()
 	pods := kube.Owned[agent.Pod](rec)
-	if res := f.result(); res.State != gitk8s.Running || len(pods) != 1 || res.Outputs["pod"] != pods[0].Name {
+	if res := f.result(); res.State != gitk8s.Running || len(pods) != 1 || res.Pod != pods[0].Name {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
 	var task struct {
@@ -347,8 +347,8 @@ func TestPushesTheAgentsFix(t *testing.T) {
 	task := f.agentThat(agent.Pass, agent.File{Path: "app.go", Mode: "100644", Content: []byte("package app\n\n// fixed\n")})
 	f.reconcile()
 	res := f.result()
-	fix := res.Outputs["fix"]
-	if res.State != gitk8s.Fixed || fix == "" || res.Message != reasoning+"; pushed "+gitk8s.Short(fix) || res.Outputs["runs"] != "1" {
+	fix := res.Fix
+	if res.State != gitk8s.Fixed || fix == "" || res.Message != reasoning+"; pushed "+gitk8s.Short(fix) || res.Notes["runs"] != "1" {
 		t.Fatalf("result = %+v, want Fixed with the agent's fix", res)
 	}
 	if got := f.work.Fetch(depsBranch); got != fix {
@@ -365,7 +365,7 @@ func TestSignsTheAgentsFix(t *testing.T) {
 	f.agentThat(agent.Pass, agent.File{Path: "app.go", Mode: "100644", Content: []byte("package app\n\n// fixed\n")})
 	f.reconcile()
 	fix := f.work.Fetch(depsBranch)
-	if res := f.result(); res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+	if res := f.result(); res.State != gitk8s.Fixed || res.Fix != fix {
 		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
 	}
 	if err := f.signer.Verify(f.work.Dir, fix); err != nil {
@@ -408,7 +408,7 @@ func TestDoesntPushWhatDoesntFixTheTests(t *testing.T) {
 			head := f.b.Spec.Head
 			f.agentThat(tc.verdict, tc.files...)
 			f.reconcile()
-			if res := f.result(); res.State != gitk8s.Failed || res.Message != tc.message || res.Outputs["fix"] != "" {
+			if res := f.result(); res.State != gitk8s.Failed || res.Message != tc.message || res.Fix != "" {
 				t.Errorf("result = %+v, want Failed with %q and no fix", res, tc.message)
 			}
 			if got := f.work.Fetch(depsBranch); got != head {
@@ -423,16 +423,17 @@ func TestReportsWhatAFailedRunUsed(t *testing.T) {
 	failed := checks.Verdict{
 		State:   gitk8s.Failed,
 		Message: "the agent failed in Pod deps-0123abcd: the Cursor API returned 429",
-		Outputs: map[string]string{
-			"runs": "1", "pod": "deps-0123abcd", "model": "composer-2.5", "inputTokens": "1200", "outputTokens": "300",
+		Notes: map[string]string{
+			"runs": "1", "model": "composer-2.5", "inputTokens": "1200", "outputTokens": "300",
 			"cacheReadTokens": "0", "cacheWriteTokens": "0", "costCents": "4",
 		},
+		Pod: "deps-0123abcd",
 	}
 	replaceAgent(t, func(context.Context, *checks.Input, agent.Task) (checks.Verdict, *agent.Result) {
 		return failed, nil
 	})
 	f.reconcile()
-	if res := f.result(); res.State != gitk8s.Failed || res.Message != failed.Message || !maps.Equal(res.Outputs, failed.Outputs) {
+	if res := f.result(); res.State != gitk8s.Failed || res.Message != failed.Message || !maps.Equal(res.Notes, failed.Notes) || res.Pod != failed.Pod || len(res.Outputs) != 0 {
 		t.Errorf("result = %+v, want the runner's verdict with what the run used", res)
 	}
 }

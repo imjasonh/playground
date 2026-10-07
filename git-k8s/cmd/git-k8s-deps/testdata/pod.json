@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "name": "gitk8sdeps6155a932a8d55db5",
+    "name": "gitk8sdeps59378d666b5b093b",
     "labels": {
       "app.kubernetes.io/name": "git-k8s-deps"
     }
@@ -78,7 +78,7 @@
           },
           {
             "name": "GIT_ALLOW_PROTOCOL",
-            "value": "http:https:git:ssh"
+            "value": "http:https"
           },
           {
             "name": "GIT_USERNAME",
@@ -200,7 +200,7 @@
           },
           {
             "name": "GIT_ALLOW_PROTOCOL",
-            "value": "http:https:git:ssh"
+            "value": "http:https"
           }
         ],
         "volumeMounts": [

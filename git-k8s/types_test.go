@@ -1,6 +1,7 @@
 package gitk8s
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
 )
 
 var labelValueRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
@@ -51,27 +55,24 @@ func TestURLPattern(t *testing.T) {
 		"https://git.example.com/app.git",
 		"http://172.18.0.1:18418/app.git",
 		"https://[2001:db8::1]/app.git",
-		"git://git.example.com/app.git",
-		"ssh://git@git.example.com:2222/app.git",
-		"ssh://git@[::1]:2222/app.git",
-		"ssh://example.com/~/app.git",
 		"https://git-k8s@git.example.com/app.git",
-		"git@github.com:imjasonh/playground.git",
-		"git@[172.18.0.1:2222]:app.git",
-		"git@[::1]:app.git",
+		"https://first.last%40example.com@git.example.com/org/app.git",
 	} {
 		if !pattern.MatchString(u) {
 			t.Errorf("the pattern rejects %q", u)
 		}
 	}
 	for _, u := range []string{
+		"git://git.example.com/app.git",
+		"ssh://git@git.example.com:2222/app.git",
+		"ssh://example.com/~/app.git",
+		"git@github.com:imjasonh/playground.git",
+		"git@[172.18.0.1:2222]:app.git",
+		"https://git.example.com/app.git?ref=main",
+		"https://git.example.com/app.git#main",
+		"https://git-k8s?@git.example.com/app.git",
 		"--upload-pack=touch /tmp/pwned",
 		"-oProxyCommand=touch /tmp/pwned",
-		"-git@git.example.com:app.git",
-		"git@-oProxyCommand=touch:app.git",
-		"ssh://-oProxyCommand=touch/app.git",
-		"ssh://git@-oProxyCommand=touch/app.git",
-		"ssh://-git@git.example.com/app.git",
 		"ext::sh -c touch% /tmp/pwned",
 		"fd::3",
 		"s3://bucket/app.git",
@@ -81,32 +82,15 @@ func TestURLPattern(t *testing.T) {
 		"/srv/git/app.git",
 		"app.git",
 		"",
-		"ssh://%2doProxyCommand=touch%20/tmp/pwned/r.git",
-		"ssh://%2DoProxyCommand=touch/r.git",
-		"ssh://git@%2doProxyCommand=touch/r.git",
-		"ssh://%2dgit@host.example/r.git",
-		"ssh://u%40h@%2doProxyCommand=touch/r.git",
-		"ssh://[-oProxyCommand=touch]/r.git",
-		"ssh://[-oProxyCommand=touch]:22/r.git",
-		"ssh://git@[-oProxyCommand=touch]/r.git",
-		"git@[-oProxyCommand=touch]:r.git",
-		"[-x@host.example]:r.git",
-		"git@%2doProxyCommand=touch:r.git",
-		"ssh://host.example:-oProxyCommand=touch/r.git",
-		"ssh://host.example:%2doProxyCommand=touch/r.git",
-		"ssh://\u2010oProxyCommand=touch/r.git",
 		"https://",
 		"file://",
+		"https://-oProxyCommand=touch/r.git",
+		"https://[-oProxyCommand=touch]/r.git",
+		"https://host.example:-1/r.git",
 		"https://host.example/r.git\n--upload-pack=touch /tmp/pwned",
 		"https://ho\nst.example/r.git",
 		"https://host.example/r.git\x00x",
-		"ssh://[-x]@host.example/r.git",
-		"[-x@host.example:22]:r.git",
-		"git@host.example:-oProxyCommand=touch",
-		"git@host.example:",
-		"ssh://gi\nt@host.example/r.git",
-		"gi\nt@host.example:r.git",
-		"git@[host.example:-0]:r.git",
+		"https://gi\nt@host.example/r.git",
 	} {
 		if pattern.MatchString(u) {
 			t.Errorf("the pattern accepts %q", u)
@@ -115,13 +99,22 @@ func TestURLPattern(t *testing.T) {
 }
 
 func TestFresh(t *testing.T) {
-	r := &CheckResult{Commit: "h1", State: Passed}
+	r := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed}
 	if !r.Fresh("h1", "p1") || !r.Fresh("h1", "p2") || r.Fresh("h2", "p1") {
-		t.Error("a result without a parent commit must depend only on the head")
+		t.Error("a result with the scope Head must depend only on the head")
 	}
-	r.ParentCommit = "p1"
-	if !r.Fresh("h1", "p1") || r.Fresh("h1", "p2") {
-		t.Error("a result with a parent commit must depend on both heads")
+	r = &CheckResult{Commit: "h1", Scope: ScopeParent, ParentCommit: "p1", State: Passed}
+	if !r.Fresh("h1", "p1") || r.Fresh("h1", "p2") || r.Fresh("h2", "p1") {
+		t.Error("a result with the scope Parent must depend on both heads")
+	}
+	r = &CheckResult{Commit: "h1", Scope: ScopeChange, MergeBase: "b1", State: Passed}
+	if !r.Fresh("h1", "p1") || !r.Fresh("h1", "p2") || r.Fresh("h2", "p1") {
+		t.Error("a result with the scope Change must depend only on the head outside a landing")
+	}
+	for _, scope := range []string{"", "Parents", "head"} {
+		if r := (&CheckResult{Commit: "h1", Scope: scope, State: Passed}); r.Fresh("h1", "p1") {
+			t.Errorf("a result with the scope %q, which Fresh doesn't know, must be for no heads", scope)
+		}
 	}
 	var missing *CheckResult
 	if missing.Fresh("h1", "p1") || missing.Final() {
@@ -130,33 +123,128 @@ func TestFresh(t *testing.T) {
 }
 
 func TestEqual(t *testing.T) {
-	r := &CheckResult{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}}
-	same := &CheckResult{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}}
+	r := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}, Notes: map[string]string{"runs": "1"}}
+	same := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}, Notes: map[string]string{"runs": "1"}}
 	if !r.Equal(same) {
 		t.Error("results with the same fields aren't equal")
 	}
-	for _, o := range []*CheckResult{
-		nil,
-		{Commit: "h2", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}},
-		{Commit: "h1", ParentCommit: "p1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}},
-		{Commit: "h1", MergeBase: "b1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}},
-		{Commit: "h1", State: Failed, Message: "ok", Outputs: map[string]string{"level": "low"}},
-		{Commit: "h1", State: Passed, Message: "fine", Outputs: map[string]string{"level": "low"}},
-		{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "high"}},
-		{Commit: "h1", State: Passed, Message: "ok"},
-		{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}, FilesOnly: true},
+	for _, edit := range []func(*CheckResult){
+		func(o *CheckResult) { o.Commit = "h2" },
+		func(o *CheckResult) { o.Scope = ScopeParent },
+		func(o *CheckResult) { o.ParentCommit = "p1" },
+		func(o *CheckResult) { o.MergeBase = "b1" },
+		func(o *CheckResult) { o.State = Failed },
+		func(o *CheckResult) { o.Message = "fine" },
+		func(o *CheckResult) { o.Outputs = map[string]string{"level": "high"} },
+		func(o *CheckResult) { o.Outputs = nil },
+		func(o *CheckResult) { o.Notes = map[string]string{"runs": "2"} },
+		func(o *CheckResult) { o.Notes = nil },
+		func(o *CheckResult) { o.Pod = "gotest-1" },
+		func(o *CheckResult) { o.Fix = "f1" },
+		func(o *CheckResult) { o.FilesOnly = true },
 	} {
-		if r.Equal(o) || o.Equal(r) {
+		o := *same
+		edit(&o)
+		if r.Equal(&o) || o.Equal(r) {
 			t.Errorf("%+v equals %+v", r, o)
 		}
+	}
+	if r.Equal(nil) {
+		t.Error("a result equals nil")
 	}
 	var missing *CheckResult
 	if !missing.Equal(nil) {
 		t.Error("nil results aren't equal")
 	}
-	empty := &CheckResult{Commit: "h1", State: Passed, Outputs: map[string]string{}}
-	if !empty.Equal(&CheckResult{Commit: "h1", State: Passed}) {
-		t.Error("empty outputs don't equal no outputs, but they look the same after a status write")
+	empty := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed, Outputs: map[string]string{}, Notes: map[string]string{}}
+	if !empty.Equal(&CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed}) {
+		t.Error("empty outputs and notes don't equal none, but they look the same after a status write")
+	}
+}
+
+// The schema that OpenAPISchema returns replaces the one that kube would
+// generate from CheckResult's fields, so it must name each of them.
+func TestCheckResultSchemaFields(t *testing.T) {
+	s := CheckResult{}.OpenAPISchema()
+	props := s["properties"].(map[string]any)
+	var required []string
+	typ := reflect.TypeFor[CheckResult]()
+	for i := range typ.NumField() {
+		name, opts, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		if _, ok := props[name]; !ok {
+			t.Errorf("the schema has no property %s", name)
+		}
+		if opts != "omitempty" {
+			required = append(required, name)
+		}
+	}
+	if len(props) != typ.NumField() {
+		t.Errorf("the schema has %d properties, but CheckResult has %d fields", len(props), typ.NumField())
+	}
+	if got := s["required"].([]string); !slices.Equal(got, required) {
+		t.Errorf("the schema requires %v, want %v", got, required)
+	}
+}
+
+// The API server must accept every result that the results controller
+// writes, so the schema's rules accept a combination of scope, parent
+// commit, and merge base exactly when Validate does.
+func TestCheckResultSchemaRules(t *testing.T) {
+	env, err := cel.NewEnv(cel.Variable("self", cel.MapType(cel.StringType, cel.DynType)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type rule struct {
+		prg     cel.Program
+		message string
+	}
+	var rules []rule
+	validations := CheckResult{}.OpenAPISchema()["x-kubernetes-validations"].([]any)
+	for _, r := range validations {
+		r := r.(map[string]any)
+		ast, iss := env.Compile(r["rule"].(string))
+		if iss.Err() != nil {
+			t.Fatalf("compiling %q: %v", r["rule"], iss.Err())
+		}
+		prg, err := env.Program(ast)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rules = append(rules, rule{prg, r["message"].(string)})
+	}
+	for _, scope := range []string{ScopeHead, ScopeParent, ScopeChange} {
+		for _, parent := range []string{"", "p1"} {
+			for _, base := range []string{"", "b1"} {
+				res := CheckResult{Commit: "h1", Scope: scope, ParentCommit: parent, MergeBase: base, State: Passed}
+				b, err := json.Marshal(res)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var self map[string]any
+				if err := json.Unmarshal(b, &self); err != nil {
+					t.Fatal(err)
+				}
+				var rejected []string
+				for _, r := range rules {
+					out, _, err := r.prg.Eval(map[string]any{"self": self})
+					if err != nil {
+						t.Fatalf("%s: %v", b, err)
+					}
+					if out != types.True {
+						rejected = append(rejected, r.message)
+					}
+				}
+				verr := res.Validate()
+				switch {
+				case verr == nil && len(rejected) > 0:
+					t.Errorf("Validate accepts %s, but the schema rejects it: %v", b, rejected)
+				case verr != nil && len(rejected) == 0:
+					t.Errorf("Validate rejects %s (%v), but the schema accepts it", b, verr)
+				case verr != nil && !slices.Contains(rejected, verr.Error()):
+					t.Errorf("Validate rejects %s with %q, and the schema with %v", b, verr, rejected)
+				}
+			}
+		}
 	}
 }
 

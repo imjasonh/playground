@@ -1099,6 +1099,137 @@ func TestSyncKeepsDeletions(t *testing.T) {
 	wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), map[string]string{"main": base})
 }
 
+// renames are branches that move to a name under their old one, and the
+// reverse. git refuses to delete refs/heads/a and create refs/heads/a/b in
+// one transaction, because refs/heads/a/ would be a directory where
+// refs/heads/a is a file.
+var renames = []struct{ name, from, to string }{
+	{name: "nested", from: "a", to: "a/b"},
+	{name: "unnested", from: "a/b", to: "a"},
+}
+
+func TestSyncTakesARenamedBranch(t *testing.T) {
+	for _, tc := range renames {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			base := w.commit("", "base")
+			w.pushExternal("main", base)
+			w.pushExternal(tc.from, base)
+			w.sync(SyncOptions{})
+
+			next, ours := w.commit(base, "next"), w.commit(base, "ours")
+			w.pushExternal(tc.from, "")
+			w.pushExternal(tc.to, next)
+			w.pushCopy("main", ours)
+			for i := range 2 {
+				rep := w.sync(SyncOptions{Fetch: true, Push: true})
+				if len(rep.Pending) > 0 || len(rep.Unapplied) > 0 || rep.Err != nil {
+					t.Errorf("Sync %d = %+v; want nothing pending or unapplied", i+1, rep)
+				}
+			}
+			want := map[string]string{"main": ours, tc.to: next}
+			wantHeads(t, "the copy's branches", w.copyRefs(headsPrefix), want)
+			wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), want)
+			wantHeads(t, "the external repository's branches", w.externalHeads(), want)
+		})
+	}
+}
+
+func TestSyncPushesARenamedBranch(t *testing.T) {
+	for _, tc := range renames {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			base := w.commit("", "base")
+			w.pushExternal("main", base)
+			w.pushExternal(tc.from, base)
+			w.sync(SyncOptions{})
+
+			next := w.commit(base, "next")
+			w.pushCopy(tc.from, "")
+			w.pushCopy(tc.to, next)
+			rep := w.sync(SyncOptions{Push: true})
+			if len(rep.Pending) > 0 || len(rep.Unapplied) > 0 || rep.Err != nil {
+				t.Errorf("Sync = %+v; want nothing pending or unapplied", rep)
+			}
+			want := map[string]string{"main": base, tc.to: next}
+			wantHeads(t, "the external repository's branches", w.externalHeads(), want)
+			wantHeads(t, "the copy's downstream refs", w.copyRefs(downstreamPrefix), want)
+			wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), want)
+
+			rep = w.sync(SyncOptions{Fetch: true, Push: true})
+			if len(rep.Pending) > 0 || len(rep.Unapplied) > 0 || rep.Err != nil {
+				t.Errorf("the next Sync = %+v; want nothing pending or unapplied", rep)
+			}
+		})
+	}
+}
+
+// A final sync, which comes before the mirror deletes the copy, takes and
+// pushes renamed branches too. Here a poll fetched the external
+// repository's rename before the final sync.
+func TestSyncFinalAfterRenames(t *testing.T) {
+	for _, tc := range renames {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			base := w.commit("", "base")
+			theirs, ours := "theirs-"+tc.from, "ours-"+tc.from
+			theirsTo, oursTo := "theirs-"+tc.to, "ours-"+tc.to
+			w.pushExternal(theirs, base)
+			w.pushExternal(ours, base)
+			w.sync(SyncOptions{})
+
+			next := w.commit(base, "next")
+			w.pushExternal(theirs, "")
+			w.pushExternal(theirsTo, next)
+			w.work.Git("--git-dir="+w.copyDir(), "fetch", "--quiet", "--prune", w.pushURL, "+refs/heads/*:"+downstreamPrefix+"*")
+			w.pushCopy(ours, "")
+			w.pushCopy(oursTo, next)
+			rep := w.sync(SyncOptions{Final: true, Push: true})
+			if len(rep.Pending) > 0 || len(rep.Unapplied) > 0 || rep.Err != nil {
+				t.Errorf("Sync with Final = %+v; want nothing pending or unapplied", rep)
+			}
+			want := map[string]string{theirsTo: next, oursTo: next}
+			wantHeads(t, "the copy's branches", w.copyRefs(headsPrefix), want)
+			wantHeads(t, "the external repository's branches", w.externalHeads(), want)
+		})
+	}
+}
+
+// When the copy has a branch a and the external repository a branch a/b,
+// neither side can take the other's branch. Sync reports both, and still
+// syncs the other branches.
+func TestSyncReportsConflictingBranchNames(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+
+	ours, theirs, next := w.commit(base, "ours"), w.commit(base, "theirs"), w.commit(base, "next")
+	w.pushCopy("a", ours)
+	w.pushExternal("a/b", theirs)
+	w.pushCopy("main", next)
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	if len(rep.Unapplied) != 1 || rep.Unapplied["a/b"] == nil || !strings.Contains(rep.Unapplied["a/b"].Error(), "'refs/heads/a' exists") {
+		t.Errorf("Report.Unapplied = %v; want a/b, because the copy has a", rep.Unapplied)
+	}
+	if want := []string{"a"}; !slices.Equal(rep.Pending, want) {
+		t.Errorf("Report.Pending = %v; want %v", rep.Pending, want)
+	}
+	if rep.Err == nil || !strings.Contains(rep.Err.Error(), "refused updates to a (") {
+		t.Errorf("Report.Err = %v; want the external repository's refusal of a", rep.Err)
+	}
+	wantHeads(t, "the copy's branches", w.copyRefs(headsPrefix), map[string]string{"a": ours, "main": next})
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"a/b": theirs, "main": next})
+
+	// Once a person deletes a from the copy, a/b syncs.
+	w.pushCopy("a", "")
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if len(rep.Pending) > 0 || len(rep.Unapplied) > 0 || rep.Err != nil {
+		t.Errorf("after the deletion, Sync = %+v; want nothing pending or unapplied", rep)
+	}
+	wantHeads(t, "the copy's branches", w.copyRefs(headsPrefix), map[string]string{"a/b": theirs, "main": next})
+}
+
 func TestSyncFetchesAgainWhenExternalRepositoryMoves(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -1202,8 +1333,9 @@ func TestSyncWhenExternalRepositoryFails(t *testing.T) {
 }
 
 // A git that's killed while it updates a ref leaves the ref's lock file,
-// which git never removes. Sync fails while a running git could hold the
-// lock, and removes the lock once it's older than a git command can take.
+// which git never removes. Sync reports the branch while a running git
+// could hold the lock, and removes the lock once it's older than a git
+// command can take.
 func TestSyncRemovesStaleLocks(t *testing.T) {
 	w := newWorld(t)
 	base := w.commit("", "base")
@@ -1217,8 +1349,9 @@ func TestSyncRemovesStaleLocks(t *testing.T) {
 	}
 
 	for range 2 {
-		if _, err := w.trySync(SyncOptions{Fetch: true}); err == nil || !strings.Contains(err.Error(), "main.lock") {
-			t.Errorf("with a new lock, Sync = %v; want an error about the lock", err)
+		rep := w.sync(SyncOptions{Fetch: true})
+		if err := rep.Unapplied["main"]; err == nil || !strings.Contains(err.Error(), "main.lock") {
+			t.Errorf("with a new lock, Report.Unapplied = %v; want main, with an error about the lock", rep.Unapplied)
 		}
 	}
 	if got := w.copyRefs("refs/heads/")["main"]; got != base {
@@ -1238,8 +1371,9 @@ func TestSyncRemovesStaleLocks(t *testing.T) {
 }
 
 // When a push moved a branch since plan read it, applyLocal applies each
-// branch's updates alone. Another error, such as a lock that a killed git
-// left, still fails the sync.
+// branch's updates alone, and leaves that branch for the next sync. It
+// reports a branch whose updates fail for another reason, such as a lock
+// that a killed git left.
 func TestApplyLocalAfterAMovedBranch(t *testing.T) {
 	w := newWorld(t)
 	base := w.commit("", "base")
@@ -1262,13 +1396,16 @@ func TestApplyLocalAfterAMovedBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	err = (&syncer{repo: r.Repo}).applyLocal(t.Context(), []branch{
+	unapplied, err := (&syncer{repo: r.Repo}).applyLocal(t.Context(), []branch{
 		{name: "a", act: take, m: base, d: next, s: base},
 		{name: "b", act: take, m: base, d: next, s: base},
 		{name: "c", act: take, m: base, d: next, s: base},
 	})
-	if err == nil || !strings.Contains(err.Error(), "c.lock") {
-		t.Errorf("applyLocal = %v; want an error about c's lock", err)
+	if err != nil {
+		t.Fatalf("applyLocal: %v", err)
+	}
+	if len(unapplied) != 1 || unapplied["c"] == nil || !strings.Contains(unapplied["c"].Error(), "c.lock") {
+		t.Errorf("applyLocal = %v; want only c, with an error about its lock", unapplied)
 	}
 	wantHeads(t, "the copy's branches", w.copyRefs(headsPrefix), map[string]string{"a": next, "b": next, "c": base, "main": next})
 	wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), map[string]string{"a": base, "b": next, "c": base, "main": next})
@@ -1276,22 +1413,25 @@ func TestApplyLocalAfterAMovedBranch(t *testing.T) {
 
 // A lock is stale once it's older than the longest that a git command can
 // take, 5 minutes 10 seconds by default, plus a minute in case the volume's
-// clock differs from the node's. Sync keeps a newer lock, which a running
-// git may hold, wherever it is in the copy.
+// clock differs from the node's. Maintenance holds the locks under objects/
+// for as long as it runs, so they're stale once they're older than the
+// longest that maintenance can take, 1 hour 10 seconds by default, plus a
+// minute. Sync keeps a newer lock, which a running git may hold, wherever
+// it is in the copy.
 func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 	w := newWorld(t)
 	base := w.commit("", "base")
 	w.pushExternal("main", base)
 	w.sync(SyncOptions{})
 
-	const stale = 6*time.Minute + 10*time.Second
+	const stale, staleObjects = 6*time.Minute + 10*time.Second, time.Hour + time.Minute + 10*time.Second
 	locks := map[string]time.Duration{
 		"packed-refs.lock":        stale + time.Second,
 		"HEAD.lock":               stale - time.Second,
 		"refs/heads/feature.lock": stale + time.Second,
 		"refs/heads/fix.lock":     stale - time.Second,
-		"objects/info/commit-graphs/commit-graph-chain.lock": stale + time.Second,
-		"objects/maintenance.lock":                           stale - time.Second,
+		"objects/info/commit-graphs/commit-graph-chain.lock": staleObjects + time.Second,
+		"objects/maintenance.lock":                           staleObjects - time.Second,
 	}
 	now := time.Now()
 	for path, age := range locks {
@@ -1309,74 +1449,13 @@ func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 
 	w.sync(SyncOptions{})
 	for path, age := range locks {
+		cutoff := stale
+		if strings.HasPrefix(path, "objects/") {
+			cutoff = staleObjects
+		}
 		_, err := os.Stat(filepath.Join(w.copyDir(), path))
-		if removed, want := errors.Is(err, os.ErrNotExist), age > stale; removed != want {
+		if removed, want := errors.Is(err, os.ErrNotExist), age > cutoff; removed != want {
 			t.Errorf("Sync removed %s, %v old: %t, want %t", path, age, removed, want)
-		}
-	}
-}
-
-// Fetches and pushes don't start git's maintenance, which would hold them
-// up. Sync runs it in the foreground when the copy needs it, even
-// after a killed maintenance left its lock, which makes maintenance skip
-// the copy without an error.
-func TestSyncMaintainsCopy(t *testing.T) {
-	w := newWorld(t)
-	base := w.commit("", "base")
-	w.pushExternal("main", base)
-	w.sync(SyncOptions{})
-	// The first fetch leaves its few objects loose, too few to need
-	// maintenance.
-	if got := w.work.Git("--git-dir="+w.copyDir(), "count-objects"); strings.HasPrefix(got, "0 objects,") {
-		t.Errorf("after the first Sync, git count-objects = %q, want the fetched objects loose", got)
-	}
-	config := func(args ...string) string {
-		t.Helper()
-		return w.work.Git(append([]string{"--git-dir=" + w.copyDir(), "config"}, args...)...)
-	}
-	for key, want := range map[string]string{"maintenance.auto": "false", "receive.autogc": "false"} {
-		if got := config(key); got != want {
-			t.Errorf("the copy has %s = %q, want %q", key, got, want)
-		}
-	}
-
-	// With gc.auto at 1, maintenance packs the copy once objects/17/ holds
-	// two loose objects, and the fetch leaves every object loose.
-	config("gc.auto", "1")
-	config("fetch.unpackLimit", "1000000")
-	w.work.Git("checkout", "--quiet", "--detach", base)
-	for i := range 2000 {
-		w.work.Write(fmt.Sprintf("many/%d.txt", i), fmt.Sprintf("file %d\n", i))
-	}
-	many := w.work.Commit("many")
-	w.pushExternal("main", many)
-	lock := filepath.Join(w.copyDir(), "objects", "maintenance.lock")
-	if err := os.WriteFile(lock, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-w.m.Git.MaxDuration() - 2*time.Minute)
-	if err := os.Chtimes(lock, old, old); err != nil {
-		t.Fatal(err)
-	}
-
-	if rep := w.sync(SyncOptions{Fetch: true}); rep.Heads["main"] != many {
-		t.Fatalf("Report.Heads = %v; want main at %.7s", rep.Heads, many)
-	}
-	under17 := 0
-	for line := range strings.SplitSeq(w.work.Git("--git-dir="+w.copyDir(), "rev-list", "--objects", "--all"), "\n") {
-		if strings.HasPrefix(line, "17") {
-			under17++
-		}
-	}
-	if under17 < 2 {
-		t.Fatalf("only %d of the fetched objects go under objects/17/, too few to need maintenance", under17)
-	}
-	if got := w.work.Git("--git-dir="+w.copyDir(), "count-objects"); !strings.HasPrefix(got, "0 objects,") {
-		t.Errorf("after Sync, git count-objects = %q, want no loose objects", got)
-	}
-	for _, path := range []string{lock, filepath.Join(w.copyDir(), "gc.pid")} {
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("after Sync, %s is there: %v", filepath.Base(path), err)
 		}
 	}
 }

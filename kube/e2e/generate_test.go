@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -286,8 +288,8 @@ func (in installation) runInstalled(t *testing.T, exe, kubeconfig string) *syncB
 	args := []string{"-kubeconfig=" + kubeconfig}
 	for _, a := range in.args {
 		switch {
-		case strings.HasPrefix(a, "-addr="):
-			a = "-addr=" + httpAddr
+		case strings.HasPrefix(a, "-metrics-addr="):
+			a = "-metrics-addr=" + httpAddr
 		case strings.HasPrefix(a, "-webhook-addr="):
 			a = "-webhook-addr=" + hookAddr
 		case strings.HasPrefix(a, "-webhook-service="):
@@ -340,6 +342,25 @@ func noPermissionErrors(t *testing.T, out *syncBuffer) {
 	}
 }
 
+// unnamedCreates returns the resources that the rules in obj, a Role or a
+// ClusterRole, let the program create with any name.
+func unnamedCreates(obj map[string]any) []string {
+	var out []string
+	rules, _ := obj["rules"].([]any)
+	for _, r := range rules {
+		rule, _ := r.(map[string]any)
+		verbs, _ := rule["verbs"].([]any)
+		if _, named := rule["resourceNames"]; named || !slices.Contains(verbs, any("create")) {
+			continue
+		}
+		resources, _ := rule["resources"].([]any)
+		for _, res := range resources {
+			out = append(out, res.(string))
+		}
+	}
+	return out
+}
+
 // eventFrom waits for an Event in namespace from controller. The program
 // writes events in the background, so a denial can come after its other
 // writes succeed.
@@ -366,17 +387,35 @@ func eventFrom(t *testing.T, c *client.Client, namespace, controller string) {
 // TestGenerateWebsite installs the website example from what its generate
 // command wrote, and runs the image's program with the generated RBAC
 // rules: the API server enforces them, so a missing rule fails the test.
+// The rules let the program create the Website CRD and no other. The test
+// runs go run with a build tag in GOFLAGS, and the image's program has that
+// tag too.
 func TestGenerateWebsite(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "examples/website", "website-system")
+	// The YAML creates only the namespace named for the program.
+	install := e2e.Namespace(t, c)
+	t.Setenv("GOFLAGS", strings.TrimSpace(os.Getenv("GOFLAGS")+" -tags=kube_e2e"))
+	in := generateExample(t, reg, "examples/website", install)
 	if !slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("args = %q, want -leader-elect for two replicas", in.args)
 	}
+	for _, obj := range in.objects {
+		if slices.Contains(unnamedCreates(obj), "customresourcedefinitions") {
+			t.Errorf("the %s lets the program create a CRD of any name", obj["kind"])
+		}
+	}
 	in.apply(t, c)
 	exe := in.executable(t, "website")
-	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "website-system", "website"))
+	bi, err := buildinfo.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (debug.BuildSetting{Key: "-tags", Value: "kube_e2e,kube_nogenerate"}); !slices.Contains(bi.Settings, want) {
+		t.Errorf("the image's program was built with %v, want %s=%s", bi.Settings, want.Key, want.Value)
+	}
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, install, "website"))
 
 	ns := e2e.Namespace(t, c)
 	if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
@@ -408,8 +447,8 @@ func TestGenerateWebsite(t *testing.T) {
 	var leases struct {
 		Items []any `json:"items"`
 	}
-	if err := c.Get(t.Context(), client.Path("coordination.k8s.io/v1", "leases", "website-system", ""), &leases); err != nil || len(leases.Items) == 0 {
-		t.Errorf("leases in website-system: %d, %v", len(leases.Items), err)
+	if err := c.Get(t.Context(), client.Path("coordination.k8s.io/v1", "leases", install, ""), &leases); err != nil || len(leases.Items) == 0 {
+		t.Errorf("leases in %s: %d, %v", install, len(leases.Items), err)
 	}
 	eventFrom(t, c, ns, "website")
 	noPermissionErrors(t, out)
@@ -423,10 +462,10 @@ func TestGenerateOneNamespace(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
-	in := generateExample(t, reg, "examples/website", "website-one", "-replicas=1", "-watch-namespace="+watched)
-	if !slices.Contains(in.args, "-namespace="+watched) {
-		t.Errorf("args = %q, want -namespace=%s", in.args, watched)
+	install, watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c), e2e.Namespace(t, c)
+	in := generateExample(t, reg, "examples/website", install, "-replicas=1", "-watch-namespace="+watched)
+	if !slices.Contains(in.args, "-watch-namespace="+watched) {
+		t.Errorf("args = %q, want -watch-namespace=%s", in.args, watched)
 	}
 	for _, obj := range in.objects {
 		b, _ := json.Marshal(obj)
@@ -436,7 +475,7 @@ func TestGenerateOneNamespace(t *testing.T) {
 	}
 	in.apply(t, c)
 	exe := in.executable(t, "website")
-	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "website-one", "website"))
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, install, "website"))
 
 	for _, ns := range []string{watched, other} {
 		if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
@@ -523,7 +562,8 @@ func TestGenerateOwnedType(t *testing.T) {
 
 // TestGenerateWebhooks installs the podpolicy example, whose admission
 // webhooks need a Service, a certificate Secret, and webhook
-// configurations, and passes it a flag after --.
+// configurations, and passes it a flag after --. The YAML creates the
+// Secret, and the program, which can't create Secrets, fills it in.
 func TestGenerateWebhooks(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
@@ -535,8 +575,13 @@ func TestGenerateWebhooks(t *testing.T) {
 		if b, _ := json.Marshal(obj); strings.Contains(string(b), `"events.k8s.io"`) {
 			t.Errorf("podpolicy records no events, but its %s has a rule for them: %s", obj["kind"], b)
 		}
+		for _, r := range unnamedCreates(obj) {
+			if r == "secrets" || strings.HasSuffix(r, "webhookconfigurations") {
+				t.Errorf("the %s lets the program create %s of any name", obj["kind"], r)
+			}
+		}
 	}
-	if !kinds["Service"] || !kinds["Role"] || slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-registries=ghcr.io/example/") {
+	if !kinds["Secret"] || !kinds["Service"] || !kinds["Role"] || slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-registries=ghcr.io/example/") {
 		t.Errorf("kinds = %v, args = %q", kinds, in.args)
 	}
 	t.Cleanup(func() {
@@ -550,6 +595,15 @@ func TestGenerateWebhooks(t *testing.T) {
 	in.apply(t, c)
 	exe := in.executable(t, "podpolicy")
 	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "podpolicy", "podpolicy"))
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := c.Get(t.Context(), client.Path("v1", "secrets", "podpolicy", "podpolicy-webhook-tls"), &secret); err != nil {
+		t.Fatal(err)
+	}
+	if secret.Data["tls.crt"] == "" {
+		t.Error("the program didn't fill in the webhook certificate Secret")
+	}
 
 	ns := e2e.Namespace(t, c)
 	pod := func(name, img string) map[string]any {

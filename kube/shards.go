@@ -117,9 +117,9 @@ func newSharder(m *Manager) *sharder {
 	suffix := make([]byte, 4)
 	_, _ = rand.Read(suffix)
 	s := &sharder{
-		m: m, n: n, ns: m.ownNamespace(), group: labelValue(m.Name),
+		m: m, n: n, ns: m.ownNamespace(), group: objectName(m.Name),
 		identity: host + "_" + hex.EncodeToString(suffix),
-		keys:     newLabelKeys(m.Domain),
+		keys:     newLabelKeys(),
 		members:  map[string]*observation{},
 		first:    make(chan struct{}),
 	}

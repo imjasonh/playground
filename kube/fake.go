@@ -26,6 +26,11 @@ import (
 // k8s.Deployment in world, with only the fields that its type declares. An
 // object of the type itself hides one of another type with the same name.
 //
+// A Get or List that can't read, such as a Get of a local type, stops the
+// reconcile with a panic, as in a cluster. Nothing recovers the panic in a
+// test, so to test a failed read, recover it yourself: its value is an error
+// that wraps the Recorder's Err.
+//
 // World can also hold FakeTokens for ReviewToken to accept. RequestToken
 // returns the tokens "fake-token-1", "fake-token-2", and so on, for the
 // service account test in the namespace default, and ReviewToken accepts
@@ -43,7 +48,7 @@ import (
 func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (context.Context, *Recorder) {
 	w := newFakeWorld(append([]any{obj}, world...))
 	ti, err := typeInfoFor[T, P]()
-	c := &core{name: "test", labels: newLabelKeys("test"), log: slog.Default()}
+	c := &core{name: "test", labels: newLabelKeys(), log: slog.Default()}
 	if err == nil {
 		c.ti = ti
 		c.res, _ = w.resolve(ctx, ti)
@@ -66,7 +71,8 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 // declares reaches this world, so test a handler that hands data to a
 // reconcile against a real API server. As in a cluster, the handler can only
 // read. A call of Own, Apply, Delete, or RequeueAfter cancels the context,
-// and the returned Recorder's Err returns the error.
+// and the returned Recorder's Err returns the error. A Get or List that
+// can't read panics, as in a Fake context.
 //
 //	ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{...})
 //	req := httptest.NewRequest("POST", "/probes/team/api", nil).WithContext(ctx)

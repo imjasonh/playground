@@ -60,15 +60,39 @@ type server struct {
 }
 
 func (s *server) handler() http.Handler {
+	mux := s.health()
+	mux.HandleFunc("GET /mod/", s.module)
+	mux.HandleFunc("GET /cache/{namespace}/{repository}/{action}", s.getOutput)
+	mux.HandleFunc("PUT /cache/{namespace}/{repository}/{action}", s.putOutput)
+	return mux
+}
+
+// health returns a mux that serves /healthz, /readyz, and /metrics.
+func (s *server) health() *http.ServeMux {
 	mux := http.NewServeMux()
 	ok := func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") }
 	mux.HandleFunc("GET /healthz", ok)
 	mux.HandleFunc("GET /readyz", ok)
 	mux.HandleFunc("GET /metrics", s.metrics.serve)
-	mux.HandleFunc("GET /mod/", s.module)
-	mux.HandleFunc("GET /cache/{namespace}/{repository}/{action}", s.getOutput)
-	mux.HandleFunc("PUT /cache/{namespace}/{repository}/{action}", s.putOutput)
 	return mux
+}
+
+// servers returns the servers for -addr and, if it's another address,
+// -metrics-addr.
+func (s *server) servers(addr, metricsAddr string) []*http.Server {
+	servers := []*http.Server{{
+		Addr:              addr,
+		Handler:           s.handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		// ReadTimeout limits how long a slow upload holds a write and its
+		// room in the store.
+		ReadTimeout: 5 * time.Minute,
+		IdleTimeout: 2 * time.Minute,
+	}}
+	if metricsAddr != "" && metricsAddr != addr {
+		servers = append(servers, &http.Server{Addr: metricsAddr, Handler: s.health(), ReadHeaderTimeout: 10 * time.Second})
+	}
+	return servers
 }
 
 // parseSize parses a number of bytes with an optional suffix, as in a
@@ -101,22 +125,24 @@ func main() {
 	controller := flag.String("controller", "check-gotest", "kube controller whose Pods may write to the build caches")
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		// go-cache has no controllers, but generate installs it like a
-		// controller program. generate checks the flags after -- against
-		// the flags above and kube.Main's own, which include -addr, so
-		// go-cache defines -addr only when it serves.
+		// controller program, and the Deployment passes kube.Main's
+		// -metrics-addr for its probes. generate fails on a program that
+		// defines that flag itself, so go-cache defines its serving flags
+		// only when it serves.
 		kube.Main()
 		return
 	}
-	addr := flag.String("addr", ":8080", "address to serve on")
+	addr := flag.String("addr", ":8080", "address to serve the module proxy and the build caches on")
+	metricsAddr := flag.String("metrics-addr", "", "address for /healthz, /readyz, and /metrics, if not -addr")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := run(log, *addr, *upstream, *dir, *maxSize, *controller); err != nil {
+	if err := run(log, *addr, *metricsAddr, *upstream, *dir, *maxSize, *controller); err != nil {
 		log.Error("exiting", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger, addr, upstream, dir, maxSize, controller string) error {
+func run(log *slog.Logger, addr, metricsAddr, upstream, dir, maxSize, controller string) error {
 	max, err := parseSize(maxSize)
 	if err != nil {
 		return fmt.Errorf("-max-size: %w", err)
@@ -144,20 +170,14 @@ func run(log *slog.Logger, addr, upstream, dir, maxSize, controller string) erro
 	} else {
 		s.reviewer = r
 	}
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           s.handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-		// ReadTimeout limits how long a slow upload holds a write and its
-		// room in the store.
-		ReadTimeout: 5 * time.Minute,
-		IdleTimeout: 2 * time.Minute,
-	}
+	servers := s.servers(addr, metricsAddr)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	log.Info("serving", "addr", addr, "upstream", upstream, "dir", dir, "max-size", maxSize, "controller", controller)
-	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
+	log.Info("serving", "addr", addr, "metrics-addr", metricsAddr, "upstream", upstream, "dir", dir, "max-size", maxSize, "controller", controller)
+	errc := make(chan error, len(servers))
+	for _, srv := range servers {
+		go func() { errc <- srv.ListenAndServe() }()
+	}
 	select {
 	case err := <-errc:
 		return err
@@ -165,5 +185,9 @@ func run(log *slog.Logger, addr, upstream, dir, maxSize, controller string) erro
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdown)
+	var errs []error
+	for _, srv := range servers {
+		errs = append(errs, srv.Shutdown(shutdown))
+	}
+	return errors.Join(errs...)
 }

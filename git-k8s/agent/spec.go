@@ -249,7 +249,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		{Name: "KEY_FILE", Value: keyFile},
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
-		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
 	}
 	if m := c.Merge; m != nil {
 		task.MergeName, task.MergeHead = cmp.Or(m.DisplayName, m.Name), m.Commit

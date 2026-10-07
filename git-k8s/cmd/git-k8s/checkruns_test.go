@@ -223,14 +223,14 @@ func TestPublishesCheckRuns(t *testing.T) {
 	})
 
 	t.Log("A fix is neutral, because the check's run on the fix decides.")
-	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Outputs: map[string]string{"fix": fix}}
+	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Fix: fix}
 	step(checks, []string{"PATCH " + api + "check-runs/3"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
 		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
 	})
 	if r := gh.Fake.CheckRuns("acme/app")[2]; r.Output.Text != "```\nfix: "+fix+"\n```" {
-		t.Errorf("text = %q, want the fix output", r.Output.Text)
+		t.Errorf("text = %q, want the fix", r.Output.Text)
 	}
 
 	t.Log("When the branch moves before a check finishes, the old commit's check run is cancelled.")
@@ -251,7 +251,7 @@ func TestPublishesCheckRuns(t *testing.T) {
 	})
 
 	t.Log("The controller forgets the check runs on a commit that the branch left, and when the branch comes back, the controller finds them on GitHub.")
-	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Outputs: map[string]string{"fix": fix}}}
+	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Fix: fix}}
 	step(checks, []string{"GET " + api + "commits/" + head + "/check-runs"}, runs(gh))
 }
 
@@ -1452,18 +1452,29 @@ func TestCheckRunsSurviveFailedReads(t *testing.T) {
 	s := newSharing(t, 2)
 	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
 
-	t.Log("A reconcile that can't read the cluster sends nothing and forgets nothing.")
+	t.Log("A reconcile that can't read the cluster stops at the read, so it sends nothing and forgets nothing.")
 	before := len(s.gh.Fake.Requests())
-	// Go picks at random between a free lock and an ended context, so a
-	// reconcile that went on to forget would forget only some of the time.
-	for range 20 {
-		b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
-		ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
-		kube.List[branchResults](ctx, kube.MatchingSelector("=broken"))
-		if rec.Err() == nil {
-			t.Fatal("the selector didn't fail the reconcile's reads")
-		}
-		s.p.c.Reconcile(ctx, b)
+	b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
+	ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
+	// A Get or List that can't read panics with an error that wraps the
+	// reconcile's.
+	stops := func(fn func()) (stopped bool) {
+		defer func() {
+			p := recover()
+			if err, ok := p.(error); ok && rec.Err() != nil && errors.Is(err, rec.Err()) {
+				stopped = true
+			} else if p != nil {
+				panic(p)
+			}
+		}()
+		fn()
+		return false
+	}
+	if !stops(func() { kube.List[branchResults](ctx, kube.MatchingSelector("=broken")) }) {
+		t.Fatal("the selector didn't stop the reconcile's reads")
+	}
+	if !stops(func() { _ = s.p.c.Reconcile(ctx, b) }) {
+		t.Error("the reconcile went on after its reads failed")
 	}
 	if got := s.gh.Fake.Requests()[before:]; len(got) > 0 {
 		t.Errorf("reconciles that couldn't read sent %q", got)
@@ -2133,6 +2144,10 @@ func TestRunFor(t *testing.T) {
 	s := runFor(gitk8s.CheckResult{State: gitk8s.Passed, Outputs: map[string]string{"level": "low", "files": "3"}})
 	if s.Output.Text != "```\nfiles: 3\nlevel: low\n```" {
 		t.Errorf("text = %q", s.Output.Text)
+	}
+	s = runFor(gitk8s.CheckResult{State: gitk8s.Fixed, Outputs: map[string]string{"files": "x.go"}, Notes: map[string]string{"runs": "1"}, Pod: "gofmt-1", Fix: "4567cdef"})
+	if s.Output.Text != "```\nfix: 4567cdef\nfiles: x.go\n```" {
+		t.Errorf("text = %q, want the fix and the outputs, without the notes or the Pod", s.Output.Text)
 	}
 }
 

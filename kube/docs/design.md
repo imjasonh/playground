@@ -458,7 +458,8 @@ processing if it was added meanwhile. Keys have one of two priorities. Changes
 are high priority. The initial list and periodic resyncs, every 10 hours by
 default, are low priority, so a restart with thousands of objects doesn't
 delay reaction to a change. Failed keys back off exponentially from 50 ms to
-5 minutes, with up to 10% random jitter, and `RequeueAfter` schedules a key on
+5 minutes, with up to 10% random jitter, unless the error has a delay from
+`kube.RetryAfter`. That delay and `RequeueAfter` schedule a key on
 a timer heap. The queue's tests use `testing/synctest`, so they check timing
 without sleeping.
 
@@ -475,6 +476,14 @@ reconciled object for `Apply`, so two objects that apply fields to the same
 target don't remove each other's fields. An owned object's document also gets
 the owner label and annotation and, when Kubernetes allows it, an owner
 reference.
+
+The controller's name is also the value of the controller label, which the
+cache of owned objects selects on, and the end of the controller's finalizer.
+Two controllers with one name that reconcile one kind would remove each
+other's finalizers and prune each other's objects, so the default name joins
+the program's name and the kind, and `Run` fails when two of its controllers
+have one name. Two controllers in one manager would also share a cache of
+owned objects whose handler enqueues only the first controller's owners.
 
 A reconcile can pass an object to `Own` or `Apply` only once, and the
 framework compares the objects by group, kind, and key, not by Go type.
@@ -567,6 +576,31 @@ its own object.
 
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
+The owner annotation names only the owner's namespace and name, so the
+framework skips objects whose owner UID label names another owner: an earlier
+object with that name, or an object of another kind whose controller has the
+same name.
+
+Server-side apply creates an object that doesn't exist and takes over one
+that does, so before it applies an object that no cache holds, the framework
+reads the object from the API server. For `Own`, an object without the
+controller label and the owner annotation is someone else's: a person's, or
+another program's. Taking it over would delete it with the owner, so the
+reconcile fails with an error that names the object, unless the controller
+has the `kube.Adopts` option. An object with the controller label whose owner
+annotation names another owner fails the reconcile even with the option,
+whether it comes from the cache or from the read, because otherwise two
+owners would take the object from each other on every reconcile. After the
+first apply, the cache of owned objects holds the object, so the read happens
+about once per object. An object that another client creates between the
+read and the apply is still taken over.
+
+For `Apply`, the read gives the document the target's UID, and a target that
+doesn't exist fails the reconcile, because nothing would own or delete an
+object that `Apply` created. A target that no cache holds is read on every
+reconcile, but the read lets the framework skip the apply by the same rule as
+for a cached target. No cache holds a local type, so the framework doesn't
+read one, and `Apply` creates a local object that doesn't exist.
 
 Finalizer changes, `Apply`, and deletes target an object that must already
 exist, so they carry its UID. An apply with a UID fails instead of creating an
@@ -598,11 +632,18 @@ controller's last status write sent the same status, there's nothing to add
 or remove. Server-side apply ignores annotations sent to the status
 subresource, so the record of the last write is in memory.
 
-A reconcile that returns an error is retried with backoff, and its intents are
-discarded. An error wrapped with `kube.Permanent` isn't retried; the object
+A reconcile that returns an error is retried with backoff, or after the delay
+that `kube.RetryAfter` added to the error, and its intents are discarded. An
+error wrapped with `kube.Permanent` without a delay isn't retried; the object
 waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
+
+`Get` and `List` use the same recovery. One that can't read panics with an
+unexported value, which the framework turns back into the read's error
+without reporting a panic. So `nil` from `Get` means only that the object
+doesn't exist, and callers have no error to check. A webhook rejects the
+request with the error, and `kube.Serve` answers 503.
 
 An intent that fails, for example because an admission policy rejects an
 apply, fails the reconcile in the same way. The framework stops carrying out
@@ -633,10 +674,11 @@ of removing the wrong entry.
 Owner references can't point across namespaces or from a namespaced object to
 a cluster-scoped one. When a reconcile owns such an object, the framework adds
 a finalizer to the owner before creating it, and records the owned types in an
-annotation. When the owner is deleted, the framework deletes those objects by
-UID, then removes the finalizer. When a reconcile stops declaring such
-objects, the framework deletes any that remain and removes the finalizer, so
-the owner can then be deleted without the controller running.
+annotation. When the owner is deleted, the framework deletes the objects of
+those types that carry the owner's UID and the controller label, then removes
+the finalizer. When a reconcile stops declaring such objects, the framework
+deletes any that remain and removes the finalizer, so the owner can then be
+deleted without the controller running.
 
 A controller without a `Finalize` method also removes its finalizer from
 objects, so a finalizer that an earlier version of the program added doesn't
@@ -874,9 +916,6 @@ programs disagree about the type:
   doesn't serve the program's own version. `checkDropped` refuses an older
   one, because the API server lists a new CRD's storage version in
   `status.storedVersions` before the CRD has objects.
-- `ownsCRD` looks for the label under the reconciling program's own
-  `Manager.Domain`, so a program with another `Domain` uses the CRD as
-  something else installed it, and never updates it.
 
 The remedy is to make the declarations agree and delete the created CRD while
 it has no objects, or, if only the version differs, to declare the created
@@ -893,9 +932,13 @@ struct with the wrong scope or version would also create a CRD that the
 reconciling program can't take over. A program that owns the type can't write
 its objects without the CRD. The cost is two rules that `generate` writes for
 each owned type: `create` on `customresourcedefinitions`, and `get` on the
-CRD's name. RBAC can't limit `create` to a name, so this is the same `create`
-rule that reconciled types need. There's no `patch`. To own a type without
-creating its CRD, declare it with `apiVersion` and `kind`.
+CRD's name. There's no `patch`. RBAC can't limit a `POST` create to a name, so
+the `create` rule covers every CRD. A reconciled type's CRD needs `create` on
+only its name, because the program applies it, and the API server checks a
+server-side apply that creates an object as `create` on that name. Applying an
+owned type's CRD would narrow its rule the same way, but would change a CRD
+that another program created after the `get`. To own a type without creating
+its CRD, declare it with `apiVersion` and `kind`.
 
 ### Installed objects
 
@@ -1051,18 +1094,31 @@ Webhooks run inside a read-only scope. `Get` and `List` read caches without
 recording dependencies, and `Own`, `Apply`, `Delete`, and `RequeueAfter`
 reject the request with an error.
 
-Every replica serves webhooks, before it competes for shards. The first
+Every replica serves webhooks, before it competes for shards. The YAML that
+`generate` writes creates an empty Secret for the certificates. The first
 replica to start makes an ECDSA certificate authority valid for ten years and
-a serving certificate valid for one, and creates a Secret with both. The
-others read the Secret, including a replica that loses the race to create it.
-Each replica rereads the Secret every minute. The first to see the serving
-certificate within 30 days of expiry, or missing a host name it needs, writes
-a new one with the Secret's resource version as a precondition, so replicas
-agree. Replacing the CA keeps the old one in the bundle until it expires, so
-servers still using a certificate it signed keep working. Each replica applies
-the webhook configurations with the bundle, which is idempotent, and deletes
-configurations that its program no longer needs, so that a dropped webhook
-doesn't fail every request for its type.
+a serving certificate valid for one, and writes both to the Secret with the
+Secret's resource version as a precondition. The others read the Secret,
+including a replica whose write loses the race. When the Secret doesn't
+exist, as when the program runs outside a cluster, the first replica creates
+it instead. `generate` grants only `get` and `update` on the Secret, because
+permission to create Secrets would let the program mint a long-lived token
+for any service account in the namespace, with a Secret of type
+`kubernetes.io/service-account-token`. Each replica rereads the Secret every
+minute. The first to see the serving certificate within 30 days of expiry, or
+missing a host name it needs, writes a new one with the same precondition, so
+replicas agree. Replacing the CA keeps the old one in the bundle until it
+expires, so servers still using a certificate it signed keep working.
+
+Each replica applies the webhook configurations with the bundle, which is
+idempotent, and deletes configurations that its program no longer needs, so
+that a dropped webhook doesn't fail every request for its type. `generate`
+grants `create` and `patch` on the validating configuration's name only to a
+program that validates objects, and on the mutating configuration's name only
+to a program that defaults them, so a program that only validates can't
+register a webhook that changes objects. Every program, even one without
+webhooks, gets `get` and `delete` on both names, to delete the configurations
+that an earlier version left.
 
 ### HTTP endpoints
 
@@ -1360,16 +1416,18 @@ without a cluster. The types that `Reconcile` reads and writes are known only
 at run time, so `internal/analysis` finds them in the source. It runs `go list
 -deps -export` for the program's package, parses the packages that import
 kube, and type-checks them with `go/types`, importing every other package from
-the compiler's export data. Each instantiation of `Get`, `List`, `Fetch`,
-`Own`, `Apply`, or `Delete` names a type, or a type parameter of the generic
-function that contains the call. The analysis follows type parameters back
+the compiler's export data. It passes `go list` the build tags of the image's
+copy of the program, so it reads the same files as that build. Each
+instantiation of `Get`, `List`, `Fetch`, `Own`, `Apply`, or `Delete` names a
+type, or a type parameter of the generic function that contains the call.
+The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
-`get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
-needs `create` and `patch`, and `Delete` needs `delete`. A `Fetch` that
-passes a type with a known scope and constants as the namespace and name
-needs `get` on only that object, so the rule names it. The analysis reads
-the constants at the call, so a `Fetch` in a generic helper still needs
+`get`, `Own` needs `get`, `list`, `watch`, `create`, `patch`, and `delete`,
+`Apply` needs `get`, `create`, and `patch`, and `Delete` needs `delete`. A
+`Fetch` that passes a type with a known scope and constants as the namespace
+and name needs `get` on only that object, so the rule names it. The analysis
+reads the constants at the call, so a `Fetch` in a generic helper still needs
 `get` on every object of the type. When a type passed to
 `Apply` has a field whose `json` tag names it `status`, the rules also grant
 `patch` on the type's `status` subresource. `controller-gen` reads
@@ -1400,7 +1458,7 @@ several controllers gets the rule for each reconciled type.
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
 a Role in its namespace. With `-watch-namespace`, the program runs with
-`-namespace`, and the rules for a type whose `kube` tag says
+`-watch-namespace` too, and the rules for a type whose `kube` tag says
 `scope=Namespaced`, or that the program defines without `scope=Cluster`, go in
 a Role in the watched namespace. A reconciled type with more than one version
 keeps its rules in the ClusterRole, because migrating its stored objects to a
@@ -1410,6 +1468,26 @@ can keep state in a ConfigMap there without the right to read or write
 ConfigMaps anywhere else. Caches watch every namespace that the program
 watches, so the framework rejects a local type in `Get`, `List`, and `Own`, and
 `generate` rejects a controller that reconciles or owns one.
+
+Every installation of a program in a cluster shares its cluster-scoped
+objects and the namespaces outside its own, so the names of the ClusterRole,
+its binding, the Roles in other namespaces, and the webhook configurations
+include the namespace that the program is installed in: `NAME.NAMESPACE`, or
+`NAME` in the namespace `NAME`, where `generate` installs by default. With the
+program's name alone, a second installation's `kubectl apply` would replace
+the first one's ClusterRoleBinding subjects, and its program would take over
+the first one's webhook configurations. The program names its webhook
+configurations with the same function as `generate`, from its own namespace.
+
+`Manager.Main` passes its Manager to `generate`, so the YAML follows the
+fields that the program sets, as the program does at run time. `Name` names
+the installation. `LeaseNamespace` is where the rules for the Leases and the
+webhook certificate go, and it names the webhook configurations. `Namespace`
+and `Shards` are the defaults of `-watch-namespace` and `-shards`, and with
+`LeaderElection`, one replica gets the rules for Leases too. The program's
+own flags default to the same fields, so when the program sets `Shards` or
+`Namespace`, the Deployment's arguments set `-shards` or `-watch-namespace`
+to the value that `generate` used, which may differ from the field.
 
 `ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
 first reference to each, and `generate` adds the rules that
@@ -1423,21 +1501,32 @@ gets a projected token for each audience and no rule.
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
-`/app/PROGRAM` to the base's image for that platform, sets the entrypoint and
-a non-root user, and pushes an index of the images. Each image names its base
+`/app/PROGRAM` to the base's image for that platform, sets the entrypoint, and
+pushes an index of the images. An image keeps its base's user, or runs as user
+65532 if the base has none. Each image names its base
 with the `org.opencontainers.image.base.name` and `.digest` annotations, and
 leaves out the base's own annotations, such as its title and source
 repository, which describe the base. Timestamps are the Unix
 epoch, so the same source and base give the same digest, and the Deployment
 names the image by digest. The copy of the program in the image is built with
-the `kube_nogenerate` build tag, which leaves out `generate` and
-go-containerregistry with it, so the program in the cluster links only kube.
+the build tags and linker flags that `debug.ReadBuildInfo` reports for the
+running program, so its tag-selected files, and a version that
+`-ldflags=-X` sets, match what the developer ran. `generate` adds `-s -w` to
+the linker flags, and the `kube_nogenerate` build tag, which leaves out
+`generate` and go-containerregistry with it, so the program in the cluster
+links only kube. The go command doesn't record the linker flags of a program
+built with `-trimpath`, so for such a program `generate` takes them from
+`GOFLAGS`. It warns when `GOFLAGS` has none, because linker flags on the go
+command line are lost.
 
 `internal/yaml` writes the YAML from ordered JSON, so the output is stable. It
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
-`/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. `/readyz`
+`/healthz`, as user and group 65532 with a read-only root file system, and
+with `-leader-elect` or `-shards` when it has more than one replica. The Pod
+sets `runAsNonRoot`, and with it the kubelet won't start a container whose
+image runs as root, or as a user name, which it can't check. A base can set
+either, so the Pod sets the user too. `/readyz`
 fails while the program starts, and by default the kubelet probes again 10
 seconds after a failure, so a new Pod, and a rollout that waits for it, could
 wait up to 10 seconds longer than they need to. `/readyz` reads only memory,
@@ -1616,7 +1705,11 @@ framework's tests check that:
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote. The website example writes its events with those
-  rules, and podpolicy, which records none, gets no rule for them.
+  rules and creates its CRD with a rule for that name only, and when
+  `GOFLAGS` sets a build tag, the program in its image has it too.
+  Podpolicy, which records no events, gets no rule for them, and fills in
+  the webhook certificate Secret that the YAML creates, with no rule to
+  create Secrets.
 - Two replicas of the probe example, with the rules that `generate` writes,
   both serve, accept tokens for their own audience and refuse others, send a
   token for their own service account from a token directory and review it,
@@ -1639,8 +1732,9 @@ kube-proxy. It pushes to a local registry as kind's
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
 that `kubectl describe` shows the Website's events, that reconciles continue
 after every controller pod is replaced, that imagereport creates its CRD with
-the rules that `generate` wrote and reports the images that pods run, and
-that the podpolicy webhooks deny and default pods through their Service.
+the rules that `generate` wrote and reports the images that pods run, that
+janitor starts on a base whose user is a name, and that the podpolicy
+webhooks deny and default pods through their Service.
 It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token
@@ -1832,8 +1926,8 @@ offers:
   but never updates it, so a later release that changes the type leaves the
   CRD as it was.
 - A program that reconciles a type takes over the CRD that another program
-  created only if both programs declare the same scope and `Manager.Domain`,
-  and the reconciling program declares the created version.
+  created only if both programs declare the same scope and the reconciling
+  program declares the created version.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache

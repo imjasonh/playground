@@ -6,11 +6,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -58,14 +64,6 @@ func TestResourceName(t *testing.T) {
 	} {
 		if g, p := resourceName(&tc.ti); g != tc.group || p != tc.plural {
 			t.Errorf("resourceName(%s) = %q, %q, want %q, %q", tc.ti.kind, g, p, tc.group, tc.plural)
-		}
-	}
-}
-
-func TestObjectName(t *testing.T) {
-	for in, want := range map[string]string{"website": "website", "My_Controller": "my-controller", "__": "controller", "a.b": "a-b"} {
-		if got := objectName(in); got != want {
-			t.Errorf("objectName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -181,7 +179,7 @@ func TestPlanPatch(t *testing.T) {
 }
 
 func TestManifests(t *testing.T) {
-	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 3, shards: 1, args: []string{"-v"}}
+	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 3, shards: 1, args: []string{"-log-level=debug"}}
 	p := &installPlan{cluster: grants{}, local: grants{}, webhooks: true, electLeader: true}
 	p.cluster.add("apps", "deployments", "", "list")
 	p.local.add("coordination.k8s.io", "leases", "", "get")
@@ -193,18 +191,25 @@ func TestManifests(t *testing.T) {
 		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		kinds = append(kinds, m["kind"].(string))
-		meta := m["metadata"].(map[string]any)
-		if m["kind"] != "Namespace" && meta["name"] != "web-site" {
-			t.Errorf("%s is named %v", m["kind"], meta["name"])
-		}
+		name := "web-site"
 		switch m["kind"] {
+		case "ClusterRole", "ClusterRoleBinding":
+			name = "web-site.sites"
+		case "Secret":
+			name = "web-site-webhook-tls"
 		case "Deployment":
 			deployment = m
 		case "Service":
 			service = m
 		}
+		if got := m["metadata"].(map[string]any)["name"]; got != name {
+			t.Errorf("%s is named %v, want %s", m["kind"], got, name)
+		}
+		if ref, ok := m["roleRef"].(map[string]any); ok && ref["name"] != name {
+			t.Errorf("%s refers to %v, want %s", m["kind"], ref["name"], name)
+		}
 	}
-	want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Service", "Deployment", "PodDisruptionBudget"}
+	want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Secret", "Service", "Deployment", "PodDisruptionBudget"}
 	if !slices.Equal(kinds, want) {
 		t.Errorf("kinds = %v, want %v", kinds, want)
 	}
@@ -212,11 +217,11 @@ func TestManifests(t *testing.T) {
 	for _, s := range []string{
 		`"replicas":3`,
 		`"image":"ghcr.io/you/web-site@sha256:abc"`,
-		`"args":["-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-v"]`,
+		`"args":["-metrics-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-log-level=debug"]`,
 		`"env":[{"name":"KUBE_IMAGE","value":"ghcr.io/you/web-site@sha256:abc"}]`,
 		`"serviceAccountName":"web-site"`,
 		`"shareProcessNamespace":true`,
-		`"runAsNonRoot":true`,
+		`"securityContext":{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}`,
 		`"readOnlyRootFilesystem":true`,
 		`"volumeMounts":[{"mountPath":"/tmp","name":"tmp"}]`,
 		`"volumes":[{"emptyDir":{},"name":"tmp"}]`,
@@ -242,12 +247,63 @@ func TestManifests(t *testing.T) {
 	for _, d := range docs {
 		kinds = append(kinds, d[1].value.(string))
 	}
-	if want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Deployment"}; !slices.Equal(kinds, want) {
+	if want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Deployment"}; !slices.Equal(kinds, want) {
 		t.Errorf("one replica without webhooks: kinds = %v, want %v", kinds, want)
 	}
 	b, _ = json.Marshal(docs[len(docs)-1])
-	if !strings.Contains(string(b), `"args":["-addr=:8080","-v"]`) {
+	if !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-log-level=debug"]`) {
 		t.Errorf("one replica without webhooks: %s", b)
+	}
+}
+
+// TestManifestsNamespace checks that the YAML creates the namespace only when
+// it's the program's own, so that deleting the installation doesn't delete a
+// namespace that other programs share.
+func TestManifestsNamespace(t *testing.T) {
+	for _, tc := range []struct {
+		namespace string
+		want      []string
+	}{
+		{namespace: "web-site", want: []string{"web-site"}},
+		{namespace: "sites"},
+	} {
+		o := &generateOptions{program: "web_site", name: "web-site", namespace: tc.namespace, replicas: 1, shards: 1}
+		var namespaces []string
+		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}}) {
+			if d[1].value == "Namespace" {
+				namespaces = append(namespaces, d[2].value.(object)[0].value.(string))
+			}
+		}
+		if !slices.Equal(namespaces, tc.want) {
+			t.Errorf("-namespace=%s: the YAML creates the namespaces %q, want %q", tc.namespace, namespaces, tc.want)
+		}
+	}
+}
+
+// TestManifestsWebhookSecret checks that the YAML creates an empty Secret for
+// the webhook certificate, which the program may fill in but not create, in
+// the namespace where the program keeps it.
+func TestManifestsWebhookSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name, leaseNamespace string
+		webhooks             bool
+		want                 string
+	}{
+		{"webhooks", "", true, `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"web-site-webhook-tls","namespace":"sites","labels":{"app.kubernetes.io/name":"web-site"}},"type":"Opaque"}`},
+		{"webhooks and a LeaseNamespace", "leases", true, `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"web-site-webhook-tls","namespace":"leases","labels":{"app.kubernetes.io/name":"web-site"}},"type":"Opaque"}`},
+		{"no webhooks", "", false, ""},
+	} {
+		o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 1, shards: 1, manager: Manager{LeaseNamespace: tc.leaseNamespace}}
+		var got string
+		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: tc.webhooks}) {
+			if d[1].value == "Secret" {
+				b, _ := json.Marshal(d)
+				got = string(b)
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%s: Secret = %s, want %s", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -272,17 +328,20 @@ func TestManifestsServe(t *testing.T) {
 	o := &generateOptions{program: "probe", name: "probe", namespace: "probe", replicas: 1, shards: 1}
 	for _, tc := range []struct {
 		webhooks             bool
+		kinds                []string
 		args, ports, service string
 	}{
 		{
 			false,
-			`"args":["-addr=:8080","-serve-addr=:8081"]`,
+			[]string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Service", "Deployment"},
+			`"args":["-metrics-addr=:8080","-serve-addr=:8081"]`,
 			`"ports":[{"name":"http","containerPort":8080},{"name":"serve","containerPort":8081}]`,
 			`"ports":[{"name":"serve","port":80,"targetPort":"serve"}]`,
 		},
 		{
 			true,
-			`"args":["-addr=:8080","-webhook-addr=:9443","-webhook-service=probe/probe","-serve-addr=:8081"]`,
+			[]string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Secret", "Service", "Deployment"},
+			`"args":["-metrics-addr=:8080","-webhook-addr=:9443","-webhook-service=probe/probe","-serve-addr=:8081"]`,
 			`"ports":[{"name":"http","containerPort":8080},{"name":"webhook","containerPort":9443},{"name":"serve","containerPort":8081}]`,
 			`"ports":[{"name":"webhook","port":443,"targetPort":"webhook"},{"name":"serve","port":80,"targetPort":"serve"}]`,
 		},
@@ -295,8 +354,8 @@ func TestManifestsServe(t *testing.T) {
 			kinds = append(kinds, kind)
 			byKind[kind] = string(b)
 		}
-		if want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Service", "Deployment"}; !slices.Equal(kinds, want) {
-			t.Errorf("webhooks %v: kinds = %v, want %v", tc.webhooks, kinds, want)
+		if !slices.Equal(kinds, tc.kinds) {
+			t.Errorf("webhooks %v: kinds = %v, want %v", tc.webhooks, kinds, tc.kinds)
 		}
 		for _, s := range []string{tc.args, tc.ports} {
 			if !strings.Contains(byKind["Deployment"], s) {
@@ -339,11 +398,11 @@ func TestManifestsPreStop(t *testing.T) {
 }
 
 func TestManifestsTokens(t *testing.T) {
-	o := &generateOptions{program: "sts", name: "sts", namespace: "sts", replicas: 1, shards: 1, args: []string{"-v"}}
+	o := &generateOptions{program: "sts", name: "sts", namespace: "sts", replicas: 1, shards: 1, args: []string{"-log-level=debug"}}
 	docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, tokens: []string{"https://octo-sts.dev", "probe"}})
 	b, _ := json.Marshal(docs[len(docs)-1])
 	for _, s := range []string{
-		`"args":["-addr=:8080","-token-dir=/var/run/secrets/tokens","-v"]`,
+		`"args":["-metrics-addr=:8080","-token-dir=/var/run/secrets/tokens","-log-level=debug"]`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"tokens","mountPath":"/var/run/secrets/tokens","readOnly":true}]`,
 		`{"name":"tokens","projected":{"sources":[` +
 			`{"serviceAccountToken":{"audience":"https://octo-sts.dev","expirationSeconds":3600,"path":"5ed769dad83e947182558c07a2054d31423885eaab718996164c0f14d4713c35"}},` +
@@ -408,10 +467,10 @@ func TestManifestsVolume(t *testing.T) {
 	for _, s := range []string{
 		`"spec":{"replicas":1,"strategy":{"type":"Recreate"},"selector"`,
 		`"shareProcessNamespace":true`,
-		`"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
+		`"securityContext":{"runAsUser":65532,"runAsGroup":65532,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"data","mountPath":"/var/lib/eventlog"}]`,
 		`"volumes":[{"name":"tmp","emptyDir":{}},{"name":"data","persistentVolumeClaim":{"claimName":"eventlog"}}]`,
-		`"args":["-addr=:8080","-serve-addr=:8081"]`,
+		`"args":["-metrics-addr=:8080","-serve-addr=:8081"]`,
 	} {
 		if !strings.Contains(byKind["Deployment"], s) {
 			t.Errorf("the Deployment lacks %s: %s", s, byKind["Deployment"])
@@ -534,9 +593,9 @@ func TestPlanGrantsStatusOfAppliedTypes(t *testing.T) {
 		group, resource string
 		want            []string
 	}{
-		{"apps", "deployments", []string{"create", "patch"}},
+		{"apps", "deployments", []string{"create", "get", "patch"}},
 		{"apps", "deployments/status", []string{"patch"}},
-		{"", "configmaps", []string{"create", "patch"}},
+		{"", "configmaps", []string{"create", "get", "patch"}},
 		{"", "configmaps/status", nil},
 		{"", "pods", []string{"list", "watch"}},
 		{"", "pods/status", nil},
@@ -547,26 +606,152 @@ func TestPlanGrantsStatusOfAppliedTypes(t *testing.T) {
 	}
 }
 
-// TestPlanCRDRules works out the rules of testdata/crdrules, which reads one
-// custom type and owns another without reconciling either. The program may
-// create the CRD of the type that it owns, and nothing for the type that it
-// reads.
+// TestPlanCRDRules works out the rules for CustomResourceDefinitions. A
+// program applies the CRD of a type that it reconciles, which needs rules
+// only for that CRD's name. testdata/crdrules reads one custom type and owns
+// another without reconciling either. It may create the CRD of the type that
+// it owns, which RBAC can't limit to a name, and gets nothing for the type
+// that it reads.
 func TestPlanCRDRules(t *testing.T) {
-	var stderr bytes.Buffer
-	o := &generateOptions{program: "crdrules", name: "crdrules", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, stderr: &stderr}
-	p, err := o.plan(t.Context(), []Controller{For[configMapMeta](nop[configMapMeta]{})}, "github.com/imjasonh/playground/kube/testdata/crdrules")
-	if err != nil {
-		t.Fatalf("plan: %v\n%s", err, stderr.String())
-	}
-	got := map[string][]string{}
-	for k, verbs := range p.cluster {
-		if k.resource == "customresourcedefinitions" {
-			got[k.name] = slices.Sorted(maps.Keys(verbs))
+	for _, tc := range []struct {
+		name, pkg string
+		c         Controller
+		want      map[string][]string
+	}{
+		{
+			"reconciled type", "github.com/imjasonh/playground/kube/examples/janitor", For[gizmo](gizmoReconciler{}),
+			map[string][]string{"gizmos.test.kube.imjasonh.github.io": {"create", "get", "patch"}},
+		},
+		{
+			"owned and read types", "github.com/imjasonh/playground/kube/testdata/crdrules", For[configMapMeta](nop[configMapMeta]{}),
+			map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}},
+		},
+	} {
+		var stderr bytes.Buffer
+		o := &generateOptions{program: "crdrules", name: "crdrules", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, stderr: &stderr}
+		p, err := o.plan(t.Context(), []Controller{tc.c}, tc.pkg)
+		if err != nil {
+			t.Fatalf("%s: plan: %v\n%s", tc.name, err, stderr.String())
+		}
+		got := map[string][]string{}
+		for k, verbs := range p.cluster {
+			if k.resource == "customresourcedefinitions" {
+				got[k.name] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: verbs on customresourcedefinitions by name = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	want := map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}}
+}
+
+// TestPlanWebhookNames checks the names in the rules for webhooks. The
+// webhook configurations are cluster-scoped, so their names include the
+// program's namespace. The certificate Secret is in that namespace.
+func TestPlanWebhookNames(t *testing.T) {
+	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 1, shards: 1, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard}
+	p, err := o.plan(t.Context(), []Controller{For[gizmo](validatingReconciler{})}, "github.com/imjasonh/playground/kube/examples/janitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for where, g := range map[string]grants{"cluster": p.cluster, "sites": p.local} {
+		for k, verbs := range g {
+			if strings.HasSuffix(k.resource, "webhookconfigurations") || k.resource == "secrets" {
+				got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+	}
+	want := map[string][]string{
+		`cluster validatingwebhookconfigurations "web-site.sites"`: {"create", "delete", "get", "patch"},
+		`cluster mutatingwebhookconfigurations "web-site.sites"`:   {"delete", "get"},
+		`sites secrets "web-site-webhook-tls"`:                     {"get", "update"},
+	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("verbs on customresourcedefinitions by name = %v, want %v", got, want)
+		t.Errorf("rules = %v, want %v", got, want)
+	}
+}
+
+type defaultingReconciler struct{ gizmoReconciler }
+
+func (defaultingReconciler) Default(context.Context, *gizmo, *gizmo) error { return nil }
+
+// TestPlanWebhookConfigurations checks that a program may create and patch
+// only the webhook configuration of each kind that it has webhooks of, and
+// only by name. It may get and delete both, to remove one that an earlier
+// version of the program left. A conversion webhook is in the CRD, so it
+// needs neither configuration. Every webhook needs the certificate Secret,
+// which the program may read and update but not create.
+func TestPlanWebhookConfigurations(t *testing.T) {
+	writes, removes := []string{"create", "delete", "get", "patch"}, []string{"delete", "get"}
+	for _, tc := range []struct {
+		name                 string
+		c                    Controller
+		validating, mutating []string
+		secret               bool
+	}{
+		{"validating reconciler", For[gizmo](validatingReconciler{}), writes, removes, true},
+		{"defaulting reconciler", For[gizmo](defaultingReconciler{}), removes, writes, true},
+		{"validating and defaulting webhooks", Webhooks[configMapMeta](labeler{}), writes, writes, true},
+		{"validating webhooks", Webhooks[configMapMeta](writer{}), writes, removes, true},
+		{"conversion", For[conversionHub](nop[conversionHub]{}, Version[conversionSpoke]()), removes, removes, true},
+		{"no webhooks", For[gizmo](gizmoReconciler{}), removes, removes, false},
+	} {
+		o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard}
+		p, err := o.plan(t.Context(), []Controller{tc.c}, "github.com/imjasonh/playground/kube/examples/janitor")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string][]string{}
+		for where, g := range map[string]grants{"cluster": p.cluster, "prog": p.local} {
+			for k, verbs := range g {
+				if strings.HasSuffix(k.resource, "webhookconfigurations") || k.resource == "secrets" {
+					got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+				}
+			}
+		}
+		want := map[string][]string{
+			`cluster validatingwebhookconfigurations "prog"`: tc.validating,
+			`cluster mutatingwebhookconfigurations "prog"`:   tc.mutating,
+		}
+		if tc.secret {
+			want[`prog secrets "prog-webhook-tls"`] = []string{"get", "update"}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: rules = %v, want %v", tc.name, got, want)
+		}
+	}
+}
+
+// TestPlanLeaseNamespace checks that the rules for the Leases and the
+// webhook certificate go in the Manager's LeaseNamespace, which also names
+// the webhook configurations, and that a Manager with LeaderElection gets
+// the rules for Leases with one replica.
+func TestPlanLeaseNamespace(t *testing.T) {
+	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 1, shards: 1, manager: Manager{LeaseNamespace: "leases", LeaderElection: true}, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard}
+	p, err := o.plan(t.Context(), []Controller{For[gizmo](validatingReconciler{})}, "github.com/imjasonh/playground/kube/examples/janitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.electLeader {
+		t.Error("a Manager with LeaderElection doesn't get the rules for Leases")
+	}
+	got := map[string][]string{}
+	for where, g := range map[string]grants{"cluster": p.cluster, "sites": p.local, "leases": p.namespaces["leases"]} {
+		for k, verbs := range g {
+			if strings.HasSuffix(k.resource, "webhookconfigurations") || k.resource == "secrets" || k.resource == "leases" {
+				got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+	}
+	want := map[string][]string{
+		`cluster validatingwebhookconfigurations "web-site.leases"`: {"create", "delete", "get", "patch"},
+		`cluster mutatingwebhookconfigurations "web-site.leases"`:   {"delete", "get"},
+		`leases secrets "web-site-webhook-tls"`:                     {"get", "update"},
+		`leases leases ""`:                                          {"create", "delete", "get", "list", "update"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rules = %v, want %v", got, want)
 	}
 }
 
@@ -624,6 +809,12 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	if role == nil || role["metadata"].(map[string]any)["namespace"] != "team" {
 		t.Fatalf("Role = %v, want one in team", role)
 	}
+	if name := role["metadata"].(map[string]any)["name"]; name != "app.app-system" {
+		t.Errorf("the Role in team is named %v, want app.app-system", name)
+	}
+	if ref := binding["roleRef"].(map[string]any)["name"]; ref != "app.app-system" {
+		t.Errorf("the RoleBinding in team refers to %v, want app.app-system", ref)
+	}
 	if b, _ := json.Marshal(role["rules"]); string(b) != `[{"apiGroups":[""],"resources":["secrets"],"verbs":["get"]}]` {
 		t.Errorf("Role rules = %s", b)
 	}
@@ -633,8 +824,41 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	if b, _ := json.Marshal(byKind["ClusterRole"]["rules"]); strings.Contains(string(b), "secrets") {
 		t.Errorf("ClusterRole rules = %s, want no secrets", b)
 	}
-	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-addr=:8080","-namespace=team"]`) {
-		t.Errorf("Deployment = %s, want -namespace=team", b)
+	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-watch-namespace=team"]`) {
+		t.Errorf("Deployment = %s, want -watch-namespace=team", b)
+	}
+}
+
+// TestManifestsFollowManager checks that the Deployment's arguments set the
+// program's flags that default to the Manager's fields to the values that
+// generate used, even when generate's flags override the fields.
+func TestManifestsFollowManager(t *testing.T) {
+	for _, tc := range []struct {
+		// fieldShards, fieldNamespace, and leaderElection are the Manager's
+		// fields, and shards and watch are the values of generate's flags.
+		fieldShards    int
+		fieldNamespace string
+		leaderElection bool
+		shards         int
+		watch          string
+		electLeader    bool
+		want           string
+	}{
+		{shards: 1, want: `"args":["-metrics-addr=:8080"]`},
+		{fieldShards: 3, fieldNamespace: "team", shards: 3, watch: "team", electLeader: true, want: `"args":["-metrics-addr=:8080","-shards=3","-watch-namespace=team"]`},
+		// generate's -shards=1 and -watch-namespace= override both fields.
+		{fieldShards: 3, fieldNamespace: "team", shards: 1, electLeader: true, want: `"args":["-metrics-addr=:8080","-shards=1","-leader-elect","-watch-namespace="]`},
+		// A program that reconciles nothing takes no Leases.
+		{fieldShards: 3, shards: 3, want: `"args":["-metrics-addr=:8080","-shards=1"]`},
+		{leaderElection: true, shards: 1, electLeader: true, want: `"args":["-metrics-addr=:8080","-leader-elect"]`},
+	} {
+		o := &generateOptions{program: "app", name: "app", namespace: "app", replicas: 1, shards: tc.shards, watchNamespace: tc.watch,
+			manager: Manager{Shards: tc.fieldShards, Namespace: tc.fieldNamespace, LeaderElection: tc.leaderElection}}
+		docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, electLeader: tc.electLeader})
+		if b, _ := json.Marshal(docs[len(docs)-1]); !strings.Contains(string(b), tc.want) {
+			t.Errorf("Shards = %d, Namespace = %q, LeaderElection = %v, -shards=%d, and -watch-namespace=%q: the Deployment lacks %s: %s",
+				tc.fieldShards, tc.fieldNamespace, tc.leaderElection, tc.shards, tc.watch, tc.want, b)
+		}
 	}
 }
 
@@ -811,7 +1035,7 @@ func TestManifestsForInstalledObjects(t *testing.T) {
 			t.Errorf("%s subjects = %s", m.Metadata.Namespace, b)
 		}
 	}
-	if want := []string{"Role other/app", "RoleBinding other/app", "Role policies/app", "RoleBinding policies/app"}; !slices.Equal(roles, want) {
+	if want := []string{"Role other/app.app-system", "RoleBinding other/app.app-system", "Role policies/app.app-system", "RoleBinding policies/app.app-system"}; !slices.Equal(roles, want) {
 		t.Errorf("roles = %q, want %q", roles, want)
 	}
 }
@@ -864,11 +1088,46 @@ var installForTest = flag.Bool("kube-test-install", true, "install objects")
 
 func TestParseProgramFlags(t *testing.T) {
 	t.Cleanup(func() { *installForTest = true })
-	if err := parseProgramFlags([]string{"-v", "-namespace=team", "-kube-test-install=false"}); err != nil {
+	o := &generateOptions{args: []string{"-log-level=debug", "-webhook-url=https://192.0.2.10:9443", "-kube-test-install=false"}}
+	if err := o.parseProgramFlags(); err != nil {
 		t.Fatal(err)
 	}
 	if *installForTest {
 		t.Error("the program's flag isn't set")
+	}
+	for _, tc := range []struct {
+		args   []string
+		logger *slog.Logger
+		want   string
+	}{
+		{[]string{"-metrics-addr=:9090"}, nil, "generate sets -metrics-addr itself"},
+		{[]string{"-leader-elect"}, nil, "generate sets -leader-elect itself; generate turns it on when -replicas or -shards is more than 1"},
+		{[]string{"-log-level=debug", "-watch-namespace=team"}, nil, "generate sets -watch-namespace itself; set -watch-namespace before -- instead"},
+		// Main doesn't define -log-level for a Manager with a Logger.
+		{[]string{"-log-level=debug"}, slog.New(slog.DiscardHandler), "flag provided but not defined: -log-level"},
+	} {
+		o := &generateOptions{args: tc.args, manager: Manager{Logger: tc.logger}}
+		if err := o.parseProgramFlags(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("parseProgramFlags with %q = %v, want an error containing %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+// TestParseProgramFlagsDefinedByTheProgram checks that generate fails when
+// the program defines a flag that the Deployment sets for kube, and accepts
+// one that it doesn't.
+func TestParseProgramFlagsDefinedByTheProgram(t *testing.T) {
+	saved := flag.CommandLine
+	t.Cleanup(func() { flag.CommandLine = saved })
+	flag.CommandLine = flag.NewFlagSet("program", flag.ContinueOnError)
+	flag.CommandLine.Int("shards", 1, "the program's own shards")
+	if err := (&generateOptions{}).parseProgramFlags(); err == nil || !strings.Contains(err.Error(), "the program defines -shards") {
+		t.Errorf("parseProgramFlags with the program's own -shards = %v, want an error about -shards", err)
+	}
+	flag.CommandLine = flag.NewFlagSet("program", flag.ContinueOnError)
+	kubeconfig := flag.CommandLine.String("kubeconfig", "", "the program's own kubeconfig")
+	if err := (&generateOptions{args: []string{"-kubeconfig=config"}}).parseProgramFlags(); err != nil || *kubeconfig != "config" {
+		t.Errorf("parseProgramFlags with the program's own -kubeconfig = %v, and set it to %q; want nil and config", err, *kubeconfig)
 	}
 }
 
@@ -885,17 +1144,99 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-volume-size=lots"}, "-volume-size \"lots\" isn't a quantity"},
 		{[]string{"-registry=ghcr.io/you", "-volume-size=2Gi", "-storage-class=fast"}, "has no kube.Volume, so leave out -storage-class and -volume-size"},
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
+		{[]string{"-registry=ghcr.io/you", "-namespace=team.a"}, `-namespace "team.a" isn't a namespace name`},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
-		{[]string{"-registry=ghcr.io/you", "--", "-v", "-nope"}, "the program's flags after --: flag provided but not defined: -nope"},
+		{[]string{"-registry=ghcr.io/you", "--", "-log-level=debug", "-nope"}, "the program's flags after --: flag provided but not defined: -nope"},
+		{[]string{"-registry=ghcr.io/you", "-watch-namespace=a", "--", "-shards=3"}, "the program's flags after --: generate sets -shards itself; set -shards before -- instead"},
 	} {
 		var stderr bytes.Buffer
-		err := generate(t.Context(), tc.args, nil, &bytes.Buffer{}, &stderr)
+		err := (&Manager{}).generate(t.Context(), tc.args, nil, &bytes.Buffer{}, &stderr)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("generate %q = %v, want an error containing %q", tc.args, err, tc.want)
 		}
 	}
 	if p, err := v1.ParsePlatform("linux/arm/v7"); err != nil || !reflect.DeepEqual(buildEnv(*p)[len(buildEnv(*p))-1], "GOARM=7") {
 		t.Errorf("buildEnv(linux/arm/v7) doesn't set GOARM: %v", err)
+	}
+}
+
+// TestBuildFlags builds testdata/buildflags as generate would for a program
+// with each case's build settings, and runs it.
+func TestBuildFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		settings []debug.BuildSetting
+		goflags  string
+		// logged ends the line that generate logs for the build, and out is
+		// what the program prints.
+		logged, out string
+		warn        bool
+	}{
+		{"none", nil, "", `-tags=kube_nogenerate -ldflags="-s -w"`, "unset false", false},
+		{
+			"tags and linker flags",
+			[]debug.BuildSetting{{Key: "-tags", Value: "foo"}, {Key: "-ldflags", Value: "-X 'main.version=v1.2.3'"}},
+			"", `-tags=foo,kube_nogenerate -ldflags="-X 'main.version=v1.2.3' -s -w"`, "v1.2.3 true", false,
+		},
+		// The go command doesn't record the linker flags of a program built
+		// with -trimpath.
+		{
+			"trimpath and GOFLAGS",
+			[]debug.BuildSetting{{Key: "-tags", Value: "foo"}, {Key: "-trimpath", Value: "true"}},
+			"-trimpath -ldflags=-X=main.version=v1.2.3", `-tags=foo,kube_nogenerate -ldflags="-X=main.version=v1.2.3 -s -w"`, "v1.2.3 true", false,
+		},
+		{
+			"trimpath",
+			[]debug.BuildSetting{{Key: "-trimpath", Value: "true"}},
+			"-trimpath", `-tags=kube_nogenerate -ldflags="-s -w"`, "unset false", true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GOFLAGS", tc.goflags)
+			var stderr bytes.Buffer
+			o := &generateOptions{stderr: &stderr}
+			if err := o.buildFlags(t.Context(), &debug.BuildInfo{Settings: tc.settings}); err != nil {
+				t.Fatal(err)
+			}
+			exe := filepath.Join(t.TempDir(), "buildflags")
+			if err := o.build(t.Context(), "github.com/imjasonh/playground/kube/testdata/buildflags", v1.Platform{OS: runtime.GOOS, Architecture: runtime.GOARCH}, exe); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.CommandContext(t.Context(), exe).Output() // #nosec G204 -- the program the test built.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(string(out)); got != tc.out {
+				t.Errorf("the program prints %q, want %q", got, tc.out)
+			}
+			if !strings.Contains(stderr.String(), " with "+tc.logged+"\n") {
+				t.Errorf("stderr = %q, want a line that ends with %s", stderr.String(), tc.logged)
+			}
+			if warned := strings.Contains(stderr.String(), "warning:"); warned != tc.warn {
+				t.Errorf("stderr = %q, want a warning: %t", stderr.String(), tc.warn)
+			}
+		})
+	}
+}
+
+// TestGenerateFollowsManager checks that generate names the installation
+// for the Manager's Name, and that its -watch-namespace and -shards default
+// to the Manager's fields, as the program's flags do.
+func TestGenerateFollowsManager(t *testing.T) {
+	var stderr bytes.Buffer
+	m := &Manager{Name: "My_App", Namespace: "team", Shards: 3}
+	if err := m.generate(t.Context(), []string{"-h"}, nil, &bytes.Buffer{}, &stderr); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("generate -h = %v, want flag.ErrHelp", err)
+	}
+	for _, s := range []string{
+		"pushes it to REGISTRY/my-app,",
+		`namespace to install the program in (default "my-app")`,
+		`go in a Role there (default "team")`,
+		"in this many shards (default 3)",
+	} {
+		if !strings.Contains(stderr.String(), s) {
+			t.Errorf("generate -h lacks %q:\n%s", s, stderr.String())
+		}
 	}
 }
 
