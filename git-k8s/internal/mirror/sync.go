@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -64,8 +63,8 @@ type Report struct {
 // the copy if it doesn't exist. For each branch, it pushes a change made
 // only in the copy, takes a change made only in the external repository,
 // and leaves a branch that changed in both as it is on each side. Unless
-// the sync is final, Sync then runs git's maintenance on the copy, which
-// packs its objects when it needs that.
+// the sync is final, Sync then queues the copy for Maintain, and returns
+// without waiting for it.
 //
 // Sync returns an error, and no report, when it has no branches to report:
 // the copy hasn't fetched the external repository yet, and the error wraps
@@ -152,11 +151,7 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 		}
 	}
 	if !o.Final {
-		// Maintenance changes no ref, so a failure leaves the report
-		// true, and the next sync tries again.
-		if err := e.repo.Maintain(ctx); err != nil {
-			slog.Warn("maintaining a copy failed", "repository", repo.Namespace+"/"+repo.Name, "err", err)
-		}
+		m.queueMaintenance(e)
 	}
 	return rep, nil
 }

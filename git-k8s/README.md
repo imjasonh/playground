@@ -181,7 +181,10 @@ seconds, or within `pollInterval` if that's shorter, and doesn't push until
 then. Until a copy has fetched from its external repository once, the
 mirror answers requests for it with `503 Service Unavailable`, and the
 `GitRepository`'s `Ready` condition says why, with the reason `FetchFailed`
-or `CredentialsUnavailable`.
+or `CredentialsUnavailable`. Each git command stops after the core
+program's `-git-timeout`, 5 minutes by default, and git doesn't resume a
+fetch that stopped, so for an external repository whose first fetch takes
+longer, raise `-git-timeout`.
 
 When you delete a `GitRepository`, the controller pushes the copy's last
 changes to the external repository and then deletes the copy. While the
@@ -237,9 +240,9 @@ where the copy and the external repository last synced under
 
 The mirror reads at most 1,000 ref updates and shallow commits, in at most
 1 MiB, at the start of a push, and a copy takes a pack of at most 256 MiB.
-The mirror stops reading a request that takes longer than git's 5-minute
-timeout plus 10 seconds, and stops writing a response 10 minutes 20 seconds
-after the request starts. A client that sends a pack slowly keeps the copy
+The mirror stops reading a request that takes longer than git's timeout
+plus 10 seconds, 5 minutes 10 seconds with the default `-git-timeout`, and
+stops writing a response twice that long after the request starts. A client that sends a pack slowly keeps the copy
 open until the first deadline, and a client that stops reading the response
 keeps it open until the second. While a copy is open, the mirror can't
 delete it, replace it, or switch it to a new URL, and the requests that
@@ -379,10 +382,10 @@ line also counts as one, and the branch diverges.
 
 Comparing the heads can take a long time when both sides rewrote the same
 long stretch of history between two syncs. The mirror stops comparing a
-branch's heads after 10 minutes 20 seconds, twice the longest that one git
-command can take, or when one git command runs past git's 5-minute
-timeout, and leaves the branch as it is on each side, with the reason
-`CompareFailed`. It remembers what it decided about each branch, including
+branch's heads after twice the longest that one git command can take, 10
+minutes 20 seconds with the default `-git-timeout`, or when one git command
+runs past that timeout, and leaves the branch as it is on each side, with
+the reason `CompareFailed`. It remembers what it decided about each branch, including
 a comparison that took too long, and doesn't compare that branch's heads
 again until either side's head moves or the core program restarts. To
 resolve a branch whose comparison took too long, push the same commit to
@@ -3104,12 +3107,16 @@ for example with `kubectl delete -f`, deletes the claim.
 
 A git that's killed while it holds a lock, for example when the Pod runs
 out of memory, leaves the lock file, and git can't update what the file
-locks until it's gone. A git command that runs past its 5-minute timeout,
-or whose request ends, gets `SIGTERM` and removes its own locks. Before
-each sync, the mirror removes the copy's lock files that are older than 6
-minutes and 10 seconds: the longest that a git command can take, plus a
-minute in case the volume's clock differs from the node's. A newer lock
-might belong to the other Pod. Until the mirror removes a lock, a sync or a
+locks until it's gone. A git command that runs past its timeout, or whose
+request ends, gets `SIGTERM` and removes its own locks. Before each sync,
+the mirror removes the copy's lock files that are older than the longest
+that a git command can take, plus a minute in case the volume's clock
+differs from the node's: 6 minutes and 10 seconds with the default
+`-git-timeout`. Maintenance holds the locks under `objects/` for as long as
+it runs, so the mirror removes those only once they're older than the
+longest that maintenance can take, plus a minute: 1 hour, 1 minute, and 10
+seconds with the default `-maintenance-timeout`. A newer lock might belong
+to the other Pod. Until the mirror removes a lock, a sync or a
 landing that needs the locked ref fails and tries again later. The
 `GitRepository`'s `ExternalSynced` condition names the lock, with the reason
 `UpdateFailed` when the sync couldn't update a branch in the copy, or
@@ -3117,11 +3124,16 @@ landing that needs the locked ref fails and tries again later. The
 
 Git packs a copy's objects in its maintenance. A fetch or a push would
 start maintenance in the background, where git's timeout doesn't apply, so
-the mirror turns that off and runs maintenance itself at the end of each
-sync, when git says the copy needs it, and logs any failure. The sync
-waits for it. Maintenance that runs past the timeout gets `SIGTERM`, and so
-does the repack that it started, and the next sync starts over, so a copy
-whose repack takes longer than the timeout isn't repacked. Maintenance that
+the mirror turns that off and runs maintenance itself after each sync, when
+git says the copy needs it. It maintains one copy at a time, beside the
+copy's syncs, fetches, and pushes, which don't wait for it. Deleting a
+copy, replacing it, or switching it to a new URL stops its maintenance, and
+so does stopping the core program, which waits for git to exit. Maintenance
+that runs past the core program's `-maintenance-timeout`, 1 hour by
+default, gets `SIGTERM`, and so does the repack that it started. After
+maintenance fails or times out, the mirror logs why and skips that copy's
+maintenance for 6 hours, so a copy whose repack takes longer than the
+timeout isn't repacked until you raise it. Maintenance that
 gets `SIGKILL` instead, as when the Pod's grace period runs out, leaves
 `objects/maintenance.lock`, which makes later maintenance skip the copy
 without an error, so the mirror removes that lock once it's stale, like the

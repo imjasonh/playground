@@ -1413,22 +1413,25 @@ func TestApplyLocalAfterAMovedBranch(t *testing.T) {
 
 // A lock is stale once it's older than the longest that a git command can
 // take, 5 minutes 10 seconds by default, plus a minute in case the volume's
-// clock differs from the node's. Sync keeps a newer lock, which a running
-// git may hold, wherever it is in the copy.
+// clock differs from the node's. Maintenance holds the locks under objects/
+// for as long as it runs, so they're stale once they're older than the
+// longest that maintenance can take, 1 hour 10 seconds by default, plus a
+// minute. Sync keeps a newer lock, which a running git may hold, wherever
+// it is in the copy.
 func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 	w := newWorld(t)
 	base := w.commit("", "base")
 	w.pushExternal("main", base)
 	w.sync(SyncOptions{})
 
-	const stale = 6*time.Minute + 10*time.Second
+	const stale, staleObjects = 6*time.Minute + 10*time.Second, time.Hour + time.Minute + 10*time.Second
 	locks := map[string]time.Duration{
 		"packed-refs.lock":        stale + time.Second,
 		"HEAD.lock":               stale - time.Second,
 		"refs/heads/feature.lock": stale + time.Second,
 		"refs/heads/fix.lock":     stale - time.Second,
-		"objects/info/commit-graphs/commit-graph-chain.lock": stale + time.Second,
-		"objects/maintenance.lock":                           stale - time.Second,
+		"objects/info/commit-graphs/commit-graph-chain.lock": staleObjects + time.Second,
+		"objects/maintenance.lock":                           staleObjects - time.Second,
 	}
 	now := time.Now()
 	for path, age := range locks {
@@ -1446,74 +1449,13 @@ func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 
 	w.sync(SyncOptions{})
 	for path, age := range locks {
+		cutoff := stale
+		if strings.HasPrefix(path, "objects/") {
+			cutoff = staleObjects
+		}
 		_, err := os.Stat(filepath.Join(w.copyDir(), path))
-		if removed, want := errors.Is(err, os.ErrNotExist), age > stale; removed != want {
+		if removed, want := errors.Is(err, os.ErrNotExist), age > cutoff; removed != want {
 			t.Errorf("Sync removed %s, %v old: %t, want %t", path, age, removed, want)
-		}
-	}
-}
-
-// Fetches and pushes don't start git's maintenance, which would hold them
-// up. Sync runs it in the foreground when the copy needs it, even
-// after a killed maintenance left its lock, which makes maintenance skip
-// the copy without an error.
-func TestSyncMaintainsCopy(t *testing.T) {
-	w := newWorld(t)
-	base := w.commit("", "base")
-	w.pushExternal("main", base)
-	w.sync(SyncOptions{})
-	// The first fetch leaves its few objects loose, too few to need
-	// maintenance.
-	if got := w.work.Git("--git-dir="+w.copyDir(), "count-objects"); strings.HasPrefix(got, "0 objects,") {
-		t.Errorf("after the first Sync, git count-objects = %q, want the fetched objects loose", got)
-	}
-	config := func(args ...string) string {
-		t.Helper()
-		return w.work.Git(append([]string{"--git-dir=" + w.copyDir(), "config"}, args...)...)
-	}
-	for key, want := range map[string]string{"maintenance.auto": "false", "receive.autogc": "false"} {
-		if got := config(key); got != want {
-			t.Errorf("the copy has %s = %q, want %q", key, got, want)
-		}
-	}
-
-	// With gc.auto at 1, maintenance packs the copy once objects/17/ holds
-	// two loose objects, and the fetch leaves every object loose.
-	config("gc.auto", "1")
-	config("fetch.unpackLimit", "1000000")
-	w.work.Git("checkout", "--quiet", "--detach", base)
-	for i := range 2000 {
-		w.work.Write(fmt.Sprintf("many/%d.txt", i), fmt.Sprintf("file %d\n", i))
-	}
-	many := w.work.Commit("many")
-	w.pushExternal("main", many)
-	lock := filepath.Join(w.copyDir(), "objects", "maintenance.lock")
-	if err := os.WriteFile(lock, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-w.m.Git.MaxDuration() - 2*time.Minute)
-	if err := os.Chtimes(lock, old, old); err != nil {
-		t.Fatal(err)
-	}
-
-	if rep := w.sync(SyncOptions{Fetch: true}); rep.Heads["main"] != many {
-		t.Fatalf("Report.Heads = %v; want main at %.7s", rep.Heads, many)
-	}
-	under17 := 0
-	for line := range strings.SplitSeq(w.work.Git("--git-dir="+w.copyDir(), "rev-list", "--objects", "--all"), "\n") {
-		if strings.HasPrefix(line, "17") {
-			under17++
-		}
-	}
-	if under17 < 2 {
-		t.Fatalf("only %d of the fetched objects go under objects/17/, too few to need maintenance", under17)
-	}
-	if got := w.work.Git("--git-dir="+w.copyDir(), "count-objects"); !strings.HasPrefix(got, "0 objects,") {
-		t.Errorf("after Sync, git count-objects = %q, want no loose objects", got)
-	}
-	for _, path := range []string{lock, filepath.Join(w.copyDir(), "gc.pid")} {
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("after Sync, %s is there: %v", filepath.Base(path), err)
 		}
 	}
 }
