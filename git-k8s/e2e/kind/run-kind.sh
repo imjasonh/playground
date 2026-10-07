@@ -394,11 +394,23 @@ if [[ "${without_policies}" != *"${read_checks}"* ]] ||
   echo "generate -- -install-policies=false must grant get on the git-k8s-checks ConfigMap, and nothing else that installs the policies" >&2
   exit 1
 fi
-# The policies ignore the entry for the core program. Without that, it would
-# make the core program the gofmt check, which can't write GitBranch status
-# or change GitBranch objects, so nothing would land.
-k -n git-k8s patch configmap git-k8s-checks --type=merge \
-  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\",\"git-k8s.git-k8s\":\"gofmt\"}}"
+# The results endpoint and the mirror treat a service account as a check
+# only through its entry. The entries for the checks that later groups
+# install go in now too, because the core program caches the entries for 5
+# seconds, and a check that it rejects sends nothing more for a branch until
+# the branch changes. The policies ignore the entry for the core program.
+# Without that, it would make the core program the gofmt check, which can't
+# write GitBranch status or change GitBranch objects, so nothing would land.
+k -n git-k8s patch configmap git-k8s-checks --type=merge -p "data:
+  check-base.check-base: base
+  check-gofmt.check-gofmt: gofmt
+  check-risk.check-risk: risk
+  ${APPROVAL_NS}.check-approval: approval
+  check-gotest.check-gotest: gotest
+  check-review.check-review: review
+  check-conflicts.check-conflicts: conflicts
+  check-deps.check-deps: deps
+  git-k8s.git-k8s: gofmt"
 echo "::endgroup::"
 
 echo "::group::Upgrading moves check results to the core program"
@@ -413,7 +425,8 @@ k patch crd gitbranches.git-k8s.imjasonh.com --type=json -p \
   '[{"op":"remove","path":"/spec/versions/0/schema/openAPIV3Schema/properties/status/properties/checks/x-kubernetes-map-type"}]'
 OLD=1111111111111111111111111111111111111111
 k create namespace git-k8s-upgrade
-k -n git-k8s-upgrade apply -f - <<EOF
+# Only the core program creates GitBranch objects.
+k -n git-k8s-upgrade create --as=system:serviceaccount:git-k8s:git-k8s -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
 kind: GitBranch
 metadata:
@@ -845,6 +858,13 @@ cat "${WORKDIR}/mirror.txt"
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${APPROVAL_NS}" check-approval)")" == 200 ]]
 [[ "$(info_refs -H "Authorization: Bearer $(mirror_token git-k8s git-k8s)")" == 404 ]]
 cat "${WORKDIR}/mirror.txt"
+# Names don't make a check, because anyone who can create namespaces and
+# service accounts can choose them: check-approval in the namespace
+# check-approval has no entry, so it isn't the approval check.
+k create namespace check-approval
+k -n check-approval create serviceaccount check-approval
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token check-approval check-approval)")" == 404 ]]
+cat "${WORKDIR}/mirror.txt"
 # can_list_secrets reports whether service account $1, in namespace $2 or
 # the namespace of the same name, can list or watch the Secrets in NS. A
 # check that signs commits can get a Secret by name, for its signing key.
@@ -875,7 +895,7 @@ for program in check-base check-gofmt check-risk check-approval check-gotest; do
   fi
 done
 k -n git-k8s auth can-i create serviceaccounts/git-k8s --subresource=token --as=system:serviceaccount:git-k8s:git-k8s
-echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. It maps check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. It maps check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but not check-approval in the namespace check-approval, which has none, and never the core program. No check can create tokens, and only the core program can create tokens for Octo STS. The checks that don't sign commits can't read Secrets, and those that do can't list them."
 echo "::endgroup::"
 
 echo "::group::A check can't push to a parent through the mirror"
@@ -989,6 +1009,28 @@ rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" 
 rejected "requires the approve verb on gitbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
+rejected "set ${APPROVE} to a commit's full SHA" annotate --as=alice "${APPROVE}=${AUTH:0:12}" "${APPROVED_BY}=alice"
+# Only the core program changes a GitBranch's spec, which holds the merge
+# policy, so neither alice, who can approve c/auth, nor bob, who can patch
+# it, can drop its checks. Nobody else creates a GitBranch either.
+for user in alice bob; do
+  rejected "${user} can't change a GitBranch's spec" k -n "${NS}" patch gitbranch "$(branch_object c/auth)" \
+    --as="${user}" --type=merge -p '{"spec":{"merge":{"when":"true"}}}'
+done
+rejected "can't create GitBranch objects; only the core program creates them" k -n "${NS}" create -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitBranch
+metadata:
+  name: app-c-forged
+spec:
+  repository: app
+  branch: c/forged
+  head: "${AUTH}"
+  parent: main
+  parentHead: "${main_before}"
+  merge:
+    when: "true"
+EOF
 # The gate wants alice's approval, so another approver's doesn't land c/auth.
 admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
 annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
@@ -1003,7 +1045,7 @@ eventually 60 gate_saw_approval
 [[ "$(remote_head main)" == "${main_before}" ]]
 rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
 rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
-echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
+echo "The policies rejected bad approvals, changes to c/auth's spec, and a GitBranch that a person created, and c/auth waited through ${admin}'s approval."
 echo "::endgroup::"
 
 echo "::group::A MutatingAdmissionPolicy sets approved-by"
@@ -1288,6 +1330,12 @@ code="$(send_result "${core_results_token}" gofmt)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 403 ]]
 grep -q "system:serviceaccount:git-k8s:git-k8s isn't a check's service account" "${WORKDIR}/result.txt"
+# Nor is check-approval in the namespace check-approval, which has no entry.
+squatter_results_token="$(k -n check-approval create token check-approval --audience=git-k8s-results)"
+code="$(send_result "${squatter_results_token}" approval)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 403 ]]
+grep -q "system:serviceaccount:check-approval:check-approval isn't a check's service account; add an entry for check-approval.check-approval to the git-k8s-checks ConfigMap" "${WORKDIR}/result.txt"
 # A cache miss doesn't show that a GitBranch is gone, so the results
 # endpoint reads the API server, and answers 410 at once rather than after
 # its 10-second wait for the cache.
@@ -1367,7 +1415,7 @@ core_token="$(k -n git-k8s create token git-k8s)"
 [[ "$(patch_status "${diverged}" "${core_token}")" == 200 ]]
 k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
 k delete clusterrolebinding,clusterrole git-k8s-e2e-status
-echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The results endpoint answers 410 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
+echo "The results endpoint takes a check's result only with the check's own token, and the endpoint and the policy map check-approval in the namespace ${APPROVAL_NS} to the approval check through its ConfigMap entry, but never the core program. The endpoint refuses check-approval in the namespace check-approval, which has no entry. The results endpoint answers 410 at once for a GitBranch that doesn't exist. It refuses a check's token for the mirror, and the mirror refuses its token for the results endpoint. Checks can't write GitBranch status, a merge queue, or status.diverged even with a role that allows it. The core program and people can write status.checks, the core program can write status.diverged, and other service accounts can write neither."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -1379,7 +1427,8 @@ patch_branch() {
 }
 # check-gotest owns Pods, so generate lets it patch GitBranch objects, and
 # only the policies stop it. Even a controller with the approve verb that
-# names itself in approved-by can't approve.
+# names a full SHA and itself in approved-by, which git-k8s-approvals
+# allows, can't approve.
 k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
 k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
   --serviceaccount=check-gotest:check-gotest --serviceaccount=git-k8s:git-k8s
@@ -1399,7 +1448,7 @@ cant_approve() {
   [[ "${code}" == 422 ]] && grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
 }
 for sa in check-gotest git-k8s; do
-  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"$(remote_head main)\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
 # git-k8s-approvals lets anyone with the approve verb take over an approval,
 # so on an approved branch only git-k8s-branches stops a controller that
@@ -2851,8 +2900,8 @@ echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix
 # git-k8s-deps doesn't have the approve verb, so git-k8s-approvals stops it
 # from approving. The API server reports only one of the policies that deny
 # a request, and not always the same one, so git-k8s-deps gets the verb here
-# and names itself in approved-by, which leaves git-k8s-branches as the only
-# policy that stops it.
+# and names a full SHA and itself in approved-by, which leaves
+# git-k8s-branches as the only policy that stops it.
 deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
 can_approve() {
   [[ "$(k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com "--as=${deps_sa}" || true)" == "$1"* ]]
@@ -2864,7 +2913,7 @@ eventually 30 can_approve yes
 deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
 code="$(patch_branch "${deps_token}" '{}')"
 [[ "${code}" == 200 ]]
-for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
+for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"${fixed}\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
   '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "${reset}"; do
   code="$(patch_branch "${deps_token}" "${patch}")"
   cat "${WORKDIR}/patch.json"

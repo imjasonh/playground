@@ -32,8 +32,8 @@ const RepositoryLabel = Group + "/repository"
 
 // ApproveAnnotation on a GitBranch approves one commit's change for the
 // approval check. Its value is the commit's full SHA, which approves any
-// head that makes the same change, or a prefix of at least seven
-// characters, which approves only that commit.
+// head that makes the same change. The approval check fails a shorter
+// prefix, and the git-k8s-approvals admission policy rejects one.
 const ApproveAnnotation = Group + "/approve"
 
 // ApprovedByAnnotation on a GitBranch is the username of whoever approved
@@ -211,7 +211,7 @@ type GitBranchSpec struct {
 	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to in the mirror."`
 	Parent     string       `json:"parent,omitempty" kube:"column=Parent" doc:"Branch that this branch proposes changes to."`
 	ParentHead string       `json:"parentHead,omitempty" doc:"Commit that the parent points to in the mirror, listed at the same time as head."`
-	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent."`
+	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent. The git-k8s-branches admission policy lets only the core program set it."`
 }
 
 // GitBranchStatus holds check results and the merge controller's state.

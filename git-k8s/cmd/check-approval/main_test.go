@@ -41,11 +41,15 @@ func TestApproval(t *testing.T) {
 	if res := approve(t, "", "", nil); res.State != gitk8s.Failed || !strings.Contains(res.Message, "isn't approved") {
 		t.Errorf("unapproved: %+v", res)
 	}
-	if res := approve(t, head[:7], "", nil); res.State != gitk8s.Passed {
-		t.Errorf("approved by prefix: %+v", res)
+	if res := approve(t, head, "", nil); res.State != gitk8s.Passed {
+		t.Errorf("approved: %+v", res)
 	}
-	if res := approve(t, head[:6], "", nil); res.State != gitk8s.Failed {
-		t.Errorf("a 6-character prefix approved: %+v", res)
+	// Anyone who can push can make another commit whose SHA starts with the
+	// head's short prefix.
+	for _, approval := range []string{head[:7], head[:39], strings.ToUpper(head)} {
+		if res := approve(t, approval, "", nil); res.State != gitk8s.Failed || !strings.Contains(res.Message, "isn't a commit's full SHA") {
+			t.Errorf("approval of %s: %+v", approval, res)
+		}
 	}
 	if res := approve(t, "fedcba98", "", nil); res.State != gitk8s.Failed || !strings.Contains(res.Message, "the approval is for fedcba98") {
 		t.Errorf("approval of another commit: %+v", res)
@@ -59,7 +63,7 @@ func TestApproval(t *testing.T) {
 }
 
 func TestApprover(t *testing.T) {
-	res := approve(t, head[:7], "alice", nil)
+	res := approve(t, head, "alice", nil)
 	if res.State != gitk8s.Passed || res.Outputs["approver"] != "alice" || !strings.Contains(res.Message, "approved by alice") {
 		t.Errorf("approved by alice: %+v", res)
 	}
@@ -132,8 +136,11 @@ func TestApprovalFollowsTheChange(t *testing.T) {
 	if res.State != gitk8s.Passed || res.Message != want || res.Outputs["approver"] != "alice" || res.MergeBase != parent || !lands(res) {
 		t.Errorf("approval of the commit before base's merge: %+v, want %q for the change on top of %s", res, want, gitk8s.Short(parent))
 	}
-	if res := reconcile(approved[:12]); res.State != gitk8s.Failed || !strings.Contains(res.Message, "the approval is for "+approved[:12]) {
-		t.Errorf("approval of the commit before base's merge by a prefix: %+v, want one only for that commit", res)
+	if res := reconcile(approved[:12]); res.State != gitk8s.Failed || !strings.Contains(res.Message, "the approval is for "+approved[:12]+", which isn't a commit's full SHA") {
+		t.Errorf("approval of the commit before base's merge by a prefix: %+v, want a failure", res)
+	}
+	if res := reconcile(merge[:12]); res.State != gitk8s.Failed || !strings.Contains(res.Message, "isn't a commit's full SHA") {
+		t.Errorf("approval of the head by a prefix: %+v, want a failure", res)
 	}
 	if res := reconcile(parent); res.State != gitk8s.Failed || !strings.Contains(res.Message, "doesn't make the same change") {
 		t.Errorf("approval of the parent's head: %+v, want one only for an empty change", res)

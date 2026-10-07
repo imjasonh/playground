@@ -18,7 +18,7 @@ var policies = []struct {
 	exposures []string
 }{
 	{"git-k8s-check-results", []string{"any service account that can write GitBranch status can write check results and status.diverged", "checks that can write GitBranch status can change a branch's state and merge queue"}},
-	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change GitBranch objects"}},
+	{"git-k8s-branches", []string{"git-k8s service accounts with the approve verb can approve branches", "checks and git-k8s-deps can change GitBranch objects", "anyone who can create or patch a GitBranch can change its merge policy"}},
 	{"git-k8s-check-pods", []string{"checks that own Pods can write any Pod in the cluster"}},
 	{"git-k8s-approvals", []string{"anyone who can patch a GitBranch can approve it", "the approved-by annotation can name someone who didn't approve"}},
 }
@@ -28,7 +28,7 @@ var policies = []struct {
 // policies, so that it reports the earlier policies as outdated.
 const (
 	policyVersionAnnotation = gitk8s.Group + "/policy-version"
-	policyVersion           = 3
+	policyVersion           = 4
 )
 
 type admissionPolicy struct {
@@ -169,7 +169,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	if len(missing) == 0 && len(weak) == 0 && len(noParamRef) == 0 && len(otherParamRef) == 0 && len(warns) == 0 && len(outdated) == 0 && len(newer) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-			Message: "the admission policies keep git-k8s service accounts from approving branches, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
+			Message: "the admission policies keep git-k8s service accounts from approving branches, let only the core program create GitBranch objects or change their spec, let no service account but the core program's write check results, keep checks to their own Pods, and check who approves branches",
 		}
 	}
 	var problems, sentences, fixes []string
