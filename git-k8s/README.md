@@ -906,7 +906,10 @@ and rates the change `high` when any of these is true:
   file required, to a new major version, or to a version that isn't a
   release, such as a pseudo-version, replaces a module with another module
   or with a directory outside the repository, stops replacing one, or
-  changes the `go` or `toolchain` line. A directory is outside the
+  changes the `go`, `toolchain`, or `godebug` lines. For a new `go.mod`
+  file, the check compares those lines with the ones in the `go.mod` file
+  of the module that its directory was in at the merge base, or with no
+  lines if the directory was in no module. A directory is outside the
   repository when its path is absolute, leads out of the repository from
   the `go.mod` file's directory, or goes through a symbolic link or a
   submodule, because the `go` command follows the link, which can point

@@ -15,10 +15,13 @@
 //     the file required, to another major version, or to a version that
 //     isn't a release, replaces a module with another module or with a
 //     directory outside the repository, stops replacing one, or changes the
-//     go or toolchain line. Modules that the file replaces with a directory
-//     in the repository are the repository's own, so requiring them is
-//     fine. A module that a go.mod file declares isn't, unless the file
-//     replaces it, because the go command downloads it.
+//     go, toolchain, or godebug lines. For a new go.mod file, the check
+//     compares those lines with the ones in the go.mod file of the module
+//     that its directory was in at the merge base, or with no lines if the
+//     directory was in no module. Modules that the file replaces with a
+//     directory in the repository are the repository's own, so requiring
+//     them is fine. A module that a go.mod file declares isn't, unless the
+//     file replaces it, because the go command downloads it.
 //   - A go.mod file replaces a module with a directory whose path goes
 //     through a symbolic link or a submodule, and the change adds the
 //     replacement, or adds or changes the link. The go command follows the
@@ -269,15 +272,16 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 	}
 	// required holds the versions of each module that the repository
 	// requires, and replaced the replacements that it makes, before the
-	// change.
+	// change. previous holds each go.mod file at base, or nil for one that
+	// check-risk can't read.
 	required := map[string][]string{}
 	replaced := map[string]bool{}
 	previous := map[string]*modfile.File{}
 	for _, f := range before {
+		previous[f.path] = f.file
 		if f.file == nil {
 			continue
 		}
-		previous[f.path] = f.file
 		for _, r := range f.file.Require {
 			required[r.Mod.Path] = append(required[r.Mod.Path], r.Mod.Version)
 		}
@@ -348,19 +352,28 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 				add("replaces %s with %s, which is outside the repository", r.Old, r.New.Path)
 			}
 		}
-		if old == nil {
-			continue
-		}
-		for _, r := range old.Replace {
-			if !now[replacement(f.path, r)] {
-				add("stops replacing %s with %s", r.Old, r.New)
+		if old != nil {
+			for _, r := range old.Replace {
+				if !now[replacement(f.path, r)] {
+					add("stops replacing %s with %s", r.Old, r.New)
+				}
 			}
 		}
-		if a, b := goLine(old), goLine(f.file); a != b {
-			add("changes the go line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
+		heldPath, held := heldBy(previous, f.path)
+		prior := func(line string) string {
+			if line = cmp.Or(line, "none"); heldPath != f.path && held != nil {
+				line += " in " + heldPath
+			}
+			return line
 		}
-		if a, b := toolchainLine(old), toolchainLine(f.file); a != b {
-			add("changes the toolchain line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
+		if a, b := goLine(held), goLine(f.file); a != b {
+			add("changes the go line in %s from %s to %s", f.path, prior(a), cmp.Or(b, "none"))
+		}
+		if a, b := toolchainLine(held), toolchainLine(f.file); a != b {
+			add("changes the toolchain line in %s from %s to %s", f.path, prior(a), cmp.Or(b, "none"))
+		}
+		if a, b := godebugLines(held), godebugLines(f.file); a != b {
+			add("changes the godebug lines in %s from %s to %s", f.path, prior(a), cmp.Or(b, "none"))
 		}
 	}
 	for _, f := range after {
@@ -440,18 +453,52 @@ func replacedInRepo(f modFile, links map[string]string, mod, version string) boo
 	})
 }
 
+// heldBy returns the path and contents of the go.mod file in previous whose
+// module held the directory of the go.mod file at file: that file, or else
+// the nearest one in a directory above it. It returns "" if no module held
+// the directory.
+func heldBy(previous map[string]*modfile.File, file string) (string, *modfile.File) {
+	for dir := path.Dir(file); ; dir = path.Dir(dir) {
+		p := path.Join(dir, "go.mod")
+		if f, ok := previous[p]; ok {
+			return p, f
+		}
+		if dir == "." {
+			return "", nil
+		}
+	}
+}
+
 func goLine(f *modfile.File) string {
-	if f.Go == nil {
+	if f == nil || f.Go == nil {
 		return ""
 	}
 	return f.Go.Version
 }
 
 func toolchainLine(f *modfile.File) string {
-	if f.Toolchain == nil {
+	if f == nil || f.Toolchain == nil {
 		return ""
 	}
 	return f.Toolchain.Name
+}
+
+// godebugLines returns the settings of f's godebug lines, sorted by key. A
+// later line for a key overrides an earlier one, as it does for the go
+// command.
+func godebugLines(f *modfile.File) string {
+	if f == nil {
+		return ""
+	}
+	settings := map[string]string{}
+	for _, g := range f.Godebug {
+		settings[g.Key] = g.Value
+	}
+	var lines []string
+	for _, k := range slices.Sorted(maps.Keys(settings)) {
+		lines = append(lines, k+"="+settings[k])
+	}
+	return strings.Join(lines, ", ")
 }
 
 func main() { checks.Main[Branch](check) }
