@@ -830,7 +830,7 @@ pushes to the mirror, which applies the rules in
 | Program | Check | What it does |
 | --- | --- | --- |
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. The merge ignores `.gitattributes` files, so that a branch can't choose how its own conflicts merge. With `mayPush`, it merges the parent in only at the front of the parent's [merge queue](#merge-queue), and until then passes a branch that merges cleanly, with `outputs.behind` set to `"true"`. |
-| `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
+| `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. It fails on a file that doesn't parse or is larger than 8 MiB, and on a head whose list of files from `git ls-tree` is larger than 16 MiB, about 150,000 files. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, or a commit whose change the head makes too, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push that changes the code needs a new approval. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
@@ -960,6 +960,10 @@ and rates the change `high` when any of these is true:
   or changes the `.gitmodules` file, which names that repository.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
+- The check can't read all of it: the list of files that it changes is
+  larger than 8 MiB, the list of files in the head or at the merge base is
+  larger than 16 MiB, each about 150,000 files, or a `go.mod` file that the
+  check reads is larger than 8 MiB.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
   trailer, because no person wrote that code.
 
@@ -1852,7 +1856,8 @@ regular file on both sides, or for a conflict that git can't mark, such as one
 in a binary file. It also runs none for a conflict in a `.cursorignore` file,
 because the agent's work tree leaves those files out, or for conflicts in more
 than 1,000 files or in files that hold more than 8 MiB, the most that a result
-can change.
+can change. Nor does it run one for a conflict in a file that's larger than 8
+MiB on either side, more than the check reads to look for conflict markers.
 
 Each commit that the check pushes makes a new head, so every check runs
 again on it. A merge, and a replay of the branch's whole change as one
@@ -2878,6 +2883,12 @@ controller update the module, raise its `go` line to 1.17 or later and run
 `go get` adds one, the file then lists every module that the build uses, and
 `check-risk` rates the change high.
 
+The controller skips a `go.mod` file that's larger than 8 MiB, and logs a
+warning. When the parent's list of files from `git ls-tree` is larger than
+16 MiB, about 150,000 files, the controller changes nothing for the parent
+until its head moves. It remakes a branch whose head has a `go.mod` file or
+a list of files larger than these limits.
+
 ### Branches
 
 When a newer version comes out before a branch lands, the controller replaces
@@ -3176,7 +3187,14 @@ without an error, so the mirror removes that lock once it's stale, like the
 others.
 
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
-`emptyDir` volume that `generate` mounts at `/tmp`.
+`emptyDir` volume that `generate` mounts at `/tmp`, and so does
+`git-k8s-deps`. Like the mirror, they turn off the maintenance that a fetch
+would start. Instead, at most once an hour for each copy, the reconcile that
+opens the copy deletes the refs that the copy no longer needs, such as those
+of deleted branches, and then runs maintenance if git says that the copy
+needs it. The reconcile logs any failure and goes on. The program removes a
+copy that no reconcile has opened for a week, such as the copy for a
+`GitRepository` that no longer exists.
 
 `generate` also writes a Service for the core program, which routes port 80
 to port 8081 of its Pod, where one handler serves both the mirror and the

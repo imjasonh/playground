@@ -324,7 +324,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	if repo == nil {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
-	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
+	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir, Remote: r.check.Remote} })
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
 	defer in.release()
 	if final && !r.current(cur, spec) && cur.ParentCommit == "" && cur.MergeBase != "" {

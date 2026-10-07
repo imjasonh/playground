@@ -442,7 +442,7 @@ func newReconciler(cfg *checks.Config) *reconciler {
 		cfg:   cfg,
 		// The checks framework keeps its own Cache in cfg.CacheDir, and two
 		// Caches don't lock each other's repositories.
-		cache: &gitk8s.Cache{Git: &cfg.Git, Dir: filepath.Join(cfg.CacheDir, ".parents")},
+		cache: &gitk8s.Cache{Git: &cfg.Git, Dir: filepath.Join(cfg.CacheDir, ".parents"), Remote: check.Remote},
 	}
 }
 

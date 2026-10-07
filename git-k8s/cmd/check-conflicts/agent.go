@@ -169,7 +169,7 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 	if len(conflicts) > agent.MaxFiles {
 		return fmt.Sprintf("%s has conflicts in %d files, more than the agent can change", t.action(), len(conflicts)), nil
 	}
-	size := 0
+	var sides []string
 	for _, c := range conflicts {
 		if path.Base(c.Path) == ".cursorignore" {
 			return fmt.Sprintf("%s conflicts on %s, which the agent can't see, because its work tree leaves out .cursorignore files", t.action(), c.Path), nil
@@ -177,7 +177,22 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 		if c.Ours == nil || c.Theirs == nil || !textMode(c.Ours.Mode) || !textMode(c.Theirs.Mode) {
 			return fmt.Sprintf("%s conflicts on %s, which isn't a file on both sides, so the agent can't resolve it", t.action(), c.Path), nil
 		}
+		sides = append(sides, c.Ours.SHA, c.Theirs.SHA)
+	}
+	sizes, err := repo.BlobSizes(ctx, sides)
+	if err != nil {
+		return "", err
+	}
+	tooBig := fmt.Sprintf("the files that conflict hold more than %d MiB, more than the agent can change", agent.MaxFileBytes>>20)
+	size := 0
+	for _, c := range conflicts {
+		if max(sizes[c.Ours.SHA], sizes[c.Theirs.SHA]) > git.MaxBlobBytes {
+			return fmt.Sprintf("%s conflicts on %s, which is larger than %d MiB on one side, more than the check reads to look for conflict markers", t.action(), c.Path, git.MaxBlobBytes>>20), nil
+		}
 		b, err := repo.ReadBlob(ctx, tree+":"+c.Path)
+		if errors.Is(err, git.ErrTooBig) {
+			return tooBig, nil
+		}
 		if err != nil {
 			return "", err
 		}
@@ -187,7 +202,7 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 		size += len(b)
 	}
 	if size > agent.MaxFileBytes {
-		return fmt.Sprintf("the files that conflict hold more than %d MiB, more than the agent can change", agent.MaxFileBytes>>20), nil
+		return tooBig, nil
 	}
 	return "", nil
 }
@@ -353,9 +368,17 @@ type rejected struct{ error }
 // checkResolved returns an error if a file that conflicted, as it is in
 // tree, holds a line that starts with one of the merge's conflict marker
 // labels, or more lines that look like conflict markers than its two sides
-// hold together.
+// hold together, or if the file in tree or a side is larger than
+// git.MaxBlobBytes, too large to look for markers in.
 func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Conflict, labels ...string) error {
-	got, err := repo.ReadBlob(ctx, tree+":"+c.Path)
+	read := func(name string) ([]byte, error) {
+		b, err := repo.ReadBlob(ctx, name)
+		if errors.Is(err, git.ErrTooBig) {
+			return nil, rejected{fmt.Errorf("can't look for conflict markers in %s: %w", c.Path, err)}
+		}
+		return b, err
+	}
+	got, err := read(tree + ":" + c.Path)
 	if err != nil {
 		return err
 	}
@@ -366,7 +389,7 @@ func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Confl
 	}
 	var sides [len(markerPrefixes)]int
 	for _, e := range []*git.TreeEntry{c.Ours, c.Theirs} {
-		b, err := repo.ReadBlob(ctx, e.SHA)
+		b, err := read(e.SHA)
 		if err != nil {
 			return err
 		}
