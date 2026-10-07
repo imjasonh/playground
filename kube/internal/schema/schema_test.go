@@ -143,6 +143,91 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+// properties returns the properties of the schema at path, a dotted list of
+// property names.
+func properties(t *testing.T, s map[string]any, path string) map[string]any {
+	t.Helper()
+	for name := range strings.SplitSeq(path, ".") {
+		if name != "" {
+			s, _ = s["properties"].(map[string]any)[name].(map[string]any)
+		}
+	}
+	props, ok := s["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("no properties at %q", path)
+	}
+	return props
+}
+
+func TestIntegers(t *testing.T) {
+	type integers struct {
+		object
+		Spec struct {
+			I    int    `json:"i"`
+			I8   int8   `json:"i8"`
+			I16  int16  `json:"i16"`
+			I32  int32  `json:"i32"`
+			I64  int64  `json:"i64"`
+			U    uint   `json:"u"`
+			U8   uint8  `json:"u8"`
+			U16  uint16 `json:"u16"`
+			U32  uint32 `json:"u32"`
+			U64  uint64 `json:"u64"`
+			Port uint16 `json:"port" kube:"min=1"`
+		} `json:"spec"`
+	}
+	r, err := Generate(reflect.TypeFor[integers]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	props := properties(t, r.Schema, "spec")
+	for name, want := range map[string]map[string]any{
+		"i":    {"type": "integer", "format": "int64"},
+		"i8":   {"type": "integer", "format": "int32", "minimum": int64(-128), "maximum": int64(127)},
+		"i16":  {"type": "integer", "format": "int32", "minimum": int64(-32768), "maximum": int64(32767)},
+		"i32":  {"type": "integer", "format": "int32", "minimum": int64(-2147483648), "maximum": int64(2147483647)},
+		"i64":  {"type": "integer", "format": "int64"},
+		"u":    {"type": "integer", "format": "int64", "minimum": int64(0)},
+		"u8":   {"type": "integer", "format": "int32", "minimum": int64(0), "maximum": int64(255)},
+		"u16":  {"type": "integer", "format": "int32", "minimum": int64(0), "maximum": int64(65535)},
+		"u32":  {"type": "integer", "format": "int64", "minimum": int64(0), "maximum": int64(4294967295)},
+		"u64":  {"type": "integer", "format": "int64", "minimum": int64(0)},
+		"port": {"type": "integer", "format": "int32", "minimum": int64(1), "maximum": int64(65535)},
+	} {
+		if got := props[name]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: schema = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestStatusNotRequired(t *testing.T) {
+	type report struct {
+		object
+		Spec struct {
+			Status string `json:"status"`
+		} `json:"spec"`
+		Status struct {
+			Ready bool `json:"ready"`
+		} `json:"status"`
+	}
+	r, err := Generate(reflect.TypeFor[report]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Schema["required"]; !reflect.DeepEqual(got, []string{"spec"}) {
+		t.Errorf("required = %v, want [spec]", got)
+	}
+	if !r.HasStatus {
+		t.Error("HasStatus = false")
+	}
+	props := properties(t, r.Schema, "")
+	for name, want := range map[string][]string{"spec": {"status"}, "status": {"ready"}} {
+		if got := props[name].(map[string]any)["required"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s.required = %v, want %v", name, got, want)
+		}
+	}
+}
+
 func TestCRD(t *testing.T) {
 	crd, err := CRD(reflect.TypeFor[website](), CRDSpec{
 		Group: "example.dev", Version: "v1", Kind: "Website", Plural: "websites", Singular: "website",

@@ -3,8 +3,10 @@
 //
 // Field names come from encoding/json struct tags. A field is required when
 // its json tag has neither omitempty nor omitzero and it isn't a pointer,
-// slice, map, or interface. Other struct tags add validation and display
-// hints:
+// slice, map, or interface. The top-level status is never required, because
+// the API server drops it from the objects that it creates. An integer field
+// accepts only the values that its Go type can hold. Other struct tags add
+// validation and display hints:
 //
 //	kube:"min=1,max=10"           numeric bounds (minimum, maximum)
 //	kube:"minLength=1,maxLength=63"
@@ -147,10 +149,9 @@ func (g *gen) typeSchema(t reflect.Type, path string) (map[string]any, error) {
 	switch t.Kind() {
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}, nil
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Uint8, reflect.Uint16:
-		return map[string]any{"type": "integer", "format": "int32"}, nil
-	case reflect.Int, reflect.Int64, reflect.Uint, reflect.Uint32, reflect.Uint64:
-		return map[string]any{"type": "integer", "format": "int64"}, nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return integerSchema(t), nil
 	case reflect.Float32, reflect.Float64:
 		return map[string]any{"type": "number"}, nil
 	case reflect.String:
@@ -210,6 +211,27 @@ func (g *gen) typeSchema(t reflect.Type, path string) (map[string]any, error) {
 	}
 }
 
+// integerSchema returns the schema of an integer type, bounded to the values
+// that the type can hold, so that the API server rejects values that the
+// program can't decode. The int32 bounds are explicit because older API
+// servers don't check that a value fits the int32 format.
+func integerSchema(t reflect.Type) map[string]any {
+	s := map[string]any{"type": "integer", "format": "int64"}
+	switch t.Kind() {
+	case reflect.Int8, reflect.Int16, reflect.Int32:
+		s["format"] = "int32"
+		s["minimum"], s["maximum"] = -int64(1)<<(t.Bits()-1), int64(1)<<(t.Bits()-1)-1
+	case reflect.Uint8, reflect.Uint16:
+		s["format"] = "int32"
+		s["minimum"], s["maximum"] = int64(0), int64(1)<<t.Bits()-1
+	case reflect.Uint32:
+		s["minimum"], s["maximum"] = int64(0), int64(1)<<32-1
+	case reflect.Uint, reflect.Uint64:
+		s["minimum"] = int64(0)
+	}
+	return s
+}
+
 func (g *gen) fields(t reflect.Type, path string, props map[string]any, required *[]string) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -252,7 +274,13 @@ func (g *gen) fields(t reflect.Type, path string, props map[string]any, required
 		_, forced := tags.opts["required"]
 		k := f.Type.Kind()
 		nilable := k == reflect.Pointer || k == reflect.Slice || k == reflect.Map || k == reflect.Interface
-		if forced || (!omit && !nilable && !optional) {
+		req := forced || (!omit && !nilable && !optional)
+		if path == "" && name == "status" {
+			// The API server drops the top-level status from every object
+			// that it creates, so requiring it would reject every create.
+			req = false
+		}
+		if req {
 			*required = append(*required, name)
 		}
 	}

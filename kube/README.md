@@ -321,8 +321,11 @@ The kind defaults to the Go type name, the version to `v1`, and the scope to
 `plural`, `singular`, `scope=Cluster`, `shortName`, and `category`.
 
 A field is required when its `json` tag has neither `omitempty` nor `omitzero`
-and it isn't a pointer, slice, map, or interface. These field tags add
-validation and display hints to the generated schema:
+and it isn't a pointer, slice, map, or interface. The top-level `status` is
+never required, because the API server drops it from the objects that it
+creates. An integer field accepts only the values that its Go type can hold,
+so a `uint8` field rejects `-1` and `300`. These field tags add validation and
+display hints to the generated schema:
 
 | Tag | Effect |
 | --- | --- |
