@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -153,8 +154,13 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		default:
 			ready.Reason = "MirrorFailed"
 		}
+		err = brief(repo, err)
 		ready.Message = err.Error()
+		kube.SetCondition(&repo.Status.Conditions, kube.Condition{Type: "ExternalSynced", Status: kube.Unknown, Reason: ready.Reason, Message: ready.Message})
 		return err
+	}
+	if rep.Err != nil {
+		rep.Err = brief(repo, rep.Err)
 	}
 	p = r.polled(key, p, now, interval, rep, push)
 
@@ -191,6 +197,9 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 	case len(rep.Failed) > 0:
 		c.Reason = "CompareFailed"
 		c.Message = "the mirror left these branches as they are on each side because it couldn't compare their heads: " + failures(rep.Failed)
+	case len(rep.Unapplied) > 0:
+		c.Reason = "UpdateFailed"
+		c.Message = "the mirror couldn't update these branches in its copy: " + failures(rep.Unapplied)
 	case len(rep.Diverged) > 0:
 		c.Reason = "Diverged"
 		c.Message = strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", ") +
@@ -207,14 +216,25 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 	return c
 }
 
-// failures lists the branches whose heads a sync couldn't compare, with
-// why.
+// failures lists the branches that a sync failed on, with why.
 func failures(failed map[string]error) string {
 	var parts []string
 	for _, name := range slices.Sorted(maps.Keys(failed)) {
 		parts = append(parts, fmt.Sprintf("%s (%v)", name, failed[name]))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// brief returns err, from a sync of repo, with git's output cut down to
+// git's own messages, for conditions and the errors that kube shows. repo's
+// URL can name any server that the core program reaches, so only the log
+// gets the whole error, with what the server sent.
+func brief(repo *gitk8s.GitRepository, err error) error {
+	short := git.Brief(err)
+	if short.Error() != err.Error() {
+		slog.Warn("syncing the repository failed", "namespace", repo.Namespace, "repository", repo.Name, "err", err)
+	}
+	return short
 }
 
 // noticeDivergence triggers a reconcile of each of repo's GitBranches whose
@@ -245,7 +265,7 @@ func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.GitRepository)
 		Remote: func() (git.Remote, error) { return credentials.Remote(ctx, spec) },
 	})
 	if err != nil {
-		return err
+		return brief(repo, err)
 	}
 	var unsynced []string
 	if len(rep.Pending) > 0 {
@@ -258,7 +278,7 @@ func (r *repositories) Finalize(ctx context.Context, repo *gitk8s.GitRepository)
 		unsynced = append(unsynced, "couldn't be compared with the mirror on "+failures(rep.Failed))
 	}
 	if rep.Err != nil {
-		unsynced = append(unsynced, rep.Err.Error())
+		unsynced = append(unsynced, brief(repo, rep.Err).Error())
 	}
 	if len(unsynced) > 0 {
 		return fmt.Errorf("the mirror keeps its copy until the external repository has every change in it, but the external repository %s; to delete the copy and the changes, remove the finalizer %s",

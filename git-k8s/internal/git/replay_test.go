@@ -251,7 +251,7 @@ func wrap(t *testing.T, repo *git.Repo, script string) *git.Repo {
 
 // logged opens repo's directory with a git that logs each command. The
 // function that it returns checks that each command ran with
-// GIT_ALLOW_PROTOCOL=http:https:git:ssh, and returns their arguments.
+// GIT_ALLOW_PROTOCOL=http:https, and returns their arguments.
 func logged(t *testing.T, repo *git.Repo) (*git.Repo, func() []string) {
 	t.Helper()
 	log := filepath.Join(t.TempDir(), "log")
@@ -265,8 +265,8 @@ func logged(t *testing.T, repo *git.Repo) (*git.Repo, func() []string) {
 		var commands []string
 		for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
 			protocols, args, _ := strings.Cut(line, "\t")
-			if protocols != "http:https:git:ssh" {
-				t.Errorf("git %s ran with GIT_ALLOW_PROTOCOL=%q, want http:https:git:ssh", args, protocols)
+			if protocols != "http:https" {
+				t.Errorf("git %s ran with GIT_ALLOW_PROTOCOL=%q, want http:https", args, protocols)
 			}
 			commands = append(commands, args)
 		}

@@ -555,7 +555,7 @@ eventually 120 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
-echo "::group::The API server rejects a URL that git could read as an option"
+echo "::group::The API server takes only http and https URLs"
 url_repository() {
   cat <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
@@ -567,8 +567,8 @@ spec:
   url: '$1'
 EOF
 }
-for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
-  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://git@example.com/app.git' 'git@example.com:app.git' \
+  'git://example.com/app.git' 'https://example.com/app.git?ref=main'; do
   if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
     echo "the API server accepted ${url}" >&2
     exit 1
@@ -576,8 +576,8 @@ for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.gi
   cat "${WORKDIR}/apply.err"
   grep -q 'spec.url' "${WORKDIR}/apply.err"
 done
-url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
-echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
+url_repository "https://git-k8s@${GATEWAY}:2222/app.git" | k apply --dry-run=server -f -
+echo "The API server rejected a URL that git could read as an option and URLs that the mirror can't reach, and accepted an https URL."
 echo "::endgroup::"
 
 # forward_mirror port-forwards a local port to the core program's Service,
