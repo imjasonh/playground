@@ -6,6 +6,9 @@
 //   - It changes more lines than -max-lines. Lines in go.sum and go.work.sum
 //     files don't count, because they're checksums that the go command
 //     checks, and the versions that they cover show in go.mod.
+//   - It changes a file that git treats as binary, such as one with a NUL
+//     byte in its first 8,000 bytes, because git counts no lines in such a
+//     file.
 //   - It touches a path that matches a -sensitive glob.
 //   - A go.mod file that it changes requires a module that no go.mod file
 //     at the merge base requires, moves a module to an earlier version than
@@ -21,6 +24,9 @@
 //     replacement, or adds or changes the link. The go command follows the
 //     link, which can point outside the repository, and a submodule's files
 //     come from another repository, so that directory isn't in the
+//     repository.
+//   - It adds or changes a submodule, whose files come from another
+//     repository, or changes the .gitmodules file, which names that
 //     repository.
 //   - It changes a go.work file, whose directives apply to every module in
 //     the workspace.
@@ -111,13 +117,26 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if err != nil {
 		return checks.Verdict{}, err
 	}
-	lines, sums := 0, false
-	var hits, works []string
+	links, err := readLinks(ctx, repo, in.Spec.Head)
+	if err != nil {
+		return checks.Verdict{}, err
+	}
+	lines, sums, gitmodules := 0, false, false
+	var hits, binaries, submodules, works []string
 	for _, s := range stats {
 		if name := path.Base(s.Path); name == "go.sum" || name == "go.work.sum" {
 			sums = true
 		} else {
 			lines += max(s.Added, 0) + max(s.Removed, 0)
+		}
+		if s.Added < 0 || s.Removed < 0 {
+			binaries = append(binaries, s.Path)
+		}
+		switch {
+		case s.Path == ".gitmodules":
+			gitmodules = true
+		case links[s.Path] == "submodule":
+			submodules = append(submodules, s.Path)
 		}
 		if path.Base(s.Path) == "go.work" {
 			works = append(works, s.Path)
@@ -133,14 +152,23 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if lines > *maxLines {
 		reasons = append(reasons, fmt.Sprintf("changes %d lines, more than %d", lines, *maxLines))
 	}
+	if len(binaries) > 0 {
+		reasons = append(reasons, "changes binary files "+strings.Join(binaries, ", "))
+	}
 	if len(hits) > 0 {
 		reasons = append(reasons, "touches "+strings.Join(hits, ", "))
 	}
-	r, readBase, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats)
+	r, readBase, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats, links)
 	if err != nil {
 		return checks.Verdict{}, err
 	}
 	reasons = append(reasons, r...)
+	if gitmodules {
+		reasons = append(reasons, "changes .gitmodules")
+	}
+	if len(submodules) > 0 {
+		reasons = append(reasons, "changes submodules "+strings.Join(submodules, ", "))
+	}
 	if len(works) > 0 {
 		reasons = append(reasons, "changes "+strings.Join(works, ", "))
 	}
@@ -211,23 +239,20 @@ func readLinks(ctx context.Context, repo *git.Repo, commit string) (map[string]s
 }
 
 // moduleReasons says what makes the changes in stats to go.mod files, and to
-// the symbolic links and submodules that their replacements go through, high
-// risk. It compares each changed go.mod file with every go.mod file at base,
-// so a module that another part of the repository required isn't new. It
-// reads the files at base only for a change to a go.mod file, a symbolic
-// link, or a submodule, and reports whether it did.
-func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat) (reasons []string, readBase bool, err error) {
-	links, err := readLinks(ctx, repo, head)
-	if err != nil {
-		return nil, false, err
-	}
+// the symbolic links that their replacements go through, high risk. links
+// holds the symbolic links and submodules at head, from readLinks. It
+// compares each changed go.mod file with every go.mod file at base, so a
+// module that another part of the repository required isn't new. It reads
+// the files at base only for a change to a go.mod file or a symbolic link,
+// and reports whether it did.
+func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat, links map[string]string) (reasons []string, readBase bool, err error) {
 	var paths []string
 	changedLinks := map[string]bool{}
 	for _, s := range stats {
 		if gomod.IsModFile(s.Path) {
 			paths = append(paths, s.Path)
 		}
-		if links[s.Path] != "" {
+		if links[s.Path] == "symbolic link" {
 			changedLinks[s.Path] = true
 		}
 	}

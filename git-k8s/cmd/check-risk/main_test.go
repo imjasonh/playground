@@ -115,6 +115,54 @@ func TestRisk(t *testing.T) {
 	}
 }
 
+func TestRiskOfBinaryFilesAndSubmodules(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	gitmodules := func(url string) string {
+		return "[submodule \"lib\"]\n\tpath = lib\n\turl = " + url + "\n"
+	}
+	good, evil := gitmodules("https://github.com/good/lib"), gitmodules("https://github.com/evil/lib")
+	c1, c2 := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	for _, c := range []struct {
+		name         string
+		base, change map[string]string
+		level        string
+		reason       string
+	}{
+		{name: "binary file", change: map[string]string{"tools/protoc": "\x7fELF\x02\x01\x01\x00" + strings.Repeat("\x00\x01", 2048)}, level: "high", reason: "changes binary files tools/protoc"},
+		{name: "text file with a NUL byte", change: map[string]string{"app.js": "/* \x00 */\n" + strings.Repeat("run();\n", 50)}, level: "high", reason: "changes binary files app.js"},
+		{name: "text file with a NUL byte after its first 8,000 bytes", change: map[string]string{"app.js": strings.Repeat("run();\n", 1200) + "/* \x00 */\n"}, level: "high", reason: "changes 1201 lines, more than 10"},
+		{name: "new submodule", change: map[string]string{".gitmodules": good, "lib": submoduleAt + c1}, level: "high", reason: "changes .gitmodules; changes submodules lib"},
+		{
+			name:   "submodule that the change moves to another repository",
+			base:   map[string]string{".gitmodules": good, "lib": submoduleAt + c1},
+			change: map[string]string{".gitmodules": evil, "lib": submoduleAt + c2},
+			level:  "high", reason: "changes .gitmodules; changes submodules lib",
+		},
+		{
+			name:   "submodule that the change moves to another commit",
+			base:   map[string]string{".gitmodules": good, "lib": submoduleAt + c1},
+			change: map[string]string{"lib": submoduleAt + c2},
+			level:  "high", reason: "changes submodules lib",
+		},
+		{
+			name:   "submodule that the change leaves alone",
+			base:   map[string]string{".gitmodules": good, "lib": submoduleAt + c1},
+			change: map[string]string{"docs/a.md": "a\n"},
+			level:  "low", reason: "changes 1 lines in 1 files",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := rate(t, c.base, c.change, "change")
+			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
+				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
+			}
+			if res.ParentCommit != "" || res.MergeBase == "" {
+				t.Errorf("result = %+v, want one for the change on top of its merge base, not for the parent's head", res)
+			}
+		})
+	}
+}
+
 func TestRiskThatReadsTheMergeBase(t *testing.T) {
 	*maxLines, *sensitive = 10, ""
 	for _, c := range []struct {
@@ -416,7 +464,7 @@ func TestRiskOfLinkedReplacements(t *testing.T) {
 			name:   "submodule that the change moves to another commit",
 			base:   map[string]string{"go.mod": replaceA("./third_party/a"), "third_party/a": submoduleAt + c1},
 			change: map[string]string{"third_party/a": submoduleAt + c2},
-			level:  "high", reason: "changes the submodule third_party/a, which a replacement of example.com/a goes through",
+			level:  "high", reason: "changes submodules third_party/a",
 		},
 		{
 			name:   "submodule that the change leaves alone",
