@@ -133,7 +133,7 @@ Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens, and where the core program also serves the
 [results endpoint](#check-results). If you install the core program under
 another name or in another namespace, set `-mirror` to the mirror's base URL
-on `check-base`, `check-gofmt`, `check-risk`, `check-gotest`,
+on `check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`,
 `check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps`, and set
 `-results-url` to the results endpoint's URL on every check. Also set the
 core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
