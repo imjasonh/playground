@@ -75,7 +75,7 @@ func entry(b *resultsBranch, check string) *gitk8s.CheckResult {
 
 func TestResultsEndpointRejects(t *testing.T) {
 	b := listedBranch()
-	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
+	base := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeParent, ParentCommit: "p1", State: gitk8s.Passed}
 	b.Status.Checks = map[string]gitk8s.CheckResult{"base": base}
 	gofmtUser := checkToken("gofmt").User
 	main := &resultsBranch{Object: kube.Meta("app-main", nil)}
@@ -92,7 +92,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 		checksEntries(map[string]string{"ci.base-bot": "base", "checks.check-approval": "approval", "check-lint.check-lint": "", "git-k8s.git-k8s": "gofmt"}),
 	}
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
-	fresh := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
+	fresh := &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	const gofmt = "/results/default/app-c-x/gofmt?generation=3"
 	for _, tc := range []struct {
 		name, path, token string
@@ -114,17 +114,20 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"a ConfigMap entry that says the account isn't a check", "/results/default/app-c-x/lint?generation=3", "lint", fresh, http.StatusForbidden, "system:serviceaccount:check-lint:check-lint isn't a check's service account"},
 		{"the core program, despite its ConfigMap entry", gofmt, "core", fresh, http.StatusForbidden, "system:serviceaccount:git-k8s:git-k8s isn't a check's service account"},
 		{"invalid JSON", gofmt, "gofmt", `{"commit":`, http.StatusBadRequest, "decoding the result"},
-		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"} {}`, http.StatusBadRequest, "the request has data after the result"},
-		{"a brace after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"}}`, http.StatusBadRequest, "the request has data after the result"},
-		{"a newline after the result", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","parentCommit":"p1","state":"Passed"}` + "\n", http.StatusNoContent, ""},
-		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusBadRequest, `unknown field "approved"`},
-		{"a body that's too large", gofmt, "gofmt", `{"commit":"h1","state":"Passed","message":"` + strings.Repeat("x", maxResultSize) + `"}`, http.StatusBadRequest, "too large"},
-		{"a state that checks can't send", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Pending}, http.StatusBadRequest, `state "Pending" isn't`},
+		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed"} {}`, http.StatusBadRequest, "the request has data after the result"},
+		{"a brace after the result", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed"}}`, http.StatusBadRequest, "the request has data after the result"},
+		{"a newline after the result", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","parentCommit":"p1","state":"Passed"}` + "\n", http.StatusNoContent, ""},
+		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusBadRequest, `unknown field "approved"`},
+		{"a body that's too large", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed","message":"` + strings.Repeat("x", maxResultSize) + `"}`, http.StatusBadRequest, "too large"},
+		{"a state that checks can't send", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Pending}, http.StatusBadRequest, `state "Pending" isn't`},
+		{"no scope", gofmt, "gofmt", `{"commit":"h1","state":"Passed"}`, http.StatusBadRequest, "the result has no scope"},
+		{"a scope that the core program doesn't know", gofmt, "gofmt", `{"commit":"h1","scope":"Tree","state":"Passed"}`, http.StatusBadRequest, `scope "Tree" isn't Head, Parent, or Change`},
+		{"a scope without the field that it needs", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","state":"Passed"}`, http.StatusBadRequest, "a result with the scope Parent has parentCommit"},
 		{"an invalid generation", "/results/default/app-c-x/gofmt?generation=new", "gofmt", fresh, http.StatusBadRequest, "generation"},
 		{"a check that the policy doesn't list", "/results/default/app-c-x/risk?generation=3", "risk", fresh, http.StatusConflict, "the merge policy for c/x doesn't list the risk check"},
 		{"a branch without a parent", "/results/default/app-main/gofmt", "gofmt", fresh, http.StatusConflict, "main has no parent, so it takes no check results"},
-		{"another head", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h0", State: gitk8s.Passed}, http.StatusConflict, "the result isn't for c/x at h1 and main at p1"},
-		{"another parent head", "/results/default/app-c-x/base?generation=3", "base", &gitk8s.CheckResult{Commit: "h1", ParentCommit: "p0", State: gitk8s.Passed}, http.StatusConflict, "the result isn't for c/x"},
+		{"another head", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h0", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}, http.StatusConflict, "the result isn't for c/x at h1 and main at p1"},
+		{"another parent head", "/results/default/app-c-x/base?generation=3", "base", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeParent, ParentCommit: "p0", State: gitk8s.Passed}, http.StatusConflict, "the result isn't for c/x"},
 		{"a result that's already written", "/results/default/app-c-x/base?generation=3", "base", &base, http.StatusNoContent, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,7 +156,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 // service accounts to checks.
 func TestResultsEndpointWithoutChecksConfigMap(t *testing.T) {
 	b := listedBranch()
-	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
+	base := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeParent, ParentCommit: "p1", State: gitk8s.Passed}
 	b.Status.Checks = map[string]gitk8s.CheckResult{"base": base}
 	bot := kube.FakeToken{Token: "bot", User: kube.UserInfo{Username: "system:serviceaccount:ci:base-bot"}, Audiences: []string{gitk8s.ResultsAudience}}
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
@@ -175,7 +178,7 @@ func TestResultsEndpointTimesOut(t *testing.T) {
 		t.Error("read the branch from the API server, although the cache has it")
 		return nil, nil
 	}}
-	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "wasn't written in time") {
 		t.Errorf("got %d %q, want 503 because nothing wrote the result", w.Code, w.Body)
 	}
@@ -199,7 +202,7 @@ func TestResultsEndpointTimesOut(t *testing.T) {
 func TestResultsEndpointOnStandby(t *testing.T) {
 	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), kube.FakeStandby{})
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
-	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "this replica doesn't write the branch's results") {
 		t.Errorf("got %d %q, want 503 from a replica that doesn't write the branch's results", w.Code, w.Body)
 	}
@@ -223,7 +226,7 @@ func TestResultsEndpointCantRead(t *testing.T) {
 	cancel(errors.New("reading GitBranches: forbidden"))
 	ctx, _ = kube.FakeRequest(ctx, checkToken("gofmt"))
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
-	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Connection") != "close" {
 		t.Errorf("got %d %q, want 503 and a closed connection", w.Code, w.Body)
 	}
@@ -242,7 +245,7 @@ func TestResultsEndpointWaitsForGeneration(t *testing.T) {
 		b.Generation = 4
 		return b, nil
 	}}
-	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=4", "gofmt", &gitk8s.CheckResult{Commit: "h2", State: gitk8s.Passed})
+	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=4", "gofmt", &gitk8s.CheckResult{Commit: "h2", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("got %d %q, want 503 while the cache has generation 3", w.Code, w.Body)
 	}
@@ -290,7 +293,7 @@ func TestResultsEndpointBranchGone(t *testing.T) {
 			ctx, rec := kube.FakeRequest(t.Context(), append(tc.world, checkToken("gofmt"))...)
 			rs := &results{timeout: time.Minute, poll: time.Millisecond, refetch: time.Second, fetch: tc.fetch}
 			start := time.Now()
-			w := sendResult(ctx, rs, tc.path, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+			w := sendResult(ctx, rs, tc.path, "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
 			if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.msg) {
 				t.Errorf("got %d %q, want %d %q", w.Code, w.Body, tc.code, tc.msg)
 			}
@@ -314,7 +317,7 @@ func TestResultsEndpointBranchGone(t *testing.T) {
 // server shows the branch, so the request waits for the cache, and once the
 // cache has the branch, the request hands its result off as usual.
 func TestResultsEndpointWaitsForBranch(t *testing.T) {
-	res := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
+	res := &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	missing, _ := kube.FakeRequest(t.Context(), checkToken("gofmt"))
 	ctx := &changingCache{Context: t.Context(), world: missing}
 	var reads atomic.Int32
@@ -410,7 +413,7 @@ func TestResultsEndpointCantFetch(t *testing.T) {
 				return nil, tc.err(ctx)
 			}}
 			start := time.Now()
-			w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+			w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed})
 			elapsed := time.Since(start)
 			if w.Code != http.StatusServiceUnavailable || w.Header().Get("Connection") != "close" {
 				t.Errorf("got %d %q, want 503 and a closed connection", w.Code, w.Body)
@@ -436,7 +439,7 @@ func TestResultsEndpointCantFetch(t *testing.T) {
 // after a failed write still writes it, and the request stops holding it
 // when it gives up. A request whose result the cache shows answers 204.
 func TestResultsHandOff(t *testing.T) {
-	res := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Failed, Message: "x.go isn't formatted"}
+	res := &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Message: "x.go isn't formatted"}
 	const path = "/results/default/app-c-x/gofmt?generation=3"
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -454,7 +457,7 @@ func TestResultsHandOff(t *testing.T) {
 		}
 	}
 
-	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
+	base := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeParent, ParentCommit: "p1", State: gitk8s.Passed}
 	var b *resultsBranch
 	for _, attempt := range []string{"the reconcile", "a retry after the write failed"} {
 		b = listedBranch()
@@ -510,9 +513,9 @@ func TestReleaseKeepsNewerResult(t *testing.T) {
 }
 
 func TestResultsReconcile(t *testing.T) {
-	fresh := gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
-	stale := gitk8s.CheckResult{Commit: "h0", State: gitk8s.Failed}
-	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
+	fresh := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
+	stale := gitk8s.CheckResult{Commit: "h0", Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
+	base := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeParent, ParentCommit: "p1", State: gitk8s.Passed}
 	for _, tc := range []struct {
 		name   string
 		parent string
@@ -581,7 +584,7 @@ func TestResultsReconcile(t *testing.T) {
 // stops holding its result once the cache shows it written.
 func TestResultsReconcileRereadsTheCache(t *testing.T) {
 	old, cur := listedBranch(), listedBranch()
-	fresh := gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
+	fresh := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	cur.Status.Checks = map[string]gitk8s.CheckResult{"gofmt": fresh}
 	ctx, _ := kube.Fake(t.Context(), old, cur)
 	if err := (&results{}).Reconcile(ctx, old); err != nil {

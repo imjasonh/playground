@@ -73,8 +73,8 @@ func refresh(t *testing.T, f *fixture, b *gitk8s.GitBranch) {
 	f.fetch()
 	b.Spec.Head = f.work.Git("rev-parse", "HEAD")
 	b.Status.Checks = map[string]gitk8s.CheckResult{
-		"base":  {Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, FilesOnly: true},
-		"gofmt": {Commit: b.Spec.Head, State: gitk8s.Passed, FilesOnly: true},
+		"base":  {Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, FilesOnly: true},
+		"gofmt": {Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed, FilesOnly: true},
 	}
 }
 
@@ -86,7 +86,7 @@ func withHistoryCheck(b *gitk8s.GitBranch) {
 		p.Checks = append(p.Checks[:len(p.Checks):len(p.Checks)], dco)
 		b.Spec.Merge = &p
 	}
-	b.Status.Checks["dco"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Passed}
+	b.Status.Checks["dco"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 }
 
 // moveParent pushes a commit that writes a file to main, and leaves w on c/x.
@@ -877,9 +877,9 @@ func TestExternalRepositoryRefusesTheRewrittenBranch(t *testing.T) {
 			b.Generation++
 			b.Spec.Head = rewritten
 			b.Status.Checks = map[string]gitk8s.CheckResult{
-				"base":  {Commit: rewritten, ParentCommit: main, State: gitk8s.Passed, FilesOnly: true},
-				"gofmt": {Commit: rewritten, State: gitk8s.Passed, FilesOnly: true},
-				"dco":   {Commit: rewritten, State: gitk8s.Passed},
+				"base":  {Commit: rewritten, Scope: gitk8s.ScopeParent, ParentCommit: main, State: gitk8s.Passed, FilesOnly: true},
+				"gofmt": {Commit: rewritten, Scope: gitk8s.ScopeHead, State: gitk8s.Passed, FilesOnly: true},
+				"dco":   {Commit: rewritten, Scope: gitk8s.ScopeHead, State: gitk8s.Passed},
 			}
 			if err := landAs(t, f, b, landing); err != nil {
 				t.Fatal(err)

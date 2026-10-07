@@ -124,7 +124,7 @@ func TestSendsNewResults(t *testing.T) {
 	got := e.requests()
 	want := received{
 		uri: "/results/default/app-c-x/lint?generation=4", auth: "Bearer fake-token-1",
-		result: gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed, Message: "clean"},
+		result: gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed, Message: "clean"},
 	}
 	if len(got) != 1 || got[0].uri != want.uri || got[0].auth != want.auth || !got[0].result.Equal(&want.result) {
 		t.Fatalf("received %+v, want %+v", got, want)
@@ -155,7 +155,7 @@ func TestSendsNothingWhenNotListed(t *testing.T) {
 	e := &endpoint{}
 	f := newSendFixture(t, e)
 	f.view.Spec.Merge.Checks[0].Name = "other"
-	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h0", State: gitk8s.Passed}
+	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h0", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	if err := f.runAndSend(f.context(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestSendsTheResultOfItsOwnReconciler(t *testing.T) {
 
 	t.Log("The reconciler clears the result of a branch without a parent, so the check sends nothing for it.")
 	f.view.Spec.Parent, f.view.Spec.ParentHead = "", ""
-	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Running}
+	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Running}
 	if err := f.runAndSend(f.context(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -207,13 +207,13 @@ func TestSendsTheResultOfItsOwnReconciler(t *testing.T) {
 func TestSendsResultWithoutFilesOnly(t *testing.T) {
 	e := &endpoint{}
 	f := newSendFixture(t, e)
-	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed, Message: "clean", FilesOnly: true}
+	f.view.Status.Checks.Result = &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed, Message: "clean", FilesOnly: true}
 	f.verdict = Pass("clean")
 	if err := f.runAndSend(f.context(t)); err != nil {
 		t.Fatal(err)
 	}
 	got := e.requests()
-	want := gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed, Message: "clean"}
+	want := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Passed, Message: "clean"}
 	if f.runs != 1 || len(got) != 1 || !got[0].result.Equal(&want) {
 		t.Errorf("%d runs sent %+v, want %+v", f.runs, got, want)
 	}
@@ -229,7 +229,7 @@ func TestSendsErrorAndFails(t *testing.T) {
 		t.Errorf("err = %v, want the check's error, which kube retries", err)
 	}
 	got := e.requests()
-	want := gitk8s.CheckResult{Commit: "h1", State: gitk8s.Error, Message: "can't fetch c/x"}
+	want := gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Error, Message: "can't fetch c/x"}
 	if len(got) != 1 || !got[0].result.Equal(&want) {
 		t.Errorf("received %+v, want %+v", got, want)
 	}

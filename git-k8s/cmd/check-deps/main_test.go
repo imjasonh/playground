@@ -63,7 +63,7 @@ func newFixture(t *testing.T, branch string) *fixture {
 	}
 	return &fixture{
 		t: t, srv: srv, work: w, b: b,
-		test: &gitk8s.CheckResult{Commit: head, State: gitk8s.Failed, Message: testOutput},
+		test: &gitk8s.CheckResult{Commit: head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Message: testOutput},
 		cfg:  &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}},
 	}
 }
@@ -186,7 +186,7 @@ func TestRunsItsAgentAsTheCheck(t *testing.T) {
 func TestPassesOtherBranches(t *testing.T) {
 	noAgent(t)
 	f := newFixture(t, "c/x")
-	f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Failed, Outputs: map[string]string{"runs": "2"}}
+	f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Outputs: map[string]string{"runs": "2"}}
 	rec := f.reconcile()
 	if res := f.result(); res.State != gitk8s.Passed || res.Message != "c/x isn't a dependency branch" || len(res.Outputs) != 1 || res.Outputs["runs"] != "2" || len(kube.Owned[agent.Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Passed with the count of agent runs and without a Pod", res)
@@ -257,7 +257,7 @@ func TestFollowsTheTests(t *testing.T) {
 			f := newFixture(t, depsBranch)
 			f.test = nil
 			if tc.testState != "" {
-				f.test = &gitk8s.CheckResult{Commit: f.b.Spec.Head, State: tc.testState, Message: testOutput}
+				f.test = &gitk8s.CheckResult{Commit: f.b.Spec.Head, Scope: gitk8s.ScopeHead, State: tc.testState, Message: testOutput}
 				if tc.older {
 					f.test.Commit = "0123abcd"
 				}
@@ -266,7 +266,7 @@ func TestFollowsTheTests(t *testing.T) {
 			if tc.noTests {
 				f.b.Spec.Merge.Checks = f.b.Spec.Merge.Checks[1:]
 			}
-			f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Fixed, Outputs: map[string]string{"runs": "3", "fix": "4567cdef"}}
+			f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", Scope: gitk8s.ScopeHead, State: gitk8s.Fixed, Outputs: map[string]string{"runs": "3", "fix": "4567cdef"}}
 			rec := f.reconcile()
 			res := f.result()
 			if res.State != tc.state || res.Message != tc.message || len(kube.Owned[agent.Pod](rec)) != 0 {

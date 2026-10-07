@@ -438,6 +438,7 @@ status:
   checks:
     ${check}:
       commit: "${OLD}"
+      scope: Head
       state: Failed
 EOF
 done
@@ -1227,8 +1228,8 @@ patch_status() {
     -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
     --data "$1" "${status_url}"
 }
-result='{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}'
-approval_result='{"status":{"checks":{"approval":{"commit":"0000000","state":"Passed"}}}}'
+result='{"status":{"checks":{"gofmt":{"commit":"0000000","scope":"Head","state":"Passed"}}}}'
+approval_result='{"status":{"checks":{"approval":{"commit":"0000000","scope":"Head","state":"Passed"}}}}'
 diverged='{"status":{"diverged":{"commit":"0000000","ref":"refs/git-k8s/downstream/heads/main"}}}'
 approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
 for bearer in "${token}" "${approval_token}"; do
@@ -1252,7 +1253,7 @@ done
 forward_mirror
 send_result() {
   curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: ${3:-Bearer} $1" \
-    -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
+    -H 'Content-Type: application/json' --data '{"commit":"0000000","scope":"Head","state":"Passed"}' \
     "${MIRROR%/"${NS}"}/results/${NS}/$(branch_object main)/$2"
 }
 risk_token="$(k -n check-risk create token check-risk --audience=git-k8s-results)"
@@ -1290,7 +1291,7 @@ grep -q "system:serviceaccount:git-k8s:git-k8s isn't a check's service account" 
 # its 10-second wait for the cache.
 start="${SECONDS}"
 code="$(curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: Bearer ${risk_token}" \
-  -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
+  -H 'Content-Type: application/json' --data '{"commit":"0000000","scope":"Head","state":"Passed"}' \
   "${MIRROR%/"${NS}"}/results/${NS}/app-no-such-branch/risk?generation=1")"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 410 ]]
@@ -1341,7 +1342,7 @@ subjects:
 EOF
 rogue_token="$(k -n "${NS}" create token rogue)"
 status_rejected() { [[ "$(patch_status "$1" "$2")" == 422 ]] && grep -q "$3" "${WORKDIR}/patch.json"; }
-for patch in "${result}" '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}' \
+for patch in "${result}" '{"status":{"checks":{"risk":{"commit":"0000000","scope":"Head","state":"Passed"}}}}' \
   '{"status":{"queued":{"since":"2026-01-01T00:00:00Z","head":"0000000"}}}' \
   '{"status":{"queue":["c/x"]}}' "${diverged}"; do
   eventually 30 status_rejected "${patch}" "${token}" "the gofmt check can't write GitBranch status"
@@ -1901,7 +1902,7 @@ k -n "${NS}" wait --for=condition=Ready pod/gotest-running --timeout=120s
 # repository $3, or on c/named of tested.
 named_result() {
   k -n "${NS}" patch gitbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
-    -p '{"status":{"checks":{"gotest":{"commit":"0000000","state":"Running","outputs":{"pod":"'"$1"'"}}}}}' >/dev/null
+    -p '{"status":{"checks":{"gotest":{"commit":"0000000","scope":"Head","state":"Running","outputs":{"pod":"'"$1"'"}}}}}' >/dev/null
 }
 # pod_token prints a token for the mirror that's bound to Pod $1.
 pod_token() {

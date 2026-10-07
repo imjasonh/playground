@@ -134,9 +134,11 @@ type Verdict struct {
 	// MergeBase, for a check without SameChange, is the merge base of the
 	// branch's head and the parent's head that the verdict holds for, such
 	// as one that a check that compares changes found. The result records
-	// it, and the merge controller lands the branch only when it's the
-	// parent's head. When the parent moves, the check runs again unless the
-	// head's merge base with it stays the same.
+	// it with the scope Change, and the merge controller lands the branch
+	// only when it's the parent's head. When the parent moves, the check
+	// runs again unless the head's merge base with it stays the same. A
+	// verdict that depends on the parent's head holds only for that head,
+	// so its result has the scope Parent and no merge base.
 	MergeBase string
 }
 
@@ -327,16 +329,16 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
 	defer in.release()
-	if final && !r.current(cur, spec) && cur.ParentCommit == "" && cur.MergeBase != "" {
+	if final && !r.current(cur, spec) && cur.Scope == gitk8s.ScopeChange {
 		if kept := r.keep(ctx, in, cur); kept != nil && !stale(kept) {
 			*result = kept
 			return nil
 		}
 	}
 
-	res := &gitk8s.CheckResult{Commit: spec.Head, FilesOnly: r.check.FilesOnly}
+	res := &gitk8s.CheckResult{Commit: spec.Head, Scope: gitk8s.ScopeHead, FilesOnly: r.check.FilesOnly}
 	if r.check.UsesParent || r.check.SameChange {
-		res.ParentCommit = spec.ParentHead
+		res.Scope, res.ParentCommit = gitk8s.ScopeParent, spec.ParentHead
 	}
 	v, err := r.check.Run(ctx, in)
 	if err != nil {
@@ -373,18 +375,21 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 // current reports whether a final result holds for the branch's heads,
 // without reading the repository.
 func (r *reconciler[V, P]) current(cur *gitk8s.CheckResult, spec *gitk8s.GitBranchSpec) bool {
-	switch {
-	case cur.Commit != spec.Head:
+	if cur.Commit != spec.Head {
 		return false
-	case cur.ParentCommit != "":
+	}
+	switch cur.Scope {
+	case gitk8s.ScopeHead:
+		return !r.check.UsesParent && !r.check.SameChange
+	case gitk8s.ScopeParent:
 		return cur.ParentCommit == spec.ParentHead
-	case cur.MergeBase != "":
+	case gitk8s.ScopeChange:
 		// A merge base is an ancestor of the head, so when the parent's
 		// head is the merge base, it's still the head's merge base with
 		// the parent.
 		return cur.MergeBase == spec.ParentHead
 	}
-	return !r.check.UsesParent && !r.check.SameChange
+	return false
 }
 
 // keep checks a final result with a merge base, which current can't check
@@ -419,24 +424,26 @@ func (r *reconciler[V, P]) keep(ctx context.Context, in *Input, cur *gitk8s.Chec
 	return &kept
 }
 
-// record notes in res what v holds for besides the branch's head: the
-// parent's head, or the head's merge base with it. A verdict of a check
-// with SameChange holds for the merge base if it's Passed or Failed, has
-// no fix, doesn't use the parent, and the head has one merge base;
-// otherwise it holds for the parent's head.
+// record sets res's scope to what v holds for besides the branch's head:
+// the parent's head, or the head's change on top of its merge base with
+// the parent's head. A verdict of a check with SameChange holds for the
+// change if it's Passed or Failed, has no fix, doesn't use the parent, and
+// the head has one merge base; otherwise it holds for the parent's head.
 func (r *reconciler[V, P]) record(ctx context.Context, in *Input, v Verdict, res *gitk8s.CheckResult) {
 	if v.UsesParent {
-		res.ParentCommit = in.Spec.ParentHead
+		res.Scope, res.ParentCommit = gitk8s.ScopeParent, in.Spec.ParentHead
 	}
 	switch {
 	case !r.check.SameChange:
-		res.MergeBase = v.MergeBase
+		if res.Scope == gitk8s.ScopeHead && v.MergeBase != "" {
+			res.Scope, res.MergeBase = gitk8s.ScopeChange, v.MergeBase
+		}
 		return
 	case r.check.UsesParent || v.UsesParent || v.Fix != "" || v.State != gitk8s.Passed && v.State != gitk8s.Failed:
 		return
 	}
 	if change, err := in.Change(ctx); err == nil && change.Base != "" {
-		res.ParentCommit, res.MergeBase = "", change.Base
+		res.Scope, res.ParentCommit, res.MergeBase = gitk8s.ScopeChange, "", change.Base
 	}
 }
 

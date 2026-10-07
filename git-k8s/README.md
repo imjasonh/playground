@@ -2069,10 +2069,11 @@ to the core program's results endpoint:
 4. The core program also rejects a result for a branch without a parent, a
    result for a check that the branch's merge policy doesn't list, a result
    that isn't for the branch's current commits, a `Pending` result, a
-   result with a field that the core program doesn't know, and a result
-   over its size limits. The `checks` package sends an `Error` result
-   instead of one with a state or size that the core program rejects, with
-   a message that says why.
+   result without a [scope](#result-scopes) or without the fields that its
+   scope needs, a result with a field that the core program doesn't know,
+   and a result over its size limits. The `checks` package sends an `Error`
+   result instead of one with a state or size that the core program
+   rejects, with a message that says why.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
@@ -2099,6 +2100,27 @@ account with `403 Forbidden`, the check logs why and sends nothing more for
 that branch until the branch changes or the check restarts. Any other
 answer, such as a `404 Not Found` from a `-results-url` with the wrong
 path, fails the check's reconcile, and kube retries it.
+
+### Result scopes
+
+A result is for the branch's head in `commit`. Its `scope` says what else
+it's for, and which other fields it has:
+
+- `Head`: the head with any parent head. The result has neither
+  `parentCommit` nor `mergeBase`.
+- `Parent`: the head with the parent's head in `parentCommit`, such as
+  `base`'s result. The result has no `mergeBase`.
+- `Change`: what the head changes on top of the merge base in `mergeBase`,
+  with any parent head, such as `risk`'s rating of the change. The result
+  has no `parentCommit`, and it counts for a landing only while its merge
+  base is the parent's head.
+
+The core program and the `GitBranch` schema reject a result without a scope
+or without the fields that its scope needs, so a missing field can't make a
+result count for more commits. The `checks` package sets the scope from the
+check's `UsesParent` and `SameChange`, and the verdict's `UsesParent` and
+`MergeBase`. The merge controller treats a result with a scope that it
+doesn't know, such as one from a later release, as `Pending`.
 
 ### Security model
 
@@ -2166,7 +2188,7 @@ unblock a branch whose check is broken:
 
 ```sh
 kubectl patch gitbranch GITBRANCH --subresource=status --type=merge \
-  -p '{"status":{"checks":{"gotest":{"commit":"SHA","state":"Passed","message":"passed by hand"}}}}'
+  -p '{"status":{"checks":{"gotest":{"commit":"SHA","scope":"Head","state":"Passed","message":"passed by hand"}}}}'
 ```
 
 Replace `GITBRANCH` with the name of the `GitBranch` object, and `SHA` with
@@ -2174,7 +2196,8 @@ the branch's head. Checks other than `approval` don't run again on commits
 that already have a `Passed`, `Failed`, or `Fixed` result, so the result
 stays until the branch moves. For a check whose result depends on the
 parent, such as `base`, or that keeps results for the same change, such as
-`risk`, also set `parentCommit` to the parent's head.
+`risk`, set `scope` to `Parent` instead, and `parentCommit` to the parent's
+head.
 
 For a branch that lands by squash or rebase, also set `filesOnly` to `true`
 if the check sets `FilesOnly`, as the built-in checks do. Otherwise the

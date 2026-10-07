@@ -7,12 +7,31 @@ import (
 
 // Validate returns why the core program doesn't accept r from a check, or
 // nil if it does. The core program accepts a result with a commit, a state
-// that checks send, and sizes within the limits.
+// that checks send, a scope with the fields that it needs, and sizes within
+// the limits.
 func (r *CheckResult) Validate() error {
 	switch r.State {
 	case Running, Passed, Failed, Fixed, Error:
 	default:
 		return fmt.Errorf("state %q isn't Running, Passed, Failed, Fixed, or Error", r.State)
+	}
+	switch r.Scope {
+	case ScopeHead:
+		if r.ParentCommit != "" || r.MergeBase != "" {
+			return errors.New("a result with the scope Head has neither parentCommit nor mergeBase")
+		}
+	case ScopeParent:
+		if r.ParentCommit == "" || r.MergeBase != "" {
+			return errors.New("a result with the scope Parent has parentCommit and not mergeBase")
+		}
+	case ScopeChange:
+		if r.MergeBase == "" || r.ParentCommit != "" {
+			return errors.New("a result with the scope Change has mergeBase and not parentCommit")
+		}
+	case "":
+		return errors.New("the result has no scope")
+	default:
+		return fmt.Errorf("scope %q isn't Head, Parent, or Change", r.Scope)
 	}
 	switch {
 	case r.Commit == "":

@@ -27,6 +27,16 @@ func TestValidate(t *testing.T) {
 		{"pending", func(r *CheckResult) { r.State = Pending }, `state "Pending" isn't`},
 		{"no state", func(r *CheckResult) { r.State = "" }, `state "" isn't`},
 		{"no commit", func(r *CheckResult) { r.Commit = "" }, "no commit"},
+		{"no scope", func(r *CheckResult) { r.Scope = "" }, "no scope"},
+		{"a scope that the core program doesn't know", func(r *CheckResult) { r.Scope = "parent" }, `scope "parent" isn't Head, Parent, or Change`},
+		{"head with a parent commit", func(r *CheckResult) { r.ParentCommit = "p1" }, "scope Head has neither parentCommit nor mergeBase"},
+		{"head with a merge base", func(r *CheckResult) { r.MergeBase = "b1" }, "scope Head has neither parentCommit nor mergeBase"},
+		{"parent", func(r *CheckResult) { r.Scope, r.ParentCommit = ScopeParent, "p1" }, ""},
+		{"parent without a parent commit", func(r *CheckResult) { r.Scope = ScopeParent }, "scope Parent has parentCommit and not mergeBase"},
+		{"parent with a merge base", func(r *CheckResult) { r.Scope, r.ParentCommit, r.MergeBase = ScopeParent, "p1", "b1" }, "scope Parent has parentCommit and not mergeBase"},
+		{"change", func(r *CheckResult) { r.Scope, r.MergeBase = ScopeChange, "b1" }, ""},
+		{"change without a merge base", func(r *CheckResult) { r.Scope = ScopeChange }, "scope Change has mergeBase and not parentCommit"},
+		{"change with a parent commit", func(r *CheckResult) { r.Scope, r.ParentCommit, r.MergeBase = ScopeChange, "p1", "b1" }, "scope Change has mergeBase and not parentCommit"},
 		{"the longest message", func(r *CheckResult) { r.Message = strings.Repeat("x", MaxMessageLength) }, ""},
 		{"a longer message", func(r *CheckResult) { r.Message = strings.Repeat("x", MaxMessageLength+1) }, "message is longer than 1024 bytes"},
 		{"the most outputs", func(r *CheckResult) { r.Outputs = outputs(MaxOutputs, 2, 1) }, ""},
@@ -40,7 +50,7 @@ func TestValidate(t *testing.T) {
 		}, "output files is longer than 1024 bytes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := &CheckResult{Commit: "h1", State: Passed}
+			r := &CheckResult{Commit: "h1", Scope: ScopeHead, State: Passed}
 			tc.edit(r)
 			err := r.Validate()
 			if tc.err == "" && err != nil || tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)) {

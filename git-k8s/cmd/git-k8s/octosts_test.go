@@ -77,8 +77,8 @@ func TestLandsWithOctoSTS(t *testing.T) {
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main, Merge: policy}
 	b.Status.Checks = map[string]gitk8s.CheckResult{
-		"base":  {Commit: head, ParentCommit: main, State: gitk8s.Passed},
-		"gofmt": {Commit: head, State: gitk8s.Passed},
+		"base":  {Commit: head, Scope: gitk8s.ScopeParent, ParentCommit: main, State: gitk8s.Passed},
+		"gofmt": {Commit: head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed},
 	}
 	// policy queues branches, and only the front of main's queue lands.
 	b.Status.Queued = &gitk8s.Queued{Head: head, Position: 1}
