@@ -1,6 +1,5 @@
 import AppKit
 
-@main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var status: DieStatusController?
     private let updater = SparkleUpdater()

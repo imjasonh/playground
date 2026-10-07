@@ -607,6 +607,11 @@ controller.
 An intent that fails, for example because an admission policy rejects an
 apply, fails the reconcile in the same way. The framework stops carrying out
 the intents, writes the status that `Reconcile` set, and retries with backoff.
+The API server's error can quote the values that it rejected, which can come
+from a Secret, so `Synced` names only the step, the object, and the status
+code, as in `applying ConfigMap.v1 shop/token failed (422 Invalid)`. A webhook
+can set any reason, so `Synced` shows the reason only if it's one word, like
+the API server's own reasons. The log keeps the whole error.
 `Reconcile` returned before the write failed, so it can't report the error.
 The controller keeps each object's last error in memory, and `kube.LastError`
 returns it to the next reconcile, which can put it in the status. That matters
@@ -827,6 +832,16 @@ it `Established`, and labels it as installed by the framework. If something
 else installed the CRD, for example a Helm chart, the controller leaves it
 alone. [CRD upgrades](#crd-upgrades) describes how it updates a CRD that
 already exists.
+
+The API server skips a field's rules while the field is absent, so
+`self == oldSelf` alone can't stop an update that sets or unsets the field.
+For an immutable field that can be absent, the generator also adds a rule
+such as `has(self.zone) == has(oldSelf.zone)` to the nearest object that's
+present whenever the field can be: the whole object, a list item, a map value,
+or a required field of one of those. The rule's `fieldPath` points its error
+at the field. An immutable field in the top-level `status` is an error,
+because the API server creates objects without their status, so the rule
+would keep the field from ever being set.
 
 A program can also own a custom type that none of its controllers reconciles,
 such as a report that it writes. It knows only the versions that it declares,

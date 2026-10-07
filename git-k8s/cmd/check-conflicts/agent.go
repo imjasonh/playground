@@ -341,7 +341,7 @@ func commitResolution(ctx context.Context, in *checks.Input, repo *git.Repo, t t
 	if res.Summary != "" {
 		body = res.Summary + "\n\n" + body
 	}
-	fix, err := mergeCommit(ctx, in, repo, t, resolved, body)
+	fix, err := mergeCommit(ctx, in, repo, t, resolved, body, git.AgentTrailer)
 	return fix, paths, err
 }
 

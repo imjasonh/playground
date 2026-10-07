@@ -442,7 +442,7 @@ func gitRepository(ns string, rp repoPlan, url string) map[string]any {
 		checks = append(checks, map[string]any{"name": "gotest"})
 		when = `checks.base.passed && checks.gofmt.passed && checks.gotest.passed && (checks.risk.outputs.level == "low" || checks.approval.passed)`
 	}
-	merge := map[string]any{"checks": checks, "when": when, "deleteMergedBranches": true}
+	merge := map[string]any{"checks": checks, "when": when, "deleteLandedBranches": true}
 	if rp.Landing != "" {
 		merge["landing"] = rp.Landing
 	}

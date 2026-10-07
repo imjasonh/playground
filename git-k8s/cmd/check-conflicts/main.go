@@ -311,8 +311,9 @@ func fix(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, 
 
 // mergeCommit commits tree as a merge of t into the branch's head, or, if
 // t.replay is set, as a commit on top of t's commit that replays the
-// branch's changes since t.synced, with body in the message.
-func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string) (string, error) {
+// branch's changes since t.synced, with body in the message. The message
+// ends with the fixer trailer and then the trailers, each set to conflicts.
+func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string, trailers ...string) (string, error) {
 	hc, err := repo.Commit(ctx, in.Spec.Head)
 	if err != nil {
 		return "", err
@@ -335,6 +336,9 @@ func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target
 		msg += body + "\n\n"
 	}
 	msg += git.FixerTrailer + ": conflicts\n"
+	for _, k := range trailers {
+		msg += k + ": conflicts\n"
+	}
 	return in.CommitTree(ctx, tree, parents, msg, max(hc.Time, tc.Time))
 }
 

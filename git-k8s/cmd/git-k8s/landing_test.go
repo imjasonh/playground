@@ -190,10 +190,10 @@ func TestSquashLanding(t *testing.T) {
 	if got, want := w.Git("rev-parse", squashed+"^{tree}"), w.Git("rev-parse", b.Spec.Head+"^{tree}"); got != want {
 		t.Errorf("squashed tree = %s, want the head's tree %s", got, want)
 	}
-	c := kube.FindCondition(b.Status.Conditions, "Merged")
+	c := kube.FindCondition(b.Status.Conditions, "Landed")
 	msg := fmt.Sprintf("squashed c/x onto main, which moved from %s to %s", gitk8s.Short(main), gitk8s.Short(squashed))
-	if c == nil || c.Status != kube.True || c.Message != msg || b.Status.State != reasonLanded {
-		t.Errorf("Merged = %+v, state %q", c, b.Status.State)
+	if c == nil || c.Status != kube.True || c.Message != msg || b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("Landed = %+v, state %q", c, b.Status.State)
 	}
 }
 
@@ -400,10 +400,10 @@ func TestRebaseLanding(t *testing.T) {
 		}
 		parent = c
 	}
-	c := kube.FindCondition(b.Status.Conditions, "Merged")
+	c := kube.FindCondition(b.Status.Conditions, "Landed")
 	msg := fmt.Sprintf("rebased c/x onto main, which moved from %s to %s", gitk8s.Short(main), gitk8s.Short(rebased))
-	if c == nil || c.Status != kube.True || c.Message != msg || b.Status.State != reasonLanded {
-		t.Errorf("Merged = %+v, state %q", c, b.Status.State)
+	if c == nil || c.Status != kube.True || c.Message != msg || b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("Landed = %+v, state %q", c, b.Status.State)
 	}
 }
 
@@ -474,8 +474,8 @@ func TestLandingNeedsTheSigningKey(t *testing.T) {
 			moveParent(t, b, w, "x.txt", "x\n")
 			mergeParent(b, w)
 			refresh(t, f, b)
-			if err := landWith(t, f, b, landing, id, broken); err != nil || b.Status.State != reasonMerged {
-				t.Errorf("landing a branch whose changes the parent has: state %q, %v; want %s", b.Status.State, err, reasonMerged)
+			if err := landWith(t, f, b, landing, id, broken); err != nil || b.Status.State != gitk8s.MergeStateNothingToLand {
+				t.Errorf("landing a branch whose changes the parent has: state %q, %v; want %s", b.Status.State, err, gitk8s.MergeStateNothingToLand)
 			}
 		})
 	}
@@ -524,16 +524,16 @@ func TestRewriteFastForwards(t *testing.T) {
 			if _, ok := heads["c/x"]; ok {
 				t.Error("c/x wasn't deleted after it landed")
 			}
-			c := kube.FindCondition(b.Status.Conditions, "Merged")
+			c := kube.FindCondition(b.Status.Conditions, "Landed")
 			msg := fmt.Sprintf("fast-forwarded main from %s to %s", gitk8s.Short(main), gitk8s.Short(head))
-			if c == nil || c.Reason != reasonLanded || c.Message != msg {
-				t.Errorf("Merged = %+v", c)
+			if c == nil || c.Reason != string(gitk8s.MergeStateLanded) || c.Message != msg {
+				t.Errorf("Landed = %+v", c)
 			}
 		})
 	}
 }
 
-// Without deleteMergedBranches, the branch moves to the landed commit in the
+// Without deleteLandedBranches, the branch moves to the landed commit in the
 // same update, so it stays in its parent.
 func TestRewriteMovesAKeptBranch(t *testing.T) {
 	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
@@ -543,7 +543,7 @@ func TestRewriteMovesAKeptBranch(t *testing.T) {
 			mergeParent(b, w)
 			refresh(t, f, b)
 			p := *b.Spec.Merge
-			p.DeleteMergedBranches = false
+			p.DeleteLandedBranches = false
 			b.Spec.Merge = &p
 			main := b.Spec.ParentHead
 			if err := landAs(t, f, b, landing); err != nil {
@@ -553,8 +553,8 @@ func TestRewriteMovesAKeptBranch(t *testing.T) {
 			if heads["main"] == main || heads["main"] == b.Spec.Head || heads["c/x"] != heads["main"] {
 				t.Errorf("main = %s, c/x = %s; want both at a new commit on %s", heads["main"], heads["c/x"], main)
 			}
-			if b.Status.State != reasonLanded {
-				t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+			if b.Status.State != gitk8s.MergeStateLanded {
+				t.Errorf("state = %q, want %s", b.Status.State, gitk8s.MergeStateLanded)
 			}
 		})
 	}
@@ -575,9 +575,9 @@ func TestRewriteWithNothingToLand(t *testing.T) {
 			if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 				t.Errorf("heads = %v, want %v", after, before)
 			}
-			c := kube.FindCondition(b.Status.Conditions, "Merged")
-			if c == nil || c.Status != kube.True || b.Status.State != reasonMerged {
-				t.Errorf("Merged = %+v, state %q", c, b.Status.State)
+			c := kube.FindCondition(b.Status.Conditions, "Landed")
+			if c == nil || c.Status != kube.False || b.Status.State != gitk8s.MergeStateNothingToLand {
+				t.Errorf("Landed = %+v, state %q", c, b.Status.State)
 			}
 		})
 	}
@@ -628,9 +628,9 @@ func TestRebaseNeedsRebase(t *testing.T) {
 			if after := f.srv.Heads(t, "app"); !maps.Equal(after, before) {
 				t.Errorf("heads = %v, want %v", after, before)
 			}
-			c := kube.FindCondition(b.Status.Conditions, "Merged")
-			if c == nil || c.Status != kube.False || c.Reason != reasonNeedsRebase || !strings.Contains(c.Message, tt.problem) {
-				t.Errorf("Merged = %+v, want reason %s and a message with %q", c, reasonNeedsRebase, tt.problem)
+			c := kube.FindCondition(b.Status.Conditions, "Landed")
+			if c == nil || c.Status != kube.False || c.Reason != string(gitk8s.MergeStateNeedsRebase) || !strings.Contains(c.Message, tt.problem) {
+				t.Errorf("Landed = %+v, want reason %s and a message with %q", c, gitk8s.MergeStateNeedsRebase, tt.problem)
 			}
 
 			b.Generation++
@@ -639,8 +639,8 @@ func TestRebaseNeedsRebase(t *testing.T) {
 				t.Fatal(err)
 			}
 			squashed := w.Fetch("main")
-			if got, want := w.Git("rev-parse", squashed+"^{tree}"), w.Git("rev-parse", b.Spec.Head+"^{tree}"); got != want || b.Status.State != reasonLanded {
-				t.Errorf("after a squash landing, state = %q and main's tree = %s, want %s and %s", b.Status.State, got, reasonLanded, want)
+			if got, want := w.Git("rev-parse", squashed+"^{tree}"), w.Git("rev-parse", b.Spec.Head+"^{tree}"); got != want || b.Status.State != gitk8s.MergeStateLanded {
+				t.Errorf("after a squash landing, state = %q and main's tree = %s, want %s and %s", b.Status.State, got, gitk8s.MergeStateLanded, want)
 			}
 		})
 	}
@@ -697,10 +697,10 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 				if err := landAs(t, f, b, landing); err != nil {
 					t.Fatal(err)
 				}
-				c := kube.FindCondition(b.Status.Conditions, "Merged")
+				c := kube.FindCondition(b.Status.Conditions, "Landed")
 				if tt.problem == "" {
-					if c == nil || c.Reason != reasonLanded {
-						t.Errorf("Merged = %+v, want reason %s", c, reasonLanded)
+					if c == nil || c.Reason != string(gitk8s.MergeStateLanded) {
+						t.Errorf("Landed = %+v, want reason %s", c, gitk8s.MergeStateLanded)
 					}
 					return
 				}
@@ -708,8 +708,8 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 					t.Errorf("heads = %v, want %v", after, before)
 				}
 				msg := fmt.Sprintf("can't %s c/x onto main at %s, because %s's %s", strings.ToLower(landing), gitk8s.Short(main), gitk8s.Short(odd), tt.problem)
-				if c == nil || c.Status != kube.False || c.Reason != reasonNeedsRebase || c.Message != msg {
-					t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonNeedsRebase, msg)
+				if c == nil || c.Status != kube.False || c.Reason != string(gitk8s.MergeStateNeedsRebase) || c.Message != msg {
+					t.Errorf("Landed = %+v, want reason %s and message %q", c, gitk8s.MergeStateNeedsRebase, msg)
 				}
 			})
 		}
@@ -764,10 +764,10 @@ func TestLandingLimits(t *testing.T) {
 			if err := landAs(t, f, b, tt.landing); err != nil {
 				t.Fatal(err)
 			}
-			c := kube.FindCondition(b.Status.Conditions, "Merged")
+			c := kube.FindCondition(b.Status.Conditions, "Landed")
 			if tt.problem == "" {
-				if c == nil || c.Reason != reasonLanded || !strings.HasPrefix(c.Message, tt.verb+" ") {
-					t.Fatalf("Merged = %+v, want reason %s and a message that starts with %q", c, reasonLanded, tt.verb)
+				if c == nil || c.Reason != string(gitk8s.MergeStateLanded) || !strings.HasPrefix(c.Message, tt.verb+" ") {
+					t.Fatalf("Landed = %+v, want reason %s and a message that starts with %q", c, gitk8s.MergeStateLanded, tt.verb)
 				}
 				if got, want := w.Git("rev-parse", w.Fetch("main")+"^{tree}"), w.Git("rev-parse", head+"^{tree}"); got != want {
 					t.Errorf("main's tree = %s, want the head's tree %s", got, want)
@@ -778,8 +778,8 @@ func TestLandingLimits(t *testing.T) {
 				t.Errorf("heads = %v, want %v", after, before)
 			}
 			msg := fmt.Sprintf("can't %s c/x onto main at %s, because %s", strings.ToLower(tt.landing), gitk8s.Short(main), tt.problem)
-			if c == nil || c.Status != kube.False || c.Reason != reasonNeedsRebase || c.Message != msg {
-				t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonNeedsRebase, msg)
+			if c == nil || c.Status != kube.False || c.Reason != string(gitk8s.MergeStateNeedsRebase) || c.Message != msg {
+				t.Errorf("Landed = %+v, want reason %s and message %q", c, gitk8s.MergeStateNeedsRebase, msg)
 			}
 		})
 	}
@@ -806,7 +806,7 @@ func TestExternalRepositoryRefusesTheBranch(t *testing.T) {
 				mergeParent(b, w)
 				refresh(t, f, b)
 				p := *b.Spec.Merge
-				p.DeleteMergedBranches = !tt.keep
+				p.DeleteLandedBranches = !tt.keep
 				b.Spec.Merge = &p
 				f.srv.Config(t, "app", tt.deny, "true")
 				main, head := b.Spec.ParentHead, b.Spec.Head
@@ -827,8 +827,8 @@ func TestExternalRepositoryRefusesTheBranch(t *testing.T) {
 				}
 				verb := map[string]string{gitk8s.Squash: "squashed", gitk8s.Rebase: "rebased"}[landing]
 				msg := fmt.Sprintf("%s c/x onto main, which moved from %s to %s", verb, gitk8s.Short(main), gitk8s.Short(landed))
-				if c := kube.FindCondition(b.Status.Conditions, "Merged"); c == nil || c.Reason != reasonLanded || c.Message != msg {
-					t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonLanded, msg)
+				if c := kube.FindCondition(b.Status.Conditions, "Landed"); c == nil || c.Reason != string(gitk8s.MergeStateLanded) || c.Message != msg {
+					t.Errorf("Landed = %+v, want reason %s and message %q", c, gitk8s.MergeStateLanded, msg)
 				}
 				if heads := f.srv.Heads(t, "app"); heads["main"] != landed || heads["c/x"] != head {
 					t.Errorf("external heads = %v, want main at %s and c/x at %s", heads, landed, head)
@@ -862,8 +862,8 @@ func TestExternalRepositoryRefusesTheRewrittenBranch(t *testing.T) {
 				t.Fatal(err)
 			}
 			rewritten := f.mirrorHeads()["c/x"]
-			if b.Status.State != reasonRewritten || rewritten == head {
-				t.Fatalf("state %q, c/x = %s in the mirror; want %s and a new commit", b.Status.State, rewritten, reasonRewritten)
+			if b.Status.State != gitk8s.MergeStateRewritten || rewritten == head {
+				t.Fatalf("state %q, c/x = %s in the mirror; want %s and a new commit", b.Status.State, rewritten, gitk8s.MergeStateRewritten)
 			}
 			if heads := f.srv.Heads(t, "app"); heads["main"] != main || heads["c/x"] != head {
 				t.Errorf("external heads = %v, want main at %s and c/x at %s", heads, main, head)
@@ -916,11 +916,11 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 	if got, want := w.Git("rev-parse", squashed+"^", squashed+"^{tree}"), main+"\n"+w.Git("rev-parse", head+"^{tree}"); got != want {
 		t.Errorf("squashed commit's parent and tree = %q, want %q", got, want)
 	}
-	c := kube.FindCondition(b.Status.Conditions, "Merged")
+	c := kube.FindCondition(b.Status.Conditions, "Landed")
 	msg := fmt.Sprintf("squashed c/x onto main at %s as %s and moved c/x there, because the results of dco might depend on the branch's commits",
 		gitk8s.Short(main), gitk8s.Short(squashed))
-	if c == nil || c.Status != kube.False || c.Message != msg || b.Status.State != reasonRewritten {
-		t.Errorf("Merged = %+v, state %q", c, b.Status.State)
+	if c == nil || c.Status != kube.False || c.Message != msg || b.Status.State != gitk8s.MergeStateRewritten {
+		t.Errorf("Landed = %+v, state %q", c, b.Status.State)
 	}
 
 	t.Log("The checks pass on the squashed commit, which lands by fast-forward.")
@@ -938,8 +938,8 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 	if _, ok := heads["c/x"]; ok {
 		t.Error("c/x wasn't deleted after it landed")
 	}
-	if b.Status.State != reasonLanded {
-		t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+	if b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("state = %q, want %s", b.Status.State, gitk8s.MergeStateLanded)
 	}
 }
 
@@ -972,8 +972,8 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 				}
 				squashed := w.Fetch("c/x")
 				got := w.Git("rev-parse", squashed+"^", squashed+"^{tree}")
-				if want := main + "\n" + w.Git("rev-parse", head+"^{tree}"); got != want || b.Status.State != reasonRewritten {
-					t.Fatalf("state %q, c/x's parent and tree = %q; want %s and %q", b.Status.State, got, reasonRewritten, want)
+				if want := main + "\n" + w.Git("rev-parse", head+"^{tree}"); got != want || b.Status.State != gitk8s.MergeStateRewritten {
+					t.Fatalf("state %q, c/x's parent and tree = %q; want %s and %q", b.Status.State, got, gitk8s.MergeStateRewritten, want)
 				}
 				w.Branch("c/x", squashed)
 			}
@@ -1003,10 +1003,10 @@ func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
 			if _, ok := heads["c/x"]; heads["main"] != head || ok {
 				t.Errorf("heads = %v, want main at %s and no c/x", heads, head)
 			}
-			c := kube.FindCondition(b.Status.Conditions, "Merged")
+			c := kube.FindCondition(b.Status.Conditions, "Landed")
 			msg := fmt.Sprintf("fast-forwarded main from %s to %s", gitk8s.Short(main), gitk8s.Short(head))
-			if c == nil || c.Reason != reasonLanded || c.Message != msg {
-				t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonLanded, msg)
+			if c == nil || c.Reason != string(gitk8s.MergeStateLanded) || c.Message != msg {
+				t.Errorf("Landed = %+v, want reason %s and message %q", c, gitk8s.MergeStateLanded, msg)
 			}
 		})
 	}

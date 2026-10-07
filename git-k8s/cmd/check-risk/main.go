@@ -6,21 +6,30 @@
 //   - It changes more lines than -max-lines. Lines in go.sum and go.work.sum
 //     files don't count, because they're checksums that the go command
 //     checks, and the versions that they cover show in go.mod.
+//   - It changes a file that git treats as binary, such as one with a NUL
+//     byte in its first 8,000 bytes, because git counts no lines in such a
+//     file.
 //   - It touches a path that matches a -sensitive glob.
 //   - A go.mod file that it changes requires a module that no go.mod file
 //     at the merge base requires, moves a module to an earlier version than
 //     the file required, to another major version, or to a version that
 //     isn't a release, replaces a module with another module or with a
 //     directory outside the repository, stops replacing one, or changes the
-//     go or toolchain line. Modules that the file replaces with a directory
-//     in the repository are the repository's own, so requiring them is
-//     fine. A module that a go.mod file declares isn't, unless the file
-//     replaces it, because the go command downloads it.
+//     go, toolchain, or godebug lines. For a new go.mod file, the check
+//     compares those lines with the ones in the go.mod file of the module
+//     that its directory was in at the merge base, or with no lines if the
+//     directory was in no module. Modules that the file replaces with a
+//     directory in the repository are the repository's own, so requiring
+//     them is fine. A module that a go.mod file declares isn't, unless the
+//     file replaces it, because the go command downloads it.
 //   - A go.mod file replaces a module with a directory whose path goes
 //     through a symbolic link or a submodule, and the change adds the
 //     replacement, or adds or changes the link. The go command follows the
 //     link, which can point outside the repository, and a submodule's files
 //     come from another repository, so that directory isn't in the
+//     repository.
+//   - It adds or changes a submodule, whose files come from another
+//     repository, or changes the .gitmodules file, which names that
 //     repository.
 //   - It changes a go.work file, whose directives apply to every module in
 //     the workspace.
@@ -111,13 +120,26 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if err != nil {
 		return checks.Verdict{}, err
 	}
-	lines, sums := 0, false
-	var hits, works []string
+	links, err := readLinks(ctx, repo, in.Spec.Head)
+	if err != nil {
+		return checks.Verdict{}, err
+	}
+	lines, sums, gitmodules := 0, false, false
+	var hits, binaries, submodules, works []string
 	for _, s := range stats {
 		if name := path.Base(s.Path); name == "go.sum" || name == "go.work.sum" {
 			sums = true
 		} else {
 			lines += max(s.Added, 0) + max(s.Removed, 0)
+		}
+		if s.Added < 0 || s.Removed < 0 {
+			binaries = append(binaries, s.Path)
+		}
+		switch {
+		case s.Path == ".gitmodules":
+			gitmodules = true
+		case links[s.Path] == "submodule":
+			submodules = append(submodules, s.Path)
 		}
 		if path.Base(s.Path) == "go.work" {
 			works = append(works, s.Path)
@@ -133,14 +155,23 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if lines > *maxLines {
 		reasons = append(reasons, fmt.Sprintf("changes %d lines, more than %d", lines, *maxLines))
 	}
+	if len(binaries) > 0 {
+		reasons = append(reasons, "changes binary files "+strings.Join(binaries, ", "))
+	}
 	if len(hits) > 0 {
 		reasons = append(reasons, "touches "+strings.Join(hits, ", "))
 	}
-	r, readBase, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats)
+	r, readBase, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats, links)
 	if err != nil {
 		return checks.Verdict{}, err
 	}
 	reasons = append(reasons, r...)
+	if gitmodules {
+		reasons = append(reasons, "changes .gitmodules")
+	}
+	if len(submodules) > 0 {
+		reasons = append(reasons, "changes submodules "+strings.Join(submodules, ", "))
+	}
 	if len(works) > 0 {
 		reasons = append(reasons, "changes "+strings.Join(works, ", "))
 	}
@@ -211,23 +242,20 @@ func readLinks(ctx context.Context, repo *git.Repo, commit string) (map[string]s
 }
 
 // moduleReasons says what makes the changes in stats to go.mod files, and to
-// the symbolic links and submodules that their replacements go through, high
-// risk. It compares each changed go.mod file with every go.mod file at base,
-// so a module that another part of the repository required isn't new. It
-// reads the files at base only for a change to a go.mod file, a symbolic
-// link, or a submodule, and reports whether it did.
-func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat) (reasons []string, readBase bool, err error) {
-	links, err := readLinks(ctx, repo, head)
-	if err != nil {
-		return nil, false, err
-	}
+// the symbolic links that their replacements go through, high risk. links
+// holds the symbolic links and submodules at head, from readLinks. It
+// compares each changed go.mod file with every go.mod file at base, so a
+// module that another part of the repository required isn't new. It reads
+// the files at base only for a change to a go.mod file or a symbolic link,
+// and reports whether it did.
+func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat, links map[string]string) (reasons []string, readBase bool, err error) {
 	var paths []string
 	changedLinks := map[string]bool{}
 	for _, s := range stats {
 		if gomod.IsModFile(s.Path) {
 			paths = append(paths, s.Path)
 		}
-		if links[s.Path] != "" {
+		if links[s.Path] == "symbolic link" {
 			changedLinks[s.Path] = true
 		}
 	}
@@ -244,15 +272,16 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 	}
 	// required holds the versions of each module that the repository
 	// requires, and replaced the replacements that it makes, before the
-	// change.
+	// change. previous holds each go.mod file at base, or nil for one that
+	// check-risk can't read.
 	required := map[string][]string{}
 	replaced := map[string]bool{}
 	previous := map[string]*modfile.File{}
 	for _, f := range before {
+		previous[f.path] = f.file
 		if f.file == nil {
 			continue
 		}
-		previous[f.path] = f.file
 		for _, r := range f.file.Require {
 			required[r.Mod.Path] = append(required[r.Mod.Path], r.Mod.Version)
 		}
@@ -323,19 +352,28 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 				add("replaces %s with %s, which is outside the repository", r.Old, r.New.Path)
 			}
 		}
-		if old == nil {
-			continue
-		}
-		for _, r := range old.Replace {
-			if !now[replacement(f.path, r)] {
-				add("stops replacing %s with %s", r.Old, r.New)
+		if old != nil {
+			for _, r := range old.Replace {
+				if !now[replacement(f.path, r)] {
+					add("stops replacing %s with %s", r.Old, r.New)
+				}
 			}
 		}
-		if a, b := goLine(old), goLine(f.file); a != b {
-			add("changes the go line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
+		heldPath, held := heldBy(previous, f.path)
+		prior := func(line string) string {
+			if line = cmp.Or(line, "none"); heldPath != f.path && held != nil {
+				line += " in " + heldPath
+			}
+			return line
 		}
-		if a, b := toolchainLine(old), toolchainLine(f.file); a != b {
-			add("changes the toolchain line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
+		if a, b := goLine(held), goLine(f.file); a != b {
+			add("changes the go line in %s from %s to %s", f.path, prior(a), cmp.Or(b, "none"))
+		}
+		if a, b := toolchainLine(held), toolchainLine(f.file); a != b {
+			add("changes the toolchain line in %s from %s to %s", f.path, prior(a), cmp.Or(b, "none"))
+		}
+		if a, b := godebugLines(held), godebugLines(f.file); a != b {
+			add("changes the godebug lines in %s from %s to %s", f.path, prior(a), cmp.Or(b, "none"))
 		}
 	}
 	for _, f := range after {
@@ -415,18 +453,52 @@ func replacedInRepo(f modFile, links map[string]string, mod, version string) boo
 	})
 }
 
+// heldBy returns the path and contents of the go.mod file in previous whose
+// module held the directory of the go.mod file at file: that file, or else
+// the nearest one in a directory above it. It returns "" if no module held
+// the directory.
+func heldBy(previous map[string]*modfile.File, file string) (string, *modfile.File) {
+	for dir := path.Dir(file); ; dir = path.Dir(dir) {
+		p := path.Join(dir, "go.mod")
+		if f, ok := previous[p]; ok {
+			return p, f
+		}
+		if dir == "." {
+			return "", nil
+		}
+	}
+}
+
 func goLine(f *modfile.File) string {
-	if f.Go == nil {
+	if f == nil || f.Go == nil {
 		return ""
 	}
 	return f.Go.Version
 }
 
 func toolchainLine(f *modfile.File) string {
-	if f.Toolchain == nil {
+	if f == nil || f.Toolchain == nil {
 		return ""
 	}
 	return f.Toolchain.Name
+}
+
+// godebugLines returns the settings of f's godebug lines, sorted by key. A
+// later line for a key overrides an earlier one, as it does for the go
+// command.
+func godebugLines(f *modfile.File) string {
+	if f == nil {
+		return ""
+	}
+	settings := map[string]string{}
+	for _, g := range f.Godebug {
+		settings[g.Key] = g.Value
+	}
+	var lines []string
+	for _, k := range slices.Sorted(maps.Keys(settings)) {
+		lines = append(lines, k+"="+settings[k])
+	}
+	return strings.Join(lines, ", ")
 }
 
 func main() { checks.Main[Branch](check) }
