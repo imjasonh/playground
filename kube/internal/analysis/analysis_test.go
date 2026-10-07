@@ -200,6 +200,65 @@ func main() {
 	}
 }
 
+// TestFindTags checks that Find reads the files that Tags pick, and not
+// those that tags in GOFLAGS pick.
+func TestFindTags(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"go.mod":   "module example.com/prog\n\ngo 1.26.0\n",
+		"fw/fw.go": fw,
+		"main.go": `package main
+
+import "example.com/prog/fw"
+
+type On struct {
+	fw.Object ` + "`kube:\"group=example.dev\"`" + `
+}
+
+type Off struct {
+	fw.Object ` + "`kube:\"group=example.dev\"`" + `
+}
+
+func main() { get() }
+`,
+		"on.go": `//go:build foo
+
+package main
+
+import "example.com/prog/fw"
+
+func get() { fw.Get[On]() }
+`,
+		"off.go": `//go:build !foo
+
+package main
+
+import "example.com/prog/fw"
+
+func get() { fw.Get[Off]() }
+`,
+	})
+	for _, tc := range []struct {
+		tags    []string
+		goflags string
+		want    string
+	}{
+		{nil, "", "example.com/prog.Off"},
+		{[]string{"foo"}, "", "example.com/prog.On"},
+		{nil, "-tags=foo", "example.com/prog.Off"},
+	} {
+		uses, _, err := Find(t.Context(), Config{
+			Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod "+tc.goflags), Tags: tc.tags, Pattern: "example.com/prog",
+			Package: "example.com/prog/fw", Funcs: []string{"Get"}, Marker: "Object",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(uses) != 1 || uses[0].Type != tc.want {
+			t.Errorf("Find with tags %q and GOFLAGS %q = %v, want a Get of %s", tc.tags, tc.goflags, uses, tc.want)
+		}
+	}
+}
+
 func TestFindCalls(t *testing.T) {
 	dir := writeModule(t, map[string]string{
 		"go.mod": "module example.com/prog\n\ngo 1.26.0\n",

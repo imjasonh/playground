@@ -1362,9 +1362,11 @@ without a cluster. The types that `Reconcile` reads and writes are known only
 at run time, so `internal/analysis` finds them in the source. It runs `go list
 -deps -export` for the program's package, parses the packages that import
 kube, and type-checks them with `go/types`, importing every other package from
-the compiler's export data. Each instantiation of `Get`, `List`, `Fetch`,
-`Own`, `Apply`, or `Delete` names a type, or a type parameter of the generic
-function that contains the call. The analysis follows type parameters back
+the compiler's export data. It passes `go list` the build tags of the image's
+copy of the program, so it reads the same files as that build. Each
+instantiation of `Get`, `List`, `Fetch`, `Own`, `Apply`, or `Delete` names a
+type, or a type parameter of the generic function that contains the call.
+The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 `get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
@@ -1453,8 +1455,15 @@ leaves out the base's own annotations, such as its title and source
 repository, which describe the base. Timestamps are the Unix
 epoch, so the same source and base give the same digest, and the Deployment
 names the image by digest. The copy of the program in the image is built with
-the `kube_nogenerate` build tag, which leaves out `generate` and
-go-containerregistry with it, so the program in the cluster links only kube.
+the build tags and linker flags that `debug.ReadBuildInfo` reports for the
+running program, so its tag-selected files, and a version that
+`-ldflags=-X` sets, match what the developer ran. `generate` adds `-s -w` to
+the linker flags, and the `kube_nogenerate` build tag, which leaves out
+`generate` and go-containerregistry with it, so the program in the cluster
+links only kube. The go command doesn't record the linker flags of a program
+built with `-trimpath`, so for such a program `generate` takes them from
+`GOFLAGS`. It warns when `GOFLAGS` has none, because linker flags on the go
+command line are lost.
 
 `internal/yaml` writes the YAML from ordered JSON, so the output is stable. It
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
@@ -1642,9 +1651,11 @@ framework's tests check that:
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote. The website example writes its events with those
-  rules and creates its CRD with a rule for that name only. Podpolicy, which
-  records no events, gets no rule for them, and fills in the webhook
-  certificate Secret that the YAML creates, with no rule to create Secrets.
+  rules and creates its CRD with a rule for that name only, and when
+  `GOFLAGS` sets a build tag, the program in its image has it too.
+  Podpolicy, which records no events, gets no rule for them, and fills in
+  the webhook certificate Secret that the YAML creates, with no rule to
+  create Secrets.
 - Two replicas of the probe example, with the rules that `generate` writes,
   both serve, accept tokens for their own audience and refuse others, send a
   token for their own service account from a token directory and review it,

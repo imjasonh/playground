@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -385,13 +387,16 @@ func eventFrom(t *testing.T, c *client.Client, namespace, controller string) {
 // TestGenerateWebsite installs the website example from what its generate
 // command wrote, and runs the image's program with the generated RBAC
 // rules: the API server enforces them, so a missing rule fails the test.
-// The rules let the program create the Website CRD and no other.
+// The rules let the program create the Website CRD and no other. The test
+// runs go run with a build tag in GOFLAGS, and the image's program has that
+// tag too.
 func TestGenerateWebsite(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
 	// The YAML creates only the namespace named for the program.
 	install := e2e.Namespace(t, c)
+	t.Setenv("GOFLAGS", strings.TrimSpace(os.Getenv("GOFLAGS")+" -tags=kube_e2e"))
 	in := generateExample(t, reg, "examples/website", install)
 	if !slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("args = %q, want -leader-elect for two replicas", in.args)
@@ -403,6 +408,13 @@ func TestGenerateWebsite(t *testing.T) {
 	}
 	in.apply(t, c)
 	exe := in.executable(t, "website")
+	bi, err := buildinfo.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (debug.BuildSetting{Key: "-tags", Value: "kube_e2e,kube_nogenerate"}); !slices.Contains(bi.Settings, want) {
+		t.Errorf("the image's program was built with %v, want %s=%s", bi.Settings, want.Key, want.Value)
+	}
 	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, install, "website"))
 
 	ns := e2e.Namespace(t, c)

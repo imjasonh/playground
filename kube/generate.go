@@ -62,6 +62,10 @@ type generateOptions struct {
 	replicasSet bool
 	shards      int
 	tag         string
+	// tags and ldflags are the build tags and linker flags of the program
+	// in the image.
+	tags    []string
+	ldflags string
 	// tmpSize is the size limit of the volume at /tmp, or empty for none.
 	tmpSize string
 	// volumeSize is the size of the persistent volume that Volume declares,
@@ -167,6 +171,9 @@ func (m *Manager) generate(ctx context.Context, args []string, controllers []Con
 	if !ok || bi.Path == "" || bi.Path == "command-line-arguments" {
 		return errors.New("generate: can't tell which package to build; run go run PACKAGE generate from the program's module")
 	}
+	if err := o.buildFlags(ctx, bi); err != nil {
+		return err
+	}
 
 	p, err := o.plan(ctx, controllers, bi.Path)
 	if err != nil {
@@ -248,6 +255,57 @@ func buildEnv(p v1.Platform) []string {
 	return env
 }
 
+// buildFlags sets the build tags and linker flags of the program in the
+// image to those of the running program, which the go command takes from
+// its command line or GOFLAGS, plus the kube_nogenerate tag and -s -w,
+// which leave out the symbol table and debug information.
+func (o *generateOptions) buildFlags(ctx context.Context, bi *debug.BuildInfo) error {
+	ldflags, trimpath := "", false
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "-tags":
+			o.tags = strings.Split(s.Value, ",")
+		case "-ldflags":
+			ldflags = s.Value
+		case "-trimpath":
+			trimpath = s.Value == "true"
+		}
+	}
+	if trimpath && ldflags == "" {
+		// The go command doesn't record the linker flags of a program built
+		// with -trimpath, so take them from GOFLAGS. Those on the go
+		// command line are lost.
+		out, err := exec.CommandContext(ctx, "go", "env", "GOFLAGS").Output()
+		if err != nil {
+			return fmt.Errorf("generate: go env GOFLAGS: %w", err)
+		}
+		for _, f := range strings.Fields(string(out)) {
+			if v, ok := strings.CutPrefix(strings.TrimLeft(f, "-"), "ldflags="); ok {
+				ldflags = v
+			}
+		}
+		if ldflags == "" {
+			o.logf("warning: go doesn't record the linker flags of a program built with -trimpath, so the program in the image gets only -s -w; to pass others on, set -ldflags in GOFLAGS")
+		}
+	}
+	o.tags = append(o.tags, "kube_nogenerate")
+	o.ldflags = strings.TrimSpace(ldflags + " -s -w")
+	return nil
+}
+
+// build builds pkg for platform p into the file out.
+func (o *generateOptions) build(ctx context.Context, pkg string, p v1.Platform, out string) error {
+	tags := strings.Join(o.tags, ",")
+	o.logf("building %s for %s with -tags=%s -ldflags=%q", pkg, p, tags, o.ldflags)
+	cmd := exec.CommandContext(ctx, "go", "build", "-tags="+tags, "-trimpath", "-ldflags="+o.ldflags, "-o", out, pkg) // #nosec G204 -- the go command building the program's own package.
+	cmd.Env = buildEnv(p)
+	cmd.Stdout, cmd.Stderr = o.stderr, o.stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("generate: building %s for %s: %w", pkg, p, err)
+	}
+	return nil
+}
+
 // push builds pkg for each platform and pushes the image. It returns the
 // image's reference by digest.
 func (o *generateOptions) push(ctx context.Context, pkg string) (string, error) {
@@ -259,12 +317,8 @@ func (o *generateOptions) push(ctx context.Context, pkg string) (string, error) 
 	var exes []image.Executable
 	for _, p := range o.platforms {
 		out := filepath.Join(dir, strings.ReplaceAll(p.String(), "/", "-"), o.program)
-		o.logf("building %s for %s", pkg, p)
-		cmd := exec.CommandContext(ctx, "go", "build", "-tags=kube_nogenerate", "-trimpath", "-ldflags=-s -w", "-o", out, pkg) // #nosec G204 -- the go command building the program's own package.
-		cmd.Env = buildEnv(p)
-		cmd.Stdout, cmd.Stderr = o.stderr, o.stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("generate: building %s for %s: %w", pkg, p, err)
+		if err := o.build(ctx, pkg, p, out); err != nil {
+			return "", err
 		}
 		exes = append(exes, image.Executable{Platform: p, File: out})
 	}
@@ -510,7 +564,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
 	o.logf("finding the types that %s reads and writes", pkg)
 	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
-		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
+		Dir: ".", Env: buildEnv(o.platforms[0]), Tags: o.tags, Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
 		Calls: []string{"Eventf", "RequestToken", "ReviewToken"}, Consts: map[string]int{"RequestToken": 1},
 		Objects: map[string]int{"Fetch": 1},

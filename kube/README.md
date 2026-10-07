@@ -988,7 +988,8 @@ The command does the following:
    that names its type, not a type parameter, and passes constants as the
    namespace and name gets permission to get only that object, if the
    type's `kube` tag says `scope=Namespaced` or `scope=Cluster`.
-1. Builds the program for each platform with `CGO_ENABLED=0`.
+1. Builds the program for each platform with `CGO_ENABLED=0` and the build
+   tags and linker flags that the program was built with.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint. The image keeps the base's
    user, or runs as user 65532 if the base has none. It
@@ -1096,9 +1097,15 @@ after `--`, or when the program defines one itself. To watch one namespace
 or to set the shards, use the `generate` flag of the same name.
 
 go-containerregistry is kube's only dependency, and only `generate` uses it.
-The command builds the copy of the program for the image with the
+The command builds the copy of the program for the image with the program's
+own build tags and linker flags, which come from the go command line or
+`GOFLAGS`, so a version that `-ldflags=-X` sets reaches the image. It adds the
 `kube_nogenerate` build tag, which leaves the command out, so the program in
-the cluster links only kube and the standard library.
+the cluster links only kube and the standard library. It also adds `-s -w`,
+which leave out the symbol table and debug information. The command finds
+the program's calls with the same tags, so the rules cover the code in the
+image. Go doesn't record the linker flags of a program built with
+`-trimpath`, so for such a program `generate` takes them from `GOFLAGS`.
 
 ### Install other objects
 

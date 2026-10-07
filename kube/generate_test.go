@@ -12,7 +12,11 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -1153,6 +1157,65 @@ func TestGenerateArguments(t *testing.T) {
 	}
 	if p, err := v1.ParsePlatform("linux/arm/v7"); err != nil || !reflect.DeepEqual(buildEnv(*p)[len(buildEnv(*p))-1], "GOARM=7") {
 		t.Errorf("buildEnv(linux/arm/v7) doesn't set GOARM: %v", err)
+	}
+}
+
+// TestBuildFlags builds testdata/buildflags as generate would for a program
+// with each case's build settings, and runs it.
+func TestBuildFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		settings []debug.BuildSetting
+		goflags  string
+		// logged ends the line that generate logs for the build, and out is
+		// what the program prints.
+		logged, out string
+		warn        bool
+	}{
+		{"none", nil, "", `-tags=kube_nogenerate -ldflags="-s -w"`, "unset false", false},
+		{
+			"tags and linker flags",
+			[]debug.BuildSetting{{Key: "-tags", Value: "foo"}, {Key: "-ldflags", Value: "-X 'main.version=v1.2.3'"}},
+			"", `-tags=foo,kube_nogenerate -ldflags="-X 'main.version=v1.2.3' -s -w"`, "v1.2.3 true", false,
+		},
+		// The go command doesn't record the linker flags of a program built
+		// with -trimpath.
+		{
+			"trimpath and GOFLAGS",
+			[]debug.BuildSetting{{Key: "-tags", Value: "foo"}, {Key: "-trimpath", Value: "true"}},
+			"-trimpath -ldflags=-X=main.version=v1.2.3", `-tags=foo,kube_nogenerate -ldflags="-X=main.version=v1.2.3 -s -w"`, "v1.2.3 true", false,
+		},
+		{
+			"trimpath",
+			[]debug.BuildSetting{{Key: "-trimpath", Value: "true"}},
+			"-trimpath", `-tags=kube_nogenerate -ldflags="-s -w"`, "unset false", true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GOFLAGS", tc.goflags)
+			var stderr bytes.Buffer
+			o := &generateOptions{stderr: &stderr}
+			if err := o.buildFlags(t.Context(), &debug.BuildInfo{Settings: tc.settings}); err != nil {
+				t.Fatal(err)
+			}
+			exe := filepath.Join(t.TempDir(), "buildflags")
+			if err := o.build(t.Context(), "github.com/imjasonh/playground/kube/testdata/buildflags", v1.Platform{OS: runtime.GOOS, Architecture: runtime.GOARCH}, exe); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.CommandContext(t.Context(), exe).Output() // #nosec G204 -- the program the test built.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(string(out)); got != tc.out {
+				t.Errorf("the program prints %q, want %q", got, tc.out)
+			}
+			if !strings.Contains(stderr.String(), " with "+tc.logged+"\n") {
+				t.Errorf("stderr = %q, want a line that ends with %s", stderr.String(), tc.logged)
+			}
+			if warned := strings.Contains(stderr.String(), "warning:"); warned != tc.warn {
+				t.Errorf("stderr = %q, want a warning: %t", stderr.String(), tc.warn)
+			}
+		})
 	}
 }
 
