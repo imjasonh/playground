@@ -1,5 +1,6 @@
 // Package image builds container images that add one static executable to
-// a base image, and pushes them, with go-containerregistry.
+// a base image, pushes them, and resolves image tags to digests, with
+// go-containerregistry.
 package image
 
 import (
@@ -14,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -54,7 +54,7 @@ var epoch = v1.Time{Time: time.Unix(0, 0).UTC()}
 // login or podman login, and returns its reference by digest. The
 // reference names an index with one image per platform.
 func Push(ctx context.Context, im Image) (string, error) {
-	opts := []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent("kube-generate")}
+	opts := options(ctx)
 	if !strings.HasPrefix(im.Path, "/") {
 		return "", fmt.Errorf("image: path %q must be absolute", im.Path)
 	}

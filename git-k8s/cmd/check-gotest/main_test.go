@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"maps"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -143,6 +145,40 @@ func TestStartsSandboxedPod(t *testing.T) {
 	}
 	if mountsToken(tester) {
 		t.Error("the test container can read the token")
+	}
+}
+
+func TestImagesByDigest(t *testing.T) {
+	defer func(goImg, gitImg string) { *goImage, *gitImage = goImg, gitImg }(*goImage, *gitImage)
+	for name, want := range map[string]string{"go-image": images.Go, "git-image": images.Git} {
+		if got := flag.Lookup(name).DefValue; got != want {
+			t.Errorf("-%s defaults to %s, want %s, which names its image by digest", name, got, want)
+		}
+	}
+	t.Log("kube resolves the tag in an image flag before the program starts.")
+	for _, name := range []string{"go-image", "git-image"} {
+		if err := flag.Lookup(name).Value.Set("registry.example.com/Go"); err == nil {
+			t.Errorf("-%s takes registry.example.com/Go, which isn't an image reference, so it isn't an image flag", name)
+		}
+	}
+	t.Log("kube resolves the tags in the Pods that it applies too, so nodes run every image by digest, and pull each once.")
+	policies := func() map[string]string {
+		t.Helper()
+		b, repo := branch()
+		spec := started(t, b, repo).Spec
+		got := map[string]string{}
+		for _, c := range slices.Concat(spec.InitContainers, spec.Containers) {
+			got[c.Name] = c.ImagePullPolicy
+		}
+		return got
+	}
+	*goImage, *gitImage = "registry.example.com/go:test", "registry.example.com/git:test"
+	if got, want := policies(), map[string]string{"fetch": "IfNotPresent", "test": "IfNotPresent"}; !maps.Equal(got, want) {
+		t.Errorf("the pull policies are %v, want %v", got, want)
+	}
+	withGoCache(t)
+	if got, want := policies(), map[string]string{"fetch": "IfNotPresent", "build": "IfNotPresent", "upload": "IfNotPresent", "test": "IfNotPresent"}; !maps.Equal(got, want) {
+		t.Errorf("with -go-cache, the pull policies are %v, want %v", got, want)
 	}
 }
 

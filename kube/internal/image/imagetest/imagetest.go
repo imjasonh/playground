@@ -81,8 +81,8 @@ func Image(t testing.TB, platform string, mt types.MediaType) v1.Image {
 }
 
 // Base pushes an OCI index to ref with one image from Image for each
-// platform.
-func Base(t testing.TB, ref string, platforms ...string) {
+// platform, and returns the index's digest.
+func Base(t testing.TB, ref string, platforms ...string) string {
 	t.Helper()
 	idx := mutate.IndexMediaType(empty.Index, types.OCIImageIndex)
 	for _, platform := range platforms {
@@ -96,4 +96,9 @@ func Base(t testing.TB, ref string, platforms ...string) {
 	if err := remote.WriteIndex(r, idx); err != nil {
 		t.Fatal(err)
 	}
+	d, err := idx.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.String()
 }

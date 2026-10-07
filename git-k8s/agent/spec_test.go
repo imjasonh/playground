@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"maps"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -170,6 +172,34 @@ func TestRequestsStorage(t *testing.T) {
 			if got := c.Resources.Requests["ephemeral-storage"]; string(got) != want {
 				t.Errorf("with -storage-request %q, %s requests %s of ephemeral storage, want %s", request, c.Name, got, want)
 			}
+		}
+	}
+}
+
+func TestImagesByDigest(t *testing.T) {
+	r := &Runner{Name: "review"}
+	fs := flag.NewFlagSet("check-review", flag.ContinueOnError)
+	r.AddFlags(fs)
+	if r.GitImage != images.Git {
+		t.Errorf("-git-image defaults to %s, want %s, which names its image by digest", r.GitImage, images.Git)
+	}
+	t.Log("kube resolves the tag in an image flag before the program starts.")
+	for _, name := range []string{"agent-image", "git-image"} {
+		if err := fs.Set(name, "registry.example.com/Runner"); err == nil {
+			t.Errorf("-%s takes registry.example.com/Runner, which isn't an image reference, so it isn't an image flag", name)
+		}
+	}
+	t.Log("kube resolves the tags in the Pods that it applies too, so nodes run every image by digest, and pull each once.")
+	want := map[string]string{"prepare": "IfNotPresent", "agent": "IfNotPresent", "result": "IfNotPresent"}
+	for _, version := range []string{"@sha256:" + strings.Repeat("0", 64), ":test"} {
+		r.Image, r.GitImage = "registry.example.com/agent-runner"+version, "registry.example.com/git"+version
+		p := r.jobPod(&Job{Name: "app-c-x", Namespace: "default"}, 1)
+		got := map[string]string{}
+		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
+			got[c.Name] = c.ImagePullPolicy
+		}
+		if !maps.Equal(got, want) {
+			t.Errorf("with -agent-image=%s and -git-image=%s, the pull policies are %v, want %v", r.Image, r.GitImage, got, want)
 		}
 	}
 }

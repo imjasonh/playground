@@ -16,6 +16,12 @@
 // Reconcile returns an error, the framework writes only the status, and
 // retries with backoff.
 //
+// Before it applies a Pod, or an object with a Pod template such as a
+// Deployment, the framework replaces each container image that names a tag
+// with the image by digest. It resolves each tag once while the program runs,
+// so every object that names the tag gets the same image. Flags that [Image]
+// and [ImageVar] define resolve the same way when the program starts.
+//
 // This program runs each Website's container image with a Deployment that the
 // Website owns. It also sets an annotation on a Service that the Website names
 // and someone else manages:

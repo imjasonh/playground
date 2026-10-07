@@ -420,7 +420,7 @@ func TestGenerateWebsite(t *testing.T) {
 	ns := e2e.Namespace(t, c)
 	if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
 		"apiVersion": "examples.kube.imjasonh.github.io/v1", "kind": "Website",
-		"metadata": map[string]any{"name": "blog"}, "spec": map[string]any{"image": "nginx", "port": 8080},
+		"metadata": map[string]any{"name": "blog"}, "spec": map[string]any{"image": reg + "/chainguard/static:latest", "port": 8080},
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestGenerateOneNamespace(t *testing.T) {
 	for _, ns := range []string{watched, other} {
 		if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
 			"apiVersion": "examples.kube.imjasonh.github.io/v1", "kind": "Website",
-			"metadata": map[string]any{"name": "blog"}, "spec": map[string]any{"image": "nginx", "port": 8080},
+			"metadata": map[string]any{"name": "blog"}, "spec": map[string]any{"image": reg + "/chainguard/static:latest", "port": 8080},
 		}, nil); err != nil {
 			t.Fatal(err)
 		}

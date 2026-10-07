@@ -36,6 +36,11 @@ import (
 // later manifest leaves out stays in the cluster. Give each namespaced
 // object its metadata.namespace, and put each admission policy before its
 // bindings.
+//
+// Before it applies any of the objects, the framework replaces each container
+// image that names a tag with the image by digest, as it does for objects
+// that controllers apply. If it can't resolve a tag, the program exits when it
+// starts.
 func Install(manifest func() []byte) Controller {
 	return &installer{manifest: manifest}
 }
@@ -109,6 +114,11 @@ func (in *installer) prepare(_ context.Context, m *Manager) error {
 }
 
 func (in *installer) setup(ctx context.Context, m *Manager) error {
+	for _, o := range in.objects {
+		if err := resolveImages(ctx, o.body, m.log); err != nil {
+			return fmt.Errorf("installing %s %s: %w", o.kind, o.name, err)
+		}
+	}
 	for _, o := range in.objects {
 		res, err := m.client.Resource(ctx, o.apiVersion, o.kind)
 		if err != nil {

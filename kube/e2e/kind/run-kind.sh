@@ -160,6 +160,9 @@ eventually 180 website_ready 2
 k get website hello
 [[ "$(k get deployment hello -o jsonpath='{.metadata.ownerReferences[0].kind}')" == Website ]]
 [[ "$(k get website hello -o jsonpath='{.status.url}')" == http://hello.default.svc ]]
+site_image="$(k get deployment hello -o jsonpath='{.spec.template.spec.containers[0].image}')"
+[[ "${site_image}" == "${CHAINGUARD}/nginx@sha256:"* ]]
+echo "The controller resolved the Website's tag: the Deployment runs ${site_image}."
 
 serving_event() {
   k describe website hello | grep -E "Normal +Serving .+ website +$1 of $1 replicas are ready"

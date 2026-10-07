@@ -23,6 +23,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/git-k8s/internal/goproxytest"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -113,6 +114,35 @@ func TestPodName(t *testing.T) {
 	b := &Branch{Object: kube.Meta("app-main", nil)}
 	if name := u.pod(b, &gitk8s.Repository{}, "0123abcd", 0, nil).Name; strings.Contains(name, "-") {
 		t.Errorf("the update Pod's name %s has a hyphen, so a check whose new Pods must be named NAME-ID could create a Pod with it first", name)
+	}
+}
+
+func TestImagesByDigest(t *testing.T) {
+	u := &updater{}
+	fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
+	u.addFlags(fs)
+	if u.goImage != images.Go || u.gitImage != images.Git {
+		t.Errorf("-go-image and -git-image default to %s and %s, want %s and %s, which name their images by digest", u.goImage, u.gitImage, images.Go, images.Git)
+	}
+	t.Log("kube resolves the tag in an image flag before the program starts.")
+	for _, name := range []string{"go-image", "git-image", "result-image"} {
+		if err := fs.Set(name, "registry.example.com/Go"); err == nil {
+			t.Errorf("-%s takes registry.example.com/Go, which isn't an image reference, so it isn't an image flag", name)
+		}
+	}
+	t.Log("kube resolves the tags in the Pods that it applies too, so nodes run every image by digest, and pull each once.")
+	u.proxy = newProxy(nil, time.Hour, time.Now)
+	want := map[string]string{"prepare": "IfNotPresent", "update": "IfNotPresent", "result": "IfNotPresent"}
+	for _, version := range []string{"@sha256:" + strings.Repeat("0", 64), ":test"} {
+		u.goImage, u.gitImage, u.resultImage = "registry.example.com/go"+version, "registry.example.com/git"+version, "registry.example.com/agent-runner"+version
+		p := u.pod(&Branch{Object: kube.Meta("app-main", nil)}, &gitk8s.Repository{}, "0123abcd", 0, nil)
+		got := map[string]string{}
+		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
+			got[c.Name] = c.ImagePullPolicy
+		}
+		if !maps.Equal(got, want) {
+			t.Errorf("with images %s, %s, and %s, the pull policies are %v, want %v", u.goImage, u.gitImage, u.resultImage, got, want)
+		}
 	}
 }
 

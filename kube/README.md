@@ -1234,6 +1234,70 @@ for any other `paramKind`, `generate` prints a warning, and you give the
 program the permission yourself. For a binding with a `paramRef`, `generate`
 grants `get` on the parameter object that the binding names.
 
+### Name images by digest
+
+A tag can move from one image to another, so nodes that pull the same tag at
+different times can run different images. A digest names one image. When a
+program names an image by tag, in an image flag or in a container of an
+object that it applies, kube resolves the tag to a digest before it creates
+any object that names the image, and uses the image by digest instead. So
+each container that the program creates names its image by digest, and a
+node pulls each image once with the pull policy `IfNotPresent`, which
+Kubernetes sets by default for an image by digest.
+
+For a flag that names an image, use `kube.Image` or `kube.ImageVar` instead
+of `flag.String` or `flag.StringVar`:
+
+```go
+toolImage := kube.Image("tool-image", "ghcr.io/you/tool:1.4", "image that runs the tool")
+```
+
+The flag takes an image reference, such as `ghcr.io/you/tool:1.4` or
+`ghcr.io/you/tool@sha256:...`, or an empty string, and rejects other values.
+If an image flag on `flag.CommandLine` names a tag, through its default or a
+flag after `--`, `generate` resolves the tag and writes the image by digest
+into the Deployment's arguments, such as
+`-tool-image=ghcr.io/you/tool@sha256:...`. It prints each tag that it
+resolves, and fails if one doesn't resolve. When the program starts with a
+tag in an image flag, `Run` resolves the tag and sets the flag to the image
+by digest before it calls `Setup` or starts a controller. If the tag doesn't
+resolve, `Run` returns an error that names the flag, and the program exits.
+
+Before a controller applies a Pod, PodTemplate, ReplicationController,
+Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, or CronJob, it resolves
+the tags in the images of the object's init, regular, and ephemeral
+containers, and applies the object with the images by digest. If a tag
+doesn't resolve, the reconcile fails before it applies that object, the
+`Synced` condition names the image, and the framework retries with backoff.
+`kube.Install` resolves the tags in all of its objects before it applies any
+of them. If one doesn't resolve, the program exits when it starts. kube
+doesn't resolve the tags in the Pod templates of custom resources.
+
+kube keeps the repository as the reference spells it, so `nginx:1.27`
+becomes `nginx@sha256:...`, not `docker.io/library/nginx@sha256:...`. It
+leaves a reference that has a digest as it is, even one that has a tag too,
+such as `nginx:1.27@sha256:...`. A program resolves each tag once, and every
+image flag and object that names the tag gets that digest until the program
+exits, so its Pods don't change when the tag moves. After a restart, the
+program resolves the tag again, and a Deployment that names the tag rolls out
+the new image. Each replica resolves tags on its own, so replicas that
+started before and after a tag moved can resolve it to different images.
+
+Resolving a tag reads the registry, so an image in a private registry needs
+credentials wherever its tag resolves. `generate` runs on your machine, and
+uses the credentials from `docker login` or `podman login`, credential
+helpers included, as it does to push the program's image. A program reads
+the credentials in the docker config file of its environment,
+`$DOCKER_CONFIG/config.json` or `~/.docker/config.json`, as `docker login`
+writes them. It doesn't run credential helpers, and it uses plain HTTP only
+for a registry at `localhost` or a loopback address. The Pod that `generate`
+writes has no docker config file, so in the cluster, a program resolves only
+the tags of public images.
+
+Pass digests where you can. With a digest, the program doesn't read the
+registry or need its credentials, and every replica runs the same image
+until you change the digest.
+
 ### Replicas
 
 With `-leader-elect`, replicas take turns. The replica that holds a Lease
@@ -1538,6 +1602,11 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `kube.Trigger` queues a reconcile only on the replica that reconciles the
   object. It doesn't send the request to that replica.
 - `kube.Serve` serves plain HTTP, without TLS.
+- A program resolves image tags with only the credentials in its docker
+  config file, without credential helpers, and uses plain HTTP only for a
+  registry at a loopback address.
+- kube resolves the image tags of Pods and of the built-in kinds with Pod
+  templates, but not of custom resources with Pod templates.
 - A program with a `kube.Volume` runs one replica, and is down while it
   restarts, webhooks included. Adding a volume to an installed program takes
   `kubectl apply` rather than server-side apply, and leaves objects for you
@@ -1547,10 +1616,10 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 
 | Path | Contents |
 | --- | --- |
-| `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, events, webhooks, HTTP APIs, tokens, triggers, other objects to install, volumes, versions, shards, metrics, and fakes |
+| `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, events, webhooks, HTTP APIs, tokens, triggers, other objects to install, images by digest, volumes, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, reads of a controller's own writes, shared status, status that `Apply` writes, changes that types can't see, panics, permanent errors, `LastError`, events, HTTP handlers and the data that they hand to reconciles, tokens, `Install`, volumes, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, reads of a controller's own writes, shared status, status that `Apply` writes, changes that types can't see, panics, permanent errors, `LastError`, events, HTTP handlers and the data that they hand to reconciles, tokens, `Install`, images by digest, volumes, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |
@@ -1561,6 +1630,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `internal/subset/` | Checks whether one JSON document's fields are a subset of another's |
 | `internal/yaml/` | The YAML subset that kubeconfig files use, and the YAML that `generate` writes |
 | `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, its calls to `Eventf` and `ReviewToken`, and the audiences that it passes to `RequestToken`, for `generate`'s RBAC rules and token volumes |
-| `internal/image/` | Builds and pushes images with go-containerregistry, for `generate` |
+| `internal/image/` | Builds and pushes images, and resolves image tags to digests, with go-containerregistry, for `generate` |
+| `internal/registry/` | Parses image references, and resolves image tags to digests with only the standard library, for the program in the cluster |
 | `internal/envtest/`, `internal/e2e/` | Start `etcd` and `kube-apiserver` for tests |
 | `bench/` | Benchmark against `client-go` and `controller-runtime`, in its own module |

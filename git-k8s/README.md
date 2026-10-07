@@ -1226,6 +1226,35 @@ Set `-runtime-class` to run the Pods under a sandboxing runtime such as
 gVisor, and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change
 the rest. If you set `-goproxy`, set the same value on the core program.
 
+The test container runs the Go in `-go-image` with `GOTOOLCHAIN=local`, so
+the tests of a module that needs a newer Go fail until you set `-go-image`
+to an image that has it. The default names an image by digest, as
+[Install](#install) describes, so it doesn't move to a newer Go until you
+upgrade `check-gotest`.
+
+Each test Pod's volumes have size limits. The repository can use up to
+`-source-size`, 2Gi by default, and the home directory, which holds Go's
+module and build caches and the tests' temporary files, up to
+`-go-cache-size`, 4Gi by default. With `-go-cache`, the build outputs that
+the Pod shares can use up to `-go-cache-size` too. Each container requests
+1Gi of ephemeral storage, and its limit covers all the volumes and 256Mi of
+logs. That's 6400Mi by default, and 10496Mi with `-go-cache`. When a Pod
+uses more than a limit, the kubelet evicts it, and the check fails with the
+kubelet's reason.
+
+Each container can use up to `-cpu-limit` CPUs, 2 by default, and
+`-cpu-limit=0` removes the limit. Go 1.25 and later set `GOMAXPROCS` from
+that limit, and `go test` runs that many builds and test binaries at once,
+so the limit also bounds how many of them share the test container's 2Gi
+of memory.
+
+The scheduler reserves only a Pod's requests on its node. So a node can
+run low on disk space or memory while each Pod stays within its limits,
+and then the kubelet evicts Pods, first those that use more than they
+request. A ResourceQuota on `limits.cpu` or `limits.ephemeral-storage`
+counts each test Pod's limits, and a LimitRange with a smaller maximum for
+either resource rejects every test Pod.
+
 The core program owns the NetworkPolicy so that `check-gotest`, which
 creates Pods in every namespace that has a `GitBranch`, can't change
 NetworkPolicies. Each `GitRepository` owns one policy, `NAME-test-pods`. It
@@ -1700,7 +1729,7 @@ kubectl get pods --all-namespaces -l git-k8s.imjasonh.com/agent=review
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-agent-image` | Required | Image that runs the agent, built from `agent/runner/Dockerfile` |
-| `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
+| `-git-image` | `cgr.dev/chainguard/git` by digest | Image that fetches the source; it needs `git` and `sh` |
 | `-backend` | `cursor` | Where the agent runs: `cursor`, with the Cursor SDK in the Pod, or `fake`, for tests |
 | `-model` | `composer-2.5` | Model that the agent uses |
 | `-api-key-secret` | `cursor-api-key` | Secret, in each branch's namespace, whose `api-key` key holds the API key |
@@ -3187,8 +3216,8 @@ branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 | `-seen-configmap` | `git-k8s-deps-first-seen` | Name of the ConfigMap in the controller's namespace that keeps when the controller first saw versions, or empty to keep the times only in memory |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
 | `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
-| `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
-| `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
+| `-go-image` | `cgr.dev/chainguard/go` by digest | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
+| `-git-image` | `cgr.dev/chainguard/git` by digest | Image that fetches the source; it needs `git` and `sh` |
 | `-timeout` | `15m` | Longest that an update Pod can run |
 | `-source-size` | `2Gi` | Most disk space that an update Pod's copy of the repository can use |
 | `-go-cache-size` | `4Gi` | Most disk space that an update Pod's Go module and build caches can use |
@@ -3251,6 +3280,27 @@ the branch waits for that check until then.
 
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
+
+`check-gotest`, `git-k8s-deps`, and the [agentic checks](#agentic-checks)
+fetch the source in their Pods with the image in `-git-image`, and
+`check-gotest` and `git-k8s-deps` run Go with the one in `-go-image`. By
+default, those flags name Chainguard's `git` and `go` images by digest, so
+moving a tag, on the registry or on a mirror between it and your cluster,
+can't change what those Pods run. With `-go-cache`, `check-gotest`'s Pods
+fetch the source with `check-gotest`'s own image instead, which `generate`
+names by digest.
+
+`-git-image`, `-go-image`, `-agent-image`, and `-result-image` are kube
+image flags. If you set one to an image by tag, `generate` resolves the tag
+with your registry credentials, and writes the image by digest into the
+Deployment's arguments. A program that starts with a tag in one of those
+flags resolves it before it starts its controllers, or exits if it can't.
+So the Pods name every image by digest. Each container has the pull policy
+`IfNotPresent`, and a node pulls each image once. Pass digests where you
+can, so that nothing has to resolve a tag. To run newer images, upgrade the
+programs, or set the flags. For how kube resolves tags, see
+[Name images by digest](../kube/README.md#name-images-by-digest) in kube's
+README.
 
 The core program keeps the mirror's copies on a PersistentVolumeClaim that
 `generate` adds for its `kube.Volume`, at
