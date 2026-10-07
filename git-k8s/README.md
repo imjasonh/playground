@@ -133,7 +133,7 @@ Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens, and where the core program also serves the
 [results endpoint](#check-results). If you install the core program under
 another name or in another namespace, set `-mirror` to the mirror's base URL
-on `check-base`, `check-gofmt`, `check-risk`, `check-gotest`,
+on `check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`,
 `check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps`, and set
 `-results-url` to the results endpoint's URL on every check. Also set the
 core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
@@ -188,6 +188,21 @@ diverged, the `GitRepository` stays, and its `Synced` condition says why. It
 also stays while the mirror can't compare a branch's heads. To delete it
 anyway, with the changes that the external repository lacks, remove the
 finalizer `kube.imjasonh.github.io/repositories`.
+
+Each `GitRepository` and `GitBranch` has a `Synced` condition, which kube
+sets after every reconcile of the object. After a reconcile succeeds,
+`Synced` is `True` with the reason `Reconciled`. After one fails, it's
+`False`, and its message says what failed. Its reason is then
+`ReconcileError`, or `PermanentError` for an error that retrying won't fix,
+such as an invalid `pollInterval`. After a `ReconcileError`, kube retries
+the reconcile with backoff. After a `PermanentError`, it reconciles the
+object again when the object changes. kube doesn't reconcile a
+`GitRepository` that's being deleted, so its other conditions, such as
+`ExternalSynced`, keep their values from before the deletion. If the
+deletion can't finish, `Synced` is `False`, and its message says why. For
+more about `Synced`, see
+[Read the real state, declare the desired state](../kube/README.md#read-the-real-state-declare-the-desired-state)
+in kube's README.
 
 The mirror syncs branches only. It doesn't fetch or push tags, and it takes
 pushes only to branches.
@@ -250,7 +265,7 @@ a dependency update controller that `generate` installs in the namespace
 `git-k8s-deps`:
 
 ```sh
-go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -branch-prefix=git-k8s-deps/git-k8s-deps=deps/ | kubectl apply -f -
 ```
 
 The controller reaches the mirror with `mirror.Remote`, as a check does, and
@@ -3063,7 +3078,12 @@ done
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
-after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+after `--`, as in this command for `check-risk`:
+
+```sh
+go run ./cmd/check-risk generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -sensitive='auth/**' | kubectl apply -f -
+```
+
 To give test Pods a module proxy and a shared build cache, also install
 `go-cache`. [Share modules and build outputs](#share-modules-and-build-outputs)
 shows how.
