@@ -37,10 +37,9 @@ type GitHub struct {
 }
 
 // NewGitHub starts a fake GitHub. The fake can't ask kube.Fake who a token
-// belongs to, so its exchange
-// takes any token that kube.Fake's RequestToken returns as one with the
-// claims Issuer, Subject, and Audience. A test checks the audience that a
-// token really has with kube.ReviewToken.
+// belongs to, so its exchange takes any token that kube.Fake's RequestToken
+// returns as one with the claims Issuer, Subject, and Audience. A test
+// checks the audience that a token really has with kube.ReviewToken.
 func NewGitHub(t testing.TB) *GitHub {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
