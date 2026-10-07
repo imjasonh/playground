@@ -33,9 +33,11 @@ const (
 // fixture serves a mirror whose copy of default/app has main at base and
 // feature at feature. Main's merge policy lets the gofmt check push and
 // lists the approval check, and the service account git-k8s-deps may start
-// branches under deps/. The git-k8s-checks ConfigMap makes the service
-// account bot in the namespace checks the gofmt check, and names the gofmt
-// check for the core program, which is never a check.
+// branches under deps/. The git-k8s-checks ConfigMap makes check-gofmt in
+// the namespace check-gofmt and bot in the namespace checks the gofmt check,
+// check-approval in the namespace checks the approval check, and
+// check-other in the namespace check-other the other check. It also names
+// the gofmt check for the core program, which is never a check.
 type fixture struct {
 	*world
 	srv           *httptest.Server
@@ -93,7 +95,10 @@ func newFixture(t *testing.T) *fixture {
 			Audiences: []string{gitk8s.MirrorAudience},
 		}
 	}
-	checks := &k8s.ConfigMap{Object: kube.Meta(caller.ChecksConfigMap, nil), Data: map[string]string{"checks.bot": "gofmt", "git-k8s.git-k8s": "gofmt"}}
+	checks := &k8s.ConfigMap{Object: kube.Meta(caller.ChecksConfigMap, nil), Data: map[string]string{
+		"check-gofmt.check-gofmt": "gofmt", "checks.check-approval": "approval", "check-other.check-other": "other",
+		"checks.bot": "gofmt", "git-k8s.git-k8s": "gofmt",
+	}}
 	checks.Namespace = caller.ChecksNamespace
 	objects := []any{
 		repo,
@@ -106,7 +111,8 @@ func newFixture(t *testing.T) *fixture {
 		branch("app-running", "gotest-running"),
 		pod("gotest-running", gitk8s.GoTestController, "Running"),
 		token("gofmt", "system:serviceaccount:check-gofmt:check-gofmt", nil),
-		token("approval", "system:serviceaccount:check-approval:check-approval", nil),
+		token("approval", "system:serviceaccount:checks:check-approval", nil),
+		token("namesake", "system:serviceaccount:check-approval:check-approval", nil),
 		token("other", "system:serviceaccount:check-other:check-other", nil),
 		token("deps", "system:serviceaccount:git-k8s-deps:git-k8s-deps", nil),
 		token("bot", "system:serviceaccount:checks:bot", nil),
@@ -199,7 +205,8 @@ func TestServeHTTPStatus(t *testing.T) {
 		{name: "a check that the repository doesn't list", path: fetch, token: "other", want: http.StatusNotFound, body: "no GitRepository default/app that check-other/check-other may fetch"},
 		{name: "a listed check fetches", path: fetch, token: "approval", want: http.StatusOK, body: "001e# service=git-upload-pack\n0000"},
 		{name: "a check that may push", path: push, token: "gofmt", want: http.StatusOK, body: "001f# service=git-receive-pack\n0000"},
-		{name: "a check that may not push", path: push, token: "approval", want: http.StatusForbidden, body: "check-approval/check-approval may not push to default/app"},
+		{name: "a check that may not push", path: push, token: "approval", want: http.StatusForbidden, body: "checks/check-approval may not push to default/app"},
+		{name: "generate's account for a check that runs elsewhere", path: fetch, token: "namesake", want: http.StatusNotFound, body: "no GitRepository default/app that check-approval/check-approval may fetch"},
 		{name: "a controller with a prefix", path: push, token: "deps", want: http.StatusOK},
 		{name: "a check through its ConfigMap entry", path: push, token: "bot", want: http.StatusOK},
 		{name: "the core program, whose ConfigMap entry names a check", path: fetch, token: "core", want: http.StatusNotFound, body: "no GitRepository default/app that git-k8s/git-k8s may fetch"},

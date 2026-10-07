@@ -101,7 +101,13 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	check, ok := checkFor(review.User, entries)
 	switch {
 	case !ok:
-		http.Error(w, review.User.Username+" isn't a check's service account", http.StatusForbidden)
+		msg := review.User.Username + " isn't a check's service account"
+		if ns, name, sa := review.User.ServiceAccount(); sa {
+			if _, listed := entries[ns+"."+name]; !listed {
+				msg += fmt.Sprintf("; add an entry for %s.%s to the %s ConfigMap in the %s namespace", ns, name, caller.ChecksConfigMap, caller.ChecksNamespace)
+			}
+		}
+		http.Error(w, msg, http.StatusForbidden)
 		return
 	case check != entry:
 		http.Error(w, fmt.Sprintf("%s is the %s check, so it can't write the %s check's result", review.User.Username, check, entry), http.StatusForbidden)
@@ -292,8 +298,8 @@ func (rs *results) Reconcile(ctx context.Context, b *resultsBranch) error {
 }
 
 // checkFor returns the name of the check that runs as user, which must be a
-// service account. The mirror maps service accounts to checks the same way,
-// with entries from the git-k8s-checks ConfigMap, as caller.Caller.Check
+// service account with an entry in the git-k8s-checks ConfigMap. The mirror
+// maps service accounts to checks the same way, as caller.Caller.Check
 // describes.
 func checkFor(user kube.UserInfo, entries map[string]string) (string, bool) {
 	ns, name, ok := user.ServiceAccount()

@@ -45,6 +45,10 @@ func checksEntries(entries map[string]string) *k8s.ConfigMap {
 	return cm
 }
 
+// registered is the git-k8s-checks ConfigMap with entries that make the
+// service accounts of checkToken's base, gofmt, and risk tokens those checks.
+var registered = checksEntries(map[string]string{"check-base.check-base": "base", "check-gofmt.check-gofmt": "gofmt", "check-risk.check-risk": "risk"})
+
 // sendResult sends body, a result or raw JSON, to the results endpoint
 // with token, in a request context from kube.FakeRequest. A token with a
 // space in it is the whole Authorization header.
@@ -88,8 +92,12 @@ func TestResultsEndpointRejects(t *testing.T) {
 		kube.FakeToken{Token: "admin", User: kube.UserInfo{Username: "kubernetes-admin"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "bot", User: kube.UserInfo{Username: "system:serviceaccount:ci:base-bot"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "approval", User: kube.UserInfo{Username: "system:serviceaccount:checks:check-approval"}, Audiences: []string{gitk8s.ResultsAudience}},
+		kube.FakeToken{Token: "squatter", User: kube.UserInfo{Username: "system:serviceaccount:check-approval:check-approval"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "core", User: kube.UserInfo{Username: "system:serviceaccount:git-k8s:git-k8s"}, Audiences: []string{gitk8s.ResultsAudience}},
-		checksEntries(map[string]string{"ci.base-bot": "base", "checks.check-approval": "approval", "check-lint.check-lint": "", "git-k8s.git-k8s": "gofmt"}),
+		checksEntries(map[string]string{
+			"check-base.check-base": "base", "check-gofmt.check-gofmt": "gofmt", "check-risk.check-risk": "risk",
+			"ci.base-bot": "base", "checks.check-approval": "approval", "check-lint.check-lint": "", "git-k8s.git-k8s": "gofmt",
+		}),
 	}
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	fresh := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
@@ -105,13 +113,14 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"no token", gofmt, "Bearer ", fresh, http.StatusUnauthorized, "no token"},
 		{"a lowercase scheme", "/results/default/app-main/gofmt", "bearer gofmt", fresh, http.StatusConflict, "main has no parent, so it takes no check results"},
 		{"a token for the API server", gofmt, "api", fresh, http.StatusUnauthorized, "is invalid for the target audiences"},
-		{"a service account that isn't a check", gofmt, "ci", fresh, http.StatusForbidden, "system:serviceaccount:default:ci isn't a check's service account"},
+		{"a service account that isn't a check", gofmt, "ci", fresh, http.StatusForbidden, "system:serviceaccount:default:ci isn't a check's service account; add an entry for default.ci to the git-k8s-checks ConfigMap in the git-k8s namespace"},
 		{"a check's account name in another namespace", gofmt, "elsewhere", fresh, http.StatusForbidden, "isn't a check's service account"},
+		{"generate's account for a check that runs elsewhere", "/results/default/app-c-x/approval?generation=3", "squatter", fresh, http.StatusForbidden, "system:serviceaccount:check-approval:check-approval isn't a check's service account; add an entry"},
 		{"a person", gofmt, "admin", fresh, http.StatusForbidden, "kubernetes-admin isn't a check's service account"},
 		{"another check's entry", gofmt, "base", fresh, http.StatusForbidden, "system:serviceaccount:check-base:check-base is the base check, so it can't write the gofmt check's result"},
 		{"a check through its ConfigMap entry", "/results/default/app-c-x/base?generation=3", "bot", &base, http.StatusNoContent, ""},
 		{"another check's entry through a ConfigMap entry", gofmt, "approval", fresh, http.StatusForbidden, "system:serviceaccount:checks:check-approval is the approval check, so it can't write the gofmt check's result"},
-		{"a ConfigMap entry that says the account isn't a check", "/results/default/app-c-x/lint?generation=3", "lint", fresh, http.StatusForbidden, "system:serviceaccount:check-lint:check-lint isn't a check's service account"},
+		{"a ConfigMap entry that says the account isn't a check", "/results/default/app-c-x/lint?generation=3", "lint", fresh, http.StatusForbidden, "system:serviceaccount:check-lint:check-lint isn't a check's service account\n"},
 		{"the core program, despite its ConfigMap entry", gofmt, "core", fresh, http.StatusForbidden, "system:serviceaccount:git-k8s:git-k8s isn't a check's service account"},
 		{"invalid JSON", gofmt, "gofmt", `{"commit":`, http.StatusBadRequest, "decoding the result"},
 		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"} {}`, http.StatusBadRequest, "the request has data after the result"},
@@ -149,8 +158,9 @@ func TestResultsEndpointRejects(t *testing.T) {
 	}
 }
 
-// Without the git-k8s-checks ConfigMap, only generate's convention maps
-// service accounts to checks.
+// Without the git-k8s-checks ConfigMap, no service account is a check, not
+// even the one that generate installs a check's program with, because
+// anyone who can create its namespace could create that service account.
 func TestResultsEndpointWithoutChecksConfigMap(t *testing.T) {
 	b := listedBranch()
 	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
@@ -158,10 +168,10 @@ func TestResultsEndpointWithoutChecksConfigMap(t *testing.T) {
 	bot := kube.FakeToken{Token: "bot", User: kube.UserInfo{Username: "system:serviceaccount:ci:base-bot"}, Audiences: []string{gitk8s.ResultsAudience}}
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	const path = "/results/default/app-c-x/base?generation=3"
-	for token, code := range map[string]int{"base": http.StatusNoContent, "bot": http.StatusForbidden} {
+	for _, token := range []string{"base", "bot"} {
 		ctx, rec := kube.FakeRequest(t.Context(), b, checkToken("base"), bot)
-		if w := sendResult(ctx, rs, path, token, &base); w.Code != code {
-			t.Errorf("with the %s token, got %d %q, want %d", token, w.Code, w.Body, code)
+		if w := sendResult(ctx, rs, path, token, &base); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "isn't a check's service account") {
+			t.Errorf("with the %s token, got %d %q, want 403", token, w.Code, w.Body)
 		}
 		if err := rec.Err(); err != nil {
 			t.Error(err)
@@ -170,7 +180,7 @@ func TestResultsEndpointWithoutChecksConfigMap(t *testing.T) {
 }
 
 func TestResultsEndpointTimesOut(t *testing.T) {
-	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
+	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), registered)
 	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond, fetch: func(context.Context, string, string) (*resultsBranch, error) {
 		t.Error("read the branch from the API server, although the cache has it")
 		return nil, nil
@@ -197,7 +207,7 @@ func TestResultsEndpointTimesOut(t *testing.T) {
 // hold the branch's shard, answers 503 at once and closes the connection,
 // so that the check's next try can reach the replica that does.
 func TestResultsEndpointOnStandby(t *testing.T) {
-	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), kube.FakeStandby{})
+	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), registered, kube.FakeStandby{})
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "this replica doesn't write the branch's results") {
@@ -221,7 +231,7 @@ func TestResultsEndpointOnStandby(t *testing.T) {
 func TestResultsEndpointCantRead(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(errors.New("reading GitBranches: forbidden"))
-	ctx, _ = kube.FakeRequest(ctx, checkToken("gofmt"))
+	ctx, _ = kube.FakeRequest(ctx, checkToken("gofmt"), registered)
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Connection") != "close" {
@@ -234,7 +244,7 @@ func TestResultsEndpointCantRead(t *testing.T) {
 // API server shows the newer spec, so the request keeps waiting, and it
 // reads the API server at most once every refetch.
 func TestResultsEndpointWaitsForGeneration(t *testing.T) {
-	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
+	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), registered)
 	reads := 0
 	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond, refetch: time.Hour, fetch: func(context.Context, string, string) (*resultsBranch, error) {
 		reads++
@@ -287,7 +297,7 @@ func TestResultsEndpointBranchGone(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, rec := kube.FakeRequest(t.Context(), append(tc.world, checkToken("gofmt"))...)
+			ctx, rec := kube.FakeRequest(t.Context(), append(tc.world, checkToken("gofmt"), registered)...)
 			rs := &results{timeout: time.Minute, poll: time.Millisecond, refetch: time.Second, fetch: tc.fetch}
 			start := time.Now()
 			w := sendResult(ctx, rs, tc.path, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
@@ -315,7 +325,7 @@ func TestResultsEndpointBranchGone(t *testing.T) {
 // cache has the branch, the request hands its result off as usual.
 func TestResultsEndpointWaitsForBranch(t *testing.T) {
 	res := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
-	missing, _ := kube.FakeRequest(t.Context(), checkToken("gofmt"))
+	missing, _ := kube.FakeRequest(t.Context(), checkToken("gofmt"), registered)
 	ctx := &changingCache{Context: t.Context(), world: missing}
 	var reads atomic.Int32
 	rs := &results{timeout: time.Minute, poll: time.Millisecond, refetch: time.Hour, fetch: func(context.Context, string, string) (*resultsBranch, error) {
@@ -337,7 +347,7 @@ func TestResultsEndpointWaitsForBranch(t *testing.T) {
 	waitFor("read the API server", func() bool { return reads.Load() > 0 })
 
 	t.Log("The cache gets the branch, so the request holds its result and triggers a reconcile, which writes it.")
-	cached, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
+	cached, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), registered)
 	ctx.set(cached)
 	waitFor("held its result", func() bool { return rs.heldFor(branchKey)["gofmt"] != nil })
 	b := listedBranch()
@@ -345,7 +355,7 @@ func TestResultsEndpointWaitsForBranch(t *testing.T) {
 	if err := rs.Reconcile(rctx, b); err != nil {
 		t.Fatal(err)
 	}
-	written, _ := kube.FakeRequest(t.Context(), b, checkToken("gofmt"))
+	written, _ := kube.FakeRequest(t.Context(), b, checkToken("gofmt"), registered)
 	ctx.set(written)
 	if w := <-answered; w.Code != http.StatusNoContent {
 		t.Errorf("got %d %q, want 204 once the cache shows the result", w.Code, w.Body)
@@ -403,7 +413,7 @@ func TestResultsEndpointCantFetch(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, rec := kube.FakeRequest(t.Context(), checkToken("gofmt"))
+			ctx, rec := kube.FakeRequest(t.Context(), checkToken("gofmt"), registered)
 			reads := 0
 			rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond, refetch: time.Hour, fetch: func(ctx context.Context, _, _ string) (*resultsBranch, error) {
 				reads++
@@ -440,7 +450,7 @@ func TestResultsHandOff(t *testing.T) {
 	const path = "/results/default/app-c-x/gofmt?generation=3"
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	ctx, cancel := context.WithCancel(t.Context())
-	ctx, rec := kube.FakeRequest(ctx, listedBranch(), checkToken("gofmt"))
+	ctx, rec := kube.FakeRequest(ctx, listedBranch(), checkToken("gofmt"), registered)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -480,7 +490,7 @@ func TestResultsHandOff(t *testing.T) {
 		t.Error(err)
 	}
 
-	ctx, rec = kube.FakeRequest(t.Context(), b, checkToken("gofmt"))
+	ctx, rec = kube.FakeRequest(t.Context(), b, checkToken("gofmt"), registered)
 	if w := sendResult(ctx, rs, path, "gofmt", res); w.Code != http.StatusNoContent {
 		t.Errorf("with the result written, got %d %q, want 204", w.Code, w.Body)
 	}
@@ -604,8 +614,8 @@ func TestCheckFor(t *testing.T) {
 		entries map[string]string
 		want    string
 	}{
-		{"system:serviceaccount:check-gofmt:check-gofmt", nil, "gofmt"},
-		{"system:serviceaccount:check-my-lint:check-my-lint", nil, "my-lint"},
+		{"system:serviceaccount:check-gofmt:check-gofmt", nil, ""},
+		{"system:serviceaccount:check-my-lint:check-my-lint", nil, ""},
 		{"system:serviceaccount:default:check-gofmt", nil, ""},
 		{"system:serviceaccount:check-gofmt:default", nil, ""},
 		{"system:serviceaccount:check-:check-", nil, ""},
@@ -613,8 +623,9 @@ func TestCheckFor(t *testing.T) {
 		{"system:serviceaccount:checks:check-approval", nil, ""},
 		{"check-gofmt", nil, ""},
 		{"kubernetes-admin", nil, ""},
-		{"system:serviceaccount:check-gofmt:check-gofmt", entries, "gofmt"},
+		{"system:serviceaccount:check-gofmt:check-gofmt", entries, ""},
 		{"system:serviceaccount:checks:check-approval", entries, "approval"},
+		{"system:serviceaccount:check-approval:check-approval", entries, ""},
 		{"system:serviceaccount:ci:gofmt-bot", entries, "gofmt"},
 		{"system:serviceaccount:check-risk:check-risk", entries, ""},
 		{"system:serviceaccount:git-k8s:git-k8s", entries, ""},

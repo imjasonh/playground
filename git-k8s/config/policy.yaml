@@ -1,11 +1,14 @@
-# The git-k8s-check-results and git-k8s-branches policies, and the core
-# program's results endpoint and mirror, read this ConfigMap to find checks
-# that don't run as the service account check-NAME in the namespace
-# check-NAME. Each entry maps NAMESPACE.SERVICE_ACCOUNT to a check's name,
-# for example "ci.gofmt-bot: gofmt", and overrides that convention. They
-# ignore an entry for the core program's service account, git-k8s.git-k8s,
-# which is never a check. The core program applies this ConfigMap without
-# data, so it keeps the entries that you add.
+# Each entry maps NAMESPACE.SERVICE_ACCOUNT to a check's name, for example
+# "check-gofmt.check-gofmt: gofmt", or to "" for a service account that
+# isn't a check. The core program's results endpoint and mirror treat a
+# service account as a check only if it has an entry, so add one for each
+# check that you install. The git-k8s-check-results and git-k8s-branches
+# policies read the entries too. They also treat the service account
+# check-NAME in the namespace check-NAME as the NAME check without an entry,
+# which only limits what that account can do. All of them ignore an entry
+# for the core program's service account, git-k8s.git-k8s, which is never a
+# check. The core program applies this ConfigMap without data, so it keeps
+# the entries that you add.
 # While the ConfigMap is missing, those policies deny every write to
 # GitBranch objects, including people's.
 apiVersion: v1
@@ -23,8 +26,11 @@ metadata:
 # generate installs each program in a namespace with a service account of
 # the program's name, so the core program runs as
 # system:serviceaccount:git-k8s:git-k8s and the gofmt check as
-# system:serviceaccount:check-gofmt:check-gofmt. A check installed under
-# another name or namespace needs an entry in the git-k8s-checks ConfigMap.
+# system:serviceaccount:check-gofmt:check-gofmt. This policy treats an
+# account with an entry in the git-k8s-checks ConfigMap as a check, and
+# check-NAME in the namespace check-NAME too, with or without an entry.
+# Being a check here only takes writes away, so whoever creates such an
+# account gains nothing; the results endpoint and the mirror need the entry.
 # A check whose entry is empty can't send results, but this policy still
 # treats it as a check. People aren't service accounts, so RBAC alone
 # decides whether they can write results.

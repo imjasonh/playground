@@ -35,6 +35,7 @@ func TestIdentify(t *testing.T) {
 		kube.FakeToken{Token: "api", User: kube.UserInfo{Username: "system:serviceaccount:check-gofmt:check-gofmt"}},
 		kube.FakeToken{Token: "person", User: kube.UserInfo{Username: "jane@example.com"}, Audiences: []string{gitk8s.MirrorAudience}},
 	}
+	entries := map[string]string{"check-gofmt.check-gofmt": "gofmt"}
 	for _, tc := range []struct {
 		name, header string
 		want         Caller
@@ -66,8 +67,8 @@ func TestIdentify(t *testing.T) {
 			if err != nil || got != tc.want {
 				t.Fatalf("Identify = %#v, %v; want %#v", got, err, tc.want)
 			}
-			if check, ok := got.Check(nil); check != tc.check || ok != (tc.check != "") {
-				t.Errorf("Check(nil) = %q, %v; want %q", check, ok, tc.check)
+			if check, ok := got.Check(entries); check != tc.check || ok != (tc.check != "") {
+				t.Errorf("Check(%v) = %q, %v; want %q", entries, check, ok, tc.check)
 			}
 		})
 	}
@@ -83,8 +84,10 @@ func TestCheck(t *testing.T) {
 		entries map[string]string
 		want    string
 	}{
-		{name: "generate's service account for a check", c: gofmt, want: "gofmt"},
-		{name: "a check's name in another namespace", c: Caller{Namespace: "team", Name: "check-gofmt"}},
+		{name: "generate's service account for a check, with an entry", c: gofmt, entries: map[string]string{"check-gofmt.check-gofmt": "gofmt"}, want: "gofmt"},
+		{name: "generate's service account for a check, without an entry", c: gofmt},
+		{name: "generate's service account for a check that runs elsewhere", c: Caller{Namespace: "check-approval", Name: "check-approval"}, entries: map[string]string{"checks.check-approval": "approval"}},
+		{name: "a check's name in another namespace", c: Caller{Namespace: "team", Name: "check-gofmt"}, entries: map[string]string{"check-gofmt.check-gofmt": "gofmt"}},
 		{name: "a service account named check-", c: Caller{Namespace: "check-", Name: "check-"}},
 		{name: "the core program", c: core},
 		{name: "a service account with an entry", c: bot, entries: map[string]string{"checks.bot": "bot"}, want: "bot"},
