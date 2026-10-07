@@ -15,18 +15,6 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// More Merged condition reasons, for squash and rebase landings.
-const (
-	// reasonNeedsRebase means a squash or rebase landing can't copy the
-	// branch's commits onto the parent's head, so a person has to rebase
-	// them.
-	reasonNeedsRebase = "NeedsRebase"
-	// reasonRewritten means the merge controller moved the branch to the
-	// squashed or rebased commits instead of landing them on the parent, so
-	// that the checks whose results don't have filesOnly run on them.
-	reasonRewritten = "Rewritten"
-)
-
 // maxLandingCommits is the most commits that a squash or rebase landing
 // reads from a branch. A rebase runs two git commands for each commit that
 // it copies.
@@ -49,13 +37,13 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 	case err != nil:
 		return false, err
 	case problem != "":
-		report(b, reasonNeedsRebase, false, "can't %s %s onto %s at %s, because %s",
+		report(b, gitk8s.MergeStateNeedsRebase, "can't %s %s onto %s at %s, because %s",
 			strings.ToLower(spec.Merge.Landing), spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), problem)
 		return true, nil
 	case landed == spec.Head:
 		return false, nil
 	case landed == spec.ParentHead:
-		report(b, reasonMerged, true, "%s at %s already has the changes in %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
+		report(b, gitk8s.MergeStateNothingToLand, "%s at %s already has the changes in %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
 		return true, nil
 	}
 
@@ -71,7 +59,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 		}
 		slog.Info("rewrote a branch", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
 			"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.Head), "to", gitk8s.Short(landed))
-		report(b, reasonRewritten, false, "%s %s onto %s at %s as %s and moved %s there, because the results of %s might depend on the branch's commits",
+		report(b, gitk8s.MergeStateRewritten, "%s %s onto %s at %s as %s and moved %s there, because the results of %s might depend on the branch's commits",
 			verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "))
 		// A queued branch keeps its place while the checks run on the
 		// rewritten commits, so its place moves with it.
@@ -86,7 +74,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 	// deleted stays in its parent instead of falling behind it.
 	parent := git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: landed, Old: spec.ParentHead}
 	branch := git.RefUpdate{Ref: "refs/heads/" + spec.Branch, New: landed, Old: spec.Head}
-	if spec.Merge.DeleteMergedBranches {
+	if spec.Merge.DeleteLandedBranches {
 		branch.New = ""
 	}
 	if err := local.UpdateRefs(ctx, parent, branch); err != nil {
@@ -94,8 +82,8 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 	}
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch, "parent", spec.Parent,
 		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", branch.New == "")
-	report(b, reasonLanded, true, "%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
-	kube.Eventf(ctx, kube.Normal, reasonLanded, "%s %s at %s onto %s, which moved from %s to %s",
+	report(b, gitk8s.MergeStateLanded, "%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
+	kube.Eventf(ctx, kube.Normal, "Landed", "%s %s at %s onto %s, which moved from %s to %s",
 		verb, spec.Branch, gitk8s.Short(spec.Head), spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
 	if branch.New == "" {
 		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
