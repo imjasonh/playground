@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -337,6 +338,68 @@ func TestInformerFallsBackWhenStreamingIsUnsupported(t *testing.T) {
 	}
 	if inf.streaming.Load() {
 		t.Error("informer still tries streaming lists")
+	}
+}
+
+func TestInformerBacksOffWhenWatchesEndEarly(t *testing.T) {
+	const a = `{"metadata":{"name":"a","namespace":"ns","resourceVersion":"10"}}`
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			// Like a proxy that ends every watch at once, which cuts each
+			// streaming list after its first event.
+			var lists, streams, watches atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				q := r.URL.Query()
+				switch {
+				case q.Get("watch") != "1":
+					lists.Add(1)
+					fmt.Fprintf(w, `{"kind":"ConfigMapList","apiVersion":"v1","metadata":{"resourceVersion":"10"},"items":[%s]}`, a)
+				case q.Get("sendInitialEvents") == "true":
+					streams.Add(1)
+					fmt.Fprintf(w, `{"type":"ADDED","object":%s}`+"\n", a)
+				default:
+					watches.Add(1)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			c, err := client.New(&client.Config{Host: srv.URL}, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ti, err := typeInfoFor[cfgMap, *cfgMap]()
+			if err != nil {
+				t.Fatal(err)
+			}
+			inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, informerConfig{streaming: streaming}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+			ctx, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+			go inf.run(ctx)
+			select {
+			case <-inf.synced:
+			case <-time.After(10 * time.Second):
+				t.Fatalf("the informer didn't sync after %d streaming lists", streams.Load())
+			}
+			if got := keys(inf); !slices.Equal(got, []string{"a"}) {
+				t.Errorf("cache = %v", got)
+			}
+			var want int64
+			if streaming {
+				want = maxListCuts
+			}
+			if got := streams.Load(); got != want || lists.Load() != 1 {
+				t.Errorf("%d streaming lists and %d lists, want %d and 1", got, lists.Load(), want)
+			}
+			if inf.streaming.Load() {
+				t.Error("informer still tries streaming lists")
+			}
+
+			// The backoff starts at 800ms.
+			before := watches.Load()
+			time.Sleep(time.Second)
+			if n := watches.Load() - before; n > 3 {
+				t.Errorf("%d watches in a second, want at most 3", n)
+			}
+		})
 	}
 }
 

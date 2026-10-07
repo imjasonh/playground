@@ -392,9 +392,16 @@ The informer first tries a streaming list, which is a watch with
 replaces the cache's contents in one step, then keeps reading the same watch.
 If the server rejects the parameters with `400` or `422`, or sends nothing for
 15 seconds, the informer switches to paginated lists of 500 objects and
-watches from the list's resource version. Watches ask for a random timeout
+watches from the list's resource version. It also switches after three
+streaming lists in a row end before the bookmark: something in between, such
+as a proxy with a short timeout, may cut every long response, and each page
+of a paginated list is a short one. Watches ask for a random timeout
 between 5 and 10 minutes so that reconnects spread out, and resume from the
-last resource version they saw. A `410 Gone` starts a new list. Replacing the
+last resource version they saw. A streaming list that ends before the
+bookmark counts as a failure and waits out the backoff, from 0.8 to 30
+seconds. So does a watch that ends within a second without events, as in
+`client-go`, so that a server or proxy that ends every watch at once doesn't
+get a tight loop of requests. A `410 Gone` starts a new list. Replacing the
 cache's contents computes which objects were added, changed, or deleted while
 the informer was disconnected, and notifies controllers of exactly those.
 

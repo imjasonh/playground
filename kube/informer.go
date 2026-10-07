@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -76,9 +77,19 @@ const (
 	// first event before the informer decides the server doesn't support
 	// streaming lists. Servers that do send at least the end bookmark at once.
 	firstEventTimeout = 15 * time.Second
+	// maxListCuts is how many streaming lists in a row may end before their
+	// end bookmark before the informer uses paginated lists instead.
+	maxListCuts = 3
 )
 
-var errStreamingUnsupported = errors.New("streaming lists are not supported")
+var (
+	errStreamingUnsupported = errors.New("streaming lists are not supported")
+	errListCut              = errors.New("the streaming list ended before its last event")
+	// errShortWatch is the error for a watch that ends within a second and
+	// without events, so that a server or proxy that ends every watch at
+	// once gets new watches with backoff, not in a tight loop.
+	errShortWatch = errors.New("the watch ended at once, without events")
+)
 
 // informer keeps a store in sync with the API server by listing and then
 // watching, and calls handlers for every change.
@@ -311,6 +322,7 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 	b := backoff{min: 800 * time.Millisecond, max: 30 * time.Second}
 	b.reset()
 	rv, needSync := "", true
+	cuts := 0
 	for ctx.Err() == nil {
 		var err error
 		if needSync {
@@ -322,6 +334,16 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 			rv, synced, err = inf.stream(ctx, "", true)
 			if errors.Is(err, errStreamingUnsupported) {
 				inf.log.Info("API server doesn't support streaming lists; using paginated lists")
+				inf.streaming.Store(false)
+				continue
+			}
+			if !errors.Is(err, errListCut) {
+				cuts = 0
+			} else if cuts++; cuts == maxListCuts {
+				// Something in between, such as a proxy with a short
+				// timeout, may cut every long streaming list. Each page of
+				// a paginated list is a shorter response.
+				inf.log.Info("streaming lists keep ending early; using paginated lists", "err", err)
 				inf.streaming.Store(false)
 				continue
 			}
@@ -494,6 +516,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 		return rv, false, err
 	}
 	defer w.Close()
+	start, events := time.Now(), 0
 
 	var items map[Key]*T
 	var bad map[Key]*decodeError
@@ -520,14 +543,19 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 			switch {
 			case first != nil && timedOut.Load():
 				return "", false, errStreamingUnsupported
-			case errors.Is(err, io.EOF):
-				return rv, synced, nil
 			case ctx.Err() != nil:
 				return rv, synced, ctx.Err()
+			case !synced:
+				return rv, false, fmt.Errorf("%w: %w", errListCut, err)
+			case errors.Is(err, io.EOF) && events == 0 && time.Since(start) < time.Second:
+				return rv, synced, errShortWatch
+			case errors.Is(err, io.EOF):
+				return rv, synced, nil
 			default:
 				return rv, synced, err
 			}
 		}
+		events++
 		inf.m.inc("kube_watch_events_total", "type", inf.ti.String())
 		switch typ {
 		case client.Added, client.Modified, client.Deleted:
