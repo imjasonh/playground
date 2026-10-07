@@ -194,7 +194,9 @@ sets after every reconcile of the object. After a reconcile succeeds,
 `Synced` is `True` with the reason `Reconciled`. After one fails, it's
 `False`, and its message says what failed. Its reason is then
 `ReconcileError`, or `PermanentError` for an error that retrying won't fix,
-which kube doesn't retry until the object changes. kube doesn't reconcile a
+such as an invalid `pollInterval`. After a `ReconcileError`, kube retries
+the reconcile with backoff. After a `PermanentError`, it reconciles the
+object again when the object changes. kube doesn't reconcile a
 `GitRepository` that's being deleted, so its other conditions, such as
 `ExternalSynced`, keep their values from before the deletion. If the
 deletion can't finish, `Synced` is `False`, and its message says why. For
