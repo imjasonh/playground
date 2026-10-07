@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/kube/internal/jsonpatch"
 )
@@ -65,6 +68,85 @@ func (gizmoReconciler) Reconcile(context.Context, *gizmo) error { return nil }
 
 func testManager() *Manager {
 	return &Manager{log: slog.Default(), metrics: newMetrics()}
+}
+
+func TestWebhookServerStopLetsRequestsFinish(t *testing.T) {
+	grace := serveGrace
+	serveGrace = time.Second
+	t.Cleanup(func() { serveGrace = grace })
+	ws := &webhookServer{m: testManager(), mux: http.NewServeMux()}
+	started := make(chan struct{}, 2)
+	finish, canceled := make(chan struct{}), make(chan struct{})
+	ws.handle("/finish", func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-finish
+		_, _ = io.WriteString(w, "finished")
+	})
+	ws.handle("/hang", func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-r.Context().Done()
+		close(canceled)
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ws.srv = &http.Server{Handler: ws.mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = ws.srv.Serve(ln) }()
+	ws.ready.Store(true)
+	post := func(path string) <-chan string {
+		body := make(chan string, 1)
+		go func() {
+			resp, err := http.Post("http://"+addr+path, "application/json", nil)
+			if err != nil {
+				body <- err.Error()
+				return
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			body <- string(b)
+		}()
+		return body
+	}
+	finished := post("/finish")
+	post("/hang")
+	<-started
+	<-started
+
+	stopping := time.Now()
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		ws.stop()
+	}()
+	waitFor(t, "the server to stop accepting connections", func() bool {
+		c, err := net.Dial("tcp", addr)
+		if err == nil {
+			c.Close()
+		}
+		return err != nil
+	})
+	if ws.serving() {
+		t.Error("the server is still ready once it stops")
+	}
+	close(finish)
+	if body := <-finished; body != "finished" {
+		t.Errorf("a request in progress when the server stopped got %q, want it to finish", body)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the context of a request that didn't finish wasn't canceled")
+	}
+	if d := time.Since(stopping); d < serveGrace {
+		t.Errorf("a request's context was canceled %v after the server stopped, want %v", d, serveGrace)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(30 * time.Second):
+		t.Fatal("stop didn't return")
+	}
 }
 
 func TestConvert(t *testing.T) {
@@ -123,6 +205,30 @@ func TestConvert(t *testing.T) {
 	}
 	if _, err := c.convert(json.RawMessage(`{"apiVersion":"test.kube.imjasonh.github.io/v9","metadata":{}}`), "test.kube.imjasonh.github.io/v2"); err == nil {
 		t.Error("converting an unknown version succeeded")
+	}
+}
+
+// gizmoV1beta2 has no conversion methods, and a tier that v2's tier doesn't
+// fit.
+type gizmoV1beta2 struct {
+	Object `kube:"group=test.kube.imjasonh.github.io,kind=Gizmo,version=v1beta2"`
+	Spec   struct {
+		Tier int `json:"tier,omitempty"`
+	} `json:"spec"`
+}
+
+func TestConvertFailsWhenAValueDoesntFit(t *testing.T) {
+	c := For[gizmo](gizmoReconciler{}, Version[gizmoV1](), Version[gizmoV1beta2]()).(*controller[gizmo, *gizmo])
+	if err := c.prepare(t.Context(), testManager()); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ obj, to string }{
+		{`{"apiVersion":"test.kube.imjasonh.github.io/v1","kind":"Gizmo","metadata":{},"spec":{"size":"4"},"status":{"seen":2}}`, "test.kube.imjasonh.github.io/v2"},
+		{`{"apiVersion":"test.kube.imjasonh.github.io/v2","kind":"Gizmo","metadata":{},"spec":{"replicas":1,"tier":"gold"}}`, "test.kube.imjasonh.github.io/v1beta2"},
+	} {
+		if out, err := c.convert(json.RawMessage(tc.obj), tc.to); err == nil {
+			t.Errorf("converting %s to %s = %s, want an error", tc.obj, tc.to, out)
+		}
 	}
 }
 
@@ -295,6 +401,49 @@ func TestValidate(t *testing.T) {
 	r := validate[configMapMeta, *configMapMeta](t.Context(), m, ti, labeler{}, &admissionRequest{Operation: "UPDATE", Object: frozen, OldObject: frozen})
 	if r.Allowed || r.Result == nil || r.Result.Message != "frozen ConfigMaps can't change" || r.Result.Code != 403 {
 		t.Errorf("update = %+v", r)
+	}
+}
+
+// olds records the old object that each webhook call receives.
+type olds struct{ got []*strictMap }
+
+func (o *olds) Validate(_ context.Context, _, old *strictMap) error {
+	o.got = append(o.got, old)
+	return nil
+}
+
+func (o *olds) Default(_ context.Context, _, old *strictMap) error {
+	o.got = append(o.got, old)
+	return nil
+}
+
+func TestWebhooksSeeOnlyObjectsThatDecode(t *testing.T) {
+	ti, err := typeInfoFor[strictMap, *strictMap]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := json.RawMessage(`{"metadata":{"name":"cm"},"data":{"count":1}}`)
+	// port's error stops encoding/json before it reaches targets.
+	partial := json.RawMessage(`{"metadata":{"name":"cm"},"data":{"port":3000000000,"targets":["a"]}}`)
+	o := &olds{}
+	m := testManager()
+	for _, call := range []func(*admissionRequest) *admissionResponse{
+		func(req *admissionRequest) *admissionResponse {
+			return validate[strictMap, *strictMap](t.Context(), m, ti, o, req)
+		},
+		func(req *admissionRequest) *admissionResponse {
+			return mutate[strictMap, *strictMap](t.Context(), m, ti, o, req)
+		},
+	} {
+		if r := call(&admissionRequest{Operation: "CREATE", Object: partial}); r.Allowed {
+			t.Errorf("creating an object that doesn't decode = %+v, want denied", r)
+		}
+		if r := call(&admissionRequest{Operation: "UPDATE", Object: good, OldObject: partial}); !r.Allowed {
+			t.Errorf("fixing an object that doesn't decode = %+v, want allowed", r.Result)
+		}
+	}
+	if len(o.got) != 2 || o.got[0] != nil || o.got[1] != nil {
+		t.Errorf("webhooks received old objects %v, want nil twice", o.got)
 	}
 }
 

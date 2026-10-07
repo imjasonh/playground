@@ -2,7 +2,6 @@ package protobuf
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -254,10 +253,7 @@ func (fp *fieldPlan) set(dst reflect.Value, f field) error {
 		if err != nil {
 			return err
 		}
-		var te *json.UnmarshalTypeError
-		if err := json.Unmarshal(b, dst.Addr().Interface()); err != nil && !errors.As(err, &te) {
-			return err
-		}
+		return json.Unmarshal(b, dst.Addr().Interface())
 	}
 	return nil
 }

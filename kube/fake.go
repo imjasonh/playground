@@ -3,7 +3,6 @@ package kube
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -237,9 +236,8 @@ func (w *fakeWorld) read(ti *typeInfo) *memSource {
 				continue
 			}
 			v := reflect.New(ti.goType)
-			// Like the cache, tolerate fields whose JSON type doesn't match.
-			var te *json.UnmarshalTypeError
-			if err := json.Unmarshal(b, v.Interface()); err != nil && !errors.As(err, &te) {
+			// Like the cache, skip objects that don't decode.
+			if err := json.Unmarshal(b, v.Interface()); err != nil {
 				continue
 			}
 			s.objs[k] = v.Interface()

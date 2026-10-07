@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -286,6 +287,23 @@ func (m *Manager) init() error {
 		var out []sample
 		for k, c := range m.caches {
 			out = append(out, sample{labels: []string{"type", k.ti.String(), "namespace", k.namespace, "selector", k.selector}, value: float64(c.size())})
+		}
+		return out
+	})
+	m.metrics.gauge("kube_cache_undecodable_objects", "Objects that each cache skips because they don't decode as its type.", func() []sample {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		// Controllers with the same selector have separate caches of the
+		// same objects.
+		n := map[[3]string]int{}
+		for _, c := range slices.AppendSeq(slices.Clone(m.unshared), maps.Values(m.caches)) {
+			ns, sel := c.filter()
+			k := [3]string{c.typeInfo().String(), ns, sel}
+			n[k] = max(n[k], c.undecodable())
+		}
+		var out []sample
+		for k, v := range n {
+			out = append(out, sample{labels: []string{"type", k[0], "namespace", k[1], "selector", k[2]}, value: float64(v)})
 		}
 		return out
 	})

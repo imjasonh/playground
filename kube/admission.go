@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -20,9 +19,9 @@ import (
 // type and calls Validate for every create and update, on every replica.
 type Validator[T any] interface {
 	// Validate returns an error to reject obj. The person or program that
-	// made the request sees the error's message. On a create, old is nil.
-	// Validate can read with Get, List, and Fetch, but can't change
-	// anything.
+	// made the request sees the error's message. On a create, and on an
+	// update of an object that doesn't decode as T, old is nil. Validate can
+	// read with Get, List, and Fetch, but can't change anything.
 	Validate(ctx context.Context, obj, old *T) error
 }
 
@@ -34,9 +33,10 @@ type Validator[T any] interface {
 type Defaulter[T any] interface {
 	// Default changes obj in place. The framework sends the API server a
 	// patch of only the fields that changed, so fields that T doesn't
-	// declare keep their values. On a create, old is nil. On an update,
-	// change only fields that an update may change: a Pod's containers, for
-	// example, are fixed once it exists. Returning an error rejects obj.
+	// declare keep their values. On a create, and on an update of an object
+	// that doesn't decode as T, old is nil. On an update, change only fields
+	// that an update may change: a Pod's containers, for example, are fixed
+	// once it exists. Returning an error rejects obj.
 	Default(ctx context.Context, obj, old *T) error
 }
 
@@ -224,15 +224,15 @@ func serveAdmission(w http.ResponseWriter, r *http.Request, m *Manager, ti *type
 	_ = json.NewEncoder(w).Encode(admissionReview{APIVersion: review.APIVersion, Kind: review.Kind, Response: resp})
 }
 
-// decodeAs decodes an object from a webhook request into a new T, keeping
-// the fields whose JSON type matches, as caches do.
+// decodeAs decodes an object from a webhook request into a new T. As caches
+// do, it treats an object with any error as undecodable, because the error
+// may have stopped decoding partway.
 func decodeAs[T any, P Resource[T]](ti *typeInfo, raw json.RawMessage) (*T, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
 	obj := new(T)
-	var te *json.UnmarshalTypeError
-	if err := json.Unmarshal(raw, obj); err != nil && !errors.As(err, &te) {
+	if err := json.Unmarshal(raw, obj); err != nil {
 		return nil, err
 	}
 	o := P(obj).object()
@@ -245,10 +245,9 @@ func validate[T any, P Resource[T]](ctx context.Context, m *Manager, ti *typeInf
 	if err != nil || obj == nil {
 		return deny(fmt.Errorf("decoding the object: %v", err))
 	}
-	old, err := decodeAs[T, P](ti, req.OldObject)
-	if err != nil {
-		return deny(fmt.Errorf("decoding the old object: %w", err))
-	}
+	// Denying updates of an object that doesn't decode would keep anyone
+	// from fixing it.
+	old, _ := decodeAs[T, P](ti, req.OldObject)
 	ctx, s := newWebhookScope(ctx, m)
 	defer s.cancel(nil)
 	err = v.Validate(ctx, obj, old)
@@ -266,10 +265,8 @@ func mutate[T any, P Resource[T]](ctx context.Context, m *Manager, ti *typeInfo,
 	if err != nil || obj == nil {
 		return deny(fmt.Errorf("decoding the object: %v", err))
 	}
-	old, err := decodeAs[T, P](ti, req.OldObject)
-	if err != nil {
-		return deny(fmt.Errorf("decoding the old object: %w", err))
-	}
+	// As in validate.
+	old, _ := decodeAs[T, P](ti, req.OldObject)
 	before, err := generic(obj)
 	if err != nil {
 		return deny(err)
