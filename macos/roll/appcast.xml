@@ -7,6 +7,13 @@
     <language>en</language>
     <item>
       <title>Roll 1.0.0</title>
+      <pubDate>Wed, 07 Oct 2026 13:26:06 +0000</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/roll-v1.0.0/Roll-1.0.0.zip" length="1015838" type="application/octet-stream" sparkle:edSignature="7dCuClRPN/l3LfunVQRzb24/Omzdq9W3ejuyHWRJv1lpImnScJ1QCwvwPrmP2cO4XQPrY/YXxq88dwL2q45eCg=="/>
+    </item>
+    <item>
+      <title>Roll 1.0.0</title>
       <pubDate>Wed, 07 Oct 2026 12:32:54 +0000</pubDate>
       <sparkle:version>1</sparkle:version>
       <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
