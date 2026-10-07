@@ -919,6 +919,10 @@ and rates the change `high` when any of these is true:
   changes.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
+- The check can't read all of it: the list of files that it changes is
+  larger than 8 MiB, the list of files in the head or at the merge base is
+  larger than 16 MiB, each about 150,000 files, or a `go.mod` file that the
+  check reads is larger than 8 MiB.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
   trailer, because no person wrote that code.
 

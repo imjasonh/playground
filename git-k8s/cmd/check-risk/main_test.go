@@ -439,3 +439,45 @@ func TestRiskOfLinkedReplacements(t *testing.T) {
 		})
 	}
 }
+
+// TestRiskOfAChangeTooBigToRead rates a change to a go.mod file larger than
+// git.MaxBlobBytes, and a change that adds more files than check-risk
+// lists.
+func TestRiskOfAChangeTooBigToRead(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	results := map[string]*gitk8s.CheckResult{
+		"go.mod": rate(t, nil, map[string]string{"go.mod": "module example.com/app\n\n// " + strings.Repeat("x", git.MaxBlobBytes) + "\n"}, "change"),
+	}
+
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("README.md", "hello\n")
+	main := w.Commit("main")
+	w.Push("main")
+	w.Branch("c/x", main)
+	head := w.Bomb("bomb", 4)
+	w.Push("c/x")
+	b := &Branch{Object: kube.Meta("app-c-x", nil)}
+	b.Namespace = "default"
+	b.Spec = gitk8s.GitBranchSpec{
+		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
+		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
+	}
+	repo, _ := srv.Repository("app")
+	ctx, _ := kube.Fake(t.Context(), b, repo)
+	c := check
+	c.Remote = srv.RemoteFor
+	if err := checks.NewReconciler[Branch](c, &checks.Config{CacheDir: t.TempDir()}).Reconcile(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	results["files"] = b.Status.Checks.Result
+
+	for name, res := range results {
+		if res.State != gitk8s.Passed || res.Outputs["level"] != "high" || !strings.Contains(res.Message, "check-risk can't read all of the files that it rates") {
+			t.Errorf("%s: result = %+v, want a high rating because check-risk can't read the change", name, res)
+		}
+		if res.ParentCommit == "" || res.MergeBase != "" {
+			t.Errorf("%s: result = %+v, want one for the parent's head", name, res)
+		}
+	}
+}

@@ -24,6 +24,10 @@
 //     repository.
 //   - It changes a go.work file, whose directives apply to every module in
 //     the workspace.
+//   - The check can't read all of it: the list of files that it changes is
+//     larger than 8 MiB, the list of files in the head or at the merge base
+//     is larger than 16 MiB, each about 150,000 files, or a go.mod file
+//     that the check reads is larger than 8 MiB.
 //   - It has commits from AI agents, which carry the Git-K8s-Agent trailer.
 //
 // Otherwise it's low risk, so a patch or minor release of a module that the
@@ -43,6 +47,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"maps"
@@ -91,7 +96,22 @@ var (
 // A rating is for the change, so the check sets SameChange. A rating that
 // reads go.mod files at the merge base sets UsesParent, because those files
 // can differ at another merge base where the change is the same.
-var check = checks.Check{Name: "risk", SameChange: true, FilesOnly: true, Remote: mirror.Remote, Run: run}
+var check = checks.Check{Name: "risk", SameChange: true, FilesOnly: true, Remote: mirror.Remote, Run: rateOrHigh}
+
+// rateOrHigh runs run, but rates a change high, instead of failing, when
+// git prints more for it than a reader reads. The read that was too big
+// can be of go.mod files at the merge base, so the rating holds only for
+// the parent's head.
+func rateOrHigh(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	v, err := run(ctx, in)
+	if errors.Is(err, git.ErrTooBig) {
+		v = checks.Pass("risk is high: check-risk can't read all of the files that it rates: %v", err)
+		v.Outputs = map[string]string{"level": "high"}
+		v.UsesParent = true
+		return v, nil
+	}
+	return v, err
+}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)
