@@ -393,7 +393,7 @@ replaces the cache's contents in one step, then keeps reading the same watch.
 If the server rejects the parameters with `400` or `422`, or sends nothing for
 15 seconds, the informer switches to paginated lists of 500 objects and
 watches from the list's resource version. It also switches after three
-streaming lists in a row end before the bookmark: something in between, such
+streaming lists in a row end before the bookmark. Something in between, such
 as a proxy with a short timeout, may cut every long response, and each page
 of a paginated list is a short one. Watches ask for a random timeout
 between 5 and 10 minutes so that reconnects spread out, and resume from the
