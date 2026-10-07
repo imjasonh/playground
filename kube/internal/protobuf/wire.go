@@ -189,18 +189,32 @@ func Status(raw []byte) (code int32, reason, message string, err error) {
 	return code, reason, message, err
 }
 
-// Meta returns the resource version and annotations of an object message,
-// whose metadata, a metav1.ObjectMeta, is field 1.
-func Meta(raw []byte) (resourceVersion string, annotations map[string]string, err error) {
-	err = each(raw, func(f field) error {
+// ObjectMeta is the part of a metav1.ObjectMeta that Meta decodes.
+type ObjectMeta struct {
+	Name, Namespace, UID, ResourceVersion string
+	Annotations                           map[string]string
+}
+
+// Meta decodes the metadata of an object message, whose metadata, a
+// metav1.ObjectMeta, is field 1.
+func Meta(raw []byte) (ObjectMeta, error) {
+	var om ObjectMeta
+	err := each(raw, func(f field) error {
 		if f.num != 1 || f.wt != wireBytes {
 			return nil
 		}
 		return each(f.data, func(m field) error {
 			switch {
-			case m.num == 6 && m.wt == wireBytes:
-				resourceVersion = string(m.data)
-			case m.num == 12 && m.wt == wireBytes:
+			case m.wt != wireBytes:
+			case m.num == 1:
+				om.Name = string(m.data)
+			case m.num == 3:
+				om.Namespace = string(m.data)
+			case m.num == 5:
+				om.UID = string(m.data)
+			case m.num == 6:
+				om.ResourceVersion = string(m.data)
+			case m.num == 12:
 				var k, v string
 				if err := each(m.data, func(e field) error {
 					switch e.num {
@@ -213,13 +227,13 @@ func Meta(raw []byte) (resourceVersion string, annotations map[string]string, er
 				}); err != nil {
 					return err
 				}
-				if annotations == nil {
-					annotations = map[string]string{}
+				if om.Annotations == nil {
+					om.Annotations = map[string]string{}
 				}
-				annotations[k] = v
+				om.Annotations[k] = v
 			}
 			return nil
 		})
 	})
-	return resourceVersion, annotations, err
+	return om, err
 }
