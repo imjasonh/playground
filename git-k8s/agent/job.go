@@ -36,8 +36,8 @@ type Job struct {
 	// Mirror is true when URL is a repository's copy on the git-k8s mirror.
 	// The Pods then fetch with a token for the mirror that kube binds to
 	// each Pod, instead of with Credentials. The mirror accepts that token
-	// only from a Pending Pod that a check's Running result names in its
-	// pod output and whose controller label names that check's program, so
+	// only from a Pending Pod that a check's Running result names as its
+	// Pod and whose controller label names that check's program, so
 	// a check's job sets Mirror, as Run's does, and a controller's job uses
 	// Credentials.
 	Mirror   bool
@@ -102,7 +102,7 @@ type Ref struct {
 
 // JobState is what RunJob needs to follow a job's run from one call to the
 // next. RunJob changes it on each call, so store all of it after each
-// call, such as in one of a check's outputs with MarshalText, and pass it
+// call, such as in one of a check's notes with MarshalText, and pass it
 // to the next call.
 type JobState struct {
 	// Runs counts the runs that RunJob started and didn't give back.
@@ -131,7 +131,7 @@ type JobState struct {
 func (s JobState) MarshalText() ([]byte, error) { return json.Marshal(jobState(s)) }
 
 // UnmarshalText decodes a state that MarshalText encoded, or the zero
-// state from empty text, such as an output that a check hasn't written.
+// state from empty text, such as a note that a check hasn't written.
 // Text that doesn't decode leaves s unchanged.
 func (s *JobState) UnmarshalText(text []byte) error {
 	v := jobState{}

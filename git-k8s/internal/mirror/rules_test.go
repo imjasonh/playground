@@ -150,7 +150,7 @@ func TestMayFetchAndPush(t *testing.T) {
 		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: repository})}
 		b.Namespace = "team"
 		b.Spec.Merge = &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: check}}}
-		b.Status.Checks = map[string]gitk8s.CheckResult{check: {State: state, Outputs: map[string]string{"pod": pod}}}
+		b.Status.Checks = map[string]gitk8s.CheckResult{check: {State: state, Pod: pod}}
 		return b
 	}
 	unlisted := branch("app-review-unlisted", "app", "review", gitk8s.Running, "review-unlisted")

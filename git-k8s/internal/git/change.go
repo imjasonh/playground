@@ -18,7 +18,8 @@ type Change struct {
 }
 
 // MaxChangeBytes is the most output that SameChange reads from git for the
-// files that one change touches.
+// files that one change touches, and that Numstat reads for the files that
+// differ between two commits.
 const MaxChangeBytes = 8 << 20
 
 // errChangeTooBig is what changedFiles returns when git prints more than

@@ -98,7 +98,7 @@ func (m *Manager) getCRD(ctx context.Context, name string) (*liveCRD, error) {
 }
 
 func (m *Manager) ownsCRD(live *liveCRD) bool {
-	return live != nil && live.Metadata.Labels[newLabelKeys(m.Domain).managedBy] != ""
+	return live != nil && live.Metadata.Labels[newLabelKeys().managedBy] != ""
 }
 
 // installedElsewhere explains, for an error about a version of live that
@@ -106,7 +106,7 @@ func (m *Manager) ownsCRD(live *liveCRD) bool {
 // label names one. A program that owns the type without reconciling it
 // creates the CRD with only its own version.
 func (m *Manager) installedElsewhere(live *liveCRD, version string) string {
-	by := live.Metadata.Labels[newLabelKeys(m.Domain).managedBy]
+	by := live.Metadata.Labels[newLabelKeys().managedBy]
 	if by == labelValue(m.Name) {
 		return ""
 	}
@@ -121,7 +121,7 @@ func (m *Manager) desiredCRD(spec crdSpec) (map[string]any, error) {
 	cs := schema.CRDSpec{
 		Group: ti.group, Version: ti.version, Kind: ti.kind, Plural: ti.plural, Singular: ti.singular,
 		ShortNames: ti.shortNames, Categories: ti.categories, Namespaced: ti.scope == "Namespaced",
-		Labels:     map[string]string{newLabelKeys(m.Domain).managedBy: labelValue(m.Name)},
+		Labels:     map[string]string{newLabelKeys().managedBy: labelValue(m.Name)},
 		Deprecated: ti.deprecated, Conversion: spec.conversion,
 	}
 	for _, v := range spec.versions {

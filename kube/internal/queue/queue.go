@@ -179,6 +179,15 @@ func (q *Queue[K]) Retry(key K, p Priority) time.Duration {
 	return d
 }
 
+// RetryAfter schedules key again after d instead of the backoff. It counts
+// the failure as Retry does, so a later Retry backs off from there.
+func (q *Queue[K]) RetryAfter(key K, p Priority, d time.Duration) {
+	q.mu.Lock()
+	q.failures[key]++
+	q.mu.Unlock()
+	q.AddAfter(key, p, d)
+}
+
 // Failures returns how many consecutive times key has been retried.
 func (q *Queue[K]) Failures(key K) int {
 	q.mu.Lock()

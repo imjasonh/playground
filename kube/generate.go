@@ -42,8 +42,8 @@ var scopeVerbs = map[string][]string{
 	"Get":    {"list", "watch"},
 	"List":   {"list", "watch"},
 	"Fetch":  {"get"},
-	"Own":    {"list", "watch", "create", "patch", "delete"},
-	"Apply":  {"create", "patch"},
+	"Own":    {"get", "list", "watch", "create", "patch", "delete"},
+	"Apply":  {"get", "create", "patch"},
 	"Delete": {"delete"},
 }
 

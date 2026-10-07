@@ -451,6 +451,7 @@ status:
   checks:
     ${check}:
       commit: "${OLD}"
+      scope: Head
       state: Failed
 EOF
 done
@@ -568,7 +569,7 @@ eventually 120 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
-echo "::group::The API server rejects a URL that git could read as an option"
+echo "::group::The API server takes only http and https URLs"
 url_repository() {
   cat <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
@@ -580,8 +581,8 @@ spec:
   url: '$1'
 EOF
 }
-for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
-  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://git@example.com/app.git' 'git@example.com:app.git' \
+  'git://example.com/app.git' 'https://example.com/app.git?ref=main'; do
   if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
     echo "the API server accepted ${url}" >&2
     exit 1
@@ -589,8 +590,8 @@ for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.gi
   cat "${WORKDIR}/apply.err"
   grep -q 'spec.url' "${WORKDIR}/apply.err"
 done
-url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
-echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
+url_repository "https://git-k8s@${GATEWAY}:2222/app.git" | k apply --dry-run=server -f -
+echo "The API server rejected a URL that git could read as an option and URLs that the mirror can't reach, and accepted an https URL."
 echo "::endgroup::"
 
 # forward_mirror port-forwards a local port to the core program's Service,
@@ -1269,8 +1270,8 @@ patch_status() {
     -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
     --data "$1" "${status_url}"
 }
-result='{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}'
-approval_result='{"status":{"checks":{"approval":{"commit":"0000000","state":"Passed"}}}}'
+result='{"status":{"checks":{"gofmt":{"commit":"0000000","scope":"Head","state":"Passed"}}}}'
+approval_result='{"status":{"checks":{"approval":{"commit":"0000000","scope":"Head","state":"Passed"}}}}'
 diverged='{"status":{"diverged":{"commit":"0000000","ref":"refs/git-k8s/downstream/heads/main"}}}'
 approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
 for bearer in "${token}" "${approval_token}"; do
@@ -1294,7 +1295,7 @@ done
 forward_mirror
 send_result() {
   curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: ${3:-Bearer} $1" \
-    -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
+    -H 'Content-Type: application/json' --data '{"commit":"0000000","scope":"Head","state":"Passed"}' \
     "${MIRROR%/"${NS}"}/results/${NS}/$(branch_object main)/$2"
 }
 risk_token="$(k -n check-risk create token check-risk --audience=git-k8s-results)"
@@ -1338,7 +1339,7 @@ grep -q "system:serviceaccount:check-approval:check-approval isn't a check's ser
 # its 10-second wait for the cache.
 start="${SECONDS}"
 code="$(curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: Bearer ${risk_token}" \
-  -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
+  -H 'Content-Type: application/json' --data '{"commit":"0000000","scope":"Head","state":"Passed"}' \
   "${MIRROR%/"${NS}"}/results/${NS}/app-no-such-branch/risk?generation=1")"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 410 ]]
@@ -1389,7 +1390,7 @@ subjects:
 EOF
 rogue_token="$(k -n "${NS}" create token rogue)"
 status_rejected() { [[ "$(patch_status "$1" "$2")" == 422 ]] && grep -q "$3" "${WORKDIR}/patch.json"; }
-for patch in "${result}" '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}' \
+for patch in "${result}" '{"status":{"checks":{"risk":{"commit":"0000000","scope":"Head","state":"Passed"}}}}' \
   '{"status":{"queued":{"since":"2026-01-01T00:00:00Z","head":"0000000"}}}' \
   '{"status":{"queue":["c/x"]}}' "${diverged}"; do
   eventually 30 status_rejected "${patch}" "${token}" "the gofmt check can't write GitBranch status"
@@ -1950,7 +1951,7 @@ k -n "${NS}" wait --for=condition=Ready pod/gotest-running --timeout=120s
 # repository $3, or on c/named of tested.
 named_result() {
   k -n "${NS}" patch gitbranch "$(branch_object "${2:-c/named}" "${3:-tested}")" --subresource=status --type=merge \
-    -p '{"status":{"checks":{"gotest":{"commit":"0000000","state":"Running","outputs":{"pod":"'"$1"'"}}}}}' >/dev/null
+    -p '{"status":{"checks":{"gotest":{"commit":"0000000","scope":"Head","state":"Running","pod":"'"$1"'"}}}}' >/dev/null
 }
 # pod_token prints a token for the mirror that's bound to Pod $1.
 pod_token() {
@@ -2026,7 +2027,7 @@ done
 # burst_results prints each tested branch's name, head, and gotest commit,
 # state, and waiting time.
 burst_results() {
-  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.outputs.waiting}{"\n"}{end}'
+  k -n "${NS}" get gitbranches -l git-k8s.imjasonh.com/repository=tested -o jsonpath='{range .items[*]}{.spec.branch}|{.spec.head}|{.status.checks.gotest.commit}|{.status.checks.gotest.state}|{.status.checks.gotest.notes.waiting}{"\n"}{end}'
 }
 burst_checked() { [[ "$(burst_results | awk -F'|' '$1 ~ /^c\/burst-[bcd]$/ && $2 == $3' | wc -l)" -eq 3 ]]; }
 t push -q "${HOST_URL}/tested.git" "${burst[@]}"
@@ -2489,10 +2490,10 @@ eventually 300 review_failed
 k -n "${NS}" get gitbranch "$(branch_object d/marked reviewed)" -o jsonpath='{.status.checks.review}'
 echo
 [[ "$(review d/marked message)" == "The change adds DO NOT MERGE at notes.txt:2." ]]
-[[ "$(review d/marked outputs.summary)" == "1 added line holds DO NOT MERGE" ]]
-[[ "$(review d/marked outputs.model)" == fake:composer-2.5 ]]
-[[ "$(review d/marked outputs.inputTokens)" -gt 0 ]]
-[[ "$(review d/marked outputs.runs)" == 1 ]]
+[[ "$(review d/marked notes.summary)" == "1 added line holds DO NOT MERGE" ]]
+[[ "$(review d/marked notes.model)" == fake:composer-2.5 ]]
+[[ "$(review d/marked notes.inputTokens)" -gt 0 ]]
+[[ "$(review d/marked notes.runs)" == 1 ]]
 eventually 60 no_agent_pods
 printf 'Notes\nDO NOT MERGE\nDO NOT MERGE EITHER\n' >"${REVIEWED}/notes.txt"
 rv commit -qam "Mark the notes again"
@@ -2622,7 +2623,7 @@ eventually 300 refused_failed
 k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.checks}'
 echo
 [[ "$(result c/refused conflicts message)" == "the agent couldn't resolve the conflicts: The conflicts in notes.txt hold DO NOT MERGE or aren't well formed, so the fake agent changed no files." ]]
-[[ "$(result c/refused conflicts outputs.runs)" == 1 ]]
+[[ "$(result c/refused conflicts notes.runs)" == 1 ]]
 [[ "$(remote_head c/refused conflicted)" == "${refused}" ]]
 [[ "$(remote_head main conflicted)" == "${moved}" ]]
 eventually 60 no_agent_pods

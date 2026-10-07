@@ -23,6 +23,30 @@ import (
 	"github.com/imjasonh/playground/kube/internal/queue"
 )
 
+// Domain prefixes every label, annotation, and finalizer that the framework
+// writes on objects. These keys don't change between versions of the
+// framework, so admission policies and other programs can match on them.
+const Domain = "kube.imjasonh.github.io"
+
+// The framework writes these keys on each object that a controller declares
+// with Own.
+const (
+	// ControllerLabel's value is the name of the controller that owns the
+	// object.
+	ControllerLabel = Domain + "/controller"
+	// OwnerUIDLabel's value is the UID of the reconciled object that owns
+	// the object.
+	OwnerUIDLabel = Domain + "/owner-uid"
+	// OwnerAnnotation's value is the reconciled object that owns the object,
+	// as "namespace/name", or as its name if it's cluster-scoped.
+	OwnerAnnotation = Domain + "/owner"
+)
+
+// FinalizerName returns the finalizer of the controller with the given name.
+// The controller adds it to the objects it reconciles when it has a
+// Finalize method or owns objects that can't carry an owner reference.
+func FinalizerName(controller string) string { return Domain + "/" + controller }
+
 // Manager runs controllers against one cluster. The zero value is ready to
 // use; every field is optional.
 type Manager struct {
@@ -38,9 +62,6 @@ type Manager struct {
 	// and admission webhooks for namespaced types to objects in it. Empty
 	// means all namespaces.
 	Namespace string
-	// Domain prefixes the labels, annotations, and finalizers that the
-	// framework adds to objects. It defaults to "kube.imjasonh.github.io".
-	Domain string
 	// LeaderElection makes replicas take turns: only the replica that holds
 	// a Lease reconciles. Caches start only after the replica first holds
 	// it, so standby replicas use almost no memory. A replica that loses the
@@ -202,9 +223,6 @@ func (m *Manager) flags(fs *flag.FlagSet) *bool {
 func (m *Manager) init() error {
 	if m.Name == "" {
 		m.Name = filepath.Base(os.Args[0])
-	}
-	if m.Domain == "" {
-		m.Domain = "kube.imjasonh.github.io"
 	}
 	m.log = m.Logger
 	if m.log == nil {

@@ -278,7 +278,7 @@ func (ws *webhookServer) refresh(ctx context.Context) error {
 				TypeMeta: TypeMeta{APIVersion: "v1", Kind: "Secret"},
 				Metadata: ObjectMeta{
 					Name: ws.secret.Name, Namespace: ws.secret.Namespace,
-					Labels: map[string]string{newLabelKeys(ws.m.Domain).managedBy: labelValue(ws.m.Name)},
+					Labels: map[string]string{newLabelKeys().managedBy: labelValue(ws.m.Name)},
 				},
 				Type: "Opaque",
 				Data: map[string][]byte{"ca.crt": ca.Cert, "ca.key": ca.Key, "tls.crt": serving.Cert, "tls.key": serving.Key},
@@ -360,7 +360,7 @@ func (ws *webhookServer) configurationName() string { return labelValue(ws.m.Nam
 // version of the program left behind: its webhooks would fail every request.
 func (ws *webhookServer) applyConfigurations(ctx context.Context) error {
 	c := ws.m.client
-	keys := newLabelKeys(ws.m.Domain)
+	keys := newLabelKeys()
 	ws.mu.Lock()
 	kinds := []struct {
 		kind, resource string
@@ -425,7 +425,7 @@ func (ws *webhookServer) webhookName(ti *typeInfo, plural string) string {
 	}
 	name := plural + "." + g
 	if strings.Count(name, ".") < 2 {
-		name += "." + ws.m.Domain
+		name += "." + Domain
 	}
 	return name
 }

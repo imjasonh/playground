@@ -160,7 +160,7 @@ const fetchRetryDelay = 30 * time.Second
 // a place after that.
 const declaredFor = time.Minute
 
-// waitingLayout formats outputs.waiting and outputs.queued as a Kubernetes
+// waitingLayout formats notes.waiting and notes.queued as a Kubernetes
 // MicroTime, which sorts as a string.
 const waitingLayout = "2006-01-02T15:04:05.000000Z07:00"
 
@@ -184,7 +184,7 @@ func (g *gotest) check() checks.Check {
 // server deletes a Pod whose phase is Succeeded or Failed at once, but
 // waits for the kubelet to stop one that's still running.
 func stopping(ctx context.Context, meta *kube.ObjectMeta, _ *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
-	name := previous.Outputs["pod"]
+	name := previous.Pod
 	if name == "" {
 		return false
 	}
@@ -196,22 +196,22 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	if p := in.Previous; p.Final() && p.Commit == in.Spec.Head {
 		// stopping found that the Pod that the result names hasn't stopped,
 		// so keep declaring the Pod, and keep the result.
-		if pod, err := testPod(in, p.Outputs["pod"]); err == nil {
+		if pod, err := testPod(in, p.Pod); err == nil {
 			kube.Own(ctx, pod)
 		}
-		return checks.Verdict{State: p.State, Message: p.Message, Outputs: p.Outputs}, nil
+		return checks.Verdict{State: p.State, Message: p.Message, Outputs: p.Outputs, Notes: p.Notes, Pod: p.Pod}, nil
 	}
 	attempt, named := 1, ""
 	if p := in.Previous; p != nil && p.Commit == in.Spec.Head && p.State == gitk8s.Running {
-		if n, err := strconv.Atoi(p.Outputs["attempt"]); err == nil && n > 0 {
+		if n, err := strconv.Atoi(p.Notes["attempt"]); err == nil && n > 0 {
 			attempt = n
 		}
-		named = p.Outputs["pod"]
+		named = p.Pod
 	}
 	name := podName(in.Meta.Name, in.Spec.Head, attempt)
-	outputs := map[string]string{"pod": name, "attempt": strconv.Itoa(attempt)}
+	notes := map[string]string{"attempt": strconv.Itoa(attempt)}
 	running := func(format string, args ...any) checks.Verdict {
-		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: outputs}
+		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Notes: notes, Pod: name}
 	}
 	// take counts the Pod from the moment that it lets the branch start it,
 	// so build the Pod first, and one that can't be built takes no place.
@@ -224,7 +224,7 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		since = t
 	}
 	if !g.take(ctx, in.Meta.Key(), in.Spec.Head, kube.Key{Namespace: in.Meta.Namespace, Name: name}, since) {
-		outputs["waiting"] = since.Format(waitingLayout)
+		notes["waiting"] = since.Format(waitingLayout)
 		// Listing the Pods runs this again when one of them finishes. The
 		// requeue covers declared Pods that never appear.
 		kube.RequeueAfter(ctx, time.Minute)
@@ -233,17 +233,17 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 	if named != name {
 		// The mirror lets a test Pod fetch only once a running result names
 		// it, so the check records the name before it starts the Pod, and
-		// outputs.queued keeps the branch's place in line meanwhile.
-		outputs["queued"] = since.Format(waitingLayout)
+		// notes.queued keeps the branch's place in line meanwhile.
+		notes["queued"] = since.Format(waitingLayout)
 		kube.RequeueAfter(ctx, time.Second)
 		return running("starting Pod %s", name), nil
 	}
 	pod := kube.Own(ctx, p)
 	if pod == nil {
-		// outputs.queued keeps the branch's place in line until the Pod
-		// exists. Other branches count only outputs.waiting, so a Pod that
+		// notes.queued keeps the branch's place in line until the Pod
+		// exists. Other branches count only notes.waiting, so a Pod that
 		// the API server refuses stops holding a place after declaredFor.
-		outputs["queued"] = since.Format(waitingLayout)
+		notes["queued"] = since.Format(waitingLayout)
 		// kube creates the Pod after run returns, and retries with backoff
 		// when it can't, for example because an admission policy denies it.
 		if err := kube.LastError(ctx); err != nil {
@@ -257,7 +257,7 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		// final and declares no Pod, so kube deletes it.
 		kube.RequeueAfter(ctx, time.Second)
 		v := checks.Pass("go test passed in Pod %s", name)
-		v.Outputs = map[string]string{"pod": name}
+		v.Pod = name
 		return v, nil
 	case "Failed":
 		msg, finished, code := terminated(pod.Status.InitContainerStatuses, "fetch")
@@ -273,12 +273,13 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		kube.RequeueAfter(ctx, time.Second)
 		if failed {
 			if attempt < fetchAttempts {
-				outputs["attempt"] = strconv.Itoa(attempt + 1)
-				outputs["pod"] = podName(in.Meta.Name, in.Spec.Head, attempt+1)
-				return running("fetching the source failed, so trying again: %s", msg), nil
+				notes["attempt"] = strconv.Itoa(attempt + 1)
+				v := running("fetching the source failed, so trying again: %s", msg)
+				v.Pod = podName(in.Meta.Name, in.Spec.Head, attempt+1)
+				return v, nil
 			}
 			v := checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg)
-			v.Outputs = map[string]string{"pod": name}
+			v.Pod = name
 			return v, nil
 		}
 		msg, _, _ = terminated(pod.Status.ContainerStatuses, "test")
@@ -290,7 +291,7 @@ func (g *gotest) run(ctx context.Context, in *checks.Input) (checks.Verdict, err
 		if strings.Contains(out, "lookup disabled by GOPROXY=off") {
 			v = checks.Fail("go test couldn't download modules in Pod %s, because -goproxy is off; vendor the dependencies, or set -goproxy: %s", name, out)
 		}
-		v.Outputs = map[string]string{"pod": name}
+		v.Pod = name
 		return v, nil
 	}
 	return running("Pod %s is %s", name, cmp.Or(pod.Status.Phase, "Pending")), nil
@@ -351,8 +352,7 @@ func (g *gotest) take(ctx context.Context, b kube.Key, head string, pod kube.Key
 			free--
 		}
 	}
-	// After a failed read, ctx is canceled and kube creates no Pod, so take
-	// mustn't count one.
+	// Once ctx is canceled, kube creates no Pod, so take mustn't count one.
 	if free <= 0 || ctx.Err() != nil {
 		return false
 	}
@@ -362,14 +362,14 @@ func (g *gotest) take(ctx context.Context, b kube.Key, head string, pod kube.Key
 
 // waiting returns the Pod that a result says its branch is waiting to start
 // at head, and when the branch started waiting, from the first of keys that
-// the result's outputs hold.
+// the result's notes hold.
 func waiting(res *gitk8s.CheckResult, head string, keys ...string) (string, time.Time, bool) {
 	if res == nil || res.Commit != head || res.State != gitk8s.Running {
 		return "", time.Time{}, false
 	}
 	for _, k := range keys {
-		if t, err := time.Parse(time.RFC3339, res.Outputs[k]); err == nil {
-			return res.Outputs["pod"], t, true
+		if t, err := time.Parse(time.RFC3339, res.Notes[k]); err == nil {
+			return res.Pod, t, true
 		}
 	}
 	return "", time.Time{}, false

@@ -4,7 +4,7 @@
 // Pod with the agent package. The agent reads the change from the merge
 // base with the parent, and the files around it, and answers pass or fail.
 // The check reports the agent's reasoning as its message, and its summary,
-// model, and token usage as outputs. When the merge policy lets the check
+// model, and token usage as notes. When the merge policy lets the check
 // push, the agent can also fix what it finds, and the check pushes the fix.
 package main
 

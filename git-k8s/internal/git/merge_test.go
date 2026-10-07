@@ -249,8 +249,8 @@ func TestMergeCommandsAllowOnlyRemoteTransports(t *testing.T) {
 	}
 	for _, line := range lines {
 		protocols, args, _ := strings.Cut(line, "\t")
-		if protocols != "http:https:git:ssh" {
-			t.Errorf("git %s ran with GIT_ALLOW_PROTOCOL=%q, want http:https:git:ssh", args, protocols)
+		if protocols != "http:https" {
+			t.Errorf("git %s ran with GIT_ALLOW_PROTOCOL=%q, want http:https", args, protocols)
 		}
 		// check-ref-format takes no --end-of-options, and hash-object
 		// names no ref or commit.

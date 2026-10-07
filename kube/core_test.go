@@ -1,15 +1,23 @@
 package kube
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/queue"
 )
 
@@ -356,10 +364,79 @@ func TestSpecChangedIgnoresStatusAndResourceVersion(t *testing.T) {
 	}
 }
 
+// Clusters store these keys on objects, and admission policies copy them, so
+// a change to one is a breaking change.
+func TestKeysAreStable(t *testing.T) {
+	keys := newLabelKeys()
+	for _, tc := range []struct{ got, want string }{
+		{ControllerLabel, "kube.imjasonh.github.io/controller"},
+		{OwnerUIDLabel, "kube.imjasonh.github.io/owner-uid"},
+		{OwnerAnnotation, "kube.imjasonh.github.io/owner"},
+		{FinalizerName("website"), "kube.imjasonh.github.io/website"},
+		{keys.controller, ControllerLabel},
+		{keys.ownerUID, OwnerUIDLabel},
+		{keys.owner, OwnerAnnotation},
+		{keys.applied, "kube.imjasonh.github.io/applied"},
+		{keys.cleanup, "kube.imjasonh.github.io/cleanup"},
+		{keys.managedBy, "kube.imjasonh.github.io/managed-by"},
+		{keys.leaseGroup, "kube.imjasonh.github.io/lease-group"},
+		{keys.leaseRole, "kube.imjasonh.github.io/lease-role"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("key = %q, want %q", tc.got, tc.want)
+		}
+	}
+}
+
+func TestDefaultName(t *testing.T) {
+	for _, tc := range []struct{ program, kind, want string }{
+		{"shop", "Website", "shop-website"},
+		{"website", "Website", "website"},
+		{"", "Website", "website"},
+		{"My_App", "Widget", "my-app-widget"},
+		{"e2e.test", "ConfigMap", "e2e.test-configmap"},
+		{"_tool.", "Widget", "tool-widget"},
+	} {
+		if got := defaultName(tc.program, tc.kind); got != tc.want {
+			t.Errorf("defaultName(%q, %q) = %q, want %q", tc.program, tc.kind, got, tc.want)
+		}
+	}
+	long, longer := defaultName(strings.Repeat("a", 44), "Widget"), defaultName(strings.Repeat("a", 45), "Widget")
+	for _, name := range []string{long, longer} {
+		if !nameRE.MatchString(name) || !strings.HasPrefix(name, strings.Repeat("a", 41)+"-") {
+			t.Errorf("long default name %q, want the first 41 characters and a hash", name)
+		}
+	}
+	if long == longer {
+		t.Errorf("two long program names both default to %q", long)
+	}
+}
+
+func TestDuplicateControllerNames(t *testing.T) {
+	m := testManager()
+	m.Name = "shop"
+	first, second := For[gizmo](gizmoReconciler{}), For[gizmo](gizmoReconciler{})
+	m.controllers = []Controller{first, second}
+	if err := first.prepare(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if c := first.(*controller[gizmo, *gizmo]); c.name != "shop-gizmo" || c.finalizer != FinalizerName("shop-gizmo") {
+		t.Errorf("name = %q, finalizer = %q, want shop-gizmo", c.name, c.finalizer)
+	}
+	if err := second.prepare(t.Context(), m); err == nil || !strings.Contains(err.Error(), `two controllers are named "shop-gizmo"`) || !strings.Contains(err.Error(), "kube.Named") {
+		t.Errorf("err = %v, want one about two controllers named shop-gizmo", err)
+	}
+	named := For[gizmo](gizmoReconciler{}, Named("gizmo-sizes"))
+	m.controllers = []Controller{first, named}
+	if err := named.prepare(t.Context(), m); err != nil || named.controllerName() != "gizmo-sizes" {
+		t.Errorf("named controller: name = %q, err = %v", named.controllerName(), err)
+	}
+}
+
 func TestOwnBody(t *testing.T) {
 	wti, _ := typeInfoFor[widget, *widget]()
 	dti, _ := typeInfoFor[deploymentProjection, *deploymentProjection]()
-	c := &controller[widget, *widget]{core: core{name: "widgets", ti: wti, res: resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, labels: newLabelKeys("kube.test")}}
+	c := &controller[widget, *widget]{core: core{name: "widgets", ti: wti, res: resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, labels: newLabelKeys()}}
 	parent := &widget{}
 	parent.Namespace, parent.Name, parent.UID = "shop", "w1", "uid-1"
 
@@ -378,10 +455,10 @@ func TestOwnBody(t *testing.T) {
 		t.Error("owned body has a uid")
 	}
 	labels := meta["labels"].(map[string]any)
-	if labels["app"] != "w1" || labels["kube.test/controller"] != "widgets" || labels["kube.test/owner-uid"] != "uid-1" {
+	if labels["app"] != "w1" || labels[ControllerLabel] != "widgets" || labels[OwnerUIDLabel] != "uid-1" {
 		t.Errorf("labels = %v", labels)
 	}
-	if meta["annotations"].(map[string]any)["kube.test/owner"] != "shop/w1" {
+	if meta["annotations"].(map[string]any)[OwnerAnnotation] != "shop/w1" {
 		t.Errorf("annotations = %v", meta["annotations"])
 	}
 	refs := meta["ownerReferences"].([]any)
@@ -407,6 +484,28 @@ func TestOwnBody(t *testing.T) {
 	meta = body["metadata"].(map[string]any)
 	if meta["uid"] != "target-uid" || meta["labels"] != nil || meta["ownerReferences"] != nil {
 		t.Errorf("apply body metadata = %v", meta)
+	}
+}
+
+func TestOwnRefusesAnotherOwnersObject(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	mine := &deploymentProjection{Object: Meta("mine", nil)}
+	mine.Namespace, mine.Annotations = "shop", map[string]string{OwnerAnnotation: "shop/w1"}
+	theirs := &deploymentProjection{Object: Meta("theirs", nil)}
+	theirs.Namespace, theirs.Annotations = "shop", map[string]string{OwnerAnnotation: "shop/w2"}
+	ctx, rec := Fake(t.Context(), parent, mine, theirs)
+	if Own(ctx, &deploymentProjection{Object: Meta("mine", nil)}) == nil || rec.Err() != nil {
+		t.Fatalf("Own of the owner's object failed: %v", rec.Err())
+	}
+	if Own(ctx, &deploymentProjection{Object: Meta("theirs", nil)}) != nil {
+		t.Error("Own returned another owner's object")
+	}
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "already has another owner, shop/w2") {
+		t.Errorf("Err = %v, want an error that names the other owner", err)
+	}
+	if got := Owned[deploymentProjection](rec); len(got) != 1 || got[0].Name != "mine" {
+		t.Errorf("Owned = %v, want only the owner's object", got)
 	}
 }
 
@@ -545,7 +644,7 @@ func TestLocalTypes(t *testing.T) {
 		"Fetch without a namespace": func(ctx context.Context) { Fetch[localConfigMap](ctx, "", "state") },
 	} {
 		ctx, rec := Fake(t.Context(), parent, state)
-		use(ctx)
+		stopped(func() { use(ctx) })
 		if err := rec.Err(); !IsPermanent(err) || !strings.Contains(err.Error(), "is local") {
 			t.Errorf("%s: Err = %v, want an error that says the type is local", name, err)
 		}
@@ -564,6 +663,155 @@ func TestLocalTypes(t *testing.T) {
 	Delete(ctx, old)
 	if rec.Err() != nil || len(Applied[localConfigMap](rec)) != 1 || len(Deleted[localConfigMap](rec)) != 1 {
 		t.Errorf("Err = %v, Applied = %v, Deleted = %v", rec.Err(), Applied[localConfigMap](rec), Deleted[localConfigMap](rec))
+	}
+}
+
+// TestDeleteNamesOneObject checks that Delete defaults and checks the
+// namespace and name as Own and Apply do. A delete without a name would go
+// to the collection's path.
+func TestDeleteNamesOneObject(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	ctx, rec := Fake(t.Context(), parent)
+	Delete(ctx, &podMeta{})
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "kube.Delete") || !strings.Contains(err.Error(), "needs a name") || len(Deleted[podMeta](rec)) != 0 {
+		t.Errorf("Delete without a name: Err = %v, Deleted = %v", err, Deleted[podMeta](rec))
+	}
+
+	ctx, rec = Fake(t.Context(), parent)
+	Delete(ctx, &podMeta{Object: Meta("p1", nil)})
+	if got := Deleted[podMeta](rec); rec.Err() != nil || len(got) != 1 || got[0].Namespace != "shop" {
+		t.Errorf("Delete without a namespace: Err = %v, Deleted = %v; want p1 in shop", rec.Err(), got)
+	}
+
+	ctx, rec = Fake(t.Context(), &policy{Object: Meta("p", nil)})
+	Delete(ctx, &podMeta{Object: Meta("p1", nil)})
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "needs a namespace") || len(Deleted[podMeta](rec)) != 0 {
+		t.Errorf("Delete without a namespace for a cluster-scoped object: Err = %v, Deleted = %v", err, Deleted[podMeta](rec))
+	}
+}
+
+// TestControllerDeleteNeedsAName checks that the controller refuses a delete
+// without a name rather than send it to the collection's path.
+func TestControllerDeleteNeedsAName(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testManager()
+	m.client, m.tracker = cl, newTracker()
+	c := triggerable[widget](t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true})
+	ti, err := typeInfoFor[podMeta, *podMeta]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.delete(t.Context(), ti, resolved{apiVersion: "v1", plural: "pods", namespaced: true}, &ObjectMeta{Namespace: "shop"})
+	if err == nil || requests.Load() != 0 {
+		t.Errorf("delete without a name = %v after %d requests, want an error and none", err, requests.Load())
+	}
+}
+
+// stopped runs fn and returns the error of the Get or List that stopped it,
+// or nil if fn returned. It passes any other panic on.
+func stopped(fn func()) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			if err = readError(p); err == nil {
+				panic(p)
+			}
+		}
+	}()
+	fn()
+	return nil
+}
+
+// TestFailedReadsStop checks that a read that fails, and every read after
+// it, stops the reconcile with the first error, so that nil from Get means
+// only that the object doesn't exist.
+func TestFailedReadsStop(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	pod := &podMeta{Object: Meta("p1", nil)}
+	pod.Namespace = "shop"
+	ctx, rec := Fake(t.Context(), parent, pod)
+	if err := stopped(func() {
+		if got := Get[podMeta](ctx, "shop", "missing"); got != nil {
+			t.Errorf("Get of a missing object = %v, want nil", got)
+		}
+	}); err != nil {
+		t.Errorf("a Get of a missing object stopped with %v", err)
+	}
+
+	went := false
+	first := stopped(func() {
+		List[podMeta](ctx, MatchingSelector("=broken"))
+		went = true
+	})
+	if went || !IsPermanent(first) || first != rec.Err() {
+		t.Errorf("a List with an invalid selector went on = %v and stopped with %v; Err = %v; want a stop with Err, a permanent error", went, first, rec.Err())
+	}
+	for name, read := range map[string]func(){
+		"Get":  func() { Get[podMeta](ctx, "shop", "p1") },
+		"List": func() { List[podMeta](ctx) },
+	} {
+		if err := stopped(read); err != first {
+			t.Errorf("%s after a failed read stopped with %v, want %v", name, err, first)
+		}
+	}
+}
+
+// TestFailedReadStopsTheReconcile fails a Get in a reconcile, as the API
+// server does when the program may not read a type. The reconcile must stop
+// at the Get, fail with the read's error, and retry, and the controller must
+// not report a panic.
+func TestFailedReadStopsTheReconcile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != client.ApplyPatch {
+			http.Error(rw, "forbidden", http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+			"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	m := testManager()
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	m.client, m.tracker = cl, newTracker()
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+	c.sh = &sharder{n: 1, shards: []*shard{{}}}
+	went := false
+	c.r = fakeReconciler{reconcile: func(ctx context.Context, _ *widget) error {
+		Get[podMeta](ctx, "shop", "p1")
+		went = true
+		return nil
+	}}
+
+	c.process(t.Context(), w.Key())
+	if went {
+		t.Error("the reconcile went on after a Get that couldn't read")
+	}
+	if err := c.lastError(w.Key()); !client.IsForbidden(err) {
+		t.Errorf("LastError = %v, want the read's error", err)
+	}
+	if n := m.metrics.counter("kube_reconcile_total", "controller", c.name, "result", "error"); n != 1 {
+		t.Errorf("%v reconciles failed and will retry, want 1", n)
+	}
+	if strings.Contains(logs.String(), "panicked") {
+		t.Errorf("the controller reported a panic:\n%s", logs.String())
 	}
 }
 
@@ -589,6 +837,92 @@ func TestPermanent(t *testing.T) {
 	var target errorString
 	if !errors.As(err, &target) {
 		t.Error("Permanent doesn't unwrap")
+	}
+}
+
+func TestRetryAfter(t *testing.T) {
+	base := errorString("rate limited")
+	if RetryAfter(nil, time.Minute) != nil || RetryAfter(base, 0) != base || RetryAfter(base, -time.Second) != base {
+		t.Error("RetryAfter changed nil or an error without a delay")
+	}
+	err := RetryAfter(base, time.Minute)
+	if err.Error() != "rate limited" || !errors.Is(err, base) || retryDelay(err) != time.Minute || retryDelay(base) != 0 {
+		t.Errorf("RetryAfter(%v, 1m) = %v with delay %v", base, err, retryDelay(err))
+	}
+	if both := Permanent(err); !IsPermanent(both) || retryDelay(both) != time.Minute {
+		t.Errorf("Permanent(RetryAfter(...)) = %v, permanent %t, delay %v", both, IsPermanent(both), retryDelay(both))
+	}
+}
+
+// TestProcessRetryAfter checks when the controller retries a reconcile that
+// fails: after the delay from RetryAfter instead of the backoff, even for a
+// permanent error, and with backoff despite RequeueAfter.
+func TestProcessRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+			"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryRE := regexp.MustCompile(`retry=(\S+)`)
+	for _, tc := range []struct {
+		name    string
+		err     error
+		requeue time.Duration
+		result  string
+		// retry is the delay that the controller logs, or zero for none,
+		// and backoff means any delay under a second.
+		retry    time.Duration
+		backoff  bool
+		failures int
+	}{
+		{name: "error with a delay", err: RetryAfter(errorString("rate limited"), 30*time.Minute), result: "error", retry: 30 * time.Minute, failures: 1},
+		{name: "permanent error with a delay", err: RetryAfter(Permanent(errorString("no such zone")), time.Hour), result: "permanent_error", retry: time.Hour},
+		{name: "permanent error", err: Permanent(errorString("no such zone")), result: "permanent_error"},
+		{name: "error after RequeueAfter", err: errorString("failed"), requeue: time.Hour, result: "error", backoff: true, failures: 1},
+	} {
+		var logs bytes.Buffer
+		m := testManager()
+		m.log = slog.New(slog.NewTextHandler(&logs, nil))
+		m.client, m.tracker = cl, newTracker()
+		w := &widget{}
+		w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+		c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+		c.sh = &sharder{n: 1, shards: []*shard{{}}}
+		c.r = fakeReconciler{reconcile: func(ctx context.Context, _ *widget) error {
+			if tc.requeue > 0 {
+				RequeueAfter(ctx, tc.requeue)
+			}
+			return tc.err
+		}}
+
+		c.process(t.Context(), w.Key())
+		if n := m.metrics.counter("kube_reconcile_total", "controller", c.name, "result", tc.result); n != 1 {
+			t.Errorf("%s: %v reconciles with result %s, want 1", tc.name, n, tc.result)
+		}
+		var retry time.Duration
+		if match := retryRE.FindStringSubmatch(logs.String()); match != nil {
+			if retry, err = time.ParseDuration(match[1]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		switch {
+		case tc.backoff && (retry <= 0 || retry >= time.Second):
+			t.Errorf("%s: retry in %v, want a backoff under a second\n%s", tc.name, retry, logs.String())
+		case !tc.backoff && retry != tc.retry:
+			t.Errorf("%s: retry in %v, want %v\n%s", tc.name, retry, tc.retry, logs.String())
+		}
+		waiting := 0
+		if retry > 0 {
+			waiting = 1
+		}
+		if c.q.Waiting() != waiting || c.q.Failures(w.Key()) != tc.failures {
+			t.Errorf("%s: %d keys waiting with %d failures, want %d and %d", tc.name, c.q.Waiting(), c.q.Failures(w.Key()), waiting, tc.failures)
+		}
 	}
 }
 

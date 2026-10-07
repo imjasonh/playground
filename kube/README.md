@@ -108,9 +108,17 @@ no watch setup. The stripped binary in its image is 8.4 MiB.
 `Apply`, and `Delete`. The framework carries out the declarations after
 `Reconcile` returns `nil`. If `Reconcile` returns an error, the framework
 writes only status, and retries with exponential backoff from 50 ms to 5
-minutes. If a declaration fails, for example because an admission policy
+minutes, or after the delay that `kube.RetryAfter` added to the error, such
+as the wait that a rate limit asks for. `kube.RequeueAfter` applies only to a
+reconcile that succeeds.
+If a declaration fails, for example because an admission policy
 rejects an object, the framework writes the status that `Reconcile` set and
-retries in the same way. An error from the API server can quote the values
+retries in the same way. If `Get` or `List` can't read, for example because
+the program may not list the type, `Reconcile` stops there, and the framework
+handles the error as if `Reconcile` had returned it. So `nil` from `Get`
+always means that the object doesn't exist. `Get` and `List` stop `Reconcile`
+with a panic that the framework recovers, so call them only in the goroutine
+that runs `Reconcile`. An error from the API server can quote the values
 that it rejected, so the `Synced` condition names only the write that failed
 and the status code, such as `422 Invalid`, and the program logs the whole
 error. In the retry, `kube.LastError` returns the whole error, so the
@@ -120,15 +128,16 @@ secret, don't copy it there. Each process keeps the errors in memory, so
 
 | Function | What it does |
 | --- | --- |
-| `kube.Get[T](ctx, namespace, name)` | Returns one object from a cache, or `nil` |
+| `kube.Get[T](ctx, namespace, name)` | Returns one object from a cache, or `nil` if it doesn't exist |
 | `kube.List[T](ctx, options...)` | Returns objects from a cache, sorted, filtered by namespace or label selector |
 | `kube.Fetch[T](ctx, namespace, name)` | Returns one object from the API server without caching its type |
 | `kube.Own(ctx, desired)` | Declares an object that the reconciled object owns, and returns it as observed |
 | `kube.Apply(ctx, desired)` | Declares fields on an object that something else owns |
 | `kube.Delete(ctx, object)` | Declares that an object must be deleted |
 | `kube.Eventf(ctx, eventType, reason, format, args...)` | Records an event about the reconciled object; see [Record events](#record-events) |
-| `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay |
+| `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay, if this one succeeds |
 | `kube.Permanent(err)` | Marks an error that retrying won't fix |
+| `kube.RetryAfter(err, duration)` | Marks an error to retry after a delay instead of with backoff |
 | `kube.LastError(ctx)` | Returns the error that the previous reconcile of the object failed with, or `nil` |
 
 The framework records every `Get` and `List`. When an object that a reconcile
@@ -150,10 +159,24 @@ cases the framework adds a finalizer to the owner and deletes the owned
 objects itself. Either way, objects that a reconcile declared before and
 doesn't declare now are deleted.
 
+`Own` doesn't take over an object that the controller didn't create, because
+the framework would then delete it with its owner. If the declared object
+exists without the controller's labels, the reconcile fails with an error
+that names the object, and the object stays as it is. To take over such
+objects, for example ones from a manual install, pass `kube.Adopts()` to
+`kube.For`. Even with `kube.Adopts()`, a reconcile fails when it declares an
+object that the controller created for another owner.
+
 `Apply` manages only the fields you set on an object that the controller
 doesn't own, such as one annotation on someone else's Deployment. Fields that
 a later reconcile stops applying are removed, and the object isn't deleted
 with the reconciled object.
+
+`Apply` doesn't create objects, because nothing would own or delete them. If
+the object doesn't exist, the reconcile fails with an error that names it.
+The exception is a local type, which
+[Install in a cluster](#install-in-a-cluster) describes: `Apply` creates a
+local object that doesn't exist.
 
 If the type that you pass to `Apply` has a status, the framework applies the
 status too, so a controller can write its own fields in another controller's
@@ -381,11 +404,11 @@ try to create the CRD at the same time, one of them creates it, and both use
 it if it serves both of their versions.
 
 A program that only reads a type never creates its CRD. While the CRD is
-missing, `Get` and `List` of the type fail the reconcile, so a later `Own` in
-it does nothing, and the framework retries it. `Fetch` returns `nil` and
-doesn't fail the reconcile. If a reconcile calls `Get` or `List` for a type
-before it first owns an object of the type, declare the type with `kube.Owns`,
-so that the program creates the CRD when it starts.
+missing, `Get` and `List` of the type stop the reconcile, and the framework
+retries it. `Fetch` returns `nil` and doesn't fail the reconcile. If a
+reconcile calls `Get` or `List` for a type before it first owns an object of
+the type, declare the type with `kube.Owns`, so that the program creates the
+CRD when it starts.
 
 When a program that reconciles the type starts, it installs its own CRD over
 the created one. Until then, the CRD keeps the schema that it was created with,
@@ -399,9 +422,6 @@ the created CRD if the two programs disagree about the type:
 - If the created version isn't one that the reconciling program declares, as
   its own version or with `kube.Version`, the reconciling program fails to
   start.
-- If they set the `Domain` field of `kube.Manager` differently, the
-  reconciling program doesn't recognize the created CRD as the framework's. It
-  uses the CRD as it is and never updates it.
 
 To recover, make the declarations agree, and then delete the created CRD while
 it has no objects, because deleting a CRD deletes its objects. If only the
@@ -617,7 +637,10 @@ Every replica serves the handler at `-serve-addr`, `:8081` by default,
 whether or not it holds a lease, and `/readyz` reports ready once it
 serves. As in a webhook, the handler can read with `Get`, `List`, and
 `Fetch` through the request's context, and calling `Own`, `Apply`, or
-`Delete` cancels the context with an error. To change the cluster in
+`Delete` cancels the context with an error. A `Get` or `List` that can't
+read stops the handler, so call them only in the handler's goroutine. The
+server then answers 503 Service Unavailable and closes the connection, or
+aborts the response if the handler has started it. To change the cluster in
 response to a request, trigger a reconcile and make the change there. A
 program can have one `kube.Serve`, so serve every path from one handler,
 such as an `http.ServeMux`.
@@ -963,6 +986,24 @@ For more control, set the fields of a `kube.Manager` and call its `Run`
 method. `kube.For` takes options such as `kube.Workers(n)`,
 `kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
 
+Each controller has a name. The controller's finalizer is
+`kube.imjasonh.github.io/NAME`, the objects that it owns have the label
+`kube.imjasonh.github.io/controller=NAME`, and `NAME` is its field manager and
+the reporting controller of its events. The name defaults to the program's
+name and the lowercase kind, joined by a hyphen, such as `shop-website` for a
+program named `shop` that reconciles Websites, or only the kind when the two
+are the same, such as `website`. Two controllers that reconcile or own the
+same type in a cluster need different names, or they remove each other's
+finalizers and delete each other's objects. `Run` fails when two controllers
+in one program have the same name. To set a name, or to keep the name when
+you rename the program, pass `kube.Named(name)` to `kube.For`.
+
+The labels, annotations, and finalizers that kube writes, all under
+`kube.imjasonh.github.io`, don't change between versions of kube, so admission
+policies and other programs can match on them. Go programs can use
+`kube.ControllerLabel`, `kube.OwnerUIDLabel`, `kube.OwnerAnnotation`, and
+`kube.FinalizerName(name)` instead of copying the strings.
+
 ### Install in a cluster
 
 `kube.Main` also has a `generate` command, which pushes an image of the
@@ -1037,8 +1078,9 @@ a local type only with `Fetch`, `Apply`, and `Delete`. `Get`, `List`, and
 `Own` read caches that watch every namespace that the program watches, so they
 fail the reconcile with a local type, and `generate` rejects a controller that
 reconciles or owns one. Give each local object the program's namespace:
-`Fetch` and `Apply` fail the reconcile when it's empty, rather than use the
-namespace of the object being reconciled, which the Role doesn't cover.
+`Fetch`, `Apply`, and `Delete` fail the reconcile when it's empty, rather
+than use the namespace of the object being reconciled, which the Role
+doesn't cover.
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -1163,7 +1205,8 @@ way, its service account needs these permissions:
   on each object that it fetches is enough.
 - `create`, `patch`, and `delete` on every type that it declares with `Own`,
   `Apply`, or `Delete`. Server-side apply needs `create` for objects that
-  don't exist yet.
+  don't exist yet. `Own` and `Apply` also need `get`, to read an object that
+  no cache holds before they write it.
 - `patch` on the reconciled type's `status` subresource, for status.
 - `patch` on the reconciled type, for its finalizer and for migrations, when
   any of the following is true:
@@ -1270,8 +1313,12 @@ in a cluster has its own.
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
 
-The fakes differ from a cluster in two ways:
+The fakes differ from a cluster in three ways:
 
+- A `Get` or `List` that can't read, such as a `Get` of a local type, panics
+  as in a cluster, but nothing recovers the panic, so the test fails with it.
+  To test a failed read, recover the panic. Its value is an error that wraps
+  `rec.Err()`.
 - `Trigger` doesn't check that a controller in the program reconciles the
   object's kind, so it returns true for any object in the world unless the
   world holds `kube.FakeStandby{}`.
@@ -1280,6 +1327,11 @@ The fakes differ from a cluster in two ways:
   handler through a reconcile to the handler's next `Get`. Test the hand-off
   in [Trigger a reconcile](#trigger-a-reconcile) against a real API server, as
   `TestServeHandsDataToReconcile` in `e2e/serve_test.go` does.
+- In a `kube.Fake` context, `Own` treats each object in the world as one that
+  the controller created, unless its `kube.OwnerAnnotation` names another
+  owner, and `Apply` doesn't need its object to be in the world. In a
+  cluster, `Own` fails for an object that the controller didn't create, and
+  `Apply` fails for an object that doesn't exist.
 
 The end-to-end tests run each example against a real `kube-apiserver` and
 `etcd`, without a kubelet or controller manager. To run them, download the
@@ -1408,6 +1460,9 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops calling `Apply` for it, and when the reconciled object is
   deleted.
+- `Own` reads an object that no cache holds before it first applies the
+  object. An object that another client creates between the read and the
+  apply is taken over, as if the controller had `kube.Adopts()`.
 - `generate` can't tell which namespace an owned object goes in, so a program
   that declares owned objects gets `patch` on every namespaced type that it
   reconciles, even when each owned object is in its owner's namespace and

@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/imjasonh/playground/kube"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -54,7 +55,7 @@ const (
 	podUIDExtra  = "authentication.kubernetes.io/pod-uid"
 	// controllerLabel is the label that kube puts on each object that a
 	// controller owns, with the controller's name.
-	controllerLabel = "kube.imjasonh.github.io/controller"
+	controllerLabel = kube.ControllerLabel
 )
 
 // tokenReviewer asks the API server about tokens with TokenReviews, and

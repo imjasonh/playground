@@ -29,10 +29,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -54,6 +57,8 @@ func main() {
 	merge := &merger{mirror: m}
 	rs := &results{timeout: 10 * time.Second, poll: 100 * time.Millisecond, refetch: time.Second, checks: checks}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
+	flag.DurationVar(&g.Timeout, "git-timeout", 5*time.Minute, "longest that one git command can take, such as the mirror's first fetch of a repository")
+	flag.DurationVar(&m.MaintenanceTimeout, "maintenance-timeout", time.Hour, "longest that git's maintenance of one copy in the mirror can take")
 	flag.StringVar(&m.Dir, "mirror-dir", mirrorDir, "writable directory for the mirror's copies of repositories, which one process at a time may use")
 	flag.StringVar(&merge.ident.Name, "identity-name", "git-k8s", "committer name of the commits that squash and rebase landings make")
 	flag.StringVar(&merge.ident.Email, "identity-email", "git-k8s@users.noreply.github.com", "committer email of the commits that squash and rebase landings make")
@@ -75,6 +80,19 @@ func main() {
 			slog.Warn("removing signing keys that an earlier run left", "err", err)
 		}
 	}
+	// Maintain starts before kube.Main parses the flags. main waits for it
+	// to stop git, because a git that's still running when the container's
+	// main process exits gets SIGKILL, which leaves its locks.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	maintained := make(chan struct{})
+	go func() {
+		defer close(maintained)
+		m.Maintain(ctx)
+	}()
+	defer func() {
+		stop()
+		<-maintained
+	}()
 	kube.Main(
 		kube.Install(func() []byte {
 			if !repos.installPolicies {

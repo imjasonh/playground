@@ -62,7 +62,7 @@ const (
 // allowProtocol is GIT_ALLOW_PROTOCOL for git in update Pods: the
 // transports that a GitRepository's URL can name. It leaves out remote
 // helpers, which git runs as programs, and file, which covers local paths.
-const allowProtocol = "http:https:git:ssh"
+const allowProtocol = "http:https"
 
 // stuckReasons are the reasons that a container waits until someone fixes
 // a Secret or an image, which agent runs end on too. An update fails on

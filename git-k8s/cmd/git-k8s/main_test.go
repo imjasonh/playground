@@ -227,8 +227,8 @@ func (f *fixture) branches() *gitk8s.GitBranch {
 // pass gives b fresh, passing results for the policy's checks.
 func pass(b *gitk8s.GitBranch) {
 	b.Status.Checks = map[string]gitk8s.CheckResult{
-		"base":  {Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed},
-		"gofmt": {Commit: b.Spec.Head, State: gitk8s.Passed},
+		"base":  {Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed},
+		"gofmt": {Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed},
 	}
 }
 
@@ -756,6 +756,9 @@ func TestFirstFetchFailureKeepsBranches(t *testing.T) {
 			if c := f.condition("Ready"); c == nil || c.Reason != tc.reason {
 				t.Errorf("Ready = %+v, want reason %s", c, tc.reason)
 			}
+			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.Unknown || c.Reason != tc.reason {
+				t.Errorf("ExternalSynced = %+v, want Unknown with reason %s", c, tc.reason)
+			}
 			if len(owned(rec)) != 0 {
 				t.Error("declared GitBranches without fetching from the external repository")
 			}
@@ -817,12 +820,9 @@ func TestExternalFailureBacksOff(t *testing.T) {
 // A lock that a killed git left in the mirror's copy stops the copy from
 // taking the external repository's changes, and a condition says why.
 func TestReportsStaleLock(t *testing.T) {
-	for _, tc := range []struct {
-		ref, condition, reason string
-		fails                  bool
-	}{
-		{ref: "refs/heads/c/x", condition: "Ready", reason: "MirrorFailed", fails: true},
-		{ref: "refs/git-k8s/downstream/heads/c/x", condition: "ExternalSynced", reason: "SyncFailed"},
+	for _, tc := range []struct{ ref, reason string }{
+		{ref: "refs/heads/c/x", reason: "UpdateFailed"},
+		{ref: "refs/git-k8s/downstream/heads/c/x", reason: "SyncFailed"},
 	} {
 		t.Run(tc.ref, func(t *testing.T) {
 			f := newFixture(t)
@@ -834,14 +834,81 @@ func TestReportsStaleLock(t *testing.T) {
 			f.work.Commit("a person's change")
 			f.work.Push("c/x")
 			f.now = f.now.Add(time.Hour)
-			if _, err := f.tryReconcile(); (err != nil) != tc.fails {
-				t.Errorf("reconcile = %v, want an error: %t", err, tc.fails)
+			if _, err := f.tryReconcile(); err != nil {
+				t.Errorf("reconcile = %v", err)
 			}
-			if c := f.condition(tc.condition); c == nil || c.Status != kube.False || c.Reason != tc.reason || !strings.Contains(c.Message, "x.lock") {
-				t.Errorf("%s = %+v, want %s and a message that names the lock", tc.condition, c, tc.reason)
+			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.False || c.Reason != tc.reason || !strings.Contains(c.Message, "x.lock") {
+				t.Errorf("ExternalSynced = %+v, want %s and a message that names the lock", c, tc.reason)
 			}
 		})
 	}
+}
+
+// When a sync fails without a report, ExternalSynced can't say whether the
+// external repository has every change in the copy, and doesn't keep what
+// the last sync found.
+func TestMirrorFailureMakesExternalSyncedUnknown(t *testing.T) {
+	f := newFixture(t)
+	f.branches()
+	if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.True {
+		t.Fatalf("after the first sync, ExternalSynced = %+v", c)
+	}
+	if err := os.WriteFile(filepath.Join(f.copyDir(), "config"), []byte("[broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(time.Hour)
+	if _, err := f.tryReconcile(); err == nil {
+		t.Fatal("reconcile of a broken copy succeeded")
+	}
+	ready := f.condition("Ready")
+	if ready == nil || ready.Reason != "MirrorFailed" {
+		t.Fatalf("Ready = %+v, want the reason MirrorFailed", ready)
+	}
+	if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.Unknown || c.Reason != ready.Reason || c.Message != ready.Message {
+		t.Errorf("ExternalSynced = %+v, want Unknown with Ready's reason and message %q", c, ready.Message)
+	}
+}
+
+// A GitRepository's URL can name any server that the core program reaches,
+// and git prints the body of the server's error response. Conditions and the
+// errors that kube shows have git's own messages without the body.
+func TestReportsLeaveOutWhatTheServerSent(t *testing.T) {
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal-only: db_password=hunter2", http.StatusInternalServerError)
+	}))
+	t.Cleanup(hs.Close)
+	check := func(what, msg string) {
+		t.Helper()
+		if strings.Contains(msg, "hunter2") || !strings.Contains(msg, "The requested URL returned error: 500") {
+			t.Errorf("%s: %q, want git's own message without the server's", what, msg)
+		}
+	}
+
+	t.Log("The first fetch fails.")
+	f := newFixture(t)
+	f.repo.Spec.URL = hs.URL + "/app.git"
+	_, err := f.tryReconcile()
+	if err == nil {
+		t.Fatal("reconcile succeeded without fetching from the external repository")
+	}
+	check("the reconcile's error", err.Error())
+	check("Ready", f.condition("Ready").Message)
+	check("ExternalSynced", f.condition("ExternalSynced").Message)
+
+	t.Log("After a sync, the URL changes to the server's, so fetches and pushes fail.")
+	f = newFixture(t)
+	f.branches()
+	f.repo.Spec.URL = hs.URL + "/app.git"
+	f.fetch()
+	if c := f.condition("ExternalSynced"); c.Reason != "SyncFailed" {
+		t.Errorf("ExternalSynced = %+v, want the reason SyncFailed", c)
+	}
+	check("ExternalSynced", f.condition("ExternalSynced").Message)
+	err = f.finalize()
+	if err == nil {
+		t.Fatal("Finalize succeeded without pushing to the external repository")
+	}
+	check("Finalize's error", err.Error())
 }
 
 // A branch whose heads the mirror can't compare stays as it is on each
@@ -889,6 +956,22 @@ func TestCompareFailedComesBeforeDiverged(t *testing.T) {
 	}
 	if c := syncedCondition(poll{}, rep); c.Reason != "CompareFailed" || !strings.Contains(c.Message, "c/x (") {
 		t.Errorf("ExternalSynced = %+v, want the reason CompareFailed, naming c/x", c)
+	}
+}
+
+// A branch that the mirror couldn't update in its copy comes after a branch
+// that it couldn't compare, and before a divergence.
+func TestUpdateFailedComesBeforeDiverged(t *testing.T) {
+	rep := &mirror.Report{
+		Unapplied: map[string]error{"c/x": errors.New("git update-ref: exit status 128")},
+		Diverged:  map[string]string{"c/y": "0123456789abcdef0123456789abcdef01234567"},
+	}
+	if c := syncedCondition(poll{}, rep); c.Reason != "UpdateFailed" || !strings.Contains(c.Message, "c/x (") {
+		t.Errorf("ExternalSynced = %+v, want the reason UpdateFailed, naming c/x", c)
+	}
+	rep.Failed = map[string]error{"c/z": errors.New("git merge-base: exit status 128")}
+	if c := syncedCondition(poll{}, rep); c.Reason != "CompareFailed" {
+		t.Errorf("with a branch that the mirror couldn't compare, ExternalSynced = %+v, want the reason CompareFailed", c)
 	}
 }
 
@@ -1194,13 +1277,13 @@ func TestWaitsForFreshPassingChecks(t *testing.T) {
 	for name, edit := range map[string]func(*gitk8s.GitBranch){
 		"pending": func(b *gitk8s.GitBranch) { delete(b.Status.Checks, "gofmt") },
 		"failed": func(b *gitk8s.GitBranch) {
-			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
+			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
 		},
 		"stale head": func(b *gitk8s.GitBranch) {
-			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: "old", State: gitk8s.Passed}
+			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: "old", Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 		},
 		"stale parent": func(b *gitk8s.GitBranch) {
-			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: "old", State: gitk8s.Passed}
+			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: "old", State: gitk8s.Passed}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1224,8 +1307,8 @@ func TestGateExpression(t *testing.T) {
 	p.Checks = append(p.Checks[:2:2], gitk8s.CheckPolicy{Name: "risk"}, gitk8s.CheckPolicy{Name: "approval"})
 	p.When = `checks.base.passed && checks.gofmt.passed && (checks.risk.outputs.level == "low" || checks.approval.passed)`
 	b.Spec.Merge = &p
-	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: map[string]string{"level": "high"}}
-	b.Status.Checks["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
+	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeParent, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: map[string]string{"level": "high"}}
+	b.Status.Checks["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
 	results := b.Status.Checks
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
@@ -1234,7 +1317,7 @@ func TestGateExpression(t *testing.T) {
 		t.Fatalf("state = %q, conditions %+v", b.Status.State, b.Status.Conditions)
 	}
 
-	results["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Passed}
+	results["approval"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Passed}
 	b.Status.Checks = results
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
@@ -1251,7 +1334,7 @@ func TestLandsResultsForTheParentsHead(t *testing.T) {
 	p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt"}, {Name: "risk"}}
 	b.Spec.Merge = &p
 	low := map[string]string{"level": "low"}
-	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, MergeBase: strings.Repeat("1", 40), State: gitk8s.Passed, Outputs: low}
+	b.Status.Checks["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeChange, MergeBase: strings.Repeat("1", 40), State: gitk8s.Passed, Outputs: low}
 	results := b.Status.Checks
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
@@ -1263,7 +1346,7 @@ func TestLandsResultsForTheParentsHead(t *testing.T) {
 		t.Fatalf("main moved to %s", got)
 	}
 
-	results["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, MergeBase: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: low}
+	results["risk"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeChange, MergeBase: b.Spec.ParentHead, State: gitk8s.Passed, Outputs: low}
 	b.Status.Checks = results
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)

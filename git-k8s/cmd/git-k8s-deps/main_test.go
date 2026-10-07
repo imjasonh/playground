@@ -2456,6 +2456,71 @@ exclude example.com/other v1.1.0
 	}
 }
 
+// TestSkipsAGoModFileTooLargeToRead checks that a go.mod file larger than
+// git.MaxBlobBytes doesn't hold up the updates of the parent's other go.mod
+// files.
+func TestSkipsAGoModFileTooLargeToRead(t *testing.T) {
+	f := newFixture(t)
+	f.work.Write("big/go.mod", "module example.com/app/big\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n\n// "+strings.Repeat("x", git.MaxBlobBytes)+"\n")
+	logs := captureLogs(t)
+	f.b.Spec.Head = f.work.Commit("big")
+	f.work.Push("main")
+
+	p := f.start()
+	if got, want := env(p.Spec.InitContainers[1], "UPDATES"), "example.com/greet v1.1.0 .\n"; got != want {
+		t.Errorf("UPDATES = %q, want %q", got, want)
+	}
+	if !slices.ContainsFunc(strings.Split(logs.String(), "\n"), func(l string) bool {
+		return strings.Contains(l, "skipping a go.mod file that's too large to read") && strings.Contains(l, " path=big/go.mod ")
+	}) {
+		t.Errorf("the controller didn't warn that it skips big/go.mod; logs:\n%s", logs)
+	}
+}
+
+// TestWaitsForAParentTooLargeToRead checks that a parent whose list of
+// files is larger than git.MaxTreeBytes fails the reconcile with an error
+// that kube doesn't retry until the parent's Branch changes.
+func TestWaitsForAParentTooLargeToRead(t *testing.T) {
+	f := newFixture(t)
+	f.b.Spec.Head = f.work.Bomb("bomb", 4)
+	f.work.Push("main")
+	repo, secret := f.srv.Repository("app", f.rules...)
+	ctx, _ := kube.Fake(t.Context(), f.b, repo, secret)
+	if err := f.u.Reconcile(ctx, f.b); !kube.IsPermanent(err) || !errors.Is(err, git.ErrTooBig) {
+		t.Errorf("Reconcile() = %v, want a permanent error that wraps git.ErrTooBig", err)
+	}
+}
+
+// TestRemakesABranchTooLargeToRead checks that a branch's head whose
+// go.mod file or list of files is too large to read doesn't make its
+// update, so the controller remakes the branch.
+func TestRemakesABranchTooLargeToRead(t *testing.T) {
+	ctx := t.Context()
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("go.mod", modAt("v1.0.0"))
+	parent := w.Commit("main")
+	w.Write("go.mod", modAt("v1.1.0")+"\n// "+strings.Repeat("x", git.MaxBlobBytes)+"\n")
+	bigMod := w.Commit("update with a large go.mod file")
+	w.Write("go.mod", modAt("v1.1.0"))
+	w.Commit("update")
+	bomb := w.Bomb("bomb", 4)
+	w.Push("main")
+	repo, err := (&git.Git{}).Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	up := update{module: greet, version: "v1.1.0", from: map[string]string{".": "v1.0.0"}}
+	for what, head := range map[string]string{"go.mod file": bigMod, "list of files": bomb} {
+		if ok, behind, err := current(ctx, repo, parent, head, up, false); ok || behind || err != nil {
+			t.Errorf("current() for a head whose %s is too large to read = %t, %t, %v, want false, false, nil", what, ok, behind, err)
+		}
+	}
+}
+
 func TestRefusesToPushOtherBranches(t *testing.T) {
 	u := &updater{prefix: "deps/"}
 	for _, branch := range []string{"main", "deps", "deps/../main", "deps/go/x@v1.lock", "deps-x/go"} {

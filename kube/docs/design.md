@@ -458,7 +458,8 @@ processing if it was added meanwhile. Keys have one of two priorities. Changes
 are high priority. The initial list and periodic resyncs, every 10 hours by
 default, are low priority, so a restart with thousands of objects doesn't
 delay reaction to a change. Failed keys back off exponentially from 50 ms to
-5 minutes, with up to 10% random jitter, and `RequeueAfter` schedules a key on
+5 minutes, with up to 10% random jitter, unless the error has a delay from
+`kube.RetryAfter`. That delay and `RequeueAfter` schedule a key on
 a timer heap. The queue's tests use `testing/synctest`, so they check timing
 without sleeping.
 
@@ -475,6 +476,14 @@ reconciled object for `Apply`, so two objects that apply fields to the same
 target don't remove each other's fields. An owned object's document also gets
 the owner label and annotation and, when Kubernetes allows it, an owner
 reference.
+
+The controller's name is also the value of the controller label, which the
+cache of owned objects selects on, and the end of the controller's finalizer.
+Two controllers with one name that reconcile one kind would remove each
+other's finalizers and prune each other's objects, so the default name joins
+the program's name and the kind, and `Run` fails when two of its controllers
+have one name. Two controllers in one manager would also share a cache of
+owned objects whose handler enqueues only the first controller's owners.
 
 A reconcile can pass an object to `Own` or `Apply` only once, and the
 framework compares the objects by group, kind, and key, not by Go type.
@@ -567,6 +576,31 @@ its own object.
 
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
+The owner annotation names only the owner's namespace and name, so the
+framework skips objects whose owner UID label names another owner: an earlier
+object with that name, or an object of another kind whose controller has the
+same name.
+
+Server-side apply creates an object that doesn't exist and takes over one
+that does, so before it applies an object that no cache holds, the framework
+reads the object from the API server. For `Own`, an object without the
+controller label and the owner annotation is someone else's: a person's, or
+another program's. Taking it over would delete it with the owner, so the
+reconcile fails with an error that names the object, unless the controller
+has the `kube.Adopts` option. An object with the controller label whose owner
+annotation names another owner fails the reconcile even with the option,
+whether it comes from the cache or from the read, because otherwise two
+owners would take the object from each other on every reconcile. After the
+first apply, the cache of owned objects holds the object, so the read happens
+about once per object. An object that another client creates between the
+read and the apply is still taken over.
+
+For `Apply`, the read gives the document the target's UID, and a target that
+doesn't exist fails the reconcile, because nothing would own or delete an
+object that `Apply` created. A target that no cache holds is read on every
+reconcile, but the read lets the framework skip the apply by the same rule as
+for a cached target. No cache holds a local type, so the framework doesn't
+read one, and `Apply` creates a local object that doesn't exist.
 
 Finalizer changes, `Apply`, and deletes target an object that must already
 exist, so they carry its UID. An apply with a UID fails instead of creating an
@@ -598,11 +632,18 @@ controller's last status write sent the same status, there's nothing to add
 or remove. Server-side apply ignores annotations sent to the status
 subresource, so the record of the last write is in memory.
 
-A reconcile that returns an error is retried with backoff, and its intents are
-discarded. An error wrapped with `kube.Permanent` isn't retried; the object
+A reconcile that returns an error is retried with backoff, or after the delay
+that `kube.RetryAfter` added to the error, and its intents are discarded. An
+error wrapped with `kube.Permanent` without a delay isn't retried; the object
 waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
+
+`Get` and `List` use the same recovery. One that can't read panics with an
+unexported value, which the framework turns back into the read's error
+without reporting a panic. So `nil` from `Get` means only that the object
+doesn't exist, and callers have no error to check. A webhook rejects the
+request with the error, and `kube.Serve` answers 503.
 
 An intent that fails, for example because an admission policy rejects an
 apply, fails the reconcile in the same way. The framework stops carrying out
@@ -633,10 +674,11 @@ of removing the wrong entry.
 Owner references can't point across namespaces or from a namespaced object to
 a cluster-scoped one. When a reconcile owns such an object, the framework adds
 a finalizer to the owner before creating it, and records the owned types in an
-annotation. When the owner is deleted, the framework deletes those objects by
-UID, then removes the finalizer. When a reconcile stops declaring such
-objects, the framework deletes any that remain and removes the finalizer, so
-the owner can then be deleted without the controller running.
+annotation. When the owner is deleted, the framework deletes the objects of
+those types that carry the owner's UID and the controller label, then removes
+the finalizer. When a reconcile stops declaring such objects, the framework
+deletes any that remain and removes the finalizer, so the owner can then be
+deleted without the controller running.
 
 A controller without a `Finalize` method also removes its finalizer from
 objects, so a finalizer that an earlier version of the program added doesn't
@@ -874,9 +916,6 @@ programs disagree about the type:
   doesn't serve the program's own version. `checkDropped` refuses an older
   one, because the API server lists a new CRD's storage version in
   `status.storedVersions` before the CRD has objects.
-- `ownsCRD` looks for the label under the reconciling program's own
-  `Manager.Domain`, so a program with another `Domain` uses the CRD as
-  something else installed it, and never updates it.
 
 The remedy is to make the declarations agree and delete the created CRD while
 it has no objects, or, if only the version differs, to declare the created
@@ -1365,11 +1404,11 @@ the compiler's export data. Each instantiation of `Get`, `List`, `Fetch`,
 function that contains the call. The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
-`get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
-needs `create` and `patch`, and `Delete` needs `delete`. A `Fetch` that
-passes a type with a known scope and constants as the namespace and name
-needs `get` on only that object, so the rule names it. The analysis reads
-the constants at the call, so a `Fetch` in a generic helper still needs
+`get`, `Own` needs `get`, `list`, `watch`, `create`, `patch`, and `delete`,
+`Apply` needs `get`, `create`, and `patch`, and `Delete` needs `delete`. A
+`Fetch` that passes a type with a known scope and constants as the namespace
+and name needs `get` on only that object, so the rule names it. The analysis
+reads the constants at the call, so a `Fetch` in a generic helper still needs
 `get` on every object of the type. When a type passed to
 `Apply` has a field whose `json` tag names it `status`, the rules also grant
 `patch` on the type's `status` subresource. `controller-gen` reads
@@ -1832,8 +1871,8 @@ offers:
   but never updates it, so a later release that changes the type leaves the
   CRD as it was.
 - A program that reconciles a type takes over the CRD that another program
-  created only if both programs declare the same scope and `Manager.Domain`,
-  and the reconciling program declares the created version.
+  created only if both programs declare the same scope and the reconciling
+  program declares the created version.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache

@@ -76,7 +76,7 @@ func newFixture(t *testing.T) *fixture {
 		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: "app"})}
 		b.Namespace = "default"
 		b.Spec.Merge = &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: gitk8s.GoTestCheck}}}
-		b.Status.Checks = map[string]gitk8s.CheckResult{gitk8s.GoTestCheck: {State: gitk8s.Running, Outputs: map[string]string{"pod": pod}}}
+		b.Status.Checks = map[string]gitk8s.CheckResult{gitk8s.GoTestCheck: {State: gitk8s.Running, Pod: pod}}
 		return b
 	}
 	pod := func(name, controller, phase string) *k8s.Pod {

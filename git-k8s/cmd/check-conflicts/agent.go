@@ -87,54 +87,58 @@ func (t target) job(in *checks.Input, base, url string) *agent.Job {
 // push can drop the commit that the run merges, when the head where the
 // branch last synced moved, when -union changed, because git might then
 // resolve every conflict, or when the run waits for a commit that t
-// already has. Then it updates the runs in outputs, which the new run
+// already has. Then it updates the runs in rec's notes, which the new run
 // counts from. While the check can't reach the mirror, such as when its
 // token for the mirror can't be read, it follows the run with the URL in
-// the previous outputs. Otherwise a new URL, such as from a changed
+// the previous notes. Otherwise a new URL, such as from a changed
 // -mirror, starts a new run.
-func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]string) (checks.Verdict, bool) {
+func follow(ctx context.Context, in *checks.Input, t target, rec record) (checks.Verdict, bool) {
 	prev := in.Previous
 	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head {
 		return checks.Verdict{}, false
 	}
-	st := readState(prev.Outputs)
+	st := readState(prev.Notes)
 	diverged := ""
 	if t.diverged {
 		diverged = t.commit
 	}
-	if st.Pod == "" || prev.Outputs["diverged"] != diverged || prev.Outputs["synced"] != t.synced ||
-		!isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) || prev.Outputs["union"] != union.String() {
+	if st.Pod == "" || prev.Notes["diverged"] != diverged || prev.Notes["synced"] != t.synced ||
+		!isCommit(prev.Notes["merge"]) || !isCommit(prev.Notes["base"]) || prev.Notes["union"] != union.String() {
 		return checks.Verdict{}, false
 	}
-	url := prev.Outputs["url"]
+	url := prev.Notes["url"]
 	if remote, err := in.Remote(ctx); err == nil {
 		url = remote.URL
 	}
 	if url == "" {
 		return checks.Verdict{}, false
 	}
-	pinned, base := t, prev.Outputs["base"]
-	pinned.commit = prev.Outputs["merge"]
-	pinned.replay = prev.Outputs["rewound"] == "external"
+	pinned, base := t, prev.Notes["base"]
+	pinned.commit = prev.Notes["merge"]
+	pinned.replay = prev.Notes["rewound"] == "external"
 	s := runJob(ctx, pinned.job(in, base, url), st)
 	if s.Moved && pinned.commit != t.commit {
 		// RunJob gave back the run whose Pod found the branch moved.
-		maps.Copy(outputs, stateOutputs(&agent.JobState{Runs: st.Runs}))
+		maps.Copy(rec.notes, stateNotes(&agent.JobState{Runs: st.Runs}))
 		return checks.Verdict{}, false
 	}
 	v := report(ctx, in, pinned, base, url, st, s)
-	for _, k := range []string{"diverged", "rewound", "conflicts"} {
-		if prev.Outputs[k] != "" {
-			v.Outputs[k] = prev.Outputs[k]
+	for _, k := range []string{"diverged", "rewound"} {
+		if prev.Notes[k] != "" {
+			v.Notes[k] = prev.Notes[k]
 		}
+	}
+	if conflicts := prev.Outputs["conflicts"]; conflicts != "" {
+		v.Outputs = map[string]string{"conflicts": conflicts}
 	}
 	return v, true
 }
 
 // startAgent starts the agent's run that resolves the conflicts that git
 // leaves when it merges t into the branch's head. bases are the merge
-// bases, and list names the files that conflict.
-func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target, bases []string, list string, outputs map[string]string) checks.Verdict {
+// bases, list names the files that conflict, and notes are the notes that
+// the check recorded, with the branch's runs.
+func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target, bases []string, list string, notes map[string]string) checks.Verdict {
 	if len(bases) > 1 {
 		return checks.Fail("the branch and %s have %d merge bases, so their conflicts have no one base for the agent to compare", t.name, len(bases))
 	}
@@ -154,7 +158,7 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 	if err != nil {
 		return retry(ctx, "reaching the repository: %v", err)
 	}
-	st := &agent.JobState{Runs: readState(outputs).Runs}
+	st := &agent.JobState{Runs: readState(notes).Runs}
 	s := runJob(ctx, t.job(in, base, remote.URL), st)
 	if !s.Done && st.Pod == "" {
 		s.Message = fmt.Sprintf("%s conflicts in %s; %s", t.action(), list, s.Message)
@@ -169,7 +173,7 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 	if len(conflicts) > agent.MaxFiles {
 		return fmt.Sprintf("%s has conflicts in %d files, more than the agent can change", t.action(), len(conflicts)), nil
 	}
-	size := 0
+	var sides []string
 	for _, c := range conflicts {
 		if path.Base(c.Path) == ".cursorignore" {
 			return fmt.Sprintf("%s conflicts on %s, which the agent can't see, because its work tree leaves out .cursorignore files", t.action(), c.Path), nil
@@ -177,7 +181,22 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 		if c.Ours == nil || c.Theirs == nil || !textMode(c.Ours.Mode) || !textMode(c.Theirs.Mode) {
 			return fmt.Sprintf("%s conflicts on %s, which isn't a file on both sides, so the agent can't resolve it", t.action(), c.Path), nil
 		}
+		sides = append(sides, c.Ours.SHA, c.Theirs.SHA)
+	}
+	sizes, err := repo.BlobSizes(ctx, sides)
+	if err != nil {
+		return "", err
+	}
+	tooBig := fmt.Sprintf("the files that conflict hold more than %d MiB, more than the agent can change", agent.MaxFileBytes>>20)
+	size := 0
+	for _, c := range conflicts {
+		if max(sizes[c.Ours.SHA], sizes[c.Theirs.SHA]) > git.MaxBlobBytes {
+			return fmt.Sprintf("%s conflicts on %s, which is larger than %d MiB on one side, more than the check reads to look for conflict markers", t.action(), c.Path, git.MaxBlobBytes>>20), nil
+		}
 		b, err := repo.ReadBlob(ctx, tree+":"+c.Path)
+		if errors.Is(err, git.ErrTooBig) {
+			return tooBig, nil
+		}
 		if err != nil {
 			return "", err
 		}
@@ -187,7 +206,7 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 		size += len(b)
 	}
 	if size > agent.MaxFileBytes {
-		return fmt.Sprintf("the files that conflict hold more than %d MiB, more than the agent can change", agent.MaxFileBytes>>20), nil
+		return tooBig, nil
 	}
 	return "", nil
 }
@@ -198,20 +217,20 @@ func unresolvable(ctx context.Context, repo *git.Repo, head string, t target, tr
 // its files resolve.
 func report(ctx context.Context, in *checks.Input, t target, base, url string, st *agent.JobState, s agent.JobStatus) checks.Verdict {
 	running := func(format string, args ...any) checks.Verdict {
-		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: runOutputs(t, base, url, st)}
+		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Notes: runNotes(t, base, url, st), Pod: st.Pod}
 	}
 	if !s.Done {
 		return running("%s", s.Message)
 	}
-	o := stateOutputs(st)
-	o["merge"] = t.commit
+	notes := stateNotes(st)
+	notes["merge"] = t.commit
 	res := s.Result
 	if res == nil {
 		v := checks.Fail("%s", s.Message)
 		if s.Failed != nil {
-			maps.Copy(o, agent.UsageOutputs(s.Failed))
+			maps.Copy(notes, agent.UsageNotes(s.Failed))
 		}
-		v.Outputs = o
+		v.Notes, v.Pod = notes, st.Pod
 		return finished(ctx, v)
 	}
 	var v checks.Verdict
@@ -221,7 +240,7 @@ func report(ctx context.Context, in *checks.Input, t target, base, url string, s
 		repo, err := targetRepo(ctx, in, t)
 		if err != nil {
 			// The Pod still serves the result, and RunJob declared it in
-			// this reconcile. Leaving the run undone in the outputs makes
+			// this reconcile. Leaving the run undone in the notes makes
 			// the next reconcile follow the Pod and fetch the result again,
 			// instead of RunJob reporting the run as done without it.
 			st.Done = false
@@ -248,9 +267,9 @@ func report(ctx context.Context, in *checks.Input, t target, base, url string, s
 			return running("comparing the agent's replay with %s: %v", t.name, err)
 		}
 	}
-	maps.Copy(o, agent.UsageOutputs(res))
-	o["summary"] = res.Summary
-	v.Outputs = o
+	maps.Copy(notes, agent.UsageNotes(res))
+	notes["summary"] = res.Summary
+	v.Notes, v.Pod = notes, st.Pod
 	return finished(ctx, v)
 }
 
@@ -262,39 +281,34 @@ func finished(ctx context.Context, v checks.Verdict) checks.Verdict {
 	return v
 }
 
-// runOutputs hold what the next reconcile needs to follow the agent's run
+// runNotes hold what the next reconcile needs to follow the agent's run
 // that merges t, with base as the merge base, from the repository at url.
-func runOutputs(t target, base, url string, st *agent.JobState) map[string]string {
-	o := stateOutputs(st)
-	o["merge"] = t.commit
+func runNotes(t target, base, url string, st *agent.JobState) map[string]string {
+	n := stateNotes(st)
+	n["merge"] = t.commit
 	if st.Pod == "" {
-		return o
+		return n
 	}
-	o["base"] = base
-	o["url"] = url
+	n["base"] = base
+	n["url"] = url
 	if len(union) > 0 {
-		o["union"] = union.String()
+		n["union"] = union.String()
 	}
-	return o
+	return n
 }
 
-// stateOutputs hold the state of the agent's run, which readState reads,
-// and the run's runs and Pod for people to read.
-func stateOutputs(st *agent.JobState) map[string]string {
+// stateNotes hold the state of the agent's run, which readState reads,
+// and the run's runs for people to read.
+func stateNotes(st *agent.JobState) map[string]string {
 	text, _ := st.MarshalText()
-	o := map[string]string{"state": string(text), "runs": strconv.Itoa(st.Runs)}
-	if st.Pod != "" {
-		o["pod"] = st.Pod
-	}
-	return o
+	return map[string]string{"state": string(text), "runs": strconv.Itoa(st.Runs)}
 }
 
-// readState reads the state of the agent's run from outputs that
-// stateOutputs wrote. A state that doesn't decode starts over, like a
-// missing one.
-func readState(outputs map[string]string) *agent.JobState {
+// readState reads the state of the agent's run from notes that stateNotes
+// wrote. A state that doesn't decode starts over, like a missing one.
+func readState(notes map[string]string) *agent.JobState {
 	st := &agent.JobState{}
-	_ = st.UnmarshalText([]byte(outputs["state"]))
+	_ = st.UnmarshalText([]byte(notes["state"]))
 	return st
 }
 
@@ -353,9 +367,17 @@ type rejected struct{ error }
 // checkResolved returns an error if a file that conflicted, as it is in
 // tree, holds a line that starts with one of the merge's conflict marker
 // labels, or more lines that look like conflict markers than its two sides
-// hold together.
+// hold together, or if the file in tree or a side is larger than
+// git.MaxBlobBytes, too large to look for markers in.
 func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Conflict, labels ...string) error {
-	got, err := repo.ReadBlob(ctx, tree+":"+c.Path)
+	read := func(name string) ([]byte, error) {
+		b, err := repo.ReadBlob(ctx, name)
+		if errors.Is(err, git.ErrTooBig) {
+			return nil, rejected{fmt.Errorf("can't look for conflict markers in %s: %w", c.Path, err)}
+		}
+		return b, err
+	}
+	got, err := read(tree + ":" + c.Path)
 	if err != nil {
 		return err
 	}
@@ -366,7 +388,7 @@ func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Confl
 	}
 	var sides [len(markerPrefixes)]int
 	for _, e := range []*git.TreeEntry{c.Ours, c.Theirs} {
-		b, err := repo.ReadBlob(ctx, e.SHA)
+		b, err := read(e.SHA)
 		if err != nil {
 			return err
 		}

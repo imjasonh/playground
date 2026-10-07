@@ -39,7 +39,7 @@ const AgentTrailer = "Git-K8s-Agent"
 // local repository such as another GitRepository's cache. Commands that
 // read only local objects need it too, because a repository with a
 // promisor remote fetches the objects that it lacks.
-const AllowProtocol = "http:https:git:ssh"
+const AllowProtocol = "http:https"
 
 // Auth is a username and password for HTTP basic authentication, or a
 // bearer token.
@@ -787,9 +787,10 @@ type FileStat struct {
 	Removed int
 }
 
-// Numstat lists the files that differ between two commits.
+// Numstat lists the files that differ between two commits. If the list
+// takes more than MaxChangeBytes, the error wraps ErrTooBig.
 func (r *Repo) Numstat(ctx context.Context, base, head string) ([]FileStat, error) {
-	out, err := r.run(ctx, "diff", "--numstat", "-z", "--no-renames", "--end-of-options", base, head)
+	out, err := r.limited(ctx, MaxChangeBytes, "diff", "--numstat", "-z", "--no-renames", "--end-of-options", base, head)
 	if err != nil {
 		return nil, err
 	}
@@ -819,9 +820,22 @@ type TreeEntry struct {
 	Path string
 }
 
-// LsTree lists every file in a commit's tree.
+// MaxTreeBytes is the most output that LsTree reads from git, enough for
+// about 150,000 files. A pack of a few hundred bytes can hold a tree that
+// lists millions of files, because a tree can list one subtree many times.
+const MaxTreeBytes = 16 << 20
+
+// MaxBlobBytes is the largest blob that ReadBlob reads.
+const MaxBlobBytes = 8 << 20
+
+// ErrTooBig is the error, wrapped, from a reader such as ReadBlob when
+// git prints more than the reader's limit.
+var ErrTooBig = errors.New("more output than the limit")
+
+// LsTree lists every file in a commit's tree. If the list takes more than
+// MaxTreeBytes, the error wraps ErrTooBig.
 func (r *Repo) LsTree(ctx context.Context, commit string) ([]TreeEntry, error) {
-	out, err := r.run(ctx, "ls-tree", "-r", "-z", "--full-tree", "--end-of-options", commit)
+	out, err := r.limited(ctx, MaxTreeBytes, "ls-tree", "-r", "-z", "--full-tree", "--end-of-options", commit)
 	if err != nil {
 		return nil, err
 	}
@@ -837,9 +851,69 @@ func (r *Repo) LsTree(ctx context.Context, commit string) ([]TreeEntry, error) {
 	return entries, nil
 }
 
-// ReadBlob returns a blob's contents.
+// BlobSizes returns the size in bytes of each blob in shas, so that a
+// caller can skip a blob that's larger than MaxBlobBytes without reading
+// it. It fails if an object is missing or isn't a blob.
+func (r *Repo) BlobSizes(ctx context.Context, shas []string) (map[string]int64, error) {
+	sizes := map[string]int64{}
+	var names []string
+	var in strings.Builder
+	for _, sha := range shas {
+		if !objectID(sha) {
+			return nil, fmt.Errorf("git cat-file: %q isn't an object name", sha)
+		}
+		if _, ok := sizes[sha]; !ok {
+			sizes[sha] = 0
+			names = append(names, sha)
+			in.WriteString(sha + "\n")
+		}
+	}
+	if len(names) == 0 {
+		return sizes, nil
+	}
+	// git prints a line for each name, less than twice as long as the
+	// name, so the output needs no limit.
+	out, err := r.git.run(ctx, r.Dir, []string{"cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"}, opts{stdin: []byte(in.String())})
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != len(names) {
+		return nil, fmt.Errorf("git cat-file: printed %d lines for %d objects", len(lines), len(names))
+	}
+	for i, line := range lines {
+		f := strings.Fields(line)
+		if len(f) != 3 || f[0] != names[i] || f[1] != "blob" {
+			return nil, fmt.Errorf("git cat-file: %s isn't a blob: %q", names[i], line)
+		}
+		n, err := strconv.ParseInt(f[2], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("git cat-file: %s has the size %q", names[i], f[2])
+		}
+		sizes[names[i]] = n
+	}
+	return sizes, nil
+}
+
+// ReadBlob returns a blob's contents. If the blob is larger than
+// MaxBlobBytes, the error wraps ErrTooBig.
 func (r *Repo) ReadBlob(ctx context.Context, sha string) ([]byte, error) {
-	return r.run(ctx, "cat-file", "blob", "--end-of-options", sha)
+	return r.limited(ctx, MaxBlobBytes, "cat-file", "blob", "--end-of-options", sha)
+}
+
+// limited runs git in the repository like run, but reads at most limit
+// bytes of its output. If git prints more, the error wraps ErrTooBig.
+func (r *Repo) limited(ctx context.Context, limit int, args ...string) ([]byte, error) {
+	out := &limitedWriter{n: limit}
+	_, err := r.git.run(ctx, r.Dir, args, opts{out: out})
+	if out.full {
+		// git dies when the write fails, so err doesn't say why.
+		return nil, fmt.Errorf("git %s: %w of %d MiB", args[0], ErrTooBig, limit>>20)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return out.b, nil
 }
 
 // WriteBlob stores a blob and returns its SHA.
