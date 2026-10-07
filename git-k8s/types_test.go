@@ -388,9 +388,9 @@ func TestKindNames(t *testing.T) {
 
 // TestRepositoryStatusColumns checks the printer columns of the Repository
 // CustomResourceDefinition that come from status fields. kube adds a column
-// for each field with the column option, which reads the field by its JSON
-// name. The number of Branch objects is status.trackedBranches, because
-// spec.branches holds the rules that select the branches to track.
+// for each field with the column option, and the column reads the field by
+// its JSON name. The number of Branch objects is status.trackedBranches,
+// because spec.branches holds the rules that select the branches to track.
 func TestRepositoryStatusColumns(t *testing.T) {
 	var columns []string
 	typ := reflect.TypeFor[RepositoryStatus]()
