@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+
+# Pin fastlane via bundler so local and CI runs agree. Run `bundle install`
+# once to generate Gemfile.lock, then commit it for fully reproducible builds.
+gem "fastlane", "~> 2.222"
