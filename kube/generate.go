@@ -141,7 +141,7 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
 	if err := parseProgramFlags(o.args); err != nil {
-		return fmt.Errorf("generate: the program's flags after --: %v", err)
+		return fmt.Errorf("generate: %v", err)
 	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
 	for _, s := range strings.Split(*platforms, ",") {
@@ -188,15 +188,45 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	return err
 }
 
+// generatedFlags are Main's flags that the Deployment's arguments set, each
+// with a hint for someone who passes it after --.
+var generatedFlags = map[string]string{
+	"leader-elect":    "; generate turns it on when -replicas or -shards is more than 1",
+	"metrics-addr":    "",
+	"serve-addr":      "",
+	"shards":          "; set -shards before -- instead",
+	"token-dir":       "",
+	"watch-namespace": "; set -watch-namespace before -- instead",
+	"webhook-addr":    "",
+	"webhook-service": "",
+}
+
 // parseProgramFlags parses the flags for the program in the Deployment into
 // the program's variables, as Main would, so that controllers' describe
-// methods see them.
+// methods see them. generate writes RBAC rules, ports, and probes for the
+// flags that the Deployment sets, so parseProgramFlags fails on one of those
+// in args, and on one that the program defines itself, which would take
+// the value that the Deployment sets for kube.
 func parseProgramFlags(args []string) error {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
+	for _, name := range slices.Sorted(maps.Keys(generatedFlags)) {
+		if fs.Lookup(name) != nil {
+			return fmt.Errorf("the program defines -%s, which generate sets for kube.Main; give the program's flag another name", name)
+		}
+	}
 	(&Manager{}).flags(fs)
-	return fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("the program's flags after --: %v", err)
+	}
+	var err error
+	fs.Visit(func(f *flag.Flag) {
+		if hint, ok := generatedFlags[f.Name]; ok && err == nil {
+			err = fmt.Errorf("the program's flags after --: generate sets -%s itself%s", f.Name, hint)
+		}
+	})
+	return err
 }
 
 // buildEnv is the environment for building and analyzing the program for
@@ -746,7 +776,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	for _, ns := range slices.Sorted(maps.Keys(namespaces)) {
 		docs = append(docs, role(ns, namespaces[ns])...)
 	}
-	args := []string{"-addr=:8080"}
+	args := []string{"-metrics-addr=:8080"}
 	switch {
 	case p.electLeader && o.shards > 1:
 		args = append(args, fmt.Sprintf("-shards=%d", o.shards))
@@ -754,7 +784,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		args = append(args, "-leader-elect")
 	}
 	if o.watchNamespace != "" {
-		args = append(args, "-namespace="+o.watchNamespace)
+		args = append(args, "-watch-namespace="+o.watchNamespace)
 	}
 	ports := []any{object{{"name", "http"}, {"containerPort", 8080}}}
 	var servicePorts []any

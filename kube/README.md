@@ -568,7 +568,8 @@ kube.Main(kube.For[Website](reconciler{}), kube.Webhooks[k8s.Pod](podPolicy{}))
 
 A webhook for a built-in type skips `kube-system` and the namespace of the
 webhook's Service, so that the controller's own Pods can start while its
-webhook is down. With `-namespace`, webhooks apply only in that namespace.
+webhook is down. With `-watch-namespace`, webhooks apply only in that
+namespace.
 [`examples/podpolicy`](examples/podpolicy/main.go) is a webhook for Pods.
 
 Every replica serves the webhooks over HTTPS, whether or not it holds a lease.
@@ -919,7 +920,7 @@ in a volume, and serves the copies.
 
 - `-kubeconfig`: the kubeconfig file. Without it, kube uses `$KUBECONFIG`,
   then the pod's service account, then `$HOME/.kube/config`.
-- `-namespace`: watch only one namespace.
+- `-watch-namespace`: watch only one namespace.
 - `-leader-elect`: reconcile only while this replica holds a Lease.
 - `-shards`: split reconciles across replicas into this many shards.
 - `-webhook-service`: the Service, as `name` or `namespace/name`, through
@@ -932,9 +933,14 @@ in a volume, and serves the copies.
 - `-token-dir`: a directory of service account tokens for
   `kube.RequestToken`, each in a file named by the hex SHA-256 hash of its
   audience, as `generate` mounts them.
-- `-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`, for
-  example on `:8080`.
-- `-v`: log debug messages.
+- `-metrics-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`,
+  for example on `:8080`.
+- `-log-level`: log messages at this level and above: `debug`, `info`,
+  `warn`, or `error`. The default is `info`.
+
+If the program defines one of these flags itself on `flag.CommandLine`,
+`kube.Main` leaves out its own and logs a warning, and the manager doesn't
+read that flag.
 
 For more control, set the fields of a `kube.Manager` and call its `Run`
 method. `kube.For` takes options such as `kube.Workers(n)`,
@@ -1055,6 +1061,13 @@ go run ./examples/podpolicy generate -registry=ghcr.io/you -- -registries=ghcr.i
 `generate` parses these flags as the program would, so it fails on a flag
 that the program doesn't define, and the function that you pass to
 [`kube.Install`](#install-other-objects) sees their values.
+
+The Deployment sets some of `kube.Main`'s flags to match the RBAC rules,
+ports, and probes that `generate` writes: `-metrics-addr`, `-leader-elect`,
+`-shards`, `-watch-namespace`, `-webhook-addr`, `-webhook-service`,
+`-serve-addr`, and `-token-dir`. `generate` fails when you pass one of these
+after `--`, or when the program defines one itself. To watch one namespace
+or to set the shards, use the `generate` flag of the same name.
 
 go-containerregistry is kube's only dependency, and only `generate` uses it.
 The command builds the copy of the program for the image with the

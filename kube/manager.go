@@ -141,9 +141,10 @@ func Run(ctx context.Context, controllers ...Controller) error {
 
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
-// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
-// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, -token-dir,
-// and -v for debug logs.
+// they fail. Flags: -kubeconfig, -watch-namespace, -leader-elect, -shards,
+// -metrics-addr, -webhook-addr, -webhook-service, -webhook-url,
+// -serve-addr, -token-dir, and -log-level. Main leaves out a flag that the
+// program defines itself on flag.CommandLine, and logs a warning.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
@@ -170,13 +171,12 @@ func Main(controllers ...Controller) {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
 		flag.PrintDefaults()
 	}
-	verbose := m.flags(flag.CommandLine)
+	level, skipped := m.flags(flag.CommandLine)
 	flag.Parse()
-	level := slog.LevelInfo
-	if *verbose {
-		level = slog.LevelDebug
-	}
 	m.Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	for _, name := range skipped {
+		m.Logger.Warn("the program defines this flag, so kube doesn't read it", "flag", "-"+name)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := m.Run(ctx, controllers...); err != nil {
@@ -186,19 +186,31 @@ func Main(controllers ...Controller) {
 	}
 }
 
-// flags defines Main's flags on fs, and returns the value of -v.
-func (m *Manager) flags(fs *flag.FlagSet) *bool {
-	fs.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
-	fs.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
-	fs.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
-	fs.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
-	fs.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
-	fs.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
-	fs.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
-	fs.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
-	fs.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
-	fs.StringVar(&m.TokenDir, "token-dir", "", "directory of service account tokens for kube.RequestToken, by audience")
-	return fs.Bool("v", false, "log debug messages")
+// flags defines Main's flags on fs, except those that fs already has, such
+// as flags that the program defines itself. It returns the value of
+// -log-level and the names of the flags that it skipped.
+func (m *Manager) flags(fs *flag.FlagSet) (level *slog.Level, skipped []string) {
+	own := flag.NewFlagSet("", flag.ContinueOnError)
+	own.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
+	own.StringVar(&m.Namespace, "watch-namespace", "", "watch only this namespace")
+	own.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
+	own.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
+	own.StringVar(&m.Addr, "metrics-addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
+	own.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
+	own.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
+	own.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
+	own.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
+	own.StringVar(&m.TokenDir, "token-dir", "", "directory of service account tokens for kube.RequestToken, by audience")
+	level = new(slog.Level)
+	own.TextVar(level, "log-level", slog.LevelInfo, "log messages at this `level` and above: debug, info, warn, or error")
+	own.VisitAll(func(f *flag.Flag) {
+		if fs.Lookup(f.Name) != nil {
+			skipped = append(skipped, f.Name)
+			return
+		}
+		fs.Var(f.Value, f.Name, f.Usage)
+	})
+	return level, skipped
 }
 
 func (m *Manager) init() error {

@@ -1385,7 +1385,7 @@ several controllers gets the rule for each reconciled type.
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
 a Role in its namespace. With `-watch-namespace`, the program runs with
-`-namespace`, and the rules for a type whose `kube` tag says
+`-watch-namespace` too, and the rules for a type whose `kube` tag says
 `scope=Namespaced`, or that the program defines without `scope=Cluster`, go in
 a Role in the watched namespace. A reconciled type with more than one version
 keeps its rules in the ClusterRole, because migrating its stored objects to a

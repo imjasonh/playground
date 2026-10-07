@@ -286,8 +286,8 @@ func (in installation) runInstalled(t *testing.T, exe, kubeconfig string) *syncB
 	args := []string{"-kubeconfig=" + kubeconfig}
 	for _, a := range in.args {
 		switch {
-		case strings.HasPrefix(a, "-addr="):
-			a = "-addr=" + httpAddr
+		case strings.HasPrefix(a, "-metrics-addr="):
+			a = "-metrics-addr=" + httpAddr
 		case strings.HasPrefix(a, "-webhook-addr="):
 			a = "-webhook-addr=" + hookAddr
 		case strings.HasPrefix(a, "-webhook-service="):
@@ -427,8 +427,8 @@ func TestGenerateOneNamespace(t *testing.T) {
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
 	install, watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c), e2e.Namespace(t, c)
 	in := generateExample(t, reg, "examples/website", install, "-replicas=1", "-watch-namespace="+watched)
-	if !slices.Contains(in.args, "-namespace="+watched) {
-		t.Errorf("args = %q, want -namespace=%s", in.args, watched)
+	if !slices.Contains(in.args, "-watch-namespace="+watched) {
+		t.Errorf("args = %q, want -watch-namespace=%s", in.args, watched)
 	}
 	for _, obj := range in.objects {
 		b, _ := json.Marshal(obj)

@@ -173,7 +173,7 @@ func TestPlanPatch(t *testing.T) {
 }
 
 func TestManifests(t *testing.T) {
-	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 3, shards: 1, args: []string{"-v"}}
+	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 3, shards: 1, args: []string{"-log-level=debug"}}
 	p := &installPlan{cluster: grants{}, local: grants{}, webhooks: true, electLeader: true}
 	p.cluster.add("apps", "deployments", "", "list")
 	p.local.add("coordination.k8s.io", "leases", "", "get")
@@ -209,7 +209,7 @@ func TestManifests(t *testing.T) {
 	for _, s := range []string{
 		`"replicas":3`,
 		`"image":"ghcr.io/you/web-site@sha256:abc"`,
-		`"args":["-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-v"]`,
+		`"args":["-metrics-addr=:8080","-leader-elect","-webhook-addr=:9443","-webhook-service=sites/web-site","-log-level=debug"]`,
 		`"env":[{"name":"KUBE_IMAGE","value":"ghcr.io/you/web-site@sha256:abc"}]`,
 		`"serviceAccountName":"web-site"`,
 		`"shareProcessNamespace":true`,
@@ -243,7 +243,7 @@ func TestManifests(t *testing.T) {
 		t.Errorf("one replica without webhooks: kinds = %v, want %v", kinds, want)
 	}
 	b, _ = json.Marshal(docs[len(docs)-1])
-	if !strings.Contains(string(b), `"args":["-addr=:8080","-v"]`) {
+	if !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-log-level=debug"]`) {
 		t.Errorf("one replica without webhooks: %s", b)
 	}
 }
@@ -297,13 +297,13 @@ func TestManifestsServe(t *testing.T) {
 	}{
 		{
 			false,
-			`"args":["-addr=:8080","-serve-addr=:8081"]`,
+			`"args":["-metrics-addr=:8080","-serve-addr=:8081"]`,
 			`"ports":[{"name":"http","containerPort":8080},{"name":"serve","containerPort":8081}]`,
 			`"ports":[{"name":"serve","port":80,"targetPort":"serve"}]`,
 		},
 		{
 			true,
-			`"args":["-addr=:8080","-webhook-addr=:9443","-webhook-service=probe/probe","-serve-addr=:8081"]`,
+			`"args":["-metrics-addr=:8080","-webhook-addr=:9443","-webhook-service=probe/probe","-serve-addr=:8081"]`,
 			`"ports":[{"name":"http","containerPort":8080},{"name":"webhook","containerPort":9443},{"name":"serve","containerPort":8081}]`,
 			`"ports":[{"name":"webhook","port":443,"targetPort":"webhook"},{"name":"serve","port":80,"targetPort":"serve"}]`,
 		},
@@ -360,11 +360,11 @@ func TestManifestsPreStop(t *testing.T) {
 }
 
 func TestManifestsTokens(t *testing.T) {
-	o := &generateOptions{program: "sts", name: "sts", namespace: "sts", replicas: 1, shards: 1, args: []string{"-v"}}
+	o := &generateOptions{program: "sts", name: "sts", namespace: "sts", replicas: 1, shards: 1, args: []string{"-log-level=debug"}}
 	docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, tokens: []string{"https://octo-sts.dev", "probe"}})
 	b, _ := json.Marshal(docs[len(docs)-1])
 	for _, s := range []string{
-		`"args":["-addr=:8080","-token-dir=/var/run/secrets/tokens","-v"]`,
+		`"args":["-metrics-addr=:8080","-token-dir=/var/run/secrets/tokens","-log-level=debug"]`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"tokens","mountPath":"/var/run/secrets/tokens","readOnly":true}]`,
 		`{"name":"tokens","projected":{"sources":[` +
 			`{"serviceAccountToken":{"audience":"https://octo-sts.dev","expirationSeconds":3600,"path":"5ed769dad83e947182558c07a2054d31423885eaab718996164c0f14d4713c35"}},` +
@@ -432,7 +432,7 @@ func TestManifestsVolume(t *testing.T) {
 		`"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"data","mountPath":"/var/lib/eventlog"}]`,
 		`"volumes":[{"name":"tmp","emptyDir":{}},{"name":"data","persistentVolumeClaim":{"claimName":"eventlog"}}]`,
-		`"args":["-addr=:8080","-serve-addr=:8081"]`,
+		`"args":["-metrics-addr=:8080","-serve-addr=:8081"]`,
 	} {
 		if !strings.Contains(byKind["Deployment"], s) {
 			t.Errorf("the Deployment lacks %s: %s", s, byKind["Deployment"])
@@ -690,8 +690,8 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	if b, _ := json.Marshal(byKind["ClusterRole"]["rules"]); strings.Contains(string(b), "secrets") {
 		t.Errorf("ClusterRole rules = %s, want no secrets", b)
 	}
-	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-addr=:8080","-namespace=team"]`) {
-		t.Errorf("Deployment = %s, want -namespace=team", b)
+	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-watch-namespace=team"]`) {
+		t.Errorf("Deployment = %s, want -watch-namespace=team", b)
 	}
 }
 
@@ -921,11 +921,41 @@ var installForTest = flag.Bool("kube-test-install", true, "install objects")
 
 func TestParseProgramFlags(t *testing.T) {
 	t.Cleanup(func() { *installForTest = true })
-	if err := parseProgramFlags([]string{"-v", "-namespace=team", "-kube-test-install=false"}); err != nil {
+	if err := parseProgramFlags([]string{"-log-level=debug", "-webhook-url=https://192.0.2.10:9443", "-kube-test-install=false"}); err != nil {
 		t.Fatal(err)
 	}
 	if *installForTest {
 		t.Error("the program's flag isn't set")
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-metrics-addr=:9090"}, "generate sets -metrics-addr itself"},
+		{[]string{"-leader-elect"}, "generate sets -leader-elect itself; generate turns it on when -replicas or -shards is more than 1"},
+		{[]string{"-log-level=debug", "-watch-namespace=team"}, "generate sets -watch-namespace itself; set -watch-namespace before -- instead"},
+	} {
+		if err := parseProgramFlags(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("parseProgramFlags(%q) = %v, want an error containing %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+// TestParseProgramFlagsDefinedByTheProgram checks that generate fails when
+// the program defines a flag that the Deployment sets for kube, and accepts
+// one that it doesn't.
+func TestParseProgramFlagsDefinedByTheProgram(t *testing.T) {
+	saved := flag.CommandLine
+	t.Cleanup(func() { flag.CommandLine = saved })
+	flag.CommandLine = flag.NewFlagSet("program", flag.ContinueOnError)
+	flag.CommandLine.Int("shards", 1, "the program's own shards")
+	if err := parseProgramFlags(nil); err == nil || !strings.Contains(err.Error(), "the program defines -shards") {
+		t.Errorf("parseProgramFlags with the program's own -shards = %v, want an error about -shards", err)
+	}
+	flag.CommandLine = flag.NewFlagSet("program", flag.ContinueOnError)
+	kubeconfig := flag.CommandLine.String("kubeconfig", "", "the program's own kubeconfig")
+	if err := parseProgramFlags([]string{"-kubeconfig=config"}); err != nil || *kubeconfig != "config" {
+		t.Errorf("parseProgramFlags with the program's own -kubeconfig = %v, and set it to %q; want nil and config", err, *kubeconfig)
 	}
 }
 
@@ -944,7 +974,8 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
 		{[]string{"-registry=ghcr.io/you", "-namespace=team.a"}, `-namespace "team.a" isn't a namespace name`},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
-		{[]string{"-registry=ghcr.io/you", "--", "-v", "-nope"}, "the program's flags after --: flag provided but not defined: -nope"},
+		{[]string{"-registry=ghcr.io/you", "--", "-log-level=debug", "-nope"}, "the program's flags after --: flag provided but not defined: -nope"},
+		{[]string{"-registry=ghcr.io/you", "-watch-namespace=a", "--", "-shards=3"}, "the program's flags after --: generate sets -shards itself; set -shards before -- instead"},
 	} {
 		var stderr bytes.Buffer
 		err := generate(t.Context(), tc.args, nil, &bytes.Buffer{}, &stderr)
