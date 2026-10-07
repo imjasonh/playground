@@ -9,6 +9,7 @@ import (
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
+	"github.com/imjasonh/playground/kube/internal/image/imagetest"
 	"github.com/imjasonh/playground/kube/k8s"
 )
 
@@ -105,6 +106,9 @@ func TestEndToEnd(t *testing.T) {
 	e2e.Run(t, &kube.Manager{Name: "website-e2e"}, kube.For[Website](reconciler{}))
 	ctx := t.Context()
 	ns := e2e.Namespace(t, c)
+	reg := imagetest.Registry(t)
+	nginx127 := imagetest.Base(t, reg+"/nginx:1.27", "linux/amd64")
+	nginx128 := imagetest.Base(t, reg+"/nginx:1.28", "linux/arm64")
 
 	sitePath := client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, "blog")
 	depPath := client.Path("apps/v1", "deployments", ns, "blog")
@@ -115,17 +119,17 @@ func TestEndToEnd(t *testing.T) {
 			"apiVersion": "examples.kube.imjasonh.github.io/v1",
 			"kind":       "Website",
 			"metadata":   map[string]any{"name": "blog"},
-			"spec":       map[string]any{"image": "nginx:1.27", "replicas": 2, "port": 8080},
+			"spec":       map[string]any{"image": reg + "/nginx:1.27", "replicas": 2, "port": 8080},
 		}, &site)
 	})
 
-	t.Log("The controller creates a Deployment and a Service that the Website owns.")
+	t.Log("The controller creates a Deployment, with the image by digest, and a Service that the Website owns.")
 	var dep k8s.Deployment
 	e2e.Eventually(t, 10*time.Second, func() error {
 		if err := e2e.Get(ctx, c, depPath, &dep); err != nil {
 			return err
 		}
-		if *dep.Spec.Replicas != 2 || dep.Spec.Template.Spec.Containers[0].Image != "nginx:1.27" {
+		if *dep.Spec.Replicas != 2 || dep.Spec.Template.Spec.Containers[0].Image != reg+"/nginx@"+nginx127 {
 			return fmt.Errorf("deployment spec = %+v", dep.Spec)
 		}
 		if len(dep.OwnerReferences) != 1 || dep.OwnerReferences[0].UID != site.UID || !*dep.OwnerReferences[0].Controller {
@@ -190,14 +194,14 @@ func TestEndToEnd(t *testing.T) {
 	})
 
 	t.Log("Changing the image updates the Deployment; removing the port deletes the Service.")
-	if err := c.Patch(ctx, sitePath, client.MergePatch, nil, []byte(`{"spec":{"image":"nginx:1.28","port":null}}`), nil); err != nil {
+	if err := c.Patch(ctx, sitePath, client.MergePatch, nil, []byte(`{"spec":{"image":"`+reg+`/nginx:1.28","port":null}}`), nil); err != nil {
 		t.Fatal(err)
 	}
 	e2e.Eventually(t, 10*time.Second, func() error {
 		if err := e2e.Get(ctx, c, depPath, &dep); err != nil {
 			return err
 		}
-		if img := dep.Spec.Template.Spec.Containers[0].Image; img != "nginx:1.28" {
+		if img := dep.Spec.Template.Spec.Containers[0].Image; img != reg+"/nginx@"+nginx128 {
 			return fmt.Errorf("image = %s", img)
 		}
 		if len(dep.Spec.Template.Spec.Containers[0].Ports) != 0 {
