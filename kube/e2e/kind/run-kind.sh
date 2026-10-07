@@ -212,7 +212,12 @@ echo "The program created the ImageReport CRD and reports pods' images."
 echo "::endgroup::"
 
 echo "::group::Install the janitor example"
-generate janitor | k apply -f -
+# janitor's base names its user. The kubelet can't check that a named user
+# isn't root, so it starts the container only because the Pod sets the user.
+NAMED_USER_BASE="localhost:${PORT}/kube-e2e/static-named-user"
+go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 mutate --platform "${PLATFORM}" \
+  --user nonroot "${CHAINGUARD}/static:latest" -t "${NAMED_USER_BASE}" >/dev/null
+generate janitor -base="${NAMED_USER_BASE}" | k apply -f -
 k -n janitor rollout status deployment/janitor --timeout=180s
 # janitor has no Finalize method and owns nothing, so generate doesn't let it
 # patch namespaces.

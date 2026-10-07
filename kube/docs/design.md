@@ -1445,8 +1445,9 @@ gets a projected token for each audience and no rule.
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
-`/app/PROGRAM` to the base's image for that platform, sets the entrypoint and
-a non-root user, and pushes an index of the images. Each image names its base
+`/app/PROGRAM` to the base's image for that platform, sets the entrypoint, and
+pushes an index of the images. An image keeps its base's user, or runs as user
+65532 if the base has none. Each image names its base
 with the `org.opencontainers.image.base.name` and `.digest` annotations, and
 leaves out the base's own annotations, such as its title and source
 repository, which describe the base. Timestamps are the Unix
@@ -1458,8 +1459,11 @@ go-containerregistry with it, so the program in the cluster links only kube.
 `internal/yaml` writes the YAML from ordered JSON, so the output is stable. It
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
-`/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. `/readyz`
+`/healthz`, as user and group 65532 with a read-only root file system, and
+with `-leader-elect` or `-shards` when it has more than one replica. The Pod
+sets `runAsNonRoot`, and with it the kubelet won't start a container whose
+image runs as root, or as a user name, which it can't check. A base can set
+either, so the Pod sets the user too. `/readyz`
 fails while the program starts, and by default the kubelet probes again 10
 seconds after a failure, so a new Pod, and a rollout that waits for it, could
 wait up to 10 seconds longer than they need to. `/readyz` reads only memory,
@@ -1663,8 +1667,9 @@ kube-proxy. It pushes to a local registry as kind's
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
 that `kubectl describe` shows the Website's events, that reconciles continue
 after every controller pod is replaced, that imagereport creates its CRD with
-the rules that `generate` wrote and reports the images that pods run, and
-that the podpolicy webhooks deny and default pods through their Service.
+the rules that `generate` wrote and reports the images that pods run, that
+janitor starts on a base whose user is a name, and that the podpolicy
+webhooks deny and default pods through their Service.
 It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token

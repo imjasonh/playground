@@ -914,7 +914,14 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		volumes = append(volumes, object{{"name", "tokens"}, {"projected", object{{"sources", sources}}}})
 	}
 	deployment := object{{"replicas", o.replicas}}
-	podSecurity := object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}
+	// The image keeps the base's user. With runAsNonRoot, the kubelet won't
+	// start a container whose user is root, or a name that it can't check,
+	// so the Pod names the user and group that the image uses when the base
+	// has none.
+	podSecurity := object{
+		{"runAsUser", 65532}, {"runAsGroup", 65532}, {"runAsNonRoot", true},
+		{"seccompProfile", object{{"type", "RuntimeDefault"}}},
+	}
 	if p.volume != "" {
 		claim := object{{"accessModes", []string{"ReadWriteOnce"}}}
 		if o.storageClass != "" {
@@ -925,10 +932,10 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		mounts = append(mounts, object{{"name", "data"}, {"mountPath", p.volume}})
 		volumes = append(volumes, object{{"name", "data"}, {"persistentVolumeClaim", object{{"claimName", o.name}}}})
 		deployment = append(deployment, field{"strategy", object{{"type", "Recreate"}}})
-		// The kubelet gives the volume to group 65532 and adds the group to
-		// the program's, so the non-root program can write volume types
-		// that support ownership. OnRootMismatch skips walking every file
-		// when the volume's root already belongs to the group.
+		// The kubelet gives the volume to group 65532, the program's group,
+		// so the program can write volume types that support ownership.
+		// OnRootMismatch skips walking every file when the volume's root
+		// already belongs to the group.
 		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
 	}
 	container = append(container, field{"volumeMounts", mounts})

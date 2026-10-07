@@ -990,7 +990,8 @@ The command does the following:
    type's `kube` tag says `scope=Namespaced` or `scope=Cluster`.
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
-   program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
+   program at `/app/PROGRAM` as the entrypoint. The image keeps the base's
+   user, or runs as user 65532 if the base has none. It
    pushes the images and an index of them to `REGISTRY/NAME` with
    [go-containerregistry](https://github.com/google/go-containerregistry),
    using the credentials from `docker login` or `podman login`.
@@ -1007,7 +1008,10 @@ The command does the following:
    and 30 failures in a row make a ready Pod unready. The container's root
    file system is read-only, with an `emptyDir` volume at `/tmp` for
    temporary files.
-   `-tmp-size` limits the volume's size. The Pod shares one process
+   `-tmp-size` limits the volume's size. The Pod runs the program as user
+   and group 65532, whatever the base's user is, because the kubelet won't
+   start a container that must run as non-root when the image's user is
+   root or a name. The Pod shares one process
    namespace, so the pause container is PID 1 and reaps the processes that
    the program's subprocesses leave behind, which a Go program doesn't do.
    A container that you add to the Pod can see the program's processes and

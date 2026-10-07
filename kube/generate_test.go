@@ -217,7 +217,7 @@ func TestManifests(t *testing.T) {
 		`"env":[{"name":"KUBE_IMAGE","value":"ghcr.io/you/web-site@sha256:abc"}]`,
 		`"serviceAccountName":"web-site"`,
 		`"shareProcessNamespace":true`,
-		`"runAsNonRoot":true`,
+		`"securityContext":{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}`,
 		`"readOnlyRootFilesystem":true`,
 		`"volumeMounts":[{"mountPath":"/tmp","name":"tmp"}]`,
 		`"volumes":[{"emptyDir":{},"name":"tmp"}]`,
@@ -463,7 +463,7 @@ func TestManifestsVolume(t *testing.T) {
 	for _, s := range []string{
 		`"spec":{"replicas":1,"strategy":{"type":"Recreate"},"selector"`,
 		`"shareProcessNamespace":true`,
-		`"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
+		`"securityContext":{"runAsUser":65532,"runAsGroup":65532,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"data","mountPath":"/var/lib/eventlog"}]`,
 		`"volumes":[{"name":"tmp","emptyDir":{}},{"name":"data","persistentVolumeClaim":{"claimName":"eventlog"}}]`,
 		`"args":["-metrics-addr=:8080","-serve-addr=:8081"]`,
