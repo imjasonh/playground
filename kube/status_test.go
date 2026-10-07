@@ -280,7 +280,7 @@ func TestApplyStatus(t *testing.T) {
 	// showed, or nil if execute skipped that apply.
 	reconcile := func(in intent, owns *bool) error {
 		t.Helper()
-		applied := map[appliedKey]uint64{}
+		applied := &appliedRecord{hashes: map[appliedKey]uint64{}}
 		if err := c.applyStatus(t.Context(), parent, in, manager, owns, applied); err != nil {
 			return err
 		}

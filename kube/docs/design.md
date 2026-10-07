@@ -960,6 +960,12 @@ holds the key's shard, and a replica that acquires a shard enqueues every
 cached key in it and forgets what it last wrote for them. It also forgets
 every reconcile error that it kept for the shard, including deleted objects'
 errors, because another replica may have reconciled the shard's keys since.
+The records that let a reconcile skip an apply or a status write hold the
+tenure in which the reconcile that made them started, a count of the
+replica's acquisitions of the shard, and reconciles ignore records from other
+tenures. So a reconcile that starts before the replica forgets, or one from
+its last hold that's still running, can't skip a write because of a stale
+record.
 Leader election is the case of one shard. Candidates measure a lease's expiry
 from when they saw its holder or renew time change, on their own clock, so
 clock skew between replicas doesn't give a shard two holders.

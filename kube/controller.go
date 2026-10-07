@@ -216,15 +216,18 @@ type core struct {
 
 	mu       sync.Mutex
 	children map[*typeInfo]source
-	// applied holds, for each reconciled object, hashes of the documents
-	// that its last successful reconcile applied.
-	applied map[Key]map[appliedKey]uint64
+	// applied holds, for each reconciled object, what its last successful
+	// reconcile applied. A reconcile ignores a record from another tenure of
+	// the object's shard, because another replica may have held the shard in
+	// between and applied with the same field managers.
+	applied map[Key]*appliedRecord
 	// statuses holds a hash of each object's status as this controller last
 	// wrote or confirmed it, to tell its own status writes from others'.
 	statuses map[Key]uint64
 	// statusApplies holds a hash of the status that this controller last
-	// applied to each object.
-	statusApplies map[Key]uint64
+	// applied to each object. A reconcile ignores a hash from another
+	// tenure, as with applied.
+	statusApplies map[Key]statusApply
 	// caughtUp holds, for each object, the tenure of its shard in which a
 	// write to the object that required the cached resource version succeeded.
 	caughtUp map[Key]uint64
@@ -236,6 +239,19 @@ type appliedKey struct {
 	ti     *typeInfo
 	key    Key
 	status bool
+}
+
+// appliedRecord holds hashes of the documents that a successful reconcile
+// applied, and the tenure of the reconciled object's shard in which it ran.
+type appliedRecord struct {
+	tenure uint64
+	hashes map[appliedKey]uint64
+}
+
+// statusApply is the hash of a status that a reconcile applied, and the
+// tenure of the object's shard in which it ran.
+type statusApply struct {
+	hash, tenure uint64
 }
 
 // labelKeys are the label and annotation keys the framework uses, under a
@@ -278,24 +294,30 @@ func (c *core) childSources() map[*typeInfo]source {
 	return maps.Clone(c.children)
 }
 
-func (c *core) lastApplied(parent Key, k appliedKey) (uint64, bool) {
+// lastApplied returns the hash of the document that the last successful
+// reconcile of parent applied as k, if that reconcile ran in tenure.
+func (c *core) lastApplied(parent Key, k appliedKey, tenure uint64) (uint64, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	h, ok := c.applied[parent][k]
+	r := c.applied[parent]
+	if r == nil || r.tenure != tenure {
+		return 0, false
+	}
+	h, ok := r.hashes[k]
 	return h, ok
 }
 
-func (c *core) setApplied(parent Key, m map[appliedKey]uint64) {
+func (c *core) setApplied(parent Key, r *appliedRecord) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.applied == nil {
-		c.applied = map[Key]map[appliedKey]uint64{}
+		c.applied = map[Key]*appliedRecord{}
 	}
-	if len(m) == 0 {
+	if r == nil || len(r.hashes) == 0 {
 		delete(c.applied, parent)
 		return
 	}
-	c.applied[parent] = m
+	c.applied[parent] = r
 }
 
 func (c *core) lastStatus(k Key) (uint64, bool) {
@@ -323,20 +345,25 @@ func (c *core) setStatus(k Key, h uint64, ok bool) {
 	c.statuses[k] = h
 }
 
-func (c *core) lastStatusApply(k Key) (uint64, bool) {
+// lastStatusApply returns the hash of the status that this controller last
+// applied to k, if it applied it in tenure.
+func (c *core) lastStatusApply(k Key, tenure uint64) (uint64, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	h, ok := c.statusApplies[k]
-	return h, ok
+	a, ok := c.statusApplies[k]
+	if !ok || a.tenure != tenure {
+		return 0, false
+	}
+	return a.hash, true
 }
 
-func (c *core) setStatusApply(k Key, h uint64) {
+func (c *core) setStatusApply(k Key, h, tenure uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.statusApplies == nil {
-		c.statusApplies = map[Key]uint64{}
+		c.statusApplies = map[Key]statusApply{}
 	}
-	c.statusApplies[k] = h
+	c.statusApplies[k] = statusApply{hash: h, tenure: tenure}
 }
 
 // hasCaughtUp reports whether a write to k that required the cached resource
@@ -710,7 +737,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	if err == nil {
 		// execute may have applied some documents before it failed, and the
 		// records don't show them, so the next reconcile sends every one.
-		if err = c.execute(ctx, key, obj, s, &pre.rv); err != nil {
+		if err = c.execute(ctx, key, obj, s, &pre.rv, pre.tenure); err != nil {
 			c.setApplied(key, nil)
 		}
 	}
@@ -740,8 +767,9 @@ func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) er
 
 // execute carries out a successful reconcile's intents, then deletes owned
 // objects that the reconcile no longer declared. Writes to parent carry the
-// resource version that rv points to, as setFinalizer describes.
-func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *scope, rv *string) error {
+// resource version that rv points to, as setFinalizer describes. tenure is
+// the tenure of parent's shard in which the reconcile ran.
+func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *scope, rv *string, tenure uint64) error {
 	pm := metaOf[T, P](parent)
 	var cleanup []string
 	for _, in := range s.intents {
@@ -761,7 +789,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		}
 	}
 
-	applied := map[appliedKey]uint64{}
+	applied := &appliedRecord{tenure: tenure, hashes: map[appliedKey]uint64{}}
 	declared := map[*typeInfo]map[Key]bool{}
 	for _, in := range s.intents {
 		m := metaOfAny(in.obj)
@@ -789,10 +817,11 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			// of it in an annotation, so matching it means the last apply
 			// sent this same body, even if this process didn't send it.
 			// Apply doesn't annotate objects that it doesn't own, and relies
-			// on what the last successful reconcile in this process applied.
+			// on what the last successful reconcile in the same process and
+			// tenure applied.
 			if in.observed != nil && matches(in.observed, body) {
-				if last, ok := c.lastApplied(key, ak); in.kind == intentOwn || ok && last == h {
-					applied[ak] = h
+				if last, ok := c.lastApplied(key, ak, tenure); in.kind == intentOwn || ok && last == h {
+					applied.hashes[ak] = h
 					c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
 					if err := c.applyStatus(ctx, key, in, manager, nil, applied); err != nil {
 						return err
@@ -808,7 +837,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			if err := c.m.apply(ctx, in.ti, m.Key(), in.res.path(m.Namespace, m.Name), manager, body, out); err != nil {
 				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
 			}
-			applied[ak] = h
+			applied.hashes[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
 			c.log.Debug("applied", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
 			owns := resp.ownsStatus(manager)
