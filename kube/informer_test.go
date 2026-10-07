@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -213,12 +215,17 @@ func startInformer(t *testing.T, c *client.Client, streaming bool) (*informer[cf
 
 func startInformerFor[T any, P Resource[T]](t *testing.T, c *client.Client, streaming bool) (*informer[T, P], func() []notification) {
 	t.Helper()
+	return startInformerWith[T, P](t, c, streaming, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func startInformerWith[T any, P Resource[T]](t *testing.T, c *client.Client, streaming bool, log *slog.Logger) (*informer[T, P], func() []notification) {
+	t.Helper()
 	ti, err := typeInfoFor[T, P]()
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := informerConfig{streaming: streaming, pageSize: 2, intern: true}
-	inf := newInformer[T, P](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	inf := newInformer[T, P](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, cfg, log, nil)
 	var mu sync.Mutex
 	var got []notification
 	inf.addHandler(func(old, new *T, initial bool) {
@@ -256,9 +263,9 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-func keys(inf *informer[cfgMap, *cfgMap]) []string {
+func keys[T any, P Resource[T]](inf *informer[T, P]) []string {
 	var out []string
-	inf.store.each("", func(o *cfgMap) bool { out = append(out, o.Name); return true })
+	inf.store.each("", func(o *T) bool { out = append(out, metaOf[T, P](o).Name); return true })
 	slices.Sort(out)
 	return out
 }
@@ -524,13 +531,154 @@ func compare(a, b string) int {
 	return 0
 }
 
-func TestInformerToleratesFieldTypeMismatch(t *testing.T) {
+// port is an int32 that decodes itself, as IntOrString does.
+type port int32
+
+func (p *port) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, (*int32)(p)) }
+
+// strictMap is a ConfigMap whose data holds fields that some JSON values
+// don't fit.
+type strictMap struct {
+	Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,scope=Namespaced"`
+	Data   struct {
+		Count   int       `json:"count,omitempty"`
+		Port    port      `json:"port,omitempty"`
+		Targets []string  `json:"targets,omitempty"`
+		When    time.Time `json:"when,omitzero"`
+	} `json:"data"`
+}
+
+func TestInformerSkipsObjectsThatDontDecode(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			f, c := newFakeAPI(t, streaming)
+			f.set("good", map[string]any{"count": 1})
+			f.set("plain", map[string]any{"count": "three"})
+			f.set("time", map[string]any{"when": "2024-01-01t10:00:00z"})
+			// port's error stops encoding/json before it reaches targets.
+			f.set("custom", map[string]any{"port": 3000000000, "targets": []string{"a"}})
+			inf, notes := startInformerFor[strictMap](t, c, streaming)
+			if got := keys(inf); !slices.Equal(got, []string{"good"}) {
+				t.Errorf("cache = %v, want only good", got)
+			}
+			if n := inf.undecodable(); n != 3 {
+				t.Errorf("undecodable = %d, want 3", n)
+			}
+
+			t.Log("A version that decodes ends a skip, a version that doesn't starts one, and a delete ends one.")
+			f.put("time", map[string]any{"when": "2024-01-01T10:00:00Z"})
+			f.put("good", map[string]any{"port": 3000000000})
+			f.del("plain", false)
+			f.put("later", nil)
+			waitFor(t, "the watch events", func() bool { return len(notes()) == 4 })
+			if want := []notification{{key: "time"}, {key: "good", deleted: true}, {key: "later"}}; !slices.Equal(notes()[1:], want) {
+				t.Errorf("watch notifications = %+v, want %+v", notes()[1:], want)
+			}
+			if got := keys(inf); !slices.Equal(got, []string{"later", "time"}) {
+				t.Errorf("cache = %v, want later and time", got)
+			}
+			if n := inf.undecodable(); n != 2 {
+				t.Errorf("undecodable = %d, want 2", n)
+			}
+			if _, watches := f.calls(); len(watches) != 1 {
+				t.Errorf("%d watches, want 1", len(watches))
+			}
+		})
+	}
+}
+
+// warnings records the key and error of each warning.
+type warnings struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (w *warnings) Enabled(_ context.Context, l slog.Level) bool { return l >= slog.LevelWarn }
+func (w *warnings) WithAttrs([]slog.Attr) slog.Handler           { return w }
+func (w *warnings) WithGroup(string) slog.Handler                { return w }
+
+func (w *warnings) Handle(_ context.Context, r slog.Record) error {
+	var key, err string
+	r.Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "key":
+			key = a.Value.String()
+		case "err":
+			err = a.Value.String()
+		}
+		return true
+	})
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.got = append(w.got, key+": "+err)
+	return nil
+}
+
+func (w *warnings) list() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.got)
+}
+
+func TestInformerWarnsOnceAboutEachErrorInAnObject(t *testing.T) {
 	f, c := newFakeAPI(t, false)
-	f.set("a", map[string]any{"count": 3})
-	f.set("b", map[string]string{"ok": "yes"})
-	inf, _ := startInformer(t, c, false)
-	if got := keys(inf); !slices.Equal(got, []string{"a", "b"}) {
-		t.Errorf("cache = %v, want both objects despite a's mismatched field", got)
+	f.set("a", map[string]any{"when": "noon"})
+	w := &warnings{}
+	inf, _ := startInformerWith[strictMap](t, c, false, slog.New(w))
+	if got := w.list(); len(got) != 1 || !strings.HasPrefix(got[0], "ns/a: ") || !strings.Contains(got[0], "noon") {
+		t.Fatalf("warnings = %q, want one about ns/a", got)
+	}
+
+	t.Log("Neither a new version with the same error nor a relist warns again.")
+	f.put("a", map[string]any{"when": "noon"})
+	f.put("b", nil)
+	waitFor(t, "b", func() bool { return slices.Equal(keys(inf), []string{"b"}) })
+	f.set("c", nil)
+	f.mu.Lock()
+	f.expire = true
+	f.mu.Unlock()
+	f.drop <- struct{}{}
+	waitFor(t, "relist", func() bool { return slices.Equal(keys(inf), []string{"b", "c"}) })
+	if got := w.list(); len(got) != 1 {
+		t.Errorf("warnings = %q, want only the first", got)
+	}
+
+	t.Log("Another error warns again.")
+	f.put("a", map[string]any{"when": "midnight"})
+	waitFor(t, "another warning", func() bool { return len(w.list()) == 2 })
+	if got := w.list()[1]; !strings.HasPrefix(got, "ns/a: ") || !strings.Contains(got, "midnight") {
+		t.Errorf("second warning = %q", got)
+	}
+}
+
+func TestUndecodableObjectsMetric(t *testing.T) {
+	m := &Manager{client: &client.Client{}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := m.init(); err != nil {
+		t.Fatal(err)
+	}
+	ti, err := typeInfoFor[cfgMap, *cfgMap]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newCache := func(selector string, skipped ...string) cache {
+		inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, nil, informerConfig{namespace: "ns", selector: selector}, m.log, nil)
+		for _, name := range skipped {
+			inf.store.skip(&decodeError{meta: ObjectMeta{Name: name, Namespace: "ns"}, err: errors.New("bad")})
+		}
+		return inf
+	}
+	m.caches[cacheKey{ti: ti, namespace: "ns"}] = newCache("", "a", "b")
+	m.unshared = []cache{newCache("app=web", "a"), newCache("app=web", "a"), newCache("app=db")}
+	var b strings.Builder
+	m.metrics.write(&b)
+	const name = `kube_cache_undecodable_objects{type="ConfigMap.v1",namespace="ns",selector=`
+	for _, want := range []string{name + `""} 2`, name + `"app=web"} 1`, name + `"app=db"} 0`} {
+		if !strings.Contains(b.String(), want+"\n") {
+			t.Errorf("metrics output is missing %q:\n%s", want, b.String())
+		}
+	}
+	if n := strings.Count(b.String(), name+`"app=web"}`); n != 1 {
+		t.Errorf("%d samples for the two caches with selector app=web, want 1", n)
 	}
 }
 

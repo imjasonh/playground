@@ -406,8 +406,24 @@ costs two passes over the bytes. The informer instead
 scans each event's boundaries with a byte scanner at about 500 MB/s, reads
 the type from the event's prefix, and decodes the object straight into `T`.
 That uses 30% less CPU and allocates a third fewer bytes than decoding twice.
-A field whose JSON type doesn't match its Go type doesn't stop the watch. The
-rest of the object decodes, and the informer logs the mismatch once.
+
+An object that doesn't decode as `T` doesn't stop the informer. The API server
+accepts some values that Go rejects, such as `2024-01-01t10:00:00z` for a
+`time.Time`, or a number too big for an `int32` in an int-or-string field.
+After an error from a type's `UnmarshalJSON`, `encoding/json` stops and leaves
+the later fields empty, but it returns the same kind of error as for a field
+that it skips and decodes past. So the informer treats an object with any
+error as undecodable, instead of reconciling a partial object, which could
+prune children or overwrite status. It decodes the object's metadata, logs a
+warning with the key and the error, and skips the object. The cache drops the
+version that it held, so reconciles, `Get`, and `List` see the object as
+missing, and an object with the controller's finalizer stays until someone
+fixes it. The watch moves past the event, and the next version that decodes,
+or a delete, ends the skip. The informer warns again only about a new error,
+and the `kube_cache_undecodable_objects` gauge counts the objects that each
+cache skips. A paginated list decodes each item straight into `T`. The decoder
+keeps no copy of an item that fails, so after a failure the informer lists
+again, reading each item's bytes first.
 
 A controller's `kube.WatchNamespace` and `kube.WatchSelector` options, and the
 manager's `Namespace` field, become query parameters, so the API server

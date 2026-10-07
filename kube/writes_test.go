@@ -412,7 +412,7 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		shows(t, s, "2")
 		s.end(f, wrote("3")) // newer than the list
 		shows(t, s, "2")
-		s.replace(map[Key]*widget{k: obj("2", "u")})
+		s.replace(map[Key]*widget{k: obj("2", "u")}, nil)
 		shows(t, s, "2")
 		settled(t, s)
 		s.put(obj("3", "u"))
@@ -420,7 +420,7 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 
 		s.beginList()
 		g := s.begin(k)
-		s.replace(map[Key]*widget{k: obj("4", "u")})
+		s.replace(map[Key]*widget{k: obj("4", "u")}, nil)
 		s.end(g, wrote("4")) // the list holds it
 		shows(t, s, "4")
 		settled(t, s)
@@ -435,7 +435,7 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		shows(t, s, "")
 		s.put(obj("2", "u")) // an update before the delete
 		shows(t, s, "")
-		s.remove(obj("3", "u"))
+		s.remove(&obj("3", "u").ObjectMeta)
 		shows(t, s, "")
 		settled(t, s)
 		s.put(obj("4", "v"))
@@ -454,7 +454,7 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		s := newStore()
 		s.put(obj("1", "u"))
 		f := s.begin(k)
-		s.remove(obj("2", "u"))
+		s.remove(&obj("2", "u").ObjectMeta)
 		s.end(f, deleted("u"))
 		settled(t, s)
 		s.put(obj("3", "v"))
@@ -475,7 +475,7 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		s.put(obj("1", "u"))
 		s.end(s.begin(k), &ownWrite[widget]{rv: "2", uid: "u"})
 		shows(t, s, "")
-		s.remove(obj("2", "u"))
+		s.remove(&obj("2", "u").ObjectMeta)
 		settled(t, s)
 		s.put(obj("3", "u")) // it matches again
 		shows(t, s, "3")
