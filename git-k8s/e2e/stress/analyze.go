@@ -704,8 +704,8 @@ func summarize(run *runData) (*summary, []*branchStats, []*frontCycle) {
 					}
 				}
 			}
-			if br.Merged != nil && !slices.Contains(st.Reasons, br.Merged.Reason) {
-				st.Reasons = append(st.Reasons, br.Merged.Reason)
+			if br.Landed != nil && !slices.Contains(st.Reasons, br.Landed.Reason) {
+				st.Reasons = append(st.Reasons, br.Landed.Reason)
 			}
 			if len(br.Diverged) > 0 && len(s.Errors.Diverged) < 20 {
 				s.Errors.Diverged = append(s.Errors.Diverged, fmt.Sprintf("%s %s %s: %s", rc.T.Format("15:04:05.000"), b.Repo, b.Name, br.Diverged))
@@ -729,8 +729,8 @@ func summarize(run *runData) (*summary, []*branchStats, []*frontCycle) {
 			if len(recs) > 0 {
 				br := recs[len(recs)-1].branch
 				last = fmt.Sprintf("head %s, state %s, position %d, checks %s", short(br.Head), br.State, position(br), summarizeChecks(br))
-				if br.Merged != nil {
-					last += fmt.Sprintf(", Merged %s: %s", br.Merged.Reason, br.Merged.Message)
+				if br.Landed != nil {
+					last += fmt.Sprintf(", Landed %s: %s", br.Landed.Reason, br.Landed.Message)
 				}
 				if br.Deleting || br.Type == "DELETED" {
 					last += ", deleted"

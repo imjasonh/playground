@@ -15,26 +15,26 @@ func TestRecordsLandingEvents(t *testing.T) {
 		edit    func(*gitk8s.GitBranch)
 		reasons []string
 	}{
-		"lands and deletes": {func(*gitk8s.GitBranch) {}, []string{reasonLanded, "DeletedBranch"}},
+		"lands and deletes": {func(*gitk8s.GitBranch) {}, []string{"Landed", "DeletedBranch"}},
 		"lands without a queue": {func(b *gitk8s.GitBranch) {
 			p := *policy
 			p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt", MayPush: true}}
 			b.Spec.Merge = &p
-		}, []string{reasonLanded, "DeletedBranch"}},
+		}, []string{"Landed", "DeletedBranch"}},
 		"keeps the branch": {func(b *gitk8s.GitBranch) {
 			p := *policy
-			p.DeleteMergedBranches = false
+			p.DeleteLandedBranches = false
 			b.Spec.Merge = &p
-		}, []string{reasonLanded}},
+		}, []string{"Landed"}},
 		"waits for checks": {func(b *gitk8s.GitBranch) { delete(b.Status.Checks, "gofmt") }, nil},
-		"already merged":   {func(b *gitk8s.GitBranch) { b.Spec.ParentHead = b.Spec.Head }, nil},
+		"nothing to land":  {func(b *gitk8s.GitBranch) { b.Spec.ParentHead = b.Spec.Head }, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			b := f.branches()
 			test.edit(b)
 			notes := map[string]string{
-				reasonLanded:    fmt.Sprintf("fast-forwarded main from %s to c/x at %s", gitk8s.Short(b.Spec.ParentHead), gitk8s.Short(b.Spec.Head)),
+				"Landed":        fmt.Sprintf("fast-forwarded main from %s to c/x at %s", gitk8s.Short(b.Spec.ParentHead), gitk8s.Short(b.Spec.Head)),
 				"DeletedBranch": fmt.Sprintf("deleted c/x at %s after it landed on main", gitk8s.Short(b.Spec.Head)),
 			}
 			var want []kube.Event
@@ -63,7 +63,7 @@ func TestRecordsRewritingLandingEvents(t *testing.T) {
 				refresh(t, f, b)
 				p := *b.Spec.Merge
 				p.Landing = landing
-				p.DeleteMergedBranches = !keep
+				p.DeleteLandedBranches = !keep
 				b.Spec.Merge = &p
 				main, head := b.Spec.ParentHead, b.Spec.Head
 				b.Status.Queued = &gitk8s.Queued{Head: head, Position: 1}
@@ -77,7 +77,7 @@ func TestRecordsRewritingLandingEvents(t *testing.T) {
 				if landed == main || landed == head {
 					t.Fatalf("main = %s, want a new commit on %s", landed, gitk8s.Short(main))
 				}
-				want := []kube.Event{{Type: kube.Normal, Reason: reasonLanded, Note: fmt.Sprintf("%s c/x at %s onto main, which moved from %s to %s",
+				want := []kube.Event{{Type: kube.Normal, Reason: "Landed", Note: fmt.Sprintf("%s c/x at %s onto main, which moved from %s to %s",
 					verbs[landing], gitk8s.Short(head), gitk8s.Short(main), gitk8s.Short(landed))}}
 				if !keep {
 					want = append(want, kube.Event{Type: kube.Normal, Reason: "DeletedBranch", Note: fmt.Sprintf("deleted c/x at %s after it landed on main", gitk8s.Short(head))})

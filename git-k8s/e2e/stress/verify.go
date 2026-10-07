@@ -86,7 +86,7 @@ func (rn *runner) verify(ctx context.Context) *verifyResult {
 		case "branch":
 			b := rc.branch
 			key := b.Repo + "/" + b.Branch
-			if b.Merged != nil && b.Merged.Reason == "Landed" && landings[key] == nil {
+			if b.Landed != nil && b.Landed.Reason == "Landed" && landings[key] == nil {
 				landings[key] = b
 			}
 		case "event":
@@ -127,7 +127,7 @@ func (rn *runner) verify(ctx context.Context) *verifyResult {
 		v.Landed++
 		lr := landings[key]
 		if lr == nil {
-			v.GateViolations = append(v.GateViolations, key+": no GitBranch record with Merged reason Landed")
+			v.GateViolations = append(v.GateViolations, key+": no GitBranch record with Landed reason Landed")
 			continue
 		}
 		if problems := gateProblems(lr, rn.plan.repo(br.plan.Repo).Gotest, parentAt[key]); len(problems) > 0 {
