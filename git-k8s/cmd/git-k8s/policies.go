@@ -28,7 +28,7 @@ var policies = []struct {
 // policies, so that it reports the earlier policies as outdated.
 const (
 	policyVersionAnnotation = gitk8s.Group + "/policy-version"
-	policyVersion           = 3
+	policyVersion           = 4
 )
 
 type admissionPolicy struct {

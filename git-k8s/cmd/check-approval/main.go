@@ -12,9 +12,10 @@
 // its own merge base with the parent's head, as git.Repo.SameChange compares
 // them. So an approval holds when the base check merges the parent into the
 // branch, and after a rebase or a squash that doesn't resolve a conflict. A
-// push that adds, removes, or changes code needs a new approval. Only an
-// approval that names the full SHA follows the branch to another head. One
-// that names a shorter prefix holds only while the head is that commit.
+// push that adds, removes, or changes code needs a new approval. The
+// approval must name the commit's full SHA, because anyone who can push can
+// make a commit whose SHA starts with a short prefix. The check fails a
+// shorter prefix, and the git-k8s-approvals admission policy rejects one.
 //
 // When the head isn't the approved commit, the check reads the repository
 // through the mirror, and its passing result names the head's merge base
@@ -31,7 +32,6 @@ package main
 import (
 	"context"
 	"errors"
-	"strings"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -70,13 +70,13 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	switch {
 	case approved == "":
 		return checks.Fail("%s isn't approved", gitk8s.Short(head)), nil
-	case len(approved) >= 7 && strings.HasPrefix(head, approved):
+	case !git.IsObjectName(approved):
+		return checks.Fail("the approval is for %s, which isn't a commit's full SHA", approved), nil
+	case approved == head:
 		if approver == "" {
 			return pass(approver, "%s is approved", gitk8s.Short(head)), nil
 		}
 		return pass(approver, "%s is approved by %s", gitk8s.Short(head), approver), nil
-	case !git.IsObjectName(approved):
-		return checks.Fail("the approval is for %s, but the branch is at %s", approved, gitk8s.Short(head)), nil
 	}
 	ours, err := in.ChangeOf(ctx, approved)
 	if errors.Is(err, checks.ErrUnknownCommit) {

@@ -6,10 +6,14 @@ import (
 	"io"
 	"maps"
 	"os"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/ext"
 	"go.yaml.in/yaml/v3"
 )
@@ -84,9 +88,49 @@ type policy struct {
 	messages []cel.Program
 }
 
+// authorizer is the part of the API server's CEL authorizer library that
+// git-k8s-approvals uses. Each call appends its argument to path, and
+// allowed reports whether path is allow, the one check that the user's
+// RBAC allows.
+type authorizer struct{ allow, path string }
+
+var authorizerType = cel.OpaqueType("kubernetes.authorization.Authorizer")
+
+func (a authorizer) ConvertToNative(reflect.Type) (any, error) {
+	return nil, errors.New("an authorizer has no native value")
+}
+
+func (a authorizer) ConvertToType(t ref.Type) ref.Val {
+	if t == types.TypeType {
+		return authorizerType
+	}
+	return types.NewErr("can't convert an authorizer to %s", t.TypeName())
+}
+
+func (a authorizer) Equal(other ref.Val) ref.Val { return types.Bool(a == other) }
+func (a authorizer) Type() ref.Type              { return authorizerType }
+func (a authorizer) Value() any                  { return a }
+
+// authorizerLib declares authorizer, and the calls that build and make a
+// check, in a CEL environment.
+func authorizerLib() []cel.EnvOption {
+	opts := []cel.EnvOption{
+		cel.Variable("authorizer", authorizerType),
+		cel.Function("allowed", cel.MemberOverload("authorizer_allowed", []*cel.Type{authorizerType}, cel.BoolType,
+			cel.UnaryBinding(func(a ref.Val) ref.Val { return types.Bool(a.(authorizer).path == a.(authorizer).allow) }))),
+	}
+	for _, call := range []string{"group", "resource", "namespace", "name", "check"} {
+		opts = append(opts, cel.Function(call, cel.MemberOverload("authorizer_"+call, []*cel.Type{authorizerType, cel.StringType}, authorizerType,
+			cel.BinaryBinding(func(a, arg ref.Val) ref.Val {
+				return authorizer{allow: a.(authorizer).allow, path: a.(authorizer).path + "/" + string(arg.(types.String))}
+			}))))
+	}
+	return opts
+}
+
 func compile(t *testing.T, m manifest) *policy {
 	t.Helper()
-	env, err := cel.NewEnv(
+	env, err := cel.NewEnv(append(authorizerLib(),
 		cel.Variable("object", cel.DynType),
 		cel.Variable("oldObject", cel.DynType),
 		cel.Variable("request", cel.DynType),
@@ -95,7 +139,7 @@ func compile(t *testing.T, m manifest) *policy {
 		cel.Variable("variables", cel.MapType(cel.StringType, cel.DynType)),
 		cel.HomogeneousAggregateLiterals(),
 		ext.Strings(ext.StringsVersion(2)),
-	)
+	)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,13 +177,16 @@ func compile(t *testing.T, m manifest) *policy {
 
 // request is an admission request for a Pod, or for the resource that
 // resource names, or for one of its subresources. params is the ConfigMap
-// that the binding names, or nil if there's none.
+// that the binding names, or nil if there's none. canApprove reports
+// whether user has the approve verb on the GitBranch named name.
 type request struct {
 	user        string
 	operation   string
 	resource    string
 	subresource string
 	namespace   string
+	name        string
+	canApprove  bool
 	nsLabels    map[string]string
 	params      map[string]any
 	object      map[string]any
@@ -167,6 +214,10 @@ func (p *policy) admit(t *testing.T, r request) string {
 	if r.nsLabels != nil {
 		ns["labels"] = r.nsLabels
 	}
+	var authz authorizer
+	if r.canApprove {
+		authz.allow = "/git-k8s.imjasonh.com/gitbranches/" + r.namespace + "/" + r.name + "/approve"
+	}
 	vars := map[string]any{}
 	activation := func() map[string]any {
 		a := map[string]any{
@@ -176,11 +227,13 @@ func (p *policy) admit(t *testing.T, r request) string {
 			"request": map[string]any{
 				"operation":   r.operation,
 				"namespace":   r.namespace,
+				"name":        r.name,
 				"subResource": r.subresource,
 				"userInfo":    map[string]any{"username": r.user},
 			},
 			"namespaceObject": map[string]any{"metadata": ns},
 			"variables":       maps.Clone(vars),
+			"authorizer":      authz,
 		}
 		// A nil map would become an empty CEL map, not null.
 		if r.object != nil {
@@ -1110,6 +1163,89 @@ func TestBranches(t *testing.T) {
 	}, {
 		name: "a person adds a label",
 		r:    update("alice@example.com", checksConfigMap("checks.bot", ""), labeled),
+	}} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.admit(t, tt.r); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApprovals(t *testing.T) {
+	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-approvals"))
+	const (
+		alice   = "alice@example.com"
+		bob     = "bob@example.com"
+		sha     = "0123456789abcdef0123456789abcdef01234567"
+		fullSHA = "set git-k8s.imjasonh.com/approve to a commit's full SHA, in lowercase hexadecimal"
+	)
+	sha256 := strings.Repeat("0123456789abcdef", 4)
+	// approved returns a GitBranch with the approve and approved-by
+	// annotations that aren't "", and the label e2e if label isn't "".
+	approved := func(approval, approver, label string) map[string]any {
+		return gitBranch(func(meta, _ map[string]any) {
+			annotations := map[string]any{}
+			if approval != "" {
+				annotations["git-k8s.imjasonh.com/approve"] = approval
+			}
+			if approver != "" {
+				annotations["git-k8s.imjasonh.com/approved-by"] = approver
+			}
+			meta["annotations"] = annotations
+			if label != "" {
+				meta["labels"] = map[string]any{"e2e": label}
+			}
+		})
+	}
+	unapproved := approved("", "", "")
+	update := func(user string, old, object map[string]any) request {
+		return request{user: user, operation: "UPDATE", resource: "gitbranches", namespace: "repos", name: "app-main", canApprove: true, object: object, oldObject: old}
+	}
+	for _, tt := range []struct {
+		name string
+		r    request
+		want string
+	}{{
+		name: "a person approves a commit",
+		r:    update(alice, unapproved, approved(sha, alice, "")),
+	}, {
+		name: "a person approves a commit in a SHA-256 repository",
+		r:    update(alice, unapproved, approved(sha256, alice, "")),
+	}, {
+		name: "a person approves a short prefix",
+		r:    update(alice, unapproved, approved(sha[:7], alice, "")),
+		want: fullSHA,
+	}, {
+		name: "a person approves a prefix one character short",
+		r:    update(alice, unapproved, approved(sha[:39], alice, "")),
+		want: fullSHA,
+	}, {
+		name: "a person approves a SHA in uppercase",
+		r:    update(alice, unapproved, approved(strings.ToUpper(sha), alice, "")),
+		want: fullSHA,
+	}, {
+		name: "a person changes an approval to a prefix",
+		r:    update(alice, approved(sha, alice, ""), approved(sha[:12], alice, "")),
+		want: fullSHA,
+	}, {
+		name: "a person creates a GitBranch with a prefix approved",
+		r:    request{user: alice, operation: "CREATE", resource: "gitbranches", namespace: "repos", name: "app-main", canApprove: true, object: approved(sha[:7], alice, "")},
+		want: fullSHA,
+	}, {
+		name: "a person removes an approval",
+		r:    update(alice, approved(sha, alice, ""), unapproved),
+	}, {
+		name: "a person labels a branch whose approval names a prefix",
+		r:    update(alice, approved(sha[:7], alice, ""), approved(sha[:7], alice, "changed")),
+	}, {
+		name: "a person takes over an approval",
+		r:    update(bob, approved(sha, alice, ""), approved(sha, bob, "")),
+	}, {
+		name: "a person without the approve verb approves a commit",
+		r:    request{user: alice, operation: "UPDATE", resource: "gitbranches", namespace: "repos", name: "app-main", object: approved(sha, alice, ""), oldObject: unapproved},
+		want: "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on gitbranches, " +
+			"which alice@example.com doesn't have for repos/app-main",
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := p.admit(t, tt.r); got != tt.want {

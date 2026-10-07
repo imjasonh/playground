@@ -32,8 +32,8 @@ const RepositoryLabel = Group + "/repository"
 
 // ApproveAnnotation on a GitBranch approves one commit's change for the
 // approval check. Its value is the commit's full SHA, which approves any
-// head that makes the same change, or a prefix of at least seven
-// characters, which approves only that commit.
+// head that makes the same change. The approval check fails a shorter
+// prefix, and the git-k8s-approvals admission policy rejects one.
 const ApproveAnnotation = Group + "/approve"
 
 // ApprovedByAnnotation on a GitBranch is the username of whoever approved

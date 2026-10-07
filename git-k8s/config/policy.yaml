@@ -37,7 +37,7 @@ metadata:
     # in this file has its policyVersion, in cmd/git-k8s/policies.go. Raise
     # policyVersion and every policy's annotation together when the core
     # program needs a change to the policies.
-    git-k8s.imjasonh.com/policy-version: "3"
+    git-k8s.imjasonh.com/policy-version: "4"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -128,7 +128,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-branches
   annotations:
-    git-k8s.imjasonh.com/policy-version: "3"
+    git-k8s.imjasonh.com/policy-version: "4"
 spec:
   failurePolicy: Fail
   paramKind:
@@ -238,7 +238,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-check-pods
   annotations:
-    git-k8s.imjasonh.com/policy-version: "3"
+    git-k8s.imjasonh.com/policy-version: "4"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -409,7 +409,9 @@ spec:
 ---
 # Only a user with the approve verb on a GitBranch can set, change, or
 # remove its approve or approved-by annotation, and generate grants that
-# verb to no program. The request that sets or changes approve must set
+# verb to no program. A new approve value must be a commit's full SHA,
+# because anyone who can push can make a commit whose SHA starts with a
+# shorter prefix. The request that sets or changes approve must set
 # approved-by to the username that sends it, and the request that removes
 # approve must remove approved-by, so approved-by names whoever approved.
 # A request that changes only approved-by takes over the approval, so
@@ -420,7 +422,7 @@ kind: ValidatingAdmissionPolicy
 metadata:
   name: git-k8s-approvals
   annotations:
-    git-k8s.imjasonh.com/policy-version: "3"
+    git-k8s.imjasonh.com/policy-version: "4"
 spec:
   failurePolicy: Fail
   matchConstraints:
@@ -458,6 +460,10 @@ spec:
       messageExpression: >-
         "changing git-k8s.imjasonh.com/approve or git-k8s.imjasonh.com/approved-by requires the approve verb on gitbranches, which " +
         request.userInfo.username + " doesn't have for " + request.namespace + "/" + request.name
+    - expression: >-
+        variables.approval == variables.oldApproval || variables.approval == "" ||
+        variables.approval.matches('^([0-9a-f]{40}|[0-9a-f]{64})$')
+      message: set git-k8s.imjasonh.com/approve to a commit's full SHA, in lowercase hexadecimal
     - expression: >-
         variables.approval == variables.oldApproval || variables.approval == "" ||
         variables.approver == request.userInfo.username

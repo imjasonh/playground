@@ -986,6 +986,7 @@ rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" 
 rejected "requires the approve verb on gitbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
+rejected "set ${APPROVE} to a commit's full SHA" annotate --as=alice "${APPROVE}=${AUTH:0:12}" "${APPROVED_BY}=alice"
 # The gate wants alice's approval, so another approver's doesn't land c/auth.
 admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
 annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
@@ -1376,7 +1377,8 @@ patch_branch() {
 }
 # check-gotest owns Pods, so generate lets it patch GitBranch objects, and
 # only the policies stop it. Even a controller with the approve verb that
-# names itself in approved-by can't approve.
+# names a full SHA and itself in approved-by, which git-k8s-approvals
+# allows, can't approve.
 k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
 k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
   --serviceaccount=check-gotest:check-gotest --serviceaccount=git-k8s:git-k8s
@@ -1396,7 +1398,7 @@ cant_approve() {
   [[ "${code}" == 422 ]] && grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
 }
 for sa in check-gotest git-k8s; do
-  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"$(remote_head main)\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
 # git-k8s-approvals lets anyone with the approve verb take over an approval,
 # so on an approved branch only git-k8s-branches stops a controller that
@@ -2848,8 +2850,8 @@ echo "v1.1.0 broke the build, the fake agent fixed it, check-deps signed the fix
 # git-k8s-deps doesn't have the approve verb, so git-k8s-approvals stops it
 # from approving. The API server reports only one of the policies that deny
 # a request, and not always the same one, so git-k8s-deps gets the verb here
-# and names itself in approved-by, which leaves git-k8s-branches as the only
-# policy that stops it.
+# and names a full SHA and itself in approved-by, which leaves
+# git-k8s-branches as the only policy that stops it.
 deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
 can_approve() {
   [[ "$(k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com "--as=${deps_sa}" || true)" == "$1"* ]]
@@ -2861,7 +2863,7 @@ eventually 30 can_approve yes
 deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
 code="$(patch_branch "${deps_token}" '{}')"
 [[ "${code}" == 200 ]]
-for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
+for patch in "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"${fixed}\",\"${APPROVED_BY}\":\"${deps_sa}\"}}}" \
   '{"metadata":{"labels":{"e2e":"changed"}}}' "${hold}" "${reown}" "${reset}"; do
   code="$(patch_branch "${deps_token}" "${patch}")"
   cat "${WORKDIR}/patch.json"

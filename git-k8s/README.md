@@ -831,9 +831,10 @@ a conflict, and for the commit that a squash or rebase landing makes. A push
 that adds, removes, or changes code needs a new approval, and so does a
 merge that resolves a conflict.
 
-Only an approval that names the commit's full SHA follows the change to
-another head. One that names a shorter prefix holds only while the branch's
-head is that commit. You can approve a commit after the branch moves on from
+`approve` must name the commit's full SHA, as `git rev-parse` prints it.
+Anyone who can push can make a commit whose SHA starts with a shorter
+prefix, so `check-approval` fails a prefix, and the `git-k8s-approvals`
+policy rejects one. You can approve a commit after the branch moves on from
 it, such as when `check-base` merges the parent in while you review the
 change. The check's message then names both commits, for example
 `1bd279367630 is approved by alice, and 9132990e9ac2 makes the same change`.
@@ -852,6 +853,7 @@ The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
   kubectl create rolebinding approver --role=approver --group=GROUP
   ```
 
+- `approve` must be a commit's full SHA, in lowercase hexadecimal.
 - A request that sets or changes `approve` must set `approved-by` to the
   username that sends it.
 - A request that removes `approve` must remove `approved-by` too.
