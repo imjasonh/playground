@@ -128,6 +128,13 @@ func (c *controller[T, P]) describe() (declared, error) {
 	return d, nil
 }
 
+// admits reports whether the reconciler validates and defaults objects.
+func (c *controller[T, P]) admits() (validates, defaults bool) {
+	_, validates = c.r.(Validator[T])
+	_, defaults = c.r.(Defaulter[T])
+	return validates, defaults
+}
+
 // Option configures a controller.
 type Option func(*options)
 

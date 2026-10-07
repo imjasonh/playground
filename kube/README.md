@@ -998,7 +998,8 @@ The command does the following:
    `-namespace` is the default, a ServiceAccount, a ClusterRole and a Role
    with only the rules that the program needs, their bindings, a
    Deployment, a PodDisruptionBudget for more than one replica, a Service
-   for webhooks and the `kube.Serve` handler, and a PersistentVolumeClaim
+   for webhooks and the `kube.Serve` handler, an empty Secret that the
+   program keeps its webhook certificate in, and a PersistentVolumeClaim
    for a `kube.Volume`. With more than
    one replica, the Deployment runs the program with `-leader-elect`, or
    with `-shards` when you set `-shards`. The kubelet probes `/readyz` every
@@ -1201,12 +1202,13 @@ way, its service account needs these permissions:
   declares with `Apply`, unless no version of the program has set that
   status.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
-  `customresourcedefinitions/status`, for its own types. To check and migrate
-  objects when a type changes, it also needs `list` on its own types in every
-  namespace.
-- `get` and `create` on `customresourcedefinitions`, for the types that it
-  defines and owns without reconciling them, so that it can create their
-  CRDs. Without `get`, it logs a warning and doesn't create them.
+  `customresourcedefinitions/status`, for the CRDs of its own types, by name.
+  To check and migrate objects when a type changes, it also needs `list` on
+  its own types in every namespace.
+- `create` on `customresourcedefinitions`, and `get` on their CRDs by name,
+  for the types that it defines and owns without reconciling them, so that it
+  can create their CRDs. Without `get`, it logs a warning and doesn't create
+  them.
 - `create` and `patch` on each object that `kube.Install` applies, by name.
   For an admission policy with a `paramKind`, it also needs `get` on the name
   `*` of that kind in every namespace, and for the policy's binding, `get` on
@@ -1216,9 +1218,15 @@ way, its service account needs these permissions:
 - `create` and `patch` on `events` in the `events.k8s.io` group, for a program
   that calls `Eventf`, in the namespaces of the reconciled objects, or in
   `default` for cluster-scoped ones.
-- `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
-  `patch`, and `delete` on `validatingwebhookconfigurations` and
-  `mutatingwebhookconfigurations`, for webhooks.
+- `get` and `delete` on its `validatingwebhookconfigurations` and
+  `mutatingwebhookconfigurations`, by name, so that it can delete one that an
+  earlier version left.
+- For webhooks, `get` and `update` on the Secret `NAME-webhook-tls` in its
+  namespace, and `create` and `patch` on its validating webhook configuration
+  when it validates objects, and on its mutating one when it defaults them.
+  The YAML that `generate` writes creates the Secret empty, and the program
+  fills it in. If the Secret doesn't exist, the program creates it, which
+  needs `create` on `secrets`.
 - `create` on `tokenreviews`, to check tokens with `ReviewToken`.
 - `create` on `serviceaccounts/token` for its own service account, in its
   namespace, to request tokens with `RequestToken`. The `generate` command

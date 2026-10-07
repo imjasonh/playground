@@ -357,7 +357,10 @@ type installPlan struct {
 	// namespaces holds permissions in other namespaces, for the objects
 	// that Install applies there.
 	namespaces map[string]grants
-	webhooks   bool
+	// webhooks is set when the program serves admission or conversion
+	// webhooks, validates when it validates objects with admission
+	// webhooks, and defaults when it defaults them.
+	webhooks, validates, defaults bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
 	// serves is set when the program serves HTTP for Serve.
@@ -393,6 +396,15 @@ func (p *installPlan) eventGrantsFor(ti *typeInfo, watching bool) grants {
 		return p.defaultNS
 	}
 	return p.grantsFor(ti, watching)
+}
+
+// admitter is a Controller that can serve admission webhooks. The program
+// registers validating webhooks in one configuration and mutating webhooks
+// in another.
+type admitter interface {
+	// admits reports whether the controller validates and defaults
+	// objects.
+	admits() (validates, defaults bool)
 }
 
 // plan works out what the program needs. Controllers declare their types,
@@ -432,6 +444,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			return nil, err
 		}
 		p.webhooks = p.webhooks || d.webhooks
+		if a, ok := c.(admitter); ok {
+			validates, defaults := a.admits()
+			p.validates = p.validates || validates
+			p.defaults = p.defaults || defaults
+		}
 		p.serves = p.serves || d.serves
 		installs = append(installs, d.installs...)
 		if d.volume != "" {
@@ -559,9 +576,12 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			grant()
 		}
 	}
+	// The program applies the CRDs of the types that it reconciles, and
+	// server-side apply asks for permission to create a CRD by its name.
+	// It creates the CRDs of the types that it only owns with a POST, which
+	// RBAC can't limit to a name.
 	for _, crd := range crds {
-		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
-		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get", "patch")
+		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "create", "get", "patch")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions/status", crd, "patch")
 		delete(creates, crd)
 	}
@@ -570,24 +590,25 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get")
 	}
 	// The program keeps its Leases and webhook certificate in its own
-	// namespace, or in the Manager's LeaseNamespace, and names its webhook
-	// configurations for that namespace.
-	ownNS, ownGrants := o.namespace, p.local
-	if ns := o.manager.LeaseNamespace; ns != "" {
-		ownNS, ownGrants = ns, o.grantsIn(p, ns)
-	}
-	// The program deletes webhook configurations that an earlier version
-	// of it left, even when it has no webhooks itself.
+	// namespace, and names its webhook configurations for that namespace.
+	ownNS := o.ownNamespace()
+	ownGrants := o.grantsIn(p, ownNS)
+	// The program applies a webhook configuration of each kind that it has
+	// webhooks of, and deletes one that an earlier version of it left.
 	config := installName(o.name, ownNS)
 	for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
 		cluster.add("admissionregistration.k8s.io", r, config, "get", "delete")
-		if p.webhooks {
-			cluster.add("admissionregistration.k8s.io", r, "", "create")
-			cluster.add("admissionregistration.k8s.io", r, config, "patch")
-		}
 	}
+	if p.validates {
+		cluster.add("admissionregistration.k8s.io", "validatingwebhookconfigurations", config, "create", "patch")
+	}
+	if p.defaults {
+		cluster.add("admissionregistration.k8s.io", "mutatingwebhookconfigurations", config, "create", "patch")
+	}
+	// The YAML creates the webhook certificate's Secret, and the program
+	// fills it in. Permission to create Secrets would let the program create
+	// a token for any service account in the namespace.
 	if p.webhooks {
-		ownGrants.add("", "secrets", "", "create")
 		ownGrants.add("", "secrets", o.name+"-webhook-tls", "get", "update")
 	}
 	if p.electLeader {
@@ -624,6 +645,13 @@ func (o *generateOptions) oneWriter(dir string) error {
 	}
 	o.replicas = 1
 	return nil
+}
+
+// ownNamespace is where the program keeps its Leases and webhook
+// certificate: the Manager's LeaseNamespace, or else the namespace that it's
+// installed in.
+func (o *generateOptions) ownNamespace() string {
+	return cmp.Or(o.manager.LeaseNamespace, o.namespace)
 }
 
 // grantsIn returns where the permissions for objects in namespace ns go,
@@ -814,6 +842,13 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		args = append(args, "-webhook-addr=:9443", "-webhook-service="+o.namespace+"/"+o.name)
 		ports = append(ports, object{{"name", "webhook"}, {"containerPort", 9443}})
 		servicePorts = append(servicePorts, object{{"name", "webhook"}, {"port", 443}, {"targetPort", "webhook"}})
+		// The program can't create Secrets, so the YAML creates the one
+		// that the program keeps its webhook certificate in.
+		docs = append(docs, object{
+			{"apiVersion", "v1"}, {"kind", "Secret"},
+			{"metadata", object{{"name", o.name + "-webhook-tls"}, {"namespace", o.ownNamespace()}, {"labels", labels}}},
+			{"type", "Opaque"},
+		})
 	}
 	if p.serves {
 		args = append(args, "-serve-addr=:8081")

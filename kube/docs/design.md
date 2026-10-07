@@ -878,9 +878,13 @@ struct with the wrong scope or version would also create a CRD that the
 reconciling program can't take over. A program that owns the type can't write
 its objects without the CRD. The cost is two rules that `generate` writes for
 each owned type: `create` on `customresourcedefinitions`, and `get` on the
-CRD's name. RBAC can't limit `create` to a name, so this is the same `create`
-rule that reconciled types need. There's no `patch`. To own a type without
-creating its CRD, declare it with `apiVersion` and `kind`.
+CRD's name. There's no `patch`. RBAC can't limit a `POST` create to a name, so
+the `create` rule covers every CRD. A reconciled type's CRD needs `create` on
+only its name, because the program applies it, and the API server checks a
+server-side apply that creates an object as `create` on that name. Applying an
+owned type's CRD would narrow its rule the same way, but would change a CRD
+that another program created after the `get`. To own a type without creating
+its CRD, declare it with `apiVersion` and `kind`.
 
 ### Installed objects
 
@@ -1036,18 +1040,31 @@ Webhooks run inside a read-only scope. `Get` and `List` read caches without
 recording dependencies, and `Own`, `Apply`, `Delete`, and `RequeueAfter`
 reject the request with an error.
 
-Every replica serves webhooks, before it competes for shards. The first
+Every replica serves webhooks, before it competes for shards. The YAML that
+`generate` writes creates an empty Secret for the certificates. The first
 replica to start makes an ECDSA certificate authority valid for ten years and
-a serving certificate valid for one, and creates a Secret with both. The
-others read the Secret, including a replica that loses the race to create it.
-Each replica rereads the Secret every minute. The first to see the serving
-certificate within 30 days of expiry, or missing a host name it needs, writes
-a new one with the Secret's resource version as a precondition, so replicas
-agree. Replacing the CA keeps the old one in the bundle until it expires, so
-servers still using a certificate it signed keep working. Each replica applies
-the webhook configurations with the bundle, which is idempotent, and deletes
-configurations that its program no longer needs, so that a dropped webhook
-doesn't fail every request for its type.
+a serving certificate valid for one, and writes both to the Secret with the
+Secret's resource version as a precondition. The others read the Secret,
+including a replica whose write loses the race. When the Secret doesn't
+exist, as when the program runs outside a cluster, the first replica creates
+it instead. `generate` grants only `get` and `update` on the Secret, because
+permission to create Secrets would let the program mint a long-lived token
+for any service account in the namespace, with a Secret of type
+`kubernetes.io/service-account-token`. Each replica rereads the Secret every
+minute. The first to see the serving certificate within 30 days of expiry, or
+missing a host name it needs, writes a new one with the same precondition, so
+replicas agree. Replacing the CA keeps the old one in the bundle until it
+expires, so servers still using a certificate it signed keep working.
+
+Each replica applies the webhook configurations with the bundle, which is
+idempotent, and deletes configurations that its program no longer needs, so
+that a dropped webhook doesn't fail every request for its type. `generate`
+grants `create` and `patch` on the validating configuration's name only to a
+program that validates objects, and on the mutating configuration's name only
+to a program that defaults them, so a program that only validates can't
+register a webhook that changes objects. Every program, even one without
+webhooks, gets `get` and `delete` on both names, to delete the configurations
+that an earlier version left.
 
 ### HTTP endpoints
 
@@ -1621,7 +1638,9 @@ framework's tests check that:
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote. The website example writes its events with those
-  rules, and podpolicy, which records none, gets no rule for them.
+  rules and creates its CRD with a rule for that name only. Podpolicy, which
+  records no events, gets no rule for them, and fills in the webhook
+  certificate Secret that the YAML creates, with no rule to create Secrets.
 - Two replicas of the probe example, with the rules that `generate` writes,
   both serve, accept tokens for their own audience and refuse others, send a
   token for their own service account from a token directory and review it,

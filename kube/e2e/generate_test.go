@@ -340,6 +340,25 @@ func noPermissionErrors(t *testing.T, out *syncBuffer) {
 	}
 }
 
+// unnamedCreates returns the resources that the rules in obj, a Role or a
+// ClusterRole, let the program create with any name.
+func unnamedCreates(obj map[string]any) []string {
+	var out []string
+	rules, _ := obj["rules"].([]any)
+	for _, r := range rules {
+		rule, _ := r.(map[string]any)
+		verbs, _ := rule["verbs"].([]any)
+		if _, named := rule["resourceNames"]; named || !slices.Contains(verbs, any("create")) {
+			continue
+		}
+		resources, _ := rule["resources"].([]any)
+		for _, res := range resources {
+			out = append(out, res.(string))
+		}
+	}
+	return out
+}
+
 // eventFrom waits for an Event in namespace from controller. The program
 // writes events in the background, so a denial can come after its other
 // writes succeed.
@@ -366,6 +385,7 @@ func eventFrom(t *testing.T, c *client.Client, namespace, controller string) {
 // TestGenerateWebsite installs the website example from what its generate
 // command wrote, and runs the image's program with the generated RBAC
 // rules: the API server enforces them, so a missing rule fails the test.
+// The rules let the program create the Website CRD and no other.
 func TestGenerateWebsite(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
@@ -375,6 +395,11 @@ func TestGenerateWebsite(t *testing.T) {
 	in := generateExample(t, reg, "examples/website", install)
 	if !slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("args = %q, want -leader-elect for two replicas", in.args)
+	}
+	for _, obj := range in.objects {
+		if slices.Contains(unnamedCreates(obj), "customresourcedefinitions") {
+			t.Errorf("the %s lets the program create a CRD of any name", obj["kind"])
+		}
 	}
 	in.apply(t, c)
 	exe := in.executable(t, "website")
@@ -525,7 +550,8 @@ func TestGenerateOwnedType(t *testing.T) {
 
 // TestGenerateWebhooks installs the podpolicy example, whose admission
 // webhooks need a Service, a certificate Secret, and webhook
-// configurations, and passes it a flag after --.
+// configurations, and passes it a flag after --. The YAML creates the
+// Secret, and the program, which can't create Secrets, fills it in.
 func TestGenerateWebhooks(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
@@ -537,8 +563,13 @@ func TestGenerateWebhooks(t *testing.T) {
 		if b, _ := json.Marshal(obj); strings.Contains(string(b), `"events.k8s.io"`) {
 			t.Errorf("podpolicy records no events, but its %s has a rule for them: %s", obj["kind"], b)
 		}
+		for _, r := range unnamedCreates(obj) {
+			if r == "secrets" || strings.HasSuffix(r, "webhookconfigurations") {
+				t.Errorf("the %s lets the program create %s of any name", obj["kind"], r)
+			}
+		}
 	}
-	if !kinds["Service"] || !kinds["Role"] || slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-registries=ghcr.io/example/") {
+	if !kinds["Secret"] || !kinds["Service"] || !kinds["Role"] || slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-registries=ghcr.io/example/") {
 		t.Errorf("kinds = %v, args = %q", kinds, in.args)
 	}
 	t.Cleanup(func() {
@@ -552,6 +583,15 @@ func TestGenerateWebhooks(t *testing.T) {
 	in.apply(t, c)
 	exe := in.executable(t, "podpolicy")
 	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "podpolicy", "podpolicy"))
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := c.Get(t.Context(), client.Path("v1", "secrets", "podpolicy", "podpolicy-webhook-tls"), &secret); err != nil {
+		t.Fatal(err)
+	}
+	if secret.Data["tls.crt"] == "" {
+		t.Error("the program didn't fill in the webhook certificate Secret")
+	}
 
 	ns := e2e.Namespace(t, c)
 	pod := func(name, img string) map[string]any {

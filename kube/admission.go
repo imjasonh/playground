@@ -85,6 +85,13 @@ func (w *webhookController[T, P]) controllerName() string {
 	return "webhooks-" + w.ti.singular
 }
 
+// admits reports whether h validates and defaults objects.
+func (w *webhookController[T, P]) admits() (validates, defaults bool) {
+	_, validates = w.h.(Validator[T])
+	_, defaults = w.h.(Defaulter[T])
+	return validates, defaults
+}
+
 // registerAdmission registers the validating and mutating webhooks for T
 // that v and d implement. Either may be nil.
 func registerAdmission[T any, P Resource[T]](ctx context.Context, m *Manager, ti *typeInfo, v Validator[T], d Defaulter[T]) error {

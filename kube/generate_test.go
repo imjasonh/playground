@@ -191,6 +191,8 @@ func TestManifests(t *testing.T) {
 		switch m["kind"] {
 		case "ClusterRole", "ClusterRoleBinding":
 			name = "web-site.sites"
+		case "Secret":
+			name = "web-site-webhook-tls"
 		case "Deployment":
 			deployment = m
 		case "Service":
@@ -203,7 +205,7 @@ func TestManifests(t *testing.T) {
 			t.Errorf("%s refers to %v, want %s", m["kind"], ref["name"], name)
 		}
 	}
-	want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Service", "Deployment", "PodDisruptionBudget"}
+	want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Secret", "Service", "Deployment", "PodDisruptionBudget"}
 	if !slices.Equal(kinds, want) {
 		t.Errorf("kinds = %v, want %v", kinds, want)
 	}
@@ -274,6 +276,33 @@ func TestManifestsNamespace(t *testing.T) {
 	}
 }
 
+// TestManifestsWebhookSecret checks that the YAML creates an empty Secret for
+// the webhook certificate, which the program may fill in but not create, in
+// the namespace where the program keeps it.
+func TestManifestsWebhookSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name, leaseNamespace string
+		webhooks             bool
+		want                 string
+	}{
+		{"webhooks", "", true, `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"web-site-webhook-tls","namespace":"sites","labels":{"app.kubernetes.io/name":"web-site"}},"type":"Opaque"}`},
+		{"webhooks and a LeaseNamespace", "leases", true, `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"web-site-webhook-tls","namespace":"leases","labels":{"app.kubernetes.io/name":"web-site"}},"type":"Opaque"}`},
+		{"no webhooks", "", false, ""},
+	} {
+		o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 1, shards: 1, manager: Manager{LeaseNamespace: tc.leaseNamespace}}
+		var got string
+		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: tc.webhooks}) {
+			if d[1].value == "Secret" {
+				b, _ := json.Marshal(d)
+				got = string(b)
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%s: Secret = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestManifestsProbes checks that the kubelet probes /readyz every second
 // and takes 30 failures in a row to make a ready Pod unready, and probes
 // /healthz with Kubernetes' defaults.
@@ -295,16 +324,19 @@ func TestManifestsServe(t *testing.T) {
 	o := &generateOptions{program: "probe", name: "probe", namespace: "probe", replicas: 1, shards: 1}
 	for _, tc := range []struct {
 		webhooks             bool
+		kinds                []string
 		args, ports, service string
 	}{
 		{
 			false,
+			[]string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Service", "Deployment"},
 			`"args":["-metrics-addr=:8080","-serve-addr=:8081"]`,
 			`"ports":[{"name":"http","containerPort":8080},{"name":"serve","containerPort":8081}]`,
 			`"ports":[{"name":"serve","port":80,"targetPort":"serve"}]`,
 		},
 		{
 			true,
+			[]string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Secret", "Service", "Deployment"},
 			`"args":["-metrics-addr=:8080","-webhook-addr=:9443","-webhook-service=probe/probe","-serve-addr=:8081"]`,
 			`"ports":[{"name":"http","containerPort":8080},{"name":"webhook","containerPort":9443},{"name":"serve","containerPort":8081}]`,
 			`"ports":[{"name":"webhook","port":443,"targetPort":"webhook"},{"name":"serve","port":80,"targetPort":"serve"}]`,
@@ -318,8 +350,8 @@ func TestManifestsServe(t *testing.T) {
 			kinds = append(kinds, kind)
 			byKind[kind] = string(b)
 		}
-		if want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Service", "Deployment"}; !slices.Equal(kinds, want) {
-			t.Errorf("webhooks %v: kinds = %v, want %v", tc.webhooks, kinds, want)
+		if !slices.Equal(kinds, tc.kinds) {
+			t.Errorf("webhooks %v: kinds = %v, want %v", tc.webhooks, kinds, tc.kinds)
 		}
 		for _, s := range []string{tc.args, tc.ports} {
 			if !strings.Contains(byKind["Deployment"], s) {
@@ -570,26 +602,42 @@ func TestPlanGrantsStatusOfAppliedTypes(t *testing.T) {
 	}
 }
 
-// TestPlanCRDRules works out the rules of testdata/crdrules, which reads one
-// custom type and owns another without reconciling either. The program may
-// create the CRD of the type that it owns, and nothing for the type that it
-// reads.
+// TestPlanCRDRules works out the rules for CustomResourceDefinitions. A
+// program applies the CRD of a type that it reconciles, which needs rules
+// only for that CRD's name. testdata/crdrules reads one custom type and owns
+// another without reconciling either. It may create the CRD of the type that
+// it owns, which RBAC can't limit to a name, and gets nothing for the type
+// that it reads.
 func TestPlanCRDRules(t *testing.T) {
-	var stderr bytes.Buffer
-	o := &generateOptions{program: "crdrules", name: "crdrules", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, stderr: &stderr}
-	p, err := o.plan(t.Context(), []Controller{For[configMapMeta](nop[configMapMeta]{})}, "github.com/imjasonh/playground/kube/testdata/crdrules")
-	if err != nil {
-		t.Fatalf("plan: %v\n%s", err, stderr.String())
-	}
-	got := map[string][]string{}
-	for k, verbs := range p.cluster {
-		if k.resource == "customresourcedefinitions" {
-			got[k.name] = slices.Sorted(maps.Keys(verbs))
+	for _, tc := range []struct {
+		name, pkg string
+		c         Controller
+		want      map[string][]string
+	}{
+		{
+			"reconciled type", "github.com/imjasonh/playground/kube/examples/janitor", For[gizmo](gizmoReconciler{}),
+			map[string][]string{"gizmos.test.kube.imjasonh.github.io": {"create", "get", "patch"}},
+		},
+		{
+			"owned and read types", "github.com/imjasonh/playground/kube/testdata/crdrules", For[configMapMeta](nop[configMapMeta]{}),
+			map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}},
+		},
+	} {
+		var stderr bytes.Buffer
+		o := &generateOptions{program: "crdrules", name: "crdrules", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, stderr: &stderr}
+		p, err := o.plan(t.Context(), []Controller{tc.c}, tc.pkg)
+		if err != nil {
+			t.Fatalf("%s: plan: %v\n%s", tc.name, err, stderr.String())
 		}
-	}
-	want := map[string][]string{"": {"create"}, "receipts.test.kube.imjasonh.github.io": {"get"}}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("verbs on customresourcedefinitions by name = %v, want %v", got, want)
+		got := map[string][]string{}
+		for k, verbs := range p.cluster {
+			if k.resource == "customresourcedefinitions" {
+				got[k.name] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: verbs on customresourcedefinitions by name = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -611,15 +659,63 @@ func TestPlanWebhookNames(t *testing.T) {
 		}
 	}
 	want := map[string][]string{
-		`cluster validatingwebhookconfigurations ""`:               {"create"},
-		`cluster validatingwebhookconfigurations "web-site.sites"`: {"delete", "get", "patch"},
-		`cluster mutatingwebhookconfigurations ""`:                 {"create"},
-		`cluster mutatingwebhookconfigurations "web-site.sites"`:   {"delete", "get", "patch"},
-		`sites secrets ""`:                     {"create"},
-		`sites secrets "web-site-webhook-tls"`: {"get", "update"},
+		`cluster validatingwebhookconfigurations "web-site.sites"`: {"create", "delete", "get", "patch"},
+		`cluster mutatingwebhookconfigurations "web-site.sites"`:   {"delete", "get"},
+		`sites secrets "web-site-webhook-tls"`:                     {"get", "update"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %v, want %v", got, want)
+	}
+}
+
+type defaultingReconciler struct{ gizmoReconciler }
+
+func (defaultingReconciler) Default(context.Context, *gizmo, *gizmo) error { return nil }
+
+// TestPlanWebhookConfigurations checks that a program may create and patch
+// only the webhook configuration of each kind that it has webhooks of, and
+// only by name. It may get and delete both, to remove one that an earlier
+// version of the program left. A conversion webhook is in the CRD, so it
+// needs neither configuration. Every webhook needs the certificate Secret,
+// which the program may read and update but not create.
+func TestPlanWebhookConfigurations(t *testing.T) {
+	writes, removes := []string{"create", "delete", "get", "patch"}, []string{"delete", "get"}
+	for _, tc := range []struct {
+		name                 string
+		c                    Controller
+		validating, mutating []string
+		secret               bool
+	}{
+		{"validating reconciler", For[gizmo](validatingReconciler{}), writes, removes, true},
+		{"defaulting reconciler", For[gizmo](defaultingReconciler{}), removes, writes, true},
+		{"validating and defaulting webhooks", Webhooks[configMapMeta](labeler{}), writes, writes, true},
+		{"validating webhooks", Webhooks[configMapMeta](writer{}), writes, removes, true},
+		{"conversion", For[conversionHub](nop[conversionHub]{}, Version[conversionSpoke]()), removes, removes, true},
+		{"no webhooks", For[gizmo](gizmoReconciler{}), removes, removes, false},
+	} {
+		o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard}
+		p, err := o.plan(t.Context(), []Controller{tc.c}, "github.com/imjasonh/playground/kube/examples/janitor")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string][]string{}
+		for where, g := range map[string]grants{"cluster": p.cluster, "prog": p.local} {
+			for k, verbs := range g {
+				if strings.HasSuffix(k.resource, "webhookconfigurations") || k.resource == "secrets" {
+					got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+				}
+			}
+		}
+		want := map[string][]string{
+			`cluster validatingwebhookconfigurations "prog"`: tc.validating,
+			`cluster mutatingwebhookconfigurations "prog"`:   tc.mutating,
+		}
+		if tc.secret {
+			want[`prog secrets "prog-webhook-tls"`] = []string{"get", "update"}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: rules = %v, want %v", tc.name, got, want)
+		}
 	}
 }
 
@@ -645,13 +741,10 @@ func TestPlanLeaseNamespace(t *testing.T) {
 		}
 	}
 	want := map[string][]string{
-		`cluster validatingwebhookconfigurations ""`:                {"create"},
-		`cluster validatingwebhookconfigurations "web-site.leases"`: {"delete", "get", "patch"},
-		`cluster mutatingwebhookconfigurations ""`:                  {"create"},
-		`cluster mutatingwebhookconfigurations "web-site.leases"`:   {"delete", "get", "patch"},
-		`leases secrets ""`:                     {"create"},
-		`leases secrets "web-site-webhook-tls"`: {"get", "update"},
-		`leases leases ""`:                      {"create", "delete", "get", "list", "update"},
+		`cluster validatingwebhookconfigurations "web-site.leases"`: {"create", "delete", "get", "patch"},
+		`cluster mutatingwebhookconfigurations "web-site.leases"`:   {"delete", "get"},
+		`leases secrets "web-site-webhook-tls"`:                     {"get", "update"},
+		`leases leases ""`:                                          {"create", "delete", "get", "list", "update"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("rules = %v, want %v", got, want)
