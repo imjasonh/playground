@@ -142,11 +142,22 @@ type options struct {
 	versions  []versionOption
 }
 
-// Named sets the controller's name. The name appears in logs, metrics, and
-// events, is the field manager for server-side apply, and labels owned
-// objects. It defaults to the lowercase kind, for example "website". A name
-// has at most 50 lowercase letters, digits, '-', and '.', and starts and ends
-// with a letter or digit. Run fails with any other name.
+// Named sets the controller's name. The name is the value of ControllerLabel
+// on the objects that the controller owns, the end of its finalizer (see
+// FinalizerName), and its field manager for server-side apply. It also
+// appears in logs, metrics, and events. Two controllers that reconcile or own
+// the same type in a cluster need different names, or they remove each
+// other's finalizers and delete each other's objects. Run fails when two
+// controllers in one program have the same name.
+//
+// The name defaults to the program's name (Manager.Name) and the lowercase
+// kind, joined by '-', such as "shop-website" for a program named shop that
+// reconciles Websites. When the program has the kind's name, the default is
+// only the kind, such as "website". A default longer than 50 characters is
+// shortened and ends in a hash. Objects in clusters carry the name, so set
+// one to keep it when you rename the program. A name has at most 50
+// lowercase letters, digits, '-', and '.', and starts and ends with a letter
+// or digit. Run fails with any other name.
 func Named(name string) Option { return func(o *options) { o.name = name } }
 
 // Workers sets how many objects the controller reconciles at once. The
@@ -405,6 +416,33 @@ type controller[T any, P Resource[T]] struct {
 
 var nameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,48}[a-z0-9])?$`)
 
+// defaultName is the name of a controller without the Named option: the
+// program's name and the kind, lowercase and joined by '-', or only the kind
+// when the program has the kind's name. To fit nameRE, a longer name keeps
+// its first 41 characters and adds '-' and a hash of the whole name.
+func defaultName(program, kind string) string {
+	kind = strings.ToLower(kind)
+	p := strings.Trim(strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '.':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r - 'A' + 'a'
+		}
+		return '-'
+	}, program), "-.")
+	if p == "" || p == kind {
+		return kind
+	}
+	name := p + "-" + kind
+	if len(name) <= 50 {
+		return name
+	}
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	return fmt.Sprintf("%s-%08x", strings.TrimRight(name[:41], "-."), h.Sum32())
+}
+
 func (c *controller[T, P]) controllerName() string { return c.name }
 
 func (c *controller[T, P]) synced() bool { return c.primary != nil && c.primary.hasSynced.Load() }
@@ -419,10 +457,18 @@ func (c *controller[T, P]) prepare(ctx context.Context, m *Manager) error {
 	c.ti, c.m = ti, m
 	c.name = c.opts.name
 	if c.name == "" {
-		c.name = strings.ToLower(ti.kind)
+		c.name = defaultName(m.Name, ti.kind)
 	}
 	if !nameRE.MatchString(c.name) {
 		return fmt.Errorf("kube: controller name %q must be at most 50 lowercase letters, digits, '-', or '.', and start and end with a letter or digit", c.name)
+	}
+	for _, o := range m.controllers {
+		if o == Controller(c) {
+			break
+		}
+		if o.reconciles() && o.controllerName() == c.name {
+			return fmt.Errorf("kube: two controllers are named %q; give the one for %v another name with kube.Named", c.name, ti)
+		}
 	}
 	c.labels = newLabelKeys()
 	c.finalizer = FinalizerName(c.name)

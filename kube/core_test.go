@@ -380,6 +380,51 @@ func TestKeysAreStable(t *testing.T) {
 	}
 }
 
+func TestDefaultName(t *testing.T) {
+	for _, tc := range []struct{ program, kind, want string }{
+		{"shop", "Website", "shop-website"},
+		{"website", "Website", "website"},
+		{"", "Website", "website"},
+		{"My_App", "Widget", "my-app-widget"},
+		{"e2e.test", "ConfigMap", "e2e.test-configmap"},
+		{"_tool.", "Widget", "tool-widget"},
+	} {
+		if got := defaultName(tc.program, tc.kind); got != tc.want {
+			t.Errorf("defaultName(%q, %q) = %q, want %q", tc.program, tc.kind, got, tc.want)
+		}
+	}
+	long, longer := defaultName(strings.Repeat("a", 44), "Widget"), defaultName(strings.Repeat("a", 45), "Widget")
+	for _, name := range []string{long, longer} {
+		if !nameRE.MatchString(name) || !strings.HasPrefix(name, strings.Repeat("a", 41)+"-") {
+			t.Errorf("long default name %q, want the first 41 characters and a hash", name)
+		}
+	}
+	if long == longer {
+		t.Errorf("two long program names both default to %q", long)
+	}
+}
+
+func TestDuplicateControllerNames(t *testing.T) {
+	m := testManager()
+	m.Name = "shop"
+	first, second := For[gizmo](gizmoReconciler{}), For[gizmo](gizmoReconciler{})
+	m.controllers = []Controller{first, second}
+	if err := first.prepare(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	if c := first.(*controller[gizmo, *gizmo]); c.name != "shop-gizmo" || c.finalizer != FinalizerName("shop-gizmo") {
+		t.Errorf("name = %q, finalizer = %q, want shop-gizmo", c.name, c.finalizer)
+	}
+	if err := second.prepare(t.Context(), m); err == nil || !strings.Contains(err.Error(), `two controllers are named "shop-gizmo"`) || !strings.Contains(err.Error(), "kube.Named") {
+		t.Errorf("err = %v, want one about two controllers named shop-gizmo", err)
+	}
+	named := For[gizmo](gizmoReconciler{}, Named("gizmo-sizes"))
+	m.controllers = []Controller{first, named}
+	if err := named.prepare(t.Context(), m); err != nil || named.controllerName() != "gizmo-sizes" {
+		t.Errorf("named controller: name = %q, err = %v", named.controllerName(), err)
+	}
+}
+
 func TestOwnBody(t *testing.T) {
 	wti, _ := typeInfoFor[widget, *widget]()
 	dti, _ := typeInfoFor[deploymentProjection, *deploymentProjection]()

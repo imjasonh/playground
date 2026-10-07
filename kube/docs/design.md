@@ -476,6 +476,14 @@ target don't remove each other's fields. An owned object's document also gets
 the owner label and annotation and, when Kubernetes allows it, an owner
 reference.
 
+The controller's name is also the value of the controller label, which the
+cache of owned objects selects on, and the end of the controller's finalizer.
+Two controllers with one name would remove each other's finalizers and prune
+each other's objects, so the default name joins the program's name and the
+kind, and `Run` fails when two of its controllers have one name. Two
+controllers in one manager would also share a cache of owned objects whose
+handler enqueues only the first controller's owners.
+
 A reconcile can pass an object to `Own` or `Apply` only once, and the
 framework compares the objects by group, kind, and key, not by Go type.
 Server-side apply takes each request as the field manager's whole intent, so

@@ -937,6 +937,18 @@ For more control, set the fields of a `kube.Manager` and call its `Run`
 method. `kube.For` takes options such as `kube.Workers(n)`,
 `kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
 
+Each controller has a name. The controller's finalizer is
+`kube.imjasonh.github.io/NAME`, the objects that it owns have the label
+`kube.imjasonh.github.io/controller=NAME`, and `NAME` is its field manager and
+the reporting controller of its events. The name defaults to the program's
+name and the lowercase kind, joined by a hyphen, such as `shop-website` for a
+program named `shop` that reconciles Websites, or only the kind when the two
+are the same, such as `website`. Two controllers that reconcile or own the
+same type in a cluster need different names, or they remove each other's
+finalizers and delete each other's objects. `Run` fails when two controllers
+in one program have the same name. To set a name, or to keep the name when
+you rename the program, pass `kube.Named(name)` to `kube.For`.
+
 The labels, annotations, and finalizers that kube writes, all under
 `kube.imjasonh.github.io`, don't change between versions of kube, so admission
 policies and other programs can match on them. Go programs can use
