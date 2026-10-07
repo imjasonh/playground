@@ -19,7 +19,7 @@
 //
 // Git resolves what it can first: paths that match -union, such as go.sum,
 // merge with git's union driver, which keeps the lines of both sides. When
-// other conflicts remain and -agent-image is set, an agent in a sandboxed
+// other conflicts remain and -runner-image is set, an agent in a sandboxed
 // Pod resolves them, as in check-review. The check never pushes a merge
 // that picks one side of a conflict or still holds conflict markers. When
 // neither git nor the agent resolves the conflicts, the check fails and
@@ -278,7 +278,7 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, re
 	}
 	switch {
 	case runner.Image == "":
-		return checks.Fail("%s conflicts in %s; git can't resolve them, and the check runs no agent without -agent-image", t.action(), list)
+		return checks.Fail("%s conflicts in %s; git can't resolve them, and the check runs no agent without -runner-image", t.action(), list)
 	case !in.Policy.MayPush:
 		return checks.Fail("%s conflicts in %s; the policy doesn't let this check push a resolution, so it runs no agent", t.action(), list)
 	}
@@ -669,7 +669,7 @@ func main() {
 	cfg := &checks.Config{}
 	cfg.AddFlags(flag.CommandLine)
 	runner.AddFlags(flag.CommandLine)
-	flag.CommandLine.Lookup("agent-image").Usage = "image that runs the agent, built from agent/runner/Dockerfile; without it, the check resolves only what git can"
+	flag.CommandLine.Lookup("runner-image").Usage = "image that runs the agent, built from agent/runner/Dockerfile; without it, the check resolves only what git can"
 	flag.Var(&union, "union", "comma-separated path patterns, in the gitattributes format, whose conflicts git resolves by keeping the lines of both sides")
 	checks.RemoveLeftoverSigningKeys()
 	kube.Main(checks.ForReconciler[Branch](check, cfg, newReconciler(cfg)))

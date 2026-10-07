@@ -1666,7 +1666,7 @@ the check's notes.
 
 A deploy can also run agents again. A Pod's spec can't change, so after a
 deploy that changes the agent Pods' spec, such as one with another
-`-agent-image` or `-model` or with a version of `check-review` that builds
+`-runner-image` or `-model` or with a version of `check-review` that builds
 Pods differently, the check starts each run in progress again in a new
 Pod, and kube deletes the old one. The agent starts over and costs as much
 as in a new run. A restarted run takes a place in `-max-runs-per-day`, or
@@ -1693,7 +1693,7 @@ checks.approval.passed)`.
 
 To install `check-review`, build the runner's image from
 `agent/runner/Dockerfile`, push it, and pass its digest to the check with
-`-agent-image`. Then create a Secret named `cursor-api-key` that holds a
+`-runner-image`. Then create a Secret named `cursor-api-key` that holds a
 Cursor API key under the key `api-key`, in each namespace with branches to
 review. Agent Pods meet the `restricted` Pod Security Standard and run in
 their branch's namespace, which must also opt in to check Pods, as
@@ -1705,7 +1705,7 @@ their branch's namespace, which must also opt in to check Pods, as
 docker build -t REGISTRY/agent-runner agent/runner
 docker push REGISTRY/agent-runner
 image="$(docker inspect -f '{{index .RepoDigests 0}}' REGISTRY/agent-runner)"
-go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -runner-image="${image}" | kubectl apply -f -
 kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key=KEY
 kubectl label namespace NAMESPACE git-k8s.imjasonh.com/check-pods=true pod-security.kubernetes.io/enforce=restricted
 kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
@@ -1727,7 +1727,7 @@ kubectl get pods --all-namespaces -l git-k8s.imjasonh.com/agent=review
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-agent-image` | Required | Image that runs the agent, built from `agent/runner/Dockerfile` |
+| `-runner-image` | Required | Image that runs the agent, built from `agent/runner/Dockerfile` |
 | `-git-image` | `cgr.dev/chainguard/git` by digest | Image that fetches the source; it needs `git` and `sh` |
 | `-backend` | `cursor` | Where the agent runs: `cursor`, with the Cursor SDK in the Pod, or `fake`, for tests |
 | `-model` | `composer-2.5` | Model that the agent uses |
@@ -2067,13 +2067,13 @@ can fetch every repository's copy, and create, update, and delete the
 branches under `resolve/` in each, as a controller that starts branches can.
 
 To install `check-conflicts`, build the agent runner's image as for
-`check-review`, and pass its digest with `-agent-image`. Without
-`-agent-image`, the check resolves only what git can, and runs no agent.
+`check-review`, and pass its digest with `-runner-image`. Without
+`-runner-image`, the check resolves only what git can, and runs no agent.
 Then map the check's service account to `conflicts` in the
 `git-k8s-checks` ConfigMap:
 
 ```sh
-go run ./cmd/check-conflicts generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+go run ./cmd/check-conflicts generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -runner-image="${image}" | kubectl apply -f -
 kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
   -p '{"data":{"check-conflicts.check-conflicts":"conflicts"}}'
 ```
@@ -2092,7 +2092,7 @@ the Secret that holds the Cursor API key, and must opt in to check Pods, as
 A controller, or a check that needs a `Job` that `Run` doesn't build, runs
 an agent with `Runner.RunJob`. Its `Job` names the repository, the commits
 to check out, the task, the agent's tools, and the runner's image if it
-isn't `-agent-image`. The mirror accepts a token that's bound to a Pod only
+isn't `-runner-image`. The mirror accepts a token that's bound to a Pod only
 from a check's Pod, so a controller's `Job` names the repository's URL and
 the Secret with the repository's credentials. A check's `Job` sets `Mirror`
 and the URL of the check's remote instead, and the check's `Running` result
@@ -3178,8 +3178,8 @@ containers from that image, and `check-deps` runs agents in it. Then map
 `check-deps`'s service account to `deps` in the `git-k8s-checks` ConfigMap:
 
 ```sh
-go run ./cmd/git-k8s-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -result-image="${image}" | kubectl apply -f -
-go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+go run ./cmd/git-k8s-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -runner-image="${image}" | kubectl apply -f -
+go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -runner-image="${image}" | kubectl apply -f -
 kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
   -p '{"data":{"check-deps.check-deps":"deps"}}'
 ```
@@ -3206,7 +3206,7 @@ branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-result-image` | Required | Image that serves update results, built from `agent/runner/Dockerfile` |
+| `-runner-image` | Required | Image that serves update results, built from `agent/runner/Dockerfile` |
 | `-prefix` | `deps/` | Branch-name prefix of the controller's branches, ending with `/` |
 | `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
 | `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
@@ -3289,7 +3289,7 @@ can't change what those Pods run. With `-go-cache`, `check-gotest`'s Pods
 fetch the source with `check-gotest`'s own image instead, which `generate`
 names by digest.
 
-`-git-image`, `-go-image`, `-agent-image`, and `-result-image` are kube
+`-git-image`, `-go-image`, and `-runner-image` are kube
 image flags. If you set one to an image by tag, `generate` resolves the tag
 with your registry credentials, and writes the image by digest into the
 Deployment's arguments. A program that starts with a tag in one of those
@@ -3487,7 +3487,7 @@ controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's
 
 Each namespace that holds a `GitRepository` whose merge policy lists
 `gotest`, `review`, or `deps`, or lists `conflicts` with `mayPush: true`
-while `check-conflicts` runs with `-agent-image`, must opt in to check Pods
+while `check-conflicts` runs with `-runner-image`, must opt in to check Pods
 and enforce the
 `restricted` Pod Security Standard, or the third policy denies the check's
 Pods:
@@ -3900,7 +3900,7 @@ only its unit tests. To run a scenario, see
   describes how to remove that. `check-gotest`, `check-review`,
   `check-conflicts`, and `check-deps` can also create Pods in every
   namespace that opts in to check Pods, and `check-conflicts` can even
-  without `-agent-image`. `git-k8s-deps` can create Pods in every
+  without `-runner-image`. `git-k8s-deps` can create Pods in every
   namespace. Installing these programs with `generate -watch-namespace`
   limits their Secrets and Pods to one namespace.
 - The branch-name prefix `resolve/` lets `check-conflicts` fetch every

@@ -69,7 +69,7 @@ func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder, string) {
 
 func TestNeedsAnAgentImage(t *testing.T) {
 	b, rec, _ := reconcile(t, false)
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.Contains(res.Message, "set -agent-image") || len(kube.Owned[agent.Pod](rec)) != 0 {
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.Contains(res.Message, "set -runner-image") || len(kube.Owned[agent.Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
 }

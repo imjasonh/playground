@@ -115,7 +115,7 @@ type updater struct {
 	goSumDB      string
 	goImage      string
 	gitImage     string
-	resultImage  string
+	runnerImage  string
 	runtimeClass string
 	timeout      time.Duration
 	sourceSize   string
@@ -158,7 +158,7 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.StringVar(&u.goSumDB, "gosumdb", "sum.golang.org", "GOSUMDB for go get, or off")
 	kube.ImageVar(fs, &u.goImage, "go-image", images.Go, "image that runs go get; it needs go, git, sh, base64, sha256sum, tail, and cut")
 	kube.ImageVar(fs, &u.gitImage, "git-image", images.Git, "image that fetches the source; it needs git and sh")
-	kube.ImageVar(fs, &u.resultImage, "result-image", "", "image that serves the result, built from agent/runner/Dockerfile (required)")
+	kube.ImageVar(fs, &u.runnerImage, "runner-image", "", "image that serves the result, built from agent/runner/Dockerfile (required)")
 	fs.StringVar(&u.runtimeClass, "runtime-class", "", "RuntimeClass for update Pods, such as gvisor")
 	fs.DurationVar(&u.timeout, "timeout", 15*time.Minute, "longest that an update Pod can run")
 	fs.StringVar(&u.sourceSize, "source-size", "2Gi", "most disk space that an update Pod's copy of the repository can use")
@@ -179,8 +179,8 @@ func (u *updater) init() error {
 	switch {
 	case !strings.HasSuffix(u.prefix, "/") || !git.ValidBranch(u.prefix+"go"):
 		return fmt.Errorf("-prefix is %q, but it must be a branch-name prefix that ends with /, such as deps/", u.prefix)
-	case u.resultImage == "":
-		return errors.New("set -result-image to the image that agent/runner/Dockerfile builds")
+	case u.runnerImage == "":
+		return errors.New("set -runner-image to the image that agent/runner/Dockerfile builds")
 	case u.goImage == "" || u.gitImage == "" || u.goSumDB == "":
 		return errors.New("-go-image, -git-image, and -gosumdb need values")
 	case u.timeout < time.Second || u.interval < time.Second || u.minAge < 0:

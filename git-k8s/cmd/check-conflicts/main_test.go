@@ -360,7 +360,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		want  string
 	}{{
 		name: "without an agent image",
-		want: "merging main conflicts in a.txt; git can't resolve them, and the check runs no agent without -agent-image",
+		want: "merging main conflicts in a.txt; git can't resolve them, and the check runs no agent without -runner-image",
 	}, {
 		name:  "when the policy doesn't let it push",
 		agent: true,
@@ -2108,7 +2108,7 @@ func TestLeavesReplaysThatBringBackAFileThatTheRewindRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "the replays of the branch's commits onto the external repository's c/x don't have every change that both sides made; " +
-		"replaying the branch onto the external repository's c/x conflicts in s.txt; git can't resolve them, and the check runs no agent without -agent-image"
+		"replaying the branch onto the external repository's c/x conflicts in s.txt; git can't resolve them, and the check runs no agent without -runner-image"
 	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Notes["rewound"] != "external" {
 		t.Errorf("result = %+v, want Failed with %q", res, want)
 	}

@@ -141,7 +141,7 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work) *fixture {
 		cfg:        checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
 		checkEmail: checksID.Email,
 		prefix:     "deps/", goProxy: fp.URL, goSumDB: "off",
-		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", resultImage: "registry.example.com/agent-runner:test",
+		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", runnerImage: "registry.example.com/agent-runner:test",
 		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour,
 		now: func() time.Time { return f.clock }, remote: srv.RemoteFor, resultPort: port,
 	}
@@ -424,7 +424,7 @@ func (f *fixture) restart() {
 	old := f.u
 	f.u = &updater{
 		cfg: old.cfg, checkEmail: old.checkEmail, prefix: old.prefix, goProxy: old.goProxy, goSumDB: old.goSumDB,
-		goImage: old.goImage, gitImage: old.gitImage, resultImage: old.resultImage, runtimeClass: old.runtimeClass,
+		goImage: old.goImage, gitImage: old.gitImage, runnerImage: old.runnerImage, runtimeClass: old.runtimeClass,
 		timeout: old.timeout, sourceSize: old.sourceSize, goCacheSize: old.goCacheSize, maxPods: old.maxPods,
 		interval: old.interval, minAge: old.minAge, seenConfigMap: old.seenConfigMap, now: old.now, remote: old.remote,
 		resultPort: old.resultPort,
@@ -2563,7 +2563,7 @@ func TestFlags(t *testing.T) {
 		u := &updater{}
 		fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
 		u.addFlags(fs)
-		if err := fs.Parse(append([]string{"-result-image=agent-runner"}, args...)); err != nil {
+		if err := fs.Parse(append([]string{"-runner-image=agent-runner"}, args...)); err != nil {
 			t.Fatal(err)
 		}
 		return u
@@ -2602,7 +2602,7 @@ func TestFlags(t *testing.T) {
 		{"-prefix=deps"},
 		{"-prefix="},
 		{"-prefix=deps..x/"},
-		{"-result-image="},
+		{"-runner-image="},
 		{"-go-image="},
 		{"-gosumdb="},
 		{"-goproxy=direct"},

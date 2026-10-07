@@ -286,7 +286,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 		}},
 		Containers: []agent.Container{{
 			Name:            "result",
-			Image:           u.resultImage,
+			Image:           u.runnerImage,
 			ImagePullPolicy: "IfNotPresent",
 			Args:            []string{"serve"},
 			Env: []agent.EnvVar{

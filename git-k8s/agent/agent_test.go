@@ -1069,7 +1069,7 @@ func TestNeedsFlags(t *testing.T) {
 	f := newFixture(t, "")
 	f.r.Image = ""
 	rec := f.reconcile()
-	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "set -agent-image") || len(kube.Owned[Pod](rec)) != 0 {
+	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "set -runner-image") || len(kube.Owned[Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
 
