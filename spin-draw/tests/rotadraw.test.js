@@ -6,6 +6,7 @@ import {
   buildDisc,
   paperPolylines,
   polylineLength,
+  shufflePieces,
   splitStrokes,
   totalLength,
 } from "../src/rotadraw.js";
@@ -92,6 +93,28 @@ test("piece lengths add up to the fitted picture", () => {
   }
   nearly(pieceSum, totalLength(disc.fitted), 1e-4);
   assert.ok(polylineLength(disc.fitted[0]) > 0);
+});
+
+function pieceKey(piece) {
+  const point = piece[0][0];
+  return `${point.x.toFixed(3)},${point.y.toFixed(3)}`;
+}
+
+test("numbered lines are a stable shuffle of the stroke pieces", () => {
+  const strokes = pictureById("dog").strokes;
+  const disc = buildDisc(strokes, { steps: 16 });
+  const again = buildDisc(strokes, { steps: 16 });
+  const sequential = splitStrokes(disc.fitted, 16).map(pieceKey);
+  const mixed = disc.steps.map((step) => pieceKey(step.paper));
+  assert.equal(mixed.length, sequential.length);
+  assert.notDeepEqual(mixed, sequential);
+  assert.deepEqual([...mixed].sort(), [...sequential].sort());
+  assert.deepEqual(
+    mixed,
+    again.steps.map((step) => pieceKey(step.paper)),
+  );
+  const forced = shufflePieces(splitStrokes(disc.fitted, 16), 1).map(pieceKey);
+  assert.notDeepEqual(forced, sequential);
 });
 
 test("an empty picture makes no lines", () => {
