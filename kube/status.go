@@ -194,7 +194,7 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		if client.IsNotFound(err) {
 			c.m.client.Forget(in.res.apiVersion)
 		}
-		return fmt.Errorf("applying status of %v %s: %w", in.ti, m.Key(), err)
+		return &writeError{"applying status of", in.ti, m.Key(), err}
 	}
 	record("applied")
 	c.log.Debug("applied status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
@@ -282,6 +282,40 @@ func containsJSON(have, want []byte) bool {
 	return subset.Contains(h, w)
 }
 
+// writeError is an error from a write that carries out a declaration. The
+// API server's message can quote the values that it rejected, which can come
+// from a Secret, so the Synced condition leaves the message out. The log and
+// LastError keep the whole error.
+type writeError struct {
+	// step is what the write does, such as "applying".
+	step string
+	ti   *typeInfo
+	key  Key
+	err  error
+}
+
+func (e *writeError) Error() string { return fmt.Sprintf("%s %v %s: %v", e.step, e.ti, e.key, e.err) }
+
+func (e *writeError) Unwrap() error { return e.err }
+
+// summary describes e without the API server's message, or returns "" if
+// the API server didn't return the error.
+func (e *writeError) summary() string {
+	var ae *client.APIError
+	if !errors.As(e.err, &ae) {
+		return ""
+	}
+	status := fmt.Sprint(ae.Code)
+	// A webhook can set any reason, so show only a word like the API
+	// server's own reasons.
+	if r := ae.Reason; r != "" && len(r) <= 64 && !strings.ContainsFunc(r, func(c rune) bool {
+		return (c < 'a' || c > 'z') && (c < 'A' || c > 'Z')
+	}) {
+		status += " " + r
+	}
+	return fmt.Sprintf("%s %v %s failed (%s); see the program's log", e.step, e.ti, e.key, status)
+}
+
 // syncedCondition reports the result of the last reconcile.
 func syncedCondition(err error, generation int64) Condition {
 	c := Condition{Type: "Synced", Status: True, Reason: "Reconciled", ObservedGeneration: generation}
@@ -291,6 +325,12 @@ func syncedCondition(err error, generation int64) Condition {
 			c.Reason = "PermanentError"
 		}
 		c.Message = err.Error()
+		var we *writeError
+		if errors.As(err, &we) {
+			if s := we.summary(); s != "" {
+				c.Message = s
+			}
+		}
 		if i := strings.IndexByte(c.Message, '\n'); i >= 0 {
 			c.Message = c.Message[:i]
 		}

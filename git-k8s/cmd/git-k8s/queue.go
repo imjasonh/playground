@@ -109,13 +109,13 @@ func position(ctx context.Context, b *gitk8s.GitBranch) (int32, int) {
 func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, results map[string]gitk8s.CheckResult, pass bool) error {
 	spec := &b.Spec
 	switch {
-	case reported(b, reasonRewritten):
+	case reported(b, gitk8s.MergeStateRewritten):
 		// The checks see the rewritten commits once the repository
 		// controller lists them. Until then, b's results are for its old
 		// head, so b holds its place without landing.
 		b.Status.Queued = q
 		return nil
-	case reported(b, reasonNeedsRebase):
+	case reported(b, gitk8s.MergeStateNeedsRebase):
 		return nil
 	}
 	base := checks["base"]
@@ -131,7 +131,7 @@ func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.
 		}
 	}
 	if q == nil && !ready {
-		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		report(b, gitk8s.MergeStateWaitingForChecks, "%s", describe(spec.Merge, checks))
 		return nil
 	}
 	pos, n := position(ctx, b)
@@ -141,7 +141,7 @@ func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.
 		// API server has queued at its current head keeps its place.
 		live, err := kube.Fetch[queueEntry](ctx, b.Namespace, b.Name)
 		if err != nil {
-			report(b, reasonQueued, false, "rejoining %s's queue at the back", spec.Parent)
+			report(b, gitk8s.MergeStateQueued, "rejoining %s's queue at the back", spec.Parent)
 			return fmt.Errorf("reading %s's place in %s's queue: %w", spec.Branch, spec.Parent, err)
 		}
 		if live != nil && live.Status.Queued != nil && live.Status.Queued.Head == spec.Head {
@@ -152,31 +152,32 @@ func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.
 	case q == nil && pos != 0:
 		// b left, but the parent's queue still lists it, and joining now
 		// would keep its old place.
-		report(b, reasonQueued, false, "rejoining %s's queue at the back", spec.Parent)
+		report(b, gitk8s.MergeStateQueued, "rejoining %s's queue at the back", spec.Parent)
 		return nil
 	case q == nil:
 		q = &gitk8s.Queued{Since: time.Now().UTC().Truncate(time.Second)}
 	case !ready && (settled(checks) || pos == 1 && !canPass(spec.Merge, checks)):
-		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		report(b, gitk8s.MergeStateWaitingForChecks, "%s", describe(spec.Merge, checks))
 		return nil
 	}
 	q.Head, q.Position = spec.Head, pos
 	b.Status.Queued = q
 	switch {
 	case pos == 0:
-		report(b, reasonQueued, false, "joining %s's queue", spec.Parent)
+		report(b, gitk8s.MergeStateQueued, "joining %s's queue", spec.Parent)
 	case pos > 1:
-		report(b, reasonQueued, false, "%d of %d in %s's queue", pos, n, spec.Parent)
+		report(b, gitk8s.MergeStateQueued, "%d of %d in %s's queue", pos, n, spec.Parent)
 	case !ready:
-		report(b, reasonQueued, false, "first in %s's queue; %s", spec.Parent, describe(spec.Merge, checks))
+		report(b, gitk8s.MergeStateQueued, "first in %s's queue; %s", spec.Parent, describe(spec.Merge, checks))
 	case base.Outputs["behind"] == "true":
-		report(b, reasonQueued, false, "first in %s's queue; waiting for the base check to merge %s in", spec.Parent, spec.Parent)
+		report(b, gitk8s.MergeStateQueued, "first in %s's queue; waiting for the base check to merge %s in", spec.Parent, spec.Parent)
 	default:
-		report(b, reasonQueued, false, "first in %s's queue", spec.Parent)
+		report(b, gitk8s.MergeStateQueued, "first in %s's queue", spec.Parent)
 		if err := m.land(ctx, repo, b, results); err != nil {
 			return err
 		}
-		if c := kube.FindCondition(b.Status.Conditions, "Merged"); c.Status == kube.True || c.Reason == reasonNeedsRebase {
+		switch b.Status.State {
+		case gitk8s.MergeStateLanded, gitk8s.MergeStateNothingToLand, gitk8s.MergeStateNeedsRebase:
 			b.Status.Queued = nil
 		}
 	}
@@ -187,14 +188,14 @@ func (m *merger) queued(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.
 // the repository controller lists b again, b's checks still pass for its
 // parent's old head, so b would otherwise join the queue again.
 func landed(b *gitk8s.GitBranch) bool {
-	return reported(b, reasonLanded)
+	return reported(b, gitk8s.MergeStateLanded)
 }
 
-// reported reports whether this controller set b's Merged condition to
-// reason at b's current spec. The spec changes when b or its parent moves.
-func reported(b *gitk8s.GitBranch, reason string) bool {
-	c := kube.FindCondition(b.Status.Conditions, "Merged")
-	return c != nil && c.Reason == reason && c.ObservedGeneration == b.Generation
+// reported reports whether this controller set b's Landed condition to
+// state at b's current spec. The spec changes when b or its parent moves.
+func reported(b *gitk8s.GitBranch, state gitk8s.MergeState) bool {
+	c := kube.FindCondition(b.Status.Conditions, "Landed")
+	return c != nil && c.Reason == string(state) && c.ObservedGeneration == b.Generation
 }
 
 // settled reports whether every check has passed or failed for the branch's

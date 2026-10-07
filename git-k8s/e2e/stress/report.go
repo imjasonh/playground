@@ -211,7 +211,7 @@ func summaryMarkdown(s *summary) string {
 
 	e := s.Errors
 	p("\n## Errors and anomalies\n\n")
-	p("- Merged reasons, by how many branches saw each: %s.\n", countList(e.Reasons))
+	p("- Merge states, by how many branches saw each: %s.\n", countList(e.Reasons))
 	p("- Check results in state Error: %d, of which %d failed to push a fix.\n", len(e.ErrorResults), e.PushRejections)
 	for _, x := range e.ErrorResults {
 		p("  - %s\n", x)
@@ -356,18 +356,18 @@ func timeline(run *runData, start time.Time) string {
 				}
 				line = fmt.Sprintf("%s %s head=%s queue=%d [%s%s]", br.Repo, br.Branch, short(br.Head), len(br.Queue), strings.Join(q, " "), more)
 			} else {
-				merged := ""
-				if br.Merged != nil {
-					merged = br.Merged.Reason
-					if br.Merged.Reason == "Queued" || br.Merged.Reason == "WaitingForChecks" {
-						msg := br.Merged.Message
+				state := ""
+				if br.Landed != nil {
+					state = br.Landed.Reason
+					if br.Landed.Reason == "Queued" || br.Landed.Reason == "WaitingForChecks" {
+						msg := br.Landed.Message
 						if len(msg) > 90 {
 							msg = msg[:90] + "..."
 						}
-						merged += "(" + msg + ")"
+						state += "(" + msg + ")"
 					}
 				}
-				line = fmt.Sprintf("%s %s head=%s parent=%s pos=%d %s checks=[%s]", br.Repo, br.Branch, short(br.Head), short(br.ParentHead), position(br), merged, summarizeChecks(br))
+				line = fmt.Sprintf("%s %s head=%s parent=%s pos=%d %s checks=[%s]", br.Repo, br.Branch, short(br.Head), short(br.ParentHead), position(br), state, summarizeChecks(br))
 				if br.Approve != "" {
 					line += " approve=" + short(br.Approve)
 				}

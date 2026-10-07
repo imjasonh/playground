@@ -1,8 +1,13 @@
 package gitk8s
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"reflect"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -152,6 +157,46 @@ func TestEqual(t *testing.T) {
 	empty := &CheckResult{Commit: "h1", State: Passed, Outputs: map[string]string{}}
 	if !empty.Equal(&CheckResult{Commit: "h1", State: Passed}) {
 		t.Error("empty outputs don't equal no outputs, but they look the same after a status write")
+	}
+}
+
+// TestMergeStateEnum checks that status.state's enum lists every merge
+// state and nothing else, so that the CRD accepts each state that the merge
+// controller sets.
+func TestMergeStateEnum(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "types.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var states []string
+	for _, decl := range file.Decls {
+		if d, ok := decl.(*ast.GenDecl); ok && d.Tok == token.CONST {
+			for _, spec := range d.Specs {
+				v := spec.(*ast.ValueSpec)
+				if typ, ok := v.Type.(*ast.Ident); !ok || typ.Name != "MergeState" {
+					continue
+				}
+				for _, value := range v.Values {
+					s, err := strconv.Unquote(value.(*ast.BasicLit).Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					states = append(states, s)
+				}
+			}
+		}
+	}
+	f, _ := reflect.TypeFor[GitBranchStatus]().FieldByName("State")
+	var enum []string
+	for opt := range strings.SplitSeq(f.Tag.Get("kube"), ",") {
+		if values, ok := strings.CutPrefix(opt, "enum="); ok {
+			enum = strings.Split(values, "|")
+		}
+	}
+	slices.Sort(states)
+	slices.Sort(enum)
+	if len(states) == 0 || !slices.Equal(enum, states) {
+		t.Errorf("status.state's enum is %v, want the MergeState constants %v", enum, states)
 	}
 }
 

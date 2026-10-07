@@ -141,7 +141,7 @@ type branchRec struct {
 	Parent     string                 `json:"parent,omitempty"`
 	ParentHead string                 `json:"parentHead,omitempty"`
 	State      string                 `json:"state,omitempty"`
-	Merged     *condition             `json:"merged,omitempty"`
+	Landed     *condition             `json:"landed,omitempty"`
 	Queued     *queuedStatus          `json:"queued,omitempty"`
 	Queue      []string               `json:"queue,omitempty"`
 	Checks     map[string]checkResult `json:"checks,omitempty"`
@@ -163,8 +163,8 @@ func toBranchRec(typ string, b *gitBranch) *branchRec {
 		r.Diverged = b.Status.Diverged
 	}
 	for i := range b.Status.Conditions {
-		if c := b.Status.Conditions[i]; c.Type == "Merged" {
-			r.Merged = &c
+		if c := b.Status.Conditions[i]; c.Type == "Landed" {
+			r.Landed = &c
 		}
 	}
 	for name, c := range r.Checks {
