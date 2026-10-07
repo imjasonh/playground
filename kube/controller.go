@@ -871,7 +871,10 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 	for ti, src := range c.childSources() {
 		for _, o := range src.owned(key.String()) {
 			om := metaOfAny(o)
-			if declared[ti][om.Key()] || om.Deleting() {
+			// The owner annotation names only a namespace and name, so a
+			// child with another owner UID belongs to an earlier owner with
+			// this name, or to an owner of another type.
+			if declared[ti][om.Key()] || om.Deleting() || om.Labels[c.labels.ownerUID] != pm.UID {
 				continue
 			}
 			res, err := c.m.resolve(ctx, ti)
@@ -1142,7 +1145,7 @@ func (c *controller[T, P]) cleanupOwned(ctx context.Context, obj *T, keep map[st
 		}
 		res := resolved{apiVersion: kind[:i], plural: r.Name, namespaced: r.Namespaced}
 		var owned []ObjectMeta
-		q := url.Values{"labelSelector": {c.labels.ownerUID + "=" + m.UID}}
+		q := url.Values{"labelSelector": {c.labels.ownerUID + "=" + m.UID + "," + c.labels.controller + "=" + c.name}}
 		_, err = c.m.client.ListAll(ctx, res.path("", ""), q, listAccept, 500, func(dec *json.Decoder) error {
 			var item struct {
 				Metadata ObjectMeta `json:"metadata"`

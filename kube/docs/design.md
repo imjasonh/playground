@@ -478,11 +478,11 @@ reference.
 
 The controller's name is also the value of the controller label, which the
 cache of owned objects selects on, and the end of the controller's finalizer.
-Two controllers with one name would remove each other's finalizers and prune
-each other's objects, so the default name joins the program's name and the
-kind, and `Run` fails when two of its controllers have one name. Two
-controllers in one manager would also share a cache of owned objects whose
-handler enqueues only the first controller's owners.
+Two controllers with one name that reconcile one kind would remove each
+other's finalizers and prune each other's objects, so the default name joins
+the program's name and the kind, and `Run` fails when two of its controllers
+have one name. Two controllers in one manager would also share a cache of
+owned objects whose handler enqueues only the first controller's owners.
 
 A reconcile can pass an object to `Own` or `Apply` only once, and the
 framework compares the objects by group, kind, and key, not by Go type.
@@ -575,6 +575,10 @@ its own object.
 
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
+The owner annotation names only the owner's namespace and name, so the
+framework skips objects whose owner UID label names another owner: an earlier
+object with that name, or an object of another kind whose controller has the
+same name.
 
 Finalizer changes, `Apply`, and deletes target an object that must already
 exist, so they carry its UID. An apply with a UID fails instead of creating an
@@ -636,10 +640,11 @@ of removing the wrong entry.
 Owner references can't point across namespaces or from a namespaced object to
 a cluster-scoped one. When a reconcile owns such an object, the framework adds
 a finalizer to the owner before creating it, and records the owned types in an
-annotation. When the owner is deleted, the framework deletes those objects by
-UID, then removes the finalizer. When a reconcile stops declaring such
-objects, the framework deletes any that remain and removes the finalizer, so
-the owner can then be deleted without the controller running.
+annotation. When the owner is deleted, the framework deletes the objects of
+those types that carry the owner's UID and the controller label, then removes
+the finalizer. When a reconcile stops declaring such objects, the framework
+deletes any that remain and removes the finalizer, so the owner can then be
+deleted without the controller running.
 
 A controller without a `Finalize` method also removes its finalizer from
 objects, so a finalizer that an earlier version of the program added doesn't
