@@ -1710,10 +1710,20 @@ check_run() {
   curl -fsS "${GITHUB_URL}/api/v3/repos/acme/octo/commits/$1/check-runs?check_name=git-k8s/$2" |
     sed -nE 's/.*"status":"([a-z_]+)","conclusion":"([a-z_]*)".*/\1 \2/p'
 }
+# check-gofmt reports Fixed for the unformatted commit after it pushes the
+# fix. The repositories controller syncs octo every second, and a sync
+# that's running when the push arrives can move c/fmt to the fix first.
+# Then the core program refuses the result, which isn't for c/fmt's head,
+# and the unformatted commit gets no gofmt check run. If it gets one, it's
+# neutral, and the check-runs controller creates it before the fix's gofmt
+# check run, so once the fix's check runs show their results, it doesn't
+# change.
 check_runs_published() {
-  [[ "$(check_run "${unformatted}" gofmt)" == "completed neutral" &&
-    "$(check_run "${fix}" gofmt)" == "completed success" &&
-    "$(check_run "${fix}" base)" == "completed success" ]]
+  [[ "$(check_run "${fix}" gofmt)" == "completed success" &&
+    "$(check_run "${fix}" base)" == "completed success" ]] || return
+  local unformatted_run
+  unformatted_run="$(check_run "${unformatted}" gofmt)"
+  [[ -z "${unformatted_run}" || "${unformatted_run}" == "completed neutral" ]]
 }
 eventually 60 check_runs_published
 echo "check-gofmt pushed a signed fix to the mirror, git-k8s landed it and pushed it to GitHub with Octo STS tokens, and the results became check runs."
