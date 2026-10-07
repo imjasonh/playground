@@ -166,7 +166,7 @@ func (ws *webhookServer) start(ctx context.Context) error {
 			"set Manager.WebhookService (-webhook-service) to a Service that routes port 443 to the webhook port, " +
 			"or Manager.WebhookURL (-webhook-url) when running outside the cluster")
 	}
-	ws.secret = Key{Namespace: m.ownNamespace(), Name: labelValue(m.Name) + "-webhook-tls"}
+	ws.secret = Key{Namespace: m.ownNamespace(), Name: objectName(m.Name) + "-webhook-tls"}
 	if err := ws.refresh(ctx); err != nil {
 		return err
 	}
@@ -352,7 +352,7 @@ func (ws *webhookServer) use(serving certs.Pair, bundle []byte) error {
 }
 
 // configurationName names the manager's webhook configurations.
-func (ws *webhookServer) configurationName() string { return labelValue(ws.m.Name) }
+func (ws *webhookServer) configurationName() string { return objectName(ws.m.Name) }
 
 // applyConfigurations registers the validating and mutating webhooks, and
 // updates objects that embed the CA bundle. When the manager has no webhooks

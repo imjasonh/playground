@@ -530,7 +530,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	// The program deletes webhook configurations that an earlier version
 	// of it left, even when it has no webhooks itself.
-	config := labelValue(o.program)
+	config := o.name
 	for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
 		cluster.add("admissionregistration.k8s.io", r, config, "get", "delete")
 		if p.webhooks {
@@ -867,27 +867,6 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		})
 	}
 	return docs
-}
-
-// objectName makes s a valid name for a Namespace, Service, or other
-// Kubernetes object: lowercase letters, digits, and '-'.
-func objectName(s string) string {
-	s = strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r + 'a' - 'A'
-		}
-		return '-'
-	}, s)
-	if len(s) > 63 {
-		s = s[:63]
-	}
-	if s = strings.Trim(s, "-"); s == "" {
-		return "controller"
-	}
-	return s
 }
 
 // object is a JSON object with its keys in order, so the YAML reads like a

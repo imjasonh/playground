@@ -62,14 +62,6 @@ func TestResourceName(t *testing.T) {
 	}
 }
 
-func TestObjectName(t *testing.T) {
-	for in, want := range map[string]string{"website": "website", "My_Controller": "my-controller", "__": "controller", "a.b": "a-b"} {
-		if got := objectName(in); got != want {
-			t.Errorf("objectName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 type conversionHub struct {
 	Object `kube:"group=test.kube.imjasonh.github.io,kind=Hub,version=v2"`
 }

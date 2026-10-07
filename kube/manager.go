@@ -26,9 +26,11 @@ import (
 // Manager runs controllers against one cluster. The zero value is ready to
 // use; every field is optional.
 type Manager struct {
-	// Name identifies the program. It names the leader election lease and
-	// appears in the User-Agent and on CustomResourceDefinitions the manager
-	// installs. It defaults to the executable's name.
+	// Name identifies the program. It appears in the User-Agent and on
+	// CustomResourceDefinitions the manager installs. Lowercased, with
+	// characters other than letters and digits changed to '-', it names the
+	// manager's Leases, webhook certificate Secret, and webhook
+	// configurations. It defaults to the executable's name.
 	Name string
 	// Kubeconfig is the path of a kubeconfig file. When empty, the manager
 	// uses $KUBECONFIG, then the pod's service account, then
