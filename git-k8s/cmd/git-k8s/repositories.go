@@ -154,6 +154,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 			ready.Reason = "MirrorFailed"
 		}
 		ready.Message = err.Error()
+		kube.SetCondition(&repo.Status.Conditions, kube.Condition{Type: "ExternalSynced", Status: kube.Unknown, Reason: ready.Reason, Message: ready.Message})
 		return err
 	}
 	p = r.polled(key, p, now, interval, rep, push)
@@ -191,6 +192,9 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 	case len(rep.Failed) > 0:
 		c.Reason = "CompareFailed"
 		c.Message = "the mirror left these branches as they are on each side because it couldn't compare their heads: " + failures(rep.Failed)
+	case len(rep.Unapplied) > 0:
+		c.Reason = "UpdateFailed"
+		c.Message = "the mirror couldn't update these branches in its copy: " + failures(rep.Unapplied)
 	case len(rep.Diverged) > 0:
 		c.Reason = "Diverged"
 		c.Message = strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", ") +
@@ -207,8 +211,7 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 	return c
 }
 
-// failures lists the branches whose heads a sync couldn't compare, with
-// why.
+// failures lists the branches that a sync failed on, with why.
 func failures(failed map[string]error) string {
 	var parts []string
 	for _, name := range slices.Sorted(maps.Keys(failed)) {

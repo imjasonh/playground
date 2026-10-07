@@ -49,6 +49,12 @@ type Report struct {
 	// such as git timing out. Sync leaves such a branch as it is on each
 	// side, and still syncs the other branches.
 	Failed map[string]error
+	// Unapplied maps each branch whose refs Sync couldn't update in the
+	// copy to why, such as the external repository having a branch a/b
+	// while the copy has a branch a, which git doesn't allow in one
+	// repository. Sync still syncs the other branches, and the next sync
+	// tries again.
+	Unapplied map[string]error
 	// Err says why Sync couldn't fetch from or push to the external
 	// repository.
 	Err error
@@ -65,8 +71,9 @@ type Report struct {
 // the copy hasn't fetched the external repository yet, and the error wraps
 // ErrNotSynced, or local git failed. Failing to fetch from or push to the
 // external repository after the copy has fetched once only sets the
-// report's Err, and failing to compare one branch's heads only adds the
-// branch to the report's Failed.
+// report's Err, failing to compare one branch's heads only adds the branch
+// to the report's Failed, and failing to update one branch's refs only adds
+// the branch to the report's Unapplied.
 func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOptions) (*Report, error) {
 	e := m.entry(repo)
 	e.syncing.Lock()
@@ -100,7 +107,7 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 		if err != nil {
 			return nil, err
 		}
-		if err := s.applyLocal(ctx, branches); err != nil {
+		if rep.Unapplied, err = s.applyLocal(ctx, branches); err != nil {
 			return nil, err
 		}
 		if err := e.markSeeded(ctx); err != nil {
@@ -109,7 +116,8 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 		if !o.Push {
 			break
 		}
-		rejected, err := s.push(ctx, branches)
+		rejected, unrecorded, err := s.push(ctx, branches)
+		maps.Copy(rep.Unapplied, unrecorded)
 		if err != nil || len(rejected) == 0 {
 			rep.Err = err
 			break
@@ -380,41 +388,30 @@ func (s *syncer) plan(ctx context.Context) ([]branch, error) {
 }
 
 // applyLocal takes the external repository's changes and records the
-// branches that agree.
-func (s *syncer) applyLocal(ctx context.Context, branches []branch) error {
-	var each [][]git.RefUpdate
+// branches that agree. It returns why it couldn't update each branch that
+// it couldn't, as update does.
+func (s *syncer) applyLocal(ctx context.Context, branches []branch) (map[string]error, error) {
+	updates := map[string][]git.RefUpdate{}
 	for _, b := range branches {
 		switch {
 		case b.act == take:
-			each = append(each, []git.RefUpdate{
+			updates[b.name] = []git.RefUpdate{
 				{Ref: headsPrefix + b.name, New: b.d, Old: b.m},
 				{Ref: syncedPrefix + b.name, New: b.d, Old: b.s},
-			})
+			}
 		case b.act == inSync && b.s != b.m:
-			each = append(each, []git.RefUpdate{{Ref: syncedPrefix + b.name, New: b.m, Old: b.s}})
+			updates[b.name] = []git.RefUpdate{{Ref: syncedPrefix + b.name, New: b.m, Old: b.s}}
 		}
 	}
-	if len(each) == 0 {
-		return nil
-	}
-	err := s.repo.UpdateRefs(ctx, slices.Concat(each...)...)
-	if !errors.Is(err, git.ErrRejected) {
-		return err
-	}
-	// A push moved a branch since plan read it. Apply the other branches;
-	// the next sync looks at that one again.
-	for _, u := range each {
-		if err := s.repo.UpdateRefs(ctx, u...); err != nil && !errors.Is(err, git.ErrRejected) {
-			return err
-		}
-	}
-	return nil
+	return s.update(ctx, updates)
 }
 
 // push sends the copy's changes to the external repository, each with a
-// lease on the external head that plan saw. It returns why the external
-// repository refused each update that it refused, by ref.
-func (s *syncer) push(ctx context.Context, branches []branch) (map[string]string, error) {
+// lease on the external head that plan saw, and records the changes that
+// the external repository took. It returns why the external repository
+// refused each update that it refused, by ref, and why push couldn't
+// record each branch that it couldn't, as update does.
+func (s *syncer) push(ctx context.Context, branches []branch) (map[string]string, map[string]error, error) {
 	var updates []git.RefUpdate
 	for _, b := range branches {
 		if b.act == push {
@@ -422,30 +419,77 @@ func (s *syncer) push(ctx context.Context, branches []branch) (map[string]string
 		}
 	}
 	if len(updates) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	remote, err := s.remote()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rejected, err := s.repo.PushEach(ctx, remote, updates...)
 	if err != nil {
-		return nil, fmt.Errorf("pushing to the external repository: %w", err)
+		return nil, nil, fmt.Errorf("pushing to the external repository: %w", err)
 	}
-	var synced []git.RefUpdate
+	pushed := map[string][]git.RefUpdate{}
 	for _, b := range branches {
 		if _, no := rejected[headsPrefix+b.name]; b.act == push && !no {
-			synced = append(synced,
-				git.RefUpdate{Ref: downstreamPrefix + b.name, New: b.m, Old: b.d},
-				git.RefUpdate{Ref: syncedPrefix + b.name, New: b.m, Old: b.s})
+			pushed[b.name] = []git.RefUpdate{
+				{Ref: downstreamPrefix + b.name, New: b.m, Old: b.d},
+				{Ref: syncedPrefix + b.name, New: b.m, Old: b.s},
+			}
 		}
 	}
-	if len(synced) > 0 {
-		if err := s.repo.UpdateRefs(ctx, synced...); err != nil {
+	unrecorded, err := s.update(ctx, pushed)
+	return rejected, unrecorded, err
+}
+
+// update applies each branch's ref updates in the copy, which change
+// together or not at all. It applies the branches whose updates delete
+// refs before the others, because git refuses to delete refs/heads/a and
+// create refs/heads/a/b in one transaction. The updates that a sync makes
+// for one branch either all delete refs or none do. update tries the
+// branches of each kind in one transaction, and then each branch alone if
+// that fails. A branch whose updates fail because a push moved one of its
+// refs since plan read it waits for the next sync, which looks at it
+// again. update returns why the updates of each other branch failed, such
+// as a lock that a killed git left, or a branch a in the copy when the
+// updates create a/b. It returns an error only when ctx ends.
+func (s *syncer) update(ctx context.Context, updates map[string][]git.RefUpdate) (map[string]error, error) {
+	var deleting, other []string
+	for _, name := range slices.Sorted(maps.Keys(updates)) {
+		if slices.ContainsFunc(updates[name], func(u git.RefUpdate) bool { return u.New != "" }) {
+			other = append(other, name)
+		} else {
+			deleting = append(deleting, name)
+		}
+	}
+	failed := map[string]error{}
+	for _, names := range [][]string{deleting, other} {
+		var all []git.RefUpdate
+		for _, name := range names {
+			all = append(all, updates[name]...)
+		}
+		if len(all) == 0 {
+			continue
+		}
+		err := s.repo.UpdateRefs(ctx, all...)
+		if err == nil {
+			continue
+		}
+		if ctx.Err() != nil {
 			return nil, err
 		}
+		for _, name := range names {
+			err := s.repo.UpdateRefs(ctx, updates[name]...)
+			switch {
+			case err == nil, errors.Is(err, git.ErrRejected):
+			case ctx.Err() != nil:
+				return nil, err
+			default:
+				failed[name] = err
+			}
+		}
 	}
-	return rejected, nil
+	return failed, nil
 }
 
 func refused(rejected map[string]string) error {

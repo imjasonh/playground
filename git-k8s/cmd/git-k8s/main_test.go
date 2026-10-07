@@ -756,6 +756,9 @@ func TestFirstFetchFailureKeepsBranches(t *testing.T) {
 			if c := f.condition("Ready"); c == nil || c.Reason != tc.reason {
 				t.Errorf("Ready = %+v, want reason %s", c, tc.reason)
 			}
+			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.Unknown || c.Reason != tc.reason {
+				t.Errorf("ExternalSynced = %+v, want Unknown with reason %s", c, tc.reason)
+			}
 			if len(owned(rec)) != 0 {
 				t.Error("declared GitBranches without fetching from the external repository")
 			}
@@ -817,12 +820,9 @@ func TestExternalFailureBacksOff(t *testing.T) {
 // A lock that a killed git left in the mirror's copy stops the copy from
 // taking the external repository's changes, and a condition says why.
 func TestReportsStaleLock(t *testing.T) {
-	for _, tc := range []struct {
-		ref, condition, reason string
-		fails                  bool
-	}{
-		{ref: "refs/heads/c/x", condition: "Ready", reason: "MirrorFailed", fails: true},
-		{ref: "refs/git-k8s/downstream/heads/c/x", condition: "ExternalSynced", reason: "SyncFailed"},
+	for _, tc := range []struct{ ref, reason string }{
+		{ref: "refs/heads/c/x", reason: "UpdateFailed"},
+		{ref: "refs/git-k8s/downstream/heads/c/x", reason: "SyncFailed"},
 	} {
 		t.Run(tc.ref, func(t *testing.T) {
 			f := newFixture(t)
@@ -834,13 +834,38 @@ func TestReportsStaleLock(t *testing.T) {
 			f.work.Commit("a person's change")
 			f.work.Push("c/x")
 			f.now = f.now.Add(time.Hour)
-			if _, err := f.tryReconcile(); (err != nil) != tc.fails {
-				t.Errorf("reconcile = %v, want an error: %t", err, tc.fails)
+			if _, err := f.tryReconcile(); err != nil {
+				t.Errorf("reconcile = %v", err)
 			}
-			if c := f.condition(tc.condition); c == nil || c.Status != kube.False || c.Reason != tc.reason || !strings.Contains(c.Message, "x.lock") {
-				t.Errorf("%s = %+v, want %s and a message that names the lock", tc.condition, c, tc.reason)
+			if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.False || c.Reason != tc.reason || !strings.Contains(c.Message, "x.lock") {
+				t.Errorf("ExternalSynced = %+v, want %s and a message that names the lock", c, tc.reason)
 			}
 		})
+	}
+}
+
+// When a sync fails without a report, ExternalSynced can't say whether the
+// external repository has every change in the copy, and doesn't keep what
+// the last sync found.
+func TestMirrorFailureMakesExternalSyncedUnknown(t *testing.T) {
+	f := newFixture(t)
+	f.branches()
+	if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.True {
+		t.Fatalf("after the first sync, ExternalSynced = %+v", c)
+	}
+	if err := os.WriteFile(filepath.Join(f.copyDir(), "config"), []byte("[broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(time.Hour)
+	if _, err := f.tryReconcile(); err == nil {
+		t.Fatal("reconcile of a broken copy succeeded")
+	}
+	ready := f.condition("Ready")
+	if ready == nil || ready.Reason != "MirrorFailed" {
+		t.Fatalf("Ready = %+v, want the reason MirrorFailed", ready)
+	}
+	if c := f.condition("ExternalSynced"); c == nil || c.Status != kube.Unknown || c.Reason != ready.Reason || c.Message != ready.Message {
+		t.Errorf("ExternalSynced = %+v, want Unknown with Ready's reason and message %q", c, ready.Message)
 	}
 }
 
@@ -889,6 +914,22 @@ func TestCompareFailedComesBeforeDiverged(t *testing.T) {
 	}
 	if c := syncedCondition(poll{}, rep); c.Reason != "CompareFailed" || !strings.Contains(c.Message, "c/x (") {
 		t.Errorf("ExternalSynced = %+v, want the reason CompareFailed, naming c/x", c)
+	}
+}
+
+// A branch that the mirror couldn't update in its copy comes after a branch
+// that it couldn't compare, and before a divergence.
+func TestUpdateFailedComesBeforeDiverged(t *testing.T) {
+	rep := &mirror.Report{
+		Unapplied: map[string]error{"c/x": errors.New("git update-ref: exit status 128")},
+		Diverged:  map[string]string{"c/y": "0123456789abcdef0123456789abcdef01234567"},
+	}
+	if c := syncedCondition(poll{}, rep); c.Reason != "UpdateFailed" || !strings.Contains(c.Message, "c/x (") {
+		t.Errorf("ExternalSynced = %+v, want the reason UpdateFailed, naming c/x", c)
+	}
+	rep.Failed = map[string]error{"c/z": errors.New("git merge-base: exit status 128")}
+	if c := syncedCondition(poll{}, rep); c.Reason != "CompareFailed" {
+		t.Errorf("with a branch that the mirror couldn't compare, ExternalSynced = %+v, want the reason CompareFailed", c)
 	}
 }
 

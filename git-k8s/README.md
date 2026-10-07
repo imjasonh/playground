@@ -172,7 +172,9 @@ external repository has every change in the copy:
 | `False` | `Pending` | The external repository doesn't have the changes to the branches that the message lists yet. |
 | `False` | `Diverged` | The branches that the message lists changed on both sides. See [Divergence](#divergence). |
 | `False` | `CompareFailed` | The mirror couldn't compare the heads of the branches that the message lists, for the reasons in the message, such as a comparison that took too long. It leaves those branches as they are on each side, and they don't land. See [Divergence](#divergence). |
+| `False` | `UpdateFailed` | The mirror couldn't update the branches that the message lists in its copy, for the reasons in the message. For example, the copy can't take the external repository's new branch `a/b` while it has a branch `a`, because git doesn't allow both in one repository. The mirror still syncs the other branches, and tries those again at each sync. |
 | `False` | `SyncFailed` | Fetching from or pushing to the external repository failed, for the reason in the message. |
+| `Unknown` | `FetchFailed`, `CredentialsUnavailable`, or `MirrorFailed` | The last sync failed before the mirror could compare the two sides. The `Ready` condition has the same reason and message. |
 
 After a fetch or a push fails, the controller tries again within 30
 seconds, or within `pollInterval` if that's shorter, and doesn't push until
@@ -3108,9 +3110,10 @@ each sync, the mirror removes the copy's lock files that are older than 6
 minutes and 10 seconds: the longest that a git command can take, plus a
 minute in case the volume's clock differs from the node's. A newer lock
 might belong to the other Pod. Until the mirror removes a lock, a sync or a
-landing that needs the locked ref fails and tries again later. When a sync
-fails, the `GitRepository`'s `Ready` condition (reason `MirrorFailed`) or
-`ExternalSynced` condition (reason `SyncFailed`) names the lock.
+landing that needs the locked ref fails and tries again later. The
+`GitRepository`'s `ExternalSynced` condition names the lock, with the reason
+`UpdateFailed` when the sync couldn't update a branch in the copy, or
+`SyncFailed` when the fetch couldn't record the external repository's head.
 
 Git packs a copy's objects in its maintenance. A fetch or a push would
 start maintenance in the background, where git's timeout doesn't apply, so
