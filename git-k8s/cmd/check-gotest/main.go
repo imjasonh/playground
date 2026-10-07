@@ -126,7 +126,6 @@ var (
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
 	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and other values need the same -goproxy on the core program")
 	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
-	mirrorURL    = flag.String("mirror", gitk8s.MirrorURL, "base URL of the git-k8s mirror, which test Pods fetch from")
 )
 
 // testPodLabels are the labels on every test Pod. generate gives the
@@ -562,7 +561,7 @@ func testPod(in *checks.Input, name string) (*Pod, error) {
 	}
 	mounts := []VolumeMount{{Name: "src", MountPath: "/src"}, {Name: "tmp", MountPath: "/tmp"}}
 	fetchEnv := []EnvVar{
-		{Name: "URL", Value: strings.TrimSuffix(*mirrorURL, "/") + gitk8s.MirrorPath(in.Repository.Namespace, in.Repository.Name)},
+		{Name: "URL", Value: in.MirrorURL()},
 		{Name: "BRANCH", Value: in.Spec.Branch},
 		{Name: "HEAD", Value: in.Spec.Head},
 		{Name: "TOKEN_FILE", Value: mirrorTokenDir + "/token"},

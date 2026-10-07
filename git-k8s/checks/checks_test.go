@@ -38,7 +38,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 
 // remote reaches the repository at the GitRepository's URL in place of the
 // mirror. Every test server here requires the password pw.
-func remote(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func remote(_ context.Context, _ string, repo *gitk8s.Repository) (git.Remote, error) {
 	return git.Remote{URL: repo.Spec.URL, Auth: &git.Auth{Username: "git-k8s", Password: "pw"}}, nil
 }
 
@@ -178,6 +178,35 @@ func TestRepoNeedsRemote(t *testing.T) {
 	}
 	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
 		t.Errorf("result = %+v, want Error", res)
+	}
+}
+
+func TestReachesTheCoreProgramAtCoreURL(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	f.cfg.CoreURL = "http://core.example:8080/"
+	var got []string
+	check := checks.Check{Name: "touch", Remote: func(ctx context.Context, coreURL string, repo *gitk8s.Repository) (git.Remote, error) {
+		got = append(got, coreURL)
+		return remote(ctx, coreURL, repo)
+	}, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+		if _, err := in.Repo(ctx); err != nil {
+			return checks.Verdict{}, err
+		}
+		return checks.Pass("%s", in.MirrorURL()), nil
+	}}
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if res, want := f.branch.Status.Checks.Result, "http://core.example:8080/default/app.git"; res == nil || res.Message != want {
+		t.Errorf("result = %+v, want the mirror URL %s", res, want)
+	}
+	if len(got) == 0 {
+		t.Error("the framework didn't call Check.Remote")
+	}
+	for _, u := range got {
+		if u != f.cfg.CoreURL {
+			t.Errorf("Check.Remote got the core program's URL %q, want %q", u, f.cfg.CoreURL)
+		}
 	}
 }
 
@@ -524,7 +553,7 @@ func TestRunErrorIsReported(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	runs := 0
 	check := touch(&runs)
-	check.Remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+	check.Remote = func(context.Context, string, *gitk8s.Repository) (git.Remote, error) {
 		r := f.srv.Remote("app")
 		r.Auth.Password = "wrong"
 		return r, nil

@@ -94,12 +94,13 @@ type Check struct {
 	// result depends on more than the heads. It can read objects with
 	// kube.Get, and a change to one of them calls it again.
 	Stale func(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool
-	// Remote returns a repository's URL and credentials. A check that calls
-	// Input.Repo or returns a Fix sets it to mirror.Remote, which reaches
-	// the repository's copy on the mirror. A check that leaves it nil
-	// doesn't link that package, so its program gets no token for the
-	// mirror.
-	Remote func(context.Context, *gitk8s.Repository) (git.Remote, error)
+	// Remote returns a repository's URL and credentials, given the core
+	// program's URL from Config.CoreURL. A check that calls Input.Repo or
+	// returns a Fix sets it to mirror.Remote, which reaches the
+	// repository's copy on the core program's mirror. A check that leaves
+	// it nil doesn't link that package, so its program gets no token for
+	// the mirror.
+	Remote func(ctx context.Context, coreURL string, repo *gitk8s.Repository) (git.Remote, error)
 	// SigningKey returns the key that signs a repository's commits, or nil
 	// if the repository doesn't name one. A check that calls
 	// Input.CommitTree or Input.Replay sets it to signing.Key. A check that
@@ -170,24 +171,25 @@ func Fail(format string, args ...any) Verdict {
 	return Verdict{State: gitk8s.Failed, Message: fmt.Sprintf(format, args...)}
 }
 
-// Config holds what check controllers need to work with git and to send
-// results.
+// Config holds what check controllers need to work with git and to reach
+// the core program.
 type Config struct {
 	Git      git.Git
 	CacheDir string
 	Identity git.Identity
-	// ResultsURL is the core program's results endpoint.
-	ResultsURL string
+	// CoreURL is the core program's base URL. Checks fetch from and push
+	// to its mirror, and send results to its results endpoint.
+	CoreURL string
 }
 
 // AddFlags registers flags that set c: -git, -cache-dir, -identity-name,
-// -identity-email, and -results-url.
+// -identity-email, and -core-url.
 func (c *Config) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Git.Bin, "git", "git", "git executable")
 	fs.StringVar(&c.CacheDir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	fs.StringVar(&c.Identity.Name, "identity-name", "git-k8s", "author and committer name of commits that the controller pushes")
 	fs.StringVar(&c.Identity.Email, "identity-email", "git-k8s@users.noreply.github.com", "author and committer email of commits that the controller pushes")
-	fs.StringVar(&c.ResultsURL, "results-url", defaultResultsURL, "URL of the core program's results endpoint")
+	fs.StringVar(&c.CoreURL, "core-url", gitk8s.CoreURL, "base URL of the git-k8s core program, which serves the mirror and takes check results")
 }
 
 // Main runs a check controller with flags from Config.AddFlags and kube.Main.
@@ -339,8 +341,15 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	if repo == nil {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
-	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir, Remote: r.check.Remote} })
-	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
+	r.once.Do(func() {
+		r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir}
+		if r.check.Remote != nil {
+			r.cache.Remote = func(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+				return r.check.Remote(ctx, r.cfg.CoreURL, repo)
+			}
+		}
+	})
+	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, coreURL: r.cfg.CoreURL, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
 	defer in.release()
 	if final && !r.current(cur, spec) && cur.Scope == gitk8s.ScopeChange {
 		if kept := r.keep(ctx, in, cur); kept != nil && !stale(kept) {
@@ -529,6 +538,7 @@ type Input struct {
 	Previous *gitk8s.CheckResult
 
 	identity git.Identity
+	coreURL  string
 	check    *Check
 	cache    *gitk8s.Cache
 	remote   *git.Remote
@@ -540,13 +550,19 @@ type Input struct {
 	key      **git.SigningKey
 }
 
+// MirrorURL returns the URL of the repository's copy on the core program's
+// mirror, which the Pod that a Running verdict names can fetch from.
+func (in *Input) MirrorURL() string {
+	return strings.TrimSuffix(in.coreURL, "/") + gitk8s.MirrorPath(in.Repository.Namespace, in.Repository.Name)
+}
+
 // Remote returns the repository's URL and credentials, from Check.Remote.
 func (in *Input) Remote(ctx context.Context) (git.Remote, error) {
 	if in.remote == nil {
 		if in.check.Remote == nil {
 			return git.Remote{}, fmt.Errorf("the %s check can't reach the repository: set Check.Remote to mirror.Remote", in.check.Name)
 		}
-		r, err := in.check.Remote(ctx, in.Repository)
+		r, err := in.check.Remote(ctx, in.coreURL, in.Repository)
 		if err != nil {
 			return r, err
 		}

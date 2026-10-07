@@ -153,12 +153,10 @@ namespace `team` is at `http://git-k8s.git-k8s.svc/team/app.git`. The
 Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens, and where the core program also serves the
 [results endpoint](#check-results). If you install the core program under
-another name or in another namespace, set `-mirror` to the mirror's base URL
-on `check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`,
-`check-review`, `check-conflicts`, `check-deps`, and `git-k8s-deps`, and set
-`-results-url` to the results endpoint's URL on every check. Also set the
-core program's `-mirror-namespace` and `-mirror-labels` to its own namespace
-and labels, which it uses in the
+another name or in another namespace, set `-core-url` to its base URL on
+every check and on `git-k8s-deps`, which reach the mirror and the results
+endpoint under that URL. Also set the core program's `-mirror-namespace`
+and `-mirror-labels` to its own namespace and labels, which it uses in the
 [test Pods' NetworkPolicy](#sandboxed-checks), and change the
 [agent Pods' NetworkPolicy](#agentic-checks) to match.
 
@@ -2203,8 +2201,8 @@ to the core program's results endpoint:
    the check's service account with the audience `git-k8s-results`, which
    the kubelet renews before it expires.
 2. It sends the result and the token in a `PUT` request to
-   `RESULTS_URL/NAMESPACE/GITBRANCH/CHECK`. `RESULTS_URL` is the check's
-   `-results-url` flag, `http://git-k8s.git-k8s.svc/results` by default. The
+   `CORE_URL/results/NAMESPACE/GITBRANCH/CHECK`. `CORE_URL` is the check's
+   `-core-url` flag, `http://git-k8s.git-k8s.svc` by default. The
    request also names the `GitBranch` generation that the check read, and
    the core program waits until its cache has the `GitBranch` at that
    generation. The check's cache can get a `GitBranch` first, so until
@@ -2247,7 +2245,7 @@ reconcile succeeds, so kube doesn't run the check again. If the core
 program rejects the result with `400 Bad Request`, or the token's service
 account with `403 Forbidden`, the check logs why and sends nothing more for
 that branch until the branch changes or the check restarts. Any other
-answer, such as a `404 Not Found` from a `-results-url` with the wrong
+answer, such as a `404 Not Found` from a `-core-url` with the wrong
 path, fails the check's reconcile, and kube retries it.
 
 ### Result scopes

@@ -9,7 +9,6 @@ package mirror
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"strings"
 
@@ -18,16 +17,14 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-var base = flag.String("mirror", gitk8s.MirrorURL, "base URL of the git-k8s mirror")
-
-// Remote returns the URL of a repository's copy on the mirror, from the
-// -mirror flag, and a token that the mirror accepts. It needs a kube
+// Remote returns the URL of a repository's copy on the mirror of the core
+// program at coreURL, and a token that the mirror accepts. It needs a kube
 // context, such as a reconcile's.
-func Remote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func Remote(ctx context.Context, coreURL string, repo *gitk8s.Repository) (git.Remote, error) {
 	token, _, err := kube.RequestToken(ctx, gitk8s.MirrorAudience)
 	if err != nil {
 		return git.Remote{}, fmt.Errorf("getting a token for the mirror: %w", err)
 	}
-	url := strings.TrimSuffix(*base, "/") + gitk8s.MirrorPath(repo.Namespace, repo.Name)
+	url := strings.TrimSuffix(coreURL, "/") + gitk8s.MirrorPath(repo.Namespace, repo.Name)
 	return git.Remote{URL: url, Auth: &git.Auth{Token: token}}, nil
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"maps"
 	"net/http"
@@ -134,7 +133,7 @@ func reconcile(t *testing.T, srv *gittest.Server, b *Branch, rules []gitk8s.Bran
 
 // useRemote makes the check reach repositories with remote instead of
 // mirror.Remote for the rest of the test.
-func useRemote(t *testing.T, remote func(context.Context, *gitk8s.Repository) (git.Remote, error)) {
+func useRemote(t *testing.T, remote func(context.Context, string, *gitk8s.Repository) (git.Remote, error)) {
 	r := check.Remote
 	t.Cleanup(func() { check.Remote = r })
 	check.Remote = remote
@@ -142,18 +141,17 @@ func useRemote(t *testing.T, remote func(context.Context, *gitk8s.Repository) (g
 
 // wrongPassword reaches the repositories on srv with the wrong password,
 // so that git fails.
-func wrongPassword(srv *gittest.Server) func(context.Context, *gitk8s.Repository) (git.Remote, error) {
-	return func(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func wrongPassword(srv *gittest.Server) func(context.Context, string, *gitk8s.Repository) (git.Remote, error) {
+	return func(_ context.Context, _ string, repo *gitk8s.Repository) (git.Remote, error) {
 		r := srv.Remote(repo.Name)
 		r.Auth = &git.Auth{Username: srv.Username, Password: "wrong"}
 		return r, nil
 	}
 }
 
-// serveMirror serves the repositories on srv like the mirror: at
-// /default/NAME.git, to requests with a token from kube.RequestToken. The
-// -mirror flag points to that server until the test ends, and serveMirror
-// returns its URL.
+// serveMirror serves the repositories on srv like the core program's
+// mirror: at /default/NAME.git, to requests with a token from
+// kube.RequestToken. It returns the server's URL, for Config.CoreURL.
 func serveMirror(t *testing.T, srv *gittest.Server) string {
 	t.Helper()
 	upstream, err := url.Parse(srv.URL)
@@ -174,10 +172,6 @@ func serveMirror(t *testing.T, srv *gittest.Server) string {
 		}
 	}))
 	t.Cleanup(m.Close)
-	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
-	if err := flag.Set("mirror", m.URL); err != nil {
-		t.Fatal(err)
-	}
 	return m.URL
 }
 
@@ -609,7 +603,7 @@ func TestFollowsTheAgentWhileGitFails(t *testing.T) {
 	}
 
 	t.Log("While the check can't get a token for the mirror, it follows the run at the URL in its notes.")
-	useRemote(t, func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+	useRemote(t, func(context.Context, string, *gitk8s.Repository) (git.Remote, error) {
 		return git.Remote{}, errors.New("no token for the mirror")
 	})
 	ctx, rec = kube.Fake(t.Context(), b, repo)
@@ -629,14 +623,14 @@ func TestReachesTheRepositoryThroughTheMirror(t *testing.T) {
 	// app on srv, and returns the copy's URL on that server.
 	reconcileThroughMirror := func(t *testing.T, srv *gittest.Server, b *Branch, world ...any) (*kube.Recorder, string) {
 		t.Helper()
-		copyURL := serveMirror(t, srv) + "/default/app.git"
+		coreURL := serveMirror(t, srv)
 		repo, _ := srv.Repository("app", rules...)
 		ctx, rec := kube.Fake(t.Context(), b, append([]any{repo}, world...)...)
-		cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
+		cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, CoreURL: coreURL}
 		if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
 			t.Fatal(err)
 		}
-		return rec, copyURL
+		return rec, coreURL + "/default/app.git"
 	}
 
 	t.Run("an agent Pod fetches from the mirror with a token of its own", func(t *testing.T) {

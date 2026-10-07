@@ -132,7 +132,7 @@ type updater struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
 	// remote is mirror.Remote, except in tests.
-	remote func(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error)
+	remote func(ctx context.Context, coreURL string, repo *gitk8s.Repository) (git.Remote, error)
 	// fetchConfigMap is kube.Fetch, and applyConfigMap is kube.Apply,
 	// except in tests.
 	fetchConfigMap func(ctx context.Context, namespace, name string) (*configMap, error)
@@ -205,8 +205,13 @@ func (u *updater) init() error {
 	if u.remote == nil {
 		u.remote = mirror.Remote
 	}
-	u.cache = &gitk8s.Cache{Git: &u.cfg.Git, Dir: u.cfg.CacheDir, Remote: u.remote}
+	u.cache = &gitk8s.Cache{Git: &u.cfg.Git, Dir: u.cfg.CacheDir, Remote: u.mirrorRemote}
 	return nil
+}
+
+// mirrorRemote reaches a repository on the core program's mirror.
+func (u *updater) mirrorRemote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+	return u.remote(ctx, u.cfg.CoreURL, repo)
 }
 
 // parseConfigMap parses the -seen-configmap flag, the name of a ConfigMap
@@ -342,7 +347,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	kube.RequeueAfter(ctx, u.interval)
 	log := slog.With("namespace", b.Namespace, "repository", repo.Name, "parent", parent)
 
-	remote, err := u.remote(ctx, repo)
+	remote, err := u.mirrorRemote(ctx, repo)
 	if err != nil {
 		return err
 	}

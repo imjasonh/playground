@@ -91,7 +91,7 @@ func (t target) job(in *checks.Input, base, url string) *agent.Job {
 // counts from. While the check can't reach the mirror, such as when its
 // token for the mirror can't be read, it follows the run with the URL in
 // the previous notes. Otherwise a new URL, such as from a changed
-// -mirror, starts a new run.
+// -core-url, starts a new run.
 func follow(ctx context.Context, in *checks.Input, t target, rec record) (checks.Verdict, bool) {
 	prev := in.Previous
 	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head {

@@ -61,7 +61,7 @@ func reconcileWith(t *testing.T, b *Branch, repo *gitk8s.GitRepository, pods ...
 	for _, p := range pods {
 		world = append(world, p)
 	}
-	return reconcileIn(t, checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{}), b, world...)
+	return reconcileIn(t, checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{CoreURL: gitk8s.CoreURL}), b, world...)
 }
 
 // reconcileIn runs r on b with world holding the objects that exist.
@@ -78,8 +78,14 @@ func reconcileIn(t *testing.T, r kube.Reconciler[Branch], b *Branch, world ...an
 // the Pod.
 func started(t *testing.T, b *Branch, repo *gitk8s.GitRepository) *Pod {
 	t.Helper()
+	return startedAt(t, gitk8s.CoreURL, b, repo)
+}
+
+// startedAt is started with the core program at coreURL.
+func startedAt(t *testing.T, coreURL string, b *Branch, repo *gitk8s.GitRepository) *Pod {
+	t.Helper()
 	named(b, 1)
-	rec := reconcileWith(t, b, repo)
+	rec := reconcileIn(t, checks.NewReconciler[Branch](new(gotest).check(), &checks.Config{CoreURL: coreURL}), b, repo)
 	pods := kube.Owned[Pod](rec)
 	if len(pods) != 1 {
 		t.Fatalf("owned Pods = %+v, want one", pods)
@@ -958,12 +964,10 @@ func TestFetch(t *testing.T) {
 			}
 		}))
 		t.Cleanup(mirror.Close)
-		defer func(u string) { *mirrorURL = u }(*mirrorURL)
-		*mirrorURL = mirror.URL + "/"
 
 		b, repo := branch()
 		b.Spec.Head = commit
-		p := started(t, b, repo)
+		p := startedAt(t, mirror.URL+"/", b, repo)
 
 		dir, err := fetch(t, p, token)
 		if err != nil {
@@ -1008,14 +1012,12 @@ func TestFetchRefusesUnsafeURLs(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	eachFetch(t, func(t *testing.T) {
-		defer func(u string) { *mirrorURL = u }(*mirrorURL)
 		for url, want := range map[string]string{
 			"--upload-pack=touch " + marker + "; false": "blocked",
 			"evil::x": "not allowed",
 		} {
-			*mirrorURL = url
 			b, repo := branch()
-			_, err := fetch(t, started(t, b, repo), "token")
+			_, err := fetch(t, startedAt(t, url, b, repo), "token")
 			if _, statErr := os.Stat(marker); statErr == nil {
 				t.Fatalf("fetching from %q ran a command", url)
 			}

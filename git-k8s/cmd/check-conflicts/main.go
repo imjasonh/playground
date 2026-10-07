@@ -441,13 +441,17 @@ type reconciler struct {
 }
 
 func newReconciler(cfg *checks.Config) *reconciler {
-	return &reconciler{
-		check: checks.NewReconciler[Branch](check, cfg),
-		cfg:   cfg,
-		// The checks framework keeps its own Cache in cfg.CacheDir, and two
-		// Caches don't lock each other's repositories.
-		cache: &gitk8s.Cache{Git: &cfg.Git, Dir: filepath.Join(cfg.CacheDir, ".parents"), Remote: check.Remote},
-	}
+	r := &reconciler{check: checks.NewReconciler[Branch](check, cfg), cfg: cfg}
+	// The checks framework keeps its own Cache in cfg.CacheDir, and two
+	// Caches don't lock each other's repositories.
+	r.cache = &gitk8s.Cache{Git: &cfg.Git, Dir: filepath.Join(cfg.CacheDir, ".parents"), Remote: r.remote}
+	return r
+}
+
+// remote reaches a repository as the check does, on the core program's
+// mirror.
+func (r *reconciler) remote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+	return check.Remote(ctx, r.cfg.CoreURL, repo)
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, b *Branch) error {
@@ -511,7 +515,7 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		return fail(err)
 	}
 	defer unlock()
-	remote, err := check.Remote(ctx, repo)
+	remote, err := r.remote(ctx, repo)
 	if err != nil {
 		return fail(err)
 	}

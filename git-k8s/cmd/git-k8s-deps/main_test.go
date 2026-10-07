@@ -431,11 +431,11 @@ func (f *fixture) restart() {
 	}
 }
 
-// serveMirror serves the repositories on srv like the mirror: at
-// /default/NAME.git, to requests with a token from kube.RequestToken. It
-// sends srv's credentials, which the controller doesn't have. The -mirror
-// flag points to that server until the test ends.
-func serveMirror(t *testing.T, srv *gittest.Server) {
+// serveMirror serves the repositories on srv like the core program's
+// mirror: at /default/NAME.git, to requests with a token from
+// kube.RequestToken. It sends srv's credentials, which the controller
+// doesn't have. It returns the server's URL, for Config.CoreURL.
+func serveMirror(t *testing.T, srv *gittest.Server) string {
 	t.Helper()
 	upstream, err := url.Parse(srv.URL)
 	if err != nil {
@@ -456,10 +456,7 @@ func serveMirror(t *testing.T, srv *gittest.Server) {
 		}
 	}))
 	t.Cleanup(m.Close)
-	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
-	if err := flag.Set("mirror", m.URL); err != nil {
-		t.Fatal(err)
-	}
+	return m.URL
 }
 
 // inNamespace runs the controller in namespace ns, as the namespace file of
@@ -1749,7 +1746,7 @@ func TestTriesAgainSoonWhenTheExternalRepositoryIsBehind(t *testing.T) {
 func TestReachesRepositoriesThroughTheMirror(t *testing.T) {
 	f := newFixture(t)
 	f.u.remote = nil
-	serveMirror(t, f.srv)
+	f.u.cfg.CoreURL = serveMirror(t, f.srv)
 	p := f.start()
 	if got, want := env(p.Spec.InitContainers[0], "URL"), f.srv.Remote("app").URL; got != want {
 		t.Errorf("the prepare container's URL = %q, want the external repository's, %q", got, want)

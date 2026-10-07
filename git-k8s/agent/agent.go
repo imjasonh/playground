@@ -182,7 +182,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	// A reconcile that doesn't declare the run's Pod deletes it, so while
 	// the check can't reach the repository, such as when its token for the
 	// mirror can't be read, it follows the run with the URL in its notes.
-	// Otherwise a new URL, such as from a changed -mirror, starts the run
+	// Otherwise a new URL, such as from a changed -core-url, starts the run
 	// again in a new Pod.
 	if remote, err := in.Remote(ctx); err == nil {
 		x.job.URL = remote.URL
