@@ -39,7 +39,11 @@ func TestGate(t *testing.T) {
 		{"checks.all(c, c in ['approval', 'my-check'] || checks[c].passed)", true},
 		{"size(checks) == 5", true},
 	} {
-		g, err := Parse(c.expr)
+		var listed []gitk8s.CheckPolicy
+		for name := range checks {
+			listed = append(listed, gitk8s.CheckPolicy{Name: name})
+		}
+		g, err := Parse(c.expr, listed)
 		if err != nil {
 			t.Errorf("Parse(%q): %v", c.expr, err)
 			continue
@@ -62,10 +66,10 @@ func TestGateErrors(t *testing.T) {
 		{expr: "nope.passed", parseErr: "undeclared reference to 'nope'"},
 		{expr: "checks.base.passed == 'true'", parseErr: "no matching overload"},
 		{expr: "checks.base", parseErr: "not a bool"},
-		{expr: "checks.nope.passed", evalErr: "no such key: nope"},
+		{expr: "checks.nope.passed", parseErr: "the merge policy doesn't list a check named 'nope'"},
 		{expr: "checks.gofmt.outputs.level == 'low'", evalErr: "no such key: level"},
 	} {
-		g, err := Parse(c.expr)
+		g, err := Parse(c.expr, []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt"}})
 		if c.parseErr != "" {
 			if err == nil || !strings.Contains(err.Error(), c.parseErr) {
 				t.Errorf("Parse(%q) error = %v, want %q", c.expr, err, c.parseErr)
@@ -86,12 +90,40 @@ func TestGateErrors(t *testing.T) {
 	}
 }
 
+// A when expression can name only the checks that its merge policy lists,
+// because it sees no others.
+func TestGateNamesOnlyListedChecks(t *testing.T) {
+	listed := []gitk8s.CheckPolicy{{Name: "base"}, {Name: "go-vet"}}
+	for _, c := range []struct{ expr, err string }{
+		{"checks.base.passed && checks.gofmy.passed", "1:29: the merge policy doesn't list a check named 'gofmy'"},
+		{"checks.gofmy.passed || checks.nope.passed", "1:7: the merge policy doesn't list a check named 'gofmy'; 1:30: the merge policy doesn't list a check named 'nope'"},
+		{`checks["gofmy"].passed`, "doesn't list a check named 'gofmy'"},
+		{"has(checks.gofmy)", "doesn't list a check named 'gofmy'"},
+		{`"gofmy" in checks`, "doesn't list a check named 'gofmy'"},
+		{"checks.exists(c, checks.gofmy.passed)", "doesn't list a check named 'gofmy'"},
+		{"checks.go-vet.passed", `undeclared reference to 'vet' (in container ''); write checks["go-vet"] for a check whose name has a hyphen`},
+	} {
+		if _, err := Parse(c.expr, listed); err == nil || !strings.Contains(err.Error(), c.err) {
+			t.Errorf("Parse(%q) error = %v, want %q", c.expr, err, c.err)
+		}
+	}
+	for _, expr := range []string{
+		`checks["go-vet"].passed && checks.base.passed`,
+		`has(checks.base) && "go-vet" in checks`,
+		"checks.all(c, checks[c].passed)",
+	} {
+		if _, err := Parse(expr, listed); err != nil {
+			t.Errorf("Parse(%q): %v", expr, err)
+		}
+	}
+}
+
 func TestGateCostLimit(t *testing.T) {
 	checks := map[string]gitk8s.GateCheck{}
 	for i := range 20 {
 		checks[fmt.Sprintf("c%d", i)] = gitk8s.GateCheck{Passed: true}
 	}
-	g, err := Parse("checks.all(a, checks.all(b, checks.all(c, checks.all(d, checks[d].passed))))")
+	g, err := Parse("checks.all(a, checks.all(b, checks.all(c, checks.all(d, checks[d].passed))))", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

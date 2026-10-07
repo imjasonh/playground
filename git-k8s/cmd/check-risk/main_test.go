@@ -115,6 +115,54 @@ func TestRisk(t *testing.T) {
 	}
 }
 
+func TestRiskOfBinaryFilesAndSubmodules(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	gitmodules := func(url string) string {
+		return "[submodule \"lib\"]\n\tpath = lib\n\turl = " + url + "\n"
+	}
+	good, evil := gitmodules("https://github.com/good/lib"), gitmodules("https://github.com/evil/lib")
+	c1, c2 := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	for _, c := range []struct {
+		name         string
+		base, change map[string]string
+		level        string
+		reason       string
+	}{
+		{name: "binary file", change: map[string]string{"tools/protoc": "\x7fELF\x02\x01\x01\x00" + strings.Repeat("\x00\x01", 2048)}, level: "high", reason: "changes binary files tools/protoc"},
+		{name: "text file with a NUL byte", change: map[string]string{"app.js": "/* \x00 */\n" + strings.Repeat("run();\n", 50)}, level: "high", reason: "changes binary files app.js"},
+		{name: "text file with a NUL byte after its first 8,000 bytes", change: map[string]string{"app.js": strings.Repeat("run();\n", 1200) + "/* \x00 */\n"}, level: "high", reason: "changes 1201 lines, more than 10"},
+		{name: "new submodule", change: map[string]string{".gitmodules": good, "lib": submoduleAt + c1}, level: "high", reason: "changes .gitmodules; changes submodules lib"},
+		{
+			name:   "submodule that the change moves to another repository",
+			base:   map[string]string{".gitmodules": good, "lib": submoduleAt + c1},
+			change: map[string]string{".gitmodules": evil, "lib": submoduleAt + c2},
+			level:  "high", reason: "changes .gitmodules; changes submodules lib",
+		},
+		{
+			name:   "submodule that the change moves to another commit",
+			base:   map[string]string{".gitmodules": good, "lib": submoduleAt + c1},
+			change: map[string]string{"lib": submoduleAt + c2},
+			level:  "high", reason: "changes submodules lib",
+		},
+		{
+			name:   "submodule that the change leaves alone",
+			base:   map[string]string{".gitmodules": good, "lib": submoduleAt + c1},
+			change: map[string]string{"docs/a.md": "a\n"},
+			level:  "low", reason: "changes 1 lines in 1 files",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := rate(t, c.base, c.change, "change")
+			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
+				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
+			}
+			if res.ParentCommit != "" || res.MergeBase == "" {
+				t.Errorf("result = %+v, want one for the change on top of its merge base, not for the parent's head", res)
+			}
+		})
+	}
+}
+
 func TestRiskThatReadsTheMergeBase(t *testing.T) {
 	*maxLines, *sensitive = 10, ""
 	for _, c := range []struct {
@@ -281,7 +329,7 @@ func TestRiskOfModules(t *testing.T) {
 		},
 		{name: "go.work in a subdirectory", change: map[string]string{"sub/go.work": "go 1.24\n\nuse ..\n"}, level: "high", reason: "changes sub/go.work"},
 		{name: "go.work.sum", change: map[string]string{"go.work.sum": strings.Repeat("example.com/a v1.2.4 h1:abc=\n", 12)}, level: "low", reason: "changes 0 lines in 1 files, not counting go.sum"},
-		{name: "new go.mod", change: map[string]string{"svc/go.mod": "module example.com/app/svc\n\ngo 1.26\n\nrequire example.com/a v1.2.3\n"}, level: "low"},
+		{name: "new go.mod", change: map[string]string{"svc/go.mod": "module example.com/app/svc\n\ngo 1.24\n\nrequire example.com/a v1.2.3\n"}, level: "low"},
 		{name: "new module", change: edit(")", "\texample.com/c v1.0.0\n)"), level: "high", reason: "adds module example.com/c"},
 		{name: "major version path", change: edit("example.com/a v1.2.3", "example.com/a/v2 v2.0.0"), level: "high", reason: "moves example.com/a to example.com/a/v2"},
 		{name: "v0 to v1", change: edit("b v0.4.0", "b v1.0.0"), level: "high", reason: "moves example.com/b to v1.0.0, a new major version"},
@@ -299,6 +347,7 @@ func TestRiskOfModules(t *testing.T) {
 		{name: "dropped replacement", change: edit("replace example.com/fork => example.com/forked v1.0.0\n", ""), level: "high", reason: "stops replacing example.com/fork with example.com/forked@v1.0.0"},
 		{name: "go line", change: edit("go 1.24", "go 1.25"), level: "high", reason: "changes the go line in go.mod from 1.24 to 1.25"},
 		{name: "toolchain line", change: edit("go 1.24\n", "go 1.24\n\ntoolchain go1.26.1\n"), level: "high", reason: "changes the toolchain line in go.mod from none to go1.26.1"},
+		{name: "godebug line", change: edit("go 1.24\n", "go 1.24\n\ngodebug x509sha1=1\n"), level: "high", reason: "changes the godebug lines in go.mod from none to x509sha1=1"},
 		{name: "unreadable go.mod", change: map[string]string{"go.mod": "this isn't a go.mod file\n"}, level: "high", reason: "changes go.mod, which check-risk can't read"},
 		{
 			name:    "agent commit",
@@ -310,6 +359,75 @@ func TestRiskOfModules(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			res := rate(t, base, c.change, cmp.Or(c.message, "change"))
+			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
+				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
+			}
+		})
+	}
+}
+
+func TestRiskOfModFileLines(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	const svcMod = "module example.com/app/svc\n\ngo 1.24\n"
+	godebug := func(lines ...string) string {
+		return goMod + "\ngodebug (\n\t" + strings.Join(lines, "\n\t") + "\n)\n"
+	}
+	root := map[string]string{"go.mod": goMod}
+	for _, c := range []struct {
+		name         string
+		base, change map[string]string
+		level        string
+		reason       string
+	}{
+		{name: "new go.mod with the lines of its directory's module", base: root, change: map[string]string{"svc/go.mod": svcMod}, level: "low"},
+		{
+			name: "new go.mod with another go line", base: root,
+			change: map[string]string{"svc/go.mod": strings.Replace(svcMod, "go 1.24", "go 1.99", 1)},
+			level:  "high", reason: "changes the go line in svc/go.mod from 1.24 in go.mod to 1.99",
+		},
+		{
+			name: "new go.mod without a go line", base: root,
+			change: map[string]string{"svc/go.mod": "module example.com/app/svc\n"},
+			level:  "high", reason: "changes the go line in svc/go.mod from 1.24 in go.mod to none",
+		},
+		{
+			name: "new go.mod with a toolchain line", base: root,
+			change: map[string]string{"svc/go.mod": svcMod + "\ntoolchain go1.99.1\n"},
+			level:  "high", reason: "changes the toolchain line in svc/go.mod from none in go.mod to go1.99.1",
+		},
+		{
+			name: "new go.mod with godebug lines", base: root,
+			change: map[string]string{"svc/go.mod": svcMod + "\ngodebug (\n\tx509sha1=1\n\ttlsrsakex=1\n)\n"},
+			level:  "high", reason: "changes the godebug lines in svc/go.mod from none in go.mod to tlsrsakex=1, x509sha1=1",
+		},
+		{
+			name:   "new go.mod in a nested module",
+			base:   map[string]string{"go.mod": goMod, "svc/go.mod": strings.Replace(svcMod, "go 1.24", "go 1.21", 1)},
+			change: map[string]string{"svc/cmd/go.mod": "module example.com/app/svc/cmd\n\ngo 1.24\n"},
+			level:  "high", reason: "changes the go line in svc/cmd/go.mod from 1.21 in svc/go.mod to 1.24",
+		},
+		{name: "new go.mod in no module", change: map[string]string{"svc/go.mod": svcMod}, level: "high", reason: "changes the go line in svc/go.mod from none to 1.24"},
+		{
+			name:   "go.mod that check-risk can't read at the merge base",
+			base:   map[string]string{"go.mod": "this isn't a go.mod file\n"},
+			change: root,
+			level:  "high", reason: "changes the go line in go.mod from none to 1.24",
+		},
+		{
+			name:   "godebug lines in another order",
+			base:   map[string]string{"go.mod": godebug("tlsrsakex=1", "x509sha1=1")},
+			change: map[string]string{"go.mod": godebug("x509sha1=1", "tlsrsakex=1")},
+			level:  "low",
+		},
+		{
+			name:   "godebug line that a later one overrides",
+			base:   map[string]string{"go.mod": godebug("tlsrsakex=1", "tlsrsakex=0")},
+			change: map[string]string{"go.mod": godebug("tlsrsakex=0", "tlsrsakex=1")},
+			level:  "high", reason: "changes the godebug lines in go.mod from tlsrsakex=0 to tlsrsakex=1",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := rate(t, c.base, c.change, "change")
 			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
 				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
 			}
@@ -330,6 +448,77 @@ func TestRiskOfSquashedAgentCommits(t *testing.T) {
 	squashed := rate(t, nil, change, "Change main.go\n\n"+git.AgentTrailer+": deps\n"+git.AgentTrailer+": review")
 	if head.Outputs["level"] != "high" || head.Message != squashed.Message || !maps.Equal(head.Outputs, squashed.Outputs) {
 		t.Errorf("head's result = %+v, squashed commit's = %+v, want the same high rating", head, squashed)
+	}
+}
+
+// TestRiskOfResolvedConflicts rates a branch, then lands a change on the
+// parent that conflicts with the branch's, then rates the merge that
+// resolves the conflict, with the message that check-conflicts gives it.
+// The merge doesn't make the branch's change, so the check rates it again.
+func TestRiskOfResolvedConflicts(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	for _, c := range []struct {
+		name, path, start, branch, main, resolved string
+		body, level, message                      string
+	}{{
+		name: "by git's union driver", path: "go.sum",
+		start: "a v1\n", branch: "a v1\nc v1\n", main: "a v1\nb v1\n", resolved: "a v1\nc v1\nb v1\n",
+		body:  "Git merged these files with its union driver, which keeps the lines of both sides:\n\ngo.sum\n\n" + git.FixerTrailer + ": conflicts",
+		level: "low", message: "risk is low: changes 0 lines in 1 files, not counting go.sum",
+	}, {
+		name: "by the agent", path: "a.txt",
+		start: "one\ntwo\nthree\n", branch: "one\nbranch\nthree\n", main: "one\nmain\nthree\n", resolved: "one\nbranch\nmain\nthree\n",
+		body:  "kept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts\n" + git.AgentTrailer + ": conflicts",
+		level: "high", message: "risk is high: has changes from AI agents",
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			w := srv.NewWork(t, "app")
+			w.Write(c.path, c.start)
+			start := w.Commit("main")
+			w.Push("main")
+			w.Branch("c/x", start)
+			w.Write(c.path, c.branch)
+			head := w.Commit("change")
+			w.Push("c/x")
+
+			b := &Branch{Object: kube.Meta("app-c-x", nil)}
+			b.Namespace = "default"
+			b.Spec = gitk8s.GitBranchSpec{
+				Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: start,
+				Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
+			}
+			repo, _ := srv.Repository("app")
+			risk := check
+			risk.Remote = srv.RemoteFor
+			r := checks.NewReconciler[Branch](risk, &checks.Config{CacheDir: t.TempDir()})
+			reconcileRisk := func() *gitk8s.CheckResult {
+				t.Helper()
+				ctx, _ := kube.Fake(t.Context(), b, repo)
+				if err := r.Reconcile(ctx, b); err != nil {
+					t.Fatal(err)
+				}
+				return b.Status.Checks.Result
+			}
+			if res := reconcileRisk(); res.Outputs["level"] != "low" {
+				t.Fatalf("result = %+v, want low risk for the branch's own change", res)
+			}
+
+			w.Branch("main", start)
+			w.Write(c.path, c.main)
+			b.Spec.ParentHead = w.Commit("land another branch")
+			w.Push("main")
+			w.Branch("c/x", head)
+			if _, err := w.TryGit("merge", "--quiet", "--no-edit", b.Spec.ParentHead); err == nil {
+				t.Fatalf("merging main into c/x succeeded, want a conflict in %s", c.path)
+			}
+			w.Write(c.path, c.resolved)
+			b.Spec.Head = w.Commit("Merge main into c/x\n\n" + c.body)
+			w.Push("c/x")
+			if res := reconcileRisk(); res.Commit != b.Spec.Head || res.Outputs["level"] != c.level || res.Message != c.message {
+				t.Errorf("result for the merge = %+v, want level %s and %q", res, c.level, c.message)
+			}
+		})
 	}
 }
 
@@ -416,7 +605,7 @@ func TestRiskOfLinkedReplacements(t *testing.T) {
 			name:   "submodule that the change moves to another commit",
 			base:   map[string]string{"go.mod": replaceA("./third_party/a"), "third_party/a": submoduleAt + c1},
 			change: map[string]string{"third_party/a": submoduleAt + c2},
-			level:  "high", reason: "changes the submodule third_party/a, which a replacement of example.com/a goes through",
+			level:  "high", reason: "changes submodules third_party/a",
 		},
 		{
 			name:   "submodule that the change leaves alone",
