@@ -282,8 +282,8 @@ func TestListsBranches(t *testing.T) {
 	if got := ownedPolicies(rec); got != wantPolicy {
 		t.Errorf("owned NetworkPolicies: %q, want %q", got, wantPolicy)
 	}
-	if f.repo.Status.Branches != 2 || rec.RequeueAfter() != 30*time.Second {
-		t.Errorf("status branches = %d, requeue = %v", f.repo.Status.Branches, rec.RequeueAfter())
+	if f.repo.Status.TrackedBranches != 2 || rec.RequeueAfter() != 30*time.Second {
+		t.Errorf("status trackedBranches = %d, requeue = %v", f.repo.Status.TrackedBranches, rec.RequeueAfter())
 	}
 	if c := f.condition("Ready"); c == nil || c.Status != kube.True || c.Message != "tracking 2 of 3 branches" {
 		t.Errorf("Ready = %+v", c)

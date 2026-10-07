@@ -174,7 +174,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.Repository) e
 			Spec:   spec,
 		})
 	}
-	repo.Status.Branches = int32(len(specs))
+	repo.Status.TrackedBranches = int32(len(specs))
 	ready = kube.Condition{
 		Type:    "Ready",
 		Status:  kube.True,

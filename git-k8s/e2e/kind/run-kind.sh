@@ -587,6 +587,13 @@ done
 crds="$(k get crds -o jsonpath='{range .items[?(@.spec.group=="git-k8s.imjasonh.com")]}{.metadata.name}{"\n"}{end}' | sort | xargs)"
 echo "CustomResourceDefinitions in git-k8s.imjasonh.com: ${crds}"
 [[ "${crds}" == "branches.git-k8s.imjasonh.com repositories.git-k8s.imjasonh.com" ]]
+# The status counts the Branch objects, one for main, in trackedBranches,
+# and the BRANCHES column that kubectl get prints reads it.
+tracked="$(k -n "${NS}" get repository app -o jsonpath='{.status.trackedBranches}')"
+table="$(k -n "${NS}" get repository app)"
+echo "${table}"
+column="$(awk 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "BRANCHES") c = i } NR == 2 && c { print $c }' <<<"${table}")"
+[[ "${tracked}" == 1 && "${column}" == 1 ]]
 echo "::endgroup::"
 
 echo "::group::The API server takes only http and https URLs"

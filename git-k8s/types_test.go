@@ -385,3 +385,23 @@ func TestKindNames(t *testing.T) {
 		t.Error("found no view types")
 	}
 }
+
+// TestRepositoryStatusColumns checks the printer columns of the Repository
+// CustomResourceDefinition that come from status fields. kube adds a column
+// for each field with the column option, which reads the field by its JSON
+// name. The number of Branch objects is status.trackedBranches, because
+// spec.branches holds the rules that select the branches to track.
+func TestRepositoryStatusColumns(t *testing.T) {
+	var columns []string
+	typ := reflect.TypeFor[RepositoryStatus]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if column, ok := tagOptions(f.Tag.Get("kube"))["column"]; ok {
+			columns = append(columns, column+"=.status."+name)
+		}
+	}
+	if want := []string{"Branches=.status.trackedBranches"}; !slices.Equal(columns, want) {
+		t.Errorf("the status's printer columns are %q, want %q", columns, want)
+	}
+}

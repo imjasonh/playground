@@ -177,7 +177,7 @@ type CheckPolicy struct {
 
 // RepositoryStatus is what the repository controller observed.
 type RepositoryStatus struct {
-	Branches           int32            `json:"branches" kube:"column=Branches" doc:"Number of tracked branches."`
+	TrackedBranches    int32            `json:"trackedBranches" kube:"column=Branches" doc:"Number of tracked branches."`
 	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition `json:"conditions,omitempty"`
 }
