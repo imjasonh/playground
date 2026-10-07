@@ -57,7 +57,7 @@ func TestGeneratePinsImageFlags(t *testing.T) {
 
 	var stderr bytes.Buffer
 	o := &generateOptions{args: []string{"-dry-run", "-agent-image", reg + "/agent:v1", "-model", "m1", "--", "rest"}, stderr: &stderr}
-	if err := programFlags().Parse(o.args); err != nil {
+	if err := o.parseProgramFlags(); err != nil {
 		t.Fatal(err)
 	}
 	if err := o.pinImageFlags(t.Context()); err != nil {

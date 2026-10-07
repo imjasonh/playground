@@ -28,10 +28,10 @@ func Image(name, value, usage string) *string {
 //
 // Name images by digest where you can. If an image flag on flag.CommandLine
 // names an image by tag, generate resolves the tag, and sets the flag to the
-// image by digest in the Deployment's arguments. Before it starts any
-// controller, Run resolves a tag that's still there and sets the flag to the
-// image by digest, or fails if it can't, so the program uses one image for
-// the flag while it runs.
+// image by digest in the Deployment's arguments. Before it calls the
+// Manager's Setup or starts any controller, Run resolves a tag that's still
+// there and sets the flag to the image by digest, or fails if it can't, so
+// the program uses one image for the flag while it runs.
 func ImageVar(fs *flag.FlagSet, p *string, name, value, usage string) {
 	*p = value
 	fs.Var((*imageValue)(p), name, usage)
@@ -232,9 +232,11 @@ func (d *imageDigests) pinImages(ctx context.Context, obj jsonObject, resolved f
 }
 
 // resolveImageFlags resolves the tags in the image flags on flag.CommandLine.
+// Run calls it before init, which sets m.log.
 func (m *Manager) resolveImageFlags(ctx context.Context) error {
+	log := cmp.Or(m.Logger, slog.Default())
 	_, err := images.pinFlags(ctx, flag.CommandLine, func(name, from, to string) {
-		m.log.Info("resolved image flag", "flag", name, "image", from, "pinned", to)
+		log.Info("resolved image flag", "flag", name, "image", from, "pinned", to)
 	})
 	return err
 }

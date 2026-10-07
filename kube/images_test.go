@@ -332,14 +332,18 @@ func TestRunResolvesImageFlags(t *testing.T) {
 	empty := Image("empty-image", "", "optional image")
 
 	var logs lockedBuffer
+	var setup string
 	p := &probe{image: app}
-	m := &Manager{client: noAPI(t), Logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	m := &Manager{client: noAPI(t), Logger: slog.New(slog.NewTextHandler(&logs, nil)), Setup: func(context.Context) error {
+		setup = *app
+		return nil
+	}}
 	if err := m.Run(t.Context(), p); !errors.Is(err, errProbe) {
 		t.Fatalf("Run() = %v, want the probe's error", err)
 	}
 	want := reg + "/app@" + digest
-	if p.saw != want || *app != want {
-		t.Errorf("the controller saw -app-image=%q, and it's now %q; want %q", p.saw, *app, want)
+	if setup != want || p.saw != want || *app != want {
+		t.Errorf("Setup saw -app-image=%q, the controller saw %q, and it's now %q; want %q", setup, p.saw, *app, want)
 	}
 	if *pinned != "registry.invalid/app@"+testDigest || *empty != "" {
 		t.Errorf("-pinned-image=%q, -empty-image=%q; want them unchanged", *pinned, *empty)
@@ -357,13 +361,17 @@ func TestRunFailsOnImageFlagThatDoesNotResolve(t *testing.T) {
 	app := Image("app-image", reg+"/app:nope", "image that runs the app")
 
 	p := &probe{image: app}
-	m := &Manager{client: noAPI(t), Logger: slog.New(slog.DiscardHandler)}
+	setup := false
+	m := &Manager{client: noAPI(t), Logger: slog.New(slog.DiscardHandler), Setup: func(context.Context) error {
+		setup = true
+		return nil
+	}}
 	err := m.Run(t.Context(), p)
 	if want := "-app-image: resolving image " + reg + "/app:nope: "; err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("Run() = %v, want an error that starts %q", err, want)
 	}
-	if p.prepared {
-		t.Error("a controller started before Run resolved the image flags")
+	if setup || p.prepared {
+		t.Errorf("Setup ran = %v, and a controller started = %v, before Run resolved the image flags", setup, p.prepared)
 	}
 }
 

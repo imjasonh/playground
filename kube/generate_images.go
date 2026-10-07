@@ -28,7 +28,7 @@ func (o *generateOptions) pinImageFlags(ctx context.Context) error {
 		return fmt.Errorf("generate: %w", err)
 	}
 	if len(pinned) > 0 {
-		o.args = setFlags(o.args, programFlags(), pinned)
+		o.args = setFlags(o.args, o.programFlags(), pinned)
 	}
 	return nil
 }
@@ -47,12 +47,12 @@ func (o *generateOptions) pinImages(ctx context.Context, docs []object) error {
 }
 
 // programFlags returns the flags of the program in the Deployment: its own,
-// and Main's.
-func programFlags() *flag.FlagSet {
+// and Main's, as parseProgramFlags parses them.
+func (o *generateOptions) programFlags() *flag.FlagSet {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
-	(&Manager{}).flags(fs)
+	(&Manager{Logger: o.manager.Logger}).flags(fs)
 	return fs
 }
 

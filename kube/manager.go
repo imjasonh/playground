@@ -128,11 +128,12 @@ type Manager struct {
 	// volume, whose tokens the kubelet renews.
 	TokenDir string
 
-	// Setup, if set, runs first when Run starts, before the manager
+	// Setup, if set, runs when Run starts, before the manager
 	// connects to the cluster, and Run returns its error. Main reads flags
 	// before it calls Run, so Setup can check the program's flags and
 	// prepare what its controllers need, and a mistake stops the program at
-	// startup. The generate command doesn't run it.
+	// startup. The generate command doesn't run it. Run resolves the tags in
+	// image flags before it calls Setup, so Setup sees their images by digest.
 	Setup func(ctx context.Context) error
 
 	client  *client.Client
@@ -295,19 +296,20 @@ func (m *Manager) init() error {
 	return nil
 }
 
-// Run runs Setup, connects to the cluster, and runs controllers until ctx
-// is done. It returns nil when ctx is canceled, or an error if Setup fails
+// Run resolves the tags in the program's image flags, runs Setup, connects
+// to the cluster, and runs controllers until ctx is done. It returns nil
+// when ctx is canceled, or an error if a tag doesn't resolve, Setup fails,
 // or the manager can't start.
 func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
+	if err := m.resolveImageFlags(ctx); err != nil {
+		return err
+	}
 	if m.Setup != nil {
 		if err := m.Setup(ctx); err != nil {
 			return err
 		}
 	}
 	if err := m.init(); err != nil {
-		return err
-	}
-	if err := m.resolveImageFlags(ctx); err != nil {
 		return err
 	}
 	parent := ctx
