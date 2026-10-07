@@ -56,7 +56,7 @@ const retryInterval = 30 * time.Second
 
 // finalizer is the finalizer that kube adds to each GitRepository for the
 // repositories controller.
-const finalizer = "kube.imjasonh.github.io/repositories"
+var finalizer = kube.FinalizerName("repositories")
 
 func (r *repositories) clock() time.Time {
 	if r.now != nil {

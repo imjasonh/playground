@@ -119,7 +119,7 @@ func newSharder(m *Manager) *sharder {
 	s := &sharder{
 		m: m, n: n, ns: m.ownNamespace(), group: labelValue(m.Name),
 		identity: host + "_" + hex.EncodeToString(suffix),
-		keys:     newLabelKeys(m.Domain),
+		keys:     newLabelKeys(),
 		members:  map[string]*observation{},
 		first:    make(chan struct{}),
 	}

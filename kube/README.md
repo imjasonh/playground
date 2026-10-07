@@ -376,9 +376,6 @@ the created CRD if the two programs disagree about the type:
 - If the created version isn't one that the reconciling program declares, as
   its own version or with `kube.Version`, the reconciling program fails to
   start.
-- If they set the `Domain` field of `kube.Manager` differently, the
-  reconciling program doesn't recognize the created CRD as the framework's. It
-  uses the CRD as it is and never updates it.
 
 To recover, make the declarations agree, and then delete the created CRD while
 it has no objects, because deleting a CRD deletes its objects. If only the
@@ -939,6 +936,12 @@ in a volume, and serves the copies.
 For more control, set the fields of a `kube.Manager` and call its `Run`
 method. `kube.For` takes options such as `kube.Workers(n)`,
 `kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
+
+The labels, annotations, and finalizers that kube writes, all under
+`kube.imjasonh.github.io`, don't change between versions of kube, so admission
+policies and other programs can match on them. Go programs can use
+`kube.ControllerLabel`, `kube.OwnerUIDLabel`, `kube.OwnerAnnotation`, and
+`kube.FinalizerName(name)` instead of copying the strings.
 
 ### Install in a cluster
 

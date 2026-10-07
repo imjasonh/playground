@@ -238,8 +238,7 @@ type appliedKey struct {
 	status bool
 }
 
-// labelKeys are the label and annotation keys the framework uses, under a
-// configurable domain.
+// labelKeys are the label and annotation keys the framework uses.
 type labelKeys struct {
 	controller string // label: controller name, on owned objects
 	ownerUID   string // label: owner UID, on owned objects
@@ -251,16 +250,16 @@ type labelKeys struct {
 	leaseRole  string // label: shard or member
 }
 
-func newLabelKeys(domain string) labelKeys {
+func newLabelKeys() labelKeys {
 	return labelKeys{
-		controller: domain + "/controller",
-		ownerUID:   domain + "/owner-uid",
-		owner:      domain + "/owner",
-		applied:    domain + "/applied",
-		cleanup:    domain + "/cleanup",
-		managedBy:  domain + "/managed-by",
-		leaseGroup: domain + "/lease-group",
-		leaseRole:  domain + "/lease-role",
+		controller: ControllerLabel,
+		ownerUID:   OwnerUIDLabel,
+		owner:      OwnerAnnotation,
+		applied:    Domain + "/applied",
+		cleanup:    Domain + "/cleanup",
+		managedBy:  Domain + "/managed-by",
+		leaseGroup: Domain + "/lease-group",
+		leaseRole:  Domain + "/lease-role",
 	}
 }
 
@@ -425,8 +424,8 @@ func (c *controller[T, P]) prepare(ctx context.Context, m *Manager) error {
 	if !nameRE.MatchString(c.name) {
 		return fmt.Errorf("kube: controller name %q must be at most 50 lowercase letters, digits, '-', or '.', and start and end with a letter or digit", c.name)
 	}
-	c.labels = newLabelKeys(m.Domain)
-	c.finalizer = m.Domain + "/" + c.name
+	c.labels = newLabelKeys()
+	c.finalizer = FinalizerName(c.name)
 	c.log = m.log.With("controller", c.name)
 	if err := c.prepareVersions(m); err != nil {
 		return err

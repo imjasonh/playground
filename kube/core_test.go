@@ -356,10 +356,34 @@ func TestSpecChangedIgnoresStatusAndResourceVersion(t *testing.T) {
 	}
 }
 
+// Clusters store these keys on objects, and admission policies copy them, so
+// a change to one is a breaking change.
+func TestKeysAreStable(t *testing.T) {
+	keys := newLabelKeys()
+	for _, tc := range []struct{ got, want string }{
+		{ControllerLabel, "kube.imjasonh.github.io/controller"},
+		{OwnerUIDLabel, "kube.imjasonh.github.io/owner-uid"},
+		{OwnerAnnotation, "kube.imjasonh.github.io/owner"},
+		{FinalizerName("website"), "kube.imjasonh.github.io/website"},
+		{keys.controller, ControllerLabel},
+		{keys.ownerUID, OwnerUIDLabel},
+		{keys.owner, OwnerAnnotation},
+		{keys.applied, "kube.imjasonh.github.io/applied"},
+		{keys.cleanup, "kube.imjasonh.github.io/cleanup"},
+		{keys.managedBy, "kube.imjasonh.github.io/managed-by"},
+		{keys.leaseGroup, "kube.imjasonh.github.io/lease-group"},
+		{keys.leaseRole, "kube.imjasonh.github.io/lease-role"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("key = %q, want %q", tc.got, tc.want)
+		}
+	}
+}
+
 func TestOwnBody(t *testing.T) {
 	wti, _ := typeInfoFor[widget, *widget]()
 	dti, _ := typeInfoFor[deploymentProjection, *deploymentProjection]()
-	c := &controller[widget, *widget]{core: core{name: "widgets", ti: wti, res: resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, labels: newLabelKeys("kube.test")}}
+	c := &controller[widget, *widget]{core: core{name: "widgets", ti: wti, res: resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, labels: newLabelKeys()}}
 	parent := &widget{}
 	parent.Namespace, parent.Name, parent.UID = "shop", "w1", "uid-1"
 
@@ -378,10 +402,10 @@ func TestOwnBody(t *testing.T) {
 		t.Error("owned body has a uid")
 	}
 	labels := meta["labels"].(map[string]any)
-	if labels["app"] != "w1" || labels["kube.test/controller"] != "widgets" || labels["kube.test/owner-uid"] != "uid-1" {
+	if labels["app"] != "w1" || labels[ControllerLabel] != "widgets" || labels[OwnerUIDLabel] != "uid-1" {
 		t.Errorf("labels = %v", labels)
 	}
-	if meta["annotations"].(map[string]any)["kube.test/owner"] != "shop/w1" {
+	if meta["annotations"].(map[string]any)[OwnerAnnotation] != "shop/w1" {
 		t.Errorf("annotations = %v", meta["annotations"])
 	}
 	refs := meta["ownerReferences"].([]any)

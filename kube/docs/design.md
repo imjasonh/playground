@@ -859,9 +859,6 @@ programs disagree about the type:
   doesn't serve the program's own version. `checkDropped` refuses an older
   one, because the API server lists a new CRD's storage version in
   `status.storedVersions` before the CRD has objects.
-- `ownsCRD` looks for the label under the reconciling program's own
-  `Manager.Domain`, so a program with another `Domain` uses the CRD as
-  something else installed it, and never updates it.
 
 The remedy is to make the declarations agree and delete the created CRD while
 it has no objects, or, if only the version differs, to declare the created
@@ -1817,8 +1814,8 @@ offers:
   but never updates it, so a later release that changes the type leaves the
   CRD as it was.
 - A program that reconciles a type takes over the CRD that another program
-  created only if both programs declare the same scope and `Manager.Domain`,
-  and the reconciling program declares the created version.
+  created only if both programs declare the same scope and the reconciling
+  program declares the created version.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache
