@@ -79,20 +79,25 @@ func TestGeneratePinsImageFlags(t *testing.T) {
 	}
 }
 
+// TestGenerateFailsOnImageFlagThatDoesNotResolve checks that generate
+// resolves the image flags before it builds the program, and writes no YAML
+// when a tag doesn't resolve.
 func TestGenerateFailsOnImageFlagThatDoesNotResolve(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/agent:v1", "linux/amd64")
 	commandLine(t)
 	Image("agent-image", reg+"/agent:nope", "image that runs the agent")
+	flag.String("model", "", "model for the agent")
 
-	o := &generateOptions{args: []string{"-model", "m1"}, stderr: new(bytes.Buffer)}
-	err := o.pinImageFlags(t.Context())
+	var stdout bytes.Buffer
+	args := []string{"-registry=" + reg, "-platform=linux/amd64", "--", "-model", "m1"}
+	err := (&Manager{}).generate(t.Context(), args, nil, &stdout, new(bytes.Buffer))
 	if want := "generate: -agent-image: resolving image " + reg + "/agent:nope: "; err == nil || !strings.HasPrefix(err.Error(), want) {
-		t.Errorf("pinImageFlags() = %v, want an error that starts %q", err, want)
+		t.Errorf("generate %q = %v, want an error that starts %q", args, err, want)
 	}
-	if !slices.Equal(o.args, []string{"-model", "m1"}) {
-		t.Errorf("the Deployment's args = %q, want them unchanged", o.args)
+	if stdout.Len() > 0 {
+		t.Errorf("generate wrote %q, want nothing", stdout.String())
 	}
 }
 
