@@ -27,10 +27,10 @@
 // Each enum value can be quoted the same way to hold a | or a comma. Only
 // listMapKey can be repeated, once for each key.
 //
-// The API server enforces the immutable option with CEL rules. A field of a
-// list item or a map value is created with its item, so an update can still
-// add or remove the whole item. The top-level status and its fields can't be immutable,
-// because the API server creates objects without their status.
+// The API server enforces the immutable option with CEL rules. An update can
+// still add or remove a whole list item or map value, with its immutable
+// fields. The top-level status and its fields can't be immutable, because the
+// API server creates objects without their status.
 //
 // A type can supply its own schema with an OpenAPISchema() map[string]any
 // method, and an element type can make its slices server-side-apply maps

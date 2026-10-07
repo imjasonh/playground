@@ -352,10 +352,9 @@ single quotes, and write a single quote inside it as two:
 repeated, once for each field of the key. Any other repeated option is an
 error.
 
-A field of a list item or a map value is created with its item, so an update
-can still add or remove a whole item that has an immutable field. The
-top-level `status` and its fields can't be immutable, because the API server
-creates objects without their status.
+An update can still add or remove a whole list item or map value, with its
+immutable fields. The top-level `status` and its fields can't be immutable,
+because the API server creates objects without their status.
 
 A type can supply its own schema with an `OpenAPISchema() map[string]any`
 method, as `k8s.IntOrString` and `k8s.Quantity` do. A list's element type can
