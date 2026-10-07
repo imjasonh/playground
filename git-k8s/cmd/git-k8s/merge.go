@@ -208,40 +208,48 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 			return err
 		}
 	}
-	err = local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
+	deleted, err := fastForward(ctx, local, b)
 	if err != nil {
 		return fmt.Errorf("fast-forwarding %s to %s: %w", spec.Parent, gitk8s.Short(spec.Head), err)
 	}
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
-		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head))
+		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head), "deletedBranch", deleted)
 	report(b, gitk8s.MergeStateLanded, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
 	kube.Eventf(ctx, kube.Normal, "Landed", "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
-	err = deleteBranch(ctx, local, b)
+	if deleted {
+		kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent)
+	}
 	kube.Trigger[gitk8s.GitRepository](ctx, b.Namespace, spec.Repository)
-	return err
+	return nil
 }
 
-// deleteBranch deletes a branch that just landed from the mirror's copy if
-// the merge policy says to, with a lease, so that a branch that moved since
-// it landed stays. The repository controller pushes the deletion to the
-// external repository, and the GitRepository's ExternalSynced condition
-// reports the external repository's reason if it refuses, as for a
-// protected branch.
-func deleteBranch(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) error {
-	if !b.Spec.Merge.DeleteLandedBranches {
-		return nil
+// fastForward moves the parent to the branch's head in the mirror's copy,
+// and reports whether it deleted the branch. When the merge policy deletes
+// landed branches, the deletion goes in the same update, with a lease on
+// the branch's head, so a landed branch can't stay because the controller
+// stopped or failed between two updates. If the branch moved or was deleted
+// since the repository controller listed it, the parent still moves to the
+// listed head, and the branch stays as it is. The repository controller
+// pushes the deletion to the external repository, and the GitRepository's
+// ExternalSynced condition reports the external repository's reason if it
+// refuses, as for a protected branch.
+func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBranch) (bool, error) {
+	spec := &b.Spec
+	parent := git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead}
+	if !spec.Merge.DeleteLandedBranches {
+		return false, local.UpdateRefs(ctx, parent)
 	}
-	err := local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + b.Spec.Branch, Old: b.Spec.Head})
-	if errors.Is(err, git.ErrRejected) {
-		slog.Info("not deleting a landed branch that moved or was deleted since it landed", "namespace", b.Namespace, "branch", b.Spec.Branch, "err", err)
-		return nil
+	rejected := local.UpdateRefs(ctx, parent, git.RefUpdate{Ref: "refs/heads/" + spec.Branch, Old: spec.Head})
+	if !errors.Is(rejected, git.ErrRejected) {
+		return rejected == nil, rejected
 	}
-	if err != nil {
-		return fmt.Errorf("deleting landed branch %s: %w", b.Spec.Branch, err)
+	// Either lease failed. If it was the parent's, this fails too.
+	if err := local.UpdateRefs(ctx, parent); err != nil {
+		return false, err
 	}
-	slog.Info("deleted landed branch", "namespace", b.Namespace, "repository", b.Spec.Repository, "branch", b.Spec.Branch)
-	kube.Eventf(ctx, kube.Normal, "DeletedBranch", "deleted %s at %s after it landed on %s", b.Spec.Branch, gitk8s.Short(b.Spec.Head), b.Spec.Parent)
-	return nil
+	slog.Info("not deleting a landed branch that moved or was deleted since the repository controller listed it",
+		"namespace", b.Namespace, "branch", spec.Branch, "err", rejected)
+	return false, nil
 }
 
 // report sets the Landed condition, which is True only in

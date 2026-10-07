@@ -1097,6 +1097,82 @@ func TestLandsAndDeletesBranch(t *testing.T) {
 	}
 }
 
+// A fast-forward and the deletion of the landed branch are one update, so a
+// failure that stops the deletion doesn't land the branch either, and the
+// next try does both.
+func TestLandsAndDeletesInOneUpdate(t *testing.T) {
+	f := newFixture(t)
+	b := f.branches()
+	lock := filepath.Join(f.copyDir(), "refs", "heads", "c", "x.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.merge(b); err == nil || !strings.Contains(err.Error(), "x.lock") {
+		t.Errorf("err = %v, want one that names the lock", err)
+	}
+	if heads := f.mirrorHeads(); heads["main"] != b.Spec.ParentHead || heads["c/x"] != b.Spec.Head {
+		t.Errorf("main = %s, c/x = %s in the mirror; want main still at %s and c/x at %s", heads["main"], heads["c/x"], b.Spec.ParentHead, b.Spec.Head)
+	}
+
+	t.Log("Once the lock is gone, the next reconcile lands c/x and deletes it.")
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	pass(b)
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	heads := f.mirrorHeads()
+	if heads["main"] != b.Spec.Head {
+		t.Errorf("main = %s in the mirror, want %s", heads["main"], b.Spec.Head)
+	}
+	if _, ok := heads["c/x"]; ok {
+		t.Error("c/x wasn't deleted after it landed")
+	}
+}
+
+// A branch that moves or is deleted after the repositories controller lists
+// it still lands at the listed head, and the merge controller leaves it as
+// it is.
+func TestLandsABranchThatChangedAfterListing(t *testing.T) {
+	for name, change := range map[string]func(*fixture){
+		"moved": func(f *fixture) {
+			f.work.Write("y.txt", "y\n")
+			f.work.Commit("c/x moves after the listing")
+			f.pushToMirror("c/x")
+		},
+		"deleted": func(f *fixture) {
+			f.work.Git("--git-dir="+f.copyDir(), "update-ref", "-d", "refs/heads/c/x")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			b := f.branches()
+			change(f)
+			want := f.mirrorHeads()["c/x"]
+			rec, err := f.merge(b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			heads := f.mirrorHeads()
+			if heads["main"] != b.Spec.Head {
+				t.Errorf("main = %s in the mirror, want %s", heads["main"], b.Spec.Head)
+			}
+			if heads["c/x"] != want {
+				t.Errorf("c/x = %q in the mirror, want %q", heads["c/x"], want)
+			}
+			if b.Status.State != gitk8s.MergeStateLanded {
+				t.Errorf("state = %q, want %s", b.Status.State, gitk8s.MergeStateLanded)
+			}
+			for _, e := range rec.Events() {
+				if e.Reason == "DeletedBranch" {
+					t.Errorf("recorded %+v for a branch that the merge controller didn't delete", e)
+				}
+			}
+		})
+	}
+}
+
 func TestWaitsForFreshPassingChecks(t *testing.T) {
 	for name, edit := range map[string]func(*gitk8s.GitBranch){
 		"pending": func(b *gitk8s.GitBranch) { delete(b.Status.Checks, "gofmt") },

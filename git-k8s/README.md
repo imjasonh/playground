@@ -90,10 +90,11 @@ endpoint share one `kube.Serve` handler, and each controller is a
   over the fresh results. When it passes, the controller lands the branch in
   the mirror's copy, as [Landing methods](#landing-methods) describes, but
   only if the parent still points to the commit that the checks saw, so it
-  never overwrites a parent that moved in the meantime. It then deletes the
-  branch if the policy says to, and the repositories controller pushes both
-  changes to the external repository. When the policy lets the `base` check
-  push, branches whose gates pass wait in the parent's
+  never overwrites a parent that moved in the meantime. If the policy says
+  to, the same update deletes the branch, unless the branch moved since the
+  repositories controller listed it. The repositories controller pushes
+  both changes to the external repository. When the policy lets the `base`
+  check push, branches whose gates pass wait in the parent's
   [merge queue](#merge-queue), and only the branch at the front lands.
 
 The core program's fourth controller, **check-runs**, copies check results
