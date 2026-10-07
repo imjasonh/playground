@@ -1725,7 +1725,12 @@ check_runs_published() {
   unformatted_run="$(check_run "${unformatted}" gofmt)"
   [[ -z "${unformatted_run}" || "${unformatted_run}" == "completed neutral" ]]
 }
-eventually 60 check_runs_published
+if ! eventually 60 check_runs_published; then
+  for commit in "${unformatted}" "${fix}"; do
+    curl -sS "${GITHUB_URL}/api/v3/repos/acme/octo/commits/${commit}/check-runs?filter=all" >&2
+  done
+  exit 1
+fi
 echo "check-gofmt pushed a signed fix to the mirror, git-k8s landed it and pushed it to GitHub with Octo STS tokens, and the results became check runs."
 
 k create namespace "${NS}-other"
