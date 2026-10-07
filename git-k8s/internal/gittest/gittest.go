@@ -175,6 +175,48 @@ func (w *Work) Commit(message string) string {
 	return w.Git("rev-parse", "HEAD")
 }
 
+// Bomb commits a tree on top of HEAD that adds 10^(depth+1) Go files under
+// dir, a directory at the top, and returns the commit. Each file has the
+// same small contents and a name of about 120 bytes. The new objects take
+// a few kilobytes, because each level of the tree lists one subtree ten
+// times. Bomb leaves the index and the working tree as they are, so commit
+// nothing on top of it.
+func (w *Work) Bomb(dir string, depth int) string {
+	w.t.Helper()
+	blob := filepath.Join(w.t.TempDir(), "bomb.go")
+	if err := os.WriteFile(blob, []byte("package bomb\n"), 0o644); err != nil {
+		w.t.Fatal(err)
+	}
+	mktree := func(lines string) string {
+		cmd := exec.Command("git", "mktree")
+		cmd.Dir, cmd.Stdin = w.Dir, strings.NewReader(lines)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		out, err := cmd.Output()
+		if err != nil {
+			w.t.Fatalf("git mktree: %v", err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	ten := func(format, sha string) string {
+		var lines strings.Builder
+		for i := range 10 {
+			fmt.Fprintf(&lines, format, sha, i)
+		}
+		return mktree(lines.String())
+	}
+	tree := ten("100644 blob %s\t"+strings.Repeat("x", 120)+"%d.go\n", w.Git("hash-object", "-w", blob))
+	for range depth {
+		tree = ten("040000 tree %s\td%d\n", tree)
+	}
+	top := w.Git("ls-tree", "HEAD")
+	if top != "" {
+		top += "\n"
+	}
+	commit := w.Git("commit-tree", "-p", "HEAD", "-m", "bomb", mktree(top+"040000 tree "+tree+"\t"+dir+"\n"))
+	w.Git("update-ref", "HEAD", commit)
+	return commit
+}
+
 // Branch switches to a new branch that starts at from.
 func (w *Work) Branch(name, from string) {
 	w.t.Helper()
