@@ -349,7 +349,74 @@ func TestWebhooksRejectFailedReads(t *testing.T) {
 
 func TestWebhooksNeedHandlers(t *testing.T) {
 	err := Webhooks[configMapMeta](struct{}{}).prepare(t.Context(), testManager())
-	if err == nil || !strings.Contains(err.Error(), "neither") {
+	if err == nil || !strings.Contains(err.Error(), "neither") || !strings.Contains(err.Error(), "Default(context.Context, *configMapMeta, *configMapMeta) error") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// pointerFinalizer has Finalize only on its pointer type.
+type pointerFinalizer struct{ gizmoReconciler }
+
+func (*pointerFinalizer) Finalize(context.Context, *gizmo) error { return nil }
+
+type oldlessValidator struct{ gizmoReconciler }
+
+func (oldlessValidator) Validate(context.Context, *gizmo) error { return nil }
+
+type oldlessDefaulter struct{ gizmoReconciler }
+
+func (oldlessDefaulter) Default(context.Context, *gizmo) error { return nil }
+
+// oldlessLabeler has a Validate method and a Default method without old.
+type oldlessLabeler struct{}
+
+func (oldlessLabeler) Validate(context.Context, *configMapMeta, *configMapMeta) error { return nil }
+func (oldlessLabeler) Default(context.Context, *configMapMeta) error                  { return nil }
+
+// halfConverter has ConvertTo and a misspelled ConvertFrom.
+type halfConverter struct {
+	Object `kube:"group=test.kube.imjasonh.github.io,kind=Gizmo,version=v1alpha1"`
+}
+
+func (*halfConverter) ConvertTo(*gizmo) error   { return nil }
+func (*halfConverter) ConvertFROM(*gizmo) error { return nil }
+
+// valueConverter's ConvertTo takes a gizmo instead of a *gizmo.
+type valueConverter struct {
+	Object `kube:"group=test.kube.imjasonh.github.io,kind=Gizmo,version=v1alpha2"`
+}
+
+func (*valueConverter) ConvertTo(gizmo) error    { return nil }
+func (*valueConverter) ConvertFrom(*gizmo) error { return nil }
+
+func TestNearMissMethods(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		c    Controller
+		want string
+	}{
+		{"Finalize on the pointer type", For[gizmo](pointerFinalizer{}),
+			"kube: kube.pointerFinalizer doesn't have the method Finalize(context.Context, *kube.gizmo) error, but *kube.pointerFinalizer does, so pass a *kube.pointerFinalizer"},
+		{"Validate without old", For[gizmo](oldlessValidator{}),
+			"kube: kube.oldlessValidator has the method Validate(context.Context, *kube.gizmo) error, but the framework calls Validate(context.Context, *kube.gizmo, *kube.gizmo) error"},
+		{"Default without old", For[gizmo](oldlessDefaulter{}),
+			"kube: kube.oldlessDefaulter has the method Default(context.Context, *kube.gizmo) error, but the framework calls Default(context.Context, *kube.gizmo, *kube.gizmo) error"},
+		{"ConvertTo without ConvertFrom", For[gizmo](gizmoReconciler{}, Version[halfConverter]()),
+			"kube.Version: *kube.halfConverter has the method ConvertTo(*kube.gizmo) error but not ConvertFrom(*kube.gizmo) error"},
+		{"ConvertTo with another signature", For[gizmo](gizmoReconciler{}, Version[valueConverter]()),
+			"kube.Version: *kube.valueConverter has the method ConvertTo(kube.gizmo) error, but the framework calls ConvertTo(*kube.gizmo) error"},
+		{"Webhooks with Default without old", Webhooks[configMapMeta](oldlessLabeler{}),
+			"kube.Webhooks[ConfigMap]: kube.oldlessLabeler has the method Default(context.Context, *kube.configMapMeta) error, but the framework calls Default(context.Context, *kube.configMapMeta, *kube.configMapMeta) error"},
+	} {
+		if _, err := tc.c.describe(); err == nil || err.Error() != tc.want {
+			t.Errorf("%s: describe: got %v, want %q", tc.name, err, tc.want)
+		}
+		if err := tc.c.prepare(t.Context(), testManager()); err == nil || err.Error() != tc.want {
+			t.Errorf("%s: prepare: got %v, want %q", tc.name, err, tc.want)
+		}
+	}
+	d, err := For[gizmo](&pointerFinalizer{}).describe()
+	if err != nil || !d.finalizes {
+		t.Errorf("describe of a *pointerFinalizer = %+v, %v; want a finalizer", d, err)
 	}
 }
