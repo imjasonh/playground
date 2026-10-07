@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -534,5 +538,309 @@ func TestWaitsForHeads(t *testing.T) {
 	runs := 0
 	if err := f.reconcile(t, touch(&runs)); err != nil || runs != 0 {
 		t.Errorf("reconcile = %v after %d runs, want no runs while the parent is missing", err, runs)
+	}
+}
+
+// rate passes every branch, as a check that rates a change does, with the
+// number of its runs in the output run. It has touch's name, so the
+// fixture's policy runs it.
+func rate(runs *int, usesParent bool) checks.Check {
+	return checks.Check{Name: "touch", SameChange: true, FilesOnly: true, Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+		*runs++
+		change, err := in.Change(ctx)
+		if err != nil {
+			return checks.Verdict{}, err
+		}
+		v := checks.Pass("rated %.7s on top of %.7s", change.Head, change.Base)
+		v.Outputs = map[string]string{"run": strconv.Itoa(*runs)}
+		v.UsesParent = usesParent
+		return v, nil
+	}}
+}
+
+// push pushes the work's current commit to a branch and returns it.
+func (f *fixture) push(branch string) string {
+	f.work.Push(branch)
+	return f.work.Git("rev-parse", "HEAD")
+}
+
+func TestKeepsResultsForTheSameChange(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	w, spec := f.work, &f.branch.Spec
+	start, head := spec.ParentHead, spec.Head
+	runs := 0
+	check := rate(&runs, false)
+	check.Stale = func(_ context.Context, _ *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+		if previous.Commit != spec.Head {
+			t.Errorf("Stale got a result for %.7s, want one for the head %.7s", previous.Commit, spec.Head)
+		}
+		return false
+	}
+	step := func(name string, wantRuns int, wantBase string) {
+		t.Helper()
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		res := f.branch.Status.Checks.Result
+		if runs != wantRuns || res.State != gitk8s.Passed || res.Commit != spec.Head || res.MergeBase != wantBase || res.ParentCommit != "" ||
+			res.Outputs["run"] != strconv.Itoa(runs) {
+			t.Errorf("%s: %d runs, result %+v; want %d runs and run %d's result for %.7s on top of %.7s", name, runs, res, wantRuns, wantRuns, spec.Head, wantBase)
+		}
+	}
+	step("the first run", 1, start)
+
+	w.Branch("main", start)
+	w.Write("y.txt", "y\n")
+	w.Commit("add y")
+	parent := f.push("main")
+	spec.ParentHead = parent
+	step("a parent that moved", 1, start)
+
+	w.Branch("c/x", head)
+	w.Git("merge", "--quiet", "--no-edit", parent)
+	spec.Head = f.push("c/x")
+	step("a merge of the parent", 1, parent)
+
+	w.Branch("c/x", parent)
+	w.Write("x.txt", "x\n")
+	w.Commit("add x on top of y")
+	spec.Head = f.push("c/x")
+	step("a rebase", 1, parent)
+
+	w.Write("x.txt", "x\nmore\n")
+	w.Commit("add more to x")
+	spec.Head = f.push("c/x")
+	step("another commit", 2, parent)
+
+	w.Branch("c/x", parent)
+	w.Write("x.txt", "x\nmore\n")
+	w.Commit("add x and more")
+	spec.Head = f.push("c/x")
+	step("a squash", 2, parent)
+
+	w.Write("x.txt", "x\nless\n")
+	w.Git("commit", "--quiet", "--amend", "-a", "-m", "add x and less")
+	spec.Head = f.push("c/x")
+	step("an amended commit", 3, parent)
+
+	// The parent rewinds past y.txt, which the head's change now adds.
+	w.Branch("main", start)
+	f.push("main")
+	spec.ParentHead = start
+	step("a parent that rewound", 4, start)
+}
+
+func TestTiesResultsToTheParentsHead(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		usesParent bool
+		lone       bool
+	}{
+		{"a verdict that uses the parent", true, false},
+		{"a branch without a merge base", false, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+			if c.lone {
+				f.work.Git("checkout", "--quiet", "--orphan", "lone")
+				f.work.Write("x.txt", "lone\n")
+				f.work.Commit("start over")
+				f.branch.Spec.Head = f.push("c/x")
+			}
+			runs := 0
+			check := rate(&runs, c.usesParent)
+			for range 2 {
+				if err := f.reconcile(t, check); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if res := f.branch.Status.Checks.Result; runs != 1 || res.ParentCommit != f.branch.Spec.ParentHead || res.MergeBase != "" {
+				t.Fatalf("%d runs, result %+v; want 1 run and a result for the parent's head", runs, res)
+			}
+
+			f.work.Branch("main", f.branch.Spec.ParentHead)
+			f.work.Write("y.txt", "y\n")
+			f.work.Commit("add y")
+			f.branch.Spec.ParentHead = f.push("main")
+			if err := f.reconcile(t, check); err != nil {
+				t.Fatal(err)
+			}
+			if res := f.branch.Status.Checks.Result; runs != 2 || res.ParentCommit != f.branch.Spec.ParentHead {
+				t.Errorf("%d runs, result %+v; want a second run for the parent's new head", runs, res)
+			}
+		})
+	}
+}
+
+func TestKeepsResultsFromBeforeSameChange(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	spec := &f.branch.Spec
+	start := spec.ParentHead
+	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: start, FilesOnly: true, State: gitk8s.Passed}
+	runs := 0
+	check := rate(&runs, false)
+	if err := f.reconcile(t, check); err != nil || runs != 0 {
+		t.Fatalf("reconcile = %v after %d runs, want no runs for a result for the same heads", err, runs)
+	}
+
+	f.work.Branch("main", start)
+	f.work.Write("y.txt", "y\n")
+	f.work.Commit("add y")
+	spec.ParentHead = f.push("main")
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.branch.Status.Checks.Result; runs != 1 || res.ParentCommit != "" || res.MergeBase != start {
+		t.Errorf("%d runs, result %+v; want 1 run and a result for the change on top of %.7s", runs, res, start)
+	}
+}
+
+// countGit makes the fixture's git log each command, and returns a function
+// that counts them.
+func (f *fixture) countGit(t *testing.T) func() int {
+	t.Helper()
+	bin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git isn't installed")
+	}
+	dir := t.TempDir()
+	log, script := filepath.Join(dir, "log"), filepath.Join(dir, "git")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$*\" >>'"+log+"'\nexec '"+bin+"' \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.cfg.Git.Bin = script
+	return func() int {
+		b, err := os.ReadFile(log)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		return strings.Count(string(b), "\n")
+	}
+}
+
+func TestRemembersMergeBasesAndChanges(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	spec := &f.branch.Spec
+	runs := 0
+	check := rate(&runs, false)
+	r := checks.NewReconciler[Branch](check, f.cfg)
+	reconcileBranch := func() {
+		t.Helper()
+		ctx, _ := kube.Fake(t.Context(), f.branch, f.repo)
+		if err := r.Reconcile(ctx, f.branch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commands := f.countGit(t)
+	reconcileBranch()
+	first := f.branch.Status.Checks.Result
+
+	f.work.Branch("main", spec.ParentHead)
+	f.work.Write("y.txt", "y\n")
+	f.work.Commit("add y")
+	spec.ParentHead = f.push("main")
+	f.work.Branch("c/x", spec.Head)
+	f.work.Git("merge", "--quiet", "--no-edit", spec.ParentHead)
+	spec.Head = f.push("c/x")
+	reconcileBranch()
+	kept := f.branch.Status.Checks.Result
+	if runs != 1 || kept.Commit != spec.Head {
+		t.Fatalf("%d runs, result %+v; want 1 run and the result kept for the merge", runs, kept)
+	}
+
+	// Each reconcile reads the result from the GitBranch, which can be
+	// behind, so a reconcile can see the first result again.
+	f.branch.Status.Checks.Result = first
+	before := commands()
+	reconcileBranch()
+	if got := f.branch.Status.Checks.Result; runs != 1 || !reflect.DeepEqual(got, kept) {
+		t.Errorf("%d runs, result %+v; want the kept result %+v", runs, got, kept)
+	}
+	if n := commands() - before; n != 0 {
+		t.Errorf("keeping the result again ran %d git commands, want none", n)
+	}
+}
+
+func TestRecordsAVerdictsMergeBase(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	spec := &f.branch.Spec
+	start := spec.ParentHead
+	runs := 0
+	check := checks.Check{Name: "touch", Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+		runs++
+		base, err := in.MergeBase(ctx)
+		v := checks.Pass("compared")
+		v.MergeBase = base
+		return v, err
+	}}
+	step := func(name string, wantRuns int, wantBase string) {
+		t.Helper()
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if res := f.branch.Status.Checks.Result; runs != wantRuns || res.Commit != spec.Head || res.MergeBase != wantBase || res.ParentCommit != "" {
+			t.Errorf("%s: %d runs, result %+v; want %d runs and a result for %.7s on top of %.7s", name, runs, res, wantRuns, spec.Head, wantBase)
+		}
+	}
+	step("the first run", 1, start)
+
+	f.work.Branch("main", start)
+	f.work.Write("y.txt", "y\n")
+	f.work.Commit("add y")
+	spec.ParentHead = f.push("main")
+	step("a parent that moved", 1, start)
+
+	f.work.Branch("c/x", spec.Head)
+	f.work.Git("merge", "--quiet", "--no-edit", spec.ParentHead)
+	spec.Head = f.push("c/x")
+	step("a merge of the parent", 2, spec.ParentHead)
+}
+
+func TestChangeOf(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	spec := &f.branch.Spec
+	start, head := spec.ParentHead, spec.Head
+	f.work.Branch("main", start)
+	f.work.Write("y.txt", "y\n")
+	f.work.Commit("add y")
+	spec.ParentHead = f.push("main")
+	// A rebase leaves no branch with the head.
+	f.work.Branch("c/x", spec.ParentHead)
+	f.work.Write("x.txt", "x\n")
+	f.work.Commit("add x on top of y")
+	spec.Head = f.push("c/x")
+
+	var commit string
+	var got git.Change
+	var same bool
+	check := checks.Check{Name: "touch", Always: true, Remote: remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+		var err error
+		if got, err = in.ChangeOf(ctx, commit); err != nil {
+			return checks.Verdict{}, err
+		}
+		change, err := in.Change(ctx)
+		if err != nil {
+			return checks.Verdict{}, err
+		}
+		same, err = in.SameChange(ctx, got, change)
+		return checks.Pass("compared"), err
+	}}
+
+	commit = head
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if want := (git.Change{Base: start, Head: head}); got != want || !same {
+		t.Errorf("ChangeOf(the head before the rebase) = %+v, same change %t; want %+v, the same change", got, same, want)
+	}
+
+	commit = strings.Repeat("1", 40)
+	if err := f.reconcile(t, check); !errors.Is(err, checks.ErrUnknownCommit) {
+		t.Errorf("ChangeOf(a commit that the repository doesn't have) = %v, want ErrUnknownCommit", err)
+	}
+
+	commit = "main"
+	if err := f.reconcile(t, check); err == nil || errors.Is(err, checks.ErrUnknownCommit) || !strings.Contains(err.Error(), "isn't a full commit SHA") {
+		t.Errorf("ChangeOf(main) = %v, want an error that says it isn't a full commit SHA", err)
 	}
 }

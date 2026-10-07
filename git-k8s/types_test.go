@@ -134,6 +134,7 @@ func TestEqual(t *testing.T) {
 		nil,
 		{Commit: "h2", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}},
 		{Commit: "h1", ParentCommit: "p1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}},
+		{Commit: "h1", MergeBase: "b1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "low"}},
 		{Commit: "h1", State: Failed, Message: "ok", Outputs: map[string]string{"level": "low"}},
 		{Commit: "h1", State: Passed, Message: "fine", Outputs: map[string]string{"level": "low"}},
 		{Commit: "h1", State: Passed, Message: "ok", Outputs: map[string]string{"level": "high"}},

@@ -32,6 +32,12 @@
 // it:
 //
 //	when: checks.risk.outputs.level == "low" || checks.approval.passed
+//
+// The check rates each change once. The rating holds when the parent moves,
+// and for a merge of the parent, a rebase, or a squash that makes the same
+// change. A rating that reads go.mod files at the merge base holds only for
+// the parent's head, so the check rates such a change again when the parent
+// moves.
 package main
 
 import (
@@ -81,7 +87,11 @@ var (
 // landing keeps every such line, and a rebase keeps each copied commit's
 // message, so the check can be FilesOnly. Its message doesn't count those
 // commits, because a squash makes one commit of them.
-var check = checks.Check{Name: "risk", UsesParent: true, FilesOnly: true, Remote: mirror.Remote, Run: run}
+//
+// A rating is for the change, so the check sets SameChange. A rating that
+// reads go.mod files at the merge base sets UsesParent, because those files
+// can differ at another merge base where the change is the same.
+var check = checks.Check{Name: "risk", SameChange: true, FilesOnly: true, Remote: mirror.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)
@@ -126,7 +136,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if len(hits) > 0 {
 		reasons = append(reasons, "touches "+strings.Join(hits, ", "))
 	}
-	r, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats)
+	r, readBase, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats)
 	if err != nil {
 		return checks.Verdict{}, err
 	}
@@ -152,6 +162,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	}
 	v := checks.Pass("risk is %s: %s", level, strings.Join(reasons, "; "))
 	v.Outputs = map[string]string{"level": level, "lines": strconv.Itoa(lines), "files": strconv.Itoa(len(stats))}
+	v.UsesParent = readBase
 	return v, nil
 }
 
@@ -202,11 +213,13 @@ func readLinks(ctx context.Context, repo *git.Repo, commit string) (map[string]s
 // moduleReasons says what makes the changes in stats to go.mod files, and to
 // the symbolic links and submodules that their replacements go through, high
 // risk. It compares each changed go.mod file with every go.mod file at base,
-// so a module that another part of the repository required isn't new.
-func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat) ([]string, error) {
+// so a module that another part of the repository required isn't new. It
+// reads the files at base only for a change to a go.mod file, a symbolic
+// link, or a submodule, and reports whether it did.
+func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat) (reasons []string, readBase bool, err error) {
 	links, err := readLinks(ctx, repo, head)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var paths []string
 	changedLinks := map[string]bool{}
@@ -219,15 +232,15 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 		}
 	}
 	if len(paths) == 0 && len(changedLinks) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	before, err := readModFiles(ctx, repo, base)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	after, err := readModFiles(ctx, repo, head)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	// required holds the versions of each module that the repository
 	// requires, and replaced the replacements that it makes, before the
@@ -257,7 +270,6 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 		}
 	}
 
-	var reasons []string
 	add := func(format string, args ...any) {
 		if r := fmt.Sprintf(format, args...); !slices.Contains(reasons, r) {
 			reasons = append(reasons, r)
@@ -342,7 +354,7 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats
 			}
 		}
 	}
-	return reasons, nil
+	return reasons, true, nil
 }
 
 // replacement returns a replace directive in the go.mod file at file as a

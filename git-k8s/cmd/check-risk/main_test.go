@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"maps"
 	"os"
 	"path/filepath"
@@ -107,8 +108,95 @@ func TestRisk(t *testing.T) {
 			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
 				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
 			}
-			if res.ParentCommit == "" {
-				t.Error("risk results depend on the parent's head")
+			if res.ParentCommit != "" || res.MergeBase == "" {
+				t.Errorf("result = %+v, want one for the change on top of its merge base, not for the parent's head", res)
+			}
+		})
+	}
+}
+
+func TestRiskThatReadsTheMergeBase(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	for _, c := range []struct {
+		name         string
+		base, change map[string]string
+	}{
+		{"go.mod", map[string]string{"go.mod": goMod}, map[string]string{"go.mod": strings.Replace(goMod, "b v0.4.0", "b v0.5.0", 1)}},
+		{"symbolic link", nil, map[string]string{"a": symlinkTo + "/tmp"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if res := rate(t, c.base, c.change, "change"); res.ParentCommit == "" || res.MergeBase != "" {
+				t.Errorf("result = %+v, want one for the parent's head, because the rating read go.mod files there", res)
+			}
+		})
+	}
+}
+
+// TestRiskRatesEachChangeOnce rates a branch, then lands another branch on
+// the parent, then merges the parent into the branch, as the base check
+// does at the front of the queue.
+func TestRiskRatesEachChangeOnce(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	for _, c := range []struct {
+		name   string
+		change map[string]string
+		runs   int
+	}{
+		{"a change to docs", map[string]string{"docs/a.md": "a\nb\n"}, 1},
+		{"a change to go.mod", map[string]string{"go.mod": strings.Replace(goMod, "b v0.4.0", "b v0.5.0", 1)}, 3},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			w := srv.NewWork(t, "app")
+			w.Write("go.mod", goMod)
+			start := w.Commit("main")
+			w.Push("main")
+			w.Branch("c/x", start)
+			for path, content := range c.change {
+				write(t, w, path, content)
+			}
+			head := w.Commit("change")
+			w.Push("c/x")
+
+			b := &Branch{Object: kube.Meta("app-c-x", nil)}
+			b.Namespace = "default"
+			b.Spec = gitk8s.GitBranchSpec{
+				Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: start,
+				Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
+			}
+			repo, _ := srv.Repository("app")
+			runs := 0
+			counted := check
+			counted.Remote = srv.RemoteFor
+			counted.Run = func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+				runs++
+				return run(ctx, in)
+			}
+			r := checks.NewReconciler[Branch](counted, &checks.Config{CacheDir: t.TempDir()})
+			reconcileRisk := func() *gitk8s.CheckResult {
+				t.Helper()
+				ctx, _ := kube.Fake(t.Context(), b, repo)
+				if err := r.Reconcile(ctx, b); err != nil {
+					t.Fatal(err)
+				}
+				return b.Status.Checks.Result
+			}
+			first := reconcileRisk()
+
+			w.Branch("main", start)
+			w.Write("other.txt", "other\n")
+			w.Commit("land another branch")
+			w.Push("main")
+			b.Spec.ParentHead = w.Git("rev-parse", "HEAD")
+			reconcileRisk()
+
+			w.Branch("c/x", head)
+			w.Git("merge", "--quiet", "--no-edit", b.Spec.ParentHead)
+			w.Push("c/x")
+			b.Spec.Head = w.Git("rev-parse", "HEAD")
+			res := reconcileRisk()
+			if runs != c.runs || res.Commit != b.Spec.Head || res.Message != first.Message || !maps.Equal(res.Outputs, first.Outputs) {
+				t.Errorf("%d runs, result for the merge %+v; want %d runs and the first rating, %+v", runs, res, c.runs, first)
 			}
 		})
 	}

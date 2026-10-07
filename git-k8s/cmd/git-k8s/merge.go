@@ -202,6 +202,14 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 			spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), spec.Parent)
 		return nil
 	}
+	// A result for the head's change on top of an older merge base waits for
+	// its check to see the change on top of the parent's head, which is what
+	// lands.
+	checks := gitk8s.LandingGateChecks(spec.Merge, results, spec.Head, spec.ParentHead)
+	if pass, err := evaluate(spec.Merge, checks); err != nil || !pass {
+		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		return nil
+	}
 	switch spec.Merge.Landing {
 	case gitk8s.Squash, gitk8s.Rebase:
 		if done, err := m.rewrite(ctx, repo, local.Repo, b, results); err != nil || done {

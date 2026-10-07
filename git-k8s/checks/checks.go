@@ -30,12 +30,14 @@ package checks
 import (
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +61,22 @@ type Check struct {
 	// UsesParent says the check's result depends on the parent's head as
 	// well as the branch's, so the check runs again when the parent moves.
 	UsesParent bool
+	// SameChange says that the check's result for the branch's head holds
+	// for any head that makes the same change on top of its merge base with
+	// the parent's head, as git.Repo.SameChange compares them. The
+	// framework records the merge base in each Passed or Failed result
+	// without a fix. When the head moves, such as to a merge of the parent,
+	// a rebase, or a squash, the framework gives the new head the result
+	// without running the check if the new head makes the same change. The
+	// check doesn't run again when the parent moves, unless the merge base
+	// moves too and the change differs. A verdict that depends on more than
+	// the change, such as on files at the merge base that the change
+	// doesn't touch, sets Verdict.UsesParent. Such a verdict, and one for a
+	// head without a single merge base, holds only for the parent's head,
+	// as with UsesParent. A check with SameChange sets Remote, because the
+	// framework reads the repository, and leaves UsesParent and Always
+	// unset.
+	SameChange bool
 	// FilesOnly says that the check's result for the branch's head also
 	// holds for any commit with the same files that builds on the same
 	// parent head, because the result doesn't depend on the branch's
@@ -68,7 +86,8 @@ type Check struct {
 	// the branch, and the check runs on them before they land.
 	FilesOnly bool
 	// Always runs the check on every reconcile, instead of only when the
-	// heads change. Use it for checks that read only the GitBranch object.
+	// heads change. Use it for checks that read more of the GitBranch
+	// object than its heads, such as an annotation.
 	Always bool
 	// Stale, when set, reports whether a final result for the branch's
 	// current heads needs the check to run again anyway, for a check whose
@@ -108,7 +127,23 @@ type Verdict struct {
 	// reports Failed. It reports Error instead, and doesn't move the branch,
 	// if the core program wouldn't accept the Fixed result.
 	Fix string
+	// UsesParent says that this verdict depends on the parent's head, as
+	// Check.UsesParent says of every verdict, so the check runs again when
+	// the parent moves.
+	UsesParent bool
+	// MergeBase, for a check without SameChange, is the merge base of the
+	// branch's head and the parent's head that the verdict holds for, such
+	// as one that a check that compares changes found. The result records
+	// it, and the merge controller lands the branch only when it's the
+	// parent's head. When the parent moves, the check runs again unless the
+	// head's merge base with it stays the same.
+	MergeBase string
 }
+
+// ErrUnknownCommit is what Input's methods return, wrapped, for a commit
+// that the repository doesn't have, such as one that no branch has pointed
+// to for long enough that git removed it.
+var ErrUnknownCommit = errors.New("the repository doesn't have the commit")
 
 // Pass returns a passing verdict.
 func Pass(format string, args ...any) Verdict {
@@ -213,6 +248,52 @@ type reconciler[V any, P interface {
 	cfg   *Config
 	once  sync.Once
 	cache *gitk8s.Cache
+	bases memo[commitPair, []string]
+	same  memo[changePair, bool]
+}
+
+// commitPair names two commits in a repository.
+type commitPair struct{ repo, a, b string }
+
+// changePair names two changes in a repository.
+type changePair struct {
+	repo string
+	a, b git.Change
+}
+
+// maxMemo is the most entries that a memo holds.
+const maxMemo = 4096
+
+// memo remembers values that don't change for the same key, such as the
+// merge bases of two commits, across reconciles. It forgets them all
+// rather than hold more than maxMemo. It's safe for concurrent use, and a
+// nil memo remembers nothing.
+type memo[K comparable, V any] struct {
+	mu sync.Mutex
+	m  map[K]V
+}
+
+func (m *memo[K, V]) get(k K) (V, bool) {
+	if m == nil {
+		var zero V
+		return zero, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.m[k]
+	return v, ok
+}
+
+func (m *memo[K, V]) put(k K, v V) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil || len(m.m) >= maxMemo {
+		m.m = map[K]V{}
+	}
+	m.m[k] = v
 }
 
 func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
@@ -227,16 +308,15 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	if spec.Head == "" || spec.ParentHead == "" {
 		return nil
 	}
-	parentCommit := ""
-	if r.check.UsesParent {
-		parentCommit = spec.ParentHead
-	}
 	cur := *result
+	stale := func(res *gitk8s.CheckResult) bool {
+		return r.check.Stale != nil && r.check.Stale(ctx, meta, spec, res)
+	}
 	// A result with filesOnly from before the check stopped setting
 	// FilesOnly must not count for a squashed or rebased commit, so the
 	// check runs again. A result without filesOnly is only cautious.
-	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit && (r.check.FilesOnly || !cur.FilesOnly) &&
-		(r.check.Stale == nil || !r.check.Stale(ctx, meta, spec, cur)) {
+	final := !r.check.Always && cur.Final() && (r.check.FilesOnly || !cur.FilesOnly)
+	if final && r.current(cur, spec) && !stale(cur) {
 		return nil
 	}
 
@@ -245,10 +325,19 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
-	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache}
+	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
 	defer in.release()
+	if final && !r.current(cur, spec) && cur.ParentCommit == "" && cur.MergeBase != "" {
+		if kept := r.keep(ctx, in, cur); kept != nil && !stale(kept) {
+			*result = kept
+			return nil
+		}
+	}
 
-	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, FilesOnly: r.check.FilesOnly}
+	res := &gitk8s.CheckResult{Commit: spec.Head, FilesOnly: r.check.FilesOnly}
+	if r.check.UsesParent || r.check.SameChange {
+		res.ParentCommit = spec.ParentHead
+	}
 	v, err := r.check.Run(ctx, in)
 	if err != nil {
 		res.State, res.Message = gitk8s.Error, truncate(err.Error())
@@ -256,6 +345,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return err
 	}
 	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), truncateOutputs(v.Outputs)
+	r.record(ctx, in, v, res)
 	reported, why := res, "the core program doesn't accept the check's result: "
 	if v.Fix != "" {
 		// If push doesn't push, it reports Failed with at most the Fixed
@@ -278,6 +368,76 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	}
 	*result = res
 	return nil
+}
+
+// current reports whether a final result holds for the branch's heads,
+// without reading the repository.
+func (r *reconciler[V, P]) current(cur *gitk8s.CheckResult, spec *gitk8s.GitBranchSpec) bool {
+	switch {
+	case cur.Commit != spec.Head:
+		return false
+	case cur.ParentCommit != "":
+		return cur.ParentCommit == spec.ParentHead
+	case cur.MergeBase != "":
+		// A merge base is an ancestor of the head, so when the parent's
+		// head is the merge base, it's still the head's merge base with
+		// the parent.
+		return cur.MergeBase == spec.ParentHead
+	}
+	return !r.check.UsesParent && !r.check.SameChange
+}
+
+// keep checks a final result with a merge base, which current can't check
+// without the repository. It returns cur if the branch's head and its merge
+// base with the parent's head are still the result's, or, for a check with
+// SameChange, a copy of cur for the branch's head if the head makes the
+// same change. It returns nil if the check must run, including when it
+// can't tell.
+func (r *reconciler[V, P]) keep(ctx context.Context, in *Input, cur *gitk8s.CheckResult) *gitk8s.CheckResult {
+	change, err := in.Change(ctx)
+	if err != nil || change.Base == "" {
+		return nil
+	}
+	last := git.Change{Base: cur.MergeBase, Head: cur.Commit}
+	switch {
+	case change == last:
+		return cur
+	case !r.check.SameChange || cur.State != gitk8s.Passed && cur.State != gitk8s.Failed:
+		return nil
+	}
+	same, err := in.SameChange(ctx, last, change)
+	if err != nil {
+		slog.Warn("comparing changes failed, so running the check", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "err", err)
+	}
+	if err != nil || !same {
+		return nil
+	}
+	kept := *cur
+	kept.Commit, kept.MergeBase, kept.Outputs = change.Head, change.Base, maps.Clone(cur.Outputs)
+	slog.Info("kept a result for the same change", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch,
+		"from", gitk8s.Short(last.Head), "to", gitk8s.Short(change.Head), "mergeBase", gitk8s.Short(change.Base))
+	return &kept
+}
+
+// record notes in res what v holds for besides the branch's head: the
+// parent's head, or the head's merge base with it. A verdict of a check
+// with SameChange holds for the merge base if it's Passed or Failed, has
+// no fix, doesn't use the parent, and the head has one merge base;
+// otherwise it holds for the parent's head.
+func (r *reconciler[V, P]) record(ctx context.Context, in *Input, v Verdict, res *gitk8s.CheckResult) {
+	if v.UsesParent {
+		res.ParentCommit = in.Spec.ParentHead
+	}
+	switch {
+	case !r.check.SameChange:
+		res.MergeBase = v.MergeBase
+		return
+	case r.check.UsesParent || v.UsesParent || v.Fix != "" || v.State != gitk8s.Passed && v.State != gitk8s.Failed:
+		return
+	}
+	if change, err := in.Change(ctx); err == nil && change.Base != "" {
+		res.ParentCommit, res.MergeBase = "", change.Base
+	}
 }
 
 // push pushes a verdict's fix if the policy and the branch's budget allow,
@@ -343,14 +503,16 @@ type Input struct {
 	// Previous is the check's last result, which can be for other commits.
 	Previous *gitk8s.CheckResult
 
-	identity  git.Identity
-	check     *Check
-	cache     *gitk8s.Cache
-	remote    *git.Remote
-	local     *git.Repo
-	unlock    func()
-	mergeBase *string
-	key       **git.SigningKey
+	identity git.Identity
+	check    *Check
+	cache    *gitk8s.Cache
+	remote   *git.Remote
+	local    *git.Repo
+	unlock   func()
+	fetched  bool
+	bases    *memo[commitPair, []string]
+	same     *memo[changePair, bool]
+	key      **git.SigningKey
 }
 
 // Remote returns the repository's URL and credentials, from Check.Remote.
@@ -371,18 +533,17 @@ func (in *Input) Remote(ctx context.Context) (git.Remote, error) {
 // Repo fetches the branch and its parent into a local repository and
 // returns it. Spec.Head and Spec.ParentHead are in the repository.
 func (in *Input) Repo(ctx context.Context) (*git.Repo, error) {
-	if in.local != nil {
+	if in.fetched {
 		return in.local, nil
 	}
 	remote, err := in.Remote(ctx)
 	if err != nil {
 		return nil, err
 	}
-	local, unlock, err := in.cache.Open(ctx, in.Repository)
+	local, err := in.open(ctx)
 	if err != nil {
 		return nil, err
 	}
-	in.unlock = unlock
 	if err := local.Fetch(ctx, remote, in.Spec.Branch, in.Spec.Parent); err != nil {
 		return nil, err
 	}
@@ -391,25 +552,161 @@ func (in *Input) Repo(ctx context.Context) (*git.Repo, error) {
 			return nil, cmp.Or(err, fmt.Errorf("fetched %s and %s but don't have %s; the branches moved, so waiting for the repository controller to list them again", in.Spec.Branch, in.Spec.Parent, gitk8s.Short(sha)))
 		}
 	}
-	in.local = local
+	in.fetched = true
 	return local, nil
 }
 
-// MergeBase returns the best common ancestor of the branch's head and the
-// parent's head, or "" if they have none.
-func (in *Input) MergeBase(ctx context.Context) (string, error) {
-	if in.mergeBase == nil {
-		local, err := in.Repo(ctx)
+// open opens the local repository without fetching. It stays locked until
+// the reconcile ends.
+func (in *Input) open(ctx context.Context) (*git.Repo, error) {
+	if in.local == nil {
+		local, unlock, err := in.cache.Open(ctx, in.Repository)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		mb, err := local.MergeBase(ctx, in.Spec.Head, in.Spec.ParentHead)
-		if err != nil {
-			return "", err
-		}
-		in.mergeBase = &mb
+		in.local, in.unlock = local, unlock
 	}
-	return *in.mergeBase, nil
+	return in.local, nil
+}
+
+// have returns the local repository once it has commits. It fetches the
+// branch and its parent for a commit that the repository doesn't have,
+// and then the commit by name. If the remote doesn't have the commit, the
+// error wraps ErrUnknownCommit.
+func (in *Input) have(ctx context.Context, commits ...string) (*git.Repo, error) {
+	local, err := in.open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	missing := func() ([]string, error) {
+		var out []string
+		for _, c := range commits {
+			ok, err := local.HasCommit(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			if !ok && !slices.Contains(out, c) {
+				out = append(out, c)
+			}
+		}
+		return out, nil
+	}
+	gone, err := missing()
+	if err == nil && len(gone) > 0 && !in.fetched {
+		if _, err = in.Repo(ctx); err == nil {
+			gone, err = missing()
+		}
+	}
+	if err != nil || len(gone) == 0 {
+		return local, err
+	}
+	remote, err := in.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fetchErr := local.FetchCommits(ctx, remote, gone...)
+	if gone, err = missing(); err != nil || len(gone) == 0 {
+		return local, err
+	}
+	var gitErr *git.Error
+	if fetchErr == nil || errors.As(fetchErr, &gitErr) && strings.Contains(gitErr.Stderr, "not our ref") {
+		return nil, fmt.Errorf("%w: %s", ErrUnknownCommit, gitk8s.Short(gone[0]))
+	}
+	return nil, fetchErr
+}
+
+// repoKey names the repository in memo keys, which hold commits by name.
+func (in *Input) repoKey() string {
+	return in.Repository.Namespace + "/" + in.Repository.Name + " " + in.Repository.Spec.URL
+}
+
+// mergeBases returns every best common ancestor of two commits, as
+// git.Repo.MergeBases does, reading the local repository before it fetches.
+func (in *Input) mergeBases(ctx context.Context, a, b string) ([]string, error) {
+	key := commitPair{in.repoKey(), a, b}
+	if bases, ok := in.bases.get(key); ok {
+		return bases, nil
+	}
+	local, err := in.open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bases, err := local.MergeBases(ctx, a, b)
+	if err != nil {
+		if local, err = in.have(ctx, a, b); err != nil {
+			return nil, err
+		}
+		if bases, err = local.MergeBases(ctx, a, b); err != nil {
+			return nil, err
+		}
+	}
+	in.bases.put(key, bases)
+	return bases, nil
+}
+
+// MergeBase returns the best common ancestor of the branch's head and the
+// parent's head, or "" if they have none. When they have more than one, it
+// returns one of them, as git merge-base does.
+func (in *Input) MergeBase(ctx context.Context) (string, error) {
+	bases, err := in.mergeBases(ctx, in.Spec.Head, in.Spec.ParentHead)
+	if err != nil || len(bases) == 0 {
+		return "", err
+	}
+	return bases[0], nil
+}
+
+// Change returns what the branch's head changes on top of its merge base
+// with the parent's head.
+func (in *Input) Change(ctx context.Context) (git.Change, error) {
+	return in.ChangeOf(ctx, in.Spec.Head)
+}
+
+// ChangeOf returns what a commit changes on top of its merge base with the
+// parent's head. The commit can be one that no branch has, such as the
+// branch's head before a rebase. If the repository doesn't have it, the
+// error wraps ErrUnknownCommit.
+func (in *Input) ChangeOf(ctx context.Context, commit string) (git.Change, error) {
+	if !git.IsObjectName(commit) {
+		return git.Change{}, fmt.Errorf("%q isn't a full commit SHA", commit)
+	}
+	bases, err := in.mergeBases(ctx, commit, in.Spec.ParentHead)
+	if err != nil {
+		return git.Change{}, err
+	}
+	c := git.Change{Head: commit}
+	if len(bases) == 1 {
+		c.Base = bases[0]
+	}
+	return c, nil
+}
+
+// SameChange reports whether change b makes the same change as change a,
+// as git.Repo.SameChange compares them, so that a result for a's head
+// holds for b's head. It fetches commits that the local repository
+// doesn't have, and remembers the answer for the same changes.
+func (in *Input) SameChange(ctx context.Context, a, b git.Change) (bool, error) {
+	if a.Base == "" || b.Base == "" {
+		return false, nil
+	}
+	key := changePair{in.repoKey(), a, b}
+	if same, ok := in.same.get(key); ok {
+		return same, nil
+	}
+	local, err := in.open(ctx)
+	if err != nil {
+		return false, err
+	}
+	same, err := local.SameChange(ctx, a, b)
+	if err != nil {
+		if local, err = in.have(ctx, a.Base, a.Head, b.Base, b.Head); err != nil {
+			return false, err
+		}
+		if same, err = local.SameChange(ctx, a, b); err != nil {
+			return false, err
+		}
+	}
+	in.same.put(key, same)
+	return same, nil
 }
 
 // CommitTree makes a commit in Repo's repository, with the controller's

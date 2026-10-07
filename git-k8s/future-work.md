@@ -50,14 +50,8 @@ Questions to settle first:
 
 ## Keep queued branches moving
 
-Three things can stop a branch in a merge queue from landing, or hold up the
-branches behind it:
+Two things can hold up the branches behind the front of a merge queue:
 
-- An approval names one head, so the front's merge of its parent needs a
-  new approval. The branch leaves the queue until it gets one, then joins at
-  the back. By the time it reaches the front again, other branches have
-  landed, so it merges the parent in and needs another approval. While
-  branches keep landing, it might never land.
 - A check that never finishes at the front, such as one whose controller
   isn't running, holds up every branch behind it while the front can still
   land.
@@ -67,18 +61,11 @@ branches behind it:
   listing doesn't change, so the branch holds the front until its head or
   its parent's head changes.
 
-The proposed fixes are an approval that still counts after a clean merge of
-the parent, and a time limit at the front of the queue, after which the
+The proposed fix is a time limit at the front of the queue, after which the
 branch leaves it.
 
 Questions to settle first:
 
-- How `check-approval` learns that the commits since the approved head are
-  clean merges of the parent. It reads only the `GitBranch`, so it gets no
-  token for the mirror. It could trust an output of `check-base`, which
-  would let a compromised `check-base` carry an approval over to code that
-  nobody approved, or read the repository itself from the mirror, with
-  `mirror.Remote`.
 - How long the front can wait, and whether a branch that runs out of time
   goes to the back of the queue or waits for a new push.
 
@@ -100,9 +87,9 @@ Questions to settle first:
 
 `check-approval` reports who approved a branch, but not who wrote it, so a
 gate can't require that someone other than the author approved.
-`check-approval` doesn't read commits today, but with `mirror.Remote` it
-could fetch them from the [mirror](README.md#the-mirror) without the
-repository's credential.
+`check-approval` already reads the repository from the
+[mirror](README.md#the-mirror) to compare an approved commit's change with
+the head's, so it could read the commits' authors too.
 
 Questions to settle first:
 

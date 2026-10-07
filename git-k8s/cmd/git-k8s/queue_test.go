@@ -171,7 +171,8 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 		t.Fatalf("main moved to %s", got)
 	}
 
-	t.Log("The base check merges main into c/one, the checks pass again, and c/one lands.")
+	t.Log("The base check merges main into c/one. gofmt's result is for what c/one changed on top of the old merge base, so c/one keeps the front without landing.")
+	old := w.Git("merge-base", one.Spec.Head, start)
 	w.Branch("c/one", one.Spec.Head)
 	w.Git("merge", "--quiet", "--no-ff", "-m", "Merge main into c/one\n\n"+git.FixerTrailer+": base", start)
 	merged := w.Git("rev-parse", "HEAD")
@@ -180,8 +181,17 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	one.Spec.Head = merged
 	one.Status.Checks = map[string]gitk8s.CheckResult{
 		"base":  {Commit: merged, ParentCommit: start, State: gitk8s.Passed},
-		"gofmt": {Commit: merged, State: gitk8s.Passed},
+		"gofmt": {Commit: merged, MergeBase: old, State: gitk8s.Passed},
 	}
+	if msg := reconcile(one); one.Status.State != reasonWaitingForChecks || one.Status.Queued == nil || msg != "checks: base Passed, gofmt Pending" {
+		t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
+	}
+	if got := f.mirrorHeads()["main"]; got != start {
+		t.Fatalf("main moved to %s", got)
+	}
+
+	t.Log("gofmt's result moves to main's head as the merge base, and c/one lands.")
+	one.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: merged, MergeBase: start, State: gitk8s.Passed}
 	if msg := reconcile(one); one.Status.State != reasonLanded || one.Status.Queued != nil {
 		t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
 	}
