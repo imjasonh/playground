@@ -130,7 +130,7 @@ func TestGitRepository(t *testing.T) {
 		t.Errorf("when = %q, want gotest and approval of high risk", when)
 	}
 	merge := spec["branches"].([]map[string]any)[0]["merge"].(map[string]any)
-	if spec["pollInterval"] != "2s" || merge["landing"] != "Rebase" || merge["deleteMergedBranches"] != true || spec["url"] != "http://git/x.git" {
+	if spec["pollInterval"] != "2s" || merge["landing"] != "Rebase" || merge["deleteLandedBranches"] != true || spec["url"] != "http://git/x.git" {
 		t.Errorf("spec = %v", spec)
 	}
 

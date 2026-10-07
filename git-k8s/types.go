@@ -131,8 +131,9 @@ type MergePolicy struct {
 	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward|Squash|Rebase,default=FastForward" doc:"How to land a branch, which must contain the parent's head. FastForward moves the parent to the branch's head. Squash makes one commit with the head's files on top of the parent's head, and Rebase copies each of the branch's commits that isn't a merge onto it. The squashed commit, or the last rebased commit, has the files that the checks saw and builds on the parent head that they saw, so results with filesOnly count for it. When the gate needs other results, the merge controller moves the branch to the new commits for the checks to run on."`
 	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer of the branch's commits that the parent doesn't have. The limit stops two checks that disagree from pushing forever. A squashed commit that the merge controller moves the branch to leaves out the fixes before it, so the count starts again after it. The merge controller doesn't squash the fixes after its own commit again."`
 	MaxAgentRuns        *int32        `json:"maxAgentRuns,omitempty" kube:"min=0,max=1000,default=10" doc:"Most agent runs that each agentic check, such as review, can start on one branch. Each new head needs a run, so the limit caps the runs that one branch can start, not what they cost."`
-	// DeleteMergedBranches deletes a branch after it lands.
-	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch after it lands."`
+	// DeleteLandedBranches deletes a branch when the merge controller lands
+	// it.
+	DeleteLandedBranches bool `json:"deleteLandedBranches,omitempty" doc:"Delete a branch when the merge controller lands it."`
 }
 
 // Check returns the policy for the named check, or nil if the policy doesn't
@@ -220,7 +221,7 @@ type GitBranchSpec struct {
 // GitBranchStatus holds check results and the merge controller's state.
 type GitBranchStatus struct {
 	Checks             map[string]CheckResult `json:"checks,omitempty" kube:"mapType=atomic" doc:"Check results by check name. Checks send their results to the core program, which writes each one to the entry of the check that sent it."`
-	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
+	State              MergeState             `json:"state,omitempty" kube:"enum=Diverged|NoMergePolicy|ParentMissing|NothingToLand|WaitingForChecks|InvalidGate|Queued|NotFastForward|NeedsRebase|Rewritten|Landed,column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Landed condition's reason. Empty for a branch without a parent."`
 	Queued             *Queued                `json:"queued,omitempty" doc:"The branch's place in its parent's merge queue, while it waits to land."`
 	Queue              []string               `json:"queue,omitempty" doc:"Branches in this branch's merge queue, front first. The front branch is the only one that merges this branch in and lands."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
@@ -243,6 +244,51 @@ type Queued struct {
 	Head     string    `json:"head" doc:"Branch head when the merge controller last kept the branch in the queue. A later push that adds a commit without the Git-K8s-Fixer trailer, or that removes commits, takes the branch out of the queue."`
 	Position int32     `json:"position,omitempty" kube:"column=Queue" doc:"Place in the parent's queue, from 1 at the front. Unset until the parent's queue includes the branch."`
 }
+
+// MergeState says why a branch has or hasn't landed on its parent. The
+// merge controller sets it as the reason of the branch's Landed condition,
+// which is True only in MergeStateLanded.
+type MergeState string
+
+// Merge states, the values of GitBranchStatus.State.
+const (
+	// MergeStateDiverged means the branch changed both in the mirror and in
+	// the external repository, so it waits for a commit that keeps both
+	// sides' changes.
+	MergeStateDiverged MergeState = "Diverged"
+	// MergeStateNoMergePolicy means no branches rule that matches the
+	// parent has a merge policy.
+	MergeStateNoMergePolicy MergeState = "NoMergePolicy"
+	// MergeStateParentMissing means the parent doesn't exist in the mirror.
+	MergeStateParentMissing MergeState = "ParentMissing"
+	// MergeStateNothingToLand means the parent already has the branch's
+	// changes, such as when the branch was just created from it. The merge
+	// controller didn't land the branch, so it doesn't delete it.
+	MergeStateNothingToLand MergeState = "NothingToLand"
+	// MergeStateWaitingForChecks means the merge policy's gate doesn't pass
+	// yet.
+	MergeStateWaitingForChecks MergeState = "WaitingForChecks"
+	// MergeStateInvalidGate means the gate fails to evaluate after every
+	// check finished.
+	MergeStateInvalidGate MergeState = "InvalidGate"
+	// MergeStateQueued means the branch waits in its parent's merge queue.
+	MergeStateQueued MergeState = "Queued"
+	// MergeStateNotFastForward means the branch doesn't contain the
+	// parent's head, so it can't land.
+	MergeStateNotFastForward MergeState = "NotFastForward"
+	// MergeStateNeedsRebase means a squash or rebase landing can't copy the
+	// branch's commits onto the parent's head, so a person has to rebase
+	// them.
+	MergeStateNeedsRebase MergeState = "NeedsRebase"
+	// MergeStateRewritten means the merge controller moved the branch to
+	// the squashed or rebased commits instead of landing them, so that the
+	// checks whose results don't have filesOnly run on them.
+	MergeStateRewritten MergeState = "Rewritten"
+	// MergeStateLanded means the merge controller landed the branch on its
+	// parent. A branch that stays after it lands keeps this state while
+	// its head is the parent's head.
+	MergeStateLanded MergeState = "Landed"
+)
 
 // Check result states.
 const (

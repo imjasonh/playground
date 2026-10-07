@@ -40,7 +40,7 @@ spec:
         when: >-
           checks.base.passed && checks.gofmt.passed &&
           (checks.risk.outputs.level == "low" || checks.approval.passed)
-        deleteMergedBranches: true
+        deleteLandedBranches: true
     - match: c/**
       parent: main
 ```
@@ -119,9 +119,28 @@ app-c-two-de141ef616    c/two    62ebc5163be79d7963293a7e4c6152a967ed9838   main
 app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b                                       48s
 ```
 
-The `Merged` condition's message explains a `WaitingForChecks` state, for
-example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`.
-`QUEUE` is a branch's place in its parent's [merge queue](#merge-queue).
+The `Landed` condition on each `GitBranch` that has a parent says whether
+the merge controller landed the branch, and `STATE` repeats the condition's
+reason. The condition is `True` only when the controller lands the branch,
+so `kubectl wait --for=condition=Landed` doesn't return for a branch that
+someone just created from its parent:
+
+| Status | Reason | Meaning |
+| --- | --- | --- |
+| `True` | `Landed` | The merge controller landed the branch. A branch that stays after it lands keeps this reason while its head is the parent's head. |
+| `False` | `WaitingForChecks` | The merge policy's gate doesn't pass yet. The message lists the checks' states, for example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`. |
+| `False` | `Queued` | The branch waits in its parent's [merge queue](#merge-queue). The message says what it waits for. |
+| `False` | `NothingToLand` | The parent already has the branch's changes, such as when someone created the branch from the parent. The merge controller didn't land the branch, so it doesn't delete it. |
+| `False` | `NotFastForward` | The branch doesn't contain the parent's head, so it can't land. |
+| `False` | `Rewritten` | A squash or rebase landing moved the branch to new commits for the checks to run on. See [Which results count](#which-results-count). |
+| `False` | `NeedsRebase` | A squash or rebase landing can't copy the branch's commits, for the reason in the message. See [Landing methods](#landing-methods). |
+| `False` | `InvalidGate` | The gate fails to evaluate after every check finished, for the reason in the message. See [Merge gates](#merge-gates). |
+| `False` | `Diverged` | The branch changed both in the mirror and in the external repository. See [Divergence](#divergence). |
+| `False` | `NoMergePolicy` | No branches rule that matches the parent has a merge policy. |
+| `False` | `ParentMissing` | The parent doesn't exist in the mirror. |
+
+A branch without a parent has no state and no `Landed` condition. `QUEUE`
+is a branch's place in its parent's [merge queue](#merge-queue).
 
 ## The mirror
 
@@ -2233,7 +2252,7 @@ as `base`, on the others. The parent's `status.queue` lists its
 queue, front first. Each queued branch's `status.queued` records when it
 joined, the head that the merge controller last kept in the queue, and its
 place, from 1 at the front, which the `QUEUE` column shows. A queued
-branch's state is `Queued`, and the `Merged` condition's message says what
+branch's state is `Queued`, and the `Landed` condition's message says what
 it waits for, such as `2 of 3 in main's queue`.
 
 A branch leaves the queue when one of these happens:
@@ -2337,7 +2356,7 @@ When the branch is one commit on top of the parent's head, a squash
 fast-forwards the parent to it. A rebase does the same for a branch with no
 merge commits after the parent's head, because copying its commits changes
 nothing. When the parent already has the files at the branch's head, a squash
-sets the branch's state to `Merged` and changes nothing. A rebase does that
+sets the branch's state to `NothingToLand` and changes nothing. A rebase does that
 only when the parent already has every commit's change, because it leaves out
 each commit that changes nothing.
 
@@ -2458,9 +2477,9 @@ When the counted results pass the gate, the controller lands the new commit
 without another round of checks. It moves the parent to the commit in the
 mirror's copy, if the parent is still at the head that the checks saw. The
 same atomic update deletes the branch, if the branch is still at its head,
-or moves the branch to the new commit when `deleteMergedBranches` is off. A
-branch that stays is then at its parent's head, so it shows `Merged` instead
-of commits that the parent doesn't have. If the parent or the branch moved
+or moves the branch to the new commit when `deleteLandedBranches` is off. A
+branch that stays is then at its parent's head, so it stays `Landed` instead
+of showing commits that the parent doesn't have. If the parent or the branch moved
 since the repositories controller listed them, the update changes neither,
 and the controller tries again.
 
@@ -2498,7 +2517,7 @@ the external repository keeps the branch where it was. The
 `the external repository refused updates to c/auth ([remote rejected] (deletion prohibited); remote: error: denying ref deletion for refs/heads/c/auth)`,
 which ends with the messages that the external repository sent, and the
 mirror tries again at each poll. A rewritten branch that the
-external repository refused still lands. If the merge policy deletes merged
+external repository refused still lands. If the merge policy deletes landed
 branches, the mirror then deletes the branch in the external repository,
 unless the external repository refuses that too. To clear the condition,
 let the external repository accept the update, such as by allowing force
@@ -2670,7 +2689,7 @@ GitHub's branch protection rules and rulesets apply to the mirror's pushes:
   git-k8s only fast-forwards parents, and checks add commits on top of the
   branches that they check.
 - **Restrict deletions** on a branch keeps it in GitHub after
-  `deleteMergedBranches` deletes it in the mirror's copy.
+  `deleteLandedBranches` deletes it in the mirror's copy.
 
 When GitHub refuses the mirror's push of a check's commit, a landing, or a
 branch from `git-k8s-deps`, the change stays in the mirror's copy, and the

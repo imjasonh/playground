@@ -29,7 +29,7 @@ import (
 
 var policy = &gitk8s.MergePolicy{
 	Checks:               []gitk8s.CheckPolicy{{Name: "base", MayPush: true}, {Name: "gofmt", MayPush: true}},
-	DeleteMergedBranches: true,
+	DeleteLandedBranches: true,
 }
 
 func rules() []gitk8s.BranchRule {
@@ -129,7 +129,7 @@ func (f *fixture) merge(b *gitk8s.GitBranch) (*kube.Recorder, error) {
 }
 
 // mergeIn reconciles b with parent as its parent's GitBranch, and returns
-// the Merged condition's message. Reads see the objects in world over b and
+// the Landed condition's message. Reads see the objects in world over b and
 // parent. b keeps its check results, which the merge controller leaves out
 // of its status write.
 func (f *fixture) mergeIn(parent, b *gitk8s.GitBranch, world ...any) string {
@@ -141,7 +141,7 @@ func (f *fixture) mergeIn(parent, b *gitk8s.GitBranch, world ...any) string {
 		f.t.Fatal(err)
 	}
 	b.Status.Checks = results
-	if c := kube.FindCondition(b.Status.Conditions, "Merged"); c != nil {
+	if c := kube.FindCondition(b.Status.Conditions, "Landed"); c != nil {
 		return c.Message
 	}
 	return ""
@@ -195,7 +195,7 @@ func (f *fixture) landInMirror(commit string) {
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "c/landing", Head: commit, Parent: "main", ParentHead: parent, Merge: policy}
 	pass(b)
-	if _, err := f.merge(b); err != nil || b.Status.State != reasonLanded {
+	if _, err := f.merge(b); err != nil || b.Status.State != gitk8s.MergeStateLanded {
 		f.t.Fatalf("landing %s on main: err = %v, state = %q", gitk8s.Short(commit), err, b.Status.State)
 	}
 }
@@ -950,8 +950,8 @@ func TestRecordsDivergence(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &gitk8s.Divergence{Commit: person, Ref: "refs/git-k8s/downstream/heads/c/x", Base: synced}
-	if d := b.Status.Diverged; d == nil || *d != *want || b.Status.State != reasonDiverged {
-		t.Errorf("diverged = %+v, state = %q; want %+v and %s", d, b.Status.State, want, reasonDiverged)
+	if d := b.Status.Diverged; d == nil || *d != *want || b.Status.State != gitk8s.MergeStateDiverged {
+		t.Errorf("diverged = %+v, state = %q; want %+v and %s", d, b.Status.State, want, gitk8s.MergeStateDiverged)
 	}
 	if got := f.mirrorHeads()["main"]; got != b.Spec.ParentHead {
 		t.Errorf("landed a diverged branch: main = %s", got)
@@ -978,8 +978,8 @@ func TestRecordsDivergence(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.Diverged != nil || b.Status.State != reasonLanded {
-		t.Errorf("diverged = %+v, state = %q; want nil and %s", b.Status.Diverged, b.Status.State, reasonLanded)
+	if b.Status.Diverged != nil || b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("diverged = %+v, state = %q; want nil and %s", b.Status.Diverged, b.Status.State, gitk8s.MergeStateLanded)
 	}
 }
 
@@ -1008,11 +1008,11 @@ func TestRecordsDeletionAsDivergence(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if d := b.Status.Diverged; d == nil || *d != (gitk8s.Divergence{Base: synced}) || b.Status.State != reasonDiverged {
-		t.Errorf("diverged = %+v, state = %q; want only the base %s, and %s", d, b.Status.State, synced, reasonDiverged)
+	if d := b.Status.Diverged; d == nil || *d != (gitk8s.Divergence{Base: synced}) || b.Status.State != gitk8s.MergeStateDiverged {
+		t.Errorf("diverged = %+v, state = %q; want only the base %s, and %s", d, b.Status.State, synced, gitk8s.MergeStateDiverged)
 	}
-	if c := kube.FindCondition(b.Status.Conditions, "Merged"); c == nil || !strings.Contains(c.Message, "external repository, which deleted it") {
-		t.Errorf("Merged = %+v, want a message that says the external repository deleted c/x", c)
+	if c := kube.FindCondition(b.Status.Conditions, "Landed"); c == nil || !strings.Contains(c.Message, "external repository, which deleted it") {
+		t.Errorf("Landed = %+v, want a message that says the external repository deleted c/x", c)
 	}
 }
 
@@ -1047,8 +1047,8 @@ func TestLandsOnDivergedParent(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.State != reasonLanded || b.Status.Diverged != nil {
-		t.Errorf("state = %q, diverged = %+v; want %s and nil", b.Status.State, b.Status.Diverged, reasonLanded)
+	if b.Status.State != gitk8s.MergeStateLanded || b.Status.Diverged != nil {
+		t.Errorf("state = %q, diverged = %+v; want %s and nil", b.Status.State, b.Status.Diverged, gitk8s.MergeStateLanded)
 	}
 
 	main := owned(rec)["main"]
@@ -1074,9 +1074,9 @@ func TestLandsAndDeletesBranch(t *testing.T) {
 	if _, ok := heads["c/x"]; ok {
 		t.Error("c/x wasn't deleted after it landed")
 	}
-	c := kube.FindCondition(b.Status.Conditions, "Merged")
-	if c == nil || c.Status != kube.True || c.Reason != reasonLanded || b.Status.State != reasonLanded {
-		t.Errorf("Merged = %+v, state %q", c, b.Status.State)
+	c := kube.FindCondition(b.Status.Conditions, "Landed")
+	if c == nil || c.Status != kube.True || c.Reason != string(gitk8s.MergeStateLanded) || b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("Landed = %+v, state %q", c, b.Status.State)
 	}
 	if b.Status.Checks != nil {
 		t.Error("the merge controller must leave status.checks out of its status write")
@@ -1114,8 +1114,8 @@ func TestWaitsForFreshPassingChecks(t *testing.T) {
 			f := newFixture(t)
 			b := f.branches()
 			edit(b)
-			if msg := f.mergeIn(parentOf(b), b); b.Status.State != reasonWaitingForChecks || b.Status.Queued != nil {
-				t.Errorf("state = %q, queued %+v, %q; want %s, out of the queue", b.Status.State, b.Status.Queued, msg, reasonWaitingForChecks)
+			if msg := f.mergeIn(parentOf(b), b); b.Status.State != gitk8s.MergeStateWaitingForChecks || b.Status.Queued != nil {
+				t.Errorf("state = %q, queued %+v, %q; want %s, out of the queue", b.Status.State, b.Status.Queued, msg, gitk8s.MergeStateWaitingForChecks)
 			}
 			if got := f.mirrorHeads()["main"]; got != b.Spec.ParentHead {
 				t.Errorf("main moved to %s", got)
@@ -1137,7 +1137,7 @@ func TestGateExpression(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.State != reasonWaitingForChecks || !strings.Contains(kube.FindCondition(b.Status.Conditions, "Merged").Message, "risk Passed (high)") {
+	if b.Status.State != gitk8s.MergeStateWaitingForChecks || !strings.Contains(kube.FindCondition(b.Status.Conditions, "Landed").Message, "risk Passed (high)") {
 		t.Fatalf("state = %q, conditions %+v", b.Status.State, b.Status.Conditions)
 	}
 
@@ -1146,8 +1146,8 @@ func TestGateExpression(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.State != reasonLanded {
-		t.Errorf("state after approval = %q, want %s", b.Status.State, reasonLanded)
+	if b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("state after approval = %q, want %s", b.Status.State, gitk8s.MergeStateLanded)
 	}
 }
 
@@ -1163,8 +1163,8 @@ func TestLandsResultsForTheParentsHead(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if msg := kube.FindCondition(b.Status.Conditions, "Merged").Message; b.Status.State != reasonWaitingForChecks || msg != "checks: base Passed, gofmt Passed, risk Pending" {
-		t.Fatalf("state = %q, %q; want %s, because risk's result is for the change on top of another merge base", b.Status.State, msg, reasonWaitingForChecks)
+	if msg := kube.FindCondition(b.Status.Conditions, "Landed").Message; b.Status.State != gitk8s.MergeStateWaitingForChecks || msg != "checks: base Passed, gofmt Passed, risk Pending" {
+		t.Fatalf("state = %q, %q; want %s, because risk's result is for the change on top of another merge base", b.Status.State, msg, gitk8s.MergeStateWaitingForChecks)
 	}
 	if got := f.mirrorHeads()["main"]; got != b.Spec.ParentHead {
 		t.Fatalf("main moved to %s", got)
@@ -1175,8 +1175,8 @@ func TestLandsResultsForTheParentsHead(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.State != reasonLanded {
-		t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+	if b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("state = %q, want %s", b.Status.State, gitk8s.MergeStateLanded)
 	}
 }
 
@@ -1193,8 +1193,8 @@ func TestNotFastForward(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.State != reasonNotFastForward {
-		t.Errorf("state = %q, want %s", b.Status.State, reasonNotFastForward)
+	if b.Status.State != gitk8s.MergeStateNotFastForward {
+		t.Errorf("state = %q, want %s", b.Status.State, gitk8s.MergeStateNotFastForward)
 	}
 }
 
@@ -1214,9 +1214,10 @@ func TestParentMovedAfterListing(t *testing.T) {
 	}
 }
 
-// A branch that's already merged, such as one just created from its parent,
-// isn't deleted, because the merge controller didn't land it.
-func TestAlreadyMergedBranchesStay(t *testing.T) {
+// A branch whose changes its parent already has, such as one just created
+// from its parent, isn't Landed or deleted, because the merge controller
+// didn't land it.
+func TestBranchesWithNothingToLandStay(t *testing.T) {
 	for name, setup := range map[string]func(*gitk8s.GitBranch, *gittest.Work){
 		"at the parent's head": func(b *gitk8s.GitBranch, w *gittest.Work) {
 			w.Push("main")
@@ -1237,13 +1238,42 @@ func TestAlreadyMergedBranchesStay(t *testing.T) {
 			if _, err := f.merge(b); err != nil {
 				t.Fatal(err)
 			}
-			if b.Status.State != reasonMerged {
-				t.Errorf("state = %q, want %s", b.Status.State, reasonMerged)
+			if c := kube.FindCondition(b.Status.Conditions, "Landed"); c == nil || c.Status != kube.False || b.Status.State != gitk8s.MergeStateNothingToLand {
+				t.Errorf("Landed = %+v, state = %q; want False and %s", c, b.Status.State, gitk8s.MergeStateNothingToLand)
 			}
 			if _, ok := f.mirrorHeads()["c/x"]; !ok {
 				t.Error("deleted a branch that the merge controller didn't land")
 			}
 		})
+	}
+}
+
+// A branch that stays after it lands is still Landed once the repositories
+// controller lists it at its parent's head, so a wait for the condition
+// can't miss the landing.
+func TestKeptBranchStaysLanded(t *testing.T) {
+	f := newFixture(t)
+	b := f.branches()
+	p := *policy
+	p.DeleteLandedBranches = false
+	b.Spec.Merge = &p
+	if _, err := f.merge(b); err != nil || b.Status.State != gitk8s.MergeStateLanded {
+		t.Fatalf("err = %v, state = %q; want %s", err, b.Status.State, gitk8s.MergeStateLanded)
+	}
+	msg := kube.FindCondition(b.Status.Conditions, "Landed").Message
+
+	t.Log("The repositories controller lists c/x at main's head.")
+	b.Spec.ParentHead = b.Spec.Head
+	b.Generation++
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	c := kube.FindCondition(b.Status.Conditions, "Landed")
+	if c == nil || c.Status != kube.True || c.Message != msg || c.ObservedGeneration != b.Generation || b.Status.State != gitk8s.MergeStateLanded {
+		t.Errorf("Landed = %+v, state = %q; want True at generation %d with %q", c, b.Status.State, b.Generation, msg)
+	}
+	if _, ok := f.mirrorHeads()["c/x"]; !ok {
+		t.Error("deleted c/x, which the merge policy keeps")
 	}
 }
 
@@ -1256,8 +1286,8 @@ func TestInvalidGateWithFinalResults(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	if b.Status.State != reasonInvalidGate {
-		t.Errorf("state = %q, want %s", b.Status.State, reasonInvalidGate)
+	if b.Status.State != gitk8s.MergeStateInvalidGate {
+		t.Errorf("state = %q, want %s", b.Status.State, gitk8s.MergeStateInvalidGate)
 	}
 }
 
@@ -1270,6 +1300,15 @@ func TestNoParentNoState(t *testing.T) {
 	m := &merger{mirror: &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()}}
 	if err := m.Reconcile(ctx, b); err != nil || b.Status.State != "" || b.Status.Diverged != nil || len(b.Status.Conditions) != 0 {
 		t.Errorf("before the mirror has a copy, err = %v, status = %+v", err, b.Status)
+	}
+
+	t.Log("A branch that loses its parent loses its state and its Landed condition.")
+	b.Status.State = gitk8s.MergeStateWaitingForChecks
+	synced := kube.Condition{Type: "Synced", Status: kube.True, Reason: "Synced"}
+	b.Status.Conditions = []kube.Condition{{Type: "Landed", Status: kube.False, Reason: string(gitk8s.MergeStateWaitingForChecks)}, synced}
+	ctx, _ = kube.Fake(t.Context(), b, repo)
+	if err := m.Reconcile(ctx, b); err != nil || b.Status.State != "" || !slices.Equal(b.Status.Conditions, []kube.Condition{synced}) {
+		t.Errorf("after losing the parent, err = %v, status = %+v", err, b.Status)
 	}
 }
 
