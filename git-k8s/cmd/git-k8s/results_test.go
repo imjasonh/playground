@@ -117,7 +117,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"} {}`, http.StatusBadRequest, "the request has data after the result"},
 		{"a brace after the result", gofmt, "gofmt", `{"commit":"h1","state":"Passed"}}`, http.StatusBadRequest, "the request has data after the result"},
 		{"a newline after the result", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","parentCommit":"p1","state":"Passed"}` + "\n", http.StatusNoContent, ""},
-		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusNoContent, ""},
+		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusBadRequest, `unknown field "approved"`},
 		{"a body that's too large", gofmt, "gofmt", `{"commit":"h1","state":"Passed","message":"` + strings.Repeat("x", maxResultSize) + `"}`, http.StatusBadRequest, "too large"},
 		{"a state that checks can't send", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Pending}, http.StatusBadRequest, `state "Pending" isn't`},
 		{"an invalid generation", "/results/default/app-c-x/gofmt?generation=new", "gofmt", fresh, http.StatusBadRequest, "generation"},

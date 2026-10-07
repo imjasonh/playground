@@ -2068,11 +2068,11 @@ to the core program's results endpoint:
    check isn't `CHECK`, the core program rejects the result.
 4. The core program also rejects a result for a branch without a parent, a
    result for a check that the branch's merge policy doesn't list, a result
-   that isn't for the branch's current commits, a `Pending` result, and a
-   result over its size limits. The `checks` package sends an `Error`
-   result instead of one with a state or size that the core program
-   rejects, with a message that says why. The core program drops fields
-   that it doesn't know, as the API server does by default.
+   that isn't for the branch's current commits, a `Pending` result, a
+   result with a field that the core program doesn't know, and a result
+   over its size limits. The `checks` package sends an `Error` result
+   instead of one with a state or size that the core program rejects, with
+   a message that says why.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
@@ -3070,11 +3070,10 @@ shows how.
 
 To upgrade, install the core program, `git-k8s`, before the checks, as this
 loop does. The core program updates the `GitBranch` CustomResourceDefinition
-when it starts, and an older one drops fields that newer checks send, such
-as a result's `mergeBase`. Without that field, `check-risk` rates a branch
-again each time it reconciles the branch, and after the parent moves, a
-rating or an approval for the change on top of the parent's earlier head
-counts for landing until its check runs again.
+when it starts, and an older one rejects results with fields that it doesn't
+know, which newer checks can send. A check sends nothing more for a branch
+after a rejected result until the branch changes or the check restarts, so
+the branch waits for that check until then.
 
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
