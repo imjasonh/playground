@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -570,6 +571,57 @@ func TestLocalTypes(t *testing.T) {
 	Delete(ctx, old)
 	if rec.Err() != nil || len(Applied[localConfigMap](rec)) != 1 || len(Deleted[localConfigMap](rec)) != 1 {
 		t.Errorf("Err = %v, Applied = %v, Deleted = %v", rec.Err(), Applied[localConfigMap](rec), Deleted[localConfigMap](rec))
+	}
+}
+
+// TestDeleteNamesOneObject checks that Delete defaults and checks the
+// namespace and name as Own and Apply do. A delete without a name would go
+// to the collection's path.
+func TestDeleteNamesOneObject(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	ctx, rec := Fake(t.Context(), parent)
+	Delete(ctx, &podMeta{})
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "kube.Delete") || !strings.Contains(err.Error(), "needs a name") || len(Deleted[podMeta](rec)) != 0 {
+		t.Errorf("Delete without a name: Err = %v, Deleted = %v", err, Deleted[podMeta](rec))
+	}
+
+	ctx, rec = Fake(t.Context(), parent)
+	Delete(ctx, &podMeta{Object: Meta("p1", nil)})
+	if got := Deleted[podMeta](rec); rec.Err() != nil || len(got) != 1 || got[0].Namespace != "shop" {
+		t.Errorf("Delete without a namespace: Err = %v, Deleted = %v; want p1 in shop", rec.Err(), got)
+	}
+
+	ctx, rec = Fake(t.Context(), &policy{Object: Meta("p", nil)})
+	Delete(ctx, &podMeta{Object: Meta("p1", nil)})
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "needs a namespace") || len(Deleted[podMeta](rec)) != 0 {
+		t.Errorf("Delete without a namespace for a cluster-scoped object: Err = %v, Deleted = %v", err, Deleted[podMeta](rec))
+	}
+}
+
+// TestControllerDeleteNeedsAName checks that the controller refuses a delete
+// without a name rather than send it to the collection's path.
+func TestControllerDeleteNeedsAName(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testManager()
+	m.client, m.tracker = cl, newTracker()
+	c := triggerable[widget](t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true})
+	ti, err := typeInfoFor[podMeta, *podMeta]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.delete(t.Context(), ti, resolved{apiVersion: "v1", plural: "pods", namespaced: true}, &ObjectMeta{Namespace: "shop"})
+	if err == nil || requests.Load() != 0 {
+		t.Errorf("delete without a name = %v after %d requests, want an error and none", err, requests.Load())
 	}
 }
 

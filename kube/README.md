@@ -1022,8 +1022,9 @@ a local type only with `Fetch`, `Apply`, and `Delete`. `Get`, `List`, and
 `Own` read caches that watch every namespace that the program watches, so they
 fail the reconcile with a local type, and `generate` rejects a controller that
 reconciles or owns one. Give each local object the program's namespace:
-`Fetch` and `Apply` fail the reconcile when it's empty, rather than use the
-namespace of the object being reconciled, which the Role doesn't cover.
+`Fetch`, `Apply`, and `Delete` fail the reconcile when it's empty, rather
+than use the namespace of the object being reconciled, which the Role
+doesn't cover.
 
 | Flag | Default | Description |
 | --- | --- | --- |

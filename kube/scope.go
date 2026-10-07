@@ -304,20 +304,7 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 		s.fail(err)
 		return resolved{}, false
 	}
-	switch {
-	case !res.namespaced:
-		m.Namespace = ""
-	case m.Namespace == "" && ti.local:
-		s.fail(Permanent(fmt.Errorf("kube.%s: %v is local, so %q needs the program's own namespace", verb, ti, m.Name)))
-		return resolved{}, false
-	case m.Namespace == "" && s.parentNS:
-		m.Namespace = s.key.Namespace
-	case m.Namespace == "":
-		s.fail(fmt.Errorf("kube.%s: %v %q needs a namespace because the object being reconciled is cluster-scoped", verb, ti, m.Name))
-		return resolved{}, false
-	}
-	if m.Name == "" {
-		s.fail(fmt.Errorf("kube.%s: %v needs a name", verb, ti))
+	if !s.locate(verb, ti, res, m) {
 		return resolved{}, false
 	}
 	for _, in := range s.intents {
@@ -450,8 +437,32 @@ func (s *scope) writesStatus(ti *typeInfo, k Key) bool {
 	return ti.sameKind(s.c.ti) && k == s.key
 }
 
+// locate defaults m's namespace for Own, Apply, and Delete, and fails the
+// scope unless m then names one object.
+func (s *scope) locate(verb string, ti *typeInfo, res resolved, m *ObjectMeta) bool {
+	switch {
+	case !res.namespaced:
+		m.Namespace = ""
+	case m.Namespace == "" && ti.local:
+		s.fail(Permanent(fmt.Errorf("kube.%s: %v is local, so %q needs the program's own namespace", verb, ti, m.Name)))
+		return false
+	case m.Namespace == "" && s.parentNS:
+		m.Namespace = s.key.Namespace
+	case m.Namespace == "":
+		s.fail(fmt.Errorf("kube.%s: %v %q needs a namespace because the object being reconciled is cluster-scoped", verb, ti, m.Name))
+		return false
+	}
+	if m.Name == "" {
+		s.fail(fmt.Errorf("kube.%s: %v needs a name", verb, ti))
+		return false
+	}
+	return true
+}
+
 // Delete declares that obj should be deleted. After Reconcile returns nil,
-// the framework deletes it, if it still has the same UID.
+// the framework deletes it, if it still has the same UID. As in Own, obj's
+// namespace defaults to the reconciled object's. If obj has no name, or no
+// namespace that Delete can use, the reconcile fails.
 func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 	s := scopeFrom(ctx, "Delete")
 	if s.readOnly("Delete") {
@@ -464,6 +475,9 @@ func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 	res, err := s.w.resolve(ctx, ti)
 	if err != nil {
 		s.fail(err)
+		return
+	}
+	if !s.locate("Delete", ti, res, &obj.object().ObjectMeta) {
 		return
 	}
 	s.intents = append(s.intents, intent{kind: intentDelete, ti: ti, res: res, obj: obj})
