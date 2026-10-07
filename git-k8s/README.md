@@ -189,6 +189,19 @@ also stays while the mirror can't compare a branch's heads. To delete it
 anyway, with the changes that the external repository lacks, remove the
 finalizer `kube.imjasonh.github.io/repositories`.
 
+Each `GitRepository` and `GitBranch` has a `Synced` condition, which kube
+sets after every reconcile of the object. After a reconcile succeeds,
+`Synced` is `True` with the reason `Reconciled`. After one fails, it's
+`False`, and its message says what failed. Its reason is then
+`ReconcileError`, or `PermanentError` for an error that retrying won't fix,
+which kube doesn't retry until the object changes. kube doesn't reconcile a
+`GitRepository` that's being deleted, so its other conditions, such as
+`ExternalSynced`, keep their values from before the deletion. If the
+deletion can't finish, `Synced` is `False`, and its message says why. For
+more about `Synced`, see
+[Read the real state, declare the desired state](../kube/README.md#read-the-real-state-declare-the-desired-state)
+in kube's README.
+
 The mirror syncs branches only. It doesn't fetch or push tags, and it takes
 pushes only to branches.
 
