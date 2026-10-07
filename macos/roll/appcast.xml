@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>roll updates</title>
+    <link>https://imjasonh.github.io/playground/macos/roll/appcast.xml</link>
+    <description>Sparkle updates for roll</description>
+    <language>en</language>
+    <item>
+      <title>Roll 1.0.0</title>
+      <pubDate>Wed, 07 Oct 2026 12:32:54 +0000</pubDate>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/roll-v1.0.0/Roll-1.0.0.zip" length="1015930" type="application/octet-stream" sparkle:edSignature="oYwrMdp60uSXpGDgLLVeEu+rUNDazUnmcxFKPiIU2W1V1sUevnqFsV1O+cUQCc/RQnz8QbMpqRUH2cWnVqQtDQ=="/>
+    </item>
+  </channel>
+</rss>
