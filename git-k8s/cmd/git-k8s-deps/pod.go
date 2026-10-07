@@ -23,6 +23,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -240,7 +241,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 		InitContainers: []agent.Container{{
 			Name:                     "prepare",
 			Image:                    u.gitImage,
-			ImagePullPolicy:          "IfNotPresent",
+			ImagePullPolicy:          images.PullPolicy(u.gitImage),
 			Command:                  []string{"sh", "-c", prepareScript},
 			Env:                      prepareEnv,
 			VolumeMounts:             []agent.VolumeMount{{Name: "src", MountPath: "/src"}, {Name: "tmp", MountPath: "/tmp"}},
@@ -253,7 +254,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 		}, {
 			Name:            "update",
 			Image:           u.goImage,
-			ImagePullPolicy: "IfNotPresent",
+			ImagePullPolicy: images.PullPolicy(u.goImage),
 			Command:         []string{"sh", "-c", updateScript},
 			Env: []agent.EnvVar{
 				{Name: "UPDATES", Value: updateLines(updates)},
@@ -287,7 +288,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 		Containers: []agent.Container{{
 			Name:            "result",
 			Image:           u.resultImage,
-			ImagePullPolicy: "IfNotPresent",
+			ImagePullPolicy: images.PullPolicy(u.resultImage),
 			Args:            []string{"serve"},
 			Env: []agent.EnvVar{
 				{Name: "POD_UID", ValueFrom: &agent.EnvVarSource{FieldRef: &agent.FieldSelector{FieldPath: "metadata.uid"}}},

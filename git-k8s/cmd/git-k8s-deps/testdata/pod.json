@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "name": "gitk8sdeps6155a932a8d55db5",
+    "name": "gitk8sdepsf9197ebebf837454",
     "labels": {
       "app.kubernetes.io/name": "git-k8s-deps"
     }
@@ -45,7 +45,7 @@
       {
         "name": "prepare",
         "image": "git",
-        "imagePullPolicy": "IfNotPresent",
+        "imagePullPolicy": "Always",
         "command": [
           "sh",
           "-c",
@@ -135,7 +135,7 @@
       {
         "name": "update",
         "image": "go",
-        "imagePullPolicy": "IfNotPresent",
+        "imagePullPolicy": "Always",
         "command": [
           "sh",
           "-c",
@@ -244,7 +244,7 @@
       {
         "name": "result",
         "image": "agent-runner",
-        "imagePullPolicy": "IfNotPresent",
+        "imagePullPolicy": "Always",
         "args": [
           "serve"
         ],

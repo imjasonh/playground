@@ -1116,6 +1116,12 @@ Set `-runtime-class` to run the Pods under a sandboxing runtime such as
 gVisor, and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change
 the rest. If you set `-goproxy`, set the same value on the core program.
 
+The test container runs the Go in `-go-image` with `GOTOOLCHAIN=local`, so
+the tests of a module that needs a newer Go fail until you set `-go-image`
+to an image that has it. The default names an image by digest, as
+[Install](#install) describes, so it doesn't move to a newer Go until you
+upgrade `check-gotest`.
+
 The core program owns the NetworkPolicy so that `check-gotest`, which
 creates Pods in every namespace that has a `GitBranch`, can't change
 NetworkPolicies. Each `GitRepository` owns one policy, `NAME-test-pods`. It
@@ -1585,7 +1591,7 @@ kubectl get pods --all-namespaces -l git-k8s.imjasonh.com/agent=review
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-agent-image` | Required | Image that runs the agent, built from `agent/runner/Dockerfile` |
-| `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
+| `-git-image` | `cgr.dev/chainguard/git` by digest | Image that fetches the source; it needs `git` and `sh` |
 | `-backend` | `cursor` | Where the agent runs: `cursor`, with the Cursor SDK in the Pod, or `fake`, for tests |
 | `-model` | `composer-2.5` | Model that the agent uses |
 | `-api-key-secret` | `cursor-api-key` | Secret, in each branch's namespace, whose `api-key` key holds the API key |
@@ -3029,8 +3035,8 @@ branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 | `-seen-configmap` | `git-k8s-deps-first-seen` | Name of the ConfigMap in the controller's namespace that keeps when the controller first saw versions, or empty to keep the times only in memory |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
 | `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
-| `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
-| `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
+| `-go-image` | `cgr.dev/chainguard/go` by digest | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
+| `-git-image` | `cgr.dev/chainguard/git` by digest | Image that fetches the source; it needs `git` and `sh` |
 | `-timeout` | `15m` | Longest that an update Pod can run |
 | `-source-size` | `2Gi` | Most disk space that an update Pod's copy of the repository can use |
 | `-go-cache-size` | `4Gi` | Most disk space that an update Pod's Go module and build caches can use |
@@ -3078,6 +3084,17 @@ counts for landing until its check runs again.
 
 To upgrade an installation from before the mirror, follow
 [Upgrade from before the mirror](#upgrade-from-before-the-mirror) instead.
+
+`check-gotest`, `git-k8s-deps`, and the [agentic checks](#agentic-checks)
+fetch the source in their Pods with the image in `-git-image`, and
+`check-gotest` and `git-k8s-deps` run Go with the one in `-go-image`. By
+default, those flags name Chainguard's `git` and `go` images by digest, so
+moving a tag, on the registry or on a mirror between it and your cluster,
+can't change what those Pods run. A container whose image is named by
+digest has the pull policy `IfNotPresent`. One whose image is named by tag
+has `Always`, so its node pulls the image each time the container starts,
+and every node runs the image that the tag names then. To run newer images,
+upgrade the programs, or set the flags.
 
 The core program keeps the mirror's copies on a PersistentVolumeClaim that
 `generate` adds for its `kube.Volume`, at

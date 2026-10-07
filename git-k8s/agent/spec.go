@@ -12,6 +12,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -321,7 +322,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		InitContainers: []Container{{
 			Name:                     "prepare",
 			Image:                    r.GitImage,
-			ImagePullPolicy:          "IfNotPresent",
+			ImagePullPolicy:          images.PullPolicy(r.GitImage),
 			Command:                  []string{"sh", "-c", prepareScript},
 			Env:                      prepareEnv,
 			VolumeMounts:             prepareMounts,
@@ -334,7 +335,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		}, {
 			Name:            "agent",
 			Image:           image,
-			ImagePullPolicy: "IfNotPresent",
+			ImagePullPolicy: images.PullPolicy(image),
 			Args:            []string{"run"},
 			Env: []EnvVar{
 				{Name: "AGENT_TASK", Value: string(agentTask)},
@@ -357,7 +358,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		Containers: []Container{{
 			Name:            "result",
 			Image:           image,
-			ImagePullPolicy: "IfNotPresent",
+			ImagePullPolicy: images.PullPolicy(image),
 			Args:            []string{"serve"},
 			Env: []EnvVar{
 				{Name: "POD_UID", ValueFrom: &EnvVarSource{FieldRef: &FieldSelector{FieldPath: "metadata.uid"}}},

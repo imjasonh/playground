@@ -47,6 +47,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -104,7 +105,7 @@ type Runner struct {
 // AddFlags registers flags that set the Runner's fields other than Name.
 func (r *Runner) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&r.Image, "agent-image", "", "image that runs the agent, built from agent/runner/Dockerfile (required)")
-	fs.StringVar(&r.GitImage, "git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
+	fs.StringVar(&r.GitImage, "git-image", images.Git, "image that fetches the source; it needs git and sh")
 	fs.StringVar(&r.Backend, "backend", "cursor", "where the agent runs: cursor, with the Cursor SDK in the Pod, or fake, for tests")
 	fs.StringVar(&r.Model, "model", "composer-2.5", "model that the agent uses")
 	fs.StringVar(&r.Secret, "api-key-secret", "cursor-api-key", "Secret, in each branch's namespace, whose api-key key holds the Cursor API key")

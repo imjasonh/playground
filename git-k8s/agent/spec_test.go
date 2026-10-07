@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"maps"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -171,6 +173,31 @@ func TestRequestsStorage(t *testing.T) {
 				t.Errorf("with -storage-request %q, %s requests %s of ephemeral storage, want %s", request, c.Name, got, want)
 			}
 		}
+	}
+}
+
+func TestPinsImages(t *testing.T) {
+	r := &Runner{Name: "review"}
+	r.AddFlags(flag.NewFlagSet("check-review", flag.ContinueOnError))
+	if r.GitImage != images.Git {
+		t.Errorf("-git-image defaults to %s, want %s, which names its image by digest", r.GitImage, images.Git)
+	}
+	policies := func() map[string]string {
+		p := r.jobPod(&Job{Name: "app-c-x", Namespace: "default"}, 1)
+		got := map[string]string{}
+		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
+			got[c.Name] = c.ImagePullPolicy
+		}
+		return got
+	}
+	r.Image = "registry.example.com/agent-runner@sha256:" + strings.Repeat("0", 64)
+	if got, want := policies(), map[string]string{"prepare": "IfNotPresent", "agent": "IfNotPresent", "result": "IfNotPresent"}; !maps.Equal(got, want) {
+		t.Errorf("with images named by digest, the pull policies are %v, want %v", got, want)
+	}
+	t.Log("A tag can move, so a node pulls it each time a container starts.")
+	r.Image, r.GitImage = "registry.example.com/agent-runner:test", "registry.example.com/git:test"
+	if got, want := policies(), map[string]string{"prepare": "Always", "agent": "Always", "result": "Always"}; !maps.Equal(got, want) {
+		t.Errorf("with images named by tag, the pull policies are %v, want %v", got, want)
 	}
 }
 

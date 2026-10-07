@@ -56,6 +56,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gomod"
+	"github.com/imjasonh/playground/git-k8s/internal/images"
 	"github.com/imjasonh/playground/git-k8s/mirror"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
@@ -155,8 +156,8 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.StringVar(&u.prefix, "prefix", "deps/", "branch-name prefix of the branches that the controller pushes, ending with /")
 	fs.StringVar(&u.goProxy, "goproxy", "https://proxy.golang.org", "comma-separated URLs of the module proxies to read modules from")
 	fs.StringVar(&u.goSumDB, "gosumdb", "sum.golang.org", "GOSUMDB for go get, or off")
-	fs.StringVar(&u.goImage, "go-image", "cgr.dev/chainguard/go:latest", "image that runs go get; it needs go, git, sh, base64, sha256sum, tail, and cut")
-	fs.StringVar(&u.gitImage, "git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
+	fs.StringVar(&u.goImage, "go-image", images.Go, "image that runs go get; it needs go, git, sh, base64, sha256sum, tail, and cut")
+	fs.StringVar(&u.gitImage, "git-image", images.Git, "image that fetches the source; it needs git and sh")
 	fs.StringVar(&u.resultImage, "result-image", "", "image that serves the result, built from agent/runner/Dockerfile (required)")
 	fs.StringVar(&u.runtimeClass, "runtime-class", "", "RuntimeClass for update Pods, such as gvisor")
 	fs.DurationVar(&u.timeout, "timeout", 15*time.Minute, "longest that an update Pod can run")
