@@ -22,7 +22,7 @@ final class DieStatusController: NSObject {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
-        button.accessibilityIdentifier = "roll-status"
+        button.setAccessibilityIdentifier("roll-status")
     }
 
     private func showCurrentFace() {
@@ -32,9 +32,9 @@ final class DieStatusController: NSObject {
         let description = "Die, \(die.statusText)"
         button.image = symbolImage(named: die.symbolName, description: description)
         button.toolTip = "\(die.statusText). Right-click or Control-click to quit."
-        button.accessibilityLabel = "Roll"
-        button.accessibilityValue = die.statusText
-        button.accessibilityHelp = "Right-click or Control-click for updates and quit."
+        button.setAccessibilityLabel("Roll")
+        button.setAccessibilityValue(die.statusText)
+        button.setAccessibilityHelp("Right-click or Control-click for updates and quit.")
     }
 
     private func symbolImage(named name: String, description: String) -> NSImage {
