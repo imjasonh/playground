@@ -430,7 +430,7 @@ func TestLeavingTheQueue(t *testing.T) {
 		name: "the gate is invalid",
 		edit: func(_ *fixture, b *gitk8s.GitBranch) {
 			p := *policy
-			p.When = "checks.missing.passed"
+			p.When = "checks.gofmt.outputs.level == 'low'"
 			b.Spec.Merge = &p
 		},
 		state: gitk8s.MergeStateInvalidGate,
