@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"reflect"
 	"slices"
@@ -621,6 +623,41 @@ func TestPlanWebhookNames(t *testing.T) {
 	}
 }
 
+// TestPlanLeaseNamespace checks that the rules for the Leases and the
+// webhook certificate go in the Manager's LeaseNamespace, which also names
+// the webhook configurations, and that a Manager with LeaderElection gets
+// the rules for Leases with one replica.
+func TestPlanLeaseNamespace(t *testing.T) {
+	o := &generateOptions{program: "web_site", name: "web-site", namespace: "sites", replicas: 1, shards: 1, manager: Manager{LeaseNamespace: "leases", LeaderElection: true}, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard}
+	p, err := o.plan(t.Context(), []Controller{For[gizmo](validatingReconciler{})}, "github.com/imjasonh/playground/kube/examples/janitor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.electLeader {
+		t.Error("a Manager with LeaderElection doesn't get the rules for Leases")
+	}
+	got := map[string][]string{}
+	for where, g := range map[string]grants{"cluster": p.cluster, "sites": p.local, "leases": p.namespaces["leases"]} {
+		for k, verbs := range g {
+			if strings.HasSuffix(k.resource, "webhookconfigurations") || k.resource == "secrets" || k.resource == "leases" {
+				got[fmt.Sprintf("%s %s %q", where, k.resource, k.name)] = slices.Sorted(maps.Keys(verbs))
+			}
+		}
+	}
+	want := map[string][]string{
+		`cluster validatingwebhookconfigurations ""`:                {"create"},
+		`cluster validatingwebhookconfigurations "web-site.leases"`: {"delete", "get", "patch"},
+		`cluster mutatingwebhookconfigurations ""`:                  {"create"},
+		`cluster mutatingwebhookconfigurations "web-site.leases"`:   {"delete", "get", "patch"},
+		`leases secrets ""`:                     {"create"},
+		`leases secrets "web-site-webhook-tls"`: {"get", "update"},
+		`leases leases ""`:                      {"create", "delete", "get", "list", "update"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rules = %v, want %v", got, want)
+	}
+}
+
 // TestPlanFetchNames works out the rules of testdata/fetchnames. A Fetch that
 // passes a type with a known scope, and constants as the namespace and name,
 // may get only that object. Every other Fetch may get every object of its
@@ -692,6 +729,39 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	}
 	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-watch-namespace=team"]`) {
 		t.Errorf("Deployment = %s, want -watch-namespace=team", b)
+	}
+}
+
+// TestManifestsFollowManager checks that the Deployment's arguments set the
+// program's flags that default to the Manager's fields to the values that
+// generate used, even when generate's flags override the fields.
+func TestManifestsFollowManager(t *testing.T) {
+	for _, tc := range []struct {
+		// fieldShards, fieldNamespace, and leaderElection are the Manager's
+		// fields, and shards and watch are the values of generate's flags.
+		fieldShards    int
+		fieldNamespace string
+		leaderElection bool
+		shards         int
+		watch          string
+		electLeader    bool
+		want           string
+	}{
+		{shards: 1, want: `"args":["-metrics-addr=:8080"]`},
+		{fieldShards: 3, fieldNamespace: "team", shards: 3, watch: "team", electLeader: true, want: `"args":["-metrics-addr=:8080","-shards=3","-watch-namespace=team"]`},
+		// generate's -shards=1 and -watch-namespace= override both fields.
+		{fieldShards: 3, fieldNamespace: "team", shards: 1, electLeader: true, want: `"args":["-metrics-addr=:8080","-shards=1","-leader-elect","-watch-namespace="]`},
+		// A program that reconciles nothing takes no Leases.
+		{fieldShards: 3, shards: 3, want: `"args":["-metrics-addr=:8080","-shards=1"]`},
+		{leaderElection: true, shards: 1, electLeader: true, want: `"args":["-metrics-addr=:8080","-leader-elect"]`},
+	} {
+		o := &generateOptions{program: "app", name: "app", namespace: "app", replicas: 1, shards: tc.shards, watchNamespace: tc.watch,
+			manager: Manager{Shards: tc.fieldShards, Namespace: tc.fieldNamespace, LeaderElection: tc.leaderElection}}
+		docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, electLeader: tc.electLeader})
+		if b, _ := json.Marshal(docs[len(docs)-1]); !strings.Contains(string(b), tc.want) {
+			t.Errorf("Shards = %d, Namespace = %q, LeaderElection = %v, -shards=%d, and -watch-namespace=%q: the Deployment lacks %s: %s",
+				tc.fieldShards, tc.fieldNamespace, tc.leaderElection, tc.shards, tc.watch, tc.want, b)
+		}
 	}
 }
 
@@ -921,22 +991,27 @@ var installForTest = flag.Bool("kube-test-install", true, "install objects")
 
 func TestParseProgramFlags(t *testing.T) {
 	t.Cleanup(func() { *installForTest = true })
-	if err := parseProgramFlags([]string{"-log-level=debug", "-webhook-url=https://192.0.2.10:9443", "-kube-test-install=false"}); err != nil {
+	o := &generateOptions{args: []string{"-log-level=debug", "-webhook-url=https://192.0.2.10:9443", "-kube-test-install=false"}}
+	if err := o.parseProgramFlags(); err != nil {
 		t.Fatal(err)
 	}
 	if *installForTest {
 		t.Error("the program's flag isn't set")
 	}
 	for _, tc := range []struct {
-		args []string
-		want string
+		args   []string
+		logger *slog.Logger
+		want   string
 	}{
-		{[]string{"-metrics-addr=:9090"}, "generate sets -metrics-addr itself"},
-		{[]string{"-leader-elect"}, "generate sets -leader-elect itself; generate turns it on when -replicas or -shards is more than 1"},
-		{[]string{"-log-level=debug", "-watch-namespace=team"}, "generate sets -watch-namespace itself; set -watch-namespace before -- instead"},
+		{[]string{"-metrics-addr=:9090"}, nil, "generate sets -metrics-addr itself"},
+		{[]string{"-leader-elect"}, nil, "generate sets -leader-elect itself; generate turns it on when -replicas or -shards is more than 1"},
+		{[]string{"-log-level=debug", "-watch-namespace=team"}, nil, "generate sets -watch-namespace itself; set -watch-namespace before -- instead"},
+		// Main doesn't define -log-level for a Manager with a Logger.
+		{[]string{"-log-level=debug"}, slog.New(slog.DiscardHandler), "flag provided but not defined: -log-level"},
 	} {
-		if err := parseProgramFlags(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("parseProgramFlags(%q) = %v, want an error containing %q", tc.args, err, tc.want)
+		o := &generateOptions{args: tc.args, manager: Manager{Logger: tc.logger}}
+		if err := o.parseProgramFlags(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("parseProgramFlags with %q = %v, want an error containing %q", tc.args, err, tc.want)
 		}
 	}
 }
@@ -949,12 +1024,12 @@ func TestParseProgramFlagsDefinedByTheProgram(t *testing.T) {
 	t.Cleanup(func() { flag.CommandLine = saved })
 	flag.CommandLine = flag.NewFlagSet("program", flag.ContinueOnError)
 	flag.CommandLine.Int("shards", 1, "the program's own shards")
-	if err := parseProgramFlags(nil); err == nil || !strings.Contains(err.Error(), "the program defines -shards") {
+	if err := (&generateOptions{}).parseProgramFlags(); err == nil || !strings.Contains(err.Error(), "the program defines -shards") {
 		t.Errorf("parseProgramFlags with the program's own -shards = %v, want an error about -shards", err)
 	}
 	flag.CommandLine = flag.NewFlagSet("program", flag.ContinueOnError)
 	kubeconfig := flag.CommandLine.String("kubeconfig", "", "the program's own kubeconfig")
-	if err := parseProgramFlags([]string{"-kubeconfig=config"}); err != nil || *kubeconfig != "config" {
+	if err := (&generateOptions{args: []string{"-kubeconfig=config"}}).parseProgramFlags(); err != nil || *kubeconfig != "config" {
 		t.Errorf("parseProgramFlags with the program's own -kubeconfig = %v, and set it to %q; want nil and config", err, *kubeconfig)
 	}
 }
@@ -978,13 +1053,34 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=a", "--", "-shards=3"}, "the program's flags after --: generate sets -shards itself; set -shards before -- instead"},
 	} {
 		var stderr bytes.Buffer
-		err := generate(t.Context(), tc.args, nil, &bytes.Buffer{}, &stderr)
+		err := (&Manager{}).generate(t.Context(), tc.args, nil, &bytes.Buffer{}, &stderr)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("generate %q = %v, want an error containing %q", tc.args, err, tc.want)
 		}
 	}
 	if p, err := v1.ParsePlatform("linux/arm/v7"); err != nil || !reflect.DeepEqual(buildEnv(*p)[len(buildEnv(*p))-1], "GOARM=7") {
 		t.Errorf("buildEnv(linux/arm/v7) doesn't set GOARM: %v", err)
+	}
+}
+
+// TestGenerateFollowsManager checks that generate names the installation
+// for the Manager's Name, and that its -watch-namespace and -shards default
+// to the Manager's fields, as the program's flags do.
+func TestGenerateFollowsManager(t *testing.T) {
+	var stderr bytes.Buffer
+	m := &Manager{Name: "My_App", Namespace: "team", Shards: 3}
+	if err := m.generate(t.Context(), []string{"-h"}, nil, &bytes.Buffer{}, &stderr); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("generate -h = %v, want flag.ErrHelp", err)
+	}
+	for _, s := range []string{
+		"pushes it to REGISTRY/my-app,",
+		`namespace to install the program in (default "my-app")`,
+		`go in a Role there (default "team")`,
+		"in this many shards (default 3)",
+	} {
+		if !strings.Contains(stderr.String(), s) {
+			t.Errorf("generate -h lacks %q:\n%s", s, stderr.String())
+		}
 	}
 }
 

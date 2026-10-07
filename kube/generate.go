@@ -8,6 +8,7 @@ package kube
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -48,8 +49,9 @@ var scopeVerbs = map[string][]string{
 }
 
 type generateOptions struct {
-	// program is the executable's name, which the program uses for itself
-	// at run time, and name is the same as a Kubernetes object name.
+	// program is the executable's name. name is the Kubernetes object name
+	// that the program computes at run time from its Manager's Name, which
+	// defaults to program.
 	program, name string
 	registry      string
 	base          string
@@ -71,6 +73,10 @@ type generateOptions struct {
 	// watchNamespace is the one namespace that the program watches, or
 	// empty for every namespace.
 	watchNamespace string
+	// manager holds the fields of the program's Manager that the YAML
+	// follows. The program's flags default to them, so the Deployment's
+	// arguments set the flags whose fields are set.
+	manager Manager
 	// args are more arguments for the program in the Deployment.
 	args   []string
 	stderr io.Writer
@@ -87,9 +93,12 @@ func (o *generateOptions) logf(format string, args ...any) {
 // the program needs from its controllers and source, builds the program
 // into an image for each platform, pushes the image, and writes the YAML
 // that installs it to stdout.
-func generate(ctx context.Context, args []string, controllers []Controller, stdout, stderr io.Writer) error {
-	o := &generateOptions{program: filepath.Base(os.Args[0]), stderr: stderr}
-	o.name = objectName(o.program)
+func (m *Manager) generate(ctx context.Context, args []string, controllers []Controller, stdout, stderr io.Writer) error {
+	o := &generateOptions{program: filepath.Base(os.Args[0]), stderr: stderr, manager: Manager{
+		Name: m.Name, Namespace: m.Namespace, LeaseNamespace: m.LeaseNamespace,
+		LeaderElection: m.LeaderElection, Shards: m.Shards, Logger: m.Logger,
+	}}
+	o.name = objectName(cmp.Or(m.Name, o.program))
 	fs := flag.NewFlagSet(o.program+" generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&o.registry, "registry", "", "registry, and optionally a repository prefix, to push the image to, such as ghcr.io/you (required)")
@@ -97,12 +106,12 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	platforms := fs.String("platform", "linux/amd64,linux/arm64", "comma-separated platforms to build the image for")
 	fs.StringVar(&o.namespace, "namespace", o.name, "namespace to install the program in")
 	fs.IntVar(&o.replicas, "replicas", 2, "pods to run; more than one turns on leader election; a program with a kube.Volume runs one")
-	fs.IntVar(&o.shards, "shards", 1, "split reconciles across replicas in this many shards")
+	fs.IntVar(&o.shards, "shards", max(m.Shards, 1), "split reconciles across replicas in this many shards")
 	fs.StringVar(&o.tag, "tag", "latest", "tag for the image, in addition to its digest")
 	fs.StringVar(&o.tmpSize, "tmp-size", "", "size limit of the emptyDir volume at /tmp, such as 1Gi; empty means no limit")
 	fs.StringVar(&o.volumeSize, "volume-size", "1Gi", "size of the persistent volume of a program with a kube.Volume")
 	fs.StringVar(&o.storageClass, "storage-class", "", "StorageClass of the persistent volume of a program with a kube.Volume; empty means the cluster's default")
-	fs.StringVar(&o.watchNamespace, "watch-namespace", "", "namespace for the program to watch instead of every namespace; the rules for namespaced resources go in a Role there")
+	fs.StringVar(&o.watchNamespace, "watch-namespace", m.Namespace, "namespace for the program to watch instead of every namespace; the rules for namespaced resources go in a Role there")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: %s generate -registry=REGISTRY [flags] [-- PROGRAM_FLAGS] | kubectl apply -f -\n\n", o.program)
 		fmt.Fprintf(stderr, "Builds the program into an image, pushes it to REGISTRY/%s, and writes the YAML that installs it.\n", o.name)
@@ -140,7 +149,7 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
-	if err := parseProgramFlags(o.args); err != nil {
+	if err := o.parseProgramFlags(); err != nil {
 		return fmt.Errorf("generate: %v", err)
 	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
@@ -205,9 +214,9 @@ var generatedFlags = map[string]string{
 // the program's variables, as Main would, so that controllers' describe
 // methods see them. generate writes RBAC rules, ports, and probes for the
 // flags that the Deployment sets, so parseProgramFlags fails on one of those
-// in args, and on one that the program defines itself, which would take
+// in o.args, and on one that the program defines itself, which would take
 // the value that the Deployment sets for kube.
-func parseProgramFlags(args []string) error {
+func (o *generateOptions) parseProgramFlags() error {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
@@ -216,8 +225,8 @@ func parseProgramFlags(args []string) error {
 			return fmt.Errorf("the program defines -%s, which generate sets for kube.Main; give the program's flag another name", name)
 		}
 	}
-	(&Manager{}).flags(fs)
-	if err := fs.Parse(args); err != nil {
+	(&Manager{Logger: o.manager.Logger}).flags(fs)
+	if err := fs.Parse(o.args); err != nil {
 		return fmt.Errorf("the program's flags after --: %v", err)
 	}
 	var err error
@@ -480,7 +489,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	if err := o.oneWriter(p.volume); err != nil {
 		return nil, err
 	}
-	p.electLeader = len(reconciled) > 0 && (o.replicas > 1 || o.shards > 1)
+	p.electLeader = len(reconciled) > 0 && (o.replicas > 1 || o.shards > 1 || o.manager.LeaderElection)
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
 	o.logf("finding the types that %s reads and writes", pkg)
 	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
@@ -560,9 +569,16 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get")
 	}
+	// The program keeps its Leases and webhook certificate in its own
+	// namespace, or in the Manager's LeaseNamespace, and names its webhook
+	// configurations for that namespace.
+	ownNS, ownGrants := o.namespace, p.local
+	if ns := o.manager.LeaseNamespace; ns != "" {
+		ownNS, ownGrants = ns, o.grantsIn(p, ns)
+	}
 	// The program deletes webhook configurations that an earlier version
 	// of it left, even when it has no webhooks itself.
-	config := installName(o.name, o.namespace)
+	config := installName(o.name, ownNS)
 	for _, r := range []string{"validatingwebhookconfigurations", "mutatingwebhookconfigurations"} {
 		cluster.add("admissionregistration.k8s.io", r, config, "get", "delete")
 		if p.webhooks {
@@ -571,11 +587,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 	}
 	if p.webhooks {
-		p.local.add("", "secrets", "", "create")
-		p.local.add("", "secrets", o.name+"-webhook-tls", "get", "update")
+		ownGrants.add("", "secrets", "", "create")
+		ownGrants.add("", "secrets", o.name+"-webhook-tls", "get", "update")
 	}
 	if p.electLeader {
-		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
+		ownGrants.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
 	}
 	o.grantInstalls(p, installs, types)
 	switch {
@@ -777,13 +793,19 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		docs = append(docs, role(ns, namespaces[ns])...)
 	}
 	args := []string{"-metrics-addr=:8080"}
-	switch {
-	case p.electLeader && o.shards > 1:
-		args = append(args, fmt.Sprintf("-shards=%d", o.shards))
-	case p.electLeader:
+	// The program's flags default to its Manager's fields, so the arguments
+	// set -shards and -watch-namespace whenever those fields are set.
+	shards := 1
+	if p.electLeader {
+		shards = o.shards
+	}
+	if shards > 1 || o.manager.Shards > 1 {
+		args = append(args, fmt.Sprintf("-shards=%d", shards))
+	}
+	if p.electLeader && shards == 1 {
 		args = append(args, "-leader-elect")
 	}
-	if o.watchNamespace != "" {
+	if o.watchNamespace != "" || o.manager.Namespace != "" {
 		args = append(args, "-watch-namespace="+o.watchNamespace)
 	}
 	ports := []any{object{{"name", "http"}, {"containerPort", 8080}}}

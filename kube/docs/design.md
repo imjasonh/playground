@@ -1406,6 +1406,16 @@ the first one's ClusterRoleBinding subjects, and its program would take over
 the first one's webhook configurations. The program names its webhook
 configurations with the same function as `generate`, from its own namespace.
 
+`Manager.Main` passes its Manager to `generate`, so the YAML follows the
+fields that the program sets, as the program does at run time. `Name` names
+the installation. `LeaseNamespace` is where the rules for the Leases and the
+webhook certificate go, and it names the webhook configurations. `Namespace`
+and `Shards` are the defaults of `-watch-namespace` and `-shards`, and with
+`LeaderElection`, one replica gets the rules for Leases too. The program's
+own flags default to the same fields, so when the program sets `Shards` or
+`Namespace`, the Deployment's arguments set `-shards` or `-watch-namespace`
+to the value that `generate` used, which may differ from the field.
+
 `ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
 first reference to each, and `generate` adds the rules that
 [Service account tokens](#service-account-tokens) describes. Any reference

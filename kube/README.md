@@ -942,9 +942,29 @@ If the program defines one of these flags itself on `flag.CommandLine`,
 `kube.Main` leaves out its own and logs a warning, and the manager doesn't
 read that flag.
 
-For more control, set the fields of a `kube.Manager` and call its `Run`
-method. `kube.For` takes options such as `kube.Workers(n)`,
-`kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
+For more control, set the fields of a `kube.Manager` and call its `Main`
+method. Each flag defaults to its field's value, and a Manager with a
+`Logger` has no `-log-level`. `Setup`, if you set it, runs after `Main`
+reads the flags and before the manager connects to the cluster, so the
+program can check its own flags and stop at startup:
+
+```go
+zone := flag.String("zone", "", "DNS zone for the sites")
+m := &kube.Manager{Name: "sites"}
+m.Setup = func(context.Context) error {
+	if *zone == "" {
+		return errors.New("-zone is required")
+	}
+	return nil
+}
+m.Main(kube.For[Website](reconciler{}))
+```
+
+`generate` follows the Manager's `Name`, `Namespace`, `LeaseNamespace`,
+`LeaderElection`, and `Shards`. To run controllers without flags, signal
+handling, or `generate`, call the Manager's `Run` method. `kube.For` takes
+options such as `kube.Workers(n)`, `kube.WatchSelector(selector)`, and
+`kube.Resync(duration)`.
 
 ### Install in a cluster
 
@@ -971,7 +991,7 @@ The command does the following:
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
-   pushes the images and an index of them to `REGISTRY/PROGRAM` with
+   pushes the images and an index of them to `REGISTRY/NAME` with
    [go-containerregistry](https://github.com/google/go-containerregistry),
    using the credentials from `docker login` or `podman login`.
 1. Writes YAML that installs the image by digest: a Namespace if
@@ -1004,8 +1024,9 @@ and running `generate` again without changes leaves the cluster as it was.
 When the program starts in the cluster, it installs its own
 CustomResourceDefinitions and webhook configurations.
 
-The installation's objects are named `NAME`, the program's name lowercased,
-with each character other than a letter or digit changed to `-`. Objects
+The installation's objects are named `NAME`, which is the `Name` of the
+program's `kube.Manager` or else the program's name, lowercased, with each
+character other than a letter or digit changed to `-`. Objects
 outside the program's namespace are named `NAME.NAMESPACE`, where
 `NAMESPACE` is the namespace that you install the program in, so that an
 installation in another namespace doesn't replace them: the ClusterRole and
@@ -1042,14 +1063,14 @@ namespace of the object being reconciled, which the Role doesn't cover.
 | `-registry` | Required | Registry, and optionally a repository prefix, to push to |
 | `-base` | `cgr.dev/chainguard/static:latest` | Base image |
 | `-platform` | `linux/amd64,linux/arm64` | Platforms to build for |
-| `-namespace` | The program's name | Namespace to install in, which must exist unless it's the default |
+| `-namespace` | `NAME` | Namespace to install in, which must exist unless it's the default |
 | `-replicas` | 2, or 1 with a `kube.Volume` | Pods to run |
-| `-shards` | 1 | Shards to split reconciles across |
+| `-shards` | 1, or the Manager's `Shards` | Shards to split reconciles across |
 | `-tag` | `latest` | Tag for the image, in addition to its digest |
 | `-tmp-size` | No limit | Size limit of the `emptyDir` volume at `/tmp`, such as `1Gi` |
 | `-volume-size` | `1Gi` | Size of the claim for a `kube.Volume` |
 | `-storage-class` | The cluster's default | StorageClass of the claim for a `kube.Volume` |
-| `-watch-namespace` | Every namespace | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
+| `-watch-namespace` | Every namespace, or the Manager's `Namespace` | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
 
 Flags after `--` go to the program in the Deployment:
 
