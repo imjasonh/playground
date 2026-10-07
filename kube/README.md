@@ -968,11 +968,12 @@ The command does the following:
    pushes the images and an index of them to `REGISTRY/PROGRAM` with
    [go-containerregistry](https://github.com/google/go-containerregistry),
    using the credentials from `docker login` or `podman login`.
-1. Writes YAML that installs the image by digest: a Namespace, a
-   ServiceAccount, a ClusterRole and a Role with only the rules that the
-   program needs, their bindings, a Deployment, a PodDisruptionBudget for
-   more than one replica, a Service for webhooks and the `kube.Serve`
-   handler, and a PersistentVolumeClaim for a `kube.Volume`. With more than
+1. Writes YAML that installs the image by digest: a Namespace if
+   `-namespace` is the default, a ServiceAccount, a ClusterRole and a Role
+   with only the rules that the program needs, their bindings, a
+   Deployment, a PodDisruptionBudget for more than one replica, a Service
+   for webhooks and the `kube.Serve` handler, and a PersistentVolumeClaim
+   for a `kube.Volume`. With more than
    one replica, the Deployment runs the program with `-leader-elect`, or
    with `-shards` when you set `-shards`. The kubelet probes `/readyz` every
    second, so a new Pod becomes ready within a second of `/readyz` passing,
@@ -1006,6 +1007,10 @@ its binding, Roles in other namespaces, and the webhook configurations that
 the program installs. When you install in the namespace `NAME`, the default,
 they're named `NAME` too.
 
+The YAML creates the namespace only when it's `NAME`, so deleting an
+installation in another namespace, for example with `kubectl delete -f`,
+leaves that namespace and the other objects in it.
+
 A program watches every namespace unless you set `-watch-namespace`. Then
 it watches one namespace, and the rules for namespaced resources go in a
 Role there instead of the ClusterRole, so a program that reads Secrets, for
@@ -1031,7 +1036,7 @@ namespace of the object being reconciled, which the Role doesn't cover.
 | `-registry` | Required | Registry, and optionally a repository prefix, to push to |
 | `-base` | `cgr.dev/chainguard/static:latest` | Base image |
 | `-platform` | `linux/amd64,linux/arm64` | Platforms to build for |
-| `-namespace` | The program's name | Namespace to install in |
+| `-namespace` | The program's name | Namespace to install in, which must exist unless it's the default |
 | `-replicas` | 2, or 1 with a `kube.Volume` | Pods to run |
 | `-shards` | 1 | Shards to split reconciles across |
 | `-tag` | `latest` | Tag for the image, in addition to its digest |

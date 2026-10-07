@@ -187,8 +187,6 @@ func TestManifests(t *testing.T) {
 		kinds = append(kinds, m["kind"].(string))
 		name := "web-site"
 		switch m["kind"] {
-		case "Namespace":
-			name = "sites"
 		case "ClusterRole", "ClusterRoleBinding":
 			name = "web-site.sites"
 		case "Deployment":
@@ -203,7 +201,7 @@ func TestManifests(t *testing.T) {
 			t.Errorf("%s refers to %v, want %s", m["kind"], ref["name"], name)
 		}
 	}
-	want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Service", "Deployment", "PodDisruptionBudget"}
+	want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "Service", "Deployment", "PodDisruptionBudget"}
 	if !slices.Equal(kinds, want) {
 		t.Errorf("kinds = %v, want %v", kinds, want)
 	}
@@ -241,12 +239,36 @@ func TestManifests(t *testing.T) {
 	for _, d := range docs {
 		kinds = append(kinds, d[1].value.(string))
 	}
-	if want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Deployment"}; !slices.Equal(kinds, want) {
+	if want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Deployment"}; !slices.Equal(kinds, want) {
 		t.Errorf("one replica without webhooks: kinds = %v, want %v", kinds, want)
 	}
 	b, _ = json.Marshal(docs[len(docs)-1])
 	if !strings.Contains(string(b), `"args":["-addr=:8080","-v"]`) {
 		t.Errorf("one replica without webhooks: %s", b)
+	}
+}
+
+// TestManifestsNamespace checks that the YAML creates the namespace only when
+// it's the program's own, so that deleting the installation doesn't delete a
+// namespace that other programs share.
+func TestManifestsNamespace(t *testing.T) {
+	for _, tc := range []struct {
+		namespace string
+		want      []string
+	}{
+		{namespace: "web-site", want: []string{"web-site"}},
+		{namespace: "sites"},
+	} {
+		o := &generateOptions{program: "web_site", name: "web-site", namespace: tc.namespace, replicas: 1, shards: 1}
+		var namespaces []string
+		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}}) {
+			if d[1].value == "Namespace" {
+				namespaces = append(namespaces, d[2].value.(object)[0].value.(string))
+			}
+		}
+		if !slices.Equal(namespaces, tc.want) {
+			t.Errorf("-namespace=%s: the YAML creates the namespaces %q, want %q", tc.namespace, namespaces, tc.want)
+		}
 	}
 }
 

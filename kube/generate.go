@@ -693,16 +693,22 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	// Objects outside the program's namespace are named for the namespace
 	// too, so that an installation in another namespace doesn't replace them.
 	shared := installName(o.name, o.namespace)
-	docs := []object{
-		{{"apiVersion", "v1"}, {"kind", "Namespace"}, {"metadata", meta(o.namespace, false)}},
-		{{"apiVersion", "v1"}, {"kind", "ServiceAccount"}, {"metadata", meta(o.name, true)}},
-		{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRole"}, {"metadata", meta(shared, false)}, {"rules", p.cluster.rules()}},
-		{
+	var docs []object
+	// Deleting the installation deletes its Namespace and everything in it,
+	// so the YAML creates only the program's own namespace, not one that
+	// -namespace names, which other programs may share.
+	if o.namespace == o.name {
+		docs = append(docs, object{{"apiVersion", "v1"}, {"kind", "Namespace"}, {"metadata", meta(o.namespace, false)}})
+	}
+	docs = append(docs,
+		object{{"apiVersion", "v1"}, {"kind", "ServiceAccount"}, {"metadata", meta(o.name, true)}},
+		object{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRole"}, {"metadata", meta(shared, false)}, {"rules", p.cluster.rules()}},
+		object{
 			{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "ClusterRoleBinding"}, {"metadata", meta(shared, false)},
 			{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "ClusterRole"}, {"name", shared}}},
 			{"subjects", subjects},
 		},
-	}
+	)
 	role := func(ns string, g grants) []object {
 		name := shared
 		if ns == o.namespace {

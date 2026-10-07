@@ -370,13 +370,15 @@ func TestGenerateWebsite(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	in := generateExample(t, reg, "examples/website", "website-system")
+	// The YAML creates only the namespace named for the program.
+	install := e2e.Namespace(t, c)
+	in := generateExample(t, reg, "examples/website", install)
 	if !slices.Contains(in.args, "-leader-elect") {
 		t.Errorf("args = %q, want -leader-elect for two replicas", in.args)
 	}
 	in.apply(t, c)
 	exe := in.executable(t, "website")
-	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "website-system", "website"))
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, install, "website"))
 
 	ns := e2e.Namespace(t, c)
 	if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
@@ -408,8 +410,8 @@ func TestGenerateWebsite(t *testing.T) {
 	var leases struct {
 		Items []any `json:"items"`
 	}
-	if err := c.Get(t.Context(), client.Path("coordination.k8s.io/v1", "leases", "website-system", ""), &leases); err != nil || len(leases.Items) == 0 {
-		t.Errorf("leases in website-system: %d, %v", len(leases.Items), err)
+	if err := c.Get(t.Context(), client.Path("coordination.k8s.io/v1", "leases", install, ""), &leases); err != nil || len(leases.Items) == 0 {
+		t.Errorf("leases in %s: %d, %v", install, len(leases.Items), err)
 	}
 	eventFrom(t, c, ns, "website")
 	noPermissionErrors(t, out)
@@ -423,8 +425,8 @@ func TestGenerateOneNamespace(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
-	watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
-	in := generateExample(t, reg, "examples/website", "website-one", "-replicas=1", "-watch-namespace="+watched)
+	install, watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c), e2e.Namespace(t, c)
+	in := generateExample(t, reg, "examples/website", install, "-replicas=1", "-watch-namespace="+watched)
 	if !slices.Contains(in.args, "-namespace="+watched) {
 		t.Errorf("args = %q, want -namespace=%s", in.args, watched)
 	}
@@ -436,7 +438,7 @@ func TestGenerateOneNamespace(t *testing.T) {
 	}
 	in.apply(t, c)
 	exe := in.executable(t, "website")
-	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "website-one", "website"))
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, install, "website"))
 
 	for _, ns := range []string{watched, other} {
 		if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
