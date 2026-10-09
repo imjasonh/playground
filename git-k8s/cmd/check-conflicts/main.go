@@ -62,10 +62,10 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// Branch is this check's view of a GitBranch.
+// Branch is this check's view of a Branch object.
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"conflicts,omitempty"`
@@ -73,20 +73,20 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-// observed is a GitBranch's divergence. It's a type of its own because a
-// check's view of a GitBranch holds only the spec and the check's result.
+// observed is a Branch object's divergence. It's a type of its own because a
+// check's view of a Branch object holds only the spec and the check's result.
 type observed struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
 	Status      struct {
 		Diverged *gitk8s.Divergence `json:"diverged,omitempty"`
 	} `json:"status,omitzero"`
 }
 
-// divergence returns a GitBranch's divergence from the external
+// divergence returns a Branch object's divergence from the external
 // repository, or nil.
 func divergence(ctx context.Context, meta *kube.ObjectMeta) *gitk8s.Divergence {
 	if o := kube.Get[observed](ctx, meta.Namespace, meta.Name); o != nil {
@@ -106,7 +106,7 @@ var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: mirror.Rem
 // the external repository's head or the head where the two sides last
 // synced moved, or the agent's run finished merging a head of the parent
 // that has since moved.
-func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.BranchSpec, previous *gitk8s.CheckResult) bool {
 	d := divergence(ctx, meta)
 	var diverged, synced string
 	if d != nil {
@@ -474,9 +474,9 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	if d == nil {
 		return nil
 	}
-	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	repo := kube.Get[gitk8s.RepositoryView](ctx, b.Namespace, b.Spec.Repository)
 	if repo == nil {
-		return fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
+		return fmt.Errorf("the Repository object %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
 	}
 	rule := gitk8s.FindRule(repo.Spec.Branches, b.Spec.Branch)
 	var policy *gitk8s.CheckPolicy
@@ -570,7 +570,7 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	case cr == nil || cr.Parent != branch:
 		return report(gitk8s.Failed, "%s diverged from the external repository at %s; add a rule that gives %s the parent %s, so that this check can resolve the divergence there", branch, gitk8s.Short(d.Commit), child, branch)
 	}
-	// Reading the child's GitBranch runs this again when the child changes
+	// Reading the child's Branch object runs this again when the child changes
 	// or is deleted.
 	kube.Get[Branch](ctx, b.Namespace, gitk8s.BranchObjectName(b.Spec.Repository, child))
 	if childHead != "" {

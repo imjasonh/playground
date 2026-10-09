@@ -23,7 +23,7 @@ var base = flag.String("mirror", gitk8s.MirrorURL, "base URL of the git-k8s mirr
 // Remote returns the URL of a repository's copy on the mirror, from the
 // -mirror flag, and a token that the mirror accepts. It needs a kube
 // context, such as a reconcile's.
-func Remote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func Remote(ctx context.Context, repo *gitk8s.RepositoryView) (git.Remote, error) {
 	token, _, err := kube.RequestToken(ctx, gitk8s.MirrorAudience)
 	if err != nil {
 		return git.Remote{}, fmt.Errorf("getting a token for the mirror: %w", err)

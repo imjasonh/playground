@@ -92,7 +92,7 @@ func runCmd(args []string) error {
 	scenario := fs.String("scenario", "clean", "clean, mixed, landing, parallel, nogotest, big, or poll30")
 	n := fs.Int("n", 0, "branches per repository, or 0 for the scenario's default")
 	repos := fs.Int("repos", 0, "repositories, or 0 for the scenario's default")
-	poll := fs.String("poll", "2s", `each GitRepository's pollInterval, or "default" to leave it out (30s); poll30 always leaves it out`)
+	poll := fs.String("poll", "2s", `each Repository object's pollInterval, or "default" to leave it out (30s); poll30 always leaves it out`)
 	out := fs.String("out", "", "directory for the run's records (default STATE/runs/SCENARIO-TIME)")
 	state := fs.String("state", defaultState(), "the directory that setup.sh wrote, which GK_STRESS_STATE also sets")
 	stagger := fs.Duration("stagger", -1, "time between first pushes, or -1 for the scenario's default")
@@ -174,7 +174,7 @@ func verifyCmd(args []string) error {
 }
 
 // cleanupCmd deletes the namespaces of earlier scenarios, so that their
-// GitRepositories stop polling, and waits for them to go away.
+// Repository objects stop polling, and waits for them to go away.
 func cleanupCmd(args []string) error {
 	fs := flag.NewFlagSet("cleanup", flag.ExitOnError)
 	state := fs.String("state", defaultState(), "the directory that setup.sh wrote")

@@ -21,7 +21,7 @@ import (
 // controller. Runner.Run builds one from a check's branch.
 type Job struct {
 	// Name, with the Runner's Name, names the job's Pods. Use the name of
-	// the object that the job is for, such as a GitBranch.
+	// the object that the job is for, such as a Branch object.
 	Name string
 	// Namespace must be the namespace of the object that the caller
 	// reconciles. RunJob declares the job's Pods with kube.Own, which puts

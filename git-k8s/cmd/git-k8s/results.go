@@ -21,12 +21,12 @@ import (
 // maxResultSize bounds the body of a request to the results endpoint.
 const maxResultSize = 256 << 10
 
-// resultsBranch is the part of a GitBranch that the results controller
+// resultsBranch is the part of a Branch object that the results controller
 // writes. status.checks is an atomic map, so each write replaces all of its
 // entries, and this controller is the only manager of any of them.
 type resultsBranch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks map[string]gitk8s.CheckResult `json:"checks"`
 	} `json:"status,omitzero"`
@@ -69,8 +69,8 @@ func (rs *results) handler() http.Handler {
 	return mux
 }
 
-// put sets one check's result on a GitBranch. The request's generation is
-// the GitBranch's generation that the check read.
+// put sets one check's result on a Branch object. The request's generation is
+// the generation of the Branch object that the check read.
 func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 	if !strings.EqualFold(scheme, "Bearer") {
@@ -206,7 +206,7 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 	}
 }
 
-// gone reads the branch from the API server. If the GitBranch that the
+// gone reads the branch from the API server. If the Branch object that the
 // check read at generation is gone, it returns the status and the message
 // to answer with. Otherwise it returns 0, and the request keeps waiting for
 // the cache, as it does when the read fails.
@@ -218,14 +218,14 @@ func (rs *results) gone(ctx context.Context, k kube.Key, generation int64) (int,
 	b, err := fetch(ctx, k.Namespace, k.Name)
 	switch {
 	case err != nil:
-		slog.WarnContext(ctx, "reading a GitBranch for a check's result failed", "namespace", k.Namespace, "branch", k.Name, "err", err)
+		slog.WarnContext(ctx, "reading a Branch object for a check's result failed", "namespace", k.Namespace, "branch", k.Name, "err", err)
 		return 0, ""
 	case b == nil:
-		return http.StatusGone, fmt.Sprintf("GitBranch %s doesn't exist", k)
+		return http.StatusGone, fmt.Sprintf("the Branch object %s doesn't exist", k)
 	case b.Generation < generation:
-		// A GitBranch's generation never decreases, so this one is another
-		// GitBranch with the same name, which the check runs on again.
-		return http.StatusConflict, fmt.Sprintf("the check read generation %d of GitBranch %s, which is at generation %d, so it was deleted and created again", generation, k, b.Generation)
+		// A Branch object's generation never decreases, so this one is another
+		// Branch object with the same name, which the check runs on again.
+		return http.StatusConflict, fmt.Sprintf("the check read generation %d of the Branch object %s, which is at generation %d, so it was deleted and created again", generation, k, b.Generation)
 	}
 	return 0, ""
 }
@@ -312,13 +312,13 @@ func checkFor(user kube.UserInfo, entries map[string]string) (string, bool) {
 
 // listed reports whether spec's merge policy lists the check, so that a
 // result for it belongs in status.checks.
-func listed(spec *gitk8s.GitBranchSpec, check string) bool {
+func listed(spec *gitk8s.BranchSpec, check string) bool {
 	return spec.Parent != "" && spec.Merge.Check(check) != nil
 }
 
 // rejection returns why a branch with spec can't take r as the check's
 // result, or "" if it can.
-func rejection(spec *gitk8s.GitBranchSpec, check string, r *gitk8s.CheckResult) string {
+func rejection(spec *gitk8s.BranchSpec, check string, r *gitk8s.CheckResult) string {
 	switch {
 	case spec.Parent == "":
 		return fmt.Sprintf("%s has no parent, so it takes no check results", spec.Branch)

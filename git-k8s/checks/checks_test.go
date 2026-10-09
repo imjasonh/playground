@@ -23,8 +23,8 @@ import (
 )
 
 type Branch struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"touch,omitempty"`
@@ -32,13 +32,13 @@ type Branch struct {
 	} `json:"status,omitzero"`
 }
 
-func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-// remote reaches the repository at the GitRepository's URL in place of the
+// remote reaches the repository at the Repository object's URL in place of the
 // mirror. Every test server here requires the password pw.
-func remote(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func remote(_ context.Context, repo *gitk8s.RepositoryView) (git.Remote, error) {
 	return git.Remote{URL: repo.Spec.URL, Auth: &git.Auth{Username: "git-k8s", Password: "pw"}}, nil
 }
 
@@ -122,14 +122,14 @@ func forEachCommitter(t *testing.T, test func(t *testing.T, check checks.Check))
 type fixture struct {
 	srv    *gittest.Server
 	work   *gittest.Work
-	repo   *gitk8s.GitRepository
+	repo   *gitk8s.Repository
 	branch *Branch
 	cfg    *checks.Config
 	world  []any
 }
 
 // newFixture pushes main and a branch c/x that adds a file, and returns a
-// GitBranch view for c/x whose policy runs the touch check.
+// Branch object view for c/x whose policy runs the touch check.
 func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
 	srv := gittest.NewServer(t, "pw")
 	return newFixtureOn(t, srv, srv.NewWork(t, "app"), policy)
@@ -146,14 +146,14 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work, policy git
 	head := w.Commit("add x")
 	w.Push("c/x")
 
-	repo := &gitk8s.GitRepository{
+	repo := &gitk8s.Repository{
 		Object: kube.Meta("app", nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: srv.Remote("app").URL},
+		Spec:   gitk8s.RepositorySpec{URL: srv.Remote("app").URL},
 	}
 	repo.Namespace = "default"
 	b := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{policy}},
 	}
@@ -241,7 +241,7 @@ func TestSignsReplays(t *testing.T) {
 	f.world = append(f.world, signer.Sign(f.repo))
 	reads := 0
 	check := replay()
-	check.SigningKey = func(ctx context.Context, repo *gitk8s.Repository) (*git.SigningKey, error) {
+	check.SigningKey = func(ctx context.Context, repo *gitk8s.RepositoryView) (*git.SigningKey, error) {
 		reads++
 		return signing.Key(ctx, repo)
 	}
@@ -304,7 +304,7 @@ func TestStaleRunsTheCheckAgain(t *testing.T) {
 	f.work.Push("c/x")
 	runs, stale := 0, false
 	check := touch(&runs)
-	check.Stale = func(_ context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+	check.Stale = func(_ context.Context, meta *kube.ObjectMeta, spec *gitk8s.BranchSpec, previous *gitk8s.CheckResult) bool {
 		if meta.Name != f.branch.Name || previous.Commit != spec.Head {
 			t.Errorf("Stale got %s with a result for %s, want %s with a result for its head", meta.Name, previous.Commit, f.branch.Name)
 		}
@@ -524,7 +524,7 @@ func TestRunErrorIsReported(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	runs := 0
 	check := touch(&runs)
-	check.Remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+	check.Remote = func(context.Context, *gitk8s.RepositoryView) (git.Remote, error) {
 		r := f.srv.Remote("app")
 		r.Auth.Password = "wrong"
 		return r, nil
@@ -576,7 +576,7 @@ func TestKeepsResultsForTheSameChange(t *testing.T) {
 	start, head := spec.ParentHead, spec.Head
 	runs := 0
 	check := rate(&runs, false)
-	check.Stale = func(_ context.Context, _ *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
+	check.Stale = func(_ context.Context, _ *kube.ObjectMeta, spec *gitk8s.BranchSpec, previous *gitk8s.CheckResult) bool {
 		if previous.Commit != spec.Head {
 			t.Errorf("Stale got a result for %.7s, want one for the head %.7s", previous.Commit, spec.Head)
 		}
@@ -775,7 +775,7 @@ func TestRemembersMergeBasesAndChanges(t *testing.T) {
 		t.Fatalf("%d runs, result %+v; want 1 run and the result kept for the merge", runs, kept)
 	}
 
-	// Each reconcile reads the result from the GitBranch, which can be
+	// Each reconcile reads the result from the Branch object, which can be
 	// behind, so a reconcile can see the first result again.
 	f.branch.Status.Checks.Result = first
 	before := commands()

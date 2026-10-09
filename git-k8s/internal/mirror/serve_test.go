@@ -65,15 +65,15 @@ func newFixture(t *testing.T) *fixture {
 	w.pushExternal("feature", f.feature)
 	w.sync(SyncOptions{})
 
-	repo := &gitk8s.GitRepository{Object: w.repo.Object, Spec: w.repo.Spec}
-	unsynced := &gitk8s.GitRepository{Object: kube.Meta("unsynced", nil), Spec: gitk8s.GitRepositorySpec{URL: "https://example.com/unsynced.git"}}
+	repo := &gitk8s.Repository{Object: w.repo.Object, Spec: w.repo.Spec}
+	unsynced := &gitk8s.Repository{Object: kube.Meta("unsynced", nil), Spec: gitk8s.RepositorySpec{URL: "https://example.com/unsynced.git"}}
 	unsynced.Namespace, unsynced.UID = "default", "uid-unsynced"
 	// The gotest check runs the Pod gotest-1 on feature. On the branch
 	// squatted, another check made the Pod that the gotest check's result
 	// names. On the branch running, the gotest check's Pod has started its
 	// tests.
-	branch := func(name, pod string) *gitk8s.GitBranch {
-		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: "app"})}
+	branch := func(name, pod string) *gitk8s.Branch {
+		b := &gitk8s.Branch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: "app"})}
 		b.Namespace = "default"
 		b.Spec.Merge = &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: gitk8s.GoTestCheck}}}
 		b.Status.Checks = map[string]gitk8s.CheckResult{gitk8s.GoTestCheck: {State: gitk8s.Running, Pod: pod}}
@@ -140,7 +140,7 @@ func newFixture(t *testing.T) *fixture {
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		f.triggered = append(f.triggered, kube.Triggered[gitk8s.GitRepository](rec)...)
+		f.triggered = append(f.triggered, kube.Triggered[gitk8s.Repository](rec)...)
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -202,14 +202,14 @@ func TestServeHTTPStatus(t *testing.T) {
 		{name: "a token for the API server", path: fetch, token: "api", want: http.StatusUnauthorized},
 		{name: "a person's token", path: fetch, token: "person", want: http.StatusUnauthorized},
 		{name: "an unknown token", path: fetch, token: "nope", want: http.StatusUnauthorized},
-		{name: "a check that the repository doesn't list", path: fetch, token: "other", want: http.StatusNotFound, body: "no GitRepository default/app that check-other/check-other may fetch"},
+		{name: "a check that the repository doesn't list", path: fetch, token: "other", want: http.StatusNotFound, body: "no Repository object default/app that check-other/check-other may fetch"},
 		{name: "a listed check fetches", path: fetch, token: "approval", want: http.StatusOK, body: "001e# service=git-upload-pack\n0000"},
 		{name: "a check that may push", path: push, token: "gofmt", want: http.StatusOK, body: "001f# service=git-receive-pack\n0000"},
 		{name: "a check that may not push", path: push, token: "approval", want: http.StatusForbidden, body: "checks/check-approval may not push to default/app"},
-		{name: "generate's account for a check that runs elsewhere", path: fetch, token: "namesake", want: http.StatusNotFound, body: "no GitRepository default/app that check-approval/check-approval may fetch"},
+		{name: "generate's account for a check that runs elsewhere", path: fetch, token: "namesake", want: http.StatusNotFound, body: "no Repository object default/app that check-approval/check-approval may fetch"},
 		{name: "a controller with a prefix", path: push, token: "deps", want: http.StatusOK},
 		{name: "a check through its ConfigMap entry", path: push, token: "bot", want: http.StatusOK},
-		{name: "the core program, whose ConfigMap entry names a check", path: fetch, token: "core", want: http.StatusNotFound, body: "no GitRepository default/app that git-k8s/git-k8s may fetch"},
+		{name: "the core program, whose ConfigMap entry names a check", path: fetch, token: "core", want: http.StatusNotFound, body: "no Repository object default/app that git-k8s/git-k8s may fetch"},
 		{name: "a test Pod fetches", path: fetch, token: "pod", want: http.StatusOK},
 		{name: "a test Pod pushes", path: push, token: "pod", want: http.StatusForbidden},
 		{name: "a Pod that no check runs", path: fetch, token: "stray-pod", want: http.StatusNotFound},

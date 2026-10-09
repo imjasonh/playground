@@ -140,7 +140,7 @@ func TestLogLevels(t *testing.T) {
 }
 
 // failure is a check's warning, in slog's text handler's format after
-// kubectl's prefix, that a reconcile of the GitBranch name ended at end
+// kubectl's prefix, that a reconcile of the Branch object name ended at end
 // seconds after t0 with err.
 func failure(check string, end float64, name, duration, err string) string {
 	ts := at(end).Format(time.RFC3339Nano)
@@ -168,8 +168,10 @@ func TestResultWaits(t *testing.T) {
 			failure("base", 24, "app-c-f005-5", "50ms", `main moved to 0123 after it was listed at 4567`),
 		},
 		"check-gotest": {
-			`[pod/check-gotest-1/check-gotest] 2026-10-06T18:00:30.5Z 2026/10/06 18:00:30 INFO the core program didn't take a result check=gotest namespace=stress-x branch=app-c-f005-5 reason="GitBranch stress-x/app-c-f005-5 doesn't exist"`,
+			`[pod/check-gotest-1/check-gotest] 2026-10-06T18:00:30.5Z 2026/10/06 18:00:30 INFO the core program didn't take a result check=gotest namespace=stress-x branch=app-c-f005-5 reason="the Branch object stress-x/app-c-f005-5 doesn't exist"`,
 			`[pod/check-gotest-1/check-gotest] 2026-10-06T18:00:31.5Z 2026/10/06 18:00:31 INFO the core program didn't take a result check=gotest namespace=stress-x branch=app-c-f006-6 reason="the result isn't for c/f006 at 0123 and main at 4567"`,
+			// A build from before the kinds' rename.
+			`[pod/check-gotest-1/check-gotest] 2026-10-06T18:00:32.5Z 2026/10/06 18:00:32 INFO the core program didn't take a result check=gotest namespace=stress-x branch=app-c-f007-7 reason="GitBranch stress-x/app-c-f007-7 doesn't exist"`,
 		},
 	})
 	names := map[string]string{"app-c-f001-1": "app c/f001", "app-c-f005-5": "app c/f005"}
@@ -203,11 +205,14 @@ func TestResultWaits(t *testing.T) {
 	if ws.StalledCycles != 1 || ws.StalledSeconds != 5 {
 		t.Errorf("stalled cycles = %d for %v seconds, want 1 for 5", ws.StalledCycles, ws.StalledSeconds)
 	}
-	if len(ws.Gone) != 1 {
-		t.Fatalf("410 answers = %+v, want one", ws.Gone)
+	if len(ws.Gone) != 2 {
+		t.Fatalf("410 answers = %+v, want two", ws.Gone)
 	}
 	if g := ws.Gone[0]; g.Check != "gotest" || g.Branch != "app c/f005" || g.At != 30.5 || g.Landed == nil || *g.Landed != 30 {
 		t.Errorf("410 answer = %+v, want gotest's for app c/f005 at 30.5, which landed at 30", g)
+	}
+	if g := ws.Gone[1]; g.Check != "gotest" || g.Branch != "app-c-f007-7" || g.At != 32.5 || g.Landed != nil {
+		t.Errorf("410 answer = %+v, want gotest's for app-c-f007-7 at 32.5, which didn't land", g)
 	}
 }
 
@@ -294,7 +299,7 @@ func TestAnalyze(t *testing.T) {
 	r.close()
 	gone := gitk8s.BranchObjectName("app", "c/f003")
 	writeLogs(t, dir, map[string][]string{"check-gotest": {
-		`[pod/check-gotest-1/check-gotest] 2026-10-06T18:00:30.2Z 2026/10/06 18:00:30 INFO the core program didn't take a result check=gotest namespace=stress-clean-0000 branch=` + gone + ` reason="GitBranch stress-clean-0000/` + gone + ` doesn't exist"`,
+		`[pod/check-gotest-1/check-gotest] 2026-10-06T18:00:30.2Z 2026/10/06 18:00:30 INFO the core program didn't take a result check=gotest namespace=stress-clean-0000 branch=` + gone + ` reason="the Branch object stress-clean-0000/` + gone + ` doesn't exist"`,
 	}})
 	if err := os.WriteFile(filepath.Join(dir, "images.txt"), []byte("git-k8s/git-k8s registry:5000/gk-stress/git-k8s@sha256:"+strings.Repeat("ab", 32)+"\n"), 0o644); err != nil {
 		t.Fatal(err)

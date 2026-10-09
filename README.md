@@ -94,7 +94,7 @@ them:
   (Go library).
 - **[`git-k8s/`](git-k8s/)** — Kubernetes controllers built on `kube` that
   keep a copy of a git repository on a git server in the cluster, track its
-  branches as `GitBranch` objects, run checks that can push fixes, such as
+  branches as `Branch` objects, run checks that can push fixes, such as
   merging the parent in or running `gofmt`, and land a branch on its parent
   by fast-forward, squash, or rebase when the parent's merge policy passes
   (Go).

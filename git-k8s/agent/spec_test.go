@@ -414,7 +414,7 @@ func TestPrepareScript(t *testing.T) {
 	r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
 	// checkPod is the Pod of a check's job, which fetches from remote.
 	checkPod := func(remote, head, base string) *Pod {
-		spec := &gitk8s.GitBranchSpec{Branch: "c/x", Parent: "main", Head: head}
+		spec := &gitk8s.BranchSpec{Branch: "c/x", Parent: "main", Head: head}
 		in := &checks.Input{Meta: &kube.ObjectMeta{Name: "app-c-x"}, Spec: spec}
 		job := r.checkJob(in, Task{}, base)
 		job.URL = remote
