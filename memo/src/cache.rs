@@ -100,28 +100,36 @@ impl Store {
         self.root.join("v1").join(key)
     }
 
-    /// Returns the entries for `key`, newest first, with their IDs.
-    pub fn entries(&self, key: &str) -> Vec<(String, Entry)> {
+    /// Returns the IDs of the entries for `key`, newest first. An ID starts
+    /// with its creation time, so this reads no manifests.
+    pub fn ids(&self, key: &str) -> Vec<String> {
         let Ok(rd) = fs::read_dir(self.dir(key)) else {
             return Vec::new();
         };
-        let mut out: Vec<(String, Entry)> = rd
+        let mut ids: Vec<(i64, String)> = rd
             .filter_map(|e| {
-                let path = e.ok()?.path();
-                let id = path
-                    .file_name()?
-                    .to_str()?
-                    .strip_suffix(".json")?
-                    .to_string();
-                if id == "last" {
-                    return None;
-                }
-                let entry: Entry = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
-                (entry.version == VERSION).then_some((id, entry))
+                let name = e.ok()?.file_name().into_string().ok()?;
+                let id = name.strip_suffix(".json")?;
+                let created: i64 = id.split('-').next()?.parse().ok()?;
+                Some((created, id.to_string()))
             })
             .collect();
-        out.sort_by(|a, b| b.1.created_ms.cmp(&a.1.created_ms).then(b.0.cmp(&a.0)));
-        out
+        ids.sort_by(|a, b| b.cmp(a));
+        ids.into_iter().map(|(_, id)| id).collect()
+    }
+
+    pub fn load(&self, key: &str, id: &str) -> Option<Entry> {
+        let data = fs::read(self.dir(key).join(format!("{id}.json"))).ok()?;
+        let entry: Entry = serde_json::from_slice(&data).ok()?;
+        (entry.version == VERSION).then_some(entry)
+    }
+
+    /// Returns every entry for `key`, newest first, with its ID.
+    pub fn entries(&self, key: &str) -> Vec<(String, Entry)> {
+        self.ids(key)
+            .into_iter()
+            .filter_map(|id| self.load(key, &id).map(|e| (id, e)))
+            .collect()
     }
 
     pub fn output(&self, key: &str, id: &str) -> io::Result<Vec<u8>> {
@@ -137,7 +145,7 @@ impl Store {
         write_private(&dir.join(format!("{id}.out")), output)?;
         let json = serde_json::to_vec(entry).map_err(io::Error::other)?;
         write_private(&dir.join(format!("{id}.json")), &json)?;
-        for (old, _) in self.entries(key).into_iter().skip(KEEP) {
+        for old in self.ids(key).into_iter().skip(KEEP) {
             let _ = fs::remove_file(dir.join(format!("{old}.json")));
             let _ = fs::remove_file(dir.join(format!("{old}.out")));
         }

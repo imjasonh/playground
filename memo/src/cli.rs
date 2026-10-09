@@ -208,6 +208,18 @@ struct Ctx {
     store: Store,
 }
 
+/// Kernel interfaces, plus files that tools rewrite on every run without it
+/// affecting their results: Go's telemetry counters and npm's debug logs.
+fn default_ignores(cwd: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = ["/proc", "/sys", "/dev"].map(PathBuf::from).to_vec();
+    if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+        for p in [".config/go/telemetry", ".npm/_logs"] {
+            out.push(absolute(cwd, &Path::new(&home).join(p)));
+        }
+    }
+    out
+}
+
 fn absolute(cwd: &Path, p: &Path) -> PathBuf {
     let p = cwd.join(p);
     std::fs::canonicalize(&p).unwrap_or_else(|_| p.components().collect())
@@ -230,7 +242,7 @@ fn context(o: &Opts) -> Result<Ctx, String> {
         stderr_tty: capture::isatty(2),
         ignore: &user_ignore,
     });
-    let mut ignore: Vec<PathBuf> = ["/proc", "/sys", "/dev"].map(PathBuf::from).to_vec();
+    let mut ignore = default_ignores(&cwd);
     ignore.extend(user_ignore);
     ignore.push(absolute(&cwd, store.root()));
     Ok(Ctx {
@@ -322,9 +334,11 @@ fn unusable(entry: &Entry, o: &Opts) -> Option<String> {
 }
 
 fn lookup(store: &Store, key: &str, o: &Opts) -> Lookup {
-    let entries = store.entries(key);
     let mut why = None;
-    for (id, entry) in entries {
+    for id in store.ids(key) {
+        let Some(entry) = store.load(key, &id) else {
+            continue;
+        };
         match unusable(&entry, o) {
             None => match store.output(key, &id).and_then(|b| capture::decode(&b)) {
                 Ok(chunks) => return Lookup::Hit { entry, chunks },
@@ -400,7 +414,11 @@ fn record(o: &Opts, ctx: &Ctx) -> i32 {
         Ok(fin) => fin,
         Err(trace::Error::Setup(e)) => {
             cap.finish(None);
-            note!("can't trace commands on this system ({e}); running without the cache");
+            if e.raw_os_error() == Some(libc::EBUSY) {
+                note!("an outer memo or another seccomp supervisor already traces this process; running without the cache");
+            } else {
+                note!("can't trace commands on this system ({e}); running without the cache");
+            }
             return run_plain(o);
         }
         Err(trace::Error::Spawn(e)) => {
