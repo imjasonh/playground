@@ -177,6 +177,9 @@ them from an XcodeGen `project.yml` that declares `platform: macOS`:
 - **[`onramp/`](onramp/)** — Onramp offline Mac can’t-get-online triage
   (playbooks + network toolbox; optional on-device chat). Same Sparkle CD path; see
   [`docs/onramp-design.md`](docs/onramp-design.md).
+- **[`countdown/`](countdown/)** is a menu bar countdown list. Click or right-click
+  to see the days until each date. No Dock icon and no window. Same Sparkle CD
+  path.
 - **[`roll/`](roll/)** — menu bar die. Click rolls. Control-click quits. No Dock
   icon and no window. Same Sparkle CD path.
 
