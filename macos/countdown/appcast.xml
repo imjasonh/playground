@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>countdown updates</title>
+    <link>https://imjasonh.github.io/playground/macos/countdown/appcast.xml</link>
+    <description>Sparkle updates for countdown</description>
+    <language>en</language>
+    <item>
+      <title>Countdown 1.0.0</title>
+      <pubDate>Fri, 09 Oct 2026 19:55:29 +0000</pubDate>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/countdown-v1.0.0/Countdown-1.0.0.zip" length="1060900" type="application/octet-stream" sparkle:edSignature="3n9oG7Er1OtflTTBlwVs5ywZjk2CNlH7WJ8hzXphWsL6kBgbklQFO3KMcnaFCk7cvfC4VpSbA5Q8L3iLS+B6Bw=="/>
+    </item>
+  </channel>
+</rss>
