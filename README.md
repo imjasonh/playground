@@ -77,6 +77,9 @@ them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE
   over tree-sitter ASTs (Go CLI).
+- **[`liquid/`](liquid/)** — a tank of liquid in the terminal that you push,
+  pull into blobs, pour, and tilt with the mouse, simulated as particles
+  (Go TUI with Bubble Tea, Lip Gloss, and bubblezone).
 - **[`sshapp/`](sshapp/)** — Wish SSH apps on GKE Autopilot behind one SSH mux
   (`hello`, `chess`; Terraform + `ko_build`).
 - **[`kube/`](kube/)** — a Kubernetes controller runtime written on the Go
