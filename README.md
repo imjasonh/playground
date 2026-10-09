@@ -127,6 +127,9 @@ them:
 - **[`mapvelopes/`](mapvelopes/)** — printable US envelope PDFs with the
   driving route from sender to recipient as the background (Rust Cloudflare
   Worker, plus a native CLI for spot-checking).
+- **[`memo/`](memo/)** — run a command and replay its output until the files,
+  directories, or HTTP responses it read change. It traces the command's
+  system calls with a seccomp filter (Rust CLI, Linux only).
 - **[`life-scad/`](life-scad/)** — OpenSCAD Game of Life sculpture (Z = time)
   plus an offline reverse-history searcher for shallow roof targets.
 - **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is
