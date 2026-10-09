@@ -604,8 +604,9 @@ func (w *World) relax(dt float64) {
 	}
 }
 
-// wallMargin keeps particles a hair inside the walls so that particles pressed
-// against the same wall don't land on exactly the same coordinate.
+// wallMargin keeps particles slightly inside the walls, with some jitter, so
+// that particles pressed against the same wall don't land on exactly the same
+// coordinate.
 const wallMargin = 1e-3
 
 // collide moves particles that left the tank back inside. Their velocity

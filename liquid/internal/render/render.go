@@ -64,8 +64,9 @@ type Frame struct {
 	// Cols and Rows are the size of the picture in terminal cells.
 	Cols, Rows int
 	Mode       Mode
-	Theme      *Theme
-	Ring       Ring
+	// Theme defaults to the first of Themes.
+	Theme *Theme
+	Ring  Ring
 }
 
 // Renderer turns frames into strings. It keeps its buffers between frames, so
@@ -125,6 +126,9 @@ func (r *Renderer) Render(f Frame) string {
 		return ""
 	}
 	r.resize(f.Cols, f.Rows)
+	if f.Theme == nil {
+		f.Theme = Themes[0]
+	}
 	if f.Theme != r.theme || r.pal == nil {
 		r.theme = f.Theme
 		r.pal = newPalette(f.Theme)

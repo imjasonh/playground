@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/imjasonh/playground/liquid/internal/render"
@@ -142,7 +143,7 @@ func (m *Model) ring() render.Ring {
 		style = render.RingPour
 	}
 	return render.Ring{
-		Visible: !m.help && (m.mouse.over || m.mouse.button != 0),
+		Visible: !m.help && (m.mouse.over || m.mouse.button != tea.MouseNone),
 		X:       m.mouse.px,
 		Y:       m.mouse.py,
 		Radius:  m.brush * m.scale,
