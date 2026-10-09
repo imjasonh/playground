@@ -5,6 +5,7 @@
 //! (`ID.out`). The output is renamed into place before the manifest, and
 //! readers only look at manifests, so a reader never sees half an entry.
 
+use crate::http::Exchange;
 use crate::record::PathExpect;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, DirBuilder, OpenOptions};
@@ -30,6 +31,9 @@ pub struct Entry {
     pub exit_code: i32,
     pub duration_ms: u64,
     pub paths: Vec<PathExpect>,
+    /// HTTP requests that are checked again before a replay.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub http: Vec<Exchange>,
     /// Network access that was allowed because the entry expires.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub net: Vec<String>,
@@ -186,6 +190,7 @@ mod tests {
             exit_code: 0,
             duration_ms: 1,
             paths: vec![],
+            http: vec![],
             net: vec![],
         }
     }

@@ -3,10 +3,12 @@
 use crate::cache::{self, Entry, LastRun, Store};
 use crate::capture::{self, Capture, MAX_OUTPUT};
 use crate::fsstate::now_ms;
+use crate::http::{Checker, Proxy};
 use crate::key::{self, Stdin};
 use crate::record::{par_map, Event, Known, Recorder, Role};
 use crate::trace;
 use std::ffi::OsString;
+use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -29,6 +31,8 @@ Options:
   --ttl DURATION     expire results after DURATION (for example 90s, 30m, 12h,
                      or 7d), and cache runs whose network access memo can't
                      check
+  --http             record HTTP and HTTPS requests through a local proxy and
+                     check them again before replaying (GET and HEAD only)
   --refresh          run COMMAND even if a cached result applies
   --cache-failures   cache and replay runs that exit with a nonzero status
   --ignore PATH      don't record files under PATH (repeatable)
@@ -53,6 +57,7 @@ struct Opts {
     ignore: Vec<PathBuf>,
     ignore_env: Vec<String>,
     verbose: bool,
+    http: bool,
     argv: Vec<OsString>,
 }
 
@@ -129,6 +134,7 @@ fn parse(args: Vec<OsString>) -> Result<Cmd, String> {
                 .ignore_env
                 .push(value("--ignore-env")?.to_string_lossy().into_owned()),
             "--refresh" => o.refresh = true,
+            "--http" => o.http = true,
             "--cache-failures" => o.cache_failures = true,
             "-v" | "--verbose" => o.verbose = true,
             "-h" | "--help" => return Ok(Cmd::Help),
@@ -241,6 +247,7 @@ fn context(o: &Opts) -> Result<Ctx, String> {
         stdout_tty: capture::isatty(1),
         stderr_tty: capture::isatty(2),
         ignore: &user_ignore,
+        http: o.http,
     });
     let mut ignore = default_ignores(&cwd);
     ignore.extend(user_ignore);
@@ -319,7 +326,22 @@ fn changes(entry: &Entry) -> Vec<String> {
     .collect()
 }
 
-/// Returns why `entry` can't be replayed, or `None` if it can.
+/// Sends every recorded HTTP request again and returns what changed.
+fn http_changes(entry: &Entry) -> Vec<String> {
+    if entry.http.is_empty() {
+        return Vec::new();
+    }
+    match Checker::new() {
+        Ok(checker) => par_map(&entry.http, |ex| checker.check(ex))
+            .into_iter()
+            .flatten()
+            .collect(),
+        Err(e) => vec![format!("couldn't check HTTP requests ({e})")],
+    }
+}
+
+/// Returns why `entry` can't be replayed, or `None` if it can. Files are
+/// checked first, since they're cheap; HTTP requests only if they all match.
 fn unusable(entry: &Entry, o: &Opts) -> Option<String> {
     if entry.expires_ms.is_some_and(|t| t <= now_ms()) {
         return Some("the cached result expired".into());
@@ -330,7 +352,10 @@ fn unusable(entry: &Entry, o: &Opts) -> Option<String> {
             entry.exit_code
         ));
     }
-    changes(entry).into_iter().next()
+    changes(entry)
+        .into_iter()
+        .next()
+        .or_else(|| http_changes(entry).into_iter().next())
 }
 
 fn lookup(store: &Store, key: &str, o: &Opts) -> Lookup {
@@ -370,6 +395,44 @@ fn exit_code(status: i32) -> (i32, Option<i32>) {
     }
 }
 
+/// Starts the recording proxy, or explains why it can't be used.
+fn start_proxy(ctx: &Ctx) -> Option<Proxy> {
+    let existing = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .into_iter()
+    .find(|k| std::env::var_os(k).is_some_and(|v| !v.is_empty()));
+    if let Some(var) = existing {
+        note!(
+            "--http can't chain to the proxy in {var}; network access is recorded as unverifiable"
+        );
+        return None;
+    }
+    let dir = ctx
+        .store
+        .root()
+        .join("tmp")
+        .join(format!("{}-{}", std::process::id(), now_ms()));
+    let started = std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)
+        .and_then(|_| Proxy::start(dir.clone()));
+    match started {
+        Ok(p) => Some(p),
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&dir);
+            note!("can't start the HTTP proxy ({e}); network access is recorded as unverifiable");
+            None
+        }
+    }
+}
+
 /// Collects the content hashes that earlier results for the key recorded.
 fn known_hashes(store: &Store, key: &str) -> Known {
     let mut known = Known::new();
@@ -404,10 +467,17 @@ fn record(o: &Opts, ctx: &Ctx) -> i32 {
             return run_plain(o);
         }
     };
+    let proxy = if o.http { start_proxy(ctx) } else { None };
+    if let Some(p) = &proxy {
+        recorder.set_proxy(p.addr());
+    }
     let mut cmd = Command::new(&o.argv[0]);
     cmd.args(&o.argv[1..])
         .stdout(Stdio::from(io.stdout))
         .stderr(Stdio::from(io.stderr));
+    if let Some(p) = &proxy {
+        cmd.envs(p.env());
+    }
     let started = Instant::now();
     let started_ms = now_ms();
     let fin = match trace::run(cmd, stdin_id, recorder) {
@@ -427,9 +497,11 @@ fn record(o: &Opts, ctx: &Ctx) -> i32 {
         }
     };
     let captured = cap.finish(fin.lingering.then_some(Duration::from_millis(200)));
+    let records = proxy.map(Proxy::finish).unwrap_or_default();
     let duration_ms = started.elapsed().as_millis() as u64;
     let (code, signal) = exit_code(fin.status);
-    let outcome = fin.outcome;
+    let mut outcome = fin.outcome;
+    outcome.net.extend(records.opaque);
 
     let mut reasons = outcome.reasons.clone();
     if let Some(sig) = signal {
@@ -474,6 +546,7 @@ fn record(o: &Opts, ctx: &Ctx) -> i32 {
             exit_code: code,
             duration_ms,
             paths: outcome.paths,
+            http: records.exchanges,
             net: outcome.net,
         };
         if let Err(e) = ctx
@@ -488,8 +561,13 @@ fn record(o: &Opts, ctx: &Ctx) -> i32 {
                 .filter(|p| p.role != Role::Output)
                 .count();
             let outputs = entry.paths.iter().filter(|p| p.role != Role::Input).count();
+            let requests = if entry.http.is_empty() {
+                String::new()
+            } else {
+                format!(", {} HTTP requests", entry.http.len())
+            };
             note!(
-                "cached the result: {inputs} inputs, {outputs} outputs, {} traced calls",
+                "cached the result: {inputs} inputs, {outputs} outputs{requests}, {} traced calls",
                 outcome.events
             );
         }
@@ -534,7 +612,10 @@ fn explain(o: &Opts) -> i32 {
             ago(e.created_ms),
             e.exit_code
         );
-        let found = changes(e);
+        let mut found = changes(e);
+        if found.is_empty() {
+            found = http_changes(e);
+        }
         match unusable(e, o) {
             None => {
                 fresh = true;
@@ -553,6 +634,11 @@ fn explain(o: &Opts) -> i32 {
         }
         for n in &e.net {
             println!("  allowed by --ttl: {n}");
+        }
+        if o.verbose {
+            for ex in &e.http {
+                println!("    http   {} {} ({})", ex.method, ex.url, ex.status);
+            }
         }
         if o.verbose {
             for p in &e.paths {

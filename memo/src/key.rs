@@ -96,6 +96,7 @@ pub struct Parts<'a> {
     pub stdout_tty: bool,
     pub stderr_tty: bool,
     pub ignore: &'a [PathBuf],
+    pub http: bool,
 }
 
 /// Hashes the parts with every field length-prefixed, so `["a b"]` and
@@ -118,7 +119,7 @@ pub fn compute(p: &Parts) -> String {
         field(v.as_bytes());
     }
     field(&p.stdin.key());
-    field(&[p.stdout_tty as u8, p.stderr_tty as u8]);
+    field(&[p.stdout_tty as u8, p.stderr_tty as u8, p.http as u8]);
     field(&(p.ignore.len() as u64).to_le_bytes());
     for i in p.ignore {
         field(i.as_os_str().as_bytes());
@@ -144,6 +145,7 @@ mod tests {
             stdout_tty: false,
             stderr_tty: false,
             ignore: &[],
+            http: false,
         })
     }
 

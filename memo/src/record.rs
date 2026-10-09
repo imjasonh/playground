@@ -221,6 +221,11 @@ impl Recorder {
         }
     }
 
+    /// Skips connections to the recording proxy, which records them itself.
+    pub fn set_proxy(&mut self, addr: SocketAddr) {
+        self.proxy = Some(addr);
+    }
+
     /// Supplies hashes from earlier runs, so unchanged files aren't hashed
     /// again.
     pub fn reuse(&mut self, known: Known) {

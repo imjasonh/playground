@@ -13,6 +13,7 @@ mod cache;
 mod capture;
 mod cli;
 mod fsstate;
+mod http;
 mod key;
 mod net;
 mod record;
