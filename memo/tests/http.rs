@@ -10,27 +10,36 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 
+/// How the test server deviates from a well-behaved origin.
+#[derive(Clone, Copy, Default)]
+struct Quirks {
+    weak_etag: bool,
+    no_validators: bool,
+    refuse_head: bool,
+    ignore_conditionals: bool,
+}
+
 #[derive(Default)]
 struct Log {
     body: String,
-    /// Status codes the server sent, in order.
-    sent: Vec<u16>,
+    /// The method and status of every request, in order.
+    seen: Vec<(String, u16)>,
 }
 
 /// An HTTP server whose body can change. It sends an ETag and answers a
-/// matching If-None-Match with 304.
+/// matching If-None-Match with 304, unless its quirks say otherwise.
 struct Server {
     addr: SocketAddr,
     log: Arc<Mutex<Log>>,
 }
 
 impl Server {
-    fn start(body: &str, tls: Option<Arc<ServerConfig>>) -> Server {
+    fn start(body: &str, quirks: Quirks, tls: Option<Arc<ServerConfig>>) -> Server {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let log = Arc::new(Mutex::new(Log {
             body: body.to_string(),
-            sent: vec![],
+            seen: vec![],
         }));
         let shared = log.clone();
         std::thread::spawn(move || {
@@ -39,27 +48,35 @@ impl Server {
                 std::thread::spawn(move || match tls {
                     Some(cfg) => {
                         let mut s = StreamOwned::new(ServerConnection::new(cfg).unwrap(), conn);
-                        answer(&mut s, &log);
+                        answer(&mut s, &log, quirks);
                         s.conn.send_close_notify();
                         let _ = s.flush();
                     }
-                    None => answer(&mut { conn }, &log),
+                    None => answer(&mut { conn }, &log, quirks),
                 });
             }
         });
         Server { addr, log }
     }
 
+    fn plain(body: &str, quirks: Quirks) -> Server {
+        Server::start(body, quirks, None)
+    }
+
     fn set_body(&self, body: &str) {
         self.log.lock().unwrap().body = body.to_string();
     }
 
-    fn sent(&self) -> Vec<u16> {
-        self.log.lock().unwrap().sent.clone()
+    fn seen(&self) -> Vec<(String, u16)> {
+        self.log.lock().unwrap().seen.clone()
+    }
+
+    fn clear(&self) {
+        self.log.lock().unwrap().seen.clear();
     }
 }
 
-fn answer(s: &mut impl ReadWrite, log: &Mutex<Log>) {
+fn answer(s: &mut impl ReadWrite, log: &Mutex<Log>, quirks: Quirks) {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     while !head.ends_with(b"\r\n\r\n") {
@@ -68,8 +85,10 @@ fn answer(s: &mut impl ReadWrite, log: &Mutex<Log>) {
         }
         head.push(byte[0]);
     }
-    let head = String::from_utf8_lossy(&head).to_ascii_lowercase();
-    if let Some(len) = head
+    let head = String::from_utf8_lossy(&head).into_owned();
+    let method = head.split(' ').next().unwrap_or_default().to_string();
+    let lower = head.to_ascii_lowercase();
+    if let Some(len) = lower
         .lines()
         .find_map(|l| l.strip_prefix("content-length:"))
         .and_then(|v| v.trim().parse::<usize>().ok())
@@ -78,22 +97,45 @@ fn answer(s: &mut impl ReadWrite, log: &Mutex<Log>) {
         let _ = s.read_exact(&mut body);
     }
     let mut log = log.lock().unwrap();
-    let etag = format!("\"{}\"", &blake3::hash(log.body.as_bytes()).to_hex()[..16]);
-    let matched = head.lines().any(|l| {
-        l.strip_prefix("if-none-match:")
-            .is_some_and(|v| v.trim() == etag)
-    });
-    let reply = if matched {
-        log.sent.push(304);
-        format!("HTTP/1.1 304 Not Modified\r\nETag: {etag}\r\nConnection: close\r\n\r\n")
+    let tag = &blake3::hash(log.body.as_bytes()).to_hex()[..16];
+    let etag = format!("{}\"{tag}\"", if quirks.weak_etag { "W/" } else { "" });
+    let validators = if quirks.no_validators {
+        String::new()
     } else {
-        log.sent.push(200);
-        format!(
-            "HTTP/1.1 200 OK\r\nETag: {etag}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            log.body.len(),
-            log.body
+        format!("ETag: {etag}\r\n")
+    };
+    let matched = !quirks.ignore_conditionals
+        && !quirks.no_validators
+        && lower.lines().any(|l| {
+            l.strip_prefix("if-none-match:")
+                .is_some_and(|v| v.trim().trim_start_matches("w/") == format!("\"{tag}\""))
+        });
+    let (status, reply) = if method == "HEAD" && quirks.refuse_head {
+        (
+            405,
+            "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
+        )
+    } else if matched {
+        (
+            304,
+            format!("HTTP/1.1 304 Not Modified\r\n{validators}Connection: close\r\n\r\n"),
+        )
+    } else {
+        let body = if method == "HEAD" {
+            ""
+        } else {
+            log.body.as_str()
+        };
+        (
+            200,
+            format!(
+                "HTTP/1.1 200 OK\r\n{validators}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                log.body.len()
+            ),
         )
     };
+    log.seen.push((method, status));
     let _ = s.write_all(reply.as_bytes());
 }
 
@@ -139,75 +181,180 @@ impl Memo {
         c.envs(self.env.iter().map(|(k, v)| (k, v)));
         c.output().unwrap()
     }
+
+    /// Runs `memo --http curl -sS URL`.
+    fn fetch(&self, url: &str) -> Fetch {
+        Fetch(self.run(&["--http", "curl", "-sS", url]))
+    }
 }
 
-fn stderr(o: &Output) -> String {
-    String::from_utf8_lossy(&o.stderr).into_owned()
+struct Fetch(Output);
+
+impl Fetch {
+    fn stdout(&self) -> String {
+        String::from_utf8_lossy(&self.0.stdout).into_owned()
+    }
+
+    fn stderr(&self) -> String {
+        String::from_utf8_lossy(&self.0.stderr).into_owned()
+    }
+
+    #[track_caller]
+    fn replayed(&self) -> &Fetch {
+        assert!(
+            self.stderr().contains("memo: replaying"),
+            "{}",
+            self.stderr()
+        );
+        self
+    }
+
+    #[track_caller]
+    fn reran(&self, why: &str) -> &Fetch {
+        let err = self.stderr();
+        assert!(
+            err.contains("memo: running") && err.contains(why),
+            "expected a rerun because of {why:?}:\n{err}"
+        );
+        self
+    }
 }
 
-fn stdout(o: &Output) -> String {
-    String::from_utf8_lossy(&o.stdout).into_owned()
+fn seen(list: &[(&str, u16)]) -> Vec<(String, u16)> {
+    list.iter().map(|(m, s)| (m.to_string(), *s)).collect()
+}
+
+/// Records a fetch of `server`, then clears its log so the test sees only
+/// the requests that later calls make.
+fn recorded(server: &Server, memo: &Memo, url: &str) {
+    let first = memo.fetch(url);
+    assert!(
+        first.stderr().contains("1 HTTP requests"),
+        "{}",
+        first.stderr()
+    );
+    assert_eq!(server.seen(), seen(&[("GET", 200)]));
+    server.clear();
 }
 
 #[test]
-fn get_requests_are_checked_again_before_replay() {
+fn a_head_request_confirms_an_unchanged_resource() {
     if !have_curl() {
-        eprintln!("skipping: curl isn't installed");
-        return;
+        return eprintln!("skipping: curl isn't installed");
     }
-    let server = Server::start("one", None);
+    let server = Server::plain("one", Quirks::default());
     let memo = Memo::new();
     let url = format!("http://{}/data", server.addr);
-    let args = ["--http", "curl", "-sS", url.as_str()];
+    recorded(&server, &memo, &url);
+    assert_eq!(memo.fetch(&url).replayed().stdout(), "one");
+    assert_eq!(server.seen(), seen(&[("HEAD", 304)]));
+}
 
-    let first = memo.run(&args);
-    assert_eq!(stdout(&first), "one", "{}", stderr(&first));
-    assert!(
-        stderr(&first).contains("1 HTTP requests"),
-        "{}",
-        stderr(&first)
-    );
-
-    let second = memo.run(&args);
-    assert!(
-        stderr(&second).contains("memo: replaying"),
-        "{}",
-        stderr(&second)
-    );
-    assert_eq!(stdout(&second), "one");
-    assert_eq!(
-        server.sent(),
-        vec![200, 304],
-        "the replay should revalidate with If-None-Match"
-    );
-
+#[test]
+fn a_changed_resource_is_found_without_downloading_it_twice() {
+    if !have_curl() {
+        return eprintln!("skipping: curl isn't installed");
+    }
+    let server = Server::plain("one", Quirks::default());
+    let memo = Memo::new();
+    let url = format!("http://{}/data", server.addr);
+    recorded(&server, &memo, &url);
     server.set_body("two");
-    let third = memo.run(&args);
-    assert!(
-        stderr(&third).contains("response changed"),
-        "{}",
-        stderr(&third)
-    );
-    assert_eq!(stdout(&third), "two");
+    let rerun = memo.fetch(&url);
+    rerun.reran("ETag changed");
+    assert_eq!(rerun.stdout(), "two");
+    // The check costs one bodyless HEAD; only the rerun downloads.
+    assert_eq!(server.seen(), seen(&[("HEAD", 200), ("GET", 200)]));
+}
+
+#[test]
+fn weak_entity_tags_still_match() {
+    if !have_curl() {
+        return eprintln!("skipping: curl isn't installed");
+    }
+    let quirks = Quirks {
+        weak_etag: true,
+        ..Quirks::default()
+    };
+    let server = Server::plain("one", quirks);
+    let memo = Memo::new();
+    let url = format!("http://{}/data", server.addr);
+    recorded(&server, &memo, &url);
+    memo.fetch(&url).replayed();
+    assert_eq!(server.seen(), seen(&[("HEAD", 304)]));
+}
+
+#[test]
+fn memo_compares_tags_itself_when_the_server_ignores_conditions() {
+    if !have_curl() {
+        return eprintln!("skipping: curl isn't installed");
+    }
+    let quirks = Quirks {
+        ignore_conditionals: true,
+        ..Quirks::default()
+    };
+    let server = Server::plain("one", quirks);
+    let memo = Memo::new();
+    let url = format!("http://{}/data", server.addr);
+    recorded(&server, &memo, &url);
+    memo.fetch(&url).replayed();
+    assert_eq!(server.seen(), seen(&[("HEAD", 200)]));
+    server.set_body("two");
+    memo.fetch(&url).reran("ETag changed");
+}
+
+#[test]
+fn a_refused_head_falls_back_to_get() {
+    if !have_curl() {
+        return eprintln!("skipping: curl isn't installed");
+    }
+    let quirks = Quirks {
+        refuse_head: true,
+        ..Quirks::default()
+    };
+    let server = Server::plain("one", quirks);
+    let memo = Memo::new();
+    let url = format!("http://{}/data", server.addr);
+    recorded(&server, &memo, &url);
+    memo.fetch(&url).replayed();
+    assert_eq!(server.seen(), seen(&[("HEAD", 405), ("GET", 304)]));
+}
+
+#[test]
+fn without_validators_the_response_is_hashed() {
+    if !have_curl() {
+        return eprintln!("skipping: curl isn't installed");
+    }
+    let quirks = Quirks {
+        no_validators: true,
+        ..Quirks::default()
+    };
+    let server = Server::plain("one", quirks);
+    let memo = Memo::new();
+    let url = format!("http://{}/data", server.addr);
+    recorded(&server, &memo, &url);
+    memo.fetch(&url).replayed();
+    assert_eq!(server.seen(), seen(&[("GET", 200)]));
+    server.set_body("two");
+    assert_eq!(memo.fetch(&url).reran("response changed").stdout(), "two");
 }
 
 #[test]
 fn other_methods_need_a_ttl() {
     if !have_curl() {
-        eprintln!("skipping: curl isn't installed");
-        return;
+        return eprintln!("skipping: curl isn't installed");
     }
-    let server = Server::start("ok", None);
+    let server = Server::plain("ok", Quirks::default());
     let memo = Memo::new();
     let url = format!("http://{}/submit", server.addr);
-    let post = memo.run(&["--http", "curl", "-sS", "-d", "x=1", url.as_str()]);
-    assert_eq!(stdout(&post), "ok", "{}", stderr(&post));
+    let post = Fetch(memo.run(&["--http", "curl", "-sS", "-d", "x=1", url.as_str()]));
+    assert_eq!(post.stdout(), "ok", "{}", post.stderr());
     assert!(
-        stderr(&post).contains(&format!("sent POST {url}")),
+        post.stderr().contains(&format!("sent POST {url}")),
         "{}",
-        stderr(&post)
+        post.stderr()
     );
-    let ttl = memo.run(&[
+    let ttl = Fetch(memo.run(&[
         "--http",
         "--ttl",
         "1h",
@@ -216,35 +363,33 @@ fn other_methods_need_a_ttl() {
         "-d",
         "x=1",
         url.as_str(),
-    ]);
+    ]));
     assert!(
-        stderr(&ttl).contains("memo: cached the result"),
+        ttl.stderr().contains("memo: cached the result"),
         "{}",
-        stderr(&ttl)
+        ttl.stderr()
     );
 }
 
 #[test]
 fn the_proxy_rejects_clients_without_its_password() {
     if !have_curl() {
-        eprintln!("skipping: curl isn't installed");
-        return;
+        return eprintln!("skipping: curl isn't installed");
     }
-    let server = Server::start("secret", None);
+    let server = Server::plain("secret", Quirks::default());
     let memo = Memo::new();
     let script = format!(
         "curl -s -o /dev/null -w '%{{http_code}}' -x \"http://${{http_proxy##*@}}\" http://{}/",
         server.addr
     );
-    let out = memo.run(&["--http", "sh", "-c", &script]);
-    assert_eq!(stdout(&out), "407", "{}", stderr(&out));
+    let out = Fetch(memo.run(&["--http", "sh", "-c", &script]));
+    assert_eq!(out.stdout(), "407", "{}", out.stderr());
 }
 
 #[test]
 fn https_is_intercepted_and_verified() {
     if !have_curl() {
-        eprintln!("skipping: curl isn't installed");
-        return;
+        return eprintln!("skipping: curl isn't installed");
     }
     let ca_key = KeyPair::generate().unwrap();
     let mut ca = CertificateParams::new(Vec::<String>::new()).unwrap();
@@ -265,7 +410,7 @@ fn https_is_intercepted_and_verified() {
             PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key.serialize_der())),
         )
         .unwrap();
-    let server = Server::start("over tls", Some(Arc::new(config)));
+    let server = Server::start("over tls", Quirks::default(), Some(Arc::new(config)));
 
     let mut memo = Memo::new();
     let ca_file: PathBuf = memo.dir.path().join("test-ca.pem");
@@ -275,20 +420,8 @@ fn https_is_intercepted_and_verified() {
     memo.env
         .push(("SSL_CERT_FILE".into(), ca_file.display().to_string()));
     let url = format!("https://127.0.0.1:{}/doc", server.addr.port());
-    let args = ["--http", "curl", "-sS", url.as_str()];
-
-    let first = memo.run(&args);
-    assert_eq!(stdout(&first), "over tls", "{}", stderr(&first));
-    assert!(
-        stderr(&first).contains("1 HTTP requests"),
-        "{}",
-        stderr(&first)
-    );
-    let second = memo.run(&args);
-    assert!(
-        stderr(&second).contains("memo: replaying"),
-        "{}",
-        stderr(&second)
-    );
-    assert_eq!(server.sent(), vec![200, 304]);
+    let first = memo.fetch(&url);
+    assert_eq!(first.stdout(), "over tls", "{}", first.stderr());
+    memo.fetch(&url).replayed();
+    assert_eq!(server.seen(), seen(&[("GET", 200), ("HEAD", 304)]));
 }
