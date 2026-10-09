@@ -303,6 +303,19 @@ func TestToolbarButtons(t *testing.T) {
 	}
 }
 
+func TestHelpFitsNarrowTerminals(t *testing.T) {
+	for _, size := range [][2]int{{60, 40}, {80, 24}, {120, 36}} {
+		m, _ := newModel(t, size[0], size[1], sim.ScenePool)
+		m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+		got := ansi.Strip(view(t, m))
+		for _, want := range []string{"controls", "drag", "space", "arrows"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%dx%d: help panel is missing %q", size[0], size[1], want)
+			}
+		}
+	}
+}
+
 func TestButtonNeedsPressAndReleaseOnIt(t *testing.T) {
 	m, _ := newModel(t, 160, 40, sim.SceneDam)
 	px, py := buttonCell(t, m, zonePause, "pause")

@@ -317,14 +317,28 @@ func (m *Model) helpPanel() string {
 		blocks = append(blocks, block(lines, m.st.panelText))
 	}
 
+	// Put as many columns side by side as fit in the tank, wrapping the rest
+	// onto more rows. If no arrangement fits, use less padding.
 	gap := m.st.panelText.Render("    ")
-	body := blocks[0]
-	for _, b := range blocks[1:] {
-		body = joinBlocks(body, gap, b, m.st.panelText)
-	}
 	title := m.st.panelKey.Render("≋ liquid") + m.st.panelText.Render("  controls")
-	content := block([]string{title, "", body}, m.st.panelText)
-	return m.st.panel.Render(content)
+	var panel string
+	for _, style := range []lipgloss.Style{m.st.panel, m.st.panel.Padding(0, 1)} {
+		for perRow := len(blocks); perRow >= 1; perRow-- {
+			lines := []string{title}
+			for i := 0; i < len(blocks); i += perRow {
+				row := blocks[i]
+				for _, b := range blocks[i+1 : min(i+perRow, len(blocks))] {
+					row = joinBlocks(row, gap, b, m.st.panelText)
+				}
+				lines = append(lines, "", row)
+			}
+			panel = style.Render(block(lines, m.st.panelText))
+			if w, h := lipgloss.Size(panel); w <= m.cols && h <= m.rows {
+				return panel
+			}
+		}
+	}
+	return panel
 }
 
 // block pads lines to the same width with spaces in style, so a panel with a
