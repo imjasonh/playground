@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// run steps w for the given number of seconds.
-func run(w *World, seconds float64) {
+// advanceFor steps w for the given number of seconds.
+func advanceFor(w *World, seconds float64) {
 	for range int(seconds / StepDuration) {
 		w.Step(StepDuration)
 	}
@@ -77,7 +77,7 @@ func TestDamBreakFlowsAndStaysInTank(t *testing.T) {
 	if n < 500 {
 		t.Fatalf("dam break has %d particles, want at least 500", n)
 	}
-	run(w, 1)
+	advanceFor(w, 1)
 	checkInside(t, w)
 	if far := countWithin(w, w.Width, w.Height, w.Width*0.4); far < n/20 {
 		t.Errorf("after 1s, %d particles reached the far side of the tank, want at least %d", far, n/20)
@@ -91,7 +91,7 @@ func TestPoolComesToRest(t *testing.T) {
 	t.Parallel()
 	w := New(28, 16, 1)
 	w.Populate(ScenePool)
-	run(w, 4)
+	advanceFor(w, 4)
 	checkInside(t, w)
 	if s := meanSpeed(w); s > 0.5 {
 		t.Errorf("mean speed after 4s is %.2f h/s, want the pool at rest (under 0.5)", s)
@@ -113,7 +113,7 @@ func TestZeroGravityBlobHoldsTogether(t *testing.T) {
 		t.Fatalf("blob scene gravity is %v, want none", w.Gravity)
 	}
 	n := w.Len()
-	run(w, 3)
+	advanceFor(w, 3)
 	checkInside(t, w)
 	r := math.Sqrt(0.24*w.Width*w.Height/math.Pi) + 1.5
 	if in := countWithin(w, w.Width/2, w.Height/2, r); in < n*9/10 {
@@ -136,14 +136,14 @@ func TestBrushTools(t *testing.T) {
 			t.Parallel()
 			w := New(28, 16, 1)
 			w.Populate(ScenePool)
-			run(w, 1)
+			advanceFor(w, 1)
 			// Aim at the surface, so the brush covers both liquid and air.
 			surface := w.Height * 0.55
 			center := Vec{w.Width / 2, surface}
 			const radius = 4.0
 			before := countWithin(w, center.X, center.Y, radius*0.6)
 			w.Brush = Brush{Tool: tc.tool, Pos: center, Radius: radius}
-			run(w, 0.75)
+			advanceFor(w, 0.75)
 			checkInside(t, w)
 			after := countWithin(w, center.X, center.Y, radius*0.6)
 			if tc.more && after <= before*5/4 {
@@ -161,10 +161,10 @@ func TestPushIsStrongerThanDisperse(t *testing.T) {
 	cleared := func(tool Tool) int {
 		w := New(28, 16, 1)
 		w.Populate(ScenePool)
-		run(w, 1)
+		advanceFor(w, 1)
 		center := Vec{w.Width / 2, w.Height * 0.8}
 		w.Brush = Brush{Tool: tool, Pos: center, Radius: 4}
-		run(w, 0.3)
+		advanceFor(w, 0.3)
 		return countWithin(w, center.X, center.Y, 2)
 	}
 	if push, disperse := cleared(ToolPush), cleared(ToolDisperse); push >= disperse {
@@ -179,11 +179,11 @@ func TestPourAddsParticlesUpToLimit(t *testing.T) {
 	n := w.Len()
 	w.MaxParticles = n + 100
 	w.Brush = Brush{Tool: ToolPour, Pos: Vec{12, 3}, Radius: 3}
-	run(w, 0.2)
+	advanceFor(w, 0.2)
 	if w.Len() <= n {
 		t.Fatalf("pour added no particles: still %d", w.Len())
 	}
-	run(w, 2)
+	advanceFor(w, 2)
 	checkInside(t, w)
 	if w.Len() != n+100 {
 		t.Errorf("after pouring past the limit, have %d particles, want %d", w.Len(), n+100)
@@ -194,10 +194,10 @@ func TestResizeMovesParticlesInside(t *testing.T) {
 	t.Parallel()
 	w := New(28, 16, 1)
 	w.Populate(SceneDam)
-	run(w, 0.5)
+	advanceFor(w, 0.5)
 	w.Resize(16, 11)
 	checkInside(t, w)
-	run(w, 0.5)
+	advanceFor(w, 0.5)
 	checkInside(t, w)
 }
 
@@ -206,7 +206,7 @@ func TestGravityDirection(t *testing.T) {
 	w := New(20, 20, 1)
 	w.Populate(SceneBlob)
 	w.Gravity = Vec{1, 0}
-	run(w, 2)
+	advanceFor(w, 2)
 	var sum float64
 	for _, x := range w.X {
 		sum += x
@@ -222,7 +222,7 @@ func TestDeterministic(t *testing.T) {
 	for _, w := range []*World{a, b} {
 		w.Populate(SceneDrop)
 		w.Brush = Brush{Tool: ToolPush, Pos: Vec{10, 10}, Radius: 3}
-		run(w, 0.5)
+		advanceFor(w, 0.5)
 	}
 	if !slices.Equal(a.X, b.X) || !slices.Equal(a.Y, b.Y) {
 		t.Error("two worlds with the same seed and inputs diverged")
@@ -233,12 +233,12 @@ func TestShakeMovesLiquid(t *testing.T) {
 	t.Parallel()
 	w := New(24, 14, 1)
 	w.Populate(ScenePool)
-	run(w, 2)
+	advanceFor(w, 2)
 	w.Shake(Vec{1, -0.5}, 16)
 	if s := meanSpeed(w); s < 10 {
 		t.Errorf("after a shake, mean speed is %.1f h/s, want at least 10", s)
 	}
-	run(w, 1)
+	advanceFor(w, 1)
 	checkInside(t, w)
 }
 
@@ -301,7 +301,7 @@ func TestWallTable(t *testing.T) {
 func BenchmarkStep(b *testing.B) {
 	w := New(40, 22, 1)
 	w.Populate(SceneDam)
-	run(w, 1)
+	advanceFor(w, 1)
 	b.ResetTimer()
 	for b.Loop() {
 		w.Step(StepDuration)
