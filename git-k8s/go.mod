@@ -7,7 +7,7 @@ replace github.com/imjasonh/playground/kube => ../kube
 
 require (
 	cel.dev/cel-go v0.32.0
-	github.com/imjasonh/playground/kube v0.0.0-20261007173624-28322c2dd442
+	github.com/imjasonh/playground/kube v0.0.0-20261008051239-59d9e810ac8f
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.41.0
 	golang.org/x/sync v0.23.0
@@ -17,7 +17,7 @@ require (
 require (
 	cel.dev/expr v0.25.3 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/docker/cli v29.8.2+incompatible // indirect
+	github.com/docker/cli v29.9.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.9 // indirect
 	github.com/google/go-containerregistry v0.22.1 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
