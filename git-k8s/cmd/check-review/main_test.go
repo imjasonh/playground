@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -21,10 +20,10 @@ import (
 )
 
 // reconcile runs the check on a branch whose copy a server serves like the
-// mirror: at /NAMESPACE/NAME.git, to requests with a token from
-// kube.RequestToken. The -mirror flag points to that server until the test
-// ends.
-func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder) {
+// core program's mirror: at /NAMESPACE/NAME.git, to requests with a token
+// from kube.RequestToken. It returns the server's URL, which the check has
+// as the core program's.
+func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder, string) {
 	t.Helper()
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
@@ -53,10 +52,6 @@ func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder) {
 		}
 	}))
 	t.Cleanup(mirror.Close)
-	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
-	if err := flag.Set("mirror", mirror.URL); err != nil {
-		t.Fatal(err)
-	}
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{
@@ -65,16 +60,16 @@ func reconcile(t *testing.T, mayPush bool) (*Branch, *kube.Recorder) {
 	}
 	repo, _ := srv.Repository("app")
 	ctx, rec := kube.Fake(t.Context(), b, repo)
-	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
+	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, CoreURL: mirror.URL}
 	if err := checks.NewReconciler[Branch](check, cfg).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
-	return b, rec
+	return b, rec, mirror.URL
 }
 
 func TestNeedsAnAgentImage(t *testing.T) {
-	b, rec := reconcile(t, false)
-	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.Contains(res.Message, "set -agent-image") || len(kube.Owned[agent.Pod](rec)) != 0 {
+	b, rec, _ := reconcile(t, false)
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || !strings.Contains(res.Message, "set -runner-image") || len(kube.Owned[agent.Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
 }
@@ -83,7 +78,7 @@ func TestEditsOnlyWhenItMayPush(t *testing.T) {
 	defer func(r *agent.Runner) { runner = r }(runner)
 	runner = &agent.Runner{Name: "review", Image: "agent-runner", GitImage: "git", Backend: "fake", Model: "composer-2.5", Secret: "cursor-api-key", Timeout: time.Minute}
 	for _, mayPush := range []bool{false, true} {
-		b, rec := reconcile(t, mayPush)
+		b, rec, _ := reconcile(t, mayPush)
 		pods := kube.Owned[agent.Pod](rec)
 		if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 {
 			t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
@@ -104,7 +99,7 @@ func TestEditsOnlyWhenItMayPush(t *testing.T) {
 func TestAgentPodsFetchFromTheMirror(t *testing.T) {
 	defer func(r *agent.Runner) { runner = r }(runner)
 	runner = &agent.Runner{Name: "review", Image: "agent-runner", GitImage: "git", Backend: "fake", Model: "composer-2.5", Secret: "cursor-api-key", Timeout: time.Minute}
-	_, rec := reconcile(t, false)
+	_, rec, coreURL := reconcile(t, false)
 	pods := kube.Owned[agent.Pod](rec)
 	if len(pods) != 1 {
 		t.Fatalf("%d Pods, want one", len(pods))
@@ -117,7 +112,7 @@ func TestAgentPodsFetchFromTheMirror(t *testing.T) {
 		}
 		env[e.Name] = e.Value
 	}
-	if want := flag.Lookup("mirror").Value.String() + "/default/app.git"; env["URL"] != want || env["TOKEN_FILE"] == "" {
+	if want := coreURL + "/default/app.git"; env["URL"] != want || env["TOKEN_FILE"] == "" {
 		t.Errorf("the prepare container fetches %q with token file %q, want %q with a token for the mirror", env["URL"], env["TOKEN_FILE"], want)
 	}
 	if !slices.Equal(secrets, []string{"cursor-api-key"}) {

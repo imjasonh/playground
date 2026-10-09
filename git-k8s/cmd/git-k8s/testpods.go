@@ -16,10 +16,10 @@ import (
 // NetworkPolicy, so that check-gotest, which creates Pods in the
 // repositories' namespaces, can't change NetworkPolicies.
 var (
-	goProxy   = flag.String("goproxy", "off", "check-gotest's -goproxy; unless it's off, test Pods can reach ports 80 and 443 on public IPv4 addresses")
-	goCacheNS = flag.String("go-cache-namespace", "", "namespace of the go-cache Pods that check-gotest's -go-cache reaches; unless it's empty, test Pods can reach port 8080 on them")
-	mirrorNS  = flag.String("mirror-namespace", "git-k8s", "namespace of this program's Pods, where test Pods reach the mirror")
-	dnsNS     = flag.String("dns-namespace", "kube-system", "namespace of the cluster's DNS Pods")
+	testPodInternet = flag.Bool("test-pod-internet", false, "let test Pods reach ports 80 and 443 on public IPv4 addresses, such as a module proxy outside the cluster that check-gotest's -goproxy names")
+	goCacheNS       = flag.String("go-cache-namespace", "", "namespace of the go-cache Pods that check-gotest's -go-cache reaches; unless it's empty, test Pods can reach port 8080 on them")
+	mirrorNS        = flag.String("mirror-namespace", "git-k8s", "namespace of this program's Pods, where test Pods reach the mirror")
+	dnsNS           = flag.String("dns-namespace", "kube-system", "namespace of the cluster's DNS Pods")
 )
 
 var (
@@ -115,9 +115,9 @@ var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "1
 // reach the mirror's port on this program's Pods, and port 53 on the DNS
 // Pods and -dns-cidrs, and lets nothing reach them. With
 // -go-cache-namespace, it also lets them reach goCachePort on go-cache's
-// Pods, where they get modules and build outputs. With -goproxy, it also
-// lets them reach ports 80 and 443 on IPv4 addresses outside privateRanges,
-// which is where a public module proxy is. On a cluster that gives Pods,
+// Pods, where they get modules and build outputs. With -test-pod-internet,
+// it also lets them reach ports 80 and 443 on IPv4 addresses outside
+// privateRanges, where a public module proxy is. On a cluster that gives Pods,
 // Services, or nodes addresses outside privateRanges, that rule lets test
 // Pods reach them too.
 func testPodsPolicy(repo *gitk8s.GitRepository) *NetworkPolicy {
@@ -143,7 +143,7 @@ func testPodsPolicy(repo *gitk8s.GitRepository) *NetworkPolicy {
 			Ports: []NetworkPolicyPort{{Protocol: "TCP", Port: goCachePort}},
 		})
 	}
-	if *goProxy != "off" {
+	if *testPodInternet {
 		p.Spec.Egress = append(p.Spec.Egress, NetworkPolicyRule{
 			To:    []NetworkPolicyPeer{{IPBlock: &IPBlock{CIDR: "0.0.0.0/0", Except: slices.Clone(privateRanges)}}},
 			Ports: []NetworkPolicyPort{{Protocol: "TCP", Port: 80}, {Protocol: "TCP", Port: 443}},

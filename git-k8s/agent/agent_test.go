@@ -144,7 +144,7 @@ func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	ctx, rec := kube.Fake(f.t.Context(), f.b, world...)
 	remote := f.srv.RemoteFor
 	if err := f.remoteErr; err != nil {
-		remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) { return git.Remote{}, err }
+		remote = func(context.Context, string, *gitk8s.Repository) (git.Remote, error) { return git.Remote{}, err }
 	}
 	check := checks.Check{Name: "review", Remote: remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		v, res := f.r.Run(ctx, in, f.task)
@@ -1069,7 +1069,7 @@ func TestNeedsFlags(t *testing.T) {
 	f := newFixture(t, "")
 	f.r.Image = ""
 	rec := f.reconcile()
-	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "set -agent-image") || len(kube.Owned[Pod](rec)) != 0 {
+	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "set -runner-image") || len(kube.Owned[Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
 

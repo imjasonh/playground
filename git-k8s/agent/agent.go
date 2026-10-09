@@ -104,7 +104,7 @@ type Runner struct {
 
 // AddFlags registers flags that set the Runner's fields other than Name.
 func (r *Runner) AddFlags(fs *flag.FlagSet) {
-	kube.ImageVar(fs, &r.Image, "agent-image", "", "image that runs the agent, built from agent/runner/Dockerfile (required)")
+	kube.ImageVar(fs, &r.Image, "runner-image", "", "image that runs the agent, built from agent/runner/Dockerfile (required)")
 	kube.ImageVar(fs, &r.GitImage, "git-image", images.Git, "image that fetches the source; it needs git and sh")
 	fs.StringVar(&r.Backend, "backend", "cursor", "where the agent runs: cursor, with the Cursor SDK in the Pod, or fake, for tests")
 	fs.StringVar(&r.Model, "model", "composer-2.5", "model that the agent uses")
@@ -120,7 +120,7 @@ func (r *Runner) AddFlags(fs *flag.FlagSet) {
 func (r *Runner) validate() error {
 	switch {
 	case r.Image == "":
-		return errors.New("set -agent-image to the image that agent/runner/Dockerfile builds")
+		return errors.New("set -runner-image to the image that agent/runner/Dockerfile builds")
 	case r.Backend != "cursor" && r.Backend != "fake":
 		return fmt.Errorf("-backend is %q, but it must be cursor or fake", r.Backend)
 	case r.Model == "" || r.GitImage == "" || r.Secret == "" || r.Timeout < time.Second:
@@ -182,7 +182,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	// A reconcile that doesn't declare the run's Pod deletes it, so while
 	// the check can't reach the repository, such as when its token for the
 	// mirror can't be read, it follows the run with the URL in its notes.
-	// Otherwise a new URL, such as from a changed -mirror, starts the run
+	// Otherwise a new URL, such as from a changed -core-url, starts the run
 	// again in a new Pod.
 	if remote, err := in.Remote(ctx); err == nil {
 		x.job.URL = remote.URL

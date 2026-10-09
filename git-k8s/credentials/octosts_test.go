@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"slices"
@@ -25,10 +26,38 @@ func clock(t *testing.T) *time.Time {
 	return &at
 }
 
+// useFake points the package at the fake GitHub at base until the test
+// ends, as -fake-github does.
+func useFake(t *testing.T, base string) {
+	old := fakeGitHub
+	t.Cleanup(func() { fakeGitHub = old })
+	fakeGitHub = base
+}
+
+// TestFlags checks that linking the package registers no flags, so that
+// only a program that calls AddFlags has -fake-github.
+func TestFlags(t *testing.T) {
+	flag.VisitAll(func(f *flag.Flag) {
+		if !strings.HasPrefix(f.Name, "test.") {
+			t.Errorf("linking the package registers -%s", f.Name)
+		}
+	})
+	useFake(t, "")
+	fs := flag.NewFlagSet("git-k8s", flag.ContinueOnError)
+	AddFlags(fs)
+	if err := fs.Parse([]string{"-fake-github=http://github.example/"}); err != nil {
+		t.Fatal(err)
+	}
+	if gh := endpoints(); gh != (github{web: "http://github.example", exchange: "http://github.example/sts/exchange", api: "http://github.example/api/v3"}) {
+		t.Errorf("with -fake-github, endpoints() = %+v", gh)
+	}
+}
+
 // newGitHub starts a fake GitHub whose repository acme/app has the trust
 // policy git, which grants contents: write, on main.
 func newGitHub(t *testing.T) (*gittest.GitHub, *gittest.Work, string) {
 	gh := gittest.NewGitHub(t)
+	useFake(t, gh.BaseURL)
 	w := gh.NewWork(t, "app")
 	w.Write(".github/chainguard/git.sts.yaml", gittest.TrustPolicy(map[string]string{"contents": "write"}))
 	main := w.Commit("main")
@@ -179,10 +208,11 @@ func (s *exchangeServer) requests() []string {
 	return s.reqs
 }
 
-// serve points the -fake-github flag at s until the test ends, and returns
-// a GitRepository for acme/app on it.
+// serve points the package at s until the test ends, and returns a
+// GitRepository for acme/app on it.
 func serve(t *testing.T, s *exchangeServer) *gitk8s.GitRepository {
 	base := gittest.Serve(t, s)
+	useFake(t, base)
 	repo := &gitk8s.GitRepository{
 		Object: kube.Meta("app", nil),
 		Spec:   gitk8s.GitRepositorySpec{URL: base + "/acme/app.git", OctoSTS: &gitk8s.OctoSTS{GitIdentity: "git"}},

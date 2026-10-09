@@ -42,8 +42,9 @@ const (
 	agentFix    = "Apply changes from the deps agent\n\nGit-K8s-Fixer: deps\nGit-K8s-Agent: deps"
 )
 
-// checksID is the identity that checks commit their fixes as.
-var checksID = git.Identity{Name: "git-k8s", Email: "checks@example.com"}
+// checksID is the identity that checks commit their fixes as. It has the
+// controller's email, as checks must, and another name.
+var checksID = git.Identity{Name: "git-k8s", Email: "deps@example.com"}
 
 // modAt returns the app's go.mod file, which requires greet at version.
 func modAt(version string) string {
@@ -138,10 +139,9 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work) *fixture {
 		t.Fatal(err)
 	}
 	f.u = &updater{
-		cfg:        checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
-		checkEmail: checksID.Email,
-		prefix:     "deps/", goProxy: fp.URL, goSumDB: "off",
-		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", resultImage: "registry.example.com/agent-runner:test",
+		cfg:     checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
+		goProxy: fp.URL, goSumDB: "off",
+		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", runnerImage: "registry.example.com/agent-runner:test",
 		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour,
 		now: func() time.Time { return f.clock }, remote: srv.RemoteFor, resultPort: port,
 	}
@@ -423,19 +423,19 @@ func (f *fixture) checkStays(head string, world ...any) *kube.Recorder {
 func (f *fixture) restart() {
 	old := f.u
 	f.u = &updater{
-		cfg: old.cfg, checkEmail: old.checkEmail, prefix: old.prefix, goProxy: old.goProxy, goSumDB: old.goSumDB,
-		goImage: old.goImage, gitImage: old.gitImage, resultImage: old.resultImage, runtimeClass: old.runtimeClass,
+		cfg: old.cfg, goProxy: old.goProxy, goSumDB: old.goSumDB,
+		goImage: old.goImage, gitImage: old.gitImage, runnerImage: old.runnerImage, runtimeClass: old.runtimeClass,
 		timeout: old.timeout, sourceSize: old.sourceSize, goCacheSize: old.goCacheSize, maxPods: old.maxPods,
 		interval: old.interval, minAge: old.minAge, seenConfigMap: old.seenConfigMap, now: old.now, remote: old.remote,
 		resultPort: old.resultPort,
 	}
 }
 
-// serveMirror serves the repositories on srv like the mirror: at
-// /default/NAME.git, to requests with a token from kube.RequestToken. It
-// sends srv's credentials, which the controller doesn't have. The -mirror
-// flag points to that server until the test ends.
-func serveMirror(t *testing.T, srv *gittest.Server) {
+// serveMirror serves the repositories on srv like the core program's
+// mirror: at /default/NAME.git, to requests with a token from
+// kube.RequestToken. It sends srv's credentials, which the controller
+// doesn't have. It returns the server's URL, for Config.CoreURL.
+func serveMirror(t *testing.T, srv *gittest.Server) string {
 	t.Helper()
 	upstream, err := url.Parse(srv.URL)
 	if err != nil {
@@ -456,10 +456,7 @@ func serveMirror(t *testing.T, srv *gittest.Server) {
 		}
 	}))
 	t.Cleanup(m.Close)
-	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
-	if err := flag.Set("mirror", m.URL); err != nil {
-		t.Fatal(err)
-	}
+	return m.URL
 }
 
 // inNamespace runs the controller in namespace ns, as the namespace file of
@@ -1566,9 +1563,28 @@ func TestLeavesBranchesWithTooManyCommitsAlone(t *testing.T) {
 func TestComparesIdentitiesAsGitWritesThem(t *testing.T) {
 	f := newFixture(t)
 	f.u.cfg.Identity.Email = " <deps@example.com>"
-	f.u.checkEmail = checksID.Email + "\n"
 	f.update("v1.1.0")
 	f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
+	main := f.moveMain("app.go", "package app\n\n// main\n")
+	if head := f.update("v1.1.0"); f.work.Git("rev-parse", head+"^") != main {
+		t.Errorf("%s = %s, want an update on main at %s", greetBranch, head, main)
+	}
+}
+
+func TestOwnsFixesCommittedAsItsIdentityEmail(t *testing.T) {
+	f := newFixture(t)
+	proxy, cacheDir := f.u.goProxy, f.u.cfg.CacheDir
+	fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
+	f.u.addFlags(fs)
+	if err := fs.Parse([]string{"-identity-email=bot@example.com", "-runner-image=agent-runner", "-goproxy=" + proxy, "-cache-dir=" + cacheDir, "-min-age=0"}); err != nil {
+		t.Fatal(err)
+	}
+	update := f.update("v1.1.0")
+	f.work.Branch("work", update)
+	f.work.Write("app.go", "package app\n\n// fixed\n")
+	f.work.Git("add", "-A")
+	f.commitAs(git.Identity{Name: "git-k8s", Email: "bot@example.com"}, agentFix, update)
+	f.work.Push(greetBranch)
 	main := f.moveMain("app.go", "package app\n\n// main\n")
 	if head := f.update("v1.1.0"); f.work.Git("rev-parse", head+"^") != main {
 		t.Errorf("%s = %s, want an update on main at %s", greetBranch, head, main)
@@ -1749,7 +1765,7 @@ func TestTriesAgainSoonWhenTheExternalRepositoryIsBehind(t *testing.T) {
 func TestReachesRepositoriesThroughTheMirror(t *testing.T) {
 	f := newFixture(t)
 	f.u.remote = nil
-	serveMirror(t, f.srv)
+	f.u.cfg.CoreURL = serveMirror(t, f.srv)
 	p := f.start()
 	if got, want := env(p.Spec.InitContainers[0], "URL"), f.srv.Remote("app").URL; got != want {
 		t.Errorf("the prepare container's URL = %q, want the external repository's, %q", got, want)
@@ -2522,7 +2538,7 @@ func TestRemakesABranchTooLargeToRead(t *testing.T) {
 }
 
 func TestRefusesToPushOtherBranches(t *testing.T) {
-	u := &updater{prefix: "deps/"}
+	u := &updater{}
 	for _, branch := range []string{"main", "deps", "deps/../main", "deps/go/x@v1.lock", "deps-x/go"} {
 		if err := u.push(t.Context(), nil, git.Remote{}, branch, "0123abcd", ""); err == nil {
 			t.Errorf("push(%q) = nil, want an error", branch)
@@ -2566,7 +2582,7 @@ func TestFlags(t *testing.T) {
 		u := &updater{}
 		fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
 		u.addFlags(fs)
-		if err := fs.Parse(append([]string{"-result-image=agent-runner"}, args...)); err != nil {
+		if err := fs.Parse(append([]string{"-runner-image=agent-runner"}, args...)); err != nil {
 			t.Fatal(err)
 		}
 		return u
@@ -2575,9 +2591,8 @@ func TestFlags(t *testing.T) {
 	if err := u.setup(); err != nil {
 		t.Fatalf("setup() with the defaults = %v", err)
 	}
-	if u.prefix != "deps/" || u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
-		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" || u.checkEmail != u.cfg.Identity.Email || u.checkEmail != "git-k8s@users.noreply.github.com" ||
-		u.seenObject != (kube.Key{Namespace: "git-k8s-deps", Name: "git-k8s-deps-first-seen"}) {
+	if u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
+		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" || u.seenObject != (kube.Key{Namespace: "git-k8s-deps", Name: "git-k8s-deps-first-seen"}) {
 		t.Errorf("the defaults = %+v", u)
 	}
 	for arg, want := range map[string]kube.Key{
@@ -2601,11 +2616,7 @@ func TestFlags(t *testing.T) {
 		{"-seen-configmap=times..v1"},
 		{"-seen-configmap=" + strings.Repeat("b", 254)},
 		{"-identity-email=<>"},
-		{"-check-identity-email="},
-		{"-prefix=deps"},
-		{"-prefix="},
-		{"-prefix=deps..x/"},
-		{"-result-image="},
+		{"-runner-image="},
 		{"-go-image="},
 		{"-gosumdb="},
 		{"-goproxy=direct"},
@@ -2650,7 +2661,7 @@ func TestFlags(t *testing.T) {
 
 	t.Log("A reconcile reports a bad flag as a permanent error.")
 	f := newFixture(t)
-	f.u.prefix = "deps"
+	f.u.runnerImage = ""
 	repo, secret := f.srv.Repository("app", f.rules...)
 	ctx, _ := kube.Fake(t.Context(), f.b, repo, secret)
 	if err := f.u.Reconcile(ctx, f.b); !kube.IsPermanent(err) {

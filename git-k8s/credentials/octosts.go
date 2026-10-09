@@ -19,10 +19,17 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// fakeGitHub is a flag and not a GitRepository field so that only whoever
-// installs a program, and no tenant, can send its service account tokens to
-// another server.
-var fakeGitHub = flag.String("fake-github", "", "base URL of a fake GitHub and Octo STS, for tests")
+// fakeGitHub is the -fake-github flag. It's a flag and not a GitRepository
+// field so that only whoever installs a program, and no tenant, can send its
+// service account tokens to another server.
+var fakeGitHub string
+
+// AddFlags registers -fake-github on fs. It's the base URL of a fake GitHub
+// and Octo STS, for tests, which the package reaches instead of GitHub and
+// Octo STS.
+func AddFlags(fs *flag.FlagSet) {
+	fs.StringVar(&fakeGitHub, "fake-github", "", "base URL of a fake GitHub and Octo STS, for tests")
+}
 
 // The audience of the service account tokens that a program sends to Octo
 // STS is audiencePrefix and the GitRepository's namespace. A program's
@@ -58,7 +65,7 @@ type github struct {
 }
 
 func endpoints() github {
-	if base := strings.TrimSuffix(*fakeGitHub, "/"); base != "" {
+	if base := strings.TrimSuffix(fakeGitHub, "/"); base != "" {
 		return github{web: base, exchange: base + "/sts/exchange", api: base + "/api/v3"}
 	}
 	return github{web: "https://github.com", exchange: "https://octo-sts.dev/sts/exchange", api: "https://api.github.com"}

@@ -62,13 +62,18 @@ const (
 	GoTestController = "check-" + GoTestCheck
 )
 
+// DepsPrefix is the branch-name prefix of the branches that git-k8s-deps
+// pushes and check-deps fixes. The core program's -branch-prefix must give
+// it to git-k8s-deps's service account.
+const DepsPrefix = "deps/"
+
 // MirrorAudience is the audience of the service account tokens that
 // programs send to the mirror, the git server in the core program.
 const MirrorAudience = "git-k8s-mirror"
 
-// MirrorURL is the mirror's base URL when kube's generate installs the core
-// program, as the Service git-k8s in the namespace git-k8s.
-const MirrorURL = "http://git-k8s.git-k8s.svc"
+// CoreURL is the core program's base URL when kube's generate installs it,
+// as the Service git-k8s in the namespace git-k8s.
+const CoreURL = "http://git-k8s.git-k8s.svc"
 
 // MirrorPath returns the path of a GitRepository's copy on the mirror,
 // below the mirror's base URL.
