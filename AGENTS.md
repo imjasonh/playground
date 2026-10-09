@@ -35,6 +35,7 @@ playground/
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
 ├── mapvelopes/            # Rust Cloudflare Worker: envelope PDFs with a route map
+├── memo/                  # Rust CLI: replay a command's output until the files it read change
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
@@ -106,6 +107,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
 | `tank-commander/` | no | Rust CLI (Tank Commander balance/fun simulator); no `index.html` |
+| `memo/` | no | Rust CLI (seccomp-traced command cache, Linux only); no `index.html` |
 | `mapvelopes/` | no | Rust Cloudflare Worker; no `index.html` |
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `nethack-agent/` | no | Cursor SDK terminal-game harness; no `index.html` |
@@ -755,6 +757,7 @@ bundle exec fastlane test
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
 | `tank-commander/` | Monte Carlo simulator for [Tank Commander](https://github.com/imjasonh/tank-commander) — skirmish 1v1, platoon 3v3, combined arms (drama + stalemate metrics) | `cargo test` + clippy |
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
+| `memo/` | Run a command under a seccomp user-notification filter, record the files it read, listed, and wrote (plus GET/HEAD responses through a recording proxy with `--http`), and replay its output until those inputs change. Linux only | `cargo test` (incl. end-to-end runs of real commands; the `--http` tests use `curl`) + clippy |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
 
