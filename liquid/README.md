@@ -143,3 +143,9 @@ demo/record.sh /tmp/liquid-demo
 `demo/drive.py` plays the part of the terminal. It writes the same SGR mouse
 reports that a terminal sends when you drag and hover, so the recording shows
 real input passing through Bubble Tea and bubblezone.
+
+GitHub shows images in pull requests and READMEs through a proxy that rejects
+files over 5 MiB. The recording's size, length, and frame rate keep the GIF
+under that limit, and the script warns if it isn't. If
+[gifsicle](https://www.lcdf.org/gifsicle/) is installed, the script also
+optimizes the GIF.

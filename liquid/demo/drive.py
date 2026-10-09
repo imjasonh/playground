@@ -10,6 +10,7 @@ Usage: drive.py LIQUID_BINARY OUTPUT.cast
 """
 
 import fcntl
+import json
 import math
 import os
 import pty
@@ -19,7 +20,10 @@ import sys
 import termios
 import time
 
-COLS, ROWS = 112, 34
+# GitHub serves images in pull requests and READMEs through a proxy that
+# rejects files over 5 MiB. At this size, 15 frames per second, and about 35
+# seconds, the GIF stays under that.
+COLS, ROWS = 100, 30
 # The tank starts below the one-line header, inside a one-cell border.
 TANK_X, TANK_Y = 1, 2
 TANK_W, TANK_H = COLS - 2, ROWS - 4
@@ -103,64 +107,79 @@ UP, DOWN, RIGHT_ARROW, LEFT_ARROW = "\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D"
 def perform(t):
     W, H = TANK_W, TANK_H
     # The dam breaks and crashes into the far wall.
-    t.wait(2.6)
+    t.wait(2.3)
 
     # Hover in from the right, then drag through the liquid to push it away.
-    t.hover(line(W * 0.95, H * 0.3, W * 0.75, H * 0.55, 10), dt=0.03)
-    t.drag(LEFT, line(W * 0.75, H * 0.62, W * 0.2, H * 0.72, 46), dt=0.035)
-    t.wait(0.5)
-    t.drag(LEFT, [(W * 0.5, H * 0.88)] * 18, dt=0.03)
-    t.wait(1.0)
+    t.hover(line(W * 0.95, H * 0.3, W * 0.75, H * 0.55, 8), dt=0.03)
+    t.drag(LEFT, line(W * 0.75, H * 0.62, W * 0.2, H * 0.72, 40), dt=0.035)
+    t.wait(0.3)
+    t.drag(LEFT, [(W * 0.5, H * 0.88)] * 15, dt=0.03)
+    t.wait(0.7)
 
     # Grow the brush, pull a blob out of the pool, carry it around, and drop it.
-    t.hover(line(W * 0.5, H * 0.6, W * 0.35, H * 0.7, 8), dt=0.03)
+    t.hover(line(W * 0.5, H * 0.6, W * 0.35, H * 0.7, 6), dt=0.03)
     t.wheel(W * 0.35, H * 0.7, times=2)
-    t.drag(RIGHT, line(W * 0.35, H * 0.85, W * 0.38, H * 0.55, 14)
-           + arc(W * 0.5, H * 0.42, H * 0.2, 180, 520, 64), dt=0.04)
-    t.wait(1.6)
+    t.drag(RIGHT, line(W * 0.35, H * 0.85, W * 0.38, H * 0.55, 12)
+           + arc(W * 0.5, H * 0.42, H * 0.2, 180, 480, 52), dt=0.04)
+    t.wait(1.2)
 
     # Hold Shift while skimming the surface to attract, then Ctrl to disperse.
     t.wheel(W * 0.15, H * 0.55, up=False, times=2)
-    t.hover(line(W * 0.12, H * 0.64, W * 0.85, H * 0.6, 64), dt=0.035, mod=SHIFT)
-    t.hover(line(W * 0.85, H * 0.6, W * 0.55, H * 0.56, 16), dt=0.04, mod=SHIFT)
-    t.hover(line(W * 0.55, H * 0.8, W * 0.2, H * 0.82, 40), dt=0.035, mod=CTRL)
+    t.hover(line(W * 0.12, H * 0.64, W * 0.8, H * 0.6, 52), dt=0.035, mod=SHIFT)
+    t.hover(line(W * 0.55, H * 0.8, W * 0.25, H * 0.82, 32), dt=0.035, mod=CTRL)
     t.leave()
 
     # Tilt the tank.
-    t.key(LEFT_ARROW, 1.4)
-    t.key(UP, 1.0)
-    t.key(RIGHT_ARROW, 1.4)
-    t.key(DOWN, 1.4)
+    t.key(LEFT_ARROW, 1.3)
+    t.key(RIGHT_ARROW, 1.3)
+    t.key(DOWN, 0.9)
 
     # Two liquids that mix.
     for _ in range(3):
         t.key("c", 0.1)
-    t.key("2", 3.0)
-    t.drag(LEFT, line(W * 0.5, H * 0.3, W * 0.5, H * 0.95, 20)
-           + arc(W * 0.5, H * 0.75, H * 0.12, 270, 990, 72), dt=0.03)
-    t.wait(1.5)
+    t.key("2", 2.3)
+    t.drag(LEFT, line(W * 0.5, H * 0.3, W * 0.5, H * 0.95, 16)
+           + arc(W * 0.5, H * 0.75, H * 0.12, 270, 990, 64), dt=0.03)
+    t.wait(1.0)
 
     # The other views.
-    t.key("v", 1.6)
-    t.drag(LEFT, line(W * 0.2, H * 0.8, W * 0.8, H * 0.8, 30), dt=0.03)
-    t.wait(0.6)
-    t.key("v", 2.0)
-    t.key("v", 0.4)
+    t.key("v", 1.2)
+    t.drag(LEFT, line(W * 0.2, H * 0.8, W * 0.8, H * 0.8, 26), dt=0.03)
+    t.wait(0.3)
+    t.key("v", 1.5)
+    t.key("v", 0.3)
 
     # A zero-gravity blob of lava, pulled around and burst.
     for _ in range(3):
         t.key("c", 0.1)
-    t.key("5", 1.2)
-    t.drag(RIGHT, line(W * 0.5, H * 0.5, W * 0.7, H * 0.4, 20)
-           + arc(W * 0.5, H * 0.45, H * 0.22, 0, 300, 50), dt=0.035)
-    t.wait(0.6)
+    t.key("5", 1.0)
+    t.drag(RIGHT, line(W * 0.5, H * 0.5, W * 0.7, H * 0.4, 16)
+           + arc(W * 0.5, H * 0.45, H * 0.22, 0, 300, 44), dt=0.035)
+    t.wait(0.4)
     t.drag(LEFT, [(W * 0.45, H * 0.45)] * 10, dt=0.03)
-    t.wait(2.2)
+    t.wait(1.8)
 
     # Every control.
     t.leave()
-    t.key("?", 2.6)
+    t.key("?", 2.2)
     t.key("q", 0.5)
+
+
+def trim_exit(path):
+    """Cut the recording where the program leaves the alternate screen.
+
+    Otherwise the recording, and the GIF made from it, ends on the empty
+    screen the program returns to when it quits.
+    """
+    with open(path) as f:
+        lines = f.read().splitlines()
+    for i, line in enumerate(lines[1:], start=1):
+        event = json.loads(line)
+        if event[1] == "o" and "\x1b[?1049l" in event[2]:
+            lines = lines[:i]
+            break
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def main():
@@ -180,6 +199,7 @@ def main():
     perform(t)
     t.wait(1.0)
     os.waitpid(pid, 0)
+    trim_exit(out)
 
 
 if __name__ == "__main__":
