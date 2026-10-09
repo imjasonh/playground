@@ -2,6 +2,7 @@ package render
 
 import (
 	"image/color"
+	"math"
 	"strconv"
 
 	"charm.land/lipgloss/v2"
@@ -152,12 +153,13 @@ func newPalette(t *Theme) *palette {
 		secondary = gradient(depthLevels, t.Mix)
 	}
 	foam := toColorful(t.Foam)
+	// Mixed liquid blends hue rather than mixing in a straight line, so
+	// cyan and magenta meet in violet instead of gray.
 	liquid := func(dye, depth int) colorful.Color {
 		if p.dyeLevels == 1 {
 			return primary[depth]
 		}
-		mix := float64(dye) / float64(p.dyeLevels-1)
-		return primary[depth].BlendOkLab(secondary[depth], mix)
+		return blendHue(primary[depth], secondary[depth], float64(dye)/float64(p.dyeLevels-1))
 	}
 
 	p.liqBase = len(colors)
@@ -169,11 +171,13 @@ func newPalette(t *Theme) *palette {
 		}
 	}
 
+	// Spray is thin liquid: lighter than the body but tinted by it, with a
+	// little of the background showing through.
 	p.sprayBase = len(colors)
 	for dye := range p.dyeLevels {
-		edge := liquid(dye, 0)
-		add(edge.BlendOkLab(bgMid, 0.4))
-		add(edge.BlendOkLab(foam, 0.5).BlendOkLab(bgMid, 0.25))
+		edge := liquid(dye, 0).BlendOkLab(liquid(dye, depthLevels/3), 0.45)
+		add(edge.BlendOkLab(bgMid, 0.2))
+		add(edge.BlendOkLab(foam, 0.5).BlendOkLab(bgMid, 0.1))
 	}
 
 	p.heatBase = len(colors)
@@ -182,9 +186,16 @@ func newPalette(t *Theme) *palette {
 	}
 
 	p.dotBase = len(colors)
-	dots := gradient(dotLevels, []color.Color{t.Liquid[min(2, len(t.Liquid)-1)], t.Liquid[0], t.Foam})
-	for _, c := range dots {
-		add(c)
+	for dye := range p.dyeLevels {
+		slow, fast := liquid(dye, depthLevels/3), liquid(dye, 0)
+		for level := range dotLevels {
+			f := float64(level) / float64(dotLevels-1)
+			if f < 0.6 {
+				add(slow.BlendOkLab(fast, f/0.6))
+			} else {
+				add(fast.BlendOkLab(foam, (f-0.6)/0.4))
+			}
+		}
 	}
 
 	p.ringBase = len(colors)
@@ -227,9 +238,18 @@ func (p *palette) spray(dye int, fast bool) uint16 {
 
 func (p *palette) heat(level int) uint16 { return uint16(p.heatBase + level) }
 
-func (p *palette) dot(level int) uint16 { return uint16(p.dotBase + level) }
+func (p *palette) dot(dye, level int) uint16 { return uint16(p.dotBase + dye*dotLevels + level) }
 
 func (p *palette) ring(style int) uint16 { return uint16(p.ringBase + style) }
+
+// blendHue blends a toward b in OkLCh, taking the shorter way around the hue
+// circle.
+func blendHue(a, b colorful.Color, t float64) colorful.Color {
+	l1, c1, h1 := a.OkLch()
+	l2, c2, h2 := b.OkLch()
+	dh := math.Mod(h2-h1+540, 360) - 180
+	return colorful.OkLch(l1+(l2-l1)*t, c1+(c2-c1)*t, math.Mod(h1+dh*t+360, 360))
+}
 
 func toColorful(c color.Color) colorful.Color {
 	cf, _ := colorful.MakeColor(c)

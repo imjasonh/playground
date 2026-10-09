@@ -80,6 +80,8 @@ type Renderer struct {
 	ring              []uint8   // Braille bits of the ring, one entry per cell.
 	dots              []uint8   // Braille bits of the particles, one entry per cell.
 	dotSpeed          []float32 // Fastest particle in each cell.
+	dotDye            []float32 // Total dye of the particles in each cell.
+	dotCount          []uint8   // Number of particles in each cell, up to 255.
 	depth             []uint8   // Depth level by run of liquid pixels; see resize.
 
 	theme *Theme
@@ -160,6 +162,8 @@ func (r *Renderer) resize(cols, rows int) {
 	r.ring = make([]uint8, cols*rows)
 	r.dots = make([]uint8, cols*rows)
 	r.dotSpeed = make([]float32, cols*rows)
+	r.dotDye = make([]float32, cols*rows)
+	r.dotCount = make([]uint8, cols*rows)
 
 	// depth[run] is the depth level of a pixel with run-1 liquid pixels above
 	// it. The top pixel gets level 0, the surface highlight.
@@ -296,6 +300,8 @@ func (r *Renderer) shadeHeat() {
 func (r *Renderer) scatterDots(w *sim.World, scale float64) {
 	clear(r.dots)
 	clear(r.dotSpeed)
+	clear(r.dotDye)
+	clear(r.dotCount)
 	if w == nil {
 		return
 	}
@@ -309,6 +315,8 @@ func (r *Renderer) scatterDots(w *sim.World, scale float64) {
 		c := (dy/4)*r.cols + dx/2
 		r.dots[c] |= brailleBit[dy%4][dx%2]
 		r.dotSpeed[c] = max(r.dotSpeed[c], float32(math.Hypot(w.VX[i], w.VY[i])))
+		r.dotDye[c] += w.Dye[i]
+		r.dotCount[c] = min(r.dotCount[c]+1, 255)
 	}
 }
 
@@ -427,7 +435,8 @@ func (r *Renderer) encodeDots(ringStyle int) {
 				r.out = utf8.AppendRune(r.out, 0x2800+rune(ringBits|dotBits))
 			case dotBits != 0:
 				level := min(dotLevels-1, int(r.dotSpeed[c]/dotSpeedMax*dotLevels))
-				r.setColors(&s, int(p.dot(level)), bg)
+				dye := r.dyeLevel(r.dotDye[c] / float32(r.dotCount[c]))
+				r.setColors(&s, int(p.dot(dye, level)), bg)
 				r.out = utf8.AppendRune(r.out, 0x2800+rune(dotBits))
 			default:
 				r.setColors(&s, -1, bg)

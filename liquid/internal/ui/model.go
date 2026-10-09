@@ -34,7 +34,7 @@ type Options struct {
 
 // Brush sizes, in h.
 const (
-	defaultBrush = 3.4
+	defaultBrush = 4.0
 	minBrush     = 1.2
 	maxBrush     = 10.0
 )

@@ -153,7 +153,7 @@ func (t Tool) String() string {
 type force struct {
 	strength float64 // Acceleration toward the center, in h/s². Negative pushes.
 	drag     float64 // Rate, in 1/s, at which particles match the cursor's velocity.
-	lift     float64 // Fraction of gravity that the brush cancels at its center.
+	lift     float64 // Rate at which gravity weakens toward the center; above 1, the core is weightless.
 }
 
 func (t Tool) force() force {
@@ -161,7 +161,7 @@ func (t Tool) force() force {
 	case ToolPush:
 		return force{strength: -1400, drag: 3}
 	case ToolPull:
-		return force{strength: 650, drag: 9, lift: 1}
+		return force{strength: 900, drag: 10, lift: 1.6}
 	case ToolAttract:
 		return force{strength: 260, drag: 4, lift: 0.6}
 	case ToolDisperse:
@@ -350,7 +350,7 @@ func (w *World) applyForces(dt float64) {
 			if d2 := dx*dx + dy*dy; d2 < r2 {
 				d := math.Sqrt(d2)
 				t := 1 - d/b.Radius
-				lift := 1 - t*f.lift
+				lift := max(1-t*f.lift, 0)
 				ax *= lift
 				ay *= lift
 				if d > 1e-9 {
