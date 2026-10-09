@@ -167,6 +167,7 @@ fn tracer_loop(
     };
     drop(sock);
     let lfd = listener.as_raw_fd();
+    let mut sync = SyncWake::new(lfd);
     let mut listening = true;
     loop {
         let mut fds = [
@@ -186,7 +187,7 @@ fn tracer_loop(
             continue;
         }
         if fds[0].revents & libc::POLLIN != 0 {
-            handle(lfd, &mut recorder, stdin_id);
+            handle(lfd, &mut recorder, stdin_id, &mut sync);
             continue;
         }
         if fds[0].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
@@ -204,10 +205,64 @@ fn tracer_loop(
     }
 }
 
-fn handle(lfd: RawFd, recorder: &mut Recorder, stdin_id: Option<(u64, u64)>) {
+/// Keeps synchronous wake-up on while the command traps one call at a time,
+/// and turns it off for good once calls queue up behind each other, which
+/// means several threads or processes are trapping at once.
+struct SyncWake {
+    lfd: RawFd,
+    on: bool,
+    handled: u32,
+    queued: u32,
+}
+
+impl SyncWake {
+    const WINDOW: u32 = 64;
+
+    fn new(lfd: RawFd) -> SyncWake {
+        seccomp::sync_wake_up(lfd, true);
+        SyncWake {
+            lfd,
+            on: true,
+            handled: 0,
+            queued: 0,
+        }
+    }
+
+    /// Runs while the thread behind the current notification is still
+    /// blocked, so a pending notification must come from another thread.
+    fn before_reply(&mut self) {
+        if !self.on {
+            return;
+        }
+        let mut p = libc::pollfd {
+            fd: self.lfd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd; a zero timeout doesn't block.
+        if unsafe { libc::poll(&mut p, 1, 0) } > 0 && p.revents & libc::POLLIN != 0 {
+            self.queued += 1;
+        }
+        self.handled += 1;
+        if self.handled == Self::WINDOW {
+            if self.queued * 8 > self.handled {
+                self.on = false;
+                seccomp::sync_wake_up(self.lfd, false);
+            }
+            self.handled = 0;
+            self.queued = 0;
+        }
+    }
+}
+
+fn handle(lfd: RawFd, recorder: &mut Recorder, stdin_id: Option<(u64, u64)>, sync: &mut SyncWake) {
     let Ok(n) = seccomp::recv(lfd) else {
         return;
     };
+    if let Some(errno) = syscalls::refusal(&n) {
+        seccomp::deny(lfd, n.id, errno);
+        return;
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let events = syscalls::decode(&n, stdin_id);
         if !events.is_empty() && seccomp::id_valid(lfd, n.id) {
@@ -219,6 +274,7 @@ fn handle(lfd: RawFd, recorder: &mut Recorder, stdin_id: Option<(u64, u64)>) {
     if result.is_err() {
         recorder.add_reason("memo hit an internal error while tracing");
     }
+    sync.before_reply();
     seccomp::allow(lfd, n.id);
 }
 

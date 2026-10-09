@@ -19,6 +19,8 @@ const SECCOMP_USER_NOTIF_FLAG_CONTINUE: u32 = 1;
 const NOTIF_RECV: u64 = 0xC050_2100;
 const NOTIF_SEND: u64 = 0xC018_2101;
 const NOTIF_ID_VALID: u64 = 0x4008_2102;
+const NOTIF_SET_FLAGS: u64 = 0x4008_2104;
+const SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP: u64 = 1;
 /// The request number that kernels before 5.9 used for `NOTIF_ID_VALID`.
 const NOTIF_ID_VALID_OLD: u64 = 0x8008_2102;
 
@@ -249,6 +251,21 @@ pub fn recv_listener(sock: &OwnedFd) -> io::Result<OwnedFd> {
     }
 }
 
+/// Turns synchronous wake-up on or off (Linux 6.6 and later). When it's on,
+/// the kernel hands the CPU straight from the blocked thread to the listener
+/// and back, which makes each round trip about three times faster, but it
+/// serializes threads that trap at the same time. Older kernels reject the
+/// request, which is harmless.
+pub fn sync_wake_up(listener: RawFd, on: bool) {
+    let flags = if on {
+        SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP
+    } else {
+        0
+    };
+    // SAFETY: the ioctl takes the flags by value.
+    unsafe { libc::ioctl(listener, NOTIF_SET_FLAGS as _, flags) };
+}
+
 /// Receives the next notification. Fails with `ENOENT` if the calling thread
 /// died before the notification could be read.
 pub fn recv(listener: RawFd) -> io::Result<Notif> {
@@ -286,12 +303,31 @@ pub fn id_valid(listener: RawFd, id: u64) -> bool {
 
 /// Lets the call behind notification `id` run.
 pub fn allow(listener: RawFd, id: u64) {
-    let mut resp = NotifResp {
-        id,
-        val: 0,
-        error: 0,
-        flags: SECCOMP_USER_NOTIF_FLAG_CONTINUE,
-    };
+    send(
+        listener,
+        NotifResp {
+            id,
+            val: 0,
+            error: 0,
+            flags: SECCOMP_USER_NOTIF_FLAG_CONTINUE,
+        },
+    );
+}
+
+/// Fails the call behind notification `id` with `errno` without running it.
+pub fn deny(listener: RawFd, id: u64, errno: i32) {
+    send(
+        listener,
+        NotifResp {
+            id,
+            val: 0,
+            error: -errno,
+            flags: 0,
+        },
+    );
+}
+
+fn send(listener: RawFd, mut resp: NotifResp) {
     loop {
         // SAFETY: the ioctl reads one seccomp_notif_resp from `resp`.
         let r = unsafe { libc::ioctl(listener, NOTIF_SEND as _, &mut resp) };

@@ -4,7 +4,7 @@ use crate::cache::{self, Entry, LastRun, Store};
 use crate::capture::{self, Capture, MAX_OUTPUT};
 use crate::fsstate::now_ms;
 use crate::key::{self, Stdin};
-use crate::record::{par_map, Event, Recorder, Role};
+use crate::record::{par_map, Event, Known, Recorder, Role};
 use crate::trace;
 use std::ffi::OsString;
 use std::os::unix::process::ExitStatusExt;
@@ -356,8 +356,22 @@ fn exit_code(status: i32) -> (i32, Option<i32>) {
     }
 }
 
+/// Collects the content hashes that earlier results for the key recorded.
+fn known_hashes(store: &Store, key: &str) -> Known {
+    let mut known = Known::new();
+    for (_, entry) in store.entries(key) {
+        for p in entry.paths {
+            if let (Some(content), Some(sig)) = (p.expect.content, p.expect.sig) {
+                known.entry(PathBuf::from(p.path)).or_insert((sig, content));
+            }
+        }
+    }
+    known
+}
+
 fn record(o: &Opts, ctx: &Ctx) -> i32 {
     let mut recorder = Recorder::new(ctx.ignore.clone(), None);
+    recorder.reuse(known_hashes(&ctx.store, &ctx.key));
     let stdin_id = match &ctx.stdin {
         Stdin::File(path) => {
             recorder.apply(Event::Open {

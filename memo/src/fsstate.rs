@@ -161,7 +161,9 @@ pub struct Sig {
 }
 
 impl Sig {
-    fn matches(&self, m: &Meta) -> bool {
+    /// Reports whether `m` is the same file, unchanged since the hash was
+    /// computed.
+    pub fn matches(&self, m: &Meta) -> bool {
         self.dev == m.dev
             && self.ino == m.ino
             && self.size == m.size

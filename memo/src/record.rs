@@ -15,7 +15,7 @@ use crate::net::NetTarget;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -178,11 +178,28 @@ impl Rec {
     }
 }
 
+/// Content hashes from earlier runs, keyed by path, with the stat signature
+/// that each was computed for.
+pub type Known = HashMap<PathBuf, (Sig, String)>;
+
+/// Returns the content identity of `path`, reusing a hash from `known` if
+/// the file is provably unchanged since then.
+fn hash_with(path: &Path, known: &Known) -> io::Result<(String, Meta)> {
+    if let Some((sig, id)) = known.get(path) {
+        let meta = Meta::of(path, true);
+        if sig.matches(&meta) {
+            return Ok((id.clone(), meta));
+        }
+    }
+    content_id(path)
+}
+
 pub struct Recorder {
     recs: HashMap<PathBuf, Rec>,
     written_children: HashMap<PathBuf, Vec<PathBuf>>,
     ignore: Vec<PathBuf>,
     proxy: Option<SocketAddr>,
+    known: Known,
     reasons: BTreeSet<String>,
     net: BTreeSet<String>,
     events: u64,
@@ -197,10 +214,17 @@ impl Recorder {
             written_children: HashMap::new(),
             ignore,
             proxy,
+            known: Known::new(),
             reasons: BTreeSet::new(),
             net: BTreeSet::new(),
             events: 0,
         }
+    }
+
+    /// Supplies hashes from earlier runs, so unchanged files aren't hashed
+    /// again.
+    pub fn reuse(&mut self, known: Known) {
+        self.known = known;
     }
 
     pub fn add_reason(&mut self, reason: impl Into<String>) {
@@ -448,7 +472,7 @@ impl Recorder {
             if !same(&Meta::of(path, true)) {
                 return Err(format!("{} changed while the command ran", path.display()));
             }
-            match content_id(path) {
+            match hash_with(path, &self.known) {
                 Ok((id, meta)) if same(&meta) => Ok((id, meta.sig(now_ms()))),
                 Ok(_) => Err(format!("{} changed while the command ran", path.display())),
                 Err(e) => Err(format!("{}: could not hash it: {e}", path.display())),
@@ -472,7 +496,7 @@ impl Recorder {
         let mut items: Vec<(&PathBuf, &Rec)> = self.recs.iter().collect();
         items.sort_by(|a, b| a.0.cmp(b.0));
         let results = par_map(&items, |(path, rec)| {
-            expectations(path, rec, dirs_with_writes.contains(path))
+            expectations(path, rec, dirs_with_writes.contains(path), &self.known)
         });
         let mut paths = Vec::new();
         for r in results {
@@ -498,6 +522,7 @@ fn expectations(
     path: &Path,
     rec: &Rec,
     has_written_children: bool,
+    known: &Known,
 ) -> Result<Vec<PathExpect>, String> {
     let display = path.display();
     let Some(name) = path.to_str() else {
@@ -583,7 +608,7 @@ fn expectations(
         let mut e = Expect::kind(&post);
         match &post.kind {
             Kind::File => {
-                let (id, m) = content_id(path)
+                let (id, m) = hash_with(path, known)
                     .map_err(|err| format!("{display}: could not hash the output: {err}"))?;
                 e.content = Some(id);
                 e.mode = Some(m.mode);
@@ -594,7 +619,7 @@ fn expectations(
                 let target = Meta::of(path, true);
                 let mut ef = Expect::kind(&target);
                 if target.kind == Kind::File {
-                    let (id, m) = content_id(path)
+                    let (id, m) = hash_with(path, known)
                         .map_err(|err| format!("{display}: could not hash the output: {err}"))?;
                     ef.content = Some(id);
                     ef.sig = Some(m.sig(now_ms()));
@@ -891,6 +916,29 @@ mod tests {
         let o = r.finish();
         assert_eq!(o.net, vec!["connected to 10.0.0.1:443".to_string()]);
         assert!(o.paths.is_empty());
+    }
+
+    #[test]
+    fn known_hashes_are_reused_only_for_unchanged_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("big-binary");
+        fs::write(&f, "v1").unwrap();
+        let meta = Meta::of(&f, true);
+        let known_at = |at_ms| Known::from([(f.clone(), (meta.sig(at_ms), "reused".to_string()))]);
+        // A hash taken right after the last change might predate a write in
+        // the same timestamp tick, so it isn't trusted.
+        let racy = known_at(now_ms());
+        assert_eq!(
+            hash_with(&f, &racy).unwrap().0,
+            crate::fsstate::hash_bytes(b"v1")
+        );
+        let settled = known_at(now_ms() + 3_000);
+        assert_eq!(hash_with(&f, &settled).unwrap().0, "reused");
+        fs::write(&f, "v2!").unwrap();
+        assert_eq!(
+            hash_with(&f, &settled).unwrap().0,
+            crate::fsstate::hash_bytes(b"v2!")
+        );
     }
 
     #[test]

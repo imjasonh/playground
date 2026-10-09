@@ -196,6 +196,14 @@ fn stdin_read(m: &Mem, stdin_id: Option<(u64, u64)>) -> Option<Event> {
     (Some((md.dev(), md.ino())) == stdin_id).then_some(Event::StdinRead)
 }
 
+/// Returns the error to fail a call with instead of running it. `io_uring`
+/// file operations never pass through system calls, so memo refuses to set
+/// up a ring, as many container runtimes do. Programs then fall back to
+/// ordinary system calls; libuv (Node.js), for example, does.
+pub fn refusal(n: &Notif) -> Option<i32> {
+    (n.data.arch == AUDIT_ARCH && n.data.nr as i64 == SYS_IO_URING_SETUP).then_some(libc::ENOSYS)
+}
+
 /// Decodes one notification. Returns no events for calls that can't affect
 /// a cached result, such as `fstat` through `newfstatat` with `AT_EMPTY_PATH`.
 pub fn decode(n: &Notif, stdin_id: Option<(u64, u64)>) -> Vec<Event> {
@@ -301,9 +309,6 @@ pub fn decode(n: &Notif, stdin_id: Option<(u64, u64)>) -> Vec<Event> {
         | libc::SYS_sendfile => stdin_read(&m, stdin_id),
         libc::SYS_open_by_handle_at => Some(Event::Unsupported(
             "opened a file by handle, which memo can't trace".into(),
-        )),
-        SYS_IO_URING_SETUP => Some(Event::Unsupported(
-            "used io_uring, whose file operations memo can't trace".into(),
         )),
         libc::SYS_mount
         | libc::SYS_umount2

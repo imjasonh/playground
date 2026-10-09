@@ -387,6 +387,17 @@ fn both_streams_are_replayed() {
 }
 
 #[test]
+fn io_uring_is_refused_so_programs_fall_back() {
+    let s = Sandbox::new();
+    let script = "import ctypes; libc = ctypes.CDLL(None, use_errno=True); \
+                  r = libc.syscall(425, 4, ctypes.create_string_buffer(256)); \
+                  print(r, ctypes.get_errno())";
+    let r = s.memo(&["python3", "-c", script]);
+    r.ran().cached();
+    assert_eq!(r.stdout().trim(), format!("-1 {}", libc::ENOSYS));
+}
+
+#[test]
 fn a_terminal_stays_a_terminal() {
     if Command::new("script").arg("--version").output().is_err() {
         eprintln!("skipping: util-linux script isn't installed");
