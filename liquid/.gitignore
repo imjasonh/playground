@@ -1,0 +1,12 @@
+# Built binary
+/liquid
+liquid.exe
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Demo recordings (regenerate with demo/record.sh)
+*.cast
+*.gif
