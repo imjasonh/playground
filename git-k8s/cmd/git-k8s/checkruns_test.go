@@ -1332,6 +1332,59 @@ func TestCheckRunsRetryRefusedCreations(t *testing.T) {
 	s.again("c/x")
 }
 
+// A sync that's running when a check pushes a fix to the mirror can move
+// the branch to the fix before the next sync pushes the fix to GitHub, so
+// checks can report results for a commit that GitHub gets later.
+func TestCheckRunsRetryUntilGitHubHasTheFix(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	w.Write("x.go", "package x\nvar  x = 1\n")
+	head := w.Commit("add x")
+	w.Push("c/x")
+	w.Write("x.go", "package x\n\nvar x = 1\n")
+	fix := w.Commit("gofmt")
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{}}
+	h, f := gitk8s.Short(head), gitk8s.Short(fix)
+	if _, err := p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Fix: fix}}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("While GitHub doesn't have the fix, it refuses to create the check runs on it, and every reconcile tries again.")
+	onFix := map[string]gitk8s.CheckResult{
+		"base":  {Commit: fix, ParentCommit: main, State: gitk8s.Passed, Message: "contains main"},
+		"gofmt": {Commit: fix, State: gitk8s.Passed, Message: "x.go is formatted"},
+	}
+	get := "GET /api/v3/repos/acme/app/commits/" + fix + "/check-runs"
+	want := []string{get, post, get, post}
+	for i := range 2 {
+		got, err := p.publish(onFix)
+		if err == nil || strings.Count(err.Error(), "422 Unprocessable Entity: No commit found for SHA: "+fix) != 2 || !slices.Equal(got, want) {
+			t.Errorf("reconcile %d: requests = %q, err = %v; want %q and GitHub's refusals", i+1, got, err, want)
+		}
+	}
+
+	t.Log("Once git-k8s pushes the fix to GitHub and lands it, so that main is at the fix too, the next reconcile creates the check runs.")
+	w.Push("c/x")
+	w.Push("main")
+	p.set("main", nil)
+	if got, err := p.reconcile("c/x"); err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	wantRuns := []string{
+		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
+		"git-k8s/base@" + f + " completed success: contains main",
+		"git-k8s/gofmt@" + f + " completed success: x.go is formatted",
+	}
+	if got := runs(gh); !slices.Equal(got, wantRuns) {
+		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(wantRuns, "\n"))
+	}
+	for _, branch := range []string{"main", "c/x"} {
+		if got, err := p.reconcile(branch); err != nil || len(got) > 0 {
+			t.Errorf("reconciling %s: requests = %q, err = %v; want none", branch, got, err)
+		}
+	}
+}
+
 func TestBranchesRetryCheckRunsThatDeletedBranchesLeft(t *testing.T) {
 	s := newSharing(t, 2)
 	s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
