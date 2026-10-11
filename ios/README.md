@@ -60,6 +60,7 @@ ios/
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `app-attest` | App Attest | Sign in with Apple, attest once, then `generateAssertion` on each whoami; needs App Attest and Sign in with Apple capability bootstrap |
 | `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
+| `phone-vr` | Phone VR | In-app; 6DoF VR for an iPhone in a lens viewer: ARKit and gyro fusion, Metal stereo at 120 Hz, lens and lateral color correction, late-latched timewarp, optional AirPods cross-check |
 
 ### Ride Monitor
 
@@ -494,6 +495,85 @@ achieved decisions per second, and the engine. Snake predictions stay out of
 the Laya screen's per-ask history; round summaries, deaths, and failures are
 appended to the diagnostics log, and **Copy round summary** copies the last
 move, estimates, and timings with the device facts.
+
+### Phone VR
+
+Phone VR turns an iPhone in a Cardboard-style lens viewer into a 6DoF headset.
+It targets the iPhone 15 Pro (2556 × 1179 at 460 ppi, 120 Hz) and a viewer
+with 45 mm acrylic lenses 42 mm from the screen, 63.9 mm apart. Other iPhones
+use their own panel size and pixel density, and every viewer value is
+editable. It follows the engineering sketch in Cursor Canvas. The renderer is
+a thin Metal layer on ARKit and Core Motion rather than RealityKit or
+SceneKit, because those don't expose lens distortion, late latching, or
+timewarp.
+
+**Tracking.** Core Motion device motion (200 Hz, no magnetometer) gives
+orientation. ARKit world tracking, at its lowest-resolution 60 fps video
+format, gives position and a slow yaw correction for gyro drift. Both are
+converted from the camera and device frames into the screen frame, then
+extrapolated to the middle of the frame's scan-out with the measured angular
+and linear velocity. When ARKit is limited or unavailable, the tracker falls
+back to a neck model (3DoF) and glides back to 6DoF when ARKit recovers.
+ARKit also finds the floor, and the camera image fades in when you walk out of
+the play area or turn on passthrough.
+
+**Rendering.** A render thread runs a `CAMetalDisplayLink` on its own run
+loop. Each frame it predicts the head pose and renders both eyes in one pass
+with vertex amplification into a two-layer array texture (two passes on GPUs
+without it), with 4× MSAA and a mask that covers the pixels outside the lens
+field first so early depth testing skips them. Then it sleeps until shortly
+before the GPU frees up, reads the gyro again, and encodes the final pass. The
+final pass maps each panel pixel through the lens polynomial
+`t = r(1 + k1·r² + k2·r⁴)`, scales red and blue by their own magnification to
+cancel lateral color, and rotates by the difference between the late gyro
+reading and the rendered orientation (timewarp). The eye buffers render a few
+degrees wider than the lens field so timewarp has pixels to rotate in. The
+display runs at 120 Hz (`CADisableMinimumFrameDurationOnPhone`). A governor
+lowers eye resolution when the GPU runs over budget, drops to 60 Hz when the
+phone gets hot or Low Power Mode is on, and simplifies the scene at the
+critical thermal state.
+
+**In the headset.** A countdown gives you time to put the phone in the viewer.
+To select, look at a button until the ring fills, tap the screen or press the
+viewer's lever, or press A on a game controller. Look down at
+the ring by your feet to open the menu: recenter, passthrough, stats, lens
+calibration, and exit. Long-press recenters; a two-finger tap exits. A
+controller adds walking (left stick), snap turns (right stick or shoulders),
+and a gyro pointer when it has motion sensors. A spatial audio beacon
+(`AVAudioEnvironmentNode`, HRTF) circles the room, so you can check that sound
+stays put as you turn.
+
+**Calibration.** The calibration scene puts you in a room whose walls are a
+grid, with a dot straight ahead. Adjust k1, k2, the red and blue scales, lens
+spacing, and screen-to-lens distance until the grid lines stay straight as you
+turn and the lines and dot have no color fringes. The values are saved when
+you leave. The launch page also has these settings, a lens preview pre-warped
+by the same model, and an estimate of lateral color from the lens geometry.
+
+**AirPods cross-check.** This check is optional. AirPods head tracking
+updates less often and arrives later than the phone's gyro, so it never drives
+the image. A background queue compares the two once a second. It measures the AirPods delay
+by cross-correlating angular speed, fits the rotation from the earbud to the
+phone, and counts a viewer slip when the two sensors' rotations differ by more
+than 4° for two checks in a row while your head is nearly still. With the
+camera off, it also corrects slow yaw drift. **AirPods** on the launch page
+runs the same check live and shows the measured update rate and delay.
+
+**Measurements.** The stats panel shows the frame rate, eye resolution, CPU
+and GPU time per pass, prediction horizons, and motion-to-photon latency,
+which is the time from the gyro sample the final pass used to the moment the
+frame was presented. The launch page keeps the last session's medians and 95th
+percentiles.
+
+Phone VR needs camera permission for ARKit and motion permission for AirPods
+head tracking. It adds no Bundle ID, entitlement, or signing bootstrap. The
+Simulator opens the launch page and renders the scene, but without ARKit or
+the gyro the view doesn't move. Unit tests cover the lens model, tracker
+fusion and prediction, AirPods alignment on synthetic motion, the
+interaction model, and the frame governor. Renderer tests compile the shaders
+in the Simulator, check that Swift and Metal agree on every uniform struct
+layout, and render an offscreen frame to check that each eye shows the scene
+the right way up with the correct stereo offset.
 
 ## Adding an experiment
 
