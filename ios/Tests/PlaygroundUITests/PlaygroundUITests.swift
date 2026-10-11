@@ -337,6 +337,27 @@ final class PlaygroundUITests: XCTestCase {
             || app.buttons["layaAskButton"].waitForExistence(timeout: 3))
     }
 
+    func testPhoneVREntersAndLeavesTheHeadsetView() {
+        let app = launchApp()
+
+        openExperiment("phone-vr", title: "Phone VR", in: app)
+
+        let enter = app.buttons["phoneVREnterButton"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["phoneVRStatusLine"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["phoneVRLensPreview"].exists)
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: enter)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 8), .completed, "Enter VR never enabled")
+
+        enter.tap()
+        let headset = app.descendants(matching: .any)["phoneVRView"]
+        XCTAssertTrue(headset.waitForExistence(timeout: 10), "The headset view did not appear")
+        // Let a few frames render, then leave the way a wearer would.
+        sleep(2)
+        headset.twoFingerTap()
+        XCTAssertTrue(enter.waitForExistence(timeout: 10), "Leaving VR did not return to the launch page")
+    }
+
     func testArmyListExperimentOpens() {
         let app = launchApp()
 
