@@ -62,6 +62,13 @@ enum VRPalette {
         return r | (g << 8) | (b << 16) | (UInt32(alpha) << 24)
     }
 
+    /// A packed color as linear RGB with straight alpha, for shader tints.
+    static func linear(_ packed: UInt32) -> SIMD4<Float> {
+        func channel(_ shift: UInt32) -> Float { Float((packed >> shift) & 0xFF) / 255 }
+        func decode(_ c: Float) -> Float { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return SIMD4(decode(channel(0)), decode(channel(8)), decode(channel(16)), channel(24))
+    }
+
     static let floor = rgba(0x1F252D)
     static let plinth = rgba(0xE2E8F0)
     static let coral = rgba(0xF56565)
@@ -231,14 +238,14 @@ enum VRMeshFactory {
         let n = SIMD3<Float>(0, 1, 0)
         let corners = [SIMD3(-halfExtent, 0, halfExtent), SIMD3(halfExtent, 0, halfExtent),
                        SIMD3(halfExtent, 0, -halfExtent), SIMD3(-halfExtent, 0, -halfExtent)]
-        let v = corners.map { VRSceneVertex(position: $0, normal: n, color: VRPalette.floor) }
+        let v = corners.map { VRSceneVertex(position: $0, normal: n, color: VRPalette.white) }
         mesh.addQuad(v[0], v[1], v[2], v[3])
         return mesh
     }
 
     /// Unit cube from y = 0 to 1, centred in x and z, with faces pointing inward.
     static func room() -> VRMesh {
-        var mesh = box(color: VRPalette.floor)
+        var mesh = box(color: VRPalette.white)
         for i in mesh.vertices.indices {
             var v = mesh.vertices[i]
             v.py += 0.5
@@ -271,10 +278,10 @@ enum VRMeshFactory {
             let d0 = SIMD3(cos(a0), 0, sin(a0))
             let d1 = SIMD3(cos(a1), 0, sin(a1))
             mesh.addQuad(
-                VRSceneVertex(position: d0, normal: d0, color: VRPalette.teal),
-                VRSceneVertex(position: d1, normal: d1, color: VRPalette.teal),
-                VRSceneVertex(position: d1 + up, normal: d1, color: VRPalette.teal),
-                VRSceneVertex(position: d0 + up, normal: d0, color: VRPalette.teal)
+                VRSceneVertex(position: d0, normal: d0, color: VRPalette.white),
+                VRSceneVertex(position: d1, normal: d1, color: VRPalette.white),
+                VRSceneVertex(position: d1 + up, normal: d1, color: VRPalette.white),
+                VRSceneVertex(position: d0 + up, normal: d0, color: VRPalette.white)
             )
         }
         return mesh

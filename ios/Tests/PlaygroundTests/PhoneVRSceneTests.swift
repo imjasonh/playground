@@ -17,6 +17,24 @@ final class PhoneVRSceneTests: XCTestCase {
         XCTAssertEqual(VRPalette.rgba(0x112233, alpha: 0x80), 0x8033_2211)
     }
 
+    func testPaletteDecodesToLinearColor() {
+        XCTAssertEqual(VRPalette.linear(VRPalette.white), SIMD4(1, 1, 1, 1))
+        XCTAssertEqual(VRPalette.linear(VRPalette.rgba(0x000000)), SIMD4(0, 0, 0, 1))
+        let gray = VRPalette.linear(VRPalette.rgba(0x808080, alpha: 0x80))
+        XCTAssertEqual(gray.x, 0.2159, accuracy: 0.0005)
+        XCTAssertEqual(gray.y, gray.x)
+        XCTAssertEqual(gray.z, gray.x)
+        XCTAssertEqual(gray.w, 128.0 / 255, accuracy: 1e-6)
+        let coral = VRPalette.linear(VRPalette.coral)
+        XCTAssertGreaterThan(coral.x, 5 * coral.y)
+    }
+
+    func testMeshesAreWhiteSoObjectsSetTheirColor() {
+        for kind in VRMeshKind.allCases {
+            XCTAssertTrue(VRMeshFactory.mesh(kind).vertices.allSatisfy { $0.color == VRPalette.white }, "\(kind)")
+        }
+    }
+
     func testEveryMeshIsWellFormed() {
         for kind in VRMeshKind.allCases {
             let mesh = VRMeshFactory.mesh(kind)

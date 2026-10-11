@@ -4,7 +4,8 @@ import simd
 @testable import Playground
 
 /// Compiles the shaders, checks Swift and Metal agree on buffer layouts, and
-/// renders a full frame offscreen to check what lands on the panel.
+/// renders full frames offscreen to check what lands on the panel against
+/// the CPU lens model.
 final class PhoneVRRendererTests: XCTestCase {
     private func metalDevice() throws -> MTLDevice {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device on this runner") }
@@ -65,6 +66,8 @@ final class PhoneVRRendererTests: XCTestCase {
         XCTAssertEqual(sizes["final.frame"], MemoryLayout<VRDistortionFrameUniforms>.stride)
     }
 
+    // MARK: - Offscreen frames
+
     private struct Rendered {
         let width: Int
         let height: Int
@@ -92,7 +95,31 @@ final class PhoneVRRendererTests: XCTestCase {
         }
     }
 
-    private func renderMarkers(singlePass: Bool) throws -> (Rendered, VRStereoLayout)? {
+    private struct Frame {
+        let image: Rendered
+        let layout: VRStereoLayout
+        let head: VRPose
+
+        /// Where the CPU lens model puts a scene point on the panel for `eye`.
+        func expectedPixel(of point: SIMD3<Float>, eye: VREye) -> SIMD2<Float> {
+            let pose = VRFrameBuilder.eyePoses(layout: layout, sceneFromHead: head)[eye.rawValue]
+            let p = pose.inverse.transformPoint(point)
+            return layout.pixel(forViewingTangent: SIMD2(p.x, p.y) / -p.z, eye: eye)
+        }
+    }
+
+    /// A white marker straight ahead at half a meter and a red one 10 cm above it.
+    private static let whiteMarker = VRSceneObject(
+        mesh: .cube, material: .emissive, position: SIMD3(0, 1.6, -0.5),
+        scale: SIMD3(repeating: 0.03), color: VRPalette.white, glow: 4
+    )
+    private static let redMarker = VRSceneObject(
+        mesh: .cube, material: .emissive, position: SIMD3(0, 1.7, -0.5),
+        scale: SIMD3(repeating: 0.03), color: VRPalette.rgba(0xFF0000), glow: 4
+    )
+
+    /// Renders `objects` and the sky through both passes into a panel-sized texture.
+    private func render(_ objects: [VRSceneObject], singlePass: Bool) throws -> Frame? {
         let device = try metalDevice()
         if singlePass, !VRRenderer.supportsSinglePassStereo(device) { return nil }
         var options = VRRenderer.Options()
@@ -108,17 +135,10 @@ final class PhoneVRRendererTests: XCTestCase {
         let targets = try renderer.ensureEyeTargets(width: size.width, height: size.height)
         let head = VRPose(rotation: VRMath.identityRotation, position: SIMD3(0, 1.6, 0))
 
-        // A white marker straight ahead at half a meter and a red one just above it.
-        var instances = VRFrameBuilder.instances(scene: .studio, reduced: false, time: 0, passthrough: false)
-        let white = VRSceneObject(mesh: .cube, material: .emissive, position: SIMD3(0, 1.6, -0.5), scale: SIMD3(repeating: 0.03), color: VRPalette.white, glow: 4)
-        let red = VRSceneObject(mesh: .cube, material: .emissive, position: SIMD3(0, 1.7, -0.5), scale: SIMD3(repeating: 0.03), color: VRPalette.rgba(0xFF0000), glow: 4)
-        instances.append(VRFrameBuilder.instance(white, time: 0))
-        instances.append(VRFrameBuilder.instance(red, time: 0))
-
         let eyeFrame = VREyeFrame(
             eyes: VRFrameBuilder.eyeUniforms(layout: layout, sceneFromHead: head),
             frame: VRFrameBuilder.frameUniforms(boundaryCenter: .zero, boundaryRadius: 1.5, boundaryVisibility: 0),
-            instances: instances,
+            instances: objects.map { VRFrameBuilder.instance($0, time: 0) },
             boundary: nil,
             panels: [],
             reticle: nil,
@@ -154,28 +174,42 @@ final class PhoneVRRendererTests: XCTestCase {
         commands.waitUntilCompleted()
         XCTAssertNil(commands.error)
         let bytes = Array(UnsafeBufferPointer(start: readback.contents().assumingMemoryBound(to: UInt8.self), count: length))
-        return (Rendered(width: screen.widthPixels, height: screen.heightPixels, bytes: bytes), layout)
+        let image = Rendered(width: screen.widthPixels, height: screen.heightPixels, bytes: bytes)
+        return Frame(image: image, layout: layout, head: head)
     }
 
-    private func checkFrame(_ frame: Rendered, layout: VRStereoLayout) {
+    private func renderMarkers(singlePass: Bool) throws -> Frame? {
+        try render([Self.whiteMarker, Self.redMarker], singlePass: singlePass)
+    }
+
+    private func checkMarkers(_ frame: Frame) {
+        let image = frame.image
         func brightness(_ p: SIMD4<Int>) -> Int { p.x + p.y + p.z }
         // Outside both lens fields the panel stays black.
-        XCTAssertEqual(brightness(frame.pixel(4, 4)), 0)
-        XCTAssertEqual(brightness(frame.pixel(frame.width / 2, frame.height / 2)), 0)
-        XCTAssertEqual(brightness(frame.pixel(frame.width - 4, frame.height - 4)), 0)
+        XCTAssertEqual(brightness(image.pixel(4, 4)), 0)
+        XCTAssertEqual(brightness(image.pixel(image.width / 2, image.height / 2)), 0)
+        XCTAssertEqual(brightness(image.pixel(image.width - 4, image.height - 4)), 0)
 
         let isWhite: (SIMD4<Int>) -> Bool = { $0.x > 235 && $0.y > 235 && $0.z > 235 }
         let isRed: (SIMD4<Int>) -> Bool = { $0.x > 200 && $0.y < 70 && $0.z < 70 }
         for eye in VREye.allCases {
-            let center = layout[eye].lensCenterPixels
-            // The scene fills the field: sky above, floor or objects below.
-            XCTAssertGreaterThan(brightness(frame.pixel(Int(center.x), Int(center.y) - 280)), 0, "\(eye) sky")
-            XCTAssertGreaterThan(brightness(frame.pixel(Int(center.x) + 150, Int(center.y) + 280)), 0, "\(eye) floor")
-            guard let white = frame.centroid(near: center, radius: 300, isWhite),
-                  let red = frame.centroid(near: center, radius: 300, isRed) else {
-                return XCTFail("\(eye): markers not found")
+            let center = frame.layout[eye].lensCenterPixels
+            // The sky fills the field above the horizon and the ground below it.
+            XCTAssertGreaterThan(brightness(image.pixel(Int(center.x), Int(center.y) - 280)), 0, "\(eye) sky")
+            XCTAssertGreaterThan(brightness(image.pixel(Int(center.x) + 150, Int(center.y) + 280)), 0, "\(eye) ground")
+
+            let expectedWhite = frame.expectedPixel(of: Self.whiteMarker.position, eye: eye)
+            let expectedRed = frame.expectedPixel(of: Self.redMarker.position, eye: eye)
+            guard let white = image.centroid(near: expectedWhite, radius: 60, isWhite),
+                  let red = image.centroid(near: expectedRed, radius: 60, isRed) else {
+                return XCTFail("\(eye): markers not found near \(expectedWhite) and \(expectedRed)")
             }
-            // Close, centred objects appear inboard in each eye; flipped eyes would invert depth.
+            // The GPU puts each marker where the CPU lens model does.
+            XCTAssertEqual(white.x, expectedWhite.x, accuracy: 4, "\(eye) white \(white) expected \(expectedWhite)")
+            XCTAssertEqual(white.y, expectedWhite.y, accuracy: 4, "\(eye) white \(white) expected \(expectedWhite)")
+            XCTAssertEqual(red.x, expectedRed.x, accuracy: 4, "\(eye) red \(red) expected \(expectedRed)")
+            XCTAssertEqual(red.y, expectedRed.y, accuracy: 4, "\(eye) red \(red) expected \(expectedRed)")
+            // Close, centred objects appear inboard in each eye; swapped eyes would invert depth.
             let offset = white.x - center.x
             if eye == .left {
                 XCTAssertGreaterThan(offset, 20, "left eye marker offset \(offset)")
@@ -184,27 +218,39 @@ final class PhoneVRRendererTests: XCTestCase {
             }
             // The higher marker is higher on the panel: nothing in the pipeline flips vertically.
             XCTAssertLessThan(red.y, white.y - 60, "\(eye) red \(red) white \(white)")
-            XCTAssertEqual(red.x, white.x, accuracy: 8)
         }
     }
 
     func testOffscreenFrameShowsBothEyesTheRightWayUp() throws {
-        guard let rendered = try renderMarkers(singlePass: false) else { return XCTFail("render failed") }
-        checkFrame(rendered.0, layout: rendered.1)
+        guard let frame = try renderMarkers(singlePass: false) else { return XCTFail("render failed") }
+        checkMarkers(frame)
+    }
+
+    func testStudioObjectsKeepTheirColors() throws {
+        let objects = VRSceneLayout.objects(for: .studio, reduced: false)
+        let ornament = try XCTUnwrap(objects.first { $0.mesh == .icosahedron })
+        guard let frame = try render(objects, singlePass: false) else { return XCTFail("render failed") }
+        for eye in VREye.allCases {
+            let at = frame.expectedPixel(of: ornament.position(at: 0), eye: eye)
+            let p = frame.image.pixel(Int(at.x), Int(at.y))
+            // Coral, not the white of an untinted mesh.
+            XCTAssertGreaterThan(p.x, p.y + 60, "\(eye) ornament \(p)")
+            XCTAssertGreaterThan(p.x, p.z + 60, "\(eye) ornament \(p)")
+        }
     }
 
     func testSinglePassStereoMatchesTwoPasses() throws {
         guard let amplified = try renderMarkers(singlePass: true) else {
             throw XCTSkip("Vertex amplification isn't supported here")
         }
-        let single = amplified.0
-        checkFrame(single, layout: amplified.1)
+        checkMarkers(amplified)
         guard let twoPass = try renderMarkers(singlePass: false) else { return XCTFail("render failed") }
-        let double = twoPass.0
+        let single = amplified.image.bytes
+        let double = twoPass.image.bytes
         var differing = 0
-        for i in stride(from: 0, to: single.bytes.count, by: 4) where abs(Int(single.bytes[i]) - Int(double.bytes[i])) > 8 {
+        for i in stride(from: 0, to: single.count, by: 4) where abs(Int(single[i]) - Int(double[i])) > 8 {
             differing += 1
         }
-        XCTAssertLessThan(Double(differing) / Double(single.bytes.count / 4), 0.001)
+        XCTAssertLessThan(Double(differing) / Double(single.count / 4), 0.001)
     }
 }

@@ -50,12 +50,13 @@ enum VRFrameBuilder {
         )
     }
 
+    /// Meshes are white, so the object's color arrives as the tint.
     static func instance(_ object: VRSceneObject, time: Double, tint: SIMD4<Float> = SIMD4(repeating: 1)) -> VRDrawInstance {
         VRDrawInstance(
             mesh: object.mesh,
             uniforms: VRInstanceUniforms(
                 model: object.modelMatrix(at: time),
-                tint: tint,
+                tint: VRPalette.linear(object.color) * tint,
                 params: SIMD4(Float(object.material.rawValue), object.glow, 0, 0)
             )
         )

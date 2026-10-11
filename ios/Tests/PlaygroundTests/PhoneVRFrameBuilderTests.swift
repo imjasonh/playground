@@ -133,4 +133,13 @@ final class PhoneVRFrameBuilderTests: XCTestCase {
         XCTAssertEqual(camera.count, normal.count - 1)
         XCTAssertFalse(camera.contains { $0.uniforms.params.x == Float(VRMaterial.floorGrid.rawValue) })
     }
+
+    func testInstancesTintByTheirObjectColor() {
+        let ornament = VRSceneObject(mesh: .icosahedron, material: .lit, position: .zero, scale: SIMD3(repeating: 1), color: VRPalette.coral)
+        let dimmed = SIMD4<Float>(0.5, 0.5, 0.5, 1)
+        XCTAssertEqual(VRFrameBuilder.instance(ornament, time: 0).uniforms.tint, VRPalette.linear(VRPalette.coral))
+        XCTAssertEqual(VRFrameBuilder.instance(ornament, time: 0, tint: dimmed).uniforms.tint, VRPalette.linear(VRPalette.coral) * dimmed)
+        let hub = VRFrameBuilder.hubInstance(center: .zero, highlighted: true, time: 0).uniforms.tint
+        XCTAssertEqual(hub, VRPalette.linear(VRPalette.teal))
+    }
 }
