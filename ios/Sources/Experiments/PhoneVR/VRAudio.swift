@@ -30,13 +30,23 @@ final class VRAudio: @unchecked Sendable {
 
     private let engine = AVAudioEngine()
     private let environment = AVAudioEnvironmentNode()
-    private var beacon: AVAudioSourceNode?
+    /// Audio session and engine calls can block, so they run here instead of
+    /// on the main thread.
+    private let queue = DispatchQueue(label: "PhoneVR.audio", qos: .userInitiated)
+    /// The beacon while the engine runs. The render thread reads it.
+    private let beacon = VRLocked<AVAudioSourceNode?>(nil)
+    /// Touched only on `queue`.
     private var observer: NSObjectProtocol?
-    private let running = VRLocked(false)
 
-    var outputLatency: TimeInterval { AVAudioSession.sharedInstance().outputLatency }
+    func start() {
+        queue.async { try? self.startEngine() }
+    }
 
-    func start() throws {
+    func stop() {
+        queue.async { self.stopEngine() }
+    }
+
+    private func startEngine() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, options: [])
         try session.setActive(true)
@@ -70,16 +80,19 @@ final class VRAudio: @unchecked Sendable {
         environment.distanceAttenuationParameters.maximumDistance = 30
         engine.prepare()
         try engine.start()
-        beacon = node
-        running.set(true)
-        observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
-            guard let self, self.running.get(), !self.engine.isRunning else { return }
-            try? self.engine.start()
+        beacon.set(node)
+        observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
+            self?.queue.async { self?.restartAfterConfigurationChange() }
         }
     }
 
-    func stop() {
-        running.set(false)
+    private func restartAfterConfigurationChange() {
+        guard beacon.get() != nil, !engine.isRunning else { return }
+        try? engine.start()
+    }
+
+    private func stopEngine() {
+        beacon.set(nil)
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         engine.stop()
@@ -89,7 +102,7 @@ final class VRAudio: @unchecked Sendable {
     /// Places the listener and the beacon, both in scene coordinates. Called
     /// from the render thread once per frame.
     func update(listener: VRPose, beaconPosition: SIMD3<Float>) {
-        guard running.get(), let beacon else { return }
+        guard let beacon = beacon.get() else { return }
         let p = listener.position
         let forward = listener.rotation.act(SIMD3(0, 0, -1))
         let up = listener.rotation.act(SIMD3(0, 1, 0))

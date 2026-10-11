@@ -355,6 +355,7 @@ final class PlaygroundUITests: XCTestCase {
         // Let a few frames render, then leave the way a wearer would.
         sleep(2)
         headset.twoFingerTap()
+        XCTAssertTrue(headset.waitForNonExistence(timeout: 10), "A two-finger tap did not close the headset view")
         XCTAssertTrue(enter.waitForExistence(timeout: 10), "Leaving VR did not return to the launch page")
     }
 

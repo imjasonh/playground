@@ -51,6 +51,8 @@ final class VRViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        // Off by default, which would hide the second finger from the exit gesture.
+        view.isMultipleTouchEnabled = true
         view.layer.addSublayer(metalLayer)
         view.isAccessibilityElement = true
         view.accessibilityLabel = "Phone VR"
@@ -163,22 +165,36 @@ final class VRViewController: UIViewController {
         if recognizer.state == .began { session?.send(.longPress) }
     }
 
-    /// Stops the session and dismisses, reporting the result once.
+    /// Dismisses at once and reports the session's result when its render
+    /// thread stops. Leaving the headset never waits on teardown. If no result
+    /// arrives within a second of the dismissal, the report goes out empty.
     func close() {
         guard !finished else { return }
         finished = true
-        let finish = onFinish
-        guard let session else {
-            dismiss(animated: true) { finish(nil) }
-            return
+        let report = VRFinishReport(onFinish)
+        if let session {
+            session.stop { result in report.send(result) }
+        } else {
+            report.send(nil)
         }
-        session.stop { [weak self] result in
-            guard let self else {
-                finish(result)
-                return
-            }
-            self.dismiss(animated: true) { finish(result) }
+        dismiss(animated: true) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { report.send(nil) }
         }
+    }
+}
+
+/// Calls `onFinish` once, with whichever result arrives first. Main thread only.
+private final class VRFinishReport {
+    private var onFinish: ((VRSessionResult?) -> Void)?
+
+    init(_ onFinish: @escaping (VRSessionResult?) -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func send(_ result: VRSessionResult?) {
+        let callback = onFinish
+        onFinish = nil
+        callback?(result)
     }
 }
 

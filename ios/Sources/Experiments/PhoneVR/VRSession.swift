@@ -141,7 +141,7 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         worldTrackingBox.set(worldTracking)
         tracking.start(worldTracking: worldTracking)
         controllers.start()
-        if settings.spatialAudio { try? audio.start() }
+        if settings.spatialAudio { audio.start() }
         airPods?.start()
         let thread = Thread { [weak self] in self?.runRenderLoop() }
         thread.name = "PhoneVR render"
@@ -189,7 +189,8 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         let airPodsLatency = airPods?.snapshot?.latency
         let summary = statistics.withLock { $0.summary(endedAt: Date(), slips: slips, airPodsLatency: airPodsLatency) }
         let result = VRSessionResult(summary: summary, profile: profileBox.get())
-        DispatchQueue.main.async { [weak self] in self?.finish(result) }
+        // Strong: the sensors must stop even after the view controller is gone.
+        DispatchQueue.main.async { self.finish(result) }
     }
 
     private static func frameRateRange(_ hz: Int) -> CAFrameRateRange {
