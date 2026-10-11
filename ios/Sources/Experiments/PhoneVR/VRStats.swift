@@ -56,7 +56,9 @@ struct VRSessionSummary: Codable, Equatable {
     var finalPassMedianMilliseconds: Double?
     var finalPassP95Milliseconds: Double?
     var cpuMedianMilliseconds: Double?
-    /// Presentation time minus the gyro sample the final pass used.
+    /// The display link's presentation time for the frame, moved to a later
+    /// refresh when the GPU finished after it, minus the gyro sample the
+    /// final pass used.
     var photonLatencyMedianMilliseconds: Double?
     var photonLatencyP95Milliseconds: Double?
     var sixDoFFraction: Double

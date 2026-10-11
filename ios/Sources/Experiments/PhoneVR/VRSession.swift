@@ -283,12 +283,17 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         let drawable = update.drawable
         renderer.encodeFinalPass(finalFrame, layout: layout, eyeTexture: targets.color, target: drawable.texture, into: finalCommands)
         let motionStamp = tracker.latestMotion?.timestamp
-        drawable.addPresentedHandler { [weak self] presented in
-            guard presented.presentedTime > 0, let stamp = motionStamp else { return }
-            self?.statistics.withLock { $0.recordPhotonLatency(milliseconds: (presented.presentedTime - stamp) * 1000) }
-        }
+        let scheduledPresentation = update.targetPresentationTimestamp
         finalCommands.present(drawable)
         finalCommands.addCompletedHandler { [weak self] buffer in
+            if let stamp = motionStamp {
+                // A frame the GPU finishes after its slot shows at a later refresh.
+                var presented = scheduledPresentation
+                if buffer.gpuEndTime > presented {
+                    presented += ((buffer.gpuEndTime - presented) / frameInterval).rounded(.up) * frameInterval
+                }
+                self?.statistics.withLock { $0.recordPhotonLatency(milliseconds: (presented - stamp) * 1000) }
+            }
             let ms = (buffer.gpuEndTime - buffer.gpuStartTime) * 1000
             guard ms > 0, ms < 200 else { return }
             self?.gpuTimes.withLock { $0.final.add(ms) }

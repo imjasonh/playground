@@ -560,9 +560,10 @@ camera off, it also corrects slow yaw drift. **AirPods** on the launch page
 runs the same check live and shows the measured update rate and delay.
 
 **Measurements.** The stats panel shows the frame rate, eye resolution, CPU
-and GPU time per pass, prediction horizons, and motion-to-photon latency,
-which is the time from the gyro sample the final pass used to the moment the
-frame was presented. The launch page keeps the last session's medians and 95th
+and GPU time per pass, prediction horizons, and motion-to-photon latency.
+Latency runs from the gyro sample the final pass used to the frame's
+presentation time from the display link, moved to a later refresh when the GPU
+finishes late. The launch page keeps the last session's medians and 95th
 percentiles.
 
 Phone VR needs camera permission for ARKit and motion permission for AirPods

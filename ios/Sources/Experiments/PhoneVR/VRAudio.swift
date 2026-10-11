@@ -42,7 +42,8 @@ final class VRAudio: @unchecked Sendable {
         try session.setActive(true)
         let hardwareRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
         let sampleRate = hardwareRate > 0 ? hardwareRate : 48_000
-        guard let mono = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else { return }
+        guard let mono = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
+              let stereo = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else { return }
         let hum = Hum(sampleRate: sampleRate)
         let node = AVAudioSourceNode(format: mono) { _, _, frameCount, bufferList -> OSStatus in
             let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
@@ -57,8 +58,8 @@ final class VRAudio: @unchecked Sendable {
         }
         engine.attach(environment)
         engine.attach(node)
-        engine.connect(node, to: environment, format: mono)
-        engine.connect(environment, to: engine.mainMixerNode, format: nil)
+        try engine.connectNode(node, to: environment, format: mono)
+        try engine.connectNode(environment, to: engine.mainMixerNode, format: stereo)
         node.renderingAlgorithm = .HRTFHQ
         node.reverbBlend = 0.25
         environment.reverbParameters.enable = true
