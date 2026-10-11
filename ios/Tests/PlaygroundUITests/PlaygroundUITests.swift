@@ -114,6 +114,14 @@ final class PlaygroundUITests: XCTestCase {
         }
     }
 
+    /// What the app shows, on one line for a failure message.
+    private func describeScreen(_ app: XCUIApplication) -> String {
+        guard app.state == .runningForeground else { return "App state \(app.state.rawValue)." }
+        let bars = app.navigationBars.allElementsBoundByIndex.map(\.identifier).joined(separator: ", ")
+        let tree = app.debugDescription.split(separator: "\n").prefix(40).joined(separator: " | ")
+        return "Navigation bars [\(bars)]. \(tree)"
+    }
+
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
@@ -356,7 +364,7 @@ final class PlaygroundUITests: XCTestCase {
         sleep(2)
         headset.twoFingerTap()
         XCTAssertTrue(headset.waitForNonExistence(timeout: 10), "A two-finger tap did not close the headset view")
-        XCTAssertTrue(enter.waitForExistence(timeout: 10), "Leaving VR did not return to the launch page")
+        XCTAssertTrue(enter.waitForExistence(timeout: 10), "Leaving VR did not return to the launch page. \(describeScreen(app))")
     }
 
     func testArmyListExperimentOpens() {
