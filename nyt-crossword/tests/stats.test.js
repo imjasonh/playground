@@ -4,7 +4,13 @@ import assert from "node:assert/strict";
 import {
   bucketKey,
   bucketLabel,
+  bucketSpan,
   chartLayout,
+  nearestChartPoint,
+  overallByBucket,
+  placeView,
+  trendLine,
+  viewIndexes,
   excludedDates,
   formatDate,
   formatSolveTime,
@@ -135,6 +141,81 @@ test("trendByWeekday buckets medians by quarter", () => {
       ["2024-Q3", 1200, 1],
     ],
   );
+});
+
+test("bucketSpan names the months a quarter covers", () => {
+  assert.equal(bucketSpan("2024-Q2"), "April to June 2024");
+  assert.equal(bucketSpan("2024-05"), "May 2024");
+  assert.equal(bucketSpan("2024"), "2024");
+});
+
+test("placeView keeps the window inside the full range", () => {
+  assert.deepEqual(placeView(-0.2, 0.25), [0, 0.25]);
+  assert.deepEqual(placeView(0.9, 0.25), [0.75, 1]);
+});
+
+test("viewIndexes keeps at least two buckets on screen", () => {
+  assert.deepEqual(viewIndexes(4, 0, 1), [0, 3]);
+  assert.deepEqual(viewIndexes(4, 0.5, 1), [2, 3]);
+  assert.deepEqual(viewIndexes(1, 0, 1), [0, 0]);
+});
+
+test("a zoomed chart pins the first visible bucket to the left", () => {
+  const series = [
+    {
+      weekday: "Monday",
+      points: [
+        { bucket: "2024-Q1", median: 600, count: 1 },
+        { bucket: "2024-Q2", median: 700, count: 1 },
+        { bucket: "2024-Q3", median: 800, count: 1 },
+        { bucket: "2024-Q4", median: 900, count: 1 },
+      ],
+    },
+  ];
+  const layout = chartLayout(series, { width: 720, height: 380, viewStart: 0.5, viewEnd: 1 });
+  const q3 = layout.lines[0].points[2];
+  const q1 = layout.lines[0].points[0];
+  assert.ok(q3.x > q1.x);
+  assert.equal(q3.x, layout.pad.left);
+});
+
+test("overallByBucket pools every selected solve in the period", () => {
+  const puzzles = [
+    solved("2024-04-01", 600),
+    solved("2024-04-02", 900),
+    solved("2024-07-01", 1200),
+  ];
+  const overall = overallByBucket(puzzles, "quarter");
+  assert.equal(overall.weekday, "Overall");
+  assert.deepEqual(
+    overall.points.map((point) => [point.bucket, point.median, point.count]),
+    [
+      ["2024-Q2", 750, 2],
+      ["2024-Q3", 1200, 1],
+    ],
+  );
+});
+
+test("trendLine fits a straight rise through the points", () => {
+  const line = trendLine([
+    { x: 0, y: 10 },
+    { x: 10, y: 30 },
+    { x: 20, y: 50 },
+  ]);
+  assert.equal(line.x1, 0);
+  assert.equal(line.y1, 10);
+  assert.equal(line.x2, 20);
+  assert.equal(line.y2, 50);
+  assert.equal(trendLine([{ x: 1, y: 2 }]), null);
+});
+
+test("nearestChartPoint picks the closest dot inside the hover radius", () => {
+  const points = [
+    { x: 0, y: 0, bucket: "2024-Q1" },
+    { x: 30, y: 0, bucket: "2024-Q2" },
+  ];
+  assert.equal(nearestChartPoint(points, 8, 4).bucket, "2024-Q1");
+  assert.equal(nearestChartPoint(points, 80, 80), null);
 });
 
 test("chartLayout places later buckets to the right and slower times higher", () => {
