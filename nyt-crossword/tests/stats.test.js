@@ -14,6 +14,7 @@ import {
   partialPuzzles,
   puzzleUrl,
   selectSolves,
+  solvedYears,
   trendByWeekday,
   weekdayName,
 } from "../src/stats.js";
@@ -77,6 +78,17 @@ test("selectSolves drops a solve that is far above or below that weekday", () =>
   const mondayMedian = medians.find((row) => row.weekday === "Monday");
   assert.equal(mondayMedian.median, 500);
   assert.equal(mondayMedian.count, 5);
+});
+
+test("solves before 2014 stay out of the chart range", () => {
+  const puzzles = [solved("2013-12-30", 400), solved("2014-01-06", 500), solved("2014-06-02", 600)];
+  const { kept, excluded } = selectSolves(puzzles, { fromYear: 2005, throughYear: 2026 });
+  assert.deepEqual(
+    kept.map((puzzle) => puzzle.date),
+    ["2014-01-06", "2014-06-02"],
+  );
+  assert.deepEqual(excluded, []);
+  assert.deepEqual(solvedYears(puzzles), [2014]);
 });
 
 test("a listed date stays out even when outliers are shown", () => {

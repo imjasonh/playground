@@ -160,6 +160,9 @@ export function maxSecondsFromMinutes(raw) {
   return minutes * 60;
 }
 
+// The chart starts on this print date. Earlier solves stay in the stats file.
+export const CHART_START = "2014-01-01";
+
 function yearOf(isoDate) {
   return Number(isoDate.slice(0, 4));
 }
@@ -182,6 +185,7 @@ export function selectSolves(puzzles, options = {}) {
   const pool = [];
   for (const puzzle of puzzles) {
     if (puzzle.solved !== true || !(puzzle.seconds > 0)) continue;
+    if (puzzle.date < CHART_START) continue;
     if (!inYearRange(puzzle.date, fromYear, throughYear)) continue;
     if (listed.has(puzzle.date)) {
       excluded.push({ puzzle, reason: "listed" });
@@ -278,7 +282,9 @@ export function trendByWeekday(puzzles, bucket) {
 export function solvedYears(puzzles) {
   const years = new Set();
   for (const puzzle of puzzles) {
-    if (puzzle.solved === true && puzzle.seconds > 0) years.add(yearOf(puzzle.date));
+    if (puzzle.solved === true && puzzle.seconds > 0 && puzzle.date >= CHART_START) {
+      years.add(yearOf(puzzle.date));
+    }
   }
   return [...years].sort((a, b) => a - b);
 }
