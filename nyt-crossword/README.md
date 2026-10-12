@@ -36,9 +36,9 @@ empty end date means today in New York.
 
 ## Excluded solves
 
-`excluded.json` lists print dates that stay out of the medians. Add a date
-there and commit it. The page reads that file, so everyone sees the same
-exclusions. A date can be a short solve or a long one.
+`excluded.json` lists print dates that stay off the chart and out of the
+medians. Add a date there and commit it. The page does not list those solves.
+A date can be a short solve or a long one.
 
 **Hide outliers** also drops times outside the usual range for that weekday,
 short or long. That range is the first quartile minus 1.5 times the
