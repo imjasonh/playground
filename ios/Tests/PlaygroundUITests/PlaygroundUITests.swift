@@ -345,6 +345,41 @@ final class PlaygroundUITests: XCTestCase {
             || app.buttons["layaAskButton"].waitForExistence(timeout: 3))
     }
 
+    func testThermalExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("thermal", title: "Thermal", in: app)
+
+        XCTAssertTrue(app.navigationBars["Thermal"].waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["thermalRoot"].waitForExistence(timeout: 8)
+                || app.descendants(matching: .any)["thermalCurrentState"].waitForExistence(timeout: 4)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["thermalIslandStatus"].waitForExistence(timeout: 8)
+        )
+        XCTAssertTrue(
+            app.staticTexts["Nominal"].waitForExistence(timeout: 8)
+                || app.staticTexts["Fair"].exists
+                || app.staticTexts["Serious"].exists
+                || app.staticTexts["Critical"].exists
+        )
+    }
+
+    func testThermalDeepLinkOpensExperiment() throws {
+        let app = launchApp()
+        let url = try XCTUnwrap(URL(string: "playground://experiment/thermal"))
+        app.open(url)
+        XCTAssertTrue(
+            app.navigationBars["Thermal"].waitForExistence(timeout: 8),
+            "playground://experiment/thermal should push Thermal"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["thermalRoot"].waitForExistence(timeout: 8)
+                || app.descendants(matching: .any)["thermalCurrentState"].waitForExistence(timeout: 4)
+        )
+    }
+
     func testPhoneVREntersAndLeavesTheHeadsetView() {
         let app = launchApp()
 

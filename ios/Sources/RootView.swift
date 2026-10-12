@@ -3,7 +3,7 @@ import SwiftUI
 /// The launcher: a list of every registered experiment. Tapping a row pushes
 /// that experiment's view. This is the home screen of the Playground app.
 struct RootView: View {
-    @State private var path: [String] = []
+    @EnvironmentObject private var navigation: ExperimentNavigation
     @State private var searchText = ""
 
     private var filteredExperiments: [Experiment] {
@@ -16,7 +16,7 @@ struct RootView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack(path: $navigation.path) {
             List {
                 ForEach(filteredExperiments) { experiment in
                     NavigationLink(value: experiment.id) {
@@ -68,4 +68,5 @@ struct RootView: View {
 
 #Preview {
     RootView()
+        .environmentObject(ExperimentNavigation())
 }

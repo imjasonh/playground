@@ -6,6 +6,7 @@ import ActivityKit
 struct RideMonitorWidgetBundle: WidgetBundle {
     var body: some Widget {
         RideMonitorLiveActivity()
+        ThermalLiveActivity()
     }
 }
 
