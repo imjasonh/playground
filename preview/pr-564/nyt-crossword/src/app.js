@@ -16,7 +16,6 @@ import {
   selectSolves,
   solvedYears,
   trendByWeekday,
-  visibleExcluded,
 } from "./stats.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -44,10 +43,6 @@ const el = {
   legend: document.getElementById("legend"),
   chart: document.getElementById("chart"),
   chartEmpty: document.getElementById("chart-empty"),
-  excludedBody: document.getElementById("excluded-rows"),
-  excludedTable: document.getElementById("excluded-table"),
-  excludedEmpty: document.getElementById("excluded-empty"),
-  excludedMore: document.getElementById("excluded-more"),
   partialSort: document.getElementById("partial-sort"),
   partialBody: document.getElementById("partial-rows"),
   partialTable: document.getElementById("partial-table"),
@@ -242,28 +237,6 @@ function renderChart(series) {
   }
 }
 
-function renderExcluded(excluded) {
-  const visible = visibleExcluded(excluded);
-  el.excludedBody.replaceChildren();
-  el.excludedEmpty.hidden = excluded.length > 0;
-  el.excludedTable.hidden = excluded.length === 0;
-  el.excludedMore.hidden = visible.hidden === 0;
-  if (visible.hidden > 0) {
-    const more = visible.hidden.toLocaleString("en-US");
-    el.excludedMore.textContent = `${more} more excluded solves are not listed.`;
-  }
-  for (const row of visible.rows) {
-    const tr = document.createElement("tr");
-    const date = document.createElement("td");
-    date.textContent = formatDate(row.puzzle.date);
-    const time = document.createElement("td");
-    time.className = "num";
-    time.textContent = formatSolveTime(row.puzzle.seconds);
-    tr.append(date, time);
-    el.excludedBody.append(tr);
-  }
-}
-
 function renderPartials(puzzles) {
   const rows = partialPuzzles(puzzles, el.partialSort.value);
   el.partialBody.replaceChildren();
@@ -289,21 +262,17 @@ function renderPartials(puzzles) {
 function render() {
   if (!state.doc) return;
   const range = yearRange();
-  const { kept, excluded } = selectSolves(state.doc.puzzles, {
+  const { kept } = selectSolves(state.doc.puzzles, {
     ...range,
     hideOutliers: el.hideOutliers.checked,
     excludedDates: state.excluded,
   });
-  const excludedCount = excluded.length.toLocaleString("en-US");
   const keptCount = kept.length.toLocaleString("en-US");
   el.solveCount.textContent =
-    excluded.length > 0
-      ? `${keptCount} solves in range. ${excludedCount} excluded.`
-      : `${keptCount} solves in range.`;
+    keptCount === "1" ? "1 solve in range." : `${keptCount} solves in range.`;
   renderSummary(medianByWeekday(kept));
   renderLegend();
   renderChart(trendByWeekday(kept, el.bucket.value));
-  renderExcluded(excluded);
   renderPartials(state.doc.puzzles);
 }
 

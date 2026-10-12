@@ -15,7 +15,6 @@ import {
   puzzleUrl,
   selectSolves,
   trendByWeekday,
-  visibleExcluded,
   weekdayName,
 } from "../src/stats.js";
 
@@ -100,20 +99,6 @@ test("excludedDates reads print dates from the repo file", () => {
   const dates = excludedDates({ dates: ["2024-06-03", "nope", 12, "2025-01-04"] });
   assert.deepEqual([...dates], ["2024-06-03", "2025-01-04"]);
   assert.equal(excludedDates(null).size, 0);
-});
-
-test("visibleExcluded keeps every listed date and caps the rest", () => {
-  const excluded = [
-    { puzzle: solved("2024-06-03", 100), reason: "listed" },
-    { puzzle: solved("2024-06-04", 50), reason: "outlier" },
-    { puzzle: solved("2024-06-05", 40), reason: "outlier" },
-  ];
-  const visible = visibleExcluded(excluded, 1);
-  assert.deepEqual(
-    visible.rows.map((row) => row.puzzle.date),
-    ["2024-06-03", "2024-06-04"],
-  );
-  assert.equal(visible.hidden, 1);
 });
 
 test("partialPuzzles sorts by weekday starting Monday, then by date", () => {

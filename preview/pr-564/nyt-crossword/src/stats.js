@@ -208,19 +208,6 @@ export function selectSolves(puzzles, options = {}) {
   return { kept, excluded, fences };
 }
 
-export function visibleExcluded(excluded, limit = 100) {
-  const listed = [];
-  const rest = [];
-  for (const row of excluded) {
-    if (row.reason === "listed") listed.push(row);
-    else rest.push(row);
-  }
-  return {
-    rows: listed.concat(rest.slice(0, limit)),
-    hidden: Math.max(0, rest.length - limit),
-  };
-}
-
 export function medianByWeekday(puzzles) {
   const groups = new Map(WEEKDAYS.map((day) => [day, []]));
   for (const puzzle of puzzles) {
