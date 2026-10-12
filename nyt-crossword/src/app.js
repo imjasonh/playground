@@ -32,8 +32,6 @@ const SLUG = {
 
 const el = {
   generated: document.getElementById("generated"),
-  badge: document.getElementById("source-badge"),
-  reload: document.getElementById("reload"),
   fromYear: document.getElementById("from-year"),
   throughYear: document.getElementById("through-year"),
   bucket: document.getElementById("bucket"),
@@ -52,7 +50,6 @@ const el = {
 
 const state = {
   doc: null,
-  source: "sample",
   excluded: new Set(),
   hiddenWeekdays: new Set(),
 };
@@ -64,19 +61,8 @@ async function fetchJson(path) {
 }
 
 async function loadDoc() {
-  const urls = ["data/stats.json"];
   const published = publishedDataUrl(window.location.pathname, "data/stats.json");
-  if (published) urls.push(published);
-  for (const url of urls) {
-    try {
-      const live = normalizeDoc(await fetchJson(url));
-      if (live.puzzles.length > 0) return { doc: live, source: "live" };
-    } catch {
-      // Missing here. A preview then tries the published gh-pages file.
-    }
-  }
-  const sample = normalizeDoc(await fetchJson("sample/stats.json"));
-  return { doc: sample, source: "sample" };
+  return normalizeDoc(await fetchJson(published ?? "data/stats.json"));
 }
 
 async function loadExcluded() {
@@ -282,29 +268,16 @@ function render() {
   renderPartials(state.doc.puzzles);
 }
 
-function setBadge() {
-  el.badge.hidden = false;
-  el.badge.textContent = state.source === "live" ? "Live" : "Sample";
-}
-
 async function boot() {
   el.notice.textContent = "";
-  const [loaded, excluded] = await Promise.all([loadDoc(), loadExcluded()]);
-  state.doc = loaded.doc;
-  state.source = loaded.source;
+  const [doc, excluded] = await Promise.all([loadDoc(), loadExcluded()]);
+  state.doc = doc;
   state.excluded = excluded;
   const when = formatUpdated(state.doc.generatedAt);
   el.generated.textContent = when ? `Updated ${when}` : "";
-  setBadge();
   fillYears();
   render();
 }
-
-el.reload.addEventListener("click", () => {
-  boot().catch(() => {
-    el.notice.textContent = "Could not reload the stats file.";
-  });
-});
 
 for (const node of [el.fromYear, el.throughYear, el.bucket, el.hideOutliers, el.partialSort]) {
   node.addEventListener("change", render);

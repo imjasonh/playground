@@ -124,13 +124,6 @@ input:focus-visible {
   line-height: 1.5;
 }
 
-.tools {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  margin: 0;
-}
-
 .count {
   margin-top: 1.25rem;
 }
