@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Collect NYT crossword stats for the browser app.
 //
-// The puzzle list does not include solve time, so each solved puzzle needs
-// one game request until its time is stored. Later runs only request
-// puzzles that are unfinished or still missing a time. Published JSON is
-// written to the gh-pages branch (see the workflow), not to main.
+// The puzzle list does not include solve time. Solve time is playTimeSeconds
+// on the crossword state endpoint, 30 puzzles at a time. The per-puzzle
+// v6 game URL returns 404 for these solves, so this script does not call it.
+// Later runs only request puzzles that are unfinished or still missing a
+// time. Published JSON is written to the gh-pages branch (see the workflow),
+// not to main.
 //
 // Usage: node scripts/scrape.js [dataDir]
 //   NYT_COOKIE   NYT-S cookie value (required)
@@ -18,24 +20,59 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_START,
+  applyPlayTime,
   cookieHeader,
   cookieValue,
   dateChunks,
-  gameUrl,
+  gameDataOf,
+  idBatches,
   isIsoDate,
   listUrl,
   mergeListed,
   normalizeDoc,
   puzzlesEqual,
   serializeStats,
+  stateUrl,
   todayInNewYork,
 } from "../src/scrape-lib.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(__dirname, "..");
 const UA = "nyt-crossword (github.com/imjasonh/playground)";
-const CONCURRENCY = 4;
+// Node's HTTP client can throw assert(!this.paused) off the request promise
+// when a socket ends early. That must not abort the rest of the run.
 const INTERVAL_MS = 100;
+
+function isParserCrash(err) {
+  return Boolean(err && err.code === "ERR_ASSERTION" && String(err.message).includes("paused"));
+}
+
+process.on("uncaughtException", (err) => {
+  if (isParserCrash(err)) {
+    console.error("HTTP parser glitch; continuing with the other game requests.");
+    return;
+  }
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 function requireDate(value, label) {
   if (!isIsoDate(value)) {
@@ -67,42 +104,41 @@ async function fetchJson(url) {
   let lastStatus = 0;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     await pace();
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        Cookie: cookieHeader(process.env.NYT_COOKIE),
-        "User-Agent": UA,
-      },
-      signal: AbortSignal.timeout(30000),
-    });
+    // Do not abort the socket. Aborting while the parser is paused is what
+    // crashed the first run. Connection: close keeps one game's 404 off the
+    // next game's connection. The body is read before we start another.
+    const response = await withTimeout(
+      fetch(url, {
+        headers: {
+          Accept: "application/json",
+          Connection: "close",
+          Cookie: cookieHeader(process.env.NYT_COOKIE),
+          "User-Agent": UA,
+        },
+      }),
+      30000,
+    );
+    const text = await withTimeout(response.text(), 30000);
     if (response.status === 401 || response.status === 403) {
       throw new Error(
         `NYT rejected NYT_COOKIE (HTTP ${response.status}). Update the Actions secret.`,
       );
     }
-    if (response.ok) return response.json();
+    if (response.ok) {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error(`Bad JSON for ${url.pathname}`, { cause: err });
+      }
+    }
     if (response.status !== 429 && response.status < 500) {
-      throw new Error(`HTTP ${response.status} for ${url.pathname}`);
+      const snippet = text.replace(/\s+/g, " ").trim().slice(0, 180);
+      throw new Error(`HTTP ${response.status} for ${url.pathname}${snippet ? `: ${snippet}` : ""}`);
     }
     lastStatus = response.status;
     await sleep(500 * attempt * attempt);
   }
   throw new Error(`HTTP ${lastStatus} for ${url.pathname}`);
-}
-
-async function mapPool(items, worker) {
-  let cursor = 0;
-  async function run() {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      await worker(items[index], index);
-    }
-  }
-  const workers = Math.min(CONCURRENCY, items.length);
-  const jobs = [];
-  for (let i = 0; i < workers; i += 1) jobs.push(run());
-  await Promise.all(jobs);
 }
 
 async function readPrevious(path) {
@@ -145,22 +181,40 @@ async function main() {
   }
 
   const { puzzles, fetchList } = mergeListed(previous.puzzles, listed, { start, end });
-  console.log(`Fetching ${fetchList.length} game records`);
+  const batches = idBatches(fetchList.map((puzzle) => puzzle.id));
+  const byId = new Map(fetchList.map((puzzle) => [puzzle.id, puzzle]));
+  console.log(`Fetching solve times for ${fetchList.length} puzzles (${batches.length} requests)`);
   let failed = 0;
-  let done = 0;
-  await mapPool(fetchList, async (puzzle) => {
+  const timedIds = new Set();
+  for (let index = 0; index < batches.length; index += 1) {
+    const ids = batches[index];
     try {
-      const body = await fetchJson(gameUrl(puzzle.id));
-      Object.assign(puzzle, applyGame(puzzle, body));
+      const body = await fetchJson(stateUrl(ids));
+      const states = body && Array.isArray(body.states) ? body.states : null;
+      if (!states) throw new Error(`State response had no states array for ${ids.length} puzzles`);
+      for (const state of states) {
+        const id = Number(state && state.puzzle_id);
+        const puzzle = byId.get(id);
+        const data = gameDataOf(state);
+        if (!puzzle || !data) continue;
+        Object.assign(puzzle, applyPlayTime(puzzle, data));
+        if (puzzle.seconds > 0) timedIds.add(puzzle.id);
+      }
     } catch (err) {
       failed += 1;
-      console.error(`Game ${puzzle.date} id ${puzzle.id}: ${err.message}`);
+      console.error(`State batch ${index + 1}/${batches.length}: ${err.message}`);
     }
-    done += 1;
-    if (done % 100 === 0 || done === fetchList.length) {
-      console.log(`  games ${done}/${fetchList.length}`);
+    if ((index + 1) % 10 === 0 || index + 1 === batches.length) {
+      console.log(`  states ${index + 1}/${batches.length}`);
     }
-  });
+  }
+
+  const timed = timedIds.size;
+  const solvedAsked = fetchList.filter((puzzle) => puzzle.solved === true).length;
+  if (solvedAsked > 0 && timed === 0) {
+    console.error(`No solve times for ${solvedAsked} solved puzzles.`);
+    process.exitCode = 1;
+  }
 
   const generatedAt = puzzlesEqual(previous.puzzles, puzzles)
     ? previous.generatedAt
@@ -174,7 +228,9 @@ async function main() {
   await writeFile(outPath, text);
   const solved = puzzles.filter((puzzle) => puzzle.solved && puzzle.seconds > 0).length;
   const partial = puzzles.filter((puzzle) => !puzzle.solved && puzzle.percentFilled > 0).length;
-  console.log(`Wrote ${outPath}: ${solved} solved, ${partial} partial, ${failed} game errors`);
+  console.log(
+    `Wrote ${outPath}: ${solved} solved, ${partial} partial, ${timed} new times, ${failed} state errors`,
+  );
 }
 
 main().catch((err) => {

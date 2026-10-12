@@ -1,6 +1,7 @@
 // Pure planning for the NYT crossword scrape. The list endpoint returns
 // solved and percent filled, not solve time, and it rejects ranges longer
-// than 100 days. Game records fill in secondsSpentSolving.
+// than 100 days. Solve time is playTimeSeconds from the crossword state
+// endpoint, in batches. The per-puzzle v6 game URL 404s for these solves.
 
 export const API_ORIGIN = "https://www.nytimes.com";
 export const DEFAULT_START = "2005-01-01";
@@ -60,8 +61,19 @@ export function listUrl(start, end) {
   return url;
 }
 
-export function gameUrl(id) {
-  return new URL(`/svc/crosswords/v6/game/${id}.json`, API_ORIGIN);
+// NYT's path really is "latests". Up to 30 ids per request.
+export const STATE_BATCH = 30;
+
+export function stateUrl(ids) {
+  const url = new URL("/svc/games/state/crossword_daily/latests", API_ORIGIN);
+  url.searchParams.set("puzzle_ids", ids.join(","));
+  return url;
+}
+
+export function idBatches(ids, size = STATE_BATCH) {
+  const batches = [];
+  for (let i = 0; i < ids.length; i += size) batches.push(ids.slice(i, i + size));
+  return batches;
 }
 
 export function cookieValue(raw) {
@@ -92,7 +104,14 @@ export function listItemToPuzzle(item) {
   };
 }
 
+// A stored solve time means the game is finished. It cannot become unsolved,
+// so later runs leave that record alone.
+export function isFinished(puzzle) {
+  return Boolean(puzzle && puzzle.solved === true && puzzle.seconds > 0);
+}
+
 export function needsGameFetch(prev, listed) {
+  if (isFinished(prev)) return false;
   const progressed = listed.solved === true || listed.percentFilled > 0;
   if (!prev) return progressed;
   if (prev.solved !== listed.solved || prev.percentFilled !== listed.percentFilled) return true;
@@ -114,6 +133,10 @@ export function mergeListed(prevPuzzles, listedItems, range) {
     const listed = listItemToPuzzle(item);
     if (!listed) continue;
     const prev = prevByDate.get(listed.date) ?? null;
+    if (isFinished(prev)) {
+      merged.set(prev.date, { puzzle: prev, fetch: false });
+      continue;
+    }
     const puzzle = {
       date: listed.date,
       id: listed.id,
@@ -130,14 +153,20 @@ export function mergeListed(prevPuzzles, listedItems, range) {
   };
 }
 
-export function applyGame(puzzle, body) {
-  const calcs =
-    body && typeof body === "object" && body.calcs && typeof body.calcs === "object"
-      ? body.calcs
-      : {};
-  const solved = typeof calcs.solved === "boolean" ? calcs.solved : puzzle.solved === true;
-  const percent = Number(calcs.percentFilled);
-  const spent = Number(calcs.secondsSpentSolving);
+function stateSaysSolved(data) {
+  const first = data && data.firstSolve;
+  if (first === true) return true;
+  const stamp = Number(first);
+  return Number.isFinite(stamp) && stamp > 0;
+}
+
+// playTimeSeconds is the running timer. A finished puzzle keeps the time it
+// already has. An open puzzle can have a timer and still no solve time.
+export function applyPlayTime(puzzle, gameData) {
+  if (isFinished(puzzle)) return { ...puzzle };
+  const data = gameData && typeof gameData === "object" ? gameData : {};
+  const solved = puzzle.solved === true || stateSaysSolved(data);
+  const spent = Number(data.playTimeSeconds);
   let seconds = null;
   if (solved) {
     if (Number.isFinite(spent) && spent > 0) seconds = spent;
@@ -147,9 +176,17 @@ export function applyGame(puzzle, body) {
     date: puzzle.date,
     id: puzzle.id,
     solved,
-    percentFilled: Number.isFinite(percent) ? percent : puzzle.percentFilled,
+    percentFilled: puzzle.percentFilled,
     seconds,
   };
+}
+
+export function gameDataOf(state) {
+  if (!state || typeof state !== "object") return null;
+  if (state.game_data && typeof state.game_data === "object") return state.game_data;
+  if (state.gameData && typeof state.gameData === "object") return state.gameData;
+  if (Object.prototype.hasOwnProperty.call(state, "playTimeSeconds")) return state;
+  return null;
 }
 
 export function puzzlesEqual(a, b) {
