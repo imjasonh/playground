@@ -364,7 +364,9 @@ final class PlaygroundUITests: XCTestCase {
         sleep(2)
         headset.twoFingerTap()
         XCTAssertTrue(headset.waitForNonExistence(timeout: 10), "A two-finger tap did not close the headset view")
-        XCTAssertTrue(enter.waitForExistence(timeout: 10), "Leaving VR did not return to the launch page. \(describeScreen(app))")
+        // The interface can stay in landscape after the headset closes.
+        XCTAssertTrue(app.navigationBars["Phone VR"].waitForExistence(timeout: 10), "Leaving VR did not return to the launch page. \(describeScreen(app))")
+        XCTAssertTrue(enter.waitForExistence(timeout: 5), "Enter VR is off screen after leaving VR. \(describeScreen(app))")
     }
 
     func testArmyListExperimentOpens() {

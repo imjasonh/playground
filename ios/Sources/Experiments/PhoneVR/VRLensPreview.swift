@@ -56,6 +56,8 @@ struct VRLensPreview: View {
             }
         }
         .aspectRatio(CGFloat(layout.screen.widthPixels) / CGFloat(layout.screen.heightPixels), contentMode: .fit)
+        // In landscape the full-width preview would push the rows under it off screen.
+        .frame(maxWidth: .infinity, maxHeight: 200)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Lens layout on the screen")
         .accessibilityValue(accessibilitySummary)
