@@ -573,8 +573,9 @@ the gyro the view doesn't move. Unit tests cover the lens model, tracker
 fusion and prediction, AirPods alignment on synthetic motion, the
 interaction model, and the frame governor. Renderer tests compile the shaders
 in the Simulator, check that Swift and Metal agree on every uniform struct
-layout, and render an offscreen frame to check that each eye shows the scene
-the right way up with the correct stereo offset.
+layout, and render offscreen frames. Markers must land within 4 pixels of
+where the CPU lens model puts them in each eye, and scene objects must keep
+their colors.
 
 ## Adding an experiment
 
