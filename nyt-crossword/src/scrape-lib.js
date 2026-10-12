@@ -92,7 +92,14 @@ export function listItemToPuzzle(item) {
   };
 }
 
+// A stored solve time means the game is finished. It cannot become unsolved,
+// so later runs leave that record alone.
+export function isFinished(puzzle) {
+  return Boolean(puzzle && puzzle.solved === true && puzzle.seconds > 0);
+}
+
 export function needsGameFetch(prev, listed) {
+  if (isFinished(prev)) return false;
   const progressed = listed.solved === true || listed.percentFilled > 0;
   if (!prev) return progressed;
   if (prev.solved !== listed.solved || prev.percentFilled !== listed.percentFilled) return true;
@@ -114,6 +121,10 @@ export function mergeListed(prevPuzzles, listedItems, range) {
     const listed = listItemToPuzzle(item);
     if (!listed) continue;
     const prev = prevByDate.get(listed.date) ?? null;
+    if (isFinished(prev)) {
+      merged.set(prev.date, { puzzle: prev, fetch: false });
+      continue;
+    }
     const puzzle = {
       date: listed.date,
       id: listed.id,
@@ -135,6 +146,7 @@ export function applyGame(puzzle, body) {
     body && typeof body === "object" && body.calcs && typeof body.calcs === "object"
       ? body.calcs
       : {};
+  if (isFinished(puzzle)) return { ...puzzle };
   const solved = typeof calcs.solved === "boolean" ? calcs.solved : puzzle.solved === true;
   const percent = Number(calcs.percentFilled);
   const spent = Number(calcs.secondsSpentSolving);
