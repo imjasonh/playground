@@ -7,6 +7,7 @@ The page reads a JSON file. A scheduled job writes that file. The browser does
 not call the NYT API. A PR preview has no copy of that file, so it reads
 `nyt-crossword/data/stats.json` from the published site, which is the current
 `gh-pages` head. `sample/stats.json` is test input. The page does not load it.
+The chart, the medians, and the year list start at 2014. Earlier solves stay in the file.
 
 ## Publish stats
 
