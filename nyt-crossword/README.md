@@ -34,17 +34,22 @@ windows, the same limit as the
 You can set a start and end print date when you run the workflow by hand. An
 empty end date means today in New York.
 
-## Filters
+## Excluded solves
 
-The chart is the median solve time for each weekday. **Hide unusually long
-solves** drops times above that weekday's upper fence (third quartile plus 1.5
-times the interquartile range), computed on the years in the range. **Ignore
-solves longer than** drops anything over the number of minutes you enter.
-**Ignore date** keeps one print date out of the medians. Those choices stay in
-this browser.
+`excluded.json` lists print dates that stay out of the medians. Add a date
+there and commit it. The page reads that file, so everyone sees the same
+exclusions. A date can be a short solve or a long one.
 
-A partially solved puzzle has some squares filled and is not solved. The date
-links to that puzzle on nytimes.com.
+**Hide outliers** also drops times outside the usual range for that weekday,
+short or long. That range is the first quartile minus 1.5 times the
+interquartile range, through the third quartile plus the same amount. It is
+computed in the browser from the years on screen. It is not written to the
+file.
+
+## Unsolved
+
+A puzzle in **Unsolved** was started and not solved. The date links to that
+puzzle on nytimes.com.
 
 ## Run locally
 

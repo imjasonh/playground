@@ -3,25 +3,39 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NYT Crossword</title>
+    <title>Crossword</title>
     <meta
       name="description"
       content="Solve time by weekday for the NYT crossword, and puzzles that were started but not finished."
     />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="fonts/source-serif-4-600.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="fonts/libre-franklin-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="wrap">
-      <header class="app-header">
+      <header class="mast">
         <div>
-          <h1>NYT Crossword</h1>
-          <p id="generated" class="updated"></p>
+          <h1>Crossword</h1>
+          <p id="generated" class="meta"></p>
         </div>
-        <div class="header-actions">
-          <p id="source-badge" class="badge" hidden></p>
+        <p class="meta tools">
+          <span id="source-badge" hidden></span>
           <button id="reload" type="button">Reload</button>
-        </div>
+        </p>
       </header>
 
       <section class="controls" aria-label="Filters">
@@ -43,27 +57,30 @@
         </label>
         <label class="check">
           <input id="hide-outliers" type="checkbox" checked />
-          Hide unusually long solves
-        </label>
-        <label>
-          Ignore solves longer than
-          <input
-            id="max-minutes"
-            type="number"
-            min="0"
-            step="1"
-            inputmode="numeric"
-            placeholder="No limit"
-          />
-          minutes
+          Hide outliers
         </label>
       </section>
 
-      <p id="solve-count" class="status" aria-live="polite"></p>
+      <p id="solve-count" class="meta count" aria-live="polite"></p>
+      <p id="notice" class="notice" role="status"></p>
 
       <section>
         <h2>Median by weekday</h2>
-        <ul id="weekday-summary" class="medians"></ul>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">
+              Median solve time by weekday
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Weekday</th>
+                <th scope="col" class="num">Median</th>
+                <th scope="col" class="num">Solves</th>
+              </tr>
+            </thead>
+            <tbody id="weekday-summary"></tbody>
+          </table>
+        </div>
       </section>
 
       <section>
@@ -73,24 +90,18 @@
           <svg
             id="chart"
             class="chart"
-            width="960"
-            height="420"
-            viewBox="0 0 960 420"
+            width="720"
+            height="380"
+            viewBox="0 0 720 380"
             role="img"
             aria-labelledby="chart-heading"
           ></svg>
         </div>
-        <p id="chart-empty" class="empty" hidden></p>
+        <p id="chart-empty" class="meta" hidden></p>
       </section>
 
       <section>
         <h2>Excluded solves</h2>
-        <form id="ignore-form" class="ignore-form">
-          <label for="ignore-date">Ignore date</label>
-          <input id="ignore-date" type="date" name="date" />
-          <button type="submit">Ignore</button>
-        </form>
-        <p id="notice" class="notice" role="status"></p>
         <div class="table-scroll">
           <table id="excluded-table">
             <caption class="visually-hidden">
@@ -100,19 +111,17 @@
               <tr>
                 <th scope="col">Date</th>
                 <th scope="col" class="num">Time</th>
-                <th scope="col">Reason</th>
-                <th scope="col"><span class="visually-hidden">Action</span></th>
               </tr>
             </thead>
             <tbody id="excluded-rows"></tbody>
           </table>
         </div>
-        <p id="excluded-more" class="status" hidden></p>
-        <p id="excluded-empty" class="empty" hidden>No solves are excluded.</p>
+        <p id="excluded-more" class="meta" hidden></p>
+        <p id="excluded-empty" class="meta" hidden>No excluded solves.</p>
       </section>
 
       <section>
-        <h2>Partially solved</h2>
+        <h2>Unsolved</h2>
         <label>
           Sort
           <select id="partial-sort">
@@ -135,16 +144,8 @@
             <tbody id="partial-rows"></tbody>
           </table>
         </div>
-        <p id="partial-empty" class="empty" hidden>No partially solved puzzles.</p>
+        <p id="partial-empty" class="meta" hidden>No unsolved puzzles.</p>
       </section>
-
-      <footer>
-        <p class="prose">
-          Times come from the NYT crossword API. A daily job publishes them.
-          Dates you ignore, and the time limit, stay in this browser. Unusually
-          long solves are the ones above the usual range for that weekday.
-        </p>
-      </footer>
     </div>
     <script type="module" src="src/app.js"></script>
   </body>
