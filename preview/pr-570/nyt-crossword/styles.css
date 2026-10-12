@@ -1,0 +1,456 @@
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("fonts/source-serif-4-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Libre Franklin";
+  src: url("fonts/libre-franklin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Libre Franklin";
+  src: url("fonts/libre-franklin-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+  --bg: #fff;
+  --ink: #121212;
+  --muted: #5a5a5a;
+  --rule: #e2e2e2;
+  --rule-strong: #727272;
+  --link: #326891;
+  --focus: #326891;
+  --plot: #fff;
+  --serif: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --sans: "Libre Franklin", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --ink: #f7f7f7;
+    --muted: #b5b5b5;
+    --rule: #2c2c2c;
+    --rule-strong: #a3a3a3;
+    --link: #8ab4f8;
+    --focus: #8ab4f8;
+    --plot: #121212;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.wrap {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem 4rem;
+}
+
+h1,
+h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 1.8rem + 2.2vw, 3.5rem);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 2.75rem 0 0.85rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--ink);
+  font-size: clamp(1.5rem, 1.3rem + 0.6vw, 1.875rem);
+}
+
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.mast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.meta {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0;
+}
+
+.count {
+  margin-top: 1.25rem;
+}
+
+.notice:empty {
+  display: none;
+}
+
+.notice {
+  margin: 0.75rem 0 0;
+  color: var(--ink);
+}
+
+button,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  min-height: 2.75rem;
+}
+
+button {
+  padding: 0.35rem 0.8rem;
+}
+
+select {
+  padding: 0.35rem 0.5rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.85rem 1.5rem;
+  margin-top: 1.25rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 1rem;
+}
+
+label.check {
+  flex-direction: row;
+  align-items: center;
+  min-height: 2.75rem;
+  gap: 0.5rem;
+}
+
+.weekday-filter {
+  border: 0;
+  margin: 0.85rem 0 0;
+  padding: 0;
+}
+
+.weekday-filter > legend {
+  padding: 0;
+  font-size: 1rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.legend-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+}
+
+.legend-check:has(input:not(:checked)) {
+  opacity: 0.4;
+}
+
+.key {
+  display: inline-block;
+  width: 1.5rem;
+  margin-right: 0.45rem;
+  border-top: 2px solid var(--ink);
+}
+
+.key.tue,
+.key.thu {
+  border-top-style: dashed;
+}
+
+.key.wed,
+.key.thu {
+  border-top-color: var(--rule-strong);
+}
+
+.key.fri,
+.key.sat {
+  border-top-color: var(--link);
+}
+
+.key.sat {
+  border-top-style: dotted;
+}
+
+.key.sun,
+.key.overall {
+  border-top-width: 3px;
+}
+
+.chart-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.chart-tools button:disabled {
+  opacity: 0.4;
+}
+
+.chart-frame {
+  position: relative;
+  margin-top: 0.85rem;
+}
+
+.chart-scroll,
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll {
+  margin-top: 0.85rem;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--plot);
+  touch-action: pan-y;
+}
+
+.chart-pan {
+  overflow-x: auto;
+  height: 1rem;
+  margin-top: 0.35rem;
+}
+
+.chart-pan div {
+  height: 1px;
+}
+
+.chart.is-zoomed {
+  cursor: grab;
+}
+
+.chart.is-panning {
+  cursor: grabbing;
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  max-width: 16rem;
+  padding: 0.45rem 0.65rem;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.chart-tip p {
+  margin: 0;
+}
+
+.chart-tip .tip-time {
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.chart-tip .tip-meta {
+  color: var(--muted);
+}
+
+
+.plot {
+  fill: var(--plot);
+}
+
+.grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.chart text {
+  fill: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+}
+
+.series {
+  fill: none;
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.series.mon,
+.series.tue,
+.series.sun,
+.trend.mon,
+.trend.tue,
+.trend.sun,
+.dot.mon,
+.dot.tue,
+.dot.sun {
+  stroke: var(--ink);
+}
+
+.series.wed,
+.series.thu,
+.trend.wed,
+.trend.thu,
+.dot.wed,
+.dot.thu {
+  stroke: var(--rule-strong);
+}
+
+.series.fri,
+.series.sat,
+.trend.fri,
+.trend.sat,
+.dot.fri,
+.dot.sat {
+  stroke: var(--link);
+}
+
+.trend {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.trend.overall {
+  stroke: var(--ink);
+  stroke-width: 2.75;
+}
+
+.series.tue,
+.series.thu {
+  stroke-dasharray: 7 4;
+}
+
+.series.sat {
+  stroke-dasharray: 2 3;
+}
+
+.series.sun {
+  stroke-width: 3.25;
+}
+
+.dot {
+  stroke: none;
+}
+
+.dot.mon,
+.dot.tue,
+.dot.sun {
+  fill: var(--ink);
+}
+
+.dot.wed,
+.dot.thu {
+  fill: var(--rule-strong);
+}
+
+.dot.fri,
+.dot.sat {
+  fill: var(--link);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  padding: 0.55rem 0.15rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+th {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.num {
+  text-align: right;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
