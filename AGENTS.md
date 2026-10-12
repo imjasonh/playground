@@ -799,7 +799,7 @@ auto-discover them. Run their local tests when you change them.
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
 | `onramp/` | Onramp — offline can’t-get-online playbooks + network toolbox (+ optional chat); Sparkle CD | XCTest via `fastlane test` |
 | `countdown/` | Menu bar countdowns. Click or right-click lists each date and the days until it. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
-| `roll/` | Menu bar die. Click rolls, Control-click quits. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
+| `roll/` | Menu bar die. Click rolls. Control-click lists countdowns and quits. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
 
 > **`onramp` has its own agent guide:** read
 > [`onramp/AGENTS.md`](onramp/AGENTS.md) before working in that
