@@ -28,10 +28,13 @@ The puzzle list does not include solve time. The job reads `playTimeSeconds`
 from the crossword state endpoint, 30 puzzles at a time. The per-puzzle
 `/v6/game/{id}.json` URL used by the
 [original scraper](https://gist.github.com/imjasonh/bc67910c96d17a37044cbd742810294f)
-returns 404 for these solves, so the job does not call it. Later runs request
-puzzles that are unfinished or that do not have a stored time yet. The list
-endpoint rejects ranges longer than 100 days, so the job walks the calendar
-in 100-day windows, the same limit as that scraper.
+returns 404 for these solves, so the job does not call it. The default first
+print date is 2014-01-01. A solved puzzle that already has a time is not
+requested again, and a 100-day window is not listed again when every day in
+it is one of those solves. An open puzzle is requested when it is new or the
+list shows a change. The list endpoint rejects ranges longer than 100 days,
+so the job walks the calendar in 100-day windows, the same limit as that
+scraper.
 
 You can set a start and end print date when you run the workflow by hand. An
 empty end date means today in New York.

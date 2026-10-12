@@ -18,7 +18,7 @@ on:
     inputs:
       start:
         description: First print date (YYYY-MM-DD)
-        default: "2005-01-01"
+        default: "2014-01-01"
         required: false
       end:
         description: Last print date (YYYY-MM-DD). Empty uses today in New York.
@@ -56,7 +56,7 @@ jobs:
         env:
           NYT_COOKIE: ${{ secrets.NYT_COOKIE }}
           NYT_DATA_DIR: ${{ github.workspace }}/pages/nyt-crossword/data
-          NYT_START: ${{ github.event_name == 'workflow_dispatch' && inputs.start || '2005-01-01' }}
+          NYT_START: ${{ github.event_name == 'workflow_dispatch' && inputs.start || '2014-01-01' }}
           NYT_END: ${{ github.event_name == 'workflow_dispatch' && inputs.end || '' }}
         run: node nyt-crossword/scripts/scrape.js
 
