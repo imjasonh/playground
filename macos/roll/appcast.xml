@@ -6,6 +6,13 @@
     <description>Sparkle updates for roll</description>
     <language>en</language>
     <item>
+      <title>Roll 1.0.2</title>
+      <pubDate>Mon, 12 Oct 2026 13:44:40 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+      <enclosure url="https://github.com/imjasonh/playground/releases/download/roll-v1.0.2/Roll-1.0.2.zip" length="1064315" type="application/octet-stream" sparkle:edSignature="DxJgWDcoS/L7y5E+/gbwpu92hv90+jdpJNBKzoaHttkgY4YVKGxzj/nDIFaGflS37W6ni/oqUHxw7f1GmyYECA=="/>
+    </item>
+    <item>
       <title>Roll 1.0.1</title>
       <pubDate>Wed, 07 Oct 2026 13:47:57 +0000</pubDate>
       <sparkle:version>3</sparkle:version>
