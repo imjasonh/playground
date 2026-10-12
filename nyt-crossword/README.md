@@ -24,12 +24,14 @@ The job writes `nyt-crossword/data/stats.json` on the `gh-pages` branch. It
 does not commit stats to `main`. The workflow shares the `gh-pages-publish`
 concurrency group with deploy, preview, and cleanup.
 
-The puzzle list does not include solve time, so the first run requests a game
-record for every solved puzzle back to 2005-01-01. Later runs request puzzles
-that are unfinished or that do not have a stored time yet. The list endpoint
-rejects ranges longer than 100 days, so the job walks the calendar in 100-day
-windows, the same limit as the
-[original scraper](https://gist.github.com/imjasonh/bc67910c96d17a37044cbd742810294f).
+The puzzle list does not include solve time. The job reads `playTimeSeconds`
+from the crossword state endpoint, 30 puzzles at a time. The per-puzzle
+`/v6/game/{id}.json` URL used by the
+[original scraper](https://gist.github.com/imjasonh/bc67910c96d17a37044cbd742810294f)
+returns 404 for these solves, so the job does not call it. Later runs request
+puzzles that are unfinished or that do not have a stored time yet. The list
+endpoint rejects ranges longer than 100 days, so the job walks the calendar
+in 100-day windows, the same limit as that scraper.
 
 You can set a start and end print date when you run the workflow by hand. An
 empty end date means today in New York.
