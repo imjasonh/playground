@@ -3,16 +3,19 @@ import assert from "node:assert/strict";
 
 import {
   addDays,
-  applyGame,
+  applyPlayTime,
   cookieHeader,
   cookieValue,
   dateChunks,
+  gameDataOf,
+  idBatches,
   listUrl,
   mergeListed,
   needsGameFetch,
   normalizeDoc,
   puzzlesEqual,
   serializeStats,
+  stateUrl,
   todayInNewYork,
 } from "../src/scrape-lib.js";
 
@@ -137,25 +140,38 @@ test("mergeListed keeps history outside the requested range", () => {
   );
 });
 
-test("applyGame records solve time and clears it when the puzzle is open", () => {
-  const open = applyGame(
+test("stateUrl batches puzzle ids on the crossword state endpoint", () => {
+  const url = stateUrl([24534, 24522]);
+  assert.equal(url.origin, "https://www.nytimes.com");
+  assert.equal(url.pathname, "/svc/games/state/crossword_daily/latests");
+  assert.equal(url.searchParams.get("puzzle_ids"), "24534,24522");
+  assert.deepEqual(idBatches([1, 2, 3, 4, 5], 2), [
+    [1, 2],
+    [3, 4],
+    [5],
+  ]);
+});
+
+test("applyPlayTime reads playTimeSeconds and leaves an open puzzle untimed", () => {
+  const open = applyPlayTime(
     { ...solved, solved: false, seconds: null, percentFilled: 10 },
-    { calcs: { solved: false, percentFilled: 40, secondsSpentSolving: 90 } },
+    { playTimeSeconds: 90, firstSolve: 0 },
   );
   assert.equal(open.solved, false);
-  assert.equal(open.percentFilled, 40);
+  assert.equal(open.percentFilled, 10);
   assert.equal(open.seconds, null);
-  const stillFinished = applyGame(solved, {
-    calcs: { solved: false, percentFilled: 40, secondsSpentSolving: 90 },
-  });
+  const stillFinished = applyPlayTime(solved, { playTimeSeconds: 90, firstSolve: 0 });
   assert.equal(stillFinished.solved, true);
   assert.equal(stillFinished.seconds, 480);
-  const done = applyGame(
-    { ...solved, seconds: null, solved: false },
-    { calcs: { solved: true, percentFilled: 100, secondsSpentSolving: 512 } },
+  const done = applyPlayTime(
+    { ...solved, seconds: null, solved: true },
+    { playTimeSeconds: 512, firstSolve: 1717200000 },
   );
   assert.equal(done.seconds, 512);
   assert.equal(done.solved, true);
+  assert.deepEqual(gameDataOf({ puzzle_id: 1, game_data: { playTimeSeconds: 12 } }), {
+    playTimeSeconds: 12,
+  });
 });
 
 test("serializeStats is stable when the puzzle rows do not change", () => {
