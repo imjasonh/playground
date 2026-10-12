@@ -1,5 +1,5 @@
 import XCTest
-@testable import Countdown
+@testable import Roll
 
 final class CountdownTests: XCTestCase {
     func testMenuPhrasesMatchTheRequestedForm() {
