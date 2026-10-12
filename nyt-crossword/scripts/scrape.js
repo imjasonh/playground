@@ -34,7 +34,10 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(__dirname, "..");
 const UA = "nyt-crossword (github.com/imjasonh/playground)";
-const CONCURRENCY = 4;
+// One request at a time. Node's fetch client crashes (undici
+// assert(!this.paused)) when several game requests share a connection and
+// one of them ends early, which is what the first backfill did.
+const CONCURRENCY = 1;
 const INTERVAL_MS = 100;
 
 function requireDate(value, label) {
@@ -70,17 +73,27 @@ async function fetchJson(url) {
     const response = await fetch(url, {
       headers: {
         Accept: "application/json",
+        Connection: "close",
         Cookie: cookieHeader(process.env.NYT_COOKIE),
         "User-Agent": UA,
       },
       signal: AbortSignal.timeout(30000),
     });
+    // Read the body before deciding. Leaving it unread, then starting the
+    // next request, is what tripped the parser crash.
+    const text = await response.text();
     if (response.status === 401 || response.status === 403) {
       throw new Error(
         `NYT rejected NYT_COOKIE (HTTP ${response.status}). Update the Actions secret.`,
       );
     }
-    if (response.ok) return response.json();
+    if (response.ok) {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error(`Bad JSON for ${url.pathname}`, { cause: err });
+      }
+    }
     if (response.status !== 429 && response.status < 500) {
       throw new Error(`HTTP ${response.status} for ${url.pathname}`);
     }
