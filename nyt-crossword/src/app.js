@@ -1,5 +1,6 @@
 // Browser entry point. Stats stay in the DOM-free module.
 
+import { publishedDataUrl } from "./published-data.js";
 import { normalizeDoc } from "./scrape-lib.js";
 import {
   WEEKDAYS,
@@ -63,11 +64,16 @@ async function fetchJson(path) {
 }
 
 async function loadDoc() {
-  try {
-    const live = normalizeDoc(await fetchJson("data/stats.json"));
-    if (live.puzzles.length > 0) return { doc: live, source: "live" };
-  } catch {
-    // Live stats are published on gh-pages. Sample covers local preview.
+  const urls = ["data/stats.json"];
+  const published = publishedDataUrl(window.location.pathname, "data/stats.json");
+  if (published) urls.push(published);
+  for (const url of urls) {
+    try {
+      const live = normalizeDoc(await fetchJson(url));
+      if (live.puzzles.length > 0) return { doc: live, source: "live" };
+    } catch {
+      // Missing here. A preview then tries the published gh-pages file.
+    }
   }
   const sample = normalizeDoc(await fetchJson("sample/stats.json"));
   return { doc: sample, source: "sample" };

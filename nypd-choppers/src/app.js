@@ -3,6 +3,7 @@
 // the DOM-free analysis.js / fleet.js modules (which are unit-tested).
 
 import { FLEET, FLEET_BY_HEX } from "./fleet.js";
+import { publishedDataUrl } from "./published-data.js";
 import {
   aggregateDays,
   analyzeDay,
@@ -14,7 +15,7 @@ const NYC = [40.7128, -74.006];
 const ALL_DAYS = "__all__";
 
 const state = {
-  base: "data", // "data" (live) or "sample" (fallback demo)
+  base: "data", // "data", the published /<app>/data path, or "sample"
   index: null, // { days: [{date, samples}] }
   dayCache: new Map(), // date -> { samples: [...] }
   selectedDay: null,
@@ -52,16 +53,21 @@ async function fetchJson(path) {
 // Resolve the data source: prefer live scraped data, fall back to bundled
 // sample data so the app is never empty during local dev or before first scrape.
 async function loadIndex() {
-  try {
-    const idx = await fetchJson("data/index.json");
-    if (idx && Array.isArray(idx.days) && idx.days.length > 0) {
-      state.base = "data";
-      state.index = idx;
-      setBadge("live", "Live scraped data");
-      return;
+  const urls = ["data/index.json"];
+  const published = publishedDataUrl(window.location.pathname, "data/index.json");
+  if (published) urls.push(published);
+  for (const url of urls) {
+    try {
+      const idx = await fetchJson(url);
+      if (idx && Array.isArray(idx.days) && idx.days.length > 0) {
+        state.base = url.slice(0, url.lastIndexOf("/"));
+        state.index = idx;
+        setBadge("live", "Live scraped data");
+        return;
+      }
+    } catch {
+      /* try the published gh-pages copy, then the sample */
     }
-  } catch {
-    /* fall through to sample */
   }
   const sample = await fetchJson("sample/index.json");
   state.base = "sample";

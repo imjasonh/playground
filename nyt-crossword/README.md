@@ -4,7 +4,9 @@ Solve times for my daily NYT crossword, one line per weekday, plus the puzzles
 I started and did not finish.
 
 The page reads a JSON file. A scheduled job writes that file. The browser does
-not call the NYT API.
+not call the NYT API. A PR preview has no copy of that file, so it reads
+`nyt-crossword/data/stats.json` from the published site, which is the current
+`gh-pages` head. The bundled sample is only for local preview before a scrape.
 
 ## Publish stats
 

@@ -31,7 +31,9 @@ this repo, `nypd-choppers` ships with a **scheduled data-collection workflow**:
   `/v2/hex` snapshot so a run still records something.
 - The merged files are committed **directly to the `gh-pages` branch** under
   `nypd-choppers/data/` — never to `main`. The deployed app fetches them at
-  runtime, so no API is ever called from the browser.
+  runtime, so no API is ever called from the browser. A PR preview reads those
+  same published files from the current `gh-pages` head instead of the bundled
+  sample.
 - The workflow shares the `gh-pages-publish` concurrency group with the deploy,
   preview, and cleanup workflows, so the published branch is only ever touched
   by one job at a time.
