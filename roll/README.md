@@ -1,11 +1,11 @@
 # roll
 
-Menu bar die for macOS. Roll puts one item in the menu bar and no Dock icon
+Roll is the menu bar app. It puts one item in the menu bar and no Dock icon
 or window. Click the die to roll. The icon changes to the face that came up.
-When you have a countdown, the item also shows the days until the next date,
-such as `30d`.
+When a countdown is set, the item also shows the days until the next date,
+such as `30d`. Add later menu bar features here.
 
-Control-click or right-click for the menu. It lists each date as
+Right-click or Control-click for the menu. It lists each date as
 `birthday (40 days)`, soonest first. Click a date, then confirm **Delete**,
 to remove it. **New Countdown…** asks for a description and a date. The menu
 also has **Check for Updates…** and **Quit Roll**.
