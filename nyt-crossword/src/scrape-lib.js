@@ -4,7 +4,7 @@
 // endpoint, in batches. The per-puzzle v6 game URL 404s for these solves.
 
 export const API_ORIGIN = "https://www.nytimes.com";
-export const DEFAULT_START = "2005-01-01";
+export const DEFAULT_START = "2014-01-01";
 export const CHUNK_DAYS = 100;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -116,16 +116,35 @@ export function needsGameFetch(prev, listed) {
   if (!prev) return progressed;
   if (prev.solved !== listed.solved || prev.percentFilled !== listed.percentFilled) return true;
   if (listed.solved === true && !(prev.seconds > 0)) return true;
-  // The list row lags the game record, so unfinished puzzles are rechecked.
-  if (listed.solved !== true && listed.percentFilled > 0) return true;
   return false;
 }
 
-export function mergeListed(prevPuzzles, listedItems, range) {
+// A 100-day window is listed only when some day in it is not a stored solve.
+// Every day already solved, with a time, is left alone.
+export function chunksNeedingList(chunks, puzzles) {
+  const byDate = new Map((puzzles ?? []).map((puzzle) => [puzzle.date, puzzle]));
+  return (chunks ?? []).filter(([start, end]) => {
+    let cursor = start;
+    while (cursor <= end) {
+      if (!isFinished(byDate.get(cursor))) return true;
+      cursor = addDays(cursor, 1);
+    }
+    return false;
+  });
+}
+
+function dateCovered(date, chunks) {
+  if (!chunks) return false;
+  return chunks.some(([start, end]) => date >= start && date <= end);
+}
+
+export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
   const prevByDate = new Map((prevPuzzles ?? []).map((puzzle) => [puzzle.date, puzzle]));
   const merged = new Map();
   for (const puzzle of prevPuzzles ?? []) {
-    if (puzzle.date < range.start || puzzle.date > range.end) {
+    const outside = puzzle.date < range.start || puzzle.date > range.end;
+    const notListed = listedChunks ? !dateCovered(puzzle.date, listedChunks) : false;
+    if (outside || notListed) {
       merged.set(puzzle.date, { puzzle, fetch: false });
     }
   }

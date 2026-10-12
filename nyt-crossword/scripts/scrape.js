@@ -4,13 +4,14 @@
 // The puzzle list does not include solve time. Solve time is playTimeSeconds
 // on the crossword state endpoint, 30 puzzles at a time. The per-puzzle
 // v6 game URL returns 404 for these solves, so this script does not call it.
-// Later runs only request puzzles that are unfinished or still missing a
-// time. Published JSON is written to the gh-pages branch (see the workflow),
+// A solved puzzle that already has a time is not requested again. An open
+// puzzle is requested only when it is new or the list shows a change.
+// Published JSON is written to the gh-pages branch (see the workflow),
 // not to main.
 //
 // Usage: node scripts/scrape.js [dataDir]
 //   NYT_COOKIE   NYT-S cookie value (required)
-//   NYT_START    first print date (default 2005-01-01)
+//   NYT_START    first print date (default 2014-01-01)
 //   NYT_END      last print date (default today in America/New_York)
 //   dataDir      defaults to $NYT_DATA_DIR or ./data
 
@@ -21,11 +22,13 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_START,
   applyPlayTime,
+  chunksNeedingList,
   cookieHeader,
   cookieValue,
   dateChunks,
   gameDataOf,
   idBatches,
+  isFinished,
   isIsoDate,
   listUrl,
   mergeListed,
@@ -167,8 +170,12 @@ async function main() {
   const { doc: previous, raw } = await readPrevious(outPath);
 
   const listed = [];
-  const chunks = dateChunks(start, end);
-  console.log(`Listing puzzles ${start} through ${end} (${chunks.length} requests)`);
+  const allChunks = dateChunks(start, end);
+  const chunks = chunksNeedingList(allChunks, previous.puzzles);
+  const skippedChunks = allChunks.length - chunks.length;
+  console.log(
+    `Listing puzzles ${start} through ${end} (${chunks.length} requests, ${skippedChunks} solved windows skipped)`,
+  );
   for (const [chunkStart, chunkEnd] of chunks) {
     const body = await fetchJson(listUrl(chunkStart, chunkEnd));
     const results = body && Array.isArray(body.results) ? body.results : [];
@@ -176,14 +183,19 @@ async function main() {
     console.log(`  ${chunkStart}..${chunkEnd}: ${results.length}`);
   }
   const inRange = previous.puzzles.some((puzzle) => puzzle.date >= start && puzzle.date <= end);
-  if (listed.length === 0 && inRange) {
+  if (chunks.length > 0 && listed.length === 0 && inRange) {
     throw new Error("NYT returned no puzzles. Leaving the published file unchanged.");
   }
 
-  const { puzzles, fetchList } = mergeListed(previous.puzzles, listed, { start, end });
-  const batches = idBatches(fetchList.map((puzzle) => puzzle.id));
-  const byId = new Map(fetchList.map((puzzle) => [puzzle.id, puzzle]));
-  console.log(`Fetching solve times for ${fetchList.length} puzzles (${batches.length} requests)`);
+  const { puzzles, fetchList } = mergeListed(previous.puzzles, listed, { start, end }, chunks);
+  const pending = fetchList.filter((puzzle) => !isFinished(puzzle));
+  const storedSolved = puzzles.filter(
+    (puzzle) => puzzle.date >= start && puzzle.date <= end && isFinished(puzzle),
+  ).length;
+  console.log(`Not requesting ${storedSolved} solved puzzles that already have a time`);
+  const batches = idBatches(pending.map((puzzle) => puzzle.id));
+  const byId = new Map(pending.map((puzzle) => [puzzle.id, puzzle]));
+  console.log(`Fetching solve times for ${pending.length} puzzles (${batches.length} requests)`);
   let failed = 0;
   const timedIds = new Set();
   for (let index = 0; index < batches.length; index += 1) {
@@ -210,7 +222,7 @@ async function main() {
   }
 
   const timed = timedIds.size;
-  const solvedAsked = fetchList.filter((puzzle) => puzzle.solved === true).length;
+  const solvedAsked = pending.filter((puzzle) => puzzle.solved === true).length;
   if (solvedAsked > 0 && timed === 0) {
     console.error(`No solve times for ${solvedAsked} solved puzzles.`);
     process.exitCode = 1;
