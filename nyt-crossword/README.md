@@ -4,7 +4,9 @@ Solve times for my daily NYT crossword, one line per weekday, plus the puzzles
 I started and did not finish.
 
 The page reads a JSON file. A scheduled job writes that file. The browser does
-not call the NYT API.
+not call the NYT API. A PR preview has no copy of that file, so it reads
+`nyt-crossword/data/stats.json` from the published site, which is the current
+`gh-pages` head. `sample/stats.json` is test input. The page does not load it.
 
 ## Publish stats
 
@@ -64,7 +66,7 @@ npm test
 npm start
 ```
 
-`npm start` serves the page with the bundled sample. To scrape into `./data`:
+`npm start` serves the page, which reads `./data/stats.json`. To scrape into `./data`:
 
 ```bash
 NYT_COOKIE="the NYT-S cookie value" npm run scrape
