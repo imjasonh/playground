@@ -114,6 +114,14 @@ final class PlaygroundUITests: XCTestCase {
         }
     }
 
+    /// What the app shows, on one line for a failure message.
+    private func describeScreen(_ app: XCUIApplication) -> String {
+        guard app.state == .runningForeground else { return "App state \(app.state.rawValue)." }
+        let bars = app.navigationBars.allElementsBoundByIndex.map(\.identifier).joined(separator: ", ")
+        let tree = app.debugDescription.split(separator: "\n").prefix(40).joined(separator: " | ")
+        return "Navigation bars [\(bars)]. \(tree)"
+    }
+
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
@@ -335,6 +343,30 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.buttons["layaDownloadButton"].waitForExistence(timeout: 8)
             || app.otherElements["layaDownloadButton"].waitForExistence(timeout: 3)
             || app.buttons["layaAskButton"].waitForExistence(timeout: 3))
+    }
+
+    func testPhoneVREntersAndLeavesTheHeadsetView() {
+        let app = launchApp()
+
+        openExperiment("phone-vr", title: "Phone VR", in: app)
+
+        let enter = app.buttons["phoneVREnterButton"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.descendants(matching: .any)["phoneVRStatusLine"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["phoneVRLensPreview"].exists)
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: enter)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 8), .completed, "Enter VR never enabled")
+
+        enter.tap()
+        let headset = app.descendants(matching: .any)["phoneVRView"]
+        XCTAssertTrue(headset.waitForExistence(timeout: 10), "The headset view did not appear")
+        // Let a few frames render, then leave the way a wearer would.
+        sleep(2)
+        headset.twoFingerTap()
+        XCTAssertTrue(headset.waitForNonExistence(timeout: 10), "A two-finger tap did not close the headset view")
+        // The interface can stay in landscape after the headset closes.
+        XCTAssertTrue(app.navigationBars["Phone VR"].waitForExistence(timeout: 10), "Leaving VR did not return to the launch page. \(describeScreen(app))")
+        XCTAssertTrue(enter.waitForExistence(timeout: 5), "Enter VR is off screen after leaving VR. \(describeScreen(app))")
     }
 
     func testArmyListExperimentOpens() {
