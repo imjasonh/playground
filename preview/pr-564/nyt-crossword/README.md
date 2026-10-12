@@ -12,13 +12,13 @@ not call the NYT API.
 runs every day at 01:17 UTC (8:17 PM Eastern Standard Time, 9:17 PM Eastern
 Daylight Time) and when you start it by hand.
 
-Create a repository Actions secret named `NYT_S`. The value is the `NYT-S`
+Create a repository Actions secret named `NYT_COOKIE`. The value is the `NYT-S`
 cookie from a browser signed in to nytimes.com.
 
 1. Open nytimes.com and sign in.
 2. In developer tools, open the cookie list for `nytimes.com`.
 3. Copy the `NYT-S` value.
-4. In the repository settings, create an Actions secret named `NYT_S` and paste that value.
+4. In the repository settings, create an Actions secret named `NYT_COOKIE` and paste that value.
 
 The job writes `nyt-crossword/data/stats.json` on the `gh-pages` branch. It
 does not commit stats to `main`. The workflow shares the `gh-pages-publish`
@@ -57,7 +57,7 @@ npm start
 `npm start` serves the page with the bundled sample. To scrape into `./data`:
 
 ```bash
-NYT_S="the NYT-S cookie value" npm run scrape
+NYT_COOKIE="the NYT-S cookie value" npm run scrape
 ```
 
 `data/` is gitignored.

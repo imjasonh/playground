@@ -7,7 +7,7 @@
 // written to the gh-pages branch (see the workflow), not to main.
 //
 // Usage: node scripts/scrape.js [dataDir]
-//   NYT_S        NYT-S cookie value (required)
+//   NYT_COOKIE   NYT-S cookie value (required)
 //   NYT_START    first print date (default 2005-01-01)
 //   NYT_END      last print date (default today in America/New_York)
 //   dataDir      defaults to $NYT_DATA_DIR or ./data
@@ -70,14 +70,14 @@ async function fetchJson(url) {
     const response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        Cookie: cookieHeader(process.env.NYT_S),
+        Cookie: cookieHeader(process.env.NYT_COOKIE),
         "User-Agent": UA,
       },
       signal: AbortSignal.timeout(30000),
     });
     if (response.status === 401 || response.status === 403) {
       throw new Error(
-        `NYT rejected NYT_S (HTTP ${response.status}). Update the Actions secret.`,
+        `NYT rejected NYT_COOKIE (HTTP ${response.status}). Update the Actions secret.`,
       );
     }
     if (response.ok) return response.json();
@@ -116,9 +116,9 @@ async function readPrevious(path) {
 }
 
 async function main() {
-  const cookie = cookieValue(process.env.NYT_S);
+  const cookie = cookieValue(process.env.NYT_COOKIE);
   if (!cookie) {
-    console.error("NYT_S is empty. Add the NYT-S cookie as the NYT_S Actions secret.");
+    console.error("NYT_COOKIE is empty. Add the NYT-S cookie as the NYT_COOKIE Actions secret.");
     process.exitCode = 1;
     return;
   }
