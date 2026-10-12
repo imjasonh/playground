@@ -223,7 +223,7 @@ discovery scripts.
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, plus the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
-| `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_S` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
+| `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_COOKIE` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 | `nethack-agent.yml` | pull requests touching `nethack-agent/**` or the notes publish scripts, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack` with `grok-4.6`. It writes the SDK token cost to the job summary, seeds `nethack-agent/notebook/` from `automation/nethack-notes`, then publishes that directory back to that branch and opens a pull request to `main` (no auto-merge). It does not commit notes onto the triggering pull request. Requires `CURSOR_API_KEY`. Skips play when the head is `automation/nethack-notes` |
 
@@ -741,7 +741,7 @@ bundle exec fastlane test
 >
 > **`nyt-crossword` uses the same kind of job.** The NYT puzzle API needs an
 > `NYT-S` cookie, so `nyt-crossword-scrape.yml` fetches solve times with the
-> `NYT_S` secret and commits `nyt-crossword/data/stats.json` to `gh-pages`
+> `NYT_COOKIE` secret and commits `nyt-crossword/data/stats.json` to `gh-pages`
 > (never `main`). It is also not part of the shared deploy/test/deps workflows.
 
 ## Current Go apps

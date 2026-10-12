@@ -1,7 +1,8 @@
 # App-specific lifecycle for the NYT crossword stats page.
 #
-# The puzzle list and game APIs are not callable from the browser (the NYT-S
-# cookie must stay on the runner). This job fetches solve times and writes
+# The puzzle list and game APIs are not callable from the browser. The
+# NYT_COOKIE secret is the NYT-S cookie value, and it stays on the runner.
+# This job fetches solve times and writes
 # nyt-crossword/data/stats.json on gh-pages. It does not commit stats to main.
 # It shares the gh-pages-publish concurrency group with deploy, preview,
 # cleanup, and the NYPD choppers scrape so the branch is updated by one job
@@ -53,7 +54,7 @@ jobs:
 
       - name: Scrape crossword stats
         env:
-          NYT_S: ${{ secrets.NYT_S }}
+          NYT_COOKIE: ${{ secrets.NYT_COOKIE }}
           NYT_DATA_DIR: ${{ github.workspace }}/pages/nyt-crossword/data
           NYT_START: ${{ github.event_name == 'workflow_dispatch' && inputs.start || '2005-01-01' }}
           NYT_END: ${{ github.event_name == 'workflow_dispatch' && inputs.end || '' }}
