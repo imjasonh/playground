@@ -57,7 +57,7 @@
   {
     "expectedLegal" : true,
     "file" : "12-legal-dark-angels-incursion.json",
-    "name" : "Dark Angels Incursion 960pts"
+    "name" : "Dark Angels Incursion 940pts"
   },
   {
     "expectedLegal" : true,
@@ -212,7 +212,7 @@
   {
     "expectedLegal" : true,
     "file" : "43-legal-dark-angels-strike-force.json",
-    "name" : "Dark Angels Strike Force 1930pts"
+    "name" : "Dark Angels Strike Force 1960pts"
   },
   {
     "expectedLegal" : true,
