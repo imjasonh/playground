@@ -25,7 +25,7 @@ Today’s Apple extensions (each its own Bundle ID):
 | Extension | Bundle ID |
 |-----------|-----------|
 | **T9 Multi-tap** (Custom Keyboard) | `io.github.imjasonh.playground.t9keyboard` |
-| **Ride Monitor** Live Activity (WidgetKit) | `io.github.imjasonh.playground.ridemonitorwidget` |
+| **Ride Monitor** + **Thermal** Live Activities (WidgetKit) | `io.github.imjasonh.playground.ridemonitorwidget` |
 | **Ride Monitor** Watch companion | `io.github.imjasonh.playground.watch` |
 
 After adding or changing any of these targets, re-run **iOS signing bootstrap** once so match stores the new App Store profiles.
@@ -141,9 +141,10 @@ ios/
 ├── fastlane/                # match lists host + extension ids
 ├── Shared/T9/               # shared by in-app T9 demo + keyboard extension
 ├── Shared/RideMonitor/      # live snapshot + ActivityAttributes + sparkline view
+├── Shared/Thermal/          # thermal Live Activity attributes + island policy
 ├── Shared/Laya/             # typed-decision runtime; Laya experiment + Army List
 ├── T9Keyboard/              # Custom Keyboard appex (own Bundle ID)
-├── RideMonitorWidget/       # Live Activity widget extension (own Bundle ID)
+├── RideMonitorWidget/       # Ride Monitor + Thermal Live Activity widget (own Bundle ID)
 ├── RideMonitorWatch/        # watchOS companion app (own Bundle ID)
 ├── Sources/
 │   ├── Experiment.swift
