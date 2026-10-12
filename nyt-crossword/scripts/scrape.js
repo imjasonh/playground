@@ -20,6 +20,7 @@ import {
   DEFAULT_START,
   cookieHeader,
   cookieValue,
+  applyGame,
   dateChunks,
   gameUrl,
   isIsoDate,
@@ -34,8 +35,43 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = resolve(__dirname, "..");
 const UA = "nyt-crossword (github.com/imjasonh/playground)";
-const CONCURRENCY = 4;
+// Several new games at once. Each response is read fully, and a missing
+// game (HTTP 404) is skipped. Node's HTTP client can still throw
+// assert(!this.paused) off the request promise when a socket ends early;
+// that must not abort the rest of the run.
+const CONCURRENCY = 8;
 const INTERVAL_MS = 100;
+
+function isParserCrash(err) {
+  return Boolean(err && err.code === "ERR_ASSERTION" && String(err.message).includes("paused"));
+}
+
+process.on("uncaughtException", (err) => {
+  if (isParserCrash(err)) {
+    console.error("HTTP parser glitch; continuing with the other game requests.");
+    return;
+  }
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 function requireDate(value, label) {
   if (!isIsoDate(value)) {
@@ -67,20 +103,33 @@ async function fetchJson(url) {
   let lastStatus = 0;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     await pace();
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        Cookie: cookieHeader(process.env.NYT_COOKIE),
-        "User-Agent": UA,
-      },
-      signal: AbortSignal.timeout(30000),
-    });
+    // Do not abort the socket. Aborting while the parser is paused is what
+    // crashed the first run. Connection: close keeps one game's 404 off the
+    // next game's connection. The body is read before we start another.
+    const response = await withTimeout(
+      fetch(url, {
+        headers: {
+          Accept: "application/json",
+          Connection: "close",
+          Cookie: cookieHeader(process.env.NYT_COOKIE),
+          "User-Agent": UA,
+        },
+      }),
+      30000,
+    );
+    const text = await withTimeout(response.text(), 30000);
     if (response.status === 401 || response.status === 403) {
       throw new Error(
         `NYT rejected NYT_COOKIE (HTTP ${response.status}). Update the Actions secret.`,
       );
     }
-    if (response.ok) return response.json();
+    if (response.ok) {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new Error(`Bad JSON for ${url.pathname}`, { cause: err });
+      }
+    }
     if (response.status !== 429 && response.status < 500) {
       throw new Error(`HTTP ${response.status} for ${url.pathname}`);
     }

@@ -77,6 +77,29 @@ test("needsGameFetch skips a solved puzzle that already has a time", () => {
     ),
     true,
   );
+  assert.equal(
+    needsGameFetch(solved, { ...listed, solved: false, percentFilled: 12 }),
+    false,
+  );
+});
+
+test("mergeListed does not refetch a finished game when the list disagrees", () => {
+  const listed = [
+    {
+      print_date: solved.date,
+      puzzle_id: solved.id,
+      publish_type: "Daily",
+      solved: false,
+      percent_filled: 15,
+    },
+  ];
+  const { puzzles, fetchList } = mergeListed([solved], listed, {
+    start: "2024-01-01",
+    end: "2024-12-31",
+  });
+  assert.equal(fetchList.length, 0);
+  assert.equal(puzzles[0].solved, true);
+  assert.equal(puzzles[0].seconds, 480);
 });
 
 test("mergeListed keeps history outside the requested range", () => {
@@ -115,12 +138,18 @@ test("mergeListed keeps history outside the requested range", () => {
 });
 
 test("applyGame records solve time and clears it when the puzzle is open", () => {
-  const open = applyGame(solved, {
-    calcs: { solved: false, percentFilled: 40, secondsSpentSolving: 90 },
-  });
+  const open = applyGame(
+    { ...solved, solved: false, seconds: null, percentFilled: 10 },
+    { calcs: { solved: false, percentFilled: 40, secondsSpentSolving: 90 } },
+  );
   assert.equal(open.solved, false);
   assert.equal(open.percentFilled, 40);
   assert.equal(open.seconds, null);
+  const stillFinished = applyGame(solved, {
+    calcs: { solved: false, percentFilled: 40, secondsSpentSolving: 90 },
+  });
+  assert.equal(stillFinished.solved, true);
+  assert.equal(stillFinished.seconds, 480);
   const done = applyGame(
     { ...solved, seconds: null, solved: false },
     { calcs: { solved: true, percentFilled: 100, secondsSpentSolving: 512 } },
