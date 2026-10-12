@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   addDays,
   applyPlayTime,
+  chunksNeedingList,
   cookieHeader,
   cookieValue,
   dateChunks,
@@ -78,6 +79,13 @@ test("needsGameFetch skips a solved puzzle that already has a time", () => {
       { ...solved, solved: false, percentFilled: 40, seconds: null },
       { ...listed, solved: false, percentFilled: 40 },
     ),
+    false,
+  );
+  assert.equal(
+    needsGameFetch(
+      { ...solved, solved: false, percentFilled: 40, seconds: null },
+      { ...listed, solved: false, percentFilled: 55 },
+    ),
     true,
   );
   assert.equal(
@@ -103,6 +111,43 @@ test("mergeListed does not refetch a finished game when the list disagrees", () 
   assert.equal(fetchList.length, 0);
   assert.equal(puzzles[0].solved, true);
   assert.equal(puzzles[0].seconds, 480);
+});
+
+test("a fully solved window is not listed and those puzzles are not fetched", () => {
+  const monday = { ...solved, date: "2014-01-06" };
+  const tuesday = { ...solved, date: "2014-01-07", id: 12, seconds: 600 };
+  const open = {
+    date: "2014-01-08",
+    id: 13,
+    solved: false,
+    percentFilled: 20,
+    seconds: null,
+  };
+  const chunks = [
+    ["2014-01-06", "2014-01-07"],
+    ["2014-01-08", "2014-01-08"],
+  ];
+  const needed = chunksNeedingList(chunks, [monday, tuesday, open]);
+  assert.deepEqual(needed, [["2014-01-08", "2014-01-08"]]);
+  const listed = [
+    {
+      print_date: open.date,
+      puzzle_id: open.id,
+      publish_type: "Daily",
+      solved: false,
+      percent_filled: 20,
+    },
+  ];
+  const { puzzles, fetchList } = mergeListed([monday, tuesday, open], listed, {
+    start: "2014-01-01",
+    end: "2014-01-31",
+  }, needed);
+  assert.deepEqual(
+    puzzles.map((puzzle) => puzzle.date),
+    ["2014-01-06", "2014-01-07", "2014-01-08"],
+  );
+  assert.equal(puzzles[0].seconds, 480);
+  assert.equal(fetchList.length, 0);
 });
 
 test("mergeListed keeps history outside the requested range", () => {
