@@ -1,0 +1,86 @@
+# App-specific lifecycle for the NYT crossword stats page.
+#
+# The puzzle list and game APIs are not callable from the browser (the NYT-S
+# cookie must stay on the runner). This job fetches solve times and writes
+# nyt-crossword/data/stats.json on gh-pages. It does not commit stats to main.
+# It shares the gh-pages-publish concurrency group with deploy, preview,
+# cleanup, and the NYPD choppers scrape so the branch is updated by one job
+# at a time.
+
+name: NYT crossword daily scrape
+
+on:
+  schedule:
+    # 01:17 UTC is 8:17 PM Eastern Standard Time and 9:17 PM Eastern Daylight Time.
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: First print date (YYYY-MM-DD)
+        default: "2005-01-01"
+        required: false
+      end:
+        description: Last print date (YYYY-MM-DD). Empty uses today in New York.
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-publish
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out app sources (main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check out published site (gh-pages)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: true
+          ref: gh-pages
+          path: pages
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+
+      - name: Scrape crossword stats
+        env:
+          NYT_S: ${{ secrets.NYT_S }}
+          NYT_DATA_DIR: ${{ github.workspace }}/pages/nyt-crossword/data
+          NYT_START: ${{ github.event_name == 'workflow_dispatch' && inputs.start || '2005-01-01' }}
+          NYT_END: ${{ github.event_name == 'workflow_dispatch' && inputs.end || '' }}
+        run: node nyt-crossword/scripts/scrape.js
+
+      - name: Commit and push stats to gh-pages
+        working-directory: pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The app .gitignore ignores data/ so a local scrape is never committed
+          # to main. The same file is present on gh-pages after deploy, so
+          # force-add past it to publish the stats.
+          git add -f nyt-crossword/data
+          if git diff --cached --quiet; then
+            echo "No data changes to publish."
+            exit 0
+          fi
+          git commit -m "chore(nyt-crossword): daily crossword stats"
+          for attempt in 1 2 3 4; do
+            if git push origin gh-pages; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt); rebasing and retrying..."
+            git pull --rebase origin gh-pages || true
+            sleep $((attempt * 4))
+          done
+          echo "Failed to push after retries." >&2
+          exit 1

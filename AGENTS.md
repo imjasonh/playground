@@ -52,6 +52,7 @@ playground/
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
 ├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
+├── nyt-crossword/         # NYT crossword solve times (JS + Node tests + daily scrape)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── laya-web/              # fetch Laya and compile the graph to WebGPU
 ├── packfile-explorer/     # fetch a git packfile via CORS proxy and explore it (JS + Node tests)
@@ -85,6 +86,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
+| `nyt-crossword/` | yes | NYT crossword solve times; JS modules, npm scripts, tests |
 | `laya-web/` | yes | Fetch Laya and compile to WebGPU; JS modules, npm scripts, tests |
 | `packfile-explorer/` | yes | Fetch a git packfile via the CORS proxy and explore objects/deltas; JS modules, npm scripts, tests |
 | `palette-swap/` | yes | Nearest-color palette swap in Wasm (scalar, portable simd, archsimd). Vendored wasm from `build-wasm.sh`. Go tests and a Node smoke test |
@@ -221,6 +223,7 @@ discovery scripts.
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, plus the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
+| `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_S` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 | `nethack-agent.yml` | pull requests touching `nethack-agent/**` or the notes publish scripts, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack` with `grok-4.6`. It writes the SDK token cost to the job summary, seeds `nethack-agent/notebook/` from `automation/nethack-notes`, then publishes that directory back to that branch and opens a pull request to `main` (no auto-merge). It does not commit notes onto the triggering pull request. Requires `CURSOR_API_KEY`. Skips play when the head is `automation/nethack-notes` |
 
@@ -721,6 +724,7 @@ bundle exec fastlane test
 | `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
+| `nyt-crossword/` | NYT crossword solve times by weekday, and puzzles that were started but not finished | Node test runner |
 | `laya-web/` | Fetch Laya and compile the graph to WebGPU | Node test runner |
 | `packfile-explorer/` | Fetch a git packfile through the CORS proxy; index objects/deltas in IndexedDB and browse contents | Node test runner |
 | `palette-swap/` | Nearest-color palette swap comparing scalar Go, portable simd, and Wasm archsimd | Node smoke test of the vendored Wasm module, plus `go test` |
@@ -734,6 +738,11 @@ bundle exec fastlane test
 > flight traces and accumulate historical data, which it commits to the
 > `gh-pages` branch (never `main`). Do not try to fold this data-collection
 > pattern into the shared deploy/test/deps workflows.
+>
+> **`nyt-crossword` uses the same kind of job.** The NYT puzzle API needs an
+> `NYT-S` cookie, so `nyt-crossword-scrape.yml` fetches solve times with the
+> `NYT_S` secret and commits `nyt-crossword/data/stats.json` to `gh-pages`
+> (never `main`). It is also not part of the shared deploy/test/deps workflows.
 
 ## Current Go apps
 

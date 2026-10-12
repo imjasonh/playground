@@ -52,6 +52,9 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
   data collected by an hourly scrape workflow.
+- **[`nyt-crossword/`](nyt-crossword/)** — NYT crossword solve times by weekday,
+  and puzzles that were started but not finished. A daily job publishes the
+  stats.
 - **[`laya-web/`](laya-web/)** — fetch a Laya checkpoint in the browser,
   compile it to WebGPU, and answer typed System One questions.
 - **[`population-rays/`](population-rays/)** — from any US point, how far a
