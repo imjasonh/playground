@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NYT Crossword</title>
+    <meta
+      name="description"
+      content="Solve time by weekday for the NYT crossword, and puzzles that were started but not finished."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="app-header">
+        <div>
+          <h1>NYT Crossword</h1>
+          <p id="generated" class="updated"></p>
+        </div>
+        <div class="header-actions">
+          <p id="source-badge" class="badge" hidden></p>
+          <button id="reload" type="button">Reload</button>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Filters">
+        <label>
+          From
+          <select id="from-year"></select>
+        </label>
+        <label>
+          Through
+          <select id="through-year"></select>
+        </label>
+        <label>
+          Trend
+          <select id="bucket">
+            <option value="month">Month</option>
+            <option value="quarter" selected>Quarter</option>
+            <option value="year">Year</option>
+          </select>
+        </label>
+        <label class="check">
+          <input id="hide-outliers" type="checkbox" checked />
+          Hide unusually long solves
+        </label>
+        <label>
+          Ignore solves longer than
+          <input
+            id="max-minutes"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            placeholder="No limit"
+          />
+          minutes
+        </label>
+      </section>
+
+      <p id="solve-count" class="status" aria-live="polite"></p>
+
+      <section>
+        <h2>Median by weekday</h2>
+        <ul id="weekday-summary" class="medians"></ul>
+      </section>
+
+      <section>
+        <h2 id="chart-heading">Solve time</h2>
+        <div id="legend" class="legend"></div>
+        <div class="chart-scroll">
+          <svg
+            id="chart"
+            class="chart"
+            width="960"
+            height="420"
+            viewBox="0 0 960 420"
+            role="img"
+            aria-labelledby="chart-heading"
+          ></svg>
+        </div>
+        <p id="chart-empty" class="empty" hidden></p>
+      </section>
+
+      <section>
+        <h2>Excluded solves</h2>
+        <form id="ignore-form" class="ignore-form">
+          <label for="ignore-date">Ignore date</label>
+          <input id="ignore-date" type="date" name="date" />
+          <button type="submit">Ignore</button>
+        </form>
+        <p id="notice" class="notice" role="status"></p>
+        <div class="table-scroll">
+          <table id="excluded-table">
+            <caption class="visually-hidden">
+              Solves left out of the medians
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col" class="num">Time</th>
+                <th scope="col">Reason</th>
+                <th scope="col"><span class="visually-hidden">Action</span></th>
+              </tr>
+            </thead>
+            <tbody id="excluded-rows"></tbody>
+          </table>
+        </div>
+        <p id="excluded-more" class="status" hidden></p>
+        <p id="excluded-empty" class="empty" hidden>No solves are excluded.</p>
+      </section>
+
+      <section>
+        <h2>Partially solved</h2>
+        <label>
+          Sort
+          <select id="partial-sort">
+            <option value="date" selected>Date</option>
+            <option value="percent">Filled</option>
+            <option value="weekday">Weekday</option>
+          </select>
+        </label>
+        <div class="table-scroll">
+          <table id="partial-table">
+            <caption class="visually-hidden">
+              Puzzles that were started and not solved
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Puzzle</th>
+                <th scope="col" class="num">Filled</th>
+              </tr>
+            </thead>
+            <tbody id="partial-rows"></tbody>
+          </table>
+        </div>
+        <p id="partial-empty" class="empty" hidden>No partially solved puzzles.</p>
+      </section>
+
+      <footer>
+        <p class="prose">
+          Times come from the NYT crossword API. A daily job publishes them.
+          Dates you ignore, and the time limit, stay in this browser. Unusually
+          long solves are the ones above the usual range for that weekday.
+        </p>
+      </footer>
+    </div>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
