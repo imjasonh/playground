@@ -9,11 +9,11 @@
 # the scheduler is best-effort. The deployed app reads those files to
 # reconstruct daily flight paths, airborne hours, and fuel-cost estimates.
 #
-# This is intentionally NOT generalized to other apps: only nypd-choppers
-# accumulates published data on a schedule. It writes to gh-pages directly
-# (never to main) so the app's source stays clean, and shares the
-# `gh-pages-publish` concurrency group with deploy/preview/cleanup so the
-# branch is only ever updated by one job at a time.
+# This is intentionally not folded into the shared deploy, test, or
+# dependency workflows. It writes to gh-pages directly (never to main) so the
+# app's source stays clean, and shares the `gh-pages-publish` concurrency
+# group with deploy, preview, cleanup, and the crossword scrape so the branch
+# is only ever updated by one job at a time.
 
 name: NYPD choppers hourly scrape
 
