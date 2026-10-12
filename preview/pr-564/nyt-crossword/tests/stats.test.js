@@ -5,7 +5,7 @@ import {
   bucketKey,
   bucketLabel,
   chartLayout,
-  exclusionLabel,
+  excludedDates,
   formatDate,
   formatSolveTime,
   isPartial,
@@ -59,17 +59,20 @@ test("median averages the two middle values", () => {
   assert.equal(median([]), null);
 });
 
-test("selectSolves drops a timer left running for that weekday only", () => {
+test("selectSolves drops a solve that is far above or below that weekday", () => {
   const monday = ["2024-06-03", "2024-06-10", "2024-06-17", "2024-06-24", "2024-07-01"];
   const puzzles = [
     ...monday.map((date) => solved(date, 500)),
     solved("2024-07-08", 18000),
+    solved("2024-07-15", 20),
     solved("2024-06-04", 4000),
   ];
   const { kept, excluded } = selectSolves(puzzles, { hideOutliers: true });
-  assert.equal(excluded.length, 1);
-  assert.equal(excluded[0].puzzle.date, "2024-07-08");
-  assert.equal(excluded[0].reason, "outlier");
+  assert.deepEqual(
+    excluded.map((row) => row.puzzle.date).sort(),
+    ["2024-07-08", "2024-07-15"],
+  );
+  assert.ok(excluded.every((row) => row.reason === "outlier"));
   assert.ok(kept.some((puzzle) => puzzle.date === "2024-06-04"));
   const medians = medianByWeekday(kept);
   const mondayMedian = medians.find((row) => row.weekday === "Monday");
@@ -77,26 +80,31 @@ test("selectSolves drops a timer left running for that weekday only", () => {
   assert.equal(mondayMedian.count, 5);
 });
 
-test("a minute cap and an ignored date stay out even when outliers are shown", () => {
+test("a listed date stays out even when outliers are shown", () => {
   const puzzles = [solved("2024-06-03", 600), solved("2024-06-10", 9000)];
   const { kept, excluded } = selectSolves(puzzles, {
     hideOutliers: false,
-    maxSeconds: 30 * 60,
-    ignoredDates: new Set(["2024-06-03"]),
+    excludedDates: new Set(["2024-06-03"]),
   });
-  assert.equal(kept.length, 0);
+  assert.deepEqual(
+    kept.map((puzzle) => puzzle.date),
+    ["2024-06-10"],
+  );
   assert.deepEqual(
     excluded.map((row) => [row.puzzle.date, row.reason]),
-    [
-      ["2024-06-10", "over-limit"],
-      ["2024-06-03", "ignored"],
-    ],
+    [["2024-06-03", "listed"]],
   );
 });
 
-test("visibleExcluded keeps every ignored date and caps the rest", () => {
+test("excludedDates reads print dates from the repo file", () => {
+  const dates = excludedDates({ dates: ["2024-06-03", "nope", 12, "2025-01-04"] });
+  assert.deepEqual([...dates], ["2024-06-03", "2025-01-04"]);
+  assert.equal(excludedDates(null).size, 0);
+});
+
+test("visibleExcluded keeps every listed date and caps the rest", () => {
   const excluded = [
-    { puzzle: solved("2024-06-03", 100), reason: "ignored" },
+    { puzzle: solved("2024-06-03", 100), reason: "listed" },
     { puzzle: solved("2024-06-04", 50), reason: "outlier" },
     { puzzle: solved("2024-06-05", 40), reason: "outlier" },
   ];
@@ -106,7 +114,6 @@ test("visibleExcluded keeps every ignored date and caps the rest", () => {
     ["2024-06-03", "2024-06-04"],
   );
   assert.equal(visible.hidden, 1);
-  assert.equal(exclusionLabel("outlier"), "Unusually long");
 });
 
 test("partialPuzzles sorts by weekday starting Monday, then by date", () => {
@@ -159,4 +166,6 @@ test("chartLayout places later buckets to the right and slower times higher", ()
   assert.ok(points[1].x > points[0].x);
   assert.ok(points[1].y < points[0].y);
   assert.ok(layout.yTicks.length >= 2);
+  assert.equal(layout.xTicks[0].anchor, "start");
+  assert.equal(layout.xTicks.at(-1).anchor, "end");
 });

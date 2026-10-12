@@ -1,16 +1,15 @@
-// Browser entry point. Stats and scrape planning stay in DOM-free modules.
+// Browser entry point. Stats stay in the DOM-free module.
 
 import { normalizeDoc } from "./scrape-lib.js";
 import {
   WEEKDAYS,
   bucketLabelLong,
   chartLayout,
-  exclusionLabel,
+  excludedDates,
   formatDate,
   formatPercent,
   formatSolveTime,
   formatUpdated,
-  maxSecondsFromMinutes,
   medianByWeekday,
   partialPuzzles,
   puzzleUrl,
@@ -18,10 +17,8 @@ import {
   solvedYears,
   trendByWeekday,
   visibleExcluded,
-  weekdayName,
 } from "./stats.js";
 
-const PREFS_KEY = "nyt-crossword-prefs";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const SLUG = {
   Monday: "mon",
@@ -41,15 +38,12 @@ const el = {
   throughYear: document.getElementById("through-year"),
   bucket: document.getElementById("bucket"),
   hideOutliers: document.getElementById("hide-outliers"),
-  maxMinutes: document.getElementById("max-minutes"),
   solveCount: document.getElementById("solve-count"),
+  notice: document.getElementById("notice"),
   summary: document.getElementById("weekday-summary"),
   legend: document.getElementById("legend"),
   chart: document.getElementById("chart"),
   chartEmpty: document.getElementById("chart-empty"),
-  ignoreForm: document.getElementById("ignore-form"),
-  ignoreDate: document.getElementById("ignore-date"),
-  notice: document.getElementById("notice"),
   excludedBody: document.getElementById("excluded-rows"),
   excludedTable: document.getElementById("excluded-table"),
   excludedEmpty: document.getElementById("excluded-empty"),
@@ -63,56 +57,9 @@ const el = {
 const state = {
   doc: null,
   source: "sample",
-  ignored: new Set(),
+  excluded: new Set(),
   hiddenWeekdays: new Set(),
 };
-
-function loadPrefs() {
-  const raw = localStorage.getItem(PREFS_KEY);
-  if (!raw) return;
-  try {
-    const prefs = JSON.parse(raw);
-    if (!prefs || typeof prefs !== "object") return;
-    if (typeof prefs.hideOutliers === "boolean") el.hideOutliers.checked = prefs.hideOutliers;
-    if (typeof prefs.maxMinutes === "string") el.maxMinutes.value = prefs.maxMinutes;
-    if (prefs.bucket === "month" || prefs.bucket === "quarter" || prefs.bucket === "year") {
-      el.bucket.value = prefs.bucket;
-    }
-    if (
-      prefs.partialSort === "date" ||
-      prefs.partialSort === "percent" ||
-      prefs.partialSort === "weekday"
-    ) {
-      el.partialSort.value = prefs.partialSort;
-    }
-    if (Array.isArray(prefs.ignored)) {
-      state.ignored = new Set(prefs.ignored.filter((date) => typeof date === "string"));
-    }
-    if (Array.isArray(prefs.hiddenWeekdays)) {
-      state.hiddenWeekdays = new Set(
-        prefs.hiddenWeekdays.filter((day) => WEEKDAYS.includes(day)),
-      );
-    }
-  } catch {
-    return;
-  }
-}
-
-function savePrefs() {
-  const payload = {
-    hideOutliers: el.hideOutliers.checked,
-    maxMinutes: el.maxMinutes.value,
-    bucket: el.bucket.value,
-    partialSort: el.partialSort.value,
-    ignored: [...state.ignored],
-    hiddenWeekdays: [...state.hiddenWeekdays],
-  };
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(payload));
-  } catch {
-    el.notice.textContent = "This browser did not store the filters.";
-  }
-}
 
 async function fetchJson(path) {
   const response = await fetch(path, { cache: "no-store" });
@@ -129,6 +76,14 @@ async function loadDoc() {
   }
   const sample = normalizeDoc(await fetchJson("sample/stats.json"));
   return { doc: sample, source: "sample" };
+}
+
+async function loadExcluded() {
+  try {
+    return excludedDates(await fetchJson("excluded.json"));
+  } catch {
+    return new Set();
+  }
 }
 
 function option(year) {
@@ -159,28 +114,21 @@ function yearRange() {
   return { fromYear: Math.min(from, through), throughYear: Math.max(from, through) };
 }
 
-function swatch(weekday) {
-  const mark = document.createElement("span");
-  mark.className = `swatch ${SLUG[weekday]}`;
-  mark.setAttribute("aria-hidden", "true");
-  return mark;
-}
-
 function renderSummary(rows) {
   el.summary.replaceChildren();
   for (const row of rows) {
-    const item = document.createElement("li");
-    const name = document.createElement("span");
-    name.className = "day";
-    name.append(swatch(row.weekday), document.createTextNode(row.weekday));
-    const time = document.createElement("strong");
-    time.textContent = row.median == null ? "No solves" : formatSolveTime(row.median);
-    const count = document.createElement("span");
-    count.className = "count";
-    count.textContent =
-      row.count === 1 ? "1 solve" : `${row.count.toLocaleString("en-US")} solves`;
-    item.append(name, time, count);
-    el.summary.append(item);
+    const tr = document.createElement("tr");
+    const day = document.createElement("th");
+    day.scope = "row";
+    day.textContent = row.weekday;
+    const time = document.createElement("td");
+    time.className = "num";
+    time.textContent = row.median == null ? "None" : formatSolveTime(row.median);
+    const count = document.createElement("td");
+    count.className = "num";
+    count.textContent = row.count.toLocaleString("en-US");
+    tr.append(day, time, count);
+    el.summary.append(tr);
   }
 }
 
@@ -189,15 +137,17 @@ function renderLegend() {
   for (const weekday of WEEKDAYS) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `legend-button ${SLUG[weekday]}`;
+    button.className = "legend-button";
     button.dataset.weekday = weekday;
-    button.append(swatch(weekday), document.createTextNode(weekday));
+    const key = document.createElement("span");
+    key.className = `key ${SLUG[weekday]}`;
+    key.setAttribute("aria-hidden", "true");
+    button.append(key, document.createTextNode(weekday));
     const shown = !state.hiddenWeekdays.has(weekday);
     button.setAttribute("aria-pressed", shown ? "true" : "false");
     button.addEventListener("click", () => {
       if (state.hiddenWeekdays.has(weekday)) state.hiddenWeekdays.delete(weekday);
       else state.hiddenWeekdays.add(weekday);
-      savePrefs();
       render();
       const next = el.legend.querySelector(`[data-weekday="${weekday}"]`);
       if (next) next.focus();
@@ -220,24 +170,24 @@ function renderChart(series) {
   if (visible.length === 0) {
     el.chart.hidden = true;
     el.chartEmpty.hidden = false;
-    el.chartEmpty.textContent =
-      series.every((row) => row.points.length === 0)
-        ? "No solved puzzles in this range."
-        : "All weekdays are hidden.";
+    el.chartEmpty.textContent = series.every((row) => row.points.length === 0)
+      ? "No solved puzzles in this range."
+      : "All weekdays are hidden.";
     return;
   }
   el.chart.hidden = false;
   el.chartEmpty.hidden = true;
-  const layout = chartLayout(visible);
+  const layout = chartLayout(visible, { width: 720, height: 380 });
   el.chart.setAttribute("viewBox", `0 0 ${layout.width} ${layout.height}`);
-  const plot = svgEl("rect", {
-    class: "plot",
-    x: layout.pad.left,
-    y: layout.pad.top,
-    width: layout.width - layout.pad.left - layout.pad.right,
-    height: layout.height - layout.pad.top - layout.pad.bottom,
-  });
-  el.chart.append(plot);
+  el.chart.append(
+    svgEl("rect", {
+      class: "plot",
+      x: layout.pad.left,
+      y: layout.pad.top,
+      width: layout.width - layout.pad.left - layout.pad.right,
+      height: layout.height - layout.pad.top - layout.pad.bottom,
+    }),
+  );
   for (const tick of layout.yTicks) {
     el.chart.append(
       svgEl("line", {
@@ -261,8 +211,8 @@ function renderChart(series) {
     const label = svgEl("text", {
       class: "axis",
       x: tick.x,
-      y: layout.height - 10,
-      "text-anchor": "middle",
+      y: layout.height - 8,
+      "text-anchor": tick.anchor,
     });
     label.textContent = tick.label;
     el.chart.append(label);
@@ -282,7 +232,7 @@ function renderChart(series) {
         class: `dot ${slug}`,
         cx: point.x,
         cy: point.y,
-        r: 4,
+        r: 3.5,
       });
       const title = document.createElementNS(SVG_NS, "title");
       title.textContent = `${line.weekday}, ${bucketLabelLong(point.bucket)}: ${formatSolveTime(point.median)} median, ${point.count} solves`;
@@ -299,36 +249,17 @@ function renderExcluded(excluded) {
   el.excludedTable.hidden = excluded.length === 0;
   el.excludedMore.hidden = visible.hidden === 0;
   if (visible.hidden > 0) {
-    el.excludedMore.textContent = `Showing the 100 longest, plus every ignored date. ${visible.hidden.toLocaleString("en-US")} more are excluded.`;
+    const more = visible.hidden.toLocaleString("en-US");
+    el.excludedMore.textContent = `${more} more excluded solves are not listed.`;
   }
   for (const row of visible.rows) {
     const tr = document.createElement("tr");
     const date = document.createElement("td");
-    const label = document.createElement("span");
-    label.className = "date-label";
-    label.append(
-      swatch(weekdayName(row.puzzle.date)),
-      document.createTextNode(formatDate(row.puzzle.date)),
-    );
-    date.append(label);
+    date.textContent = formatDate(row.puzzle.date);
     const time = document.createElement("td");
     time.className = "num";
     time.textContent = formatSolveTime(row.puzzle.seconds);
-    const reason = document.createElement("td");
-    reason.textContent = exclusionLabel(row.reason);
-    const action = document.createElement("td");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.date = row.puzzle.date;
-    if (row.reason === "ignored") {
-      button.dataset.action = "restore";
-      button.textContent = "Restore";
-    } else {
-      button.dataset.action = "ignore";
-      button.textContent = "Ignore";
-    }
-    action.append(button);
-    tr.append(date, time, reason, action);
+    tr.append(date, time);
     el.excludedBody.append(tr);
   }
 }
@@ -361,8 +292,7 @@ function render() {
   const { kept, excluded } = selectSolves(state.doc.puzzles, {
     ...range,
     hideOutliers: el.hideOutliers.checked,
-    maxSeconds: maxSecondsFromMinutes(el.maxMinutes.value),
-    ignoredDates: state.ignored,
+    excludedDates: state.excluded,
   });
   const excludedCount = excluded.length.toLocaleString("en-US");
   const keptCount = kept.length.toLocaleString("en-US");
@@ -379,19 +309,15 @@ function render() {
 
 function setBadge() {
   el.badge.hidden = false;
-  if (state.source === "live") {
-    el.badge.textContent = "Live stats";
-    el.badge.className = "badge live";
-    return;
-  }
-  el.badge.textContent = "Sample data";
-  el.badge.className = "badge sample";
+  el.badge.textContent = state.source === "live" ? "Live" : "Sample";
 }
 
 async function boot() {
-  const loaded = await loadDoc();
+  el.notice.textContent = "";
+  const [loaded, excluded] = await Promise.all([loadDoc(), loadExcluded()]);
   state.doc = loaded.doc;
   state.source = loaded.source;
+  state.excluded = excluded;
   const when = formatUpdated(state.doc.generatedAt);
   el.generated.textContent = when ? `Updated ${when}` : "";
   setBadge();
@@ -406,51 +332,9 @@ el.reload.addEventListener("click", () => {
 });
 
 for (const node of [el.fromYear, el.throughYear, el.bucket, el.hideOutliers, el.partialSort]) {
-  node.addEventListener("change", () => {
-    savePrefs();
-    render();
-  });
+  node.addEventListener("change", render);
 }
-el.maxMinutes.addEventListener("input", () => {
-  savePrefs();
-  render();
-});
 
-el.ignoreForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (!state.doc) return;
-  const date = el.ignoreDate.value;
-  if (!date) {
-    el.notice.textContent = "Choose a date.";
-    return;
-  }
-  const puzzle = state.doc.puzzles.find(
-    (row) => row.date === date && row.solved === true && row.seconds > 0,
-  );
-  if (!puzzle) {
-    el.notice.textContent = "No solved puzzle on that date.";
-    return;
-  }
-  state.ignored.add(date);
-  el.notice.textContent = "";
-  savePrefs();
-  render();
-});
-
-el.excludedBody.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-date]");
-  if (!button) return;
-  const date = button.dataset.date;
-  if (button.dataset.action === "restore") state.ignored.delete(date);
-  else state.ignored.add(date);
-  el.notice.textContent = "";
-  savePrefs();
-  render();
-  const next = el.excludedBody.querySelector(`button[data-date="${date}"]`);
-  if (next) next.focus();
-});
-
-loadPrefs();
 boot().catch(() => {
   el.notice.textContent = "Could not load crossword stats.";
 });

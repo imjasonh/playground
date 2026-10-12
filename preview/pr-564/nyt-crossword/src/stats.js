@@ -118,9 +118,21 @@ function quantile(sorted, p) {
   return sorted[lo] * (1 - frac) + sorted[hi] * frac;
 }
 
-// Upper Tukey fence per weekday. Needs four solves. One extreme time does
-// not move the quartiles, so a timer left running lands above the fence.
-export function upperFences(puzzles) {
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Dates listed in excluded.json. Short and long solves go in the same file.
+export function excludedDates(raw) {
+  const rows = raw && Array.isArray(raw.dates) ? raw.dates : [];
+  const dates = new Set();
+  for (const row of rows) {
+    if (typeof row === "string" && DATE_RE.test(row)) dates.add(row);
+  }
+  return dates;
+}
+
+// Tukey fences per weekday. Needs four solves. A time far above or below
+// the middle of that weekday lands outside the fence.
+export function fencesByWeekday(puzzles) {
   const groups = new Map(WEEKDAYS.map((day) => [day, []]));
   for (const puzzle of puzzles) {
     const day = weekdayName(puzzle.date);
@@ -133,7 +145,8 @@ export function upperFences(puzzles) {
       const sorted = values.slice().sort((a, b) => a - b);
       const q1 = quantile(sorted, 0.25);
       const q3 = quantile(sorted, 0.75);
-      fences.set(day, q3 + 1.5 * (q3 - q1));
+      const iqr = q3 - q1;
+      fences.set(day, { lower: q1 - 1.5 * iqr, upper: q3 + 1.5 * iqr });
     }
   }
   return fences;
@@ -156,12 +169,12 @@ function inYearRange(isoDate, fromYear, throughYear) {
   return year >= fromYear && year <= throughYear;
 }
 
-// Hard filters (ignored dates, minute cap) come off before the fence is
-// computed, so a pinned outlier does not widen the fence for everyone else.
+// Listed dates come off before the fence is computed, so one excluded time
+// does not widen the range for that weekday.
 export function selectSolves(puzzles, options = {}) {
   const fromYear = options.fromYear ?? -Infinity;
   const throughYear = options.throughYear ?? Infinity;
-  const ignored = options.ignoredDates ?? new Set();
+  const listed = options.excludedDates ?? new Set();
   const maxSeconds = options.maxSeconds ?? null;
   const hideOutliers = options.hideOutliers === true;
 
@@ -170,8 +183,8 @@ export function selectSolves(puzzles, options = {}) {
   for (const puzzle of puzzles) {
     if (puzzle.solved !== true || !(puzzle.seconds > 0)) continue;
     if (!inYearRange(puzzle.date, fromYear, throughYear)) continue;
-    if (ignored.has(puzzle.date)) {
-      excluded.push({ puzzle, reason: "ignored" });
+    if (listed.has(puzzle.date)) {
+      excluded.push({ puzzle, reason: "listed" });
     } else if (maxSeconds != null && puzzle.seconds > maxSeconds) {
       excluded.push({ puzzle, reason: "over-limit" });
     } else {
@@ -179,38 +192,33 @@ export function selectSolves(puzzles, options = {}) {
     }
   }
 
-  const fences = hideOutliers ? upperFences(pool) : new Map();
+  const fences = hideOutliers ? fencesByWeekday(pool) : new Map();
   const kept = [];
   for (const puzzle of pool) {
     const fence = fences.get(weekdayName(puzzle.date));
-    if (hideOutliers && fence != null && puzzle.seconds > fence) {
+    const outside =
+      fence != null && (puzzle.seconds > fence.upper || puzzle.seconds < fence.lower);
+    if (hideOutliers && outside) {
       excluded.push({ puzzle, reason: "outlier" });
     } else {
       kept.push(puzzle);
     }
   }
-  excluded.sort((a, b) => b.puzzle.seconds - a.puzzle.seconds);
+  excluded.sort((a, b) => compareIso(b.puzzle.date, a.puzzle.date));
   return { kept, excluded, fences };
 }
 
 export function visibleExcluded(excluded, limit = 100) {
-  const ignored = [];
+  const listed = [];
   const rest = [];
   for (const row of excluded) {
-    if (row.reason === "ignored") ignored.push(row);
+    if (row.reason === "listed") listed.push(row);
     else rest.push(row);
   }
   return {
-    rows: ignored.concat(rest.slice(0, limit)),
+    rows: listed.concat(rest.slice(0, limit)),
     hidden: Math.max(0, rest.length - limit),
   };
-}
-
-export function exclusionLabel(reason) {
-  if (reason === "ignored") return "Ignored";
-  if (reason === "over-limit") return "Over the time limit";
-  if (reason === "outlier") return "Unusually long";
-  return reason;
 }
 
 export function medianByWeekday(puzzles) {
@@ -387,10 +395,17 @@ export function chartLayout(series, { width = 960, height = 420 } = {}) {
       label: formatAxisMinutes(minutes),
     });
   }
-  const xTicks = pickTicks(buckets, 6).map((bucket) => ({
-    bucket,
-    x: round1(xOf(bucket)),
-    label: bucketLabel(bucket),
-  }));
+  const picked = pickTicks(buckets, 6);
+  const xTicks = picked.map((bucket, index) => {
+    let anchor = "middle";
+    if (picked.length > 1 && index === 0) anchor = "start";
+    if (picked.length > 1 && index === picked.length - 1) anchor = "end";
+    return {
+      bucket,
+      x: round1(xOf(bucket)),
+      label: bucketLabel(bucket),
+      anchor,
+    };
+  });
   return { width, height, pad, lines, yTicks, xTicks };
 }
