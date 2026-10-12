@@ -141,7 +141,7 @@ ios/
 ├── fastlane/                # match lists host + extension ids
 ├── Shared/T9/               # shared by in-app T9 demo + keyboard extension
 ├── Shared/RideMonitor/      # live snapshot + ActivityAttributes + sparkline view
-├── Shared/Thermal/          # thermal Live Activity attributes + island policy
+├── Shared/Thermal/          # thermal Live Activity attributes and policy
 ├── Shared/Laya/             # typed-decision runtime; Laya experiment + Army List
 ├── T9Keyboard/              # Custom Keyboard appex (own Bundle ID)
 ├── RideMonitorWidget/       # Ride Monitor + Thermal Live Activity widget (own Bundle ID)

@@ -1,12 +1,10 @@
 import Foundation
 
-/// URL scheme the host app and Live Activities share so a tap on the island
-/// can open a specific experiment.
+/// `playground://experiment/<id>` URLs used by Live Activity taps.
 enum ExperimentDeepLink {
     static let scheme = "playground"
     static let host = "experiment"
 
-    /// `playground://experiment/<id>`, or `nil` if `id` cannot form a URL.
     static func url(forExperimentID id: String) -> URL? {
         guard !id.isEmpty else { return nil }
         var components = URLComponents()
@@ -16,7 +14,6 @@ enum ExperimentDeepLink {
         return components.url
     }
 
-    /// Experiment catalog id from a `playground://experiment/<id>` URL.
     static func experimentID(from url: URL) -> String? {
         guard url.scheme == scheme, url.host == host else { return nil }
         let trimmed = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))

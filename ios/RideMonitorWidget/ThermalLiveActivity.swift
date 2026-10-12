@@ -1,12 +1,9 @@
+import ActivityKit
 import SwiftUI
 import WidgetKit
-import ActivityKit
 
-/// Compact Dynamic Island Live Activity for a non-nominal thermal state.
-///
-/// Compact and minimal presentations are an icon only. The Lock Screen row is
-/// one line because ActivityKit still requires that surface. Updates never
-/// pass an alert configuration.
+/// Thermal Live Activity. Compact and minimal views are an icon. The Lock
+/// Screen row is one line because ActivityKit requires that surface.
 struct ThermalLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ThermalAttributes.self) { context in
@@ -32,7 +29,6 @@ struct ThermalLiveActivity: Widget {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(ThermalLiveActivityStyle.tint(context.state.level))
                     .accessibilityLabel(context.state.level.accessibilityLabel)
-                    .widgetURL(ExperimentDeepLink.url(forExperimentID: ThermalLink.experimentID))
             } compactTrailing: {
                 EmptyView()
             } minimal: {
@@ -40,14 +36,12 @@ struct ThermalLiveActivity: Widget {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(ThermalLiveActivityStyle.tint(context.state.level))
                     .accessibilityLabel(context.state.level.accessibilityLabel)
-                    .widgetURL(ExperimentDeepLink.url(forExperimentID: ThermalLink.experimentID))
             }
             .keylineTint(ThermalLiveActivityStyle.tint(context.state.level))
         }
     }
 }
 
-/// Lock Screen presentation required by ActivityKit. Icon plus the level name.
 struct ThermalLiveActivityLockScreenView: View {
     var state: ThermalAttributes.ContentState
 

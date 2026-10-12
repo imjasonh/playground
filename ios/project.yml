@@ -199,8 +199,7 @@ targets:
       - path: Shared/RideMonitor
       - path: Shared/Thermal
         excludes:
-          # Host-only policy. The widget compiles attributes, levels, and the
-          # deep-link helper.
+          # Host-only. The widget compiles attributes, levels, and the URL helper.
           - ThermalLiveActivityPolicy.swift
     settings:
       base:

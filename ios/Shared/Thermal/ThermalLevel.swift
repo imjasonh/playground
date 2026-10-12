@@ -1,16 +1,12 @@
 import Foundation
 
-/// `ProcessInfo.ThermalState` cases the Live Activity and experiment UI share.
-///
-/// Kept as our own type so unit tests and the WidgetKit extension can map
-/// icons and copy without importing UIKit.
+/// `ProcessInfo.ThermalState` mapped for the Live Activity and experiment UI.
 enum ThermalLevel: String, Codable, Hashable, CaseIterable {
     case nominal
     case fair
     case serious
     case critical
 
-    /// Live Activity is only requested for a non-nominal state.
     var showsLiveActivity: Bool { self != .nominal }
 
     var title: String {
@@ -22,7 +18,6 @@ enum ThermalLevel: String, Codable, Hashable, CaseIterable {
         }
     }
 
-    /// SF Symbol that changes with the state so color is not the only signal.
     var symbolName: String {
         switch self {
         case .nominal: return "thermometer"
@@ -32,12 +27,10 @@ enum ThermalLevel: String, Codable, Hashable, CaseIterable {
         }
     }
 
-    /// Spoken name for the Dynamic Island glyph and the experiment header.
     var accessibilityLabel: String {
         "Thermal state \(title)"
     }
 
-    /// What the system does at this level, from `ProcessInfo.ThermalState`.
     var detail: String {
         switch self {
         case .nominal:
@@ -45,9 +38,9 @@ enum ThermalLevel: String, Codable, Hashable, CaseIterable {
         case .fair:
             return "The thermal state is slightly elevated. The system may start reducing CPU and GPU performance."
         case .serious:
-            return "The thermal state is high. The system is reducing performance to shed heat."
+            return "The thermal state is high. The system is reducing performance because the device is hot."
         case .critical:
-            return "The thermal state is significantly affecting performance. The system reduces work further."
+            return "The thermal state is high enough that the system reduces work further."
         }
     }
 
@@ -62,13 +55,12 @@ enum ThermalLevel: String, Codable, Hashable, CaseIterable {
         case .critical:
             self = .critical
         @unknown default:
-            // A future hotter-than-critical case should still show the island.
+            // A newer thermal case still shows the island.
             self = .critical
         }
     }
 }
 
-/// Deep link target shared by the Live Activity and the host experiment.
 enum ThermalLink {
     static let experimentID = "thermal"
 }

@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Current thermal state, what each level means, and whether the Dynamic
-/// Island icon is showing. A tap on that icon opens this screen.
 struct ThermalView: View {
     @ObservedObject private var monitor = ThermalMonitor.shared
 
@@ -23,18 +21,12 @@ struct ThermalView: View {
     }
 
     private var currentState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(monitor.level.title, systemImage: monitor.level.symbolName)
-                .font(.title)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint(for: monitor.level))
-                .accessibilityLabel(monitor.level.accessibilityLabel)
-                .accessibilityIdentifier("thermalCurrentState")
-            Text(monitor.level.detail)
-                .font(.body)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
+        Label(monitor.level.title, systemImage: monitor.level.symbolName)
+            .font(.title)
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(tint(for: monitor.level))
+            .accessibilityLabel(monitor.level.accessibilityLabel)
+            .accessibilityIdentifier("thermalCurrentState")
     }
 
     private var islandStatus: some View {
@@ -63,7 +55,7 @@ struct ThermalView: View {
             return "Live Activities are off for this app in Settings."
         }
         if monitor.level.showsLiveActivity {
-            return "A thermometer icon sits next to the camera. Tap it to return here. iOS also shows the same state on the Lock Screen."
+            return "The thermometer icon is next to the camera. iOS also shows this state on the Lock Screen."
         }
         return "The island icon appears only when the state is fair, serious, or critical."
     }
@@ -106,7 +98,7 @@ struct ThermalView: View {
                         .accessibilityHidden(true)
                     Text("No changes this session")
                         .font(.headline)
-                    Text("The state is still \(monitor.level.title.lowercased()) since this process launched.")
+                    Text("The state is still \(monitor.level.title.lowercased()) since the app opened.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -136,9 +128,7 @@ struct ThermalView: View {
         switch level {
         case .nominal:
             return .secondary
-        case .fair:
-            return .orange
-        case .serious:
+        case .fair, .serious:
             return .orange
         case .critical:
             return .red

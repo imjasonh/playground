@@ -37,7 +37,7 @@ ios/
 ├── fastlane/
 ├── Shared/T9/                 # multi-tap engine (app + keyboard extension)
 ├── Shared/RideMonitor/        # live snapshot + Live Activity attributes
-├── Shared/Thermal/            # thermal Live Activity attributes + island policy
+├── Shared/Thermal/            # thermal Live Activity attributes and policy
 ├── T9Keyboard/                # system Custom Keyboard appex
 ├── RideMonitorWidget/         # Ride Monitor + Thermal Live Activities (WidgetKit)
 ├── RideMonitorWatch/          # Ride Monitor watchOS companion
@@ -62,7 +62,7 @@ ios/
 | `app-attest` | App Attest | Sign in with Apple, attest once, then `generateAssertion` on each whoami; needs App Attest and Sign in with Apple capability bootstrap |
 | `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
 | `phone-vr` | Phone VR | In-app; 6DoF VR for an iPhone in a lens viewer: ARKit and gyro fusion, Metal stereo at 120 Hz, lens and lateral color correction, late-latched timewarp, optional AirPods cross-check |
-| `thermal` | Thermal | In-app; Dynamic Island icon when `ProcessInfo.thermalState` is not nominal. Tap opens this screen. Reuses the Ride Monitor widget extension |
+| `thermal` | Thermal | In-app; Dynamic Island icon when `ProcessInfo.thermalState` is not nominal. Tap opens this screen. Uses the Ride Monitor widget extension |
 
 ### Ride Monitor
 
@@ -120,19 +120,16 @@ through the system share sheet.
 
 ### Thermal
 
-Reads `ProcessInfo.thermalState` from app launch. When the state is fair,
-serious, or critical, the existing Ride Monitor widget extension
-(`io.github.imjasonh.playground.ridemonitorwidget`) presents a Live Activity
-whose Dynamic Island compact and minimal views are a thermometer icon only.
-There is no alert. A tap opens `playground://experiment/thermal`, which is
-this experiment: current level, what the system does at each level, and
-whether the island icon is showing.
+Playground reads `ProcessInfo.thermalState` from launch. If the state is
+fair, serious, or critical, the Ride Monitor widget extension
+(`io.github.imjasonh.playground.ridemonitorwidget`) starts a Live Activity.
+The Dynamic Island compact and minimal views are a thermometer icon.
+There is no alert. Tap the icon to open this experiment.
 
-ActivityKit still requires a Lock Screen presentation, so that surface is a
-single line with the same icon and level name. The Live Activity ends as soon
-as the state returns to nominal. Updates stop while the process is
-suspended. Simulator thermal state stays nominal, so the island does not
-appear there.
+ActivityKit also draws a Lock Screen row. That row is the same icon and
+level name. The Live Activity ends when the state is nominal again.
+Updates stop while the process is suspended. The Simulator stays
+nominal, so the island does not appear there.
 
 ### Army List
 

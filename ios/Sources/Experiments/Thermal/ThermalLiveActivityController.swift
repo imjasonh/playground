@@ -1,32 +1,27 @@
-import Foundation
 import ActivityKit
+import OSLog
 import UIKit
 
 /// Starts, updates, and ends the thermal Live Activity. No-ops when Live
-/// Activities are unavailable or the incoming state is nominal.
-///
-/// Requests never include an alert configuration. The island is the intended
-/// presentation. iOS still requires a Lock Screen view, which stays one line.
+/// Activities are off or the incoming state is nominal.
 @MainActor
 final class ThermalLiveActivityController {
     static let shared = ThermalLiveActivityController()
 
+    private static let logger = Logger(
+        subsystem: "io.github.imjasonh.playground",
+        category: "Thermal"
+    )
+
     private var activity: Activity<ThermalAttributes>?
-    /// Held until `Activity.request` succeeds. Also used to defer starts that
-    /// happen while the app is backgrounded (`request` only works when active).
+    /// Held until `Activity.request` succeeds, including starts that happen
+    /// while backgrounded. `request` only works when the app is active.
     private var pendingLevel: ThermalLevel?
     /// Bumps so an in-flight async start is abandoned if a newer start or end
     /// wins.
     private var generation = 0
 
     private init() {}
-
-    func handleSceneBecameActive() {
-        adoptExistingIfNeeded()
-        guard pendingLevel != nil, activity == nil else { return }
-        guard UIApplication.shared.applicationState == .active else { return }
-        enqueueStart()
-    }
 
     func sync(level: ThermalLevel) {
         adoptExistingIfNeeded()
@@ -64,8 +59,17 @@ final class ThermalLiveActivityController {
     }
 
     private func adoptExistingIfNeeded() {
+        let all = Activity<ThermalAttributes>.activities
         if activity == nil {
-            activity = Activity<ThermalAttributes>.activities.first
+            activity = all.first
+        }
+        let keepID = activity?.id
+        let extras = all.filter { $0.id != keepID }
+        guard !extras.isEmpty else { return }
+        Task {
+            for extra in extras {
+                await extra.end(nil, dismissalPolicy: .immediate)
+            }
         }
     }
 
@@ -85,9 +89,8 @@ final class ThermalLiveActivityController {
         guard token == generation, let level = pendingLevel, level.showsLiveActivity else { return }
         guard UIApplication.shared.applicationState == .active else { return }
 
-        let state = ThermalAttributes.ContentState(level: level, changedAt: Date())
         let content = ActivityContent(
-            state: state,
+            state: ThermalAttributes.ContentState(level: level),
             staleDate: ThermalLiveActivityPolicy.staleDate()
         )
         do {
@@ -105,7 +108,7 @@ final class ThermalLiveActivityController {
             pendingLevel = nil
         } catch {
             activity = nil
-            ThermalLog.error("Live Activity request failed: \(error.localizedDescription)")
+            Self.logger.error("Live Activity request failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -113,7 +116,7 @@ final class ThermalLiveActivityController {
         let token = generation
         let activityID = activity.id
         let content = ActivityContent(
-            state: ThermalAttributes.ContentState(level: level, changedAt: Date()),
+            state: ThermalAttributes.ContentState(level: level),
             staleDate: ThermalLiveActivityPolicy.staleDate()
         )
         Task {

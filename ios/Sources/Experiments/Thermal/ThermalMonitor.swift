@@ -1,7 +1,6 @@
-import Foundation
 import ActivityKit
+import Foundation
 
-/// Session sample of a thermal-state change, shown on the experiment screen.
 struct ThermalSample: Hashable, Identifiable {
     let id: UUID
     let level: ThermalLevel
@@ -16,9 +15,8 @@ struct ThermalSample: Hashable, Identifiable {
 
 /// Observes `ProcessInfo.thermalState` and keeps the Live Activity in sync.
 ///
-/// Starts from the host scene so the island can appear without opening this
-/// experiment first. The experiment is the destination for a tap and the
-/// place that shows what the level means.
+/// Started from the host scene so the island can appear without opening the
+/// experiment first.
 @MainActor
 final class ThermalMonitor: ObservableObject {
     static let shared = ThermalMonitor()
@@ -64,7 +62,6 @@ final class ThermalMonitor: ObservableObject {
     func handleSceneBecameActive() {
         activitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
         applyCurrent()
-        ThermalLiveActivityController.shared.handleSceneBecameActive()
     }
 
     private func applyCurrent() {
