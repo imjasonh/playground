@@ -10,6 +10,7 @@ import {
   formatDate,
   formatPercent,
   formatSolveTime,
+  formatUnsolvedCount,
   formatUpdated,
   medianByWeekday,
   nearestChartPoint,
@@ -37,6 +38,7 @@ const SLUG = {
 
 const el = {
   generated: document.getElementById("generated"),
+  unsolvedCount: document.getElementById("unsolved-count"),
   fromYear: document.getElementById("from-year"),
   throughYear: document.getElementById("through-year"),
   bucket: document.getElementById("bucket"),
@@ -440,6 +442,7 @@ function zoomAt(factor, clientX) {
 
 function renderPartials(puzzles) {
   const rows = partialPuzzles(puzzles, el.partialSort.value);
+  el.unsolvedCount.textContent = formatUnsolvedCount(rows.length);
   el.partialBody.replaceChildren();
   el.partialEmpty.hidden = rows.length > 0;
   el.partialTable.hidden = rows.length === 0;
