@@ -14,6 +14,7 @@ import {
   excludedDates,
   formatDate,
   formatSolveTime,
+  formatUnsolvedCount,
   isPartial,
   median,
   medianByWeekday,
@@ -47,6 +48,12 @@ test("formatSolveTime renders minutes and hours", () => {
   assert.equal(formatSolveTime(3661), "1:01:01");
   assert.equal(formatSolveTime(0), "");
   assert.equal(formatSolveTime(null), "");
+});
+
+test("formatUnsolvedCount names one puzzle and many puzzles", () => {
+  assert.equal(formatUnsolvedCount(0), "0 unsolved puzzles.");
+  assert.equal(formatUnsolvedCount(1), "1 unsolved puzzle.");
+  assert.equal(formatUnsolvedCount(1200), "1,200 unsolved puzzles.");
 });
 
 test("formatDate is a calendar date in UTC", () => {
