@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-12T22:12:52.445Z",
+  "generatedAt": "2026-10-13T03:01:03.503Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -26373,9 +26373,9 @@
     {
       "date": "2015-04-26",
       "id": 9927,
-      "solved": false,
-      "percentFilled": 65,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1599
     },
     {
       "date": "2015-04-27",
@@ -29642,9 +29642,9 @@
     {
       "date": "2016-08-05",
       "id": 11959,
-      "solved": false,
-      "percentFilled": 50,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1018
     },
     {
       "date": "2016-08-06",
@@ -31959,9 +31959,9 @@
     {
       "date": "2017-07-02",
       "id": 13448,
-      "solved": false,
-      "percentFilled": 39,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 86,
+      "seconds": 2027
     },
     {
       "date": "2017-07-03",
@@ -32134,9 +32134,9 @@
     {
       "date": "2017-07-27",
       "id": 13624,
-      "solved": false,
-      "percentFilled": 35,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 997
     },
     {
       "date": "2017-07-28",
@@ -34444,9 +34444,9 @@
     {
       "date": "2018-06-22",
       "id": 15308,
-      "solved": false,
-      "percentFilled": 40,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 928
     },
     {
       "date": "2018-06-23",
@@ -35088,9 +35088,9 @@
     {
       "date": "2018-09-22",
       "id": 15713,
-      "solved": false,
-      "percentFilled": 33,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 997
     },
     {
       "date": "2018-09-23",
@@ -37146,9 +37146,9 @@
     {
       "date": "2019-07-13",
       "id": 16917,
-      "solved": false,
-      "percentFilled": 39,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 836
     },
     {
       "date": "2019-07-14",
@@ -37825,9 +37825,9 @@
     {
       "date": "2019-10-18",
       "id": 17322,
-      "solved": false,
-      "percentFilled": 35,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1067
     },
     {
       "date": "2019-10-19",
@@ -45910,9 +45910,9 @@
     {
       "date": "2022-12-16",
       "id": 20701,
-      "solved": false,
-      "percentFilled": 47,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1019
     },
     {
       "date": "2022-12-17",
