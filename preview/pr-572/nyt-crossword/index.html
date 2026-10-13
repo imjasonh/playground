@@ -31,6 +31,7 @@
         <div>
           <h1>Crossword</h1>
           <p id="generated" class="meta"></p>
+          <p id="unsolved-count" class="meta"></p>
         </div>
       </header>
 
@@ -44,7 +45,7 @@
           <select id="through-year"></select>
         </label>
         <label>
-          Trend
+          Period
           <select id="bucket">
             <option value="month">Month</option>
             <option value="quarter" selected>Quarter</option>
@@ -54,6 +55,14 @@
         <label class="check">
           <input id="hide-outliers" type="checkbox" checked />
           Hide outliers
+        </label>
+        <label class="check">
+          <input id="trend-days" type="checkbox" />
+          Weekday trends
+        </label>
+        <label class="check">
+          <input id="trend-overall" type="checkbox" />
+          Overall trend
         </label>
       </section>
 
@@ -81,17 +90,31 @@
 
       <section>
         <h2 id="chart-heading">Solve time</h2>
-        <div id="legend" class="legend"></div>
-        <div class="chart-scroll">
-          <svg
-            id="chart"
-            class="chart"
-            width="720"
-            height="380"
-            viewBox="0 0 720 380"
-            role="img"
-            aria-labelledby="chart-heading"
-          ></svg>
+        <fieldset class="weekday-filter">
+          <legend>Weekdays</legend>
+          <div id="legend" class="legend"></div>
+        </fieldset>
+        <div class="chart-tools">
+          <button id="zoom-in" type="button">Zoom in</button>
+          <button id="zoom-out" type="button">Zoom out</button>
+          <button id="zoom-reset" type="button">Reset</button>
+        </div>
+        <div class="chart-frame">
+          <div class="chart-scroll" id="chart-scroll">
+            <svg
+              id="chart"
+              class="chart"
+              width="720"
+              height="380"
+              viewBox="0 0 720 380"
+              role="img"
+              aria-labelledby="chart-heading"
+            ></svg>
+          </div>
+          <div id="chart-pan" class="chart-pan" hidden>
+            <div id="chart-pan-inner"></div>
+          </div>
+          <div id="chart-tip" class="chart-tip" role="tooltip" hidden></div>
         </div>
         <p id="chart-empty" class="meta" hidden></p>
       </section>

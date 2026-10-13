@@ -177,24 +177,34 @@ label.check {
   gap: 0.5rem;
 }
 
+.weekday-filter {
+  border: 0;
+  margin: 0.85rem 0 0;
+  padding: 0;
+}
+
+.weekday-filter > legend {
+  padding: 0;
+  font-size: 1rem;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem 0.75rem;
-  margin-top: 0.85rem;
+  margin-top: 0.35rem;
 }
 
-.legend-button {
+.legend-check {
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
-  border: 0;
-  background: transparent;
-  padding: 0.35rem 0.15rem;
+  gap: 0.4rem;
   min-height: 2.75rem;
 }
 
-.legend-button[aria-pressed="false"] {
-  opacity: 0.35;
+.legend-check:has(input:not(:checked)) {
+  opacity: 0.4;
 }
 
 .key {
@@ -223,23 +233,89 @@ label.check {
   border-top-style: dotted;
 }
 
-.key.sun {
+.key.sun,
+.key.overall {
   border-top-width: 3px;
+}
+
+.chart-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.chart-tools button:disabled {
+  opacity: 0.4;
+}
+
+.chart-frame {
+  position: relative;
+  margin-top: 0.85rem;
 }
 
 .chart-scroll,
 .table-scroll {
   overflow-x: auto;
+}
+
+.table-scroll {
   margin-top: 0.85rem;
 }
 
 .chart {
   display: block;
-  width: 720px;
+  width: 100%;
   height: auto;
-  max-width: none;
   background: var(--plot);
+  touch-action: pan-y;
 }
+
+.chart-pan {
+  overflow-x: auto;
+  height: 1rem;
+  margin-top: 0.35rem;
+}
+
+.chart-pan div {
+  height: 1px;
+}
+
+.chart.is-zoomed {
+  cursor: grab;
+}
+
+.chart.is-panning {
+  cursor: grabbing;
+}
+
+.chart-tip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  max-width: 16rem;
+  padding: 0.45rem 0.65rem;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.chart-tip p {
+  margin: 0;
+}
+
+.chart-tip .tip-time {
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.chart-tip .tip-meta {
+  color: var(--muted);
+}
+
 
 .plot {
   fill: var(--plot);
@@ -266,6 +342,9 @@ label.check {
 .series.mon,
 .series.tue,
 .series.sun,
+.trend.mon,
+.trend.tue,
+.trend.sun,
 .dot.mon,
 .dot.tue,
 .dot.sun {
@@ -274,6 +353,8 @@ label.check {
 
 .series.wed,
 .series.thu,
+.trend.wed,
+.trend.thu,
 .dot.wed,
 .dot.thu {
   stroke: var(--rule-strong);
@@ -281,9 +362,22 @@ label.check {
 
 .series.fri,
 .series.sat,
+.trend.fri,
+.trend.sat,
 .dot.fri,
 .dot.sat {
   stroke: var(--link);
+}
+
+.trend {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.trend.overall {
+  stroke: var(--ink);
+  stroke-width: 2.75;
 }
 
 .series.tue,

@@ -75,6 +75,12 @@ export function formatPercent(value) {
   return `${Math.round(value)}%`;
 }
 
+export function formatUnsolvedCount(count) {
+  const n = count > 0 ? count : 0;
+  if (n === 1) return "1 unsolved puzzle.";
+  return `${n.toLocaleString("en-US")} unsolved puzzles.`;
+}
+
 export function formatDate(isoDate) {
   const [year, month, day] = isoDate.split("-").map(Number);
   return new Intl.DateTimeFormat("en-US", {
@@ -258,6 +264,48 @@ export function bucketLabelLong(bucket) {
   return bucket;
 }
 
+const QUARTER_SPANS = [
+  ["January", "March"],
+  ["April", "June"],
+  ["July", "September"],
+  ["October", "December"],
+];
+
+// The span a trend point covers, for the hover label.
+export function bucketSpan(bucket) {
+  const quarter = /^(\d{4})-Q([1-4])$/.exec(bucket);
+  if (quarter) {
+    const [start, end] = QUARTER_SPANS[Number(quarter[2]) - 1];
+    return `${start} to ${end} ${quarter[1]}`;
+  }
+  return bucketLabelLong(bucket);
+}
+
+// Slide a window of `span` along the 0 to 1 time axis.
+export function placeView(start, span) {
+  const width = Math.min(1, Math.max(0, span));
+  let next = start;
+  if (next < 0) next = 0;
+  if (next + width > 1) next = 1 - width;
+  if (next < 0) next = 0;
+  return [next, Math.min(1, next + width)];
+}
+
+export function nearestChartPoint(points, x, y, maxDist = 22) {
+  let best = null;
+  let bestD = maxDist * maxDist;
+  for (const point of points) {
+    const dx = point.x - x;
+    const dy = point.y - y;
+    const dist = dx * dx + dy * dy;
+    if (dist <= bestD) {
+      best = point;
+      bestD = dist;
+    }
+  }
+  return best;
+}
+
 export function trendByWeekday(puzzles, bucket) {
   const groups = new Map(WEEKDAYS.map((day) => [day, new Map()]));
   for (const puzzle of puzzles) {
@@ -277,6 +325,56 @@ export function trendByWeekday(puzzles, bucket) {
     });
     return { weekday, points };
   });
+}
+
+export function overallByBucket(puzzles, bucket) {
+  const groups = new Map();
+  for (const puzzle of puzzles) {
+    const key = bucketKey(puzzle.date, bucket);
+    const list = groups.get(key);
+    if (list) list.push(puzzle.seconds);
+    else groups.set(key, [puzzle.seconds]);
+  }
+  const points = [...groups.keys()].sort().map((key) => {
+    const values = groups.get(key);
+    return { bucket: key, median: median(values), count: values.length };
+  });
+  return { weekday: "Overall", points };
+}
+
+// Least-squares line through chart points. x and y are already in plot space.
+export function trendLine(points) {
+  const usable = (points ?? []).filter(
+    (point) => Number.isFinite(point.x) && Number.isFinite(point.y),
+  );
+  if (usable.length < 2) return null;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumXY = 0;
+  for (const point of usable) {
+    sumX += point.x;
+    sumY += point.y;
+    sumXX += point.x * point.x;
+    sumXY += point.x * point.y;
+  }
+  const n = usable.length;
+  const denom = n * sumXX - sumX * sumX;
+  if (denom === 0) return null;
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+  let minX = usable[0].x;
+  let maxX = usable[0].x;
+  for (const point of usable) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+  }
+  return {
+    x1: minX,
+    y1: intercept + slope * minX,
+    x2: maxX,
+    y2: intercept + slope * maxX,
+  };
 }
 
 export function solvedYears(puzzles) {
@@ -343,23 +441,43 @@ function pickTicks(buckets, maxTicks) {
   return ticks;
 }
 
-export function chartLayout(series, { width = 960, height = 420 } = {}) {
+export function viewIndexes(count, viewStart = 0, viewEnd = 1) {
+  if (count <= 1) return [0, Math.max(0, count - 1)];
+  const start = Math.min(Math.max(viewStart, 0), 1);
+  const end = Math.min(Math.max(viewEnd, start), 1);
+  let i0 = Math.round(start * (count - 1));
+  let i1 = Math.round(end * (count - 1));
+  if (i1 <= i0) i1 = Math.min(count - 1, i0 + 1);
+  return [i0, i1];
+}
+
+export function chartLayout(series, options = {}) {
+  const width = options.width ?? 960;
+  const height = options.height ?? 420;
   const pad = { top: 16, right: 16, bottom: 36, left: 56 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
   const seen = new Set();
   const buckets = [];
-  let maxSeconds = 60;
   for (const seriesRow of series) {
     for (const point of seriesRow.points) {
       if (!seen.has(point.bucket)) {
         seen.add(point.bucket);
         buckets.push(point.bucket);
       }
-      if (point.median > maxSeconds) maxSeconds = point.median;
     }
   }
   buckets.sort();
+  const [i0, i1] = viewIndexes(buckets.length, options.viewStart, options.viewEnd);
+  const visibleBuckets = buckets.slice(i0, i1 + 1);
+  const visibleSet = new Set(visibleBuckets);
+  let maxSeconds = 60;
+  for (const seriesRow of series) {
+    for (const point of seriesRow.points) {
+      if (!visibleSet.has(point.bucket)) continue;
+      if (point.median > maxSeconds) maxSeconds = point.median;
+    }
+  }
   const maxMinutes = maxSeconds / 60;
   const step = niceMinuteStep(maxMinutes);
   const yMaxMinutes = Math.max(step, Math.ceil(maxMinutes / step) * step);
@@ -367,7 +485,8 @@ export function chartLayout(series, { width = 960, height = 420 } = {}) {
   const xOf = (bucket) => {
     if (buckets.length <= 1) return pad.left + innerW / 2;
     const index = buckets.indexOf(bucket);
-    return pad.left + (index / (buckets.length - 1)) * innerW;
+    const span = Math.max(1, i1 - i0);
+    return pad.left + ((index - i0) / span) * innerW;
   };
   const yOf = (seconds) => pad.top + (1 - seconds / yMax) * innerH;
   const lines = series.map((seriesRow) => ({
@@ -388,7 +507,7 @@ export function chartLayout(series, { width = 960, height = 420 } = {}) {
       label: formatAxisMinutes(minutes),
     });
   }
-  const picked = pickTicks(buckets, 6);
+  const picked = pickTicks(visibleBuckets, 6);
   const xTicks = picked.map((bucket, index) => {
     let anchor = "middle";
     if (picked.length > 1 && index === 0) anchor = "start";
@@ -400,5 +519,5 @@ export function chartLayout(series, { width = 960, height = 420 } = {}) {
       anchor,
     };
   });
-  return { width, height, pad, lines, yTicks, xTicks };
+  return { width, height, pad, lines, yTicks, xTicks, bucketCount: buckets.length };
 }
