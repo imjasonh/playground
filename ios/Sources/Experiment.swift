@@ -59,5 +59,6 @@ enum ExperimentCatalog {
         LayaExperiment.experiment,
         BlatherExperiment.experiment,
         PhoneVRExperiment.experiment,
+        ThermalExperiment.experiment,
     ]
 }
