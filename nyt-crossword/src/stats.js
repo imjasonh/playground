@@ -75,6 +75,12 @@ export function formatPercent(value) {
   return `${Math.round(value)}%`;
 }
 
+export function formatUnsolvedCount(count) {
+  const n = count > 0 ? count : 0;
+  if (n === 1) return "1 unsolved puzzle.";
+  return `${n.toLocaleString("en-US")} unsolved puzzles.`;
+}
+
 export function formatDate(isoDate) {
   const [year, month, day] = isoDate.split("-").map(Number);
   return new Intl.DateTimeFormat("en-US", {
