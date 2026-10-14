@@ -2,9 +2,9 @@
 """Capture the store screenshots from a real Chrome window.
 
 This starts Xvfb at 1280 by 800, serves a page, and loads this directory
-with Chrome for Testing. store/screenshot.png is that window with two tabs
-at the same URL and the toolbar badge. store/screenshot-closed.png is the
-same window after the toolbar click.
+with Chrome for Testing. store/screenshot.png is that window with four
+tabs at the same URL and a toolbar badge of 3, the number the click would
+close. store/screenshot-closed.png is the same window after the click.
 
 Branded Chrome ignores --load-extension. Set CHROME_BIN to a Chrome for
 Testing binary. The script also needs Xvfb, ImageMagick's import, and xdotool.
@@ -126,18 +126,42 @@ def blue_clusters(image: Image.Image) -> list[tuple[int, int, int, int]]:
     return boxes
 
 
-def wait_for_badge(display: str) -> tuple[int, int]:
-    deadline = time.time() + 10
+def tab_close_buttons(image: Image.Image) -> int:
+    image = image.convert("RGB")
+    points: list[tuple[int, int]] = []
+    for y in range(10, 32):
+        for x in range(40, 1100):
+            red, green, blue = image.getpixel((x, y))[:3]
+            if red < 100 and green < 100 and blue < 100:
+                points.append((x, y))
+    points.sort()
+    groups: list[list[tuple[int, int]]] = []
+    for point in points:
+        if not groups or point[0] - groups[-1][-1][0] > 10:
+            groups.append([point])
+        else:
+            groups[-1].append(point)
+    count = 0
+    for group in groups:
+        xs = [point[0] for point in group]
+        width = max(xs) - min(xs)
+        if 5 <= width <= 12 and len(group) >= 10:
+            count += 1
+    return count
+
+
+def wait_for_duplicates(display: str, tabs: int) -> tuple[int, int]:
+    deadline = time.time() + 15
     while time.time() < deadline:
         path = Path("/tmp/duplicate-tabs-probe.png")
         grab(display, path)
         image = Image.open(path)
         clusters = [box for box in blue_clusters(image) if box[2] - box[0] < 30]
-        if clusters:
+        if tab_close_buttons(image) >= tabs and clusters:
             left, top, right, bottom = clusters[0]
             return (left + right) // 2, (top + bottom) // 2
         time.sleep(0.3)
-    raise SystemExit("the toolbar badge did not appear")
+    raise SystemExit(f"did not see {tabs} duplicate tabs with a toolbar badge")
 
 
 def grab(display: str, path: Path) -> None:
@@ -213,9 +237,9 @@ def main() -> None:
         stop(browser)
         browser = None
         pin_extension(profile, extension)
-        browser = launch_chrome(chrome, profile, display, [url, url])
+        browser = launch_chrome(chrome, profile, display, [url, url, url, url])
         wait_for_window(display)
-        badge_x, badge_y = wait_for_badge(display)
+        badge_x, badge_y = wait_for_duplicates(display, 4)
         move(display, 400, 500)
         time.sleep(0.4)
         save_rgb(display, store / "screenshot.png")
