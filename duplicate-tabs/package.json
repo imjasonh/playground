@@ -1,0 +1,8 @@
+{
+  "name": "duplicate-tabs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.js && bash pack_test.sh"
+  }
+}

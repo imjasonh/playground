@@ -1,0 +1,86 @@
+# Test the Close Duplicate Tabs extension, and publish it from main.
+#
+# Pull requests run the unit tests and pack the zip. A push to main, or a
+# manual run on main, also uploads that zip to the existing Chrome Web Store
+# item and publishes it. The API releases the version to the item's current
+# audience after review. It does not create the item or change visibility.
+#
+# Publishing needs these repository secrets:
+#   CHROME_WEB_STORE_CLIENT_ID
+#   CHROME_WEB_STORE_CLIENT_SECRET
+#   CHROME_WEB_STORE_REFRESH_TOKEN
+#   CHROME_WEB_STORE_PUBLISHER_ID
+# Optional repository variable CHROME_WEB_STORE_PUBLISH_TYPE
+# (DEFAULT_PUBLISH, STAGED_PUBLISH, or TRUSTED_TESTERS).
+# Without the secrets, tests still run and publish is skipped.
+
+name: duplicate-tabs
+
+on:
+  pull_request:
+    paths:
+      - duplicate-tabs/**
+      - .github/workflows/duplicate-tabs.yml
+      - .github/scripts/chrome_web_store.py
+      - .github/scripts/chrome_web_store_test.py
+  push:
+    branches: [main]
+    paths:
+      - duplicate-tabs/**
+      - .github/workflows/duplicate-tabs.yml
+      - .github/scripts/chrome_web_store.py
+      - .github/scripts/chrome_web_store_test.py
+  workflow_dispatch: {}
+
+concurrency:
+  group: duplicate-tabs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+
+      - name: Extension tests
+        working-directory: duplicate-tabs
+        run: npm test
+
+      - name: Publish client tests
+        working-directory: .github/scripts
+        run: python3 chrome_web_store_test.py
+
+      - name: Pack the store zip
+        run: bash duplicate-tabs/pack.sh /tmp/duplicate-tabs.zip
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: duplicate-tabs
+          path: /tmp/duplicate-tabs.zip
+          if-no-files-found: error
+
+      - name: Publish to the Chrome Web Store
+        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+        env:
+          CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.CHROME_WEB_STORE_CLIENT_ID }}
+          CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.CHROME_WEB_STORE_CLIENT_SECRET }}
+          CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEB_STORE_REFRESH_TOKEN }}
+          CHROME_WEB_STORE_PUBLISHER_ID: ${{ secrets.CHROME_WEB_STORE_PUBLISHER_ID }}
+          CHROME_WEB_STORE_ITEM_ID: canmakefmjmnhhaobdeipbamnalcloap
+          CHROME_WEB_STORE_PUBLISH_TYPE: ${{ vars.CHROME_WEB_STORE_PUBLISH_TYPE || 'DEFAULT_PUBLISH' }}
+        run: |
+          if [ -z "$CHROME_WEB_STORE_CLIENT_ID" ] || [ -z "$CHROME_WEB_STORE_CLIENT_SECRET" ] || [ -z "$CHROME_WEB_STORE_REFRESH_TOKEN" ] || [ -z "$CHROME_WEB_STORE_PUBLISHER_ID" ]; then
+            echo "::warning title=Chrome Web Store publish skipped::Add CHROME_WEB_STORE_CLIENT_ID, CHROME_WEB_STORE_CLIENT_SECRET, CHROME_WEB_STORE_REFRESH_TOKEN, and CHROME_WEB_STORE_PUBLISHER_ID. See duplicate-tabs/README.md."
+            exit 0
+          fi
+          python3 .github/scripts/chrome_web_store.py /tmp/duplicate-tabs.zip
