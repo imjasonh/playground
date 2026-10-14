@@ -35,8 +35,8 @@ if manifest["name"] != "Close Duplicate Tabs":
 description = manifest["description"]
 if len(description) > 132 or "badge" not in description or "URL" not in description:
     raise SystemExit(f"manifest description is {len(description)} characters and must name the badge and the URL")
-if manifest.get("permissions") != ["tabs"]:
-    raise SystemExit(f"permissions must be exactly tabs, got {manifest.get('permissions')}")
+if manifest.get("permissions") != ["contextMenus", "tabs"]:
+    raise SystemExit(f"permissions must be contextMenus and tabs, got {manifest.get('permissions')}")
 if "host_permissions" in manifest or "content_scripts" in manifest or "optional_permissions" in manifest:
     raise SystemExit("package must not declare host permissions or content scripts")
 action = manifest["action"]

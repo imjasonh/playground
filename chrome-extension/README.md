@@ -1,6 +1,6 @@
 # Close Duplicate Tabs
 
-A Chrome extension that closes extra tabs with the same URL. The toolbar button is the action. The badge on that button is the number of tabs the click will close.
+A Chrome extension that closes extra tabs with the same URL. The toolbar button is the action. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
 
 The Chrome Web Store item ID is `canmakefmjmnhhaobdeipbamnalcloap`. This directory has no `index.html`, so GitHub Pages does not publish it.
 
@@ -14,14 +14,16 @@ For each URL, the click keeps one tab and closes the others. It keeps a pinned t
 
 The badge is that close count. It is empty when the count is 0. Counts above 999 render as `999+`. The button title is `Close N duplicate tabs`, or `No duplicate tabs` when the count is 0.
 
-The extension uses the `tabs` permission so it can read URLs and close tabs. It does not use host permissions or content scripts. URLs stay in the browser. The extension does not send them anywhere.
+Right-click a tab in Chrome 150 or later and the menu shows the same title, `Close N duplicate tabs`. That item runs the same close as the toolbar button, so the number matches the badge. The item is hidden when the count is 0. Older Chrome keeps the toolbar button and does not show the item.
+
+The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` to add the tab menu item. It does not use host permissions or content scripts. URLs stay in the browser. The extension does not send them anywhere.
 
 ## Load it locally
 
 1. Run `bash pack.sh` only if you want a zip. To load the directory unpacked, Chrome can point at this folder.
 2. Open `chrome://extensions`, turn on Developer mode, and choose **Load unpacked**.
 3. Open two tabs with the same URL. The badge shows `1`.
-4. Click the toolbar button. One of those tabs closes, and the badge clears.
+4. Click the toolbar button, or right-click a tab and choose **Close 1 duplicate tab**. One of those tabs closes, and the badge clears. Chrome older than 150 has the toolbar button only.
 
 ## Tests
 
@@ -31,9 +33,9 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests and `pack_test.sh`. The Node tests cover which tabs close and the badge the toolbar click sets. `pack_test.sh` checks the zip layout, the `tabs` permission, and the store image sizes.
+`npm test` runs the Node tests and `pack_test.sh`. The Node tests cover which tabs close, the badge the toolbar click sets, and the tab menu item. `pack_test.sh` checks the zip layout, the `tabs` and `contextMenus` permissions, and the store image sizes.
 
-`node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
+`node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 
 Regenerate the icons with Pillow:
 
@@ -62,9 +64,9 @@ Upload `chrome-extension.zip` from `bash pack.sh chrome-extension.zip` if you ar
 | Field | Value |
 | --- | --- |
 | Name | Close Duplicate Tabs |
-| Summary | Closes extra tabs that share a URL. The badge shows how many tabs the click will close. |
-| Single purpose | Add a toolbar button that closes extra tabs with the same URL, and show how many tabs that click will close. |
-| Permission justification | The tabs permission lets the extension read each tab's URL, count tabs that share a URL, and close the extras. The comparison happens on the device. The extension does not transmit tab URLs or titles. |
+| Summary | Closes extra tabs that share a URL. The badge and tab menu show how many tabs that click will close. |
+| Single purpose | Add a toolbar button that closes extra tabs with the same URL, show how many tabs that click will close, and offer the same action from the tab menu. |
+| Permission justification | The tabs permission lets the extension read each tab's URL, count tabs that share a URL, and close the extras. The contextMenus permission adds a Close N duplicate tabs item to the tab menu. N is the same count as the badge. The comparison happens on the device. The extension does not transmit tab URLs or titles. |
 | Data use | It does not collect or use user data. |
 | Visibility | Set this in the dashboard. The publish API cannot change it. |
 
@@ -73,7 +75,7 @@ Paste this as the detailed description:
 ```text
 Close Duplicate Tabs adds one toolbar button. The badge on that button shows how many open tabs share a URL with another tab. That number is how many tabs the click will close.
 
-Click the button to close those extra tabs. For each URL, one tab stays open. A pinned tab stays ahead of an unpinned tab, then the active tab, then the tab you used most recently.
+Click the button to close those extra tabs. In Chrome 150 or later, right-click a tab and choose Close N duplicate tabs. That item closes the same tabs as the button, and it is hidden when there is nothing to close. For each URL, one tab stays open. A pinned tab stays ahead of an unpinned tab, then the active tab, then the tab you used most recently.
 
 The extension reads tab URLs on your device to make that comparison. It does not send URLs, titles, or browsing history anywhere. It has no content scripts and does not change web pages.
 ```

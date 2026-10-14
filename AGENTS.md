@@ -795,7 +795,7 @@ auto-discover them. Run their local tests when you change them.
 | `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
-| `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
+| `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Chrome 150 and later show the same action on the tab menu. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
 
 ## The iOS app
 

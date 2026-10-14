@@ -188,6 +188,22 @@ async function main() {
     if (!observed) {
       throw new Error(`badge did not match the open tabs\n${logs}`);
     }
+    const menuError = await evaluate(
+      workerSession,
+      `new Promise((resolve) => {
+        chrome.contextMenus.create({
+          id: "close-duplicates",
+          title: "probe",
+          contexts: ["tab"],
+        }, () => {
+          resolve(chrome.runtime.lastError ? chrome.runtime.lastError.message : "created");
+        });
+      })`,
+    );
+    if (!String(menuError).includes("duplicate")) {
+      throw new Error(`tab menu item was not registered: ${menuError}\n${logs}`);
+    }
+    console.log(`tab menu item close-duplicates is registered (${menuError})`);
     const before = observed.text;
     await browser.send("Extensions.triggerAction", { id: extensionId, targetId: tab.targetId });
     let after = null;
