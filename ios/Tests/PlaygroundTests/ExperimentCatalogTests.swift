@@ -71,8 +71,4 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesPhoneVR() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "phone-vr" })
     }
-
-    func testIncludesThermal() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "thermal" })
-    }
 }

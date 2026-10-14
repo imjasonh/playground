@@ -9,7 +9,7 @@ name: Playground
 #
 # Embedded Apple extensions (each needs its own Bundle ID; see AGENTS.md):
 #   - T9Keyboard: Custom Keyboard
-#   - RideMonitorWidget: Ride Monitor + Thermal Live Activities (WidgetKit)
+#   - RideMonitorWidget: Ride Monitor Live Activity (WidgetKit)
 #   - RideMonitorWatch: Ride Monitor companion Watch app
 #
 # `xcodegen generate` produces Playground.xcodeproj, which is git-ignored.
@@ -56,7 +56,6 @@ targets:
           - "**/ArmyList/Stress/**"
       - path: Shared/T9
       - path: Shared/RideMonitor
-      - path: Shared/Thermal
       - path: Shared/Laya
       # XcodeGen has no target-level `resources:` key — catalog must be a
       # sources entry with buildPhase: resources or it never reaches the app
@@ -120,9 +119,9 @@ targets:
         # No non-exempt encryption → TestFlight upload doesn't stall on the
         # export-compliance question.
         ITSAppUsesNonExemptEncryption: false
-        # Ride Monitor and Thermal Live Activities (Lock Screen / Dynamic Island).
+        # Ride Monitor Live Activity (Lock Screen / Dynamic Island).
         NSSupportsLiveActivities: true
-        # Thermal Live Activity taps open playground://experiment/thermal.
+        # Experiment deep links: playground://experiment/<id>.
         CFBundleURLTypes:
           - CFBundleURLName: io.github.imjasonh.playground
             CFBundleTypeRole: Editor
@@ -197,10 +196,6 @@ targets:
     sources:
       - path: RideMonitorWidget
       - path: Shared/RideMonitor
-      - path: Shared/Thermal
-        excludes:
-          # Host-only. The widget compiles attributes, levels, and the URL helper.
-          - ThermalLiveActivityPolicy.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.ridemonitorwidget

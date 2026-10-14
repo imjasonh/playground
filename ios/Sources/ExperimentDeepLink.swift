@@ -1,6 +1,6 @@
 import Foundation
 
-/// `playground://experiment/<id>` URLs used by Live Activity taps.
+/// `playground://experiment/<id>` URLs that open an experiment from the launcher.
 enum ExperimentDeepLink {
     static let scheme = "playground"
     static let host = "experiment"
