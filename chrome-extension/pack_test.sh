@@ -4,8 +4,8 @@ set -eu
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-bash pack.sh "$tmp/duplicate-tabs.zip" >/dev/null
-python3 - "$tmp/duplicate-tabs.zip" <<'PY'
+bash pack.sh "$tmp/chrome-extension.zip" >/dev/null
+python3 - "$tmp/chrome-extension.zip" <<'PY'
 import json, struct, sys, zipfile
 from pathlib import Path
 

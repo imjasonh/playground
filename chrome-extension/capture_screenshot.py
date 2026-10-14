@@ -153,7 +153,7 @@ def tab_close_buttons(image: Image.Image) -> int:
 def wait_for_duplicates(display: str, tabs: int) -> tuple[int, int]:
     deadline = time.time() + 15
     while time.time() < deadline:
-        path = Path("/tmp/duplicate-tabs-probe.png")
+        path = Path("/tmp/chrome-extension-probe.png")
         grab(display, path)
         image = Image.open(path)
         clusters = [box for box in blue_clusters(image) if box[2] - box[0] < 30]
@@ -215,10 +215,10 @@ def main() -> None:
     extension = extension_id(HERE)
     store = HERE / "store"
     store.mkdir(exist_ok=True)
-    page_dir = Path("/tmp/duplicate-tabs-page")
+    page_dir = Path("/tmp/chrome-extension-page")
     page_dir.mkdir(exist_ok=True)
     (page_dir / "index.html").write_text(PAGE)
-    profile = Path("/tmp/duplicate-tabs-chrome-profile")
+    profile = Path("/tmp/chrome-extension-chrome-profile")
     if profile.exists():
         subprocess.run(["rm", "-rf", str(profile)], check=True)
     profile.mkdir()

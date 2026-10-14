@@ -20,7 +20,7 @@ playground/
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
-├── duplicate-tabs/        # Chrome extension: close tabs that share a URL (not a Pages app)
+├── chrome-extension/      # Chrome extension (not a Pages app)
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
 ├── kubescheduler-the-game/ # Kubernetes scheduler + cluster-operator game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
@@ -81,7 +81,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
-| `duplicate-tabs/` | no | Chrome extension that closes duplicate tabs; no `index.html` |
+| `chrome-extension/` | no | Chrome extension; no `index.html` |
 | `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
@@ -226,7 +226,7 @@ discovery scripts.
 | `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_COOKIE` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 | `nethack-agent.yml` | pull requests touching `nethack-agent/**` or the notes publish scripts, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack` with `grok-4.6`. It writes the SDK token cost to the job summary, seeds `nethack-agent/notebook/` from `automation/nethack-notes`, then publishes that directory back to that branch and opens a pull request to `main` (no auto-merge). It does not commit notes onto the triggering pull request. Requires `CURSOR_API_KEY`. Skips play when the head is `automation/nethack-notes` |
-| `duplicate-tabs.yml` | pull requests and pushes to `main` touching `duplicate-tabs/**` or the publish script, manual | **App-specific:** tests the Close Duplicate Tabs extension and packs the store zip. On `main`, uploads that zip to the existing Chrome Web Store item and publishes it when the Chrome Web Store secrets are set. Without those secrets, tests still run and publish is skipped |
+| `chrome-extension.yml` | pull requests and pushes to `main` touching `chrome-extension/**` or the publish script, manual | **App-specific:** tests the Chrome extension and packs the store zip. On `main`, uploads that zip to the existing Chrome Web Store item and publishes it when the Chrome Web Store secrets are set. Without those secrets, tests still run and publish is skipped |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -795,7 +795,7 @@ auto-discover them. Run their local tests when you change them.
 | `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
-| `duplicate-tabs/` | Chrome extension: the toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Not a Pages app. `duplicate-tabs.yml` publishes the Chrome Web Store item from `main` | `cd duplicate-tabs && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
+| `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
 
 ## The iOS app
 

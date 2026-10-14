@@ -17,7 +17,7 @@ PUBLISHER = "pub-1"
 
 
 def make_zip(version: str) -> str:
-    path = f"/tmp/duplicate-tabs-{version}.zip"
+    path = f"/tmp/chrome-extension-{version}.zip"
     payload = json.dumps({"manifest_version": 3, "version": version, "name": "Close Duplicate Tabs"}).encode()
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("manifest.json", payload)

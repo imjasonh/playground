@@ -99,7 +99,7 @@ async function targets(port) {
 }
 
 async function main() {
-  const profile = await mkdtemp(path.join(tmpdir(), "duplicate-tabs-"));
+  const profile = await mkdtemp(path.join(tmpdir(), "chrome-extension-"));
   const child = spawn(
     chromeBin,
     [

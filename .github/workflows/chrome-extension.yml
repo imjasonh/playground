@@ -14,26 +14,26 @@
 # (DEFAULT_PUBLISH, STAGED_PUBLISH, or TRUSTED_TESTERS).
 # Without the secrets, tests still run and publish is skipped.
 
-name: duplicate-tabs
+name: chrome-extension
 
 on:
   pull_request:
     paths:
-      - duplicate-tabs/**
-      - .github/workflows/duplicate-tabs.yml
+      - chrome-extension/**
+      - .github/workflows/chrome-extension.yml
       - .github/scripts/chrome_web_store.py
       - .github/scripts/chrome_web_store_test.py
   push:
     branches: [main]
     paths:
-      - duplicate-tabs/**
-      - .github/workflows/duplicate-tabs.yml
+      - chrome-extension/**
+      - .github/workflows/chrome-extension.yml
       - .github/scripts/chrome_web_store.py
       - .github/scripts/chrome_web_store_test.py
   workflow_dispatch: {}
 
 concurrency:
-  group: duplicate-tabs-${{ github.workflow }}-${{ github.ref }}
+  group: chrome-extension-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -53,7 +53,7 @@ jobs:
           node-version: "24"
 
       - name: Extension tests
-        working-directory: duplicate-tabs
+        working-directory: chrome-extension
         run: npm test
 
       - name: Publish client tests
@@ -61,12 +61,12 @@ jobs:
         run: python3 chrome_web_store_test.py
 
       - name: Pack the store zip
-        run: bash duplicate-tabs/pack.sh /tmp/duplicate-tabs.zip
+        run: bash chrome-extension/pack.sh /tmp/chrome-extension.zip
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: duplicate-tabs
-          path: /tmp/duplicate-tabs.zip
+          name: chrome-extension
+          path: /tmp/chrome-extension.zip
           if-no-files-found: error
 
       - name: Publish to the Chrome Web Store
@@ -80,7 +80,7 @@ jobs:
           CHROME_WEB_STORE_PUBLISH_TYPE: ${{ vars.CHROME_WEB_STORE_PUBLISH_TYPE || 'DEFAULT_PUBLISH' }}
         run: |
           if [ -z "$CHROME_WEB_STORE_CLIENT_ID" ] || [ -z "$CHROME_WEB_STORE_CLIENT_SECRET" ] || [ -z "$CHROME_WEB_STORE_REFRESH_TOKEN" ] || [ -z "$CHROME_WEB_STORE_PUBLISHER_ID" ]; then
-            echo "::warning title=Chrome Web Store publish skipped::Add CHROME_WEB_STORE_CLIENT_ID, CHROME_WEB_STORE_CLIENT_SECRET, CHROME_WEB_STORE_REFRESH_TOKEN, and CHROME_WEB_STORE_PUBLISHER_ID. See duplicate-tabs/README.md."
+            echo "::warning title=Chrome Web Store publish skipped::Add CHROME_WEB_STORE_CLIENT_ID, CHROME_WEB_STORE_CLIENT_SECRET, CHROME_WEB_STORE_REFRESH_TOKEN, and CHROME_WEB_STORE_PUBLISHER_ID. See chrome-extension/README.md."
             exit 0
           fi
-          python3 .github/scripts/chrome_web_store.py /tmp/duplicate-tabs.zip
+          python3 .github/scripts/chrome_web_store.py /tmp/chrome-extension.zip

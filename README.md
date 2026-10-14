@@ -152,7 +152,7 @@ them:
   executable onto `cgr.dev/chainguard/glibc-dynamic` with crane (shell
   scripts; no Docker daemon). The Bun cousin of
   [deno-image](https://github.com/imjasonh/deno-image).
-- **[`duplicate-tabs/`](duplicate-tabs/)** — a Chrome extension. The toolbar
+- **[`chrome-extension/`](chrome-extension/)** — a Chrome extension. The toolbar
   button closes tabs that share a URL, and the badge shows how many tabs
   that click will close. Pushes to `main` publish the Chrome Web Store item
   when the store secrets are set.
