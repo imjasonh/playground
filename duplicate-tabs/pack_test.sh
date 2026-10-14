@@ -67,11 +67,12 @@ if (width, height, bit_depth, color) != (128, 128, 8, 6):
         f"store icon is {width}x{height} depth {bit_depth} color {color}, want 128x128 8-bit RGBA"
     )
 
-shot = Path("store/screenshot.png").read_bytes()
-width, height, bit_depth, color = png_info(shot)
-if (width, height, bit_depth, color) != (1280, 800, 8, 2):
-    raise SystemExit(
-        f"screenshot is {width}x{height} depth {bit_depth} color {color}, want 1280x800 24-bit RGB"
-    )
+for name in ("store/screenshot.png", "store/screenshot-closed.png"):
+    shot = Path(name).read_bytes()
+    width, height, bit_depth, color = png_info(shot)
+    if (width, height, bit_depth, color) != (1280, 800, 8, 2):
+        raise SystemExit(
+            f"{name} is {width}x{height} depth {bit_depth} color {color}, want 1280x800 24-bit RGB"
+        )
 print("ok")
 PY

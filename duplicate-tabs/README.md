@@ -35,11 +35,19 @@ npm test
 
 `node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 
-Regenerate the icons and the screenshot with Pillow:
+Regenerate the icons with Pillow:
 
 ```bash
 python3 render_assets.py
 ```
+
+Replace the store screenshots by running Chrome and capturing the window:
+
+```bash
+CHROME_BIN=/path/to/chrome-for-testing python3 capture_screenshot.py
+```
+
+`capture_screenshot.py` needs Xvfb, ImageMagick's `import`, and `xdotool`. Branded Chrome ignores `--load-extension`, so the binary has to be Chrome for Testing. `store/screenshot.png` is that window with two tabs at the same URL and the toolbar badge. `store/screenshot-closed.png` is the same window after the click.
 
 ## Store listing
 
@@ -48,7 +56,8 @@ Upload `duplicate-tabs.zip` from `bash pack.sh duplicate-tabs.zip` if you are su
 | File | Use |
 | --- | --- |
 | `store/icon-128.png` | Store icon, 128 by 128. The mark is 96 by 96, centered, with 16 pixels of padding. |
-| `store/screenshot.png` | Screenshot, 1280 by 800, 24-bit RGB, no alpha. |
+| `store/screenshot.png` | Listing screenshot, 1280 by 800, 24-bit RGB. A capture of Chrome with two tabs at the same URL and the toolbar badge. |
+| `store/screenshot-closed.png` | The same window after the toolbar click. |
 
 | Field | Value |
 | --- | --- |
