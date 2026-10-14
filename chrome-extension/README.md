@@ -33,7 +33,7 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests and `pack_test.sh`. The Node tests cover which tabs close, the badge the toolbar click sets, and the tab menu item. `pack_test.sh` checks the zip layout, the `tabs` and `contextMenus` permissions, and the store image sizes.
+`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, the store zip layout, the `tabs` and `contextMenus` permissions, and the listing image sizes.
 
 `node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 
