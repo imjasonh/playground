@@ -7,7 +7,6 @@ import SwiftUI
 @main
 struct PlaygroundApp: App {
     @StateObject private var navigation = ExperimentNavigation()
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -19,16 +18,10 @@ struct PlaygroundApp: App {
                 // the experiment.
                 .onAppear {
                     RideLiveActivityController.shared.endOrphansIfNeeded()
-                    ThermalMonitor.shared.start()
                 }
                 .onOpenURL { url in
                     if let id = ExperimentDeepLink.experimentID(from: url) {
                         navigation.openExperiment(id: id)
-                    }
-                }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .active {
-                        ThermalMonitor.shared.handleSceneBecameActive()
                     }
                 }
         }
