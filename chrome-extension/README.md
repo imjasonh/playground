@@ -82,7 +82,9 @@ The API cannot change Private or Public. If you change visibility, publish once 
 
 ## Publish from main
 
-`.github/workflows/chrome-extension.yml` runs the tests on pull requests. On a push to `main` that changes this directory or the publish script, it packs the zip and, when the secrets below exist, uploads that zip to item `canmakefmjmnhhaobdeipbamnalcloap` and calls the Chrome Web Store API v2 publish method.
+`.github/workflows/chrome-extension.yml` runs the tests on pull requests and on pushes to `main`. It packs `chrome-extension.zip` and uploads that file as a workflow artifact. Download it from the run to inspect the package or to upload it in the developer dashboard.
+
+On a push to `main` that changes this directory or the publish script, when the secrets below exist, the same job uploads that zip to item `canmakefmjmnhhaobdeipbamnalcloap` and calls the Chrome Web Store API v2 publish method.
 
 The publish type defaults to `DEFAULT_PUBLISH`. After review, that version becomes the live version for the audience already saved on the item. Set the repository variable `CHROME_WEB_STORE_PUBLISH_TYPE` to `TRUSTED_TESTERS` or `STAGED_PUBLISH` to change that. A manual **Run workflow** on `main` publishes the current package too.
 

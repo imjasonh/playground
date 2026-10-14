@@ -1,9 +1,11 @@
 # Test the Close Duplicate Tabs extension, and publish it from main.
 #
-# Pull requests run the unit tests and pack the zip. A push to main, or a
-# manual run on main, also uploads that zip to the existing Chrome Web Store
-# item and publishes it. The API releases the version to the item's current
-# audience after review. It does not create the item or change visibility.
+# Pull requests run the unit tests, pack the zip, and upload that zip as a
+# workflow artifact. The artifact is the store package itself. A push to main,
+# or a manual run on main, also uploads that zip to the existing Chrome Web
+# Store item and publishes it. The API releases the version to the item's
+# current audience after review. It does not create the item or change
+# visibility.
 #
 # Publishing needs these repository secrets:
 #   CHROME_WEB_STORE_CLIENT_ID
@@ -63,11 +65,17 @@ jobs:
       - name: Pack the store zip
         run: bash chrome-extension/pack.sh /tmp/chrome-extension.zip
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - name: Upload the store zip
+        id: store-zip
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: chrome-extension
           path: /tmp/chrome-extension.zip
+          archive: false
           if-no-files-found: error
+
+      - name: Link the store zip
+        run: |
+          echo "Store zip: ${{ steps.store-zip.outputs.artifact-url }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish to the Chrome Web Store
         if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
