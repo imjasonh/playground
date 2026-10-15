@@ -526,12 +526,16 @@ before the GPU frees up, reads the gyro again, and encodes the final pass. The
 final pass maps each panel pixel through the lens polynomial
 `t = r(1 + k1·r² + k2·r⁴)`, scales red and blue by their own magnification to
 cancel lateral color, and rotates by the difference between the late gyro
-reading and the rendered orientation (timewarp). The eye buffers render a few
-degrees wider than the lens field so timewarp has pixels to rotate in. The
-display runs at 120 Hz (`CADisableMinimumFrameDurationOnPhone`). A governor
-lowers eye resolution when the GPU runs over budget, drops to 60 Hz when the
-phone gets hot or Low Power Mode is on, and simplifies the scene at the
-critical thermal state.
+reading and the rendered orientation (timewarp). It reads the eye buffer with
+a Catmull-Rom filter, which keeps more fine detail than bilinear filtering: at
+1024² per eye, about 0.92 of a 3-pixel grating's contrast instead of 0.78.
+The eye buffers render a few degrees wider than the lens field so timewarp
+has pixels to rotate in. Automatic eye resolution starts at 1280² per eye,
+about 1.5 eye-buffer pixels per panel pixel at the lens axis. The display runs
+at 120 Hz (`CADisableMinimumFrameDurationOnPhone`). A governor lowers eye
+resolution when the GPU runs over budget or the phone warms up, drops to
+60 Hz when the phone gets hot or Low Power Mode is on, and simplifies the
+scene at the critical thermal state.
 
 **In the headset.** A countdown gives you time to put the phone in the viewer.
 To select, look at a button until the ring fills, tap the screen or press the
@@ -544,11 +548,24 @@ and a gyro pointer when it has motion sensors. A spatial audio beacon
 stays put as you turn.
 
 **Calibration.** The calibration scene puts you in a room whose walls are a
-grid, with a dot straight ahead. Adjust k1, k2, the red and blue scales, lens
-spacing, and screen-to-lens distance until the grid lines stay straight as you
-turn and the lines and dot have no color fringes. The values are saved when
-you leave. The launch page also has these settings, a lens preview pre-warped
-by the same model, and an estimate of lateral color from the lens geometry.
+grid, with a dot straight ahead and the controls on a panel below eye level.
+Adjust k1, k2, the red and blue scales, lens spacing, and screen-to-lens
+distance until the grid lines stay straight as you turn and the lines and dot
+have no color fringes. The values are saved when you leave. The launch page
+also has these settings, a lens preview pre-warped by the same model, and an
+estimate of lateral color from the lens geometry.
+
+**Sharpness.** While you look away from the calibration panel, the final pass
+draws a focus chart around each lens axis straight onto the panel, skipping
+the eye buffer. It has lines 1 pixel wide beside, above, and below the dot,
+and lines 2 pixels wide at the corners. If the 1-pixel lines blur into gray,
+the blur comes from the optics: the lens focus, how the lenses line up with
+your eyes, or your eyesight. No setting changes those. If the lines look
+distinct but the scene looks soft, the blur comes from rendering. Focus is
+fixed by the viewer. With 45 mm lenses 42 mm from the screen, the image
+appears about 0.63 m away. Moving the screen away from the lenses moves the
+image out, to about 1.3 m at 43.5 mm and to infinity at 45 mm. Most eyes
+can't focus it with the screen any farther away than that.
 
 **AirPods cross-check.** This check is optional. AirPods head tracking
 updates less often and arrives later than the phone's gyro, so it never drives
@@ -559,8 +576,9 @@ than 4° for two checks in a row while your head is nearly still. With the
 camera off, it also corrects slow yaw drift. **AirPods** on the launch page
 runs the same check live and shows the measured update rate and delay.
 
-**Measurements.** The stats panel shows the frame rate, eye resolution, CPU
-and GPU time per pass, prediction horizons, and motion-to-photon latency.
+**Measurements.** The stats panel shows the frame rate, eye resolution,
+eye-buffer pixels per panel pixel at the lens axis, CPU and GPU time per pass,
+prediction horizons, and motion-to-photon latency.
 Latency runs from the gyro sample the final pass used to the frame's
 presentation time from the display link, moved to a later refresh when the GPU
 finishes late. The launch page keeps the last session's medians and 95th
@@ -571,11 +589,13 @@ head tracking. It adds no Bundle ID, entitlement, or signing bootstrap. The
 Simulator opens the launch page and renders the scene, but without ARKit or
 the gyro the view doesn't move. Unit tests cover the lens model, tracker
 fusion and prediction, AirPods alignment on synthetic motion, the
-interaction model, and the frame governor. Renderer tests compile the shaders
-in the Simulator, check that Swift and Metal agree on every uniform struct
-layout, and render offscreen frames. Markers must land within 4 pixels of
-where the CPU lens model puts them in each eye, and scene objects must keep
-their colors.
+interaction model, the focus chart, and the frame governor. Renderer tests
+compile the shaders in the Simulator, check that Swift and Metal agree on
+every uniform struct layout, and render offscreen frames. Markers must land
+within 4 pixels of where the CPU lens model puts them in each eye, scene
+objects must keep their colors, the focus chart must cover exactly the panel
+pixels the Swift model predicts, and Catmull-Rom resampling must keep more of
+a fine grating's contrast than bilinear filtering.
 
 ## Adding an experiment
 
