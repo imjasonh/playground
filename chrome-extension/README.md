@@ -2,7 +2,7 @@
 
 A Chrome extension that closes extra tabs with the same URL. The toolbar button is the action. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
 
-The Chrome Web Store item ID is `canmakefmjmnhhaobdeipbamnalcloap`. This directory has no `index.html`, so GitHub Pages does not publish it.
+The Chrome Web Store item ID is `cfmebakopkdpedmdbpcpfibhodmppigj`. That item is already published to trusted testers. This directory has no `index.html`, so GitHub Pages does not publish it.
 
 Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is the package to submit.
 
@@ -86,9 +86,9 @@ The API cannot change Private or Public. If you change visibility, publish once 
 
 `.github/workflows/chrome-extension.yml` runs the tests on pull requests and on pushes to `main`. It packs `chrome-extension.zip` and uploads that file as a workflow artifact. Download it from the run to inspect the package or to upload it in the developer dashboard.
 
-On a push to `main` that changes this directory or the publish script, when the secrets below exist, the same job uploads that zip to item `canmakefmjmnhhaobdeipbamnalcloap` and calls the Chrome Web Store API v2 publish method.
+On a push to `main` that changes this directory or the publish script, when the secrets below exist, the same job uploads that zip to item `cfmebakopkdpedmdbpcpfibhodmppigj` and calls the Chrome Web Store API v2 publish method.
 
-The publish type defaults to `DEFAULT_PUBLISH`. After review, that version becomes the live version for the audience already saved on the item. Set the repository variable `CHROME_WEB_STORE_PUBLISH_TYPE` to `STAGED_PUBLISH` to hold the approved package until you publish it. The API v2 publish type has no trusted-tester value. Private or public is the visibility saved on the item. A manual **Run workflow** on `main` publishes the current package too.
+The publish type defaults to `DEFAULT_PUBLISH`. After review, that version becomes the live version for the audience already saved on the item, which is trusted testers. Set the repository variable `CHROME_WEB_STORE_PUBLISH_TYPE` to `STAGED_PUBLISH` to hold the approved package until you publish it. The API v2 publish type has no trusted-tester value. A manual **Run workflow** on `main` publishes the current package too.
 
 Increase `version` in `manifest.json` in the same change you want published. Each number is 0 through 65535, with at most four parts. The job skips a version that is already live or already in review. It fails, and does not upload, when the store has a newer version, when this version was rejected, or when a different version is still in review.
 

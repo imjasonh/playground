@@ -76,6 +76,12 @@ class StoreServer(ThreadingHTTPServer):
         return {}
 
 
+class DefaultsTest(unittest.TestCase):
+    def test_default_item_is_the_trusted_tester_listing(self):
+        self.assertEqual(store.DEFAULT_ITEM_ID, "cfmebakopkdpedmdbpcpfibhodmppigj")
+        self.assertEqual(store.PUBLISH_TYPES, ("DEFAULT_PUBLISH", "STAGED_PUBLISH"))
+
+
 class DecideTest(unittest.TestCase):
     def test_upload_when_nothing_is_published(self):
         decision = store.decide({}, "0.1.0")

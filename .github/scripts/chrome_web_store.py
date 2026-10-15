@@ -14,7 +14,7 @@ Required environment variables:
 
 Optional:
 
-  CHROME_WEB_STORE_ITEM_ID       default canmakefmjmnhhaobdeipbamnalcloap
+  CHROME_WEB_STORE_ITEM_ID       default cfmebakopkdpedmdbpcpfibhodmppigj
   CHROME_WEB_STORE_PUBLISH_TYPE  DEFAULT_PUBLISH or STAGED_PUBLISH
   CHROME_WEB_STORE_API_ORIGIN    tests only; must be http://127.0.0.1 or http://localhost
   CHROME_WEB_STORE_TOKEN_URL     tests only; same loopback rule
@@ -32,7 +32,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 
-DEFAULT_ITEM_ID = "canmakefmjmnhhaobdeipbamnalcloap"
+DEFAULT_ITEM_ID = "cfmebakopkdpedmdbpcpfibhodmppigj"
 API_ORIGIN = "https://chromewebstore.googleapis.com"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 PUBLISH_TYPES = ("DEFAULT_PUBLISH", "STAGED_PUBLISH")
