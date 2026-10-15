@@ -11,12 +11,12 @@
     "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
   /* The board is as wide as the screen allows, but no taller than the
      window minus the header and footer, so it fits without scrolling. */
-  --sheet-width: min(100%, max(20rem, 100vh - 10.5rem));
+  --sheet-width: min(100%, max(20rem, 100vh - 11rem));
 }
 
 @supports (height: 100svh) {
   :root {
-    --sheet-width: min(100%, max(20rem, 100svh - 10.5rem));
+    --sheet-width: min(100%, max(20rem, 100svh - 11rem));
   }
 }
 
@@ -36,9 +36,9 @@ html {
 
 body {
   padding: max(1rem, env(safe-area-inset-top))
-    max(1rem, env(safe-area-inset-right))
+    max(0.75rem, env(safe-area-inset-right))
     max(1.25rem, env(safe-area-inset-bottom))
-    max(1rem, env(safe-area-inset-left));
+    max(0.75rem, env(safe-area-inset-left));
   background: var(--bg);
   color: var(--ink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
@@ -76,7 +76,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .levels {
@@ -102,7 +102,7 @@ body {
 
 .levels span {
   display: block;
-  padding: 0.35rem 0.8rem;
+  padding: 0.35rem 0.7rem;
   border-radius: 999px;
   color: var(--muted);
   font-size: 0.95rem;
@@ -126,7 +126,7 @@ body {
 
 button {
   appearance: none;
-  padding: 0.45rem 0.95rem;
+  padding: 0.45rem 0.8rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--paper);
@@ -159,8 +159,9 @@ button[aria-pressed="true"] {
   color: var(--answer);
 }
 
+/* Keeps the button from shrinking while it reads "Copied". */
 #copy {
-  min-width: 8.5em;
+  min-width: 7.5em;
 }
 
 .sheet {
@@ -173,9 +174,13 @@ button[aria-pressed="true"] {
   container-type: inline-size;
 }
 
+/* Each cell draws only its right and bottom edges. With collapsed borders,
+   zoomed-out or fractional-DPR screens round thin and thick lines to the
+   same width, and the tie goes to the thin line, which hides the boxes. */
 .board {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   background: var(--paper);
   font-family: var(--board-font);
@@ -188,23 +193,24 @@ button[aria-pressed="true"] {
 .board td {
   height: 6.25cqi;
   padding: 0;
-  border: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
 
-.board td:nth-child(4n + 1) {
+.board td:first-child {
   border-left: 2px solid var(--ink);
 }
 
-.board td:last-child {
+.board td:nth-child(4n) {
   border-right: 2px solid var(--ink);
 }
 
-.board tr:nth-child(4n + 1) td {
+.board tr:first-child td {
   border-top: 2px solid var(--ink);
 }
 
-.board tr:last-child td {
+.board tr:nth-child(4n) td {
   border-bottom: 2px solid var(--ink);
 }
 
@@ -217,12 +223,12 @@ button[aria-pressed="true"] {
   font-weight: 400;
 }
 
+/* The status line's width changes with every board, so it gets its own row
+   rather than pushing the buttons onto a new line now and then. */
 .sheet-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
 }
 
 .status {
