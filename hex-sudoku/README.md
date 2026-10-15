@@ -7,15 +7,12 @@ solution, and the clue pattern looks the same after a half turn.
 The level sets which solving techniques a board needs. No level needs
 guessing.
 
-- **Easy**: hidden singles, where a symbol fits only one cell of a row,
-  column, or box. Easy boards have 120 clues.
-- **Medium**: hidden singles and naked singles, where only one symbol fits a
-  cell. Medium boards have about 104 clues.
-- **Hard**: everything medium uses, plus locked candidates, naked pairs, and
-  hidden pairs. Hard boards have about 102 clues.
-
-Medium boards need at least one naked single, and hard boards need at least
-one technique beyond singles, so a level is never easier than its name.
+- **Easy** boards need only hidden singles, where a symbol fits only one
+  cell of a row, column, or box. They have 120 clues.
+- **Medium** boards also need naked singles, where only one symbol fits a
+  cell. They have about 104 clues.
+- **Hard** boards also need locked candidates, naked pairs, or hidden
+  pairs. They have about 102 clues.
 
 The URL holds the level and an eight-digit hex seed. The same level and
 seed always build the same board, so a link shares a board. Boards with the
@@ -42,4 +39,5 @@ npm test
 `src/sudoku.js` fills a random grid from the seed, then clears clues in
 pairs that mirror through the center. A pair stays cleared only if the
 level's techniques still solve the board. Solving with those techniques
-proves there is one solution, so no separate uniqueness check is needed.
+proves there is one solution, so the generator doesn't need a separate
+uniqueness check.
