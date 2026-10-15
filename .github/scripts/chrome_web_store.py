@@ -254,8 +254,11 @@ def upload_zip(origin: str, name: str, token: str, path: str) -> dict:
     return payload
 
 
-def publish_item(origin: str, name: str, token: str, publish_type: str) -> dict:
-    body = json.dumps({"publishType": publish_type}).encode()
+def publish_item(origin: str, name: str, token: str, publish_type: str, skip_review: bool = False) -> dict:
+    body_fields: dict[str, str | bool] = {"publishType": publish_type}
+    if skip_review:
+        body_fields["skipReview"] = True
+    body = json.dumps(body_fields).encode()
     _status, payload = _request(
         f"{origin}/v2/{name}:publish",
         "POST",
@@ -264,6 +267,30 @@ def publish_item(origin: str, name: str, token: str, publish_type: str) -> dict:
         60,
     )
     return payload
+
+
+def submit_for_publish(origin: str, name: str, token: str, publish_type: str, version: str) -> Decision:
+    """Publish without review when the store allows it, otherwise submit for review."""
+    try:
+        published = publish_item(origin, name, token, publish_type, skip_review=True)
+        skipped_review = True
+    except PublishError as error:
+        detail = str(error).rstrip(".")
+        print(
+            f"The store did not skip review: {detail}. Submitting version {version} for review.",
+            file=sys.stderr,
+        )
+        published = publish_item(origin, name, token, publish_type, skip_review=False)
+        skipped_review = False
+    state = published.get("state") or ""
+    if state not in PUBLISH_OK:
+        raise PublishError(f"Chrome Web Store publish returned state {state or '(missing)'}")
+    warnings = ((published.get("warningInfo") or {}).get("warnings")) or []
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    if skipped_review and state in ("PUBLISHED", "PUBLISHED_TO_TESTERS"):
+        return Decision("submitted", f"Published version {version} without review. Store state: {state}.")
+    return Decision("submitted", f"Submitted version {version} for review. Store state: {state}.")
 
 
 def wait_for_upload(origin: str, name: str, token: str, sleep, attempts: int = 24) -> dict:
@@ -323,14 +350,7 @@ def publish_package(path: str, env: dict[str, str] | None = None, sleep=time.sle
         wait_for_upload(origin, name, token, sleep)
     elif upload_state not in UPLOAD_OK:
         raise PublishError(f"Chrome Web Store upload returned state {upload_state or '(missing)'}")
-    published = publish_item(origin, name, token, publish_type)
-    state = published.get("state") or ""
-    if state not in PUBLISH_OK:
-        raise PublishError(f"Chrome Web Store publish returned state {state or '(missing)'}")
-    warnings = ((published.get("warningInfo") or {}).get("warnings")) or []
-    for warning in warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-    return Decision("submitted", f"Submitted version {version}. Store state: {state}.")
+    return submit_for_publish(origin, name, token, publish_type, version)
 
 
 def main(argv: list[str] | None = None) -> int:

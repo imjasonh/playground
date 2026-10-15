@@ -88,7 +88,7 @@ The API cannot change Private or Public. If you change visibility, publish once 
 
 On a push to `main` that changes this directory or the publish script, when the secrets below exist, the same job uploads that zip to item `cfmebakopkdpedmdbpcpfibhodmppigj` and calls the Chrome Web Store API v2 publish method.
 
-The publish type defaults to `DEFAULT_PUBLISH`. After review, that version becomes the live version for the audience already saved on the item, which is trusted testers. Set the repository variable `CHROME_WEB_STORE_PUBLISH_TYPE` to `STAGED_PUBLISH` to hold the approved package until you publish it. The API v2 publish type has no trusted-tester value. A manual **Run workflow** on `main` publishes the current package too.
+The publish type defaults to `DEFAULT_PUBLISH`. The job first asks the store to publish without review. When the store requires review, the job submits the same draft for review. After review, that version becomes the live version for the audience already saved on the item, which is trusted testers. Set the repository variable `CHROME_WEB_STORE_PUBLISH_TYPE` to `STAGED_PUBLISH` to hold the approved package until you publish it. The API v2 publish type has no trusted-tester value. A manual **Run workflow** on `main` publishes the current package too.
 
 Increase `version` in `manifest.json` in the same change you want published. Each number is 0 through 65535, with at most four parts. The job skips a version that is already live or already in review. It fails, and does not upload, when the store has a newer version, when this version was rejected, or when a different version is still in review.
 
