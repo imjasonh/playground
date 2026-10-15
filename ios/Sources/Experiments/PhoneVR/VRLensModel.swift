@@ -202,6 +202,12 @@ struct VRStereoLayout {
         return Float(size.width) / self[.left].bufferTangents.width * .pi / 180
     }
 
+    /// Eye-buffer pixels per panel pixel at the lens axis, where the panel is
+    /// sharpest through the lens.
+    func centerSampling(resolution: Int) -> Float {
+        eyeBufferPixelsPerDegree(resolution: resolution) / displayPixelsPerDegree
+    }
+
     /// How far each lens axis sits inboard of the centre of its half of the panel, pixels.
     var lensInboardOffsetPixels: Float {
         Float(screen.widthPixels) / 4 - profile.interLensDistance / 2 * screen.pixelsPerMeter

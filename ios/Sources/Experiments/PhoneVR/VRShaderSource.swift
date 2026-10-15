@@ -69,6 +69,7 @@ struct DistortionFrame {
     float4 coefficients;
     float4 chroma;
     float4 output;
+    float4 options;
 };
 
 struct SceneVertexIn {
@@ -301,7 +302,33 @@ vertex MaskVaryings final_vertex(uint vid [[vertex_id]],
     return out;
 }
 
-static float4 sample_eye(texture2d_array<float> image, sampler s, float2 t, constant DistortionEye &eye, uint layer) {
+// Catmull-Rom from five bilinear taps; the four corner taps of the full 4x4
+// kernel carry almost no weight. The eye buffer has only 1.2 to 1.5 texels per
+// panel pixel at the lens axis, where bilinear filtering loses fine detail
+// that Catmull-Rom keeps.
+static float4 sample_catmull_rom(texture2d_array<float> image, sampler s, float2 uv, uint layer) {
+    float2 size = float2(float(image.get_width()), float(image.get_height()));
+    float2 position = uv * size;
+    float2 center = floor(position - 0.5) + 0.5;
+    float2 f = position - center;
+    float2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    float2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    float2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    float2 w3 = f * f * (-0.5 + 0.5 * f);
+    float2 w12 = w1 + w2;
+    float2 t0 = (center - 1.0) / size;
+    float2 t3 = (center + 2.0) / size;
+    float2 t12 = (center + w2 / w12) / size;
+    float4 sum = image.sample(s, float2(t12.x, t0.y), layer) * (w12.x * w0.y)
+               + image.sample(s, float2(t0.x, t12.y), layer) * (w0.x * w12.y)
+               + image.sample(s, t12, layer) * (w12.x * w12.y)
+               + image.sample(s, float2(t3.x, t12.y), layer) * (w3.x * w12.y)
+               + image.sample(s, float2(t12.x, t3.y), layer) * (w12.x * w3.y);
+    float weight = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+    return sum / weight;
+}
+
+static float4 sample_eye(texture2d_array<float> image, sampler s, float2 t, constant DistortionEye &eye, uint layer, bool bicubic) {
     float3 d = eye.rotation * float3(t, -1.0);
     if (d.z > -1e-4) {
         return float4(0.0);
@@ -309,7 +336,35 @@ static float4 sample_eye(texture2d_array<float> image, sampler s, float2 t, cons
     float2 rendered = d.xy / -d.z;
     float4 b = eye.bufferTangents;
     float2 uv = float2((rendered.x - b.x) / (b.y - b.x), (b.w - rendered.y) / (b.w - b.z));
-    return image.sample(s, uv, layer);
+    return bicubic ? sample_catmull_rom(image, s, uv, layer) : image.sample(s, uv, layer);
+}
+
+// Line gratings drawn straight onto the panel around the lens axis, so they
+// show what the optics resolve whatever the eye buffer's resolution: 1-pixel
+// lines left, right, above, and below a clear centre, 2-pixel lines in the
+// corners. `d` is the offset from the lens axis in panel pixels, y down.
+// Mirrors VRFocusChart.
+static bool focus_chart(float2 d, thread float &value) {
+    const float gap = 20.0;
+    const float patch = 36.0;
+    float2 a = abs(d);
+    bool bandX = a.x >= gap && a.x < gap + patch;
+    bool bandY = a.y >= gap && a.y < gap + patch;
+    int2 cell = int2(floor(d));
+    if (bandX && a.y < patch * 0.5) {
+        value = float(cell.x & 1);
+        return true;
+    }
+    if (bandY && a.x < patch * 0.5) {
+        value = float(cell.y & 1);
+        return true;
+    }
+    if (bandX && bandY) {
+        int along = (d.x < 0.0) == (d.y < 0.0) ? cell.x : cell.y;
+        value = float((along >> 1) & 1);
+        return true;
+    }
+    return false;
 }
 
 // Lens correction, lateral color, and rotational timewarp in one pass. Each
@@ -322,6 +377,10 @@ fragment float4 final_fragment(MaskVaryings in [[stage_in]],
                                constant DistortionFrame &frame [[buffer(1)]],
                                constant DistortionEye &eye [[buffer(2)]]) {
     constexpr sampler s(address::clamp_to_zero, filter::linear);
+    float chart = 0.0;
+    if (frame.options.y > 0.5 && focus_chart(in.position.xy - eye.lensCenter.xy, chart)) {
+        return float4(float3(chart * frame.output.x), 1.0);
+    }
     float2 r = (in.position.xy - eye.lensCenter.xy) * float2(1.0, -1.0) / eye.lensCenter.z;
     float r2 = dot(r, r);
     float2 t = r * (1.0 + r2 * (frame.coefficients.x + r2 * frame.coefficients.y));
@@ -336,10 +395,12 @@ fragment float4 final_fragment(MaskVaryings in [[stage_in]],
     }
     uint layer = uint(eye.params.x + 0.5);
     float3 scales = frame.chroma.w > 0.5 ? frame.chroma.xyz : float3(1.0);
-    float3 rgb = float3(sample_eye(image, s, t * scales.x, eye, layer).r,
-                        sample_eye(image, s, t * scales.y, eye, layer).g,
-                        sample_eye(image, s, t * scales.z, eye, layer).b);
-    return float4(rgb * edge * frame.output.x, 1.0);
+    bool bicubic = frame.options.x > 0.5;
+    float3 rgb = float3(sample_eye(image, s, t * scales.x, eye, layer, bicubic).r,
+                        sample_eye(image, s, t * scales.y, eye, layer, bicubic).g,
+                        sample_eye(image, s, t * scales.z, eye, layer, bicubic).b);
+    // Catmull-Rom's negative lobes overshoot at hard edges.
+    return float4(saturate(rgb) * edge * frame.output.x, 1.0);
 }
 """#
 }

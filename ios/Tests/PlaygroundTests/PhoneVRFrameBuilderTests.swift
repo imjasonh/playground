@@ -19,7 +19,7 @@ final class PhoneVRFrameBuilderTests: XCTestCase {
         XCTAssertEqual(MemoryLayout<VRPassthroughUniforms>.size, 80)
         XCTAssertEqual(MemoryLayout<VRDistortionEyeUniforms>.size, 112)
         XCTAssertEqual(MemoryLayout<VRDistortionEyeUniforms>.offset(of: \VRDistortionEyeUniforms.lensCenter), 48)
-        XCTAssertEqual(MemoryLayout<VRDistortionFrameUniforms>.size, 48)
+        XCTAssertEqual(MemoryLayout<VRDistortionFrameUniforms>.size, 64)
     }
 
     func testNearObjectsAppearInboardInEachEye() {
@@ -104,10 +104,74 @@ final class PhoneVRFrameBuilderTests: XCTestCase {
             XCTAssertEqual(u.bufferTangents, layout[eye].bufferTangents.shaderVector)
             XCTAssertEqual(u.rotation.columns.0, SIMD3(1, 0, 0))
         }
-        let frame = VRFrameBuilder.distortionFrame(layout: layout, chromaticCorrection: false, brightness: 1)
+        let frame = VRFrameBuilder.distortionFrame(layout: layout, chromaticCorrection: false, bicubic: true, focusChart: false, brightness: 1)
         XCTAssertEqual(frame.chroma.w, 0)
         XCTAssertEqual(frame.output.z, 2556)
         XCTAssertEqual(frame.coefficients.x, 0.441)
+        XCTAssertEqual(frame.options, SIMD4(1, 0, 0, 0))
+        let chart = VRFrameBuilder.distortionFrame(layout: layout, chromaticCorrection: true, bicubic: false, focusChart: true, brightness: 1)
+        XCTAssertEqual(chart.options, SIMD4(0, 1, 0, 0))
+    }
+
+    func testAutomaticResolutionSamplesTheLensAxisAboutOneAndAHalfTimes() {
+        XCTAssertEqual(layout.centerSampling(resolution: 1024), 1.21, accuracy: 0.01)
+        XCTAssertEqual(layout.centerSampling(resolution: 1280), 1.52, accuracy: 0.01)
+        let automatic = PhoneVRSettings.EyeResolution.automatic.cap
+        XCTAssertEqual(automatic.resolution, 1280)
+        XCTAssertTrue(automatic.adaptive)
+        XCTAssertLessThan(layout.centerSampling(resolution: 768), 1, "768² undersamples the panel at the lens axis")
+    }
+
+    // MARK: - Focus chart
+
+    func testFocusChartLeavesTheCentreClear() {
+        for x in stride(from: -19.5, through: 19.5, by: 1) {
+            for y in stride(from: -19.5, through: 19.5, by: 1) {
+                XCTAssertNil(VRFocusChart.value(at: SIMD2(Float(x), Float(y))))
+            }
+        }
+        XCTAssertNil(VRFocusChart.value(at: SIMD2(VRFocusChart.extent + 0.5, 0)))
+        XCTAssertNil(VRFocusChart.value(at: SIMD2(0, -VRFocusChart.extent - 0.5)))
+    }
+
+    func testFocusChartAlternatesSinglePixelLines() {
+        let rows = stride(from: Float(-17.5), through: 17.5, by: 1)
+        for x in stride(from: Float(20.5), through: 54.5, by: 1) {
+            // Left and right of the centre: columns alternate, rows don't.
+            let right = rows.map { VRFocusChart.value(at: SIMD2(x, $0)) }
+            XCTAssertEqual(Set(right), [VRFocusChart.value(at: SIMD2(x, 0))])
+            XCTAssertNotEqual(VRFocusChart.value(at: SIMD2(x, 0)), VRFocusChart.value(at: SIMD2(x + 1, 0)))
+            XCTAssertNotEqual(VRFocusChart.value(at: SIMD2(-x, 0)), VRFocusChart.value(at: SIMD2(-x - 1, 0)))
+            // Above and below: rows alternate.
+            XCTAssertNotEqual(VRFocusChart.value(at: SIMD2(0, x)), VRFocusChart.value(at: SIMD2(0, x + 1)))
+            XCTAssertNotEqual(VRFocusChart.value(at: SIMD2(5, -x)), VRFocusChart.value(at: SIMD2(5, -x - 1)))
+        }
+    }
+
+    func testFocusChartCornersUseTwoPixelLines() {
+        let row = stride(from: Float(20.5), through: 55.5, by: 1).map { VRFocusChart.value(at: SIMD2($0, 30.5)) ?? -1 }
+        // Bottom right holds vertical lines two pixels wide.
+        var runs: [Int] = []
+        var previous: Float?
+        for value in row {
+            if value == previous {
+                runs[runs.count - 1] += 1
+            } else {
+                runs.append(1)
+            }
+            previous = value
+        }
+        XCTAssertTrue(runs.dropFirst().dropLast().allSatisfy { $0 == 2 }, "\(runs)")
+        // Top right holds horizontal ones, constant along a row.
+        let topRight = Set(stride(from: Float(20.5), through: 55.5, by: 1).map { VRFocusChart.value(at: SIMD2($0, -30.5)) })
+        XCTAssertEqual(topRight.count, 1)
+    }
+
+    func testFocusChartFitsInTheSharpCentreOfTheField() {
+        for eye in VREye.allCases {
+            let reach = VRFocusChart.extent * Float(2).squareRoot()
+            XCTAssertLessThan(reach, layout[eye].visibleRadiusPixels / 4)
+        }
     }
 
     func testReticleKeepsItsAngularSize() {

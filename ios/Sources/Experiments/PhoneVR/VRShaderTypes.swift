@@ -73,7 +73,7 @@ struct VRDistortionEyeUniforms {
     var params: SIMD4<Float>
 }
 
-/// Final pass, shared. 48 bytes.
+/// Final pass, shared. 64 bytes.
 struct VRDistortionFrameUniforms {
     /// k1, k2.
     var coefficients: SIMD4<Float>
@@ -81,6 +81,9 @@ struct VRDistortionFrameUniforms {
     var chroma: SIMD4<Float>
     /// x brightness (0 black to 1), y edge feather in tangents, z and w drawable size in pixels.
     var output: SIMD4<Float>
+    /// x > 0.5 samples the eye buffer with Catmull-Rom instead of bilinear
+    /// filtering; y > 0.5 draws `VRFocusChart` around each lens axis.
+    var options: SIMD4<Float>
 }
 
 extension VRTangents {

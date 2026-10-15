@@ -158,12 +158,19 @@ enum VRFrameBuilder {
     }
 
     /// Final-pass values shared by both eyes.
-    static func distortionFrame(layout: VRStereoLayout, chromaticCorrection: Bool, brightness: Float) -> VRDistortionFrameUniforms {
+    static func distortionFrame(
+        layout: VRStereoLayout,
+        chromaticCorrection: Bool,
+        bicubic: Bool,
+        focusChart: Bool,
+        brightness: Float
+    ) -> VRDistortionFrameUniforms {
         let p = layout.profile
         return VRDistortionFrameUniforms(
             coefficients: SIMD4(p.distortionK1, p.distortionK2, 0, 0),
             chroma: SIMD4(p.redScale, 1, p.blueScale, chromaticCorrection ? 1 : 0),
-            output: SIMD4(brightness, 0.006, Float(layout.screen.widthPixels), Float(layout.screen.heightPixels))
+            output: SIMD4(brightness, 0.006, Float(layout.screen.widthPixels), Float(layout.screen.heightPixels)),
+            options: SIMD4(bicubic ? 1 : 0, focusChart ? 1 : 0, 0, 0)
         )
     }
 

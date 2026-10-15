@@ -243,6 +243,18 @@ final class PhoneVRSceneTests: XCTestCase {
         XCTAssertEqual(experience.handle(.controller(.b, target: nil, head: ahead)), [.sceneChanged(.studio), .haptic])
     }
 
+    func testCalibrationPanelLeavesTheViewAheadClear() {
+        var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
+        _ = experience.handle(.tap(target: nil, head: ahead))
+        _ = experience.handle(.gazeSelected(.menu(.scene), head: ahead))
+        let forward = SIMD3<Float>(0, 0, -1)
+        // Straight ahead is free for the target and the focus chart.
+        XCTAssertNil(experience.panelDistance(origin: ahead.position, direction: forward))
+        XCTAssertNil(experience.panelDistance(origin: ahead.position, direction: VRMath.rotationX(-VRMath.radians(5)).act(forward)))
+        // A glance down reaches the panel.
+        XCTAssertNotNil(experience.panelDistance(origin: ahead.position, direction: VRMath.rotationX(-VRMath.radians(20)).act(forward)))
+    }
+
     func testCalibrationStopsAtTheRangeLimit() {
         var profile = VRViewerProfile.standard
         profile.redScale = 1.03
@@ -263,10 +275,13 @@ final class PhoneVRSceneTests: XCTestCase {
         var settings = PhoneVRSettings()
         settings.refreshRate = .hz60
         settings.profile.distortionK1 = 0.3
+        settings.bicubicResampling = false
         let data = try JSONEncoder().encode(settings)
         XCTAssertEqual(try JSONDecoder().decode(PhoneVRSettings.self, from: data), settings)
+        // Settings saved before a key existed load with its default.
         let partial = try JSONDecoder().decode(PhoneVRSettings.self, from: Data(#"{"timewarp": false}"#.utf8))
         XCTAssertFalse(partial.timewarp)
+        XCTAssertTrue(partial.bicubicResampling)
         XCTAssertEqual(partial.profile, .standard)
         XCTAssertEqual(partial.mounting, .cameraLeft)
     }
@@ -274,6 +289,7 @@ final class PhoneVRSceneTests: XCTestCase {
     func testSettingsMapToGovernorCaps() {
         var settings = PhoneVRSettings()
         XCTAssertEqual(settings.governorConfiguration().maxRefreshRate, 120)
+        XCTAssertEqual(settings.governorConfiguration().maxEyeResolution, 1280)
         XCTAssertTrue(settings.governorConfiguration().adaptiveResolution)
         settings.refreshRate = .hz60
         settings.eyeResolution = .r1280
