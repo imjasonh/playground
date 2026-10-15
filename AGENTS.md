@@ -40,6 +40,7 @@ playground/
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
+├── hex-sudoku/            # 16×16 sudoku generator in hex digits 0-9 and A-F (JS + Node tests)
 ├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
@@ -81,6 +82,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
+| `hex-sudoku/` | yes | 16×16 sudoku generator in hex digits; JS modules, npm scripts, tests |
 | `chrome-extension/` | no | Chrome extension; no `index.html` |
 | `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
@@ -720,6 +722,7 @@ bundle exec fastlane test
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
+| `hex-sudoku/` | Generate 16×16 sudoku boards in the hex digits 0-9 and A-F. Easy, medium, and hard levels set the solving techniques a board needs; none needs guessing | Node test runner |
 | `image-diff/` | Drop two images and compare them pixel by pixel; different pixels tint red | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
