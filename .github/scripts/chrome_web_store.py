@@ -15,7 +15,7 @@ Required environment variables:
 Optional:
 
   CHROME_WEB_STORE_ITEM_ID       default canmakefmjmnhhaobdeipbamnalcloap
-  CHROME_WEB_STORE_PUBLISH_TYPE  DEFAULT_PUBLISH, STAGED_PUBLISH, or TRUSTED_TESTERS
+  CHROME_WEB_STORE_PUBLISH_TYPE  DEFAULT_PUBLISH or STAGED_PUBLISH
   CHROME_WEB_STORE_API_ORIGIN    tests only; must be http://127.0.0.1 or http://localhost
   CHROME_WEB_STORE_TOKEN_URL     tests only; same loopback rule
 """
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 DEFAULT_ITEM_ID = "canmakefmjmnhhaobdeipbamnalcloap"
 API_ORIGIN = "https://chromewebstore.googleapis.com"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
-PUBLISH_TYPES = ("DEFAULT_PUBLISH", "STAGED_PUBLISH", "TRUSTED_TESTERS")
+PUBLISH_TYPES = ("DEFAULT_PUBLISH", "STAGED_PUBLISH")
 LIVE_STATES = ("PUBLISHED", "PUBLISHED_TO_TESTERS")
 OPEN_REVIEW = ("PENDING_REVIEW", "STAGED")
 CLOSED_REVIEW = ("REJECTED", "CANCELLED")
@@ -301,7 +301,11 @@ def publish_package(path: str, env: dict[str, str] | None = None, sleep=time.sle
     item_id = values.get("CHROME_WEB_STORE_ITEM_ID", DEFAULT_ITEM_ID).strip() or DEFAULT_ITEM_ID
     publish_type = values.get("CHROME_WEB_STORE_PUBLISH_TYPE", "DEFAULT_PUBLISH").strip() or "DEFAULT_PUBLISH"
     if publish_type not in PUBLISH_TYPES:
-        raise PublishError(f"CHROME_WEB_STORE_PUBLISH_TYPE must be one of {', '.join(PUBLISH_TYPES)}")
+        raise PublishError(
+            "CHROME_WEB_STORE_PUBLISH_TYPE must be DEFAULT_PUBLISH or STAGED_PUBLISH. "
+            "The Chrome Web Store API v2 has no trusted-tester publish type. "
+            "The audience is the one saved on the item in the developer dashboard."
+        )
     name = item_name(publisher_id, item_id)
     token = fetch_token(token_url, client_id, client_secret, refresh_token)
     status = fetch_status(origin, name, token)
