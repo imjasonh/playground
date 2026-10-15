@@ -85,7 +85,7 @@ jobs:
           CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.CHROME_WEB_STORE_CLIENT_SECRET }}
           CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEB_STORE_REFRESH_TOKEN }}
           CHROME_WEB_STORE_PUBLISHER_ID: ${{ secrets.CHROME_WEB_STORE_PUBLISHER_ID }}
-          CHROME_WEB_STORE_ITEM_ID: canmakefmjmnhhaobdeipbamnalcloap
+          CHROME_WEB_STORE_ITEM_ID: cfmebakopkdpedmdbpcpfibhodmppigj
           CHROME_WEB_STORE_PUBLISH_TYPE: ${{ vars.CHROME_WEB_STORE_PUBLISH_TYPE || 'DEFAULT_PUBLISH' }}
         run: |
           if [ -z "$CHROME_WEB_STORE_CLIENT_ID" ] || [ -z "$CHROME_WEB_STORE_CLIENT_SECRET" ] || [ -z "$CHROME_WEB_STORE_REFRESH_TOKEN" ] || [ -z "$CHROME_WEB_STORE_PUBLISHER_ID" ]; then
