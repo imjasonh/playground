@@ -193,14 +193,22 @@ final class VRPanelPainter: @unchecked Sendable {
             case trailing
         }
 
+        /// Draws one line of text, shrinking it to fit the width of `r`.
         func text(_ string: String, in r: CGRect, size: CGFloat, bold: Bool = false, color: CGColor, alignment: Alignment = .center) {
-            let font = CTFontCreateUIFontForLanguage(bold ? .emphasizedSystem : .system, size, nil)
-                ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
-            let attributes: [NSAttributedString.Key: Any] = [
-                NSAttributedString.Key(kCTFontAttributeName as String): font,
-                NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
-            ]
-            let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: attributes) as CFAttributedString)
+            func makeLine(_ size: CGFloat) -> CTLine {
+                let font = CTFontCreateUIFontForLanguage(bold ? .emphasizedSystem : .system, size, nil)
+                    ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
+                let attributes: [NSAttributedString.Key: Any] = [
+                    NSAttributedString.Key(kCTFontAttributeName as String): font,
+                    NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
+                ]
+                return CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: attributes) as CFAttributedString)
+            }
+            var line = makeLine(size)
+            let natural = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            if natural > r.width, r.width > 0 {
+                line = makeLine(size * r.width / natural)
+            }
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
             var leading: CGFloat = 0
