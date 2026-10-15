@@ -217,6 +217,14 @@ class PublishFlowTest(unittest.TestCase):
             store.publish_package(self.zip_path, env, sleep=lambda _seconds: None)
         self.assertEqual(self.server.calls, [])
 
+    def test_rejects_trusted_testers_publish_type(self):
+        env = dict(self.env)
+        env["CHROME_WEB_STORE_PUBLISH_TYPE"] = "TRUSTED_TESTERS"
+        with self.assertRaises(store.PublishError) as caught:
+            store.publish_package(self.zip_path, env, sleep=lambda _seconds: None)
+        self.assertIn("DEFAULT_PUBLISH", str(caught.exception))
+        self.assertEqual(self.server.calls, [])
+
     def test_refuses_a_bad_item_id(self):
         env = dict(self.env)
         env["CHROME_WEB_STORE_ITEM_ID"] = "not-an-id"

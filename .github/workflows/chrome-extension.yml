@@ -13,7 +13,8 @@
 #   CHROME_WEB_STORE_REFRESH_TOKEN
 #   CHROME_WEB_STORE_PUBLISHER_ID
 # Optional repository variable CHROME_WEB_STORE_PUBLISH_TYPE
-# (DEFAULT_PUBLISH, STAGED_PUBLISH, or TRUSTED_TESTERS).
+# (DEFAULT_PUBLISH or STAGED_PUBLISH). The audience is the one saved
+# on the item in the developer dashboard.
 # Without the secrets, tests still run and publish is skipped.
 
 name: chrome-extension
