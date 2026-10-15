@@ -92,7 +92,7 @@ test("the store zip is the extension package and the listing images match the st
 
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.0");
+  assert.equal(manifest.version, "0.1.1");
   assert.equal(manifest.name, "Close Duplicate Tabs");
   assert.ok(manifest.description.length <= 132);
   assert.match(manifest.description, /badge/);
