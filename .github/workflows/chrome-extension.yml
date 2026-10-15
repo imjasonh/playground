@@ -3,9 +3,10 @@
 # Pull requests run the unit tests, pack the zip, and upload that zip as a
 # workflow artifact. The artifact is the store package itself. A push to main,
 # or a manual run on main, also uploads that zip to the existing Chrome Web
-# Store item and publishes it. The API releases the version to the item's
-# current audience after review. It does not create the item or change
-# visibility.
+# Store item and publishes it. The publish call asks the store to skip
+# review. When the store requires review, the same call is repeated without
+# that flag. The API releases the version to the item's current audience. It
+# does not create the item or change visibility.
 #
 # Publishing needs these repository secrets:
 #   CHROME_WEB_STORE_CLIENT_ID

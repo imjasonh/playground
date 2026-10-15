@@ -56,7 +56,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, self.server.upload_response)
             return
         if self.path.endswith(":publish"):
-            self.server.publish_body = json.loads(body.decode())
+            parsed = json.loads(body.decode()) if body else {}
+            self.server.publish_bodies.append(parsed)
+            self.server.publish_body = parsed
+            if self.server.publish_responses:
+                status, payload = self.server.publish_responses.pop(0)
+                self._send(status, payload)
+                return
             self._send(200, {"state": "PENDING_REVIEW"})
             return
         self._send(404, {"error": {"message": "not found"}})
@@ -69,6 +75,8 @@ class StoreServer(ThreadingHTTPServer):
         self.statuses = []
         self.upload_response = {"uploadState": "SUCCEEDED", "crxVersion": "0.1.0"}
         self.publish_body = None
+        self.publish_bodies = []
+        self.publish_responses = []
 
     def next_status(self) -> dict:
         if self.statuses:
@@ -185,18 +193,51 @@ class PublishFlowTest(unittest.TestCase):
             {"lastAsyncUploadState": "SUCCEEDED"},
         ]
         self.server.upload_response = {"uploadState": "IN_PROGRESS"}
+        self.server.publish_responses = [(200, {"state": "PUBLISHED_TO_TESTERS"})]
         decision = store.publish_package(self.zip_path, self.env, sleep=lambda _seconds: None)
         self.assertEqual(decision.action, "submitted")
-        self.assertIn("PENDING_REVIEW", decision.message)
+        self.assertIn("without review", decision.message)
         paths = [call[1] for call in self.server.calls]
         self.assertIn("/token", paths)
         self.assertTrue(any(path.endswith(":upload") for path in paths))
-        self.assertEqual(self.server.publish_body, {"publishType": "DEFAULT_PUBLISH"})
+        self.assertEqual(self.server.publish_bodies, [{"publishType": "DEFAULT_PUBLISH", "skipReview": True}])
         upload = next(call for call in self.server.calls if call[1].endswith(":upload"))
         self.assertEqual(upload[2], "Bearer test-token")
         with zipfile.ZipFile(io.BytesIO(upload[3])) as archive:
             manifest = json.loads(archive.read("manifest.json"))
         self.assertEqual(manifest["version"], "0.1.0")
+
+    def test_submits_for_review_when_skip_review_is_refused(self):
+        self.server.statuses = [
+            {"publishedItemRevisionStatus": {"state": "PUBLISHED", "distributionChannels": [{"crxVersion": "0.0.2"}]}}
+        ]
+        self.server.publish_responses = [
+            (400, {"error": {"message": "This item requires review."}}),
+            (200, {"state": "PENDING_REVIEW"}),
+        ]
+        decision = store.publish_package(self.zip_path, self.env, sleep=lambda _seconds: None)
+        self.assertEqual(decision.action, "submitted")
+        self.assertIn("for review", decision.message)
+        self.assertEqual(
+            self.server.publish_bodies,
+            [
+                {"publishType": "DEFAULT_PUBLISH", "skipReview": True},
+                {"publishType": "DEFAULT_PUBLISH"},
+            ],
+        )
+
+    def test_does_not_hide_a_publish_failure_after_skip_review_is_refused(self):
+        self.server.statuses = [
+            {"publishedItemRevisionStatus": {"state": "PUBLISHED", "distributionChannels": [{"crxVersion": "0.0.2"}]}}
+        ]
+        self.server.publish_responses = [
+            (400, {"error": {"message": "This item requires review."}}),
+            (400, {"error": {"message": "Privacy practices are incomplete."}}),
+        ]
+        with self.assertRaises(store.PublishError) as caught:
+            store.publish_package(self.zip_path, self.env, sleep=lambda _seconds: None)
+        self.assertIn("Privacy practices are incomplete.", str(caught.exception))
+        self.assertEqual(len(self.server.publish_bodies), 2)
 
     def test_skips_a_version_that_is_already_live(self):
         self.server.statuses = [
