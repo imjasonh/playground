@@ -33,6 +33,9 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`esp-flash/`](esp-flash/)** — flash `inkbot-esp32` / `maze-esp32` (or a
   local `.bin`) to a USB ESP32 from Chrome or Edge.
 - **[`hello/`](hello/)** — a minimal static demo.
+- **[`hex-sudoku/`](hex-sudoku/)** — generate 16×16 sudoku boards in the hex
+  digits 0-9 and A-F. Easy, medium, and hard boards each have one solution,
+  and none needs guessing. Print a board, copy it as text, or share its link.
 - **[`image-diff/`](image-diff/)** — drop two images and compare them pixel by
   pixel. Matching pixels stay as they are; the more a pixel differs, the more
   red it is tinted. Different sizes are resized. Different aspect ratios are
