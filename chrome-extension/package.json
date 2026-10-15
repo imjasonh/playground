@@ -1,0 +1,8 @@
+{
+  "name": "chrome-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.js"
+  }
+}

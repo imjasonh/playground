@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Close Duplicate Tabs",
+  "version": "0.1.0",
+  "description": "Closes extra tabs that share a URL. The badge and tab menu show how many tabs that click will close.",
+  "permissions": ["contextMenus", "tabs"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Close duplicate tabs",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}
