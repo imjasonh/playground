@@ -160,9 +160,13 @@ function openMove({ grid, candidates }, level) {
     for (const a of unit) {
       for (const b of unit) {
         const pair = options[a];
-        const same = a < b && pair.length === 2 && pair.join() === options[b].join();
+        const same =
+          a < b && pair.length === 2 && pair.join() === options[b].join();
         const others = unit.filter((i) => i !== a && i !== b);
-        if (same && others.some((i) => pair.some((k) => options[i].includes(k)))) {
+        if (
+          same &&
+          others.some((i) => pair.some((k) => options[i].includes(k)))
+        ) {
           return "naked pair";
         }
       }
@@ -170,7 +174,8 @@ function openMove({ grid, candidates }, level) {
     for (let x = 0; x < SIZE; x += 1) {
       for (let y = x + 1; y < SIZE; y += 1) {
         const spots = spotsOf(unit, x);
-        const same = spots.length === 2 && spots.join() === spotsOf(unit, y).join();
+        const same =
+          spots.length === 2 && spots.join() === spotsOf(unit, y).join();
         if (same && spots.some((i) => options[i].length > 2)) {
           return "hidden pair";
         }
