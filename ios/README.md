@@ -499,13 +499,15 @@ move, estimates, and timings with the device facts.
 ### Phone VR
 
 Phone VR turns an iPhone in a Cardboard-style lens viewer into a 6DoF headset.
-It targets the iPhone 15 Pro (2556 × 1179 at 460 ppi, 120 Hz) and a viewer
-with 45 mm acrylic lenses 42 mm from the screen, 63.9 mm apart. Other iPhones
-use their own panel size and pixel density, and every viewer value is
-editable. It follows the engineering sketch in Cursor Canvas. The renderer is
-a thin Metal layer on ARKit and Core Motion rather than RealityKit or
-SceneKit, because those don't expose lens distortion, late latching, or
-timewarp.
+It targets the iPhone 15 Pro (2556 × 1179 at 460 ppi, 120 Hz) and a 3D-printed
+viewer. The viewer's lenses sit 42 mm from the screen, measured from their
+optical center plane, with 63.9 mm between lens centers and about 24 mm of
+eye relief. The lenses are 45 mm nominal; the manufacturer's drawing works
+out to 43 to 45 mm. Other iPhones use their own panel size and pixel density,
+and every viewer value is editable. It follows the engineering sketch in
+Cursor Canvas. The renderer is a thin Metal layer on ARKit and Core Motion
+rather than RealityKit or SceneKit, because those don't expose lens
+distortion, late latching, or timewarp.
 
 **Tracking.** Core Motion device motion (200 Hz, no magnetometer) gives
 orientation. ARKit world tracking, at its lowest-resolution 60 fps video
@@ -549,11 +551,16 @@ stays put as you turn.
 
 **Calibration.** The calibration scene puts you in a room whose walls are a
 grid, with a dot straight ahead and the controls on a panel below eye level.
-Adjust k1, k2, the red and blue scales, lens spacing, and screen-to-lens
-distance until the grid lines stay straight as you turn and the lines and dot
-have no color fringes. The values are saved when you leave. The launch page
-also has these settings, a lens preview pre-warped by the same model, and an
-estimate of lateral color from the lens geometry.
+Adjust k1, k2, the red and blue scales, and the screen-to-lens distance until
+the grid lines stay straight as you turn and the lines and dot have no color
+fringes. The panel also adjusts lens spacing, which normally stays at the
+viewer's 63.9 mm. The values are saved when you leave. The lens model, like
+Cardboard's, puts the eye at the lens. With 24 mm of eye relief, paraxial
+optics predicts that the screen-to-lens value that keeps the world still as
+you turn is 42.6 to 43.6 mm for 43 to 45 mm lenses, a little more than the
+physical 42 mm. The launch page also has these settings, a lens preview
+pre-warped by the same model, and an estimate of lateral color from the lens
+geometry.
 
 **Sharpness.** While you look away from the calibration panel, the final pass
 draws a focus chart around each lens axis straight onto the panel, skipping
@@ -562,10 +569,11 @@ and lines 2 pixels wide at the corners. If the 1-pixel lines blur into gray,
 the blur comes from the optics: the lens focus, how the lenses line up with
 your eyes, or your eyesight. No setting changes those. If the lines look
 distinct but the scene looks soft, the blur comes from rendering. Focus is
-fixed by the viewer. With 45 mm lenses 42 mm from the screen, the image
-appears about 0.63 m away. Moving the screen away from the lenses moves the
-image out, to about 1.3 m at 43.5 mm and to infinity at 45 mm. Most eyes
-can't focus it with the screen any farther away than that.
+fixed by the viewer. The screen sits 1 to 3 mm inside the lenses' focal
+length, so the image appears about 0.65 to 1.8 m from the eye. That suits
+slightly nearsighted eyes, and glasses fit. Keep the screen at 42 mm. With a
+43 mm lens, moving it out 1 mm reaches the focal length, and past that most
+eyes can't focus the image.
 
 **AirPods cross-check.** This check is optional. AirPods head tracking
 updates less often and arrives later than the phone's gyro, so it never drives
