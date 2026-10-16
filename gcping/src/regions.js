@@ -4,7 +4,7 @@
 // 2024 Wikipedia table; keep the region id until a public city name is.
 export const GLOBAL_ID = "global";
 
-export const PING_BUCKET = "gcs-ping-nonexistent-bucket";
+export const PING_BUCKET = "gcping-nonexistent-bucket";
 
 export const REGIONS = Object.freeze([
   { id: GLOBAL_ID, location: "Global anycast" },

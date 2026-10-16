@@ -1,5 +1,5 @@
 {
-  "name": "gcs-ping",
+  "name": "gcping",
   "version": "1.0.0",
   "private": true,
   "description": "Measure HTTPS latency from the browser to Cloud Storage in each Google Cloud region",
