@@ -39,6 +39,7 @@ playground/
 ├── mapvelopes/            # Rust Cloudflare Worker: envelope PDFs with a route map
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
+├── gcs-ping/              # browser HTTPS latency to GCS regional endpoints (JS + Node tests)
 ├── hello/                 # example static app (HTML only)
 ├── hex-sudoku/            # 16×16 sudoku generator in hex digits 0-9 and A-F (JS + Node tests)
 ├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
@@ -81,6 +82,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kubescheduler-the-game/` | yes | Kubernetes scheduler game; JS modules, npm scripts, tests |
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
+| `gcs-ping/` | yes | GCS regional 404 latency to every Google Cloud region; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
 | `hex-sudoku/` | yes | 16×16 sudoku generator in hex digits; JS modules, npm scripts, tests |
 | `chrome-extension/` | no | Chrome extension; no `index.html` |
@@ -721,6 +723,7 @@ bundle exec fastlane test
 | `kubescheduler-the-game/` | Play the Kubernetes scheduler and cluster operator | Node test runner |
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
+| `gcs-ping/` | Median HTTPS latency from the browser to Cloud Storage in each Google Cloud region | Node test runner |
 | `hello/` | Static demo | none |
 | `hex-sudoku/` | Generate 16×16 sudoku boards in the hex digits 0-9 and A-F. Easy, medium, and hard levels set the solving techniques a board needs; none needs guessing | Node test runner |
 | `image-diff/` | Drop two images and compare them pixel by pixel; different pixels tint red | Node test runner |

@@ -1,0 +1,14 @@
+{
+  "name": "gcs-ping",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Measure HTTPS latency from the browser to Cloud Storage in each Google Cloud region",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
