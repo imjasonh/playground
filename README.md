@@ -32,6 +32,10 @@ bump when the tests still pass, so old experiments don't rot.
   procedurally generated Olympic downhill course.
 - **[`esp-flash/`](esp-flash/)** — flash `inkbot-esp32` / `maze-esp32` (or a
   local `.bin`) to a USB ESP32 from Chrome or Edge.
+- **[`gcping/`](gcping/)** — measure HTTPS latency from your browser to
+  Cloud Storage in each Google Cloud region, from 404s on
+  `storage.REGION.rep.googleapis.com`. A spiritual successor to
+  [gcping.com](https://gcping.com).
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`hex-sudoku/`](hex-sudoku/)** — generate 16×16 sudoku boards in the hex
   digits 0-9 and A-F. Easy, medium, and hard boards each have one solution,
