@@ -2,6 +2,8 @@ import { REGIONS } from "./regions.js";
 import { pingRegion } from "./ping.js";
 import { compareResults, fastestId, median } from "./stats.js";
 
+const INITIAL_ROUNDS = 10;
+
 const tbody = document.querySelector("#results tbody");
 const statusEl = document.querySelector("#status");
 const stopStart = document.querySelector("#stopstart");
@@ -12,7 +14,9 @@ const headerButtons = document.querySelectorAll("th[data-sort] button");
 
 const state = {
   running: false,
+  warming: false,
   round: 0,
+  targetRounds: INITIAL_ROUNDS,
   sortKey: "median",
   sortDir: "ascending",
   controller: null,
@@ -95,7 +99,11 @@ function render() {
   stopStart.setAttribute("aria-pressed", String(state.running));
 
   if (state.running) {
-    statusEl.textContent = `Pinging · round ${state.round}`;
+    if (state.warming || state.round === 0) {
+      statusEl.textContent = "Pinging";
+    } else {
+      statusEl.textContent = `Pinging · round ${state.round} of ${state.targetRounds}`;
+    }
   } else if (state.round === 0) {
     statusEl.textContent = "Waiting to ping";
   } else {
@@ -105,7 +113,7 @@ function render() {
   timingNote.hidden = !state.sawBreakdown;
 }
 
-async function pingOne(row, signal) {
+async function pingOne(row, signal, record) {
   const result = await pingRegion(row.id, {
     nonce: nonce(),
     fetchImpl: fetch.bind(globalThis),
@@ -114,6 +122,9 @@ async function pingOne(row, signal) {
     signal,
   });
   if (result.aborted || !result.ok || result.duration === null) {
+    return;
+  }
+  if (!record) {
     return;
   }
   row.samples.push(result.duration);
@@ -125,31 +136,39 @@ async function pingOne(row, signal) {
   render();
 }
 
-async function pingRound(signal) {
-  state.round += 1;
-  render();
-  for (const row of state.rows) {
-    if (signal.aborted) {
-      return;
-    }
-    await pingOne(row, signal);
+async function pingRound(signal, record) {
+  if (record) {
+    state.round += 1;
+    render();
   }
+  const work = state.rows.map((row) => pingOne(row, signal, record));
+  await Promise.all(work);
 }
 
-async function runUntilStopped() {
+async function runRounds(count) {
   if (state.running) {
     return;
   }
   state.running = true;
+  state.warming = true;
+  state.targetRounds = state.round + count;
   state.controller = new AbortController();
   const signal = state.controller.signal;
   render();
   try {
-    while (!signal.aborted) {
-      await pingRound(signal);
+    if (!signal.aborted) {
+      await pingRound(signal, false);
+    }
+    state.warming = false;
+    for (let i = 0; i < count; i += 1) {
+      if (signal.aborted) {
+        break;
+      }
+      await pingRound(signal, true);
     }
   } finally {
     state.running = false;
+    state.warming = false;
     state.controller = null;
     render();
   }
@@ -165,7 +184,7 @@ stopStart.addEventListener("click", () => {
   if (state.running) {
     stop();
   } else {
-    runUntilStopped();
+    runRounds(1);
   }
 });
 
@@ -194,4 +213,4 @@ if (typeof performance.setResourceTimingBufferSize === "function") {
   performance.setResourceTimingBufferSize(2000);
 }
 
-runUntilStopped();
+runRounds(INITIAL_ROUNDS);

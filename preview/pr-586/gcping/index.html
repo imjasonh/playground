@@ -79,9 +79,11 @@
           instead.
         </p>
         <p>
-          Your browser keeps sending HTTPS GET requests until you click
-          Stop. Each round hits every region. The table updates that region's
-          median as each 404 arrives.
+          The page sends 11 waves of probes. Each wave hits every region at
+          the same time. The first wave is discarded, because it includes the
+          TLS handshake and is a slow outlier. The table uses the median of
+          the other 10. Stop ends early. Restart discards one warmup wave,
+          then records one more, and keeps the samples you already have.
         </p>
         <p>
           Requests go to a bucket that does not exist, at
@@ -99,9 +101,8 @@
           the breakdown.
         </p>
         <p>
-          The first probe to a region includes the TLS handshake. Later probes
-          often reuse the HTTP connection, so they can look faster. Use the
-          numbers to compare regions from where you are, not as a lab RTT.
+          Use the numbers to compare regions from where you are, not as a
+          lab RTT. Later probes often reuse the HTTP connection.
         </p>
       </div>
       <form method="dialog">
