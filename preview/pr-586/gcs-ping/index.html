@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="Measure HTTPS latency from your browser to Cloud Storage in each Google Cloud region."
+    />
+    <title>GCS ping</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="bar">
+        <h1>GCS ping</h1>
+        <button type="button" id="how">How it works</button>
+      </div>
+      <div class="subtitle">
+        <p>Measure your latency to Google Cloud regions</p>
+        <button type="button" id="stopstart" aria-pressed="true">
+          <span data-when="running">Stop</span>
+          <span data-when="stopped" hidden>Restart</span>
+        </button>
+      </div>
+    </header>
+
+    <p id="status" class="status" role="status">Pinging</p>
+    <p id="timing-note" class="status timing-note" hidden>
+      This browser exposed DNS, TCP, or TLS timestamps for at least one
+      region. Most Cloud Storage responses hide those fields.
+    </p>
+
+    <main>
+      <noscript>
+        <p class="noscript">GCS ping needs JavaScript to send the probes.</p>
+      </noscript>
+      <div class="table-wrap">
+        <table id="results">
+          <caption class="visually-hidden">
+            Median HTTPS latency from this browser to Cloud Storage in each
+            Google Cloud region
+          </caption>
+          <thead>
+            <tr>
+              <th data-sort="location" aria-sort="none">
+                <button type="button">Location</button>
+              </th>
+              <th data-sort="id" aria-sort="none">
+                <button type="button">Region</button>
+              </th>
+              <th data-sort="median" aria-sort="ascending">
+                <button type="button">Median latency</button>
+              </th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </main>
+
+    <dialog id="how-dialog" aria-labelledby="how-title">
+      <h2 id="how-title">How it works</h2>
+      <div class="prose">
+        <p>
+          Your browser sends HTTPS GET requests to Cloud Storage in each
+          Google Cloud region, for a bucket that does not exist. The endpoint
+          is <code>storage.REGION.rep.googleapis.com</code>. The global row
+          uses <code>storage.googleapis.com</code>. Each request returns 404.
+          The table shows the median time from request to response.
+        </p>
+        <p>
+          JavaScript can only report that end-to-end time here. The Resource
+          Timing API can split DNS, TCP, TLS, waiting, and download, but only
+          when the response includes a <code>Timing-Allow-Origin</code>
+          header. These Cloud Storage 404s do not send that header, and they
+          do not allow CORS, so the browser zeros the detailed timestamps.
+          The app still reads them and shows a note if a response includes
+          the breakdown.
+        </p>
+        <p>
+          The first probe to a region includes the TLS handshake. Later probes
+          often reuse the HTTP connection, so they can look faster. Use the
+          numbers to compare regions from where you are, not as a lab RTT.
+        </p>
+        <p>
+          The layout follows
+          <a href="https://github.com/GoogleCloudPlatform/gcping"
+            >GCPing</a
+          >, which pinged Cloud Run. GCPing is deprecated.
+        </p>
+      </div>
+      <form method="dialog">
+        <button type="submit">Close</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
