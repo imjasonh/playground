@@ -275,9 +275,19 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         let lateRotation = settings.timewarp ? tracker.predictRotation(at: displayTime) : head.worldFromScreen.rotation
         let timewarp = VRFrameBuilder.timewarpRotation(rendered: head.worldFromScreen.rotation, late: lateRotation)
         let brightness = Float(min(1, time / 0.4))
+        // The chart stays out of the way while you look at a panel to read or select.
+        let gaze = sceneHead.rotation.act(SIMD3<Float>(0, 0, -1))
+        let focusChart = experience.state.scene == .calibration && !experience.isCountingDown
+            && experience.panelDistance(origin: sceneHead.position, direction: gaze) == nil
         let finalFrame = VRFinalFrame(
             eyes: VRFrameBuilder.distortionEyes(layout: layout, timewarp: timewarp, vignette: vignette),
-            frame: VRFrameBuilder.distortionFrame(layout: layout, chromaticCorrection: settings.chromaticCorrection, brightness: brightness)
+            frame: VRFrameBuilder.distortionFrame(
+                layout: layout,
+                chromaticCorrection: settings.chromaticCorrection,
+                bicubic: settings.bicubicResampling,
+                focusChart: focusChart,
+                brightness: brightness
+            )
         )
         guard let finalCommands = renderer.commandQueue.makeCommandBuffer() else { return }
         finalCommands.label = "lens correction"
@@ -623,8 +633,9 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         let size = layout.eyeBufferSize(resolution: tier.eyeResolution)
         let head = lastHead
         func ms(_ value: Double?) -> String { value.map { String(format: "%.1f", $0) } ?? "–" }
+        let sampling = String(format: "%.1f", layout.centerSampling(resolution: tier.eyeResolution))
         var lines = [
-            "\(tier.refreshRate) Hz · \(size.width)×\(size.height) per eye · \(renderer.usesAmplification ? "single pass" : "two passes")",
+            "\(tier.refreshRate) Hz · \(size.width)×\(size.height) per eye · \(sampling)× sampling",
             "Frame \(ms(s.frame.map { $0 * 1000 })) ms · CPU \(ms(s.cpu)) ms",
             "GPU eyes \(ms(s.eye)) ms · lens \(ms(s.final)) ms",
             "Motion to photon \(ms(s.photon)) ms · latch \(ms(lastLatchWait * 1000)) ms",

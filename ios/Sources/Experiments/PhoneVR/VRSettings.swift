@@ -38,9 +38,11 @@ struct PhoneVRSettings: Codable, Equatable {
         }
 
         /// Largest eye resolution allowed, and whether GPU time may lower it.
+        /// Automatic starts at 1280², about 1.5 eye-buffer pixels per panel
+        /// pixel at the lens axis on a 460 ppi iPhone with the standard viewer.
         var cap: (resolution: Int, adaptive: Bool) {
             switch self {
-            case .automatic: return (1024, true)
+            case .automatic: return (1280, true)
             case .r768: return (768, false)
             case .r1024: return (1024, false)
             case .r1280: return (1280, false)
@@ -75,6 +77,7 @@ struct PhoneVRSettings: Codable, Equatable {
     var lateLatch = true
     var timewarp = true
     var chromaticCorrection = true
+    var bicubicResampling = true
     var spatialAudio = true
     var airPodsCrossCheck = false
     var comfortVignette = true
@@ -90,7 +93,7 @@ struct PhoneVRSettings: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case profile, mounting, refreshRate, eyeResolution, tracking, multisampling
-        case singlePassStereo, prediction, lateLatch, timewarp, chromaticCorrection
+        case singlePassStereo, prediction, lateLatch, timewarp, chromaticCorrection, bicubicResampling
         case spatialAudio, airPodsCrossCheck, comfortVignette, snapTurnDegrees
         case locomotionSpeed, playAreaRadius, eyeHeight, showStats, metalPerformanceHUD
         case countdownSeconds
@@ -111,6 +114,7 @@ struct PhoneVRSettings: Codable, Equatable {
         lateLatch = try c.decodeIfPresent(Bool.self, forKey: .lateLatch) ?? d.lateLatch
         timewarp = try c.decodeIfPresent(Bool.self, forKey: .timewarp) ?? d.timewarp
         chromaticCorrection = try c.decodeIfPresent(Bool.self, forKey: .chromaticCorrection) ?? d.chromaticCorrection
+        bicubicResampling = try c.decodeIfPresent(Bool.self, forKey: .bicubicResampling) ?? d.bicubicResampling
         spatialAudio = try c.decodeIfPresent(Bool.self, forKey: .spatialAudio) ?? d.spatialAudio
         airPodsCrossCheck = try c.decodeIfPresent(Bool.self, forKey: .airPodsCrossCheck) ?? d.airPodsCrossCheck
         comfortVignette = try c.decodeIfPresent(Bool.self, forKey: .comfortVignette) ?? d.comfortVignette

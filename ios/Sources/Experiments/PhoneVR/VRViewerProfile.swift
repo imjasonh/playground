@@ -49,9 +49,11 @@ struct VRViewerProfile: Codable, Equatable {
     var timewarpMarginDegrees: Float
     var lensFocalLength: Float
 
-    /// The viewer from the engineering sketch: 42 mm lens-to-screen, 63.9 mm
-    /// IPD, 45 mm acrylic lenses, 24 mm eye relief, ±27° round field.
-    /// Distortion starts at Cardboard v1's coefficients; fit them on device.
+    /// The printed viewer: 42 mm from the lenses' optical center plane to the
+    /// screen, 63.9 mm between lens centers, 24 mm eye relief, and lenses of
+    /// 45 mm nominal focal length (43 to 45 mm per the manufacturer's
+    /// drawing), with a ±27° round field. Distortion starts at Cardboard v1's
+    /// coefficients; fit them on device.
     static let standard = VRViewerProfile(
         screenToLensDistance: 0.042,
         interLensDistance: 0.0639,

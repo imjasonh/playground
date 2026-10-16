@@ -118,8 +118,15 @@ final class PhoneVRRendererTests: XCTestCase {
         scale: SIMD3(repeating: 0.03), color: VRPalette.rgba(0xFF0000), glow: 4
     )
 
-    /// Renders `objects` and the sky through both passes into a panel-sized texture.
-    private func render(_ objects: [VRSceneObject], singlePass: Bool) throws -> Frame? {
+    /// Renders `objects`, and the sky unless `sky` is false, through both
+    /// passes into a panel-sized texture.
+    private func render(
+        _ objects: [VRSceneObject],
+        singlePass: Bool,
+        bicubic: Bool = true,
+        focusChart: Bool = false,
+        sky: Bool = true
+    ) throws -> Frame? {
         let device = try metalDevice()
         if singlePass, !VRRenderer.supportsSinglePassStereo(device) { return nil }
         var options = VRRenderer.Options()
@@ -143,11 +150,13 @@ final class PhoneVRRendererTests: XCTestCase {
             panels: [],
             reticle: nil,
             passthrough: nil,
-            drawSky: true
+            drawSky: sky
         )
         let finalFrame = VRFinalFrame(
             eyes: VRFrameBuilder.distortionEyes(layout: layout, timewarp: VRMath.identityRotation, vignette: 1),
-            frame: VRFrameBuilder.distortionFrame(layout: layout, chromaticCorrection: true, brightness: 1)
+            frame: VRFrameBuilder.distortionFrame(
+                layout: layout, chromaticCorrection: true, bicubic: bicubic, focusChart: focusChart, brightness: 1
+            )
         )
 
         let outputDescriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -237,6 +246,133 @@ final class PhoneVRRendererTests: XCTestCase {
             XCTAssertGreaterThan(p.x, p.y + 60, "\(eye) ornament \(p)")
             XCTAssertGreaterThan(p.x, p.z + 60, "\(eye) ornament \(p)")
         }
+    }
+
+    func testFocusChartIsDrawnInPanelPixels() throws {
+        guard let frame = try render([], singlePass: false, focusChart: true) else { return XCTFail("render failed") }
+        let image = frame.image
+        let reach = Int(VRFocusChart.extent) + 2
+        for eye in VREye.allCases {
+            let center = frame.layout[eye].lensCenterPixels
+            var checked = 0
+            var mismatches: [String] = []
+            for y in (Int(center.y) - reach)...(Int(center.y) + reach) {
+                for x in (Int(center.x) - reach)...(Int(center.x) + reach) {
+                    guard let value = VRFocusChart.value(atPixel: x, y, lensCenter: center) else { continue }
+                    checked += 1
+                    let p = image.pixel(x, y)
+                    let level = Int(value * 255)
+                    if abs(p.x - level) > 1 || abs(p.y - level) > 1 || abs(p.z - level) > 1 {
+                        mismatches.append("(\(x), \(y)) \(p) expected \(level)")
+                    }
+                }
+            }
+            XCTAssertGreaterThan(checked, 10_000, "\(eye)")
+            XCTAssertTrue(mismatches.isEmpty, "\(eye): \(mismatches.count) chart pixels differ, first \(mismatches.prefix(3))")
+            // The scene still shows at the lens axis.
+            let middle = image.pixel(Int(center.x), Int(center.y))
+            XCTAssertGreaterThan(middle.x + middle.y + middle.z, 0, "\(eye) centre \(middle)")
+        }
+    }
+
+    /// Fills both eye buffers with a vertical sine grating whose period is
+    /// `periodPixels` panel pixels at the lens axis, runs only the final pass,
+    /// and returns the linear brightness of the panel pixels around the left
+    /// lens axis, row by row.
+    private func resampleGrating(periodPixels: Float, bicubic: Bool) throws -> [[Float]] {
+        let device = try metalDevice()
+        var options = VRRenderer.Options()
+        options.multisample = false
+        options.singlePassStereo = false
+        options.memorylessTargets = false
+        let renderer = try VRRenderer(device: device, options: options)
+        let screen = VRPhoneScreen.iPhone15Pro
+        let layout = VRStereoLayout(screen: screen, profile: .standard)
+        let size = layout.eyeBufferSize(resolution: 1024)
+        let targets = try renderer.ensureEyeTargets(width: size.width, height: size.height)
+
+        let texelsPerPixel = layout.centerSampling(resolution: 1024)
+        func encode(_ linear: Float) -> UInt8 {
+            let c = linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1 / 2.4) - 0.055
+            return UInt8((c * 255).rounded())
+        }
+        var row = [UInt8](repeating: 255, count: size.width * 4)
+        for x in 0..<size.width {
+            let phase = 2 * Float.pi * (Float(x) + 0.5) / (periodPixels * texelsPerPixel)
+            let level = encode(0.5 + 0.5 * sin(phase))
+            row[x * 4] = level
+            row[x * 4 + 1] = level
+            row[x * 4 + 2] = level
+        }
+        let pixels = Array(repeating: row, count: size.height).flatMap { $0 }
+        let bytesPerImage = pixels.count
+        let source = try XCTUnwrap(device.makeBuffer(bytes: pixels, length: bytesPerImage, options: .storageModeShared))
+
+        let outputDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: VRRenderer.drawableFormat, width: screen.widthPixels, height: screen.heightPixels, mipmapped: false
+        )
+        outputDescriptor.usage = [.renderTarget, .shaderRead]
+        outputDescriptor.storageMode = .private
+        let output = try XCTUnwrap(device.makeTexture(descriptor: outputDescriptor))
+        let bytesPerRow = screen.widthPixels * 4
+        let length = bytesPerRow * screen.heightPixels
+        let readback = try XCTUnwrap(device.makeBuffer(length: length, options: .storageModeShared))
+
+        let commands = try XCTUnwrap(renderer.commandQueue.makeCommandBuffer())
+        let upload = try XCTUnwrap(commands.makeBlitCommandEncoder())
+        for slice in 0..<2 {
+            upload.copy(
+                from: source, sourceOffset: 0, sourceBytesPerRow: row.count, sourceBytesPerImage: bytesPerImage,
+                sourceSize: MTLSize(width: size.width, height: size.height, depth: 1),
+                to: targets.color, destinationSlice: slice, destinationLevel: 0, destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+            )
+        }
+        upload.endEncoding()
+        let finalFrame = VRFinalFrame(
+            eyes: VRFrameBuilder.distortionEyes(layout: layout, timewarp: VRMath.identityRotation, vignette: 1),
+            frame: VRFrameBuilder.distortionFrame(layout: layout, chromaticCorrection: false, bicubic: bicubic, focusChart: false, brightness: 1)
+        )
+        renderer.encodeFinalPass(finalFrame, layout: layout, eyeTexture: targets.color, target: output, into: commands)
+        let blit = try XCTUnwrap(commands.makeBlitCommandEncoder())
+        blit.copy(
+            from: output, sourceSlice: 0, sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: screen.widthPixels, height: screen.heightPixels, depth: 1),
+            to: readback, destinationOffset: 0, destinationBytesPerRow: bytesPerRow, destinationBytesPerImage: length
+        )
+        blit.endEncoding()
+        commands.commit()
+        commands.waitUntilCompleted()
+        XCTAssertNil(commands.error)
+
+        let bytes = Array(UnsafeBufferPointer(start: readback.contents().assumingMemoryBound(to: UInt8.self), count: length))
+        let image = Rendered(width: screen.widthPixels, height: screen.heightPixels, bytes: bytes)
+        let center = layout[.left].lensCenterPixels
+        func decode(_ value: Int) -> Float {
+            let c = Float(value) / 255
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return (Int(center.y) - 10...Int(center.y) + 10).map { y in
+            (Int(center.x) - 30..<Int(center.x) + 30).map { x in decode(image.pixel(x, y).y) }
+        }
+    }
+
+    func testCatmullRomKeepsMoreFineDetailThanBilinear() throws {
+        func contrast(_ rows: [[Float]]) -> Float {
+            let values = rows.flatMap { $0 }
+            let mean = values.reduce(0, +) / Float(values.count)
+            let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Float(values.count)
+            // A full-contrast sine has a standard deviation of 0.5 / √2.
+            return variance.squareRoot() * 2 * Float(2).squareRoot()
+        }
+        let bicubic = contrast(try resampleGrating(periodPixels: 3, bicubic: true))
+        let bilinear = contrast(try resampleGrating(periodPixels: 3, bicubic: false))
+        // At 1024² the eye buffer has 1.2 texels per panel pixel. A numerical
+        // model of this measurement predicts that bilinear filtering keeps
+        // 0.78 of a 3-pixel grating's contrast and Catmull-Rom keeps 0.92.
+        XCTAssertEqual(bilinear, 0.78, accuracy: 0.08)
+        XCTAssertEqual(bicubic, 0.92, accuracy: 0.08)
+        XCTAssertGreaterThan(bicubic, bilinear * 1.1)
     }
 
     func testSinglePassStereoMatchesTwoPasses() throws {

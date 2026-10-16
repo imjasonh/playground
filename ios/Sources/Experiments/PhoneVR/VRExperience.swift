@@ -383,8 +383,10 @@ struct VRExperience {
         state.scene = scene
         state.menuOpen = false
         state.menuPlacement = nil
+        // Low enough that its top edge sits below the eye line, leaving the
+        // view straight ahead for the target and the focus chart.
         state.calibrationPlacement = scene == .calibration
-            ? .inFront(of: head, distance: 1.15, drop: 0.08, size: VRPanelLayouts.calibrationSize)
+            ? .inFront(of: head, distance: 1.15, drop: 0.4, size: VRPanelLayouts.calibrationSize)
             : nil
         return [.sceneChanged(scene), .haptic]
     }

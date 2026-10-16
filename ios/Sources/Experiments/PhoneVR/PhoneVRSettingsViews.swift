@@ -156,6 +156,7 @@ struct PhoneVRDisplayView: View {
             }
             Section("Image") {
                 Toggle("Lateral color correction", isOn: $store.settings.chromaticCorrection)
+                Toggle("Bicubic resampling", isOn: $store.settings.bicubicResampling)
             }
             Section("Diagnostics") {
                 Toggle("Stats panel", isOn: $store.settings.showStats)
