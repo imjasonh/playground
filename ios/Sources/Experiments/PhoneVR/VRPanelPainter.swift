@@ -4,7 +4,7 @@ import Foundation
 import Metal
 
 struct VRMenuContent: Equatable {
-    var hovered: VRMenuItem?
+    var hovered: VRGazeTarget?
     var passthroughOn: Bool
     var passthroughAvailable: Bool
     var statsOn: Bool
@@ -22,9 +22,15 @@ struct VRCalibrationContent: Equatable {
     var hovered: VRGazeTarget?
 }
 
+struct VRSceneSignContent: Equatable {
+    var current: VRSceneKind
+    var hovered: VRSceneKind?
+}
+
 /// What a panel shows. Equal content reuses the painted texture.
 enum VRPanelContent: Equatable {
     case menu(VRMenuContent)
+    case sceneSign(VRSceneSignContent)
     case calibration(VRCalibrationContent)
     case stats([String])
     case countdown(seconds: Int, subtitle: String)
@@ -38,6 +44,7 @@ enum VRPanelContent: Equatable {
 final class VRPanelPainter: @unchecked Sendable {
     enum Slot: Hashable {
         case menu
+        case sceneSign
         case calibration
         case stats
         case countdown
@@ -67,6 +74,7 @@ final class VRPanelPainter: @unchecked Sendable {
     static func size(of slot: Slot) -> SIMD2<Float> {
         switch slot {
         case .menu: return VRPanelLayouts.menuSize
+        case .sceneSign: return VRPanelLayouts.sceneSignSize
         case .calibration: return VRPanelLayouts.calibrationSize
         case .stats: return VRPanelLayouts.statsSize
         case .countdown: return VRPanelLayouts.countdownSize
@@ -122,6 +130,7 @@ final class VRPanelPainter: @unchecked Sendable {
         let canvas = Canvas(context: context, width: CGFloat(width), height: CGFloat(height))
         switch content {
         case .menu(let menu): drawMenu(menu, on: canvas)
+        case .sceneSign(let sign): drawSceneSign(sign, on: canvas)
         case .calibration(let calibration): drawCalibration(calibration, on: canvas)
         case .stats(let lines): drawStats(lines, on: canvas)
         case .countdown(let seconds, let subtitle): drawCountdown(seconds, subtitle: subtitle, on: canvas)
@@ -230,39 +239,51 @@ final class VRPanelPainter: @unchecked Sendable {
 
     private func drawMenu(_ menu: VRMenuContent, on canvas: Canvas) {
         canvas.background()
-        canvas.text("Phone VR", in: canvas.rect(VRPanelLayouts.menuTitle), size: canvas.height * 0.085, bold: true, color: Ink.text)
+        canvas.text("Phone VR", in: canvas.rect(VRPanelLayouts.menuTitle), size: canvas.height * 0.07, bold: true, color: Ink.text)
         for button in VRPanelLayouts.menuButtons {
-            guard case .menu(let item) = button.target else { continue }
             let r = canvas.rect(button.frame)
-            let hovered = menu.hovered == item
-            let on: Bool
+            let hovered = menu.hovered == button.target
             let title: String
+            var on = false
             var color = Ink.text
-            switch item {
-            case .recenter:
+            switch button.target {
+            case .menu(.recenter):
                 title = "Recenter"
-                on = false
-            case .passthrough:
+            case .menu(.passthrough):
                 title = menu.passthroughAvailable ? (menu.passthroughOn ? "Passthrough: On" : "Passthrough: Off") : "Passthrough: No camera"
                 on = menu.passthroughOn
                 if !menu.passthroughAvailable { color = Ink.disabled }
-            case .stats:
+            case .menu(.stats):
                 title = menu.statsOn ? "Stats: On" : "Stats: Off"
                 on = menu.statsOn
-            case .scene:
-                title = menu.scene.next.menuTitle
-                on = false
-            case .close:
+            case .menu(.close):
                 title = "Close"
-                on = false
-            case .exit:
+            case .menu(.exit):
                 title = "Exit VR"
-                on = false
                 color = Ink.danger
+            case .sceneSign(let scene):
+                title = scene.title
+                on = menu.scene == scene
+            case .menuHub, .calibrationStep, .calibrationDone:
+                continue
             }
             canvas.fill(r, color: hovered ? Ink.buttonHover : (on ? Ink.buttonOn : Ink.button), radius: r.height * 0.22)
             if hovered { canvas.stroke(r, color: Ink.accent, radius: r.height * 0.22, width: 4) }
-            canvas.text(title, in: r, size: r.height * 0.3, bold: hovered, color: color)
+            canvas.text(title, in: r, size: r.height * 0.32, bold: hovered || on, color: color)
+        }
+    }
+
+    private func drawSceneSign(_ sign: VRSceneSignContent, on canvas: Canvas) {
+        canvas.background()
+        canvas.text("Scene", in: canvas.rect(VRPanelLayouts.sceneSignTitle), size: canvas.height * 0.08, bold: true, color: Ink.text)
+        for button in VRPanelLayouts.sceneSignButtons {
+            guard case .sceneSign(let scene) = button.target else { continue }
+            let r = canvas.rect(button.frame)
+            let hovered = sign.hovered == scene
+            let on = sign.current == scene
+            canvas.fill(r, color: hovered ? Ink.buttonHover : (on ? Ink.buttonOn : Ink.button), radius: r.height * 0.22)
+            if hovered { canvas.stroke(r, color: Ink.accent, radius: r.height * 0.22, width: 4) }
+            canvas.text(scene.title, in: r, size: r.height * 0.36, bold: hovered || on, color: Ink.text)
         }
     }
 
@@ -289,7 +310,7 @@ final class VRPanelPainter: @unchecked Sendable {
                 title = direction < 0 ? "−" : "+"
             case .calibrationDone:
                 title = "Done"
-            case .menuHub, .menu:
+            case .menuHub, .menu, .sceneSign:
                 continue
             }
             canvas.fill(r, color: hovered ? Ink.buttonHover : Ink.button, radius: r.height * 0.25)

@@ -53,7 +53,6 @@ enum VRMenuItem: String, CaseIterable, Identifiable {
     case recenter
     case passthrough
     case stats
-    case scene
     case close
     case exit
 
@@ -129,6 +128,7 @@ enum VRCalibrationParameter: Int, CaseIterable, Identifiable {
 enum VRGazeTarget: Hashable {
     case menuHub
     case menu(VRMenuItem)
+    case sceneSign(VRSceneKind)
     case calibrationStep(VRCalibrationParameter, Int)
     case calibrationDone
 }
@@ -141,29 +141,60 @@ struct VRPanelButton: Equatable {
 /// Button rectangles shared by hit testing and the panel painter, so what you
 /// see is what you select.
 enum VRPanelLayouts {
-    static let menuSize = SIMD2<Float>(0.62, 0.42)
+    static let menuSize = SIMD2<Float>(0.70, 0.54)
+    static let sceneSignSize = SIMD2<Float>(0.54, 0.48)
     static let calibrationSize = SIMD2<Float>(0.74, 0.58)
     static let statsSize = SIMD2<Float>(0.40, 0.22)
     static let countdownSize = SIMD2<Float>(0.60, 0.34)
     static let messageSize = SIMD2<Float>(0.62, 0.12)
 
-    static let menuTitle = VRRect(x: 0.05, y: 0.04, width: 0.9, height: 0.16)
+    static let menuTitle = VRRect(x: 0.05, y: 0.03, width: 0.9, height: 0.12)
+    static let sceneSignTitle = VRRect(x: 0.06, y: 0.04, width: 0.88, height: 0.14)
+
+    /// One button per scene, stacked under the title. Order matches
+    /// `VRSceneKind.allCases` so a new scene shows up on the sign.
+    static let sceneSignButtons: [VRPanelButton] = {
+        let scenes = VRSceneKind.allCases
+        let top: Float = 0.22
+        let gap: Float = 0.035
+        let height: Float = (0.96 - top - gap * Float(scenes.count - 1)) / Float(scenes.count)
+        return scenes.enumerated().map { index, scene in
+            VRPanelButton(
+                target: .sceneSign(scene),
+                frame: VRRect(x: 0.06, y: top + Float(index) * (height + gap), width: 0.88, height: height)
+            )
+        }
+    }()
 
     static let menuButtons: [VRPanelButton] = {
-        let rows: [[VRMenuItem]] = [[.recenter, .passthrough], [.stats, .scene], [.close, .exit]]
-        let top: Float = 0.25
-        let gap: Float = 0.04
-        let columnWidth: Float = (0.9 - gap) / 2
-        let rowHeight: Float = (0.96 - top - gap * 2) / 3
-        var buttons: [VRPanelButton] = []
-        for (r, row) in rows.enumerated() {
-            for (c, item) in row.enumerated() {
-                buttons.append(VRPanelButton(
-                    target: .menu(item),
-                    frame: VRRect(x: 0.05 + Float(c) * (columnWidth + gap), y: top + Float(r) * (rowHeight + gap), width: columnWidth, height: rowHeight)
-                ))
-            }
+        let inset: Float = 0.05
+        let gap: Float = 0.03
+        let top: Float = 0.17
+        let rows: Float = 4
+        let rowHeight = (0.96 - top - gap * (rows - 1)) / rows
+        func y(_ row: Int) -> Float { top + Float(row) * (rowHeight + gap) }
+        func pair(_ row: Int, _ left: VRMenuItem, _ right: VRMenuItem) -> [VRPanelButton] {
+            let width = (0.9 - gap) / 2
+            return [
+                VRPanelButton(target: .menu(left), frame: VRRect(x: inset, y: y(row), width: width, height: rowHeight)),
+                VRPanelButton(target: .menu(right), frame: VRRect(x: inset + width + gap, y: y(row), width: width, height: rowHeight)),
+            ]
         }
+        var buttons: [VRPanelButton] = []
+        buttons += pair(0, .recenter, .passthrough)
+        buttons += pair(1, .stats, .close)
+        let scenes = VRSceneKind.allCases
+        let sceneWidth = (0.9 - gap * Float(scenes.count - 1)) / Float(scenes.count)
+        for (index, scene) in scenes.enumerated() {
+            buttons.append(VRPanelButton(
+                target: .sceneSign(scene),
+                frame: VRRect(x: inset + Float(index) * (sceneWidth + gap), y: y(2), width: sceneWidth, height: rowHeight)
+            ))
+        }
+        buttons.append(VRPanelButton(
+            target: .menu(.exit),
+            frame: VRRect(x: inset, y: y(3), width: 0.9, height: rowHeight)
+        ))
         return buttons
     }()
 
@@ -249,9 +280,10 @@ enum VRExperienceAction: Equatable {
 
 /// The in-headset interaction model: countdown, menu, calibration, and toggles.
 ///
-/// Everything is reachable without touching the screen. Look down at the ring
-/// by your feet (or tap, or press Menu) to open the menu, and select by
-/// holding your gaze on a button, tapping, or pressing A.
+/// Everything is reachable without touching the screen. Look at the standing
+/// sign in the studio to pick a scene. Look down at the ring by your feet
+/// (or tap, or press Menu) to open the menu, and select by holding your
+/// gaze on a button, tapping, or pressing A.
 struct VRExperience {
     private(set) var state: VRExperienceState
     var snapTurnAngle: Float = VRMath.radians(30)
@@ -304,6 +336,7 @@ struct VRExperience {
             if best == nil || hit.distance < (best?.distance ?? .infinity) { best = (target, hit.distance) }
         }
         if state.menuOpen { consider(state.menuPlacement, VRPanelLayouts.menuButtons) }
+        if state.scene == .studio { consider(VRSceneLayout.sceneSignPlacement, VRPanelLayouts.sceneSignButtons) }
         if state.scene == .calibration { consider(state.calibrationPlacement, VRPanelLayouts.calibrationButtons) }
         if let best { return best }
         if !state.menuOpen, direction.y < -0.5,
@@ -322,6 +355,7 @@ struct VRExperience {
         let unit = simd_normalize(direction)
         var placements: [VRPanelPlacement] = []
         if state.menuOpen, let menu = state.menuPlacement { placements.append(menu) }
+        if state.scene == .studio { placements.append(VRSceneLayout.sceneSignPlacement) }
         if state.scene == .calibration, let panel = state.calibrationPlacement { placements.append(panel) }
         return placements.compactMap { $0.hit(origin: origin, direction: unit)?.distance }.min()
     }
@@ -380,6 +414,7 @@ struct VRExperience {
     }
 
     private mutating func setScene(_ scene: VRSceneKind, head: VRPose) -> [VRExperienceAction] {
+        if scene == state.scene { return [] }
         state.scene = scene
         state.menuOpen = false
         state.menuPlacement = nil
@@ -416,8 +451,6 @@ struct VRExperience {
             case .stats:
                 state.showStats.toggle()
                 return [.statsChanged(state.showStats), .haptic]
-            case .scene:
-                return setScene(state.scene.next, head: head)
             case .close:
                 state.menuOpen = false
                 state.menuPlacement = nil
@@ -425,6 +458,8 @@ struct VRExperience {
             case .exit:
                 return [.exit]
             }
+        case .sceneSign(let scene):
+            return setScene(scene, head: head)
         case .calibrationStep(let parameter, let direction):
             return adjust(parameter, steps: direction)
         case .calibrationDone:

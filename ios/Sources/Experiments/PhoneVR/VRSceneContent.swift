@@ -341,21 +341,6 @@ enum VRSceneKind: String, CaseIterable, Codable, Identifiable {
         case .minecraft: return "Minecraft"
         }
     }
-
-    /// Menu button label when this scene is the destination of a cycle.
-    var menuTitle: String {
-        switch self {
-        case .studio: return "Studio"
-        case .calibration: return "Calibrate lenses"
-        case .minecraft: return "Minecraft"
-        }
-    }
-
-    var next: VRSceneKind {
-        let all = Self.allCases
-        let index = all.firstIndex(of: self) ?? 0
-        return all[(index + 1) % all.count]
-    }
 }
 
 struct VRSceneObject {
@@ -403,6 +388,18 @@ struct VRSceneObject {
 enum VRSceneLayout {
     static let beaconOrbit = VRSceneObject.Orbit(center: SIMD3(0, 1.55, 0), radius: 2.2, period: 24, phase: 0.1)
 
+    /// World-locked scene picker beside the plinth. Yaw faces the origin so
+    /// looking at the ornament straight ahead does not cover the buttons.
+    static let sceneSignCenter = SIMD3<Float>(-0.72, 1.3, -1.38)
+
+    static var sceneSignPlacement: VRPanelPlacement {
+        VRPanelPlacement(
+            center: sceneSignCenter,
+            rotation: VRMath.rotationY(atan2(-sceneSignCenter.x, -sceneSignCenter.z)),
+            size: VRPanelLayouts.sceneSignSize
+        )
+    }
+
     static func objects(for scene: VRSceneKind, reduced: Bool) -> [VRSceneObject] {
         switch scene {
         case .studio: return studio(reduced: reduced)
@@ -438,6 +435,7 @@ enum VRSceneLayout {
             ),
             beacon,
         ]
+        objects.append(contentsOf: sceneSignPost)
         let pillarCount = reduced ? 8 : 16
         for i in 0..<pillarCount {
             let angle = Float(i) / Float(pillarCount) * 2 * .pi + 0.1
@@ -448,6 +446,24 @@ enum VRSceneLayout {
             ))
         }
         return objects
+    }
+
+    private static var sceneSignPost: [VRSceneObject] {
+        let placement = sceneSignPlacement
+        let postHeight = max(0.05, placement.center.y - placement.size.y / 2)
+        let boardCenter = placement.center + placement.rotation.act(SIMD3(0, 0, -0.02))
+        return [
+            VRSceneObject(
+                mesh: .cylinder, material: .lit,
+                position: SIMD3(placement.center.x, 0, placement.center.z),
+                scale: SIMD3(0.04, postHeight, 0.04), color: VRPalette.stone
+            ),
+            VRSceneObject(
+                mesh: .cube, material: .lit, position: boardCenter, rotation: placement.rotation,
+                scale: SIMD3(placement.size.x + 0.04, placement.size.y + 0.04, 0.03),
+                color: VRPalette.slate
+            ),
+        ]
     }
 
     private static func calibration() -> [VRSceneObject] {
