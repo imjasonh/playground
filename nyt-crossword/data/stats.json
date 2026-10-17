@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T05:50:23.939Z",
+  "generatedAt": "2026-10-17T05:35:29.255Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -28369,7 +28369,7 @@
       "date": "2016-02-05",
       "id": 10861,
       "solved": false,
-      "percentFilled": 2,
+      "percentFilled": 1,
       "seconds": null
     },
     {
@@ -28760,9 +28760,9 @@
     {
       "date": "2016-04-01",
       "id": 11115,
-      "solved": false,
-      "percentFilled": 6,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 587
     },
     {
       "date": "2016-04-02",
@@ -29754,9 +29754,9 @@
     {
       "date": "2016-08-21",
       "id": 12027,
-      "solved": false,
-      "percentFilled": 28,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 2810
     },
     {
       "date": "2016-08-22",
@@ -31217,9 +31217,9 @@
     {
       "date": "2017-03-18",
       "id": 13022,
-      "solved": false,
-      "percentFilled": 10,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 949
     },
     {
       "date": "2017-03-19",
@@ -37531,9 +37531,9 @@
     {
       "date": "2019-09-06",
       "id": 17119,
-      "solved": false,
-      "percentFilled": 8,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 810
     },
     {
       "date": "2019-09-07",
@@ -55710,6 +55710,13 @@
     {
       "date": "2026-10-16",
       "id": 24536,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 553
+    },
+    {
+      "date": "2026-10-17",
+      "id": 24537,
       "solved": false,
       "percentFilled": 0,
       "seconds": null
