@@ -60,7 +60,7 @@ ios/
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `app-attest` | App Attest | Sign in with Apple, attest once, then `generateAssertion` on each whoami; needs App Attest and Sign in with Apple capability bootstrap |
 | `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
-| `phone-vr` | Phone VR | In-app; 6DoF VR for an iPhone in a lens viewer: ARKit and gyro fusion, Metal stereo at 120 Hz, lens and lateral color correction, late-latched timewarp, optional AirPods cross-check |
+| `phone-vr` | Phone VR | In-app; 6DoF VR for an iPhone in a lens viewer: ARKit and gyro fusion, Metal stereo at 120 Hz, lens and lateral color correction, late-latched timewarp, optional AirPods cross-check, Minecraft voxel scene |
 
 ### Ride Monitor
 
@@ -542,12 +542,23 @@ scene at the critical thermal state.
 **In the headset.** A countdown gives you time to put the phone in the viewer.
 To select, look at a button until the ring fills, tap the screen or press the
 viewer's lever, or press A on a game controller. Look down at
-the ring by your feet to open the menu: recenter, passthrough, stats, lens
-calibration, and exit. Long-press recenters; a two-finger tap exits. A
-controller adds walking (left stick), snap turns (right stick or shoulders),
-and a gyro pointer when it has motion sensors. A spatial audio beacon
-(`AVAudioEnvironmentNode`, HRTF) circles the room, so you can check that sound
-stays put as you turn.
+the ring by your feet to open the menu: recenter, passthrough, stats, scene
+(studio, lens calibration, Minecraft), and exit. Long-press recenters; a
+two-finger tap exits. A controller adds walking (left stick; not in
+Minecraft), snap turns (right stick or shoulders), and a gyro pointer when it
+has motion sensors. A spatial audio beacon (`AVAudioEnvironmentNode`, HRTF)
+circles the studio, so you can check that sound stays put as you turn.
+
+**Minecraft.** The same world-aligned voxel integration as Voxel Eyes, drawn
+in the stereo eye pass. LiDAR depth (or sparse feature points without LiDAR)
+unprojects into ARKit world space on a 10 cm grid, colored from the camera
+and snapped to the block palette at mesh time. Chunks stay in world
+coordinates. The eye pass applies the play-space transform as a rigid model
+matrix, so looking around does not swim the blocks. Space beyond about 4.5 m,
+and any direction the scanner has not filled, fades to black like a head lamp
+in a mine. There is no pixelized camera backdrop. Stick walking is off in
+this scene so the blocks stay glued to the tracked pose. Minecraft needs 6DoF
+camera tracking. LiDAR devices fill a room fastest.
 
 **Calibration.** The calibration scene puts you in a room whose walls are a
 grid, with a dot straight ahead and the controls on a panel below eye level.
@@ -597,7 +608,8 @@ head tracking. It adds no Bundle ID, entitlement, or signing bootstrap. The
 Simulator opens the launch page and renders the scene, but without ARKit or
 the gyro the view doesn't move. Unit tests cover the lens model, tracker
 fusion and prediction, AirPods alignment on synthetic motion, the
-interaction model, the focus chart, and the frame governor. Renderer tests
+interaction model, the focus chart, the Minecraft voxel path, and the frame
+governor. Renderer tests
 compile the shaders in the Simulator, check that Swift and Metal agree on
 every uniform struct layout, and render offscreen frames. Markers must land
 within 4 pixels of where the CPU lens model puts them in each eye, scene

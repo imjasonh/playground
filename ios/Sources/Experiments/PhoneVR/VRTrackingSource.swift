@@ -32,7 +32,9 @@ final class VRTrackingSource: NSObject, ARSessionDelegate, @unchecked Sendable {
         var tracking: VRTrackingSample?
         var floorHeight: Float?
         var camera: VRCameraFrame?
+        var voxelCapture: VRVoxelCaptureFrame?
         var wantsCamera = false
+        var wantsVoxelCapture = false
         var state: CameraState = .off
         var formatDescription: String?
     }
@@ -84,7 +86,9 @@ final class VRTrackingSource: NSObject, ARSessionDelegate, @unchecked Sendable {
         mailbox.withLock {
             $0.state = .off
             $0.camera = nil
+            $0.voxelCapture = nil
             $0.tracking = nil
+            $0.wantsVoxelCapture = false
         }
     }
 
@@ -106,9 +110,27 @@ final class VRTrackingSource: NSObject, ARSessionDelegate, @unchecked Sendable {
         }
     }
 
+    /// Enables LiDAR (or scene-depth) capture for Minecraft. Reconfigures the
+    /// running ARKit session when the flag changes. Does not reset tracking.
+    func setWantsVoxelCapture(_ wants: Bool) {
+        let changed = mailbox.withLock { box -> Bool in
+            guard box.wantsVoxelCapture != wants else { return false }
+            box.wantsVoxelCapture = wants
+            if !wants { box.voxelCapture = nil }
+            return true
+        }
+        guard changed else { return }
+        applySessionConfiguration()
+    }
+
     /// Newest ARKit pose, detected floor height, and camera image.
     func latest() -> (tracking: VRTrackingSample?, floorHeight: Float?, camera: VRCameraFrame?) {
         mailbox.withLock { ($0.tracking, $0.floorHeight, $0.camera) }
+    }
+
+    /// Newest depth-capable camera frame for voxel integration.
+    func latestVoxelCapture() -> VRVoxelCaptureFrame? {
+        mailbox.withLock { $0.voxelCapture }
     }
 
     /// Newest Core Motion sample.
@@ -137,6 +159,7 @@ final class VRTrackingSource: NSObject, ARSessionDelegate, @unchecked Sendable {
         }
         let sample = VRTrackingSample(timestamp: frame.timestamp, worldFromCamera: camera.transform, quality: quality)
         let resolution = camera.imageResolution
+        let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth
         mailbox.withLock {
             $0.tracking = sample
             if case .starting = $0.state { $0.state = .running }
@@ -148,6 +171,17 @@ final class VRTrackingSource: NSObject, ARSessionDelegate, @unchecked Sendable {
                     intrinsics: camera.intrinsics,
                     imageWidth: Float(resolution.width),
                     imageHeight: Float(resolution.height)
+                )
+            }
+            if $0.wantsVoxelCapture {
+                $0.voxelCapture = VRVoxelCaptureFrame(
+                    capturedImage: frame.capturedImage,
+                    depthMap: depthData?.depthMap,
+                    confidenceMap: depthData?.confidenceMap,
+                    featurePoints: depthData == nil ? frame.rawFeaturePoints?.points : nil,
+                    intrinsics: camera.intrinsics,
+                    cameraTransform: camera.transform,
+                    timestamp: frame.timestamp
                 )
             }
         }
@@ -189,10 +223,33 @@ final class VRTrackingSource: NSObject, ARSessionDelegate, @unchecked Sendable {
         guard let floor = best else { return }
         lookingForFloor = false
         mailbox.withLock { $0.floorHeight = floor }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let configuration = self.configuration, self.cameraState != .off else { return }
-            configuration.planeDetection = []
-            self.session.run(configuration, options: [])
+        applySessionConfiguration()
+    }
+
+    /// Applies plane detection and scene-depth semantics without resetting
+    /// the world origin, so voxels stay aligned with the room. Always hops
+    /// to the delegate queue so `session.run` is not called from `didUpdate`.
+    private func applySessionConfiguration() {
+        delegateQueue.async { [weak self] in
+            self?.runSessionConfiguration()
         }
+    }
+
+    private func runSessionConfiguration() {
+        guard let configuration, cameraState != .off else { return }
+        let wantsDepth = mailbox.withLock { $0.wantsVoxelCapture }
+        configuration.frameSemantics.remove(.smoothedSceneDepth)
+        configuration.frameSemantics.remove(.sceneDepth)
+        if wantsDepth {
+            if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
+                configuration.frameSemantics.insert(.smoothedSceneDepth)
+            } else if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                configuration.frameSemantics.insert(.sceneDepth)
+            }
+        }
+        if !lookingForFloor {
+            configuration.planeDetection = []
+        }
+        session.run(configuration, options: [])
     }
 }

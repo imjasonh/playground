@@ -191,6 +191,20 @@ final class PhoneVRFrameBuilderTests: XCTestCase {
         XCTAssertNotNil(panel.hit(origin: turned.position, direction: simd_normalize(panel.center - turned.position)))
     }
 
+    func testMinecraftFrameFadesToBlack() {
+        let uniforms = VRFrameBuilder.frameUniforms(
+            boundaryCenter: .zero, boundaryRadius: 1.5, boundaryVisibility: 0, scene: .minecraft
+        )
+        XCTAssertEqual(uniforms.skyZenith, SIMD4(0, 0, 0, 1))
+        XCTAssertEqual(uniforms.skyHorizon, SIMD4(0, 0, 0, 1))
+        XCTAssertEqual(uniforms.groundColor, SIMD4(0, 0, 0, 1))
+        XCTAssertEqual(uniforms.fog.x, 0)
+        XCTAssertEqual(uniforms.fog.z, VRTorchLight.innerMeters)
+        XCTAssertEqual(uniforms.fog.w, VRTorchLight.outerMeters)
+        XCTAssertTrue(VRFrameBuilder.instances(scene: .minecraft, reduced: false, time: 0, passthrough: false).isEmpty)
+        XCTAssertTrue(VRFrameBuilder.instances(scene: .minecraft, reduced: true, time: 0, passthrough: true).isEmpty)
+    }
+
     func testPassthroughHidesTheFloor() {
         let normal = VRFrameBuilder.instances(scene: .studio, reduced: false, time: 0, passthrough: false)
         let camera = VRFrameBuilder.instances(scene: .studio, reduced: false, time: 0, passthrough: true)

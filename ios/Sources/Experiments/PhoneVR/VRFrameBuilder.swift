@@ -37,8 +37,25 @@ enum VRFrameBuilder {
         }
     }
 
-    static func frameUniforms(boundaryCenter: SIMD3<Float>, boundaryRadius: Float, boundaryVisibility: Float) -> VRFrameUniforms {
-        VRFrameUniforms(
+    static func frameUniforms(
+        boundaryCenter: SIMD3<Float>,
+        boundaryRadius: Float,
+        boundaryVisibility: Float,
+        scene: VRSceneKind = .studio
+    ) -> VRFrameUniforms {
+        if scene == .minecraft {
+            return VRFrameUniforms(
+                lightDirection: SIMD4(0, 1, 0, 0),
+                skyZenith: SIMD4(0, 0, 0, 1),
+                skyHorizon: SIMD4(0, 0, 0, 1),
+                groundColor: SIMD4(0, 0, 0, 1),
+                fog: SIMD4(0, 0, VRTorchLight.innerMeters, VRTorchLight.outerMeters),
+                boundary: SIMD4(boundaryCenter.x, boundaryCenter.z, boundaryRadius, boundaryVisibility),
+                gridMajor: gridMajor,
+                gridMinor: gridMinor
+            )
+        }
+        return VRFrameUniforms(
             lightDirection: SIMD4(lightDirection, 0.55),
             skyZenith: skyZenith,
             skyHorizon: skyHorizon,

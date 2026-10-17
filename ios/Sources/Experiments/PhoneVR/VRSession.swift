@@ -58,6 +58,7 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
     private let airPods: VRHeadphoneMotionSource?
     private let painter: VRPanelPainter
     private let cameraTextures: VRCameraTextureCache
+    private let voxels: VRVoxelWorld
 
     private let commands = VRLocked<[VRSessionCommand]>([])
     private let stopRequested = VRLocked(false)
@@ -112,6 +113,7 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         self.layer = layer
         painter = VRPanelPainter(device: renderer.device)
         cameraTextures = VRCameraTextureCache(device: renderer.device)
+        voxels = VRVoxelWorld(device: renderer.device)
         airPods = settings.airPodsCrossCheck ? VRHeadphoneMotionSource(ownsPhoneMotion: false) : nil
         let frames = VRDeviceFrames(mounting: settings.mounting, rearCameraOffset: configuration.model.rearCameraOffset)
         var trackerConfiguration = VRHeadTracker.Configuration(frames: frames)
@@ -248,9 +250,12 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         let eyeFrame = buildEyeFrame(sceneHead: sceneHead, time: time, ray: ray, hit: hit, cameraFrame: &cameraFrame, worldTracking: worldTracking)
         renderer.encodeEyePass(eyeFrame, targets: targets, into: eyeCommands)
         let retainedCamera = cameraFrame
+        let retainedVoxels = eyeFrame.voxelChunks
         eyeCommands.addCompletedHandler { [weak self] buffer in
-            // Holding the camera textures here keeps them alive until the GPU is done.
+            // Holding the camera textures and voxel buffers here keeps them
+            // alive until the GPU is done.
             _ = retainedCamera
+            _ = retainedVoxels
             let ms = (buffer.gpuEndTime - buffer.gpuStartTime) * 1000
             guard ms > 0, ms < 200 else { return }
             self?.gpuTimes.withLock { $0.eye.add(ms) }
@@ -408,7 +413,9 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
             }
             var stick = controller.leftStick
             if simd_length(stick) < 0.15 { stick = .zero }
-            if stick != .zero {
+            // Stick walking would slide the voxel room off the real camera, so
+            // Minecraft stays glued to the tracked pose.
+            if stick != .zero, experience.state.scene != .minecraft {
                 playSpace.move(stick: stick, speed: settings.locomotionSpeed, dt: Float(dt), head: head.worldFromScreen)
             }
         }
@@ -434,8 +441,15 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
                 let profile = experience.state.profile
                 layout = VRStereoLayout(screen: configuration.screen, profile: profile)
                 profileBox.set(profile)
-            case .sceneChanged:
+            case .sceneChanged(let scene):
                 dwell.reset()
+                let minecraft = scene == .minecraft
+                voxels.setActive(minecraft)
+                tracking.setWantsVoxelCapture(minecraft)
+                if minecraft {
+                    let trackingOn = worldTrackingBox.get()
+                    show(trackingOn ? "Sweep to voxelize the room" : "Minecraft needs camera tracking", now: now)
+                }
             case .passthroughChanged, .statsChanged:
                 break
             case .snapTurn(let angle):
@@ -497,7 +511,8 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
     private func updateSafety(head: VRHeadPose, dt: TimeInterval, worldTracking: Bool, controller: VRControllerSnapshot) {
         let outside = worldTracking && head.mode == .sixDoF
             && playSpace.boundaryDistance(head: head.worldFromScreen.position) < -0.15
-        let wantsCamera = experience.state.passthroughAvailable && (experience.state.passthrough || outside)
+        let minecraft = experience.state.scene == .minecraft
+        let wantsCamera = experience.state.passthroughAvailable && (experience.state.passthrough || outside) && !minecraft
         let step = Float(dt) * 4
         passthroughOpacity = wantsCamera ? min(1, passthroughOpacity + step) : max(0, passthroughOpacity - step)
         tracking.setWantsCameraFrames(wantsCamera || passthroughOpacity > 0)
@@ -523,6 +538,12 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
     ) -> VREyeFrame {
         let state = experience.state
         let now = CACurrentMediaTime()
+        let minecraft = state.scene == .minecraft
+        if minecraft, let capture = tracking.latestVoxelCapture() {
+            voxels.ingest(capture)
+        }
+        let voxelSnapshot = minecraft ? voxels.snapshot : VRVoxelSnapshot(chunks: [], voxelCount: 0)
+
         let fullPassthrough = passthroughOpacity >= 0.99
         var instances = VRFrameBuilder.instances(
             scene: state.scene,
@@ -543,7 +564,7 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         let boundaryCenter = playSpace.boundaryCenterInScene
 
         var passthrough: VRPassthroughDraw?
-        if passthroughOpacity > 0.01, let camera = tracking.latest().camera,
+        if !minecraft, passthroughOpacity > 0.01, let camera = tracking.latest().camera,
            let textures = cameraTextures.textures(for: camera.pixelBuffer) {
             cameraFrame = textures
             let sceneFromCamera = playSpace.sceneFromWorld * VRPose(camera.worldFromCamera)
@@ -612,15 +633,31 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
             )
         }
 
+        var voxelUniforms: VRInstanceUniforms?
+        if minecraft {
+            voxelUniforms = VRInstanceUniforms(
+                model: playSpace.sceneFromWorld.matrix,
+                tint: SIMD4(repeating: 1),
+                params: SIMD4(Float(VRMaterial.voxel.rawValue), 0, 0, 0)
+            )
+        }
+
         return VREyeFrame(
             eyes: VRFrameBuilder.eyeUniforms(layout: layout, sceneFromHead: sceneHead),
-            frame: VRFrameBuilder.frameUniforms(boundaryCenter: boundaryCenter, boundaryRadius: playSpace.boundaryRadius, boundaryVisibility: wallVisibility),
+            frame: VRFrameBuilder.frameUniforms(
+                boundaryCenter: boundaryCenter,
+                boundaryRadius: playSpace.boundaryRadius,
+                boundaryVisibility: wallVisibility,
+                scene: state.scene
+            ),
             instances: instances,
             boundary: wallVisibility > 0.01 ? VRFrameBuilder.boundaryUniforms(center: boundaryCenter, radius: playSpace.boundaryRadius) : nil,
             panels: panels,
             reticle: reticle,
             passthrough: passthrough,
-            drawSky: !fullPassthrough
+            drawSky: !fullPassthrough && !minecraft,
+            voxelChunks: voxelSnapshot.chunks,
+            voxelUniforms: voxelUniforms
         )
     }
 
@@ -642,6 +679,9 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         ]
         if let head {
             lines.append("\(head.mode == .sixDoF ? "6DoF" : "3DoF") · predict \(ms(head.rotationHorizon * 1000)) / \(ms(head.translationHorizon * 1000)) ms")
+        }
+        if experience.state.scene == .minecraft {
+            lines.append("Minecraft · \(voxels.snapshot.voxelCount) voxels")
         }
         var last = "Thermal \(["nominal", "fair", "serious", "critical"][thermal.rawValue])"
         if let latency = airPods?.snapshot?.latency { last += " · AirPods \(ms(latency * 1000)) ms" }

@@ -94,6 +94,28 @@ final class PhoneVRSceneTests: XCTestCase {
         XCTAssertLessThan(reduced.count, full.count)
         XCTAssertEqual(full.first?.material, .floorGrid)
         XCTAssertEqual(VRSceneLayout.objects(for: .calibration, reduced: false).first?.material, .roomGrid)
+        XCTAssertTrue(VRSceneLayout.objects(for: .minecraft, reduced: false).isEmpty)
+        XCTAssertTrue(VRSceneLayout.objects(for: .minecraft, reduced: true).isEmpty)
+    }
+
+    func testSceneKindCyclesStudioCalibrationMinecraft() {
+        XCTAssertEqual(VRSceneKind.studio.next, .calibration)
+        XCTAssertEqual(VRSceneKind.calibration.next, .minecraft)
+        XCTAssertEqual(VRSceneKind.minecraft.next, .studio)
+        XCTAssertEqual(VRSceneKind.studio.next.menuTitle, "Calibrate lenses")
+        XCTAssertEqual(VRSceneKind.calibration.next.menuTitle, "Minecraft")
+        XCTAssertEqual(VRSceneKind.minecraft.next.menuTitle, "Studio")
+    }
+
+    func testPackLinearRoundTripsThroughTheShaderDecode() {
+        XCTAssertEqual(VRPalette.linear(VRPalette.packLinear(SIMD3(1, 0, 0))), SIMD4(1, 0, 0, 1))
+        XCTAssertEqual(VRPalette.linear(VRPalette.packLinear(SIMD3(0, 1, 0))), SIMD4(0, 1, 0, 1))
+        XCTAssertEqual(VRPalette.linear(VRPalette.packLinear(SIMD3(repeating: 1))), SIMD4(1, 1, 1, 1))
+        let grayLinear = VRPalette.linear(VRPalette.rgba(0x808080)).x
+        let packedGray = VRPalette.packLinear(SIMD3(repeating: grayLinear))
+        XCTAssertEqual(packedGray & 0xFF, 0x80)
+        XCTAssertEqual((packedGray >> 8) & 0xFF, 0x80)
+        XCTAssertEqual((packedGray >> 16) & 0xFF, 0x80)
     }
 
     func testBeaconOrbitsAtEarHeight() {
@@ -241,6 +263,18 @@ final class PhoneVRSceneTests: XCTestCase {
         _ = experience.handle(.gazeSelected(.calibrationStep(.interLensDistance, 1), head: ahead))
         XCTAssertEqual(experience.state.profile.interLensDistance, 0.0644, accuracy: 1e-5)
         XCTAssertEqual(experience.handle(.controller(.b, target: nil, head: ahead)), [.sceneChanged(.studio), .haptic])
+    }
+
+    func testSceneMenuCyclesThroughMinecraft() {
+        var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
+        _ = experience.handle(.tap(target: nil, head: ahead))
+        XCTAssertEqual(experience.handle(.gazeSelected(.menu(.scene), head: ahead)), [.sceneChanged(.calibration), .haptic])
+        _ = experience.handle(.tap(target: nil, head: ahead))
+        XCTAssertEqual(experience.handle(.gazeSelected(.menu(.scene), head: ahead)), [.sceneChanged(.minecraft), .haptic])
+        XCTAssertEqual(experience.state.scene, .minecraft)
+        XCTAssertNil(experience.state.calibrationPlacement)
+        XCTAssertEqual(experience.handle(.controller(.b, target: nil, head: ahead)), [.sceneChanged(.studio), .haptic])
+        XCTAssertEqual(experience.state.scene, .studio)
     }
 
     func testCalibrationPanelLeavesTheViewAheadClear() {
