@@ -250,7 +250,7 @@ final class VRPanelPainter: @unchecked Sendable {
                 title = menu.statsOn ? "Stats: On" : "Stats: Off"
                 on = menu.statsOn
             case .scene:
-                title = menu.scene == .studio ? "Calibrate lenses" : "Back to studio"
+                title = menu.scene.next.menuTitle
                 on = false
             case .close:
                 title = "Close"

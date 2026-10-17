@@ -166,6 +166,14 @@ fragment float4 scene_fragment(SceneVaryings in [[stage_in]],
         color = mix(color, frame.gridMinor.rgb, minor * frame.gridMinor.a);
         color = mix(color, frame.gridMajor.rgb, major);
         return float4(color, 1.0);
+    } else if (material == 5) {
+        // Head lamp: full brightness nearby, quadratic fade to black at fog.w.
+        // Unoccupied / beyond-range space stays the clear color (black).
+        float dist = distance(in.worldPosition, in.eyePosition);
+        float inner = frame.fog.z;
+        float outer = max(frame.fog.w, inner + 1e-3);
+        float t = saturate((outer - dist) / (outer - inner));
+        return float4(base * (t * t), 1.0);
     } else {
         float3 l = frame.lightDirection.xyz;
         float diffuse = max(dot(n, l), 0.0);

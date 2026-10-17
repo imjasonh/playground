@@ -62,6 +62,18 @@ enum VRPalette {
         return r | (g << 8) | (b << 16) | (UInt32(alpha) << 24)
     }
 
+    /// Encodes linear RGB in `0...1` to the packed sRGB the scene vertex
+    /// shader decodes. Voxel meshes store linear face colors, so they go
+    /// through this before upload.
+    static func packLinear(_ rgb: SIMD3<Float>, alpha: UInt8 = 255) -> UInt32 {
+        func encode(_ c: Float) -> UInt32 {
+            let x = max(0, min(1, c))
+            let srgb = x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1 / 2.4) - 0.055
+            return UInt32((srgb * 255).rounded())
+        }
+        return encode(rgb.x) | encode(rgb.y) << 8 | encode(rgb.z) << 16 | UInt32(alpha) << 24
+    }
+
     /// A packed color as linear RGB with straight alpha, for shader tints.
     static func linear(_ packed: UInt32) -> SIMD4<Float> {
         func channel(_ shift: UInt32) -> Float { Float((packed >> shift) & 0xFF) / 255 }
@@ -311,11 +323,14 @@ enum VRMaterial: Int {
     case floorGrid = 2
     case roomGrid = 3
     case boundary = 4
+    /// Vertex color with a head-lamp falloff to black. Used by Minecraft voxels.
+    case voxel = 5
 }
 
 enum VRSceneKind: String, CaseIterable, Codable, Identifiable {
     case studio
     case calibration
+    case minecraft
 
     var id: String { rawValue }
 
@@ -323,7 +338,23 @@ enum VRSceneKind: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .studio: return "Studio"
         case .calibration: return "Calibration"
+        case .minecraft: return "Minecraft"
         }
+    }
+
+    /// Menu button label when this scene is the destination of a cycle.
+    var menuTitle: String {
+        switch self {
+        case .studio: return "Studio"
+        case .calibration: return "Calibrate lenses"
+        case .minecraft: return "Minecraft"
+        }
+    }
+
+    var next: VRSceneKind {
+        let all = Self.allCases
+        let index = all.firstIndex(of: self) ?? 0
+        return all[(index + 1) % all.count]
     }
 }
 
@@ -376,6 +407,7 @@ enum VRSceneLayout {
         switch scene {
         case .studio: return studio(reduced: reduced)
         case .calibration: return calibration()
+        case .minecraft: return []
         }
     }
 

@@ -417,7 +417,7 @@ struct VRExperience {
                 state.showStats.toggle()
                 return [.statsChanged(state.showStats), .haptic]
             case .scene:
-                return setScene(state.scene == .studio ? .calibration : .studio, head: head)
+                return setScene(state.scene.next, head: head)
             case .close:
                 state.menuOpen = false
                 state.menuPlacement = nil
@@ -440,7 +440,7 @@ struct VRExperience {
             return toggleMenu(head: head)
         case .b:
             if state.menuOpen { return toggleMenu(head: head) }
-            if calibrating { return setScene(.studio, head: head) }
+            if calibrating || state.scene == .minecraft { return setScene(.studio, head: head) }
             return []
         case .x:
             return activate(.menu(.passthrough), head: head)

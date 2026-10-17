@@ -25,6 +25,10 @@ struct VREyeFrame {
     var reticle: VRPanelUniforms?
     var passthrough: VRPassthroughDraw?
     var drawSky: Bool
+    /// World-space voxel chunk meshes. `voxelUniforms.model` maps them into
+    /// scene space (`sceneFromWorld`).
+    var voxelChunks: [VRVoxelMeshChunk] = []
+    var voxelUniforms: VRInstanceUniforms?
 }
 
 /// Everything the final pass needs for one frame.
@@ -395,6 +399,22 @@ final class VRRenderer: @unchecked Sendable {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<VRInstanceUniforms>.stride, index: 2)
             encoder.setVertexBuffer(mesh.vertices, offset: 0, index: 0)
             encoder.drawIndexedPrimitives(type: .triangle, indexCount: mesh.indexCount, indexType: .uint16, indexBuffer: mesh.indices, indexBufferOffset: 0)
+        }
+
+        if var voxelUniforms = frame.voxelUniforms, !frame.voxelChunks.isEmpty {
+            encoder.setCullMode(.back)
+            encoder.setVertexBytes(&voxelUniforms, length: MemoryLayout<VRInstanceUniforms>.stride, index: 2)
+            encoder.setFragmentBytes(&voxelUniforms, length: MemoryLayout<VRInstanceUniforms>.stride, index: 2)
+            for chunk in frame.voxelChunks where chunk.indexCount >= 3 {
+                encoder.setVertexBuffer(chunk.vertices, offset: 0, index: 0)
+                encoder.drawIndexedPrimitives(
+                    type: .triangle,
+                    indexCount: chunk.indexCount,
+                    indexType: .uint32,
+                    indexBuffer: chunk.indices,
+                    indexBufferOffset: 0
+                )
+            }
         }
 
         if frame.drawSky {

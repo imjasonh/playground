@@ -22,7 +22,9 @@ struct VRFrameUniforms {
     var skyZenith: SIMD4<Float>
     var skyHorizon: SIMD4<Float>
     var groundColor: SIMD4<Float>
-    /// x fog density per meter, y fog start distance, z unused, w grid fade distance.
+    /// x fog density per meter, y fog start distance. In Minecraft, z and w are
+    /// the head-lamp inner and outer distances in meters. Otherwise w is the
+    /// grid fade distance.
     var fog: SIMD4<Float>
     /// Play-area centre (x, y = scene x, z), radius (z), wall visibility (w).
     var boundary: SIMD4<Float>
