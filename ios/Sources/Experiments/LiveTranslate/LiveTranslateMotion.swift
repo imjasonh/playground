@@ -34,16 +34,22 @@ struct LiveTranslateMotion: Equatable {
         )
     }
 
+    /// The motion that undoes this one.
+    func inverted() -> LiveTranslateMotion {
+        LiveTranslateMotion(scale: 1 / scale, dx: -dx / scale, dy: -dy / scale)
+    }
+
     /// Fits matched points while ignoring outliers.
     ///
     /// The scale is the median ratio of distances between pairs of points,
     /// skipping pairs closer than `minimumSpan` and clamping to `scaleRange`.
-    /// The shift is the median of what's left after scaling. One point gives a
-    /// pure shift, and none gives the identity.
+    /// With no such pair, the scale is `fallbackScale`. The shift is the median
+    /// of what's left after scaling. No points gives the identity.
     static func fit(
         _ pairs: [(from: CGPoint, to: CGPoint)],
         minimumSpan: CGFloat,
-        scaleRange: ClosedRange<CGFloat>
+        scaleRange: ClosedRange<CGFloat>,
+        fallbackScale: CGFloat = 1
     ) -> LiveTranslateMotion {
         guard !pairs.isEmpty else { return .identity }
         var ratios: [CGFloat] = []
@@ -55,7 +61,7 @@ struct LiveTranslateMotion: Equatable {
             }
         }
         let scale = ratios.isEmpty
-            ? 1
+            ? fallbackScale
             : min(max(median(ratios), scaleRange.lowerBound), scaleRange.upperBound)
         return LiveTranslateMotion(
             scale: scale,

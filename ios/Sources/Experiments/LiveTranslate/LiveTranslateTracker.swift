@@ -148,10 +148,10 @@ struct LiveTranslateTracker {
     /// Eases a display size toward a measured one.
     ///
     /// A measurement within `settleBand` moves it 30% of the way. A bigger
-    /// change moves it 5% until it lasts `lastingStreak` passes, then half the
-    /// way: blur or glare swells a box for a pass or two, but a real change
-    /// persists. `streak` counts consecutive passes above (positive) or below
-    /// (negative) the band.
+    /// change is ignored until it lasts `lastingStreak` passes, then moves it
+    /// half the way: blur or glare swells a box for a pass or two, but a real
+    /// change persists. `streak` counts consecutive passes above (positive) or
+    /// below (negative) the band.
     static func settle(_ current: CGFloat, toward measured: CGFloat, streak: inout Int) -> CGFloat {
         guard current > 0 else {
             streak = 0
@@ -164,8 +164,12 @@ struct LiveTranslateTracker {
             return current + (measured - current) * 0.3
         }
         streak = streak.signum() == direction ? streak + direction : direction
-        let rate: CGFloat = abs(streak) >= lastingStreak ? 0.5 : 0.05
-        return current + (measured - current) * rate
+        return isSuspect(streak) ? current : current + (measured - current) * 0.5
+    }
+
+    /// Whether the latest reading sat outside the band without lasting long enough to trust.
+    static func isSuspect(_ streak: Int) -> Bool {
+        streak != 0 && abs(streak) < lastingStreak
     }
 
     /// Pan and zoom since the last pass, fit to readings that match an
@@ -279,9 +283,14 @@ private extension LiveTranslateTrack {
         } else {
             let width = LiveTranslateTracker.settle(predicted.width, toward: reading.box.width, streak: &widthStreak)
             let height = LiveTranslateTracker.settle(predicted.height, toward: reading.box.height, streak: &heightStreak)
+            // A box that blur swelled is off center too, so hold the predicted spot.
+            let suspect = LiveTranslateTracker.isSuspect(heightStreak)
+            let center = suspect
+                ? CGPoint(x: predicted.midX, y: predicted.midY)
+                : CGPoint(x: reading.box.midX, y: reading.box.midY)
             displayBox = CGRect(
-                x: reading.box.midX - width / 2,
-                y: reading.box.midY - height / 2,
+                x: center.x - width / 2,
+                y: center.y - height / 2,
                 width: width,
                 height: height
             )
