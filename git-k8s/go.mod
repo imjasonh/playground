@@ -7,7 +7,7 @@ replace github.com/imjasonh/playground/kube => ../kube
 
 require (
 	cel.dev/cel-go v0.32.0
-	github.com/imjasonh/playground/kube v0.0.0-20261014213446-69624169ec1b
+	github.com/imjasonh/playground/kube v0.0.0-20261016012152-82d2a795aa99
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.42.0
 	golang.org/x/sync v0.24.0
