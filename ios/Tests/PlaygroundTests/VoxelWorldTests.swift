@@ -1,3 +1,5 @@
+import ARKit
+import CoreVideo
 import XCTest
 import simd
 @testable import Playground
@@ -699,5 +701,123 @@ final class FarFieldPixelizerTests: XCTestCase {
         XCTAssertEqual(pixels[1], near)
         XCTAssertEqual(pixels[2], far)
         XCTAssertEqual(pixels[3], far)
+    }
+}
+
+final class VoxelScannerTests: XCTestCase {
+    func testDepthSamplesLandOnTheWorldGrid() throws {
+        let image = try Self.makeYCbCr(width: 16, height: 16, y: 255, cb: 128, cr: 128)
+        let depth = try Self.makeDepth(width: 8, height: 8, meters: 1)
+        var grid = VoxelGrid(voxelSize: 0.1)
+        var intrinsics = simd_float3x3(1)
+        intrinsics[0][0] = 16
+        intrinsics[1][1] = 16
+        intrinsics[2][0] = 8
+        intrinsics[2][1] = 8
+
+        let result = VoxelScanner.integrate(
+            grid: &grid,
+            intrinsics: intrinsics,
+            cameraTransform: matrix_identity_float4x4,
+            capturedImage: image,
+            depthMap: depth,
+            confidenceMap: nil,
+            featurePoints: nil,
+            maxVoxels: 10_000,
+            maxDepth: 5
+        )
+
+        XCTAssertGreaterThan(grid.voxelCount, 0)
+        XCTAssertFalse(result.structural.isEmpty)
+        XCTAssertTrue(grid.isOccupied(VoxelKey(x: 0, y: -1, z: -10)))
+    }
+
+    func testSamplesPastMaxDepthAreIgnored() throws {
+        let image = try Self.makeYCbCr(width: 16, height: 16, y: 255, cb: 128, cr: 128)
+        let depth = try Self.makeDepth(width: 8, height: 8, meters: 8)
+        var grid = VoxelGrid(voxelSize: 0.1)
+        var intrinsics = simd_float3x3(1)
+        intrinsics[0][0] = 16
+        intrinsics[1][1] = 16
+        intrinsics[2][0] = 8
+        intrinsics[2][1] = 8
+
+        _ = VoxelScanner.integrate(
+            grid: &grid,
+            intrinsics: intrinsics,
+            cameraTransform: matrix_identity_float4x4,
+            capturedImage: image,
+            depthMap: depth,
+            confidenceMap: nil,
+            featurePoints: nil,
+            maxVoxels: 10_000,
+            maxDepth: 5
+        )
+        XCTAssertEqual(grid.voxelCount, 0)
+    }
+
+    func testScannerSharesVoxelEyesCutoffs() {
+        XCTAssertEqual(VoxelScanner.minimumDepth, FarFieldPixelizer.minimumDepth)
+        XCTAssertEqual(VoxelScanner.depthStride, VoxelWorldSession.depthStride)
+        XCTAssertEqual(UInt8(ARConfidenceLevel.medium.rawValue), VoxelScanner.mediumConfidence)
+    }
+
+    private static func makeYCbCr(width: Int, height: Int, y: UInt8, cb: UInt8, cr: UInt8) throws -> CVPixelBuffer {
+        var buffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            nil,
+            &buffer
+        )
+        guard status == kCVReturnSuccess, let pixelBuffer = buffer else {
+            throw XCTSkip("Could not allocate a YCbCr pixel buffer")
+        }
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+        let luma = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0)!.assumingMemoryBound(to: UInt8.self)
+        let lumaRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
+        for row in 0..<CVPixelBufferGetHeightOfPlane(pixelBuffer, 0) {
+            for col in 0..<CVPixelBufferGetWidthOfPlane(pixelBuffer, 0) {
+                luma[row * lumaRow + col] = y
+            }
+        }
+        let chroma = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1)!.assumingMemoryBound(to: UInt8.self)
+        let chromaRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1)
+        for row in 0..<CVPixelBufferGetHeightOfPlane(pixelBuffer, 1) {
+            for col in 0..<CVPixelBufferGetWidthOfPlane(pixelBuffer, 1) {
+                chroma[row * chromaRow + col * 2] = cb
+                chroma[row * chromaRow + col * 2 + 1] = cr
+            }
+        }
+        return pixelBuffer
+    }
+
+    private static func makeDepth(width: Int, height: Int, meters: Float) throws -> CVPixelBuffer {
+        var buffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            width,
+            height,
+            kCVPixelFormatType_DepthFloat32,
+            nil,
+            &buffer
+        )
+        guard status == kCVReturnSuccess, let pixelBuffer = buffer else {
+            throw XCTSkip("Could not allocate a depth pixel buffer")
+        }
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+        let base = CVPixelBufferGetBaseAddress(pixelBuffer)!.assumingMemoryBound(to: Float32.self)
+        let rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let stride = rowBytes / MemoryLayout<Float32>.stride
+        for row in 0..<height {
+            for col in 0..<width {
+                base[row * stride + col] = meters
+            }
+        }
+        return pixelBuffer
     }
 }

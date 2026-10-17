@@ -17,7 +17,7 @@ enum FarFieldPixelizer {
 
     /// Depth samples at or below this are not a surface. Voxel integration
     /// uses the same cutoff.
-    static let minimumDepth: Float = 0.05
+    static let minimumDepth: Float = VoxelScanner.minimumDepth
 
     /// Integer factor that brings the longer image edge down to `maxEdge`.
     /// Returns 1 when the image is already within the cap.
