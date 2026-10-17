@@ -607,10 +607,8 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
             add(.calibration, .calibration(VRCalibrationContent(rows: rows, selected: state.selectedParameter, hovered: hovered)), at: state.calibrationPlacement)
         }
         if state.menuOpen {
-            var hovered: VRMenuItem?
-            if let target = hit?.target, case .menu(let item) = target { hovered = item }
             let content = VRMenuContent(
-                hovered: hovered,
+                hovered: hit?.target,
                 passthroughOn: state.passthrough,
                 passthroughAvailable: state.passthroughAvailable,
                 statsOn: state.showStats,

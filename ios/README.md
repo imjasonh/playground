@@ -541,10 +541,10 @@ scene at the critical thermal state.
 
 **In the headset.** A countdown gives you time to put the phone in the viewer.
 To select, look at a button until the ring fills, tap the screen or press the
-viewer's lever, or press A on a game controller. A standing sign beside the
-studio plinth lists Studio, Calibration, and Minecraft; look at a name to
-switch. Look down at the ring by your feet to open the menu: recenter,
-passthrough, stats, the same scene cycle, and exit. Long-press
+viewer's lever, or press A on a game controller. Look down at the ring by
+your feet to open the menu: recenter, passthrough, stats, close, exit, and a
+row of Studio, Calibration, and Minecraft. The current scene is highlighted.
+A standing sign beside the studio plinth lists the same scenes. Long-press
 recenters; a two-finger tap exits. A controller adds walking (left stick;
 not in Minecraft), snap turns (right stick or shoulders), and a gyro pointer
 when it has motion sensors. A spatial audio beacon (`AVAudioEnvironmentNode`,

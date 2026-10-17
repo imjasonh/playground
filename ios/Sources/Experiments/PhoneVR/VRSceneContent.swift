@@ -341,21 +341,6 @@ enum VRSceneKind: String, CaseIterable, Codable, Identifiable {
         case .minecraft: return "Minecraft"
         }
     }
-
-    /// Menu button label when this scene is the destination of a cycle.
-    var menuTitle: String {
-        switch self {
-        case .studio: return "Studio"
-        case .calibration: return "Calibrate lenses"
-        case .minecraft: return "Minecraft"
-        }
-    }
-
-    var next: VRSceneKind {
-        let all = Self.allCases
-        let index = all.firstIndex(of: self) ?? 0
-        return all[(index + 1) % all.count]
-    }
 }
 
 struct VRSceneObject {

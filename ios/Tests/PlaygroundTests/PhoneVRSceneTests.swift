@@ -98,13 +98,11 @@ final class PhoneVRSceneTests: XCTestCase {
         XCTAssertTrue(VRSceneLayout.objects(for: .minecraft, reduced: true).isEmpty)
     }
 
-    func testSceneKindCyclesStudioCalibrationMinecraft() {
-        XCTAssertEqual(VRSceneKind.studio.next, .calibration)
-        XCTAssertEqual(VRSceneKind.calibration.next, .minecraft)
-        XCTAssertEqual(VRSceneKind.minecraft.next, .studio)
-        XCTAssertEqual(VRSceneKind.studio.next.menuTitle, "Calibrate lenses")
-        XCTAssertEqual(VRSceneKind.calibration.next.menuTitle, "Minecraft")
-        XCTAssertEqual(VRSceneKind.minecraft.next.menuTitle, "Studio")
+    func testSceneKindOrderIsStudioCalibrationMinecraft() {
+        XCTAssertEqual(VRSceneKind.allCases, [.studio, .calibration, .minecraft])
+        XCTAssertEqual(VRSceneKind.studio.title, "Studio")
+        XCTAssertEqual(VRSceneKind.calibration.title, "Calibration")
+        XCTAssertEqual(VRSceneKind.minecraft.title, "Minecraft")
     }
 
     func testPackLinearRoundTripsThroughTheShaderDecode() {
@@ -167,7 +165,12 @@ final class PhoneVRSceneTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(VRPanelLayouts.menuButtons.count, VRMenuItem.allCases.count)
+        XCTAssertEqual(
+            VRPanelLayouts.menuButtons.map(\.target),
+            VRMenuItem.allCases.map { .menu($0) }.filter { $0 != .menu(.exit) }
+                + VRSceneKind.allCases.map { .sceneSign($0) }
+                + [.menu(.exit)]
+        )
         XCTAssertEqual(VRPanelLayouts.sceneSignButtons.map(\.target), VRSceneKind.allCases.map { .sceneSign($0) })
     }
 
@@ -239,11 +242,11 @@ final class PhoneVRSceneTests: XCTestCase {
         var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
         _ = experience.handle(.tap(target: nil, head: ahead))
         guard let menu = experience.state.menuPlacement else { return XCTFail("menu should be open") }
-        for item in VRMenuItem.allCases {
-            guard let point = worldPoint(of: .menu(item), on: menu, buttons: VRPanelLayouts.menuButtons) else {
-                return XCTFail("no button for \(item)")
+        for button in VRPanelLayouts.menuButtons {
+            guard let point = worldPoint(of: button.target, on: menu, buttons: VRPanelLayouts.menuButtons) else {
+                return XCTFail("no button for \(button.target)")
             }
-            XCTAssertEqual(experience.gazeTarget(head: head(lookingAt: point, from: ahead.position)), .menu(item))
+            XCTAssertEqual(experience.gazeTarget(head: head(lookingAt: point, from: ahead.position)), button.target)
         }
         let exitHead = head(lookingAt: worldPoint(of: .menu(.exit), on: menu, buttons: VRPanelLayouts.menuButtons) ?? .zero, from: ahead.position)
         XCTAssertEqual(experience.handle(.gazeSelected(.menu(.exit), head: exitHead)), [.exit])
@@ -261,7 +264,7 @@ final class PhoneVRSceneTests: XCTestCase {
     func testCalibrationAdjustsTheProfile() {
         var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
         _ = experience.handle(.tap(target: nil, head: ahead))
-        XCTAssertEqual(experience.handle(.gazeSelected(.menu(.scene), head: ahead)), [.sceneChanged(.calibration), .haptic])
+        XCTAssertEqual(experience.handle(.gazeSelected(.sceneSign(.calibration), head: ahead)), [.sceneChanged(.calibration), .haptic])
         XCTAssertNotNil(experience.state.calibrationPlacement)
         XCTAssertEqual(experience.handle(.controller(.dpadRight, target: nil, head: ahead)), [.profileChanged])
         XCTAssertEqual(experience.state.profile.distortionK1, 0.461, accuracy: 1e-5)
@@ -302,14 +305,21 @@ final class PhoneVRSceneTests: XCTestCase {
         }
     }
 
-    func testSceneMenuCyclesThroughMinecraft() {
+    func testMenuListsEverySceneIncludingMinecraft() {
         var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
         _ = experience.handle(.tap(target: nil, head: ahead))
-        XCTAssertEqual(experience.handle(.gazeSelected(.menu(.scene), head: ahead)), [.sceneChanged(.calibration), .haptic])
-        _ = experience.handle(.tap(target: nil, head: ahead))
-        XCTAssertEqual(experience.handle(.gazeSelected(.menu(.scene), head: ahead)), [.sceneChanged(.minecraft), .haptic])
+        guard let menu = experience.state.menuPlacement else { return XCTFail("menu should be open") }
+        XCTAssertEqual(experience.handle(.gazeSelected(.sceneSign(.studio), head: ahead)), [])
+        XCTAssertTrue(experience.state.menuOpen)
+        for scene in VRSceneKind.allCases {
+            guard let point = worldPoint(of: .sceneSign(scene), on: menu, buttons: VRPanelLayouts.menuButtons) else {
+                return XCTFail("menu is missing \(scene)")
+            }
+            XCTAssertEqual(experience.gazeTarget(head: head(lookingAt: point, from: ahead.position)), .sceneSign(scene))
+        }
+        XCTAssertEqual(experience.handle(.gazeSelected(.sceneSign(.minecraft), head: ahead)), [.sceneChanged(.minecraft), .haptic])
         XCTAssertEqual(experience.state.scene, .minecraft)
-        XCTAssertNil(experience.state.calibrationPlacement)
+        XCTAssertFalse(experience.state.menuOpen)
         XCTAssertEqual(experience.handle(.controller(.b, target: nil, head: ahead)), [.sceneChanged(.studio), .haptic])
         XCTAssertEqual(experience.state.scene, .studio)
     }
@@ -317,7 +327,7 @@ final class PhoneVRSceneTests: XCTestCase {
     func testCalibrationPanelLeavesTheViewAheadClear() {
         var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
         _ = experience.handle(.tap(target: nil, head: ahead))
-        _ = experience.handle(.gazeSelected(.menu(.scene), head: ahead))
+        _ = experience.handle(.gazeSelected(.sceneSign(.calibration), head: ahead))
         let forward = SIMD3<Float>(0, 0, -1)
         // Straight ahead is free for the target and the focus chart.
         XCTAssertNil(experience.panelDistance(origin: ahead.position, direction: forward))
