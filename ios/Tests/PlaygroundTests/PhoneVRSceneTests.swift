@@ -154,7 +154,7 @@ final class PhoneVRSceneTests: XCTestCase {
     }
 
     func testPanelButtonsStayInsideAndDontOverlap() {
-        for buttons in [VRPanelLayouts.menuButtons, VRPanelLayouts.calibrationButtons] {
+        for buttons in [VRPanelLayouts.menuButtons, VRPanelLayouts.calibrationButtons, VRPanelLayouts.sceneSignButtons] {
             for (i, a) in buttons.enumerated() {
                 XCTAssertGreaterThanOrEqual(a.frame.x, 0)
                 XCTAssertGreaterThanOrEqual(a.frame.y, 0)
@@ -168,6 +168,21 @@ final class PhoneVRSceneTests: XCTestCase {
             }
         }
         XCTAssertEqual(VRPanelLayouts.menuButtons.count, VRMenuItem.allCases.count)
+        XCTAssertEqual(VRPanelLayouts.sceneSignButtons.map(\.target), VRSceneKind.allCases.map { .sceneSign($0) })
+    }
+
+    func testSceneSignFacesTheOriginAndStandsOnAPost() {
+        let placement = VRSceneLayout.sceneSignPlacement
+        XCTAssertEqual(placement.size, VRPanelLayouts.sceneSignSize)
+        let normal = placement.rotation.act(SIMD3(0, 0, 1))
+        let towardOrigin = simd_normalize(SIMD3(-placement.center.x, 0, -placement.center.z))
+        XCTAssertEqual(normal.x, towardOrigin.x, accuracy: 1e-5)
+        XCTAssertEqual(normal.z, towardOrigin.z, accuracy: 1e-5)
+        XCTAssertGreaterThan(placement.center.y, 1)
+        XCTAssertLessThan(placement.center.x, 0)
+        let studio = VRSceneLayout.objects(for: .studio, reduced: true)
+        XCTAssertTrue(studio.contains { $0.mesh == .cylinder && abs($0.position.x - placement.center.x) < 1e-5 })
+        XCTAssertTrue(studio.contains { $0.mesh == .cube && abs($0.position.y - placement.center.y) < 0.05 })
     }
 
     // MARK: - Experience
@@ -263,6 +278,28 @@ final class PhoneVRSceneTests: XCTestCase {
         _ = experience.handle(.gazeSelected(.calibrationStep(.interLensDistance, 1), head: ahead))
         XCTAssertEqual(experience.state.profile.interLensDistance, 0.0644, accuracy: 1e-5)
         XCTAssertEqual(experience.handle(.controller(.b, target: nil, head: ahead)), [.sceneChanged(.studio), .haptic])
+    }
+
+    func testStudioSceneSignSelectsEachScene() {
+        var experience = VRExperience(profile: .standard, countdown: 0, passthroughAvailable: true, showStats: false)
+        let placement = VRSceneLayout.sceneSignPlacement
+        XCTAssertNil(experience.gazeTarget(head: ahead))
+        XCTAssertNotNil(experience.panelDistance(origin: ahead.position, direction: simd_normalize(placement.center - ahead.position)))
+        for scene in VRSceneKind.allCases {
+            guard let point = worldPoint(of: .sceneSign(scene), on: placement, buttons: VRPanelLayouts.sceneSignButtons) else {
+                return XCTFail("no sign button for \(scene)")
+            }
+            let looking = head(lookingAt: point, from: ahead.position)
+            XCTAssertEqual(experience.gazeTarget(head: looking), .sceneSign(scene))
+            if scene == .studio {
+                XCTAssertEqual(experience.handle(.gazeSelected(.sceneSign(scene), head: looking)), [])
+                XCTAssertEqual(experience.state.scene, .studio)
+            } else {
+                XCTAssertEqual(experience.handle(.gazeSelected(.sceneSign(scene), head: looking)), [.sceneChanged(scene), .haptic])
+                XCTAssertEqual(experience.state.scene, scene)
+                XCTAssertEqual(experience.handle(.controller(.b, target: nil, head: looking)), [.sceneChanged(.studio), .haptic])
+            }
+        }
     }
 
     func testSceneMenuCyclesThroughMinecraft() {

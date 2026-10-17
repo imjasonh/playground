@@ -70,6 +70,7 @@ struct PhoneVRView: View {
 
             Section("Controls") {
                 ControlRow(symbol: "eye", title: "Select", detail: "Hold your gaze on a button, tap the screen, or press A.")
+                ControlRow(symbol: "signpost.right", title: "Pick a scene", detail: "Look at the standing sign in the studio.")
                 ControlRow(symbol: "arrow.down.circle", title: "Open the menu", detail: "Look down at the ring by your feet, or press Menu.")
                 ControlRow(symbol: "scope", title: "Recenter", detail: "Long-press the screen, or press Options.")
                 ControlRow(symbol: "xmark.circle", title: "Exit", detail: "Tap with two fingers, or choose Exit VR in the menu.")

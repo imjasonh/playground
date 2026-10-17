@@ -590,6 +590,15 @@ final class VRSession: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable
         if case .countdown(let remaining) = state.phase {
             add(.countdown, .countdown(seconds: Int(remaining.rounded(.up)), subtitle: "Put the phone in the viewer"), at: state.countdownPlacement)
         }
+        if state.scene == .studio {
+            var hovered: VRSceneKind?
+            if let target = hit?.target, case .sceneSign(let scene) = target { hovered = scene }
+            add(
+                .sceneSign,
+                .sceneSign(VRSceneSignContent(current: state.scene, hovered: hovered)),
+                at: VRSceneLayout.sceneSignPlacement
+            )
+        }
         if state.scene == .calibration {
             var hovered: VRGazeTarget?
             if let target = hit?.target, case .calibrationStep = target { hovered = target }
