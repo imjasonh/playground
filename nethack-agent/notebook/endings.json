@@ -1,1 +1,38 @@
-[]
+[
+  {
+    "life": 1,
+    "turns": 16,
+    "exitReason": "turn_cap",
+    "screen": "[Runner the Stripling          ] St:18 Dx:13 Co:17 In:8 Wi:9 Ch:10 Lawful\nDlvl:1 $:0 HP:16(18) Pw:1(1) AC:6 Xp:1"
+  },
+  {
+    "life": 1,
+    "turns": 16,
+    "exitReason": "turn_cap",
+    "screen": "[Runner the Stripling          ] St:18 Dx:15 Co:19 In:7 Wi:9 Ch:7 Lawful\nDlvl:1 $:0 HP:12(18) Pw:1(1) AC:6 Xp:1"
+  },
+  {
+    "life": 1,
+    "turns": 16,
+    "exitReason": "turn_cap",
+    "screen": "[Runner the Stripling          ] St:16 Dx:10 Co:16 In:14 Wi:10 Ch:9 Lawful\nDlvl:1 $:0 HP:18(18) Pw:1(1) AC:6 Xp:1"
+  },
+  {
+    "life": 1,
+    "turns": 16,
+    "exitReason": "turn_cap",
+    "screen": "[Runner the Stripling          ] St:18/01 Dx:11 Co:17 In:9 Wi:10 Ch:11 Lawful\nDlvl:1 $:0 HP:18(18) Pw:1(1) AC:6 Xp:1"
+  },
+  {
+    "life": 1,
+    "turns": 16,
+    "exitReason": "turn_cap",
+    "screen": "[Runner the Stripling          ] St:18/05 Dx:10 Co:16 In:8 Wi:9 Ch:9 Lawful\nDlvl:1 $:0 HP:18(18) Pw:1(1) AC:6 Xp:1"
+  },
+  {
+    "life": 1,
+    "turns": 16,
+    "exitReason": "turn_cap",
+    "screen": "There is nothing here to pick up.\n[Runner the Stripling          ] St:18/01 Dx:13 Co:18 In:8 Wi:9 Ch:8 Lawful\nDlvl:1 $:2 HP:18(18) Pw:1(1) AC:6 Xp:1"
+  }
+]

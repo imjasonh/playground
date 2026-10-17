@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "name": "open-n",
+    "keys": "ok",
+    "life": 1,
+    "turn": 13
+  },
+  {
+    "name": "door-n",
+    "keys": "lokkk",
+    "life": 1,
+    "turn": 16
+  },
+  {
+    "name": "start",
+    "keys": "yy ",
+    "life": 1,
+    "turn": 2
+  },
+  {
+    "name": "search8",
+    "keys": "ssssssss",
+    "life": 1,
+    "turn": 16
+  },
+  {
+    "name": "valk-d",
+    "keys": "nvdy      ",
+    "life": 1,
+    "turn": 3
+  },
+  {
+    "name": "open-w",
+    "keys": "oh",
+    "life": 1,
+    "turn": 6
+  },
+  {
+    "name": "kick-w",
+    "keys": "#kick\nh",
+    "life": 1,
+    "turn": 7
+  },
+  {
+    "name": "kick-e",
+    "keys": "#kick\nl",
+    "life": 1,
+    "turn": 13
+  }
+]
