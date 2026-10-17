@@ -184,8 +184,10 @@ func TestImagesByDigest(t *testing.T) {
 		t.Errorf("-git-image defaults to %s, want %s, which names its image by digest", r.GitImage, images.Git)
 	}
 	t.Log("kube resolves the tag in an image flag before the program starts.")
-	for _, name := range []string{"agent-image", "git-image"} {
-		if err := fs.Set(name, "registry.example.com/Runner"); err == nil {
+	for _, name := range []string{"runner-image", "git-image"} {
+		if fs.Lookup(name) == nil {
+			t.Errorf("AddFlags registers no -%s", name)
+		} else if err := fs.Set(name, "registry.example.com/Runner"); err == nil {
 			t.Errorf("-%s takes registry.example.com/Runner, which isn't an image reference, so it isn't an image flag", name)
 		}
 	}
@@ -199,7 +201,7 @@ func TestImagesByDigest(t *testing.T) {
 			got[c.Name] = c.ImagePullPolicy
 		}
 		if !maps.Equal(got, want) {
-			t.Errorf("with -agent-image=%s and -git-image=%s, the pull policies are %v, want %v", r.Image, r.GitImage, got, want)
+			t.Errorf("with -runner-image=%s and -git-image=%s, the pull policies are %v, want %v", r.Image, r.GitImage, got, want)
 		}
 	}
 }

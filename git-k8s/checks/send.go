@@ -2,7 +2,6 @@ package checks
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,10 +17,6 @@ import (
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
 )
-
-// defaultResultsURL is the results endpoint of the core program, as
-// generate installs it.
-const defaultResultsURL = "http://git-k8s.git-k8s.svc/results"
 
 // sendAttempts is how many times a check tries to send a result before its
 // reconcile fails and kube retries it, which runs the check again. A try
@@ -94,7 +89,7 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 	if err != nil {
 		return err
 	}
-	u := fmt.Sprintf("%s/%s/%s/%s?generation=%d", strings.TrimSuffix(cmp.Or(s.cfg.ResultsURL, defaultResultsURL), "/"),
+	u := fmt.Sprintf("%s/results/%s/%s/%s?generation=%d", strings.TrimSuffix(s.cfg.CoreURL, "/"),
 		url.PathEscape(meta.Namespace), url.PathEscape(meta.Name), url.PathEscape(s.check), meta.Generation)
 	delay := s.delay
 	for attempt := 1; ; attempt++ {
@@ -111,7 +106,7 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 		case err == nil && code == http.StatusGone:
 			// The core program answers 410 only once the API server shows
 			// that the GitBranch is gone. A 404 can come from a wrong
-			// -results-url, so it fails the reconcile like other answers.
+			// -core-url, so it fails the reconcile like other answers.
 			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
 			return errGone
 		case err == nil && code == http.StatusBadRequest:

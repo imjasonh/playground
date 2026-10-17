@@ -2403,14 +2403,14 @@ cat "${WORKDIR}/agent-image.log"
 [[ ${agent_image_status} -eq 0 ]]
 AGENT_IMAGE="${AGENT_IMAGE}@$(<"${WORKDIR}/agent-image.digest")"
 CHECKS+=(check-review)
-install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+install check-review -- "-runner-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 # The conflicts and deps groups install programs whose flags name the image.
-pregenerate check-conflicts check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" \
+pregenerate check-conflicts check-conflicts -- "-runner-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" \
   -backend=fake -timeout=5m
-pregenerate check-deps check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake \
+pregenerate check-deps check-deps -- "-runner-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake \
   -timeout=5m
 pregenerate git-k8s-deps git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
-  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=1s -min-age=5s -timeout=5m
+  "-git-image=${GIT_IMAGE}" "-runner-image=${AGENT_IMAGE}" -interval=1s -min-age=5s -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
 # The agent Pods fetch from the mirror with tokens that kube binds to them,
 # so check-review needs no repository credentials. It gets Secrets only by

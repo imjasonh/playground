@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
-	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +22,7 @@ import (
 )
 
 const (
-	depsBranch = "deps/go/example.com/greet"
+	depsBranch = gitk8s.DepsPrefix + "go/example.com/greet"
 	testOutput = "go test failed in Pod gotest-1: --- FAIL: TestGreet\n    greet_test.go:9: got \"hello\", want \"hello, world\"\nFAIL"
 	reasoning  = "Hello takes a name in v1.1.0, so Greet passes one."
 )
@@ -44,7 +41,7 @@ type fixture struct {
 
 func newFixture(t *testing.T, branch string) *fixture {
 	srv := gittest.NewServer(t, "")
-	serveMirror(t, srv)
+	coreURL := serveMirror(t, srv)
 	w := srv.NewWork(t, "app")
 	w.Write("go.mod", "module example.com/app\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n")
 	w.Write("app.go", "package app\n")
@@ -64,7 +61,7 @@ func newFixture(t *testing.T, branch string) *fixture {
 	return &fixture{
 		t: t, srv: srv, work: w, b: b,
 		test: &gitk8s.CheckResult{Commit: head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed, Message: testOutput},
-		cfg:  &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}},
+		cfg:  &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}, CoreURL: coreURL},
 	}
 }
 
@@ -87,10 +84,10 @@ func (f *fixture) reconcile() *kube.Recorder {
 
 func (f *fixture) result() *gitk8s.CheckResult { return f.b.Status.Checks.Result }
 
-// serveMirror serves the repositories on srv like the mirror: at
-// /default/NAME.git, to requests with a token from kube.RequestToken. The
-// -mirror flag points to that server until the test ends.
-func serveMirror(t *testing.T, srv *gittest.Server) {
+// serveMirror serves the repositories on srv like the core program's
+// mirror: at /default/NAME.git, to requests with a token from
+// kube.RequestToken. It returns the server's URL, for Config.CoreURL.
+func serveMirror(t *testing.T, srv *gittest.Server) string {
 	t.Helper()
 	upstream, err := url.Parse(srv.URL)
 	if err != nil {
@@ -110,10 +107,7 @@ func serveMirror(t *testing.T, srv *gittest.Server) {
 		}
 	}))
 	t.Cleanup(m.Close)
-	t.Cleanup(func() { flag.Set("mirror", gitk8s.MirrorURL) })
-	if err := flag.Set("mirror", m.URL); err != nil {
-		t.Fatal(err)
-	}
+	return m.URL
 }
 
 // replaceAgent makes runAgent call fake for the rest of the test.
@@ -190,39 +184,6 @@ func TestPassesOtherBranches(t *testing.T) {
 	rec := f.reconcile()
 	if res := f.result(); res.State != gitk8s.Passed || res.Message != "c/x isn't a dependency branch" || len(res.Notes) != 1 || res.Notes["runs"] != "2" || len(kube.Owned[agent.Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Passed with the count of agent runs and without a Pod", res)
-	}
-}
-
-func TestNeedsAValidPrefix(t *testing.T) {
-	defer func(r *agent.Runner) { runner = r }(runner)
-	runner = &agent.Runner{Name: "deps"}
-	t.Cleanup(func() { prefix = "deps/" })
-	if err := new(branchPrefix).Set(string(prefix)); err != nil {
-		t.Errorf("the default -prefix, %q, isn't valid: %v", prefix, err)
-	}
-	parse := func(value string) error {
-		fs := flag.NewFlagSet("check-deps", flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
-		addFlags(fs)
-		return fs.Parse([]string{"-prefix=" + value})
-	}
-	for _, p := range []string{"", "deps", "/", "deps//", "-deps/", "deps..x/", ".deps/", "deps.lock/", "de ps/"} {
-		want := fmt.Sprintf("invalid value %q for flag -prefix: it must be a branch-name prefix that ends with /, such as deps/", p)
-		if err := parse(p); err == nil || err.Error() != want {
-			t.Errorf("parsing -prefix=%q = %v, want %s", p, err, want)
-		}
-		if prefix != "deps/" {
-			t.Fatalf("parsing -prefix=%q set the prefix to %q", p, prefix)
-		}
-	}
-	if err := parse("updates/"); err != nil {
-		t.Fatalf("parsing -prefix=updates/ = %v", err)
-	}
-	noAgent(t)
-	f := newFixture(t, depsBranch)
-	rec := f.reconcile()
-	if res := f.result(); res.State != gitk8s.Passed || res.Message != depsBranch+" isn't a dependency branch" || len(kube.Owned[agent.Pod](rec)) != 0 {
-		t.Errorf("with -prefix=updates/, result = %+v, want Passed without a Pod because %s isn't a dependency branch", res, depsBranch)
 	}
 }
 
@@ -334,7 +295,7 @@ func TestAgentPodsFetchFromTheMirror(t *testing.T) {
 		}
 		env[e.Name] = e.Value
 	}
-	if want := flag.Lookup("mirror").Value.String() + "/default/app.git"; env["URL"] != want || env["TOKEN_FILE"] == "" {
+	if want := f.cfg.CoreURL + "/default/app.git"; env["URL"] != want || env["TOKEN_FILE"] == "" {
 		t.Errorf("the prepare container fetches %q with token file %q, want %q with a token for the mirror", env["URL"], env["TOKEN_FILE"], want)
 	}
 	if !slices.Equal(secrets, []string{"cursor-api-key"}) {

@@ -40,6 +40,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/mirror"
@@ -71,6 +72,7 @@ func main() {
 		m.Prefixes = append(m.Prefixes, p)
 		return nil
 	})
+	credentials.AddFlags(flag.CommandLine)
 	// A container that's killed while a landing signs a commit leaves the
 	// key in os.TempDir, which generate puts on a volume that outlives the
 	// container. Outside a Pod, as in generate or a run with -kubeconfig,

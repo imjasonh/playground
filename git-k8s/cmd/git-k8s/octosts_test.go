@@ -1,20 +1,36 @@
 package main
 
 import (
+	"flag"
 	"testing"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
 )
 
+// main registers credentials' flags, and tests set -fake-github.
+func init() { credentials.AddFlags(flag.CommandLine) }
+
+// useFakeGitHub sets -fake-github to base until the test ends.
+func useFakeGitHub(t *testing.T, base string) {
+	t.Helper()
+	old := flag.Lookup("fake-github").Value.String()
+	if err := flag.Set("fake-github", base); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { flag.Set("fake-github", old) })
+}
+
 // newGitHub starts a fake GitHub whose repository acme/app has, on main,
 // the trust policies git, which grants contents: write, and checks, which
 // grants checks: write. It returns a working repository at main.
 func newGitHub(t *testing.T) (*gittest.GitHub, *gittest.Work, string) {
 	gh := gittest.NewGitHub(t)
+	useFakeGitHub(t, gh.BaseURL)
 	w := gh.NewWork(t, "app")
 	w.Write(".github/chainguard/git.sts.yaml", gittest.TrustPolicy(map[string]string{"contents": "write"}))
 	w.Write(".github/chainguard/checks.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))

@@ -207,7 +207,7 @@ func TestRestartsAJobsRunWhenAFlagChanges(t *testing.T) {
 	p := f.startJob(job, st)
 	f.runJob(job, st, p)
 
-	t.Log("Another -agent-image starts the run again in a new Pod, which isn't another run.")
+	t.Log("Another -runner-image starts the run again in a new Pod, which isn't another run.")
 	f.r.Image = "registry.example.com/agent-runner:new"
 	s, rec := f.runJob(job, st, p)
 	pods := kube.Owned[Pod](rec)

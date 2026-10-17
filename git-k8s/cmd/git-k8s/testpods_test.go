@@ -12,9 +12,9 @@ import (
 )
 
 func TestTestPodsPolicy(t *testing.T) {
-	defer func(ml, gl, dl labels, dc cidrs, mns, gns, dns, proxy string) {
-		mirrorLabels, goCacheLabels, dnsLabels, dnsCIDRs, *mirrorNS, *goCacheNS, *dnsNS, *goProxy = ml, gl, dl, dc, mns, gns, dns, proxy
-	}(mirrorLabels, goCacheLabels, dnsLabels, dnsCIDRs, *mirrorNS, *goCacheNS, *dnsNS, *goProxy)
+	defer func(ml, gl, dl labels, dc cidrs, mns, gns, dns string, internet bool) {
+		mirrorLabels, goCacheLabels, dnsLabels, dnsCIDRs, *mirrorNS, *goCacheNS, *dnsNS, *testPodInternet = ml, gl, dl, dc, mns, gns, dns, internet
+	}(mirrorLabels, goCacheLabels, dnsLabels, dnsCIDRs, *mirrorNS, *goCacheNS, *dnsNS, *testPodInternet)
 	set := func(name, value string) {
 		t.Helper()
 		if err := flag.Set(name, value); err != nil {
@@ -84,8 +84,8 @@ func TestTestPodsPolicy(t *testing.T) {
 		conn{metadata, "TCP", 80, false},
 	)
 
-	t.Log("With -goproxy, test Pods can reach ports 80 and 443 outside the cluster, but not the cluster's addresses or a metadata server.")
-	set("goproxy", "https://proxy.golang.org")
+	t.Log("With -test-pod-internet, test Pods can reach ports 80 and 443 outside the cluster, but not the cluster's addresses or a metadata server.")
+	set("test-pod-internet", "true")
 	check(
 		conn{mirror, "TCP", mirrorPort, true},
 		conn{coreDNS, "UDP", 53, true},
@@ -100,7 +100,7 @@ func TestTestPodsPolicy(t *testing.T) {
 		conn{cgnat, "TCP", 443, false},
 		conn{home, "TCP", 80, false},
 	)
-	set("goproxy", "off")
+	set("test-pod-internet", "false")
 
 	t.Log("With -go-cache-namespace, test Pods can also reach go-cache's port on go-cache's Pods.")
 	set("go-cache-namespace", "go-cache")

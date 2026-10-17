@@ -1494,6 +1494,7 @@ func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter,
 	base := gittest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler(w, r, gh.Fake)
 	}))
+	useFakeGitHub(t, base)
 	repo := gh.Repository("app", sts, rules()...)
 	repo.Spec.URL = base + "/acme/app.git"
 	return repo

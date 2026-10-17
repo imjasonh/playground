@@ -1,6 +1,7 @@
 package gitk8s_test
 
 import (
+	"context"
 	"maps"
 	"os"
 	"os/exec"
@@ -103,7 +104,10 @@ func TestCacheTidiesRepositories(t *testing.T) {
 	remote := srv.Remote("app")
 	dir := t.TempDir()
 
-	c := &gitk8s.Cache{Git: &git.Git{}, Dir: dir, Remote: srv.RemoteFor}
+	remoteFor := func(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+		return srv.Remote(repo.Name), nil
+	}
+	c := &gitk8s.Cache{Git: &git.Git{}, Dir: dir, Remote: remoteFor}
 	r, unlock, err := c.Open(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -152,5 +156,5 @@ func TestCacheTidiesRepositories(t *testing.T) {
 	check(c, all, 2)
 	// Without Remote, it runs maintenance and keeps every ref.
 	check(&gitk8s.Cache{Git: c.Git, Dir: dir}, all, 1)
-	check(&gitk8s.Cache{Git: c.Git, Dir: dir, Remote: srv.RemoteFor}, []string{"refs/remotes/origin/main"}, 1)
+	check(&gitk8s.Cache{Git: c.Git, Dir: dir, Remote: remoteFor}, []string{"refs/remotes/origin/main"}, 1)
 }

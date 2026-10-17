@@ -100,7 +100,7 @@ func newSendFixture(t *testing.T, e *endpoint) *sendFixture {
 		f.runs++
 		return f.verdict, f.err
 	}}
-	cfg := &Config{ResultsURL: srv.URL + "/results/"}
+	cfg := &Config{CoreURL: srv.URL + "/"}
 	f.r = NewReconciler[view](check, cfg)
 	f.s = &sender{check: "lint", cfg: cfg, client: srv.Client(), delay: time.Microsecond}
 	return f
@@ -238,7 +238,7 @@ func TestSendsErrorAndFails(t *testing.T) {
 
 // A check's reconcile of a branch that's gone succeeds, even if the check
 // failed, because running the check again can't help. Only a 410 says that
-// the branch is gone. A 404 can come from a wrong -results-url, so the
+// the branch is gone. A 404 can come from a wrong -core-url, so the
 // reconcile fails with the check's error and the 404, and kube retries it.
 func TestBranchGoneEndsReconcile(t *testing.T) {
 	for code, want := range map[int][]string{
@@ -415,7 +415,7 @@ func TestRefusedTokenIsReplaced(t *testing.T) {
 
 func TestSendRetriesUnreachableEndpoint(t *testing.T) {
 	f := newSendFixture(t, &endpoint{})
-	f.s.cfg = &Config{ResultsURL: "http://127.0.0.1:1/results"}
+	f.s.cfg = &Config{CoreURL: "http://127.0.0.1:1"}
 	f.verdict = Pass("clean")
 	if err := f.runAndSend(f.context(t)); err == nil || kube.IsPermanent(err) {
 		t.Errorf("err = %v, want an error that kube retries", err)

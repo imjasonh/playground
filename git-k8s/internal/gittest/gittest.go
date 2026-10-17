@@ -65,9 +65,9 @@ func (s *Server) Remote(repo string) git.Remote {
 }
 
 // RemoteFor returns the remote of the repository on the server with the
-// GitRepository's name. In tests, set checks.Check.Remote to it in place of
-// the mirror.
-func (s *Server) RemoteFor(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+// GitRepository's name, whatever the core program's URL. In tests, set
+// checks.Check.Remote to it in place of mirror.Remote.
+func (s *Server) RemoteFor(_ context.Context, _ string, repo *gitk8s.Repository) (git.Remote, error) {
 	return s.Remote(repo.Name), nil
 }
 

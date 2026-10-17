@@ -31,7 +31,7 @@ var updateGolden = flag.Bool("update", false, "rewrite testdata/pod.json")
 
 func TestPod(t *testing.T) {
 	u := &updater{
-		goImage: "go", gitImage: "git", resultImage: "agent-runner", timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi",
+		goImage: "go", gitImage: "git", runnerImage: "agent-runner", timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi",
 		goSumDB: "sum.golang.org", runtimeClass: "gvisor",
 		proxy: newProxy([]string{"https://proxy.example.com"}, time.Hour, time.Now),
 	}
@@ -125,8 +125,10 @@ func TestImagesByDigest(t *testing.T) {
 		t.Errorf("-go-image and -git-image default to %s and %s, want %s and %s, which name their images by digest", u.goImage, u.gitImage, images.Go, images.Git)
 	}
 	t.Log("kube resolves the tag in an image flag before the program starts.")
-	for _, name := range []string{"go-image", "git-image", "result-image"} {
-		if err := fs.Set(name, "registry.example.com/Go"); err == nil {
+	for _, name := range []string{"go-image", "git-image", "runner-image"} {
+		if fs.Lookup(name) == nil {
+			t.Errorf("git-k8s-deps has no -%s", name)
+		} else if err := fs.Set(name, "registry.example.com/Go"); err == nil {
 			t.Errorf("-%s takes registry.example.com/Go, which isn't an image reference, so it isn't an image flag", name)
 		}
 	}
@@ -134,14 +136,14 @@ func TestImagesByDigest(t *testing.T) {
 	u.proxy = newProxy(nil, time.Hour, time.Now)
 	want := map[string]string{"prepare": "IfNotPresent", "update": "IfNotPresent", "result": "IfNotPresent"}
 	for _, version := range []string{"@sha256:" + strings.Repeat("0", 64), ":test"} {
-		u.goImage, u.gitImage, u.resultImage = "registry.example.com/go"+version, "registry.example.com/git"+version, "registry.example.com/agent-runner"+version
+		u.goImage, u.gitImage, u.runnerImage = "registry.example.com/go"+version, "registry.example.com/git"+version, "registry.example.com/agent-runner"+version
 		p := u.pod(&Branch{Object: kube.Meta("app-main", nil)}, &gitk8s.Repository{}, "0123abcd", 0, nil)
 		got := map[string]string{}
 		for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
 			got[c.Name] = c.ImagePullPolicy
 		}
 		if !maps.Equal(got, want) {
-			t.Errorf("with images %s, %s, and %s, the pull policies are %v, want %v", u.goImage, u.gitImage, u.resultImage, got, want)
+			t.Errorf("with images %s, %s, and %s, the pull policies are %v, want %v", u.goImage, u.gitImage, u.runnerImage, got, want)
 		}
 	}
 }
