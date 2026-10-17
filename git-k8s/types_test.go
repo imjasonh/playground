@@ -1,10 +1,14 @@
 package gitk8s
 
 import (
+	"cmp"
 	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -49,7 +53,7 @@ func TestBranchObjectName(t *testing.T) {
 // The API server matches a CustomResourceDefinition's patterns with Go's
 // regexp package, so this is what it accepts.
 func TestURLPattern(t *testing.T) {
-	field, _ := reflect.TypeFor[GitRepositorySpec]().FieldByName("URL")
+	field, _ := reflect.TypeFor[RepositorySpec]().FieldByName("URL")
 	pattern := regexp.MustCompile(field.Tag.Get("pattern"))
 	for _, u := range []string{
 		"https://git.example.com/app.git",
@@ -274,7 +278,7 @@ func TestMergeStateEnum(t *testing.T) {
 			}
 		}
 	}
-	f, _ := reflect.TypeFor[GitBranchStatus]().FieldByName("State")
+	f, _ := reflect.TypeFor[BranchStatus]().FieldByName("State")
 	var enum []string
 	for opt := range strings.SplitSeq(f.Tag.Get("kube"), ",") {
 		if values, ok := strings.CutPrefix(opt, "enum="); ok {
@@ -289,7 +293,7 @@ func TestMergeStateEnum(t *testing.T) {
 }
 
 func TestChecksMapIsAtomic(t *testing.T) {
-	f, _ := reflect.TypeFor[GitBranchStatus]().FieldByName("Checks")
+	f, _ := reflect.TypeFor[BranchStatus]().FieldByName("Checks")
 	if got := f.Tag.Get("kube"); got != "mapType=atomic" {
 		t.Errorf("status.checks has kube tag %q; it must be an atomic map, so that the results controller owns every entry and can remove any of them", got)
 	}
@@ -307,5 +311,97 @@ func TestMergePolicyDefaults(t *testing.T) {
 	}
 	if c := p.Check("gofmt"); c == nil || !c.MayPush {
 		t.Errorf("Check(gofmt) = %+v", c)
+	}
+}
+
+// kinds are the kinds that git-k8s defines. Their names make up the names
+// of their CustomResourceDefinitions, which can't change once objects
+// exist, so each kind's tag gives its plural and singular instead of
+// leaving them to kube. Flux's source-controller defines a GitRepository
+// kind with the plural gitrepositories and the short name gitrepo, so
+// git-k8s doesn't use those names.
+var kinds = []struct {
+	typ                               reflect.Type
+	kind, plural, singular, shortName string
+}{
+	{reflect.TypeFor[Repository](), "Repository", "repositories", "repository", "repo"},
+	{reflect.TypeFor[Branch](), "Branch", "branches", "branch", "branch"},
+}
+
+// tagOptions splits a kube struct tag into its options.
+func tagOptions(tag string) map[string]string {
+	opts := map[string]string{}
+	for opt := range strings.SplitSeq(tag, ",") {
+		name, value, _ := strings.Cut(opt, "=")
+		opts[name] = value
+	}
+	return opts
+}
+
+// TestKindNames checks each kind's names, and that every view type in the
+// module, and every example of one in its docs, names a kind with its
+// plural. The kind e2e test checks the names of the CustomResourceDefinitions
+// that the core program installs.
+func TestKindNames(t *testing.T) {
+	plurals := map[string]string{}
+	for _, k := range kinds {
+		plurals[k.kind] = k.plural
+		f, _ := k.typ.FieldByName("Object")
+		tag := f.Tag.Get("kube")
+		opts := tagOptions(tag)
+		if cmp.Or(opts["kind"], k.typ.Name()) != k.kind || opts["plural"] != k.plural || opts["singular"] != k.singular {
+			t.Errorf("%s has kube tag %q, want the kind %s with the plural %s and the singular %s", k.typ.Name(), tag, k.kind, k.plural, k.singular)
+		}
+		if opts["group"]+"/"+opts["version"] != APIVersion || opts["shortName"] != k.shortName || opts["category"] != "git-k8s" {
+			t.Errorf("%s has kube tag %q, want %s with the short name %s in the category git-k8s", k.typ.Name(), tag, APIVersion, k.shortName)
+		}
+	}
+	viewTag := regexp.MustCompile(`kube:"(apiVersion=` + regexp.QuoteMeta(Group) + `/[^"]*)"`)
+	views := 0
+	scan := func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if ext := filepath.Ext(path); ext != ".go" && ext != ".md" {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range viewTag.FindAllSubmatch(src, -1) {
+			views++
+			opts := tagOptions(string(m[1]))
+			if plural, ok := plurals[opts["kind"]]; !ok || opts["plural"] != plural || opts["apiVersion"] != APIVersion || opts["scope"] != "Namespaced" {
+				t.Errorf("%s: view tag %q doesn't name a kind at %s with its plural", path, m[1], APIVersion)
+			}
+		}
+		return nil
+	}
+	if err := filepath.WalkDir(".", scan); err != nil {
+		t.Fatal(err)
+	}
+	if views == 0 {
+		t.Error("found no view types")
+	}
+}
+
+// TestRepositoryStatusColumns checks the printer columns of the Repository
+// CustomResourceDefinition that come from status fields. kube adds a column
+// for each field with the column option, and the column reads the field by
+// its JSON name. The number of Branch objects is status.trackedBranches,
+// because spec.branches holds the rules that select the branches to track.
+func TestRepositoryStatusColumns(t *testing.T) {
+	var columns []string
+	typ := reflect.TypeFor[RepositoryStatus]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if column, ok := tagOptions(f.Tag.Get("kube"))["column"]; ok {
+			columns = append(columns, column+"=.status."+name)
+		}
+	}
+	if want := []string{"Branches=.status.trackedBranches"}; !slices.Equal(columns, want) {
+		t.Errorf("the status's printer columns are %q, want %q", columns, want)
 	}
 }

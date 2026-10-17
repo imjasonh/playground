@@ -83,7 +83,7 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 // v1.0.0, a module proxy that has greet v1.0.0 and v1.1.0, an updater for
 // them, and a server that stands in for the result containers of its Pods.
 // The updater has no -min-age, which would hold back each version from when
-// it first shows up. With a signer, the GitRepository names its key.
+// it first shows up. With a signer, the Repository object names its key.
 type fixture struct {
 	t      *testing.T
 	srv    *gittest.Server
@@ -125,7 +125,7 @@ func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work) *fixture {
 	}
 	f.b = &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "main"), nil)}
 	f.b.Namespace = "default"
-	f.b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: main}
+	f.b.Spec = gitk8s.BranchSpec{Repository: "app", Branch: "main", Head: main}
 
 	hs := httptest.NewServer(http.HandlerFunc(f.serveResult))
 	t.Cleanup(hs.Close)

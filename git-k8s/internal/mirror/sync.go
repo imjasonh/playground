@@ -73,7 +73,7 @@ type Report struct {
 // report's Err, failing to compare one branch's heads only adds the branch
 // to the report's Failed, and failing to update one branch's refs only adds
 // the branch to the report's Unapplied.
-func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOptions) (*Report, error) {
+func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.RepositoryView, o SyncOptions) (*Report, error) {
 	e := m.entry(repo)
 	e.syncing.Lock()
 	defer e.syncing.Unlock()
@@ -162,7 +162,7 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 // the other side's changes. Divergence shares each branch's last decision
 // with Sync, so it doesn't compare heads that a sync compared, and returns
 // the same error for heads that a sync couldn't compare.
-func (m *Mirror) Divergence(ctx context.Context, repo *gitk8s.Repository, branch string) (*gitk8s.Divergence, error) {
+func (m *Mirror) Divergence(ctx context.Context, repo *gitk8s.RepositoryView, branch string) (*gitk8s.Divergence, error) {
 	r, err := m.Open(ctx, repo)
 	if err != nil {
 		return nil, err

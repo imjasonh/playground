@@ -19,15 +19,15 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// fakeGitHub is a flag and not a GitRepository field so that only whoever
+// fakeGitHub is a flag and not a Repository field so that only whoever
 // installs a program, and no tenant, can send its service account tokens to
 // another server.
 var fakeGitHub = flag.String("fake-github", "", "base URL of a fake GitHub and Octo STS, for tests")
 
 // The audience of the service account tokens that a program sends to Octo
-// STS is audiencePrefix and the GitRepository's namespace. A program's
-// tokens are otherwise the same for every GitRepository, so a trust policy
-// that requires one namespace's audience keeps GitRepositories in other
+// STS is audiencePrefix and the Repository object's namespace. A program's
+// tokens are otherwise the same for every Repository object, so a trust policy
+// that requires one namespace's audience keeps Repository objects in other
 // namespaces from using its identity.
 const audiencePrefix = "octo-sts.dev/"
 
@@ -85,7 +85,7 @@ func (gh github) scope(rawURL string) (string, error) {
 // https://api.github.com/repos/OWNER/REPO, and a token for an Octo STS
 // identity, the name of a trust policy in the repository. Like Remote, it
 // must run in a reconcile.
-func GitHubAPI(ctx context.Context, repo *gitk8s.Repository, identity string) (apiURL, token string, err error) {
+func GitHubAPI(ctx context.Context, repo *gitk8s.RepositoryView, identity string) (apiURL, token string, err error) {
 	gh := endpoints()
 	scope, err := gh.scope(repo.Spec.URL)
 	if err != nil {
@@ -97,7 +97,7 @@ func GitHubAPI(ctx context.Context, repo *gitk8s.Repository, identity string) (a
 	return gh.api + "/repos/" + scope, token, nil
 }
 
-func octoSTSRemote(ctx context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+func octoSTSRemote(ctx context.Context, repo *gitk8s.RepositoryView) (git.Remote, error) {
 	r := git.Remote{URL: repo.Spec.URL}
 	if repo.Spec.SecretRef != nil {
 		return r, kube.Permanent(errors.New("set secretRef or octoSTS.gitIdentity, not both"))

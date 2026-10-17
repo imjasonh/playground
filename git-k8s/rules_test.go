@@ -49,7 +49,7 @@ func TestDesiredBranches(t *testing.T) {
 		"self":      "s1",
 	}
 	got := DesiredBranches("app", rules, heads)
-	want := []GitBranchSpec{
+	want := []BranchSpec{
 		{Repository: "app", Branch: "c/add", Head: "c1", Parent: "main", ParentHead: "m1", Merge: policy},
 		{Repository: "app", Branch: "main", Head: "m1"},
 		{Repository: "app", Branch: "orphan/a", Head: "o1", Parent: "missing"},

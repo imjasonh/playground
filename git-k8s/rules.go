@@ -45,19 +45,19 @@ func FindRule(rules []BranchRule, branch string) *BranchRule {
 	return nil
 }
 
-// DesiredBranches returns the spec of a GitBranch for each branch in heads,
+// DesiredBranches returns the spec of a Branch object for each branch in heads,
 // a map from branch name to commit SHA, that a rule selects. A branch whose
 // rule names a parent gets the merge policy of the rule that matches the
-// parent, so each GitBranch carries the policy that applies to it. The
+// parent, so each Branch object carries the policy that applies to it. The
 // result is sorted by branch name.
-func DesiredBranches(repository string, rules []BranchRule, heads map[string]string) []GitBranchSpec {
-	var out []GitBranchSpec
+func DesiredBranches(repository string, rules []BranchRule, heads map[string]string) []BranchSpec {
+	var out []BranchSpec
 	for _, branch := range slices.Sorted(maps.Keys(heads)) {
 		rule := FindRule(rules, branch)
 		if rule == nil {
 			continue
 		}
-		spec := GitBranchSpec{Repository: repository, Branch: branch, Head: heads[branch]}
+		spec := BranchSpec{Repository: repository, Branch: branch, Head: heads[branch]}
 		if rule.Parent != "" && rule.Parent != branch {
 			spec.Parent = rule.Parent
 			spec.ParentHead = heads[rule.Parent]

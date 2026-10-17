@@ -22,7 +22,7 @@ var DefaultCacheDir = filepath.Join(os.TempDir(), "git-k8s")
 
 const (
 	// cacheIdle is how long a local repository goes unopened before Open
-	// removes it, such as the repository of a GitRepository that no longer
+	// removes it, such as the repository of a Repository object that no longer
 	// exists.
 	cacheIdle = 7 * 24 * time.Hour
 	// cacheTidy is how often Open looks for idle repositories, and how
@@ -30,7 +30,7 @@ const (
 	cacheTidy = time.Hour
 )
 
-// Cache keeps a local bare repository for each GitRepository, so that
+// Cache keeps a local bare repository for each Repository object, so that
 // controllers fetch only objects they don't have yet. Open maintains the
 // repositories, and removes the ones that go unopened for a week.
 type Cache struct {
@@ -39,10 +39,10 @@ type Cache struct {
 	// must be writable. Open leaves alone the directories in Dir whose
 	// names start with a dot, where another Cache can keep its own.
 	Dir string
-	// Remote reaches a GitRepository's repository, so that Open can tell
+	// Remote reaches a Repository object's repository, so that Open can tell
 	// which refs a local repository still needs. If Remote is nil, Open
 	// keeps every ref.
-	Remote func(context.Context, *Repository) (git.Remote, error)
+	Remote func(context.Context, *RepositoryView) (git.Remote, error)
 
 	mu      sync.Mutex
 	entries map[string]*cacheEntry
@@ -62,7 +62,7 @@ type cacheEntry struct {
 // reconcile in this process uses it until unlock is called. At most once
 // an hour, Open removes the repositories that no reconcile opened for a
 // week, and tidies the repository that it returns.
-func (c *Cache) Open(ctx context.Context, repo *Repository) (r *git.Repo, unlock func(), err error) {
+func (c *Cache) Open(ctx context.Context, repo *RepositoryView) (r *git.Repo, unlock func(), err error) {
 	sum := sha256.Sum256([]byte(repo.Spec.URL))
 	dir := filepath.Join(c.Dir, repo.Namespace, repo.Name+"-"+hex.EncodeToString(sum[:4])+".git")
 	c.mu.Lock()
@@ -139,7 +139,7 @@ func (c *Cache) sweep() {
 // fetch. Then tidy deletes the refs that r no longer needs, which keep
 // their objects, and runs maintenance if git says that r needs it. It only
 // logs what fails, because r works without it.
-func (c *Cache) tidy(ctx context.Context, r *git.Repo, repo *Repository) {
+func (c *Cache) tidy(ctx context.Context, r *git.Repo, repo *RepositoryView) {
 	log := slog.With("namespace", repo.Namespace, "repository", repo.Name)
 	if err := r.SetConfig(ctx, "maintenance.auto", "false"); err != nil {
 		log.Warn("configuring a local repository failed", "err", err)
@@ -165,7 +165,7 @@ func (c *Cache) tidy(ctx context.Context, r *git.Repo, repo *Repository) {
 // pruneRefs deletes refs, which r holds, except those of the branches that
 // repo's repository has, which Fetch keeps under refs/remotes/origin/.
 // Controllers fetch any other ref again when they need it.
-func (c *Cache) pruneRefs(ctx context.Context, r *git.Repo, repo *Repository, refs map[string]string) error {
+func (c *Cache) pruneRefs(ctx context.Context, r *git.Repo, repo *RepositoryView, refs map[string]string) error {
 	if c.Remote == nil {
 		return nil
 	}

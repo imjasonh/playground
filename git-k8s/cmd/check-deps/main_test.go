@@ -31,7 +31,7 @@ const (
 )
 
 // fixture is a branch that updates a module on a git server, and the gotest
-// check's result on it. With a signer, the GitRepository names its key.
+// check's result on it. With a signer, the Repository object names its key.
 type fixture struct {
 	t      *testing.T
 	srv    *gittest.Server
@@ -57,7 +57,7 @@ func newFixture(t *testing.T, branch string) *fixture {
 
 	b := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", branch), nil)}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{
+	b.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: branch, Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "gotest"}, {Name: "deps", MayPush: true}}},
 	}

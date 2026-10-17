@@ -34,9 +34,9 @@ const FixerTrailer = "Git-K8s-Fixer"
 const AgentTrailer = "Git-K8s-Agent"
 
 // AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
-// with. It allows only the transports that a GitRepository's URL can name.
+// with. It allows only the transports that a Repository object's URL can name.
 // It leaves out file, which also covers plain paths, so git can't read a
-// local repository such as another GitRepository's cache. Commands that
+// local repository such as another Repository object's cache. Commands that
 // read only local objects need it too, because a repository with a
 // promisor remote fetches the objects that it lacks.
 const AllowProtocol = "http:https"

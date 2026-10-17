@@ -55,7 +55,7 @@ func NewSigner(t testing.TB, email string) *Signer {
 
 // Sign returns a Secret in repo's namespace that holds the key, and points
 // repo's signingKeyRef at it.
-func (s *Signer) Sign(repo *gitk8s.GitRepository) *k8s.Secret {
+func (s *Signer) Sign(repo *gitk8s.Repository) *k8s.Secret {
 	secret := &k8s.Secret{
 		Object: kube.Meta(repo.Name+"-signing", nil),
 		Type:   "kubernetes.io/ssh-auth",

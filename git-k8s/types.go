@@ -1,12 +1,12 @@
 // Package gitk8s defines the git-k8s API and the code that its controllers
 // share.
 //
-// People write GitRepository objects. The mirror in the core program keeps a
+// People write Repository objects. The mirror in the core program keeps a
 // copy of each repository, and the repository controller syncs the copy with
-// the external repository and owns one GitBranch object for every branch
-// that the repository's rules select. Check controllers send their results
-// to the core program, which writes them to each GitBranch's status, and
-// the merge controller lands a branch on its parent when the parent's merge
+// the external repository and owns one Branch object for every branch that
+// the repository's rules select. Check controllers send their results to the
+// core program, which writes them to each Branch object's status, and the
+// merge controller lands a branch on its parent when the parent's merge
 // policy allows.
 package gitk8s
 
@@ -26,17 +26,17 @@ const Group = "git-k8s.imjasonh.com"
 // APIVersion is the apiVersion of every git-k8s type.
 const APIVersion = Group + "/v1alpha1"
 
-// RepositoryLabel is the label on each GitBranch that names the
-// GitRepository it belongs to.
+// RepositoryLabel is the label on each Branch object that names the
+// Repository object it belongs to.
 const RepositoryLabel = Group + "/repository"
 
-// ApproveAnnotation on a GitBranch approves one commit's change for the
+// ApproveAnnotation on a Branch object approves one commit's change for the
 // approval check. Its value is the commit's full SHA, which approves any
 // head that makes the same change. The approval check fails a shorter
 // prefix, and the git-k8s-approvals admission policy rejects one.
 const ApproveAnnotation = Group + "/approve"
 
-// ApprovedByAnnotation on a GitBranch is the username of whoever approved
+// ApprovedByAnnotation on a Branch object is the username of whoever approved
 // the commit in its ApproveAnnotation. The git-k8s-approvals admission
 // policy in config/policy.yaml makes it match the request that set the
 // approval or took it over.
@@ -70,22 +70,22 @@ const MirrorAudience = "git-k8s-mirror"
 // program, as the Service git-k8s in the namespace git-k8s.
 const MirrorURL = "http://git-k8s.git-k8s.svc"
 
-// MirrorPath returns the path of a GitRepository's copy on the mirror,
+// MirrorPath returns the path of a Repository object's copy on the mirror,
 // below the mirror's base URL.
 func MirrorPath(namespace, name string) string {
 	return "/" + namespace + "/" + name + ".git"
 }
 
-// GitRepository is an external git repository, which the mirror keeps a copy
+// Repository is an external git repository, which the mirror keeps a copy
 // of, and the rules that select which of its branches to track.
-type GitRepository struct {
-	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,shortName=gitrepo,category=git-k8s"`
-	Spec        GitRepositorySpec   `json:"spec"`
-	Status      GitRepositoryStatus `json:"status,omitzero"`
+type Repository struct {
+	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,plural=repositories,singular=repository,shortName=repo,category=git-k8s"`
+	Spec        RepositorySpec   `json:"spec"`
+	Status      RepositoryStatus `json:"status,omitzero"`
 }
 
-// GitRepositorySpec says where a repository is and which branches to track.
-type GitRepositorySpec struct {
+// RepositorySpec says where a repository is and which branches to track.
+type RepositorySpec struct {
 	// git appends info/refs?service=... to the URL, which a query or a
 	// fragment would break.
 	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^https?://([^@/?#\\[\\]\\x00-\\x1f\\x7f]+@)?([A-Za-z0-9_][A-Za-z0-9_.-]*|\\[[0-9A-Fa-f:.]+\\])(:[0-9]+)?/[^?#\\x00-\\x1f\\x7f]*$" doc:"URL of the external repository, which the mirror reaches with git over HTTP: an https or http URL without a query or a fragment, such as https://git.example.com/app.git."`
@@ -175,38 +175,38 @@ type CheckPolicy struct {
 	MayPush bool   `json:"mayPush,omitempty" doc:"Let the check push commits that fix what it finds, such as formatting, or merging the parent in."`
 }
 
-// GitRepositoryStatus is what the repository controller observed.
-type GitRepositoryStatus struct {
-	Branches           int32            `json:"branches" kube:"column=Branches" doc:"Number of tracked branches."`
+// RepositoryStatus is what the repository controller observed.
+type RepositoryStatus struct {
+	TrackedBranches    int32            `json:"trackedBranches" kube:"column=Branches" doc:"Number of tracked branches."`
 	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition `json:"conditions,omitempty"`
 }
 
-// Repository is a GitRepository without its status. Controllers that fetch
-// from and push to a repository read this type, so that the repository
+// RepositoryView is a Repository object without its status. Controllers that
+// fetch from and push to a repository read this type, so that the repository
 // controller's status writes don't run them again.
-type Repository struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitRepository,plural=gitrepositories,scope=Namespaced"`
-	Spec        GitRepositorySpec `json:"spec"`
+type RepositoryView struct {
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Repository,plural=repositories,scope=Namespaced"`
+	Spec        RepositorySpec `json:"spec"`
 }
 
-// GitBranch is one branch that a GitRepository tracks. The repository
+// Branch is one branch that a Repository object tracks. The repository
 // controller owns these objects and writes their spec from the mirror's copy
 // of the repository, so don't edit them by hand.
 //
-// Two controllers write a GitBranch's status, each a different part: the
+// Two controllers write a Branch object's status, each a different part: the
 // core program's results controller writes Status.Checks with the results
 // that checks send it, and the merge controller writes the rest.
 // Server-side apply keeps their writes apart.
-type GitBranch struct {
-	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,shortName=gitbr,category=git-k8s"`
-	Spec        GitBranchSpec   `json:"spec"`
-	Status      GitBranchStatus `json:"status,omitzero"`
+type Branch struct {
+	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,plural=branches,singular=branch,shortName=branch,category=git-k8s"`
+	Spec        BranchSpec   `json:"spec"`
+	Status      BranchStatus `json:"status,omitzero"`
 }
 
-// GitBranchSpec is a branch as the repository controller last listed it.
-type GitBranchSpec struct {
-	Repository string       `json:"repository" doc:"Name of the GitRepository in the same namespace."`
+// BranchSpec is a branch as the repository controller last listed it.
+type BranchSpec struct {
+	Repository string       `json:"repository" doc:"Name of the Repository object in the same namespace."`
 	Branch     string       `json:"branch" kube:"column=Branch" doc:"Branch name without refs/heads/."`
 	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to in the mirror."`
 	Parent     string       `json:"parent,omitempty" kube:"column=Parent" doc:"Branch that this branch proposes changes to."`
@@ -214,8 +214,8 @@ type GitBranchSpec struct {
 	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent. The git-k8s-branches admission policy lets only the core program set it."`
 }
 
-// GitBranchStatus holds check results and the merge controller's state.
-type GitBranchStatus struct {
+// BranchStatus holds check results and the merge controller's state.
+type BranchStatus struct {
 	Checks             map[string]CheckResult `json:"checks,omitempty" kube:"mapType=atomic" doc:"Check results by check name. Checks send their results to the core program, which writes each one to the entry of the check that sent it."`
 	State              MergeState             `json:"state,omitempty" kube:"enum=Diverged|NoMergePolicy|ParentMissing|NothingToLand|WaitingForChecks|InvalidGate|Queued|NotFastForward|NeedsRebase|Rewritten|Landed,column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Landed condition's reason. Empty for a branch without a parent."`
 	Queued             *Queued                `json:"queued,omitempty" doc:"The branch's place in its parent's merge queue, while it waits to land."`
@@ -246,7 +246,7 @@ type Queued struct {
 // which is True only in MergeStateLanded.
 type MergeState string
 
-// Merge states, the values of GitBranchStatus.State.
+// Merge states, the values of BranchStatus.State.
 const (
 	// MergeStateDiverged means the branch changed both in the mirror and in
 	// the external repository, so it waits for a commit that keeps both
@@ -356,7 +356,7 @@ type CheckResult struct {
 	FilesOnly    bool              `json:"filesOnly,omitempty"`
 }
 
-// OpenAPISchema returns the schema of a result in the GitBranch
+// OpenAPISchema returns the schema of a result in the Branch
 // CustomResourceDefinition. Its rules check the fields that each scope
 // needs, as Validate does.
 func (CheckResult) OpenAPISchema() map[string]any {
@@ -450,7 +450,7 @@ func Short(sha string) string {
 	return sha
 }
 
-// BranchObjectName returns the name of the GitBranch for a branch of a
+// BranchObjectName returns the name of the Branch object for a branch of a
 // repository.
 //
 // Branch names can hold characters that object names can't, and two branch

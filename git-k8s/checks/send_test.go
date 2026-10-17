@@ -18,11 +18,11 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// view is a check's view of a GitBranch, like the ones that check programs
+// view is a check's view of a Branch object, like the ones that check programs
 // declare.
 type view struct {
-	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
-	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=Branch,plural=branches,scope=Namespaced"`
+	Spec        gitk8s.BranchSpec `json:"spec"`
 	Status      struct {
 		Checks struct {
 			Result *gitk8s.CheckResult `json:"lint,omitempty"`
@@ -30,7 +30,7 @@ type view struct {
 	} `json:"status,omitzero"`
 }
 
-func (v *view) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.CheckResult) {
+func (v *view) Parts() (*kube.ObjectMeta, *gitk8s.BranchSpec, **gitk8s.CheckResult) {
 	return &v.ObjectMeta, &v.Spec, &v.Status.Checks.Result
 }
 
@@ -73,7 +73,7 @@ func (e *endpoint) requests() []received {
 type sendFixture struct {
 	branch  *branch
 	view    *view
-	repo    *gitk8s.GitRepository
+	repo    *gitk8s.Repository
 	verdict Verdict
 	err     error
 	runs    int
@@ -89,12 +89,12 @@ func newSendFixture(t *testing.T, e *endpoint) *sendFixture {
 	t.Cleanup(srv.Close)
 	f := &sendFixture{branch: &branch{Object: kube.Meta("app-c-x", nil)}, view: &view{Object: kube.Meta("app-c-x", nil)}}
 	f.branch.Namespace, f.view.Namespace, f.view.Generation = "default", "default", 4
-	f.view.Spec = gitk8s.GitBranchSpec{
+	f.view.Spec = gitk8s.BranchSpec{
 		Repository: "app", Branch: "c/x", Head: "h1", Parent: "main", ParentHead: "p1",
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "lint"}}},
 	}
 	f.branch.Spec = f.view.Spec
-	f.repo = &gitk8s.GitRepository{Object: kube.Meta("app", nil)}
+	f.repo = &gitk8s.Repository{Object: kube.Meta("app", nil)}
 	f.repo.Namespace = "default"
 	check := Check{Name: "lint", Run: func(context.Context, *Input) (Verdict, error) {
 		f.runs++

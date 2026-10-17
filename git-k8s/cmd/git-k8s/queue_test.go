@@ -16,30 +16,30 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// proposal returns the GitBranch of a branch of repository that proposes
+// proposal returns the Branch object of a branch of repository that proposes
 // changes to parent, with q as its place in parent's queue.
-func proposal(repository, branch, parent string, q *gitk8s.Queued) *gitk8s.GitBranch {
-	b := &gitk8s.GitBranch{Object: kube.Meta(gitk8s.BranchObjectName(repository, branch), map[string]string{gitk8s.RepositoryLabel: repository})}
+func proposal(repository, branch, parent string, q *gitk8s.Queued) *gitk8s.Branch {
+	b := &gitk8s.Branch{Object: kube.Meta(gitk8s.BranchObjectName(repository, branch), map[string]string{gitk8s.RepositoryLabel: repository})}
 	b.Namespace = "default"
-	b.Spec = gitk8s.GitBranchSpec{Repository: repository, Branch: branch, Parent: parent, Merge: policy}
+	b.Spec = gitk8s.BranchSpec{Repository: repository, Branch: branch, Parent: parent, Merge: policy}
 	b.Status.Queued = q
 	return b
 }
 
-// parentOf returns the GitBranch of b's parent, with queue as its merge
+// parentOf returns the Branch object of b's parent, with queue as its merge
 // queue.
-func parentOf(b *gitk8s.GitBranch, queue ...string) *gitk8s.GitBranch {
-	p := &gitk8s.GitBranch{Object: kube.Meta(gitk8s.BranchObjectName(b.Spec.Repository, b.Spec.Parent), map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository})}
+func parentOf(b *gitk8s.Branch, queue ...string) *gitk8s.Branch {
+	p := &gitk8s.Branch{Object: kube.Meta(gitk8s.BranchObjectName(b.Spec.Repository, b.Spec.Parent), map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository})}
 	p.Namespace = b.Namespace
-	p.Spec = gitk8s.GitBranchSpec{Repository: b.Spec.Repository, Branch: b.Spec.Parent, Head: b.Spec.ParentHead}
+	p.Spec = gitk8s.BranchSpec{Repository: b.Spec.Repository, Branch: b.Spec.Parent, Head: b.Spec.ParentHead}
 	p.Status.Queue = queue
 	return p
 }
 
-// repository returns the GitRepository app with rules, at an address where
+// repository returns the Repository object app with rules, at an address where
 // nothing listens.
-func repository(rules ...gitk8s.BranchRule) *gitk8s.GitRepository {
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: "http://127.0.0.1:1/app.git", Branches: rules}}
+func repository(rules ...gitk8s.BranchRule) *gitk8s.Repository {
+	repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: gitk8s.RepositorySpec{URL: "http://127.0.0.1:1/app.git", Branches: rules}}
 	repo.Namespace = "default"
 	return repo
 }
@@ -50,9 +50,9 @@ func noCopies(t *testing.T) *mirror.Mirror {
 	return &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()}
 }
 
-// queueOf reconciles parent among the GitBranches in world, and returns its
+// queueOf reconciles parent among the Branch objects in world, and returns its
 // merge queue.
-func queueOf(t *testing.T, parent *gitk8s.GitBranch, world ...any) []string {
+func queueOf(t *testing.T, parent *gitk8s.Branch, world ...any) []string {
 	t.Helper()
 	ctx, _ := kube.Fake(t.Context(), parent, append([]any{repository(rules()...)}, world...)...)
 	if err := (&merger{mirror: noCopies(t)}).Reconcile(ctx, parent); err != nil {
@@ -75,7 +75,7 @@ func TestQueueOrder(t *testing.T) {
 		proposal("app", "c/waiting", "main", nil),
 		proposal("other", "c/e", "main", at(0)),
 	}
-	t.Log("c/b keeps the front. c/gone's GitBranch is gone and c/left left the queue. Branches that joined since follow in the order that they joined, then by name.")
+	t.Log("c/b keeps the front. c/gone's Branch object is gone and c/left left the queue. Branches that joined since follow in the order that they joined, then by name.")
 	if got, want := queueOf(t, main, world...), []string{"c/b", "c/d", "c/a", "c/c"}; !slices.Equal(got, want) {
 		t.Fatalf("queue = %q, want %q", got, want)
 	}
@@ -112,17 +112,17 @@ func TestOnlyParentsHaveQueues(t *testing.T) {
 
 // behind pushes main, then c/one and c/two from it, then moves main ahead,
 // all in the external repository of a new fixture, and syncs the mirror.
-// It returns the fixture, the branches' GitBranches with fresh, passing
+// It returns the fixture, the branches' Branch objects with fresh, passing
 // results, and the fixture's working repository: both branches merge main
 // cleanly, so the base check passes them but reports that they're behind.
-func behind(t *testing.T) (f *fixture, one, two *gitk8s.GitBranch, w *gittest.Work) {
+func behind(t *testing.T) (f *fixture, one, two *gitk8s.Branch, w *gittest.Work) {
 	f = newFixture(t)
 	w = f.work
 	start := w.Commit("main")
 	w.Write("y.txt", "y\n")
 	main := w.Commit("main moves")
 	w.Push("main")
-	var bs []*gitk8s.GitBranch
+	var bs []*gitk8s.Branch
 	for _, branch := range []string{"c/one", "c/two"} {
 		w.Branch(branch, start)
 		w.Write(strings.TrimPrefix(branch, "c/")+".txt", branch+"\n")
@@ -144,13 +144,13 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	f, one, two, w := behind(t)
 	main := parentOf(one)
 	start := main.Spec.Head
-	reconcile := func(b *gitk8s.GitBranch) string {
+	reconcile := func(b *gitk8s.Branch) string {
 		t.Helper()
 		return f.mergeIn(main, b)
 	}
 
 	t.Log("Both branches become ready together and join main's queue.")
-	for _, b := range []*gitk8s.GitBranch{one, two} {
+	for _, b := range []*gitk8s.Branch{one, two} {
 		if msg := reconcile(b); b.Status.State != gitk8s.MergeStateQueued || msg != "joining main's queue" {
 			t.Fatalf("%s: state %q, %q", b.Spec.Branch, b.Status.State, msg)
 		}
@@ -221,7 +221,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 	f, one, two, w := behind(t)
 	main := parentOf(one)
 	start := main.Spec.Head
-	reconcile := func(b *gitk8s.GitBranch) string {
+	reconcile := func(b *gitk8s.Branch) string {
 		t.Helper()
 		return f.mergeIn(main, b)
 	}
@@ -236,7 +236,7 @@ func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
 	}
 
 	t.Log("c/one is behind main, and c/two contains main's head. Both join main's queue, and c/two doesn't land before the queue lists it.")
-	for _, b := range []*gitk8s.GitBranch{one, two} {
+	for _, b := range []*gitk8s.Branch{one, two} {
 		if msg := reconcile(b); b.Status.State != gitk8s.MergeStateQueued || msg != "joining main's queue" {
 			t.Fatalf("%s: state %q, %q", b.Spec.Branch, b.Status.State, msg)
 		}
@@ -291,7 +291,7 @@ func TestRejoinsAtTheBack(t *testing.T) {
 			if branch == "c/two" {
 				pushed, other = two, one
 			}
-			reconcile := func(b *gitk8s.GitBranch) string {
+			reconcile := func(b *gitk8s.Branch) string {
 				t.Helper()
 				return f.mergeIn(main, b)
 			}
@@ -346,7 +346,7 @@ func TestKeepsItsPlaceWhileItsCacheLags(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t.Log("c/one and c/two join main's queue, and main lists them before their own caches have the writes in which they joined.")
 	for _, tc := range []struct {
-		b    *gitk8s.GitBranch
+		b    *gitk8s.Branch
 		pos  int32
 		want string
 	}{
@@ -370,12 +370,12 @@ func TestLeavingTheQueue(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name string
-		edit func(*fixture, *gitk8s.GitBranch)
+		edit func(*fixture, *gitk8s.Branch)
 		// state is the branch's state afterward, Queued if it keeps its place.
 		state gitk8s.MergeState
 	}{{
 		name: "a check pushes a fix",
-		edit: func(f *fixture, b *gitk8s.GitBranch) {
+		edit: func(f *fixture, b *gitk8s.Branch) {
 			f.work.Write("x.txt", "fixed\n")
 			b.Spec.Head = f.work.Commit("Fix x\n\n" + git.FixerTrailer + ": gofmt")
 			f.pushToMirror("c/x")
@@ -383,13 +383,13 @@ func TestLeavingTheQueue(t *testing.T) {
 		state: gitk8s.MergeStateQueued,
 	}, {
 		name: "a check is still running",
-		edit: func(_ *fixture, b *gitk8s.GitBranch) {
+		edit: func(_ *fixture, b *gitk8s.Branch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Running}
 		},
 		state: gitk8s.MergeStateQueued,
 	}, {
 		name: "a person pushes",
-		edit: func(f *fixture, b *gitk8s.GitBranch) {
+		edit: func(f *fixture, b *gitk8s.Branch) {
 			f.work.Write("more.txt", "more\n")
 			b.Spec.Head = f.work.Commit("more work")
 			f.work.Push("c/x")
@@ -398,7 +398,7 @@ func TestLeavingTheQueue(t *testing.T) {
 		state: gitk8s.MergeStateWaitingForChecks,
 	}, {
 		name: "someone force-pushes",
-		edit: func(f *fixture, b *gitk8s.GitBranch) {
+		edit: func(f *fixture, b *gitk8s.Branch) {
 			f.work.Branch("c/x", b.Spec.ParentHead)
 			f.work.Write("other.txt", "other\n")
 			b.Spec.Head = f.work.Commit("start over")
@@ -408,7 +408,7 @@ func TestLeavingTheQueue(t *testing.T) {
 		state: gitk8s.MergeStateWaitingForChecks,
 	}, {
 		name: "the branch diverges",
-		edit: func(f *fixture, b *gitk8s.GitBranch) {
+		edit: func(f *fixture, b *gitk8s.Branch) {
 			head := b.Spec.Head
 			f.work.Write("x.txt", "fixed\n")
 			b.Spec.Head = f.work.Commit("Fix x\n\n" + git.FixerTrailer + ": gofmt")
@@ -422,13 +422,13 @@ func TestLeavingTheQueue(t *testing.T) {
 		state: gitk8s.MergeStateDiverged,
 	}, {
 		name: "a check fails",
-		edit: func(_ *fixture, b *gitk8s.GitBranch) {
+		edit: func(_ *fixture, b *gitk8s.Branch) {
 			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, Scope: gitk8s.ScopeHead, State: gitk8s.Failed}
 		},
 		state: gitk8s.MergeStateWaitingForChecks,
 	}, {
 		name: "the gate is invalid",
-		edit: func(_ *fixture, b *gitk8s.GitBranch) {
+		edit: func(_ *fixture, b *gitk8s.Branch) {
 			p := *policy
 			p.When = "checks.gofmt.outputs.level == 'low'"
 			b.Spec.Merge = &p
@@ -436,11 +436,11 @@ func TestLeavingTheQueue(t *testing.T) {
 		state: gitk8s.MergeStateInvalidGate,
 	}, {
 		name:  "the parent is gone",
-		edit:  func(_ *fixture, b *gitk8s.GitBranch) { b.Spec.ParentHead = "" },
+		edit:  func(_ *fixture, b *gitk8s.Branch) { b.Spec.ParentHead = "" },
 		state: gitk8s.MergeStateParentMissing,
 	}, {
 		name: "someone lands the branch's changes",
-		edit: func(f *fixture, b *gitk8s.GitBranch) {
+		edit: func(f *fixture, b *gitk8s.Branch) {
 			f.work.Write("m.txt", "m\n")
 			b.Spec.ParentHead = f.work.Commit("main moves past c/x")
 			f.work.Push("main")
@@ -602,7 +602,7 @@ func TestNeedsRebaseLeavesTheQueue(t *testing.T) {
 	f, one, two, w := behind(t)
 	main := parentOf(one, "c/one", "c/two")
 	start := main.Spec.Head
-	reconcile := func(b *gitk8s.GitBranch) string {
+	reconcile := func(b *gitk8s.Branch) string {
 		t.Helper()
 		return f.mergeIn(main, b)
 	}
@@ -679,7 +679,7 @@ func TestRewrittenBranchHoldsTheFront(t *testing.T) {
 	f, one, two, w := behind(t)
 	main := parentOf(one, "c/one", "c/two")
 	start := main.Spec.Head
-	reconcile := func(b *gitk8s.GitBranch) string {
+	reconcile := func(b *gitk8s.Branch) string {
 		t.Helper()
 		return f.mergeIn(main, b)
 	}

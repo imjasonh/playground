@@ -112,12 +112,12 @@ From the `git-k8s` directory, run the following:
 go run ./e2e/stress run -scenario clean
 ```
 
-Each scenario gets its own namespace with one or more GitRepository objects.
+Each scenario gets its own namespace with one or more Repository objects.
 Each one's `main` policy has the `base`, `gofmt`, `risk`, `approval`, and
 `gotest` checks. A branch lands when `base`, `gofmt`, and `gotest` pass, and
 either `risk` rates it low or `approval` passes. The policy lets `base` and
 `gofmt` push, which gives it a merge queue, and sets `deleteLandedBranches`.
-The GitRepositories poll every 2 seconds.
+The Repository objects poll every 2 seconds.
 
 Before the burst, the harness lands one branch in each repository to warm the
 caches. After the burst, it waits for the landings to reach the git server,
@@ -142,7 +142,7 @@ error after it writes the run's summary.
 | `-scenario` | `clean` | The scenario to run. |
 | `-n` | The scenario's | Branches per repository. |
 | `-repos` | The scenario's | Repositories, for `clean`, `nogotest`, `big`, and `parallel`. |
-| `-poll` | `2s` | Each GitRepository's `pollInterval`. `default` leaves it out, for the 30-second default. `poll30` always leaves it out. |
+| `-poll` | `2s` | Each Repository object's `pollInterval`. `default` leaves it out, for the 30-second default. `poll30` always leaves it out. |
 | `-stagger` | The scenario's | The time between first pushes. Only `poll30` staggers them by default. |
 | `-approve-delay` | `15s` | How long the reviewer waits after `risk` rates a head high before it approves the head. The reviewer doesn't approve a head that `approval` already passes for, such as a merge of `main` into a head that it approved, when approvals follow the change. |
 | `-timeout` | `45m`, or `120m` for `big` | How long the burst can take. |
@@ -150,7 +150,7 @@ error after it writes the run's summary.
 | `-out` | `$GK_STRESS_STATE/runs/SCENARIO-TIME` | The run's directory. `report` and `chart` label each run with its directory's name. |
 | `-state` | `$GK_STRESS_STATE`, or `/tmp/gk-stress` | The directory that `setup.sh` wrote. |
 
-A scenario's namespace stays after the run, and its GitRepositories keep
+A scenario's namespace stays after the run, and its Repository objects keep
 polling the git server. Before the next run, delete earlier scenarios'
 namespaces:
 
@@ -166,8 +166,8 @@ A run writes the following to its directory:
   section, and the verification result.
 - `timeline.txt`: what happened, in seconds after the first push.
 - `log.jsonl`: every record that the harness took. It has the changes to
-  GitBranches, Pods, and Events that the harness watched, the refs on the git
-  server, CPU samples every second, the programs' metrics every 10 seconds,
+  Branch objects, Pods, and Events that the harness watched, the refs on the
+  git server, CPU samples every second, the programs' metrics every 10 seconds,
   and the harness's own actions.
 - `plan.json`: the scenario's repositories and branches.
 - `branches.tsv` and `fronts.tsv`: one row per branch, and one per landing
@@ -176,8 +176,8 @@ A run writes the following to its directory:
   server, with each commit's `Git-K8s-Fixer` trailer.
 - `verify.json`: what verification checked, and the problems that it found.
 - `images.txt`: each Deployment's image, by digest.
-- `gitobjects.yaml` and `pods.txt`: the GitRepositories, GitBranches, and
-  Pods at the end.
+- `gitobjects.yaml` and `pods.txt`: the Repository objects, Branch objects,
+  and Pods at the end.
 - `logs/`: the logs of git-k8s and each check since the scenario started,
   with Kubernetes's timestamps.
 - `work/`: the harness's clones of the repositories.

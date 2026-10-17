@@ -51,7 +51,7 @@ func TestParsePrefix(t *testing.T) {
 
 // rulesRepo has two parents, main and release, and branches that propose
 // changes to each.
-var rulesRepo = &gitk8s.Repository{Spec: gitk8s.GitRepositorySpec{Branches: []gitk8s.BranchRule{
+var rulesRepo = &gitk8s.RepositoryView{Spec: gitk8s.RepositorySpec{Branches: []gitk8s.BranchRule{
 	{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "gofmt", MayPush: true}, {Name: "risk"}}}},
 	{Match: "release", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk", MayPush: true}}}},
 	{Match: "hotfix/*", Parent: "release"},
@@ -142,12 +142,12 @@ func TestRefuse(t *testing.T) {
 
 func TestMayFetchAndPush(t *testing.T) {
 	m := &Mirror{Prefixes: []Prefix{{Namespace: "git-k8s-deps", ServiceAccount: "git-k8s-deps", Prefix: "deps/"}}}
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: rulesRepo.Spec}
+	repo := &gitk8s.Repository{Object: kube.Meta("app", nil), Spec: rulesRepo.Spec}
 	repo.Namespace = "team"
 	// branch returns a branch in team whose merge policy lists check, and
 	// whose result for check names pod.
-	branch := func(name, repository, check, state, pod string) *gitk8s.GitBranch {
-		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: repository})}
+	branch := func(name, repository, check, state, pod string) *gitk8s.Branch {
+		b := &gitk8s.Branch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: repository})}
 		b.Namespace = "team"
 		b.Spec.Merge = &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: check}}}
 		b.Status.Checks = map[string]gitk8s.CheckResult{check: {State: state, Pod: pod}}
@@ -203,7 +203,7 @@ func TestMayFetchAndPush(t *testing.T) {
 	pod := func(ns, name string) caller.Caller {
 		return caller.Caller{Namespace: ns, Name: "default", Pod: name, PodUID: "uid-" + name}
 	}
-	r := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
+	r := &gitk8s.RepositoryView{Object: repo.Object, Spec: repo.Spec}
 	for _, tc := range []struct {
 		name string
 		who  caller.Caller
