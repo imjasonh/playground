@@ -106,7 +106,8 @@ Non-goals for the first version:
 ### Chip
 
 Only three Espressif chip families have an SD host controller. The others
-drive cards in SPI mode, which is about four times slower than 4-bit SD mode.
+drive cards in SPI mode, which measured two to five times slower than 4-bit SD
+mode in one ESP32-S3 benchmark.
 
 | Chip | CPU | RAM | SD | Radio | Fit |
 |---|---|---|---|---|---|
@@ -136,7 +137,8 @@ The ESP32-S3 fits best for four reasons:
   as the ESP32-S3-WROOM-1-N16R8. The flash holds two OTA slots.
 - **SD wiring.** CLK, CMD, and D0 through D3, with 10 kΩ pull-ups on CMD and
   the data lines, running at 40 MHz (`SDMMC_FREQ_HIGHSPEED`). One-bit mode
-  halves throughput.
+  halves throughput, and SPI mode is slower still. For more information, see
+  [SPI-mode SD wiring](#spi-mode-sd-wiring).
 - **Card.** An industrial or high-endurance card with power-loss protection,
   for example one that runs its flash in pSLC mode. When power fails during a
   write, a consumer TLC card can corrupt pages it wrote earlier, including
@@ -148,6 +150,44 @@ The ESP32-S3 fits best for four reasons:
   Optionally, a supercapacitor and a GPIO that senses input power let the
   firmware stop issuing writes before a brownout.
 
+### SPI-mode SD wiring
+
+Some small boards and add-ons wire the card for SPI mode, which uses one data
+line in each direction. One example is a Seeed XIAO ESP32S3 with Adafruit's
+microSD BFF add-on (product 5683). The XIAO meets the chip requirements: an
+ESP32-S3R8 with 8 MiB of octal PSRAM, 8 MiB of flash, which holds two OTA
+slots, and an external antenna connector. The BFF's schematic connects only
+the card's CS, MOSI, MISO, and SCK pins, leaves DAT1 and DAT2 unconnected, and
+has no pull-up resistors. The XIAO ESP32S3 Sense's built-in slot is also wired
+for SPI mode, with chip select on GPIO21.
+
+The firmware supports SPI mode through ESP-IDF's SDSPI host behind the same
+`BlockDevice` trait, with these costs:
+
+- One ESP32-S3 benchmark measured 1.0 MB/s raw writes and 1.7 MB/s raw reads
+  in SPI mode at 20 MHz, against 2.3 and 8.4 MB/s in 4-bit mode on the same
+  board. Clones, fetches of objects that aren't cached in RAM, and large pushes
+  of binary files run at card speed instead of Wi-Fi speed.
+- Up-to-date fetches and small pushes barely change. RAM answers the first,
+  and grouped commits spread card writes across many of the second.
+- Large pushes of source history already index at about card speed. The
+  ingest path stops reading the socket when the scanner falls behind,
+  instead of reading the pack back from a card that is slower than Wi-Fi.
+- ESP-IDF requires pull-ups on CMD and all four data lines, even in SPI mode.
+  The firmware enables the ESP32-S3's internal pull-ups on the connected
+  lines, but the BFF's DAT1 and DAT2 can't be pulled up without rework.
+  Adafruit sells the BFF for any card that supports SPI mode, but a server
+  that runs unattended is safer with pull-ups on every line.
+- The BFF's chip select defaults to the XIAO's TX pin, GPIO43, which carries
+  UART0 output. Route the ESP-IDF console to USB Serial/JTAG
+  (`CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG`), or move chip select to A0 or A1 with
+  the BFF's solder jumpers.
+
+For full speed on a XIAO, wire a breakout that brings out all six SD lines with
+pull-ups, such as Adafruit's microSD SPI or SDIO breakout (product 4682), to
+six free pins. The ESP32-S3 routes its SD host through the GPIO matrix, so any
+free pins work. Keep the wires short at 40 MHz.
+
 ## What the hardware can do
 
 | Resource | Figure | Source |
@@ -157,6 +197,7 @@ The ESP32-S3 fits best for four reasons:
 | Free internal RAM with Wi-Fi running | About 134-274 KB, depending on Wi-Fi buffer settings | [ESP-IDF Wi-Fi performance guide][wifi-perf] |
 | SD raw writes, 4-bit at 40 MHz | About 10 MB/s with 20 KiB multi-block writes in one report, 2.3 MB/s in another | [esp-idf#11628][sd-issue], [esp32-sdcard-msc][sd-msc] |
 | SD raw reads, 4-bit at 40 MHz | 8.4 MB/s. The bus limit is 20 MB/s. | [esp32-sdcard-msc][sd-msc] |
+| SD raw writes and reads, SPI mode at 20 MHz | 1.0 MB/s writes, 1.7 MB/s reads | [esp32-sdcard-msc][sd-msc] |
 | SD writes from a PSRAM or unaligned buffer | Single 512-byte block writes on ESP-IDF 5.2 | [`sdmmc_cmd.c` in ESP-IDF 5.2.2][sdmmc-522] |
 | FAT through ESP-IDF's VFS, classic ESP32 | 0.35-3.7 MB/s writes, depending on block size and alignment | [esp32-sd-card-benchmarks][drorgl] |
 | SHA-1 in hardware | At least 32 MB/s | [ESP-IDF performance targets for the ESP32-S3][perf-s3] |
@@ -518,7 +559,9 @@ clients send full objects instead.
 - A large push writes its bytes to its own pack segments as they arrive, in
   64 KiB DMA writes. The scanner reads from an in-RAM ring buffer while it
   keeps up, and from the copy on the card when it falls behind, so a slow
-  scan never closes the TCP window.
+  scan never closes the TCP window. If the card is slower than Wi-Fi, as in
+  SPI mode, the server stops reading the socket instead, and TCP flow control
+  slows the client.
 
 One large push indexes at a time. Others keep receiving to the card and wait.
 Small pushes don't wait behind a large one, because the index worker handles
