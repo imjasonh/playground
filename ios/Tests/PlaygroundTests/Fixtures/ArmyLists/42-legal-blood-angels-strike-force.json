@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-4",
+    "catalogVersion" : "11e-5",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "blood-angels--assault-brethren",

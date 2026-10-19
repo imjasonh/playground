@@ -1,5 +1,5 @@
 {
-  "version": "11e-4",
+  "version": "11e-5",
   "edition": "11th",
   "source": {
     "pointsSource": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
@@ -11284,9 +11284,7 @@
       "name": "Agamatus Custodians",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Fly",
-        "Mounted"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -11311,7 +11309,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -11321,12 +11319,10 @@
       "keywords": [
         "Faction: Adeptus Custodes",
         "Character",
-        "Epic Hero",
-        "Infantry",
         "Leader"
       ],
       "characterRole": "leader",
-      "epicHero": true,
+      "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
       "legends": false,
@@ -11408,6 +11404,7 @@
       "keywords": [
         "Faction: Adeptus Custodes",
         "Dedicated Transport",
+        "Faction: Anathema Psykana",
         "Transport",
         "Vehicle"
       ],
@@ -11454,13 +11451,13 @@
               "points": 0
             },
             {
-              "id": "adeptus-custodes--anathema-psykana-rhino--6e83-f3e5-e2cf-922e",
-              "name": "Armoured tracks",
+              "id": "adeptus-custodes--anathema-psykana-rhino--ba35-32ec-46d3-c5ea",
+              "name": "Hunter-killer missile",
               "points": 0
             },
             {
-              "id": "adeptus-custodes--anathema-psykana-rhino--a58c-9d13-f5dd-4afa",
-              "name": "Hunter-killer missile",
+              "id": "adeptus-custodes--anathema-psykana-rhino--c027-918a-30eb-305b",
+              "name": "Armoured tracks",
               "points": 0
             }
           ]
@@ -11472,8 +11469,7 @@
       "name": "Aquilon Custodians",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -11498,7 +11494,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -11674,13 +11670,13 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "adeptus-custodes--caladius-grav-tank--dca3-638e-52a2-b1b8",
-              "name": "Armoured hull",
+              "id": "adeptus-custodes--caladius-grav-tank--c44c-df9e-eb4e-66f8",
+              "name": "Twin Iliastus Accelerator Cannon",
               "points": 0
             },
             {
-              "id": "adeptus-custodes--caladius-grav-tank--62a1-1fa7-70b7-614d",
-              "name": "Twin lastrum bolt cannon",
+              "id": "adeptus-custodes--caladius-grav-tank--8aca-dd92-6fc0-f687",
+              "name": "Armoured hull",
               "points": 0
             }
           ]
@@ -11734,21 +11730,7 @@
           "options": [
             {
               "id": "adeptus-custodes--contemptor-achillus-dreadnought--b1eb-9d70-dfc2-208b",
-              "name": "Achillus dreadspear",
-              "points": 0
-            }
-          ]
-        },
-        {
-          "id": "adeptus-custodes--contemptor-achillus-dreadnought--e744-e7ad-f9d4-217f",
-          "name": "Character Upgrade",
-          "min": 0,
-          "max": 1,
-          "defaultOptionID": null,
-          "options": [
-            {
-              "id": "adeptus-custodes--contemptor-achillus-dreadnought--cb63-f563-eecd-6e15",
-              "name": "Character",
+              "name": "Dreadspear",
               "points": 0
             }
           ]
@@ -11802,21 +11784,7 @@
           "options": [
             {
               "id": "adeptus-custodes--contemptor-galatus-dreadnought--a287-990-9f34-9836",
-              "name": "Galatus warblade",
-              "points": 0
-            }
-          ]
-        },
-        {
-          "id": "adeptus-custodes--contemptor-galatus-dreadnought--e744-e7ad-f9d4-217f",
-          "name": "Character Upgrade",
-          "min": 0,
-          "max": 1,
-          "defaultOptionID": null,
-          "options": [
-            {
-              "id": "adeptus-custodes--contemptor-galatus-dreadnought--cb63-f563-eecd-6e15",
-              "name": "Character",
+              "name": "Warblade",
               "points": 0
             }
           ]
@@ -11871,18 +11839,13 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "adeptus-custodes--coronus-grav-carrier--66-f0fd-e679-7c3d",
+              "id": "adeptus-custodes--coronus-grav-carrier--cfaf-17dd-1add-2ac1",
               "name": "Armoured hull",
               "points": 0
             },
             {
-              "id": "adeptus-custodes--coronus-grav-carrier--c515-ed5-b39e-691a",
-              "name": "Twin arachnus blaze cannon",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--coronus-grav-carrier--6fdb-341f-d4a6-3946",
-              "name": "Twin lastrum bolt cannon",
+              "id": "adeptus-custodes--coronus-grav-carrier--2f46-3331-6af1-42c5",
+              "name": "Twin Arachnus Blaze Cannon",
               "points": 0
             }
           ]
@@ -11894,13 +11857,11 @@
       "name": "Custodian Guard",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Battleline",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
-      "battleline": true,
+      "battleline": false,
       "dedicatedTransport": false,
       "legends": false,
       "minModels": 4,
@@ -11929,7 +11890,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 6,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -11937,8 +11898,7 @@
       "name": "Custodian Guard With Adrasite And Pyrithite Spears",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -11968,7 +11928,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -12011,27 +11971,7 @@
       "leaderTo": [],
       "mustAttach": false,
       "maxCopiesOverride": 3,
-      "optionGroups": [
-        {
-          "id": "adeptus-custodes--custodian-wardens--e0fc-e1e9-eb95-5da8",
-          "name": "Custodian Warden w/ Vexilla · Weapon",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "adeptus-custodes--custodian-wardens--9269-d5ba-f2a-c30f",
-          "options": [
-            {
-              "id": "adeptus-custodes--custodian-wardens--9269-d5ba-f2a-c30f",
-              "name": "Guardian Spear",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--custodian-wardens--3b38-fa2c-6bc7-f457",
-              "name": "Castellan Axe",
-              "points": 0
-            }
-          ]
-        }
-      ]
+      "optionGroups": []
     },
     {
       "id": "adeptus-custodes--knight-centura",
@@ -12040,6 +11980,7 @@
       "keywords": [
         "Faction: Adeptus Custodes",
         "Character",
+        "Faction: Anathema Psykana",
         "Infantry",
         "Leader"
       ],
@@ -12084,12 +12025,12 @@
             },
             {
               "id": "adeptus-custodes--knight-centura--93a9-93c6-8eaa-ada4",
-              "name": "Witchseeker Flamer and CCW",
+              "name": "Master-crafted Flamer",
               "points": 0
             },
             {
               "id": "adeptus-custodes--knight-centura--94e9-239c-e46b-34c2",
-              "name": "Master-crafted boltgun and CCW",
+              "name": "Master-crafted boltgun",
               "points": 0
             }
           ]
@@ -12207,13 +12148,8 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "adeptus-custodes--pallas-grav-attack--5645-646-96f-9768",
+              "id": "adeptus-custodes--pallas-grav-attack--5158-1b42-e4d3-8a33",
               "name": "Armoured hull",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--pallas-grav-attack--2693-63bf-611f-37fe",
-              "name": "Twin arachnus blaze cannon",
               "points": 0
             }
           ]
@@ -12225,8 +12161,7 @@
       "name": "Prosecutors",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12255,7 +12190,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -12263,8 +12198,7 @@
       "name": "Sagittarum Custodians",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12287,7 +12221,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -12333,31 +12267,26 @@
           "name": "Wargear",
           "min": 1,
           "max": 1,
-          "defaultOptionID": "adeptus-custodes--shield-captain--53df-e02f-5f3e-6a1d",
+          "defaultOptionID": "adeptus-custodes--shield-captain--661f-4fd-3300-5e9b",
           "options": [
             {
-              "id": "adeptus-custodes--shield-captain--53df-e02f-5f3e-6a1d",
-              "name": "Guardian Spear",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--shield-captain--540a-65ba-1752-f217",
-              "name": "Castellan Axe",
-              "points": 0
-            },
-            {
               "id": "adeptus-custodes--shield-captain--5267-88a7-c874-ba99",
-              "name": "Sentinel Blade & Praesidium Shield",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--shield-captain--9480-c9d0-bef6-c3a4",
-              "name": "Sentinel Blade",
-              "points": 0
+              "name": "Paragon Blade & Praesidium Shield",
+              "points": 25
             },
             {
               "id": "adeptus-custodes--shield-captain--661f-4fd-3300-5e9b",
               "name": "Pyrithite Spear & Praesidium shield",
+              "points": 25
+            },
+            {
+              "id": "adeptus-custodes--shield-captain--2197-b397-779f-0626",
+              "name": "Guardian Spear",
+              "points": 0
+            },
+            {
+              "id": "adeptus-custodes--shield-captain--2a2a-3ef6-03d4-88d5",
+              "name": "Castellan Axe",
               "points": 0
             }
           ]
@@ -12515,27 +12444,8 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "adeptus-custodes--telemon-heavy-dreadnought--80e0-3d7a-702a-a745",
-              "name": "Armoured feet",
-              "points": 0
-            },
-            {
               "id": "adeptus-custodes--telemon-heavy-dreadnought--1189-dcd8-e3ed-7837",
               "name": "Spiculus bolt launcher",
-              "points": 0
-            }
-          ]
-        },
-        {
-          "id": "adeptus-custodes--telemon-heavy-dreadnought--e744-e7ad-f9d4-217f",
-          "name": "Character Upgrade",
-          "min": 0,
-          "max": 1,
-          "defaultOptionID": null,
-          "options": [
-            {
-              "id": "adeptus-custodes--telemon-heavy-dreadnought--cb63-f563-eecd-6e15",
-              "name": "Character",
               "points": 0
             }
           ]
@@ -12589,12 +12499,10 @@
       "keywords": [
         "Faction: Adeptus Custodes",
         "Character",
-        "Epic Hero",
-        "Infantry",
         "Leader"
       ],
       "characterRole": "leader",
-      "epicHero": true,
+      "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
       "legends": false,
@@ -12627,9 +12535,7 @@
       "name": "Venatari Custodians",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Fly",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12662,7 +12568,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -12670,8 +12576,7 @@
       "name": "Venerable Contemptor Dreadnought",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Vehicle"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12701,51 +12606,15 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
-      "optionGroups": [
-        {
-          "id": "adeptus-custodes--venerable-contemptor-dreadnought--e744-e7ad-f9d4-217f",
-          "name": "Character Upgrade",
-          "min": 0,
-          "max": 1,
-          "defaultOptionID": null,
-          "options": [
-            {
-              "id": "adeptus-custodes--venerable-contemptor-dreadnought--cb63-f563-eecd-6e15",
-              "name": "Character",
-              "points": 0
-            }
-          ]
-        },
-        {
-          "id": "adeptus-custodes--venerable-contemptor-dreadnought--f869-c5f5-f929-8502",
-          "name": "Wargear",
-          "min": 0,
-          "max": 1,
-          "defaultOptionID": null,
-          "options": [
-            {
-              "id": "adeptus-custodes--venerable-contemptor-dreadnought--33a3-7a7b-c766-bf09",
-              "name": "Combi-bolter",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--venerable-contemptor-dreadnought--355c-3441-af3d-849",
-              "name": "Contemptor combat weapon",
-              "points": 0
-            }
-          ]
-        }
-      ]
+      "maxCopiesOverride": null,
+      "optionGroups": []
     },
     {
       "id": "adeptus-custodes--venerable-land-raider",
       "name": "Venerable Land Raider",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Transport",
-        "Vehicle"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12775,43 +12644,8 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
-      "optionGroups": [
-        {
-          "id": "adeptus-custodes--venerable-land-raider--61c5-72aa-c6e7-978c",
-          "name": "Wargear",
-          "min": 0,
-          "max": 1,
-          "defaultOptionID": null,
-          "options": [
-            {
-              "id": "adeptus-custodes--venerable-land-raider--abaf-ea8a-f3da-2cbc",
-              "name": "Armoured tracks",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--venerable-land-raider--ccdc-5040-ff10-83b8",
-              "name": "Godhammer lascannon",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--venerable-land-raider--e8a1-2a4e-fc19-905c",
-              "name": "Storm bolter",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--venerable-land-raider--fa54-868f-d45c-ec75",
-              "name": "Twin heavy bolter",
-              "points": 0
-            },
-            {
-              "id": "adeptus-custodes--venerable-land-raider--a220-a212-161a-c4a0",
-              "name": "Hunter-killer missile",
-              "points": 0
-            }
-          ]
-        }
-      ]
+      "maxCopiesOverride": null,
+      "optionGroups": []
     },
     {
       "id": "adeptus-custodes--vertus-praetors",
@@ -12854,15 +12688,34 @@
       "leaderTo": [],
       "mustAttach": false,
       "maxCopiesOverride": 3,
-      "optionGroups": []
+      "optionGroups": [
+        {
+          "id": "adeptus-custodes--vertus-praetors--f1f0-042e-18c0-4e39",
+          "name": "Vertus Praetor · Unit weapons",
+          "min": 1,
+          "max": 1,
+          "defaultOptionID": "adeptus-custodes--vertus-praetors--d5b1-b243-92cb-e4fe",
+          "options": [
+            {
+              "id": "adeptus-custodes--vertus-praetors--1d99-4473-2f61-80e7",
+              "name": "Hurricane bolter",
+              "points": 0
+            },
+            {
+              "id": "adeptus-custodes--vertus-praetors--d5b1-b243-92cb-e4fe",
+              "name": "Salvo launcher",
+              "points": 0
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "adeptus-custodes--vigilators",
       "name": "Vigilators",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12891,7 +12744,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -12899,8 +12752,7 @@
       "name": "Witchseekers",
       "factionID": "adeptus-custodes",
       "keywords": [
-        "Faction: Adeptus Custodes",
-        "Infantry"
+        "Faction: Adeptus Custodes"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -12929,7 +12781,7 @@
       ],
       "leaderTo": [],
       "mustAttach": false,
-      "maxCopiesOverride": 3,
+      "maxCopiesOverride": null,
       "optionGroups": []
     },
     {
@@ -28250,11 +28102,6 @@
               "points": 0
             },
             {
-              "id": "black-templars--gladiator-lancer--c95f-71df-6d90-f1dc",
-              "name": "Defensive Array",
-              "points": 0
-            },
-            {
               "id": "black-templars--gladiator-lancer--261-d90b-20a4-c8e4",
               "name": "Armoured Hull",
               "points": 0
@@ -28263,6 +28110,11 @@
               "id": "black-templars--gladiator-lancer--8d43-c098-fbb7-40a2",
               "name": "Multi-melta",
               "points": 10
+            },
+            {
+              "id": "black-templars--gladiator-lancer--05a6-726b-0c58-ecf6",
+              "name": "Defensive Array",
+              "points": 0
             }
           ]
         }
@@ -29478,20 +29330,25 @@
       "maxCopiesOverride": 3,
       "optionGroups": [
         {
-          "id": "black-templars--land-speeder--a516-0086-9ffb-0692",
-          "name": "Weapon Option",
-          "min": 1,
+          "id": "black-templars--land-speeder--452f-f88b-d8be-48fc",
+          "name": "Wargear",
+          "min": 0,
           "max": 1,
-          "defaultOptionID": "black-templars--land-speeder--b8c5-61e3-711f-ea8f",
+          "defaultOptionID": null,
           "options": [
             {
-              "id": "black-templars--land-speeder--f2e6-d439-781e-982b",
-              "name": "Pyrecannon",
+              "id": "black-templars--land-speeder--5ae0-0712-b3f5-6492",
+              "name": "Stormfury Missile Launcher",
               "points": 0
             },
             {
-              "id": "black-templars--land-speeder--b8c5-61e3-711f-ea8f",
-              "name": "Onslaught gatling cannon",
+              "id": "black-templars--land-speeder--9851-e299-31ca-8e78",
+              "name": "Armoured Impact",
+              "points": 0
+            },
+            {
+              "id": "black-templars--land-speeder--e630-6fb2-284d-ace8",
+              "name": "Multi-melta",
               "points": 0
             }
           ]
@@ -29540,7 +29397,7 @@
           "options": [
             {
               "id": "black-templars--lieutenant--a1f2-12d9-5a4c-a524",
-              "name": "Neo-volkite pistol & Master-crafted Power Sword",
+              "name": "Neo-volkite pistol & Master-crafted Power Weapon",
               "points": 0
             },
             {
@@ -30531,25 +30388,6 @@
       "mustAttach": false,
       "maxCopiesOverride": 3,
       "optionGroups": [
-        {
-          "id": "black-templars--sternguard-veteran-squad--5ff5-aadc-6bc4-b2d8",
-          "name": "Sternguard Veteran Sergeant · Weapon Option",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "black-templars--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-          "options": [
-            {
-              "id": "black-templars--sternguard-veteran-squad--4dcf-36a1-82dd-7d64",
-              "name": "Combi-weapon",
-              "points": 0
-            },
-            {
-              "id": "black-templars--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-              "name": "Artificer Firearm",
-              "points": 0
-            }
-          ]
-        },
         {
           "id": "black-templars--sternguard-veteran-squad--6cfb-5b5e-5441-a1af",
           "name": "Sternguard Veteran Sergeant · Melee Option",
@@ -35637,20 +35475,25 @@
       "maxCopiesOverride": 3,
       "optionGroups": [
         {
-          "id": "blood-angels--land-speeder--a516-0086-9ffb-0692",
-          "name": "Weapon Option",
-          "min": 1,
+          "id": "blood-angels--land-speeder--452f-f88b-d8be-48fc",
+          "name": "Wargear",
+          "min": 0,
           "max": 1,
-          "defaultOptionID": "blood-angels--land-speeder--b8c5-61e3-711f-ea8f",
+          "defaultOptionID": null,
           "options": [
             {
-              "id": "blood-angels--land-speeder--f2e6-d439-781e-982b",
-              "name": "Pyrecannon",
+              "id": "blood-angels--land-speeder--5ae0-0712-b3f5-6492",
+              "name": "Stormfury Missile Launcher",
               "points": 0
             },
             {
-              "id": "blood-angels--land-speeder--b8c5-61e3-711f-ea8f",
-              "name": "Onslaught gatling cannon",
+              "id": "blood-angels--land-speeder--9851-e299-31ca-8e78",
+              "name": "Armoured Impact",
+              "points": 0
+            },
+            {
+              "id": "blood-angels--land-speeder--e630-6fb2-284d-ace8",
+              "name": "Multi-melta",
               "points": 0
             }
           ]
@@ -35969,7 +35812,7 @@
           "options": [
             {
               "id": "blood-angels--lieutenant--a1f2-12d9-5a4c-a524",
-              "name": "Neo-volkite pistol & Master-crafted Power Sword",
+              "name": "Neo-volkite pistol & Master-crafted Power Weapon",
               "points": 0
             },
             {
@@ -37027,25 +36870,6 @@
       "mustAttach": false,
       "maxCopiesOverride": 3,
       "optionGroups": [
-        {
-          "id": "blood-angels--sternguard-veteran-squad--5ff5-aadc-6bc4-b2d8",
-          "name": "Sternguard Veteran Sergeant · Weapon Option",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "blood-angels--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-          "options": [
-            {
-              "id": "blood-angels--sternguard-veteran-squad--4dcf-36a1-82dd-7d64",
-              "name": "Combi-weapon",
-              "points": 0
-            },
-            {
-              "id": "blood-angels--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-              "name": "Artificer Firearm",
-              "points": 0
-            }
-          ]
-        },
         {
           "id": "blood-angels--sternguard-veteran-squad--6cfb-5b5e-5441-a1af",
           "name": "Sternguard Veteran Sergeant · Melee Option",
@@ -51464,20 +51288,25 @@
       "maxCopiesOverride": 3,
       "optionGroups": [
         {
-          "id": "dark-angels--land-speeder--a516-0086-9ffb-0692",
-          "name": "Weapon Option",
-          "min": 1,
+          "id": "dark-angels--land-speeder--452f-f88b-d8be-48fc",
+          "name": "Wargear",
+          "min": 0,
           "max": 1,
-          "defaultOptionID": "dark-angels--land-speeder--b8c5-61e3-711f-ea8f",
+          "defaultOptionID": null,
           "options": [
             {
-              "id": "dark-angels--land-speeder--f2e6-d439-781e-982b",
-              "name": "Pyrecannon",
+              "id": "dark-angels--land-speeder--5ae0-0712-b3f5-6492",
+              "name": "Stormfury Missile Launcher",
               "points": 0
             },
             {
-              "id": "dark-angels--land-speeder--b8c5-61e3-711f-ea8f",
-              "name": "Onslaught gatling cannon",
+              "id": "dark-angels--land-speeder--9851-e299-31ca-8e78",
+              "name": "Armoured Impact",
+              "points": 0
+            },
+            {
+              "id": "dark-angels--land-speeder--e630-6fb2-284d-ace8",
+              "name": "Multi-melta",
               "points": 0
             }
           ]
@@ -51835,7 +51664,7 @@
           "options": [
             {
               "id": "dark-angels--lieutenant--a1f2-12d9-5a4c-a524",
-              "name": "Neo-volkite pistol & Master-crafted Power Sword",
+              "name": "Neo-volkite pistol & Master-crafted Power Weapon",
               "points": 0
             },
             {
@@ -52061,13 +51890,13 @@
               "points": 0
             },
             {
-              "id": "dark-angels--nephilim-jetfighter--1354-db5e-30ec-f248",
-              "name": "Armoured Hull",
+              "id": "dark-angels--nephilim-jetfighter--4c0b-95dd-62ef-dc02",
+              "name": "Avenger mega bolter",
               "points": 0
             },
             {
-              "id": "dark-angels--nephilim-jetfighter--69db-958d-3081-1c54",
-              "name": "Twin heavy bolter",
+              "id": "dark-angels--nephilim-jetfighter--1354-db5e-30ec-f248",
+              "name": "Armoured Hull",
               "points": 0
             }
           ]
@@ -53134,25 +52963,6 @@
       "mustAttach": false,
       "maxCopiesOverride": 3,
       "optionGroups": [
-        {
-          "id": "dark-angels--sternguard-veteran-squad--5ff5-aadc-6bc4-b2d8",
-          "name": "Sternguard Veteran Sergeant · Weapon Option",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "dark-angels--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-          "options": [
-            {
-              "id": "dark-angels--sternguard-veteran-squad--4dcf-36a1-82dd-7d64",
-              "name": "Combi-weapon",
-              "points": 0
-            },
-            {
-              "id": "dark-angels--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-              "name": "Artificer Firearm",
-              "points": 0
-            }
-          ]
-        },
         {
           "id": "dark-angels--sternguard-veteran-squad--6cfb-5b5e-5441-a1af",
           "name": "Sternguard Veteran Sergeant · Melee Option",
@@ -57914,7 +57724,7 @@
           "options": [
             {
               "id": "deathwatch--deathwatch-terminator-squad--8259-a28d-949-b4fa",
-              "name": "Assault Cannon & Power fist",
+              "name": "Assault Cannon",
               "points": 0
             },
             {
@@ -59720,20 +59530,25 @@
       "maxCopiesOverride": 3,
       "optionGroups": [
         {
-          "id": "deathwatch--land-speeder--a516-0086-9ffb-0692",
-          "name": "Weapon Option",
-          "min": 1,
+          "id": "deathwatch--land-speeder--452f-f88b-d8be-48fc",
+          "name": "Wargear",
+          "min": 0,
           "max": 1,
-          "defaultOptionID": "deathwatch--land-speeder--b8c5-61e3-711f-ea8f",
+          "defaultOptionID": null,
           "options": [
             {
-              "id": "deathwatch--land-speeder--f2e6-d439-781e-982b",
-              "name": "Pyrecannon",
+              "id": "deathwatch--land-speeder--5ae0-0712-b3f5-6492",
+              "name": "Stormfury Missile Launcher",
               "points": 0
             },
             {
-              "id": "deathwatch--land-speeder--b8c5-61e3-711f-ea8f",
-              "name": "Onslaught gatling cannon",
+              "id": "deathwatch--land-speeder--9851-e299-31ca-8e78",
+              "name": "Armoured Impact",
+              "points": 0
+            },
+            {
+              "id": "deathwatch--land-speeder--e630-6fb2-284d-ace8",
+              "name": "Multi-melta",
               "points": 0
             }
           ]
@@ -59984,7 +59799,7 @@
           "options": [
             {
               "id": "deathwatch--lieutenant--a1f2-12d9-5a4c-a524",
-              "name": "Neo-volkite pistol & Master-crafted Power Sword",
+              "name": "Neo-volkite pistol & Master-crafted Power Weapon",
               "points": 0
             },
             {
@@ -60854,25 +60669,6 @@
       "mustAttach": false,
       "maxCopiesOverride": 3,
       "optionGroups": [
-        {
-          "id": "deathwatch--sternguard-veteran-squad--5ff5-aadc-6bc4-b2d8",
-          "name": "Sternguard Veteran Sergeant · Weapon Option",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "deathwatch--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-          "options": [
-            {
-              "id": "deathwatch--sternguard-veteran-squad--4dcf-36a1-82dd-7d64",
-              "name": "Combi-weapon",
-              "points": 0
-            },
-            {
-              "id": "deathwatch--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-              "name": "Artificer Firearm",
-              "points": 0
-            }
-          ]
-        },
         {
           "id": "deathwatch--sternguard-veteran-squad--6cfb-5b5e-5441-a1af",
           "name": "Sternguard Veteran Sergeant · Melee Option",
@@ -62935,12 +62731,12 @@
               "points": 0
             },
             {
-              "id": "drukhari--reavers--b3f7-b615-91c3-4259",
+              "id": "drukhari--reavers--d350-dd87-2148-a98f",
               "name": "Blaster",
               "points": 0
             },
             {
-              "id": "drukhari--reavers--6f83-c6e1-22e8-f954",
+              "id": "drukhari--reavers--f63d-336d-c76d-52df",
               "name": "Heat Lance",
               "points": 0
             }
@@ -68348,52 +68144,7 @@
       "leaderTo": [],
       "mustAttach": false,
       "maxCopiesOverride": null,
-      "optionGroups": [
-        {
-          "id": "imperial-agents--deathwatch-kill-team--4c9f-c0f3-4112-2adf",
-          "name": "Watch Sergeant · Wargear",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "imperial-agents--deathwatch-kill-team--a55a-63c0-e252-524e",
-          "options": [
-            {
-              "id": "imperial-agents--deathwatch-kill-team--a55a-63c0-e252-524e",
-              "name": "Boltgun and power weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--618d-3f67-a4f7-20f6",
-              "name": "Deathwatch shotgun and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--9f21-dfa9-4120-2498",
-              "name": "Frag cannon and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--2960-b388-5313-5eb8",
-              "name": "Infernus heavy bolter and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--0b32-454c-ebdc-bff1",
-              "name": "Stalker-pattern boltgun and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--1275-1573-26db-0967",
-              "name": "Black Shield blades",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--ae30-1c49-2042-29c2",
-              "name": "Deathwatch thunder hammer",
-              "points": 0
-            }
-          ]
-        }
-      ]
+      "optionGroups": []
     },
     {
       "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword",
@@ -68430,52 +68181,7 @@
       "leaderTo": [],
       "mustAttach": false,
       "maxCopiesOverride": null,
-      "optionGroups": [
-        {
-          "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--4c9f-c0f3-4112-2adf",
-          "name": "Watch Sergeant · Wargear",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--a55a-63c0-e252-524e",
-          "options": [
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--a55a-63c0-e252-524e",
-              "name": "Boltgun and power weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--618d-3f67-a4f7-20f6",
-              "name": "Deathwatch shotgun and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--9f21-dfa9-4120-2498",
-              "name": "Frag cannon and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--2960-b388-5313-5eb8",
-              "name": "Infernus heavy bolter and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--0b32-454c-ebdc-bff1",
-              "name": "Stalker-pattern boltgun and close combat weapon",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--1275-1573-26db-0967",
-              "name": "Black Shield blades",
-              "points": 0
-            },
-            {
-              "id": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword--ae30-1c49-2042-29c2",
-              "name": "Deathwatch thunder hammer",
-              "points": 0
-            }
-          ]
-        }
-      ]
+      "optionGroups": []
     },
     {
       "id": "imperial-agents--deathwatch-terminator-squad",
@@ -84277,20 +83983,25 @@
       "maxCopiesOverride": 3,
       "optionGroups": [
         {
-          "id": "space-marines--land-speeder--a516-0086-9ffb-0692",
-          "name": "Weapon Option",
-          "min": 1,
+          "id": "space-marines--land-speeder--452f-f88b-d8be-48fc",
+          "name": "Wargear",
+          "min": 0,
           "max": 1,
-          "defaultOptionID": "space-marines--land-speeder--b8c5-61e3-711f-ea8f",
+          "defaultOptionID": null,
           "options": [
             {
-              "id": "space-marines--land-speeder--f2e6-d439-781e-982b",
-              "name": "Pyrecannon",
+              "id": "space-marines--land-speeder--5ae0-0712-b3f5-6492",
+              "name": "Stormfury Missile Launcher",
               "points": 0
             },
             {
-              "id": "space-marines--land-speeder--b8c5-61e3-711f-ea8f",
-              "name": "Onslaught gatling cannon",
+              "id": "space-marines--land-speeder--9851-e299-31ca-8e78",
+              "name": "Armoured Impact",
+              "points": 0
+            },
+            {
+              "id": "space-marines--land-speeder--e630-6fb2-284d-ace8",
+              "name": "Multi-melta",
               "points": 0
             }
           ]
@@ -84539,7 +84250,7 @@
           "options": [
             {
               "id": "space-marines--lieutenant--a1f2-12d9-5a4c-a524",
-              "name": "Neo-volkite pistol & Master-crafted Power Sword",
+              "name": "Neo-volkite pistol & Master-crafted Power Weapon",
               "points": 0
             },
             {
@@ -85541,25 +85252,6 @@
       "mustAttach": false,
       "maxCopiesOverride": 3,
       "optionGroups": [
-        {
-          "id": "space-marines--sternguard-veteran-squad--5ff5-aadc-6bc4-b2d8",
-          "name": "Sternguard Veteran Sergeant · Weapon Option",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "space-marines--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-          "options": [
-            {
-              "id": "space-marines--sternguard-veteran-squad--4dcf-36a1-82dd-7d64",
-              "name": "Combi-weapon",
-              "points": 0
-            },
-            {
-              "id": "space-marines--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-              "name": "Artificer Firearm",
-              "points": 0
-            }
-          ]
-        },
         {
           "id": "space-marines--sternguard-veteran-squad--6cfb-5b5e-5441-a1af",
           "name": "Sternguard Veteran Sergeant · Melee Option",
@@ -90353,20 +90045,25 @@
       "maxCopiesOverride": 3,
       "optionGroups": [
         {
-          "id": "space-wolves--land-speeder--a516-0086-9ffb-0692",
-          "name": "Weapon Option",
-          "min": 1,
+          "id": "space-wolves--land-speeder--452f-f88b-d8be-48fc",
+          "name": "Wargear",
+          "min": 0,
           "max": 1,
-          "defaultOptionID": "space-wolves--land-speeder--b8c5-61e3-711f-ea8f",
+          "defaultOptionID": null,
           "options": [
             {
-              "id": "space-wolves--land-speeder--f2e6-d439-781e-982b",
-              "name": "Pyrecannon",
+              "id": "space-wolves--land-speeder--5ae0-0712-b3f5-6492",
+              "name": "Stormfury Missile Launcher",
               "points": 0
             },
             {
-              "id": "space-wolves--land-speeder--b8c5-61e3-711f-ea8f",
-              "name": "Onslaught gatling cannon",
+              "id": "space-wolves--land-speeder--9851-e299-31ca-8e78",
+              "name": "Armoured Impact",
+              "points": 0
+            },
+            {
+              "id": "space-wolves--land-speeder--e630-6fb2-284d-ace8",
+              "name": "Multi-melta",
               "points": 0
             }
           ]
@@ -90617,7 +90314,7 @@
           "options": [
             {
               "id": "space-wolves--lieutenant--a1f2-12d9-5a4c-a524",
-              "name": "Neo-volkite pistol & Master-crafted Power Sword",
+              "name": "Neo-volkite pistol & Master-crafted Power Weapon",
               "points": 0
             },
             {
@@ -91831,25 +91528,6 @@
       "mustAttach": false,
       "maxCopiesOverride": 3,
       "optionGroups": [
-        {
-          "id": "space-wolves--sternguard-veteran-squad--5ff5-aadc-6bc4-b2d8",
-          "name": "Sternguard Veteran Sergeant · Weapon Option",
-          "min": 1,
-          "max": 1,
-          "defaultOptionID": "space-wolves--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-          "options": [
-            {
-              "id": "space-wolves--sternguard-veteran-squad--4dcf-36a1-82dd-7d64",
-              "name": "Combi-weapon",
-              "points": 0
-            },
-            {
-              "id": "space-wolves--sternguard-veteran-squad--39c3-1657-46c8-5d87",
-              "name": "Artificer Firearm",
-              "points": 0
-            }
-          ]
-        },
         {
           "id": "space-wolves--sternguard-veteran-squad--6cfb-5b5e-5441-a1af",
           "name": "Sternguard Veteran Sergeant · Melee Option",
