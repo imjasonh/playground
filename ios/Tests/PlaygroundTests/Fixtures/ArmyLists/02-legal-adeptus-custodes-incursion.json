@@ -2,19 +2,19 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-4",
+    "catalogVersion" : "11e-5",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "adeptus-custodes--null-maiden-vigil"
     ],
     "factionID" : "adeptus-custodes",
-    "id" : "D81C413C-AB77-4BEE-B939-79CE6B548795",
-    "name" : "Adeptus Custodes Incursion 995pts",
+    "id" : "CF872F80-57FB-4AC7-A490-359C577AB59C",
+    "name" : "Adeptus Custodes Incursion 975pts",
     "notes" : "stress seed=1 attach=true enh=true",
     "units" : [
       {
-        "attachedToUnitID" : "1AD4373E-7256-4F5E-932E-2BCDFAB86E35",
-        "datasheetID" : "adeptus-custodes--knight-centura",
+        "attachedToUnitID" : "932E2BCD-FAB8-4E35-981C-413CAB779BEE",
+        "datasheetID" : "adeptus-custodes--aleya",
         "enhancementIDs" : [
           "adeptus-custodes--null-maiden-vigil--huntress-eye"
         ],
@@ -25,23 +25,12 @@
         ]
       },
       {
-        "datasheetID" : "adeptus-custodes--anathema-psykana-rhino",
+        "datasheetID" : "adeptus-custodes--venatari-custodians",
         "enhancementIDs" : [
 
         ],
-        "id" : "0028A58A-6835-4691-8108-E0952802D0E0",
-        "models" : 1,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "adeptus-custodes--orion-assault-dropship",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "2EE7EE70-6E9D-43C4-9775-749434993F21",
-        "models" : 1,
+        "id" : "5B9F14A8-42BE-4AAB-8028-A58A68355691",
+        "models" : 3,
         "optionIDs" : [
 
         ]
@@ -51,19 +40,52 @@
         "enhancementIDs" : [
 
         ],
-        "id" : "0CFEF1D8-797F-4539-9D9C-8D9C6B0F7141",
+        "id" : "0108E095-2802-40E0-AEE7-EE706E9D13C4",
         "models" : 2,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "adeptus-custodes--prosecutors",
+        "datasheetID" : "adeptus-custodes--custodian-guard-with-adrasite-and-pyrithite-spears",
         "enhancementIDs" : [
 
         ],
-        "id" : "1AD4373E-7256-4F5E-932E-2BCDFAB86E35",
+        "id" : "17757494-3499-4F21-8CFE-F1D8797F3539",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--contemptor-achillus-dreadnought",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "1D9C8D9C-6B0F-4141-9AD4-373E72567F5E",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--witchseekers",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "932E2BCD-FAB8-4E35-981C-413CAB779BEE",
         "models" : 4,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--coronus-grav-carrier",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "F93979CE-6B54-4795-86B7-FE18EB001056",
+        "models" : 1,
         "optionIDs" : [
 
         ]
