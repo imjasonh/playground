@@ -58,9 +58,11 @@ requests must keep landing as merge commits.
 
 ## Testing
 
-CI runs the packages that upstream's CI unit-tests. Only the root package
-gets the `vfs` build tag, because `cmd/litestream` doesn't link SQLite, which
-the VFS needs:
+CI checks this directory with `gofmt`, as it does every Go module. Upstream's
+CI already enforces `goimports`, so upstream's code passes, and patches must
+pass too. CI then runs the packages that upstream's CI unit-tests. Only the
+root package gets the `vfs` build tag, because `cmd/litestream` doesn't link
+SQLite, which the VFS needs:
 
 ```bash
 go test -race -count=1 -tags vfs .

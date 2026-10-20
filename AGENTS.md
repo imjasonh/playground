@@ -153,11 +153,12 @@ with `git subtree`, plus the patches that `litestream/PATCHES.md` lists. It
 keeps upstream's module path, and `cloudrun-sqlite` builds against it with
 `replace github.com/benbjohnson/litestream => ../litestream`. Change it only
 for patches meant for upstream: one commit per patch, with a `litestream:`
-subject and a row in `PATCHES.md`. Don't restyle it. pasta skips it, the Go
-dependency update leaves its `go.mod` at upstream's versions, and
-`update-litestream.yml` pulls upstream every night. `git subtree` finds the
-last import through merge commits, so pull requests must keep landing as
-merge commits.
+subject and a row in `PATCHES.md`. Don't restyle it. pasta skips it; the
+`gofmt` check still covers it, which upstream's own `goimports` check already
+satisfies. The Go dependency update leaves its `go.mod` at upstream's
+versions, and `update-litestream.yml` pulls upstream every night.
+`git subtree` finds the last import through merge commits, so pull requests
+must keep landing as merge commits.
 
 ### Rust apps
 
