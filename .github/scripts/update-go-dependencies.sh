@@ -41,6 +41,13 @@ if [ "${#modules[@]}" -eq 0 ]; then
 fi
 
 for module in "${modules[@]}"; do
+  if [ "$module" = "litestream" ]; then
+    # The fork keeps upstream's dependency versions, so a later pull from
+    # upstream merges cleanly. update-litestream.yml updates it instead.
+    echo "- \`litestream\`: skipped; update-litestream.yml pulls upstream" >> "$GITHUB_STEP_SUMMARY"
+    continue
+  fi
+
   echo "::group::Update and verify ${module}"
 
   if (

@@ -14,6 +14,8 @@ skip: [
 	// XCTest suites force-unwrap fixtures constantly.
 	"PlaygroundTests",
 	"PlaygroundUITests",
+	// Fork of benbjohnson/litestream. Keep it diffable against upstream.
+	"litestream",
 ]
 
 // XcodeGen uses YES/NO for build settings. yaml_truthy would rewrite

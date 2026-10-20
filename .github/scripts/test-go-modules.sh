@@ -63,6 +63,10 @@ for module in "${modules[@]}"; do
       # -count=1: the end-to-end tests run examples with go run, and the test
       # cache doesn't track the files that a subprocess reads.
       KUBEBUILDER_ASSETS="$kube_assets" go test -race -v -count=1 ./...
+    elif [ "$module" = "litestream" ]; then
+      # The Litestream fork runs the packages that upstream's CI unit-tests,
+      # with the build tag that its VFS tests need.
+      go test -race -v -count=1 -tags vfs . ./internal ./abs ./file ./gs ./nats ./s3 ./sftp ./cmd/litestream
     else
       go test -race -v ./...
     fi
