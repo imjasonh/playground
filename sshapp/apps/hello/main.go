@@ -15,6 +15,7 @@ import (
 	"charm.land/ssh"
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/logging"
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 )
@@ -28,8 +29,7 @@ var env = envconfig.MustProcess(context.Background(), &struct {
 func main() {
 	srv, err := newServer(env.Addr, env.HostKey, env.HostKeyPath)
 	if err != nil {
-		slog.Error("create server", "error", err)
-		os.Exit(1)
+		clog.Fatal("create server", "error", err)
 	}
 
 	done := make(chan os.Signal, 1)
@@ -47,8 +47,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-		slog.Error("shutdown", "error", err)
-		os.Exit(1)
+		clog.Fatal("shutdown", "error", err)
 	}
 }
 

@@ -10,10 +10,11 @@
 // those names are also testing.T and the standard log package, and
 // this checker has no types.
 //
-// clog.Info, clog.Warn, clog.Error, clog.Debug, clog.Fatal, and
-// clog.With call the default logger. That is slog. Keep clog for a
-// logger stored on a context: clog.FromContext, clog.WithLogger, and
-// the Context methods.
+// clog.Info, clog.Warn, clog.Error, clog.Debug, and clog.With call
+// the default logger. That is slog. Keep clog.Fatal: slog has no
+// equivalent, and Fatal logs then exits. Keep clog for a logger
+// stored on a context: clog.FromContext, clog.WithLogger, and the
+// Context methods.
 //
 // gcp.NewHandler builds the Cloud Logging handler itself. Blank-import
 // github.com/chainguard-dev/clog/gcp/init instead. Which programs run
@@ -115,8 +116,8 @@ go_clog: schema.#Analyzer & {
 					}
 				}
 				where: [
-					{op: "matches", args: ["@fn", "^(Info|Warn|Error|Debug|Fatal|With)$"]},
-					{op: "matches", args: ["@fnexpr", "^clog\\.(Info|Warn|Error|Debug|Fatal|With)$"]},
+					{op: "matches", args: ["@fn", "^(Info|Warn|Error|Debug|With)$"]},
+					{op: "matches", args: ["@fnexpr", "^clog\\.(Info|Warn|Error|Debug|With)$"]},
 				]
 			}
 

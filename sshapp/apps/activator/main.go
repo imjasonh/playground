@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 
@@ -23,20 +24,17 @@ import (
 func main() {
 	cfg, err := configFromEnv()
 	if err != nil {
-		slog.Error("config", "error", err)
-		os.Exit(1)
+		clog.Fatal("config", "error", err)
 	}
 
 	backend, err := scaler.NewK8s(cfg.K8sConfig)
 	if err != nil {
-		slog.Error("kubernetes client", "error", err)
-		os.Exit(1)
+		clog.Fatal("kubernetes client", "error", err)
 	}
 
 	ln, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
-		slog.Error("listen", "error", err)
-		os.Exit(1)
+		clog.Fatal("listen", "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -56,8 +54,7 @@ func main() {
 		"idle_after", cfg.IdleAfter.String(),
 	)
 	if err := srv.Serve(ctx, ln); err != nil && !errors.Is(err, net.ErrClosed) {
-		slog.Error("serve", "error", err)
-		os.Exit(1)
+		clog.Fatal("serve", "error", err)
 	}
 }
 

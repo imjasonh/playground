@@ -23,6 +23,7 @@ import (
 	"charm.land/ssh"
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/logging"
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 	gossh "golang.org/x/crypto/ssh"
@@ -36,8 +37,7 @@ import (
 func main() {
 	cfg, err := muxConfigFromEnv()
 	if err != nil {
-		slog.Error("config", "error", err)
-		os.Exit(1)
+		clog.Fatal("config", "error", err)
 	}
 
 	names := make([]string, 0, len(cfg.Apps))
@@ -62,8 +62,7 @@ func main() {
 
 	signer, err := newEphemeralSigner()
 	if err != nil {
-		slog.Error("backend client key", "error", err)
-		os.Exit(1)
+		clog.Fatal("backend client key", "error", err)
 	}
 
 	opts := []ssh.Option{
@@ -85,8 +84,7 @@ func main() {
 
 	srv, err := wish.NewServer(opts...)
 	if err != nil {
-		slog.Error("create server", "error", err)
-		os.Exit(1)
+		clog.Fatal("create server", "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

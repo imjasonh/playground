@@ -22,6 +22,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 )
 
 func main() {
@@ -29,13 +31,11 @@ func main() {
 	dir := flag.String("dir", "", "directory that holds the module versions")
 	flag.Parse()
 	if *dir == "" {
-		slog.Error("set -dir")
-		os.Exit(1)
+		clog.Fatal("set -dir")
 	}
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
-		slog.Error("listen", "error", err)
-		os.Exit(1)
+		clog.Fatal("listen", "error", err)
 	}
 	slog.Info("serving", "dir", *dir, "addr", ln.Addr())
 	srv := &http.Server{
@@ -44,8 +44,7 @@ func main() {
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	slog.Error("serve", "error", srv.Serve(ln))
-	os.Exit(1)
+	clog.Fatal("serve", "error", srv.Serve(ln))
 }
 
 // serve answers a module proxy request, and returns the status.

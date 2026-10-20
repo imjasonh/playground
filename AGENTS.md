@@ -680,7 +680,9 @@ bundle exec fastlane test
   is for a logger stored on a `context.Context`: `clog.WithLogger` to
   store it, `clog.FromContext` or the `Context` methods to read it.
   `clog.Info` and the other package-level calls only reach the default
-  logger, so use `slog` there. Do not call clog's printf-style methods
+  logger, so use `slog` there. `clog.Fatal` is the exception: `slog`
+  has no equivalent, and `Fatal` logs then exits. Do not call clog's
+  printf-style methods
   (`Infof`, `Warnf`, `Errorf`, `Debugf`, `Fatalf`, and the `Contextf`
   variants). Parse a log-level flag with
   `github.com/chainguard-dev/clog/slag`.
@@ -689,7 +691,8 @@ bundle exec fastlane test
   That installs the Cloud Logging JSON handler from `LOG_LEVEL` in every
   environment. Do not call `gcp.NewHandler` yourself.
   [`pasta/analyzers/go_clog`](pasta/analyzers/go_clog/go_clog.cue)
-  flags printf-style calls, package-level clog calls, `gcp.NewHandler`,
+  flags printf-style calls, package-level clog calls other than
+  `Fatal`, `gcp.NewHandler`,
   and a `flag.String` whose name contains `log-level`. Which programs
   run on GCP is not visible to that check. `kube` stays on `slog`
   because that module imports only the standard library. Do not restyle

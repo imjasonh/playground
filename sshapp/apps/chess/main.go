@@ -18,6 +18,7 @@ import (
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/activeterm"
 	"charm.land/wish/v2/logging"
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/sshapp/internal/sshtea"
 	"github.com/sethvargo/go-envconfig"
@@ -368,8 +369,7 @@ func (m model) getPieceName(piece Piece) string {
 func main() {
 	srv, err := newServer(env.Addr, env.HostKey, env.HostKeyPath)
 	if err != nil {
-		slog.Error("create server", "error", err)
-		os.Exit(1)
+		clog.Fatal("create server", "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -387,8 +387,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-		slog.Error("shutdown", "error", err)
-		os.Exit(1)
+		clog.Fatal("shutdown", "error", err)
 	}
 }
 

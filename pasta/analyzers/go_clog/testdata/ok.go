@@ -14,6 +14,7 @@ func ok(ctx context.Context, t interface {
 	Errorf(string, ...any)
 	Fatalf(string, ...any)
 }, name string, err error) {
+	clog.Fatal("boom", "name", name)
 	clog.InfoContext(ctx, "hello", "name", name)
 	clog.WarnContext(ctx, "careful", "name", name)
 	clog.FromContext(ctx).Info("hello", "name", name)

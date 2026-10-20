@@ -35,7 +35,6 @@ func bad(ctx context.Context, name string, err error, n int) {
 	clog.Warn("careful", "name", name)                    // want "default logger"
 	clog.Error("failed", "error", err)                    // want "default logger"
 	clog.Debug("n", "n", n)                               // want "default logger"
-	clog.Fatal("boom", "name", name)                      // want "default logger"
 	clog.With("name", name).Error("failed", "error", err) // want "default logger"
 
 	_ = gcp.NewHandler(slog.LevelInfo)            // want "gcp.NewHandler"
