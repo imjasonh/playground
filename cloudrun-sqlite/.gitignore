@@ -1,0 +1,24 @@
+# Built binaries
+/cloudrun-sqlite
+/crsim
+/crbench
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Local replicas and scratch directories
+*.db
+/replica/
+/data/
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+terraform/crash.*.log
+terraform/*.tfvars
+!terraform/terraform.tfvars.example
