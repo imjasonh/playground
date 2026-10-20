@@ -29,6 +29,8 @@ type SoakConfig struct {
 	Writers  int
 	Readers  int
 	BodySize int
+	// WriteInterval paces each writer. Zero writes as fast as possible.
+	WriteInterval time.Duration
 
 	CrashEvery  time.Duration // SIGKILL the instance (0 disables)
 	ScaleEvery  time.Duration // SIGTERM the instance, as when idle (0 disables)
@@ -161,6 +163,9 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 				rec.mu.Lock()
 				rec.writes = append(rec.writes, d)
 				rec.mu.Unlock()
+				if rest := cfg.WriteInterval - d; rest > 0 {
+					time.Sleep(rest)
+				}
 			}
 		})
 	}

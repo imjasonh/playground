@@ -112,6 +112,7 @@ func soak(args []string) error {
 	fs.IntVar(&cfg.Writers, "writers", 8, "concurrent writers")
 	fs.IntVar(&cfg.Readers, "readers", 8, "concurrent readers")
 	fs.IntVar(&cfg.BodySize, "body-size", 200, "bytes per item")
+	fs.DurationVar(&cfg.WriteInterval, "write-interval", 0, "pause between each writer's writes (0 writes as fast as possible)")
 	fs.DurationVar(&cfg.CrashEvery, "crash-every", 20*time.Second, "SIGKILL the instance this often (0 disables)")
 	fs.DurationVar(&cfg.ScaleEvery, "scale-every", 15*time.Second, "scale to zero this often (0 disables)")
 	fs.DurationVar(&cfg.DeployEvery, "deploy-every", 25*time.Second, "deploy a new revision this often (0 disables)")
@@ -257,7 +258,7 @@ func measureSize(c *common, url string, rows, trials, reads int) (coldResult, er
 	for range trials {
 		sim.ScaleToZero()
 		start := time.Now()
-		if err := get(client, srv.URL+"/items/"+strconv.Itoa(1+rand.IntN(rows)), nil); err != nil {
+		if err := getJSON(client, srv.URL+"/items/"+strconv.Itoa(1+rand.IntN(rows)), nil); err != nil {
 			return res, err
 		}
 		first = append(first, ms(time.Since(start)))
@@ -269,14 +270,14 @@ func measureSize(c *common, url string, rows, trials, reads int) (coldResult, er
 				OpenMillis float64 `json:"open_ms"`
 			}
 		}
-		if err := get(client, srv.URL+"/stats", &st); err != nil {
+		if err := getJSON(client, srv.URL+"/stats", &st); err != nil {
 			return res, err
 		}
 		open = append(open, st.Store.OpenMillis)
 
 		for range reads {
 			start := time.Now()
-			if err := get(client, srv.URL+"/items/"+strconv.Itoa(1+rand.IntN(rows)), nil); err != nil {
+			if err := getJSON(client, srv.URL+"/items/"+strconv.Itoa(1+rand.IntN(rows)), nil); err != nil {
 				return res, err
 			}
 			warm = append(warm, ms(time.Since(start)))
@@ -315,7 +316,7 @@ func measureSize(c *common, url string, rows, trials, reads int) (coldResult, er
 	return res, nil
 }
 
-func get(client *http.Client, url string, into any) error {
+func getJSON(client *http.Client, url string, into any) error {
 	resp, err := client.Get(url)
 	if err != nil {
 		return err
