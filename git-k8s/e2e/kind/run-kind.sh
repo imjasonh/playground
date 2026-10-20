@@ -934,7 +934,8 @@ signed_by_git_k8s FETCH_HEAD
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
 k -n git-k8s logs deployment/git-k8s >"${WORKDIR}/core.log"
-grep -q 'served a push.*caller=check-gofmt/check-gofmt' "${WORKDIR}/core.log"
+# gcp/init writes Cloud Logging JSON, so the caller is a quoted field.
+grep -q 'served a push.*"caller":"check-gofmt/check-gofmt"' "${WORKDIR}/core.log"
 eventually 60 in_sync
 [[ "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
 echo "The gofmt check pushed a signed fix to the mirror, main fast-forwarded to it in the mirror, the mirror synced main to the git server, and c/fmt was deleted."
@@ -1146,8 +1147,9 @@ g log --graph --format='%h %s' "${main_before}^..FETCH_HEAD"
 grep -Fx "c/ahead: ${AHEAD:0:12} is approved by alice, and $(g rev-parse --short=12 FETCH_HEAD^2) makes the same change" "${WORKDIR}/approvals.txt"
 grep -Fx "c/auth: ${AUTH:0:12} is approved by alice, and $(g rev-parse --short=12 FETCH_HEAD) makes the same change" "${WORKDIR}/approvals.txt"
 k -n check-risk logs deployment/check-risk >"${WORKDIR}/risk.log"
-grep -E 'kept a result for the same change.+ branch=c/ahead ' "${WORKDIR}/risk.log"
-grep -E 'kept a result for the same change.+ branch=c/auth ' "${WORKDIR}/risk.log"
+# gcp/init writes Cloud Logging JSON, so the branch is a quoted field.
+grep -E 'kept a result for the same change.*"branch":"c/ahead"' "${WORKDIR}/risk.log"
+grep -E 'kept a result for the same change.*"branch":"c/auth"' "${WORKDIR}/risk.log"
 echo "The base check merged main into c/ahead and then c/auth at the front of main's queue, and both landed with alice's approvals and check-risk's ratings of the commits before the merges."
 echo "::endgroup::"
 
