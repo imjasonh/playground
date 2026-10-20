@@ -37,6 +37,7 @@ playground/
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
 ├── liquid/                # Go TUI: particle liquid you push and pull with the mouse
+├── litestream/            # Go: fork of benbjohnson/litestream (git subtree + patches; see PATCHES.md)
 ├── mapvelopes/            # Rust Cloudflare Worker: envelope PDFs with a route map
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
@@ -101,6 +102,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `cloudrun-sqlite/` | no | Go server for Cloud Run (Litestream VFS + Terraform); no `index.html` |
+| `litestream/` | no | Fork of Litestream (`git subtree`) that `cloudrun-sqlite` builds against; no `index.html` |
 | `git-k8s/` | no | Go Kubernetes controllers built on `kube`; no `index.html` |
 | `kube/` | no | Go library (Kubernetes controller runtime) and example controllers; no `index.html` |
 | `liquid/` | no | Go TUI (Bubble Tea, Lip Gloss, bubblezone); no `index.html` |
@@ -144,6 +146,18 @@ Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 as `kube`, with a `replace` directive to the library's directory
 (`replace github.com/imjasonh/playground/kube => ../kube` in `git-k8s/go.mod`),
 so that it builds against the library at head.
+
+`litestream/` is a fork of
+[benbjohnson/litestream](https://github.com/benbjohnson/litestream), imported
+with `git subtree`, plus the patches that `litestream/PATCHES.md` lists. It
+keeps upstream's module path, and `cloudrun-sqlite` builds against it with
+`replace github.com/benbjohnson/litestream => ../litestream`. Change it only
+for patches meant for upstream: one commit per patch, with a `litestream:`
+subject and a row in `PATCHES.md`. Don't restyle it. pasta skips it, the Go
+dependency update leaves its `go.mod` at upstream's versions, and
+`update-litestream.yml` pulls upstream every night. `git subtree` finds the
+last import through merge commits, so pull requests must keep landing as
+merge commits.
 
 ### Rust apps
 
@@ -232,6 +246,7 @@ discovery scripts.
 | `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_COOKIE` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 | `nethack-agent.yml` | pull requests touching `nethack-agent/**` or the notes publish scripts, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack` with `grok-4.6`. It writes the SDK token cost to the job summary, seeds `nethack-agent/notebook/` from `automation/nethack-notes`, then publishes that directory back to that branch and opens a pull request to `main` (no auto-merge). It does not commit notes onto the triggering pull request. Requires `CURSOR_API_KEY`. Skips play when the head is `automation/nethack-notes` |
+| `update-litestream.yml` | daily at 00:30 UTC, manual | Pulls upstream Litestream into the `litestream/` subtree with `git subtree merge --squash` (`.github/scripts/update-litestream.sh`). A clean merge opens a pull request from `automation/litestream-update` with auto-merge, so it lands when CI passes. On conflicts, it commits the merge with the conflict markers, opens the pull request without auto-merge, and fails the run. It leaves the branch alone once someone else pushes to it. Uses the `litestream-update` Octo STS identity. Test the script with `bash .github/scripts/update-litestream_test.sh` |
 | `chrome-extension.yml` | pull requests and pushes to `main` touching `chrome-extension/**` or the publish script, manual | **App-specific:** tests the Chrome extension, packs the store zip, and uploads `chrome-extension.zip` as a workflow artifact. The download is the store package. On `main`, uploads that zip to the existing Chrome Web Store item and publishes it when the Chrome Web Store secrets are set. Without those secrets, tests still run and publish is skipped |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
@@ -349,7 +364,7 @@ pinned Wrangler version) selects every Cloudflare Worker app.
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
-| Go | `go.mod` | `go build ./...` → `go test -race ./...` |
+| Go | `go.mod` | `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
@@ -427,7 +442,7 @@ test workflow gates on:
 | App type | Upgrade | Verify |
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
-| Go | `go get -u ./...` | `go build ./...` → `go test -race ./...` |
+| Go | `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `go build ./...` → `go test -race ./...` |
 | Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
@@ -758,7 +773,8 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
-| `cloudrun-sqlite/` | HTTP server whose SQLite database lives only in a Litestream replica (Cloud Storage, S3, or a directory), read page by page through the Litestream VFS. `internal/litevfs` is a patched copy of the VFS (Litestream `main` plus PR #1293, a fix for polls that find two new L1 files, and a fix that keeps the pages a shrinking transaction didn't write) because every release corrupts the database under sustained writes; read its `README.md` before changing it, and keep its interleaving tests (`interleave_test.go`) passing, since they replay each known race deterministically. Writes share transactions and upload before they return; L0 uploads are conditional so overlapping Cloud Run instances can't both publish a transaction. `cmd/crsim` simulates Cloud Run's instance lifecycle, `cmd/crbench` measures cold starts and runs chaos soaks, and `terraform/` deploys to Cloud Run | `go test -race ./...` (CGO; includes a 25-second end-to-end run under the simulator, skipped by `-short`). `LITEVFS_INTERLEAVE_SEEDS=N` runs more random VFS schedules, and `go test -run '^$' -fuzz=FuzzInterleave ./internal/litevfs` fuzzes them |
+| `cloudrun-sqlite/` | HTTP server whose SQLite database lives only in a Litestream replica (Cloud Storage, S3, or a directory), read page by page through the Litestream VFS. It builds against the fork in `litestream/`, because every Litestream release corrupts the database under sustained writes. Writes share transactions and upload before they return; L0 uploads are conditional so overlapping Cloud Run instances can't both publish a transaction. `cmd/crsim` simulates Cloud Run's instance lifecycle, `cmd/crbench` measures cold starts and runs chaos soaks, and `terraform/` deploys to Cloud Run | `go test -tags vfs -race ./...` (CGO; Litestream's VFS needs the `vfs` tag; includes a 25-second end-to-end run under the simulator, skipped by `-short`) |
+| `litestream/` | Fork of [benbjohnson/litestream](https://github.com/benbjohnson/litestream), imported with `git subtree`. The patches in `PATCHES.md` fix data corruption in the write-enabled VFS and make writes cheaper; `vfs_interleave_test.go` replays each known race deterministically, so keep it passing. Not an app | `go test -race -tags vfs .` and `go test -race ./internal ./abs ./file ./gs ./nats ./s3 ./sftp ./cmd/litestream`. `LITEVFS_INTERLEAVE_SEEDS=N` runs more random VFS schedules |
 | `git-k8s/` | Kubernetes controllers built on `kube` (imported at head with `replace ../kube`). The core program keeps a copy of each `GitRepository` on a PersistentVolumeClaim and serves it over smart HTTP as the mirror, which syncs with the external repository. It owns a `GitBranch` for each tracked branch, and lands a branch on its parent by fast-forward, squash, or rebase when the parent's merge policy passes, through a merge queue when the policy lets `base` push. Check programs (`check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`, which runs `go test` in a locked-down Pod that it declares with `kube.Own`, and `check-review`, `check-deps`, and `check-conflicts`, which run AI agents in Pods with the `agent` package) fetch from and push to the mirror, and send their results to the core program's results endpoint, so only the core program writes `status.checks`. `git-k8s-deps` pushes Go module updates to `deps/` branches, and `go-cache` gives test Pods a module proxy and a shared build cache. The core program installs the admission policies in `config/policy.yaml` when it starts. git-k8s can also get GitHub tokens from Octo STS, report check runs, and sign commits (see `git-k8s/README.md`) | `go test -race ./...` (uses an in-process smart-HTTP git server); the agent runner's tests are `cd agent/runner && npm ci && npm test`. `GIT_K8S_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the programs with `generate` in a kind cluster and pushes branches to a git server on the host (needs Docker, kubectl, git, ssh-keygen, and curl; CI runs it when `git-k8s/` or `kube/` changes). The stress harness in `e2e/stress/` measures landing throughput on a kind cluster that its `setup.sh` starts (`go run ./e2e/stress run -scenario clean`; see its `README.md`); CI runs only its unit tests |
 | `kube/` | Kubernetes controller runtime written on the standard library alone: one struct and one `Reconcile` method per controller, generated CRDs with more than one version and conversion webhooks, CRD upgrades that migrate stored objects and refuse changes that lose data, admission webhooks, server-side apply, projection caches that read built-in types as protobuf, replicas that split work with shard Leases, events, an HTTP API whose handlers check callers' service account tokens and trigger reconciles, objects to install when the program starts, and state on a persistent volume. The runtime imports only the standard library; keep it that way. The one dependency, go-containerregistry, is for the `generate` command (builds, pushes, and writes install YAML with RBAC rules found by type-checking the program); `generate` builds the image's copy of the program with the `kube_nogenerate` tag, which leaves the command and go-containerregistry out. Example controllers and webhooks in `examples/`. Two directories are separate modules that CI doesn't build: the benchmark in `kube/bench/`, which imports `client-go`, and `kube/internal/protobuf/gen/`, which writes `kube/internal/protobuf/schema.txt` from `k8s.io/api` (after changing its `k8s.io/api` version, run `go run . -o ../schema.txt` there). Design and measurements: [`kube/docs/design.md`](kube/docs/design.md) | `go test -race ./...`. End-to-end tests need `kube-apiserver` and `etcd` and skip without `KUBEBUILDER_ASSETS`; CI sets it from `kube/fetch-envtest.sh`. `KUBE_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the examples with `generate` in a kind cluster with a local registry (needs Docker, kubectl, and curl; CI runs it when `kube/` changes) |
 | `liquid/` | Terminal liquid simulation: particles simulated with double density relaxation and drawn with Lip Gloss as half-block pixels or braille dots. bubblezone maps mouse events to the tank and toolbar: drag pushes, right drag pulls, middle drag pours, and Shift, Alt, or Ctrl while moving attracts or disperses | `go test -race ./...` (UI tests drive the model with real bubblezone zones and a fake clock) |
