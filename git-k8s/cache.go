@@ -5,13 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 )
 
@@ -126,7 +126,7 @@ func (c *Cache) sweep() {
 				continue
 			}
 			if err := os.RemoveAll(dir); err != nil {
-				clog.Warn("removing an unused local repository failed", "path", dir, "err", err)
+				slog.Warn("removing an unused local repository failed", "path", dir, "err", err)
 				continue
 			}
 			delete(c.entries, dir)
@@ -140,7 +140,7 @@ func (c *Cache) sweep() {
 // their objects, and runs maintenance if git says that r needs it. It only
 // logs what fails, because r works without it.
 func (c *Cache) tidy(ctx context.Context, r *git.Repo, repo *Repository) {
-	log := clog.With("namespace", repo.Namespace, "repository", repo.Name)
+	log := slog.With("namespace", repo.Namespace, "repository", repo.Name)
 	if err := r.SetConfig(ctx, "maintenance.auto", "false"); err != nil {
 		log.Warn("configuring a local repository failed", "err", err)
 		return

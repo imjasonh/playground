@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
@@ -63,13 +63,13 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	case err != nil:
-		clog.Warn("checking a token failed", "err", err)
+		slog.Warn("checking a token failed", "err", err)
 		http.Error(w, "the mirror couldn't check the token; try again", http.StatusServiceUnavailable)
 		return
 	}
 	entries, err := m.Checks.Entries(ctx)
 	if err != nil {
-		clog.Warn("reading the git-k8s-checks ConfigMap failed", "err", err)
+		slog.Warn("reading the git-k8s-checks ConfigMap failed", "err", err)
 		http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
 		return
 	}
@@ -78,7 +78,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	may := false
 	if repo != nil {
 		if may, err = m.mayFetch(ctx, who, check, repo); err != nil {
-			clog.Warn("checking a caller failed", "repository", namespace+"/"+name, "caller", who.String(), "err", err)
+			slog.Warn("checking a caller failed", "repository", namespace+"/"+name, "caller", who.String(), "err", err)
 			http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
 			return
 		}
@@ -122,7 +122,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			if reasons := m.refusals(who, check, repo, p); reasons != nil {
 				refuseAll(w, r, p, reasons)
-				clog.Info("refused a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "reason", reasons[0])
+				slog.Info("refused a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "reason", reasons[0])
 				return
 			}
 			body = io.MultiReader(&start, body)
@@ -135,7 +135,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	case err != nil:
-		clog.Error("opening a copy failed", "repository", namespace+"/"+name, "err", err)
+		slog.Error("opening a copy failed", "repository", namespace+"/"+name, "err", err)
 		http.Error(w, "the mirror couldn't open the repository", http.StatusInternalServerError)
 		return
 	}
@@ -152,20 +152,20 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "%04x# service=git-%s\n0000", len(service)+19, service)
 		}
 		if err := m.Git.Advertise(ctx, service, cp.Dir, protocol, w); err != nil {
-			clog.Warn("advertising refs failed", "repository", namespace+"/"+name, "err", err)
+			slog.Warn("advertising refs failed", "repository", namespace+"/"+name, "err", err)
 		}
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-git-"+service+"-result")
 	if err := m.Git.Serve(ctx, service, cp.Dir, protocol, body, w); err != nil {
-		clog.Warn("serving a request failed", "repository", namespace+"/"+name, "service", service, "err", err)
+		slog.Warn("serving a request failed", "repository", namespace+"/"+name, "service", service, "err", err)
 	}
 	if p != nil && len(p.commands) > 0 {
 		// git doesn't retry a push, so the mirror took it either way. If
 		// this replica doesn't reconcile the repository now, the next poll
 		// syncs the push.
 		queued := kube.Trigger[gitk8s.GitRepository](ctx, namespace, name)
-		clog.Info("served a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "triggered", queued)
+		slog.Info("served a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "triggered", queued)
 	}
 }
 

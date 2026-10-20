@@ -2,10 +2,10 @@ package caller
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -78,7 +78,7 @@ func (c *Checks) Entries(ctx context.Context) (map[string]string, error) {
 		}
 		c.err, c.failedAt = err, time.Now()
 		if c.usable() {
-			clog.Warn("reading the git-k8s-checks ConfigMap failed, so the entries read earlier stay in use", "err", err, "age", time.Since(c.readAt))
+			slog.Warn("reading the git-k8s-checks ConfigMap failed, so the entries read earlier stay in use", "err", err, "age", time.Since(c.readAt))
 		}
 	}
 	if c.usable() {

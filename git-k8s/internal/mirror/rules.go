@@ -3,11 +3,11 @@ package mirror
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"slices"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
@@ -147,7 +147,7 @@ func isCheckPod(ctx context.Context, who caller.Caller, checks []string) (bool, 
 	default:
 		return true, nil
 	}
-	clog.Info("refused a Pod that a running result names", "pod", who.Namespace+"/"+who.Pod, "reason", reason)
+	slog.Info("refused a Pod that a running result names", "pod", who.Namespace+"/"+who.Pod, "reason", reason)
 	return false, nil
 }
 

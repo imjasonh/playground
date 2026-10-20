@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sort"
@@ -22,8 +23,8 @@ import (
 	"charm.land/ssh"
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/logging"
-	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
+	"github.com/sethvargo/go-envconfig"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/imjasonh/playground/sshapp/internal/registry"
@@ -35,7 +36,8 @@ import (
 func main() {
 	cfg, err := muxConfigFromEnv()
 	if err != nil {
-		clog.Fatal("config", "error", err)
+		slog.Error("config", "error", err)
+		os.Exit(1)
 	}
 
 	names := make([]string, 0, len(cfg.Apps))
@@ -60,7 +62,8 @@ func main() {
 
 	signer, err := newEphemeralSigner()
 	if err != nil {
-		clog.Fatal("backend client key", "error", err)
+		slog.Error("backend client key", "error", err)
+		os.Exit(1)
 	}
 
 	opts := []ssh.Option{
@@ -82,20 +85,21 @@ func main() {
 
 	srv, err := wish.NewServer(opts...)
 	if err != nil {
-		clog.Fatal("create server", "error", err)
+		slog.Error("create server", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	clog.Info("mux listening",
+	slog.Info("mux listening",
 		"addr", cfg.Listen,
 		"apps", strings.Join(names, ","),
 		"idle_after", cfg.IdleAfter.String(),
 	)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-			clog.Error("listen", "error", err)
+			slog.Error("listen", "error", err)
 			stop()
 		}
 	}()
@@ -144,7 +148,7 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 
 			code, err := proxySSHSession(sess, addr, signer, target)
 			if err != nil {
-				clog.Error("proxy session", "app", target.App, "error", err)
+				slog.Error("proxy session", "app", target.App, "error", err)
 				_ = sess.Exit(1)
 				return
 			}
@@ -274,43 +278,41 @@ type appSpecJSON struct {
 }
 
 func muxConfigFromEnv() (muxConfig, error) {
-	apps, err := appsFromEnv()
+	// Process returns the error so tests can set the environment and load
+	// again. App JSON and the legacy CSV stay custom.
+	var env struct {
+		Listen      string        `env:"SSHAPP_LISTEN, default=:2222"`
+		Namespace   string        `env:"SSHAPP_NAMESPACE, default=sshapps"`
+		IdleAfter   time.Duration `env:"SSHAPP_IDLE_AFTER, default=5m"`
+		WarmTimeout time.Duration `env:"SSHAPP_WARM_TIMEOUT, default=2m"`
+		HostKeyPEM  string        `env:"SSHAPP_HOST_KEY"`
+		HostKeyPath string        `env:"SSHAPP_HOST_KEY_PATH, default=.ssh/mux_ed25519"`
+		Kubeconfig  string        `env:"KUBECONFIG"`
+		AppConfig   string        `env:"SSHAPP_APP_CONFIG"`
+		Apps        string        `env:"SSHAPP_APPS"`
+	}
+	if err := envconfig.Process(context.Background(), &env); err != nil {
+		return muxConfig{}, err
+	}
+	apps, err := appsFromConfig(env.AppConfig, env.Apps)
 	if err != nil {
 		return muxConfig{}, err
 	}
-
-	idle := 5 * time.Minute
-	warmTimeout := 2 * time.Minute
-	if v := os.Getenv("SSHAPP_IDLE_AFTER"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return muxConfig{}, err
-		}
-		idle = d
-	}
-	if v := os.Getenv("SSHAPP_WARM_TIMEOUT"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return muxConfig{}, err
-		}
-		warmTimeout = d
-	}
-
 	return muxConfig{
-		Listen:      envOr("SSHAPP_LISTEN", ":2222"),
-		Namespace:   envOr("SSHAPP_NAMESPACE", "sshapps"),
+		Listen:      env.Listen,
+		Namespace:   env.Namespace,
 		Apps:        apps,
 		BackendPort: 2222,
-		IdleAfter:   idle,
-		WarmTimeout: warmTimeout,
-		HostKeyPEM:  os.Getenv("SSHAPP_HOST_KEY"),
-		HostKeyPath: envOr("SSHAPP_HOST_KEY_PATH", ".ssh/mux_ed25519"),
-		Kubeconfig:  os.Getenv("KUBECONFIG"),
+		IdleAfter:   env.IdleAfter,
+		WarmTimeout: env.WarmTimeout,
+		HostKeyPEM:  env.HostKeyPEM,
+		HostKeyPath: env.HostKeyPath,
+		Kubeconfig:  env.Kubeconfig,
 	}, nil
 }
 
-func appsFromEnv() (map[string]scaler.AppSpec, error) {
-	if raw := os.Getenv("SSHAPP_APP_CONFIG"); raw != "" {
+func appsFromConfig(raw, appsCSV string) (map[string]scaler.AppSpec, error) {
+	if raw != "" {
 		var parsed map[string]appSpecJSON
 		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 			return nil, fmt.Errorf("SSHAPP_APP_CONFIG: %w", err)
@@ -333,7 +335,6 @@ func appsFromEnv() (map[string]scaler.AppSpec, error) {
 	}
 
 	// Legacy: comma-separated names, all scale-to-zero with 1 warm replica.
-	appsCSV := os.Getenv("SSHAPP_APPS")
 	if appsCSV == "" {
 		return nil, errors.New("SSHAPP_APP_CONFIG or SSHAPP_APPS is required")
 	}
@@ -349,11 +350,4 @@ func appsFromEnv() (map[string]scaler.AppSpec, error) {
 		return nil, errors.New("SSHAPP_APPS is empty")
 	}
 	return out, nil
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

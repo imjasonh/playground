@@ -5,9 +5,10 @@ package main
 
 import (
 	"flag"
+	"log/slog"
+	"os"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/git-k8s/internal/goproxytest"
 )
 
@@ -18,13 +19,16 @@ func main() {
 	at := flag.String("time", "", "the version's time in RFC 3339 format, such as 2020-01-02T03:04:05Z")
 	flag.Parse()
 	if *root == "" || *dir == "" {
-		clog.Fatal("set -root and -dir")
+		slog.Error("set -root and -dir")
+		os.Exit(1)
 	}
 	t, err := time.Parse(time.RFC3339, *at)
 	if err != nil {
-		clog.Fatal("parse -time", "error", err)
+		slog.Error("parse -time", "error", err)
+		os.Exit(1)
 	}
 	if err := goproxytest.Publish(*root, *dir, *version, t); err != nil {
-		clog.Fatal("publish", "error", err)
+		slog.Error("publish", "error", err)
+		os.Exit(1)
 	}
 }

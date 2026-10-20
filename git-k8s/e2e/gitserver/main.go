@@ -8,11 +8,11 @@ package main
 import (
 	"errors"
 	"flag"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 )
 
@@ -26,7 +26,8 @@ func main() {
 	flag.Parse()
 	password := os.Getenv("GITSERVER_PASSWORD")
 	if *root == "" || password == "" {
-		clog.Fatal("set -root and GITSERVER_PASSWORD")
+		slog.Error("set -root and GITSERVER_PASSWORD")
+		os.Exit(1)
 	}
 	var h http.Handler = &gitserver.Server{Root: *root, Username: *username, Password: password, AllowedSigners: *allowedSigners}
 	if *goProxy != "" {
@@ -43,8 +44,9 @@ func main() {
 	if *kubeContext != "" {
 		srv.Handler = withGitHub(srv.Handler, *root, *username, password, *allowedSigners, *kubeContext)
 	}
-	clog.Info("serving", "root", *root, "addr", *addr)
+	slog.Info("serving", "root", *root, "addr", *addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		clog.Fatal("listen", "error", err)
+		slog.Error("listen", "error", err)
+		os.Exit(1)
 	}
 }

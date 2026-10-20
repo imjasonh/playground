@@ -19,11 +19,12 @@
 package sshtea
 
 import (
+	"log/slog"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/ssh"
 	"charm.land/wish/v2"
 	wishtea "charm.land/wish/v2/bubbletea"
-	"github.com/chainguard-dev/clog"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/imjasonh/playground/sshapp/internal/sshpty"
 )
@@ -63,7 +64,7 @@ func MiddlewareWithProgramHandler(handler wishtea.ProgramHandler) wish.Middlewar
 				}
 			}()
 			if _, err := program.Run(); err != nil {
-				clog.Error("app exit with error", "error", err)
+				slog.Error("app exit with error", "error", err)
 			}
 			program.Kill()
 			next(sess)

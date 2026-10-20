@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
-	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/gate"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -212,7 +212,7 @@ func (m *merger) land(ctx context.Context, repo *gitk8s.Repository, b *gitk8s.Gi
 	if err != nil {
 		return fmt.Errorf("fast-forwarding %s to %s: %w", spec.Parent, gitk8s.Short(spec.Head), err)
 	}
-	clog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
+	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
 		"parent", spec.Parent, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(spec.Head), "deletedBranch", deleted)
 	report(b, gitk8s.MergeStateLanded, "fast-forwarded %s from %s to %s", spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(spec.Head))
 	kube.Eventf(ctx, kube.Normal, "Landed", "fast-forwarded %s from %s to %s at %s", spec.Parent, gitk8s.Short(spec.ParentHead), spec.Branch, gitk8s.Short(spec.Head))
@@ -247,7 +247,7 @@ func fastForward(ctx context.Context, local *mirror.Repository, b *gitk8s.GitBra
 	if err := local.UpdateRefs(ctx, parent); err != nil {
 		return false, err
 	}
-	clog.Info("not deleting a landed branch that moved or was deleted since the repository controller listed it",
+	slog.Info("not deleting a landed branch that moved or was deleted since the repository controller listed it",
 		"namespace", b.Namespace, "branch", spec.Branch, "err", rejected)
 	return false, nil
 }

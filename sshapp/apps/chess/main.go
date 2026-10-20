@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"slices"
@@ -17,10 +18,16 @@ import (
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/activeterm"
 	"charm.land/wish/v2/logging"
-	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/sshapp/internal/sshtea"
+	"github.com/sethvargo/go-envconfig"
 )
+
+var env = envconfig.MustProcess(context.Background(), &struct {
+	Addr        string `env:"SSHAPP_ADDR, default=:2222"`
+	HostKey     string `env:"SSHAPP_HOST_KEY"`
+	HostKeyPath string `env:"SSHAPP_HOST_KEY_PATH, default=.ssh/host_ed25519"`
+}{})
 
 type model struct {
 	game       *Game
@@ -359,19 +366,19 @@ func (m model) getPieceName(piece Piece) string {
 }
 
 func main() {
-	addr := envOr("SSHAPP_ADDR", ":2222")
-	srv, err := newServer(addr, os.Getenv("SSHAPP_HOST_KEY"), envOr("SSHAPP_HOST_KEY_PATH", ".ssh/host_ed25519"))
+	srv, err := newServer(env.Addr, env.HostKey, env.HostKeyPath)
 	if err != nil {
-		clog.Fatal("create server", "error", err)
+		slog.Error("create server", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	clog.Info("starting SSH chess server", "addr", addr)
+	slog.Info("starting SSH chess server", "addr", env.Addr)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-			clog.Error("listen", "error", err)
+			slog.Error("listen", "error", err)
 			stop()
 		}
 	}()
@@ -380,7 +387,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-		clog.Error("shutdown", "error", err)
+		slog.Error("shutdown", "error", err)
 		os.Exit(1)
 	}
 }
@@ -419,11 +426,4 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		GetGameManager().RemovePlayer(player.ID)
 	}()
 	return initialModelWithPlayer(player), nil
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

@@ -3,10 +3,10 @@ package mirror
 import (
 	"cmp"
 	"context"
+	"log/slog"
 	"slices"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 )
 
@@ -61,7 +61,7 @@ func (m *Mirror) maintainNext(ctx context.Context) bool {
 	}
 	m.mu.Unlock()
 	if failed {
-		clog.Warn("maintaining a copy failed", "path", e.dir, "retry", retry, "err", err)
+		slog.Warn("maintaining a copy failed", "path", e.dir, "retry", retry, "err", err)
 	}
 	return ctx.Err() == nil
 }

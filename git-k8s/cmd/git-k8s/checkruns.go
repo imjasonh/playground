@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"math/rand/v2"
 	"net/http"
@@ -19,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/kube"
@@ -214,7 +214,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	err = s.sync(ctx, b.Name)
 	var limited *rateLimited
 	if errors.As(err, &limited) {
-		clog.Info("pausing check runs for GitHub's rate limit", "owner", path.Base(owner), "for", limited.wait)
+		slog.Info("pausing check runs for GitHub's rate limit", "owner", path.Base(owner), "for", limited.wait)
 		c.pause(owner, limited.wait)
 		kube.RequeueAfter(ctx, spread(limited.wait))
 		return nil
@@ -428,7 +428,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 		}
 		if err != nil || found == nil {
 			if err != nil {
-				clog.Warn("couldn't find a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "error", err)
+				slog.Warn("couldn't find a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "error", err)
 			}
 			delete(s.runs, cc)
 			return nil
@@ -454,7 +454,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 			return fmt.Errorf("updating the check run on %s: %w", gitk8s.Short(cc.commit), err)
 		}
 		if err != nil {
-			clog.Warn("couldn't update a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "id", run.id, "error", err)
+			slog.Warn("couldn't update a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "id", run.id, "error", err)
 			by, want = "", run.shows
 			break
 		}

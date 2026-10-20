@@ -9,6 +9,7 @@ require (
 	cloud.google.com/go/storage v1.69.0
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/charmbracelet/colorprofile v0.4.3
+	github.com/sethvargo/go-envconfig v1.4.3
 	golang.org/x/crypto v0.58.0
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1

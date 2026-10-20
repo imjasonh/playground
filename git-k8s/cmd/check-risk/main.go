@@ -69,6 +69,7 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"

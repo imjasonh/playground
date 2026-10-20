@@ -7,14 +7,14 @@ package main
 
 import (
 	"flag"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"sync/atomic"
 	"time"
-
-	"github.com/chainguard-dev/clog"
 )
 
 func main() {
@@ -30,16 +30,17 @@ func main() {
 
 	u, err := url.Parse(*target)
 	if err != nil {
-		clog.Fatal("parse target", "error", err)
+		slog.Error("parse target", "error", err)
+		os.Exit(1)
 	}
 	rp := httputil.NewSingleHostReverseProxy(u)
 	var n atomic.Int64
 	go func() {
 		for range time.Tick(10 * time.Second) {
-			clog.Info("requests", "count", n.Load())
+			slog.Info("requests", "count", n.Load())
 		}
 	}()
-	clog.Fatal("serve", "error", http.ListenAndServe(*listen, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	slog.Error("serve", "error", http.ListenAndServe(*listen, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n.Add(1)
 		d := *get
 		switch {
@@ -56,6 +57,7 @@ func main() {
 		}
 		rp.ServeHTTP(w, r)
 	})))
+	os.Exit(1)
 }
 
 // paced writes a response body no faster than rate bytes per second.

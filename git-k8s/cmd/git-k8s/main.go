@@ -31,13 +31,14 @@ package main
 import (
 	"context"
 	"flag"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/chainguard-dev/clog"
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
@@ -77,7 +78,7 @@ func main() {
 	// other processes can be signing in the same directory.
 	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
 		if err := git.RemoveSigningKeys(); err != nil {
-			clog.Warn("removing signing keys that an earlier run left", "err", err)
+			slog.Warn("removing signing keys that an earlier run left", "err", err)
 		}
 	}
 	// Maintain starts before kube.Main parses the flags. main waits for it
