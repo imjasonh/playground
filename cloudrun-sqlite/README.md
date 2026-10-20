@@ -82,7 +82,12 @@ files written after it. The store fetches those in parallel before the VFS
 asks for them one at a time. The VFS compacts L0 files into L1, L2, and L3
 files, and the store merges the plan into a new snapshot when the files at
 L1 and above grow past 16. L0 files are left for compaction. It then deletes
-files that the previous snapshot covers.
+files that the previous snapshot covers. During a write, the VFS also keeps
+the L0 file it just uploaded. When 16 of those files continue the current L1
+range, it writes that L1 from those bytes, and when 16 L1 files continue the
+L2 range, it writes that L2 the same way. The L0 files stay until retention
+deletes them. After a write burst that started from a short plan, the idle
+replica is those L2 files plus whatever has not been folded yet.
 
 **Overlapping instances.** Cloud Run can run two instances of a
 `max_instance_count = 1` service for a short time, for example during a
@@ -247,6 +252,9 @@ CPU is frozen and it makes none.
   488 MiB. Durable instances peaked at 106 to 126 MiB in every run.
 - With request-based billing, Cloud Run throttles CPU between requests, so
   compaction and snapshots only make progress while requests are in flight.
+  The upload fold runs in that window, from bytes this instance still has.
+  A plan left by an earlier instance stays long until a later pass reads
+  those files, because this process no longer has their bytes.
   Set `cpu_always_allocated = true` if cold starts slow down because the
   restore plan grew.
 - `Write` runs each function inside a transaction, so it can't run `VACUUM`,
