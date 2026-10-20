@@ -1,0 +1,1984 @@
+//go:build vfs
+
+package litestream
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/superfly/ltx"
+
+	"github.com/psanford/sqlite3vfs"
+)
+
+func TestVFSFile_LockStateMachine(t *testing.T) {
+	f := &VFSFile{logger: slog.Default(), writeEnabled: true}
+	f.cond = sync.NewCond(&f.mu)
+
+	if err := f.Lock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("lock shared: %v", err)
+	}
+	if reserved, _ := f.CheckReservedLock(); reserved {
+		t.Fatalf("shared lock should not report reserved")
+	}
+
+	if err := f.Lock(sqlite3vfs.LockReserved); err != nil {
+		t.Fatalf("lock reserved: %v", err)
+	}
+	if reserved, _ := f.CheckReservedLock(); !reserved {
+		t.Fatalf("reserved lock should report reserved")
+	}
+
+	if err := f.Lock(sqlite3vfs.LockShared); err == nil {
+		t.Fatalf("expected downgrade via Lock to fail")
+	}
+
+	if err := f.Unlock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("unlock to shared: %v", err)
+	}
+	if reserved, _ := f.CheckReservedLock(); reserved {
+		t.Fatalf("unlock to shared should clear reserved state")
+	}
+
+	if err := f.Unlock(sqlite3vfs.LockPending); err == nil {
+		t.Fatalf("expected unlock to pending to fail")
+	}
+
+	if err := f.Lock(sqlite3vfs.LockExclusive); err != nil {
+		t.Fatalf("lock exclusive: %v", err)
+	}
+
+	if err := f.Unlock(sqlite3vfs.LockNone); err != nil {
+		t.Fatalf("unlock to none: %v", err)
+	}
+}
+
+func TestVFSFile_PendingIndexIsolation(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	if err := f.Lock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("lock shared: %v", err)
+	}
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll replica: %v", err)
+	}
+
+	f.mu.Lock()
+	pendingLen := len(f.pending)
+	current := f.index[1]
+	f.mu.Unlock()
+
+	if pendingLen == 0 {
+		t.Fatalf("expected pending index entries while shared lock held")
+	}
+	if current.MinTXID != 1 {
+		t.Fatalf("main index should still reference first txid, got %s", current.MinTXID)
+	}
+
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read during lock: %v", err)
+	}
+	if buf[0] != 'a' {
+		t.Fatalf("expected old data during lock, got %q", buf[0])
+	}
+
+	if err := f.Unlock(sqlite3vfs.LockNone); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read after unlock: %v", err)
+	}
+	if buf[0] != 'b' {
+		t.Fatalf("expected updated data after unlock, got %q", buf[0])
+	}
+}
+
+func TestVFSFile_PendingIndexRace(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "race.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	if err := f.Lock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("lock shared: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	// continuously stream new fixtures
+	go func() {
+		txid := ltx.TXID(2)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			client.addFixture(t, buildLTXFixture(t, txid, byte('a'+int(txid%26))))
+			if err := f.pollReplicaClient(context.Background()); err != nil {
+				t.Errorf("poll replica: %v", err)
+				return
+			}
+			txid++
+			time.Sleep(2 * time.Millisecond)
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			buf := make([]byte, 4096)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				if _, err := f.ReadAt(buf, 0); err != nil {
+					t.Errorf("reader %d: %v", id, err)
+					return
+				}
+			}
+		}(i)
+	}
+
+	<-ctx.Done()
+	f.Unlock(sqlite3vfs.LockNone)
+	wg.Wait()
+}
+
+func TestVFSFileMonitorStopsOnCancel(t *testing.T) {
+	client := newCountingReplicaClient()
+	f := &VFSFile{client: client, logger: slog.Default(), PollInterval: 5 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); f.monitorReplicaClient(ctx) }()
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if client.calls.Load() > 0 {
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+	if client.calls.Load() == 0 {
+		t.Fatalf("monitor never invoked LTXFiles")
+	}
+
+	cancel()
+	finished := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(finished)
+	}()
+
+	select {
+	case <-finished:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("monitor goroutine did not exit after cancel")
+	}
+}
+
+func TestVFSFile_NonContiguousTXIDError(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "gap.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	client.addFixture(t, buildLTXFixture(t, 3, 'c'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll replica: %v", err)
+	}
+	if pos := f.Pos(); pos.TXID != 1 {
+		t.Fatalf("unexpected txid advance after gap: got %s", pos.TXID.String())
+	}
+}
+
+func TestVFSFile_IndexMemoryDoesNotGrowUnbounded(t *testing.T) {
+	const pageLimit = 16
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "mem.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	for i := 0; i < 100; i++ {
+		pgno := uint32(i%pageLimit) + 2
+		client.addFixture(t, buildLTXFixtureWithPages(t, ltx.TXID(i+2), 4096, []uint32{pgno}, byte('b'+byte(i%26))))
+		if err := f.pollReplicaClient(context.Background()); err != nil {
+			t.Fatalf("poll replica: %v", err)
+		}
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if l := len(f.index); l > pageLimit+1 { // +1 for initial page 1
+		t.Fatalf("index grew unexpectedly: got %d want <= %d", l, pageLimit+1)
+	}
+}
+
+func TestVFSFile_AutoVacuumShrinksCommit(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixtureWithPages(t, 1, 4096, []uint32{1, 2, 3, 4}, 'a'))
+
+	f := NewVFSFile(client, "autovac.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	client.addFixture(t, buildLTXFixtureWithPages(t, 2, 4096, []uint32{1, 2}, 'b'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll replica: %v", err)
+	}
+
+	size, err := f.FileSize()
+	if err != nil {
+		t.Fatalf("file size: %v", err)
+	}
+	if size != int64(2*4096) {
+		t.Fatalf("unexpected file size after vacuum: got %d want %d", size, 2*4096)
+	}
+
+	buf := make([]byte, 4096)
+	lockOffset := int64(3-1) * 4096
+	if _, err := f.ReadAt(buf, lockOffset); err == nil || !strings.Contains(err.Error(), "page not found") {
+		t.Fatalf("expected missing page after vacuum, got %v", err)
+	}
+}
+
+func TestVFSFile_PendingIndexReplacementRemovesStalePages(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixtureWithPages(t, 1, 4096, []uint32{1, 2, 3, 4}, 'a'))
+
+	f := NewVFSFile(client, "pending-replace.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	if err := f.Lock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("lock shared: %v", err)
+	}
+
+	client.addFixture(t, buildLTXFixtureWithPages(t, 2, 4096, []uint32{1, 2}, 'b'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll replica: %v", err)
+	}
+
+	f.mu.Lock()
+	if _, ok := f.index[4]; !ok {
+		t.Fatalf("expected stale page to remain in main index while lock is held")
+	}
+	if !f.pendingReplace {
+		t.Fatalf("expected pending replacement flag set")
+	}
+	f.mu.Unlock()
+
+	if err := f.Unlock(sqlite3vfs.LockNone); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+
+	size, err := f.FileSize()
+	if err != nil {
+		t.Fatalf("file size: %v", err)
+	}
+	if size != int64(2*4096) {
+		t.Fatalf("unexpected file size after pending replacement applied: got %d want %d", size, 2*4096)
+	}
+
+	buf := make([]byte, 4096)
+	lockOffset := int64(3-1) * 4096
+	if _, err := f.ReadAt(buf, lockOffset); err == nil || !strings.Contains(err.Error(), "page not found") {
+		t.Fatalf("expected missing page after pending replacement applied, got %v", err)
+	}
+}
+
+func TestVFSFile_CorruptedPageIndexRecovery(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, &ltxFixture{info: &ltx.FileInfo{Level: 0, MinTXID: 1, MaxTXID: 1, Size: 0}, data: []byte("bad-index")})
+
+	f := NewVFSFile(client, "corrupt.db", slog.Default())
+	if err := f.Open(); err == nil {
+		t.Fatalf("expected open to fail on corrupted index")
+	}
+}
+
+func TestVFSFile_OpenSeedsLevel1Position(t *testing.T) {
+	client := newMockReplicaClient()
+	snapshot := buildLTXFixture(t, 1, 's')
+	snapshot.info.Level = SnapshotLevel
+	client.addFixture(t, snapshot)
+	l1 := buildLTXFixture(t, 2, 'l')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	l0 := buildLTXFixture(t, 3, 'z')
+	l0.info.Level = 0
+	client.addFixture(t, l0)
+
+	f := NewVFSFile(client, "seed-level1.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	if got, want := f.maxTXID1, l1.info.MaxTXID; got != want {
+		t.Fatalf("unexpected maxTXID1: got %s want %s", got, want)
+	}
+	if got, want := f.Pos().TXID, l0.info.MaxTXID; got != want {
+		t.Fatalf("unexpected pos after open: got %s want %s", got, want)
+	}
+}
+
+func TestVFSFile_OpenSeedsLevel1PositionFromPos(t *testing.T) {
+	client := newMockReplicaClient()
+	snapshot := buildLTXFixture(t, 1, 's')
+	snapshot.info.Level = SnapshotLevel
+	client.addFixture(t, snapshot)
+	l0 := buildLTXFixture(t, 2, '0')
+	l0.info.Level = 0
+	client.addFixture(t, l0)
+
+	f := NewVFSFile(client, "seed-default.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	pos := f.Pos().TXID
+	if pos == 0 {
+		t.Fatalf("expected non-zero position")
+	}
+	if got := f.maxTXID1; got != pos {
+		t.Fatalf("expected maxTXID1 to equal pos when no L1 files, got %s want %s", got, pos)
+	}
+}
+
+func TestVFSFile_HeaderForcesDeleteJournal(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'h'))
+
+	f := NewVFSFile(client, "header.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	buf := make([]byte, 32)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read header: %v", err)
+	}
+	if buf[18] != 0x01 || buf[19] != 0x01 {
+		t.Fatalf("journal mode bytes not forced to DELETE, got %x %x", buf[18], buf[19])
+	}
+}
+
+func TestVFSFile_ReadAtLockPageBoundary(t *testing.T) {
+	pageSizes := []uint32{512, 1024, 2048, 4096, 8192, 16384, 32768, 65536}
+	for _, pageSize := range pageSizes {
+		pageSize := pageSize
+		t.Run(fmt.Sprintf("page_%d", pageSize), func(t *testing.T) {
+			client := newMockReplicaClient()
+			lockPgno := ltx.LockPgno(pageSize)
+			before := lockPgno - 1
+			after := lockPgno + 1
+
+			client.addFixture(t, buildLTXFixtureWithPage(t, 1, pageSize, 1, 'z'))
+			client.addFixture(t, buildLTXFixtureWithPage(t, 2, pageSize, before, 'b'))
+			client.addFixture(t, buildLTXFixtureWithPage(t, 3, pageSize, after, 'a'))
+
+			f := NewVFSFile(client, fmt.Sprintf("lock-boundary-%d.db", pageSize), slog.Default())
+			if err := f.Open(); err != nil {
+				t.Fatalf("open vfs file: %v", err)
+			}
+			defer f.Close()
+
+			buf := make([]byte, int(pageSize))
+			off := int64(before-1) * int64(pageSize)
+			if _, err := f.ReadAt(buf, off); err != nil {
+				t.Fatalf("read before lock page: %v", err)
+			}
+			if buf[0] != 'b' {
+				t.Fatalf("unexpected data before lock page: got %q", buf[0])
+			}
+
+			buf = make([]byte, int(pageSize))
+			off = int64(after-1) * int64(pageSize)
+			if _, err := f.ReadAt(buf, off); err != nil {
+				t.Fatalf("read after lock page: %v", err)
+			}
+			if buf[0] != 'a' {
+				t.Fatalf("unexpected data after lock page: got %q", buf[0])
+			}
+
+			buf = make([]byte, int(pageSize))
+			lockOffset := int64(lockPgno-1) * int64(pageSize)
+			if _, err := f.ReadAt(buf, lockOffset); err == nil || !strings.Contains(err.Error(), "page not found") {
+				t.Fatalf("expected missing lock page error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestVFS_TempFileLifecycleStress(t *testing.T) {
+	vfs := NewVFS(nil, slog.Default())
+	const (
+		workers    = 8
+		iterations = 50
+	)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+	for w := 0; w < workers; w++ {
+		w := w
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				name := fmt.Sprintf("temp-%02d-%02d.db", w, i)
+				flags := sqlite3vfs.OpenTempDB | sqlite3vfs.OpenReadWrite | sqlite3vfs.OpenCreate
+				deleteOnClose := (w+i)%2 == 0
+				if deleteOnClose {
+					flags |= sqlite3vfs.OpenDeleteOnClose
+				}
+
+				file, _, err := vfs.openTempFile(name, flags)
+				if err != nil {
+					errCh <- fmt.Errorf("open temp file: %w", err)
+					return
+				}
+				tf := file.(*localTempFile)
+				if _, err := tf.WriteAt([]byte("hot-data"), 0); err != nil {
+					errCh <- fmt.Errorf("write temp file: %w", err)
+					return
+				}
+
+				path, tracked := vfs.loadTempFilePath(name)
+				if !tracked && name != "" {
+					errCh <- fmt.Errorf("temp file %s was not tracked", name)
+					return
+				}
+
+				if err := tf.Close(); err != nil {
+					errCh <- fmt.Errorf("close temp file: %w", err)
+					return
+				}
+
+				if deleteOnClose {
+					if path != "" {
+						if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
+							errCh <- fmt.Errorf("delete-on-close leaked temp file %s", path)
+							return
+						}
+					}
+				} else {
+					if path == "" {
+						errCh <- fmt.Errorf("missing tracked path for %s", name)
+						return
+					}
+					if _, err := os.Stat(path); err != nil {
+						errCh <- fmt.Errorf("expected temp file on disk: %v", err)
+						return
+					}
+					if err := os.Remove(path); err != nil {
+						errCh <- fmt.Errorf("cleanup temp file: %v", err)
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("temp file stress: %v", err)
+		}
+	}
+
+	leak := false
+	vfs.tempFiles.Range(func(key, value any) bool {
+		leak = true
+		return false
+	})
+	if leak {
+		t.Fatalf("temp files still tracked after stress run")
+	}
+
+	if dir := vfs.tempDir; dir != "" {
+		entries, err := os.ReadDir(dir)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("read temp dir: %v", err)
+		}
+		if err == nil && len(entries) > 0 {
+			names := make([]string, 0, len(entries))
+			for _, entry := range entries {
+				names = append(names, entry.Name())
+			}
+			t.Fatalf("temp dir not cleaned: %v", names)
+		}
+	}
+}
+
+func TestVFS_TempFileNameCollision(t *testing.T) {
+	vfs := NewVFS(nil, slog.Default())
+	name := "collision.db"
+	flags := sqlite3vfs.OpenTempDB | sqlite3vfs.OpenReadWrite | sqlite3vfs.OpenCreate
+
+	file1, _, err := vfs.openTempFile(name, flags)
+	if err != nil {
+		t.Fatalf("open temp file1: %v", err)
+	}
+	tf1 := file1.(*localTempFile)
+	path1, ok := vfs.loadTempFilePath(name)
+	if !ok {
+		t.Fatalf("first temp file not tracked")
+	}
+
+	file2, _, err := vfs.openTempFile(name, flags|sqlite3vfs.OpenDeleteOnClose)
+	if err != nil {
+		t.Fatalf("open temp file2: %v", err)
+	}
+	tf2 := file2.(*localTempFile)
+	path2, ok := vfs.loadTempFilePath(name)
+	if !ok {
+		t.Fatalf("second temp file not tracked")
+	}
+	if path1 != path2 {
+		t.Fatalf("expected same canonical path, got %s vs %s", path1, path2)
+	}
+
+	if err := tf2.Close(); err != nil {
+		t.Fatalf("close second file: %v", err)
+	}
+	if _, err := os.Stat(path2); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("expected file removed after delete-on-close")
+	}
+	if _, ok := vfs.loadTempFilePath(name); ok {
+		t.Fatalf("canonical entry should be cleared after delete-on-close")
+	}
+	if err := tf1.Close(); err != nil {
+		t.Fatalf("close first file: %v", err)
+	}
+}
+
+func TestVFS_TempFileSameBasenameDifferentDirs(t *testing.T) {
+	vfs := NewVFS(nil, slog.Default())
+	flags := sqlite3vfs.OpenTempDB | sqlite3vfs.OpenReadWrite | sqlite3vfs.OpenCreate
+
+	name1 := filepath.Join("foo", "shared.db")
+	name2 := filepath.Join("bar", "shared.db")
+
+	file1, _, err := vfs.openTempFile(name1, flags)
+	if err != nil {
+		t.Fatalf("open first temp file: %v", err)
+	}
+	tf1 := file1.(*localTempFile)
+	path1, ok := vfs.loadTempFilePath(name1)
+	if !ok {
+		t.Fatalf("first temp file not tracked")
+	}
+
+	file2, _, err := vfs.openTempFile(name2, flags|sqlite3vfs.OpenDeleteOnClose)
+	if err != nil {
+		t.Fatalf("open second temp file: %v", err)
+	}
+	tf2 := file2.(*localTempFile)
+	path2, ok := vfs.loadTempFilePath(name2)
+	if !ok {
+		t.Fatalf("second temp file not tracked")
+	}
+
+	if path1 == path2 {
+		t.Fatalf("expected unique paths for %s and %s", name1, name2)
+	}
+
+	if err := tf1.Close(); err != nil {
+		t.Fatalf("close first file: %v", err)
+	}
+
+	if _, ok := vfs.loadTempFilePath(name2); !ok {
+		t.Fatalf("closing first file should not unregister second")
+	}
+
+	if path1 != "" {
+		if err := os.Remove(path1); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("cleanup first temp file: %v", err)
+		}
+	}
+
+	if err := tf2.Close(); err != nil {
+		t.Fatalf("close second file: %v", err)
+	}
+	if _, ok := vfs.loadTempFilePath(name2); ok {
+		t.Fatalf("delete-on-close should clear second temp file")
+	}
+}
+
+func TestVFS_TempFileDeleteOnClose(t *testing.T) {
+	vfs := NewVFS(nil, slog.Default())
+	name := "delete-on-close.db"
+	flags := sqlite3vfs.OpenTempDB | sqlite3vfs.OpenReadWrite | sqlite3vfs.OpenCreate | sqlite3vfs.OpenDeleteOnClose
+
+	file, _, err := vfs.openTempFile(name, flags)
+	if err != nil {
+		t.Fatalf("open temp file: %v", err)
+	}
+	tf := file.(*localTempFile)
+	path, ok := vfs.loadTempFilePath(name)
+	if !ok {
+		t.Fatalf("temp file not tracked")
+	}
+
+	if _, err := tf.WriteAt([]byte("x"), 0); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	if err := tf.Close(); err != nil {
+		t.Fatalf("close temp file: %v", err)
+	}
+	if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("expected delete-on-close to remove temp file")
+	}
+	if _, ok := vfs.loadTempFilePath(name); ok {
+		t.Fatalf("temp file tracking entry should be cleared")
+	}
+	if err := vfs.Delete(name, false); err != nil {
+		t.Fatalf("delete should ignore missing temp files: %v", err)
+	}
+	if err := vfs.Delete(name, false); err != nil {
+		t.Fatalf("delete should ignore repeated temp deletes: %v", err)
+	}
+}
+
+func TestLocalTempFileLocking(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "local-temp-*")
+	if err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	tf := newLocalTempFile(f, false, nil)
+	defer tf.Close()
+
+	assertReserved := func(want bool) {
+		t.Helper()
+		got, err := tf.CheckReservedLock()
+		if err != nil {
+			t.Fatalf("check reserved: %v", err)
+		}
+		if got != want {
+			t.Fatalf("reserved lock state mismatch: got %v want %v", got, want)
+		}
+	}
+
+	assertReserved(false)
+
+	if err := tf.Lock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("lock shared: %v", err)
+	}
+	assertReserved(false)
+
+	if err := tf.Lock(sqlite3vfs.LockReserved); err != nil {
+		t.Fatalf("lock reserved: %v", err)
+	}
+	assertReserved(true)
+
+	if err := tf.Unlock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("unlock shared: %v", err)
+	}
+	assertReserved(false)
+
+	if err := tf.Lock(sqlite3vfs.LockExclusive); err != nil {
+		t.Fatalf("lock exclusive: %v", err)
+	}
+	assertReserved(true)
+
+	if err := tf.Unlock(sqlite3vfs.LockNone); err != nil {
+		t.Fatalf("unlock none: %v", err)
+	}
+	assertReserved(false)
+}
+
+func TestVFS_DeleteIgnoresMissingTempFiles(t *testing.T) {
+	vfs := NewVFS(nil, slog.Default())
+
+	t.Run("AlreadyRemovedEntry", func(t *testing.T) {
+		name := "already-removed.db"
+		flags := sqlite3vfs.OpenTempDB | sqlite3vfs.OpenReadWrite | sqlite3vfs.OpenCreate | sqlite3vfs.OpenDeleteOnClose
+
+		file, _, err := vfs.openTempFile(name, flags)
+		if err != nil {
+			t.Fatalf("open temp file: %v", err)
+		}
+		tf := file.(*localTempFile)
+		if err := tf.Close(); err != nil {
+			t.Fatalf("close temp file: %v", err)
+		}
+		if err := vfs.Delete(name, false); err != nil {
+			t.Fatalf("delete should ignore missing tracked entry: %v", err)
+		}
+	})
+
+	t.Run("MissingOnDisk", func(t *testing.T) {
+		name := "missing-on-disk.db"
+		flags := sqlite3vfs.OpenTempDB | sqlite3vfs.OpenReadWrite | sqlite3vfs.OpenCreate
+
+		file, _, err := vfs.openTempFile(name, flags)
+		if err != nil {
+			t.Fatalf("open temp file: %v", err)
+		}
+		tf := file.(*localTempFile)
+
+		path, ok := vfs.loadTempFilePath(name)
+		if !ok {
+			t.Fatalf("temp file not tracked")
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("remove backing file: %v", err)
+		}
+		if err := vfs.Delete(name, false); err != nil {
+			t.Fatalf("delete should ignore missing file: %v", err)
+		}
+		if _, ok := vfs.loadTempFilePath(name); ok {
+			t.Fatalf("temp file tracking entry should be cleared")
+		}
+		if err := tf.Close(); err != nil {
+			t.Fatalf("close temp file: %v", err)
+		}
+	})
+}
+
+func TestVFS_TempDirExhaustion(t *testing.T) {
+	vfs := NewVFS(nil, slog.Default())
+	injected := fmt.Errorf("temp dir exhausted")
+	vfs.tempDirOnce.Do(func() { vfs.tempDirErr = injected })
+
+	if _, err := vfs.ensureTempDir(); !errors.Is(err, injected) {
+		t.Fatalf("expected ensureTempDir error, got %v", err)
+	}
+
+	if _, _, err := vfs.openTempFile("exhausted.db", sqlite3vfs.OpenTempDB); !errors.Is(err, injected) {
+		t.Fatalf("openTempFile should surface exhaustion error, got %v", err)
+	}
+}
+
+func TestVFSFile_PollingCancelsBlockedLTXFiles(t *testing.T) {
+	client := newBlockingReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "blocking.db", slog.Default())
+	f.PollInterval = 5 * time.Millisecond
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	client.blockNext.Store(true)
+	deadline := time.After(200 * time.Millisecond)
+	select {
+	case <-client.blocked:
+	case <-deadline:
+		t.Fatalf("expected monitor to block on LTXFiles")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_ = f.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("close did not unblock blocked LTXFiles call")
+	}
+
+	if !client.cancelled.Load() {
+		t.Fatalf("blocking client did not observe context cancellation")
+	}
+}
+
+type vfsTestLogger struct{}
+
+func (vfsTestLogger) SetLogger(*slog.Logger) {}
+
+// mockReplicaClient implements ReplicaClient for deterministic LTX fixtures.
+type mockReplicaClient struct {
+	vfsTestLogger
+	mu    sync.Mutex
+	files []*ltx.FileInfo
+	data  map[string][]byte
+}
+
+type blockingReplicaClient struct {
+	*mockReplicaClient
+	blockNext atomic.Bool
+	blocked   chan struct{}
+	cancelled atomic.Bool
+	once      sync.Once
+}
+
+type countingReplicaClient struct {
+	vfsTestLogger
+	calls atomic.Uint64
+}
+
+type failingPageReplicaClient struct {
+	*mockReplicaClient
+	failPageReads atomic.Bool
+	opens         atomic.Uint64
+}
+
+func newCountingReplicaClient() *countingReplicaClient { return &countingReplicaClient{} }
+
+func newFailingPageReplicaClient() *failingPageReplicaClient {
+	return &failingPageReplicaClient{mockReplicaClient: newMockReplicaClient()}
+}
+
+func (c *countingReplicaClient) Type() string { return "count" }
+
+func (c *countingReplicaClient) Init(context.Context) error { return nil }
+
+func (c *countingReplicaClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+	c.calls.Add(1)
+	return ltx.NewFileInfoSliceIterator(nil), nil
+}
+
+func (c *countingReplicaClient) OpenLTXFile(context.Context, int, ltx.TXID, ltx.TXID, int64, int64) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+func (c *countingReplicaClient) WriteLTXFile(context.Context, int, ltx.TXID, ltx.TXID, io.Reader) (*ltx.FileInfo, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (c *countingReplicaClient) DeleteLTXFiles(context.Context, []*ltx.FileInfo) error { return nil }
+
+func (c *countingReplicaClient) DeleteAll(context.Context) error { return nil }
+
+func (c *countingReplicaClient) SetLogger(*slog.Logger) {}
+
+func newMockReplicaClient() *mockReplicaClient {
+	return &mockReplicaClient{data: make(map[string][]byte)}
+}
+
+func newBlockingReplicaClient() *blockingReplicaClient {
+	return &blockingReplicaClient{
+		mockReplicaClient: newMockReplicaClient(),
+		blocked:           make(chan struct{}),
+	}
+}
+
+func (c *mockReplicaClient) Type() string { return "mock" }
+
+func (c *mockReplicaClient) Init(context.Context) error { return nil }
+
+func (c *mockReplicaClient) addFixture(tb testing.TB, fx *ltxFixture) {
+	tb.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.files = append(c.files, fx.info)
+	c.data[c.key(fx.info)] = fx.data
+}
+
+func (c *mockReplicaClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []*ltx.FileInfo
+	for _, info := range c.files {
+		if info.Level == level && info.MinTXID >= seek {
+			out = append(out, info)
+		}
+	}
+	return ltx.NewFileInfoSliceIterator(out), nil
+}
+
+func (c *mockReplicaClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := c.makeKey(level, minTXID, maxTXID)
+	data, ok := c.data[key]
+	if !ok {
+		return nil, fmt.Errorf("ltx file not found")
+	}
+	if offset > int64(len(data)) {
+		return nil, fmt.Errorf("offset beyond data")
+	}
+	slice := data[offset:]
+	if size > 0 && size < int64(len(slice)) {
+		slice = slice[:size]
+	}
+	return io.NopCloser(bytes.NewReader(slice)), nil
+}
+
+func (c *failingPageReplicaClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	c.opens.Add(1)
+	if c.failPageReads.Load() && offset > 0 && size > 0 {
+		return nil, errors.New("injected page read failure")
+	}
+	return c.mockReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+}
+
+func (c *mockReplicaClient) WriteLTXFile(context.Context, int, ltx.TXID, ltx.TXID, io.Reader) (*ltx.FileInfo, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (c *mockReplicaClient) DeleteLTXFiles(context.Context, []*ltx.FileInfo) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (c *mockReplicaClient) DeleteAll(context.Context) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (c *mockReplicaClient) SetLogger(*slog.Logger) {}
+
+func (c *blockingReplicaClient) Type() string { return "blocking" }
+
+func (c *blockingReplicaClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+	if seek > 1 && c.blockNext.Load() {
+		if c.blockNext.CompareAndSwap(true, false) {
+			c.once.Do(func() { close(c.blocked) })
+			<-ctx.Done()
+			c.cancelled.Store(true)
+			return nil, ctx.Err()
+		}
+	}
+	return c.mockReplicaClient.LTXFiles(ctx, level, seek, useMetadata)
+}
+
+func (c *blockingReplicaClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	return c.mockReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+}
+
+func (c *blockingReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, r io.Reader) (*ltx.FileInfo, error) {
+	return c.mockReplicaClient.WriteLTXFile(ctx, level, minTXID, maxTXID, r)
+}
+
+func (c *blockingReplicaClient) DeleteLTXFiles(ctx context.Context, files []*ltx.FileInfo) error {
+	return c.mockReplicaClient.DeleteLTXFiles(ctx, files)
+}
+
+func (c *blockingReplicaClient) DeleteAll(ctx context.Context) error {
+	return c.mockReplicaClient.DeleteAll(ctx)
+}
+
+func (c *mockReplicaClient) key(info *ltx.FileInfo) string {
+	return c.makeKey(info.Level, info.MinTXID, info.MaxTXID)
+}
+
+func (c *mockReplicaClient) makeKey(level int, minTXID, maxTXID ltx.TXID) string {
+	return fmt.Sprintf("%d:%s:%s", level, minTXID.String(), maxTXID.String())
+}
+
+type ltxFixture struct {
+	info *ltx.FileInfo
+	data []byte
+}
+
+func buildLTXFixture(tb testing.TB, txid ltx.TXID, fill byte) *ltxFixture {
+	return buildLTXFixtureWithPage(tb, txid, 4096, 1, fill)
+}
+
+func buildLTXFixtureRange(tb testing.TB, minTXID, maxTXID ltx.TXID, fill byte) *ltxFixture {
+	return buildLTXFixtureRangeWithPages(tb, minTXID, maxTXID, 4096, []uint32{1}, fill)
+}
+
+func buildLTXFixtureWithPage(tb testing.TB, txid ltx.TXID, pageSize, pgno uint32, fill byte) *ltxFixture {
+	return buildLTXFixtureWithPages(tb, txid, pageSize, []uint32{pgno}, fill)
+}
+
+func buildLTXFixtureWithPages(tb testing.TB, txid ltx.TXID, pageSize uint32, pgnos []uint32, fill byte) *ltxFixture {
+	return buildLTXFixtureRangeWithPages(tb, txid, txid, pageSize, pgnos, fill)
+}
+
+func buildLTXFixtureRangeWithPages(tb testing.TB, minTXID, maxTXID ltx.TXID, pageSize uint32, pgnos []uint32, fill byte) *ltxFixture {
+	tb.Helper()
+	if len(pgnos) == 0 {
+		tb.Fatalf("pgnos required")
+	}
+	if minTXID == 1 {
+		if len(pgnos) == 0 || pgnos[0] != 1 {
+			tb.Fatalf("snapshot fixture must start at page 1")
+		}
+	}
+
+	var buf bytes.Buffer
+	enc, err := ltx.NewEncoder(&buf)
+	if err != nil {
+		tb.Fatalf("new encoder: %v", err)
+	}
+	maxPg := uint32(0)
+	for _, pg := range pgnos {
+		if pg > maxPg {
+			maxPg = pg
+		}
+	}
+	if maxPg == 0 {
+		maxPg = 1
+	}
+	hdr := ltx.Header{
+		Version:   ltx.Version,
+		PageSize:  pageSize,
+		Commit:    maxPg,
+		MinTXID:   minTXID,
+		MaxTXID:   maxTXID,
+		Timestamp: time.Now().UnixMilli(),
+		Flags:     ltx.HeaderFlagNoChecksum,
+	}
+	if err := enc.EncodeHeader(hdr); err != nil {
+		tb.Fatalf("encode header: %v", err)
+	}
+	for _, pg := range pgnos {
+		if pg == 0 {
+			pg = 1
+		}
+		page := bytes.Repeat([]byte{fill}, int(pageSize))
+		if err := enc.EncodePage(ltx.PageHeader{Pgno: pg}, page); err != nil {
+			tb.Fatalf("encode page %d: %v", pg, err)
+		}
+	}
+	if err := enc.Close(); err != nil {
+		tb.Fatalf("close encoder: %v", err)
+	}
+
+	info := &ltx.FileInfo{
+		Level:     0,
+		MinTXID:   minTXID,
+		MaxTXID:   maxTXID,
+		Size:      int64(buf.Len()),
+		CreatedAt: time.Now().UTC(),
+	}
+
+	return &ltxFixture{info: info, data: buf.Bytes()}
+}
+
+func openVFSFileAtSnapshot(tb testing.TB, maxTXID ltx.TXID, fill byte) (*VFSFile, *mockReplicaClient) {
+	tb.Helper()
+	client := newMockReplicaClient()
+	snapshot := buildLTXFixtureRange(tb, 1, maxTXID, fill)
+	snapshot.info.Level = SnapshotLevel
+	client.addFixture(tb, snapshot)
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	if err := f.Open(); err != nil {
+		tb.Fatalf("open vfs file: %v", err)
+	}
+	tb.Cleanup(func() { _ = f.Close() })
+	return f, client
+}
+
+func waitForHydration(tb testing.TB, f *VFSFile) {
+	tb.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	for {
+		if f.hydrator != nil && f.hydrator.Complete() {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-timer.C:
+			tb.Fatalf("hydration did not complete in time")
+		}
+	}
+}
+
+// TestVFSFile_Hydration_Basic tests that hydration completes and reads from local file.
+func TestVFSFile_Hydration_Basic(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	// Create temp directory for hydration
+	hydrationDir := t.TempDir()
+
+	// Create VFSFile with hydration enabled
+	f := NewVFSFile(client, "test.db", slog.Default())
+	f.hydrationPath = filepath.Join(hydrationDir, "test.db.hydration.db")
+	f.PollInterval = 100 * time.Millisecond
+
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	// Wait for hydration to complete
+	deadline := time.Now().Add(5 * time.Second)
+	for f.hydrator == nil || !f.hydrator.Complete() {
+		if time.Now().After(deadline) {
+			t.Fatalf("hydration did not complete in time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Verify hydration file exists
+	if _, err := os.Stat(f.hydrationPath); err != nil {
+		t.Fatalf("hydration file not found: %v", err)
+	}
+
+	// Read a page - should come from hydrated file
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read at: %v", err)
+	}
+
+	// Check that the data matches (excluding modified header bytes)
+	for i := 28; i < len(buf); i++ {
+		if buf[i] != 'a' {
+			t.Fatalf("expected byte 'a' at position %d, got %q", i, buf[i])
+		}
+	}
+}
+
+// TestVFSFile_Hydration_ReadsDuringHydration tests that reads work via cache/remote during hydration.
+func TestVFSFile_Hydration_ReadsDuringHydration(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'b'))
+
+	hydrationDir := t.TempDir()
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	f.hydrationPath = filepath.Join(hydrationDir, "test.db.hydration.db")
+	f.PollInterval = 100 * time.Millisecond
+
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	// Read immediately - should work even if hydration is still in progress
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read at during hydration: %v", err)
+	}
+
+	// Data should be correct regardless of hydration status
+	for i := 28; i < len(buf); i++ {
+		if buf[i] != 'b' {
+			t.Fatalf("expected byte 'b' at position %d, got %q", i, buf[i])
+		}
+	}
+}
+
+// TestVFSFile_Hydration_CloseEarly tests clean shutdown during hydration.
+func TestVFSFile_Hydration_CloseEarly(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'c'))
+
+	hydrationDir := t.TempDir()
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	f.hydrationPath = filepath.Join(hydrationDir, "test.db.hydration.db")
+	f.PollInterval = 100 * time.Millisecond
+
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+
+	// Close immediately without waiting for hydration
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// Hydration file should be removed
+	if _, err := os.Stat(f.hydrationPath); !os.IsNotExist(err) {
+		t.Fatalf("hydration file should be removed after close")
+	}
+}
+
+// TestVFSFile_Hydration_Disabled tests that hydration has no effect when disabled.
+func TestVFSFile_Hydration_Disabled(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'd'))
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	// hydrationPath is empty by default (hydration disabled)
+	f.PollInterval = 100 * time.Millisecond
+
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	// Hydrator should be nil when hydration is disabled
+	if f.hydrator != nil {
+		t.Fatalf("hydrator should be nil when disabled")
+	}
+
+	// Reads should still work via cache/remote
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read at: %v", err)
+	}
+}
+
+// TestVFSFile_Hydration_IncrementalUpdates tests that new LTX files are applied to hydrated file.
+func TestVFSFile_Hydration_IncrementalUpdates(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'e'))
+
+	hydrationDir := t.TempDir()
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	f.hydrationPath = filepath.Join(hydrationDir, "test.db.hydration.db")
+	f.PollInterval = 50 * time.Millisecond
+
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	// Wait for hydration to complete
+	deadline := time.Now().Add(5 * time.Second)
+	for f.hydrator == nil || !f.hydrator.Complete() {
+		if time.Now().After(deadline) {
+			t.Fatalf("hydration did not complete in time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Add a new LTX file
+	client.addFixture(t, buildLTXFixture(t, 2, 'f'))
+
+	// Wait for poll to pick up the update
+	time.Sleep(200 * time.Millisecond)
+
+	// Read the page - should have updated data
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read at: %v", err)
+	}
+
+	// Data should be updated (excluding header bytes)
+	for i := 28; i < len(buf); i++ {
+		if buf[i] != 'f' {
+			t.Fatalf("expected byte 'f' at position %d, got %q", i, buf[i])
+		}
+	}
+}
+
+func TestHydrator_Close_Persistent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hydration.db")
+	client := newMockReplicaClient()
+
+	h := NewHydrator(path, true, 4096, client, slog.Default())
+	if err := h.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	h.SetTXID(5)
+
+	if err := h.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("hydration file should be preserved: %v", err)
+	}
+
+	metaPath := path + ".meta"
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("meta file should exist: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "5" {
+		t.Fatalf("expected meta TXID=5, got %q", got)
+	}
+}
+
+func TestHydrator_Init_Resume(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hydration.db")
+	client := newMockReplicaClient()
+
+	if err := os.WriteFile(path, []byte("existing-db-data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".meta", []byte("42\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHydrator(path, true, 4096, client, slog.Default())
+	if err := h.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	defer h.Close()
+
+	if got := h.TXID(); got != 42 {
+		t.Fatalf("expected TXID=42, got %d", got)
+	}
+
+	data := make([]byte, 16)
+	n, err := h.file.ReadAt(data, 0)
+	if err != nil && err != io.EOF {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data[:n]) != "existing-db-data" {
+		t.Fatalf("file contents should be preserved, got %q", string(data[:n]))
+	}
+}
+
+func TestHydrator_Close_TempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hydration.db")
+	client := newMockReplicaClient()
+
+	h := NewHydrator(path, false, 4096, client, slog.Default())
+	if err := h.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	h.SetTXID(10)
+
+	if err := h.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("temp hydration file should be deleted")
+	}
+	if _, err := os.Stat(path + ".meta"); !os.IsNotExist(err) {
+		t.Fatalf("meta file should not exist for temp hydrator")
+	}
+}
+
+func TestHydrator_Init_StaleMeta(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hydration.db")
+	client := newMockReplicaClient()
+
+	if err := os.WriteFile(path+".meta", []byte("99\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHydrator(path, true, 4096, client, slog.Default())
+	if err := h.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	defer h.Close()
+
+	if got := h.TXID(); got != 0 {
+		t.Fatalf("expected TXID=0 for stale meta, got %d", got)
+	}
+
+	if _, err := os.Stat(path + ".meta"); !os.IsNotExist(err) {
+		t.Fatalf("stale meta file should be removed")
+	}
+}
+
+func TestVFSFile_Hydration_PersistentResumeOnReopen(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'g'))
+
+	hydrationDir := t.TempDir()
+	hydrationPath := filepath.Join(hydrationDir, "persistent-hydration.db")
+
+	f := NewVFSFile(client, "test.db", slog.Default())
+	f.hydrationPath = hydrationPath
+	f.hydrationPersistent = true
+	f.PollInterval = 50 * time.Millisecond
+
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file (first): %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for f.hydrator == nil || !f.hydrator.Complete() {
+		if time.Now().After(deadline) {
+			t.Fatalf("first hydration did not complete in time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := f.Close(); err != nil {
+		t.Fatalf("close vfs file (first): %v", err)
+	}
+
+	if _, err := os.Stat(hydrationPath); err != nil {
+		t.Fatalf("persistent hydration file should exist after close: %v", err)
+	}
+	if _, err := os.Stat(hydrationPath + ".meta"); err != nil {
+		t.Fatalf("persistent hydration meta should exist after close: %v", err)
+	}
+	initialInfo, err := os.Stat(hydrationPath)
+	if err != nil {
+		t.Fatalf("stat hydration file after first close: %v", err)
+	}
+
+	f2 := NewVFSFile(client, "test.db", slog.Default())
+	f2.hydrationPath = hydrationPath
+	f2.hydrationPersistent = true
+	f2.PollInterval = 50 * time.Millisecond
+
+	if err := f2.Open(); err != nil {
+		t.Fatalf("open vfs file (second): %v", err)
+	}
+
+	deadline = time.Now().Add(5 * time.Second)
+	for f2.hydrator == nil || !f2.hydrator.Complete() {
+		if time.Now().After(deadline) {
+			t.Fatalf("second hydration did not complete in time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if got := f2.hydrator.TXID(); got != 1 {
+		t.Fatalf("expected resumed hydration txid=1, got %d", got)
+	}
+	if err := f2.Close(); err != nil {
+		t.Fatalf("close vfs file (second): %v", err)
+	}
+
+	reopenedInfo, err := os.Stat(hydrationPath)
+	if err != nil {
+		t.Fatalf("stat hydration file after second close: %v", err)
+	}
+	if !reopenedInfo.ModTime().Equal(initialInfo.ModTime()) {
+		t.Fatalf("expected hydration file modtime unchanged on reopen resume")
+	}
+}
+
+func TestVFSFile_PollLevel1DoesNotRegressNewerL0Pages(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "regress.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	client.addFixture(t, buildLTXFixture(t, 3, 'c'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L0: %v", err)
+	}
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read after L0: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("expected newest L0 page, got %q", buf[0])
+	}
+
+	l1 := buildLTXFixture(t, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 2 {
+		t.Fatalf("maxTXID1 = %s, want 2", got)
+	}
+	if got := f.Pos().TXID; got != 3 {
+		t.Fatalf("pos = %s, want 3", got)
+	}
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read after L1: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("L1 poll regressed page 1 to older version %q, want 'c'", buf[0])
+	}
+}
+
+func TestVFSFile_PollLevel1RecoversStraddlingCompactions(t *testing.T) {
+	f, client := openVFSFileAtSnapshot(t, 6, 'a')
+
+	straddler := buildLTXFixtureRange(t, 1, 11, 'b')
+	straddler.info.Level = 1
+	client.addFixture(t, straddler)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll straddling L1: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 11 {
+		t.Fatalf("maxTXID1 = %s, want 11", got)
+	}
+
+	next := buildLTXFixtureRange(t, 12, 29, 'c')
+	next.info.Level = 1
+	client.addFixture(t, next)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll next L1: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 29 {
+		t.Fatalf("maxTXID1 = %s, want 29", got)
+	}
+	if got := f.Pos().TXID; got != 29 {
+		t.Fatalf("pos = %s, want 29", got)
+	}
+
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read after L1 recovery: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("read = %q, want newest L1 page 'c'", buf[0])
+	}
+}
+
+func TestVFSFile_PollLevel1RecoversStraddlerAndNextFileTogether(t *testing.T) {
+	f, client := openVFSFileAtSnapshot(t, 6, 'a')
+
+	straddler := buildLTXFixtureRange(t, 1, 11, 'b')
+	straddler.info.Level = 1
+	client.addFixture(t, straddler)
+	next := buildLTXFixtureRange(t, 12, 29, 'c')
+	next.info.Level = 1
+	client.addFixture(t, next)
+
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1 files: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 29 {
+		t.Fatalf("maxTXID1 = %s, want 29", got)
+	}
+	if got := f.Pos().TXID; got != 29 {
+		t.Fatalf("pos = %s, want 29", got)
+	}
+}
+
+func TestVFSFile_PollLevel1KeepsWatermarkForCoveredFile(t *testing.T) {
+	f, client := openVFSFileAtSnapshot(t, 6, 'a')
+
+	covered := buildLTXFixtureRange(t, 1, 5, 'b')
+	covered.info.Level = 1
+	client.addFixture(t, covered)
+
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll covered L1: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 6 {
+		t.Fatalf("maxTXID1 = %s, want 6", got)
+	}
+}
+
+func TestVFSFile_PollLevel1RepointsPageBelowWatermark(t *testing.T) {
+	client := newFailingPageReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+	l0 := buildLTXFixture(t, 2, 'b')
+	client.addFixture(t, l0)
+	client.addFixture(t, buildLTXFixtureWithPage(t, 3, 4096, 2, 'c'))
+
+	f := NewVFSFile(client, "covered-l1.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	covered := buildLTXFixtureRange(t, 1, 2, 'b')
+	covered.info.Level = 1
+	client.addFixture(t, covered)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll covered L1: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 3 {
+		t.Fatalf("maxTXID1 = %s, want 3", got)
+	}
+	opens := client.opens.Load()
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("repeat poll of covered L1: %v", err)
+	}
+	if got := client.opens.Load(); got != opens {
+		t.Fatalf("repeat poll opened %d unchanged L1 files", got-opens)
+	}
+
+	f.mu.Lock()
+	elem := f.index[1]
+	f.mu.Unlock()
+	if elem.Level != 1 || elem.MaxTXID != 2 {
+		t.Fatalf("page index = %+v, want L1 at TXID 2", elem)
+	}
+	client.mu.Lock()
+	delete(client.data, client.key(l0.info))
+	client.mu.Unlock()
+	f.cache.Purge()
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read retained L1 page: %v", err)
+	}
+	if buf[0] != 'b' {
+		t.Fatalf("retained L1 page = %q, want 'b'", buf[0])
+	}
+}
+
+func TestVFSFile_PollLevel1RejectsRealGap(t *testing.T) {
+	f, client := openVFSFileAtSnapshot(t, 6, 'a')
+
+	gap := buildLTXFixtureRange(t, 8, 11, 'b')
+	gap.info.Level = 1
+	client.addFixture(t, gap)
+
+	err := f.pollReplicaClient(context.Background())
+	if err == nil {
+		t.Fatal("expected non-contiguous L1 error")
+	}
+	if got, want := err.Error(), "poll L1: non-contiguous ltx file: level=1, current=0000000000000006, next=0000000000000008-000000000000000b"; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+}
+
+func TestVFSFile_PollLevel1RecoversFirstFileStartingAboveOne(t *testing.T) {
+	f, client := openVFSFileAtSnapshot(t, 6, 'a')
+
+	straddler := buildLTXFixtureRange(t, 4, 9, 'b')
+	straddler.info.Level = 1
+	client.addFixture(t, straddler)
+
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll first L1: %v", err)
+	}
+	if got := f.MaxTXID1(); got != 9 {
+		t.Fatalf("maxTXID1 = %s, want 9", got)
+	}
+}
+
+func TestVFSFile_PollStraddlingLevel1DoesNotRegressNewerL0Pages(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "straddling-regress.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	client.addFixture(t, buildLTXFixture(t, 3, 'c'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L0: %v", err)
+	}
+
+	l1 := buildLTXFixtureRange(t, 1, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll straddling L1: %v", err)
+	}
+
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read after L1: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("L1 poll regressed page 1 to %q, want 'c'", buf[0])
+	}
+}
+
+func TestVFSFile_PendingLevel1DoesNotRegressNewerL0Pages(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "pending-regress.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	client.addFixture(t, buildLTXFixture(t, 3, 'c'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L0: %v", err)
+	}
+	if err := f.Lock(sqlite3vfs.LockShared); err != nil {
+		t.Fatalf("lock shared: %v", err)
+	}
+
+	l1 := buildLTXFixture(t, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1: %v", err)
+	}
+	f.mu.Lock()
+	elem, ok := f.pending[1]
+	f.mu.Unlock()
+	if ok {
+		t.Fatalf("pending page regressed to L1 entry %+v", elem)
+	}
+	if err := f.Unlock(sqlite3vfs.LockNone); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read after unlock: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("L1 poll regressed page 1 to %q, want 'c'", buf[0])
+	}
+}
+
+func TestVFSFile_HydratedLevel1DoesNotRegressNewerL0Pages(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "hydrated-regress.db", slog.Default())
+	f.hydrationPath = filepath.Join(t.TempDir(), "hydrated-regress.db")
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+	waitForHydration(t, f)
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	client.addFixture(t, buildLTXFixture(t, 3, 'c'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L0: %v", err)
+	}
+
+	l1 := buildLTXFixture(t, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1: %v", err)
+	}
+
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read hydrated page: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("L1 poll regressed hydrated page 1 to %q, want 'c'", buf[0])
+	}
+}
+
+func TestVFSFile_PollLevel1RepointsEqualTXIDPage(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+	l0 := buildLTXFixture(t, 2, 'b')
+	client.addFixture(t, l0)
+
+	f := NewVFSFile(client, "equal-txid.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	f.mu.Lock()
+	elem := f.index[1]
+	anchored := f.maxTXID1Anchored
+	f.mu.Unlock()
+	if elem.Level != 0 || elem.MaxTXID != 2 || anchored {
+		t.Fatalf("initial page index = %+v, anchored=%t; want unanchored level 0 at TXID 2", elem, anchored)
+	}
+
+	l1 := buildLTXFixtureRange(t, 1, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1: %v", err)
+	}
+
+	f.mu.Lock()
+	elem = f.index[1]
+	anchored = f.maxTXID1Anchored
+	f.mu.Unlock()
+	if elem.Level != 1 || elem.MaxTXID != 2 || !anchored {
+		t.Fatalf("page index = %+v, anchored=%t; want anchored level 1 at TXID 2", elem, anchored)
+	}
+
+	client.mu.Lock()
+	delete(client.data, client.key(l0.info))
+	client.mu.Unlock()
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read compacted page: %v", err)
+	}
+	if buf[0] != 'b' {
+		t.Fatalf("read compacted page = %q, want 'b'", buf[0])
+	}
+}
+
+func TestVFSFile_PollLevel1RepointsEqualTXIDPageBeforeSuccessor(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+	l0 := buildLTXFixture(t, 2, 'b')
+	client.addFixture(t, l0)
+
+	f := NewVFSFile(client, "equal-txid-successor.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	l1 := buildLTXFixtureRange(t, 1, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	successor := buildLTXFixtureWithPage(t, 3, 4096, 2, 'c')
+	successor.info.Level = 1
+	client.addFixture(t, successor)
+
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1: %v", err)
+	}
+
+	f.mu.Lock()
+	elem := f.index[1]
+	f.mu.Unlock()
+	if elem.Level != 1 || elem.MaxTXID != 2 {
+		t.Fatalf("page index = %+v, want L1 at TXID 2", elem)
+	}
+
+	client.mu.Lock()
+	delete(client.data, client.key(l0.info))
+	client.mu.Unlock()
+	f.cache.Purge()
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read retained L1 page: %v", err)
+	}
+	if buf[0] != 'b' {
+		t.Fatalf("retained L1 page = %q, want 'b'", buf[0])
+	}
+}
+
+func TestVFSFile_PollLevel1KeepsNewerL0Page(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "newer-l0.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	client.addFixture(t, buildLTXFixture(t, 3, 'c'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L0: %v", err)
+	}
+
+	l1 := buildLTXFixture(t, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L1: %v", err)
+	}
+
+	f.mu.Lock()
+	elem := f.index[1]
+	f.mu.Unlock()
+	if elem.Level != 0 || elem.MaxTXID != 3 {
+		t.Fatalf("page index = %+v, want level 0 at TXID 3", elem)
+	}
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read newer L0 page: %v", err)
+	}
+	if buf[0] != 'c' {
+		t.Fatalf("read newer L0 page = %q, want 'c'", buf[0])
+	}
+}
+
+func TestVFSFile_PollOlderLevel1KeepsNewerL0Growth(t *testing.T) {
+	client := newMockReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "older-l1-growth.db", slog.Default())
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+
+	client.addFixture(t, buildLTXFixtureWithPage(t, 2, 4096, 2, 'b'))
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll L0 growth: %v", err)
+	}
+
+	l1 := buildLTXFixture(t, 1, 'a')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	if err := f.pollReplicaClient(context.Background()); err != nil {
+		t.Fatalf("poll older L1: %v", err)
+	}
+
+	f.mu.Lock()
+	commit := f.commit
+	_, hasPage2 := f.index[2]
+	f.mu.Unlock()
+	if commit != 2 || !hasPage2 {
+		t.Fatalf("older L1 discarded newer L0 growth: commit=%d, hasPage2=%t", commit, hasPage2)
+	}
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 4096); err != nil {
+		t.Fatalf("read newer L0 page: %v", err)
+	}
+	if buf[0] != 'b' {
+		t.Fatalf("newer L0 page = %q, want 'b'", buf[0])
+	}
+}
+
+func TestVFSFile_HydrationUpdateFailureDisablesHydration(t *testing.T) {
+	client := newFailingPageReplicaClient()
+	client.addFixture(t, buildLTXFixture(t, 1, 'a'))
+
+	f := NewVFSFile(client, "hydration-failure.db", slog.Default())
+	f.hydrationPath = filepath.Join(t.TempDir(), "hydration-failure.db")
+	if err := f.Open(); err != nil {
+		t.Fatalf("open vfs file: %v", err)
+	}
+	defer f.Close()
+	waitForHydration(t, f)
+
+	client.addFixture(t, buildLTXFixture(t, 2, 'b'))
+	l1 := buildLTXFixture(t, 2, 'b')
+	l1.info.Level = 1
+	client.addFixture(t, l1)
+	client.failPageReads.Store(true)
+
+	err := f.pollReplicaClient(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "apply hydration updates") {
+		t.Fatalf("poll error = %v, want hydration update failure", err)
+	}
+	if f.hydrator.Complete() {
+		t.Fatal("hydration remained enabled after update failure")
+	}
+	if got := f.Pos().TXID; got != 2 {
+		t.Fatalf("pos = %s, want 2", got)
+	}
+	if got := f.MaxTXID1(); got != 2 {
+		t.Fatalf("maxTXID1 = %s, want 2", got)
+	}
+
+	client.failPageReads.Store(false)
+	buf := make([]byte, 4096)
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("read remote fallback: %v", err)
+	}
+	if buf[0] != 'b' {
+		t.Fatalf("read remote fallback = %q, want 'b'", buf[0])
+	}
+}
