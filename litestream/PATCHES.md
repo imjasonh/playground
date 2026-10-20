@@ -18,6 +18,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `b4dff65e` | Interleaving tests for the VFS | Not proposed |
 | `f9801067` | Keep written pages cached when the poller installs them | Not proposed |
 | `f9b60a91` | `VFS.ConflictCheckInterval`, which skips the conflict-check LIST while a writer's position is fresh | Not proposed; it needs conditional L0 uploads, which upstream's replica clients don't do |
+| `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 
 To see every change against upstream, diff against the last import:
 
@@ -31,7 +32,7 @@ git diff "$(git log --grep='^git-subtree-dir: litestream$' --format=%H -1):" HEA
   restyle it: pasta skips it, and the Go dependency update leaves its
   `go.mod` at upstream's versions, so pulls from upstream merge cleanly.
 - Make each patch one commit whose subject starts with `litestream:`, and
-  update the table in the same commit.
+  add its row to the table, with the commit's hash, in a follow-up commit.
 - When upstream merges a patch, the next pull brings upstream's version.
   Keep upstream's version and delete the row.
 

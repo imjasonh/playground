@@ -84,6 +84,11 @@ type VFS struct {
 	// that fell behind could reuse a TXID whose file was deleted.
 	ConflictCheckInterval time.Duration
 
+	// PageReadHook, if set, is called after each page read that returns a
+	// page, with where the page came from and how long the read took,
+	// including any fetch from the replica. It runs on SQLite's read path.
+	PageReadHook func(source PageReadSource, d time.Duration)
+
 	// HydrationEnabled activates background hydration of the database to a local file.
 	// When enabled, the VFS will restore the database in the background and serve
 	// reads from the local file once complete, eliminating remote fetch latency.
@@ -187,6 +192,7 @@ func (vfs *VFS) openMainDB(name string, uriParameters map[string]string, flags s
 	f := NewVFSFile(client, name, vfs.logger.With("name", name))
 	f.PollInterval = vfs.PollInterval
 	f.CacheSize = vfs.CacheSize
+	f.pageReadHook = vfs.PageReadHook
 	f.vfs = vfs
 	f.perConnClient = perConnClient
 
@@ -646,6 +652,8 @@ type VFSFile struct {
 
 	conflictCheckInterval time.Duration // See VFS.ConflictCheckInterval
 	positionConfirmedAt   time.Time     // When a listing or upload last confirmed expectedTXID
+
+	pageReadHook func(PageReadSource, time.Duration) // See VFS.PageReadHook
 
 	perConnClient bool // True when client was created from config registry (close on file close)
 
@@ -1573,6 +1581,10 @@ func (f *VFSFile) Close() error {
 
 func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 	f.logger.Debug("reading at", "off", off, "len", len(p))
+	var start time.Time
+	if f.pageReadHook != nil {
+		start = time.Now()
+	}
 	pageSize, err := f.pageSizeBytes()
 	if err != nil {
 		return 0, err
@@ -1599,13 +1611,18 @@ func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 			_, _ = rand.Read(p[24:28])
 		}
 
+		f.reportPageRead(PageReadOverlay, start)
 		return n, nil
 	}
 	f.mu.Unlock()
 
 	// If hydration complete, read from local file
 	if f.hydrator != nil && f.hydrator.Complete() {
-		return f.hydrator.ReadAt(p, off)
+		n, err = f.hydrator.ReadAt(p, off)
+		if err == nil {
+			f.reportPageRead(PageReadHydrated, start)
+		}
+		return n, err
 	}
 
 	// Check cache (cache is thread-safe)
@@ -1619,6 +1636,7 @@ func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 			_, _ = rand.Read(p[24:28])
 		}
 
+		f.reportPageRead(PageReadCache, start)
 		return n, nil
 	}
 
@@ -1685,7 +1703,31 @@ func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 		_, _ = rand.Read(p[24:28])
 	}
 
+	f.reportPageRead(PageReadReplica, start)
 	return n, nil
+}
+
+// PageReadSource says where VFSFile.ReadAt found a page.
+type PageReadSource string
+
+const (
+	// PageReadOverlay is a page this file wrote that the page index doesn't
+	// cover yet.
+	PageReadOverlay PageReadSource = "overlay"
+	// PageReadHydrated is a page from the hydrated local copy.
+	PageReadHydrated PageReadSource = "hydrated"
+	// PageReadCache is a page from the in-memory page cache.
+	PageReadCache PageReadSource = "cache"
+	// PageReadReplica is a page fetched from the replica client.
+	PageReadReplica PageReadSource = "replica"
+)
+
+// reportPageRead passes a page read that began at start to the page read
+// hook, if there is one.
+func (f *VFSFile) reportPageRead(source PageReadSource, start time.Time) {
+	if f.pageReadHook != nil {
+		f.pageReadHook(source, time.Since(start))
+	}
 }
 
 // readOverlayPageWithLock returns local write pages that must be visible

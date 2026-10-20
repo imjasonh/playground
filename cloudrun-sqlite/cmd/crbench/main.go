@@ -309,7 +309,12 @@ type remoteStats struct {
 		WriteQueue pct     `json:"write_queue"`
 		Tx         pct     `json:"tx"`
 		Flush      pct     `json:"flush"`
-		GCS        struct {
+		Write      pct     `json:"write"`
+		VFSRead    struct {
+			PagedIn pct `json:"paged_in"`
+			Cold    pct `json:"cold"`
+		} `json:"vfs_read"`
+		GCS struct {
 			Get  pct `json:"get"`
 			List pct `json:"list"`
 			Put  pct `json:"put"`
@@ -333,13 +338,16 @@ func printRemoteStats(st *remoteStats) {
 	printPct("write queue", s.WriteQueue)
 	printPct("sqlite tx", s.Tx)
 	printPct("flush", s.Flush)
+	printPct("write ack", s.Write)
+	printPct("paged in", s.VFSRead.PagedIn)
+	printPct("cold read", s.VFSRead.Cold)
 	printPct("replica get", s.GCS.Get)
 	printPct("replica list", s.GCS.List)
 	printPct("replica put", s.GCS.Put)
 }
 
 func printPct(name string, p pct) {
-	fmt.Printf("  %-12s n=%-6d p50 %6.1f  p90 %6.1f  p99 %6.1f  max %6.1f ms\n", name, p.Count, p.P50, p.P90, p.P99, p.Max)
+	fmt.Printf("  %-12s n=%-6d p50 %8.3f  p90 %8.3f  p99 %8.3f  max %8.3f ms\n", name, p.Count, p.P50, p.P90, p.P99, p.Max)
 }
 
 // rollService deploys a new revision and waits until /stats reports a

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -140,6 +141,9 @@ type Store struct {
 	writeQueue   latencies
 	tx           latencies
 	flushes      latencies
+	writeAcks    latencies
+	pagedIn      latencies
+	coldReads    latencies
 	snapshotMu   sync.Mutex
 	snapshots    atomic.Int64
 	lastSnapshot atomic.Pointer[SnapshotResult]
@@ -226,6 +230,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		done:      make(chan struct{}),
 	}
 	s.planLen.Store(-1)
+	vfs.PageReadHook = s.notePageRead
 	name := fmt.Sprintf("litestream-%d", vfsSeq.Add(1))
 	if err := sqlite3vfs.RegisterVFS(name, &captureVFS{VFS: vfs, store: s}); err != nil {
 		return nil, fmt.Errorf("register VFS: %w", err)
@@ -329,8 +334,19 @@ func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) (err error) {
 // not call Read, which waits for the transaction fn is part of.
 func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 	ctx, end := observe.Span(ctx, "store.write")
-	defer func() { end(err) }()
-	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1), enqueued: time.Now()}
+	start := time.Now()
+	defer func() {
+		d := time.Since(start)
+		result := "ok"
+		if err != nil {
+			result = "error"
+		} else {
+			s.writeAcks.add(d)
+		}
+		observe.Measure(ctx, observe.StoreWrite, d, "durable", strconv.FormatBool(s.cfg.Durable), "result", result)
+		end(err)
+	}()
+	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1), enqueued: start}
 	select {
 	case s.writes <- req:
 	case <-s.closing:
@@ -389,7 +405,20 @@ func (s *Store) commitLoop() {
 
 func (s *Store) note(ctx context.Context, l *latencies, phase string, d time.Duration) {
 	l.add(d)
-	observe.Measure(ctx, "store.phase", "phase", phase, d)
+	observe.Measure(ctx, observe.StorePhase, d, "phase", phase)
+}
+
+// notePageRead records a page read through the VFS. A page from the
+// replica is cold; one from the write overlay, the page cache, or the
+// hydrated copy was paged in. SQLite reads through its own page cache
+// first, so a page it holds never gets here.
+func (s *Store) notePageRead(source litestream.PageReadSource, d time.Duration) {
+	l, label := &s.pagedIn, "paged_in"
+	if source == litestream.PageReadReplica {
+		l, label = &s.coldReads, "cold"
+	}
+	l.add(d)
+	observe.Measure(context.Background(), observe.VFSPageRead, d, "source", label)
 }
 
 func batchContext(batch []*writeReq) context.Context {
