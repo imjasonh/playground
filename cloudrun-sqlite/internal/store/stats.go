@@ -60,7 +60,12 @@ type Stats struct {
 	Conflicts    int64           `json:"conflicts"`
 	Writes       int64           `json:"writes"`
 	Batches      int64           `json:"batches"`
+	ReadWait     Percentiles     `json:"read_wait"`
+	ReadQuery    Percentiles     `json:"read_query"`
+	WriteQueue   Percentiles     `json:"write_queue"`
+	Tx           Percentiles     `json:"tx"`
 	Flush        Percentiles     `json:"flush"`
+	GCS          GCSStats        `json:"gcs"`
 	TXID         string          `json:"txid"`
 	Hydration    string          `json:"hydration_pct,omitempty"`
 	Snapshots    int64           `json:"snapshots"`
@@ -70,17 +75,33 @@ type Stats struct {
 	RestorePlanLen int64 `json:"restore_plan_len"`
 }
 
+// GCSStats is how long replica reads, listings, and uploads took.
+type GCSStats struct {
+	Get  Percentiles `json:"get"`
+	List Percentiles `json:"list"`
+	Put  Percentiles `json:"put"`
+}
+
 // Stats reports counters and queries the VFS for its position.
 func (s *Store) Stats(ctx context.Context) Stats {
 	st := Stats{
-		OpenMillis:     float64(s.openDuration) / float64(time.Millisecond),
-		Durable:        s.cfg.Durable,
-		Opens:          s.opens.Load(),
-		Reopens:        s.reopens.Load(),
-		Conflicts:      s.client.conflicts.Load(),
-		Writes:         s.writeCount.Load(),
-		Batches:        s.batchCount.Load(),
-		Flush:          s.flushes.percentiles(),
+		OpenMillis: float64(s.openDuration) / float64(time.Millisecond),
+		Durable:    s.cfg.Durable,
+		Opens:      s.opens.Load(),
+		Reopens:    s.reopens.Load(),
+		Conflicts:  s.client.conflicts.Load(),
+		Writes:     s.writeCount.Load(),
+		Batches:    s.batchCount.Load(),
+		ReadWait:   s.readWait.percentiles(),
+		ReadQuery:  s.readQuery.percentiles(),
+		WriteQueue: s.writeQueue.percentiles(),
+		Tx:         s.tx.percentiles(),
+		Flush:      s.flushes.percentiles(),
+		GCS: GCSStats{
+			Get:  s.client.gets.percentiles(),
+			List: s.client.lists.percentiles(),
+			Put:  s.client.puts.percentiles(),
+		},
 		Snapshots:      s.snapshots.Load(),
 		LastSnapshot:   s.lastSnapshot.Load(),
 		RestorePlanLen: s.planLen.Load(),

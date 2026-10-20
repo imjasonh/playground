@@ -176,6 +176,47 @@ Before reads waited for whole writes, the 8-writer run's reads took
 upload, then hold it until the upload finished while other reads queued
 behind it.
 
+`crbench live` runs that workload against a service that is already
+running, instead of MinIO and the latency proxy. `-roll` deploys a new
+Cloud Run revision before the read-back, so a new instance has to serve
+the acknowledged writes from the replica.
+
+```bash
+go build -tags vfs -o crbench ./cmd/crbench
+./crbench live -url https://SERVICE.run.app -duration 1m \
+  -roll -project PROJECT -region us-central1 -service cloudrun-sqlite
+```
+
+Client latencies include the network to Cloud Run. The command also prints
+`/stats` from the instance that served the load: time waiting on an upload,
+the SQLite transaction, and replica GET, LIST, and PUT. On Cloud Run those
+spans and histograms also go to Cloud Trace and Cloud Monitoring.
+
+### Deployed service
+
+These numbers are from Cloud Run and Cloud Storage in `us-central1` on
+October 20, 2026. The client was not in the same region. Server columns are
+from `/stats`. The simulator's 50 ms PUT was 78 ms here. SQLite was under 1
+ms. A durable write is that PUT.
+
+| Workload | Client write p50 / p99 | Client read p50 / p99 | Server PUT p50 | Writes per second |
+|---|---:|---:|---:|---:|
+| 1 writer and 1 reader, 30 s | 124 / 286 ms | 113 / 223 ms | 78 ms | 7.5 |
+| 8 writers and 8 readers, 60 s | 163 / 330 ms | 82 / 211 ms | 77 ms | 46 |
+
+With one writer, reads waited on the upload in progress (server wait p50 59
+ms, query 0.2 ms). Eight writers shared uploads, about 3 writes per batch,
+and reads waited 25 ms at the median. All 2,787 acknowledged writes from the
+8-writer run were readable from the next revision: none missing, none
+mismatched.
+
+A cold open after that run, with no snapshot yet, read 734 objects and took
+1.6 s. There were 936 L0 files. The snapshot check is now 15 seconds. The
+next busy period wrote two snapshots, and the following cold open took 682
+ms. Reading that backlog into the first snapshot stalled requests for up to
+9 s. Replica GETs were 35 ms at the median once the instance was warm, and
+65 to 76 ms while opening. The latency proxy assumed 20 ms.
+
 ### Background requests
 
 Polling, compaction, and retention list the replica on timers while an

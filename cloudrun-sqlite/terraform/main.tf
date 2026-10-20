@@ -1,6 +1,8 @@
 resource "google_project_service" "services" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "cloudtrace.googleapis.com",
+    "monitoring.googleapis.com",
     "run.googleapis.com",
     "storage.googleapis.com",
   ])
@@ -33,6 +35,17 @@ resource "google_artifact_registry_repository" "images" {
 resource "google_service_account" "service" {
   account_id   = var.name
   display_name = "cloudrun-sqlite service"
+}
+
+resource "google_project_iam_member" "telemetry" {
+  for_each = toset([
+    "roles/cloudtrace.agent",
+    "roles/monitoring.metricWriter",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.service.email}"
 }
 
 resource "google_storage_bucket_iam_member" "replica" {
@@ -127,6 +140,7 @@ resource "google_cloud_run_v2_service" "service" {
 
   depends_on = [
     google_project_service.services,
+    google_project_iam_member.telemetry,
     google_storage_bucket_iam_member.replica,
   ]
 }

@@ -45,7 +45,7 @@ func (c *fencedClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, u
 			return ltx.NewFileInfoSliceIterator(out), nil
 		}
 	}
-	return c.ReplicaClient.LTXFiles(ctx, level, seek, useMetadata)
+	return c.remoteList(ctx, level, seek, useMetadata)
 }
 
 func (c *fencedClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
@@ -54,7 +54,7 @@ func (c *fencedClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxT
 			return io.NopCloser(bytes.NewReader(b)), nil
 		}
 	}
-	return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+	return c.remoteOpen(ctx, level, minTXID, maxTXID, offset, size)
 }
 
 // warmUp fills the cache. Requests it doesn't anticipate, or that fail
@@ -67,7 +67,7 @@ func (c *fencedClient) warmUp(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 	for level := 0; level <= litestream.SnapshotLevel; level++ {
 		g.Go(func() error {
-			itr, err := c.ReplicaClient.LTXFiles(gctx, level, 0, false)
+			itr, err := c.remoteList(gctx, level, 0, false)
 			if err != nil {
 				return err
 			}
@@ -98,7 +98,7 @@ func (c *fencedClient) warmUp(ctx context.Context) error {
 	}
 
 	fetch := func(ctx context.Context, info *ltx.FileInfo, offset, size int64) []byte {
-		rc, err := c.ReplicaClient.OpenLTXFile(ctx, info.Level, info.MinTXID, info.MaxTXID, offset, size)
+		rc, err := c.remoteOpen(ctx, info.Level, info.MinTXID, info.MaxTXID, offset, size)
 		if err != nil {
 			return nil
 		}

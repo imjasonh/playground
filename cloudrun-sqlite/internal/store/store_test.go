@@ -553,3 +553,23 @@ func TestRetentionKeepsRecentL0Files(t *testing.T) {
 		t.Fatalf("L0 has %d files after the second snapshot, want %d", len(after), len(before))
 	}
 }
+
+func TestStatsRecordWritePhases(t *testing.T) {
+	s := mustOpen(t, testConfig(t, t.TempDir()))
+	defer s.Close()
+	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+	mustWrite(t, s, "INSERT INTO t (v) VALUES ('x')")
+	if err := s.Read(t.Context(), func(db *sql.DB) error {
+		var n int
+		return db.QueryRow("SELECT count(*) FROM t").Scan(&n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st := s.Stats(t.Context())
+	if st.Tx.Count < 2 || st.Flush.Count < 2 || st.GCS.Put.Count < 2 || st.WriteQueue.Count < 2 {
+		t.Fatalf("write stats = %+v", st)
+	}
+	if st.ReadQuery.Count < 1 || st.ReadWait.Count < 1 {
+		t.Fatalf("read stats = %+v", st)
+	}
+}

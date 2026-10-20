@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/litestream"
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
 
@@ -48,7 +49,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok\n") })
 	mux.HandleFunc("POST /admin/snapshot", s.admin(s.snapshot))
 	mux.HandleFunc("GET /admin/check", s.admin(s.check))
-	return mux
+	return observe.HTTP(mux)
 }
 
 // admin guards endpoints that read the whole database. They are off unless
