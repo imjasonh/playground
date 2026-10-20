@@ -192,6 +192,10 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	vfs.WriteEnabled = true
 	vfs.WriteSyncInterval = cfg.SyncInterval
 	vfs.WriteBufferPath = filepath.Join(cfg.Dir, "write-buffer")
+	// The fenced client makes L0 uploads conditional, and nothing here deletes
+	// an L0 file younger than L0Retention, so a writer can skip the
+	// conflict-check LIST for half of that, leaving room for clock skew.
+	vfs.ConflictCheckInterval = cfg.L0Retention / 2
 	if cfg.Hydrate {
 		vfs.HydrationEnabled = true
 		vfs.HydrationPath = filepath.Join(cfg.Dir, "hydrated.db")

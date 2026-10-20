@@ -1,12 +1,15 @@
-# Possible improvements
+# Improvements
 
-These changes would make the store faster, cheaper to run, or both. None of
-them is implemented. Each section gives the expected benefit, the reasons you
-might not want the change, and what it takes to keep the store correct.
+These changes make the store faster, cheaper to run, or both. The first two
+are done: they're patches in the Litestream fork
+([`PATCHES.md`](../../litestream/PATCHES.md)), and the store turns on the
+first one. The others aren't done. Each section gives the benefit, the
+reasons you might not want the change, and what it takes to keep the store
+correct.
 
 The numbers come from MinIO behind `cmd/latproxy` (20 ms per GET, 30 ms per
-LIST, 50 ms per PUT), measured on scratch builds of each change unless a
-section says it's an estimate. Request costs use Cloud Storage's regional
+LIST, 50 ms per PUT), measured on builds with each change unless a section
+says it's an estimate. Request costs use Cloud Storage's regional
 Standard list prices: $0.005 per 1,000 Class A operations (LIST and PUT) and
 $0.0004 per 1,000 Class B operations (GET). Check the
 [Cloud Storage pricing page](https://cloud.google.com/storage/pricing) for
@@ -14,24 +17,27 @@ current prices.
 
 ## Summary
 
-| Change | Speed | Cost | Correctness work | Recommendation |
+| Change | Speed | Cost | Correctness work | Status |
 |---|---|---|---|---|
-| [Skip the conflict-check LIST](#skip-the-conflict-check-list) | Durable writes 37% faster; 60% more uploads per second | Half the Class A requests per batch | Two guards and tests; changes the VFS copy | Do it, with the guards |
-| [Keep written pages cached](#keep-written-pages-cached) | No storage reads for pages this instance wrote recently | One fewer GET per such page | An exact TXID check; changes the VFS copy | Do it |
-| [List S3 from the seek position](#list-s3-from-the-seek-position) | About twice the upload rate on S3 under sustained writes (estimate) | About 2.5 times fewer Class A requests per batch on S3 (estimate) | Small; S3 only | Do it before running on S3 |
-| [Snapshot less often under steady writes](#snapshot-less-often-under-steady-writes) | Frees about 2% of a vCPU per GiB of database; cold starts about 60 ms slower | Fewer upload requests | None | Do it for large databases |
-| [Hold commits open briefly](#hold-commits-open-briefly) | Adds the wait to every write | About 20% fewer batches at 5 writes per second (estimate) | None | An opt-in setting, off by default |
-| [Use more read connections](#use-more-read-connections) | Parallel storage reads | Memory for each connection | Large | Don't; enlarge the cache or hydrate instead |
+| [Skip the conflict-check LIST](#skip-the-conflict-check-list) | Durable writes 37% faster; 60% more uploads per second | Half the Class A requests per batch | Two guards and tests; a patch in the fork | Done |
+| [Keep written pages cached](#keep-written-pages-cached) | No storage reads for pages this instance wrote recently | One fewer GET per such page | An exact TXID check; a patch in the fork | Done |
+| [List S3 from the seek position](#list-s3-from-the-seek-position) | About twice the upload rate on S3 under sustained writes (estimate) | About 2.5 times fewer Class A requests per batch on S3 (estimate) | Small; S3 only | Not done; do it before running on S3 |
+| [Snapshot less often under steady writes](#snapshot-less-often-under-steady-writes) | Frees about 2% of a vCPU per GiB of database; cold starts about 60 ms slower | Fewer upload requests | None | Not done; do it for large databases |
+| [Hold commits open briefly](#hold-commits-open-briefly) | Adds the wait to every write | About 20% fewer batches at 5 writes per second (estimate) | None | Not done; make it an opt-in setting, off by default |
+| [Use more read connections](#use-more-read-connections) | Parallel storage reads | Memory for each connection | Large | Not done; enlarge the cache or hydrate instead |
 
 ## Skip the conflict-check LIST
 
 Before each upload, the VFS lists the L0 files after the writer's base TXID
-(`checkForConflict` in `internal/litevfs/vfs.go`) to check whether another
+(`checkForConflict` in `litestream/vfs.go`) to check whether another
 instance published first. The upload is already a conditional create, which
 fails if another instance published the same TXID. The LIST adds protection in
 one case only: another instance published TXIDs after this writer's base, and
 the file for the next TXID has since been deleted, so the conditional create
 would succeed and fork the history.
+
+The fork adds `VFS.ConflictCheckInterval`, zero by default, and the store
+sets it to half of `L0Retention`.
 
 ### Expected benefit
 
@@ -51,32 +57,38 @@ $10 to $5 per million batches, and the 2.9 Class B requests per batch don't
 change. Writing at the maximum rate costs about $290 a month at 18 uploads per
 second instead of about $330 at 11.3.
 
+With the patch in place, the steady-state runs in the README took 56 ms per
+write at the median with one writer, down from 93 ms, and 8 writers made 71
+writes per second instead of 42.
+
 ### Reasons not to
 
-- It changes upstream code in the VFS copy, which makes the next merge from
-  Litestream harder.
+- It's a patch to carry in the fork until upstream takes it, and upstream
+  would also need conditional L0 uploads.
 - Its safety depends on retention rules in two places, the VFS and the store.
   A later change to either can break it without failing any existing test.
 
 ### What keeps it correct
 
 1. Nothing deletes an L0 file younger than `L0Retention` (5 minutes). The
-   VFS's L0 retention already checks the age. The store's snapshot retention
-   doesn't: two snapshots in quick succession, from two instances during a
-   deploy or two `POST /admin/snapshot` calls, can delete recent L0 files. Add
-   the same age check there.
-2. The writer skips the LIST only when it has seen the replica's position
-   within the last half of `L0Retention`: its own last successful upload, or a
-   LIST or poll that found nothing newer. Otherwise it lists first, as it does
-   now. After a long idle period, for example with CPU frozen between
-   requests, the first write lists.
-3. If a poll has already seen a TXID beyond the writer's base, the writer
-   reports a conflict without uploading.
+   VFS's L0 retention checks the age. The store's snapshot retention used to
+   delete any file a snapshot covered, so two snapshots in quick succession,
+   from two instances during a deploy or two `POST /admin/snapshot` calls,
+   could delete recent L0 files. It now keeps L0 files younger than
+   `L0Retention`, which `TestRetentionKeepsRecentL0Files` checks.
+2. The writer skips the LIST only when it confirmed the replica's position
+   within half of `L0Retention`, by its last listing or by its own last
+   upload, timed from when each started. Otherwise it lists first. After a
+   long idle period, for example with CPU frozen between requests, the first
+   write lists. Elapsed time is the larger of the monotonic and wall-clock
+   differences, so neither a paused host nor a clock step shortens it.
+3. If a poll has already installed a TXID beyond the writer's base, the
+   writer lists, which reports the conflict without uploading.
 
 With these rules, any file the writer could collide with is younger than the
-retention age, so it still exists and the conditional create fails. Add an
-interleaving test in which a stale writer races retention, and a store test
-that checks two quick snapshots keep recent L0 files.
+retention age, so it still exists and the conditional create fails.
+`TestVFSFile_ConflictCheckInterval` in the fork covers each case, and the
+store's tests of overlapping writers pass with the interval on.
 
 ## Keep written pages cached
 
@@ -98,7 +110,7 @@ million pages.
 
 ### Reasons not to
 
-- It's another change to the VFS copy.
+- It's another patch to carry in the fork until upstream takes it.
 - Written pages take room in the 64 MiB cache, though their next read would
   have put them there anyway.
 
@@ -110,9 +122,9 @@ later write, means the overlay page is out of date; drop it as the code does
 now. Pages that the index now covers leave the overlay in one function,
 `clearSyncedPageWithIndexElemWithLock`, which every caller runs after
 invalidating the cache entry; the other code that clears the overlay drops
-pages past the end of the database, which must not be cached. The
-interleaving tests and the store's read-visibility tests passed on a build
-with this change.
+pages past the end of the database, which must not be cached.
+`TestVFSFile_PollCachesSyncedPages` in the fork checks both cases, and the
+interleaving tests and the store's read-visibility tests pass with it.
 
 ## List S3 from the seek position
 
@@ -122,7 +134,7 @@ costs one LIST per 1,000 retained L0 files. With 5-minute L0 retention at 11
 uploads per second, about 3,300 files are retained, so a check takes about 4
 LIST requests. The Cloud Storage client passes the seek as `StartOffset` and
 isn't affected. The fix passes the seek as `StartAfter`. It belongs in
-Litestream; until then, `fencedClient` can override `LTXFiles` for S3.
+Litestream, and can be a patch in the fork until then.
 
 ### Expected benefit
 

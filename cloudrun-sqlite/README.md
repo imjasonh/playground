@@ -158,13 +158,18 @@ With no failures injected, for 60 seconds:
 
 | Workload | Write p50 / p99 | Read p50 / p99 | Writes per second |
 |---|---:|---:|---:|
-| 8 writers and 8 readers, durable | 188 / 220 ms | 95 / 113 ms | 42 |
-| 1 writer and 1 reader, durable | 93 / 114 ms | 89 / 113 ms | 11 |
-| 1 writer at 5 writes per second and 8 readers, durable | 91 / 108 ms | 0.4 / 1.4 ms | 5 |
-| 8 writers and 8 readers, `DURABLE=false` | 2.0 / 6.6 ms | 1.1 / 8.5 ms | 1,810 |
+| 8 writers and 8 readers, durable | 111 / 135 ms | 56 / 68 ms | 71 |
+| 1 writer and 1 reader, durable | 56 / 68 ms | 52 / 68 ms | 18 |
+| 1 writer at 5 writes per second and 8 readers, durable | 56 / 69 ms | 0.3 / 1.6 ms | 5 |
+| 8 writers and 8 readers, `DURABLE=false` | 1.9 / 7.1 ms | 1.0 / 8.7 ms | 1,899 |
 
-A durable write costs one upload: a list request to check for a newer
-transaction and a conditional put. Reads are fast until uploads run back to
+A durable write costs one upload, a conditional put. The writer lists the
+replica for a newer transaction first only when it hasn't confirmed its
+position for half of `L0Retention`, 2.5 minutes by default; the conditional
+put catches another writer the rest of the time. With a list request before
+every put, writes took 188 / 220 ms with 8 writers and 93 / 114 ms with one;
+[`docs/improvements.md`](docs/improvements.md#skip-the-conflict-check-list)
+explains why skipping it is safe. Reads are fast until uploads run back to
 back, because a read waits for the write that is committing or uploading.
 Before reads waited for whole writes, the 8-writer run's reads took
 104 / 560 ms: a read could take the one connection between a commit and its
@@ -193,8 +198,8 @@ CPU is frozen and it makes none.
   that stays in memory. Each GiB of database adds about 170 ms to the open and
   75 MiB of memory: an instance used 81 MiB after opening a 10 MiB database,
   156 MiB for 979 MiB, and 372 MiB for 3.8 GiB.
-- With `DURABLE=false` and constant writes, an instance peaked at 457 MiB.
-  Durable instances peaked at 106 to 124 MiB in every run.
+- With `DURABLE=false` and constant writes, an instance peaked at 457 to
+  488 MiB. Durable instances peaked at 106 to 126 MiB in every run.
 - With request-based billing, Cloud Run throttles CPU between requests, so
   compaction and snapshots only make progress while requests are in flight.
   Set `cpu_always_allocated = true` if cold starts slow down because the
@@ -202,9 +207,9 @@ CPU is frozen and it makes none.
 - `Write` runs each function inside a transaction, so it can't run `VACUUM`,
   which SQLite doesn't allow there.
 
-[`docs/improvements.md`](docs/improvements.md) lists changes that would make
-writes faster and cheaper, with measured benefits, reasons not to make each
-one, and what each needs to stay correct.
+[`docs/improvements.md`](docs/improvements.md) lists changes that make writes
+faster and cheaper, which of them are done, their measured benefits, reasons
+not to make each one, and what each needs to stay correct.
 
 ## Run locally
 

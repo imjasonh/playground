@@ -429,6 +429,7 @@ func TestSnapshotShortensRestorePlan(t *testing.T) {
 	replica := t.TempDir()
 	cfg := testConfig(t, replica)
 	cfg.CompactionLevels = nil
+	cfg.L0Retention = 50 * time.Millisecond
 	s := mustOpen(t, cfg)
 	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
 	for range 30 {
@@ -455,7 +456,9 @@ func TestSnapshotShortensRestorePlan(t *testing.T) {
 	}
 	integrity(t, s)
 
-	// A second snapshot lets retention delete what the first one covered.
+	// A second snapshot lets retention delete what the first one covered,
+	// once the L0 files are older than L0Retention.
+	time.Sleep(2 * cfg.L0Retention)
 	res, err := s.Snapshot(t.Context())
 	if err != nil {
 		t.Fatalf("second Snapshot: %v", err)
@@ -473,4 +476,45 @@ func TestSnapshotShortensRestorePlan(t *testing.T) {
 		t.Fatalf("rows = %d, want 35", got)
 	}
 	integrity(t, s2)
+}
+
+// Two snapshots in quick succession must not delete L0 files younger than
+// L0Retention. A writer that skips the conflict-check LIST relies on another
+// writer's file for its next TXID staying in place.
+func TestRetentionKeepsRecentL0Files(t *testing.T) {
+	replica := t.TempDir()
+	cfg := testConfig(t, replica)
+	cfg.CompactionLevels = nil
+	cfg.L0Retention = time.Hour
+	s := mustOpen(t, cfg)
+	defer s.Close()
+	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
+	for range 5 {
+		mustWrite(t, s, "INSERT INTO t (v) VALUES (randomblob(3000))")
+	}
+	if _, err := s.Snapshot(t.Context()); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	for range 5 {
+		mustWrite(t, s, "INSERT INTO t (v) VALUES (randomblob(3000))")
+	}
+	before, err := s.listLevel(t.Context(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.Snapshot(t.Context())
+	if err != nil {
+		t.Fatalf("second Snapshot: %v", err)
+	}
+	if res.Deleted != 0 {
+		t.Errorf("retention deleted %d files, want 0", res.Deleted)
+	}
+	after, err := s.listLevel(t.Context(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("L0 has %d files after the second snapshot, want %d", len(after), len(before))
+	}
 }

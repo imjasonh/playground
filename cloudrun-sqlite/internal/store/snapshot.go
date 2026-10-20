@@ -175,6 +175,11 @@ func (s *Store) enforceRetention(ctx context.Context) (int, error) {
 	slices.SortFunc(snapshots, func(a, b *ltx.FileInfo) int { return cmp.Compare(a.MaxTXID, b.MaxTXID) })
 	cutoff := snapshots[len(snapshots)-2].MaxTXID
 
+	// Keep L0 files younger than L0Retention even when a snapshot covers them.
+	// A writer that skips the conflict-check LIST relies on its next TXID's
+	// file staying in place if another writer published it.
+	keepL0After := time.Now().Add(-s.cfg.L0Retention)
+
 	var victims []*ltx.FileInfo
 	victims = append(victims, snapshots[:len(snapshots)-2]...)
 	for level := 0; level < litestream.SnapshotLevel; level++ {
@@ -183,9 +188,13 @@ func (s *Store) enforceRetention(ctx context.Context) (int, error) {
 			return 0, err
 		}
 		for _, info := range infos {
-			if info.MaxTXID <= cutoff {
-				victims = append(victims, info)
+			if info.MaxTXID > cutoff {
+				continue
 			}
+			if level == 0 && (info.CreatedAt.IsZero() || info.CreatedAt.After(keepL0After)) {
+				continue
+			}
+			victims = append(victims, info)
 		}
 	}
 	if len(victims) == 0 {
