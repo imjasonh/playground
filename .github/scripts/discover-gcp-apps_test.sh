@@ -114,9 +114,18 @@ EVENT_NAME=workflow_dispatch GCP_DEPLOY_ROOT="$git_root" \
 assert_eq "$(sed -n 's/^apps=//p' "$out")" '["alpha"]' "manual dispatch selects all"
 
 : >"$out"
-EVENT_NAME=pull_request GCP_DEPLOY_ROOT="$git_root" \
+EVENT_NAME=pull_request BEFORE_SHA="$base" HEAD_SHA="$head" GCP_DEPLOY_ROOT="$git_root" \
   GITHUB_OUTPUT="$out" bash "$changed" >/dev/null
-assert_eq "$(sed -n 's/^apps=//p' "$out")" '[]' "pull request deploys nothing"
+assert_eq "$(sed -n 's/^apps=//p' "$out")" '["alpha"]' "pull request selects the changed app"
+
+: >"$out"
+EVENT_NAME=pull_request BEFORE_SHA="$head" HEAD_SHA="$readme" GCP_DEPLOY_ROOT="$git_root" \
+  GITHUB_OUTPUT="$out" bash "$changed" >/dev/null
+assert_eq "$(sed -n 's/^apps=//p' "$out")" '[]' "pull request with no app changes selects nothing"
+
+assert_fail "pull request without a base SHA fails" \
+  env EVENT_NAME=pull_request HEAD_SHA="$head" GCP_DEPLOY_ROOT="$git_root" \
+  GITHUB_OUTPUT="$out" bash "$changed"
 
 : >"$out"
 EVENT_NAME=push BEFORE_SHA=0000000000000000000000000000000000000000 HEAD_SHA="$head" \

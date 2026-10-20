@@ -10,6 +10,13 @@
 #   GCP_WORKLOAD_IDENTITY_PROVIDER
 #   GCP_DEPLOY_SERVICE_ACCOUNT
 #   GCP_TF_STATE_BUCKET
+#
+# A pull request that selects an app runs the configuration check and
+# fails when any of those variables is missing. It does not apply.
+# Apply runs on a push to main, and on a manual run from main. A manual
+# run from another branch fails. The require job fails the workflow when
+# a required job was skipped, because a skipped job would otherwise be
+# a green run.
 
 name: Deploy GCP
 
@@ -25,6 +32,8 @@ on:
       - ".github/scripts/discover-changed-gcp.sh"
       - ".github/scripts/deploy-gcp.sh"
       - ".github/scripts/deploy-gcp_test.sh"
+      - ".github/scripts/deploy-gcp-result.sh"
+      - ".github/scripts/deploy-gcp-result_test.sh"
       - ".github/scripts/install-zig.sh"
       - "**/gcp-deploy.json"
       - "cloudrun-sqlite/terraform/**"
@@ -54,18 +63,45 @@ jobs:
         run: |
           bash .github/scripts/discover-gcp-apps_test.sh
           bash .github/scripts/deploy-gcp_test.sh
+          bash .github/scripts/deploy-gcp-result_test.sh
 
       - name: Discover GCP apps to deploy
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
+          BEFORE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-gcp.sh
 
-  deploy:
+  check:
     needs: prepare
-    if: github.event_name != 'pull_request' && needs.prepare.outputs.apps != '[]'
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: gcp-${{ matrix.app }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.prepare.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check deploy configuration
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: bash .github/scripts/deploy-gcp.sh --check "$APP"
+
+  deploy:
+    needs: [prepare, check]
+    if: needs.check.result == 'success' && github.event_name != 'pull_request' && needs.prepare.outputs.apps != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: gcp-${{ matrix.app }}
@@ -120,3 +156,23 @@ jobs:
           GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
           GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
         run: bash .github/scripts/deploy-gcp.sh "$APP"
+
+  require:
+    needs: [prepare, check, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Fail when a required job did not run
+        env:
+          PREPARE: ${{ needs.prepare.result }}
+          CHECK: ${{ needs.check.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          APPS: ${{ needs.prepare.outputs.apps }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: bash .github/scripts/deploy-gcp-result.sh

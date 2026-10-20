@@ -141,6 +141,7 @@ gcp_deploy_all_path() {
   case "$1" in
     .github/workflows/deploy-gcp.yml | \
       .github/scripts/deploy-gcp.sh | \
+      .github/scripts/deploy-gcp-result.sh | \
       .github/scripts/gcp-app.sh | \
       .github/scripts/install-zig.sh | \
       .github/scripts/discover-gcp-apps.sh | \

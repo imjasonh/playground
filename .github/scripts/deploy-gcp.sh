@@ -158,6 +158,10 @@ if [[ "${DRY_RUN:-}" == "1" ]]; then
 fi
 
 url=$(terraform -chdir="$tfdir" output -raw url)
+if [[ -z "$url" || "$url" != https://* ]]; then
+  echo "gcp: terraform output url is empty or not an https URL" >&2
+  exit 1
+fi
 echo "applied ${url}"
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   {

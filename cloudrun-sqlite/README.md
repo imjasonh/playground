@@ -391,7 +391,9 @@ does: ko, `GOFLAGS=-tags=vfs`, zig targeting `x86_64-linux-gnu`, and
 the `cgr.dev/chainguard/glibc-dynamic` base. CI passes `project_id`
 and `github_repository`. Every other setting comes from the defaults
 in `variables.tf`. Run the workflow by hand from `main` to apply every
-app that has a `gcp-deploy.json`. A pull request runs the script tests.
+app that has a `gcp-deploy.json`. A pull request that changes this app
+or `litestream/` checks those four variables and fails if one is missing.
+It does not apply. A manual run from a branch other than `main` fails.
 
 The apply also creates a Cloud Monitoring dashboard of the latencies in
 [Observability](#observability). `terraform output dashboard_url` prints

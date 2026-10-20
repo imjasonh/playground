@@ -118,7 +118,11 @@ printf 'terraform' >> "$log"
 printf ' %s' "\$@" >> "$log"
 printf '\\n' >> "$log"
 if [ "\$2" = "output" ]; then
-  echo "https://example-app-hash-uc.a.run.app"
+  if [ -f "$tmp/url.txt" ]; then
+    cat "$tmp/url.txt"
+  else
+    echo "https://example-app-hash-uc.a.run.app"
+  fi
 fi
 EOF
 cat >"$tmp/bin/go" <<'EOF'
@@ -216,6 +220,22 @@ if err=$(
   fail "local backend should fail"
 else
   assert_contains "$err" 'backend "gcs"' "local backend error"
+fi
+
+: >"$tmp/url.txt"
+if err=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_WORKLOAD_IDENTITY_PROVIDER="$wif" \
+    GCP_DEPLOY_SERVICE_ACCOUNT="$sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    bash "$deploy" example-app 2>&1
+); then
+  fail "empty service url should fail"
+else
+  assert_contains "$err" "terraform output url" "empty service url error"
 fi
 
 if ((failures > 0)); then
