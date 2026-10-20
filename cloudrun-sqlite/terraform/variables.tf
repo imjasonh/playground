@@ -10,9 +10,14 @@ variable "region" {
 }
 
 variable "name" {
-  description = "Name for the service, service account, and image repository."
+  description = "Name for the service, service account, image repository, and the GitHub environment gcp-<name>. Use the app directory name."
   type        = string
   default     = "cloudrun-sqlite"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{4,17}[a-z0-9]$", var.name))
+    error_message = "name must be 6 to 19 characters: a lowercase letter, then letters, digits, or hyphens, and it cannot end with a hyphen. Service account ids are 6 to 30 characters, and the deploy account id is <name>-gha-deploy."
+  }
 }
 
 variable "durable" {
@@ -61,4 +66,37 @@ variable "cgo_cc" {
   description = "C compiler for the CGO build. The default cross-compiles with zig from any host; on linux/amd64 with gcc, use \"gcc\"."
   type        = string
   default     = "zig cc -target x86_64-linux-gnu"
+}
+
+variable "github_repository" {
+  description = "GitHub repository (OWNER/REPO) allowed to deploy this service. Leave empty to skip Workload Identity Federation."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "github_repository must be empty or OWNER/REPO."
+  }
+}
+
+variable "github_workflow" {
+  description = "Workflow path that may deploy, relative to the repository root. The pool rejects tokens from any other workflow."
+  type        = string
+  default     = ".github/workflows/deploy-gcp.yml"
+
+  validation {
+    condition     = can(regex("^\\.github/workflows/[A-Za-z0-9_.-]+\\.yml$", var.github_workflow))
+    error_message = "github_workflow must be a workflow file under .github/workflows/."
+  }
+}
+
+variable "github_environment" {
+  description = "GitHub environment that must be selected to deploy. Empty uses gcp-<name>, which is what deploy-gcp.yml selects."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_environment == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$", var.github_environment))
+    error_message = "github_environment must be empty or a GitHub environment name."
+  }
 }

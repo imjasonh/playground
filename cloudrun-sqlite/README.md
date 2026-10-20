@@ -343,21 +343,59 @@ export AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
 
 ## Deploy
 
-The Terraform in `terraform/` creates a bucket, a service account that can
-use only that bucket, and a Cloud Run service limited to one instance. It
-builds the image with [`ko`](https://ko.build). The build needs CGO; by
-default it cross-compiles with [zig](https://ziglang.org).
+Terraform in `terraform/` creates the bucket, the Artifact Registry
+repository, the runtime service account, and a Cloud Run service limited
+to one instance. Apply builds the image with [`ko`](https://ko.build).
+The build needs CGO. The default compiler is [zig](https://ziglang.org),
+which cross-compiles from any host.
+
+State is in a Cloud Storage bucket so a local apply and GitHub Actions
+share it. Create that bucket once, in the same project as the service.
+Do not use the replica bucket. Litestream deletes objects there.
 
 ```bash
+gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets update gs://BUCKET --versioning
+
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # set project_id
-terraform init
+cp terraform.tfvars.example terraform.tfvars   # set project_id and github_repository
+terraform init -backend-config="bucket=BUCKET"
 terraform apply
 ```
 
-It also creates a Cloud Monitoring dashboard of the latencies in
-[Observability](#observability); `terraform output dashboard_url` prints its
-link.
+If this stack already has local state, pass `-migrate-state` on that init.
+
+Set `github_repository` to `OWNER/REPO` (for this repo,
+`imjasonh/playground`). Apply creates a Workload Identity pool that
+trusts GitHub OIDC for that repository. The pool accepts a token only
+from `.github/workflows/deploy-gcp.yml` on `main`, in the GitHub
+environment `gcp-cloudrun-sqlite`. Actions exchanges that token for a
+short-lived credential of the deploy service account, then runs
+`terraform apply`.
+
+Create the environment in the repository settings and store these
+variables on it. `terraform output github_actions_variables` prints the
+first three lines. With no protection rules on that environment, a push
+to `main` applies without waiting for approval.
+
+| Variable | Value |
+|---|---|
+| `GCP_PROJECT_ID` | the `project_id` from your tfvars |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | output `github_actions_workload_identity_provider` |
+| `GCP_DEPLOY_SERVICE_ACCOUNT` | output `github_actions_service_account` |
+| `GCP_TF_STATE_BUCKET` | the state bucket name, without the `gs://` prefix |
+
+A push to `main` that changes this app or `litestream/` runs
+`terraform apply`. Apply builds the image the same way a local apply
+does: ko, `GOFLAGS=-tags=vfs`, zig targeting `x86_64-linux-gnu`, and
+the `cgr.dev/chainguard/glibc-dynamic` base. CI passes `project_id`
+and `github_repository`. Every other setting comes from the defaults
+in `variables.tf`. Run the workflow by hand from `main` to apply every
+app that has a `gcp-deploy.json`. A pull request runs the script tests.
+
+The apply also creates a Cloud Monitoring dashboard of the latencies in
+[Observability](#observability). `terraform output dashboard_url` prints
+its link.
 
 ## Observability
 

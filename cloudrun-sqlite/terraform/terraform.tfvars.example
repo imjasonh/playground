@@ -10,3 +10,10 @@ region     = "us-central1"
 
 # On linux/amd64 with gcc installed, skip zig:
 # cgo_cc = "gcc"
+
+# GitHub repository allowed to apply this stack from main. This creates
+# the Workload Identity pool. The directory name and `name` must match.
+# github_repository = "imjasonh/playground"
+#
+# State bucket, created once in this project and passed to init:
+#   terraform init -backend-config="bucket=BUCKET"

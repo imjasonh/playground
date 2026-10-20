@@ -1,0 +1,122 @@
+# Apply Cloud Run stacks from main with GitHub OIDC and Workload Identity
+# Federation. There is no long-lived GCP key.
+#
+# An app opts in with gcp-deploy.json. Terraform in the app creates the
+# service and the identity pool, and apply builds the image. See
+# cloudrun-sqlite/README.md.
+#
+# Each app reads variables from the GitHub environment gcp-<directory>:
+#   GCP_PROJECT_ID
+#   GCP_WORKLOAD_IDENTITY_PROVIDER
+#   GCP_DEPLOY_SERVICE_ACCOUNT
+#   GCP_TF_STATE_BUCKET
+
+name: Deploy GCP
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/deploy-gcp.yml"
+      - ".github/scripts/gcp-app.sh"
+      - ".github/scripts/discover-gcp-apps.sh"
+      - ".github/scripts/discover-gcp-apps_test.sh"
+      - ".github/scripts/discover-changed-gcp.sh"
+      - ".github/scripts/deploy-gcp.sh"
+      - ".github/scripts/deploy-gcp_test.sh"
+      - ".github/scripts/install-zig.sh"
+      - "**/gcp-deploy.json"
+      - "cloudrun-sqlite/terraform/**"
+  workflow_dispatch: {}
+
+# A second push waits. Cancelling an apply can leave state locked.
+concurrency:
+  group: deploy-gcp-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Test deploy scripts
+        run: |
+          bash .github/scripts/discover-gcp-apps_test.sh
+          bash .github/scripts/deploy-gcp_test.sh
+
+      - name: Discover GCP apps to deploy
+        id: discover
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bash .github/scripts/discover-changed-gcp.sh
+
+  deploy:
+    needs: prepare
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: gcp-${{ matrix.app }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.prepare.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::GCP deploy runs from main."
+          exit 1
+
+      - name: Check deploy configuration
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: bash .github/scripts/deploy-gcp.sh --check "$APP"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.6
+          terraform_wrapper: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
+
+      - name: Apply ${{ matrix.app }}
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: bash .github/scripts/deploy-gcp.sh "$APP"

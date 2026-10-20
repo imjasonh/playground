@@ -1,10 +1,15 @@
+# iam, iamcredentials, sts, and cloudresourcemanager back GitHub OIDC deploys.
 resource "google_project_service" "services" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
     "cloudtrace.googleapis.com",
+    "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
     "monitoring.googleapis.com",
     "run.googleapis.com",
     "storage.googleapis.com",
+    "sts.googleapis.com",
   ])
 
   service            = each.key
