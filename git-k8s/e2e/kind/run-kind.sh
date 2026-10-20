@@ -235,7 +235,8 @@ printf 'package greet\n\nfunc Hello(name string) string { return "Hello, " + nam
 (cd "${ROOT}" && go build -o "${WORKDIR}/modproxy" ./e2e/modproxy)
 "${WORKDIR}/modproxy" -addr=0.0.0.0:0 -dir="${WORKDIR}/modules" >"${WORKDIR}/modproxy.log" 2>&1 &
 MOD_PROXY_PID=$!
-mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${WORKDIR}/modproxy.log"; }
+# slog's text handler prints "INFO serving dir=... addr=host:port".
+mod_port() { sed -nE 's/.* serving .*addr=.*:([0-9]+)"?$/\1/p' "${WORKDIR}/modproxy.log"; }
 mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
 eventually 30 mod_proxy_listening
 MOD_PORT="$(mod_port)"
