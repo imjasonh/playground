@@ -96,7 +96,7 @@ func serveMain(args []string) error {
 	}
 	log.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
 
-	srv := &http.Server{Handler: newServer(st, instance, start).routes()}
+	srv := &http.Server{Handler: newServer(st, instance, start, os.Getenv("ADMIN_TOKEN")).routes()}
 	ln, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
 		st.Close()

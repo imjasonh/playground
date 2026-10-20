@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/litevfs"
@@ -26,13 +28,14 @@ func migrate(ctx context.Context, st *store.Store) error {
 }
 
 type server struct {
-	st       *store.Store
-	instance string
-	started  time.Time
+	st         *store.Store
+	instance   string
+	started    time.Time
+	adminToken string
 }
 
-func newServer(st *store.Store, instance string, started time.Time) *server {
-	return &server{st: st, instance: instance, started: started}
+func newServer(st *store.Store, instance string, started time.Time, adminToken string) *server {
+	return &server{st: st, instance: instance, started: started, adminToken: adminToken}
 }
 
 func (s *server) routes() http.Handler {
@@ -43,9 +46,26 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /items", s.createItem)
 	mux.HandleFunc("GET /stats", s.stats)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok\n") })
-	mux.HandleFunc("POST /admin/snapshot", s.snapshot)
-	mux.HandleFunc("GET /admin/check", s.check)
+	mux.HandleFunc("POST /admin/snapshot", s.admin(s.snapshot))
+	mux.HandleFunc("GET /admin/check", s.admin(s.check))
 	return mux
+}
+
+// admin guards endpoints that read the whole database. They are off unless
+// ADMIN_TOKEN is set, and then require it as a bearer token.
+func (s *server) admin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.adminToken == "" {
+			http.NotFound(w, r)
+			return
+		}
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.adminToken)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h(w, r)
+	}
 }
 
 // writeError maps store errors to HTTP statuses. A conflict that survived

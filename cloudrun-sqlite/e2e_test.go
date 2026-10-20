@@ -49,6 +49,7 @@ func TestCloudRunLifecycle(t *testing.T) {
 		Env: []string{
 			"REPLICA_URL=file://" + filepath.Join(dir, "replica"),
 			"SNAPSHOT_PLAN_LEN=8",
+			"ADMIN_TOKEN=e2e",
 		},
 		Output: logs,
 	})
@@ -66,6 +67,7 @@ func TestCloudRunLifecycle(t *testing.T) {
 		ScaleEvery:  5 * time.Second,
 		DeployEvery: 9 * time.Second,
 		Overlap:     2 * time.Second,
+		AdminToken:  "e2e",
 		Logf:        t.Logf,
 	})
 	if err != nil {

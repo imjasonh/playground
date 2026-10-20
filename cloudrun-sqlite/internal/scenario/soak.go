@@ -40,6 +40,9 @@ type SoakConfig struct {
 	// opened before the write sees it on its next poll.
 	StaleWindow time.Duration
 
+	// AdminToken is the server's ADMIN_TOKEN, for the final integrity check.
+	AdminToken string
+
 	Logf func(format string, args ...any)
 }
 
@@ -265,7 +268,7 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 	res.Missing = int(missing.Load())
 	res.Mismatched = int(mismatched.Load())
 
-	code, data, err := do(ctx, client, http.MethodGet, cfg.URL+"/admin/check", "")
+	code, data, err := do(ctx, client, http.MethodGet, cfg.URL+"/admin/check", "", "Bearer "+cfg.AdminToken)
 	if err != nil || code != http.StatusOK {
 		return nil, fmt.Errorf("integrity check: %d %v %s", code, err, data)
 	}
@@ -294,7 +297,7 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 	return res, nil
 }
 
-func do(ctx context.Context, client *http.Client, method, url, body string) (int, []byte, error) {
+func do(ctx context.Context, client *http.Client, method, url, body string, auth ...string) (int, []byte, error) {
 	var rd io.Reader
 	if body != "" {
 		rd = strings.NewReader(body)
@@ -302,6 +305,9 @@ func do(ctx context.Context, client *http.Client, method, url, body string) (int
 	req, err := http.NewRequestWithContext(ctx, method, url, rd)
 	if err != nil {
 		return 0, nil, err
+	}
+	for _, a := range auth {
+		req.Header.Set("Authorization", a)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

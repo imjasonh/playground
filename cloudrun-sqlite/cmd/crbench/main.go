@@ -62,6 +62,7 @@ type common struct {
 	env        envFlag
 	throttle   bool
 	logs       string
+	adminToken string
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -82,9 +83,12 @@ func (c *common) sim(replicaURL string) (*crsim.Sim, *httptest.Server, func(), e
 		}
 		out, closeLog = f, f.Close
 	}
+	if c.adminToken == "" {
+		c.adminToken = strconv.FormatUint(rand.Uint64(), 36)
+	}
 	sim := crsim.New(crsim.Config{
 		Command:  []string{c.app},
-		Env:      append([]string{"REPLICA_URL=" + replicaURL}, c.env...),
+		Env:      append([]string{"REPLICA_URL=" + replicaURL, "ADMIN_TOKEN=" + c.adminToken}, c.env...),
 		Throttle: c.throttle,
 		Output:   out,
 		Logger:   slog.New(slog.NewTextHandler(out, nil)).With("component", "crsim"),
@@ -122,6 +126,7 @@ func soak(args []string) error {
 	defer done()
 	cfg.URL = srv.URL
 	cfg.Sim = sim
+	cfg.AdminToken = c.adminToken
 	cfg.Logf = func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05.000")}, args...)...)
 	}
