@@ -3,9 +3,10 @@
 These changes make the store faster, cheaper to run, or both. The first two
 are done: they're patches in the Litestream fork
 ([`PATCHES.md`](../../litestream/PATCHES.md)), and the store turns on the
-first one. The others aren't done. Each section gives the benefit, the
-reasons you might not want the change, and what it takes to keep the store
-correct.
+first one. Snapshotting less often and folding L0 files during a write
+are also done. The others aren't done. Each section gives the benefit,
+the reasons you might not want the change, and what it takes to keep the
+store correct.
 
 The numbers come from MinIO behind `cmd/latproxy` (20 ms per GET, 30 ms per
 LIST, 50 ms per PUT), measured on builds with each change unless a section
@@ -23,6 +24,7 @@ current prices.
 | [Keep written pages cached](#keep-written-pages-cached) | No storage reads for pages this instance wrote recently | One fewer GET per such page | An exact TXID check; a patch in the fork | Done |
 | [List S3 from the seek position](#list-s3-from-the-seek-position) | About twice the upload rate on S3 under sustained writes (estimate) | About 2.5 times fewer Class A requests per batch on S3 (estimate) | Small; S3 only | Not done; do it before running on S3 |
 | [Snapshot less often under steady writes](#snapshot-less-often-under-steady-writes) | Frees about 2% of a vCPU per GiB of database; cold starts about 60 ms slower | Fewer upload requests | None | Done |
+| [Fold L0 files during the write](#fold-l0-files-during-the-write) | A write burst leaves L2 files behind, so the next cold start reads fewer objects | One extra PUT per 16 L0 files, and one per 16 L1 files. No extra GET when the bytes are still local | The fold writes a contiguous prefix and does not delete L0 files | Done |
 | [Hold commits open briefly](#hold-commits-open-briefly) | Adds the wait to every write | About 20% fewer batches at 5 writes per second (estimate) | None | Not done; make it an opt-in setting, off by default |
 | [Use more read connections](#use-more-read-connections) | Parallel storage reads | Memory for each connection | Large | Not done; enlarge the cache or hydrate instead |
 
@@ -156,6 +158,69 @@ LTX file names are fixed-width hexadecimal, so lexical order is TXID order.
 `StartAfter` set to the level prefix plus the seek TXID returns exactly the
 files whose MinTXID is at least the seek, because those names continue past
 that string. Add a test that compares the result with the client-side filter.
+
+## Fold L0 files during the write
+
+The timed compaction monitors run only while the instance has CPU. With
+request-based billing that is during a request, and a request is usually
+shorter than a compaction of hundreds of L0 files. After the burst the
+process is frozen, and the L0 files are still there for the next cold start.
+
+The VFS keeps the bytes of each L0 file it has just uploaded, up to 32 files
+and 8 MiB each. When 16 of them are the next L1 transaction range, it writes
+that L1 from memory. It keeps those L1 bytes the same way and writes an L2
+every 16 L1 files. The existing monitors still compact whatever this pass
+does not. Nothing here deletes an L0 file.
+
+### Expected benefit
+
+A burst that starts from a short plan uploads about one L1 object per 16 L0
+objects and about one L2 object per 256 L0 objects, and the next open reads
+that shorter plan.
+
+### Measured on Cloud Run
+
+On October 20, 2026, the same 60-second run with 8 writers and 8 readers
+hit revision `cloudrun-sqlite-00009-rh6` after the replica had already been
+compacted to a short plan. The client acknowledged 2,581 writes (43 per
+second). Write latency was 169 / 410 ms at p50 / p99, and read latency was
+84 / 296 ms. The unfolded revision `cloudrun-sqlite-00008-sdz`, on the same
+workload, acknowledged 2,885 writes (48 per second) at 159 / 279 ms write
+and 80 / 168 ms read.
+
+The fold run recorded 673 batches, 716 PUTs, 240 LISTs, and 786 GETs. PUT
+p50 stayed 78 ms. One LIST took 25.3 s. The slowest request was 744 ms. A
+snapshot of 37 inputs took 3.4 s. At the end the restore plan was 5 files:
+the snapshot through transaction `0xc8b` and 4 L1 files after it. The bucket
+still held 673 L0 objects, 48 L1 files, and 3 L2 files. 41 new L1 files
+cover 16 transactions. Three shorter new L1 files cover 11, 5, and 1. The
+11- and 5-transaction files sit in the middle of the 16-transaction files.
+One new L2 file covers 256 transactions, `0xa13` through `0xb12`, and no
+second L2 file was written after that.
+
+A new revision opened that plan in 282 ms and made 11 GETs. The unfolded
+run had ended at a plan of 238. At list price, before the free tier, the
+fold run's object operations cost about $0.0051 and the unfolded run's about
+$0.0045.
+
+786 GETs is about one GET per L0 file. The copy kept in memory did not
+replace those reads on this run. The shorter plan is what the next open
+actually read.
+
+### Reasons not to
+
+The instance has to remember the file bytes until the fold runs. A file
+larger than 8 MiB is left for the timed monitor. A replica that already has
+a long L0 chain is unchanged, because those bytes are gone. The fold also
+lists the destination level once per batch.
+
+### What keeps it correct
+
+The fold writes a destination file only for a contiguous prefix that starts
+at that level's current max TXID plus one. A gap waits for the timed
+monitor, which reads the missing files. L0 files younger than `L0Retention`
+stay in place, which the conflict check relies on. The fold does not hold
+the VFS lock across the upload of the compacted file.
 
 ## Snapshot less often under steady writes
 

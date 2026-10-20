@@ -90,6 +90,30 @@ func TestCompactor_Compact(t *testing.T) {
 	})
 }
 
+func TestCompactor_CompactLimit(t *testing.T) {
+	client := file.NewReplicaClient(t.TempDir())
+	compactor := litestream.NewCompactor(client, slog.Default())
+	for txid := ltx.TXID(1); txid <= 6; txid++ {
+		createTestLTXFile(t, client, 0, txid, txid)
+	}
+	createTestLTXFile(t, client, 0, 9, 9)
+
+	for _, want := range [][2]ltx.TXID{{1, 2}, {3, 4}, {5, 6}} {
+		info, err := compactor.CompactLimit(context.Background(), 1, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.MinTXID != want[0] || info.MaxTXID != want[1] {
+			t.Fatalf("TXID range=%d-%d, want %d-%d", info.MinTXID, info.MaxTXID, want[0], want[1])
+		}
+	}
+
+	// TXID 9 does not continue from 7, so it stays at L0.
+	if _, err := compactor.CompactLimit(context.Background(), 1, 2); err != litestream.ErrNoCompaction {
+		t.Fatalf("err=%v, want ErrNoCompaction", err)
+	}
+}
+
 func TestCompactor_CompactClosesPipeOnWriteError(t *testing.T) {
 	client := newEarlyReturnCompactionClient(t.TempDir())
 	compactor := litestream.NewCompactor(client, slog.Default())
@@ -897,5 +921,5 @@ func (s *leakCheckStream) isClosed() bool {
 func countCompactorPipeWriters() int {
 	buf := make([]byte, 2<<20)
 	n := runtime.Stack(buf, true)
-	return strings.Count(string(buf[:n]), "github.com/benbjohnson/litestream.(*Compactor).Compact.func")
+	return strings.Count(string(buf[:n]), "github.com/benbjohnson/litestream.(*Compactor).compact.func")
 }
