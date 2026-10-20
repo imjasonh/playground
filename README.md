@@ -92,6 +92,11 @@ them:
   (Go TUI with Bubble Tea, Lip Gloss, and bubblezone).
 - **[`sshapp/`](sshapp/)** — Wish SSH apps on GKE Autopilot behind one SSH mux
   (`hello`, `chess`; Terraform + `ko_build`).
+- **[`cloudrun-sqlite/`](cloudrun-sqlite/)** — a Cloud Run service whose
+  SQLite database lives only in Cloud Storage or S3. It reads pages on demand
+  through the Litestream VFS, so cold starts don't download the database, and
+  uploads each write before responding (Go + Terraform, with a local Cloud Run
+  simulator).
 - **[`kube/`](kube/)** — a Kubernetes controller runtime written on the Go
   standard library alone, without `client-go`. A controller is one struct and
   one `Reconcile` method. The framework generates CRDs, tracks what each
