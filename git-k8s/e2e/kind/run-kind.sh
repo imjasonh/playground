@@ -1168,9 +1168,25 @@ g add -A
 g commit -qm "Add three.txt"
 MOVED="$(g rev-parse HEAD)"
 g push -q "${HOST_URL}/app.git" HEAD:main
-timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranch "$(branch_object main)" --watch \
+# kubectl drops the first event when it watches one object. That event is
+# often the queue with both branches in it, and the log then shows only the
+# branch still at the front. A list watch prints every change. Wait until
+# it has printed the current queue, so the push happens after the list.
+main_object="$(branch_object main)"
+[[ -n "${main_object}" ]]
+: >"${WORKDIR}/queues.txt"
+timeout 600 kubectl --context "${CONTEXT}" -n "${NS}" get gitbranches \
+  --field-selector "metadata.name=${main_object}" --watch \
   -o jsonpath='{.status.queue[*]}{"\n"}' >"${WORKDIR}/queues.txt" 2>&1 &
 queues_pid=$!
+queue_watch_connected() {
+  if grep -q '^Error' "${WORKDIR}/queues.txt"; then
+    cat "${WORKDIR}/queues.txt" >&2
+    exit 1
+  fi
+  [[ "$(wc -l < "${WORKDIR}/queues.txt")" -ge 1 ]]
+}
+eventually 60 queue_watch_connected
 g push -q "${HOST_URL}/app.git" c/one:c/one c/two:c/two
 both_landed() {
   branch_gone c/one && branch_gone c/two && fetch_main &&
