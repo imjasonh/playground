@@ -34,9 +34,15 @@ variable "cpu_always_allocated" {
 }
 
 variable "memory_limit" {
-  description = "Container memory. The page cache, write buffer, and any hydrated copy count against it."
+  description = "Container memory. The page cache, the page index (about 75 MiB per GiB of database), the write buffer, and any hydrated copy count against it."
   type        = string
   default     = "512Mi"
+}
+
+variable "go_memory_limit" {
+  description = "GOMEMLIMIT for the server, about 80% of memory_limit, so the Go runtime collects garbage before Cloud Run's limit kills the instance."
+  type        = string
+  default     = "400MiB"
 }
 
 variable "scratch_size_limit" {

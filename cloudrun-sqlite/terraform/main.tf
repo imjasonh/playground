@@ -103,6 +103,10 @@ resource "google_cloud_run_v2_service" "service" {
         name  = "HYDRATE"
         value = tostring(var.hydrate)
       }
+      env {
+        name  = "GOMEMLIMIT"
+        value = var.go_memory_limit
+      }
 
       volume_mounts {
         name       = "scratch"
