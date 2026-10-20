@@ -655,6 +655,15 @@ type VFSFile struct {
 
 	pageReadHook func(PageReadSource, time.Duration) // See VFS.PageReadHook
 
+	// readSnapshot hides the transaction that has committed locally but has
+	// not been uploaded. ReadAt then serves the page index from before that
+	// transaction and skips its dirty pages. The store sets this for the
+	// duration of the upload.
+	readSnapshot bool
+	// shadow is the pre-upload index entry for each page the hidden
+	// transaction replaced. A nil pointer means the page did not exist.
+	shadow map[uint32]*ltx.PageIndexElem
+
 	perConnClient bool // True when client was created from config registry (close on file close)
 
 	hydrator            *Hydrator // Background hydration (nil if disabled)
@@ -1594,8 +1603,11 @@ func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 	pageOffset := int(off % int64(pageSize))
 
 	// Visible page order: dirty -> synced -> hydration -> cache -> index.
+	// While an upload is in progress, skip that transaction's dirty pages
+	// so a reader sees the last uploaded database.
 	f.mu.Lock()
-	overlayData, source, sourceTXID, ok, err := f.readOverlayPageWithLock(pgno, pageSize)
+	snapshot := f.readSnapshot
+	overlayData, source, sourceTXID, ok, err := f.readOverlayPageWithLock(pgno, pageSize, snapshot)
 	if err != nil {
 		f.mu.Unlock()
 		return 0, err
@@ -1614,9 +1626,13 @@ func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 		f.reportPageRead(PageReadOverlay, start)
 		return n, nil
 	}
+	elem, hasElem, missing := f.indexElemForReadLocked(pgno, snapshot)
+	hidden := snapshot && f.shadowHasLocked(pgno)
+	writeEnabled := f.writeEnabled // capture while holding lock to avoid data race
 	f.mu.Unlock()
 
-	// If hydration complete, read from local file
+	// If hydration complete, read from local file. It does not contain the
+	// transaction being uploaded; synced pages were checked above.
 	if f.hydrator != nil && f.hydrator.Complete() {
 		n, err = f.hydrator.ReadAt(p, off)
 		if err == nil {
@@ -1625,26 +1641,36 @@ func (f *VFSFile) ReadAt(p []byte, off int64) (n int, err error) {
 		return n, err
 	}
 
-	// Check cache (cache is thread-safe)
-	if data, ok := f.cache.Get(pgno); ok {
-		n = copy(p, data[pageOffset:])
-		f.logger.Debug("cache hit", "page", pgno, "n", n)
+	// A page this upload replaced was dropped from the cache when the
+	// transaction ended, so a hit is an older page. Skip the cache for a
+	// replaced page and use its previous index entry.
+	if !hidden {
+		if data, ok := f.cache.Get(pgno); ok {
+			n = copy(p, data[pageOffset:])
+			f.logger.Debug("cache hit", "page", pgno, "n", n)
 
-		// Update the first page to pretend like we are in journal mode.
-		if off == 0 {
-			p[18], p[19] = 0x01, 0x01
-			_, _ = rand.Read(p[24:28])
+			// Update the first page to pretend like we are in journal mode.
+			if off == 0 {
+				p[18], p[19] = 0x01, 0x01
+				_, _ = rand.Read(p[24:28])
+			}
+
+			f.reportPageRead(PageReadCache, start)
+			return n, nil
 		}
-
-		f.reportPageRead(PageReadCache, start)
-		return n, nil
 	}
 
-	// Get page index element
-	f.mu.Lock()
-	elem, ok := f.index[pgno]
-	writeEnabled := f.writeEnabled // capture while holding lock to avoid data race
-	f.mu.Unlock()
+	ok = hasElem
+
+	if missing {
+		if writeEnabled {
+			for i := range p {
+				p[i] = 0
+			}
+			return len(p), nil
+		}
+		return 0, fmt.Errorf("page not found: %d", pgno)
+	}
 
 	if !ok {
 		// For write-enabled VFS with a new database (no existing pages),
@@ -1730,11 +1756,42 @@ func (f *VFSFile) reportPageRead(source PageReadSource, start time.Time) {
 	}
 }
 
+// SetDurableRead hides the transaction that just committed locally until
+// the caller turns it off, which the store does after the upload. Reads in
+// between see the previous pages.
+func (f *VFSFile) SetDurableRead(on bool) {
+	f.mu.Lock()
+	f.readSnapshot = on
+	f.mu.Unlock()
+}
+
+// indexElemForReadLocked returns the index entry a read should use. When
+// snapshot is set, a page the hidden transaction replaced uses its previous
+// entry. missing is true when that page did not exist before. Caller must
+// hold f.mu.
+func (f *VFSFile) indexElemForReadLocked(pgno uint32, snapshot bool) (elem ltx.PageIndexElem, ok bool, missing bool) {
+	if snapshot {
+		if old, hidden := f.shadow[pgno]; hidden {
+			if old == nil {
+				return ltx.PageIndexElem{}, false, true
+			}
+			return *old, true, false
+		}
+	}
+	elem, ok = f.index[pgno]
+	return elem, ok, false
+}
+
+func (f *VFSFile) shadowHasLocked(pgno uint32) bool {
+	_, ok := f.shadow[pgno]
+	return ok
+}
+
 // readOverlayPageWithLock returns local write pages that must be visible
 // before any hydrated file, cached remote page, or remote page index lookup.
-// Caller must hold f.mu.
-func (f *VFSFile) readOverlayPageWithLock(pgno uint32, pageSize uint32) (data []byte, source string, txid ltx.TXID, ok bool, err error) {
-	if f.writeEnabled {
+// Caller must hold f.mu. skipDirty omits the transaction that is uploading.
+func (f *VFSFile) readOverlayPageWithLock(pgno uint32, pageSize uint32, skipDirty bool) (data []byte, source string, txid ltx.TXID, ok bool, err error) {
+	if f.writeEnabled && !skipDirty {
 		if bufferOff, ok := f.dirty[pgno]; ok {
 			data := make([]byte, pageSize)
 			if _, err := f.bufferFile.ReadAt(data, bufferOff); err != nil {
@@ -1807,7 +1864,7 @@ func (f *VFSFile) WriteAt(b []byte, off int64) (n int, err error) {
 func (f *VFSFile) readPageForWrite(pgno uint32, buf []byte) error {
 	pageSize := uint32(len(buf))
 
-	if data, _, _, ok, err := f.readOverlayPageWithLock(pgno, pageSize); err != nil {
+	if data, _, _, ok, err := f.readOverlayPageWithLock(pgno, pageSize, false); err != nil {
 		return err
 	} else if ok {
 		copy(buf, data)
@@ -2548,6 +2605,21 @@ func (f *VFSFile) Unlock(elock sqlite3vfs.LockType) error {
 	}
 
 	f.lockType = elock
+
+	// Remember where these pages lived before this transaction, so a reader
+	// can see that database while the new pages are still uploading. A later
+	// unlock with no pending pages must not wipe that record.
+	if len(f.pending) > 0 {
+		f.shadow = make(map[uint32]*ltx.PageIndexElem, len(f.pending))
+		for pgno := range f.pending {
+			if elem, ok := f.index[pgno]; ok {
+				elem := elem
+				f.shadow[pgno] = &elem
+			} else {
+				f.shadow[pgno] = nil
+			}
+		}
+	}
 
 	// Copy pending index to main index and invalidate affected pages in cache.
 	if f.pendingShrink {
