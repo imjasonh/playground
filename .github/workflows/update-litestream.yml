@@ -42,6 +42,19 @@ jobs:
           GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
         run: bash .github/scripts/update-litestream.sh pull
 
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: ${{ steps.pull.outputs.result == 'merged' }}
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
+      # Upstream may require newer dependencies than the modules that build
+      # against litestream/ list, and CI won't update their go.mod files.
+      - name: Tidy the modules that build against litestream/
+        if: ${{ steps.pull.outputs.result == 'merged' }}
+        run: bash .github/scripts/update-litestream.sh tidy
+
       - name: Open a pull request for a clean update
         id: pr_success
         if: ${{ steps.pull.outputs.result == 'merged' }}

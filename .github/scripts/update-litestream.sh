@@ -6,6 +6,10 @@
 #     Merges upstream into a fresh automation branch. Writes the outputs
 #     result (unchanged, merged, conflict, or skipped), upstream, previous,
 #     and conflicts.
+#   update-litestream.sh tidy
+#     Runs go mod tidy in each module that replaces Litestream with
+#     ../litestream, and commits any change, so that the module still builds
+#     when upstream requires newer dependencies.
 #   update-litestream.sh open-pr | open-conflict-pr
 #     Pushes the branch and opens or updates its pull request. They read
 #     UPSTREAM, PREVIOUS, and CONFLICTS from the environment.
@@ -117,14 +121,37 @@ case "${1:-}" in
     } >> "$GITHUB_OUTPUT"
     _output result conflict
     ;;
+  tidy)
+    _git_identity
+    tidied=()
+    for gomod in $(grep -l "^replace github.com/benbjohnson/litestream => ../${PREFIX}\$" -- */go.mod 2>/dev/null); do
+      dir=$(dirname "$gomod")
+      (cd "$dir" && go mod tidy)
+      if ! git diff --quiet -- "$dir/go.mod" "$dir/go.sum" ||
+        [[ -n "$(git ls-files --others -- "$dir/go.sum")" ]]; then
+        # A module without dependencies has no go.sum.
+        for f in "$dir/go.mod" "$dir/go.sum"; do
+          if [[ -e "$f" ]] || git ls-files --error-unmatch -- "$f" > /dev/null 2>&1; then
+            git add -A -- "$f"
+          fi
+        done
+        tidied+=("$dir")
+      fi
+    done
+    if [[ ${#tidied[@]} -gt 0 ]]; then
+      git commit --quiet --no-verify -m "${tidied[*]}: tidy go.mod for the Litestream update"
+      echo "Tidied ${tidied[*]}."
+    fi
+    ;;
   open-pr)
     : "${UPSTREAM:?}" "${PREVIOUS:?}"
     _push_and_pr "litestream: pull upstream ${UPSTREAM:0:7}" "$(cat <<EOF
 Pulls upstream Litestream into \`litestream/\` with \`git subtree\`:
 [\`${PREVIOUS:0:7}...${UPSTREAM:0:7}\`]($(_compare_url)).
 
-The merge was clean. Auto-merge is enabled, so this pull request lands
-once the required checks pass. If upstream merged one of the patches in
+The merge was clean, and the modules that build against \`litestream/\`
+were tidied. Auto-merge is enabled, so this pull request lands once the
+required checks pass. If upstream merged one of the patches in
 \`litestream/PATCHES.md\`, delete its row there.
 
 Opened by the [nightly workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
@@ -182,7 +209,7 @@ EOF
     exit 1
     ;;
   *)
-    echo "Usage: $0 pull | open-pr | open-conflict-pr | enable-auto-merge <pr-number> | close-stale | report-conflict" >&2
+    echo "Usage: $0 pull | tidy | open-pr | open-conflict-pr | enable-auto-merge <pr-number> | close-stale | report-conflict" >&2
     exit 2
     ;;
 esac

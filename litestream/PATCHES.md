@@ -44,8 +44,9 @@ Every night, `.github/workflows/update-litestream.yml` runs
 git subtree pull --prefix=litestream https://github.com/benbjohnson/litestream main --squash
 ```
 
-When the merge is clean, the workflow opens a pull request from
-`automation/litestream-update` and enables auto-merge, so the update lands
+When the merge is clean, the workflow runs `go mod tidy` in each module
+that builds against this directory, opens a pull request from
+`automation/litestream-update`, and enables auto-merge, so the update lands
 when CI passes. When upstream's changes conflict with a patch, it commits the
 merge with the conflict markers, opens the pull request without auto-merge,
 and fails the run. To finish that update, check out the branch, resolve the

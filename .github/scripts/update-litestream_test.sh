@@ -17,6 +17,8 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 export GITHUB_OUTPUT="$work/output"
 unset GH_TOKEN GITHUB_REPOSITORY
+# go mod tidy must not reach the network or download a toolchain.
+export GOTOOLCHAIN=local GOFLAGS= GOPROXY=off
 export LITESTREAM_UPSTREAM_URL="$work/upstream"
 branch=automation/litestream-update
 
@@ -29,12 +31,14 @@ commit_upstream() {
 git init -q -b main "$work/upstream"
 git -C "$work/upstream" config user.name upstream
 git -C "$work/upstream" config user.email upstream@example.com
+printf 'module github.com/benbjohnson/litestream\n\ngo 1.21\n' > "$work/upstream/go.mod"
 printf 'package litestream\n\nconst A = 1\n' > "$work/upstream/a.go"
 printf 'package litestream\n\nconst B = 1\n' > "$work/upstream/b.go"
 git -C "$work/upstream" add -A
 git -C "$work/upstream" commit -qm "upstream: A = 1, B = 1"
 
-# The monorepo: the subtree plus a local patch to b.go, pushed to a bare origin.
+# The monorepo: the subtree, a local patch to b.go, and a module that builds
+# against the subtree, pushed to a bare origin.
 git init -q --bare -b main "$work/origin.git"
 git init -q -b main "$work/repo"
 cd "$work/repo"
@@ -46,6 +50,12 @@ git commit -qm init
 git subtree add -q --prefix=litestream "$work/upstream" main --squash > /dev/null 2>&1
 printf 'package litestream\n\nconst B = 2 // patched\n' > litestream/b.go
 git commit -qam "litestream: patch B"
+mkdir app
+printf 'module example.com/app\n\ngo 1.21\n\nreplace github.com/benbjohnson/litestream => ../litestream\n' > app/go.mod
+printf 'package main\n\nimport _ "github.com/benbjohnson/litestream"\n\nfunc main() {}\n' > app/main.go
+(cd app && go mod tidy 2> /dev/null)
+git add -A
+git commit -qm "app: build against litestream/"
 git remote add origin "$work/origin.git"
 git push -q origin main
 
@@ -81,6 +91,19 @@ expect "clean merge keeps the patch" "const B = 2 // patched" "$(sed -n 3p lites
 expect "clean merge takes upstream" "const A = 2" "$(sed -n 3p litestream/a.go)"
 expect "clean merge records the import" "$(git -C "$work/upstream" rev-parse HEAD)" "$(last_import)"
 expect "clean merge upstream output" "$(git -C "$work/upstream" rev-parse HEAD)" "$(output upstream)"
+merged=$(git rev-parse HEAD)
+bash "$script" tidy > "$work/tidy.log" 2>&1
+expect "tidy with nothing to change" "$merged" "$(git rev-parse HEAD)"
+reset_repo
+
+# Upstream raises its go line, so the module that builds against it needs
+# go mod tidy, which tidy commits.
+printf 'module github.com/benbjohnson/litestream\n\ngo 1.22\n' > "$work/upstream/go.mod"
+git -C "$work/upstream" commit -qam "upstream: go 1.22"
+expect "go bump" merged "$(pull)"
+bash "$script" tidy > "$work/tidy.log" 2>&1
+expect "tidy commit" "app: tidy go.mod for the Litestream update" "$(git log -1 --format=%s)"
+expect "tidy go line" "go 1.22" "$(grep '^go ' app/go.mod)"
 reset_repo
 
 commit_upstream b.go B 3
