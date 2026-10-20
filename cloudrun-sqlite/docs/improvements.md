@@ -176,8 +176,36 @@ does not. Nothing here deletes an L0 file.
 
 A burst that starts from a short plan uploads about one L1 object per 16 L0
 objects and about one L2 object per 256 L0 objects, and the next open reads
-that shorter plan. The fold does not read the L0 objects back. Measured cost
-on the deployed service is not in yet.
+that shorter plan.
+
+### Measured on Cloud Run
+
+On October 20, 2026, the same 60-second run with 8 writers and 8 readers
+hit revision `cloudrun-sqlite-00009-rh6` after the replica had already been
+compacted to a short plan. The client acknowledged 2,581 writes (43 per
+second). Write latency was 169 / 410 ms at p50 / p99, and read latency was
+84 / 296 ms. The unfolded revision `cloudrun-sqlite-00008-sdz`, on the same
+workload, acknowledged 2,885 writes (48 per second) at 159 / 279 ms write
+and 80 / 168 ms read.
+
+The fold run recorded 673 batches, 716 PUTs, 240 LISTs, and 786 GETs. PUT
+p50 stayed 78 ms. One LIST took 25.3 s. The slowest request was 744 ms. A
+snapshot of 37 inputs took 3.4 s. At the end the restore plan was 5 files:
+the snapshot through transaction `0xc8b` and 4 L1 files after it. The bucket
+still held 673 L0 objects, 48 L1 files, and 3 L2 files. 41 new L1 files
+cover 16 transactions. Three shorter new L1 files cover 11, 5, and 1. The
+11- and 5-transaction files sit in the middle of the 16-transaction files.
+One new L2 file covers 256 transactions, `0xa13` through `0xb12`, and no
+second L2 file was written after that.
+
+A new revision opened that plan in 282 ms and made 11 GETs. The unfolded
+run had ended at a plan of 238. At list price, before the free tier, the
+fold run's object operations cost about $0.0051 and the unfolded run's about
+$0.0045.
+
+786 GETs is about one GET per L0 file. The copy kept in memory did not
+replace those reads on this run. The shorter plan is what the next open
+actually read.
 
 ### Reasons not to
 

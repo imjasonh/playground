@@ -86,8 +86,9 @@ files that the previous snapshot covers. During a write, the VFS also keeps
 the L0 file it just uploaded. When 16 of those files continue the current L1
 range, it writes that L1 from those bytes, and when 16 L1 files continue the
 L2 range, it writes that L2 the same way. The L0 files stay until retention
-deletes them. After a write burst that started from a short plan, the idle
-replica is those L2 files plus whatever has not been folded yet.
+deletes them. On the deployed service, a 60-second burst that started from a
+short plan left a restore plan of 5 files. The numbers are in
+[Deployed service](#deployed-service).
 
 **Overlapping instances.** Cloud Run can run two instances of a
 `max_instance_count = 1` service for a short time, for example during a
@@ -226,6 +227,44 @@ next busy period wrote two snapshots, and the following cold open took 682
 ms. Reading that backlog into the first snapshot stalled requests for up to
 9 s. Replica GETs were 35 ms at the median once the instance was warm, and
 65 to 76 ms while opening. The latency proxy assumed 20 ms.
+
+The same 60-second, 8-writer, 8-reader run later compared the durable-read
+revision `cloudrun-sqlite-00008-sdz` with the L0-fold revision
+`cloudrun-sqlite-00009-rh6`
+(`sha256:2a56d367cdf032d774dc8f97ac8a3a14e953444ad12d360a70c9b65d0b5900b3`).
+Both opened a short plan, in 236 ms and 245 ms. Before the fold run the
+bucket held 1 L0 file, 5 L1 files, 3 L2 files, and 2 snapshots.
+
+| | 00008 | 00009, with the fold |
+|---|---:|---:|
+| Acknowledged writes | 2,885 (48/s) | 2,581 (43/s) |
+| Client write p50 / p99 | 159 / 279 ms | 169 / 410 ms |
+| Client read p50 / p99 | 80 / 168 ms | 84 / 296 ms |
+| Server write p99 | 221 ms | 251 ms |
+| PUT p50 | 76 ms | 78 ms |
+| PUTs / LISTs / GETs during the run | 730 / 69 / 1,284 | 716 / 240 / 786 |
+| Snapshots | 0 | 1, 37 inputs, 3.4 s |
+| Restore plan at the end | 238 | 5 |
+| L0 objects at the end | 730 | 673 |
+
+On the fold run, 41 new L1 files cover 16 transactions each. Three shorter
+new L1 files cover 11, 5, and 1 transactions. The 11- and 5-transaction
+files sit in the middle of the 16-transaction files, which is the shape the
+30-second monitor writes when it compacts whatever L0 files are waiting. One
+new L2 file covers 256 transactions, `0xa13` through `0xb12`. The 673 L0
+objects were still in the bucket. The plan was the new snapshot through
+`0xc8b` plus the 4 L1 files after it.
+
+Revision `cloudrun-sqlite-00010-7db` then opened that plan in 282 ms and made
+11 GETs. The slowest request during the burst was 744 ms. One LIST took 25.3
+s, and the median LIST was 108 ms. On the unfolded run the median LIST was
+317 ms and the longest was 7.9 s. At list price, before the free tier, the
+operations during the fold run cost about $0.0051, and the unfolded run about
+$0.0045. Both figures use regional Standard prices in `us-central1`: $0.005
+per 1,000 Class A operations and $0.0004 per 1,000 Class B operations.
+
+The fold run made 786 GETs, about one per L0 file, down from 1,284. Keeping
+the uploaded bytes on the instance did not replace those reads.
 
 ### Background requests
 
