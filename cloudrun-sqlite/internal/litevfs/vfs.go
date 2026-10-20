@@ -604,7 +604,8 @@ type VFSFile struct {
 	maxTXID1Covered  ltx.TXID
 	index            map[uint32]ltx.PageIndexElem
 	pending          map[uint32]ltx.PageIndexElem
-	pendingReplace   bool
+	pendingShrink    bool                       // the database shrank while a reader held the index
+	pendingShrinkTo  uint32                     // smallest commit of that shrink; Unlock truncates the index to it
 	cache            *lru.Cache[uint32, []byte] // LRU cache for page data
 	targetTime       *time.Time                 // Target view time; nil means latest
 	latestLTXTime    time.Time                  // Timestamp of most recent LTX file
@@ -1321,7 +1322,7 @@ func (f *VFSFile) rebuildIndex(ctx context.Context, infos []*ltx.FileInfo, targe
 	defer f.mu.Unlock()
 	f.index = index
 	f.pending = make(map[uint32]ltx.PageIndexElem)
-	f.pendingReplace = false
+	f.pendingShrink = false
 	f.synced = make(map[uint32]TPage)
 	f.pos = pos
 	f.maxTXID1 = maxTXID1
@@ -1396,6 +1397,9 @@ func (f *VFSFile) buildIndexMap(ctx context.Context, infos []*ltx.FileInfo) (map
 		hdr, err := FetchLTXHeader(ctx, f.client, info)
 		if err != nil {
 			return nil, 0, fmt.Errorf("fetch header: %w", err)
+		}
+		if hdr.Commit < commit {
+			truncateIndex(index, hdr.Commit)
 		}
 		commit = hdr.Commit
 	}
@@ -1807,6 +1811,13 @@ func (f *VFSFile) Truncate(size int64) error {
 			delete(f.synced, pgno)
 		}
 	}
+	for pgno := range f.index {
+		if pgno > newCommit {
+			f.cache.Remove(pgno)
+		}
+	}
+	truncateIndex(f.index, newCommit)
+	truncateIndex(f.pending, newCommit)
 
 	f.commit = newCommit
 	f.commitTXID = f.pendingTXID
@@ -2449,18 +2460,12 @@ func (f *VFSFile) Unlock(elock sqlite3vfs.LockType) error {
 	f.lockType = elock
 
 	// Copy pending index to main index and invalidate affected pages in cache.
-	if f.pendingReplace {
-		// Replace entire index
-		count := len(f.index)
-		f.index = f.pending
-		f.logger.Debug("cache invalidated all pages", "count", count)
-		// Invalidate entire cache since we replaced the index
+	if f.pendingShrink {
+		truncateIndex(f.index, f.pendingShrinkTo)
 		f.cache.Purge()
-		for k, v := range f.index {
-			f.clearSyncedPageWithIndexElemWithLock(k, v)
-		}
-		f.clearSyncedPagesBeyondCommitWithLock(f.commit)
-	} else if len(f.pending) > 0 {
+		f.logger.Debug("cache invalidated all pages", "truncatedTo", f.pendingShrinkTo)
+	}
+	if len(f.pending) > 0 {
 		// Merge pending into index
 		count := len(f.pending)
 		mergePageIndexes(f.index, nil, f.pending, nil)
@@ -2470,8 +2475,11 @@ func (f *VFSFile) Unlock(elock sqlite3vfs.LockType) error {
 		}
 		f.logger.Debug("cache invalidated pages", "count", count)
 	}
+	if f.pendingShrink {
+		f.clearSyncedPagesBeyondCommitWithLock(f.commit)
+	}
 	f.pending = make(map[uint32]ltx.PageIndexElem)
-	f.pendingReplace = false
+	f.pendingShrink = false
 
 	return nil
 }
@@ -2711,17 +2719,17 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	combined := make(map[uint32]ltx.PageIndexElem)
 
 	newCommit := baseCommit
-	replaceIndex := false
+	shrunk := false
+	var shrinkTo uint32
 
 	level0, err := f.pollLevel(ctx, 0, pos.TXID, baseCommit, pos.TXID, true, 0)
 	if err != nil {
 		return fmt.Errorf("poll L0: %w", err)
 	}
-	if level0.replaceIndex {
-		replaceIndex = true
+	if level0.shrunk {
+		shrunk, shrinkTo = true, level0.shrinkTo
 		baseCommit = level0.commit
 		newCommit = level0.commit
-		combined = make(map[uint32]ltx.PageIndexElem)
 		mergePageIndexes(combined, nil, level0.index, nil)
 	} else {
 		if len(level0.index) > 0 {
@@ -2737,10 +2745,13 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("poll L1: %w", err)
 	}
-	if level1.replaceIndex && level1.maxTXID >= level0.maxTXID {
-		replaceIndex = true
+	if level1.shrunk && level1.maxTXID >= level0.maxTXID {
+		if !shrunk || level1.shrinkTo < shrinkTo {
+			shrinkTo = level1.shrinkTo
+		}
+		shrunk = true
 		newCommit = level1.commit
-		combined = make(map[uint32]ltx.PageIndexElem)
+		truncateIndex(combined, level1.shrinkTo)
 		mergePageIndexes(combined, nil, level1.index, nil)
 	} else {
 		mergePageIndexes(combined, nil, level1.index, nil)
@@ -2772,24 +2783,27 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 		target = f.pending
 		baseline = f.index
 		targetIsMain = false
-	} else {
-		f.pendingReplace = false
 	}
-	if replaceIndex {
-		if f.lockType < sqlite3vfs.LockShared {
-			f.index = make(map[uint32]ltx.PageIndexElem)
+	if shrunk {
+		if targetIsMain {
+			truncateIndex(f.index, shrinkTo)
 			f.cache.Purge()
-			target = f.index
-			baseline = nil
-			targetIsMain = true
-			f.pendingReplace = false
 		} else {
-			f.pending = make(map[uint32]ltx.PageIndexElem)
-			target = f.pending
-			baseline = nil
-			targetIsMain = false
-			f.pendingReplace = true
+			// A reader keeps the pages it can see until Unlock truncates.
+			if !f.pendingShrink || shrinkTo < f.pendingShrinkTo {
+				f.pendingShrinkTo = shrinkTo
+			}
+			f.pendingShrink = true
+			truncateIndex(f.pending, shrinkTo)
 		}
+	}
+	// No page past the commit at applyTXID exists, but an L1 file compacted
+	// from L0 files older than a shrink still lists the pages it removed.
+	truncateIndex(combined, newCommit)
+	if f.writeEnabled && applyTXID < f.commitTXID {
+		// The writer's own pages are newer than these files. If it shrank
+		// the database since, the pages past its commit are gone.
+		truncateIndex(combined, f.commit)
 	}
 	applied := make(map[uint32]ltx.PageIndexElem)
 	mergePageIndexes(target, baseline, combined, applied)
@@ -2806,12 +2820,12 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	}
 
 	commitUpdated := false
-	if (replaceIndex || len(combined) > 0) && (!f.writeEnabled || applyTXID >= f.commitTXID) {
+	if (shrunk || len(combined) > 0) && (!f.writeEnabled || applyTXID >= f.commitTXID) {
 		f.commit = newCommit
 		f.commitTXID = applyTXID
 		commitUpdated = true
 	}
-	if replaceIndex && targetIsMain && commitUpdated {
+	if shrunk && targetIsMain && commitUpdated {
 		f.clearSyncedPagesBeyondCommitWithLock(f.commit)
 	}
 	if level0.maxTXID > level1.maxTXID {
@@ -2845,12 +2859,13 @@ func latestTime(a, b time.Time) time.Time {
 }
 
 type pollLevelResult struct {
-	maxTXID      ltx.TXID
-	index        map[uint32]ltx.PageIndexElem
-	commit       uint32
-	replaceIndex bool
-	anchored     bool
-	coveredTXID  ltx.TXID
+	maxTXID     ltx.TXID
+	index       map[uint32]ltx.PageIndexElem
+	commit      uint32
+	shrunk      bool   // a file's commit was smaller than the one before it
+	shrinkTo    uint32 // smallest such commit; pages past it are gone
+	anchored    bool
+	coveredTXID ltx.TXID
 	// createdAt is the CreatedAt of the newest LTX file applied; zero if none.
 	createdAt time.Time
 }
@@ -2875,8 +2890,10 @@ func (f *VFSFile) clearSyncedPagesBeyondCommitWithLock(commit uint32) {
 // Caller must hold f.mu.
 func (f *VFSFile) indexCommitWithLock() uint32 {
 	var commit uint32
-	if !f.pendingReplace {
-		commit = f.mainIndexCommitWithLock()
+	for pgno := range f.index {
+		if pgno > commit && (!f.pendingShrink || pgno <= f.pendingShrinkTo) {
+			commit = pgno
+		}
 	}
 	for pgno := range f.pending {
 		if pgno > commit {
@@ -2886,18 +2903,17 @@ func (f *VFSFile) indexCommitWithLock() uint32 {
 	return commit
 }
 
-func (f *VFSFile) mainIndexCommitWithLock() uint32 {
-	var commit uint32
-	for pgno := range f.index {
+// truncateIndex removes the entries for pages past commit.
+func truncateIndex(index map[uint32]ltx.PageIndexElem, commit uint32) {
+	for pgno := range index {
 		if pgno > commit {
-			commit = pgno
+			delete(index, pgno)
 		}
 	}
-	return commit
 }
 
 // pollLevel fetches LTX files for a specific level and returns the highest TXID seen,
-// any index updates, the latest commit value, and if the index should be replaced.
+// any index updates, the latest commit value, and whether the database shrank.
 // baseCommit is the page count as of baseTXID. A file that ends before
 // baseTXID is older than that page count, so its smaller commit isn't a shrink.
 func (f *VFSFile) pollLevel(ctx context.Context, level int, prevMaxTXID ltx.TXID, baseCommit uint32, baseTXID ltx.TXID, anchored bool, coveredTXID ltx.TXID) (pollLevelResult, error) {
@@ -2958,9 +2974,15 @@ func (f *VFSFile) pollLevel(ctx context.Context, level int, prevMaxTXID ltx.TXID
 			}
 
 			if info.MaxTXID >= lastCommitTXID {
+				// A shrink drops the pages past the new commit. The file
+				// holds only the pages its transactions wrote, so every
+				// other page keeps its entry.
 				if hdr.Commit < lastCommit {
-					result.replaceIndex = true
-					result.index = make(map[uint32]ltx.PageIndexElem)
+					if !result.shrunk || hdr.Commit < result.shrinkTo {
+						result.shrinkTo = hdr.Commit
+					}
+					result.shrunk = true
+					truncateIndex(result.index, hdr.Commit)
 				}
 				lastCommit, lastCommitTXID = hdr.Commit, info.MaxTXID
 			}

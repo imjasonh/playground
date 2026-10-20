@@ -172,6 +172,7 @@ type harness struct {
 	durable [][]byte // pages as of the last sync
 	version uint64
 	reading bool // holds SHARED across steps, like an open read transaction
+	shrinks bool // random schedules include transactions that shrink the database
 
 	poll, compact *task
 }
@@ -346,6 +347,35 @@ func (h *harness) write(pgnos ...uint32) {
 	}
 }
 
+// shrink commits one write transaction that writes pgnos and then truncates
+// the database to n pages, as auto_vacuum does. Pages it doesn't write keep
+// their contents.
+func (h *harness) shrink(n int, pgnos ...uint32) {
+	h.logf("write pages %v and truncate to %d pages", pgnos, n)
+	if !h.reading {
+		h.lock(sqlite3vfs.LockShared)
+	}
+	h.lock(sqlite3vfs.LockReserved)
+	h.lock(sqlite3vfs.LockExclusive)
+	for _, pgno := range pgnos {
+		h.checkPage(h.f, h.pages, pgno, "read before write")
+		h.version++
+		b := pageData(pgno, h.version)
+		if _, err := h.f.WriteAt(b, int64(pgno-1)*ilPageSize); err != nil {
+			h.failf("write page %d: %v", pgno, err)
+		}
+		h.pages[pgno-1] = b
+	}
+	if err := h.f.Truncate(int64(n) * ilPageSize); err != nil {
+		h.failf("truncate to %d pages: %v", n, err)
+	}
+	h.pages = h.pages[:n]
+	h.unlock(sqlite3vfs.LockShared)
+	if !h.reading {
+		h.unlock(sqlite3vfs.LockNone)
+	}
+}
+
 func (h *harness) sync() {
 	h.logf("sync")
 	if err := h.f.Sync(sqlite3vfs.SyncNormal); err != nil {
@@ -504,7 +534,22 @@ func (h *harness) randomWrite() {
 	h.write(pgnos...)
 }
 
+// randomShrink truncates the database to a random smaller size in a
+// transaction that writes page 1 and maybe one other page that remains.
+func (h *harness) randomShrink() {
+	n := 1 + h.pick(len(h.pages)-1)
+	pgnos := []uint32{1}
+	if n > 1 && h.pick(2) == 0 {
+		pgnos = append(pgnos, uint32(2+h.pick(n-1)))
+	}
+	h.shrink(n, pgnos...)
+}
+
 func (h *harness) randomStep() {
+	if h.shrinks && len(h.pages) > 1 && h.pick(20) == 0 {
+		h.randomShrink()
+		return
+	}
 	switch r := h.pick(100); {
 	case r < 30:
 		h.randomWrite()
@@ -633,10 +678,88 @@ func TestInterleaveOlderL1EntryDoesNotReplaceNewerL0(t *testing.T) {
 	}
 }
 
+// A transaction can shrink the database while writing only some of the pages
+// that remain, as auto_vacuum does. The writer, a reader that polls, and a
+// cold start must all drop the pages past the new end and keep the pages the
+// transaction didn't write.
+func TestInterleaveShrinkKeepsUnwrittenPages(t *testing.T) {
+	h := newHarness(t, nil)
+	if err := h.do(func() {
+		h.write(1, 2, 3, 4, 5, 6)
+		h.sync()
+		h.pollNow()
+		reader, err := openTestFile(h.dir, h.client, false)
+		if err != nil {
+			h.failf("open reader: %v", err)
+		}
+		defer func() { _ = reader.Close() }()
+		h.shrink(4, 1, 2)
+		h.sync()
+		h.checkAll("writer after sync")
+		h.pollNow()
+		h.checkAll("writer after poll")
+		if err := reader.pollReplicaClient(h.ctx); err != nil {
+			h.failf("reader poll: %v", err)
+		}
+		if err := reader.Lock(sqlite3vfs.LockShared); err != nil {
+			h.failf("reader lock: %v", err)
+		}
+		h.checkFile(reader, h.durable, "reader after poll")
+		h.checkReplica()
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A reader that holds SHARED while a poll finds a shrink keeps seeing the
+// pages it started with, and sees the smaller database after it unlocks.
+func TestInterleaveShrinkWaitsForReader(t *testing.T) {
+	h := newHarness(t, nil)
+	if err := h.do(func() {
+		h.write(1, 2, 3, 4, 5, 6)
+		h.sync()
+		h.pollNow()
+		reader, err := openTestFile(h.dir, h.client, false)
+		if err != nil {
+			h.failf("open reader: %v", err)
+		}
+		defer func() { _ = reader.Close() }()
+		before := slices.Clone(h.durable)
+		if err := reader.Lock(sqlite3vfs.LockShared); err != nil {
+			h.failf("reader lock: %v", err)
+		}
+		h.shrink(4, 1, 2)
+		h.sync()
+		if err := reader.pollReplicaClient(h.ctx); err != nil {
+			h.failf("reader poll: %v", err)
+		}
+		h.checkFile(reader, before, "reader holding SHARED")
+		if err := reader.Unlock(sqlite3vfs.LockNone); err != nil {
+			h.failf("reader unlock: %v", err)
+		}
+		if err := reader.Lock(sqlite3vfs.LockShared); err != nil {
+			h.failf("reader lock: %v", err)
+		}
+		h.checkFile(reader, h.durable, "reader after unlock")
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestInterleaveRandom runs random schedules of writes, syncs, reads, and
 // paused polls and compactions. To run more schedules, set
 // LITEVFS_INTERLEAVE_SEEDS. To replay one, set LITEVFS_INTERLEAVE_SEED.
 func TestInterleaveRandom(t *testing.T) {
+	runRandomSeeds(t, false)
+}
+
+// TestInterleaveRandomShrink runs the same schedules with transactions that
+// shrink the database mixed in. The same variables select its seeds.
+func TestInterleaveRandomShrink(t *testing.T) {
+	runRandomSeeds(t, true)
+}
+
+func runRandomSeeds(t *testing.T, shrinks bool) {
 	first, n := int64(1), int64(200)
 	if testing.Short() {
 		n = 50
@@ -658,6 +781,7 @@ func TestInterleaveRandom(t *testing.T) {
 	for seed := first; seed < first+n; seed++ {
 		rng := rand.New(rand.NewSource(seed))
 		h := newHarness(t, rng.Intn)
+		h.shrinks = shrinks
 		if err := h.runRandom(150, func() bool { return false }); err != nil {
 			t.Fatalf("seed %d: %v\nTo replay, set LITEVFS_INTERLEAVE_SEED=%d.", seed, err, seed)
 		}

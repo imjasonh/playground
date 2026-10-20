@@ -107,10 +107,12 @@ million pages.
 Cache the page only when the installed entry's MaxTXID equals the overlay
 page's TXID. A newer entry, from another instance or from compaction past a
 later write, means the overlay page is out of date; drop it as the code does
-now. The overlay is cleared in one function,
+now. Pages that the index now covers leave the overlay in one function,
 `clearSyncedPageWithIndexElemWithLock`, which every caller runs after
-invalidating the cache entry. The interleaving tests and the store's
-read-visibility tests passed on a build with this change.
+invalidating the cache entry; the other code that clears the overlay drops
+pages past the end of the database, which must not be cached. The
+interleaving tests and the store's read-visibility tests passed on a build
+with this change.
 
 ## List S3 from the seek position
 

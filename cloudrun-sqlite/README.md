@@ -32,7 +32,8 @@ writer and from a fresh VFS. These are its results against each version:
 | `main` at `716acc5` | corrupt pages, 629 acknowledged rows lost | replica itself corrupt | not run | not run |
 | [#1293](https://github.com/benbjohnson/litestream/pull/1293) alone | pass | pass | malformed after 16 s | not run |
 | `main` + #1293 | pass | pass | pass | malformed in 5 of 6 runs, after 6-27 s |
-| `main` + #1293 + shrink check (`internal/litevfs`) | pass | pass | pass | pass in 6 of 6 runs |
+| `main` + #1293 + shrink check | pass | pass | pass | pass in 6 of 6 runs |
+| `main` + #1293 + both shrink fixes (`internal/litevfs`) | pass | pass | pass | pass in 6 of 6 runs |
 
 The 60-second, 10-writer run gives the same results on S3, using MinIO behind
 the latency proxy described in [Measurements](#measurements). v0.5.7,
@@ -43,8 +44,17 @@ runs never had. A poll that finds two new L1 files reads the older one's
 smaller commit as a shrink and drops every page the two files don't contain.
 `main` has the same bug.
 
-`internal/litevfs` is the `main` + #1293 merge with a check that fixes that
-shrink. Its [README](internal/litevfs/README.md) explains which race each
+A transaction that really does shrink the database hits a separate bug,
+which `main` also has. With `auto_vacuum`, a `DELETE` truncates the database
+and writes only the pages it changes. A poller that finds the smaller commit
+replaces its page index with that file's pages, so every page the `DELETE`
+didn't write disappears, and another instance's next query fails with
+`database disk image is malformed`. The writer's own file size and a cold
+start's page index also keep pages past the new end.
+`TestShrinkIsVisibleToAnotherInstance` reproduces it with two instances.
+
+`internal/litevfs` is the `main` + #1293 merge with one fix for each shrink
+bug. Its [README](internal/litevfs/README.md) explains which race each
 change fixes and how the merge conflicts were resolved. Delete it once
 Litestream ships the fixes.
 
@@ -187,8 +197,8 @@ CPU is frozen and it makes none.
   compaction and snapshots only make progress while requests are in flight.
   Set `cpu_always_allocated = true` if cold starts slow down because the
   restore plan grew.
-- Avoid `VACUUM`. A transaction that shrinks the database takes a VFS code
-  path that this repository doesn't test.
+- `Write` runs each function inside a transaction, so it can't run `VACUUM`,
+  which SQLite doesn't allow there.
 
 [`docs/improvements.md`](docs/improvements.md) lists changes that would make
 writes faster and cheaper, with measured benefits, reasons not to make each
