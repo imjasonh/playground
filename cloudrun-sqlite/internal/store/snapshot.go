@@ -100,6 +100,9 @@ func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
 		}
 		s.mu.RLock()
 		defer s.mu.RUnlock()
+		if s.db == nil {
+			return ErrUnavailable
+		}
 		_, err := s.db.ExecContext(ctx, "PRAGMA litestream_time = 'latest'")
 		return err
 	}); err != nil {

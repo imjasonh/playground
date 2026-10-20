@@ -51,9 +51,11 @@ Litestream ships the fixes.
 ## How it works
 
 **Reads.** SQLite reads pages through the VFS, which serves each one from
-writes that are not yet uploaded, an LRU page cache (64 MiB), an optional
-local copy that it downloads in the background (`HYDRATE=true`), or a ranged
-GET of the LTX file that holds the page.
+this instance's own writes, an LRU page cache (64 MiB), an optional local
+copy that it downloads in the background (`HYDRATE=true`), or a ranged GET of
+the LTX file that holds the page. A read waits while a durable write commits
+and uploads, so it sees only writes that are in the replica. With
+`DURABLE=false`, reads also see writes that the VFS hasn't uploaded yet.
 
 **Writes.** Every request's transaction runs on one goroutine. Writes that
 arrive while one is committing share the next transaction, then the store
@@ -74,7 +76,10 @@ deploy. The store uploads L0 files with a conditional create
 (`If-None-Match: *` on S3, `DoesNotExist` on Cloud Storage, `link(2)` on a
 local directory). If another instance already published that transaction, the
 upload fails, the store discards its local commit, reopens the database, and
-reruns the batch.
+reruns the batch. Reads on that instance wait until the commit is gone,
+because the row IDs it took belong to the other instance's writes. Any failed
+upload makes the store reopen the database from the replica this way. If the
+open fails too, requests get a 503 until a later read or write opens it.
 
 **Shutdown.** On SIGTERM the server stops accepting requests, finishes the
 ones in flight, uploads anything left, and exits. Cloud Run sends SIGKILL 10
@@ -125,7 +130,7 @@ acknowledged write.
 
 | Mode | Acknowledged writes | Write p50 / p99 | Read p50 / p99 | Lost after restart | `integrity_check` |
 |---|---:|---:|---:|---:|---|
-| Durable (default) | 2,610 | 199 / 1,554 ms | 113 / 1,065 ms | 0 | ok |
+| Durable (default) | 2,576 | 200 / 1,484 ms | 100 / 899 ms | 0 | ok |
 | `DURABLE=false` | 60,158 | 1.8 / 395 ms | 1.1 / 225 ms | 507 | ok |
 
 The p99 latencies include waiting for a new instance after each kill or
@@ -141,15 +146,18 @@ With no failures injected, for 60 seconds:
 
 | Workload | Write p50 / p99 | Read p50 / p99 | Writes per second |
 |---|---:|---:|---:|
-| 8 writers and 8 readers, durable | 189 / 222 ms | 104 / 539 ms | 42 |
-| 1 writer and 1 reader, durable | 91 / 107 ms | 88 / 107 ms | 11 |
-| 1 writer at 5 writes per second and 8 readers, durable | 91 / 108 ms | 0.4 / 1.3 ms | 5 |
-| 8 writers and 8 readers, `DURABLE=false` | 2.1 / 6.3 ms | 1.2 / 8.6 ms | 1,740 |
+| 8 writers and 8 readers, durable | 188 / 220 ms | 95 / 113 ms | 42 |
+| 1 writer and 1 reader, durable | 93 / 114 ms | 89 / 113 ms | 11 |
+| 1 writer at 5 writes per second and 8 readers, durable | 91 / 108 ms | 0.4 / 1.4 ms | 5 |
+| 8 writers and 8 readers, `DURABLE=false` | 2.0 / 6.6 ms | 1.1 / 8.5 ms | 1,810 |
 
 A durable write costs one upload: a list request to check for a newer
 transaction and a conditional put. Reads are fast until uploads run back to
-back, because the VFS holds a lock during each upload that every page read
-needs.
+back, because a read waits for the write that is committing or uploading.
+Before reads waited for whole writes, the 8-writer run's reads took
+104 / 560 ms: a read could take the one connection between a commit and its
+upload, then hold it until the upload finished while other reads queued
+behind it.
 
 ### Background requests
 
@@ -162,8 +170,9 @@ CPU is frozen and it makes none.
 ## Limits
 
 - One SQLite connection serves every request, so a slow query delays
-  everything behind it. The VFS also holds its lock while it uploads, which
-  adds the upload time to reads that arrive during a flush.
+  everything behind it. In durable mode, a read also waits for the write
+  that is committing or uploading, which adds up to one upload's time to
+  reads that arrive during a write.
 - A page that isn't cached costs one object-store round trip. A query that
   scans a large table on a cold instance is slow until the cache or the
   hydrated copy has the pages. Hydration needs memory for the whole database

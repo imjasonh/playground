@@ -69,11 +69,12 @@ func (s *server) admin(h http.HandlerFunc) http.HandlerFunc {
 }
 
 // writeError maps store errors to HTTP statuses. A conflict that survived
-// every retry means another instance kept winning; the client can retry.
+// every retry means another instance kept winning, and an unavailable
+// database is waiting to be reopened; the client can retry either.
 func writeError(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	switch {
-	case errors.Is(err, litevfs.ErrConflict), errors.Is(err, store.ErrClosed):
+	case errors.Is(err, litevfs.ErrConflict), errors.Is(err, store.ErrClosed), errors.Is(err, store.ErrUnavailable):
 		w.Header().Set("Retry-After", "1")
 		code = http.StatusServiceUnavailable
 	case errors.Is(err, sql.ErrNoRows):

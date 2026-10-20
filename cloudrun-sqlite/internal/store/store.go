@@ -29,6 +29,11 @@ import (
 // ErrClosed is returned by Write after Close.
 var ErrClosed = errors.New("store closed")
 
+// ErrUnavailable is returned while the database is closed because the
+// store couldn't reopen it after a failed upload. The next write or read
+// tries to open it again.
+var ErrUnavailable = errors.New("database unavailable")
+
 // Config configures a Store.
 type Config struct {
 	// ReplicaURL is the Litestream replica: gs://bucket/path,
@@ -107,18 +112,21 @@ type Store struct {
 	client *fencedClient
 	dsn    string
 
-	// mu guards db. Reads hold it shared; the committer holds it
-	// exclusively while it reopens the database after a conflict.
+	// mu guards db. Reads hold it shared. When the store is durable, the
+	// committer holds it exclusively from the start of each batch until the
+	// batch is in the replica or thrown away, so reads never see a write
+	// that could still be lost. db is nil after a failed reopen.
 	mu   sync.RWMutex
 	db   *sql.DB
 	file atomic.Pointer[litevfs.VFSFile]
 
-	writes  chan *writeReq
-	jobs    chan func()
-	closing chan struct{}
-	done    chan struct{}
-	bg      sync.WaitGroup
-	closed  atomic.Bool
+	writes    chan *writeReq
+	jobs      chan func()
+	retryOpen chan struct{}
+	closing   chan struct{}
+	done      chan struct{}
+	bg        sync.WaitGroup
+	closed    atomic.Bool
 
 	openDuration time.Duration
 	opens        atomic.Int64
@@ -130,6 +138,20 @@ type Store struct {
 	snapshots    atomic.Int64
 	lastSnapshot atomic.Pointer[SnapshotResult]
 	planLen      atomic.Int64
+
+	// hooks lets tests pause or fail the committer. Set it before the first
+	// Write.
+	hooks testHooks
+}
+
+// testHooks are points where tests pause the committer or make it fail.
+type testHooks struct {
+	// beforeUpload runs after a durable batch commits locally. An error
+	// stands in for a failed upload.
+	beforeUpload func() error
+	// beforeOpen runs before each reopen. An error stands in for a failed
+	// open.
+	beforeOpen func() error
 }
 
 type writeReq struct {
@@ -183,13 +205,14 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	}
 
 	s := &Store{
-		cfg:     cfg,
-		log:     cfg.Logger,
-		client:  client,
-		writes:  make(chan *writeReq),
-		jobs:    make(chan func()),
-		closing: make(chan struct{}),
-		done:    make(chan struct{}),
+		cfg:       cfg,
+		log:       cfg.Logger,
+		client:    client,
+		writes:    make(chan *writeReq),
+		jobs:      make(chan func()),
+		retryOpen: make(chan struct{}, 1),
+		closing:   make(chan struct{}),
+		done:      make(chan struct{}),
 	}
 	s.planLen.Store(-1)
 	name := fmt.Sprintf("litestream-%d", vfsSeq.Add(1))
@@ -260,20 +283,31 @@ func (v *captureVFS) capture(f sqlite3vfs.File, flags sqlite3vfs.OpenFlag) {
 	}
 }
 
-// Read runs fn against the database. Reads see every write this instance
-// has committed, including ones still being uploaded.
+// Read runs fn against the database. When the store is durable, fn sees
+// only writes that are in the replica: Read waits while a batch commits and
+// uploads, and returns ErrUnavailable if the store couldn't reopen the
+// database after a failed upload. Otherwise fn sees every committed write,
+// including ones not yet uploaded.
 func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if s.db == nil {
+		select {
+		case s.retryOpen <- struct{}{}:
+		default:
+		}
+		return ErrUnavailable
+	}
 	return fn(s.db)
 }
 
 // Write runs fn in a transaction shared with other concurrent writes. When
 // the store is durable, Write returns nil only after the transaction is in
-// object storage. An error from fn rolls back only fn's own changes.
+// object storage. An error from fn rolls back only fn's own changes. fn must
+// not call Read, which waits for the transaction fn is part of.
 func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) error {
 	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1)}
 	select {
@@ -306,6 +340,13 @@ func (s *Store) commitLoop() {
 		case job := <-s.jobs:
 			job()
 			continue
+		case <-s.retryOpen:
+			s.mu.Lock()
+			if err := s.openIfClosedLocked(); err != nil {
+				s.log.Warn("database still unavailable", "error", err)
+			}
+			s.mu.Unlock()
+			continue
 		case <-s.closing:
 			return
 		}
@@ -326,17 +367,8 @@ func (s *Store) runBatch(batch []*writeReq) {
 	var results []error
 	var err error
 	for attempt := 1; ; attempt++ {
-		results, err = s.commitBatch(batch)
+		results, err = s.commitBatch(batch, attempt)
 		if err == nil || !errors.Is(err, litevfs.ErrConflict) || attempt == maxConflictRetries {
-			break
-		}
-		// Another instance published a transaction this instance hadn't
-		// seen. The local commit was never uploaded, so throw it away and
-		// rerun the batch against the replica's current state.
-		s.log.Warn("write conflict, reopening database", "attempt", attempt, "error", err)
-		time.Sleep(time.Duration(rand.Int64N(int64(attempt) * int64(10*time.Millisecond))))
-		if rerr := s.reopen(); rerr != nil {
-			err = errors.Join(err, rerr)
 			break
 		}
 	}
@@ -354,7 +386,47 @@ func (s *Store) runBatch(batch []*writeReq) {
 	}
 }
 
-func (s *Store) commitBatch(batch []*writeReq) ([]error, error) {
+// commitBatch runs batch in one transaction. When the store is durable, it
+// holds s.mu from the start of the transaction until the transaction is in
+// the replica. If the upload fails, it reopens the database from the replica
+// before it releases s.mu, which throws the local commit away, or keeps it
+// if the upload landed after all.
+func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
+	if !s.cfg.Durable {
+		return s.runTx(batch)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.openIfClosedLocked(); err != nil {
+		return nil, err
+	}
+	results, err := s.runTx(batch)
+	if err != nil {
+		return nil, err
+	}
+	if h := s.hooks.beforeUpload; h != nil {
+		err = h()
+	}
+	if err == nil {
+		err = s.flush()
+	}
+	if err == nil {
+		return results, nil
+	}
+	if errors.Is(err, litevfs.ErrConflict) {
+		// Another instance published a transaction this instance hadn't
+		// seen. Back off with jitter so that two instances writing at once
+		// both make progress, then rerun against the replica's state.
+		s.log.Warn("write conflict, reopening database", "attempt", attempt, "error", err)
+		time.Sleep(time.Duration(rand.Int64N(int64(attempt) * int64(10*time.Millisecond))))
+	}
+	if rerr := s.reopenLocked(); rerr != nil {
+		err = errors.Join(err, rerr)
+	}
+	return nil, err
+}
+
+func (s *Store) runTx(batch []*writeReq) ([]error, error) {
 	ctx := context.Background()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -385,11 +457,6 @@ func (s *Store) commitBatch(batch []*writeReq) ([]error, error) {
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	if s.cfg.Durable {
-		if err := s.flush(); err != nil {
-			return nil, err
-		}
-	}
 	return results, nil
 }
 
@@ -407,12 +474,29 @@ func (s *Store) flush() error {
 	return err
 }
 
-func (s *Store) reopen() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Close tries a final upload, which conflicts again; the VFS then
-	// discards the unuploaded pages.
+// reopenLocked replaces the database with one opened from the replica. If
+// the open fails, s.db stays nil until openIfClosedLocked succeeds. The
+// caller holds s.mu exclusively.
+func (s *Store) reopenLocked() error {
+	// Close tries a final upload. If that fails too, the VFS discards the
+	// pages it couldn't upload.
 	_ = s.db.Close()
+	s.db = nil
+	s.file.Store(nil)
+	return s.openIfClosedLocked()
+}
+
+// openIfClosedLocked opens the database if a reopen failed. The caller holds
+// s.mu exclusively.
+func (s *Store) openIfClosedLocked() error {
+	if s.db != nil {
+		return nil
+	}
+	if h := s.hooks.beforeOpen; h != nil {
+		if err := h(); err != nil {
+			return fmt.Errorf("reopen: %w", err)
+		}
+	}
 	db, err := s.openDB(context.Background())
 	if err != nil {
 		return fmt.Errorf("reopen: %w", err)
@@ -454,8 +538,10 @@ func (s *Store) Close() error {
 	close(s.closing)
 	<-s.done
 	s.bg.Wait()
-	err := s.flush()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return errors.Join(err, s.db.Close())
+	if s.db == nil {
+		return nil
+	}
+	return errors.Join(s.flush(), s.db.Close())
 }
