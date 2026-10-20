@@ -82,22 +82,20 @@ type Config struct {
 	VFSLogger *slog.Logger
 }
 
-// DefaultConfig returns the defaults used by the server.
+// DefaultConfig returns the defaults used by the server. Every interval
+// costs list requests while an instance has CPU, so they are as long as
+// correctness allows: a single writer doesn't need to poll for its own
+// files, and L0 retention only needs one poll after each L1 compaction.
 func DefaultConfig() Config {
 	return Config{
-		Durable:      true,
-		SyncInterval: time.Second,
-		PollInterval: time.Second,
-		CacheSize:    64 << 20,
-		CompactionLevels: litestream.CompactionLevels{
-			{Level: 0},
-			{Level: 1, Interval: 10 * time.Second},
-			{Level: 2, Interval: 2 * time.Minute},
-			{Level: 3, Interval: 30 * time.Minute},
-		},
-		L0Retention:           2 * time.Minute,
+		Durable:               true,
+		SyncInterval:          time.Second,
+		PollInterval:          30 * time.Second,
+		CacheSize:             64 << 20,
+		CompactionLevels:      litestream.DefaultCompactionLevels,
+		L0Retention:           5 * time.Minute,
 		SnapshotPlanLen:       16,
-		SnapshotCheckInterval: time.Minute,
+		SnapshotCheckInterval: 5 * time.Minute,
 		MaxBatch:              256,
 	}
 }
@@ -131,6 +129,7 @@ type Store struct {
 	snapshotMu   sync.Mutex
 	snapshots    atomic.Int64
 	lastSnapshot atomic.Pointer[SnapshotResult]
+	planLen      atomic.Int64
 }
 
 type writeReq struct {
@@ -192,6 +191,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		closing: make(chan struct{}),
 		done:    make(chan struct{}),
 	}
+	s.planLen.Store(-1)
 	name := fmt.Sprintf("litestream-%d", vfsSeq.Add(1))
 	if err := sqlite3vfs.RegisterVFS(name, &captureVFS{VFS: vfs, store: s}); err != nil {
 		return nil, fmt.Errorf("register VFS: %w", err)

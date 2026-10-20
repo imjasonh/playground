@@ -53,23 +53,24 @@ func summarize(ds []time.Duration, total int) Percentiles {
 
 // Stats describes the store for the /stats endpoint and benchmarks.
 type Stats struct {
-	OpenMillis     float64         `json:"open_ms"`
-	Durable        bool            `json:"durable"`
-	Opens          int64           `json:"opens"`
-	Reopens        int64           `json:"reopens"`
-	Conflicts      int64           `json:"conflicts"`
-	Writes         int64           `json:"writes"`
-	Batches        int64           `json:"batches"`
-	Flush          Percentiles     `json:"flush"`
-	TXID           string          `json:"txid"`
-	Hydration      string          `json:"hydration_pct,omitempty"`
-	Snapshots      int64           `json:"snapshots"`
-	LastSnapshot   *SnapshotResult `json:"last_snapshot,omitempty"`
-	RestorePlanLen int             `json:"restore_plan_len"`
+	OpenMillis   float64         `json:"open_ms"`
+	Durable      bool            `json:"durable"`
+	Opens        int64           `json:"opens"`
+	Reopens      int64           `json:"reopens"`
+	Conflicts    int64           `json:"conflicts"`
+	Writes       int64           `json:"writes"`
+	Batches      int64           `json:"batches"`
+	Flush        Percentiles     `json:"flush"`
+	TXID         string          `json:"txid"`
+	Hydration    string          `json:"hydration_pct,omitempty"`
+	Snapshots    int64           `json:"snapshots"`
+	LastSnapshot *SnapshotResult `json:"last_snapshot,omitempty"`
+	// RestorePlanLen is the plan length at the last snapshot check, or -1
+	// before the first one.
+	RestorePlanLen int64 `json:"restore_plan_len"`
 }
 
-// Stats reports counters and queries the VFS for its position. It lists the
-// replica to compute RestorePlanLen.
+// Stats reports counters and queries the VFS for its position.
 func (s *Store) Stats(ctx context.Context) Stats {
 	st := Stats{
 		OpenMillis:   float64(s.openDuration) / float64(time.Millisecond),
@@ -80,8 +81,9 @@ func (s *Store) Stats(ctx context.Context) Stats {
 		Writes:       s.writeCount.Load(),
 		Batches:      s.batchCount.Load(),
 		Flush:        s.flushes.percentiles(),
-		Snapshots:    s.snapshots.Load(),
-		LastSnapshot: s.lastSnapshot.Load(),
+		Snapshots:      s.snapshots.Load(),
+		LastSnapshot:   s.lastSnapshot.Load(),
+		RestorePlanLen: s.planLen.Load(),
 	}
 	_ = s.Read(ctx, func(db *sql.DB) error {
 		_ = db.QueryRowContext(ctx, "PRAGMA litestream_txid").Scan(&st.TXID)
@@ -90,8 +92,5 @@ func (s *Store) Stats(ctx context.Context) Stats {
 		}
 		return nil
 	})
-	if plan, err := s.RestorePlan(ctx); err == nil {
-		st.RestorePlanLen = len(plan)
-	}
 	return st
 }

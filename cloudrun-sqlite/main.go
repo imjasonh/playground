@@ -50,6 +50,13 @@ func envBool(name string, def bool) bool {
 	return def
 }
 
+func envDuration(name string, def time.Duration) time.Duration {
+	if v, err := time.ParseDuration(os.Getenv(name)); err == nil {
+		return v
+	}
+	return def
+}
+
 func envInt(name string, def int) int {
 	if v, err := strconv.Atoi(os.Getenv(name)); err == nil {
 		return v
@@ -66,6 +73,7 @@ func serveMain(args []string) error {
 	fs.BoolVar(&cfg.Hydrate, "hydrate", envBool("HYDRATE", false), "download the whole database in the background")
 	fs.IntVar(&cfg.CacheSize, "cache-size", envInt("CACHE_SIZE", cfg.CacheSize), "page cache size in bytes")
 	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", envInt("SNAPSHOT_PLAN_LEN", cfg.SnapshotPlanLen), "snapshot when a cold start would read more than this many files (0 disables)")
+	fs.DurationVar(&cfg.PollInterval, "poll-interval", envDuration("POLL_INTERVAL", cfg.PollInterval), "how often to list the replica for compacted files or another instance's writes")
 	port := fs.String("port", env("PORT", "8080"), "listen port")
 	logLevel := fs.String("log-level", env("LOG_LEVEL", "info"), "log level")
 	vfsLogLevel := fs.String("vfs-log-level", env("VFS_LOG_LEVEL", "warn"), "Litestream VFS log level")

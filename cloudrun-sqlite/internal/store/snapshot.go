@@ -39,14 +39,25 @@ func (s *Store) snapshotLoop() {
 	}()
 	t := time.NewTicker(s.cfg.SnapshotCheckInterval)
 	defer t.Stop()
+	var checked int64
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
+		// Listing every level costs ten requests; skip it while idle.
+		n := s.batchCount.Load()
+		if n == checked {
+			continue
+		}
+		checked = n
 		plan, err := s.RestorePlan(ctx)
-		if err != nil || len(plan) <= s.cfg.SnapshotPlanLen {
+		if err != nil {
+			continue
+		}
+		s.planLen.Store(int64(len(plan)))
+		if len(plan) <= s.cfg.SnapshotPlanLen {
 			continue
 		}
 		if _, err := s.Snapshot(ctx); err != nil && ctx.Err() == nil {
@@ -110,6 +121,9 @@ func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
 	}
 	s.snapshots.Add(1)
 	s.lastSnapshot.Store(res)
+	if plan, err := s.RestorePlan(ctx); err == nil {
+		s.planLen.Store(int64(len(plan)))
+	}
 	s.log.Info("snapshot written", "max_txid", res.MaxTXID, "size", res.Size, "inputs", res.Inputs, "deleted", res.Deleted, "duration", res.Duration)
 	return res, nil
 }
