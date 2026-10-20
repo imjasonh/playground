@@ -25,20 +25,28 @@ The program in [`repro/`](repro/) opens one connection with
 `count(*)` in a loop for the stated time, then runs `integrity_check` in the
 writer and from a fresh VFS. These are its results against each version:
 
-| Litestream | 30 s, 1 writer | 60 s, 10 writers | 130 s, 4 writers, compaction on |
-|---|---|---|---|
-| v0.5.7 (the earlier attempt) | malformed after 2 s | malformed after 1 s | not run |
-| v0.5.17 (latest release) | malformed after 6 s | malformed after 1 s | not run |
-| `main` at `716acc5` | corrupt pages, 629 acknowledged rows lost | replica itself corrupt | not run |
-| [#1293](https://github.com/benbjohnson/litestream/pull/1293) alone | pass | pass | malformed after 16 s |
-| `main` + #1293 | pass | pass | pass |
+| Litestream | 30 s, 1 writer | 60 s, 10 writers | 130 s, 4 writers, compaction on | 90 s, 4 writers, L1 every 1 s, polls every 3 s |
+|---|---|---|---|---|
+| v0.5.7 (the earlier attempt) | malformed after 2 s | malformed after 1 s | not run | not run |
+| v0.5.17 (latest release) | malformed after 6 s | malformed after 1 s | not run | not run |
+| `main` at `716acc5` | corrupt pages, 629 acknowledged rows lost | replica itself corrupt | not run | not run |
+| [#1293](https://github.com/benbjohnson/litestream/pull/1293) alone | pass | pass | malformed after 16 s | not run |
+| `main` + #1293 | pass | pass | pass | malformed in 5 of 6 runs, after 6-27 s |
+| `main` + #1293 + shrink check (`internal/litevfs`) | pass | pass | pass | pass in 6 of 6 runs |
 
 The 60-second, 10-writer run gives the same results on S3, using MinIO behind
 the latency proxy described in [Measurements](#measurements). v0.5.7,
 v0.5.17, and `main` fail, and #1293 alone and `main` + #1293 pass.
-`internal/litevfs` is the `main` + #1293 merge. Its [README](internal/litevfs/README.md) explains which
-race each half fixes and how the merge conflicts were resolved. Delete it
-once Litestream ships a fix.
+
+The last column needs two L1 compactions between polls, which the earlier
+runs never had. A poll that finds two new L1 files reads the older one's
+smaller commit as a shrink and drops every page the two files don't contain.
+`main` has the same bug.
+
+`internal/litevfs` is the `main` + #1293 merge with a check that fixes that
+shrink. Its [README](internal/litevfs/README.md) explains which race each
+change fixes and how the merge conflicts were resolved. Delete it once
+Litestream ships the fixes.
 
 ## How it works
 
