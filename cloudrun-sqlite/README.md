@@ -65,9 +65,10 @@ tests pass. Drop a patch once Litestream ships it.
 **Reads.** SQLite reads pages through the VFS, which serves each one from
 this instance's own writes, an LRU page cache (64 MiB), an optional local
 copy that it downloads in the background (`HYDRATE=true`), or a ranged GET of
-the LTX file that holds the page. A read waits while a durable write commits
-and uploads, so it sees only writes that are in the replica. With
-`DURABLE=false`, reads also see writes that the VFS hasn't uploaded yet.
+the LTX file that holds the page. A durable read sees only writes that are
+in the replica. It does not wait for an upload that is in progress, and it
+does not see that upload's pages. With `DURABLE=false`, reads also see
+writes that the VFS hasn't uploaded yet.
 
 **Writes.** Every request's transaction runs on one goroutine. Writes that
 arrive while one is committing share the next transaction, then the store
@@ -79,8 +80,9 @@ uploads every second instead.
 and page index of each file in the restore plan, the newest snapshot plus the
 files written after it. The store fetches those in parallel before the VFS
 asks for them one at a time. The VFS compacts L0 files into L1, L2, and L3
-files, and the store merges the plan into a new snapshot when it grows past
-16 files, then deletes files that the previous snapshot covers.
+files, and the store merges the plan into a new snapshot when the files at
+L1 and above grow past 16. L0 files are left for compaction. It then deletes
+files that the previous snapshot covers.
 
 **Overlapping instances.** Cloud Run can run two instances of a
 `max_instance_count = 1` service for a short time, for example during a
@@ -88,8 +90,9 @@ deploy. The store uploads L0 files with a conditional create
 (`If-None-Match: *` on S3, `DoesNotExist` on Cloud Storage, `link(2)` on a
 local directory). If another instance already published that transaction, the
 upload fails, the store discards its local commit, reopens the database, and
-reruns the batch. Reads on that instance wait until the commit is gone,
-because the row IDs it took belong to the other instance's writes. Any failed
+reruns the batch. Reads on that instance keep seeing the last uploaded write
+while that happens, so they never observe the row IDs the other instance took.
+Any failed
 upload makes the store reopen the database from the replica this way. If the
 open fails too, requests get a 503 until a later read or write opens it.
 
@@ -230,9 +233,8 @@ CPU is frozen and it makes none.
 ## Limits
 
 - One SQLite connection serves every request, so a slow query delays
-  everything behind it. In durable mode, a read also waits for the write
-  that is committing or uploading, which adds up to one upload's time to
-  reads that arrive during a write.
+  everything behind it. A durable read does not wait for an upload, but it
+  also does not see that upload's rows until the upload finishes.
 - A page that isn't cached costs one object-store round trip. A query that
   scans a large table on a cold instance is slow until the cache or the
   hydrated copy has the pages. Hydration needs memory for the whole database
