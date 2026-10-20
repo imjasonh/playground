@@ -50,6 +50,7 @@ type fencedClient struct {
 	litestream.ReplicaClient
 	creator   l0Creator
 	conflicts atomic.Int64
+	warm      atomic.Pointer[warmCache]
 }
 
 func newFencedClient(ctx context.Context, c litestream.ReplicaClient) (*fencedClient, error) {

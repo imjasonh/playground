@@ -212,6 +212,11 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 }
 
 func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
+	if err := s.client.warmUp(ctx); err != nil {
+		s.log.Warn("prefetch for open failed", "error", err)
+	}
+	defer s.client.coolDown()
+
 	db, err := sql.Open("sqlite3", s.dsn)
 	if err != nil {
 		return nil, err
