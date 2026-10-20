@@ -3,9 +3,9 @@ package publish_test
 import (
 	"testing"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/imjasonh/playground/node-image/internal/layer"
 	"github.com/imjasonh/playground/node-image/internal/publish"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestEmptyImageDeterministic(t *testing.T) {

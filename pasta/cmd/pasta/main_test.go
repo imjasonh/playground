@@ -46,10 +46,10 @@ func TestWalkSources_skipsVendorTrees(t *testing.T) {
 func TestWalkSources_skipsPackageLockJSON(t *testing.T) {
 	dir := t.TempDir()
 	for name, body := range map[string]string{
-		"app.js":             "console.log(1)\n",
-		"package-lock.json":  `{"lockfileVersion": 3}`,
+		"app.js":              "console.log(1)\n",
+		"package-lock.json":   `{"lockfileVersion": 3}`,
 		"npm-shrinkwrap.json": `{"name": "x"}`,
-		"data.json":          `{"ok": true}`,
+		"data.json":           `{"ok": true}`,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
