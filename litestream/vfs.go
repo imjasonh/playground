@@ -2876,6 +2876,11 @@ type pollLevelResult struct {
 func (f *VFSFile) clearSyncedPageWithIndexElemWithLock(pgno uint32, elem ltx.PageIndexElem) {
 	page, ok := f.synced[pgno]
 	if ok && elem.MaxTXID >= page.txid {
+		// An entry at the TXID this file uploaded the page in holds the same
+		// bytes, so keep them rather than download the page again.
+		if elem.MaxTXID == page.txid {
+			f.cache.Add(pgno, page.data)
+		}
 		delete(f.synced, pgno)
 	}
 }

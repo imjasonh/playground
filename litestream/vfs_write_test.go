@@ -2366,3 +2366,72 @@ func TestVFSFile_PollReplacementEvictsSyncedByVisibleState(t *testing.T) {
 		t.Fatalf("page 3 read stale data after replacement: got first byte %d", buf[0])
 	}
 }
+
+func TestVFSFile_PollCachesSyncedPages(t *testing.T) {
+	pageSize := uint32(4096)
+	page2 := bytes.Repeat([]byte{9}, int(pageSize))
+	newer := bytes.Repeat([]byte{7}, int(pageSize))
+
+	for _, tt := range []struct {
+		name  string
+		other bool // another file at a later TXID rewrites page 2 before the poll
+		want  []byte
+	}{
+		{name: "same TXID", want: page2},
+		{name: "later TXID", other: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newWriteTestReplicaClient()
+			createTestLTXFile(t, client, 1, pageSize, 2, map[uint32][]byte{
+				1: bytes.Repeat([]byte{1}, int(pageSize)),
+				2: bytes.Repeat([]byte{2}, int(pageSize)),
+			})
+			f := setupWriteableVFSFile(t, client)
+			f.CacheSize = int(pageSize * 8)
+			if err := f.Open(); err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+
+			if _, err := f.WriteAt(page2, int64(pageSize)); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Sync(0); err != nil {
+				t.Fatal(err)
+			}
+			if tt.other {
+				createTestLTXFile(t, client, 3, pageSize, 2, map[uint32][]byte{2: newer})
+			}
+			if err := f.pollReplicaClient(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+
+			f.mu.Lock()
+			_, synced := f.synced[2]
+			f.mu.Unlock()
+			if synced {
+				t.Fatal("expected the poll to evict page 2 from the synced overlay")
+			}
+			cached, ok := f.cache.Get(2)
+			if tt.want == nil {
+				if ok && bytes.Equal(cached, page2) {
+					t.Fatal("cached the synced bytes of page 2 after a later file rewrote it")
+				}
+			} else if !ok || !bytes.Equal(cached, tt.want) {
+				t.Fatal("expected the poll to keep the synced bytes of page 2 in the cache")
+			}
+
+			buf := make([]byte, pageSize)
+			if _, err := f.ReadAt(buf, int64(pageSize)); err != nil {
+				t.Fatal(err)
+			}
+			want := page2
+			if tt.other {
+				want = newer
+			}
+			if !bytes.Equal(buf, want) {
+				t.Fatalf("page 2 read %d, want %d", buf[0], want[0])
+			}
+		})
+	}
+}
