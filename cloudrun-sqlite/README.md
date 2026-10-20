@@ -288,3 +288,11 @@ go test -race ./...
 `TestCloudRunLifecycle` builds the server, runs it under the simulator for 25
 seconds of crashes, scale-to-zero, and overlapping deploys, and fails if any
 acknowledged write is missing afterward. `go test -short` skips it.
+
+The races in [The VFS write bug](#the-vfs-write-bug) show up in the `repro`
+runs only after seconds of load, and not on every run. The tests in
+`internal/litevfs/interleave_test.go` pause the VFS's polls and compactions
+at each storage call and check every page read, so each race fails
+deterministically within milliseconds. The
+[`litevfs` README](internal/litevfs/README.md#interleaving-tests) describes
+how to run more random schedules and how to fuzz them.

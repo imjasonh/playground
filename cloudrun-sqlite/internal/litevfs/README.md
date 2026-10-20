@@ -77,3 +77,25 @@ extension's init symbol from the `sqlite3` command line where they ran.
 
 To see the full delta, diff these files against upstream `vfs.go` and
 `vfs_config.go` at `716acc5`.
+
+## Interleaving tests
+
+`interleave_test.go` drives a `VFSFile` without SQLite, against an in-memory
+replica client. Polls and L1 compactions run on their own goroutines and
+pause at each storage call, so a test chooses when each listing and upload
+happens relative to writes, syncs, and reads. Every page read is compared
+with the last version written, which fails a test at the read that returned
+a stale page.
+
+- Four named tests replay the races in
+  [What each change covers](#what-each-change-covers).
+- `TestInterleaveRandom` runs 200 random schedules, or 50 with `-short`. To
+  run more, set `LITEVFS_INTERLEAVE_SEEDS`. To replay a failure, set
+  `LITEVFS_INTERLEAVE_SEED` to the seed it printed.
+- `go test -run '^$' -fuzz=FuzzInterleave ./internal/litevfs` searches for
+  failing schedules with coverage-guided fuzzing.
+
+The same file runs against an upstream checkout if you copy it into the
+repository root, change its package to `litestream`, and add
+`//go:build vfs`. On v0.5.17, `main`, and #1293 alone, the first random
+schedule fails. On the merge without the shrink check, seed 176 fails.
