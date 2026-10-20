@@ -2337,14 +2337,14 @@ func TestVFSFile_PollReplacementEvictsSyncedByVisibleState(t *testing.T) {
 	commit := f.commit
 	f.mu.Unlock()
 
-	if !page2Synced {
-		t.Fatal("expected synced page 2 to remain until a visible page index covers it")
+	if !page2Indexed {
+		t.Fatal("expected the index to keep page 2, which the shrink didn't write")
+	}
+	if page2Synced {
+		t.Fatal("expected synced page 2 to be evicted once the index covers it")
 	}
 	if page3Synced {
-		t.Fatal("expected synced page 3 to be evicted after replacement shrank commit to page 2")
-	}
-	if page2Indexed {
-		t.Fatal("test is ineffective: replacement index already covers page 2")
+		t.Fatal("expected synced page 3 to be evicted after the shrink to page 2")
 	}
 	if commit != 2 {
 		t.Fatalf("commit = %d, want 2", commit)

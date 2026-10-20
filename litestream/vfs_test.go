@@ -301,8 +301,8 @@ func TestVFSFile_PendingIndexReplacementRemovesStalePages(t *testing.T) {
 	if _, ok := f.index[4]; !ok {
 		t.Fatalf("expected stale page to remain in main index while lock is held")
 	}
-	if !f.pendingReplace {
-		t.Fatalf("expected pending replacement flag set")
+	if !f.pendingShrink || f.pendingShrinkTo != 2 {
+		t.Fatalf("expected a pending shrink to 2 pages, got %v to %d", f.pendingShrink, f.pendingShrinkTo)
 	}
 	f.mu.Unlock()
 
