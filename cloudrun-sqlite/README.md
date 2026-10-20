@@ -190,6 +190,10 @@ CPU is frozen and it makes none.
 - Avoid `VACUUM`. A transaction that shrinks the database takes a VFS code
   path that this repository doesn't test.
 
+[`docs/improvements.md`](docs/improvements.md) lists changes that would make
+writes faster and cheaper, with measured benefits, reasons not to make each
+one, and what each needs to stay correct.
+
 ## Run locally
 
 Build the server and point it at a local directory:
