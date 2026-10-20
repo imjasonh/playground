@@ -12,8 +12,6 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/benbjohnson/litestream v0.5.18-0.20261019170223-716acc52ee80
 	github.com/fsouza/fake-gcs-server v1.47.3
-	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/markusmobius/go-dateparser v1.2.4
 	github.com/mattn/go-sqlite3 v1.14.19
 	github.com/psanford/sqlite3vfs v0.0.0-20260519004904-f9180fa2acc9
 	github.com/superfly/ltx v0.5.2
@@ -67,9 +65,11 @@ require (
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/hablullah/go-hijri v1.0.2 // indirect
 	github.com/hablullah/go-juliandays v1.0.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/jalaali/go-jalaali v0.0.0-20210801064154-80525e88d958 // indirect
 	github.com/lmittmann/tint v1.1.3 // indirect
 	github.com/magefile/mage v1.14.0 // indirect
+	github.com/markusmobius/go-dateparser v1.2.4 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -111,3 +111,5 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.49.1 // indirect
 )
+
+replace github.com/benbjohnson/litestream => ../litestream

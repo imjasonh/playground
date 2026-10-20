@@ -29,4 +29,11 @@ go get github.com/benbjohnson/litestream@COMMIT
 
 Replace `COMMIT` with a commit hash from `benbjohnson/litestream`. For a
 pull request from a fork, add a `replace` directive that points at the fork's
-module and commit instead.
+module and commit instead. To test this repository's fork, with the patches
+in [`litestream/PATCHES.md`](../../litestream/PATCHES.md), point the
+`replace` directive at it:
+
+```bash
+go mod edit -replace github.com/benbjohnson/litestream=../../litestream
+go mod tidy
+```

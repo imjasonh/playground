@@ -33,7 +33,7 @@ writer and from a fresh VFS. These are its results against each version:
 | [#1293](https://github.com/benbjohnson/litestream/pull/1293) alone | pass | pass | malformed after 16 s | not run |
 | `main` + #1293 | pass | pass | pass | malformed in 5 of 6 runs, after 6-27 s |
 | `main` + #1293 + shrink check | pass | pass | pass | pass in 6 of 6 runs |
-| `main` + #1293 + both shrink fixes (`internal/litevfs`) | pass | pass | pass | pass in 6 of 6 runs |
+| `main` + #1293 + both shrink fixes ([`litestream/`](../litestream)) | pass | pass | pass | pass in 6 of 6 runs |
 
 The 60-second, 10-writer run gives the same results on S3, using MinIO behind
 the latency proxy described in [Measurements](#measurements). v0.5.7,
@@ -53,10 +53,12 @@ didn't write disappears, and another instance's next query fails with
 start's page index also keep pages past the new end.
 `TestShrinkIsVisibleToAnotherInstance` reproduces it with two instances.
 
-`internal/litevfs` is the `main` + #1293 merge with one fix for each shrink
-bug. Its [README](internal/litevfs/README.md) explains which race each
-change fixes and how the merge conflicts were resolved. Delete it once
-Litestream ships the fixes.
+This repository carries those fixes in [`litestream/`](../litestream), a
+fork of Litestream imported with `git subtree`, and `go.mod` replaces
+Litestream with it. Its [`PATCHES.md`](../litestream/PATCHES.md) lists each
+patch, explains which race it fixes, and shows how to send it upstream. A
+nightly workflow pulls upstream into the fork and merges the update when the
+tests pass. Drop a patch once Litestream ships it.
 
 ## How it works
 
@@ -206,10 +208,11 @@ one, and what each needs to stay correct.
 
 ## Run locally
 
-Build the server and point it at a local directory:
+Build the server and point it at a local directory. Litestream builds its
+VFS only with the `vfs` tag:
 
 ```bash
-go build -o cloudrun-sqlite .
+go build -tags vfs -o cloudrun-sqlite .
 ./cloudrun-sqlite -replica-url file://$PWD/replica
 ```
 
@@ -267,7 +270,7 @@ curl localhost:8080/_crsim/stats
 `crbench` drives the server through the simulator:
 
 ```bash
-go build -o crbench ./cmd/crbench
+go build -tags vfs -o crbench ./cmd/crbench
 ./crbench coldstart -app ./cloudrun-sqlite -replica-url file://$PWD/bench -rows 10000,100000
 ./crbench soak -app ./cloudrun-sqlite -replica-url file://$PWD/soak -duration 1m -throttle
 ```
@@ -305,7 +308,7 @@ terraform apply
 ## Test
 
 ```bash
-go test -race ./...
+go test -tags vfs -race ./...
 ```
 
 `TestCloudRunLifecycle` builds the server, runs it under the simulator for 25
@@ -313,9 +316,9 @@ seconds of crashes, scale-to-zero, and overlapping deploys, and fails if any
 acknowledged write is missing afterward. `go test -short` skips it.
 
 The races in [The VFS write bug](#the-vfs-write-bug) show up in the `repro`
-runs only after seconds of load, and not on every run. The tests in
-`internal/litevfs/interleave_test.go` pause the VFS's polls and compactions
-at each storage call and check every page read, so each race fails
-deterministically within milliseconds. The
-[`litevfs` README](internal/litevfs/README.md#interleaving-tests) describes
-how to run more random schedules and how to fuzz them.
+runs only after seconds of load, and not on every run. The fork's
+`vfs_interleave_test.go` pauses the VFS's polls and compactions at each
+storage call and checks every page read, so each race fails
+deterministically within milliseconds.
+[`PATCHES.md`](../litestream/PATCHES.md#testing) describes how to run the
+fork's tests, more random schedules, and the fuzzer.

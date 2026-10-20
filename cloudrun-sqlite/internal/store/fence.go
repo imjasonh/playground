@@ -27,8 +27,6 @@ import (
 	lss3 "github.com/benbjohnson/litestream/s3"
 	"github.com/superfly/ltx"
 	"google.golang.org/api/googleapi"
-
-	"github.com/imjasonh/playground/cloudrun-sqlite/internal/litevfs"
 )
 
 // errExists reports that a conditional create found an object already there.
@@ -44,7 +42,7 @@ type l0Creator interface {
 
 // fencedClient makes L0 uploads conditional. Two instances that both think
 // they are the writer (Cloud Run overlaps instances during a deploy) then
-// cannot both publish the same TXID: the loser gets litevfs.ErrConflict
+// cannot both publish the same TXID: the loser gets litestream.ErrConflict
 // instead of silently overwriting the winner's transaction.
 type fencedClient struct {
 	litestream.ReplicaClient
@@ -95,7 +93,7 @@ func (c *fencedClient) WriteLTXFile(ctx context.Context, level int, minTXID, max
 		// our own bytes. Anything else is another writer's transaction.
 		if !c.sameObject(ctx, minTXID, maxTXID, data) {
 			c.conflicts.Add(1)
-			return nil, fmt.Errorf("%w: another writer already published L0 %s", litevfs.ErrConflict, ltx.FormatFilename(minTXID, maxTXID))
+			return nil, fmt.Errorf("%w: another writer already published L0 %s", litestream.ErrConflict, ltx.FormatFilename(minTXID, maxTXID))
 		}
 	} else if err != nil {
 		return nil, err

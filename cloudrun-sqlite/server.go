@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/imjasonh/playground/cloudrun-sqlite/internal/litevfs"
+	"github.com/benbjohnson/litestream"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
 
@@ -74,7 +74,7 @@ func (s *server) admin(h http.HandlerFunc) http.HandlerFunc {
 func writeError(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
 	switch {
-	case errors.Is(err, litevfs.ErrConflict), errors.Is(err, store.ErrClosed), errors.Is(err, store.ErrUnavailable):
+	case errors.Is(err, litestream.ErrConflict), errors.Is(err, store.ErrClosed), errors.Is(err, store.ErrUnavailable):
 		w.Header().Set("Retry-After", "1")
 		code = http.StatusServiceUnavailable
 	case errors.Is(err, sql.ErrNoRows):

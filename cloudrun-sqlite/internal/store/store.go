@@ -22,8 +22,6 @@ import (
 	_ "github.com/benbjohnson/litestream/s3"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/psanford/sqlite3vfs"
-
-	"github.com/imjasonh/playground/cloudrun-sqlite/internal/litevfs"
 )
 
 // ErrClosed is returned by Write after Close.
@@ -118,7 +116,7 @@ type Store struct {
 	// that could still be lost. db is nil after a failed reopen.
 	mu   sync.RWMutex
 	db   *sql.DB
-	file atomic.Pointer[litevfs.VFSFile]
+	file atomic.Pointer[litestream.VFSFile]
 
 	writes    chan *writeReq
 	jobs      chan func()
@@ -188,7 +186,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, err
 	}
 
-	vfs := litevfs.NewVFS(client, cfg.VFSLogger)
+	vfs := litestream.NewVFS(client, cfg.VFSLogger)
 	vfs.PollInterval = cfg.PollInterval
 	vfs.CacheSize = cfg.CacheSize
 	vfs.WriteEnabled = true
@@ -261,7 +259,7 @@ func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
 // captureVFS records the main database file each time SQLite opens it, so
 // the committer can upload it directly after a commit.
 type captureVFS struct {
-	*litevfs.VFS
+	*litestream.VFS
 	store *Store
 }
 
@@ -278,7 +276,7 @@ func (v *captureVFS) OpenURI(name string, params map[string]string, flags sqlite
 }
 
 func (v *captureVFS) capture(f sqlite3vfs.File, flags sqlite3vfs.OpenFlag) {
-	if lf, ok := f.(*litevfs.VFSFile); ok && flags&sqlite3vfs.OpenMainDB != 0 {
+	if lf, ok := f.(*litestream.VFSFile); ok && flags&sqlite3vfs.OpenMainDB != 0 {
 		v.store.file.Store(lf)
 	}
 }
@@ -368,7 +366,7 @@ func (s *Store) runBatch(batch []*writeReq) {
 	var err error
 	for attempt := 1; ; attempt++ {
 		results, err = s.commitBatch(batch, attempt)
-		if err == nil || !errors.Is(err, litevfs.ErrConflict) || attempt == maxConflictRetries {
+		if err == nil || !errors.Is(err, litestream.ErrConflict) || attempt == maxConflictRetries {
 			break
 		}
 	}
@@ -413,7 +411,7 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 	if err == nil {
 		return results, nil
 	}
-	if errors.Is(err, litevfs.ErrConflict) {
+	if errors.Is(err, litestream.ErrConflict) {
 		// Another instance published a transaction this instance hadn't
 		// seen. Back off with jitter so that two instances writing at once
 		// both make progress, then rerun against the replica's state.

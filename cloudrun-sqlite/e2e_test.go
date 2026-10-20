@@ -22,7 +22,7 @@ func TestCloudRunLifecycle(t *testing.T) {
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "cloudrun-sqlite")
-	args := []string{"build", "-o", bin}
+	args := []string{"build", "-tags", "vfs", "-o", bin}
 	if raceEnabled {
 		args = append(args, "-race")
 	}

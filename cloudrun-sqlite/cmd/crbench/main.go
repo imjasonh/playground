@@ -26,6 +26,9 @@ import (
 	_ "github.com/benbjohnson/litestream/file"
 	_ "github.com/benbjohnson/litestream/gs"
 	_ "github.com/benbjohnson/litestream/s3"
+	// With the vfs tag, Litestream's VFS calls SQLite's C API, which
+	// go-sqlite3 links.
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/crsim"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/scenario"

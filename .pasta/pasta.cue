@@ -24,14 +24,10 @@ skip: [
 //
 // pstack scripts under .cursor/skills/ are upstream copies. Do not
 // rewrite them to satisfy playground JS rules.
-//
-// cloudrun-sqlite/internal/litevfs is a patched copy of Litestream's VFS.
-// Keep it diffable against upstream.
 disabled_on: {
 	yaml_truthy: ["**/project.yml"]
 	js_preserve_caught_error: ["**/.cursor/skills/**"]
 	js_no_constant_condition_while: ["**/.cursor/skills/**"]
-	inline_define: ["**/cloudrun-sqlite/internal/litevfs/**"]
 }
 
 // Keep the per-file parse timeout; hang defense still matters.
