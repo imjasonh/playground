@@ -18,6 +18,7 @@ require (
 	github.com/fsouza/fake-gcs-server v1.47.3
 	github.com/mattn/go-sqlite3 v1.14.19
 	github.com/psanford/sqlite3vfs v0.0.0-20260519004904-f9180fa2acc9
+	github.com/sethvargo/go-envconfig v1.4.3
 	github.com/superfly/ltx v0.5.2
 	go.opentelemetry.io/contrib/detectors/gcp v1.44.0
 	go.opentelemetry.io/otel v1.45.0

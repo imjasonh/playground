@@ -674,6 +674,19 @@ bundle exec fastlane test
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
+- **Go logging**: use [`github.com/chainguard-dev/clog`](https://github.com/chainguard-dev/clog).
+  Log with `clog.Info`, `clog.Warn`, `clog.Error`, `clog.Debug`, and `clog.Fatal`
+  (and the `Context` variants) plus attributes. `slog` is fine when an API
+  already takes `*slog.Logger`. Do not call the printf-style methods
+  (`Infof`, `Warnf`, `Errorf`, `Debugf`, `Fatalf`, and the `Contextf`
+  variants). [`pasta/analyzers/go_clog`](pasta/analyzers/go_clog/go_clog.cue)
+  flags those calls. Parse a log-level flag with
+  `github.com/chainguard-dev/clog/slag`.
+  In `main` of a program that runs on GCP (Cloud Run, GKE, Cloud Functions,
+  or App Engine), blank-import `github.com/chainguard-dev/clog/gcp/init`.
+  That installs the Cloud Logging JSON handler from `LOG_LEVEL` in every
+  environment. `kube` stays on `slog` because that module
+  imports only the standard library. Do not restyle `litestream`.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A

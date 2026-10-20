@@ -15,7 +15,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/chainguard-dev/clog/slag"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
+	"github.com/sethvargo/go-envconfig"
 )
 
 func main() {
@@ -40,51 +40,63 @@ func main() {
 	}
 }
 
-func env(name, def string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return def
+// serveEnv is the server's environment. Fields that start from a non-zero
+// store.DefaultConfig value use overwrite so an environment variable can
+// replace that default.
+type serveEnv struct {
+	ReplicaURL      string        `env:"REPLICA_URL"`
+	Dir             string        `env:"DATA_DIR"`
+	Durable         bool          `env:"DURABLE, overwrite"`
+	Hydrate         bool          `env:"HYDRATE"`
+	CacheSize       int           `env:"CACHE_SIZE, overwrite"`
+	SnapshotPlanLen int           `env:"SNAPSHOT_PLAN_LEN, overwrite"`
+	PollInterval    time.Duration `env:"POLL_INTERVAL, overwrite"`
+	Port            string        `env:"PORT, default=8080"`
+	VFSLogLevel     slog.Level    `env:"VFS_LOG_LEVEL, default=WARN"`
+	AdminToken      string        `env:"ADMIN_TOKEN"`
 }
 
-func envBool(name string, def bool) bool {
-	if v, err := strconv.ParseBool(os.Getenv(name)); err == nil {
-		return v
+func loadServeEnv() (serveEnv, error) {
+	def := store.DefaultConfig()
+	env := serveEnv{
+		Durable:         def.Durable,
+		CacheSize:       def.CacheSize,
+		SnapshotPlanLen: def.SnapshotPlanLen,
+		PollInterval:    def.PollInterval,
 	}
-	return def
-}
-
-func envDuration(name string, def time.Duration) time.Duration {
-	if v, err := time.ParseDuration(os.Getenv(name)); err == nil {
-		return v
+	if err := envconfig.Process(context.Background(), &env); err != nil {
+		return serveEnv{}, err
 	}
-	return def
-}
-
-func envInt(name string, def int) int {
-	if v, err := strconv.Atoi(os.Getenv(name)); err == nil {
-		return v
+	if env.Dir == "" {
+		env.Dir = filepath.Join(os.TempDir(), "cloudrun-sqlite")
 	}
-	return def
+	return env, nil
 }
 
 func serveMain(args []string) error {
-	cfg := store.DefaultConfig()
-	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	fs.StringVar(&cfg.ReplicaURL, "replica-url", os.Getenv("REPLICA_URL"), "Litestream replica URL (gs://, s3://, or file://)")
-	fs.StringVar(&cfg.Dir, "dir", env("DATA_DIR", filepath.Join(os.TempDir(), "cloudrun-sqlite")), "instance-local scratch directory")
-	fs.BoolVar(&cfg.Durable, "durable", envBool("DURABLE", cfg.Durable), "acknowledge writes only after they are in object storage")
-	fs.BoolVar(&cfg.Hydrate, "hydrate", envBool("HYDRATE", false), "download the whole database in the background")
-	fs.IntVar(&cfg.CacheSize, "cache-size", envInt("CACHE_SIZE", cfg.CacheSize), "page cache size in bytes")
-	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", envInt("SNAPSHOT_PLAN_LEN", cfg.SnapshotPlanLen), "snapshot when a cold start would read more than this many files (0 disables)")
-	fs.DurationVar(&cfg.PollInterval, "poll-interval", envDuration("POLL_INTERVAL", cfg.PollInterval), "how often to list the replica for compacted files or another instance's writes")
-	port := fs.String("port", env("PORT", "8080"), "listen port")
-	vfsLogLevel := slag.Level(slog.LevelWarn)
-	if v := os.Getenv("VFS_LOG_LEVEL"); v != "" {
-		if err := vfsLogLevel.Set(v); err != nil {
-			return fmt.Errorf("VFS_LOG_LEVEL: %w", err)
-		}
+	env, err := loadServeEnv()
+	if err != nil {
+		return err
 	}
+	cfg := store.DefaultConfig()
+	cfg.ReplicaURL = env.ReplicaURL
+	cfg.Dir = env.Dir
+	cfg.Durable = env.Durable
+	cfg.Hydrate = env.Hydrate
+	cfg.CacheSize = env.CacheSize
+	cfg.SnapshotPlanLen = env.SnapshotPlanLen
+	cfg.PollInterval = env.PollInterval
+
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	fs.StringVar(&cfg.ReplicaURL, "replica-url", cfg.ReplicaURL, "Litestream replica URL (gs://, s3://, or file://)")
+	fs.StringVar(&cfg.Dir, "dir", cfg.Dir, "instance-local scratch directory")
+	fs.BoolVar(&cfg.Durable, "durable", cfg.Durable, "acknowledge writes only after they are in object storage")
+	fs.BoolVar(&cfg.Hydrate, "hydrate", cfg.Hydrate, "download the whole database in the background")
+	fs.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "page cache size in bytes")
+	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", cfg.SnapshotPlanLen, "snapshot when a cold start would read more than this many files (0 disables)")
+	fs.DurationVar(&cfg.PollInterval, "poll-interval", cfg.PollInterval, "how often to list the replica for compacted files or another instance's writes")
+	port := fs.String("port", env.Port, "listen port")
+	vfsLogLevel := slag.Level(env.VFSLogLevel)
 	fs.Var(&vfsLogLevel, "vfs-log-level", "Litestream VFS log level")
 	fs.Parse(args)
 	if cfg.ReplicaURL == "" {
@@ -123,7 +135,7 @@ func serveMain(args []string) error {
 	}
 	clog.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
 
-	srv := &http.Server{Handler: newServer(st, instance, start, os.Getenv("ADMIN_TOKEN")).routes()}
+	srv := &http.Server{Handler: newServer(st, instance, start, env.AdminToken).routes()}
 	ln, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
 		st.Close()
