@@ -215,6 +215,41 @@ func TestOverlappingInstancesConflictAndRetry(t *testing.T) {
 	integrity(t, c)
 }
 
+// A writer whose last upload is recent skips the conflict-check LIST, so the
+// conditional create catches another instance's upload of its next TXID.
+// The writer then reopens and reruns its write after the other instance's.
+func TestFreshWriterLosesTheConditionalCreate(t *testing.T) {
+	replica := t.TempDir()
+	cfg := testConfig(t, replica)
+	// Without a poll, a doesn't learn of b's upload before its own.
+	cfg.PollInterval = time.Hour
+	a := mustOpen(t, cfg)
+	defer a.Close()
+	mustWrite(t, a, "CREATE TABLE t (id INTEGER PRIMARY KEY, who TEXT)")
+	mustWrite(t, a, "INSERT INTO t (who) VALUES ('a')")
+
+	b := mustOpen(t, testConfig(t, replica))
+	mustWrite(t, b, "INSERT INTO t (who) VALUES ('b')")
+	if err := b.Close(); err != nil {
+		t.Fatalf("close b: %v", err)
+	}
+
+	// The VFS's sync loop can retry the upload before the store reopens, and
+	// the conditional create rejects every attempt.
+	before := a.Stats(t.Context()).Conflicts
+	mustWrite(t, a, "INSERT INTO t (who) VALUES ('a')")
+	if got := a.Stats(t.Context()).Conflicts - before; got < 1 {
+		t.Fatalf("a's upload hit %d conditional-create conflicts, want at least 1", got)
+	}
+
+	c := mustOpen(t, testConfig(t, replica))
+	defer c.Close()
+	if got := count(t, c, "t"); got != 3 {
+		t.Fatalf("rows = %d, want 3", got)
+	}
+	integrity(t, c)
+}
+
 // A durable write is in the replica before any read can see it.
 func TestReadsWaitForUpload(t *testing.T) {
 	s := mustOpen(t, testConfig(t, t.TempDir()))
