@@ -75,6 +75,15 @@ type VFS struct {
 	// If empty, uses a temp file.
 	WriteBufferPath string
 
+	// ConflictCheckInterval lets a writer skip listing the replica for newer
+	// transactions before an upload, for this long after it last confirmed
+	// the replica's position by listing it or by uploading. Zero lists before
+	// every upload. Set it only when the replica client's L0 uploads fail if
+	// the file already exists, and nothing deletes an L0 file younger than
+	// this interval plus any clock skew between writers. Otherwise a writer
+	// that fell behind could reuse a TXID whose file was deleted.
+	ConflictCheckInterval time.Duration
+
 	// HydrationEnabled activates background hydration of the database to a local file.
 	// When enabled, the VFS will restore the database in the background and serve
 	// reads from the local file once complete, eliminating remote fetch latency.
@@ -224,6 +233,7 @@ func (vfs *VFS) openMainDB(name string, uriParameters map[string]string, flags s
 		if f.syncInterval == 0 {
 			f.syncInterval = DefaultSyncInterval
 		}
+		f.conflictCheckInterval = vfs.ConflictCheckInterval
 
 		writeSeq := atomic.AddUint64(&vfs.writeSeq, 1)
 		if bufferPath != "" {
@@ -633,6 +643,9 @@ type VFSFile struct {
 	inTransaction bool             // True during active write transaction
 	disabling     bool             // True when write disable is in progress
 	cond          *sync.Cond       // Signals transaction state changes
+
+	conflictCheckInterval time.Duration // See VFS.ConflictCheckInterval
+	positionConfirmedAt   time.Time     // When a listing or upload last confirmed expectedTXID
 
 	perConnClient bool // True when client was created from config registry (close on file close)
 
@@ -2018,6 +2031,7 @@ func (f *VFSFile) SetWriteEnabledWithTimeout(enabled bool, timeout time.Duration
 	if f.pendingTXID == 0 {
 		f.expectedTXID = f.pos.TXID
 		f.pendingTXID = f.pos.TXID + 1
+		f.positionConfirmedAt = time.Time{}
 	}
 
 	// Start sync ticker if not running and interval > 0
@@ -2078,14 +2092,19 @@ func (f *VFSFile) syncToRemoteWithLock() error {
 	ctx := f.ctx
 
 	// Check for conflicts
-	if err := f.checkForConflict(ctx); err != nil {
-		return err
+	if !f.skipConflictCheckWithLock() {
+		listStart := time.Now()
+		if err := f.checkForConflict(ctx); err != nil {
+			return err
+		}
+		f.positionConfirmedAt = listStart
 	}
 
 	// Create LTX file from dirty pages
 	ltxReader, encodedCh := f.createLTXFromDirty()
 
 	// Upload LTX file to remote
+	uploadStart := time.Now()
 	info, err := f.client.WriteLTXFile(ctx, 0, f.pendingTXID, f.pendingTXID, ltxReader)
 	if err != nil {
 		_ = ltxReader.CloseWithError(err)
@@ -2104,6 +2123,9 @@ func (f *VFSFile) syncToRemoteWithLock() error {
 	f.expectedTXID = f.pendingTXID
 	f.pendingTXID++
 	f.commitTXID = f.expectedTXID
+	// Another writer's next TXID comes after this upload, so any file a later
+	// sync could collide with is younger than uploadStart.
+	f.positionConfirmedAt = uploadStart
 
 	if f.vfs != nil {
 		f.vfs.writeMu.Lock()
@@ -2144,6 +2166,28 @@ func (f *VFSFile) syncToRemoteWithLock() error {
 	}
 
 	return nil
+}
+
+// skipConflictCheckWithLock reports whether a sync can skip listing the
+// replica before it uploads. See VFS.ConflictCheckInterval.
+// Must be called with f.mu held.
+func (f *VFSFile) skipConflictCheckWithLock() bool {
+	if f.conflictCheckInterval <= 0 || f.positionConfirmedAt.IsZero() {
+		return false
+	}
+	// A poll that installed a TXID past expectedTXID found another writer's
+	// transaction, so list to report the conflict before uploading.
+	if f.pos.TXID > f.expectedTXID {
+		return false
+	}
+	// The monotonic clock stops while the host sleeps, and the wall clock
+	// can step back, so use whichever reports more elapsed time.
+	now := time.Now()
+	elapsed := now.Sub(f.positionConfirmedAt)
+	if wall := now.Round(0).Sub(f.positionConfirmedAt.Round(0)); wall > elapsed {
+		elapsed = wall
+	}
+	return elapsed < f.conflictCheckInterval
 }
 
 // checkForConflict checks if the remote has newer transactions than expected.
@@ -2426,6 +2470,7 @@ func (f *VFSFile) Lock(elock sqlite3vfs.LockType) error {
 			if lastSyncedTXID := f.vfs.lastSyncedTXID[f.replicaURL]; lastSyncedTXID > f.expectedTXID && len(f.dirty) == 0 {
 				f.expectedTXID = lastSyncedTXID
 				f.pendingTXID = lastSyncedTXID + 1
+				f.positionConfirmedAt = time.Time{}
 			}
 			f.vfs.writeMu.Unlock()
 		}
