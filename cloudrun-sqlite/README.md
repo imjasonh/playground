@@ -142,15 +142,15 @@ acknowledged write.
 
 | Mode | Acknowledged writes | Write p50 / p99 | Read p50 / p99 | Lost after restart | `integrity_check` |
 |---|---:|---:|---:|---:|---|
-| Durable (default) | 2,576 | 200 / 1,484 ms | 100 / 899 ms | 0 | ok |
-| `DURABLE=false` | 60,158 | 1.8 / 395 ms | 1.1 / 225 ms | 507 | ok |
+| Durable (default) | 3,671 | 121 / 1,759 ms | 62 / 911 ms | 0 | ok |
+| `DURABLE=false` | 62,025 | 1.8 / 380 ms | 1.1 / 216 ms | 306 | ok |
 
 The p99 latencies include waiting for a new instance after each kill or
-stop, 12 times in 90 seconds. In both runs, 64 requests failed with a 502
-because their instance was killed mid-request; the client can't tell whether
-those writes happened. With `DURABLE=false`, every kill loses the writes from
-the last second that were acknowledged but not yet uploaded, and the next
-instance hands out their IDs again.
+stop, 12 times in 90 seconds. In the two runs, 64 and 63 requests failed
+with a 502 because their instance was killed mid-request; the client can't
+tell whether those writes happened. With `DURABLE=false`, every kill loses
+the writes from the last second that were acknowledged but not yet uploaded,
+and the next instance hands out their IDs again.
 
 ### Steady state
 
