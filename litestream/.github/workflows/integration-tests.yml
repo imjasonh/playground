@@ -1,0 +1,231 @@
+name: Integration Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: false
+        default: 'quick'
+        type: choice
+        options:
+          - 'quick'
+          - 'all'
+          - 'long'
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect Integration Test Changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.paths.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check changed paths
+        id: paths
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const totalChangedFiles = context.payload.pull_request.changed_files;
+            const matcherPath = '.github/scripts/integration-test-paths.js';
+            const completeResponse =
+              Array.isArray(files) &&
+              Number.isSafeInteger(totalChangedFiles) &&
+              totalChangedFiles >= 0 &&
+              totalChangedFiles === files.length &&
+              files.every(file =>
+                file !== null &&
+                typeof file === 'object' &&
+                !Array.isArray(file) &&
+                typeof file.filename === 'string' &&
+                file.filename.trim() !== '' &&
+                (file.previous_filename === undefined ||
+                  (typeof file.previous_filename === 'string' &&
+                    file.previous_filename.trim() !== ''))
+              );
+            const matcherChanged =
+              completeResponse &&
+              files.some(
+                file =>
+                  file.filename === matcherPath ||
+                  file.previous_filename === matcherPath
+              );
+            if (!completeResponse || matcherChanged) {
+              core.setOutput('relevant', 'true');
+              return;
+            }
+            const { hasRelevantIntegrationTestChanges } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/integration-test-paths`
+            );
+            const relevant = hasRelevantIntegrationTestChanges(
+              files,
+              totalChangedFiles
+            );
+            core.setOutput('relevant', String(relevant));
+
+  quick-tests:
+    name: Quick Integration Tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: always() && ((github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.relevant == 'true') || (github.event_name == 'workflow_dispatch' && (inputs.test_type == 'quick' || inputs.test_type == 'all')))
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - uses: ./.github/actions/build-minio-image
+
+      - name: Build binaries
+        run: |
+          go build -o bin/litestream ./cmd/litestream
+          go build -o bin/litestream-test ./cmd/litestream-test
+
+      - name: Run quick integration tests
+        run: |
+          go test -v -tags=integration -timeout=30m ./tests/integration/... \
+            -run="TestFreshStart|TestDatabaseIntegrity|TestRapidCheckpoints|TestS3AccessPointLocalStack|TestRestore_|TestBinaryCompatibility|TestCompaction_Compatibility|TestVersionMigration|TestUpgrade|TestLockPage|TestDirectoryWatcher|TestDatabaseDeletion|TestWALGrowth|TestBusyTimeout|TestConcurrentOperations"
+        env:
+          CGO_ENABLED: 1
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-test-logs
+          path: |
+            /tmp/litestream-*/*.log
+            /tmp/*-test.log
+
+  scenario-tests:
+    name: Scenario Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && (inputs.test_type == 'all' || inputs.test_type == 'long')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Build binaries
+        run: |
+          go build -o bin/litestream ./cmd/litestream
+          go build -o bin/litestream-test ./cmd/litestream-test
+
+      - name: Run all scenario tests
+        run: |
+          go test -v -tags=integration -timeout=1h ./tests/integration/... \
+            -run="Test(FreshStart|DatabaseIntegrity|DatabaseDeletion|RapidCheckpoints|WALGrowth|ConcurrentOperations|BusyTimeout)"
+        env:
+          CGO_ENABLED: 1
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-test-logs
+          path: |
+            /tmp/litestream-*/*.log
+            /tmp/*-test.log
+
+  long-running-tests:
+    name: Long-Running Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.test_type == 'long'
+    timeout-minutes: 600
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Build binaries
+        run: |
+          go build -o bin/litestream ./cmd/litestream
+          go build -o bin/litestream-test ./cmd/litestream-test
+
+      - name: Run long tests
+        run: |
+          go test -v -tags="integration,long" -timeout=10h ./tests/integration/... \
+            -run="TestOvernight|Test1GBBoundary"
+        env:
+          CGO_ENABLED: 1
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: long-test-logs
+          path: |
+            /tmp/litestream-*/*.log
+            /tmp/*-test.log
+
+  summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [changes, quick-tests]
+    if: always() && (github.event_name == 'pull_request' || inputs.test_type == 'quick' || inputs.test_type == 'all')
+    steps:
+      - name: Generate summary
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TEST_TYPE: ${{ inputs.test_type }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RELEVANT_CHANGES: ${{ needs.changes.outputs.relevant }}
+          QUICK_TESTS_RESULT: ${{ needs.quick-tests.result }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          status=0
+          {
+            echo "## Integration Test Results"
+            echo ""
+
+            if [ "$EVENT_NAME" = "pull_request" ]; then
+              if [ "$CHANGES_RESULT" != "success" ]; then
+                echo "❌ **Change Detection:** $CHANGES_RESULT"
+                status=1
+              elif [ "$RELEVANT_CHANGES" = "false" ]; then
+                echo "⏭️ **Quick Tests:** Skipped for irrelevant changes"
+              elif [ "$RELEVANT_CHANGES" != "true" ]; then
+                echo "❌ **Change Detection:** Invalid output"
+                status=1
+              elif [ "$QUICK_TESTS_RESULT" = "success" ]; then
+                echo "✅ **Quick Tests:** Passed"
+              else
+                echo "❌ **Quick Tests:** $QUICK_TESTS_RESULT"
+                status=1
+              fi
+            elif [ "$EVENT_NAME" = "workflow_dispatch" ] && { [ "$TEST_TYPE" = "quick" ] || [ "$TEST_TYPE" = "all" ]; }; then
+              if [ "$QUICK_TESTS_RESULT" = "success" ]; then
+                echo "✅ **Quick Tests:** Passed"
+              else
+                echo "❌ **Quick Tests:** $QUICK_TESTS_RESULT"
+                status=1
+              fi
+            else
+              echo "❌ **Workflow:** Unexpected invocation"
+              status=1
+            fi
+
+            echo ""
+            echo "---"
+            echo "**Triggered by:** @$ACTOR"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

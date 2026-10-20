@@ -1,0 +1,549 @@
+// Package store runs a SQLite database whose only durable copy is a
+// Litestream replica in object storage. Pages are read on demand through the
+// Litestream VFS, so opening the database costs a few object-store requests
+// regardless of how big it is.
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"math/rand/v2"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/benbjohnson/litestream"
+	_ "github.com/benbjohnson/litestream/file"
+	_ "github.com/benbjohnson/litestream/gs"
+	_ "github.com/benbjohnson/litestream/s3"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/psanford/sqlite3vfs"
+)
+
+// ErrClosed is returned by Write after Close.
+var ErrClosed = errors.New("store closed")
+
+// ErrUnavailable is returned while the database is closed because the
+// store couldn't reopen it after a failed upload. The next write or read
+// tries to open it again.
+var ErrUnavailable = errors.New("database unavailable")
+
+// Config configures a Store.
+type Config struct {
+	// ReplicaURL is the Litestream replica: gs://bucket/path,
+	// s3://bucket/path?endpoint=..., or file:///path.
+	ReplicaURL string
+
+	// Dir is instance-local scratch space for the write buffer and the
+	// hydrated copy. On Cloud Run that is the in-memory filesystem.
+	Dir string
+
+	// Durable makes Write return only after its transaction is in object
+	// storage. Otherwise Write returns after the local commit and the VFS
+	// uploads on SyncInterval, so a crash can lose up to that much.
+	Durable bool
+
+	// SyncInterval is how often the VFS uploads committed pages in the
+	// background.
+	SyncInterval time.Duration
+
+	// PollInterval is how often the VFS lists the replica for files written
+	// by compaction or by another instance.
+	PollInterval time.Duration
+
+	// CacheSize is the VFS page cache size in bytes.
+	CacheSize int
+
+	// Hydrate downloads the whole database to Dir in the background and
+	// serves reads from it once complete. It costs memory equal to the
+	// database size on Cloud Run.
+	Hydrate bool
+
+	// CompactionLevels merges L0 files into larger files over time. Nil
+	// disables compaction.
+	CompactionLevels litestream.CompactionLevels
+
+	// L0Retention is how long L0 files are kept after compaction into L1.
+	L0Retention time.Duration
+
+	// SnapshotPlanLen triggers a snapshot when opening the database would
+	// read more than this many LTX files. Zero disables snapshots.
+	SnapshotPlanLen int
+
+	// SnapshotCheckInterval is how often to compute the restore plan.
+	SnapshotCheckInterval time.Duration
+
+	// MaxBatch caps how many queued writes share one transaction and upload.
+	MaxBatch int
+
+	// Logger receives store logs. VFSLogger receives Litestream VFS logs.
+	Logger    *slog.Logger
+	VFSLogger *slog.Logger
+}
+
+// DefaultConfig returns the defaults used by the server. Every interval
+// costs list requests while an instance has CPU, so they are as long as
+// correctness allows: a single writer doesn't need to poll for its own
+// files, and L0 retention only needs one poll after each L1 compaction.
+func DefaultConfig() Config {
+	return Config{
+		Durable:               true,
+		SyncInterval:          time.Second,
+		PollInterval:          30 * time.Second,
+		CacheSize:             64 << 20,
+		CompactionLevels:      litestream.DefaultCompactionLevels,
+		L0Retention:           5 * time.Minute,
+		SnapshotPlanLen:       16,
+		SnapshotCheckInterval: 5 * time.Minute,
+		MaxBatch:              256,
+	}
+}
+
+// Store is a SQLite database backed by a Litestream replica.
+type Store struct {
+	cfg    Config
+	log    *slog.Logger
+	client *fencedClient
+	dsn    string
+
+	// mu guards db. Reads hold it shared. When the store is durable, the
+	// committer holds it exclusively from the start of each batch until the
+	// batch is in the replica or thrown away, so reads never see a write
+	// that could still be lost. db is nil after a failed reopen.
+	mu   sync.RWMutex
+	db   *sql.DB
+	file atomic.Pointer[litestream.VFSFile]
+
+	writes    chan *writeReq
+	jobs      chan func()
+	retryOpen chan struct{}
+	closing   chan struct{}
+	done      chan struct{}
+	bg        sync.WaitGroup
+	closed    atomic.Bool
+
+	openDuration time.Duration
+	opens        atomic.Int64
+	reopens      atomic.Int64
+	writeCount   atomic.Int64
+	batchCount   atomic.Int64
+	flushes      latencies
+	snapshotMu   sync.Mutex
+	snapshots    atomic.Int64
+	lastSnapshot atomic.Pointer[SnapshotResult]
+	planLen      atomic.Int64
+
+	// hooks lets tests pause or fail the committer. Set it before the first
+	// Write.
+	hooks testHooks
+}
+
+// testHooks are points where tests pause the committer or make it fail.
+type testHooks struct {
+	// beforeUpload runs after a durable batch commits locally. An error
+	// stands in for a failed upload.
+	beforeUpload func() error
+	// beforeOpen runs before each reopen. An error stands in for a failed
+	// open.
+	beforeOpen func() error
+}
+
+type writeReq struct {
+	ctx  context.Context
+	fn   func(*sql.Tx) error
+	done chan error
+}
+
+var vfsSeq atomic.Int64
+
+// Open opens the database, creating it in the replica if it doesn't exist.
+func Open(ctx context.Context, cfg Config) (*Store, error) {
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	if cfg.VFSLogger == nil {
+		cfg.VFSLogger = cfg.Logger
+	}
+	if cfg.MaxBatch <= 0 {
+		cfg.MaxBatch = 1
+	}
+	start := time.Now()
+
+	raw, err := litestream.NewReplicaClientFromURL(cfg.ReplicaURL)
+	if err != nil {
+		return nil, fmt.Errorf("replica client: %w", err)
+	}
+	raw.SetLogger(cfg.VFSLogger)
+	if err := raw.Init(ctx); err != nil {
+		return nil, fmt.Errorf("init replica client: %w", err)
+	}
+	client, err := newFencedClient(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+
+	vfs := litestream.NewVFS(client, cfg.VFSLogger)
+	vfs.PollInterval = cfg.PollInterval
+	vfs.CacheSize = cfg.CacheSize
+	vfs.WriteEnabled = true
+	vfs.WriteSyncInterval = cfg.SyncInterval
+	vfs.WriteBufferPath = filepath.Join(cfg.Dir, "write-buffer")
+	// The fenced client makes L0 uploads conditional, and nothing here deletes
+	// an L0 file younger than L0Retention, so a writer can skip the
+	// conflict-check LIST for half of that, leaving room for clock skew.
+	vfs.ConflictCheckInterval = cfg.L0Retention / 2
+	if cfg.Hydrate {
+		vfs.HydrationEnabled = true
+		vfs.HydrationPath = filepath.Join(cfg.Dir, "hydrated.db")
+	}
+	if cfg.CompactionLevels != nil {
+		vfs.CompactionEnabled = true
+		vfs.CompactionLevels = cfg.CompactionLevels
+		vfs.L0Retention = cfg.L0Retention
+	}
+
+	s := &Store{
+		cfg:       cfg,
+		log:       cfg.Logger,
+		client:    client,
+		writes:    make(chan *writeReq),
+		jobs:      make(chan func()),
+		retryOpen: make(chan struct{}, 1),
+		closing:   make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+	s.planLen.Store(-1)
+	name := fmt.Sprintf("litestream-%d", vfsSeq.Add(1))
+	if err := sqlite3vfs.RegisterVFS(name, &captureVFS{VFS: vfs, store: s}); err != nil {
+		return nil, fmt.Errorf("register VFS: %w", err)
+	}
+	s.dsn = fmt.Sprintf("file:db?vfs=%s&_busy_timeout=5000&_txlock=immediate", name)
+
+	if s.db, err = s.openDB(ctx); err != nil {
+		return nil, err
+	}
+	s.openDuration = time.Since(start)
+
+	go s.commitLoop()
+	if cfg.SnapshotPlanLen > 0 && cfg.SnapshotCheckInterval > 0 {
+		s.bg.Add(1)
+		go s.snapshotLoop()
+	}
+	return s, nil
+}
+
+func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
+	if err := s.client.warmUp(ctx); err != nil {
+		s.log.Warn("prefetch for open failed", "error", err)
+	}
+	defer s.client.coolDown()
+
+	db, err := sql.Open("sqlite3", s.dsn)
+	if err != nil {
+		return nil, err
+	}
+	// One connection means one VFS file: one page cache, one write buffer,
+	// and reads that always see this instance's own writes.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	db.SetConnMaxIdleTime(0)
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	s.opens.Add(1)
+	return db, nil
+}
+
+// captureVFS records the main database file each time SQLite opens it, so
+// the committer can upload it directly after a commit.
+type captureVFS struct {
+	*litestream.VFS
+	store *Store
+}
+
+func (v *captureVFS) Open(name string, flags sqlite3vfs.OpenFlag) (sqlite3vfs.File, sqlite3vfs.OpenFlag, error) {
+	f, outFlags, err := v.VFS.Open(name, flags)
+	v.capture(f, flags)
+	return f, outFlags, err
+}
+
+func (v *captureVFS) OpenURI(name string, params map[string]string, flags sqlite3vfs.OpenFlag) (sqlite3vfs.File, sqlite3vfs.OpenFlag, error) {
+	f, outFlags, err := v.VFS.OpenURI(name, params, flags)
+	v.capture(f, flags)
+	return f, outFlags, err
+}
+
+func (v *captureVFS) capture(f sqlite3vfs.File, flags sqlite3vfs.OpenFlag) {
+	if lf, ok := f.(*litestream.VFSFile); ok && flags&sqlite3vfs.OpenMainDB != 0 {
+		v.store.file.Store(lf)
+	}
+}
+
+// Read runs fn against the database. When the store is durable, fn sees
+// only writes that are in the replica: Read waits while a batch commits and
+// uploads, and returns ErrUnavailable if the store couldn't reopen the
+// database after a failed upload. Otherwise fn sees every committed write,
+// including ones not yet uploaded.
+func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.db == nil {
+		select {
+		case s.retryOpen <- struct{}{}:
+		default:
+		}
+		return ErrUnavailable
+	}
+	return fn(s.db)
+}
+
+// Write runs fn in a transaction shared with other concurrent writes. When
+// the store is durable, Write returns nil only after the transaction is in
+// object storage. An error from fn rolls back only fn's own changes. fn must
+// not call Read, which waits for the transaction fn is part of.
+func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) error {
+	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1)}
+	select {
+	case s.writes <- req:
+	case <-s.closing:
+		return ErrClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case err := <-req.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// maxConflictRetries bounds how often a batch reruns after another writer
+// published first. Retries back off with jitter so that two instances
+// writing at once both make progress.
+const maxConflictRetries = 10
+
+func (s *Store) commitLoop() {
+	defer close(s.done)
+	for {
+		var batch []*writeReq
+		select {
+		case req := <-s.writes:
+			batch = append(batch, req)
+		case job := <-s.jobs:
+			job()
+			continue
+		case <-s.retryOpen:
+			s.mu.Lock()
+			if err := s.openIfClosedLocked(); err != nil {
+				s.log.Warn("database still unavailable", "error", err)
+			}
+			s.mu.Unlock()
+			continue
+		case <-s.closing:
+			return
+		}
+	drain:
+		for len(batch) < s.cfg.MaxBatch {
+			select {
+			case req := <-s.writes:
+				batch = append(batch, req)
+			default:
+				break drain
+			}
+		}
+		s.runBatch(batch)
+	}
+}
+
+func (s *Store) runBatch(batch []*writeReq) {
+	var results []error
+	var err error
+	for attempt := 1; ; attempt++ {
+		results, err = s.commitBatch(batch, attempt)
+		if err == nil || !errors.Is(err, litestream.ErrConflict) || attempt == maxConflictRetries {
+			break
+		}
+	}
+	s.batchCount.Add(1)
+	for i, req := range batch {
+		switch {
+		case err != nil:
+			req.done <- err
+		default:
+			if results[i] == nil {
+				s.writeCount.Add(1)
+			}
+			req.done <- results[i]
+		}
+	}
+}
+
+// commitBatch runs batch in one transaction. When the store is durable, it
+// holds s.mu from the start of the transaction until the transaction is in
+// the replica. If the upload fails, it reopens the database from the replica
+// before it releases s.mu, which throws the local commit away, or keeps it
+// if the upload landed after all.
+func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
+	if !s.cfg.Durable {
+		return s.runTx(batch)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.openIfClosedLocked(); err != nil {
+		return nil, err
+	}
+	results, err := s.runTx(batch)
+	if err != nil {
+		return nil, err
+	}
+	if h := s.hooks.beforeUpload; h != nil {
+		err = h()
+	}
+	if err == nil {
+		err = s.flush()
+	}
+	if err == nil {
+		return results, nil
+	}
+	if errors.Is(err, litestream.ErrConflict) {
+		// Another instance published a transaction this instance hadn't
+		// seen. Back off with jitter so that two instances writing at once
+		// both make progress, then rerun against the replica's state.
+		s.log.Warn("write conflict, reopening database", "attempt", attempt, "error", err)
+		time.Sleep(time.Duration(rand.Int64N(int64(attempt) * int64(10*time.Millisecond))))
+	}
+	if rerr := s.reopenLocked(); rerr != nil {
+		err = errors.Join(err, rerr)
+	}
+	return nil, err
+}
+
+func (s *Store) runTx(batch []*writeReq) ([]error, error) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]error, len(batch))
+	for i, req := range batch {
+		if err := req.ctx.Err(); err != nil {
+			results[i] = err
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, "SAVEPOINT w"); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		if err := req.fn(tx); err != nil {
+			results[i] = err
+			if _, err := tx.ExecContext(ctx, "ROLLBACK TO w"); err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, "RELEASE w"); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// flush uploads committed pages that are not yet in the replica. It must
+// not run during a write transaction, which the VFS would skip; the
+// committer is the only writer, so it calls flush between transactions.
+func (s *Store) flush() error {
+	f := s.file.Load()
+	if f == nil {
+		return errors.New("database file not open")
+	}
+	start := time.Now()
+	err := f.Sync(0)
+	s.flushes.add(time.Since(start))
+	return err
+}
+
+// reopenLocked replaces the database with one opened from the replica. If
+// the open fails, s.db stays nil until openIfClosedLocked succeeds. The
+// caller holds s.mu exclusively.
+func (s *Store) reopenLocked() error {
+	// Close tries a final upload. If that fails too, the VFS discards the
+	// pages it couldn't upload.
+	_ = s.db.Close()
+	s.db = nil
+	s.file.Store(nil)
+	return s.openIfClosedLocked()
+}
+
+// openIfClosedLocked opens the database if a reopen failed. The caller holds
+// s.mu exclusively.
+func (s *Store) openIfClosedLocked() error {
+	if s.db != nil {
+		return nil
+	}
+	if h := s.hooks.beforeOpen; h != nil {
+		if err := h(); err != nil {
+			return fmt.Errorf("reopen: %w", err)
+		}
+	}
+	db, err := s.openDB(context.Background())
+	if err != nil {
+		return fmt.Errorf("reopen: %w", err)
+	}
+	s.db = db
+	s.reopens.Add(1)
+	return nil
+}
+
+// do runs fn on the committer goroutine, between write transactions.
+func (s *Store) do(ctx context.Context, fn func() error) error {
+	errc := make(chan error, 1)
+	select {
+	case s.jobs <- func() { errc <- fn() }:
+	case <-s.closing:
+		return ErrClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Flush uploads everything committed so far.
+func (s *Store) Flush(ctx context.Context) error {
+	return s.do(ctx, s.flush)
+}
+
+// Close uploads everything committed and closes the database. Call it only
+// after every Write has returned.
+func (s *Store) Close() error {
+	if !s.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	close(s.closing)
+	<-s.done
+	s.bg.Wait()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return nil
+	}
+	return errors.Join(s.flush(), s.db.Close())
+}

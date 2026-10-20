@@ -1,0 +1,93 @@
+name: Update Litestream
+
+on:
+  schedule:
+    - cron: '30 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # Octo STS OIDC federation
+
+concurrency:
+  group: update-litestream
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Pull upstream Litestream into litestream/
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: main
+          # git subtree finds the last import in the history.
+          fetch-depth: 0
+
+      # App token (not GITHUB_TOKEN) so the automation PR triggers required
+      # checks and can enable auto-merge onto protected main.
+      - name: Federate GitHub App token via Octo STS
+        id: octo-sts
+        uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        with:
+          scope: imjasonh/playground
+          identity: litestream-update
+
+      - name: Pull upstream into litestream/
+        id: pull
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/update-litestream.sh pull
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: ${{ steps.pull.outputs.result == 'merged' }}
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: false
+
+      # Upstream may require newer dependencies than the modules that build
+      # against litestream/ list, and CI won't update their go.mod files.
+      - name: Tidy the modules that build against litestream/
+        if: ${{ steps.pull.outputs.result == 'merged' }}
+        run: bash .github/scripts/update-litestream.sh tidy
+
+      - name: Open a pull request for a clean update
+        id: pr_success
+        if: ${{ steps.pull.outputs.result == 'merged' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          UPSTREAM: ${{ steps.pull.outputs.upstream }}
+          PREVIOUS: ${{ steps.pull.outputs.previous }}
+        run: bash .github/scripts/update-litestream.sh open-pr
+
+      # CI tests litestream/ and cloudrun-sqlite, which builds against it, so
+      # the update lands only when both pass.
+      - name: Enable auto-merge for a clean update
+        if: ${{ steps.pull.outputs.result == 'merged' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          PR_NUMBER: ${{ steps.pr_success.outputs.pull-request-number }}
+        run: bash .github/scripts/update-litestream.sh enable-auto-merge "${PR_NUMBER}"
+
+      - name: Open a pull request with the conflicts
+        if: ${{ steps.pull.outputs.result == 'conflict' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          UPSTREAM: ${{ steps.pull.outputs.upstream }}
+          PREVIOUS: ${{ steps.pull.outputs.previous }}
+          CONFLICTS: ${{ steps.pull.outputs.conflicts }}
+        run: bash .github/scripts/update-litestream.sh open-conflict-pr
+
+      - name: Close a stale update pull request
+        if: ${{ steps.pull.outputs.result == 'unchanged' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/update-litestream.sh close-stale
+
+      - name: Report conflicts
+        if: ${{ steps.pull.outputs.result == 'conflict' }}
+        run: bash .github/scripts/update-litestream.sh report-conflict

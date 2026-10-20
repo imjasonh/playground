@@ -31,9 +31,16 @@ for module in "${modules[@]}"; do
     result=1
   fi
 
+  # cloudrun-sqlite uses the Litestream fork's VFS, which builds only with the
+  # vfs tag. GOFLAGS also reaches the builds that its tests run.
+  goflags="${GOFLAGS:-}"
+  if [ "$module" = "cloudrun-sqlite" ]; then
+    goflags="${goflags:+$goflags }-tags=vfs"
+  fi
+
   if (
     cd "$module"
-    go build ./...
+    GOFLAGS="$goflags" go build ./...
   ); then
     echo "${module}: build passed"
   else
@@ -66,6 +73,7 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
+    export GOFLAGS="$goflags"
     # -race is the Go equivalent of a data-race detector. Always on in CI.
     # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
@@ -78,6 +86,12 @@ for module in "${modules[@]}"; do
       # -count=1: the end-to-end tests run examples with go run, and the test
       # cache doesn't track the files that a subprocess reads.
       KUBEBUILDER_ASSETS="$kube_assets" go test -race -v -count=1 ./...
+    elif [ "$module" = "litestream" ]; then
+      # The Litestream fork runs the packages that upstream's CI unit-tests.
+      # Only the root package gets the vfs tag: cmd/litestream doesn't link
+      # SQLite, which the VFS needs.
+      go test -race -v -count=1 -tags vfs . &&
+        go test -race -v -count=1 ./internal ./abs ./file ./gs ./nats ./s3 ./sftp ./cmd/litestream
     else
       go test -race -v ./...
     fi

@@ -41,10 +41,25 @@ if [ "${#modules[@]}" -eq 0 ]; then
 fi
 
 for module in "${modules[@]}"; do
+  if [ "$module" = "litestream" ]; then
+    # The fork keeps upstream's dependency versions, so a later pull from
+    # upstream merges cleanly. update-litestream.yml updates it instead.
+    echo "- \`litestream\`: skipped; update-litestream.yml pulls upstream" >> "$GITHUB_STEP_SUMMARY"
+    continue
+  fi
+
   echo "::group::Update and verify ${module}"
+
+  # Match test-go-modules.sh: cloudrun-sqlite builds the fork's VFS, which
+  # needs the vfs tag, so go get also sees the VFS's dependencies.
+  goflags="${GOFLAGS:-}"
+  if [ "$module" = "cloudrun-sqlite" ]; then
+    goflags="${goflags:+$goflags }-tags=vfs"
+  fi
 
   if (
     cd "$module"
+    export GOFLAGS="$goflags"
     go get -u ./...
   ); then
     echo "- ✅ \`${module}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
@@ -65,6 +80,7 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
+    export GOFLAGS="$goflags"
     go build ./...
   ); then
     echo "- ✅ \`${module}\`: build passed" >> "$GITHUB_STEP_SUMMARY"
@@ -84,6 +100,7 @@ for module in "${modules[@]}"; do
 
   if (
     cd "$module"
+    export GOFLAGS="$goflags"
     # Match test-go-modules.sh: always race-detect. Heavy modules get more time.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -race -timeout 30m ./...
