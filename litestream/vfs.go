@@ -2716,7 +2716,7 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	newCommit := baseCommit
 	replaceIndex := false
 
-	level0, err := f.pollLevel(ctx, 0, pos.TXID, baseCommit, true, 0)
+	level0, err := f.pollLevel(ctx, 0, pos.TXID, baseCommit, pos.TXID, true, 0)
 	if err != nil {
 		return fmt.Errorf("poll L0: %w", err)
 	}
@@ -2736,7 +2736,7 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 		}
 	}
 
-	level1, err := f.pollLevel(ctx, 1, maxTXID1Snapshot, baseCommit, maxTXID1AnchoredSnapshot, maxTXID1CoveredSnapshot)
+	level1, err := f.pollLevel(ctx, 1, maxTXID1Snapshot, baseCommit, level0.maxTXID, maxTXID1AnchoredSnapshot, maxTXID1CoveredSnapshot)
 	if err != nil {
 		return fmt.Errorf("poll L1: %w", err)
 	}
@@ -2901,7 +2901,7 @@ func (f *VFSFile) mainIndexCommitWithLock() uint32 {
 
 // pollLevel fetches LTX files for a specific level and returns the highest TXID seen,
 // any index updates, the latest commit value, and if the index should be replaced.
-func (f *VFSFile) pollLevel(ctx context.Context, level int, prevMaxTXID ltx.TXID, baseCommit uint32, anchored bool, coveredTXID ltx.TXID) (pollLevelResult, error) {
+func (f *VFSFile) pollLevel(ctx context.Context, level int, prevMaxTXID ltx.TXID, baseCommit uint32, baseTXID ltx.TXID, anchored bool, coveredTXID ltx.TXID) (pollLevelResult, error) {
 	result := pollLevelResult{
 		maxTXID:     prevMaxTXID,
 		index:       make(map[uint32]ltx.PageIndexElem),
@@ -2909,7 +2909,7 @@ func (f *VFSFile) pollLevel(ctx context.Context, level int, prevMaxTXID ltx.TXID
 		anchored:    anchored,
 		coveredTXID: coveredTXID,
 	}
-	lastCommit := baseCommit
+	lastCommit, lastCommitTXID := baseCommit, baseTXID
 
 	poll := func(seek ltx.TXID) (*ltx.FileInfo, bool, error) {
 		itr, err := f.client.LTXFiles(ctx, level, seek, false)
@@ -2958,11 +2958,13 @@ func (f *VFSFile) pollLevel(ctx context.Context, level int, prevMaxTXID ltx.TXID
 				return nil, applied, fmt.Errorf("fetch header: %w", err)
 			}
 
-			if hdr.Commit < lastCommit {
-				result.replaceIndex = true
-				result.index = make(map[uint32]ltx.PageIndexElem)
+			if info.MaxTXID >= lastCommitTXID {
+				if hdr.Commit < lastCommit {
+					result.replaceIndex = true
+					result.index = make(map[uint32]ltx.PageIndexElem)
+				}
+				lastCommit, lastCommitTXID = hdr.Commit, info.MaxTXID
 			}
-			lastCommit = hdr.Commit
 			result.commit = hdr.Commit
 
 			for k, v := range idx {
