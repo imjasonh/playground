@@ -43,6 +43,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/kube"
 	"golang.org/x/sync/singleflight"
 )
@@ -135,7 +136,8 @@ func main() {
 	addr := flag.String("addr", ":8080", "address to serve the module proxy and the build caches on")
 	metricsAddr := flag.String("metrics-addr", "", "address for /healthz, /readyz, and /metrics, if not -addr")
 	flag.Parse()
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// gcp/init installed the process handler from LOG_LEVEL.
+	log := slog.Default()
 	if err := run(log, *addr, *metricsAddr, *upstream, *dir, *maxSize, *controller); err != nil {
 		log.Error("exiting", "err", err)
 		os.Exit(1)

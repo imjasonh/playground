@@ -51,6 +51,8 @@ import (
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 
+	"github.com/chainguard-dev/clog"
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -340,7 +342,8 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 		return nil
 	}
 	kube.RequeueAfter(ctx, u.interval)
-	log := slog.With("namespace", b.Namespace, "repository", repo.Name, "parent", parent)
+	// The rest of this reconcile logs the repository without a logger parameter.
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("namespace", b.Namespace, "repository", repo.Name, "parent", parent))
 
 	remote, err := u.remote(ctx, repo)
 	if err != nil {
@@ -368,7 +371,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	if err := fetchMissing(ctx, local, remote, heads, names); err != nil {
 		return err
 	}
-	mods, err := readModules(ctx, local, parentHead, log)
+	mods, err := readModules(ctx, local, parentHead)
 	if errors.Is(err, git.ErrTooBig) {
 		// The list stays too long until the parent's head moves.
 		return kube.Permanent(fmt.Errorf("reading the parent's go.mod files: %w", err))
@@ -381,8 +384,8 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 		return err
 	}
 	reqs := requirements(mods)
-	stored, loaded := u.loadSeen(ctx, len(reqs) > 0, log)
-	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, reqs, owned, log)
+	stored, loaded := u.loadSeen(ctx, len(reqs) > 0)
+	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, reqs, owned)
 	writes, kept, deletes, err := u.plan(ctx, local, parentHead, mergePolicy(repo.Spec.Branches, parent), targets, failed, existing, owned)
 	if err != nil {
 		return err
@@ -391,25 +394,25 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	// From here on, errors are logged instead of returned, so that kube
 	// still applies the Pod that the reconcile declares.
 	st := u.stateFor(b.Key(), parentHead)
-	u.runPod(ctx, b, repo, st, writes, log)
+	u.runPod(ctx, b, repo, st, writes)
 	key := sync.OnceValues(func() (*git.SigningKey, error) { return signing.Key(ctx, repo) })
 	for _, w := range writes {
-		u.write(ctx, local, remote, key, mods, st, w, log)
+		u.write(ctx, local, remote, key, mods, st, w)
 	}
 	for _, d := range deletes {
 		if err := u.push(ctx, local, remote, d.branch, "", d.old); err != nil {
-			u.pushFailed(ctx, log, d.branch, err)
+			u.pushFailed(ctx, d.branch, err)
 			continue
 		}
-		log.Info("deleted a branch that has no update left to make", "branch", d.branch, "head", gitk8s.Short(d.old))
+		clog.FromContext(ctx).Info("deleted a branch that has no update left to make", "branch", d.branch, "head", gitk8s.Short(d.old))
 	}
 	for _, k := range kept {
-		u.deleteIfRetracted(ctx, local, remote, mods, k, log)
+		u.deleteIfRetracted(ctx, local, remote, mods, k)
 	}
 	if loaded {
 		// kube writes objects in the order that they're declared and
 		// stops at an error, so this comes after the update Pod.
-		u.storeSeen(ctx, stored, log)
+		u.storeSeen(ctx, stored)
 	}
 	return nil
 }
@@ -418,7 +421,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 // if the controller keeps them in one and waits for -min-age, and need
 // says that this reconcile looks for versions. It returns the times as the
 // ConfigMap holds them, and whether it read them.
-func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (stored string, loaded bool) {
+func (u *updater) loadSeen(ctx context.Context, need bool) (stored string, loaded bool) {
 	if u.minAge == 0 || u.seenObject.Name == "" || !need {
 		return "", false
 	}
@@ -428,7 +431,7 @@ func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (st
 	}
 	cm, err := fetch(ctx, u.seenObject.Namespace, u.seenObject.Name)
 	if err != nil {
-		log.Warn("reading first-seen times failed, so a restart would restart the wait for the versions that this reconcile sees", "configmap", u.seenObject.String(), "error", err)
+		clog.FromContext(ctx).Warn("reading first-seen times failed, so a restart would restart the wait for the versions that this reconcile sees", "configmap", u.seenObject.String(), "error", err)
 		return "", false
 	}
 	if cm != nil {
@@ -441,11 +444,11 @@ func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (st
 // storeSeen writes the first-seen times to the ConfigMap that keeps them,
 // if they're not what it held, and warns when it leaves out times that
 // don't fit.
-func (u *updater) storeSeen(ctx context.Context, stored string, log *slog.Logger) {
+func (u *updater) storeSeen(ctx context.Context, stored string) {
 	times, dropped := u.proxy.encode()
 	if times != stored {
 		if dropped > 0 {
-			log.Warn("the ConfigMap leaves out the oldest first-seen times, which don't fit, so a restart would restart the wait for their versions", "configmap", u.seenObject.String(), "dropped", dropped)
+			clog.FromContext(ctx).Warn("the ConfigMap leaves out the oldest first-seen times, which don't fit, so a restart would restart the wait for their versions", "configmap", u.seenObject.String(), "dropped", dropped)
 		}
 		apply := kube.Apply[configMap]
 		if u.applyConfigMap != nil {
@@ -551,7 +554,7 @@ type modFile struct {
 // get raises. go get adds a go line to a file that has none, and the file
 // then lists every module that the build uses. It skips files larger than
 // git.MaxBlobBytes too.
-func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.Logger) (map[string]*modFile, error) {
+func readModules(ctx context.Context, repo *git.Repo, commit string) (map[string]*modFile, error) {
 	entries, err := repo.LsTree(ctx, commit)
 	if err != nil {
 		return nil, err
@@ -570,7 +573,7 @@ func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.L
 		}
 		data, err := repo.ReadBlob(ctx, e.SHA)
 		if errors.Is(err, git.ErrTooBig) {
-			log.Warn("skipping a go.mod file that's too large to read", "path", e.Path, "error", err)
+			clog.FromContext(ctx).Warn("skipping a go.mod file that's too large to read", "path", e.Path, "error", err)
 			continue
 		}
 		if err != nil {
@@ -581,11 +584,11 @@ func readModules(ctx context.Context, repo *git.Repo, commit string, log *slog.L
 			err = errors.New("it has no module line")
 		}
 		if err != nil {
-			log.Warn("skipping a go.mod file that doesn't parse", "path", e.Path, "error", err)
+			clog.FromContext(ctx).Warn("skipping a go.mod file that doesn't parse", "path", e.Path, "error", err)
 			continue
 		}
 		if f.Go != nil && goversion.Compare("go"+f.Go.Version, "go1.17") < 0 {
-			log.Warn("skipping a go.mod file whose go line is older than 1.17, so it doesn't list every module that the build uses", "path", e.Path)
+			clog.FromContext(ctx).Warn("skipping a go.mod file whose go line is older than 1.17, so it doesn't list every module that the build uses", "path", e.Path)
 			continue
 		}
 		mods[dir] = &modFile{data: data, file: f}
@@ -658,7 +661,7 @@ func replaced(f *modfile.File, m module.Version) bool {
 // versions the controller couldn't read. The version of a branch that the
 // controller owns was old enough when the controller pushed it, so it
 // doesn't wait for -min-age again.
-func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, parent string, reqs map[moduleMajor]*requirement, owned map[moduleMajor]ownedBranch, log *slog.Logger) (map[moduleMajor]update, map[moduleMajor]bool) {
+func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, parent string, reqs map[moduleMajor]*requirement, owned map[moduleMajor]ownedBranch) (map[moduleMajor]update, map[moduleMajor]bool) {
 	targets, failed := map[moduleMajor]update{}, map[moduleMajor]bool{}
 	for _, m := range slices.SortedFunc(maps.Keys(reqs), compareModules) {
 		name := m.branch(u.prefix)
@@ -670,7 +673,7 @@ func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, paren
 		kube.RequeueAfter(ctx, wait)
 		if err != nil {
 			failed[m] = true
-			log.Warn("reading a module's versions failed", "module", m.path, "error", err)
+			clog.FromContext(ctx).Warn("reading a module's versions failed", "module", m.path, "error", err)
 			if !errors.Is(err, errNotFound) {
 				kube.RequeueAfter(ctx, errorRetry)
 			}
@@ -879,7 +882,7 @@ func requires(f *modfile.File, mod, version string) bool {
 // moves, and an update that waits for the versions that it raises gets none
 // until they're old enough. runPod forgets the outcomes and waits of
 // updates that writes don't need.
-func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change, log *slog.Logger) {
+func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change) {
 	now := u.clock()
 	wanted := map[module.Version]bool{}
 	for _, w := range writes {
@@ -918,7 +921,7 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 		kube.RequeueAfter(ctx, time.Minute)
 		return
 	}
-	out := u.follow(ctx, desired, pending, log)
+	out := u.follow(ctx, desired, pending)
 	if out == nil {
 		return
 	}
@@ -933,7 +936,7 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 		st.outcomes[up.key()] = o
 		if o.err != "" {
 			failedAny = true
-			log.Warn("updating a module failed", "module", up.module, "version", up.version, "error", o.err)
+			clog.FromContext(ctx).Warn("updating a module failed", "module", up.module, "version", up.version, "error", o.err)
 		}
 	}
 	if failedAny {
@@ -948,7 +951,8 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 
 // write commits an update whose Pod succeeded, signed with the key that key
 // returns, and pushes it to its branch.
-func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote, key func() (*git.SigningKey, error), mods map[string]*modFile, st *state, w change, log *slog.Logger) {
+func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote, key func() (*git.SigningKey, error), mods map[string]*modFile, st *state, w change) {
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("branch", w.branch, "module", w.up.module, "version", w.up.version))
 	o := st.outcomes[w.up.key()]
 	if o == nil || o.err != "" {
 		return
@@ -956,35 +960,35 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 	if err := checkResult(mods, w.up, o.files); err != nil {
 		o.err, o.files, o.at = "the update Pod's result isn't valid: "+err.Error(), nil, u.clock()
 		st.attempt++
-		log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
+		clog.FromContext(ctx).Warn("updating a module failed", "error", o.err)
 		return
 	}
 	raises := raised(mods, w.up, o.files)
 	for _, m := range raises {
 		retracted, err := u.proxy.retracted(ctx, m.Path, m.Version)
 		if errors.Is(err, errNotFound) {
-			u.failMissing(st, w, m, log)
+			u.failMissing(ctx, st, w, m)
 			return
 		}
 		if err != nil {
-			log.Warn("reading the retractions of a module that an update raises failed", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", m.String(), "error", err)
+			clog.FromContext(ctx).Warn("reading the retractions of a module that an update raises failed", "raises", m.String(), "error", err)
 			kube.RequeueAfter(ctx, errorRetry)
 			return
 		}
 		if retracted {
-			u.deleteIfRetracted(ctx, local, remote, mods, w, log)
+			u.deleteIfRetracted(ctx, local, remote, mods, w)
 			o.err, o.files, o.at = fmt.Sprintf("the update raises %s to %s, which the module retracts", m.Path, m.Version), nil, u.clock()
 			st.attempt++
-			log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
+			clog.FromContext(ctx).Warn("updating a module failed", "error", o.err)
 			return
 		}
 	}
-	if u.waitsForRaised(ctx, st, w, raises, log) {
+	if u.waitsForRaised(ctx, st, w, raises) {
 		return
 	}
 	k, err := key()
 	if err != nil {
-		log.Warn("reading the signing key failed", "branch", w.branch, "error", err)
+		clog.FromContext(ctx).Warn("reading the signing key failed", "error", err)
 		kube.RequeueAfter(ctx, errorRetry)
 		return
 	}
@@ -993,11 +997,11 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 		err = u.push(ctx, local, remote, w.branch, commit, w.old)
 	}
 	if err != nil {
-		u.pushFailed(ctx, log, w.branch, err)
+		u.pushFailed(ctx, w.branch, err)
 		return
 	}
 	if commit != w.old {
-		log.Info("pushed an update", "branch", w.branch, "module", w.up.module, "version", w.up.version, "from", gitk8s.Short(w.old), "to", gitk8s.Short(commit))
+		clog.FromContext(ctx).Info("pushed an update", "from", gitk8s.Short(w.old), "to", gitk8s.Short(commit))
 	}
 }
 
@@ -1008,13 +1012,16 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 // whose own version the module retracts only when target finds no version
 // to update to. The controller pushed such a branch before the module
 // retracted the version.
-func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote git.Remote, mods map[string]*modFile, w change, log *slog.Logger) {
+func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote git.Remote, mods map[string]*modFile, w change) {
 	if w.old == "" {
 		return
 	}
-	old, err := readModules(ctx, local, w.old, slog.New(slog.DiscardHandler))
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("branch", w.branch))
+	// A go.mod file this read skips is the branch's old commit, not a file
+	// the reconcile failed to update. Drop those warnings.
+	old, err := readModules(clog.WithLogger(ctx, clog.NewLogger(slog.New(slog.DiscardHandler))), local, w.old)
 	if err != nil {
-		log.Warn("reading a branch's go.mod files failed", "branch", w.branch, "error", err)
+		clog.FromContext(ctx).Warn("reading a branch's go.mod files failed", "error", err)
 		return
 	}
 	files := map[string][]byte{}
@@ -1024,17 +1031,17 @@ func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote
 	for _, m := range raised(mods, update{}, files) {
 		retracted, err := u.proxy.retracted(ctx, m.Path, m.Version)
 		if err != nil {
-			log.Warn("reading the retractions of a module that a branch raises failed", "branch", w.branch, "raises", m.String(), "error", err)
+			clog.FromContext(ctx).Warn("reading the retractions of a module that a branch raises failed", "raises", m.String(), "error", err)
 			return
 		}
 		if !retracted {
 			continue
 		}
 		if err := u.push(ctx, local, remote, w.branch, "", w.old); err != nil {
-			u.pushFailed(ctx, log, w.branch, err)
+			u.pushFailed(ctx, w.branch, err)
 			return
 		}
-		log.Info("deleted a branch that raises a requirement to a version that its module retracts", "branch", w.branch, "head", gitk8s.Short(w.old), "raises", m.String())
+		clog.FromContext(ctx).Info("deleted a branch that raises a requirement to a version that its module retracts", "head", gitk8s.Short(w.old), "raises", m.String())
 		return
 	}
 }
@@ -1112,7 +1119,7 @@ func raised(mods map[string]*modFile, up update, files map[string][]byte) []modu
 // version that it raises a requirement to isn't -min-age old yet. Then it
 // forgets the update's outcome and records when each of the versions will
 // be old enough, which is when runPod makes the update again.
-func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raised []module.Version, log *slog.Logger) bool {
+func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raised []module.Version) bool {
 	if u.minAge == 0 {
 		return false
 	}
@@ -1121,11 +1128,11 @@ func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raise
 	for _, m := range raised {
 		at, err := u.proxy.raisedOldEnoughAt(ctx, m.Path, m.Version, u.minAge)
 		if errors.Is(err, errNotFound) {
-			u.failMissing(st, w, m, log)
+			u.failMissing(ctx, st, w, m)
 			return true
 		}
 		if err != nil {
-			log.Warn("reading the age of a version that an update raises failed", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", m.String(), "error", err)
+			clog.FromContext(ctx).Warn("reading the age of a version that an update raises failed", "raises", m.String(), "error", err)
 			kube.RequeueAfter(ctx, errorRetry)
 			return true
 		}
@@ -1141,7 +1148,7 @@ func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raise
 	st.waits[w.up.key()] = until
 	st.attempt++
 	kube.RequeueAfter(ctx, until.Sub(now))
-	log.Info("waiting to push an update until the versions that it raises are old enough", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", last.String(), "until", until)
+	clog.FromContext(ctx).Info("waiting to push an update until the versions that it raises are old enough", "raises", last.String(), "until", until)
 	return true
 }
 
@@ -1149,13 +1156,13 @@ func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raise
 // version that no module proxy has, so the controller can't check it. The
 // parent moving doesn't put the version in a proxy, so the update also
 // waits -interval, and runPod makes it again then.
-func (u *updater) failMissing(st *state, w change, m module.Version, log *slog.Logger) {
+func (u *updater) failMissing(ctx context.Context, st *state, w change, m module.Version) {
 	now := u.clock()
 	o := st.outcomes[w.up.key()]
 	o.err, o.files, o.at = fmt.Sprintf("the update raises %s to %s, which no module proxy has", m.Path, m.Version), nil, now
 	st.waits[w.up.key()] = now.Add(u.interval)
 	st.attempt++
-	log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
+	clog.FromContext(ctx).Warn("updating a module failed", "error", o.err)
 }
 
 // sameDirectives reports whether two lists of directives hold the same
@@ -1211,14 +1218,15 @@ func (u *updater) push(ctx context.Context, repo *git.Repo, remote git.Remote, b
 	return repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + branch, New: commit, Old: old})
 }
 
-func (u *updater) pushFailed(ctx context.Context, log *slog.Logger, branch string, err error) {
+func (u *updater) pushFailed(ctx context.Context, branch string, err error) {
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("branch", branch))
 	var rejected *git.PushError
 	if errors.As(err, &rejected) && !rejected.Refused("refs/heads/"+branch) {
-		log.Info("not pushing a branch that moved", "branch", branch)
+		clog.FromContext(ctx).Info("not pushing a branch that moved")
 		kube.RequeueAfter(ctx, pushRetry)
 		return
 	}
-	log.Warn("pushing a branch failed", "branch", branch, "error", err)
+	clog.FromContext(ctx).Warn("pushing a branch failed", "error", err)
 	kube.RequeueAfter(ctx, errorRetry)
 }
 

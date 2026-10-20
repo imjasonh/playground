@@ -367,9 +367,10 @@ func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 }
 
 // maxConflictRetries bounds how often a batch reruns after another writer
-// published first. Retries back off with jitter so that two instances
-// writing at once both make progress.
-const maxConflictRetries = 10
+// published first. Two instances can each land dozens of writes during a
+// deploy overlap, so the bound is above one such burst. Retries back off
+// with jitter so both make progress.
+const maxConflictRetries = 48
 
 func (s *Store) commitLoop() {
 	defer close(s.done)

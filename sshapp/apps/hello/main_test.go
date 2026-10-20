@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -25,18 +24,5 @@ func TestGreet(t *testing.T) {
 				t.Fatalf("greet(%q, %q) = %q, want %q", tc.greeting, tc.user, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestEnvOr(t *testing.T) {
-	t.Setenv("SSHAPP_TEST_ENV", "set")
-	if got := envOr("SSHAPP_TEST_ENV", "fallback"); got != "set" {
-		t.Fatalf("envOr = %q, want set", got)
-	}
-	if got := envOr("SSHAPP_TEST_MISSING", "fallback"); got != "fallback" {
-		t.Fatalf("envOr = %q, want fallback", got)
-	}
-	if !strings.HasPrefix(defaultAddr, ":") {
-		t.Fatalf("defaultAddr = %q, want leading colon", defaultAddr)
 	}
 }

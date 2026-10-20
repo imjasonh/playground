@@ -43,6 +43,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
@@ -340,6 +341,12 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir, Remote: r.check.Remote} })
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With(
+		"check", r.check.Name,
+		"namespace", meta.Namespace,
+		"repository", spec.Repository,
+		"branch", spec.Branch,
+	))
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache, bases: &r.bases, same: &r.same}
 	defer in.release()
 	if final && !r.current(cur, spec) && cur.Scope == gitk8s.ScopeChange {
@@ -435,14 +442,14 @@ func (r *reconciler[V, P]) keep(ctx context.Context, in *Input, cur *gitk8s.Chec
 	}
 	same, err := in.SameChange(ctx, last, change)
 	if err != nil {
-		slog.Warn("comparing changes failed, so running the check", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "err", err)
+		clog.FromContext(ctx).Warn("comparing changes failed, so running the check", "err", err)
 	}
 	if err != nil || !same {
 		return nil
 	}
 	kept := *cur
 	kept.Commit, kept.MergeBase, kept.Outputs, kept.Notes = change.Head, change.Base, maps.Clone(cur.Outputs), maps.Clone(cur.Notes)
-	slog.Info("kept a result for the same change", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch,
+	clog.FromContext(ctx).Info("kept a result for the same change",
 		"from", gitk8s.Short(last.Head), "to", gitk8s.Short(change.Head), "mergeBase", gitk8s.Short(change.Base))
 	return &kept
 }
@@ -505,7 +512,7 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 		// spec, which runs the check on the new head.
 		return fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(v.Fix), in.Spec.Branch, err)
 	}
-	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
+	clog.FromContext(ctx).Info("pushed a fix", "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
 	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s: %s", gitk8s.Short(v.Fix), in.Spec.Branch, v.Message)
 	*res = *fixed(res, v)
 	return nil

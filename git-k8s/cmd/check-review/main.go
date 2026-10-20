@@ -12,6 +12,7 @@ import (
 	"context"
 	"flag"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"

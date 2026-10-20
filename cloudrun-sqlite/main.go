@@ -15,12 +15,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
+	"github.com/sethvargo/go-envconfig"
 )
 
 func main() {
@@ -37,63 +38,61 @@ func main() {
 	}
 }
 
-func env(name, def string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return def
-}
-
-func envBool(name string, def bool) bool {
-	if v, err := strconv.ParseBool(os.Getenv(name)); err == nil {
-		return v
-	}
-	return def
-}
-
-func envDuration(name string, def time.Duration) time.Duration {
-	if v, err := time.ParseDuration(os.Getenv(name)); err == nil {
-		return v
-	}
-	return def
-}
-
-func envInt(name string, def int) int {
-	if v, err := strconv.Atoi(os.Getenv(name)); err == nil {
-		return v
-	}
-	return def
-}
+// env is the server configuration, loaded once before main. The store
+// defaults match store.DefaultConfig: durable writes, a 64 MiB cache, a
+// snapshot after 16 files, and a 30s poll. An empty DATA_DIR falls back to
+// a temp directory, which a tag cannot name.
+var env = envconfig.MustProcess(context.Background(), &struct {
+	ReplicaURL      string        `env:"REPLICA_URL"`
+	Dir             string        `env:"DATA_DIR"`
+	Durable         bool          `env:"DURABLE, default=true"`
+	Hydrate         bool          `env:"HYDRATE"`
+	CacheSize       int           `env:"CACHE_SIZE, default=67108864"`
+	SnapshotPlanLen int           `env:"SNAPSHOT_PLAN_LEN, default=16"`
+	PollInterval    time.Duration `env:"POLL_INTERVAL, default=30s"`
+	Port            string        `env:"PORT, default=8080"`
+	AdminToken      string        `env:"ADMIN_TOKEN"`
+}{})
 
 func serveMain(args []string) error {
 	cfg := store.DefaultConfig()
+	cfg.ReplicaURL = env.ReplicaURL
+	cfg.Dir = env.Dir
+	if cfg.Dir == "" {
+		cfg.Dir = filepath.Join(os.TempDir(), "cloudrun-sqlite")
+	}
+	cfg.Durable = env.Durable
+	cfg.Hydrate = env.Hydrate
+	cfg.CacheSize = env.CacheSize
+	cfg.SnapshotPlanLen = env.SnapshotPlanLen
+	cfg.PollInterval = env.PollInterval
+
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	fs.StringVar(&cfg.ReplicaURL, "replica-url", os.Getenv("REPLICA_URL"), "Litestream replica URL (gs://, s3://, or file://)")
-	fs.StringVar(&cfg.Dir, "dir", env("DATA_DIR", filepath.Join(os.TempDir(), "cloudrun-sqlite")), "instance-local scratch directory")
-	fs.BoolVar(&cfg.Durable, "durable", envBool("DURABLE", cfg.Durable), "acknowledge writes only after they are in object storage")
-	fs.BoolVar(&cfg.Hydrate, "hydrate", envBool("HYDRATE", false), "download the whole database in the background")
-	fs.IntVar(&cfg.CacheSize, "cache-size", envInt("CACHE_SIZE", cfg.CacheSize), "page cache size in bytes")
-	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", envInt("SNAPSHOT_PLAN_LEN", cfg.SnapshotPlanLen), "snapshot when a cold start would read more than this many files (0 disables)")
-	fs.DurationVar(&cfg.PollInterval, "poll-interval", envDuration("POLL_INTERVAL", cfg.PollInterval), "how often to list the replica for compacted files or another instance's writes")
-	port := fs.String("port", env("PORT", "8080"), "listen port")
-	logLevel := fs.String("log-level", env("LOG_LEVEL", "info"), "log level")
-	vfsLogLevel := fs.String("vfs-log-level", env("VFS_LOG_LEVEL", "warn"), "Litestream VFS log level")
+	fs.StringVar(&cfg.ReplicaURL, "replica-url", cfg.ReplicaURL, "Litestream replica URL (gs://, s3://, or file://)")
+	fs.StringVar(&cfg.Dir, "dir", cfg.Dir, "instance-local scratch directory")
+	fs.BoolVar(&cfg.Durable, "durable", cfg.Durable, "acknowledge writes only after they are in object storage")
+	fs.BoolVar(&cfg.Hydrate, "hydrate", cfg.Hydrate, "download the whole database in the background")
+	fs.IntVar(&cfg.CacheSize, "cache-size", cfg.CacheSize, "page cache size in bytes")
+	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", cfg.SnapshotPlanLen, "snapshot when a cold start would read more than this many files (0 disables)")
+	fs.DurationVar(&cfg.PollInterval, "poll-interval", cfg.PollInterval, "how often to list the replica for compacted files or another instance's writes")
+	port := fs.String("port", env.Port, "listen port")
 	fs.Parse(args)
 	if cfg.ReplicaURL == "" {
 		return errors.New("set REPLICA_URL or -replica-url")
 	}
 
 	instance := instanceID()
-	cfg.Logger = newLogger(*logLevel).With("instance", instance)
-	cfg.VFSLogger = newLogger(*vfsLogLevel).With("instance", instance)
-	log := cfg.Logger
+	// gcp/init installed the process handler from LOG_LEVEL.
+	log := slog.Default().With("instance", instance)
 	slog.SetDefault(log)
-	stopTel := observe.Start(context.Background(), log)
+	cfg.Logger = log
+	cfg.VFSLogger = log
+	stopTel := observe.Start(context.Background(), cfg.Logger)
 	defer func() {
 		tctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if err := stopTel(tctx); err != nil {
-			log.Warn("telemetry shutdown", "error", err)
+			slog.Warn("telemetry shutdown", "error", err)
 		}
 	}()
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
@@ -112,9 +111,9 @@ func serveMain(args []string) error {
 		st.Close()
 		return err
 	}
-	log.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
+	slog.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
 
-	srv := &http.Server{Handler: newServer(st, instance, start, os.Getenv("ADMIN_TOKEN")).routes()}
+	srv := &http.Server{Handler: newServer(st, instance, start, env.AdminToken).routes()}
 	ln, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
 		st.Close()
@@ -122,38 +121,26 @@ func serveMain(args []string) error {
 	}
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-			log.Error("serve", "error", err)
+			slog.Error("serve", "error", err)
 			stop()
 		}
 	}()
-	log.Info("listening", "port", *port, "startup_ms", ms(time.Since(start)))
+	slog.Info("listening", "port", *port, "startup_ms", ms(time.Since(start)))
 
 	<-ctx.Done()
 	// Cloud Run sends SIGTERM and kills the container 10 seconds later.
-	log.Info("shutting down")
+	slog.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Warn("http shutdown", "error", err)
+		slog.Warn("http shutdown", "error", err)
 	}
 	if err := st.Close(); err != nil {
-		log.Error("close database", "error", err)
+		slog.Error("close database", "error", err)
 		return err
 	}
-	log.Info("shut down cleanly")
+	slog.Info("shut down cleanly")
 	return nil
-}
-
-func newLogger(level string) *slog.Logger {
-	var l slog.Level
-	if err := l.UnmarshalText([]byte(level)); err != nil {
-		l = slog.LevelInfo
-	}
-	opts := &slog.HandlerOptions{Level: l}
-	if os.Getenv("K_SERVICE") != "" {
-		return slog.New(slog.NewJSONHandler(os.Stderr, opts))
-	}
-	return slog.New(slog.NewTextHandler(os.Stderr, opts))
 }
 
 func instanceID() string {

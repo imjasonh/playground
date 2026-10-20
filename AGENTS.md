@@ -674,6 +674,41 @@ bundle exec fastlane test
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
+- **Go logging**: use `log/slog`. `slog.Info`, `slog.Warn`, `slog.Error`,
+  and `slog.Debug`, and the `Context` variants, take attributes.
+  [`github.com/chainguard-dev/clog`](https://github.com/chainguard-dev/clog)
+  is for a logger stored on a `context.Context`: `clog.WithLogger` to
+  store it, `clog.FromContext` or the `Context` methods to read it.
+  At the start of a request or reconcile, store the shared identity
+  (repository, branch, caller) there so later logs in that call chain
+  include it. Do not pass a `*slog.Logger` beside `ctx` for that.
+  `clog.Info` and the other package-level calls only reach the default
+  logger, so use `slog` there. `clog.Fatal` is the exception: `slog`
+  has no equivalent, and `Fatal` logs then exits. Do not call clog's
+  printf-style methods
+  (`Infof`, `Warnf`, `Errorf`, `Debugf`, `Fatalf`, and the `Contextf`
+  variants). Parse a log-level flag with
+  `github.com/chainguard-dev/clog/slag`.
+  In `main` of a program that runs on GCP (Cloud Run, GKE, Cloud Functions,
+  or App Engine), blank-import `github.com/chainguard-dev/clog/gcp/init`.
+  That installs the Cloud Logging JSON handler from `LOG_LEVEL` in every
+  environment. Do not call `gcp.NewHandler` yourself.
+  [`pasta/analyzers/go_clog`](pasta/analyzers/go_clog/go_clog.cue)
+  flags printf-style calls, package-level clog calls other than
+  `Fatal`, `gcp.NewHandler`,
+  and a `flag.String` whose name contains `log-level`. Which programs
+  run on GCP is not visible to that check. `kube` stays on `slog`
+  because that module imports only the standard library. Do not restyle
+  `litestream`.
+- **Go environment variables**: load them with
+  [`github.com/sethvargo/go-envconfig`](https://github.com/sethvargo/go-envconfig).
+  Put the default in the `env` struct tag, as in `env:"PORT, default=8080"`.
+  `envconfig.MustProcess` loads the struct once, before `main`, and panics
+  when the environment is invalid. Use `envconfig.Process` when the caller
+  needs the error, including a test that sets variables and loads again.
+  [`pasta/analyzers/go_envconfig`](pasta/analyzers/go_envconfig/go_envconfig.cue)
+  flags `strconv` and `time.ParseDuration` applied to `os.Getenv` or
+  `os.LookupEnv`.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A

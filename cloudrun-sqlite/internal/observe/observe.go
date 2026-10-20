@@ -252,7 +252,7 @@ func HTTP(next http.Handler) http.Handler {
 					"logging.googleapis.com/spanId", sc.SpanID().String(),
 				)
 			}
-			slog.Info("slow request", attrs...)
+			slog.InfoContext(ctx, "slow request", attrs...)
 		}()
 		next.ServeHTTP(sw, r.WithContext(ctx))
 		route = r.Pattern

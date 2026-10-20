@@ -13,7 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -22,6 +22,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 )
 
 func main() {
@@ -29,20 +31,20 @@ func main() {
 	dir := flag.String("dir", "", "directory that holds the module versions")
 	flag.Parse()
 	if *dir == "" {
-		log.Fatal("set -dir")
+		clog.Fatal("set -dir")
 	}
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
-		log.Fatal(err)
+		clog.Fatal("listen", "error", err)
 	}
-	log.Printf("serving %s on %s", *dir, ln.Addr())
+	slog.Info("serving", "dir", *dir, "addr", ln.Addr())
 	srv := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("%s %s %d", r.Method, r.URL.Path, serve(w, r, *dir))
+			slog.Info("request", "method", r.Method, "path", r.URL.Path, "status", serve(w, r, *dir))
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Fatal(srv.Serve(ln))
+	clog.Fatal("serve", "error", srv.Serve(ln))
 }
 
 // serve answers a module proxy request, and returns the status.
@@ -78,7 +80,7 @@ func serve(w http.ResponseWriter, r *http.Request, root string) int {
 		http.ServeFile(w, r, filepath.Join(dir, "go.mod"))
 	case ".zip":
 		if err := writeZip(w, dir, module+"@"+version); err != nil {
-			log.Printf("zipping %s: %v", dir, err)
+			slog.Error("zipping", "dir", dir, "error", err)
 		}
 	default:
 		http.NotFound(w, r)

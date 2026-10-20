@@ -206,7 +206,8 @@ GREET="${STATE}/modules/example.com/greet@v1.0.0"
 mkdir -p "${GREET}"
 printf 'module example.com/greet\n\ngo 1.24\n' >"${GREET}/go.mod"
 printf 'package greet\n\nfunc Hello(name string) string { return "Hello, " + name }\n' >"${GREET}/greet.go"
-mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${STATE}/modproxy.log" | tail -n 1; }
+# slog's text handler prints "INFO serving dir=... addr=host:port".
+mod_port() { sed -nE 's/.* serving .*addr=.*:([0-9]+)"?$/\1/p' "${STATE}/modproxy.log" | tail -n 1; }
 if ! running "${MOD_PROXY_PID}" modproxy; then
   : >"${STATE}/modproxy.log"
   detach "${STATE}/modproxy.log" "${STATE}/bin/modproxy" -addr=0.0.0.0:0 -dir="${STATE}/modules"

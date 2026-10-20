@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
 )
@@ -94,6 +94,8 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 	if err != nil {
 		return err
 	}
+	// branch is the GitBranch object's name. The results URL is built from it.
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("check", s.check, "namespace", meta.Namespace, "branch", meta.Name))
 	u := fmt.Sprintf("%s/%s/%s/%s?generation=%d", strings.TrimSuffix(cmp.Or(s.cfg.ResultsURL, defaultResultsURL), "/"),
 		url.PathEscape(meta.Namespace), url.PathEscape(meta.Name), url.PathEscape(s.check), meta.Generation)
 	delay := s.delay
@@ -106,13 +108,13 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 			// The branch changed since the check read it, or its policy no
 			// longer lists the check. Either way, the change runs the
 			// check again.
-			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
+			clog.FromContext(ctx).Info("the core program didn't take a result", "reason", msg)
 			return nil
 		case err == nil && code == http.StatusGone:
 			// The core program answers 410 only once the API server shows
 			// that the GitBranch is gone. A 404 can come from a wrong
 			// -results-url, so it fails the reconcile like other answers.
-			slog.Info("the core program didn't take a result", "check", s.check, "namespace", meta.Namespace, "branch", meta.Name, "reason", msg)
+			clog.FromContext(ctx).Info("the core program didn't take a result", "reason", msg)
 			return errGone
 		case err == nil && code == http.StatusBadRequest:
 			return kube.Permanent(fmt.Errorf("the core program rejected the %s check's result: %s", s.check, msg))

@@ -38,6 +38,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/config"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
