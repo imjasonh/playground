@@ -1,11 +1,13 @@
 package litestream
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,6 +41,10 @@ type Compactor struct {
 	// If nil or returns os.ErrNotExist, falls back to remote.
 	// This is used by DB to prefer local files over remote for consistency.
 	LocalFileOpener func(level int, minTXID, maxTXID ltx.TXID) (io.ReadCloser, error)
+
+	// WriteHook, when set, receives a copy of each file CompactLimit writes.
+	// Compact does not call it.
+	WriteHook func(level int, minTXID, maxTXID ltx.TXID, data []byte)
 
 	// LocalFileDeleter optionally deletes local LTX files after retention.
 	// If nil, only remote files are deleted.
@@ -102,6 +108,21 @@ func (c *Compactor) MaxLTXFileInfo(ctx context.Context, level int) (ltx.FileInfo
 // Compact compacts source level files into the destination level.
 // Returns ErrNoCompaction if there are no files to compact.
 func (c *Compactor) Compact(ctx context.Context, dstLevel int) (*ltx.FileInfo, error) {
+	return c.compact(ctx, dstLevel, 0)
+}
+
+// CompactLimit compacts at most limit source files into dstLevel.
+// It writes the contiguous prefix that starts at the destination level's
+// max TXID plus one, and stops before a gap. A limit of zero compacts every
+// source file, which is what Compact does.
+func (c *Compactor) CompactLimit(ctx context.Context, dstLevel, limit int) (*ltx.FileInfo, error) {
+	if limit < 0 {
+		limit = 0
+	}
+	return c.compact(ctx, dstLevel, limit)
+}
+
+func (c *Compactor) compact(ctx context.Context, dstLevel, limit int) (*ltx.FileInfo, error) {
 	srcLevel := dstLevel - 1
 
 	prevMaxInfo, err := c.MaxLTXFileInfo(ctx, dstLevel)
@@ -125,34 +146,27 @@ func (c *Compactor) Compact(ctx context.Context, dstLevel int) (*ltx.FileInfo, e
 		}
 	}()
 
-	var minTXID, maxTXID ltx.TXID
-	for itr.Next() {
-		info := itr.Item()
+	selected, err := c.selectSourceFiles(itr, seekTXID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected) == 0 {
+		return nil, ErrNoCompaction
+	}
 
+	var minTXID, maxTXID ltx.TXID
+	for _, info := range selected {
 		if minTXID == 0 || info.MinTXID < minTXID {
 			minTXID = info.MinTXID
 		}
 		if maxTXID == 0 || info.MaxTXID > maxTXID {
 			maxTXID = info.MaxTXID
 		}
-
-		if c.LocalFileOpener != nil {
-			if f, err := c.LocalFileOpener(srcLevel, info.MinTXID, info.MaxTXID); err == nil {
-				rdrs = append(rdrs, f)
-				continue
-			} else if !os.IsNotExist(err) {
-				return nil, fmt.Errorf("open local ltx file: %w", err)
-			}
-		}
-
-		f, err := c.client.OpenLTXFile(ctx, info.Level, info.MinTXID, info.MaxTXID, 0, 0)
+		rd, err := c.openSource(ctx, info)
 		if err != nil {
-			return nil, fmt.Errorf("open ltx file: %w", err)
+			return nil, err
 		}
-		rdrs = append(rdrs, internal.NewResumableReader(ctx, c.client, info.Level, info.MinTXID, info.MaxTXID, info.Size, f, c.logger))
-	}
-	if len(rdrs) == 0 {
-		return nil, ErrNoCompaction
+		rdrs = append(rdrs, rd)
 	}
 
 	pr, pw := io.Pipe()
@@ -166,10 +180,19 @@ func (c *Compactor) Compact(ctx context.Context, dstLevel int) (*ltx.FileInfo, e
 		_ = pw.CloseWithError(comp.Compact(ctx))
 	}()
 
-	info, err := c.client.WriteLTXFile(ctx, dstLevel, minTXID, maxTXID, pr)
+	body := io.Reader(pr)
+	var captured *bytes.Buffer
+	if limit > 0 && c.WriteHook != nil {
+		captured = &bytes.Buffer{}
+		body = io.TeeReader(pr, captured)
+	}
+	info, err := c.client.WriteLTXFile(ctx, dstLevel, minTXID, maxTXID, body)
 	_ = pr.CloseWithError(err)
 	if err != nil {
 		return nil, fmt.Errorf("write ltx file: %w", err)
+	}
+	if captured != nil {
+		c.WriteHook(dstLevel, info.MinTXID, info.MaxTXID, bytes.Clone(captured.Bytes()))
 	}
 
 	if c.CacheSetter != nil {
@@ -189,6 +212,59 @@ func (c *Compactor) Compact(ctx context.Context, dstLevel int) (*ltx.FileInfo, e
 	}
 
 	return info, nil
+}
+
+// selectSourceFiles returns the files compaction will read.
+// A positive limit keeps the contiguous prefix of at most that many files,
+// starting at seekTXID. Zero keeps every file, in iterator order.
+func (c *Compactor) selectSourceFiles(itr ltx.FileIterator, seekTXID ltx.TXID, limit int) ([]*ltx.FileInfo, error) {
+	var infos []ltx.FileInfo
+	for itr.Next() {
+		infos = append(infos, *itr.Item())
+	}
+	if err := itr.Err(); err != nil {
+		return nil, err
+	}
+	if limit == 0 {
+		selected := make([]*ltx.FileInfo, len(infos))
+		for i := range infos {
+			selected[i] = &infos[i]
+		}
+		return selected, nil
+	}
+
+	sort.Slice(infos, func(i, j int) bool { return infos[i].MinTXID < infos[j].MinTXID })
+	selected := make([]*ltx.FileInfo, 0, limit)
+	next := seekTXID
+	for i := range infos {
+		if len(selected) >= limit {
+			break
+		}
+		if infos[i].MinTXID != next {
+			break
+		}
+		selected = append(selected, &infos[i])
+		next = infos[i].MaxTXID + 1
+	}
+	return selected, nil
+}
+
+func (c *Compactor) openSource(ctx context.Context, info *ltx.FileInfo) (io.Reader, error) {
+	if c.LocalFileOpener != nil {
+		f, err := c.LocalFileOpener(info.Level, info.MinTXID, info.MaxTXID)
+		if err == nil {
+			return f, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("open local ltx file: %w", err)
+		}
+	}
+
+	f, err := c.client.OpenLTXFile(ctx, info.Level, info.MinTXID, info.MaxTXID, 0, 0)
+	if err != nil {
+		return nil, fmt.Errorf("open ltx file: %w", err)
+	}
+	return internal.NewResumableReader(ctx, c.client, info.Level, info.MinTXID, info.MaxTXID, info.Size, f, c.logger), nil
 }
 
 // VerifyLevelConsistency checks that LTX files at the given level have
