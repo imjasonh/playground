@@ -13,7 +13,11 @@ changing the server's. It needs CGO and the `vfs` build tag:
 go run -tags vfs . -replica-url file:///tmp/repro-1 -c 1 -duration 30s
 go run -tags vfs . -replica-url file:///tmp/repro-10 -c 10 -duration 60s
 go run -tags vfs . -replica-url file:///tmp/repro-compact -c 4 -duration 130s -compaction
+go run -tags vfs . -replica-url file:///tmp/repro-l1 -c 4 -duration 90s -compaction -l1-interval 1s -poll-interval 3s
 ```
+
+The last command polls less often than it compacts L1, so a poll can find
+two new L1 files.
 
 Use a new replica path for each run. To test another release or an unmerged
 commit, change the required version first:

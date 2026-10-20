@@ -31,7 +31,8 @@ func main() {
 	writers := flag.Int("c", 1, "concurrent writers")
 	syncInterval := flag.Duration("sync-interval", time.Second, "VFS WriteSyncInterval")
 	pollInterval := flag.Duration("poll-interval", time.Second, "VFS PollInterval")
-	compaction := flag.Bool("compaction", false, "enable VFS compaction (L1 every 5s, L2 every 20s)")
+	compaction := flag.Bool("compaction", false, "enable VFS compaction (L1 every -l1-interval, L2 every 20s)")
+	l1Interval := flag.Duration("l1-interval", 5*time.Second, "L1 compaction interval with -compaction")
 	flag.Parse()
 	if *replicaURL == "" {
 		fmt.Fprintln(os.Stderr, "usage: repro -replica-url URL [flags]")
@@ -51,7 +52,7 @@ func main() {
 		vfs.CompactionEnabled = true
 		vfs.CompactionLevels = litestream.CompactionLevels{
 			{Level: 0},
-			{Level: 1, Interval: 5 * time.Second},
+			{Level: 1, Interval: *l1Interval},
 			{Level: 2, Interval: 20 * time.Second},
 		}
 	}
