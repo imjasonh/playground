@@ -73,14 +73,14 @@ type Stats struct {
 // Stats reports counters and queries the VFS for its position.
 func (s *Store) Stats(ctx context.Context) Stats {
 	st := Stats{
-		OpenMillis:   float64(s.openDuration) / float64(time.Millisecond),
-		Durable:      s.cfg.Durable,
-		Opens:        s.opens.Load(),
-		Reopens:      s.reopens.Load(),
-		Conflicts:    s.client.conflicts.Load(),
-		Writes:       s.writeCount.Load(),
-		Batches:      s.batchCount.Load(),
-		Flush:        s.flushes.percentiles(),
+		OpenMillis:     float64(s.openDuration) / float64(time.Millisecond),
+		Durable:        s.cfg.Durable,
+		Opens:          s.opens.Load(),
+		Reopens:        s.reopens.Load(),
+		Conflicts:      s.client.conflicts.Load(),
+		Writes:         s.writeCount.Load(),
+		Batches:        s.batchCount.Load(),
+		Flush:          s.flushes.percentiles(),
 		Snapshots:      s.snapshots.Load(),
 		LastSnapshot:   s.lastSnapshot.Load(),
 		RestorePlanLen: s.planLen.Load(),
