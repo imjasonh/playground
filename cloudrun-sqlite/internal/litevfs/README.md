@@ -52,6 +52,10 @@ assertion change. `TestVFSFile_WriteModeCompactionPollKeepsNewerPage`
 expects a sync to update the page index itself, which only `main`'s sync
 does; checking that a read returns the new page instead makes it pass,
 including its final check that a compacted L1 poll doesn't regress the page.
+`go test -tags vfs ./cmd/litestream-vfs` fails the same four
+`TestHydration_E2E_SQLiteCLI` tests on the merged tree as on unmodified
+`main`; they could not load the extension's init symbol from the `sqlite3`
+command line where they ran.
 
 To see the full delta, diff these files against upstream `vfs.go` and
 `vfs_config.go` at `716acc5`.
