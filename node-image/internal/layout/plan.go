@@ -67,10 +67,10 @@ func PlanLayout(l *lock.Lock, refs []resolve.PackageRef, tarballs map[string]str
 	allow := allowSet(opt.AllowScripts)
 
 	type plannedPkg struct {
-		ref  resolve.PackageRef
-		pj   packageJSON
+		ref   resolve.PackageRef
+		pj    packageJSON
 		store layer.PackageStore
-		err  error
+		err   error
 	}
 	results := make([]plannedPkg, len(refs))
 	var wg sync.WaitGroup

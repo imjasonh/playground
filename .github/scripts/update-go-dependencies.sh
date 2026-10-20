@@ -54,6 +54,15 @@ for module in "${modules[@]}"; do
     echo "- ❌ \`${module}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
+  # Same gate as test-go-modules.sh: an unformatted tree fails the update.
+  if bash "${repo_root}/.github/scripts/check-gofmt.sh" "$module"; then
+    echo "- ✅ \`${module}\`: gofmt ok" >> "$GITHUB_STEP_SUMMARY"
+  else
+    result=failure
+    echo "::error title=gofmt failed::${module}: gofmt would reformat a .go file outside vendor and testdata"
+    echo "- ❌ \`${module}\`: gofmt failed" >> "$GITHUB_STEP_SUMMARY"
+  fi
+
   if (
     cd "$module"
     go build ./...

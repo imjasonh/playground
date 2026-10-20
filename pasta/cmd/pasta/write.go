@@ -12,6 +12,7 @@ import (
 // Using a same-directory temp + rename avoids:
 //   - following a symlink and rewriting an outside target
 //   - leaving a truncated file if the process dies mid-write
+//
 // and preserves the original permission bits.
 func writeFixedFile(path string, data []byte) error {
 	info, err := os.Lstat(path)

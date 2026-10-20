@@ -720,4 +720,3 @@ func SafeBinRelForTest(rel string) (string, bool) { return safeBinRel(rel) }
 
 // ParseBinForTest exposes parseBin for tests.
 func ParseBinForTest(pj packageJSON) (map[string]string, error) { return parseBin(pj) }
-
