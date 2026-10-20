@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
 
@@ -86,6 +87,15 @@ func serveMain(args []string) error {
 	cfg.Logger = newLogger(*logLevel).With("instance", instance)
 	cfg.VFSLogger = newLogger(*vfsLogLevel).With("instance", instance)
 	log := cfg.Logger
+	slog.SetDefault(log)
+	stopTel := observe.Start(context.Background(), log)
+	defer func() {
+		tctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := stopTel(tctx); err != nil {
+			log.Warn("telemetry shutdown", "error", err)
+		}
+	}()
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,7 +28,15 @@ import (
 	lss3 "github.com/benbjohnson/litestream/s3"
 	"github.com/superfly/ltx"
 	"google.golang.org/api/googleapi"
+
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 )
+
+// l0ChunkSize is the upload buffer for an L0 object. The Cloud Storage
+// client's default is 16 MiB, and it allocates that buffer on every upload
+// while readers wait for the batch. An L0 file is a handful of pages, so
+// 1 MiB still sends it in one request and still lets the client retry.
+const l0ChunkSize = 1 << 20
 
 // errExists reports that a conditional create found an object already there.
 var errExists = errors.New("object already exists")
@@ -49,6 +58,9 @@ type fencedClient struct {
 	creator   l0Creator
 	conflicts atomic.Int64
 	warm      atomic.Pointer[warmCache]
+	gets      latencies
+	lists     latencies
+	puts      latencies
 }
 
 func newFencedClient(ctx context.Context, c litestream.ReplicaClient) (*fencedClient, error) {
@@ -75,6 +87,17 @@ func newFencedClient(ctx context.Context, c litestream.ReplicaClient) (*fencedCl
 }
 
 func (c *fencedClient) WriteLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, r io.Reader) (*ltx.FileInfo, error) {
+	ctx, end := observe.Span(ctx, "replica.put")
+	start := time.Now()
+	info, err := c.writeLTXFile(ctx, level, minTXID, maxTXID, r)
+	d := time.Since(start)
+	c.puts.add(d)
+	observe.Measure(ctx, "replica.operation", "op", "put", d)
+	end(err)
+	return info, err
+}
+
+func (c *fencedClient) writeLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, r io.Reader) (*ltx.FileInfo, error) {
 	if level != 0 {
 		return c.ReplicaClient.WriteLTXFile(ctx, level, minTXID, maxTXID, r)
 	}
@@ -99,6 +122,56 @@ func (c *fencedClient) WriteLTXFile(ctx context.Context, level int, minTXID, max
 		return nil, err
 	}
 	return &ltx.FileInfo{Level: 0, MinTXID: minTXID, MaxTXID: maxTXID, Size: int64(len(data)), CreatedAt: ts}, nil
+}
+
+func (c *fencedClient) remoteOpen(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	ctx, end := observe.Span(ctx, "replica.get")
+	start := time.Now()
+	rc, err := c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
+	d := time.Since(start)
+	c.gets.add(d)
+	observe.Measure(ctx, "replica.operation", "op", "get", d)
+	end(err)
+	return rc, err
+}
+
+func (c *fencedClient) remoteList(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+	ctx, end := observe.Span(ctx, "replica.list")
+	start := time.Now()
+	itr, err := c.ReplicaClient.LTXFiles(ctx, level, seek, useMetadata)
+	if err != nil {
+		d := time.Since(start)
+		c.lists.add(d)
+		observe.Measure(ctx, "replica.operation", "op", "list", d)
+		end(err)
+		return nil, err
+	}
+	return &recordingIter{FileIterator: itr, start: start, done: func(d time.Duration, err error) {
+		c.lists.add(d)
+		observe.Measure(ctx, "replica.operation", "op", "list", d)
+		end(err)
+	}}, nil
+}
+
+// recordingIter times a listing through Close, which is when the pages of
+// results have been read.
+type recordingIter struct {
+	ltx.FileIterator
+	start time.Time
+	once  sync.Once
+	done  func(time.Duration, error)
+}
+
+func (r *recordingIter) Close() error {
+	err := r.FileIterator.Close()
+	r.once.Do(func() {
+		spanErr := err
+		if spanErr == nil {
+			spanErr = r.FileIterator.Err()
+		}
+		r.done(time.Since(r.start), spanErr)
+	})
+	return err
 }
 
 func (c *fencedClient) sameObject(ctx context.Context, minTXID, maxTXID ltx.TXID, data []byte) bool {
@@ -154,6 +227,7 @@ type gcsCreator struct {
 func (g *gcsCreator) create(ctx context.Context, minTXID, maxTXID ltx.TXID, data []byte, ts time.Time) error {
 	key := litestream.LTXFilePath(g.path, 0, minTXID, maxTXID)
 	w := g.bucket.Object(key).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
+	w.ChunkSize = l0ChunkSize
 	w.Metadata = map[string]string{gs.MetadataKeyTimestamp: ts.Format(time.RFC3339Nano)}
 	if _, err := w.Write(data); err != nil {
 		w.Close()

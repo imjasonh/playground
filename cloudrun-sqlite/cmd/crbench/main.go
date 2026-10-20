@@ -2,11 +2,13 @@
 //
 //	crbench coldstart -app ./cloudrun-sqlite -replica-url s3://bench/cold -rows 10000,100000,1000000
 //	crbench soak -app ./cloudrun-sqlite -replica-url s3://bench/soak -duration 2m
+//	crbench live -url https://service.run.app -duration 1m -roll -project PROJECT
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -36,7 +38,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: crbench coldstart|soak [flags]")
+		fmt.Fprintln(os.Stderr, "usage: crbench coldstart|soak|live [flags]")
 		os.Exit(2)
 	}
 	var err error
@@ -45,6 +47,8 @@ func main() {
 		err = coldstart(os.Args[2:])
 	case "soak":
 		err = soak(os.Args[2:])
+	case "live":
+		err = live(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -152,7 +156,11 @@ func soak(args []string) error {
 }
 
 func printSoak(r *scenario.SoakResult) {
-	fmt.Printf("acknowledged writes: %d (items in database: %d)\n", r.Acked, r.Items)
+	if r.Integrity == "skipped" {
+		fmt.Printf("acknowledged writes: %d\n", r.Acked)
+	} else {
+		fmt.Printf("acknowledged writes: %d (items in database: %d)\n", r.Acked, r.Items)
+	}
 	fmt.Printf("write latency ms: p50 %.1f  p90 %.1f  p99 %.1f  max %.1f\n", r.WriteLatency.P50, r.WriteLatency.P90, r.WriteLatency.P99, r.WriteLatency.Max)
 	fmt.Printf("read latency ms:  p50 %.1f  p90 %.1f  p99 %.1f  max %.1f  (%d reads)\n", r.ReadLatency.P50, r.ReadLatency.P90, r.ReadLatency.P99, r.ReadLatency.Max, r.ReadLatency.Count)
 	keys := make([]string, 0, len(r.Statuses))
@@ -164,6 +172,19 @@ func printSoak(r *scenario.SoakResult) {
 		fmt.Printf("  %-12s %d\n", k, r.Statuses[k])
 	}
 	fmt.Printf("chaos: %d crashes, %d scale-to-zeros, %d deploys; %d instances\n", r.Crashes, r.ScaleToZeros, r.Deploys, len(r.Instances))
+	if len(r.Instances) == 0 {
+		fmt.Printf("stale reads during overlap: %d\n", r.StaleReads)
+		fmt.Printf("after restart: %d missing, %d mismatched; integrity_check: %s\n", r.Missing, r.Mismatched, r.Integrity)
+		fmt.Printf("violations: %d\n", len(r.Violations))
+		for i, v := range r.Violations {
+			if i == 10 {
+				fmt.Printf("  ... %d more\n", len(r.Violations)-10)
+				break
+			}
+			fmt.Println("  " + v)
+		}
+		return
+	}
 	var exits = map[string]int{}
 	var peakRSS, peakDisk int64
 	var ready []float64
@@ -188,6 +209,179 @@ func printSoak(r *scenario.SoakResult) {
 		}
 		fmt.Println("  " + v)
 	}
+}
+
+// live runs the soak workload against a service that is already up, then
+// reads every acknowledged write back. -roll starts a new Cloud Run
+// revision first so the read-back comes from the replica.
+func live(args []string) error {
+	cfg := scenario.SoakConfig{}
+	fs := flag.NewFlagSet("live", flag.ExitOnError)
+	url := fs.String("url", "", "base URL of the running service")
+	fs.DurationVar(&cfg.Duration, "duration", time.Minute, "how long to run")
+	fs.IntVar(&cfg.Writers, "writers", 8, "concurrent writers")
+	fs.IntVar(&cfg.Readers, "readers", 8, "concurrent readers")
+	fs.IntVar(&cfg.BodySize, "body-size", 200, "bytes per item")
+	fs.DurationVar(&cfg.WriteInterval, "write-interval", 0, "pause between each writer's writes (0 writes as fast as possible)")
+	admin := fs.String("admin-token", "", "bearer token for GET /admin/check (optional)")
+	roll := fs.Bool("roll", false, "deploy a new Cloud Run revision before reading writes back")
+	project := fs.String("project", "", "Google Cloud project, required with -roll")
+	region := fs.String("region", "us-central1", "Cloud Run region")
+	service := fs.String("service", "cloudrun-sqlite", "Cloud Run service name")
+	jsonOut := fs.String("json", "", "write the result as JSON to this file")
+	fs.Parse(args)
+	if *url == "" {
+		return errors.New("-url is required")
+	}
+	if *roll && *project == "" {
+		return errors.New("-roll requires -project")
+	}
+	*url = strings.TrimRight(*url, "/")
+	cfg.URL = *url
+	cfg.AdminToken = *admin
+	cfg.Logf = func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05.000")}, args...)...)
+	}
+
+	var during remoteStats
+	var haveDuring bool
+	var cold *liveCold
+	cfg.BeforeVerify = func(ctx context.Context) error {
+		client := &http.Client{Timeout: 30 * time.Second}
+		if err := getJSON(client, *url+"/stats", &during); err != nil {
+			fmt.Fprintf(os.Stderr, "stats before read-back: %v\n", err)
+		} else {
+			haveDuring = true
+		}
+		if !*roll {
+			return nil
+		}
+		c, err := rollService(ctx, *project, *region, *service, *url, during.Instance)
+		if err != nil {
+			return err
+		}
+		cold = c
+		return nil
+	}
+
+	res, err := scenario.Soak(context.Background(), cfg)
+	if res != nil {
+		printSoak(res)
+	}
+	if haveDuring {
+		fmt.Println("server during load:")
+		printRemoteStats(&during)
+	}
+	if cold != nil {
+		fmt.Printf("new instance %s: request %.0f ms, database open %.0f ms\n", cold.Instance, cold.RequestMS, cold.OpenMS)
+	}
+	if *jsonOut != "" && res != nil {
+		b, _ := json.MarshalIndent(map[string]any{"soak": res, "during": during, "cold": cold}, "", "  ")
+		if werr := os.WriteFile(*jsonOut, b, 0o644); werr != nil {
+			return werr
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if len(res.Violations) > 0 {
+		return fmt.Errorf("%d violations", len(res.Violations))
+	}
+	return nil
+}
+
+type liveCold struct {
+	Instance  string  `json:"instance"`
+	RequestMS float64 `json:"request_ms"`
+	OpenMS    float64 `json:"open_ms"`
+}
+
+type remoteStats struct {
+	Instance string  `json:"instance"`
+	UptimeMS float64 `json:"uptime_ms"`
+	Store    struct {
+		OpenMS     float64 `json:"open_ms"`
+		Writes     int64   `json:"writes"`
+		Batches    int64   `json:"batches"`
+		Conflicts  int64   `json:"conflicts"`
+		ReadWait   pct     `json:"read_wait"`
+		ReadQuery  pct     `json:"read_query"`
+		WriteQueue pct     `json:"write_queue"`
+		Tx         pct     `json:"tx"`
+		Flush      pct     `json:"flush"`
+		GCS        struct {
+			Get  pct `json:"get"`
+			List pct `json:"list"`
+			Put  pct `json:"put"`
+		} `json:"gcs"`
+	} `json:"store"`
+}
+
+type pct struct {
+	Count int     `json:"count"`
+	P50   float64 `json:"p50_ms"`
+	P90   float64 `json:"p90_ms"`
+	P99   float64 `json:"p99_ms"`
+	Max   float64 `json:"max_ms"`
+}
+
+func printRemoteStats(st *remoteStats) {
+	s := st.Store
+	fmt.Printf("  instance %s, open %.1f ms, writes %d, batches %d, conflicts %d\n", st.Instance, s.OpenMS, s.Writes, s.Batches, s.Conflicts)
+	printPct("read wait", s.ReadWait)
+	printPct("read query", s.ReadQuery)
+	printPct("write queue", s.WriteQueue)
+	printPct("sqlite tx", s.Tx)
+	printPct("flush", s.Flush)
+	printPct("replica get", s.GCS.Get)
+	printPct("replica list", s.GCS.List)
+	printPct("replica put", s.GCS.Put)
+}
+
+func printPct(name string, p pct) {
+	fmt.Printf("  %-12s n=%-6d p50 %6.1f  p90 %6.1f  p99 %6.1f  max %6.1f ms\n", name, p.Count, p.P50, p.P90, p.P99, p.Max)
+}
+
+// rollService deploys a new revision and waits until /stats reports a
+// different instance. The successful request's time is how long that
+// request took, which includes a cold start when Cloud Run has not
+// already started the container.
+func rollService(ctx context.Context, project, region, service, url, oldInstance string) (*liveCold, error) {
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
+	epoch := strconv.FormatInt(time.Now().Unix(), 10)
+	cmd := exec.CommandContext(ctx, "gcloud", "run", "services", "update", service,
+		"--project", project,
+		"--region", region,
+		"--update-env-vars", "LIVE_EPOCH="+epoch,
+		"--quiet",
+	)
+	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("roll revision: %w", err)
+	}
+	client := &http.Client{Timeout: 2 * time.Minute}
+	deadline := time.Now().Add(2 * time.Minute)
+	var last error
+	for time.Now().Before(deadline) {
+		start := time.Now()
+		var st remoteStats
+		err := getJSON(client, url+"/stats", &st)
+		if err == nil && st.Instance != "" && st.Instance != oldInstance {
+			return &liveCold{Instance: st.Instance, RequestMS: ms(time.Since(start)), OpenMS: st.Store.OpenMS}, nil
+		}
+		if err != nil {
+			last = err
+		} else {
+			last = fmt.Errorf("still instance %s", st.Instance)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	return nil, fmt.Errorf("new instance did not serve: %w", last)
 }
 
 type coldResult struct {

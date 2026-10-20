@@ -22,6 +22,8 @@ import (
 	_ "github.com/benbjohnson/litestream/s3"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/psanford/sqlite3vfs"
+
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 )
 
 // ErrClosed is returned by Write after Close.
@@ -85,10 +87,12 @@ type Config struct {
 	VFSLogger *slog.Logger
 }
 
-// DefaultConfig returns the defaults used by the server. Every interval
-// costs list requests while an instance has CPU, so they are as long as
-// correctness allows: a single writer doesn't need to poll for its own
-// files, and L0 retention only needs one poll after each L1 compaction.
+// DefaultConfig returns the defaults used by the server. Polling costs list
+// requests while an instance has CPU, so that interval stays long: a single
+// writer doesn't need to poll for its own files, and L0 retention only needs
+// one poll after each L1 compaction. The snapshot check is shorter. A minute
+// of writes with a 5 minute check left 936 L0 files, and the next instance
+// spent 1.6 s and 734 GETs opening them.
 func DefaultConfig() Config {
 	return Config{
 		Durable:               true,
@@ -98,7 +102,7 @@ func DefaultConfig() Config {
 		CompactionLevels:      litestream.DefaultCompactionLevels,
 		L0Retention:           5 * time.Minute,
 		SnapshotPlanLen:       16,
-		SnapshotCheckInterval: 5 * time.Minute,
+		SnapshotCheckInterval: 15 * time.Second,
 		MaxBatch:              256,
 	}
 }
@@ -131,6 +135,10 @@ type Store struct {
 	reopens      atomic.Int64
 	writeCount   atomic.Int64
 	batchCount   atomic.Int64
+	readWait     latencies
+	readQuery    latencies
+	writeQueue   latencies
+	tx           latencies
 	flushes      latencies
 	snapshotMu   sync.Mutex
 	snapshots    atomic.Int64
@@ -153,9 +161,10 @@ type testHooks struct {
 }
 
 type writeReq struct {
-	ctx  context.Context
-	fn   func(*sql.Tx) error
-	done chan error
+	ctx      context.Context
+	fn       func(*sql.Tx) error
+	done     chan error
+	enqueued time.Time
 }
 
 var vfsSeq atomic.Int64
@@ -290,10 +299,14 @@ func (v *captureVFS) capture(f sqlite3vfs.File, flags sqlite3vfs.OpenFlag) {
 // uploads, and returns ErrUnavailable if the store couldn't reopen the
 // database after a failed upload. Otherwise fn sees every committed write,
 // including ones not yet uploaded.
-func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) error {
+func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) (err error) {
+	ctx, end := observe.Span(ctx, "store.read")
+	defer func() { end(err) }()
+	wait := time.Now()
 	s.mu.RLock()
+	s.note(ctx, &s.readWait, "read_wait", time.Since(wait))
 	defer s.mu.RUnlock()
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return err
 	}
 	if s.db == nil {
@@ -301,29 +314,38 @@ func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) error {
 		case s.retryOpen <- struct{}{}:
 		default:
 		}
-		return ErrUnavailable
+		err = ErrUnavailable
+		return err
 	}
-	return fn(s.db)
+	query := time.Now()
+	err = fn(s.db)
+	s.note(ctx, &s.readQuery, "read_query", time.Since(query))
+	return err
 }
 
 // Write runs fn in a transaction shared with other concurrent writes. When
 // the store is durable, Write returns nil only after the transaction is in
 // object storage. An error from fn rolls back only fn's own changes. fn must
 // not call Read, which waits for the transaction fn is part of.
-func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) error {
-	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1)}
+func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) (err error) {
+	ctx, end := observe.Span(ctx, "store.write")
+	defer func() { end(err) }()
+	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1), enqueued: time.Now()}
 	select {
 	case s.writes <- req:
 	case <-s.closing:
-		return ErrClosed
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	select {
-	case err := <-req.done:
+		err = ErrClosed
 		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		err = ctx.Err()
+		return err
+	}
+	select {
+	case err = <-req.done:
+		return err
+	case <-ctx.Done():
+		err = ctx.Err()
+		return err
 	}
 }
 
@@ -365,7 +387,26 @@ func (s *Store) commitLoop() {
 	}
 }
 
+func (s *Store) note(ctx context.Context, l *latencies, phase string, d time.Duration) {
+	l.add(d)
+	observe.Measure(ctx, "store.phase", "phase", phase, d)
+}
+
+func batchContext(batch []*writeReq) context.Context {
+	if len(batch) == 0 || batch[0].ctx == nil {
+		return context.Background()
+	}
+	// The caller's cancel must not abort a batch other requests have joined.
+	return context.WithoutCancel(batch[0].ctx)
+}
+
 func (s *Store) runBatch(batch []*writeReq) {
+	now := time.Now()
+	for _, req := range batch {
+		if !req.enqueued.IsZero() {
+			s.note(req.ctx, &s.writeQueue, "write_queue", now.Sub(req.enqueued))
+		}
+	}
 	var results []error
 	var err error
 	for attempt := 1; ; attempt++ {
@@ -394,15 +435,16 @@ func (s *Store) runBatch(batch []*writeReq) {
 // before it releases s.mu, which throws the local commit away, or keeps it
 // if the upload landed after all.
 func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
+	ctx := batchContext(batch)
 	if !s.cfg.Durable {
-		return s.runTx(batch)
+		return s.runTx(ctx, batch)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.openIfClosedLocked(); err != nil {
 		return nil, err
 	}
-	results, err := s.runTx(batch)
+	results, err := s.runTx(ctx, batch)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +452,7 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 		err = h()
 	}
 	if err == nil {
-		err = s.flush()
+		err = s.flush(ctx)
 	}
 	if err == nil {
 		return results, nil
@@ -428,13 +470,19 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 	return nil, err
 }
 
-func (s *Store) runTx(batch []*writeReq) ([]error, error) {
-	ctx := context.Background()
-	tx, err := s.db.BeginTx(ctx, nil)
+func (s *Store) runTx(ctx context.Context, batch []*writeReq) (results []error, err error) {
+	ctx, end := observe.Span(ctx, "store.tx")
+	start := time.Now()
+	defer func() {
+		s.note(ctx, &s.tx, "tx", time.Since(start))
+		end(err)
+	}()
+	var tx *sql.Tx
+	tx, err = s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	results := make([]error, len(batch))
+	results = make([]error, len(batch))
 	for i, req := range batch {
 		if err := req.ctx.Err(); err != nil {
 			results[i] = err
@@ -465,14 +513,18 @@ func (s *Store) runTx(batch []*writeReq) ([]error, error) {
 // flush uploads committed pages that are not yet in the replica. It must
 // not run during a write transaction, which the VFS would skip; the
 // committer is the only writer, so it calls flush between transactions.
-func (s *Store) flush() error {
+func (s *Store) flush(ctx context.Context) (err error) {
 	f := s.file.Load()
 	if f == nil {
 		return errors.New("database file not open")
 	}
+	ctx, end := observe.Span(ctx, "store.flush")
 	start := time.Now()
-	err := f.Sync(0)
-	s.flushes.add(time.Since(start))
+	defer func() {
+		s.note(ctx, &s.flushes, "flush", time.Since(start))
+		end(err)
+	}()
+	err = f.Sync(0)
 	return err
 }
 
@@ -528,7 +580,7 @@ func (s *Store) do(ctx context.Context, fn func() error) error {
 
 // Flush uploads everything committed so far.
 func (s *Store) Flush(ctx context.Context) error {
-	return s.do(ctx, s.flush)
+	return s.do(ctx, func() error { return s.flush(ctx) })
 }
 
 // Close uploads everything committed and closes the database. Call it only
@@ -545,5 +597,5 @@ func (s *Store) Close() error {
 	if s.db == nil {
 		return nil
 	}
-	return errors.Join(s.flush(), s.db.Close())
+	return errors.Join(s.flush(context.Background()), s.db.Close())
 }

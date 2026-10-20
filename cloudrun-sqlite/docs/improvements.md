@@ -160,7 +160,7 @@ that string. Add a test that compares the result with the client-side filter.
 ## Snapshot less often under steady writes
 
 The store snapshots when a cold start would read more than 16 files
-(`SNAPSHOT_PLAN_LEN`), checking every 5 minutes. With a write every second or
+(`SNAPSHOT_PLAN_LEN`), checking every 15 seconds. With a write every second or
 more, L0 files alone pass 16 between L1 compactions, so nearly every check
 writes a full snapshot: both 6-minute write runs wrote one at their first
 check. Counting only L1 and higher levels toward the limit stops L0 files,

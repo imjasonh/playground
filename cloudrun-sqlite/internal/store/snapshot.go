@@ -95,7 +95,7 @@ func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
 	// anything it might still reference. The VFS only polls L0 and L1 for
 	// new files, so it would never move off older files by itself.
 	if err := s.do(ctx, func() error {
-		if err := s.flush(); err != nil {
+		if err := s.flush(ctx); err != nil {
 			return err
 		}
 		s.mu.RLock()

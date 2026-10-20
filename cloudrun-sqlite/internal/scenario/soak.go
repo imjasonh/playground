@@ -43,7 +43,13 @@ type SoakConfig struct {
 	StaleWindow time.Duration
 
 	// AdminToken is the server's ADMIN_TOKEN, for the final integrity check.
+	// An empty token skips that check.
 	AdminToken string
+
+	// BeforeVerify runs after the load stops and before every acknowledged
+	// write is read back. The live benchmark uses it to snapshot /stats and
+	// to start a new Cloud Run instance first.
+	BeforeVerify func(ctx context.Context) error
 
 	Logf func(format string, args ...any)
 }
@@ -231,17 +237,27 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 			}
 		})
 	}
-	chaos(cfg.CrashEvery, "crash", &res.Crashes, cfg.Sim.Crash)
-	chaos(cfg.ScaleEvery, "scale to zero", &res.ScaleToZeros, cfg.Sim.ScaleToZero)
-	chaos(cfg.DeployEvery, "deploy", &res.Deploys, func() {
-		if err := cfg.Sim.Deploy(cfg.Overlap); err != nil {
-			cfg.Logf("deploy: %v", err)
-		}
-	})
+	if cfg.Sim != nil {
+		chaos(cfg.CrashEvery, "crash", &res.Crashes, cfg.Sim.Crash)
+		chaos(cfg.ScaleEvery, "scale to zero", &res.ScaleToZeros, cfg.Sim.ScaleToZero)
+		chaos(cfg.DeployEvery, "deploy", &res.Deploys, func() {
+			if err := cfg.Sim.Deploy(cfg.Overlap); err != nil {
+				cfg.Logf("deploy: %v", err)
+			}
+		})
+	}
 	wg.Wait()
 
-	// Restart from nothing and check every acknowledged write.
-	cfg.Sim.ScaleToZero()
+	// Restart from nothing and check every acknowledged write. A live
+	// service has no simulator; BeforeVerify can roll a new instance instead.
+	if cfg.Sim != nil {
+		cfg.Sim.ScaleToZero()
+	}
+	if cfg.BeforeVerify != nil {
+		if err := cfg.BeforeVerify(ctx); err != nil {
+			return nil, err
+		}
+	}
 	mu.Lock()
 	all := slices.Clone(ids)
 	mu.Unlock()
@@ -273,24 +289,28 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 	res.Missing = int(missing.Load())
 	res.Mismatched = int(mismatched.Load())
 
-	code, data, err := do(ctx, client, http.MethodGet, cfg.URL+"/admin/check", "", "Bearer "+cfg.AdminToken)
-	if err != nil || code != http.StatusOK {
-		return nil, fmt.Errorf("integrity check: %d %v %s", code, err, data)
-	}
-	var check struct {
-		Integrity string
-		Items     int64
-	}
-	if err := json.Unmarshal(data, &check); err != nil {
-		return nil, err
-	}
-	res.Integrity = check.Integrity
-	res.Items = check.Items
-	if check.Integrity != "ok" {
-		violate("integrity_check: %s", check.Integrity)
-	}
-	if check.Items < int64(res.Acked) {
-		violate("%d items in database, %d acknowledged", check.Items, res.Acked)
+	if cfg.AdminToken == "" {
+		res.Integrity = "skipped"
+	} else {
+		code, data, err := do(ctx, client, http.MethodGet, cfg.URL+"/admin/check", "", "Bearer "+cfg.AdminToken)
+		if err != nil || code != http.StatusOK {
+			return nil, fmt.Errorf("integrity check: %d %v %s", code, err, data)
+		}
+		var check struct {
+			Integrity string
+			Items     int64
+		}
+		if err := json.Unmarshal(data, &check); err != nil {
+			return nil, err
+		}
+		res.Integrity = check.Integrity
+		res.Items = check.Items
+		if check.Integrity != "ok" {
+			violate("integrity_check: %s", check.Integrity)
+		}
+		if check.Items < int64(res.Acked) {
+			violate("%d items in database, %d acknowledged", check.Items, res.Acked)
+		}
 	}
 
 	res.WriteLatency = summarize(rec.writes)
@@ -298,7 +318,9 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 	res.Statuses = rec.statuses
 	res.StaleReads = int(stale.Load())
 	res.Violations = violations
-	res.Instances = cfg.Sim.Instances()
+	if cfg.Sim != nil {
+		res.Instances = cfg.Sim.Instances()
+	}
 	return res, nil
 }
 
