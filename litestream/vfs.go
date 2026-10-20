@@ -4,7 +4,6 @@
 package litestream
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -15,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -261,8 +259,6 @@ func (vfs *VFS) openMainDB(name string, uriParameters map[string]string, flags s
 		// Initialize compaction if enabled
 		if vfs.CompactionEnabled {
 			f.compactor = NewCompactor(client, f.logger)
-			f.compactor.LocalFileOpener = f.openRetainedLTX
-			f.compactor.WriteHook = f.retainCompactedLTX
 		}
 	}
 
@@ -689,15 +685,6 @@ type VFSFile struct {
 	compactionWg     sync.WaitGroup
 	compactionCtx    context.Context
 	compactionCancel context.CancelFunc
-
-	// compactMu serializes compaction. The monitor and the upload fold both
-	// write the next level, and a second writer in the same TXID range would
-	// replace the first.
-	compactMu sync.Mutex
-	// foldMu guards folds, the bytes kept from uploads so the next level
-	// can be built without reading those files back.
-	foldMu sync.Mutex
-	folds  map[int]*ltxFold
 }
 
 type TPage struct {
@@ -2215,15 +2202,9 @@ func (f *VFSFile) syncToRemoteWithLock() error {
 	// Create LTX file from dirty pages
 	ltxReader, encodedCh := f.createLTXFromDirty()
 
-	// Upload LTX file to remote. Keep a copy when compaction is on so a
-	// later fold can build the next level from these bytes.
+	// Upload LTX file to remote
 	uploadStart := time.Now()
-	var uploaded bytes.Buffer
-	body := io.Reader(ltxReader)
-	if f.compactor != nil {
-		body = io.TeeReader(ltxReader, &uploaded)
-	}
-	info, err := f.client.WriteLTXFile(ctx, 0, f.pendingTXID, f.pendingTXID, body)
+	info, err := f.client.WriteLTXFile(ctx, 0, f.pendingTXID, f.pendingTXID, ltxReader)
 	if err != nil {
 		_ = ltxReader.CloseWithError(err)
 		return fmt.Errorf("upload LTX: %w", err)
@@ -2231,9 +2212,6 @@ func (f *VFSFile) syncToRemoteWithLock() error {
 	encoded := <-encodedCh
 	if encoded.err != nil {
 		return fmt.Errorf("encode LTX: %w", encoded.err)
-	}
-	if f.compactor != nil && uploaded.Len() > 0 && uploaded.Len() <= ltxFoldMaxFile {
-		f.noteRetainedLTX(0, info.MinTXID, info.MaxTXID, bytes.Clone(uploaded.Bytes()))
 	}
 
 	f.logger.Info("synced to remote",
@@ -3486,236 +3464,7 @@ func (f *VFSFile) Compact(ctx context.Context, level int) (*ltx.FileInfo, error)
 	if f.compactor == nil {
 		return nil, fmt.Errorf("compaction not enabled")
 	}
-	f.compactMu.Lock()
-	defer f.compactMu.Unlock()
 	return f.compactor.Compact(ctx, level)
-}
-
-// ltxFoldBatch is how many source files to fold into the next level.
-// ltxFoldKeep bounds the bytes kept from recent uploads. ltxFoldMaxFile
-// skips a single file that would dominate that budget. The file stays in
-// the replica, and the timed compaction monitor reads it later.
-const (
-	ltxFoldBatch   = 16
-	ltxFoldKeep    = 32
-	ltxFoldMaxFile = 8 << 20
-)
-
-// retainedLTX is one LTX file this process still has in memory.
-type retainedLTX struct {
-	min  ltx.TXID
-	max  ltx.TXID
-	data []byte
-}
-
-// ltxFold is the retained files for one source level.
-type ltxFold struct {
-	files     []retainedLTX
-	watermark ltx.TXID
-	known     bool
-	folding   bool
-}
-
-// noteRetainedLTX keeps an uploaded file and starts a fold once a
-// contiguous batch continues the next level. Caller may hold f.mu.
-func (f *VFSFile) noteRetainedLTX(level int, min, max ltx.TXID, data []byte) {
-	if f.compactor == nil || len(data) == 0 || len(data) > ltxFoldMaxFile {
-		return
-	}
-	f.foldMu.Lock()
-	st := f.foldState(level)
-	st.files = append(st.files, retainedLTX{min: min, max: max, data: data})
-	st.dropCovered()
-	st.trim()
-	start := st.ready()
-	if start {
-		st.folding = true
-	}
-	f.foldMu.Unlock()
-	if start {
-		go f.foldLoop(level + 1)
-	}
-}
-
-// retainCompactedLTX is the compactor write hook. An L1 file is kept so
-// the same batch fold can build L2. Higher levels are not kept.
-func (f *VFSFile) retainCompactedLTX(level int, min, max ltx.TXID, data []byte) {
-	if level != 1 {
-		return
-	}
-	f.noteRetainedLTX(level, min, max, data)
-}
-
-func (f *VFSFile) foldLoop(dstLevel int) {
-	src := dstLevel - 1
-	for {
-		err := f.foldOnce(dstLevel)
-		if err != nil && !errors.Is(err, ErrNoCompaction) && !errors.Is(err, context.Canceled) {
-			f.logger.Warn("local compaction failed", "level", dstLevel, "error", err)
-		}
-		f.foldMu.Lock()
-		st := f.foldState(src)
-		again := err == nil && st.contiguous(ltxFoldBatch) >= ltxFoldBatch
-		if !again {
-			st.folding = false
-			f.foldMu.Unlock()
-			return
-		}
-		f.foldMu.Unlock()
-	}
-}
-
-// foldOnce writes one batch at dstLevel when the retained source files
-// are the next contiguous TXID range. It does not delete the source files.
-func (f *VFSFile) foldOnce(dstLevel int) error {
-	if f.compactor == nil {
-		return ErrNoCompaction
-	}
-	ctx := f.foldContext()
-	src := dstLevel - 1
-
-	f.compactMu.Lock()
-	defer f.compactMu.Unlock()
-
-	prev, err := f.compactor.MaxLTXFileInfo(ctx, dstLevel)
-	if err != nil {
-		return err
-	}
-
-	f.foldMu.Lock()
-	st := f.foldState(src)
-	st.watermark = prev.MaxTXID
-	st.known = true
-	st.dropCovered()
-	ready := st.contiguous(ltxFoldBatch) >= ltxFoldBatch
-	f.foldMu.Unlock()
-	if !ready {
-		return ErrNoCompaction
-	}
-
-	info, err := f.compactor.CompactLimit(ctx, dstLevel, ltxFoldBatch)
-	if err != nil {
-		return err
-	}
-
-	f.foldMu.Lock()
-	st = f.foldState(src)
-	st.watermark = info.MaxTXID
-	st.known = true
-	st.dropCovered()
-	f.foldMu.Unlock()
-
-	f.logger.Info("compacted uploaded ltx files",
-		"level", dstLevel,
-		"minTXID", info.MinTXID,
-		"maxTXID", info.MaxTXID)
-	return nil
-}
-
-func (f *VFSFile) foldContext() context.Context {
-	if f.compactionCtx != nil {
-		return f.compactionCtx
-	}
-	if f.ctx != nil {
-		return f.ctx
-	}
-	return context.Background()
-}
-
-func (f *VFSFile) openRetainedLTX(level int, min, max ltx.TXID) (io.ReadCloser, error) {
-	f.foldMu.Lock()
-	defer f.foldMu.Unlock()
-	st := f.folds[level]
-	if st == nil {
-		return nil, os.ErrNotExist
-	}
-	for _, file := range st.files {
-		if file.min == min && file.max == max {
-			return io.NopCloser(bytes.NewReader(file.data)), nil
-		}
-	}
-	return nil, os.ErrNotExist
-}
-
-func (f *VFSFile) foldState(level int) *ltxFold {
-	if f.folds == nil {
-		f.folds = make(map[int]*ltxFold)
-	}
-	st := f.folds[level]
-	if st == nil {
-		st = &ltxFold{}
-		f.folds[level] = st
-	}
-	return st
-}
-
-func (st *ltxFold) ready() bool {
-	if st.folding {
-		return false
-	}
-	if !st.known {
-		return len(st.files) >= ltxFoldBatch
-	}
-	return st.contiguous(ltxFoldBatch) >= ltxFoldBatch
-}
-
-func (st *ltxFold) dropCovered() {
-	if !st.known {
-		return
-	}
-	kept := st.files[:0]
-	for _, file := range st.files {
-		if file.max > st.watermark {
-			kept = append(kept, file)
-		}
-	}
-	st.files = kept
-}
-
-func (st *ltxFold) trim() {
-	if len(st.files) <= ltxFoldKeep {
-		return
-	}
-	sort.Slice(st.files, func(i, j int) bool { return st.files[i].min < st.files[j].min })
-	if !st.known {
-		st.files = append([]retainedLTX(nil), st.files[len(st.files)-ltxFoldKeep:]...)
-		return
-	}
-	next := st.watermark + 1
-	kept := make([]retainedLTX, 0, ltxFoldKeep)
-	for _, file := range st.files {
-		if len(kept) == ltxFoldKeep {
-			break
-		}
-		if file.max <= st.watermark || file.min != next {
-			continue
-		}
-		kept = append(kept, file)
-		next = file.max + 1
-	}
-	st.files = kept
-}
-
-// contiguous reports how many retained files continue from the watermark,
-// up to limit.
-func (st *ltxFold) contiguous(limit int) int {
-	if !st.known || len(st.files) == 0 || limit == 0 {
-		return 0
-	}
-	sort.Slice(st.files, func(i, j int) bool { return st.files[i].min < st.files[j].min })
-	next := st.watermark + 1
-	n := 0
-	for _, file := range st.files {
-		if file.max <= st.watermark {
-			continue
-		}
-		if file.min != next || n == limit {
-			break
-		}
-		next = file.max + 1
-		n++
-	}
-	return n
 }
 
 // Snapshot creates a full database snapshot from remote LTX files.
