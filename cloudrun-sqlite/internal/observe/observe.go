@@ -1,7 +1,7 @@
 // Package observe records how long the server spends in HTTP, SQLite, and
-// replica storage. On Cloud Run it also exports spans to Cloud Trace and
-// histograms to Cloud Monitoring. Elsewhere the spans are dropped and the
-// in-process /stats histograms are the record.
+// replica storage. /metrics serves the histograms in the Prometheus text
+// format. On Cloud Run the same histograms also go to Cloud Monitoring, and
+// spans go to Cloud Trace; elsewhere the spans are dropped.
 package observe
 
 import (
@@ -14,15 +14,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -33,64 +37,109 @@ import (
 
 const scope = "github.com/imjasonh/playground/cloudrun-sqlite"
 
-// Buckets cover the 5 ms to 5 s range the replica calls and HTTP handlers
-// actually land in, so Cloud Monitoring can show a median near 20 ms.
-var buckets = []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5}
-
-var (
-	histMu sync.Mutex
-	hists  = map[string]metric.Float64Histogram{}
-	proj   string
+// Histogram names. Cloud Monitoring calls each one
+// workload.googleapis.com/NAME, and /metrics calls it NAME with dots
+// replaced by underscores, plus _seconds.
+const (
+	// HTTPServer is a request's time in the server, labeled with its route.
+	HTTPServer = "http.server"
+	// StorePhase is one part of a read or write, labeled with its phase.
+	StorePhase = "store.phase"
+	// StoreWrite is a write from the call to its acknowledgement, labeled
+	// with durable and result.
+	StoreWrite = "store.write"
+	// VFSPageRead is one SQLite page read through the VFS, labeled with
+	// source: paged_in or cold.
+	VFSPageRead = "vfs.page_read"
+	// ReplicaOperation is one object-storage call, labeled with op.
+	ReplicaOperation = "replica.operation"
 )
 
-// Start exports traces and metrics when this process is a Cloud Run
-// service. The returned function flushes them. A setup failure disables
-// export and leaves the server running.
+var descriptions = map[string]string{
+	HTTPServer:       "Time a request spent in the server, by route.",
+	StorePhase:       "Time in one part of a read or write: read_wait, read_query, write_queue, tx, or flush.",
+	StoreWrite:       "Time from a write's call to its acknowledgement. A durable write includes its upload.",
+	VFSPageRead:      "Time for one SQLite page read through the VFS: paged_in from memory or the hydrated copy, or cold from the replica.",
+	ReplicaOperation: "Time for one object-storage call: get, list, or put.",
+}
+
+// Buckets run from 10 µs, where a page read from memory lands, to 10 s, a
+// stalled upload. They are in seconds.
+var buckets = []float64{
+	0.00001, 0.000025, 0.00005, 0.0001, 0.00025, 0.0005,
+	0.001, 0.0025, 0.005, 0.01, 0.02, 0.05,
+	0.1, 0.2, 0.5, 1, 2, 5, 10,
+}
+
+var (
+	histMu  sync.Mutex
+	hists   = map[string]metric.Float64Histogram{}
+	proj    string
+	metrics atomic.Pointer[http.Handler]
+)
+
+// Start sets up the meter provider behind /metrics. On a Cloud Run service
+// it also exports traces to Cloud Trace and metrics to Cloud Monitoring.
+// The returned function flushes them. A setup failure disables that export
+// and leaves the server running.
 func Start(ctx context.Context, log *slog.Logger) func(context.Context) error {
-	noop := func(context.Context) error { return nil }
-	if os.Getenv("K_SERVICE") == "" || log == nil {
-		return noop
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
 	}
-	mctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	projectID, err := metadata.ProjectIDWithContext(mctx)
-	if err != nil {
-		log.Warn("telemetry disabled", "error", err)
-		return noop
-	}
-	proj = projectID
-
-	res, err := resource.New(ctx,
-		resource.WithDetectors(gcp.NewDetector()),
-		resource.WithAttributes(attribute.String("service.name", "cloudrun-sqlite")),
-	)
-	if err != nil {
-		log.Warn("telemetry resource", "error", err)
-		res = resource.Default()
-	}
-
+	res := resource.NewSchemaless(attribute.String("service.name", "cloudrun-sqlite"))
+	var opts []sdkmetric.Option
 	var shutdowns []func(context.Context) error
-	if exp, err := texporter.New(texporter.WithProjectID(projectID)); err != nil {
-		log.Warn("trace exporter", "error", err)
+
+	reg := prometheus.NewRegistry()
+	if exp, err := otelprom.New(otelprom.WithRegisterer(reg), otelprom.WithoutScopeInfo()); err != nil {
+		log.Warn("prometheus exporter", "error", err)
 	} else {
-		tp := sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(exp),
-			sdktrace.WithResource(res),
-			sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		)
-		otel.SetTracerProvider(tp)
-		otel.SetTextMapPropagator(cloudTracePropagator{})
-		shutdowns = append(shutdowns, tp.Shutdown)
+		opts = append(opts, sdkmetric.WithReader(exp))
+		h := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+		metrics.Store(&h)
 	}
-	if exp, err := mexporter.New(mexporter.WithProjectID(projectID)); err != nil {
-		log.Warn("metric exporter", "error", err)
-	} else {
-		reader := sdkmetric.NewPeriodicReader(exp, sdkmetric.WithInterval(30*time.Second))
-		mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithResource(res))
-		otel.SetMeterProvider(mp)
-		shutdowns = append(shutdowns, mp.Shutdown)
+
+	if os.Getenv("K_SERVICE") != "" {
+		if projectID, err := projectID(ctx); err != nil {
+			log.Warn("Cloud Monitoring and Cloud Trace disabled", "error", err)
+		} else {
+			proj = projectID
+			if detected, err := resource.New(ctx,
+				resource.WithDetectors(gcp.NewDetector()),
+				resource.WithAttributes(attribute.String("service.name", "cloudrun-sqlite")),
+			); err != nil {
+				log.Warn("telemetry resource", "error", err)
+			} else {
+				res = detected
+			}
+			if exp, err := texporter.New(texporter.WithProjectID(projectID)); err != nil {
+				log.Warn("trace exporter", "error", err)
+			} else {
+				tp := sdktrace.NewTracerProvider(
+					sdktrace.WithBatcher(exp),
+					sdktrace.WithResource(res),
+					sdktrace.WithSampler(sdktrace.AlwaysSample()),
+				)
+				otel.SetTracerProvider(tp)
+				otel.SetTextMapPropagator(cloudTracePropagator{})
+				shutdowns = append(shutdowns, tp.Shutdown)
+			}
+			if exp, err := mexporter.New(mexporter.WithProjectID(projectID)); err != nil {
+				log.Warn("metric exporter", "error", err)
+			} else {
+				opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exp, sdkmetric.WithInterval(30*time.Second))))
+			}
+			log.Info("telemetry enabled", "project", projectID)
+		}
 	}
-	log.Info("telemetry enabled", "project", projectID)
+
+	mp := sdkmetric.NewMeterProvider(append(opts, sdkmetric.WithResource(res))...)
+	otel.SetMeterProvider(mp)
+	// Histograms made from an earlier provider would keep recording there.
+	histMu.Lock()
+	clear(hists)
+	histMu.Unlock()
+	shutdowns = append(shutdowns, mp.Shutdown)
 	return func(ctx context.Context) error {
 		var err error
 		for _, fn := range shutdowns {
@@ -98,6 +147,25 @@ func Start(ctx context.Context, log *slog.Logger) func(context.Context) error {
 		}
 		return err
 	}
+}
+
+func projectID(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return metadata.ProjectIDWithContext(ctx)
+}
+
+// Metrics serves the histograms in the Prometheus text format. Before
+// Start, it serves nothing.
+func Metrics() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := metrics.Load()
+		if h == nil {
+			http.Error(w, "metrics are not set up", http.StatusServiceUnavailable)
+			return
+		}
+		(*h).ServeHTTP(w, r)
+	})
 }
 
 // Span starts a span and returns a function that ends it. err == nil marks
@@ -113,13 +181,18 @@ func Span(ctx context.Context, name string) (context.Context, func(error)) {
 	}
 }
 
-// Measure records d on the histogram name, labeled with key=val.
-func Measure(ctx context.Context, name, key, val string, d time.Duration) {
+// Measure records d on the histogram name. labels alternate keys and
+// values.
+func Measure(ctx context.Context, name string, d time.Duration, labels ...string) {
 	h := histogram(name)
 	if h == nil {
 		return
 	}
-	h.Record(ctx, d.Seconds(), metric.WithAttributes(attribute.String(key, val)))
+	attrs := make([]attribute.KeyValue, 0, len(labels)/2)
+	for i := 0; i+1 < len(labels); i += 2 {
+		attrs = append(attrs, attribute.String(labels[i], labels[i+1]))
+	}
+	h.Record(ctx, d.Seconds(), metric.WithAttributes(attrs...))
 }
 
 func histogram(name string) metric.Float64Histogram {
@@ -129,6 +202,7 @@ func histogram(name string) metric.Float64Histogram {
 		return h
 	}
 	h, err := otel.Meter(scope).Float64Histogram(name,
+		metric.WithDescription(descriptions[name]),
 		metric.WithUnit("s"),
 		metric.WithExplicitBucketBoundaries(buckets...),
 	)
@@ -162,7 +236,7 @@ func HTTP(next http.Handler) http.Handler {
 				sp.SetStatus(codes.Error, http.StatusText(sw.code))
 			}
 			sp.End()
-			Measure(ctx, "http.server", "route", route, d)
+			Measure(ctx, HTTPServer, d, "route", route)
 			if d < 200*time.Millisecond && sw.code < 500 {
 				return
 			}

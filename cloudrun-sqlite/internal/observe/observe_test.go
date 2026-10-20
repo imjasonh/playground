@@ -1,6 +1,38 @@
 package observe
 
-import "testing"
+import (
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestMetricsServesHistograms(t *testing.T) {
+	stop := Start(t.Context(), nil)
+	defer stop(t.Context())
+
+	Measure(t.Context(), VFSPageRead, 30*time.Microsecond, "source", "paged_in")
+	Measure(t.Context(), VFSPageRead, 40*time.Millisecond, "source", "cold")
+	Measure(t.Context(), StoreWrite, 60*time.Millisecond, "durable", "true", "result", "ok")
+
+	rec := httptest.NewRecorder()
+	Metrics().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		`# HELP vfs_page_read_seconds Time for one SQLite page read`,
+		`vfs_page_read_seconds_bucket{source="paged_in",le="2.5e-05"} 0`,
+		`vfs_page_read_seconds_bucket{source="paged_in",le="5e-05"} 1`,
+		`vfs_page_read_seconds_bucket{source="cold",le="0.05"} 1`,
+		`store_write_seconds_count{durable="true",result="ok"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics is missing %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Log(body)
+	}
+}
 
 func TestParseCloudTrace(t *testing.T) {
 	traceID, spanID, sampled, ok := parseCloudTrace("0123456789abcdef0123456789abcdef/17;o=1")

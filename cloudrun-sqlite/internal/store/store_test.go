@@ -250,6 +250,47 @@ func TestFreshWriterLosesTheConditionalCreate(t *testing.T) {
 	integrity(t, c)
 }
 
+// Stats times acknowledged writes, and splits page reads into cold ones from
+// the replica and ones paged in from the VFS's cache.
+func TestStatsTimesWritesAndPageReads(t *testing.T) {
+	replica := t.TempDir()
+	s := mustOpen(t, testConfig(t, replica))
+	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
+	for range 20 {
+		mustWrite(t, s, "INSERT INTO t (v) VALUES (randomblob(3000))")
+	}
+	if w := s.Stats(t.Context()).Write; w.Count != 21 || w.P50 <= 0 {
+		t.Errorf("write stats = %+v, want 21 timed writes", w)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new instance has none of the pages in memory.
+	s2 := mustOpen(t, testConfig(t, replica))
+	defer s2.Close()
+	if got := count(t, s2, "t"); got != 20 {
+		t.Fatalf("rows = %d, want 20", got)
+	}
+	first := s2.Stats(t.Context()).VFSRead
+	if first.Cold.Count == 0 {
+		t.Fatalf("first scan read no pages from the replica: %+v", first)
+	}
+	// The VFS changes page 1's change counter on every read, so SQLite drops
+	// its own cache and reads each page through the VFS again.
+	if got := count(t, s2, "t"); got != 20 {
+		t.Fatalf("rows = %d, want 20", got)
+	}
+	second := s2.Stats(t.Context()).VFSRead
+	if second.PagedIn.Count <= first.PagedIn.Count {
+		t.Errorf("second scan paged in no pages: before %+v, after %+v", first, second)
+	}
+	if second.Cold.Count != first.Cold.Count {
+		t.Errorf("second scan read %d pages from the replica, want 0", second.Cold.Count-first.Cold.Count)
+	}
+	t.Logf("paged in p50 %.3f ms, cold p50 %.3f ms", second.PagedIn.P50, second.Cold.P50)
+}
+
 // A durable write is in the replica before any read can see it.
 func TestReadsWaitForUpload(t *testing.T) {
 	s := mustOpen(t, testConfig(t, t.TempDir()))
