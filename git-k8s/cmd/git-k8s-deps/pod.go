@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"math"
 	"path"
@@ -19,6 +18,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/chainguard-dev/clog"
 	"golang.org/x/mod/module"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -360,10 +360,10 @@ func (u *updater) unfinishedPods(ctx context.Context, ns, name string) int {
 
 // follow starts or follows the Pod that makes updates, and returns their
 // outcomes once it can. It returns nil while the Pod runs.
-func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []update, log *slog.Logger) map[module.Version]*outcome {
+func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []update) map[module.Version]*outcome {
 	pod := kube.Own(ctx, desired)
 	if pod == nil {
-		log.Info("starting an update Pod", "pod", desired.Name, "updates", len(updates))
+		clog.FromContext(ctx).Info("starting an update Pod", "pod", desired.Name, "updates", len(updates))
 		return nil
 	}
 	failAll := func(format string, args ...any) map[module.Version]*outcome {

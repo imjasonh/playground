@@ -679,6 +679,9 @@ bundle exec fastlane test
   [`github.com/chainguard-dev/clog`](https://github.com/chainguard-dev/clog)
   is for a logger stored on a `context.Context`: `clog.WithLogger` to
   store it, `clog.FromContext` or the `Context` methods to read it.
+  At the start of a request or reconcile, store the shared identity
+  (repository, branch, caller) there so later logs in that call chain
+  include it. Do not pass a `*slog.Logger` beside `ctx` for that.
   `clog.Info` and the other package-level calls only reach the default
   logger, so use `slog` there. `clog.Fatal` is the exception: `slog`
   has no equivalent, and `Fatal` logs then exits. Do not call clog's

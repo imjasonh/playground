@@ -27,6 +27,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -697,7 +698,8 @@ func TestPushFailed(t *testing.T) {
 	} {
 		var logs bytes.Buffer
 		ctx, rec := kube.Fake(t.Context(), &Branch{Object: kube.Meta("app.main", nil)})
-		(&updater{}).pushFailed(ctx, slog.New(slog.NewTextHandler(&logs, nil)), greetBranch, tc.err)
+		ctx = clog.WithLogger(ctx, clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+		(&updater{}).pushFailed(ctx, greetBranch, tc.err)
 		if !strings.Contains(logs.String(), tc.logged) || rec.RequeueAfter() != tc.wait {
 			t.Errorf("pushFailed(%v) logged %q and RequeueAfter() = %v, want %s and %v", tc.err, logs.String(), rec.RequeueAfter(), tc.logged, tc.wait)
 		}

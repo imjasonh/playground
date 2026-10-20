@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
@@ -55,7 +55,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	ctx := clog.WithLogger(r.Context(), clog.FromContext(r.Context()).With("repository", namespace+"/"+name, "service", service))
 	who, err := caller.Identify(ctx, r, gitk8s.MirrorAudience)
 	switch {
 	case errors.Is(err, caller.ErrUnauthenticated):
@@ -63,22 +63,23 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	case err != nil:
-		slog.Warn("checking a token failed", "err", err)
+		clog.FromContext(ctx).Warn("checking a token failed", "err", err)
 		http.Error(w, "the mirror couldn't check the token; try again", http.StatusServiceUnavailable)
 		return
 	}
 	entries, err := m.Checks.Entries(ctx)
 	if err != nil {
-		slog.Warn("reading the git-k8s-checks ConfigMap failed", "err", err)
+		clog.FromContext(ctx).Warn("reading the git-k8s-checks ConfigMap failed", "err", err)
 		http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
 		return
 	}
 	check, _ := who.Check(entries)
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("caller", who.String()))
 	repo := kube.Get[gitk8s.Repository](ctx, namespace, name)
 	may := false
 	if repo != nil {
 		if may, err = m.mayFetch(ctx, who, check, repo); err != nil {
-			slog.Warn("checking a caller failed", "repository", namespace+"/"+name, "caller", who.String(), "err", err)
+			clog.FromContext(ctx).Warn("checking a caller failed", "err", err)
 			http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
 			return
 		}
@@ -122,7 +123,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			if reasons := m.refusals(who, check, repo, p); reasons != nil {
 				refuseAll(w, r, p, reasons)
-				slog.Info("refused a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "reason", reasons[0])
+				clog.FromContext(ctx).Info("refused a push", "refs", len(p.commands), "reason", reasons[0])
 				return
 			}
 			body = io.MultiReader(&start, body)
@@ -135,7 +136,7 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	case err != nil:
-		slog.Error("opening a copy failed", "repository", namespace+"/"+name, "err", err)
+		clog.FromContext(ctx).Error("opening a copy failed", "err", err)
 		http.Error(w, "the mirror couldn't open the repository", http.StatusInternalServerError)
 		return
 	}
@@ -152,20 +153,20 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "%04x# service=git-%s\n0000", len(service)+19, service)
 		}
 		if err := m.Git.Advertise(ctx, service, cp.Dir, protocol, w); err != nil {
-			slog.Warn("advertising refs failed", "repository", namespace+"/"+name, "err", err)
+			clog.FromContext(ctx).Warn("advertising refs failed", "err", err)
 		}
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-git-"+service+"-result")
 	if err := m.Git.Serve(ctx, service, cp.Dir, protocol, body, w); err != nil {
-		slog.Warn("serving a request failed", "repository", namespace+"/"+name, "service", service, "err", err)
+		clog.FromContext(ctx).Warn("serving a request failed", "err", err)
 	}
 	if p != nil && len(p.commands) > 0 {
 		// git doesn't retry a push, so the mirror took it either way. If
 		// this replica doesn't reconcile the repository now, the next poll
 		// syncs the push.
 		queued := kube.Trigger[gitk8s.GitRepository](ctx, namespace, name)
-		slog.Info("served a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "triggered", queued)
+		clog.FromContext(ctx).Info("served a push", "refs", len(p.commands), "triggered", queued)
 	}
 }
 
