@@ -97,6 +97,11 @@ them:
   through the Litestream VFS, so cold starts don't download the database, and
   uploads each write before responding (Go + Terraform, with a local Cloud Run
   simulator).
+- **[`litestream/`](litestream/)** — a fork of
+  [Litestream](https://github.com/benbjohnson/litestream), imported with
+  `git subtree`, that `cloudrun-sqlite` builds against. Its patches, listed in
+  `PATCHES.md`, fix data corruption in the write-enabled VFS and make writes
+  cheaper. A nightly workflow pulls upstream into it (Go library).
 - **[`kube/`](kube/)** — a Kubernetes controller runtime written on the Go
   standard library alone, without `client-go`. A controller is one struct and
   one `Reconcile` method. The framework generates CRDs, tracks what each
