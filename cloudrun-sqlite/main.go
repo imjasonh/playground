@@ -19,6 +19,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chainguard-dev/clog"
+	_ "github.com/chainguard-dev/clog/gcp/init"
+	"github.com/chainguard-dev/clog/slag"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
@@ -76,24 +79,30 @@ func serveMain(args []string) error {
 	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", envInt("SNAPSHOT_PLAN_LEN", cfg.SnapshotPlanLen), "snapshot when a cold start would read more than this many files (0 disables)")
 	fs.DurationVar(&cfg.PollInterval, "poll-interval", envDuration("POLL_INTERVAL", cfg.PollInterval), "how often to list the replica for compacted files or another instance's writes")
 	port := fs.String("port", env("PORT", "8080"), "listen port")
-	logLevel := fs.String("log-level", env("LOG_LEVEL", "info"), "log level")
-	vfsLogLevel := fs.String("vfs-log-level", env("VFS_LOG_LEVEL", "warn"), "Litestream VFS log level")
+	vfsLogLevel := slag.Level(slog.LevelWarn)
+	if v := os.Getenv("VFS_LOG_LEVEL"); v != "" {
+		if err := vfsLogLevel.Set(v); err != nil {
+			return fmt.Errorf("VFS_LOG_LEVEL: %w", err)
+		}
+	}
+	fs.Var(&vfsLogLevel, "vfs-log-level", "Litestream VFS log level")
 	fs.Parse(args)
 	if cfg.ReplicaURL == "" {
 		return errors.New("set REPLICA_URL or -replica-url")
 	}
 
 	instance := instanceID()
-	cfg.Logger = newLogger(*logLevel).With("instance", instance)
-	cfg.VFSLogger = newLogger(*vfsLogLevel).With("instance", instance)
-	log := cfg.Logger
+	// gcp/init installed the process handler from LOG_LEVEL.
+	log := slog.Default().With("instance", instance)
 	slog.SetDefault(log)
-	stopTel := observe.Start(context.Background(), log)
+	cfg.Logger = log
+	cfg.VFSLogger = slog.New(minLevel{level: vfsLogLevel.Level(), next: log.Handler()})
+	stopTel := observe.Start(context.Background(), cfg.Logger)
 	defer func() {
 		tctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if err := stopTel(tctx); err != nil {
-			log.Warn("telemetry shutdown", "error", err)
+			clog.Warn("telemetry shutdown", "error", err)
 		}
 	}()
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
@@ -112,7 +121,7 @@ func serveMain(args []string) error {
 		st.Close()
 		return err
 	}
-	log.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
+	clog.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
 
 	srv := &http.Server{Handler: newServer(st, instance, start, os.Getenv("ADMIN_TOKEN")).routes()}
 	ln, err := net.Listen("tcp", ":"+*port)
@@ -122,38 +131,51 @@ func serveMain(args []string) error {
 	}
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-			log.Error("serve", "error", err)
+			clog.Error("serve", "error", err)
 			stop()
 		}
 	}()
-	log.Info("listening", "port", *port, "startup_ms", ms(time.Since(start)))
+	clog.Info("listening", "port", *port, "startup_ms", ms(time.Since(start)))
 
 	<-ctx.Done()
 	// Cloud Run sends SIGTERM and kills the container 10 seconds later.
-	log.Info("shutting down")
+	clog.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Warn("http shutdown", "error", err)
+		clog.Warn("http shutdown", "error", err)
 	}
 	if err := st.Close(); err != nil {
-		log.Error("close database", "error", err)
+		clog.Error("close database", "error", err)
 		return err
 	}
-	log.Info("shut down cleanly")
+	clog.Info("shut down cleanly")
 	return nil
 }
 
-func newLogger(level string) *slog.Logger {
-	var l slog.Level
-	if err := l.UnmarshalText([]byte(level)); err != nil {
-		l = slog.LevelInfo
+// minLevel drops records below level and forwards the rest to next.
+type minLevel struct {
+	level slog.Level
+	next  slog.Handler
+}
+
+func (h minLevel) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.level && h.next.Enabled(ctx, level)
+}
+
+func (h minLevel) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level < h.level {
+		return nil
 	}
-	opts := &slog.HandlerOptions{Level: l}
-	if os.Getenv("K_SERVICE") != "" {
-		return slog.New(slog.NewJSONHandler(os.Stderr, opts))
-	}
-	return slog.New(slog.NewTextHandler(os.Stderr, opts))
+	return h.next.Handle(ctx, r)
+}
+
+func (h minLevel) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return minLevel{level: h.level, next: h.next.WithAttrs(attrs)}
+}
+
+func (h minLevel) WithGroup(name string) slog.Handler {
+	return minLevel{level: h.level, next: h.next.WithGroup(name)}
 }
 
 func instanceID() string {

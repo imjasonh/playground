@@ -46,13 +46,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"maps"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -621,7 +621,7 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	if err := local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + child, New: commit, Old: childHead}); err != nil {
 		return fail(fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(commit), child, err))
 	}
-	slog.Info("pushed a branch that resolves a divergence", "namespace", b.Namespace, "branch", child, "parent", branch, "commit", gitk8s.Short(commit))
+	clog.Info("pushed a branch that resolves a divergence", "namespace", b.Namespace, "branch", child, "parent", branch, "commit", gitk8s.Short(commit))
 	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s, which lands on %s with the external repository's head %s", gitk8s.Short(commit), child, branch, gitk8s.Short(d.Commit))
 	return nil
 }

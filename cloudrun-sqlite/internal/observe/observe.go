@@ -19,6 +19,7 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"github.com/chainguard-dev/clog"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -173,7 +174,7 @@ func HTTP(next http.Handler) http.Handler {
 					"logging.googleapis.com/spanId", sc.SpanID().String(),
 				)
 			}
-			slog.Info("slow request", attrs...)
+			clog.InfoContext(ctx, "slow request", attrs...)
 		}()
 		next.ServeHTTP(sw, r.WithContext(ctx))
 		route = r.Pattern

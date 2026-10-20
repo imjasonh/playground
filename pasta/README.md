@@ -78,6 +78,7 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 | [go_shift](./analyzers/go_shift/go_shift.cue)                                 | Flag `x << 64` (and larger) integer-literal shift counts |
 | [go_sigchanyzer](./analyzers/go_sigchanyzer/go_sigchanyzer.cue) ✏️             | `signal.Notify(make(chan T))` → buffer the channel with `, 1` |
 | [go_slog](./analyzers/go_slog/go_slog.cue)                                   | Flag `slog.Info("msg", "key")` missing a value |
+| [go_clog](./analyzers/go_clog/go_clog.cue)                                   | Flag printf-style clog calls such as `clog.Infof` |
 | [go_sortslice](./analyzers/go_sortslice/go_sortslice.cue)                     | Flag `sort.Slice` comparison funcs that do not take two parameters |
 | [go_stdmethods](./analyzers/go_stdmethods/go_stdmethods.cue)                 | Flag `String`/`Error`/`ReadByte` methods with the wrong signature |
 | [go_stringintconv](./analyzers/go_stringintconv/go_stringintconv.cue) ✏️       | `string(123)` → `string(rune(123))` |

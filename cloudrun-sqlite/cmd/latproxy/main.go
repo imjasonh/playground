@@ -7,13 +7,14 @@ package main
 
 import (
 	"flag"
-	"log"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync/atomic"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 )
 
 func main() {
@@ -29,16 +30,16 @@ func main() {
 
 	u, err := url.Parse(*target)
 	if err != nil {
-		log.Fatal(err)
+		clog.Fatal("parse target", "error", err)
 	}
 	rp := httputil.NewSingleHostReverseProxy(u)
 	var n atomic.Int64
 	go func() {
 		for range time.Tick(10 * time.Second) {
-			log.Printf("requests: %d", n.Load())
+			clog.Info("requests", "count", n.Load())
 		}
 	}()
-	log.Fatal(http.ListenAndServe(*listen, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	clog.Fatal("serve", "error", http.ListenAndServe(*listen, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n.Add(1)
 		d := *get
 		switch {

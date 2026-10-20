@@ -19,10 +19,11 @@ import (
 	"syscall"
 	"time"
 
-	"charm.land/log/v2"
 	"charm.land/ssh"
 	"charm.land/wish/v2"
 	"charm.land/wish/v2/logging"
+	"github.com/chainguard-dev/clog"
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/imjasonh/playground/sshapp/internal/registry"
@@ -34,7 +35,7 @@ import (
 func main() {
 	cfg, err := muxConfigFromEnv()
 	if err != nil {
-		log.Fatal("config", "error", err)
+		clog.Fatal("config", "error", err)
 	}
 
 	names := make([]string, 0, len(cfg.Apps))
@@ -59,7 +60,7 @@ func main() {
 
 	signer, err := newEphemeralSigner()
 	if err != nil {
-		log.Fatal("backend client key", "error", err)
+		clog.Fatal("backend client key", "error", err)
 	}
 
 	opts := []ssh.Option{
@@ -81,20 +82,20 @@ func main() {
 
 	srv, err := wish.NewServer(opts...)
 	if err != nil {
-		log.Fatal("create server", "error", err)
+		clog.Fatal("create server", "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Info("mux listening",
+	clog.Info("mux listening",
 		"addr", cfg.Listen,
 		"apps", strings.Join(names, ","),
 		"idle_after", cfg.IdleAfter.String(),
 	)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
-			log.Error("listen", "error", err)
+			clog.Error("listen", "error", err)
 			stop()
 		}
 	}()
@@ -143,7 +144,7 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 
 			code, err := proxySSHSession(sess, addr, signer, target)
 			if err != nil {
-				log.Error("proxy session", "app", target.App, "error", err)
+				clog.Error("proxy session", "app", target.App, "error", err)
 				_ = sess.Exit(1)
 				return
 			}

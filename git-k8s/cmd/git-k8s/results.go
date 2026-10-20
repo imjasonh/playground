@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"net/http"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
@@ -83,7 +83,7 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		// The error can name the core program's service account and the
 		// permission that it lacks.
-		slog.ErrorContext(r.Context(), "reviewing a check's token failed", "err", err)
+		clog.ErrorContext(r.Context(), "reviewing a check's token failed", "err", err)
 		http.Error(w, "can't check the token now", http.StatusInternalServerError)
 		return
 	case !review.Authenticated:
@@ -93,7 +93,7 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := rs.checks.Entries(r.Context())
 	if err != nil {
-		slog.ErrorContext(r.Context(), "reading the git-k8s-checks ConfigMap failed", "err", err)
+		clog.ErrorContext(r.Context(), "reading the git-k8s-checks ConfigMap failed", "err", err)
 		http.Error(w, "can't read the git-k8s-checks ConfigMap now", http.StatusInternalServerError)
 		return
 	}
@@ -218,7 +218,7 @@ func (rs *results) gone(ctx context.Context, k kube.Key, generation int64) (int,
 	b, err := fetch(ctx, k.Namespace, k.Name)
 	switch {
 	case err != nil:
-		slog.WarnContext(ctx, "reading a GitBranch for a check's result failed", "namespace", k.Namespace, "branch", k.Name, "err", err)
+		clog.WarnContext(ctx, "reading a GitBranch for a check's result failed", "namespace", k.Namespace, "branch", k.Name, "err", err)
 		return 0, ""
 	case b == nil:
 		return http.StatusGone, fmt.Sprintf("GitBranch %s doesn't exist", k)

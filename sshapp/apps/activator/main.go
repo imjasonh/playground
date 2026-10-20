@@ -13,7 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"charm.land/log/v2"
+	"github.com/chainguard-dev/clog"
+	_ "github.com/chainguard-dev/clog/gcp/init"
 
 	"github.com/imjasonh/playground/sshapp/internal/proxy"
 	"github.com/imjasonh/playground/sshapp/internal/scaler"
@@ -22,17 +23,17 @@ import (
 func main() {
 	cfg, err := configFromEnv()
 	if err != nil {
-		log.Fatal("config", "error", err)
+		clog.Fatal("config", "error", err)
 	}
 
 	backend, err := scaler.NewK8s(cfg.K8sConfig)
 	if err != nil {
-		log.Fatal("kubernetes client", "error", err)
+		clog.Fatal("kubernetes client", "error", err)
 	}
 
 	ln, err := net.Listen("tcp", envOr("SSHAPP_LISTEN", ":2222"))
 	if err != nil {
-		log.Fatal("listen", "error", err)
+		clog.Fatal("listen", "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -44,7 +45,7 @@ func main() {
 		DialTimeout: 5 * time.Second,
 	}
 
-	log.Info("activator listening",
+	clog.Info("activator listening",
 		"addr", ln.Addr().String(),
 		"deployment", cfg.Deployment,
 		"service", cfg.Service,
@@ -52,7 +53,7 @@ func main() {
 		"idle_after", cfg.IdleAfter.String(),
 	)
 	if err := srv.Serve(ctx, ln); err != nil && !errors.Is(err, net.ErrClosed) {
-		log.Fatal("serve", "error", err)
+		clog.Fatal("serve", "error", err)
 	}
 }
 

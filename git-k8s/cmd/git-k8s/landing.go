@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"unicode"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/signing"
@@ -57,7 +57,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 		if err := local.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/" + spec.Branch, New: landed, Old: spec.Head}); err != nil {
 			return true, fmt.Errorf("moving %s to %s: %w", spec.Branch, gitk8s.Short(landed), err)
 		}
-		slog.Info("rewrote a branch", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
+		clog.Info("rewrote a branch", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
 			"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.Head), "to", gitk8s.Short(landed))
 		report(b, gitk8s.MergeStateRewritten, "%s %s onto %s at %s as %s and moved %s there, because the results of %s might depend on the branch's commits",
 			verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "))
@@ -80,7 +80,7 @@ func (m *merger) rewrite(ctx context.Context, repo *gitk8s.Repository, local *gi
 	if err := local.UpdateRefs(ctx, parent, branch); err != nil {
 		return true, fmt.Errorf("landing %s on %s: %w", gitk8s.Short(landed), spec.Parent, err)
 	}
-	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch, "parent", spec.Parent,
+	clog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch, "parent", spec.Parent,
 		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", branch.New == "")
 	report(b, gitk8s.MergeStateLanded, "%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
 	kube.Eventf(ctx, kube.Normal, "Landed", "%s %s at %s onto %s, which moved from %s to %s",

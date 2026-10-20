@@ -33,7 +33,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -43,6 +42,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
@@ -216,7 +216,7 @@ func RemoveLeftoverSigningKeys() {
 		return
 	}
 	if err := git.RemoveSigningKeys(); err != nil {
-		slog.Warn("removing signing keys that an earlier run left", "err", err)
+		clog.Warn("removing signing keys that an earlier run left", "err", err)
 	}
 }
 
@@ -435,14 +435,14 @@ func (r *reconciler[V, P]) keep(ctx context.Context, in *Input, cur *gitk8s.Chec
 	}
 	same, err := in.SameChange(ctx, last, change)
 	if err != nil {
-		slog.Warn("comparing changes failed, so running the check", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "err", err)
+		clog.Warn("comparing changes failed, so running the check", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "err", err)
 	}
 	if err != nil || !same {
 		return nil
 	}
 	kept := *cur
 	kept.Commit, kept.MergeBase, kept.Outputs, kept.Notes = change.Head, change.Base, maps.Clone(cur.Outputs), maps.Clone(cur.Notes)
-	slog.Info("kept a result for the same change", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch,
+	clog.Info("kept a result for the same change", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch,
 		"from", gitk8s.Short(last.Head), "to", gitk8s.Short(change.Head), "mergeBase", gitk8s.Short(change.Base))
 	return &kept
 }
@@ -505,7 +505,7 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 		// spec, which runs the check on the new head.
 		return fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(v.Fix), in.Spec.Branch, err)
 	}
-	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
+	clog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
 	kube.Eventf(ctx, kube.Normal, "PushedFix", "pushed %s to %s: %s", gitk8s.Short(v.Fix), in.Spec.Branch, v.Message)
 	*res = *fixed(res, v)
 	return nil

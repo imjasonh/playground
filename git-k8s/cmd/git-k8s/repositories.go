@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/gate"
@@ -232,7 +232,7 @@ func failures(failed map[string]error) string {
 func brief(repo *gitk8s.GitRepository, err error) error {
 	short := git.Brief(err)
 	if short.Error() != err.Error() {
-		slog.Warn("syncing the repository failed", "namespace", repo.Namespace, "repository", repo.Name, "err", err)
+		clog.Warn("syncing the repository failed", "namespace", repo.Namespace, "repository", repo.Name, "err", err)
 	}
 	return short
 }

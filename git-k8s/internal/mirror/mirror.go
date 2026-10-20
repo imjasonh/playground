@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -290,11 +290,11 @@ func (m *Mirror) removeStaleLocks(dir string) {
 		}
 		if err := os.Remove(path); err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				slog.Warn("removing a stale lock failed", "path", path, "err", err)
+				clog.Warn("removing a stale lock failed", "path", path, "err", err)
 			}
 			return
 		}
-		slog.Warn("removed a stale lock", "path", path, "modified", info.ModTime())
+		clog.Warn("removed a stale lock", "path", path, "modified", info.ModTime())
 	}
 	top, err := os.ReadDir(dir)
 	if err != nil {
