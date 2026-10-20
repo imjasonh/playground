@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (gitignored) and fill in values.
+project_id = "your-gcp-project"
+region     = "us-central1"
+
+# Acknowledge writes only after they are in Cloud Storage.
+# durable = true
+
+# Run compaction and snapshots between requests (instance-based billing).
+# cpu_always_allocated = false
+
+# On linux/amd64 with gcc installed, skip zig:
+# cgo_cc = "gcc"
