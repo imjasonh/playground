@@ -63,12 +63,17 @@ var descriptions = map[string]string{
 	ReplicaOperation: "Time for one object-storage call: get, list, or put.",
 }
 
-// Buckets run from 10 µs, where a page read from memory lands, to 10 s, a
-// stalled upload. They are in seconds.
+// Buckets run from 1 µs, where a page read from memory lands, to 10 s, a
+// stalled upload, with extra steps from 10 to 100 ms, where object-storage
+// calls land. They are in seconds.
 var buckets = []float64{
-	0.00001, 0.000025, 0.00005, 0.0001, 0.00025, 0.0005,
-	0.001, 0.0025, 0.005, 0.01, 0.02, 0.05,
-	0.1, 0.2, 0.5, 1, 2, 5, 10,
+	0.000001, 0.0000025, 0.000005,
+	0.00001, 0.000025, 0.00005,
+	0.0001, 0.00025, 0.0005,
+	0.001, 0.0025, 0.005,
+	0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.075,
+	0.1, 0.15, 0.2, 0.3, 0.5, 0.75,
+	1, 2, 5, 10,
 }
 
 var (
