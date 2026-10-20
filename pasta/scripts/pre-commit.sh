@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# pre-commit / CI checks for pasta.
+# Local checks for pasta.
 #
-# Same script runs on the developer's machine and in local iteration,
-# so locally-clean changes can't fail CI on something the hook would
-# have caught.
+# CI runs the same gofmt checker (.github/scripts/check-gofmt.sh) on
+# each changed Go module, then builds and tests with go test -race.
+# Run this before sending a PR so a local gofmt failure matches that gate.
 #
 # When pasta lives inside the playground monorepo, run this from
 # pasta/ (or let it locate itself via BASH_SOURCE).
@@ -14,17 +14,13 @@ set -euo pipefail
 # ../). Stable whether invoked directly or as a git hook symlink.
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 step()  { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 
 step "gofmt"
-unformatted=$(gofmt -l .)
-if [ -n "$unformatted" ]; then
-  red "gofmt would reformat:"
-  echo "$unformatted"
-  exit 1
-fi
+# Same checker CI runs. It skips vendor and testdata.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+bash "${repo_root}/.github/scripts/check-gofmt.sh" .
 
 step "go vet"
 go vet ./...

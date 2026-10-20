@@ -364,7 +364,7 @@ pinned Wrangler version) selects every Cloudflare Worker app.
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
-| Go | `go.mod` | `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
+| Go | `go.mod` | `gofmt` (`.github/scripts/check-gofmt.sh` fails the Test job when `gofmt` would change a `.go` file outside `vendor` and `testdata`) → `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
@@ -442,7 +442,7 @@ test workflow gates on:
 | App type | Upgrade | Verify |
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
-| Go | `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `go build ./...` → `go test -race ./...` |
+| Go | `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
 | Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
@@ -561,9 +561,11 @@ Run locally:
 
 ```bash
 cd my-tool
+bash ../.github/scripts/check-gofmt.sh .
 go build ./...
 go test ./...
-# CI runs `go test -race ./...` (pasta / node-image also get -timeout 30m)
+# CI runs that gofmt check, then `go test -race ./...`
+# (pasta / node-image also get -timeout 30m)
 ```
 
 ## Adding a new Rust app
