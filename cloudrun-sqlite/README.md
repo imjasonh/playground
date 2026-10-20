@@ -65,9 +65,10 @@ tests pass. Drop a patch once Litestream ships it.
 **Reads.** SQLite reads pages through the VFS, which serves each one from
 this instance's own writes, an LRU page cache (64 MiB), an optional local
 copy that it downloads in the background (`HYDRATE=true`), or a ranged GET of
-the LTX file that holds the page. A read waits while a durable write commits
-and uploads, so it sees only writes that are in the replica. With
-`DURABLE=false`, reads also see writes that the VFS hasn't uploaded yet.
+the LTX file that holds the page. A durable read sees only writes that are
+in the replica. It does not wait for an upload that is in progress, and it
+does not see that upload's pages. With `DURABLE=false`, reads also see
+writes that the VFS hasn't uploaded yet.
 
 **Writes.** Every request's transaction runs on one goroutine. Writes that
 arrive while one is committing share the next transaction, then the store
@@ -79,8 +80,9 @@ uploads every second instead.
 and page index of each file in the restore plan, the newest snapshot plus the
 files written after it. The store fetches those in parallel before the VFS
 asks for them one at a time. The VFS compacts L0 files into L1, L2, and L3
-files, and the store merges the plan into a new snapshot when it grows past
-16 files, then deletes files that the previous snapshot covers.
+files, and the store merges the plan into a new snapshot when the files at
+L1 and above grow past 16. L0 files are left for compaction. It then deletes
+files that the previous snapshot covers.
 
 **Overlapping instances.** Cloud Run can run two instances of a
 `max_instance_count = 1` service for a short time, for example during a
@@ -88,8 +90,9 @@ deploy. The store uploads L0 files with a conditional create
 (`If-None-Match: *` on S3, `DoesNotExist` on Cloud Storage, `link(2)` on a
 local directory). If another instance already published that transaction, the
 upload fails, the store discards its local commit, reopens the database, and
-reruns the batch. Reads on that instance wait until the commit is gone,
-because the row IDs it took belong to the other instance's writes. Any failed
+reruns the batch. Reads on that instance keep seeing the last uploaded write
+while that happens, so they never observe the row IDs the other instance took.
+Any failed
 upload makes the store reopen the database from the replica this way. If the
 open fails too, requests get a 503 until a later read or write opens it.
 
@@ -189,8 +192,10 @@ go build -tags vfs -o crbench ./cmd/crbench
 
 Client latencies include the network to Cloud Run. The command also prints
 `/stats` from the instance that served the load: time waiting on an upload,
-the SQLite transaction, and replica GET, LIST, and PUT. On Cloud Run those
-spans and histograms also go to Cloud Trace and Cloud Monitoring.
+the SQLite transaction, acknowledged writes, paged-in and cold page reads,
+and replica GET, LIST, and PUT. On Cloud Run those spans and histograms
+also go to Cloud Trace and Cloud Monitoring; see
+[Observability](#observability).
 
 ### Deployed service
 
@@ -228,9 +233,8 @@ CPU is frozen and it makes none.
 ## Limits
 
 - One SQLite connection serves every request, so a slow query delays
-  everything behind it. In durable mode, a read also waits for the write
-  that is committing or uploading, which adds up to one upload's time to
-  reads that arrive during a write.
+  everything behind it. A durable read does not wait for an upload, but it
+  also does not see that upload's rows until the upload finishes.
 - A page that isn't cached costs one object-store round trip. A query that
   scans a large table on a cold instance is slow until the cache or the
   hydrated copy has the pages. Hydration needs memory for the whole database
@@ -349,6 +353,68 @@ cd terraform
 cp terraform.tfvars.example terraform.tfvars   # set project_id
 terraform init
 terraform apply
+```
+
+It also creates a Cloud Monitoring dashboard of the latencies in
+[Observability](#observability); `terraform output dashboard_url` prints its
+link.
+
+## Observability
+
+The server times writes, reads, and object-storage calls as histograms:
+
+| Histogram | Labels | What it times |
+|---|---|---|
+| `store.write` | `durable`, `result` | A write from the call to its acknowledgement. A durable write includes its upload. |
+| `vfs.page_read` | `source`: `paged_in` or `cold` | One SQLite page read through the VFS. A `paged_in` page came from memory (pages this instance wrote, or the page cache) or the hydrated copy; a `cold` one came from object storage. |
+| `replica.operation` | `op`: `get`, `list`, or `put` | One object-storage call. |
+| `store.phase` | `phase` | One part of a read or write: `read_wait`, waiting for a write in progress; `read_query`; `write_queue`; `tx`, the SQLite transaction; and `flush`, the upload. |
+| `http.server` | `route` | A request's time in the server. |
+
+SQLite reads each page through its own page cache first, so
+`vfs.page_read` counts only the reads that reach the VFS.
+
+You can see them in three places:
+
+- `/stats` reports recent percentiles from the instance that answers.
+- `/metrics` serves the histograms in the Prometheus text format, with dots
+  in names replaced by underscores and `_seconds` appended: for example,
+  `vfs_page_read_seconds`.
+- On Cloud Run they also go to Cloud Monitoring as
+  `workload.googleapis.com/NAME`, every 30 seconds, and requests and store
+  operations go to Cloud Trace as spans. The dashboard that Terraform creates
+  charts durable write latency, page read latency split into paged in and
+  cold, object-storage latency, read latency, and write latency by phase.
+
+To graph a local run, point [Prometheus](https://prometheus.io/download/)
+at `/metrics`:
+
+```bash
+cat > prometheus.yml <<'EOF'
+scrape_configs:
+  - job_name: cloudrun-sqlite
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['localhost:8080']
+EOF
+prometheus --config.file=prometheus.yml
+```
+
+Then graph these queries at <http://localhost:9090>:
+
+```promql
+# Durable write latency, p50 and p99
+histogram_quantile(0.5, sum by (le) (rate(store_write_seconds_bucket{durable="true",result="ok"}[1m])))
+histogram_quantile(0.99, sum by (le) (rate(store_write_seconds_bucket{durable="true",result="ok"}[1m])))
+
+# Page read latency, paged in and cold, p50
+histogram_quantile(0.5, sum by (le, source) (rate(vfs_page_read_seconds_bucket[1m])))
+
+# Page reads per second, paged in and cold
+sum by (source) (rate(vfs_page_read_seconds_count[1m]))
+
+# Object-storage latency by call, p99
+histogram_quantile(0.99, sum by (le, op) (rate(replica_operation_seconds_bucket[1m])))
 ```
 
 ## Test

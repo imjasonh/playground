@@ -46,6 +46,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /items/{id}", s.getItem)
 	mux.HandleFunc("POST /items", s.createItem)
 	mux.HandleFunc("GET /stats", s.stats)
+	mux.Handle("GET /metrics", observe.Metrics())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok\n") })
 	mux.HandleFunc("POST /admin/snapshot", s.admin(s.snapshot))
 	mux.HandleFunc("GET /admin/check", s.admin(s.check))

@@ -53,18 +53,22 @@ func summarize(ds []time.Duration, total int) Percentiles {
 
 // Stats describes the store for the /stats endpoint and benchmarks.
 type Stats struct {
-	OpenMillis   float64         `json:"open_ms"`
-	Durable      bool            `json:"durable"`
-	Opens        int64           `json:"opens"`
-	Reopens      int64           `json:"reopens"`
-	Conflicts    int64           `json:"conflicts"`
-	Writes       int64           `json:"writes"`
-	Batches      int64           `json:"batches"`
-	ReadWait     Percentiles     `json:"read_wait"`
-	ReadQuery    Percentiles     `json:"read_query"`
-	WriteQueue   Percentiles     `json:"write_queue"`
-	Tx           Percentiles     `json:"tx"`
-	Flush        Percentiles     `json:"flush"`
+	OpenMillis float64     `json:"open_ms"`
+	Durable    bool        `json:"durable"`
+	Opens      int64       `json:"opens"`
+	Reopens    int64       `json:"reopens"`
+	Conflicts  int64       `json:"conflicts"`
+	Writes     int64       `json:"writes"`
+	Batches    int64       `json:"batches"`
+	ReadWait   Percentiles `json:"read_wait"`
+	ReadQuery  Percentiles `json:"read_query"`
+	WriteQueue Percentiles `json:"write_queue"`
+	Tx         Percentiles `json:"tx"`
+	Flush      Percentiles `json:"flush"`
+	// Write is from the call to Write to its acknowledgement, for writes
+	// that succeeded. When the store is durable, that includes the upload.
+	Write        Percentiles     `json:"write"`
+	VFSRead      VFSReadStats    `json:"vfs_read"`
 	GCS          GCSStats        `json:"gcs"`
 	TXID         string          `json:"txid"`
 	Hydration    string          `json:"hydration_pct,omitempty"`
@@ -73,6 +77,14 @@ type Stats struct {
 	// RestorePlanLen is the plan length at the last snapshot check, or -1
 	// before the first one.
 	RestorePlanLen int64 `json:"restore_plan_len"`
+}
+
+// VFSReadStats is how long SQLite's page reads through the VFS took. A
+// paged-in page came from memory or the hydrated copy, and a cold one from
+// the replica.
+type VFSReadStats struct {
+	PagedIn Percentiles `json:"paged_in"`
+	Cold    Percentiles `json:"cold"`
 }
 
 // GCSStats is how long replica reads, listings, and uploads took.
@@ -97,6 +109,11 @@ func (s *Store) Stats(ctx context.Context) Stats {
 		WriteQueue: s.writeQueue.percentiles(),
 		Tx:         s.tx.percentiles(),
 		Flush:      s.flushes.percentiles(),
+		Write:      s.writeAcks.percentiles(),
+		VFSRead: VFSReadStats{
+			PagedIn: s.pagedIn.percentiles(),
+			Cold:    s.coldReads.percentiles(),
+		},
 		GCS: GCSStats{
 			Get:  s.client.gets.percentiles(),
 			List: s.client.lists.percentiles(),

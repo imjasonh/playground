@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -140,6 +141,9 @@ type Store struct {
 	writeQueue   latencies
 	tx           latencies
 	flushes      latencies
+	writeAcks    latencies
+	pagedIn      latencies
+	coldReads    latencies
 	snapshotMu   sync.Mutex
 	snapshots    atomic.Int64
 	lastSnapshot atomic.Pointer[SnapshotResult]
@@ -226,6 +230,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		done:      make(chan struct{}),
 	}
 	s.planLen.Store(-1)
+	vfs.PageReadHook = s.notePageRead
 	name := fmt.Sprintf("litestream-%d", vfsSeq.Add(1))
 	if err := sqlite3vfs.RegisterVFS(name, &captureVFS{VFS: vfs, store: s}); err != nil {
 		return nil, fmt.Errorf("register VFS: %w", err)
@@ -295,9 +300,10 @@ func (v *captureVFS) capture(f sqlite3vfs.File, flags sqlite3vfs.OpenFlag) {
 }
 
 // Read runs fn against the database. When the store is durable, fn sees
-// only writes that are in the replica: Read waits while a batch commits and
-// uploads, and returns ErrUnavailable if the store couldn't reopen the
-// database after a failed upload. Otherwise fn sees every committed write,
+// only writes that are in the replica. A write that is uploading stays
+// hidden, and Read does not wait for that upload. Read returns
+// ErrUnavailable if the store couldn't reopen the database after a failed
+// upload. When the store is not durable, fn sees every committed write,
 // including ones not yet uploaded.
 func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) (err error) {
 	ctx, end := observe.Span(ctx, "store.read")
@@ -329,8 +335,19 @@ func (s *Store) Read(ctx context.Context, fn func(*sql.DB) error) (err error) {
 // not call Read, which waits for the transaction fn is part of.
 func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 	ctx, end := observe.Span(ctx, "store.write")
-	defer func() { end(err) }()
-	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1), enqueued: time.Now()}
+	start := time.Now()
+	defer func() {
+		d := time.Since(start)
+		result := "ok"
+		if err != nil {
+			result = "error"
+		} else {
+			s.writeAcks.add(d)
+		}
+		observe.Measure(ctx, observe.StoreWrite, d, "durable", strconv.FormatBool(s.cfg.Durable), "result", result)
+		end(err)
+	}()
+	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1), enqueued: start}
 	select {
 	case s.writes <- req:
 	case <-s.closing:
@@ -389,7 +406,20 @@ func (s *Store) commitLoop() {
 
 func (s *Store) note(ctx context.Context, l *latencies, phase string, d time.Duration) {
 	l.add(d)
-	observe.Measure(ctx, "store.phase", "phase", phase, d)
+	observe.Measure(ctx, observe.StorePhase, d, "phase", phase)
+}
+
+// notePageRead records a page read through the VFS. A page from the
+// replica is cold; one from the write overlay, the page cache, or the
+// hydrated copy was paged in. SQLite reads through its own page cache
+// first, so a page it holds never gets here.
+func (s *Store) notePageRead(source litestream.PageReadSource, d time.Duration) {
+	l, label := &s.pagedIn, "paged_in"
+	if source == litestream.PageReadReplica {
+		l, label = &s.coldReads, "cold"
+	}
+	l.add(d)
+	observe.Measure(context.Background(), observe.VFSPageRead, d, "source", label)
 }
 
 func batchContext(batch []*writeReq) context.Context {
@@ -430,43 +460,58 @@ func (s *Store) runBatch(batch []*writeReq) {
 }
 
 // commitBatch runs batch in one transaction. When the store is durable, it
-// holds s.mu from the start of the transaction until the transaction is in
-// the replica. If the upload fails, it reopens the database from the replica
-// before it releases s.mu, which throws the local commit away, or keeps it
-// if the upload landed after all.
+// holds s.mu for the SQLite commit, then uploads with the lock released so
+// reads of the previous transaction can proceed. The VFS hides the
+// un-uploaded pages while that is happening. If the upload fails, the store
+// takes s.mu again and reopens the database from the replica, which throws
+// the local commit away, or keeps it if the upload landed after all.
 func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 	ctx := batchContext(batch)
 	if !s.cfg.Durable {
 		return s.runTx(ctx, batch)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if err := s.openIfClosedLocked(); err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
 	results, err := s.runTx(ctx, batch)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, err
 	}
+	if file := s.file.Load(); file != nil {
+		file.SetDurableRead(true)
+	}
+	s.mu.Unlock()
+
 	if h := s.hooks.beforeUpload; h != nil {
 		err = h()
 	}
 	if err == nil {
 		err = s.flush(ctx)
 	}
-	if err == nil {
-		return results, nil
-	}
 	if errors.Is(err, litestream.ErrConflict) {
 		// Another instance published a transaction this instance hadn't
 		// seen. Back off with jitter so that two instances writing at once
 		// both make progress, then rerun against the replica's state.
+		// Readers still see the previous upload while this waits.
 		s.log.Warn("write conflict, reopening database", "attempt", attempt, "error", err)
 		time.Sleep(time.Duration(rand.Int64N(int64(attempt) * int64(10*time.Millisecond))))
+	}
+
+	s.mu.Lock()
+	if file := s.file.Load(); file != nil {
+		file.SetDurableRead(false)
+	}
+	if err == nil {
+		s.mu.Unlock()
+		return results, nil
 	}
 	if rerr := s.reopenLocked(); rerr != nil {
 		err = errors.Join(err, rerr)
 	}
+	s.mu.Unlock()
 	return nil, err
 }
 

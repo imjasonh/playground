@@ -92,7 +92,7 @@ func (c *fencedClient) WriteLTXFile(ctx context.Context, level int, minTXID, max
 	info, err := c.writeLTXFile(ctx, level, minTXID, maxTXID, r)
 	d := time.Since(start)
 	c.puts.add(d)
-	observe.Measure(ctx, "replica.operation", "op", "put", d)
+	observe.Measure(ctx, observe.ReplicaOperation, d, "op", "put")
 	end(err)
 	return info, err
 }
@@ -130,7 +130,7 @@ func (c *fencedClient) remoteOpen(ctx context.Context, level int, minTXID, maxTX
 	rc, err := c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
 	d := time.Since(start)
 	c.gets.add(d)
-	observe.Measure(ctx, "replica.operation", "op", "get", d)
+	observe.Measure(ctx, observe.ReplicaOperation, d, "op", "get")
 	end(err)
 	return rc, err
 }
@@ -142,13 +142,13 @@ func (c *fencedClient) remoteList(ctx context.Context, level int, seek ltx.TXID,
 	if err != nil {
 		d := time.Since(start)
 		c.lists.add(d)
-		observe.Measure(ctx, "replica.operation", "op", "list", d)
+		observe.Measure(ctx, observe.ReplicaOperation, d, "op", "list")
 		end(err)
 		return nil, err
 	}
 	return &recordingIter{FileIterator: itr, start: start, done: func(d time.Duration, err error) {
 		c.lists.add(d)
-		observe.Measure(ctx, "replica.operation", "op", "list", d)
+		observe.Measure(ctx, observe.ReplicaOperation, d, "op", "list")
 		end(err)
 	}}, nil
 }

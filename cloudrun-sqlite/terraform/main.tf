@@ -153,3 +153,11 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
+# Latency charts for the histograms the server exports to Cloud Monitoring.
+# dashboard_test.go checks that its filters match series the server emits.
+resource "google_monitoring_dashboard" "latency" {
+  dashboard_json = file("${path.module}/dashboard.json")
+
+  depends_on = [google_project_service.services]
+}
