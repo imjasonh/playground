@@ -29,6 +29,19 @@ func (s *Store) RestorePlan(ctx context.Context) ([]*ltx.FileInfo, error) {
 	return litestream.CalcRestorePlan(ctx, s.client, 0, time.Time{}, s.log)
 }
 
+// levelsAboveL0 counts files at L1 or higher. L0 files are not included:
+// compaction folds them into L1, and a snapshot of them reads every one
+// back just to write them again.
+func levelsAboveL0(plan []*ltx.FileInfo) int {
+	n := 0
+	for _, info := range plan {
+		if info.Level >= 1 {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *Store) snapshotLoop() {
 	defer s.bg.Done()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -57,7 +70,9 @@ func (s *Store) snapshotLoop() {
 			continue
 		}
 		s.planLen.Store(int64(len(plan)))
-		if len(plan) <= s.cfg.SnapshotPlanLen {
+		// L0 files are compacted into L1 within 30 seconds. Counting them
+		// here made every check during a write burst snapshot the database.
+		if levelsAboveL0(plan) <= s.cfg.SnapshotPlanLen {
 			continue
 		}
 		if _, err := s.Snapshot(ctx); err != nil && ctx.Err() == nil {

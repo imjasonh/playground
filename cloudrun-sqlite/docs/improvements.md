@@ -22,7 +22,7 @@ current prices.
 | [Skip the conflict-check LIST](#skip-the-conflict-check-list) | Durable writes 37% faster; 60% more uploads per second | Half the Class A requests per batch | Two guards and tests; a patch in the fork | Done |
 | [Keep written pages cached](#keep-written-pages-cached) | No storage reads for pages this instance wrote recently | One fewer GET per such page | An exact TXID check; a patch in the fork | Done |
 | [List S3 from the seek position](#list-s3-from-the-seek-position) | About twice the upload rate on S3 under sustained writes (estimate) | About 2.5 times fewer Class A requests per batch on S3 (estimate) | Small; S3 only | Not done; do it before running on S3 |
-| [Snapshot less often under steady writes](#snapshot-less-often-under-steady-writes) | Frees about 2% of a vCPU per GiB of database; cold starts about 60 ms slower | Fewer upload requests | None | Not done; do it for large databases |
+| [Snapshot less often under steady writes](#snapshot-less-often-under-steady-writes) | Frees about 2% of a vCPU per GiB of database; cold starts about 60 ms slower | Fewer upload requests | None | Done |
 | [Hold commits open briefly](#hold-commits-open-briefly) | Adds the wait to every write | About 20% fewer batches at 5 writes per second (estimate) | None | Not done; make it an opt-in setting, off by default |
 | [Use more read connections](#use-more-read-connections) | Parallel storage reads | Memory for each connection | Large | Not done; enlarge the cache or hydrate instead |
 
@@ -159,13 +159,11 @@ that string. Add a test that compares the result with the client-side filter.
 
 ## Snapshot less often under steady writes
 
-The store snapshots when a cold start would read more than 16 files
-(`SNAPSHOT_PLAN_LEN`), checking every 15 seconds. With a write every second or
-more, L0 files alone pass 16 between L1 compactions, so nearly every check
-writes a full snapshot: both 6-minute write runs wrote one at their first
-check. Counting only L1 and higher levels toward the limit stops L0 files,
-which compaction folds into L1 within 30 seconds, from triggering snapshots.
-Under steady writes the plan would then pass 16 files about once an hour.
+The store snapshots when a cold start would read more than 16 files at L1 or
+above (`SNAPSHOT_PLAN_LEN`), checking every 15 seconds. L0 files are not
+counted. Compaction folds them into L1 within 30 seconds, and a snapshot of
+them reads every file back. Under steady writes the higher levels pass 16
+files about once an hour.
 
 ### Expected benefit
 

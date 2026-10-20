@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/litestream"
+	"github.com/superfly/ltx"
 )
 
 func testConfig(t *testing.T, replicaDir string) Config {
@@ -291,8 +292,9 @@ func TestStatsTimesWritesAndPageReads(t *testing.T) {
 	t.Logf("paged in p50 %.3f ms, cold p50 %.3f ms", second.PagedIn.P50, second.Cold.P50)
 }
 
-// A durable write is in the replica before any read can see it.
-func TestReadsWaitForUpload(t *testing.T) {
+// A read during an upload sees the last uploaded database and does not
+// wait. It must not see the write that is still uploading.
+func TestReadDuringUploadSeesPrevious(t *testing.T) {
 	s := mustOpen(t, testConfig(t, t.TempDir()))
 	defer s.Close()
 	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
@@ -319,15 +321,18 @@ func TestReadsWaitForUpload(t *testing.T) {
 	}()
 	select {
 	case r := <-read:
-		t.Fatalf("a read returned %d rows, %v while the write was committed but not uploaded", r.n, r.err)
-	case <-time.After(200 * time.Millisecond):
+		if r.err != nil || r.n != 0 {
+			t.Fatalf("read during upload = %d rows, %v; want 0 rows", r.n, r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("read blocked on the upload")
 	}
 	release()
 	if err := <-written; err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if r := <-read; r.err != nil || r.n != 1 {
-		t.Fatalf("read after the upload = %d rows, %v; want 1 row", r.n, r.err)
+	if got := count(t, s, "t"); got != 1 {
+		t.Fatalf("rows after the upload = %d, want 1", got)
 	}
 }
 
@@ -375,15 +380,26 @@ func TestReadsNeverSeeALosingWrite(t *testing.T) {
 	}()
 	select {
 	case r := <-read:
-		t.Fatalf("a read on b returned %q, %v while b's write was neither uploaded nor thrown away", r.body, r.err)
-	case <-time.After(200 * time.Millisecond):
+		// b has not polled a's write, so the previous view may not contain it.
+		// It must not contain b's write, which is not uploaded.
+		if r.err == nil && r.body == "from b" {
+			t.Fatal("read saw b's write before it was uploaded")
+		}
+		if r.err != nil && !errors.Is(r.err, sql.ErrNoRows) {
+			t.Fatalf("read during upload: %v", r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("read blocked on the upload")
 	}
 	release()
 	if err := <-written; err != nil {
 		t.Fatalf("b's Write: %v", err)
 	}
-	if r := <-read; r.err != nil || r.body != "from a" {
-		t.Fatalf("id 1 on b = %q, %v; want %q", r.body, r.err, "from a")
+	var body string
+	if err := b.Read(t.Context(), func(db *sql.DB) error {
+		return db.QueryRow("SELECT body FROM items WHERE id = 1").Scan(&body)
+	}); err != nil || body != "from a" {
+		t.Fatalf("id 1 on b = %q, %v; want %q", body, err, "from a")
 	}
 	if b.Stats(t.Context()).Reopens == 0 {
 		t.Error("b didn't reopen after its write lost")
@@ -592,6 +608,23 @@ func TestRetentionKeepsRecentL0Files(t *testing.T) {
 	}
 	if len(after) != len(before) {
 		t.Fatalf("L0 has %d files after the second snapshot, want %d", len(after), len(before))
+	}
+}
+
+func TestLevelsAboveL0IgnoresFreshFiles(t *testing.T) {
+	plan := []*ltx.FileInfo{{Level: litestream.SnapshotLevel, MinTXID: 1, MaxTXID: 1}}
+	for range 40 {
+		plan = append(plan, &ltx.FileInfo{Level: 0})
+	}
+	if got := levelsAboveL0(plan); got != 1 {
+		t.Fatalf("levels above L0 = %d, want 1", got)
+	}
+	var higher []*ltx.FileInfo
+	for range 17 {
+		higher = append(higher, &ltx.FileInfo{Level: 1})
+	}
+	if got := levelsAboveL0(higher); got != 17 {
+		t.Fatalf("L1 files = %d, want 17", got)
 	}
 }
 

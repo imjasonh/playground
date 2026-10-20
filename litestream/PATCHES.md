@@ -19,6 +19,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `f9801067` | Keep written pages cached when the poller installs them | Not proposed |
 | `f9b60a91` | `VFS.ConflictCheckInterval`, which skips the conflict-check LIST while a writer's position is fresh | Not proposed; it needs conditional L0 uploads, which upstream's replica clients don't do |
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
+| `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
 
 To see every change against upstream, diff against the last import:
 
