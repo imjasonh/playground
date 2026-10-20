@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Build and test the Go modules listed in MODULES as JSON.
+# Format-check, build, and test the Go modules listed in MODULES as JSON.
+#
+# gofmt failure fails this script, and test.yml runs it in the Test job,
+# so an unformatted module fails the pull request check.
 set -uo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -12,9 +15,21 @@ if [ "${#modules[@]}" -eq 0 ]; then
   exit 0
 fi
 
+if ! bash "${repo_root}/.github/scripts/check-gofmt_test.sh"; then
+  echo "::error title=gofmt script tests failed::.github/scripts/check-gofmt_test.sh"
+  exit 1
+fi
+
 result=0
 for module in "${modules[@]}"; do
-  echo "::group::Build and test ${module}"
+  echo "::group::Format, build, and test ${module}"
+
+  if bash "${repo_root}/.github/scripts/check-gofmt.sh" "$module"; then
+    echo "${module}: gofmt ok"
+  else
+    echo "::error title=gofmt failed::${module}: gofmt would reformat a .go file outside vendor and testdata"
+    result=1
+  fi
 
   if (
     cd "$module"

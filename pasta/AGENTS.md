@@ -11,9 +11,9 @@ standalone-repo commit gate that used to live here.
 
 ## Pre-commit / local checks
 
-`scripts/pre-commit.sh` runs gofmt, go vet, go build, and
-`go test -race ./...` from the pasta module root. Run it before sending
-a PR:
+`scripts/pre-commit.sh` runs gofmt (the repo checker, which skips
+`vendor` and `testdata`), go vet, go build, and `go test -race ./...`
+from the pasta module root. Run it before sending a PR:
 
 ```
 ./scripts/pre-commit.sh

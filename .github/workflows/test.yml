@@ -85,7 +85,7 @@ jobs:
               APPS: ${{ steps.discover.outputs.apps }}
             run: bash .github/scripts/test-browser-apps.sh
 
-          - name: Build and test changed Go apps
+          - name: Format, build, and test changed Go apps
             if: ${{ steps.discover.outputs.modules != '[]' }}
             env:
               MODULES: ${{ steps.discover.outputs.modules }}
