@@ -124,6 +124,7 @@ func DefaultRegistry() PredicateRegistry {
 			"node_is_not":          predNodeIsNot,
 			"subtree_lacks":        predSubtreeLacks,
 			"stmt_index_delta":     predStmtIndexDelta,
+			"parent_field":         predParentField,
 		},
 		Checks: map[string]CheckFunc{
 			"all_children_type":               checkAllChildrenType,
@@ -403,6 +404,27 @@ func predSubtreeLacks(args []dsl.Arg, env *Env, caps Captures) bool {
 		}
 	}
 	return !found
+}
+
+// predParentField: [@cap, "field"]. True when @cap's parent is the
+// named field of its grandparent. A Go parameter_declaration sits in a
+// parameter_list that is either the function's "parameters" field or
+// its "result" field, and this tells them apart.
+func predParentField(args []dsl.Arg, _ *Env, caps Captures) bool {
+	if len(args) != 2 {
+		return false
+	}
+	n, ok := resolveCapture(posStr(args, 0), caps)
+	if !ok || !n.IsValid() {
+		return false
+	}
+	parent := n.Parent()
+	grand := parent.Parent()
+	if !parent.IsValid() || !grand.IsValid() {
+		return false
+	}
+	field := grand.ChildByFieldName(posStr(args, 1))
+	return field.IsValid() && field.StartByte() == parent.StartByte() && field.EndByte() == parent.EndByte() && field.Type() == parent.Type()
 }
 
 // predAncestorIs: [@cap, types]. types is either a list of strings

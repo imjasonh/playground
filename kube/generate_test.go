@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"os/exec"
 	"path/filepath"
@@ -1098,17 +1097,14 @@ func TestParseProgramFlags(t *testing.T) {
 		t.Error("the program's flag isn't set")
 	}
 	for _, tc := range []struct {
-		args   []string
-		logger *slog.Logger
-		want   string
+		args []string
+		want string
 	}{
-		{[]string{"-metrics-addr=:9090"}, nil, "generate sets -metrics-addr itself"},
-		{[]string{"-leader-elect"}, nil, "generate sets -leader-elect itself; generate turns it on when -replicas or -shards is more than 1"},
-		{[]string{"-log-level=debug", "-watch-namespace=team"}, nil, "generate sets -watch-namespace itself; set -watch-namespace before -- instead"},
-		// Main doesn't define -log-level for a Manager with a Logger.
-		{[]string{"-log-level=debug"}, slog.New(slog.DiscardHandler), "flag provided but not defined: -log-level"},
+		{[]string{"-metrics-addr=:9090"}, "generate sets -metrics-addr itself"},
+		{[]string{"-leader-elect"}, "generate sets -leader-elect itself; generate turns it on when -replicas or -shards is more than 1"},
+		{[]string{"-log-level=debug", "-watch-namespace=team"}, "generate sets -watch-namespace itself; set -watch-namespace before -- instead"},
 	} {
-		o := &generateOptions{args: tc.args, manager: Manager{Logger: tc.logger}}
+		o := &generateOptions{args: tc.args}
 		if err := o.parseProgramFlags(); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("parseProgramFlags with %q = %v, want an error containing %q", tc.args, err, tc.want)
 		}

@@ -25,8 +25,8 @@ import (
 // it, which returns the manager's error.
 func release(t *testing.T, m *kube.Manager, controllers ...kube.Controller) func() error {
 	t.Helper()
-	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
-	ctx, cancel := context.WithCancel(t.Context())
+	m.Kubeconfig = e2e.Env(t).Kubeconfig
+	ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, controllers...) }()
 	var once sync.Once
@@ -54,8 +54,8 @@ func release(t *testing.T, m *kube.Manager, controllers ...kube.Controller) func
 // returns its error.
 func failedRelease(t *testing.T, m *kube.Manager, controllers ...kube.Controller) error {
 	t.Helper()
-	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	m.Kubeconfig = e2e.Env(t).Kubeconfig
+	ctx, cancel := context.WithTimeout(e2e.WithLogger(t.Context(), t), time.Minute)
 	defer cancel()
 	err := m.Run(ctx, controllers...)
 	if err == nil {

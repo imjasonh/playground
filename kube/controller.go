@@ -9,6 +9,8 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"maps"
+
+	"github.com/chainguard-dev/clog"
 	"math/rand/v2"
 	"net/url"
 	"reflect"
@@ -299,7 +301,6 @@ type core struct {
 	q         *queue.Queue[Key]
 	finalizer string
 	labels    labelKeys
-	log       *slog.Logger
 	// sh decides which keys this replica reconciles, or is nil when it
 	// reconciles every key.
 	sh *sharder
@@ -578,7 +579,6 @@ func (c *controller[T, P]) prepare(ctx context.Context, m *Manager) error {
 	}
 	c.labels = newLabelKeys()
 	c.finalizer = FinalizerName(c.name)
-	c.log = m.log.With("controller", c.name)
 	if err := c.prepareVersions(m); err != nil {
 		return err
 	}
@@ -602,7 +602,7 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 	c.q = queue.New[Key](queue.Options{})
 	c.sh = m.sharder
 	cfg := m.informerConfig(c.res, ns, c.opts.selector, "")
-	c.primary = newInformer[T, P](m.newID(), ti, c.res, m.client, cfg, m.log, m.metrics)
+	c.primary = newInformer[T, P](m.newID(), ti, c.res, m.client, cfg, m.metrics)
 	// A handler or webhook that read the type before the controller
 	// started, or another controller of the type, may have started a cache
 	// of the same objects. Two caches of them see each write at different
@@ -639,7 +639,7 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 			return err
 		}
 		if err := m.ensureCRD(ctx, oti); err != nil {
-			c.log.Warn("creating the CustomResourceDefinition of an owned type failed; Own tries again", "type", oti.String(), "err", err)
+			c.logger(ctx).Warn("creating the CustomResourceDefinition of an owned type failed; Own tries again", "type", oti.String(), "err", err)
 		}
 		if _, err := m.childSource(ctx, &c.core, oti, false); err != nil {
 			return fmt.Errorf("controller %s: %w", c.name, err)
@@ -671,7 +671,7 @@ func (c *controller[T, P]) run(ctx context.Context) error {
 		c.q.ShutDown()
 		return nil
 	}
-	c.log.Info("started", "type", c.ti.String(), "objects", c.primary.store.len(), "workers", c.opts.workers)
+	c.logger(ctx).Info("started", "type", c.ti.String(), "objects", c.primary.store.len(), "workers", c.opts.workers)
 	var wg sync.WaitGroup
 	for range c.opts.workers {
 		wg.Go(func() {
@@ -779,6 +779,10 @@ func (c *controller[T, P]) specChanged(old, new *T) bool {
 	return !reflect.DeepEqual(a, b)
 }
 
+func (c *core) logger(ctx context.Context) *clog.Logger {
+	return clog.FromContext(withLog(ctx, "controller:"+c.name, "controller", c.name))
+}
+
 func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	start := time.Now()
 	requeue, err := c.reconcileKey(ctx, key)
@@ -789,7 +793,7 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	}
 	elapsed := time.Since(start)
 	result := "success"
-	log := c.log.With("key", key.String(), "duration", elapsed.Round(time.Microsecond))
+	log := c.logger(ctx).With("key", key.String(), "duration", elapsed.Round(time.Microsecond))
 	switch {
 	case err == nil:
 		c.q.Forget(key)
@@ -883,7 +887,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 		case err == nil:
 			err = fmt.Errorf("writing status: %w", serr)
 		case !errors.Is(serr, errStale):
-			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
+			c.logger(ctx).Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 	}
 	return s.requeue, err
@@ -898,7 +902,7 @@ func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) er
 			if err = readError(r); err != nil {
 				return
 			}
-			c.log.Error("reconcile panicked", "panic", r, "stack", string(debug.Stack()))
+			c.logger(ctx).Error("reconcile panicked", "panic", r, "stack", string(debug.Stack()))
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
@@ -942,7 +946,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			if err != nil {
 				return err
 			}
-			if err := resolveImages(ctx, body, c.log); err != nil {
+			if err := resolveImages(ctx, body); err != nil {
 				return &writeError{"applying", in.ti, m.Key(), err}
 			}
 			manager := c.name
@@ -985,7 +989,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			}
 			applied.hashes[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
-			c.log.Debug("applied", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
+			c.logger(ctx).Debug("applied", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
 			owns := resp.ownsStatus(manager)
 			if err := c.applyStatus(ctx, key, in, manager, &owns, applied); err != nil {
 				return err
@@ -1014,7 +1018,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			if err := c.delete(ctx, ti, res, om); err != nil {
 				return err
 			}
-			c.log.Debug("pruned", "key", key.String(), "object", ti.String()+" "+om.Key().String())
+			c.logger(ctx).Debug("pruned", "key", key.String(), "object", ti.String()+" "+om.Key().String())
 		}
 	}
 
@@ -1303,12 +1307,12 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 	c.m.tracker.forget(ref{c: &c.core, key: key})
 	if err != nil {
 		if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil && !client.IsNotFound(serr) && !errors.Is(serr, errStale) {
-			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
+			c.logger(ctx).Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 		return s.requeue, err
 	}
 	c.setApplied(key, nil)
-	c.log.Debug("finalized", "key", key.String())
+	c.logger(ctx).Debug("finalized", "key", key.String())
 	return 0, nil
 }
 

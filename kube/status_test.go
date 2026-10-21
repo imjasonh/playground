@@ -3,7 +3,6 @@ package kube
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -271,8 +270,8 @@ func TestApplyStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := &Manager{client: cl, log: slog.New(slog.DiscardHandler), metrics: newMetrics()}
-	c := &controller[widget, *widget]{core: core{name: "checks", log: m.log}, m: m}
+	m := &Manager{client: cl, metrics: newMetrics()}
+	c := &controller[widget, *widget]{core: core{name: "checks"}, m: m}
 	parent := Key{Namespace: "shop", Name: "w1"}
 	const manager = "checks/shop/w1"
 	// reconcile applies the status of one Apply intent, the way execute does.

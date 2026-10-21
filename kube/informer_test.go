@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube/internal/client"
 )
 
@@ -216,17 +216,17 @@ func startInformer(t *testing.T, c *client.Client, streaming bool) (*informer[cf
 
 func startInformerFor[T any, P Resource[T]](t *testing.T, c *client.Client, streaming bool) (*informer[T, P], func() []notification) {
 	t.Helper()
-	return startInformerWith[T, P](t, c, streaming, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return startInformerWith[T, P](t, c, streaming, slog.DiscardHandler)
 }
 
-func startInformerWith[T any, P Resource[T]](t *testing.T, c *client.Client, streaming bool, log *slog.Logger) (*informer[T, P], func() []notification) {
+func startInformerWith[T any, P Resource[T]](t *testing.T, c *client.Client, streaming bool, h slog.Handler) (*informer[T, P], func() []notification) {
 	t.Helper()
 	ti, err := typeInfoFor[T, P]()
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := informerConfig{streaming: streaming, pageSize: 2, intern: true}
-	inf := newInformer[T, P](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, cfg, log, nil)
+	inf := newInformer[T, P](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, cfg, nil)
 	var mu sync.Mutex
 	var got []notification
 	inf.addHandler(func(old, new *T, initial bool) {
@@ -238,7 +238,7 @@ func startInformerWith[T any, P Resource[T]](t *testing.T, c *client.Client, str
 		}
 		got = append(got, notification{key: metaOf[T, P](new).Name, initial: initial})
 	})
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(h))))
 	t.Cleanup(cancel)
 	go inf.run(ctx)
 	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -370,8 +370,8 @@ func TestInformerBacksOffWhenWatchesEndEarly(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, informerConfig{streaming: streaming}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
-			ctx, cancel := context.WithCancel(t.Context())
+			inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, informerConfig{streaming: streaming}, nil)
+			ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler))))
 			t.Cleanup(cancel)
 			go inf.run(ctx)
 			select {
@@ -687,7 +687,7 @@ func TestInformerWarnsOnceAboutEachErrorInAnObject(t *testing.T) {
 	f, c := newFakeAPI(t, false)
 	f.set("a", map[string]any{"when": "noon"})
 	w := &warnings{}
-	inf, _ := startInformerWith[strictMap](t, c, false, slog.New(w))
+	inf, _ := startInformerWith[strictMap](t, c, false, w)
 	if got := w.list(); len(got) != 1 || !strings.HasPrefix(got[0], "ns/a: ") || !strings.Contains(got[0], "noon") {
 		t.Fatalf("warnings = %q, want one about ns/a", got)
 	}
@@ -715,8 +715,8 @@ func TestInformerWarnsOnceAboutEachErrorInAnObject(t *testing.T) {
 }
 
 func TestUndecodableObjectsMetric(t *testing.T) {
-	m := &Manager{client: &client.Client{}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	if err := m.init(); err != nil {
+	m := &Manager{client: &client.Client{}}
+	if err := m.init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	ti, err := typeInfoFor[cfgMap, *cfgMap]()
@@ -724,7 +724,7 @@ func TestUndecodableObjectsMetric(t *testing.T) {
 		t.Fatal(err)
 	}
 	newCache := func(selector string, skipped ...string) cache {
-		inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, nil, informerConfig{namespace: "ns", selector: selector}, m.log, nil)
+		inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, nil, informerConfig{namespace: "ns", selector: selector}, nil)
 		for _, name := range skipped {
 			inf.store.skip(&decodeError{meta: ObjectMeta{Name: name, Namespace: "ns"}, err: errors.New("bad")})
 		}
@@ -755,7 +755,6 @@ func TestInformersReadProtobufWhenTheSchemaHasTheirFields(t *testing.T) {
 	type podMeta struct {
 		Object `kube:"apiVersion=v1,kind=Pod"`
 	}
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, tc := range []struct {
 		name  string
 		info  func() (*typeInfo, error)
@@ -771,20 +770,20 @@ func TestInformersReadProtobufWhenTheSchemaHasTheirFields(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := protoPlan(ti, log) != nil; got != tc.proto {
+		if got := protoPlan(t.Context(), ti) != nil; got != tc.proto {
 			t.Errorf("%s: protobuf = %v, want %v", tc.name, got, tc.proto)
 		}
 	}
 	ti, _ := typeInfoFor[cfgMap, *cfgMap]()
 	res := resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}
-	if got := newInformer[cfgMap, *cfgMap](1, ti, res, nil, informerConfig{protobuf: true}, log, nil).accept(true); got != protoAccept {
+	if got := newInformer[cfgMap, *cfgMap](1, ti, res, nil, informerConfig{protobuf: true}, nil).accept(true); got != protoAccept {
 		t.Errorf("Accept = %q, want %q", got, protoAccept)
 	}
-	if got := newInformer[cfgMap, *cfgMap](1, ti, res, nil, informerConfig{}, log, nil).accept(true); got != "" {
+	if got := newInformer[cfgMap, *cfgMap](1, ti, res, nil, informerConfig{}, nil).accept(true); got != "" {
 		t.Errorf("with protobuf off, Accept = %q", got)
 	}
 	mi, _ := typeInfoFor[podMeta, *podMeta]()
-	if got := newInformer[podMeta, *podMeta](1, mi, res, nil, informerConfig{protobuf: true}, log, nil).accept(false); got != protoWatchAccept {
+	if got := newInformer[podMeta, *podMeta](1, mi, res, nil, informerConfig{protobuf: true}, nil).accept(false); got != protoWatchAccept {
 		t.Errorf("metadata-only watch Accept = %q, want %q", got, protoWatchAccept)
 	}
 }
@@ -797,8 +796,8 @@ func TestWaitSyncedReportsFirstFailure(t *testing.T) {
 	defer srv.Close()
 	c, _ := client.New(&client.Config{Host: srv.URL}, "test")
 	ti, _ := typeInfoFor[cfgMap, *cfgMap]()
-	inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, informerConfig{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
-	ctx, cancel := context.WithCancel(t.Context())
+	inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, informerConfig{}, nil)
+	ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler))))
 	defer cancel()
 	go inf.run(ctx)
 	if err := inf.waitSynced(ctx); !client.IsForbidden(err) {

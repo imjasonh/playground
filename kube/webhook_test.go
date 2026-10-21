@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+
+	"github.com/chainguard-dev/clog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -67,7 +69,7 @@ type gizmoReconciler struct{}
 func (gizmoReconciler) Reconcile(context.Context, *gizmo) error { return nil }
 
 func testManager() *Manager {
-	return &Manager{log: slog.Default(), metrics: newMetrics()}
+	return &Manager{metrics: newMetrics()}
 }
 
 func TestWebhookServerStopLetsRequestsFinish(t *testing.T) {
@@ -476,12 +478,13 @@ func (r reader) Validate(ctx context.Context, cm, _ *configMapMeta) error {
 func TestWebhooksRejectFailedReads(t *testing.T) {
 	var logs bytes.Buffer
 	m := testManager()
-	m.log = slog.New(slog.NewTextHandler(&logs, nil))
 	ti, _ := typeInfoFor[configMapMeta, *configMapMeta]()
 	went := false
 	body := `{"request":{"uid":"u1","operation":"CREATE","object":{"metadata":{"name":"cm"}}}}`
 	rec := httptest.NewRecorder()
-	serveAdmission(rec, httptest.NewRequest(http.MethodPost, "/validate", strings.NewReader(body)), m, ti, func(ctx context.Context, req *admissionRequest) *admissionResponse {
+	req := httptest.NewRequest(http.MethodPost, "/validate", strings.NewReader(body))
+	req = req.WithContext(clog.WithLogger(req.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil)))))
+	serveAdmission(rec, req, m, ti, func(ctx context.Context, req *admissionRequest) *admissionResponse {
 		return validate[configMapMeta, *configMapMeta](ctx, m, ti, reader{&went}, req)
 	})
 	var review admissionReview

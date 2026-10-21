@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+
+	"github.com/chainguard-dev/clog"
+	"github.com/chainguard-dev/clog/slag"
 	"maps"
 	"net"
 	"net/http"
@@ -86,8 +89,6 @@ type Manager struct {
 	// Addr, when set, serves /healthz, /readyz, and Prometheus /metrics at
 	// this address, for example ":8080".
 	Addr string
-	// Logger receives the framework's logs. It defaults to slog.Default().
-	Logger *slog.Logger
 	// DisableStreamingLists makes caches use paginated lists instead of
 	// trying streaming lists (watches with sendInitialEvents) first.
 	DisableStreamingLists bool
@@ -138,15 +139,15 @@ type Manager struct {
 	// image flags before it calls Setup, so Setup sees their images by digest.
 	Setup func(ctx context.Context) error
 
-	client  *client.Client
-	log     *slog.Logger
-	metrics *metrics
-	events  *eventWriter
-	tracker *tracker
-	ids     atomic.Int64
-	runCtx  context.Context
-	started atomic.Bool
-	sharder *sharder
+	client   *client.Client
+	logLevel slag.Level
+	metrics  *metrics
+	events   *eventWriter
+	tracker  *tracker
+	ids      atomic.Int64
+	runCtx   context.Context
+	started  atomic.Bool
+	sharder  *sharder
 	// self is the user that the program authenticates as, once known.
 	self atomic.Pointer[UserInfo]
 
@@ -180,10 +181,9 @@ func Main(controllers ...Controller) {
 // m's fields, stops on SIGINT or SIGTERM, runs controllers, and exits with
 // status 1 if they fail. Flags: -kubeconfig, -watch-namespace,
 // -leader-elect, -shards, -metrics-addr, -webhook-addr, -webhook-service,
-// -webhook-url, -serve-addr, -token-dir, and, if Logger is nil,
-// -log-level. Each flag defaults to its field's value. Main leaves out a
-// flag that the program defines itself on flag.CommandLine, and logs a
-// warning.
+// -webhook-url, -serve-addr, -token-dir, and -log-level. Each flag defaults
+// to its field's value. Main leaves out a flag that the program defines
+// itself on flag.CommandLine, and logs a warning.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
@@ -210,18 +210,17 @@ func (m *Manager) Main(controllers ...Controller) {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
 		flag.PrintDefaults()
 	}
-	level, skipped := m.flags(flag.CommandLine)
+	skipped := m.flags(flag.CommandLine)
 	flag.Parse()
-	if m.Logger == nil {
-		m.Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-	}
-	for _, name := range skipped {
-		m.Logger.Warn("the program defines this flag, so kube doesn't read it", "flag", "-"+name)
-	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &m.logLevel})))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx = clog.WithLogger(ctx, clog.NewLogger(slog.Default()))
+	for _, name := range skipped {
+		clog.FromContext(ctx).Warn("the program defines this flag, so kube doesn't read it", "flag", "-"+name)
+	}
 	if err := m.Run(ctx, controllers...); err != nil {
-		m.Logger.Error("exiting", "err", err)
+		clog.FromContext(ctx).Error("exiting", "err", err)
 		stop()
 		os.Exit(1)
 	}
@@ -229,9 +228,9 @@ func (m *Manager) Main(controllers ...Controller) {
 
 // flags defines Main's flags on fs, with m's fields as their defaults,
 // except those that fs already has, such as flags that the program defines
-// itself. It returns the value of -log-level, which it defines only if
-// m.Logger is nil, and the names of the flags that it skipped.
-func (m *Manager) flags(fs *flag.FlagSet) (level *slog.Level, skipped []string) {
+// itself. It returns the names of the flags that it skipped. -log-level
+// sets m.logLevel.
+func (m *Manager) flags(fs *flag.FlagSet) (skipped []string) {
 	own := flag.NewFlagSet("", flag.ContinueOnError)
 	own.StringVar(&m.Kubeconfig, "kubeconfig", m.Kubeconfig, "path to a kubeconfig file")
 	own.StringVar(&m.Namespace, "watch-namespace", m.Namespace, "watch only this namespace")
@@ -243,10 +242,7 @@ func (m *Manager) flags(fs *flag.FlagSet) (level *slog.Level, skipped []string) 
 	own.StringVar(&m.WebhookURL, "webhook-url", m.WebhookURL, "base https URL through which the API server reaches the webhooks, outside the cluster")
 	own.StringVar(&m.ServeAddr, "serve-addr", cmp.Or(m.ServeAddr, ":8081"), "address for the HTTP handler passed to kube.Serve")
 	own.StringVar(&m.TokenDir, "token-dir", m.TokenDir, "directory of service account tokens for kube.RequestToken, by audience")
-	if m.Logger == nil {
-		level = new(slog.Level)
-		own.TextVar(level, "log-level", slog.LevelInfo, "log messages at this `level` and above: debug, info, warn, or error")
-	}
+	own.Var(&m.logLevel, "log-level", "log messages at this `level` and above: debug, info, warn, or error")
 	own.VisitAll(func(f *flag.Flag) {
 		if fs.Lookup(f.Name) != nil {
 			skipped = append(skipped, f.Name)
@@ -254,16 +250,12 @@ func (m *Manager) flags(fs *flag.FlagSet) (level *slog.Level, skipped []string) 
 		}
 		fs.Var(f.Value, f.Name, f.Usage)
 	})
-	return level, skipped
+	return skipped
 }
 
-func (m *Manager) init() error {
+func (m *Manager) init(ctx context.Context) error {
 	if m.Name == "" {
 		m.Name = filepath.Base(os.Args[0])
-	}
-	m.log = m.Logger
-	if m.log == nil {
-		m.log = slog.Default()
 	}
 	if m.client == nil {
 		cfg, err := client.Load(m.Kubeconfig)
@@ -274,10 +266,10 @@ func (m *Manager) init() error {
 		if m.client, err = client.New(cfg, m.Name+" (kube; github.com/imjasonh/playground/kube)"); err != nil {
 			return err
 		}
-		m.log.Info("connecting", "host", cfg.Host, "config", cfg.Source)
+		clog.FromContext(ctx).Info("connecting", "host", cfg.Host, "config", cfg.Source)
 	}
 	m.metrics = newMetrics()
-	m.events = newEventWriter(m.client, m.log, m.metrics)
+	m.events = newEventWriter(m.client, m.metrics)
 	m.tracker = newTracker()
 	m.caches = map[cacheKey]cache{}
 	m.resolved = map[*typeInfo]resolved{}
@@ -327,7 +319,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			return err
 		}
 	}
-	if err := m.init(); err != nil {
+	if err := m.init(ctx); err != nil {
 		return err
 	}
 	parent := ctx
@@ -357,13 +349,13 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		return err
 	}
 	if m.Addr != "" {
-		srv, err := m.serve()
+		srv, err := m.serve(ctx)
 		if err != nil {
 			return err
 		}
 		stops = append(stops, func() { srv.Close() })
 	}
-	stops = append(stops, m.waitForCaches, m.events.start())
+	stops = append(stops, m.waitForCaches, m.events.start(ctx))
 	for _, c := range controllers {
 		if err := c.prepare(ctx, m); err != nil {
 			return startFailed(err)
@@ -377,7 +369,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	} else if err := (&webhookServer{m: m}).applyConfigurations(ctx); err != nil {
 		// An earlier version of the program may have left webhook
 		// configurations whose webhooks no longer answer.
-		m.log.Warn("removing stale webhook configurations failed", "err", err)
+		clog.FromContext(ctx).Warn("removing stale webhook configurations failed", "err", err)
 	}
 	var reconcilers, others []Controller
 	for _, c := range controllers {
@@ -452,7 +444,7 @@ func (m *Manager) waitForCaches() {
 	}
 }
 
-func (m *Manager) serve() (*http.Server, error) {
+func (m *Manager) serve(ctx context.Context) (*http.Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
 	// A standby replica is ready once its webhooks and Serve handler serve:
@@ -493,10 +485,10 @@ func (m *Manager) serve() (*http.Server, error) {
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			m.log.Error("health server failed", "err", err)
+			clog.FromContext(ctx).Error("health server failed", "err", err)
 		}
 	}()
-	m.log.Info("serving health and metrics", "addr", ln.Addr().String())
+	clog.FromContext(ctx).Info("serving health and metrics", "addr", ln.Addr().String())
 	return srv, nil
 }
 
@@ -645,7 +637,7 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 		return c
 	}
 	id := m.newID()
-	c := key.ti.newCache(id, res, m.client, m.informerConfig(res, key.namespace, key.selector, ownerKey), m.log, m.metrics)
+	c := key.ti.newCache(id, res, m.client, m.informerConfig(res, key.namespace, key.selector, ownerKey), m.metrics)
 	c.onChange(func(old, new *ObjectMeta, initial bool) {
 		if !initial {
 			m.tracker.changed(id, old, new)

@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/envtest"
@@ -443,8 +444,8 @@ func measure(mode, kubeconfig, namespace string) (*result, error) {
 		ln.Close()
 		m := &kube.Manager{Kubeconfig: kubeconfig, Namespace: namespace, Addr: addr, DisableInterning: strings.HasSuffix(mode, "no-interning"),
 			DisableStreamingLists: strings.HasSuffix(mode, "paginated"),
-			DisableProtobuf:       strings.HasSuffix(mode, "-json"),
-			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil))}
+			DisableProtobuf:       strings.HasSuffix(mode, "-json")}
+		ctx = clog.WithLogger(ctx, clog.NewLogger(slog.New(slog.DiscardHandler)))
 		var c kube.Controller
 		switch mode {
 		case "kube-k8s.Pod", "kube-k8s.Pod-json", "kube-k8s.Pod-paginated", "kube-k8s.Pod-no-interning":

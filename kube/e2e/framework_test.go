@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
@@ -185,9 +186,9 @@ func TestRestartMakesNoWrites(t *testing.T) {
 	ns := e2e.Namespace(t, c)
 	run := func(r *counter) (addr string, stop func()) {
 		addr = freeAddr(t)
-		ctx, cancel := context.WithCancelCause(t.Context())
+		ctx, cancel := context.WithCancelCause(e2e.WithLogger(t.Context(), t))
 		done := make(chan error, 1)
-		m := &kube.Manager{Name: "restart-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, Addr: addr, Logger: e2e.Logger(t)}
+		m := &kube.Manager{Name: "restart-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, Addr: addr}
 		go func() { done <- m.Run(ctx, kube.For[Widget](r, kube.Named("restart"))) }()
 		return addr, func() {
 			// Like signal.NotifyContext, which kube.Main uses, stop with
@@ -497,9 +498,8 @@ func TestStaleFinalizerNeedsPatch(t *testing.T) {
 		}
 	}
 	out := &syncBuffer{}
-	e2e.Run(t, &kube.Manager{
+	e2e.RunContext(t, clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(out, nil)))), &kube.Manager{
 		Name: "unfinalized-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "unfinalized"), Namespace: ns,
-		Logger: slog.New(slog.NewTextHandler(out, nil)),
 	}, kube.For[settings](unfinalized{}, kube.Named("unfinalized")))
 	finalizers := func() ([]string, error) {
 		var cm settings
@@ -587,9 +587,9 @@ func TestLeaderElectionFailover(t *testing.T) {
 	}
 	start := func() *replica {
 		rep := &replica{r: &counter{}, done: make(chan error, 1)}
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 		rep.cancel = cancel
-		m := &kube.Manager{Name: "leader-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, LeaderElection: true, LeaseNamespace: ns, Logger: e2e.Logger(t)}
+		m := &kube.Manager{Name: "leader-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, LeaderElection: true, LeaseNamespace: ns}
 		go func() { rep.done <- m.Run(ctx, kube.For[Widget](rep.r, kube.Named("leader"))) }()
 		return rep
 	}

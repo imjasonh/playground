@@ -195,7 +195,7 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		return &writeError{"applying status of", in.ti, m.Key(), err}
 	}
 	record("applied")
-	c.log.Debug("applied status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
+	c.logger(ctx).Debug("applied status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
 	return nil
 }
 

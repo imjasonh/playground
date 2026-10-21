@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
@@ -85,13 +86,13 @@ func startReplica(t *testing.T, ns, kubeconfig string, shards int, opts ...kube.
 	mux.HandleFunc("GET /reports/{namespace}/{name}", showResults)
 	counts := &logCounts{}
 	log := slog.New(countingHandler{Handler: e2e.Logger(t).Handler(), counts: counts})
-	m := &kube.Manager{Name: "reports-handover-e2e", Kubeconfig: kubeconfig, Namespace: ns, LeaseNamespace: ns, Addr: freeAddr(t), ServeAddr: freeAddr(t), Logger: log}
+	m := &kube.Manager{Name: "reports-handover-e2e", Kubeconfig: kubeconfig, Namespace: ns, LeaseNamespace: ns, Addr: freeAddr(t), ServeAddr: freeAddr(t)}
 	if shards > 1 {
 		m.Shards = shards
 	} else {
 		m.LeaderElection = true
 	}
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(log)))
 	done := make(chan error, 1)
 	opts = append([]kube.Option{kube.Named("reports")}, opts...)
 	go func() { done <- m.Run(ctx, kube.For[Report](h, opts...), kube.Serve(mux)) }()

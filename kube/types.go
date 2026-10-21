@@ -3,7 +3,6 @@ package kube
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -48,7 +47,7 @@ type typeInfo struct {
 
 	// newCache builds a cache for this type. It's captured where the Go
 	// type is known statically, so caches are typed without reflection.
-	newCache func(id int, res resolved, c *client.Client, cfg informerConfig, log *slog.Logger, m *metrics) cache
+	newCache func(id int, res resolved, c *client.Client, cfg informerConfig, m *metrics) cache
 }
 
 // cache is a running informer of any type.
@@ -111,8 +110,8 @@ func typeInfoFor[T any, P Resource[T]]() (*typeInfo, error) {
 		typeCache.Store(t, err)
 		return nil, err
 	}
-	ti.newCache = func(id int, res resolved, c *client.Client, cfg informerConfig, log *slog.Logger, m *metrics) cache {
-		return newInformer[T, P](id, ti, res, c, cfg, log, m)
+	ti.newCache = func(id int, res resolved, c *client.Client, cfg informerConfig, m *metrics) cache {
+		return newInformer[T, P](id, ti, res, c, cfg, m)
 	}
 	v, _ := typeCache.LoadOrStore(t, ti)
 	return v.(*typeInfo), nil

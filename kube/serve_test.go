@@ -240,7 +240,7 @@ func TestServeRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := s.ln.Addr().String()
-	health, err := m.serve()
+	health, err := m.serve(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

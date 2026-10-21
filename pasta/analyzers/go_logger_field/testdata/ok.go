@@ -13,18 +13,19 @@ type config struct {
 
 type bytesBuffer struct{}
 
-func take(log *slog.Logger, clogger *clog.Logger) *slog.Logger {
-	return log
-}
-
 func local() {
 	log := slog.Default()
 	_ = log
-	_ = take(log, nil)
-}
-
-type client interface {
-	SetLogger(logger *slog.Logger)
+	clogger := clog.New(slog.DiscardHandler)
+	_ = clogger
 }
 
 func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+func makeLogger() *clog.Logger { return clog.New(slog.DiscardHandler) }
+
+func parenthesized() (*slog.Logger, error) {
+	return slog.New(slog.DiscardHandler), nil
+}
+
+func namedResult() (log *slog.Logger) { return nil }

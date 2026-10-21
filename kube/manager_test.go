@@ -18,7 +18,7 @@ func TestFlagsThatTheProgramDefines(t *testing.T) {
 	kubeconfig := fs.String("kubeconfig", "", "the program's own kubeconfig")
 	verbose := fs.Bool("v", false, "the program's own verbosity")
 	var m Manager
-	level, skipped := m.flags(fs)
+	skipped := m.flags(fs)
 	if !slices.Equal(skipped, []string{"kubeconfig"}) {
 		t.Errorf("skipped %q, want [kubeconfig]", skipped)
 	}
@@ -28,19 +28,18 @@ func TestFlagsThatTheProgramDefines(t *testing.T) {
 	if *kubeconfig != "mine" || !*verbose || m.Kubeconfig != "" {
 		t.Errorf("the program's -kubeconfig = %q and -v = %v, and the manager's Kubeconfig = %q; want mine, true, and empty", *kubeconfig, *verbose, m.Kubeconfig)
 	}
-	if m.Namespace != "team" || m.Addr != ":8080" || m.Shards != 3 || *level != slog.LevelDebug {
-		t.Errorf("Namespace = %q, Addr = %q, Shards = %d, and -log-level = %v; want team, :8080, 3, and DEBUG", m.Namespace, m.Addr, m.Shards, *level)
+	if m.Namespace != "team" || m.Addr != ":8080" || m.Shards != 3 || m.logLevel.Level() != slog.LevelDebug {
+		t.Errorf("Namespace = %q, Addr = %q, Shards = %d, and -log-level = %v; want team, :8080, 3, and DEBUG", m.Namespace, m.Addr, m.Shards, m.logLevel.Level())
 	}
 }
 
 // TestFlagsDefaultToFields checks that Manager.Main keeps the fields that
-// the program sets, as the defaults of their flags, and that a Manager with
-// a Logger has no -log-level.
+// the program sets, as the defaults of their flags.
 func TestFlagsDefaultToFields(t *testing.T) {
 	fs := flag.NewFlagSet("program", flag.ContinueOnError)
-	m := Manager{Namespace: "team", LeaderElection: true, Shards: 3, Addr: ":9090", Logger: slog.New(slog.DiscardHandler)}
-	if level, _ := m.flags(fs); level != nil || fs.Lookup("log-level") != nil {
-		t.Error("a Manager with a Logger has -log-level")
+	m := Manager{Namespace: "team", LeaderElection: true, Shards: 3, Addr: ":9090"}
+	if skipped := m.flags(fs); len(skipped) != 0 || fs.Lookup("log-level") == nil {
+		t.Fatalf("skipped %q; -log-level present = %v", skipped, fs.Lookup("log-level") != nil)
 	}
 	if err := fs.Parse([]string{"-metrics-addr=:7070"}); err != nil {
 		t.Fatal(err)

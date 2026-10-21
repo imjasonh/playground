@@ -1,6 +1,7 @@
 package buildcmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/imjasonh/playground/node-image/internal/app"
@@ -56,6 +59,7 @@ func Run(opt Options) (string, error) {
 		stderr = os.Stderr
 	}
 	log := slog.New(slog.NewTextHandler(stderr, nil))
+	ctx := clog.WithLogger(context.Background(), clog.NewLogger(log))
 	dir := opt.Dir
 	if dir == "" {
 		dir = "."
@@ -341,7 +345,7 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		layers, err := assemblePlannedLayers(planned, appFiles, cfg, baseInfo, log)
+		layers, err := assemblePlannedLayers(ctx, planned, appFiles, cfg, baseInfo)
 		if err != nil {
 			return "", err
 		}
@@ -502,7 +506,7 @@ func prefixFiles(prefix string, files []layer.File) []layer.File {
 	return out
 }
 
-func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File, cfg *config.Config, baseInfo *base.Info, log *slog.Logger) ([]publish.LayerFiles, error) {
+func assemblePlannedLayers(ctx context.Context, planned *layout.PlannedLayout, appFiles []layer.File, cfg *config.Config, baseInfo *base.Info) ([]publish.LayerFiles, error) {
 	budget := layer.Budget{
 		MaxLayers:   cfg.MaxLayers,
 		BaseLayers:  baseInfo.LayerCount,
@@ -510,7 +514,7 @@ func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File,
 	}
 	slots := budget.StoreSlots()
 	if len(planned.Store) > slots {
-		log.Info("layer budget", "packages", len(planned.Store), "buckets", slots, "max_layers", cfg.MaxLayers, "base", baseInfo.LayerCount)
+		clog.FromContext(ctx).Info("layer budget", "packages", len(planned.Store), "buckets", slots, "max_layers", cfg.MaxLayers, "base", baseInfo.LayerCount)
 	}
 	storeGroups := layer.BucketStorePackagesOpts(planned.Store, slots, layer.BucketOptions{
 		Unbucketed: cfg.Unbucketed,

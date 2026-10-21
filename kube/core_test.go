@@ -7,6 +7,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/chainguard-dev/clog"
 	"net/http/httptest"
 	"reflect"
 	"regexp"
@@ -787,7 +789,6 @@ func TestFailedReadStopsTheReconcile(t *testing.T) {
 	}
 	var logs bytes.Buffer
 	m := testManager()
-	m.log = slog.New(slog.NewTextHandler(&logs, nil))
 	m.client, m.tracker = cl, newTracker()
 	w := &widget{}
 	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
@@ -800,7 +801,8 @@ func TestFailedReadStopsTheReconcile(t *testing.T) {
 		return nil
 	}}
 
-	c.process(t.Context(), w.Key())
+	ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	c.process(ctx, w.Key())
 	if went {
 		t.Error("the reconcile went on after a Get that couldn't read")
 	}
@@ -887,7 +889,6 @@ func TestProcessRetryAfter(t *testing.T) {
 	} {
 		var logs bytes.Buffer
 		m := testManager()
-		m.log = slog.New(slog.NewTextHandler(&logs, nil))
 		m.client, m.tracker = cl, newTracker()
 		w := &widget{}
 		w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
@@ -900,7 +901,8 @@ func TestProcessRetryAfter(t *testing.T) {
 			return tc.err
 		}}
 
-		c.process(t.Context(), w.Key())
+		ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+		c.process(ctx, w.Key())
 		if n := m.metrics.counter("kube_reconcile_total", "controller", c.name, "result", tc.result); n != 1 {
 			t.Errorf("%s: %v reconciles with result %s, want 1", tc.name, n, tc.result)
 		}
