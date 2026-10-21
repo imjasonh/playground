@@ -682,11 +682,11 @@ bundle exec fastlane test
   At the start of a request, reconcile, or command, store the shared
   identity (repository, branch, caller) there so later logs in that
   call chain include it. Do not pass a `*slog.Logger` beside `ctx`.
-  Do not add a `Logf` function or a `*slog.Logger` field on a config
-  struct to carry our logs. Read the logger from the context. A
-  library that requires `*slog.Logger` is the boundary where that
-  logger is passed in: Litestream's replica client and VFS, and
-  `kube`'s manager, which imports only the standard library.
+  Do not keep a `*slog.Logger` on a struct. Pass the context into the
+  function that logs, and read the logger there with `clog.FromContext`.
+  A library that requires `*slog.Logger` gets it at that call:
+  Litestream's replica client and VFS, and `kube`'s manager, which
+  imports only the standard library.
   `clog.Info` and the other package-level calls only reach the default
   logger, so use `slog` there. `clog.Fatal` is the exception: `slog`
   has no equivalent, and `Fatal` logs then exits. Do not call clog's

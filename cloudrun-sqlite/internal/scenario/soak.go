@@ -237,7 +237,7 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 		chaos(cfg.CrashEvery, "crash", &res.Crashes, cfg.Sim.Crash)
 		chaos(cfg.ScaleEvery, "scale to zero", &res.ScaleToZeros, cfg.Sim.ScaleToZero)
 		chaos(cfg.DeployEvery, "deploy", &res.Deploys, func() {
-			if err := cfg.Sim.Deploy(cfg.Overlap); err != nil {
+			if err := cfg.Sim.Deploy(runCtx, cfg.Overlap); err != nil {
 				slog.ErrorContext(runCtx, "deploy", "err", err)
 			}
 		})
