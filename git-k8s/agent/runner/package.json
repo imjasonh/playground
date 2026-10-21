@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@cursor/sdk": "^1.0.38"
+    "@cursor/sdk": "^1.0.40"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

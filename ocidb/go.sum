@@ -23,6 +23,8 @@ github.com/docker/cli v29.9.0+incompatible h1:Cw9x50ioSGgGwXJ4eO+hIBry/w3LLbyF8G
 github.com/docker/cli v29.9.0+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/cli v29.9.1+incompatible h1:E4YGy7TMkPk7mFsXTVUyjHxVeJdjTDfIS0X4Q0+ioQ0=
 github.com/docker/cli v29.9.1+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
+github.com/docker/cli v29.9.2+incompatible h1:trup/vUxx5uUo2t+87Cd9AmITR+DvKUe4H2tTtZN8FY=
+github.com/docker/cli v29.9.2+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/distribution v2.8.3+incompatible h1:AtKxIZ36LoNK51+Z6RpzLpddBirtxJnzDrHLEKxTAYk=
 github.com/docker/distribution v2.8.3+incompatible/go.mod h1:J2gT2udsDAN96Uj4KfcMRqY0/ypR+oyYUYmja8H+y+w=
 github.com/docker/docker-credential-helpers v0.9.3 h1:gAm/VtF9wgqJMoxzT3Gj5p4AqIjCBS4wrsOh9yRqcz8=
@@ -33,6 +35,8 @@ github.com/docker/docker-credential-helpers v0.9.9 h1:BkydjIgZ46JnDbqyM2p2fc63KM
 github.com/docker/docker-credential-helpers v0.9.9/go.mod h1:v1S+hepowrQXITkEfw6o4+BMbGot02wiKpzWhGUZK6c=
 github.com/docker/docker-credential-helpers v0.9.10 h1:LCWwv7UmS7fQVmdKDWeMuureOeY5kkbC5kZfkzxkS6k=
 github.com/docker/docker-credential-helpers v0.9.10/go.mod h1:v1S+hepowrQXITkEfw6o4+BMbGot02wiKpzWhGUZK6c=
+github.com/docker/docker-credential-helpers v0.9.12 h1:hAgjJcMuC17DPf0Kl/HQSZQ7cxVo+wEA8Oo1SzkmqFg=
+github.com/docker/docker-credential-helpers v0.9.12/go.mod h1:v1S+hepowrQXITkEfw6o4+BMbGot02wiKpzWhGUZK6c=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/dustin/go-humanize v1.1.0 h1:dbKTrvD0klcbBV/h4AWJdMuZogJACoMlvWIWZ5b2xWg=
