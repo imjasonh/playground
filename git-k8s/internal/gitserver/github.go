@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -218,7 +219,7 @@ func (g *GitHub) exchange(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, err := g.Verify(r.Context(), strings.TrimPrefix(auth[0], "Bearer "))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gitserver: exchange for %s %s: %v\n", scope, identity, err)
+		slog.Error("token exchange failed", "scope", scope, "identity", identity, "err", err)
 		stsError(w, http.StatusUnauthorized, "unable to verify bearer token")
 		return
 	}

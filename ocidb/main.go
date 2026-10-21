@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -42,8 +44,7 @@ var queryFS embed.FS
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "ocidb:", err)
-		os.Exit(1)
+		log.Fatal("ocidb:", err)
 	}
 }
 
@@ -200,7 +201,7 @@ func cmdShell(args []string) error {
 			stmt = strings.TrimSuffix(stmt, ";")
 			if strings.TrimSpace(stmt) != "" {
 				if err := runAndPrint(os.Stdout, db, stmt, s.format); err != nil {
-					fmt.Fprintln(os.Stderr, "error:", err)
+					slog.Error("query", "err", err)
 				}
 			}
 		}
@@ -316,7 +317,7 @@ func cmdDemo(args []string) error {
 		fmt.Printf("\n\033[1m== %d/%d  %s\033[0m\n", i+1, len(demos), d.title)
 		fmt.Printf("\033[2m%s\033[0m\n", d.sql)
 		if err := runAndPrint(os.Stdout, db, d.sql, s.format); err != nil {
-			fmt.Fprintln(os.Stderr, "  query failed:", err)
+			slog.Error("query failed", "err", err)
 		}
 	}
 	reportCache(os.Stderr, client)

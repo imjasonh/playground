@@ -67,7 +67,7 @@ func seedMain(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("built %d rows, %d bytes in %s\n", *rows, fi.Size(), time.Since(start).Round(time.Millisecond))
+	slog.Info("built database", "rows", *rows, "bytes", fi.Size(), "duration", time.Since(start).Round(time.Millisecond))
 
 	start = time.Now()
 	f, err := os.Open(path)
@@ -82,7 +82,7 @@ func seedMain(args []string) error {
 	if err != nil {
 		return fmt.Errorf("upload snapshot: %w", err)
 	}
-	fmt.Printf("uploaded snapshot, %d bytes in %s\n", info.Size, time.Since(start).Round(time.Millisecond))
+	slog.Info("uploaded snapshot", "bytes", info.Size, "duration", time.Since(start).Round(time.Millisecond))
 	return nil
 }
 

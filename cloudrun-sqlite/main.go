@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
@@ -27,14 +27,12 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "seed" {
 		if err := seedMain(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "seed:", err)
-			os.Exit(1)
+			clog.Fatal("seed", "err", err)
 		}
 		return
 	}
 	if err := serveMain(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		clog.Fatal("serve", "err", err)
 	}
 }
 

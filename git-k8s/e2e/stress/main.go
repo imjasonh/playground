@@ -10,6 +10,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -46,13 +48,12 @@ func main() {
 		os.Exit(2)
 	}
 	if err := cmd(os.Args[2:]); err != nil {
-		logf("%v", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 }
 
 func logf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "%s %s\n", time.Now().Format("15:04:05.000"), fmt.Sprintf(format, args...))
+	slog.Info(fmt.Sprintf(format, args...))
 }
 
 func numCPU() int { return runtime.NumCPU() }

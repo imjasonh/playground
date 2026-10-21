@@ -43,6 +43,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/kube"
 	"golang.org/x/sync/singleflight"
@@ -139,8 +140,7 @@ func main() {
 	// gcp/init installed the process handler from LOG_LEVEL.
 	log := slog.Default()
 	if err := run(log, *addr, *metricsAddr, *upstream, *dir, *maxSize, *controller); err != nil {
-		log.Error("exiting", "err", err)
-		os.Exit(1)
+		clog.Fatal("exiting", "err", err)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,15 +67,13 @@ func main() {
 	if *mode != "" {
 		r, err := measure(*mode, *kubeconfig, *namespace)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			log.Fatal(err)
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(r)
 		return
 	}
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 }
 

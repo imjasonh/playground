@@ -28,6 +28,7 @@ import (
 	_ "github.com/benbjohnson/litestream/file"
 	_ "github.com/benbjohnson/litestream/gs"
 	_ "github.com/benbjohnson/litestream/s3"
+	"github.com/chainguard-dev/clog"
 	// With the vfs tag, Litestream's VFS calls SQLite's C API, which
 	// go-sqlite3 links.
 	_ "github.com/mattn/go-sqlite3"
@@ -53,8 +54,7 @@ func main() {
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		clog.Fatal("crbench", "err", err)
 	}
 }
 
@@ -135,9 +135,7 @@ func soak(args []string) error {
 	cfg.URL = srv.URL
 	cfg.Sim = sim
 	cfg.AdminToken = c.adminToken
-	cfg.Logf = func(format string, args ...any) {
-		fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05.000")}, args...)...)
-	}
+	cfg.Logf = logf
 	res, err := scenario.Soak(context.Background(), cfg)
 	if err != nil {
 		return err
@@ -153,6 +151,10 @@ func soak(args []string) error {
 		return fmt.Errorf("%d violations", len(res.Violations))
 	}
 	return nil
+}
+
+func logf(format string, args ...any) {
+	slog.Info(fmt.Sprintf(format, args...))
 }
 
 func printSoak(r *scenario.SoakResult) {
@@ -239,9 +241,7 @@ func live(args []string) error {
 	*url = strings.TrimRight(*url, "/")
 	cfg.URL = *url
 	cfg.AdminToken = *admin
-	cfg.Logf = func(format string, args ...any) {
-		fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05.000")}, args...)...)
-	}
+	cfg.Logf = logf
 
 	var during remoteStats
 	var haveDuring bool
@@ -249,7 +249,7 @@ func live(args []string) error {
 	cfg.BeforeVerify = func(ctx context.Context) error {
 		client := &http.Client{Timeout: 30 * time.Second}
 		if err := getJSON(client, *url+"/stats", &during); err != nil {
-			fmt.Fprintf(os.Stderr, "stats before read-back: %v\n", err)
+			slog.Warn("stats before read-back", "err", err)
 		} else {
 			haveDuring = true
 		}
@@ -434,7 +434,7 @@ func coldstart(args []string) error {
 			return err
 		}
 		results = append(results, r)
-		fmt.Fprintf(os.Stderr, "%+v\n", r)
+		slog.Info("cold start", "result", fmt.Sprintf("%+v", r))
 	}
 
 	fmt.Println("| rows | database | start to listen | first request | random read p50 / p99 | full restore (old approach) |")

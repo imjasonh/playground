@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/crsim"
 )
 
@@ -42,6 +43,7 @@ func main() {
 	cfg.Command = flag.Args()
 	cfg.Env = env
 	cfg.Logger = slog.New(slog.NewTextHandler(os.Stderr, nil)).With("component", "crsim")
+	slog.SetDefault(cfg.Logger)
 
 	sim := crsim.New(cfg)
 	go func() {
@@ -53,7 +55,6 @@ func main() {
 	}()
 	cfg.Logger.Info("serving", "listen", *listen, "command", cfg.Command)
 	if err := http.ListenAndServe(*listen, sim); err != nil {
-		cfg.Logger.Error("listen", "error", err)
-		os.Exit(1)
+		clog.Fatal("listen", "error", err)
 	}
 }

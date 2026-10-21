@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -17,8 +18,7 @@ func main() {
 	switch os.Args[1] {
 	case "build":
 		if err := runBuild(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "node-image: %v\n", err)
-			os.Exit(1)
+			log.Fatal("node-image:", err)
 		}
 	case "diagnose":
 		dir := "."

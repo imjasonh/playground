@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -406,7 +407,7 @@ func (s *Server) handleDidChangeWatched(ctx context.Context, p protocol.DidChang
 
 func (s *Server) logf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(os.Stderr, "pastals:", msg)
+	slog.Info(msg)
 	if s.conn == nil {
 		return
 	}

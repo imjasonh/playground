@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"maps"
 	"net"
@@ -200,8 +201,7 @@ func (m *Manager) Main(controllers ...Controller) {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 		case err != nil:
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			log.Fatal(err)
 		}
 		return
 	}
