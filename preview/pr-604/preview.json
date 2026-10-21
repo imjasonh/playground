@@ -1,1 +1,1 @@
-{"number": 604, "title": "Log diagnostic prints with slog, and exit with Fatal", "apps": ["palette-swap"], "posts": false, "index": false}
+{"number": 604, "title": "Log with slog attributes and a context logger", "apps": ["palette-swap"], "posts": false, "index": false}
