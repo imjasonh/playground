@@ -21,6 +21,7 @@ import (
 	_ "github.com/benbjohnson/litestream/file"
 	_ "github.com/benbjohnson/litestream/gs"
 	_ "github.com/benbjohnson/litestream/s3"
+	"github.com/chainguard-dev/clog"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/psanford/sqlite3vfs"
 
@@ -82,10 +83,6 @@ type Config struct {
 
 	// MaxBatch caps how many queued writes share one transaction and upload.
 	MaxBatch int
-
-	// Logger receives store logs. VFSLogger receives Litestream VFS logs.
-	Logger    *slog.Logger
-	VFSLogger *slog.Logger
 }
 
 // DefaultConfig returns the defaults used by the server. Polling costs list
@@ -174,13 +171,9 @@ type writeReq struct {
 var vfsSeq atomic.Int64
 
 // Open opens the database, creating it in the replica if it doesn't exist.
+// Logs go to the logger on ctx, which is also what Litestream's client and
+// VFS receive. Those APIs take *slog.Logger.
 func Open(ctx context.Context, cfg Config) (*Store, error) {
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
-	if cfg.VFSLogger == nil {
-		cfg.VFSLogger = cfg.Logger
-	}
 	if cfg.MaxBatch <= 0 {
 		cfg.MaxBatch = 1
 	}
@@ -190,7 +183,8 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("replica client: %w", err)
 	}
-	raw.SetLogger(cfg.VFSLogger)
+	log := clog.FromContext(ctx).Logger
+	raw.SetLogger(&log)
 	if err := raw.Init(ctx); err != nil {
 		return nil, fmt.Errorf("init replica client: %w", err)
 	}
@@ -199,7 +193,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, err
 	}
 
-	vfs := litestream.NewVFS(client, cfg.VFSLogger)
+	vfs := litestream.NewVFS(client, &log)
 	vfs.PollInterval = cfg.PollInterval
 	vfs.CacheSize = cfg.CacheSize
 	vfs.WriteEnabled = true
@@ -221,7 +215,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 
 	s := &Store{
 		cfg:       cfg,
-		log:       cfg.Logger,
+		log:       &log,
 		client:    client,
 		writes:    make(chan *writeReq),
 		jobs:      make(chan func()),

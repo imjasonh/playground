@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ func loadRun(dir string) (*runData, error) {
 			break
 		} else if err != nil {
 			// A run that was killed can leave half a line at the end.
-			logf("%s: stopping at a bad record: %v", dir, err)
+			slog.Warn("stopping at a bad record", "dir", dir, "err", err)
 			break
 		}
 		rc := record{T: r.T, Kind: r.Kind}

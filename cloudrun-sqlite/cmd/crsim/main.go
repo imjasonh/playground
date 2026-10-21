@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -42,10 +43,10 @@ func main() {
 	}
 	cfg.Command = flag.Args()
 	cfg.Env = env
-	cfg.Logger = slog.New(slog.NewTextHandler(os.Stderr, nil)).With("component", "crsim")
-	slog.SetDefault(cfg.Logger)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil)).With("component", "crsim")
+	slog.SetDefault(log)
 
-	sim := crsim.New(cfg)
+	sim := crsim.New(clog.WithLogger(context.Background(), clog.NewLogger(log)), cfg)
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -53,7 +54,7 @@ func main() {
 		sim.Close()
 		os.Exit(0)
 	}()
-	cfg.Logger.Info("serving", "listen", *listen, "command", cfg.Command)
+	slog.Info("serving", "listen", *listen, "command", cfg.Command)
 	if err := http.ListenAndServe(*listen, sim); err != nil {
 		clog.Fatal("listen", "error", err)
 	}

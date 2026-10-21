@@ -52,10 +52,6 @@ func main() {
 	}
 }
 
-func logf(format string, args ...any) {
-	slog.Info(fmt.Sprintf(format, args...))
-}
-
 func numCPU() int { return runtime.NumCPU() }
 
 func defaultState() string {
@@ -127,12 +123,12 @@ func runCmd(args []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	logf("recording to %s", *out)
+	slog.Info("recording", "dir", *out)
 	runErr := runScenario(ctx, env, p, *out)
 	if err := analyze(*out); err != nil {
 		runErr = errors.Join(runErr, fmt.Errorf("analyzing %s: %w", *out, err))
 	} else {
-		logf("wrote %s", filepath.Join(*out, "summary.md"))
+		slog.Info("wrote summary", "path", filepath.Join(*out, "summary.md"))
 	}
 	return runErr
 }
@@ -213,7 +209,7 @@ func cleanupCmd(args []string) error {
 		return err
 	}
 	for _, name := range names {
-		logf("deleting namespace %s", name)
+		slog.Info("deleting namespace", "namespace", name)
 		if err := k.delete(ctx, "/api/v1/namespaces/"+name); err != nil {
 			return err
 		}

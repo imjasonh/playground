@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -199,7 +200,7 @@ func (k *kubeClient) watch(ctx context.Context, path string, handle func(typ str
 				Items []json.RawMessage `json:"items"`
 			}
 			if err := k.get(ctx, path, &list); err != nil {
-				logf("listing %s: %v", path, err)
+				slog.Warn("listing", "path", path, "err", err)
 				sleep(ctx, time.Second)
 				continue
 			}
@@ -212,7 +213,7 @@ func (k *kubeClient) watch(ctx context.Context, path string, handle func(typ str
 		var err error
 		rv, err = k.watchOnce(ctx, path+sep+"watch=1&allowWatchBookmarks=true&timeoutSeconds=300&resourceVersion="+rv, rv, handle)
 		if err != nil && ctx.Err() == nil {
-			logf("watching %s: %v", path, err)
+			slog.Warn("watching", "path", path, "err", err)
 			sleep(ctx, 500*time.Millisecond)
 		}
 	}

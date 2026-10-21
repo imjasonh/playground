@@ -20,6 +20,7 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	mexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"github.com/chainguard-dev/clog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/detectors/gcp"
@@ -86,11 +87,9 @@ var (
 // Start sets up the meter provider behind /metrics. On a Cloud Run service
 // it also exports traces to Cloud Trace and metrics to Cloud Monitoring.
 // The returned function flushes them. A setup failure disables that export
-// and leaves the server running.
-func Start(ctx context.Context, log *slog.Logger) func(context.Context) error {
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
-	}
+// and leaves the server running. Setup logs use the logger on ctx.
+func Start(ctx context.Context) func(context.Context) error {
+	log := clog.FromContext(ctx)
 	res := resource.NewSchemaless(attribute.String("service.name", "cloudrun-sqlite"))
 	var opts []sdkmetric.Option
 	var shutdowns []func(context.Context) error

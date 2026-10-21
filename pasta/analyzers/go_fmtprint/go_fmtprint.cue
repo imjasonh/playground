@@ -1,8 +1,7 @@
 // go_fmtprint flags fmt.Print, fmt.Println, and fmt.Printf.
 //
-// Those calls write to standard output. A log belongs in slog, with
-// a message and attributes. clog.Fatal and log.Fatal are the calls
-// that log and then exit. slog has no equivalent.
+// A log is slog, with a message and attributes. clog.Fatal and
+// log.Fatal log and then exit. slog has no equivalent.
 //
 // A single string argument is rewritten to slog.Info. The other
 // shapes stay as diagnostics: a format string and its operands do
@@ -10,8 +9,11 @@
 // has no types.
 //
 // fmt.Fprint, fmt.Fprintln, and fmt.Fprintf are not flagged. They
-// write to a caller-supplied writer, which is how a command prints
-// its result and how code formats into a buffer.
+// write to the io.Writer the caller passed, which is how a function
+// writes a document or formats into a buffer. Passing os.Stdout at
+// the call, in place of fmt.Println, is the same write. Do not do
+// that to hide from this rule. A Go example that prints for an
+// Output comment keeps fmt.Println and marks the line pasta:ignore.
 
 package go_fmtprint
 

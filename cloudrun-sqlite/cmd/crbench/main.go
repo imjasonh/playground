@@ -93,12 +93,13 @@ func (c *common) sim(replicaURL string) (*crsim.Sim, *httptest.Server, func(), e
 	if c.adminToken == "" {
 		c.adminToken = strconv.FormatUint(rand.Uint64(), 36)
 	}
-	sim := crsim.New(crsim.Config{
+	sim := crsim.New(clog.WithLogger(context.Background(), clog.NewLogger(
+		slog.New(slog.NewTextHandler(out, nil)).With("component", "crsim"),
+	)), crsim.Config{
 		Command:  []string{c.app},
 		Env:      append([]string{"REPLICA_URL=" + replicaURL, "ADMIN_TOKEN=" + c.adminToken}, c.env...),
 		Throttle: c.throttle,
 		Output:   out,
-		Logger:   slog.New(slog.NewTextHandler(out, nil)).With("component", "crsim"),
 	})
 	srv := httptest.NewServer(sim)
 	return sim, srv, func() {
@@ -135,7 +136,6 @@ func soak(args []string) error {
 	cfg.URL = srv.URL
 	cfg.Sim = sim
 	cfg.AdminToken = c.adminToken
-	cfg.Logf = logf
 	res, err := scenario.Soak(context.Background(), cfg)
 	if err != nil {
 		return err
@@ -151,10 +151,6 @@ func soak(args []string) error {
 		return fmt.Errorf("%d violations", len(res.Violations))
 	}
 	return nil
-}
-
-func logf(format string, args ...any) {
-	slog.Info(fmt.Sprintf(format, args...))
 }
 
 func printSoak(r *scenario.SoakResult) {
@@ -236,7 +232,6 @@ func live(args []string) error {
 	*url = strings.TrimRight(*url, "/")
 	cfg.URL = *url
 	cfg.AdminToken = *admin
-	cfg.Logf = logf
 
 	var during remoteStats
 	var haveDuring bool
@@ -429,7 +424,6 @@ func coldstart(args []string) error {
 			return err
 		}
 		results = append(results, r)
-		slog.Info("cold start", "result", fmt.Sprintf("%+v", r))
 	}
 
 	for _, r := range results {

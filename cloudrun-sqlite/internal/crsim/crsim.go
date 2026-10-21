@@ -12,9 +12,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chainguard-dev/clog"
 	"io"
 	"io/fs"
-	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -51,7 +51,6 @@ type Config struct {
 	StartTimeout time.Duration
 	// Output receives instance stdout and stderr, prefixed by instance ID.
 	Output io.Writer
-	Logger *slog.Logger
 }
 
 // Sim is a simulated Cloud Run service. It is an http.Handler: requests
@@ -59,6 +58,7 @@ type Config struct {
 // instance.
 type Sim struct {
 	cfg Config
+	log *clog.Logger
 
 	mu       sync.Mutex
 	revision int
@@ -106,8 +106,9 @@ type InstanceStats struct {
 	ExitCode    int        `json:"exit_code"`
 }
 
-// New returns a simulator. Call Close to stop every instance.
-func New(cfg Config) *Sim {
+// New returns a simulator. Logs use the logger on ctx. Call Close to stop
+// every instance.
+func New(ctx context.Context, cfg Config) *Sim {
 	if cfg.GracePeriod == 0 {
 		cfg.GracePeriod = 10 * time.Second
 	}
@@ -117,10 +118,7 @@ func New(cfg Config) *Sim {
 	if cfg.Output == nil {
 		cfg.Output = os.Stderr
 	}
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
-	s := &Sim{cfg: cfg, revision: 1}
+	s := &Sim{cfg: cfg, log: clog.FromContext(ctx), revision: 1}
 	go s.monitor()
 	return s
 }
@@ -195,7 +193,7 @@ func (s *Sim) coldStart() {
 	if err == nil {
 		s.active = inst
 	} else {
-		s.cfg.Logger.Error("cold start failed", "error", err)
+		s.log.Error("cold start failed", "error", err)
 	}
 	close(s.starting)
 	s.starting = nil
@@ -257,7 +255,7 @@ func (s *Sim) start() (*instance, error) {
 	s.mu.Lock()
 	s.all = append(s.all, inst)
 	s.mu.Unlock()
-	s.cfg.Logger.Info("instance starting", "id", id)
+	s.log.Info("instance starting", "id", id)
 
 	go inst.copyOutput(out)
 	go inst.wait()
@@ -283,7 +281,7 @@ func (s *Sim) start() (*instance, error) {
 	inst.lastActive = time.Now()
 	s.mu.Unlock()
 	close(inst.ready)
-	s.cfg.Logger.Info("instance ready", "id", id, "ready_ms", inst.Stats.ReadyMillis)
+	s.log.Info("instance ready", "id", id, "ready_ms", inst.Stats.ReadyMillis)
 	return inst, nil
 }
 
@@ -312,7 +310,7 @@ func (inst *instance) wait() {
 		s.overlap = nil
 	}
 	s.mu.Unlock()
-	s.cfg.Logger.Info("instance exited", "id", inst.id, "how", inst.Stats.Exit, "code", inst.Stats.ExitCode, "error", err)
+	s.log.Info("instance exited", "id", inst.id, "how", inst.Stats.Exit, "code", inst.Stats.ExitCode, "error", err)
 	os.RemoveAll(inst.dir)
 	close(inst.exited)
 }
@@ -406,7 +404,7 @@ func (s *Sim) monitor() {
 			s.mu.Unlock()
 		}
 		for _, inst := range idle {
-			s.cfg.Logger.Info("scaling idle instance to zero", "id", inst.id)
+			s.log.Info("scaling idle instance to zero", "id", inst.id)
 			go inst.terminate()
 		}
 	}

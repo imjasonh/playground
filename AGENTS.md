@@ -679,15 +679,21 @@ bundle exec fastlane test
   [`github.com/chainguard-dev/clog`](https://github.com/chainguard-dev/clog)
   is for a logger stored on a `context.Context`: `clog.WithLogger` to
   store it, `clog.FromContext` or the `Context` methods to read it.
-  At the start of a request or reconcile, store the shared identity
-  (repository, branch, caller) there so later logs in that call chain
-  include it. Do not pass a `*slog.Logger` beside `ctx` for that.
+  At the start of a request, reconcile, or command, store the shared
+  identity (repository, branch, caller) there so later logs in that
+  call chain include it. Do not pass a `*slog.Logger` beside `ctx`.
+  Do not add a `Logf` function or a `*slog.Logger` field on a config
+  struct to carry our logs. Read the logger from the context. A
+  library that requires `*slog.Logger` is the boundary where that
+  logger is passed in: Litestream's replica client and VFS, and
+  `kube`'s manager, which imports only the standard library.
   `clog.Info` and the other package-level calls only reach the default
   logger, so use `slog` there. `clog.Fatal` is the exception: `slog`
   has no equivalent, and `Fatal` logs then exits. Do not call clog's
   printf-style methods
   (`Infof`, `Warnf`, `Errorf`, `Debugf`, `Fatalf`, and the `Contextf`
-  variants). Parse a log-level flag with
+  variants), and do not wrap `slog.Info(fmt.Sprintf(...))` to get
+  one. Pass attributes. Parse a log-level flag with
   `github.com/chainguard-dev/clog/slag`.
   In `main` of a program that runs on GCP (Cloud Run, GKE, Cloud Functions,
   or App Engine), blank-import `github.com/chainguard-dev/clog/gcp/init`.
@@ -703,8 +709,14 @@ bundle exec fastlane test
   Do not log with `fmt.Print`, `fmt.Println`, or `fmt.Printf`.
   [`pasta/analyzers/go_fmtprint`](pasta/analyzers/go_fmtprint/go_fmtprint.cue)
   rewrites a single string argument to `slog.Info` and flags every
-  other call. A command that prints its result uses `fmt.Fprint` on
-  an explicit writer, including `os.Stdout`.
+  other call. Do not satisfy a pasta rule by rewriting a call into a
+  form the rule does not match. `fmt.Fprintln(os.Stdout, ...)` is
+  `fmt.Println`. Change the code so the rule's recommendation holds,
+  or change the rule. A Go example that prints for an `// Output:`
+  comment keeps `fmt.Println` and marks that line `pasta:ignore`. A
+  function that writes a document takes an `io.Writer` and uses
+  `fmt.Fprint` on that writer. The command passes `os.Stdout` once,
+  at that call.
 - **Go environment variables**: load them with
   [`github.com/sethvargo/go-envconfig`](https://github.com/sethvargo/go-envconfig).
   Put the default in the `env` struct tag, as in `env:"PORT, default=8080"`.

@@ -80,12 +80,15 @@ func serveMain(args []string) error {
 	}
 
 	instance := instanceID()
-	// gcp/init installed the process handler from LOG_LEVEL.
+	// gcp/init installed the process handler from LOG_LEVEL. The instance
+	// id rides on the context, and on the default logger for code that
+	// has no context.
 	log := slog.Default().With("instance", instance)
 	slog.SetDefault(log)
-	cfg.Logger = log
-	cfg.VFSLogger = log
-	stopTel := observe.Start(context.Background(), cfg.Logger)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	ctx = clog.WithLogger(ctx, clog.NewLogger(log))
+	stopTel := observe.Start(ctx)
 	defer func() {
 		tctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -96,9 +99,6 @@ func serveMain(args []string) error {
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-	defer stop()
 
 	start := time.Now()
 	st, err := store.Open(ctx, cfg)

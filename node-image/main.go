@@ -29,7 +29,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "version", "-version", "--version":
-		fmt.Fprintln(os.Stdout, "node-image 0.0.0-dev")
+		fmt.Println("node-image 0.0.0-dev") // pasta:ignore literal_message
 	case "help", "-h", "--help":
 		usage()
 	default:
