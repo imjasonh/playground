@@ -20,6 +20,9 @@ function cssVar(page, selector, name) {
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#bullseye')).toBeVisible();
+  // Chromium may expose requestPermission; wait for a silent grant (or a
+  // denied→preview path) so the enable panel is not still settling.
+  await expect(page.locator('#enable-panel')).toBeHidden();
 });
 
 test('does not show the iOS permission gate on Android/Chromium', async ({ page }) => {

@@ -5,14 +5,23 @@
     <link>https://imjasonh.github.io/playground/preview/pr-258/posts/</link>
     <description>Posts from Playground.</description>
     <atom:link href="https://imjasonh.github.io/playground/preview/pr-258/posts/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Thu, 20 Aug 2026 18:03:31 -0400</lastBuildDate>
+    <lastBuildDate>Wed, 21 Oct 2026 15:18:36 -0400</lastBuildDate>
     <item>
       <title>My favorite iOS app has 1 DAU</title>
       <link>https://imjasonh.github.io/playground/preview/pr-258/posts/ios/</link>
       <guid isPermaLink="true">https://imjasonh.github.io/playground/preview/pr-258/posts/ios/</guid>
       <description>My favorite iOS app has 1 DAU</description>
       <pubDate>Thu, 20 Aug 2026 18:03:31 -0400</pubDate>
-      <content:encoded><![CDATA[<p><em>(that's "one daily active user")</em></p>]]></content:encoded>
+      <content:encoded><![CDATA[<p><em>(that's "one daily active user")</em></p>
+<hr>
+<blockquote>
+<p>As far back as I can remember, I always wanted to be a [mobile developer].</p>
+</blockquote>
+<p>It's crazy to think sometimes how much computer we carry around with us each and every day. Not just in terms of computing resources, CPU, RAM, storage, all that, but how many sensors there are. The thing in my pocket can tell exactly where I am, my fine-grained movements, it can listen, sense temperature, communicate with nearby devices (not to mention the entire internet), and has a better screen than we puny humans deserve frankly.</p>
+<p>As a person who likes to tinker, it's always been a fascinating and tempting place to explore ideas, good and bad. But the barriers to entry were always so high: learning a new language, just for an exploratory side project? Who has the time?!</p>
+<p>But it's 2026 now, and agents have the time. It's time to fuck around and find out about mobile apps.</p>
+<h3>First you must get the code onto the phone</h3>
+<p>TODO</p>]]></content:encoded>
     </item>
     <item>
       <title>pasta: a polyglot linter/fixer for monorepos</title>
