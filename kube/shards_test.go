@@ -258,7 +258,7 @@ func TestRetakenShardIgnoresWhatTheLastHoldWrote(t *testing.T) {
 	c := triggerable(t, m, res, w)
 	c.r, c.sh = readyApplier{}, s
 	cti, _ := typeInfoFor[cfgMap, *cfgMap]()
-	cms := newInformer[cfgMap, *cfgMap](2, cti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, nil, informerConfig{}, m.log, m.metrics)
+	cms := newInformer[cfgMap, *cfgMap](2, cti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, nil, informerConfig{}, m.metrics)
 	cm := &cfgMap{Object: Meta("w1", nil)}
 	cm.APIVersion, cm.Kind, cm.Namespace, cm.UID, cm.ResourceVersion = "v1", "ConfigMap", "shop", "c1", "3"
 	cms.store.put(cm)
@@ -479,7 +479,7 @@ func TestFinalizerRemovalShowsTheCacheCaughtUp(t *testing.T) {
 			c.primary.store.put(w)
 			viaGet := *w
 			viaGet.ResourceVersion = tt.getRV
-			get := newInformer[widget, *widget](2, c.ti, res, nil, informerConfig{}, m.log, m.metrics)
+			get := newInformer[widget, *widget](2, c.ti, res, nil, informerConfig{}, m.metrics)
 			get.store.put(&viaGet)
 			m.resolved = map[*typeInfo]resolved{c.ti: res}
 			m.caches = map[cacheKey]cache{{ti: c.ti}: get}

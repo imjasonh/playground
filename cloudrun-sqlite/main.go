@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
@@ -27,14 +27,12 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "seed" {
 		if err := seedMain(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "seed:", err)
-			os.Exit(1)
+			clog.Fatal("seed", "err", err)
 		}
 		return
 	}
 	if err := serveMain(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		clog.Fatal("serve", "err", err)
 	}
 }
 
@@ -82,12 +80,15 @@ func serveMain(args []string) error {
 	}
 
 	instance := instanceID()
-	// gcp/init installed the process handler from LOG_LEVEL.
+	// gcp/init installed the process handler from LOG_LEVEL. The instance
+	// id rides on the context, and on the default logger for code that
+	// has no context.
 	log := slog.Default().With("instance", instance)
 	slog.SetDefault(log)
-	cfg.Logger = log
-	cfg.VFSLogger = log
-	stopTel := observe.Start(context.Background(), cfg.Logger)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	ctx = clog.WithLogger(ctx, clog.NewLogger(log))
+	stopTel := observe.Start(ctx)
 	defer func() {
 		tctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -98,9 +99,6 @@ func serveMain(args []string) error {
 	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
-	defer stop()
 
 	start := time.Now()
 	st, err := store.Open(ctx, cfg)

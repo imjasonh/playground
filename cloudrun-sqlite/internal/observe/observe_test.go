@@ -1,14 +1,17 @@
 package observe
 
 import (
+	"log/slog"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 )
 
 func TestMetricsServesHistograms(t *testing.T) {
-	stop := Start(t.Context(), nil)
+	stop := Start(clog.WithLogger(t.Context(), clog.New(slog.DiscardHandler)))
 	defer stop(t.Context())
 
 	Measure(t.Context(), VFSPageRead, 30*time.Microsecond, "source", "paged_in")

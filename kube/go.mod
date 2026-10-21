@@ -2,7 +2,10 @@ module github.com/imjasonh/playground/kube
 
 go 1.26.0
 
-require github.com/google/go-containerregistry v0.22.1
+require (
+	github.com/chainguard-dev/clog v1.8.1
+	github.com/google/go-containerregistry v0.22.1
+)
 
 require (
 	github.com/docker/cli v29.9.2+incompatible // indirect

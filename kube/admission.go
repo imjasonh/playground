@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/chainguard-dev/clog"
 	"runtime/debug"
 	"time"
 
@@ -207,7 +209,7 @@ func serveAdmission(w http.ResponseWriter, r *http.Request, m *Manager, ti *type
 					resp = deny(err)
 					return
 				}
-				m.log.Error("webhook panicked", "type", ti.String(), "panic", p, "stack", string(debug.Stack()))
+				clog.FromContext(ctx).Error("webhook panicked", "type", ti.String(), "panic", p, "stack", string(debug.Stack()))
 				resp = deny(fmt.Errorf("panic: %v", p))
 			}
 		}()

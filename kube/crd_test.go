@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+
+	"github.com/chainguard-dev/clog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -449,14 +451,13 @@ func TestEnsureCRDAfterPanic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.log = slog.New(panicHandler{})
 	a.script(crdError(http.StatusNotFound, "NotFound"), crdReply{http.StatusCreated, nil})
 	func() {
 		defer func() { _ = recover() }()
-		_ = m.ensureCRD(t.Context(), gizmos)
+		ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(panicHandler{})))
+		_ = m.ensureCRD(ctx, gizmos)
 		t.Error("ensureCRD didn't panic")
 	}()
-	m.log = slog.Default()
 	a.script(crdWith(true, map[string]bool{"v2": true}))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()

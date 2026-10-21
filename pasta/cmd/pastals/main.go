@@ -9,7 +9,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"os"
 
 	"github.com/imjasonh/playground/pasta/internal/pastals"
@@ -18,7 +18,6 @@ import (
 func main() {
 	srv := pastals.New(os.Stdin, os.Stdout)
 	if err := srv.Run(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, "pastals:", err)
-		os.Exit(1)
+		log.Fatal("pastals:", err)
 	}
 }

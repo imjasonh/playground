@@ -113,9 +113,9 @@ func TestEvents(t *testing.T) {
 	host, _ := os.Hostname()
 	addr := freeAddr(t)
 	r := &eventer{}
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 	done := make(chan error, 1)
-	m := &kube.Manager{Name: "events-e2e", Kubeconfig: env.Kubeconfig, Addr: addr, Logger: e2e.Logger(t)}
+	m := &kube.Manager{Name: "events-e2e", Kubeconfig: env.Kubeconfig, Addr: addr}
 	go func() {
 		done <- m.Run(ctx,
 			kube.For[Whatsit](r, kube.Named("events"), kube.WatchNamespace(ns)),

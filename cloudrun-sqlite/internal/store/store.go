@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math/rand/v2"
 	"path/filepath"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 	_ "github.com/benbjohnson/litestream/file"
 	_ "github.com/benbjohnson/litestream/gs"
 	_ "github.com/benbjohnson/litestream/s3"
+	"github.com/chainguard-dev/clog"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/psanford/sqlite3vfs"
 
@@ -82,10 +82,6 @@ type Config struct {
 
 	// MaxBatch caps how many queued writes share one transaction and upload.
 	MaxBatch int
-
-	// Logger receives store logs. VFSLogger receives Litestream VFS logs.
-	Logger    *slog.Logger
-	VFSLogger *slog.Logger
 }
 
 // DefaultConfig returns the defaults used by the server. Polling costs list
@@ -111,7 +107,6 @@ func DefaultConfig() Config {
 // Store is a SQLite database backed by a Litestream replica.
 type Store struct {
 	cfg    Config
-	log    *slog.Logger
 	client *fencedClient
 	dsn    string
 
@@ -174,13 +169,9 @@ type writeReq struct {
 var vfsSeq atomic.Int64
 
 // Open opens the database, creating it in the replica if it doesn't exist.
+// Litestream's client and VFS take *slog.Logger, so Open passes the logger
+// from ctx at that call. Later logs read the logger from the context again.
 func Open(ctx context.Context, cfg Config) (*Store, error) {
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
-	if cfg.VFSLogger == nil {
-		cfg.VFSLogger = cfg.Logger
-	}
 	if cfg.MaxBatch <= 0 {
 		cfg.MaxBatch = 1
 	}
@@ -190,7 +181,8 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("replica client: %w", err)
 	}
-	raw.SetLogger(cfg.VFSLogger)
+	l := clog.FromContext(ctx)
+	raw.SetLogger(&l.Logger)
 	if err := raw.Init(ctx); err != nil {
 		return nil, fmt.Errorf("init replica client: %w", err)
 	}
@@ -199,7 +191,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, err
 	}
 
-	vfs := litestream.NewVFS(client, cfg.VFSLogger)
+	vfs := litestream.NewVFS(client, &l.Logger)
 	vfs.PollInterval = cfg.PollInterval
 	vfs.CacheSize = cfg.CacheSize
 	vfs.WriteEnabled = true
@@ -221,7 +213,6 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 
 	s := &Store{
 		cfg:       cfg,
-		log:       cfg.Logger,
 		client:    client,
 		writes:    make(chan *writeReq),
 		jobs:      make(chan func()),
@@ -242,17 +233,17 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	}
 	s.openDuration = time.Since(start)
 
-	go s.commitLoop()
+	go s.commitLoop(ctx)
 	if cfg.SnapshotPlanLen > 0 && cfg.SnapshotCheckInterval > 0 {
 		s.bg.Add(1)
-		go s.snapshotLoop()
+		go s.snapshotLoop(ctx)
 	}
 	return s, nil
 }
 
 func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
 	if err := s.client.warmUp(ctx); err != nil {
-		s.log.Warn("prefetch for open failed", "error", err)
+		clog.FromContext(ctx).Warn("prefetch for open failed", "error", err)
 	}
 	defer s.client.coolDown()
 
@@ -372,7 +363,7 @@ func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 // with jitter so both make progress.
 const maxConflictRetries = 48
 
-func (s *Store) commitLoop() {
+func (s *Store) commitLoop(ctx context.Context) {
 	defer close(s.done)
 	for {
 		var batch []*writeReq
@@ -384,8 +375,8 @@ func (s *Store) commitLoop() {
 			continue
 		case <-s.retryOpen:
 			s.mu.Lock()
-			if err := s.openIfClosedLocked(); err != nil {
-				s.log.Warn("database still unavailable", "error", err)
+			if err := s.openIfClosedLocked(ctx); err != nil {
+				clog.FromContext(ctx).Warn("database still unavailable", "error", err)
 			}
 			s.mu.Unlock()
 			continue
@@ -472,7 +463,7 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 		return s.runTx(ctx, batch)
 	}
 	s.mu.Lock()
-	if err := s.openIfClosedLocked(); err != nil {
+	if err := s.openIfClosedLocked(ctx); err != nil {
 		s.mu.Unlock()
 		return nil, err
 	}
@@ -497,7 +488,7 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 		// seen. Back off with jitter so that two instances writing at once
 		// both make progress, then rerun against the replica's state.
 		// Readers still see the previous upload while this waits.
-		s.log.Warn("write conflict, reopening database", "attempt", attempt, "error", err)
+		clog.FromContext(ctx).Warn("write conflict, reopening database", "attempt", attempt, "error", err)
 		time.Sleep(time.Duration(rand.Int64N(int64(attempt) * int64(10*time.Millisecond))))
 	}
 
@@ -509,7 +500,7 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 		s.mu.Unlock()
 		return results, nil
 	}
-	if rerr := s.reopenLocked(); rerr != nil {
+	if rerr := s.reopenLocked(ctx); rerr != nil {
 		err = errors.Join(err, rerr)
 	}
 	s.mu.Unlock()
@@ -577,18 +568,18 @@ func (s *Store) flush(ctx context.Context) (err error) {
 // reopenLocked replaces the database with one opened from the replica. If
 // the open fails, s.db stays nil until openIfClosedLocked succeeds. The
 // caller holds s.mu exclusively.
-func (s *Store) reopenLocked() error {
+func (s *Store) reopenLocked(ctx context.Context) error {
 	// Close tries a final upload. If that fails too, the VFS discards the
 	// pages it couldn't upload.
 	_ = s.db.Close()
 	s.db = nil
 	s.file.Store(nil)
-	return s.openIfClosedLocked()
+	return s.openIfClosedLocked(ctx)
 }
 
 // openIfClosedLocked opens the database if a reopen failed. The caller holds
 // s.mu exclusively.
-func (s *Store) openIfClosedLocked() error {
+func (s *Store) openIfClosedLocked(ctx context.Context) error {
 	if s.db != nil {
 		return nil
 	}
@@ -597,7 +588,7 @@ func (s *Store) openIfClosedLocked() error {
 			return fmt.Errorf("reopen: %w", err)
 		}
 	}
-	db, err := s.openDB(context.Background())
+	db, err := s.openDB(ctx)
 	if err != nil {
 		return fmt.Errorf("reopen: %w", err)
 	}

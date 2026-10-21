@@ -44,7 +44,7 @@ func TestCloudRunLifecycle(t *testing.T) {
 		}
 	}()
 
-	sim := crsim.New(crsim.Config{
+	sim := crsim.New(t.Context(), crsim.Config{
 		Command: []string{bin},
 		Env: []string{
 			"REPLICA_URL=file://" + filepath.Join(dir, "replica"),
@@ -68,7 +68,6 @@ func TestCloudRunLifecycle(t *testing.T) {
 		DeployEvery: 9 * time.Second,
 		Overlap:     2 * time.Second,
 		AdminToken:  "e2e",
-		Logf:        t.Logf,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+
+	"github.com/chainguard-dev/clog"
 	"net"
 	"net/http"
 	"net/url"
@@ -188,10 +190,10 @@ func (ws *webhookServer) start(ctx context.Context) error {
 	}
 	go func() {
 		if err := ws.srv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			m.log.Error("webhook server failed", "err", err)
+			clog.FromContext(ctx).Error("webhook server failed", "err", err)
 		}
 	}()
-	m.log.Info("serving webhooks", "addr", ln.Addr().String(), "hosts", ws.hosts)
+	clog.FromContext(ctx).Info("serving webhooks", "addr", ln.Addr().String(), "hosts", ws.hosts)
 	if err := ws.applyConfigurations(ctx); err != nil {
 		ws.srv.Close()
 		return err
@@ -240,7 +242,7 @@ func (ws *webhookServer) refreshLoop(ctx context.Context) {
 		old := slices.Clone(ws.bundle)
 		ws.mu.Unlock()
 		if err := ws.refresh(ctx); err != nil {
-			ws.m.log.Warn("refreshing the webhook certificate failed", "err", err)
+			clog.FromContext(ctx).Warn("refreshing the webhook certificate failed", "err", err)
 			continue
 		}
 		ws.mu.Lock()
@@ -249,9 +251,9 @@ func (ws *webhookServer) refreshLoop(ctx context.Context) {
 		if !changed {
 			continue
 		}
-		ws.m.log.Info("the webhook CA bundle changed; updating webhook configurations")
+		clog.FromContext(ctx).Info("the webhook CA bundle changed; updating webhook configurations")
 		if err := ws.applyConfigurations(ctx); err != nil {
-			ws.m.log.Warn("updating webhook configurations failed", "err", err)
+			clog.FromContext(ctx).Warn("updating webhook configurations failed", "err", err)
 		}
 	}
 }
@@ -336,7 +338,7 @@ func (ws *webhookServer) refresh(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("renewing the webhook certificate in Secret %s: %w", ws.secret, err)
 			}
-			ws.m.log.Info("renewed the webhook certificate", "secret", ws.secret.String())
+			clog.FromContext(ctx).Info("renewed the webhook certificate", "secret", ws.secret.String())
 		}
 		// Until the previous CA expires, the API server also trusts it, so a
 		// replica still serving a certificate it signed keeps working.
@@ -395,7 +397,7 @@ func (ws *webhookServer) applyConfigurations(ctx context.Context) error {
 				if err := c.Delete(ctx, path, client.DeleteOptions{UID: existing.Metadata.UID}); err != nil && !client.IsNotFound(err) && !client.IsConflict(err) {
 					return fmt.Errorf("deleting stale %s %s: %w", k.kind, ws.configurationName(), err)
 				}
-				ws.m.log.Info("deleted a webhook configuration that this program no longer needs", "kind", k.kind, "name", ws.configurationName())
+				clog.FromContext(ctx).Info("deleted a webhook configuration that this program no longer needs", "kind", k.kind, "name", ws.configurationName())
 			case err != nil && !client.IsNotFound(err) && !client.IsForbidden(err):
 				return fmt.Errorf("reading %s %s: %w", k.kind, ws.configurationName(), err)
 			}

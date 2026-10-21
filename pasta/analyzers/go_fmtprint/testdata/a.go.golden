@@ -1,0 +1,18 @@
+package a
+
+import "fmt"
+
+func bad(err error, name string) {
+	slog.Info("hello")       // want "use slog"
+	slog.Info("hello")         // want "use slog"
+	slog.Info("hello")        // want "use slog"
+	slog.Info(`hello`)       // want "use slog"
+	defer slog.Info("done")  // want "use slog"
+	slog.Info("")              // want "use slog"
+	slog.Info("")                // want "use slog"
+	fmt.Println(err)           // want "use slog"
+	fmt.Println("  " + name)   // want "use slog"
+	fmt.Println("hello", err)  // want "use slog"
+	fmt.Printf("hello %s", name) // want "use slog"
+	slog.Info("hello %s")     // want "use slog"
+}

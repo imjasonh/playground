@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -28,6 +27,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 )
 
 // Config configures a simulated service.
@@ -51,7 +52,6 @@ type Config struct {
 	StartTimeout time.Duration
 	// Output receives instance stdout and stderr, prefixed by instance ID.
 	Output io.Writer
-	Logger *slog.Logger
 }
 
 // Sim is a simulated Cloud Run service. It is an http.Handler: requests
@@ -106,8 +106,9 @@ type InstanceStats struct {
 	ExitCode    int        `json:"exit_code"`
 }
 
-// New returns a simulator. Call Close to stop every instance.
-func New(cfg Config) *Sim {
+// New returns a simulator. ctx is the simulator's lifetime: monitor logs
+// with the logger on it, and Close stops every instance.
+func New(ctx context.Context, cfg Config) *Sim {
 	if cfg.GracePeriod == 0 {
 		cfg.GracePeriod = 10 * time.Second
 	}
@@ -117,11 +118,8 @@ func New(cfg Config) *Sim {
 	if cfg.Output == nil {
 		cfg.Output = os.Stderr
 	}
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
 	s := &Sim{cfg: cfg, revision: 1}
-	go s.monitor()
+	go s.monitor(ctx)
 	return s
 }
 
@@ -155,7 +153,7 @@ func (s *Sim) acquire(ctx context.Context) (*instance, error) {
 		if inst == nil {
 			if s.starting == nil {
 				s.starting = make(chan struct{})
-				go s.coldStart()
+				go s.coldStart(ctx)
 			}
 			wait := s.starting
 			s.mu.Unlock()
@@ -188,14 +186,14 @@ func (s *Sim) release(inst *instance) {
 	}
 }
 
-func (s *Sim) coldStart() {
-	inst, err := s.start()
+func (s *Sim) coldStart(ctx context.Context) {
+	inst, err := s.start(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err == nil {
 		s.active = inst
 	} else {
-		s.cfg.Logger.Error("cold start failed", "error", err)
+		clog.FromContext(ctx).Error("cold start failed", "error", err)
 	}
 	close(s.starting)
 	s.starting = nil
@@ -204,7 +202,7 @@ func (s *Sim) coldStart() {
 // start launches an instance of the current revision and waits until it
 // accepts TCP connections on PORT, which is Cloud Run's default startup
 // probe.
-func (s *Sim) start() (*instance, error) {
+func (s *Sim) start(ctx context.Context) (*instance, error) {
 	s.mu.Lock()
 	s.seq++
 	rev := s.revision
@@ -257,10 +255,10 @@ func (s *Sim) start() (*instance, error) {
 	s.mu.Lock()
 	s.all = append(s.all, inst)
 	s.mu.Unlock()
-	s.cfg.Logger.Info("instance starting", "id", id)
+	clog.FromContext(ctx).Info("instance starting", "id", id)
 
 	go inst.copyOutput(out)
-	go inst.wait()
+	go inst.wait(ctx)
 
 	deadline := time.Now().Add(s.cfg.StartTimeout)
 	for {
@@ -283,7 +281,7 @@ func (s *Sim) start() (*instance, error) {
 	inst.lastActive = time.Now()
 	s.mu.Unlock()
 	close(inst.ready)
-	s.cfg.Logger.Info("instance ready", "id", id, "ready_ms", inst.Stats.ReadyMillis)
+	clog.FromContext(ctx).Info("instance ready", "id", id, "ready_ms", inst.Stats.ReadyMillis)
 	return inst, nil
 }
 
@@ -295,7 +293,7 @@ func (inst *instance) copyOutput(r io.Reader) {
 	}
 }
 
-func (inst *instance) wait() {
+func (inst *instance) wait(ctx context.Context) {
 	err := inst.cmd.Wait()
 	s := inst.sim
 	s.mu.Lock()
@@ -312,7 +310,7 @@ func (inst *instance) wait() {
 		s.overlap = nil
 	}
 	s.mu.Unlock()
-	s.cfg.Logger.Info("instance exited", "id", inst.id, "how", inst.Stats.Exit, "code", inst.Stats.ExitCode, "error", err)
+	clog.FromContext(ctx).Info("instance exited", "id", inst.id, "how", inst.Stats.Exit, "code", inst.Stats.ExitCode, "error", err)
 	os.RemoveAll(inst.dir)
 	close(inst.exited)
 }
@@ -378,7 +376,7 @@ func (inst *instance) kill(how string) {
 // monitor scales idle instances to zero and records peak memory and
 // scratch-directory use. Cloud Run counts files written to the container
 // filesystem against the memory limit.
-func (s *Sim) monitor() {
+func (s *Sim) monitor(ctx context.Context) {
 	for range time.Tick(250 * time.Millisecond) {
 		s.mu.Lock()
 		if s.closed {
@@ -406,7 +404,7 @@ func (s *Sim) monitor() {
 			s.mu.Unlock()
 		}
 		for _, inst := range idle {
-			s.cfg.Logger.Info("scaling idle instance to zero", "id", inst.id)
+			clog.FromContext(ctx).Info("scaling idle instance to zero", "id", inst.id)
 			go inst.terminate()
 		}
 	}
@@ -430,11 +428,11 @@ func (s *Sim) Crash() {
 // it is ready. For the overlap duration, requests are split between the old
 // and new instance, so two instances serve at once. The old instance is
 // then stopped with SIGTERM.
-func (s *Sim) Deploy(overlap time.Duration) error {
+func (s *Sim) Deploy(ctx context.Context, overlap time.Duration) error {
 	s.mu.Lock()
 	s.revision++
 	s.mu.Unlock()
-	inst, err := s.start()
+	inst, err := s.start(ctx)
 	if err != nil {
 		return err
 	}
@@ -497,7 +495,7 @@ func (s *Sim) admin(w http.ResponseWriter, r *http.Request) {
 		s.Crash()
 	case "/_crsim/deploy":
 		overlap, _ := time.ParseDuration(r.URL.Query().Get("overlap"))
-		if err := s.Deploy(overlap); err != nil {
+		if err := s.Deploy(r.Context(), overlap); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	default:

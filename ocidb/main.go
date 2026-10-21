@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -42,8 +44,7 @@ var queryFS embed.FS
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "ocidb:", err)
-		os.Exit(1)
+		log.Fatal("ocidb:", err)
 	}
 }
 
@@ -59,9 +60,9 @@ func run(args []string) error {
 	case "shell", "repl":
 		return cmdShell(rest)
 	case "demo":
-		return cmdDemo(rest)
+		return cmdDemo(os.Stdout, rest)
 	case "schema", "tables":
-		return cmdSchema(rest)
+		return cmdSchema(os.Stdout, rest)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return nil
@@ -200,7 +201,7 @@ func cmdShell(args []string) error {
 			stmt = strings.TrimSuffix(stmt, ";")
 			if strings.TrimSpace(stmt) != "" {
 				if err := runAndPrint(os.Stdout, db, stmt, s.format); err != nil {
-					fmt.Fprintln(os.Stderr, "error:", err)
+					slog.Error("query", "err", err)
 				}
 			}
 		}
@@ -245,11 +246,11 @@ func metaCommand(w io.Writer, line string) (done bool) {
 	return false
 }
 
-func cmdSchema(args []string) error {
+func cmdSchema(w io.Writer, args []string) error {
 	if len(args) == 0 {
 		for _, n := range tables.Names() {
-			fmt.Println(displaySchema(tables.Schema(n)) + ";")
-			fmt.Println()
+			fmt.Fprintln(w, displaySchema(tables.Schema(n))+";")
+			fmt.Fprintln(w)
 		}
 		return nil
 	}
@@ -257,7 +258,7 @@ func cmdSchema(args []string) error {
 	if s == "" {
 		return fmt.Errorf("unknown table %q (have: %s)", args[0], strings.Join(tables.Names(), ", "))
 	}
-	fmt.Println(displaySchema(s) + ";")
+	fmt.Fprintln(w, displaySchema(s)+";")
 	return nil
 }
 
@@ -279,7 +280,7 @@ func displaySchema(s string) string {
 	return strings.Join(out, "\n")
 }
 
-func cmdDemo(args []string) error {
+func cmdDemo(w io.Writer, args []string) error {
 	var s sharedFlags
 	var list bool
 	fs := newFlagSet("demo")
@@ -295,7 +296,7 @@ func cmdDemo(args []string) error {
 	}
 	if list {
 		for _, d := range demos {
-			fmt.Printf("-- %s\n%s\n\n", d.title, d.sql)
+			fmt.Fprintf(w, "-- %s\n%s\n\n", d.title, d.sql)
 		}
 		return nil
 	}
@@ -313,10 +314,10 @@ func cmdDemo(args []string) error {
 		if ctx.Err() != nil {
 			break
 		}
-		fmt.Printf("\n\033[1m== %d/%d  %s\033[0m\n", i+1, len(demos), d.title)
-		fmt.Printf("\033[2m%s\033[0m\n", d.sql)
-		if err := runAndPrint(os.Stdout, db, d.sql, s.format); err != nil {
-			fmt.Fprintln(os.Stderr, "  query failed:", err)
+		fmt.Fprintf(w, "\n\033[1m== %d/%d  %s\033[0m\n", i+1, len(demos), d.title)
+		fmt.Fprintf(w, "\033[2m%s\033[0m\n", d.sql)
+		if err := runAndPrint(w, db, d.sql, s.format); err != nil {
+			slog.Error("query failed", "err", err)
 		}
 	}
 	reportCache(os.Stderr, client)

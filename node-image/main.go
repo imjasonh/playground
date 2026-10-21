@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -17,8 +18,7 @@ func main() {
 	switch os.Args[1] {
 	case "build":
 		if err := runBuild(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "node-image: %v\n", err)
-			os.Exit(1)
+			log.Fatal("node-image:", err)
 		}
 	case "diagnose":
 		dir := "."
@@ -29,7 +29,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "version", "-version", "--version":
-		fmt.Println("node-image 0.0.0-dev")
+		fmt.Println("node-image 0.0.0-dev") // pasta:ignore literal_message
 	case "help", "-h", "--help":
 		usage()
 	default:

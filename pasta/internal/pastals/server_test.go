@@ -254,7 +254,7 @@ func (c *testClient) readLoop() {
 // e2e clone suite and other CUE/WASM packages) while the same
 // ubuntu-latest runner is also bumping every JS and Rust app. A 5s
 // cap expires while initialize is still in LoadRules — CI then prints
-// "pastals: loaded 1 analyzer(s)" next to "timed out reading from
+// "loaded 1 analyzer(s)" next to "timed out reading from
 // server" at ~5.2s. Stay well under the package deadline, but do not
 // use a tight wall clock.
 func rpcWait(t *testing.T) time.Duration {

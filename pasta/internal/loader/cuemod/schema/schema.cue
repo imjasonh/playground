@@ -45,7 +45,8 @@ package schema
 		"stmt_index_delta" |
 		"empty" |
 		"named_child_count" |
-		"prev_sibling_matches"
+		"prev_sibling_matches" |
+		"parent_field"
 	// Positional args. Each is either a string (capture ref, regex,
 	// literal) or a list of strings (e.g. node-type alternatives).
 	args: [...string | [...string]]

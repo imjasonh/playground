@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
@@ -61,7 +62,7 @@ func (s *server) authorize(w http.ResponseWriter, r *http.Request, method string
 		return "", false
 	case err != nil:
 		s.metrics.buildRequest(method, "error")
-		s.log.Error("checking a token", "err", err)
+		slog.Error("checking a token", "err", err)
 		http.Error(w, "couldn't check the token", http.StatusServiceUnavailable)
 		return "", false
 	case id.namespace != ns:
@@ -186,7 +187,7 @@ func (s *server) answerExisting(w http.ResponseWriter, key, output string) bool 
 
 func (s *server) buildFailed(w http.ResponseWriter, method string, err error) {
 	s.metrics.buildRequest(method, "error")
-	s.log.Error("build cache", "method", method, "err", err)
+	slog.Error("build cache", "method", method, "err", err)
 	http.Error(w, "go-cache couldn't serve the request", http.StatusInternalServerError)
 }
 

@@ -3,6 +3,8 @@ package kube
 import (
 	"context"
 	"fmt"
+
+	"github.com/chainguard-dev/clog"
 	"regexp"
 	"strings"
 
@@ -115,7 +117,7 @@ func (in *installer) prepare(_ context.Context, m *Manager) error {
 
 func (in *installer) setup(ctx context.Context, m *Manager) error {
 	for _, o := range in.objects {
-		if err := resolveImages(ctx, o.body, m.log); err != nil {
+		if err := resolveImages(ctx, o.body); err != nil {
 			return fmt.Errorf("installing %s %s: %w", o.kind, o.name, err)
 		}
 	}
@@ -133,7 +135,7 @@ func (in *installer) setup(ctx context.Context, m *Manager) error {
 		if err := m.client.Apply(ctx, client.Path(o.apiVersion, res.Name, o.namespace, o.name), m.Name, true, o.body, nil); err != nil {
 			return fmt.Errorf("installing %s %s: %w", o.kind, o.name, err)
 		}
-		m.log.Info("installed", "kind", o.kind, "name", o.name, "namespace", o.namespace)
+		clog.FromContext(ctx).Info("installed", "kind", o.kind, "name", o.name, "namespace", o.namespace)
 	}
 	return nil
 }

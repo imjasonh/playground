@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
@@ -26,7 +27,7 @@ var (
 // for every metric and label value the charts filter or group by in
 // /metrics, which reads the same histograms that go to Cloud Monitoring.
 func TestDashboardMatchesMetrics(t *testing.T) {
-	stop := observe.Start(t.Context(), nil)
+	stop := observe.Start(clog.WithLogger(t.Context(), clog.New(slog.DiscardHandler)))
 	defer stop(t.Context())
 
 	replica := t.TempDir()
@@ -34,8 +35,7 @@ func TestDashboardMatchesMetrics(t *testing.T) {
 		cfg := store.DefaultConfig()
 		cfg.ReplicaURL = "file://" + replica
 		cfg.Dir = t.TempDir()
-		cfg.Logger = slog.New(slog.DiscardHandler)
-		s, err := store.Open(t.Context(), cfg)
+		s, err := store.Open(clog.WithLogger(t.Context(), clog.New(slog.DiscardHandler)), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}

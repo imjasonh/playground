@@ -7,9 +7,8 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	"log"
 	"math/rand/v2"
-	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -79,6 +78,5 @@ func main() {
 }
 
 func fail(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "liquid: "+format+"\n", args...)
-	os.Exit(2)
+	log.Fatalf("liquid: "+format, args...)
 }

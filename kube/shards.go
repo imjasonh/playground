@@ -5,8 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"hash/fnv"
-	"log/slog"
 	"net/http"
+
+	"github.com/chainguard-dev/clog"
 	"net/url"
 	"os"
 	"slices"
@@ -89,7 +90,6 @@ type sharder struct {
 	group    string
 	identity string
 	keys     labelKeys
-	log      *slog.Logger
 
 	mu        sync.Mutex
 	shards    []*shard
@@ -123,7 +123,6 @@ func newSharder(m *Manager) *sharder {
 		members:  map[string]*observation{},
 		first:    make(chan struct{}),
 	}
-	s.log = m.log.With("identity", s.identity)
 	for i := range n {
 		name := s.group
 		if n > 1 {
@@ -217,8 +216,12 @@ func (s *sharder) onAcquire(fn func(int)) {
 
 // run keeps the shard leases until ctx is done. The caller releases them
 // with releaseAll once reconciles have stopped.
+func (s *sharder) logger(ctx context.Context) *clog.Logger {
+	return clog.FromContext(withLog(ctx, "identity:"+s.identity, "identity", s.identity))
+}
+
 func (s *sharder) run(ctx context.Context) {
-	s.log.Info("waiting for shards", "shards", s.n, "namespace", s.ns)
+	s.logger(ctx).Info("waiting for shards", "shards", s.n, "namespace", s.ns)
 	for {
 		s.sync(ctx)
 		select {
@@ -243,7 +246,7 @@ func (s *sharder) sync(ctx context.Context) {
 	}
 	leases, err := s.list(ctx)
 	if err != nil {
-		s.log.Warn("listing shard leases failed", "err", err)
+		s.logger(ctx).Warn("listing shard leases failed", "err", err)
 	}
 	live := s.liveMembers(ctx, leases, now)
 
@@ -260,11 +263,11 @@ func (s *sharder) sync(ctx context.Context) {
 		assigned := s.n == 1 || rendezvous(live, i) == s.identity
 		switch {
 		case sh.held && l != nil && l.Spec.HolderIdentity != "" && l.Spec.HolderIdentity != s.identity:
-			s.lose(sh, "another replica holds it")
+			s.lose(ctx, sh, "another replica holds it")
 		case sh.held:
 			if !assigned && !sh.draining {
 				sh.draining = true
-				s.log.Info("releasing shard to the replica it's assigned to", "shard", sh.name)
+				s.logger(ctx).Info("releasing shard to the replica it's assigned to", "shard", sh.name)
 			}
 			if sh.draining && sh.inflight == 0 {
 				actions = append(actions, action{i: i, l: l, drop: true})
@@ -299,7 +302,7 @@ func (s *sharder) sync(ctx context.Context) {
 			if ok {
 				sh.renewed = now
 			} else if now.Sub(sh.renewed) > renewDeadline {
-				s.lose(sh, "renewing its lease failed")
+				s.lose(ctx, sh, "renewing its lease failed")
 			}
 			s.mu.Unlock()
 		case a.take:
@@ -311,7 +314,7 @@ func (s *sharder) sync(ctx context.Context) {
 			sh.tenure++
 			fns := slices.Clone(s.acquired)
 			s.mu.Unlock()
-			s.log.Info("acquired shard", "shard", sh.name)
+			s.logger(ctx).Info("acquired shard", "shard", sh.name)
 			s.m.metrics.inc("kube_shard_transitions_total", "event", "acquired")
 			for _, fn := range fns {
 				fn(a.i)
@@ -323,9 +326,9 @@ func (s *sharder) sync(ctx context.Context) {
 
 // lose stops reconciling a shard's keys. Reconciles already running finish.
 // The caller holds s.mu.
-func (s *sharder) lose(sh *shard, why string) {
+func (s *sharder) lose(ctx context.Context, sh *shard, why string) {
 	sh.held, sh.draining = false, false
-	s.log.Error("lost shard", "shard", sh.name, "reason", why)
+	s.logger(ctx).Error("lost shard", "shard", sh.name, "reason", why)
 	s.m.metrics.inc("kube_shard_transitions_total", "event", "lost")
 }
 
@@ -389,7 +392,7 @@ func (s *sharder) write(ctx context.Context, sh *shard, l *lease, now time.Time)
 		err = s.m.client.Update(ctx, s.leasePath(sh.name), nl, nil)
 	}
 	if err != nil && !client.IsConflict(err) && !client.IsAlreadyExists(err) {
-		s.log.Warn("writing shard lease failed", "shard", sh.name, "err", err)
+		s.logger(ctx).Warn("writing shard lease failed", "shard", sh.name, "err", err)
 	}
 	return err == nil
 }
@@ -405,16 +408,17 @@ func (s *sharder) release(ctx context.Context, sh *shard, l *lease) {
 	nl.Spec.LeaseDurationSeconds = 1
 	nl.Spec.RenewTime = time.Now().UTC().Format(microTime)
 	if err := s.m.client.Update(ctx, s.leasePath(sh.name), nl, nil); err != nil {
-		s.log.Warn("releasing shard lease failed; it expires on its own", "shard", sh.name, "err", err)
+		s.logger(ctx).Warn("releasing shard lease failed; it expires on its own", "shard", sh.name, "err", err)
 		return
 	}
-	s.log.Info("released shard", "shard", sh.name)
+	s.logger(ctx).Info("released shard", "shard", sh.name)
 }
 
 // releaseAll releases every shard this replica holds and its membership,
 // when it stops, so other replicas take over at once.
 func (s *sharder) releaseAll() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx = withLog(ctx, "identity:"+s.identity, "identity", s.identity)
 	defer cancel()
 	s.mu.Lock()
 	var held []*shard
@@ -479,7 +483,7 @@ func (s *sharder) renewMembership(ctx context.Context, now time.Time) {
 	case client.IsConflict(err) || client.IsNotFound(err):
 		s.member = nil
 	default:
-		s.log.Warn("renewing membership failed", "err", err)
+		s.logger(ctx).Warn("renewing membership failed", "err", err)
 	}
 }
 
@@ -520,7 +524,7 @@ func (s *sharder) liveMembers(ctx context.Context, leases map[string]*lease, now
 	s.mu.Unlock()
 	for _, l := range stale {
 		if err := s.m.client.Delete(ctx, s.leasePath(l.Metadata.Name), client.DeleteOptions{UID: l.Metadata.UID}); err == nil {
-			s.log.Info("deleted the membership of a replica that stopped", "member", l.Spec.HolderIdentity)
+			s.logger(ctx).Info("deleted the membership of a replica that stopped", "member", l.Spec.HolderIdentity)
 		}
 	}
 	slices.Sort(live)

@@ -169,11 +169,12 @@ func (c *controller[T, P]) serveConversion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	start := time.Now()
+	ctx := r.Context()
 	resp := &conversionResponse{UID: review.Request.UID, ConvertedObjects: []json.RawMessage{}}
 	err := func() (err error) {
 		defer func() {
 			if p := recover(); p != nil {
-				c.log.Error("conversion panicked", "panic", p, "stack", string(debug.Stack()))
+				c.logger(ctx).Error("conversion panicked", "panic", p, "stack", string(debug.Stack()))
 				err = fmt.Errorf("panic: %v", p)
 			}
 		}()

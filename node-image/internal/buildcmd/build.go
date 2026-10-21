@@ -1,15 +1,19 @@
 package buildcmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/chainguard-dev/clog"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/imjasonh/playground/node-image/internal/app"
@@ -54,6 +58,8 @@ func Run(opt Options) (string, error) {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	log := slog.New(slog.NewTextHandler(stderr, nil))
+	ctx := clog.WithLogger(context.Background(), clog.NewLogger(log))
 	dir := opt.Dir
 	if dir == "" {
 		dir = "."
@@ -129,12 +135,12 @@ func Run(opt Options) (string, error) {
 	}
 	for _, f := range report.Findings {
 		if f.Severity == "warning" {
-			fmt.Fprintf(stderr, "warning: %s: %s\n", f.Code, f.Message)
+			log.Warn("warning: "+f.Code, "message", f.Message)
 		}
 	}
 
 	if !cfg.SkipBuild && cfg.BuildScript != "" {
-		fmt.Fprintf(stderr, "compiling with pnpm run %s\n", cfg.BuildScript)
+		log.Info("compiling with pnpm run " + cfg.BuildScript)
 		if err := app.Compile(cfg.Dir, lockRoot, cfg.BuildScript); err != nil {
 			return "", err
 		}
@@ -146,7 +152,7 @@ func Run(opt Options) (string, error) {
 			return "", err
 		}
 		if resolved != cfg.Main && cfg.Main != "" {
-			fmt.Fprintf(stderr, "entrypoint: using %s (package.json main was %q)\n", resolved, cfg.Main)
+			log.Info("entrypoint: using "+resolved, "main", cfg.Main)
 		}
 		cfg.Main = resolved
 	}
@@ -186,14 +192,14 @@ func Run(opt Options) (string, error) {
 			return "", err
 		}
 		for _, w := range baseInfo.Warnings {
-			fmt.Fprintf(stderr, "warning: %s\n", w)
+			log.Warn(w)
 		}
 		// Custom bases often lack /nodejs/bin/node — if entrypoint is still the
 		// distroless default and the base is not distroless-like, prefer "node".
 		if len(opt.Entrypoint) == 0 && len(cfg.Entrypoint) == 1 && cfg.Entrypoint[0] == "/nodejs/bin/node" {
 			if !strings.Contains(cfg.Base, "distroless") {
 				cfg.Entrypoint = []string{"node"}
-				fmt.Fprintf(stderr, "entrypoint: using [node] for non-distroless base (set node-image.entrypoint to override)\n")
+				log.Info("entrypoint: using [node] for non-distroless base (set node-image.entrypoint to override)")
 			}
 		}
 	}
@@ -310,7 +316,7 @@ func Run(opt Options) (string, error) {
 		buildFP = fingerprintFromConfig(cfg, lockDig, importer, platforms, opt.EmptyBase || cfg.Base == "scratch",
 			closureLines, appLines)
 		if rec, ok := lookupBuildRecord(cacheRootFor(cfg), buildFP); ok && rec.Ref != "" && sameStringSet(rec.Platforms, platforms) {
-			fmt.Fprintf(stderr, "cache hit: identical build fingerprint %s… → %s\n", buildFP[:12], rec.Ref)
+			log.Info("cache hit: identical build fingerprint", "prefix", buildFP[:12], "ref", rec.Ref)
 			if cfg.NoPush {
 				outDir := cfg.OCIDir
 				if outDir == "" {
@@ -319,7 +325,7 @@ func Run(opt Options) (string, error) {
 				if err := writeCachedDigestSummary(outDir, rec); err != nil {
 					return "", err
 				}
-				fmt.Fprintf(stderr, "wrote %s (%s) [cache]\n", outDir, rec.Ref)
+				log.Info("wrote digest summary", "dir", outDir, "ref", rec.Ref, "cache", true)
 			}
 			fmt.Fprintln(stdout, rec.Ref)
 			return rec.Ref, nil
@@ -339,7 +345,7 @@ func Run(opt Options) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		layers, err := assemblePlannedLayers(planned, appFiles, cfg, baseInfo, stderr)
+		layers, err := assemblePlannedLayers(ctx, planned, appFiles, cfg, baseInfo)
 		if err != nil {
 			return "", err
 		}
@@ -379,7 +385,7 @@ func Run(opt Options) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			fmt.Fprintf(stderr, "wrote %s (%s)\n", outDir, dig)
+			log.Info("wrote digest summary", "dir", outDir, "ref", dig)
 			lastRef = dig
 		case cfg.Local:
 			ref, err := publish.LoadLocal(cfg.Repo, cfg.Tags, image)
@@ -409,7 +415,7 @@ func Run(opt Options) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			fmt.Fprintf(stderr, "wrote multi-arch index %s (%s)\n", outDir, dig)
+			log.Info("wrote multi-arch index", "dir", outDir, "ref", dig)
 			lastRef = dig
 		case cfg.Local:
 			return "", fmt.Errorf("--local does not support multi-arch indexes (Docker daemon loads a single image)\nHint: pass --platform linux/%s (or one arch) with -L", hostArchHint())
@@ -500,7 +506,7 @@ func prefixFiles(prefix string, files []layer.File) []layer.File {
 	return out
 }
 
-func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File, cfg *config.Config, baseInfo *base.Info, stderr io.Writer) ([]publish.LayerFiles, error) {
+func assemblePlannedLayers(ctx context.Context, planned *layout.PlannedLayout, appFiles []layer.File, cfg *config.Config, baseInfo *base.Info) ([]publish.LayerFiles, error) {
 	budget := layer.Budget{
 		MaxLayers:   cfg.MaxLayers,
 		BaseLayers:  baseInfo.LayerCount,
@@ -508,8 +514,7 @@ func assemblePlannedLayers(planned *layout.PlannedLayout, appFiles []layer.File,
 	}
 	slots := budget.StoreSlots()
 	if len(planned.Store) > slots {
-		fmt.Fprintf(stderr, "layer budget: %d store packages into %d buckets (max-layers=%d, base=%d, extra=2)\n",
-			len(planned.Store), slots, cfg.MaxLayers, baseInfo.LayerCount)
+		clog.FromContext(ctx).Info("layer budget", "packages", len(planned.Store), "buckets", slots, "max_layers", cfg.MaxLayers, "base", baseInfo.LayerCount)
 	}
 	storeGroups := layer.BucketStorePackagesOpts(planned.Store, slots, layer.BucketOptions{
 		Unbucketed: cfg.Unbucketed,

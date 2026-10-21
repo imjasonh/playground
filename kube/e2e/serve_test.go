@@ -673,8 +673,8 @@ func TestServeListenFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-	m := &kube.Manager{Name: "serve-listen-e2e", Kubeconfig: e2e.Env(t).Kubeconfig, Logger: e2e.Logger(t), ServeAddr: ln.Addr().String()}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	m := &kube.Manager{Name: "serve-listen-e2e", Kubeconfig: e2e.Env(t).Kubeconfig, ServeAddr: ln.Addr().String()}
+	ctx, cancel := context.WithTimeout(e2e.WithLogger(t.Context(), t), 30*time.Second)
 	defer cancel()
 	err = m.Run(ctx, kube.For[ConfigMapMeta](idleConfigMaps{}, kube.Named("serve-listen")), kube.Serve(http.NotFoundHandler()))
 	if !errors.Is(err, syscall.EADDRINUSE) {
@@ -715,10 +715,10 @@ func TestRequestToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := &kube.Manager{
-		Name: "request-token-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "prog"), Logger: e2e.Logger(t),
+		Name: "request-token-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "prog"),
 		ServeAddr: freeAddr(t), TokenDir: dir,
 	}
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 	done := make(chan error, 1)
 	go func() {
 		done <- m.Run(ctx, kube.Serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

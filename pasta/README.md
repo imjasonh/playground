@@ -71,6 +71,7 @@ Syntactic ports of [`golang.org/x/tools/go/analysis/passes`](https://pkg.go.dev/
 | [go_copylock](./analyzers/go_copylock/go_copylock.cue)                       | Flag `sync.Mutex` / `sync.RWMutex` passed by value |
 | [go_deepequalerrors](./analyzers/go_deepequalerrors/go_deepequalerrors.cue)   | Flag `reflect.DeepEqual` on `errors.New` / `fmt.Errorf` |
 | [go_defers](./analyzers/go_defers/go_defers.cue)                             | Flag `time.Since` evaluated as a deferred call argument |
+| [go_fmtprint](./analyzers/go_fmtprint/go_fmtprint.cue) ✏️                     | `fmt.Print` / `Println` / `Printf` → `slog.Info` for a single string; flag the rest |
 | [go_hostport](./analyzers/go_hostport/go_hostport.cue)                       | Flag `fmt.Sprintf("%s:%d", host, port)`; use `net.JoinHostPort` |
 | [go_httpresponse](./analyzers/go_httpresponse/go_httpresponse.cue)           | Flag `defer resp.Body.Close()` immediately after `http.Get` |
 | [go_lostcancel](./analyzers/go_lostcancel/go_lostcancel.cue)                 | Flag discarding the cancel func from `context.WithCancel` |

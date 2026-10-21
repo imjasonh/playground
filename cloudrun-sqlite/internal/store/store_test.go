@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/litestream"
+	"github.com/chainguard-dev/clog"
 	"github.com/superfly/ltx"
 )
 
@@ -30,13 +31,13 @@ func testConfig(t *testing.T, replicaDir string) Config {
 		{Level: 2, Interval: time.Second},
 	}
 	cfg.SnapshotPlanLen = 0
-	cfg.Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	return cfg
 }
 
 func mustOpen(t *testing.T, cfg Config) *Store {
 	t.Helper()
-	s, err := Open(t.Context(), cfg)
+	ctx := clog.WithLogger(t.Context(), clog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	s, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"sort"
@@ -33,8 +34,7 @@ var exampleFS embed.FS
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "gitdb:", err)
-		os.Exit(1)
+		log.Fatal("gitdb:", err)
 	}
 }
 

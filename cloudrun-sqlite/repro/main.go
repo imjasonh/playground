@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"sync"
@@ -95,11 +96,11 @@ func main() {
 
 	integrity := scalar(db, "PRAGMA integrity_check")
 	db.Close()
-	fmt.Printf("writes: %d ok, %d failed\n", ok.Load(), failed.Load())
+	slog.Info("writes", "ok", ok.Load(), "failed", failed.Load())
 	if v := firstErr.Load(); v != nil {
-		fmt.Printf("first error %s\n", v)
+		slog.Info("first error", "error", v)
 	}
-	fmt.Printf("integrity_check in the writer: %s\n", integrity)
+	slog.Info("integrity check", "where", "writer", "result", integrity)
 
 	// What a new instance would see.
 	reader := litestream.NewVFS(client, logger)
@@ -111,14 +112,12 @@ func main() {
 	var count int
 	countErr := rdb.QueryRow("SELECT count(*) FROM t").Scan(&count)
 	want := initial + int(ok.Load())
-	fmt.Printf("integrity_check from a fresh VFS: %s\n", fresh)
-	fmt.Printf("rows from a fresh VFS: %d (error %v); acknowledged: %d\n", count, countErr, want)
+	slog.Info("integrity check", "where", "fresh", "result", fresh, "rows", count, "error", countErr, "acknowledged", want)
 
 	if failed.Load() > 0 || integrity != "ok" || fresh != "ok" || countErr != nil || count < want {
-		fmt.Println("FAIL")
-		os.Exit(1)
+		log.Fatalf("FAIL failed=%d writer=%s fresh=%s rows=%d error=%v acknowledged=%d", failed.Load(), integrity, fresh, count, countErr, want)
 	}
-	fmt.Println("PASS")
+	slog.Info("PASS")
 }
 
 func scalar(db *sql.DB, q string) string {
@@ -131,7 +130,6 @@ func scalar(db *sql.DB, q string) string {
 
 func check(err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		log.Fatal(err)
 	}
 }

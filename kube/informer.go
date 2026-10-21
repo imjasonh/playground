@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/rand/v2"
+
+	"github.com/chainguard-dev/clog"
 	"net/url"
 	"reflect"
 	"slices"
@@ -99,7 +100,6 @@ type informer[T any, P Resource[T]] struct {
 	res resolved
 	cfg informerConfig
 	c   *client.Client
-	log *slog.Logger
 	m   *metrics
 
 	store store[T, P]
@@ -137,14 +137,13 @@ func (e *decodeError) same(o *decodeError) bool {
 	return o != nil && o.meta.UID == e.meta.UID && o.err.Error() == e.err.Error()
 }
 
-func newInformer[T any, P Resource[T]](id int, ti *typeInfo, res resolved, c *client.Client, cfg informerConfig, log *slog.Logger, m *metrics) *informer[T, P] {
+func newInformer[T any, P Resource[T]](id int, ti *typeInfo, res resolved, c *client.Client, cfg informerConfig, m *metrics) *informer[T, P] {
 	inf := &informer[T, P]{
 		idn:       id,
 		ti:        ti,
 		res:       res,
 		cfg:       cfg,
 		c:         c,
-		log:       log.With("type", ti.String()),
 		m:         m,
 		attempted: make(chan struct{}),
 		synced:    make(chan struct{}),
@@ -154,16 +153,13 @@ func newInformer[T any, P Resource[T]](id int, ti *typeInfo, res resolved, c *cl
 	if cfg.pageSize == 0 {
 		inf.cfg.pageSize = 500
 	}
-	if cfg.selector != "" {
-		inf.log = inf.log.With("selector", cfg.selector)
-	}
 	// parseSelector doesn't parse the > and < operators, and a selector
 	// with them would seem to match no object.
 	if sel, err := parseSelector(cfg.selector); err == nil && !strings.ContainsAny(cfg.selector, "<>") {
 		inf.sel, inf.ownWrites = sel, true
 	}
 	if cfg.protobuf {
-		inf.pb = protoPlan(ti, inf.log)
+		inf.pb = protoPlan(context.Background(), ti)
 	}
 	return inf
 }
@@ -286,16 +282,16 @@ func (inf *informer[T, P]) attemptFailed(err error) {
 	inf.attemptOnce.Do(func() { close(inf.attempted) })
 }
 
-func (inf *informer[T, P]) replaceAll(items map[Key]*T, bad map[Key]*decodeError) {
+func (inf *informer[T, P]) replaceAll(ctx context.Context, items map[Key]*T, bad map[Key]*decodeError) {
 	initial := !inf.hasSynced.Load()
 	changes, fresh := inf.store.replace(items, bad)
 	for _, e := range fresh {
-		inf.warnSkipped(e)
+		inf.warnSkipped(ctx, e)
 	}
 	inf.hasSynced.Store(true)
 	inf.syncOnce.Do(func() { close(inf.synced) })
 	inf.attemptOnce.Do(func() { close(inf.attempted) })
-	inf.log.Debug("cache synced", "objects", len(items), "changes", len(changes))
+	inf.logger(ctx).Debug("cache synced", "objects", len(items), "changes", len(changes))
 	for _, c := range changes {
 		if inf.changed(c.old, c.new) {
 			inf.notify(c.old, c.new, initial)
@@ -318,6 +314,14 @@ func (inf *informer[T, P]) changed(old, new *T) bool {
 	return !reflect.DeepEqual(a, b)
 }
 
+func (inf *informer[T, P]) logger(ctx context.Context) *clog.Logger {
+	attrs := []any{"type", inf.ti.String()}
+	if inf.cfg.selector != "" {
+		attrs = append(attrs, "selector", inf.cfg.selector)
+	}
+	return clog.FromContext(withLog(ctx, "informer:"+strconv.Itoa(inf.idn), attrs...))
+}
+
 func (inf *informer[T, P]) run(ctx context.Context) {
 	b := backoff{min: 800 * time.Millisecond, max: 30 * time.Second}
 	b.reset()
@@ -333,7 +337,7 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 			var synced bool
 			rv, synced, err = inf.stream(ctx, "", true)
 			if errors.Is(err, errStreamingUnsupported) {
-				inf.log.Info("API server doesn't support streaming lists; using paginated lists")
+				inf.logger(ctx).Info("API server doesn't support streaming lists; using paginated lists")
 				inf.streaming.Store(false)
 				continue
 			}
@@ -343,7 +347,7 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 				// Something in between, such as a proxy with a short
 				// timeout, may cut every long streaming list. Each page of
 				// a paginated list is a shorter response.
-				inf.log.Info("streaming lists keep ending early; using paginated lists", "err", err)
+				inf.logger(ctx).Info("streaming lists keep ending early; using paginated lists", "err", err)
 				inf.streaming.Store(false)
 				continue
 			}
@@ -366,7 +370,7 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 		}
 		if client.IsGone(err) {
 			inf.m.inc("kube_cache_relists_total", "type", inf.ti.String())
-			inf.log.Debug("resource version expired; relisting", "err", err)
+			inf.logger(ctx).Debug("resource version expired; relisting", "err", err)
 			needSync = true
 			continue
 		}
@@ -374,7 +378,7 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 			inf.attemptFailed(err)
 		}
 		inf.m.inc("kube_watch_errors_total", "type", inf.ti.String())
-		inf.log.Warn("list or watch failed; retrying", "err", err, "retry", b.d)
+		inf.logger(ctx).Warn("list or watch failed; retrying", "err", err, "retry", b.d)
 		b.sleep(ctx)
 	}
 }
@@ -405,7 +409,7 @@ func (inf *informer[T, P]) accept(list bool) string {
 
 // protoPlan returns the plan to decode ti from protobuf, or nil if the
 // schema doesn't have the kind or a field that ti declares.
-func protoPlan(ti *typeInfo, log *slog.Logger) *protobuf.Plan {
+func protoPlan(ctx context.Context, ti *typeInfo) *protobuf.Plan {
 	apiVersion, kind := ti.apiVersion, ti.kind
 	if ti.metadataOnly {
 		apiVersion, kind = "meta.k8s.io/v1", "PartialObjectMetadata"
@@ -414,7 +418,7 @@ func protoPlan(ti *typeInfo, log *slog.Logger) *protobuf.Plan {
 	}
 	p, err := protobuf.For(ti.goType, apiVersion, kind)
 	if err != nil {
-		log.Debug("reading as JSON", "reason", err)
+		clog.FromContext(ctx).Debug("reading as JSON", "type", ti.String(), "reason", err)
 		return nil
 	}
 	return p
@@ -483,7 +487,7 @@ func (inf *informer[T, P]) relist(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	inf.replaceAll(items, bad)
+	inf.replaceAll(ctx, items, bad)
 	return rv, nil
 }
 
@@ -595,7 +599,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 			case de != nil:
 				old, fresh := inf.store.skip(de)
 				if fresh {
-					inf.warnSkipped(de)
+					inf.warnSkipped(ctx, de)
 				}
 				if old != nil {
 					inf.notify(old, nil, false)
@@ -627,7 +631,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 				rv, annotations = b.Object.Metadata.ResourceVersion, b.Object.Metadata.Annotations
 			}
 			if items != nil && annotations[client.InitialEventsEndAnnotation] == "true" {
-				inf.replaceAll(items, bad)
+				inf.replaceAll(ctx, items, bad)
 				items, bad, synced = nil, nil, true
 			}
 		case client.Error:
@@ -704,8 +708,8 @@ func (inf *informer[T, P]) decodeProto(b []byte) (*T, error) {
 	return obj, nil
 }
 
-func (inf *informer[T, P]) warnSkipped(e *decodeError) {
-	inf.log.Warn("object doesn't decode; skipping it", "key", e.meta.Key().String(), "resourceVersion", e.meta.ResourceVersion, "err", e.err)
+func (inf *informer[T, P]) warnSkipped(ctx context.Context, e *decodeError) {
+	inf.logger(ctx).Warn("object doesn't decode; skipping it", "key", e.meta.Key().String(), "resourceVersion", e.meta.ResourceVersion, "err", e.err)
 }
 
 func (inf *informer[T, P]) normalize(obj *T) {

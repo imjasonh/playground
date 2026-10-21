@@ -28,6 +28,7 @@ import (
 	_ "github.com/benbjohnson/litestream/file"
 	_ "github.com/benbjohnson/litestream/gs"
 	_ "github.com/benbjohnson/litestream/s3"
+	"github.com/chainguard-dev/clog"
 	// With the vfs tag, Litestream's VFS calls SQLite's C API, which
 	// go-sqlite3 links.
 	_ "github.com/mattn/go-sqlite3"
@@ -53,8 +54,7 @@ func main() {
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		clog.Fatal("crbench", "err", err)
 	}
 }
 
@@ -93,12 +93,13 @@ func (c *common) sim(replicaURL string) (*crsim.Sim, *httptest.Server, func(), e
 	if c.adminToken == "" {
 		c.adminToken = strconv.FormatUint(rand.Uint64(), 36)
 	}
-	sim := crsim.New(crsim.Config{
+	sim := crsim.New(clog.WithLogger(context.Background(), clog.NewLogger(
+		slog.New(slog.NewTextHandler(out, nil)).With("component", "crsim"),
+	)), crsim.Config{
 		Command:  []string{c.app},
 		Env:      append([]string{"REPLICA_URL=" + replicaURL, "ADMIN_TOKEN=" + c.adminToken}, c.env...),
 		Throttle: c.throttle,
 		Output:   out,
-		Logger:   slog.New(slog.NewTextHandler(out, nil)).With("component", "crsim"),
 	})
 	srv := httptest.NewServer(sim)
 	return sim, srv, func() {
@@ -135,9 +136,6 @@ func soak(args []string) error {
 	cfg.URL = srv.URL
 	cfg.Sim = sim
 	cfg.AdminToken = c.adminToken
-	cfg.Logf = func(format string, args ...any) {
-		fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05.000")}, args...)...)
-	}
 	res, err := scenario.Soak(context.Background(), cfg)
 	if err != nil {
 		return err
@@ -157,32 +155,23 @@ func soak(args []string) error {
 
 func printSoak(r *scenario.SoakResult) {
 	if r.Integrity == "skipped" {
-		fmt.Printf("acknowledged writes: %d\n", r.Acked)
+		slog.Info("acknowledged writes", "acked", r.Acked)
 	} else {
-		fmt.Printf("acknowledged writes: %d (items in database: %d)\n", r.Acked, r.Items)
+		slog.Info("acknowledged writes", "acked", r.Acked, "items", r.Items)
 	}
-	fmt.Printf("write latency ms: p50 %.1f  p90 %.1f  p99 %.1f  max %.1f\n", r.WriteLatency.P50, r.WriteLatency.P90, r.WriteLatency.P99, r.WriteLatency.Max)
-	fmt.Printf("read latency ms:  p50 %.1f  p90 %.1f  p99 %.1f  max %.1f  (%d reads)\n", r.ReadLatency.P50, r.ReadLatency.P90, r.ReadLatency.P99, r.ReadLatency.Max, r.ReadLatency.Count)
+	slog.Info("write latency", "p50_ms", r.WriteLatency.P50, "p90_ms", r.WriteLatency.P90, "p99_ms", r.WriteLatency.P99, "max_ms", r.WriteLatency.Max)
+	slog.Info("read latency", "p50_ms", r.ReadLatency.P50, "p90_ms", r.ReadLatency.P90, "p99_ms", r.ReadLatency.P99, "max_ms", r.ReadLatency.Max, "reads", r.ReadLatency.Count)
 	keys := make([]string, 0, len(r.Statuses))
 	for k := range r.Statuses {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)
 	for _, k := range keys {
-		fmt.Printf("  %-12s %d\n", k, r.Statuses[k])
+		slog.Info("status", "status", k, "count", r.Statuses[k])
 	}
-	fmt.Printf("chaos: %d crashes, %d scale-to-zeros, %d deploys; %d instances\n", r.Crashes, r.ScaleToZeros, r.Deploys, len(r.Instances))
+	slog.Info("chaos", "crashes", r.Crashes, "scale_to_zeros", r.ScaleToZeros, "deploys", r.Deploys, "instances", len(r.Instances))
 	if len(r.Instances) == 0 {
-		fmt.Printf("stale reads during overlap: %d\n", r.StaleReads)
-		fmt.Printf("after restart: %d missing, %d mismatched; integrity_check: %s\n", r.Missing, r.Mismatched, r.Integrity)
-		fmt.Printf("violations: %d\n", len(r.Violations))
-		for i, v := range r.Violations {
-			if i == 10 {
-				fmt.Printf("  ... %d more\n", len(r.Violations)-10)
-				break
-			}
-			fmt.Println("  " + v)
-		}
+		logSoakChecks(r)
 		return
 	}
 	var exits = map[string]int{}
@@ -195,19 +184,23 @@ func printSoak(r *scenario.SoakResult) {
 		ready = append(ready, in.ReadyMillis)
 	}
 	slices.Sort(ready)
-	fmt.Printf("instance exits: %v; peak RSS %.0f MiB, peak scratch %.1f MiB\n", exits, float64(peakRSS)/(1<<20), float64(peakDisk)/(1<<20))
+	slog.Info("instances", "exits", exits, "peak_rss_mib", float64(peakRSS)/(1<<20), "peak_scratch_mib", float64(peakDisk)/(1<<20))
 	if len(ready) > 0 {
-		fmt.Printf("instance start-to-listen ms: median %.0f, max %.0f\n", ready[len(ready)/2], ready[len(ready)-1])
+		slog.Info("instance start to listen", "median_ms", ready[len(ready)/2], "max_ms", ready[len(ready)-1])
 	}
-	fmt.Printf("stale reads during overlap: %d\n", r.StaleReads)
-	fmt.Printf("after restart: %d missing, %d mismatched; integrity_check: %s\n", r.Missing, r.Mismatched, r.Integrity)
-	fmt.Printf("violations: %d\n", len(r.Violations))
-	for i, v := range r.Violations {
-		if i == 10 {
-			fmt.Printf("  ... %d more\n", len(r.Violations)-10)
-			break
-		}
-		fmt.Println("  " + v)
+	logSoakChecks(r)
+}
+
+func logSoakChecks(r *scenario.SoakResult) {
+	slog.Info("overlap", "stale_reads", r.StaleReads)
+	slog.Info("after restart", "missing", r.Missing, "mismatched", r.Mismatched, "integrity", r.Integrity)
+	n := min(len(r.Violations), 10)
+	slog.Info("violations", "count", len(r.Violations))
+	for _, v := range r.Violations[:n] {
+		slog.Info("violation", "detail", v)
+	}
+	if len(r.Violations) > n {
+		slog.Info("violations truncated", "more", len(r.Violations)-n)
 	}
 }
 
@@ -239,9 +232,6 @@ func live(args []string) error {
 	*url = strings.TrimRight(*url, "/")
 	cfg.URL = *url
 	cfg.AdminToken = *admin
-	cfg.Logf = func(format string, args ...any) {
-		fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format("15:04:05.000")}, args...)...)
-	}
 
 	var during remoteStats
 	var haveDuring bool
@@ -249,7 +239,7 @@ func live(args []string) error {
 	cfg.BeforeVerify = func(ctx context.Context) error {
 		client := &http.Client{Timeout: 30 * time.Second}
 		if err := getJSON(client, *url+"/stats", &during); err != nil {
-			fmt.Fprintf(os.Stderr, "stats before read-back: %v\n", err)
+			slog.Warn("stats before read-back", "err", err)
 		} else {
 			haveDuring = true
 		}
@@ -269,11 +259,11 @@ func live(args []string) error {
 		printSoak(res)
 	}
 	if haveDuring {
-		fmt.Println("server during load:")
+		slog.Info("server during load")
 		printRemoteStats(&during)
 	}
 	if cold != nil {
-		fmt.Printf("new instance %s: request %.0f ms, database open %.0f ms\n", cold.Instance, cold.RequestMS, cold.OpenMS)
+		slog.Info("new instance", "instance", cold.Instance, "request_ms", cold.RequestMS, "open_ms", cold.OpenMS)
 	}
 	if *jsonOut != "" && res != nil {
 		b, _ := json.MarshalIndent(map[string]any{"soak": res, "during": during, "cold": cold}, "", "  ")
@@ -332,7 +322,7 @@ type pct struct {
 
 func printRemoteStats(st *remoteStats) {
 	s := st.Store
-	fmt.Printf("  instance %s, open %.1f ms, writes %d, batches %d, conflicts %d\n", st.Instance, s.OpenMS, s.Writes, s.Batches, s.Conflicts)
+	slog.Info("instance", "instance", st.Instance, "open_ms", s.OpenMS, "writes", s.Writes, "batches", s.Batches, "conflicts", s.Conflicts)
 	printPct("read wait", s.ReadWait)
 	printPct("read query", s.ReadQuery)
 	printPct("write queue", s.WriteQueue)
@@ -347,7 +337,7 @@ func printRemoteStats(st *remoteStats) {
 }
 
 func printPct(name string, p pct) {
-	fmt.Printf("  %-12s n=%-6d p50 %8.3f  p90 %8.3f  p99 %8.3f  max %8.3f ms\n", name, p.Count, p.P50, p.P90, p.P99, p.Max)
+	slog.Info(name, "n", p.Count, "p50_ms", p.P50, "p90_ms", p.P90, "p99_ms", p.P99, "max_ms", p.Max)
 }
 
 // rollService deploys a new revision and waits until /stats reports a
@@ -434,14 +424,10 @@ func coldstart(args []string) error {
 			return err
 		}
 		results = append(results, r)
-		fmt.Fprintf(os.Stderr, "%+v\n", r)
 	}
 
-	fmt.Println("| rows | database | start to listen | first request | random read p50 / p99 | full restore (old approach) |")
-	fmt.Println("|---:|---:|---:|---:|---:|---:|")
 	for _, r := range results {
-		fmt.Printf("| %d | %.0f MiB | %.0f ms | %.0f ms | %.1f / %.1f ms | %.0f ms |\n",
-			r.Rows, float64(r.DBBytes)/(1<<20), r.ListenMillis, r.FirstMillis, r.WarmP50, r.WarmP99, r.RestoreMs)
+		slog.Info("cold start", "rows", r.Rows, "database_mib", float64(r.DBBytes)/(1<<20), "listen_ms", r.ListenMillis, "first_ms", r.FirstMillis, "warm_p50_ms", r.WarmP50, "warm_p99_ms", r.WarmP99, "restore_ms", r.RestoreMs)
 	}
 	if *jsonOut != "" {
 		b, _ := json.MarshalIndent(results, "", "  ")

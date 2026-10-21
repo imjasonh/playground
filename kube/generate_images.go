@@ -52,7 +52,7 @@ func (o *generateOptions) programFlags() *flag.FlagSet {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
-	(&Manager{Logger: o.manager.Logger}).flags(fs)
+	(&Manager{}).flags(fs)
 	return fs
 }
 

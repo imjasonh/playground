@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/litestream"
+	"github.com/chainguard-dev/clog"
 	"github.com/superfly/ltx"
 )
 
@@ -26,7 +27,8 @@ type SnapshotResult struct {
 // RestorePlan returns the LTX files a new instance would read to open the
 // database: the latest snapshot plus the shortest chain of newer files.
 func (s *Store) RestorePlan(ctx context.Context) ([]*ltx.FileInfo, error) {
-	return litestream.CalcRestorePlan(ctx, s.client, 0, time.Time{}, s.log)
+	l := clog.FromContext(ctx)
+	return litestream.CalcRestorePlan(ctx, s.client, 0, time.Time{}, &l.Logger)
 }
 
 // levelsAboveL0 counts files at L1 or higher. L0 files are not included:
@@ -42,9 +44,9 @@ func levelsAboveL0(plan []*ltx.FileInfo) int {
 	return n
 }
 
-func (s *Store) snapshotLoop() {
+func (s *Store) snapshotLoop(ctx context.Context) {
 	defer s.bg.Done()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		<-s.closing
@@ -76,7 +78,7 @@ func (s *Store) snapshotLoop() {
 			continue
 		}
 		if _, err := s.Snapshot(ctx); err != nil && ctx.Err() == nil {
-			s.log.Error("snapshot failed", "error", err)
+			clog.FromContext(ctx).Error("snapshot failed", "error", err)
 		}
 	}
 }
@@ -126,7 +128,7 @@ func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
 
 	deleted, err := s.enforceRetention(ctx)
 	if err != nil {
-		s.log.Warn("retention failed", "error", err)
+		clog.FromContext(ctx).Warn("retention failed", "error", err)
 	}
 
 	res := &SnapshotResult{
@@ -142,7 +144,7 @@ func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
 	if plan, err := s.RestorePlan(ctx); err == nil {
 		s.planLen.Store(int64(len(plan)))
 	}
-	s.log.Info("snapshot written", "max_txid", res.MaxTXID, "size", res.Size, "inputs", res.Inputs, "deleted", res.Deleted, "duration", res.Duration)
+	clog.FromContext(ctx).Info("snapshot written", "max_txid", res.MaxTXID, "size", res.Size, "inputs", res.Inputs, "deleted", res.Deleted, "duration", res.Duration)
 	return res, nil
 }
 
