@@ -23,7 +23,6 @@ type store struct {
 	dir     string
 	max     int64
 	metrics *metrics
-	log     *slog.Logger
 	// writes holds a value for each write in progress, up to its capacity.
 	writes chan struct{}
 	// fetches is writes for module fetches, which don't wait for a slot.
@@ -55,8 +54,8 @@ var (
 	errBusy = errors.New("too many writes are in progress")
 )
 
-func openStore(dir string, max int64, m *metrics, log *slog.Logger) (*store, error) {
-	s := &store{dir: dir, max: max, metrics: m, log: log, writes: make(chan struct{}, maxWrites), fetches: make(chan struct{}, maxFetches), writeWait: 30 * time.Second}
+func openStore(dir string, max int64, m *metrics) (*store, error) {
+	s := &store{dir: dir, max: max, metrics: m, writes: make(chan struct{}, maxWrites), fetches: make(chan struct{}, maxFetches), writeWait: 30 * time.Second}
 	tmp := filepath.Join(dir, "tmp")
 	if err := os.RemoveAll(tmp); err != nil {
 		return nil, err
@@ -121,7 +120,7 @@ func (s *store) open(key string) (*os.File, error) {
 	if fi, err := f.Stat(); err == nil && time.Since(fi.ModTime()) > touchAfter {
 		now := time.Now()
 		if err := os.Chtimes(path, now, now); err != nil {
-			s.log.Warn("marking a file as used", "err", err)
+			slog.Warn("marking a file as used", "err", err)
 		}
 	}
 	return f, nil
@@ -291,7 +290,7 @@ func (s *store) evict(n int64) {
 	}
 	files, err := s.files()
 	if err != nil {
-		s.log.Error("listing files to evict", "err", err)
+		slog.Error("listing files to evict", "err", err)
 		return
 	}
 	slices.SortFunc(files, func(a, b file) int { return a.mtime.Compare(b.mtime) })
@@ -304,7 +303,7 @@ func (s *store) evict(n int64) {
 		}
 		if err := os.Remove(f.path); err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
-				s.log.Error("evicting", "err", err)
+				slog.Error("evicting", "err", err)
 			}
 			continue
 		}

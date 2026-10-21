@@ -703,8 +703,11 @@ bundle exec fastlane test
   flags printf-style calls, package-level clog calls other than
   `Fatal`, `gcp.NewHandler`,
   and a `flag.String` whose name contains `log-level`. Which programs
-  run on GCP is not visible to that check. `kube` stays on `slog`
-  because that module imports only the standard library. Do not restyle
+  run on GCP is not visible to that check.
+  [`pasta/analyzers/go_logger_field`](pasta/analyzers/go_logger_field/go_logger_field.cue)
+  flags a struct field of type `slog.Logger` or `clog.Logger`.
+  `kube` stays on `slog` because that module imports only the standard
+  library, and the check does not run there. Do not restyle
   `litestream`.
   Do not log with `fmt.Print`, `fmt.Println`, or `fmt.Printf`.
   [`pasta/analyzers/go_fmtprint`](pasta/analyzers/go_fmtprint/go_fmtprint.cue)

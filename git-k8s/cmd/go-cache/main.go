@@ -56,7 +56,6 @@ type server struct {
 	// reviewer is nil outside a cluster, which turns the build caches off.
 	reviewer reviewer
 	metrics  *metrics
-	log      *slog.Logger
 	// fetches holds the module fetches in progress, by key.
 	fetches singleflight.Group
 }
@@ -138,13 +137,12 @@ func main() {
 	metricsAddr := flag.String("metrics-addr", "", "address for /healthz, /readyz, and /metrics, if not -addr")
 	flag.Parse()
 	// gcp/init installed the process handler from LOG_LEVEL.
-	log := slog.Default()
-	if err := run(log, *addr, *metricsAddr, *upstream, *dir, *maxSize, *controller); err != nil {
+	if err := run(*addr, *metricsAddr, *upstream, *dir, *maxSize, *controller); err != nil {
 		clog.Fatal("exiting", "err", err)
 	}
 }
 
-func run(log *slog.Logger, addr, metricsAddr, upstream, dir, maxSize, controller string) error {
+func run(addr, metricsAddr, upstream, dir, maxSize, controller string) error {
 	max, err := parseSize(maxSize)
 	if err != nil {
 		return fmt.Errorf("-max-size: %w", err)
@@ -156,7 +154,7 @@ func run(log *slog.Logger, addr, metricsAddr, upstream, dir, maxSize, controller
 		return errors.New("-controller can't be empty")
 	}
 	m := newMetrics()
-	st, err := openStore(dir, max, m, log)
+	st, err := openStore(dir, max, m)
 	if err != nil {
 		return err
 	}
@@ -165,17 +163,16 @@ func run(log *slog.Logger, addr, metricsAddr, upstream, dir, maxSize, controller
 		upstream: strings.TrimSuffix(upstream, "/"),
 		client:   &http.Client{Timeout: 10 * time.Minute},
 		metrics:  m,
-		log:      log,
 	}
 	if r, err := inCluster(controller); err != nil {
-		log.Warn("the build caches are off, because go-cache can't review tokens outside a cluster", "err", err)
+		slog.Warn("the build caches are off, because go-cache can't review tokens outside a cluster", "err", err)
 	} else {
 		s.reviewer = r
 	}
 	servers := s.servers(addr, metricsAddr)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	log.Info("serving", "addr", addr, "metrics-addr", metricsAddr, "upstream", upstream, "dir", dir, "max-size", maxSize, "controller", controller)
+	slog.Info("serving", "addr", addr, "metrics-addr", metricsAddr, "upstream", upstream, "dir", dir, "max-size", maxSize, "controller", controller)
 	errc := make(chan error, len(servers))
 	for _, srv := range servers {
 		go func() { errc <- srv.ListenAndServe() }()

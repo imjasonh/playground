@@ -28,6 +28,9 @@ disabled_on: {
 	yaml_truthy: ["**/project.yml"]
 	js_preserve_caught_error: ["**/.cursor/skills/**"]
 	js_no_constant_condition_while: ["**/.cursor/skills/**"]
+	// kube stores *slog.Logger. That module imports only the standard
+	// library, so it cannot read a logger from a clog context.
+	go_logger_field: ["kube/**"]
 }
 
 // Keep the per-file parse timeout; hang defense still matters.
