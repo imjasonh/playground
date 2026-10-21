@@ -699,7 +699,9 @@ bundle exec fastlane test
   In `main` of a program that runs on GCP (Cloud Run, GKE, Cloud Functions,
   or App Engine), blank-import `github.com/chainguard-dev/clog/gcp/init`.
   That installs the Cloud Logging JSON handler from `LOG_LEVEL` in every
-  environment. Do not call `gcp.NewHandler` yourself.
+  environment. Do not call `gcp.NewHandler` yourself. `kube.Main` keeps
+  that handler. It installs a text handler at `-log-level` only when
+  the program did not import `gcp/init`.
   [`pasta/analyzers/go_clog`](pasta/analyzers/go_clog/go_clog.cue)
   flags printf-style calls, package-level clog calls other than
   `Fatal`, `gcp.NewHandler`,

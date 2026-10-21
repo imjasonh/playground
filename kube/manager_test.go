@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/chainguard-dev/clog/gcp"
+	"github.com/chainguard-dev/clog/slag"
 )
 
 // TestFlagsThatTheProgramDefines checks that Main leaves out its flags that
@@ -46,6 +49,42 @@ func TestFlagsDefaultToFields(t *testing.T) {
 	}
 	if m.Namespace != "team" || !m.LeaderElection || m.Shards != 3 || m.Addr != ":7070" {
 		t.Errorf("Namespace = %q, LeaderElection = %v, Shards = %d, and Addr = %q; want team, true, 3, and :7070", m.Namespace, m.LeaderElection, m.Shards, m.Addr)
+	}
+}
+
+// TestSetLoggerKeepsCloudLoggingHandler checks that a handler from
+// clog/gcp/init stays the process logger.
+func TestSetLoggerKeepsCloudLoggingHandler(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	h := &gcp.Handler{}
+	slog.SetDefault(slog.New(h))
+	setLogger(slog.LevelDebug)
+	if slog.Default().Handler() != h {
+		t.Fatal("replaced the Cloud Logging handler")
+	}
+}
+
+// TestSetLoggerInstallsTextHandlerAtLevel checks that, without a Cloud
+// Logging handler, -log-level filters the text handler.
+func TestSetLoggerInstallsTextHandlerAtLevel(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	var level slag.Level
+	setLogger(&level)
+	h := slog.Default().Handler()
+	if _, ok := h.(*gcp.Handler); ok {
+		t.Fatal("installed a Cloud Logging handler")
+	}
+	if h.Enabled(t.Context(), slog.LevelDebug) {
+		t.Fatal("debug is enabled at the default level")
+	}
+	if err := level.Set("debug"); err != nil {
+		t.Fatal(err)
+	}
+	if !h.Enabled(t.Context(), slog.LevelDebug) {
+		t.Fatal("debug is disabled after -log-level=debug")
 	}
 }
 

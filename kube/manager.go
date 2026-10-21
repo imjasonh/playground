@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/chainguard-dev/clog"
+	"github.com/chainguard-dev/clog/gcp"
 	"github.com/chainguard-dev/clog/slag"
 	"maps"
 	"net"
@@ -183,7 +184,9 @@ func Main(controllers ...Controller) {
 // -leader-elect, -shards, -metrics-addr, -webhook-addr, -webhook-service,
 // -webhook-url, -serve-addr, -token-dir, and -log-level. Each flag defaults
 // to its field's value. Main leaves out a flag that the program defines
-// itself on flag.CommandLine, and logs a warning.
+// itself on flag.CommandLine, and logs a warning. -log-level sets the
+// text handler's level. A program that blank-imports clog/gcp/init keeps
+// that Cloud Logging handler, and LOG_LEVEL sets its level.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
@@ -212,7 +215,7 @@ func (m *Manager) Main(controllers ...Controller) {
 	}
 	skipped := m.flags(flag.CommandLine)
 	flag.Parse()
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &m.logLevel})))
+	setLogger(&m.logLevel)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx = clog.WithLogger(ctx, clog.NewLogger(slog.Default()))
@@ -226,10 +229,20 @@ func (m *Manager) Main(controllers ...Controller) {
 	}
 }
 
+// setLogger leaves a Cloud Logging handler in place. clog/gcp/init
+// installs that handler from LOG_LEVEL before main runs. A program
+// without that import gets a text handler at level, which -log-level sets.
+func setLogger(level slog.Leveler) {
+	if _, ok := slog.Default().Handler().(*gcp.Handler); ok {
+		return
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+}
+
 // flags defines Main's flags on fs, with m's fields as their defaults,
 // except those that fs already has, such as flags that the program defines
 // itself. It returns the names of the flags that it skipped. -log-level
-// sets m.logLevel.
+// sets m.logLevel, which setLogger reads for the text handler.
 func (m *Manager) flags(fs *flag.FlagSet) (skipped []string) {
 	own := flag.NewFlagSet("", flag.ContinueOnError)
 	own.StringVar(&m.Kubeconfig, "kubeconfig", m.Kubeconfig, "path to a kubeconfig file")
@@ -242,7 +255,7 @@ func (m *Manager) flags(fs *flag.FlagSet) (skipped []string) {
 	own.StringVar(&m.WebhookURL, "webhook-url", m.WebhookURL, "base https URL through which the API server reaches the webhooks, outside the cluster")
 	own.StringVar(&m.ServeAddr, "serve-addr", cmp.Or(m.ServeAddr, ":8081"), "address for the HTTP handler passed to kube.Serve")
 	own.StringVar(&m.TokenDir, "token-dir", m.TokenDir, "directory of service account tokens for kube.RequestToken, by audience")
-	own.Var(&m.logLevel, "log-level", "log messages at this `level` and above: debug, info, warn, or error")
+	own.Var(&m.logLevel, "log-level", "log messages at this `level` and above: debug, info, warn, or error. A program that blank-imports clog/gcp/init takes the level from LOG_LEVEL")
 	own.VisitAll(func(f *flag.Flag) {
 		if fs.Lookup(f.Name) != nil {
 			skipped = append(skipped, f.Name)
