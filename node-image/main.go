@@ -29,7 +29,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "version", "-version", "--version":
-		fmt.Println("node-image 0.0.0-dev")
+		fmt.Fprintln(os.Stdout, "node-image 0.0.0-dev")
 	case "help", "-h", "--help":
 		usage()
 	default:

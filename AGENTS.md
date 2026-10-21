@@ -700,6 +700,11 @@ bundle exec fastlane test
   run on GCP is not visible to that check. `kube` stays on `slog`
   because that module imports only the standard library. Do not restyle
   `litestream`.
+  Do not log with `fmt.Print`, `fmt.Println`, or `fmt.Printf`.
+  [`pasta/analyzers/go_fmtprint`](pasta/analyzers/go_fmtprint/go_fmtprint.cue)
+  rewrites a single string argument to `slog.Info` and flags every
+  other call. A command that prints its result uses `fmt.Fprint` on
+  an explicit writer, including `os.Stdout`.
 - **Go environment variables**: load them with
   [`github.com/sethvargo/go-envconfig`](https://github.com/sethvargo/go-envconfig).
   Put the default in the `env` struct tag, as in `env:"PORT, default=8080"`.

@@ -102,7 +102,7 @@ func probe(c *client.Client) error {
 			}
 		}
 		w.Close()
-		fmt.Printf("Reading a streaming list as %s: %.1f MiB in %v.\n", accept, float64(n)/(1<<20), time.Since(start).Round(time.Millisecond))
+		slog.Info("streaming list", "accept", accept, "mib", float64(n)/(1<<20), "duration", time.Since(start).Round(time.Millisecond))
 	}
 	for _, accept := range []string{"application/json", "application/vnd.kubernetes.protobuf"} {
 		start := time.Now()
@@ -112,9 +112,8 @@ func probe(c *client.Client) error {
 		}
 		size, _ := io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		fmt.Printf("Reading a list as %s: %.1f MiB in %v.\n", accept, float64(size)/(1<<20), time.Since(start).Round(time.Millisecond))
+		slog.Info("list", "accept", accept, "mib", float64(size)/(1<<20), "duration", time.Since(start).Round(time.Millisecond))
 	}
-	fmt.Println()
 	return nil
 }
 
@@ -144,9 +143,9 @@ func run() error {
 	if err := seed(ctx, c); err != nil {
 		return err
 	}
-	fmt.Printf("Created %d Pods and %d Secrets in %v.\n\n", *pods, *secrets, time.Since(start).Round(time.Second))
+	slog.Info("created objects", "pods", *pods, "secrets", *secrets, "duration", time.Since(start).Round(time.Second))
 	if *hold {
-		fmt.Printf("Holding the control plane open. KUBECONFIG=%s\n", env.Kubeconfig)
+		slog.Info("holding the control plane open", "kubeconfig", env.Kubeconfig)
 		select {}
 	}
 
@@ -156,7 +155,7 @@ func run() error {
 	}
 	n, _ := io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	fmt.Printf("Average Pod JSON size, including managedFields: %d bytes.\n\n", n/int64(*pods))
+	slog.Info("average pod json size", "bytes", n/int64(*pods))
 	if err := probe(c); err != nil {
 		return err
 	}
@@ -165,8 +164,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("| Cache | Objects | Heap | Per object | Sync |")
-	fmt.Println("|---|---|---|---|---|")
 	for _, m := range []string{"client-go", "client-go-strip-managed-fields", "kube-k8s.Pod", "kube-k8s.Pod-json", "kube-k8s.Pod-paginated", "kube-k8s.Pod-no-interning", "kube-small-projection", "kube-metadata-only"} {
 		out, err := exec.Command(self, "-mode", m, "-kubeconfig", env.Kubeconfig, "-namespace", ns).Output() // #nosec G204 -- runs this program.
 		if err != nil {
@@ -176,7 +173,7 @@ func run() error {
 		if err := json.Unmarshal(out, &r); err != nil {
 			return fmt.Errorf("%s: %w: %s", m, err, out)
 		}
-		fmt.Printf("| %s | %d | %.1f MiB | %.0f B | %.2fs |\n", r.Mode, r.Objects, float64(r.Heap)/(1<<20), float64(r.Heap)/float64(r.Objects), r.Sync)
+		slog.Info("cache", "mode", r.Mode, "objects", r.Objects, "heap_mib", float64(r.Heap)/(1<<20), "bytes_per_object", float64(r.Heap)/float64(r.Objects), "sync_seconds", r.Sync)
 	}
 
 	full, err := listBytes(ctx, c, "")
@@ -187,7 +184,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\nListing %d Secrets of %d bytes each: %.1f MiB full, %.2f MiB metadata-only.\n\n", *secrets, *secretSize, float64(full)/(1<<20), float64(meta)/(1<<20))
+	slog.Info("secret list", "secrets", *secrets, "secret_bytes", *secretSize, "full_mib", float64(full)/(1<<20), "metadata_mib", float64(meta)/(1<<20))
 	return sizes()
 }
 
@@ -208,8 +205,6 @@ func sizes() error {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	fmt.Println("| Binary | Size (stripped) | Modules |")
-	fmt.Println("|---|---|---|")
 	for _, b := range []struct{ name, dir, pkg string }{
 		{"kube (examples/website)", "..", "./examples/website"},
 		{"controller-runtime (crsize)", ".", "./crsize"},
@@ -234,7 +229,7 @@ func sizes() error {
 		for _, m := range strings.Fields(string(list)) {
 			set[m] = true
 		}
-		fmt.Printf("| %s | %.1f MiB | %d |\n", b.name, float64(st.Size())/(1<<20), len(set))
+		slog.Info("binary", "name", b.name, "mib", float64(st.Size())/(1<<20), "modules", len(set))
 	}
 	return nil
 }

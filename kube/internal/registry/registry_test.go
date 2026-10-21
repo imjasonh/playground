@@ -435,8 +435,8 @@ func ExampleParse() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(r.Registry, r.Repository, r.Tag)
-	fmt.Println(r.WithDigest(testDigest))
+	fmt.Fprintln(os.Stdout, r.Registry, r.Repository, r.Tag)
+	fmt.Fprintln(os.Stdout, r.WithDigest(testDigest))
 	// Output:
 	// registry-1.docker.io library/nginx 1.27
 	// nginx@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

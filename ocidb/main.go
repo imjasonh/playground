@@ -249,8 +249,8 @@ func metaCommand(w io.Writer, line string) (done bool) {
 func cmdSchema(args []string) error {
 	if len(args) == 0 {
 		for _, n := range tables.Names() {
-			fmt.Println(displaySchema(tables.Schema(n)) + ";")
-			fmt.Println()
+			fmt.Fprintln(os.Stdout, displaySchema(tables.Schema(n))+";")
+			fmt.Fprintln(os.Stdout)
 		}
 		return nil
 	}
@@ -258,7 +258,7 @@ func cmdSchema(args []string) error {
 	if s == "" {
 		return fmt.Errorf("unknown table %q (have: %s)", args[0], strings.Join(tables.Names(), ", "))
 	}
-	fmt.Println(displaySchema(s) + ";")
+	fmt.Fprintln(os.Stdout, displaySchema(s)+";")
 	return nil
 }
 
@@ -296,7 +296,7 @@ func cmdDemo(args []string) error {
 	}
 	if list {
 		for _, d := range demos {
-			fmt.Printf("-- %s\n%s\n\n", d.title, d.sql)
+			fmt.Fprintf(os.Stdout, "-- %s\n%s\n\n", d.title, d.sql)
 		}
 		return nil
 	}
@@ -314,8 +314,8 @@ func cmdDemo(args []string) error {
 		if ctx.Err() != nil {
 			break
 		}
-		fmt.Printf("\n\033[1m== %d/%d  %s\033[0m\n", i+1, len(demos), d.title)
-		fmt.Printf("\033[2m%s\033[0m\n", d.sql)
+		fmt.Fprintf(os.Stdout, "\n\033[1m== %d/%d  %s\033[0m\n", i+1, len(demos), d.title)
+		fmt.Fprintf(os.Stdout, "\033[2m%s\033[0m\n", d.sql)
 		if err := runAndPrint(os.Stdout, db, d.sql, s.format); err != nil {
 			slog.Error("query failed", "err", err)
 		}
