@@ -17,10 +17,10 @@ import (
 // replica operation timing for /stats.
 type monitoredClient struct {
 	litestream.ReplicaClient
-	warm atomic.Pointer[warmCache]
-	gets latencies
+	warm  atomic.Pointer[warmCache]
+	gets  latencies
 	lists latencies
-	puts latencies
+	puts  latencies
 }
 
 var _ litestream.L0CreateOnlyReplicaClient = (*monitoredClient)(nil)
