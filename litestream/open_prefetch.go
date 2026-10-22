@@ -113,19 +113,6 @@ func (c *OpenPrefetchReplicaClient) PrefetchOpen(ctx context.Context, logger *sl
 // EndOpenPrefetch clears the open cache.
 func (c *OpenPrefetchReplicaClient) EndOpenPrefetch() { c.cache.Store(nil) }
 
-func (f *VFSFile) beginOpenPrefetch() func() {
-	if f.vfs == nil || !f.vfs.OpenPrefetch {
-		return func() {}
-	}
-	pf, ok := f.client.(*OpenPrefetchReplicaClient)
-	if !ok {
-		pf = NewOpenPrefetchReplicaClient(f.client)
-		f.client = pf
-	}
-	pf.PrefetchOpen(f.ctx, f.logger)
-	return pf.EndOpenPrefetch
-}
-
 func (c *OpenPrefetchReplicaClient) prefetch(ctx context.Context) error {
 	w := &openPrefetchCache{levels: map[int][]*ltx.FileInfo{}, ranges: map[openPrefetchRange][]byte{}}
 	var mu sync.Mutex

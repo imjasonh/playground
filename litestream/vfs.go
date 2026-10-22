@@ -1163,6 +1163,19 @@ func (f *VFSFile) hasTargetTime() bool {
 	return f.targetTime != nil
 }
 
+func (f *VFSFile) beginOpenPrefetch() func() {
+	if f.vfs == nil || !f.vfs.OpenPrefetch {
+		return func() {}
+	}
+	pf, ok := f.client.(*OpenPrefetchReplicaClient)
+	if !ok {
+		pf = NewOpenPrefetchReplicaClient(f.client)
+		f.client = pf
+	}
+	pf.PrefetchOpen(f.ctx, f.logger)
+	return pf.EndOpenPrefetch
+}
+
 func (f *VFSFile) Open() error {
 	f.logger.Debug("opening file")
 
