@@ -1,0 +1,27 @@
+{
+  "name": "nethack-coach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "tmux-hosted Cursor advisor that watches a NetHack game and gives advice in a side pane",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "nethack-coach": "bin/nethack-coach"
+  },
+  "scripts": {
+    "start": "bin/nethack-coach",
+    "advisor": "tsx src/advisor.ts",
+    "test": "tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+#
+# Launch NetHack in a tmux pane with a Cursor advisor watching from a side pane.
+#
+# The player drives the game as usual in the left pane. The right pane runs the
+# advisor, which reads the game screen through `tmux capture-pane` and prints
+# advice. On-demand hotkeys work from either pane because they are bound on tmux's
+# root key table (no prefix): F9 asks for advice now, F10 toggles automatic
+# advice, F8 quits.
+#
+# Environment overrides (mostly for testing):
+#   NHC_GAME_CMD      command to run as the game (default: the nethack binary)
+#   NHC_MODEL         model id for the advisor (default: grok-4.6)
+#   NHC_SIDEBAR_COLS  width of the advisor pane (default: 46)
+#   NHC_SESSION       tmux session name (default: coach-<pid>)
+#   NHC_SOCKET        tmux socket name (default: nethack-coach)
+#   NHC_ATTACH        1 to attach (default), 0 to leave detached and print the
+#                     session name (used by the headless smoke test)
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONF="$ROOT/coach.tmux.conf"
+
+SOCKET="${NHC_SOCKET:-nethack-coach}"
+SESSION="${NHC_SESSION:-coach-$$}"
+SIDEBAR_COLS="${NHC_SIDEBAR_COLS:-46}"
+MODEL="${NHC_MODEL:-grok-4.6}"
+GAME_CMD="${NHC_GAME_CMD:-}"
+ATTACH="${NHC_ATTACH:-1}"
+
+tm() { command tmux -L "$SOCKET" -f "$CONF" "$@"; }
+
+die() { echo "nethack-coach: $*" >&2; exit 1; }
+
+command -v tmux >/dev/null 2>&1 || die "tmux is required"
+command -v node >/dev/null 2>&1 || die "node is required"
+
+if [ -z "$GAME_CMD" ]; then
+  if [ -x /usr/games/nethack ]; then
+    GAME_CMD="/usr/games/nethack"
+  elif command -v nethack >/dev/null 2>&1; then
+    GAME_CMD="nethack"
+  else
+    die "nethack not found. Install it (Debian/Ubuntu: sudo apt-get install nethack-console) or set NHC_GAME_CMD."
+  fi
+fi
+
+[ -n "${CURSOR_API_KEY:-}" ] || die "CURSOR_API_KEY is required (get one at https://cursor.com/dashboard/api)"
+[ -d "$ROOT/node_modules/@cursor/sdk" ] || die "dependencies missing; run: (cd \"$ROOT\" && npm install)"
+
+TSX="$ROOT/node_modules/.bin/tsx"
+[ -x "$TSX" ] || die "tsx not found; run: (cd \"$ROOT\" && npm install)"
+
+CTRL="$(mktemp -d "${TMPDIR:-/tmp}/nethack-coach.XXXXXX")"
+
+cleanup() {
+  tm kill-session -t "$SESSION" 2>/dev/null || true
+  rm -rf "$CTRL" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Left pane: the game. Capture its unique pane id so the advisor always reads the
+# right pane even if the layout changes.
+GAME_PANE="$(tm new-session -d -s "$SESSION" -n coach -P -F '#{pane_id}' "$GAME_CMD")"
+tm select-pane -t "$GAME_PANE" -T "NetHack"
+
+# Right pane: the advisor, sized to the sidebar width.
+ADVISOR_CMD="$TSX $ROOT/src/advisor.ts --socket $SOCKET --game-pane $GAME_PANE --control-dir $CTRL --sidebar-cols $SIDEBAR_COLS --model $MODEL"
+COACH_PANE="$(tm split-window -h -t "$GAME_PANE" -l "$SIDEBAR_COLS" -P -F '#{pane_id}' "$ADVISOR_CMD")"
+tm select-pane -t "$COACH_PANE" -T "Coach"
+
+# On-demand controls, bound on the root table so they work while the game has focus.
+tm bind-key -n F9  run-shell "touch '$CTRL/ask'"
+tm bind-key -n F10 run-shell "touch '$CTRL/toggle'"
+tm bind-key -n F8  kill-session
+
+# Start the player in the game pane so they can just begin typing.
+tm select-pane -t "$GAME_PANE"
+
+if [ "$ATTACH" = "1" ]; then
+  tm attach-session -t "$SESSION"
+else
+  # Headless mode: leave the session running for inspection and print its name.
+  trap - EXIT INT TERM
+  echo "$SESSION"
+fi
