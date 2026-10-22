@@ -106,9 +106,10 @@ func DefaultConfig() Config {
 
 // Store is a SQLite database backed by a Litestream replica.
 type Store struct {
-	cfg    Config
-	client *monitoredClient
-	dsn    string
+	cfg      Config
+	client   *monitoredClient
+	prefetch *litestream.OpenPrefetchReplicaClient
+	dsn      string
 
 	// mu guards db. Reads hold it shared. When the store is durable, the
 	// committer holds it exclusively from the start of each batch until the
@@ -187,8 +188,9 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, fmt.Errorf("init replica client: %w", err)
 	}
 	client := &monitoredClient{ReplicaClient: raw}
+	prefetch := litestream.NewOpenPrefetchReplicaClient(client)
 
-	vfs := litestream.NewVFS(client, &l.Logger)
+	vfs := litestream.NewVFS(prefetch, &l.Logger)
 	vfs.PollInterval = cfg.PollInterval
 	vfs.CacheSize = cfg.CacheSize
 	vfs.WriteEnabled = true
@@ -211,6 +213,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	s := &Store{
 		cfg:       cfg,
 		client:    client,
+		prefetch:  prefetch,
 		writes:    make(chan *writeReq),
 		jobs:      make(chan func()),
 		retryOpen: make(chan struct{}, 1),
@@ -239,10 +242,8 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 }
 
 func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
-	if err := s.client.warmUp(ctx); err != nil {
-		clog.FromContext(ctx).Warn("prefetch for open failed", "error", err)
-	}
-	defer s.client.coolDown()
+	s.prefetch.PrefetchOpen(ctx, &clog.FromContext(ctx).Logger)
+	defer s.prefetch.EndOpenPrefetch()
 
 	db, err := sql.Open("sqlite3", s.dsn)
 	if err != nil {

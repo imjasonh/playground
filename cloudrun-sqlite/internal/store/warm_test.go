@@ -29,8 +29,8 @@ func (c *countingClient) OpenLTXFile(ctx context.Context, level int, minTXID, ma
 	return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
 }
 
-// The warm cache must hand the VFS exactly what the replica would.
-func TestWarmUpServesIdenticalData(t *testing.T) {
+// The Litestream open prefetch client must hand the VFS exactly what the replica would.
+func TestOpenPrefetchServesIdenticalData(t *testing.T) {
 	replica := t.TempDir()
 	s := mustOpen(t, testConfig(t, replica))
 	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
@@ -49,10 +49,8 @@ func TestWarmUpServesIdenticalData(t *testing.T) {
 	}
 
 	counting := &countingClient{ReplicaClient: file.NewReplicaClient(replica)}
-	fc := &monitoredClient{ReplicaClient: counting}
-	if err := fc.warmUp(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	fc := litestream.NewOpenPrefetchReplicaClient(counting)
+	fc.PrefetchOpen(t.Context(), nil)
 	lists, opens := counting.lists.Load(), counting.opens.Load()
 
 	got, err := litestream.CalcRestorePlan(t.Context(), fc, 0, time.Time{}, logger)
@@ -94,11 +92,11 @@ func TestWarmUpServesIdenticalData(t *testing.T) {
 			counting.lists.Load()-lists, counting.opens.Load()-opens)
 	}
 
-	fc.coolDown()
+	fc.EndOpenPrefetch()
 	if _, err := fc.LTXFiles(t.Context(), 0, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	if counting.lists.Load() == lists {
-		t.Error("listing after coolDown was served from the cache")
+		t.Error("listing after EndOpenPrefetch was served from the cache")
 	}
 }
