@@ -17,7 +17,8 @@ and make its writes cheaper. Each one is meant for upstream.
 | `5d832c37` | Truncate the page index when the database shrinks | Not proposed |
 | `b4dff65e` | Interleaving tests for the VFS | Not proposed |
 | `f9801067` | Keep written pages cached when the poller installs them | Not proposed |
-| `f9b60a91` | `VFS.ConflictCheckInterval`, which skips the conflict-check LIST while a writer's position is fresh | Not proposed; it needs conditional L0 uploads, which upstream's replica clients don't do |
+| `f9b60a91` | `VFS.ConflictCheckInterval`, which skips the conflict-check LIST while a writer's position is fresh | Not proposed; pairs with conditional L0 uploads below |
+| (pending) | Conditional create-if-absent for level-0 writes on `file`, `gs`, and `s3` replica clients (`SetReplicaL0CreateOnly`); enabled automatically when the write-enabled VFS opens | Not proposed |
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 | `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
 

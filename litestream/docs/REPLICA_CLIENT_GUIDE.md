@@ -57,6 +57,11 @@ type ReplicaClient interface {
 
 ### Optional Features
 
+- [ ] **Conditional level-0 creates** (`L0CreateOnlyReplicaClient`): create-if-absent
+  uploads for `level == 0` so two writers cannot overwrite the same TXID. The
+  write-enabled VFS turns this on automatically for clients that implement it
+  (`file`, `gs`, `s3`). A lost race returns `litestream.ErrConflict` unless the
+  existing object is a byte-for-byte retry of the same upload.
 - [ ] Connection pooling
 - [ ] Retry logic with exponential backoff
 - [ ] Request batching

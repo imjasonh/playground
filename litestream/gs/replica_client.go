@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/superfly/ltx"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 
 	"github.com/benbjohnson/litestream"
@@ -32,6 +35,11 @@ const ReplicaClientType = "gs"
 const MetadataKeyTimestamp = "litestream-timestamp"
 
 var _ litestream.ReplicaClient = (*ReplicaClient)(nil)
+var _ litestream.L0CreateOnlyReplicaClient = (*ReplicaClient)(nil)
+
+// DefaultL0UploadChunkSize is the GCS writer chunk size for small level-0
+// objects. The client default is 16 MiB per upload buffer.
+const DefaultL0UploadChunkSize = 1 << 20
 
 // ReplicaClient is a client for writing LTX files to Google Cloud Storage.
 type ReplicaClient struct {
@@ -43,7 +51,19 @@ type ReplicaClient struct {
 	// GS bucket information
 	Bucket string
 	Path   string
+
+	l0CreateOnly bool
+	l0Conflicts  atomic.Int64
 }
+
+// SetL0CreateOnly makes level-0 writes create-if-absent in GCS.
+func (c *ReplicaClient) SetL0CreateOnly(enabled bool) { c.l0CreateOnly = enabled }
+
+// L0CreateOnly reports whether level-0 writes are create-if-absent.
+func (c *ReplicaClient) L0CreateOnly() bool { return c.l0CreateOnly }
+
+// L0ConflictCount is how many conditional L0 creates lost to another writer.
+func (c *ReplicaClient) L0ConflictCount() int64 { return c.l0Conflicts.Load() }
 
 // NewReplicaClient returns a new instance of ReplicaClient.
 func NewReplicaClient() *ReplicaClient {
@@ -142,6 +162,9 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 	if err := c.Init(ctx); err != nil {
 		return info, err
 	}
+	if level == 0 && c.l0CreateOnly {
+		return c.writeL0CreateOnly(ctx, minTXID, maxTXID, rd)
+	}
 
 	key := litestream.LTXFilePath(c.Path, level, minTXID, maxTXID)
 
@@ -186,6 +209,31 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 		Size:      n,
 		CreatedAt: timestamp,
 	}, nil
+}
+
+func (c *ReplicaClient) writeL0CreateOnly(ctx context.Context, minTXID, maxTXID ltx.TXID, rd io.Reader) (*ltx.FileInfo, error) {
+	data, ts, err := litestream.ReadLTXUpload(rd)
+	if err != nil {
+		return nil, err
+	}
+	key := litestream.LTXFilePath(c.Path, 0, minTXID, maxTXID)
+	w := c.bkt.Object(key).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
+	w.ChunkSize = DefaultL0UploadChunkSize
+	w.Metadata = map[string]string{MetadataKeyTimestamp: ts.Format(time.RFC3339Nano)}
+	if _, err := w.Write(data); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && gerr.Code == http.StatusPreconditionFailed {
+			return litestream.CompleteL0CreateOnly(ctx, c, minTXID, maxTXID, data, ts, func() { c.l0Conflicts.Add(1) })
+		}
+		return nil, err
+	}
+	internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "PUT").Inc()
+	internal.OperationBytesCounterVec.WithLabelValues(ReplicaClientType, "PUT").Add(float64(len(data)))
+	return &ltx.FileInfo{Level: 0, MinTXID: minTXID, MaxTXID: maxTXID, Size: int64(len(data)), CreatedAt: ts}, nil
 }
 
 // OpenLTXFile returns a reader for a given LTX file.
