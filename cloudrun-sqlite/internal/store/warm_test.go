@@ -49,7 +49,7 @@ func TestWarmUpServesIdenticalData(t *testing.T) {
 	}
 
 	counting := &countingClient{ReplicaClient: file.NewReplicaClient(replica)}
-	fc := &fencedClient{ReplicaClient: counting}
+	fc := &monitoredClient{ReplicaClient: counting}
 	if err := fc.warmUp(t.Context()); err != nil {
 		t.Fatal(err)
 	}

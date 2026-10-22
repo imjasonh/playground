@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/benbjohnson/litestream"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 )
 
@@ -60,7 +61,7 @@ func TestCloudStorageOverlappingInstances(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	conflicts := a.client.conflicts.Load() + b.client.conflicts.Load()
+	conflicts := litestream.ReplicaL0ConflictCount(a.client.ReplicaClient) + litestream.ReplicaL0ConflictCount(b.client.ReplicaClient)
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
 	}

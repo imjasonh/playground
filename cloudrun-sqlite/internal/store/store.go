@@ -107,7 +107,7 @@ func DefaultConfig() Config {
 // Store is a SQLite database backed by a Litestream replica.
 type Store struct {
 	cfg    Config
-	client *fencedClient
+	client *monitoredClient
 	dsn    string
 
 	// mu guards db. Reads hold it shared. When the store is durable, the
@@ -186,10 +186,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	if err := raw.Init(ctx); err != nil {
 		return nil, fmt.Errorf("init replica client: %w", err)
 	}
-	client, err := newFencedClient(ctx, raw)
-	if err != nil {
-		return nil, err
-	}
+	client := &monitoredClient{ReplicaClient: raw}
 
 	vfs := litestream.NewVFS(client, &l.Logger)
 	vfs.PollInterval = cfg.PollInterval
@@ -197,7 +194,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	vfs.WriteEnabled = true
 	vfs.WriteSyncInterval = cfg.SyncInterval
 	vfs.WriteBufferPath = filepath.Join(cfg.Dir, "write-buffer")
-	// The fenced client makes L0 uploads conditional, and nothing here deletes
+	// Conditional L0 creates are enabled on the replica client, and nothing here deletes
 	// an L0 file younger than L0Retention, so a writer can skip the
 	// conflict-check LIST for half of that, leaving room for clock skew.
 	vfs.ConflictCheckInterval = cfg.L0Retention / 2

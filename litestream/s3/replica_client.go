@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -43,6 +44,8 @@ import (
 	"github.com/benbjohnson/litestream"
 	"github.com/benbjohnson/litestream/internal"
 )
+
+var _ litestream.L0CreateOnlyReplicaClient = (*ReplicaClient)(nil)
 
 func init() {
 	litestream.RegisterReplicaClientFactory("s3", NewReplicaClientFromURL)
@@ -124,7 +127,19 @@ type ReplicaClient struct {
 	// Server-Side Encryption - AWS KMS (SSE-KMS)
 	// Only works with AWS S3 (not S3-compatible providers)
 	SSEKMSKeyID string // KMS key ID, ARN, or alias
+
+	l0CreateOnly bool
+	l0Conflicts  atomic.Int64
 }
+
+// SetL0CreateOnly makes level-0 writes create-if-absent in S3.
+func (c *ReplicaClient) SetL0CreateOnly(enabled bool) { c.l0CreateOnly = enabled }
+
+// L0CreateOnly reports whether level-0 writes are create-if-absent.
+func (c *ReplicaClient) L0CreateOnly() bool { return c.l0CreateOnly }
+
+// L0ConflictCount is how many conditional L0 creates lost to another writer.
+func (c *ReplicaClient) L0ConflictCount() int64 { return c.l0Conflicts.Load() }
 
 // NewReplicaClient returns a new instance of ReplicaClient.
 func NewReplicaClient() *ReplicaClient {
@@ -719,6 +734,9 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 	if err := c.Init(ctx); err != nil {
 		return nil, err
 	}
+	if level == 0 && c.l0CreateOnly {
+		return c.writeL0CreateOnly(ctx, minTXID, maxTXID, r)
+	}
 
 	filename := ltx.FormatFilename(minTXID, maxTXID)
 	key := c.Path + "/" + fmt.Sprintf("%04x/%s", level, filename)
@@ -755,6 +773,36 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 		Size:      size,
 		CreatedAt: timestamp,
 	}, nil
+}
+
+func (c *ReplicaClient) writeL0CreateOnly(ctx context.Context, minTXID, maxTXID ltx.TXID, r io.Reader) (*ltx.FileInfo, error) {
+	data, ts, err := litestream.ReadLTXUpload(r)
+	if err != nil {
+		return nil, err
+	}
+	filename := ltx.FormatFilename(minTXID, maxTXID)
+	key := c.Path + "/" + fmt.Sprintf("%04x/%s", 0, filename)
+	input := c.putObjectInput(key, ts)
+	input.Body = bytes.NewReader(data)
+	input.ContentLength = aws.Int64(int64(len(data)))
+	input.IfNoneMatch = aws.String("*")
+	out, err := c.s3.PutObject(ctx, input)
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "PreconditionFailed", "ConditionalRequestConflict":
+				return litestream.CompleteL0CreateOnly(ctx, c, minTXID, maxTXID, data, ts, func() { c.l0Conflicts.Add(1) })
+			}
+		}
+		return nil, fmt.Errorf("s3: put object %s: %w", key, err)
+	}
+	if out.ETag == nil {
+		return nil, fmt.Errorf("s3: upload failed: no ETag returned")
+	}
+	internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "PUT").Inc()
+	internal.OperationBytesCounterVec.WithLabelValues(ReplicaClientType, "PUT").Add(float64(len(data)))
+	return &ltx.FileInfo{Level: 0, MinTXID: minTXID, MaxTXID: maxTXID, Size: int64(len(data)), CreatedAt: ts}, nil
 }
 
 // uploadLTX uploads LTX data from r to key, choosing between a single

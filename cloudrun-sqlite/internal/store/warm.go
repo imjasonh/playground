@@ -32,7 +32,7 @@ type rangeKey struct {
 	offset, size     int64
 }
 
-func (c *fencedClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+func (c *monitoredClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
 	if w := c.warm.Load(); w != nil && !useMetadata {
 		if infos, ok := w.levels[level]; ok {
 			var out []*ltx.FileInfo
@@ -48,7 +48,7 @@ func (c *fencedClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, u
 	return c.remoteList(ctx, level, seek, useMetadata)
 }
 
-func (c *fencedClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+func (c *monitoredClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
 	if w := c.warm.Load(); w != nil {
 		if b, ok := w.ranges[rangeKey{level, minTXID, maxTXID, offset, size}]; ok {
 			return io.NopCloser(bytes.NewReader(b)), nil
@@ -60,7 +60,7 @@ func (c *fencedClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxT
 // warmUp fills the cache. Requests it doesn't anticipate, or that fail
 // here, go to the replica as usual. Call coolDown once the database is
 // open so polling sees fresh listings.
-func (c *fencedClient) warmUp(ctx context.Context) error {
+func (c *monitoredClient) warmUp(ctx context.Context) error {
 	w := &warmCache{levels: map[int][]*ltx.FileInfo{}, ranges: map[rangeKey][]byte{}}
 	var mu sync.Mutex
 
@@ -137,4 +137,4 @@ func (c *fencedClient) warmUp(ctx context.Context) error {
 	return nil
 }
 
-func (c *fencedClient) coolDown() { c.warm.Store(nil) }
+func (c *monitoredClient) coolDown() { c.warm.Store(nil) }

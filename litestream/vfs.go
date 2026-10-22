@@ -37,9 +37,6 @@ const (
 	pageFetchRetryDelay    = 15 * time.Millisecond
 )
 
-// ErrConflict is returned when the remote replica has newer transactions than expected.
-var ErrConflict = errors.New("remote has newer transactions than expected")
-
 var (
 	//go:linkname sqlite3vfsFileMap github.com/psanford/sqlite3vfs.fileMap
 	sqlite3vfsFileMap map[uint64]sqlite3vfs.File
@@ -233,6 +230,9 @@ func (vfs *VFS) openMainDB(name string, uriParameters map[string]string, flags s
 
 	// Initialize write support if enabled
 	if writeEnabled {
+		if cc, ok := client.(L0CreateOnlyReplicaClient); ok {
+			cc.SetL0CreateOnly(true)
+		}
 		f.writeEnabled = true
 		f.dirty = make(map[uint32]int64)
 		f.syncInterval = syncInterval
