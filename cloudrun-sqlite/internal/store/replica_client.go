@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/benbjohnson/litestream"
@@ -17,7 +16,6 @@ import (
 // replica operation timing for /stats.
 type monitoredClient struct {
 	litestream.ReplicaClient
-	warm  atomic.Pointer[warmCache]
 	gets  latencies
 	lists latencies
 	puts  latencies

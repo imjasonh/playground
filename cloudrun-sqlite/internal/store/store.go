@@ -189,6 +189,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	client := &monitoredClient{ReplicaClient: raw}
 
 	vfs := litestream.NewVFS(client, &l.Logger)
+	vfs.OpenPrefetch = true
 	vfs.PollInterval = cfg.PollInterval
 	vfs.CacheSize = cfg.CacheSize
 	vfs.WriteEnabled = true
@@ -239,11 +240,6 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 }
 
 func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
-	if err := s.client.warmUp(ctx); err != nil {
-		clog.FromContext(ctx).Warn("prefetch for open failed", "error", err)
-	}
-	defer s.client.coolDown()
-
 	db, err := sql.Open("sqlite3", s.dsn)
 	if err != nil {
 		return nil, err

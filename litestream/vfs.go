@@ -86,6 +86,12 @@ type VFS struct {
 	// including any fetch from the replica. It runs on SQLite's read path.
 	PageReadHook func(source PageReadSource, d time.Duration)
 
+	// OpenPrefetch lists every LTX level and prefetches restore-plan headers
+	// and page indexes concurrently at the start of VFSFile.Open, before the
+	// page index is built. It clears the cache when Open returns. Zero by
+	// default. See OpenPrefetchReplicaClient.
+	OpenPrefetch bool
+
 	// HydrationEnabled activates background hydration of the database to a local file.
 	// When enabled, the VFS will restore the database in the background and serve
 	// reads from the local file once complete, eliminating remote fetch latency.
@@ -1157,8 +1163,24 @@ func (f *VFSFile) hasTargetTime() bool {
 	return f.targetTime != nil
 }
 
+func (f *VFSFile) beginOpenPrefetch() func() {
+	if f.vfs == nil || !f.vfs.OpenPrefetch {
+		return func() {}
+	}
+	pf, ok := f.client.(*OpenPrefetchReplicaClient)
+	if !ok {
+		pf = NewOpenPrefetchReplicaClient(f.client)
+		f.client = pf
+	}
+	pf.PrefetchOpen(f.ctx, f.logger)
+	return pf.EndOpenPrefetch
+}
+
 func (f *VFSFile) Open() error {
 	f.logger.Debug("opening file")
+
+	endPrefetch := f.beginOpenPrefetch()
+	defer endPrefetch()
 
 	// Try to get restore plan. For write-enabled VFS, we can create a new database
 	// if no LTX files exist yet.

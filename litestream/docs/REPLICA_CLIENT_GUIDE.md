@@ -62,6 +62,13 @@ type ReplicaClient interface {
   write-enabled VFS turns this on automatically for clients that implement it
   (`file`, `gs`, `s3`). A lost race returns `litestream.ErrConflict` unless the
   existing object is a byte-for-byte retry of the same upload.
+- [ ] **Open prefetch** (`OpenPrefetchReplicaClient` or `VFS.OpenPrefetch`):
+  lists every level concurrently, then fetches each restore-plan file's header
+  and page-index ranges in parallel (the same reads `FetchLTXHeader` /
+  `FetchPageIndex` make). With `VFS.OpenPrefetch`, `VFSFile.Open` runs prefetch
+  before it builds the page index and clears the cache when open completes.
+  Manual `PrefetchOpen` / `EndOpenPrefetch` remain for callers that do not use
+  the VFS.
 - [ ] Connection pooling
 - [ ] Retry logic with exponential backoff
 - [ ] Request batching
