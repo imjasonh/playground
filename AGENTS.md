@@ -33,6 +33,7 @@ playground/
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
 ├── its-not-jaws/          # Cursor SDK harness: knower/guesser secret-guessing game
 ├── nethack-agent/         # Cursor SDK harness: learn a terminal game from the screen and its own notes
+├── nethack-coach/         # tmux-hosted Cursor advisor that watches you play NetHack and advises in a side pane
 ├── life-qr/               # OpenSCAD Life sculpture with a QR-code roof (parametric)
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
@@ -123,6 +124,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `mapvelopes/` | no | Rust Cloudflare Worker; no `index.html` |
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `nethack-agent/` | no | Cursor SDK terminal-game harness; no `index.html` |
+| `nethack-coach/` | no | tmux-hosted NetHack advisor (side pane); no `index.html` |
 | `bun-image/` | no | bun compile + crane image (shell); no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
@@ -876,6 +878,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
 | `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` using `grok-4.6`, and each run prints the token cost the SDK reported. The notebook keeps claims that survive the screen, not a turn log. CI play publishes `notebook/` to `automation/nethack-notes` so the next play can read it before that pull request merges | `cd nethack-agent && npm test` (CI also runs `bash .github/scripts/publish-nethack-notes_test.sh`; the play job runs the real binary when `CURSOR_API_KEY` is set) |
+| `nethack-coach/` | tmux-hosted advisor: you play NetHack in one pane while a read-only Cursor agent watches the screen through `tmux capture-pane` and advises in a side pane. Advice is event- and demand-driven (settle + cooldown, F9 to ask, F10 to toggle, F8 to quit), not per keystroke. The inverse of `nethack-agent`: it teaches the human, names the game, and never presses keys. `npm start` needs `tmux`, `nethack`, and `CURSOR_API_KEY`. Not wired into shared CI | `cd nethack-coach && npm test` (pure logic plus an injected-dependency loop test; no tmux, NetHack, or API needed) |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
