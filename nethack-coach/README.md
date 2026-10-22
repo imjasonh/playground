@@ -78,11 +78,34 @@ Closing the window (F8, or the game and advisor both exiting) ends the session.
 `C-b d` detaches tmux; this launcher then tears the session down, so detaching
 ends the game rather than leaving it in the background.
 
+## Settings help
+
+The coach can also review your NetHack configuration. This mode does not need
+tmux or a running game: it reads your `.nethackrc`, asks the agent for a review
+and a suggested config, and prints both.
+
+```bash
+export CURSOR_API_KEY=...
+npm run settings                      # review ~/.nethackrc (or $NETHACKOPTIONS)
+npm run settings -- --ask "stop autopickup picking up rocks"
+npm run settings -- --file ./my.rc --output ./my.suggested.rc
+npm run settings -- --write           # back up the current file, then save the suggestion
+```
+
+It finds your config from `--file`, else `$NETHACKOPTIONS` (an `@file`, a path,
+or inline options), else `~/.nethackrc`. With no config anywhere it drafts a safe
+default. By default it only prints — your files are untouched. `--write` saves the
+suggestion to the config after copying the original to a timestamped `.bak`;
+`--output <path>` writes to a new file and never touches the original.
+
+During live play, the coach can also advise on the in-game options menu: press
+`O` in NetHack so the options are on screen, then F9.
+
 ## Test
 
-Unit tests cover the advice decision, screen diffing, and sidebar layout. An
-injected-dependency test drives the whole watch loop without tmux, the game, or
-the API.
+Unit tests cover the advice decision, screen diffing, sidebar layout, config-path
+resolution, and reply parsing. Injected-dependency tests drive the whole watch
+loop and the settings read/backup/write flow without tmux, the game, or the API.
 
 ```bash
 npm test
@@ -96,6 +119,7 @@ These do not call the Cursor API and do not need NetHack or tmux installed.
 | File | Role |
 |------|------|
 | `bin/nethack-coach` | Launcher: builds the tmux session and hotkeys |
+| `bin/nethack-settings` | Launcher for settings review (no tmux or game needed) |
 | `coach.tmux.conf` | Private tmux profile (panes, borders, status line) |
 | `src/advisor.ts` | Entry point for the side pane; wires real dependencies |
 | `src/loop.ts` | The watch loop (dependency-injected, testable) |
@@ -103,6 +127,9 @@ These do not call the Cursor API and do not need NetHack or tmux installed.
 | `src/screen.ts` | tmux capture, screen normalize, and diff |
 | `src/controls.ts` | Reads the F9/F10 marker files the hotkeys drop |
 | `src/render.ts` | Sidebar layout and painting |
-| `src/prompts.ts` | The advisor's instructions and per-screen message |
+| `src/settings-cli.ts` | Settings entry point: parses args, wires real dependencies |
+| `src/settings-run.ts` | The settings flow (dependency-injected, testable) |
+| `src/settings.ts` | Config-path resolution and reply parsing |
+| `src/prompts.ts` | The coach and settings instructions and messages |
 | `src/cursor.ts` | The read-only Cursor agent |
 | `src/cost.ts` | Token totals and SDK cost reads |

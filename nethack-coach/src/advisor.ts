@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeFileControls } from "./controls.js";
 import { createCursorAdvisor } from "./cursor.js";
+import { systemPrompt } from "./prompts.js";
 import { paintSidebar } from "./render.js";
 import { makeTmuxCapture } from "./screen.js";
 import { runLoop } from "./loop.js";
@@ -30,7 +31,7 @@ async function main(): Promise<void> {
   const width = () => process.stdout.columns ?? sidebarCols;
   const advisor = await createCursorAdvisor({
     model,
-    sidebarCols,
+    system: systemPrompt(sidebarCols),
     workspaceDir: path.join(root, ".workspace"),
     apiKey: process.env.CURSOR_API_KEY,
   });

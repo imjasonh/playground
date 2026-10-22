@@ -23,6 +23,38 @@ export function systemPrompt(sidebarCols: number): string {
   ].join("\n");
 }
 
+export const RC_BEGIN = "=== BEGIN .nethackrc ===";
+export const RC_END = "=== END .nethackrc ===";
+
+/** Standing instructions for the settings reviewer. */
+export function settingsSystemPrompt(): string {
+  return [
+    "You are a NetHack settings expert. You review and improve a player's NetHack configuration (.nethackrc) and options.",
+    "Explain what matters in plain terms: safety and interface options that prevent misclicks and lost characters, autopickup and pickup_types, message handling, menu and map display, and sensible defaults for a given role or play style.",
+    "Call out options that are risky, deprecated, contradictory, or likely typos. Prefer small, well-justified changes over a rewrite.",
+    "",
+    "Reply in two parts.",
+    "First, a short plain-text review: the few changes that matter most and why. No markdown headings or code fences.",
+    `Then, on its own line, the exact marker ${RC_BEGIN}, then the full suggested .nethackrc, then the exact marker ${RC_END}.`,
+    "The block between the markers must be a complete, valid .nethackrc the player can save as-is. Keep the player's intent; comment lines you add or change so they know what each does.",
+    "If you were given no configuration to start from, draft a safe, friendly default.",
+  ].join("\n");
+}
+
+/** The settings request: the player's current config, plus any specific ask. */
+export function settingsPrompt(input: { kind: "file" | "inline" | "none"; contents: string; ask?: string }): string {
+  const parts: string[] = [];
+  if (input.ask) parts.push(`The player asks: ${input.ask}`, "");
+  if (input.kind === "none") {
+    parts.push("The player has no configuration yet. Draft one.");
+  } else if (input.kind === "inline") {
+    parts.push("Current options (from the NETHACKOPTIONS environment variable):", input.contents);
+  } else {
+    parts.push("Current .nethackrc:", input.contents || "(the file is empty)");
+  }
+  return parts.join("\n");
+}
+
 /** Build the per-request message from the current screen and recent context. */
 export function turnPrompt(input: {
   screen: string;

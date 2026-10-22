@@ -8,10 +8,12 @@
     "node": ">=22.13"
   },
   "bin": {
-    "nethack-coach": "bin/nethack-coach"
+    "nethack-coach": "bin/nethack-coach",
+    "nethack-settings": "bin/nethack-settings"
   },
   "scripts": {
     "start": "bin/nethack-coach",
+    "settings": "bin/nethack-settings",
     "advisor": "tsx src/advisor.ts",
     "test": "tsx --test tests/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

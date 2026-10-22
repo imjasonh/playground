@@ -1,6 +1,5 @@
 import { mkdir } from "node:fs/promises";
 import { readReportedCost } from "./cost.js";
-import { systemPrompt } from "./prompts.js";
 import type { Advisor, TokenUsage } from "./types.js";
 
 type SdkModule = typeof import("@cursor/sdk");
@@ -14,15 +13,16 @@ function loadSdk(): Promise<SdkModule> {
 
 export type CursorAdvisorOptions = {
   model: string;
-  sidebarCols: number;
+  system: string;
   workspaceDir: string;
   apiKey?: string;
   turnTimeoutMs?: number;
 };
 
 /**
- * A read-only Cursor agent that advises on NetHack screens. It has no built-in
- * tools and loads no repo settings: it sees only the screens it is sent.
+ * A read-only Cursor agent. It has no built-in tools and loads no repo settings:
+ * it sees only the text it is sent. The caller supplies the system prompt, so the
+ * same agent serves both the live coach and the settings reviewer.
  */
 export async function createCursorAdvisor(options: CursorAdvisorOptions): Promise<Advisor> {
   const { Agent } = await loadSdk();
@@ -37,7 +37,7 @@ export async function createCursorAdvisor(options: CursorAdvisorOptions): Promis
   });
 
   const turnTimeoutMs = options.turnTimeoutMs ?? 60_000;
-  await agent.send(systemPrompt(options.sidebarCols)).then((run) => run.wait());
+  await agent.send(options.system).then((run) => run.wait());
 
   return {
     async advise(prompt: string) {

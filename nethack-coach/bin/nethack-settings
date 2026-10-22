@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Review and improve your NetHack .nethackrc with a Cursor agent.
+#
+# This does not need tmux or a running game. It reads your config (from --file,
+# NETHACKOPTIONS, or ~/.nethackrc), asks the agent for a review and a suggested
+# config, and prints both. Pass --write to save the suggestion (after a backup),
+# or --output <path> to write it elsewhere. See --help for all options.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+command -v node >/dev/null 2>&1 || { echo "nethack-settings: node is required" >&2; exit 1; }
+
+TSX="$ROOT/node_modules/.bin/tsx"
+[ -x "$TSX" ] || { echo "nethack-settings: dependencies missing; run: (cd \"$ROOT\" && npm install)" >&2; exit 1; }
+
+exec "$TSX" "$ROOT/src/settings-cli.ts" "$@"
