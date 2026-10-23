@@ -22,6 +22,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `27f1d8c1` | `OpenPrefetchReplicaClient` and `VFS.OpenPrefetch`: concurrent level listings and restore-plan header/page-index fetches during `VFSFile.Open` | Not proposed |
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 | `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
+| `47a5773d` | `gcs-grpc://` replica client, with `rapid=true` support for appendable uploads and bidirectional reads | Not proposed |
 
 To see every change against upstream, diff against the last import:
 
@@ -70,7 +71,7 @@ SQLite, which the VFS needs:
 
 ```bash
 go test -race -count=1 -tags vfs .
-go test -race -count=1 ./internal ./abs ./file ./gs ./nats ./s3 ./sftp ./cmd/litestream
+go test -race -count=1 ./internal ./abs ./file ./gs ./gsgrpc ./nats ./s3 ./sftp ./cmd/litestream
 ```
 
 `vfs_interleave_test.go` drives a `VFSFile` without SQLite, against an
