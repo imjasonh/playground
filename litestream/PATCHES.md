@@ -23,6 +23,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 | `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
 | `47a5773d` | `gcs-grpc://` replica client, with `rapid=true` support for appendable uploads and bidirectional reads | Not proposed |
+| `aebbedf7` | `gcs-grpc://` `ipv4=true` dials `storage.googleapis.com` over IPv4 and skips the gRPC resolver's TXT lookup and DirectPath | Not proposed |
 
 To see every change against upstream, diff against the last import:
 
