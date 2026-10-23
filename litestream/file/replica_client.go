@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/superfly/ltx"
@@ -28,6 +31,7 @@ const ReplicaClientType = "file"
 
 var _ litestream.ReplicaClient = (*ReplicaClient)(nil)
 var _ litestream.ReplicaClientV3 = (*ReplicaClient)(nil)
+var _ litestream.L0CreateOnlyReplicaClient = (*ReplicaClient)(nil)
 
 // ReplicaClient is a client for writing LTX files to disk.
 type ReplicaClient struct {
@@ -35,7 +39,19 @@ type ReplicaClient struct {
 
 	Replica *litestream.Replica
 	logger  *slog.Logger
+
+	l0CreateOnly bool
+	l0Conflicts  atomic.Int64
 }
+
+// SetL0CreateOnly makes level-0 writes create-if-absent using link(2).
+func (c *ReplicaClient) SetL0CreateOnly(enabled bool) { c.l0CreateOnly = enabled }
+
+// L0CreateOnly reports whether level-0 writes are create-if-absent.
+func (c *ReplicaClient) L0CreateOnly() bool { return c.l0CreateOnly }
+
+// L0ConflictCount is how many conditional L0 creates lost to another writer.
+func (c *ReplicaClient) L0ConflictCount() int64 { return c.l0Conflicts.Load() }
 
 // NewReplicaClient returns a new instance of ReplicaClient.
 func NewReplicaClient(path string) *ReplicaClient {
@@ -156,6 +172,9 @@ func (c *ReplicaClient) OpenLTXFile(ctx context.Context, level int, minTXID, max
 // WriteLTXFile writes an LTX file to the replica.
 // Extracts timestamp from LTX header and sets it as the file's ModTime to preserve original creation time.
 func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, rd io.Reader) (info *ltx.FileInfo, err error) {
+	if level == 0 && c.l0CreateOnly {
+		return c.writeL0CreateOnly(ctx, minTXID, maxTXID, rd)
+	}
 	var fileInfo, dirInfo os.FileInfo
 	if db := c.db(); db != nil {
 		fileInfo, dirInfo = db.FileInfo(), db.DirInfo()
@@ -235,6 +254,44 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 	}
 
 	return info, nil
+}
+
+func (c *ReplicaClient) writeL0CreateOnly(ctx context.Context, minTXID, maxTXID ltx.TXID, rd io.Reader) (*ltx.FileInfo, error) {
+	data, ts, err := litestream.ReadLTXUpload(rd)
+	if err != nil {
+		return nil, err
+	}
+	path := c.LTXFilePath(0, minTXID, maxTXID)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(dir, ".l0create-*.tmp")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	if err := os.Link(tmp.Name(), path); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return litestream.CompleteL0CreateOnly(ctx, c, minTXID, maxTXID, data, ts, func() { c.l0Conflicts.Add(1) })
+		}
+		return nil, err
+	}
+	if err := os.Chtimes(path, ts, ts); err != nil {
+		return nil, err
+	}
+	return &ltx.FileInfo{Level: 0, MinTXID: minTXID, MaxTXID: maxTXID, Size: int64(len(data)), CreatedAt: ts}, nil
 }
 
 // DeleteLTXFiles deletes LTX files.

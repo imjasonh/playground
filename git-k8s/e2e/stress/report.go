@@ -442,7 +442,8 @@ func reportCmd(args []string) error {
 	}
 	report := comparison(fs.Args(), runs)
 	if *out == "" {
-		fmt.Print(report)
+		// report is the comparison table this command exists to write.
+		fmt.Print(report) // pasta:ignore value
 		return nil
 	}
 	return os.WriteFile(*out, []byte(report), 0o644)

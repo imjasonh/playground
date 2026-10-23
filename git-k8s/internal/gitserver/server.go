@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -128,7 +129,7 @@ func (s *Server) run(w http.ResponseWriter, service, dir, protocol string, stdin
 	if err := cmd.Run(); err != nil {
 		// The status line has gone out, so the client sees a truncated
 		// response; log the reason for whoever runs the server.
-		fmt.Fprintf(os.Stderr, "gitserver: git %s %s: %v: %s\n", service, filepath.Base(dir), err, stderr.String())
+		slog.Error("git command failed", "service", service, "repository", filepath.Base(dir), "err", err, "stderr", stderr.String())
 	}
 }
 

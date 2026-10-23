@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
+
+	"github.com/chainguard-dev/clog"
 	"os"
 	"regexp"
 	"strings"
@@ -60,7 +61,7 @@ func Eventf(ctx context.Context, eventType, reason, format string, args ...any) 
 		return
 	}
 	if eventType != Normal && eventType != Warning || reason == "" || len(reason) > maxReason {
-		s.c.log.Warn("dropped an event that the API server would reject", "key", s.key.String(), "type", eventType, "reason", reason)
+		clog.FromContext(withLog(ctx, "controller:"+s.c.name, "controller", s.c.name)).Warn("dropped an event that the API server would reject", "key", s.key.String(), "type", eventType, "reason", reason)
 		return
 	}
 	note := truncateNote(fmt.Sprintf(format, args...))
@@ -139,7 +140,6 @@ type eventSeries struct {
 // that start runs touches series and last.
 type eventWriter struct {
 	client  *client.Client
-	log     *slog.Logger
 	metrics *metrics
 	host    string
 	queue   chan eventRecord
@@ -151,10 +151,10 @@ type eventWriter struct {
 	dropped atomic.Int64
 }
 
-func newEventWriter(c *client.Client, log *slog.Logger, m *metrics) *eventWriter {
+func newEventWriter(c *client.Client, m *metrics) *eventWriter {
 	host, _ := os.Hostname()
 	return &eventWriter{
-		client: c, log: log, metrics: m, host: host,
+		client: c, metrics: m, host: host,
 		queue:  make(chan eventRecord, 1000),
 		finish: 6 * time.Minute,
 		series: map[eventKey]*eventSeries{},
@@ -182,8 +182,8 @@ func (w *eventWriter) send(c *core, obj *ObjectMeta, action string, s *scope) {
 // start writes queued events until the returned function is called. That
 // function cancels any write in progress, spends at most 5 seconds writing
 // the events still queued and the counts of series, then returns.
-func (w *eventWriter) start() func() {
-	ctx, cancel := context.WithCancel(context.Background())
+func (w *eventWriter) start(ctx context.Context) func() {
+	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -198,7 +198,7 @@ func (w *eventWriter) start() func() {
 			case <-ctx.Done():
 			}
 		}
-		drain, cancelDrain := context.WithTimeout(context.Background(), 5*time.Second)
+		drain, cancelDrain := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancelDrain()
 		for len(w.queue) > 0 && drain.Err() == nil {
 			w.record(drain, <-w.queue)
@@ -258,7 +258,7 @@ func (w *eventWriter) flush(ctx context.Context, now time.Time) {
 		}
 	}
 	if n := w.dropped.Swap(0); n > 0 {
-		w.log.Warn("dropped events because writing them fell behind", "events", n)
+		clog.FromContext(ctx).Warn("dropped events because writing them fell behind", "events", n)
 	}
 }
 
@@ -271,7 +271,7 @@ func (w *eventWriter) write(ctx context.Context, k eventKey, s *eventSeries) {
 	}
 	if err != nil {
 		w.metrics.inc("kube_events_total", "controller", k.controller, "result", "failed")
-		w.log.Warn("writing event failed", "controller", k.controller, "object", k.regarding.Kind+" "+Key{Namespace: k.regarding.Namespace, Name: k.regarding.Name}.String(), "reason", k.reason, "err", err)
+		clog.FromContext(ctx).Warn("writing event failed", "controller", k.controller, "object", k.regarding.Kind+" "+Key{Namespace: k.regarding.Namespace, Name: k.regarding.Name}.String(), "reason", k.reason, "err", err)
 		var e *client.APIError
 		s.failed = errors.As(err, &e) && e.Code != http.StatusTooManyRequests && e.Code < http.StatusInternalServerError
 		return

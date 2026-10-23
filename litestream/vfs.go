@@ -37,9 +37,6 @@ const (
 	pageFetchRetryDelay    = 15 * time.Millisecond
 )
 
-// ErrConflict is returned when the remote replica has newer transactions than expected.
-var ErrConflict = errors.New("remote has newer transactions than expected")
-
 var (
 	//go:linkname sqlite3vfsFileMap github.com/psanford/sqlite3vfs.fileMap
 	sqlite3vfsFileMap map[uint64]sqlite3vfs.File
@@ -88,6 +85,12 @@ type VFS struct {
 	// page, with where the page came from and how long the read took,
 	// including any fetch from the replica. It runs on SQLite's read path.
 	PageReadHook func(source PageReadSource, d time.Duration)
+
+	// OpenPrefetch lists every LTX level and prefetches restore-plan headers
+	// and page indexes concurrently at the start of VFSFile.Open, before the
+	// page index is built. It clears the cache when Open returns. Zero by
+	// default. See OpenPrefetchReplicaClient.
+	OpenPrefetch bool
 
 	// HydrationEnabled activates background hydration of the database to a local file.
 	// When enabled, the VFS will restore the database in the background and serve
@@ -233,6 +236,9 @@ func (vfs *VFS) openMainDB(name string, uriParameters map[string]string, flags s
 
 	// Initialize write support if enabled
 	if writeEnabled {
+		if cc, ok := client.(L0CreateOnlyReplicaClient); ok {
+			cc.SetL0CreateOnly(true)
+		}
 		f.writeEnabled = true
 		f.dirty = make(map[uint32]int64)
 		f.syncInterval = syncInterval
@@ -1157,8 +1163,24 @@ func (f *VFSFile) hasTargetTime() bool {
 	return f.targetTime != nil
 }
 
+func (f *VFSFile) beginOpenPrefetch() func() {
+	if f.vfs == nil || !f.vfs.OpenPrefetch {
+		return func() {}
+	}
+	pf, ok := f.client.(*OpenPrefetchReplicaClient)
+	if !ok {
+		pf = NewOpenPrefetchReplicaClient(f.client)
+		f.client = pf
+	}
+	pf.PrefetchOpen(f.ctx, f.logger)
+	return pf.EndOpenPrefetch
+}
+
 func (f *VFSFile) Open() error {
 	f.logger.Debug("opening file")
+
+	endPrefetch := f.beginOpenPrefetch()
+	defer endPrefetch()
 
 	// Try to get restore plan. For write-enabled VFS, we can create a new database
 	// if no LTX files exist yet.

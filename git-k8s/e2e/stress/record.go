@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,7 +44,7 @@ func newRecorder(path string) (*recorder, error) {
 func (r *recorder) add(kind string, at time.Time, d any) {
 	b, err := json.Marshal(d)
 	if err != nil {
-		logf("encoding a %s record: %v", kind, err)
+		slog.Error("encoding record", "kind", kind, "err", err)
 		return
 	}
 	r.mu.Lock()

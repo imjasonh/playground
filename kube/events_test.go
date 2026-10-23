@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+
+	"github.com/chainguard-dev/clog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -126,7 +128,7 @@ func (s *eventServer) clear() {
 	clear(s.events)
 }
 
-func newTestEventWriter(t *testing.T) (*eventWriter, *eventServer, *bytes.Buffer) {
+func newTestEventWriter(t *testing.T) (*eventWriter, *eventServer, context.Context, *bytes.Buffer) {
 	t.Helper()
 	srv := &eventServer{events: map[string]map[string]any{}, hung: make(chan string, 16)}
 	ts := httptest.NewServer(srv)
@@ -136,9 +138,10 @@ func newTestEventWriter(t *testing.T) (*eventWriter, *eventServer, *bytes.Buffer
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
-	w := newEventWriter(c, slog.New(slog.NewTextHandler(&logs, nil)), newMetrics())
+	ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	w := newEventWriter(c, newMetrics())
 	w.host = "node-1"
-	return w, srv, &logs
+	return w, srv, ctx, &logs
 }
 
 var t0 = time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)
@@ -168,8 +171,7 @@ func methods(reqs []string) []string {
 }
 
 func TestEventWriterCreatesAnEventThenCountsRepeats(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
-	ctx := t.Context()
+	w, srv, ctx, _ := newTestEventWriter(t)
 	w.record(ctx, widgetEvent("Pushed", "pushed", t0))
 	if reqs := srv.take(); !slices.Equal(reqs, []string{"POST /apis/events.k8s.io/v1/namespaces/shop/events"}) {
 		t.Fatalf("requests = %q", reqs)
@@ -231,8 +233,7 @@ func TestEventWriterCreatesAnEventThenCountsRepeats(t *testing.T) {
 }
 
 func TestEventWriterKeepsDifferentEventsApart(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
-	ctx := t.Context()
+	w, srv, ctx, _ := newTestEventWriter(t)
 	w.record(ctx, widgetEvent("Pushed", "pushed", t0))
 	w.record(ctx, widgetEvent("Rejected", "pushed", t0))
 	warning := widgetEvent("Pushed", "pushed", t0)
@@ -260,8 +261,7 @@ func TestEventWriterKeepsDifferentEventsApart(t *testing.T) {
 }
 
 func TestEventWriterEndsASeriesAfterAQuietPeriod(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
-	ctx := t.Context()
+	w, srv, ctx, _ := newTestEventWriter(t)
 	for i := range 3 {
 		w.record(ctx, widgetEvent("Pushed", "pushed", t0.Add(time.Duration(i)*time.Second)))
 	}
@@ -296,10 +296,10 @@ func TestEventWriterEndsASeriesAfterAQuietPeriod(t *testing.T) {
 }
 
 func TestEventWriterWritesEventsAboutClusterScopedObjectsInDefault(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
+	w, srv, ctx, _ := newTestEventWriter(t)
 	r := widgetEvent("Pushed", "pushed", t0)
 	r.regarding.Namespace = ""
-	w.record(t.Context(), r)
+	w.record(ctx, r)
 	if reqs := srv.take(); !slices.Equal(reqs, []string{"POST /apis/events.k8s.io/v1/namespaces/default/events"}) {
 		t.Fatalf("requests = %q", reqs)
 	}
@@ -309,8 +309,7 @@ func TestEventWriterWritesEventsAboutClusterScopedObjectsInDefault(t *testing.T)
 }
 
 func TestEventWriterCreatesADeletedEventAgain(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
-	ctx := t.Context()
+	w, srv, ctx, _ := newTestEventWriter(t)
 	w.record(ctx, widgetEvent("Pushed", "pushed", t0))
 	srv.clear()
 	w.record(ctx, widgetEvent("Pushed", "pushed", t0.Add(time.Second)))
@@ -327,8 +326,7 @@ func TestEventWriterCreatesADeletedEventAgain(t *testing.T) {
 }
 
 func TestEventWriterStopsSendingARejectedEvent(t *testing.T) {
-	w, srv, logs := newTestEventWriter(t)
-	ctx := t.Context()
+	w, srv, ctx, logs := newTestEventWriter(t)
 	srv.fail = http.StatusForbidden
 	w.record(ctx, widgetEvent("Pushed", "pushed", t0))
 	srv.fail = 0
@@ -352,8 +350,7 @@ func TestEventWriterStopsSendingARejectedEvent(t *testing.T) {
 
 func TestEventWriterRetriesAfterATemporaryFailure(t *testing.T) {
 	for _, code := range []int{http.StatusTooManyRequests, http.StatusInternalServerError} {
-		w, srv, _ := newTestEventWriter(t)
-		ctx := t.Context()
+		w, srv, ctx, _ := newTestEventWriter(t)
 		srv.fail = code
 		w.record(ctx, widgetEvent("Pushed", "pushed", t0))
 		srv.fail = 0
@@ -365,8 +362,7 @@ func TestEventWriterRetriesAfterATemporaryFailure(t *testing.T) {
 }
 
 func TestEventWriterHandlesALostResponse(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
-	ctx := t.Context()
+	w, srv, ctx, _ := newTestEventWriter(t)
 	srv.lose = true
 	w.record(ctx, widgetEvent("Pushed", "pushed", t0))
 	srv.lose = false
@@ -392,7 +388,7 @@ func TestEventWriterHandlesALostResponse(t *testing.T) {
 }
 
 func TestEventWriterSendDropsEventsInsteadOfBlocking(t *testing.T) {
-	w, _, logs := newTestEventWriter(t)
+	w, _, ctx, logs := newTestEventWriter(t)
 	w.queue = make(chan eventRecord, 2)
 	c := &core{name: "widgets", ti: &typeInfo{apiVersion: "example.dev/v1", kind: "Widget"}}
 	obj := &ObjectMeta{Namespace: "shop", Name: "w1", UID: "u1", ResourceVersion: "7"}
@@ -410,7 +406,7 @@ func TestEventWriterSendDropsEventsInsteadOfBlocking(t *testing.T) {
 	if got, want := <-w.queue, widgetEvent("Pushed", "0", t0); got != want {
 		t.Errorf("queued %+v, want %+v", got, want)
 	}
-	w.flush(t.Context(), t0)
+	w.flush(ctx, t0)
 	if !strings.Contains(logs.String(), "dropped events") || !strings.Contains(logs.String(), "events=1") {
 		t.Errorf("logs = %s", logs)
 	}
@@ -419,8 +415,8 @@ func TestEventWriterSendDropsEventsInsteadOfBlocking(t *testing.T) {
 }
 
 func TestEventWriterWritesQueuedEventsWhenItStops(t *testing.T) {
-	w, srv, _ := newTestEventWriter(t)
-	stop := w.start()
+	w, srv, ctx, _ := newTestEventWriter(t)
+	stop := w.start(ctx)
 	for i := range 3 {
 		w.queue <- widgetEvent("Pushed", "pushed", t0.Add(time.Duration(i)*time.Second))
 	}
@@ -432,9 +428,9 @@ func TestEventWriterWritesQueuedEventsWhenItStops(t *testing.T) {
 }
 
 func TestEventWriterStopsInSecondsWhenTheAPIServerHangs(t *testing.T) {
-	w, srv, logs := newTestEventWriter(t)
+	w, srv, ctx, logs := newTestEventWriter(t)
 	srv.hang.Store(true)
-	stop := w.start()
+	stop := w.start(ctx)
 	for _, reason := range []string{"Pushed", "Rejected", "Merged"} {
 		w.queue <- widgetEvent(reason, "n", t0)
 	}
@@ -459,13 +455,13 @@ func TestEventWriterStopsInSecondsWhenTheAPIServerHangs(t *testing.T) {
 }
 
 func TestEventWriterKeepsASeriesWhoseWriteWasCanceled(t *testing.T) {
-	w, srv, logs := newTestEventWriter(t)
+	w, srv, ctx, logs := newTestEventWriter(t)
 	for i := range 3 {
-		w.record(t.Context(), widgetEvent("Pushed", "pushed", t0.Add(time.Duration(i)*time.Second)))
+		w.record(ctx, widgetEvent("Pushed", "pushed", t0.Add(time.Duration(i)*time.Second)))
 	}
 	srv.take()
 	srv.hang.Store(true)
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		<-srv.hung
@@ -481,7 +477,7 @@ func TestEventWriterKeepsASeriesWhoseWriteWasCanceled(t *testing.T) {
 	}
 
 	srv.hang.Store(false)
-	w.flush(t.Context(), ended)
+	w.flush(context.WithoutCancel(ctx), ended)
 	if reqs := srv.take(); !slices.Equal(methods(reqs), []string{"PATCH"}) {
 		t.Errorf("requests = %q, want the count written", reqs)
 	}
@@ -598,7 +594,7 @@ func TestEventfDropsEventsThatTheAPIServerWouldReject(t *testing.T) {
 	w.Namespace, w.Name = "shop", "w1"
 	ctx, rec := Fake(t.Context(), w)
 	var logs bytes.Buffer
-	rec.s.c.log = slog.New(slog.NewTextHandler(&logs, nil))
+	ctx = clog.WithLogger(ctx, clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	Eventf(ctx, "Info", "Created", "created")
 	Eventf(ctx, Normal, "", "created")
 	Eventf(ctx, Warning, strings.Repeat("A", maxReason+1), "rejected")

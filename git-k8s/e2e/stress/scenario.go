@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	mrand "math/rand/v2"
 	"os"
 	"os/exec"
@@ -251,7 +252,7 @@ type runner struct {
 
 func (rn *runner) note(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	logf("%s", msg)
+	slog.Info("note", "msg", msg)
 	rn.r.add("note", time.Now(), map[string]string{"msg": msg})
 }
 
@@ -621,7 +622,7 @@ func (rn *runner) burst(ctx context.Context, deadline time.Time) error {
 			if br := rn.byObj[e.Object]; br != nil && !br.landed {
 				br.landed = true
 				lastLanding = time.Now()
-				logf("landed %s/%s: %s", br.plan.Repo, br.plan.Name, e.Note)
+				slog.Info("landed", "repo", br.plan.Repo, "branch", br.plan.Name, "note", e.Note)
 			}
 		}
 		left := 0

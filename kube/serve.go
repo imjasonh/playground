@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/chainguard-dev/clog"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -106,7 +108,7 @@ func (s *server) run(ctx context.Context) error {
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 	s.ready.Store(true)
-	s.m.log.Info("serving HTTP", "addr", ln.Addr().String())
+	clog.FromContext(ctx).Info("serving HTTP", "addr", ln.Addr().String())
 	select {
 	case err := <-served:
 		s.ready.Store(false)
@@ -139,7 +141,7 @@ func (s *server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			return
 		}
-		s.m.log.Warn("a call in a kube.Serve handler failed", "method", r.Method, "path", r.URL.Path, "err", err)
+		clog.FromContext(r.Context()).Warn("a call in a kube.Serve handler failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		switch {
 		case p == nil:
 		case rw.started:

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"slices"
 	"sync"
@@ -47,7 +46,7 @@ import (
 func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (context.Context, *Recorder) {
 	w := newFakeWorld(append([]any{obj}, world...))
 	ti, err := typeInfoFor[T, P]()
-	c := &core{name: "test", labels: newLabelKeys(), log: slog.Default()}
+	c := &core{name: "test", labels: newLabelKeys()}
 	if err == nil {
 		c.ti = ti
 		c.res, _ = w.resolve(ctx, ti)

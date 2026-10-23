@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"slices"
@@ -50,8 +51,6 @@ type SoakConfig struct {
 	// write is read back. The live benchmark uses it to snapshot /stats and
 	// to start a new Cloud Run instance first.
 	BeforeVerify func(ctx context.Context) error
-
-	Logf func(format string, args ...any)
 }
 
 // Latency summarizes request latencies in milliseconds.
@@ -107,9 +106,6 @@ func (r *recorder) status(kind string, code int, err error) {
 
 // Soak runs the scenario and verifies the result.
 func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
-	if cfg.Logf == nil {
-		cfg.Logf = func(string, ...any) {}
-	}
 	if cfg.BodySize == 0 {
 		cfg.BodySize = 200
 	}
@@ -132,7 +128,7 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 		mu.Lock()
 		violations = append(violations, msg)
 		mu.Unlock()
-		cfg.Logf("VIOLATION: %s", msg)
+		slog.InfoContext(ctx, "violation", "msg", msg)
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, cfg.Duration)
@@ -228,7 +224,7 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 				case <-runCtx.Done():
 					return
 				case <-t.C:
-					cfg.Logf("chaos: %s", name)
+					slog.InfoContext(runCtx, "chaos", "action", name)
 					fn()
 					mu.Lock()
 					*counter++
@@ -241,8 +237,8 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 		chaos(cfg.CrashEvery, "crash", &res.Crashes, cfg.Sim.Crash)
 		chaos(cfg.ScaleEvery, "scale to zero", &res.ScaleToZeros, cfg.Sim.ScaleToZero)
 		chaos(cfg.DeployEvery, "deploy", &res.Deploys, func() {
-			if err := cfg.Sim.Deploy(cfg.Overlap); err != nil {
-				cfg.Logf("deploy: %v", err)
+			if err := cfg.Sim.Deploy(runCtx, cfg.Overlap); err != nil {
+				slog.ErrorContext(runCtx, "deploy", "err", err)
 			}
 		})
 	}

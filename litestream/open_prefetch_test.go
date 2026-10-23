@@ -1,4 +1,4 @@
-package store
+package litestream_test
 
 import (
 	"context"
@@ -14,45 +14,66 @@ import (
 	"github.com/superfly/ltx"
 )
 
-type countingClient struct {
+type prefetchCountingClient struct {
 	litestream.ReplicaClient
 	lists, opens atomic.Int64
 }
 
-func (c *countingClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+func (c *prefetchCountingClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
 	c.lists.Add(1)
 	return c.ReplicaClient.LTXFiles(ctx, level, seek, useMetadata)
 }
 
-func (c *countingClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+func (c *prefetchCountingClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
 	c.opens.Add(1)
 	return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
 }
 
-// The warm cache must hand the VFS exactly what the replica would.
-func TestWarmUpServesIdenticalData(t *testing.T) {
+func TestOpenPrefetchReplicaClient_CachesListings(t *testing.T) {
 	replica := t.TempDir()
-	s := mustOpen(t, testConfig(t, replica))
-	mustWrite(t, s, "CREATE TABLE t (id INTEGER PRIMARY KEY, v BLOB)")
-	for range 20 {
-		mustWrite(t, s, "INSERT INTO t (v) VALUES (randomblob(20000))")
+	inner := file.NewReplicaClient(replica)
+	counting := &prefetchCountingClient{ReplicaClient: inner}
+	pf := litestream.NewOpenPrefetchReplicaClient(counting)
+
+	pf.PrefetchOpen(t.Context(), nil)
+	afterPrefetch := counting.lists.Load()
+	if afterPrefetch < litestream.SnapshotLevel+1 {
+		t.Fatalf("prefetch listed %d times, want at least %d level listings", afterPrefetch, litestream.SnapshotLevel+1)
 	}
-	if err := s.Close(); err != nil {
+
+	if _, err := pf.LTXFiles(t.Context(), 0, 0, false); err != nil {
 		t.Fatal(err)
+	}
+	if counting.lists.Load() != afterPrefetch {
+		t.Fatalf("listing through cache issued another list (%d -> %d)", afterPrefetch, counting.lists.Load())
+	}
+
+	pf.EndOpenPrefetch()
+	if _, err := pf.LTXFiles(t.Context(), 0, 0, false); err != nil {
+		t.Fatal(err)
+	}
+	if counting.lists.Load() <= afterPrefetch {
+		t.Fatal("listing after EndOpenPrefetch did not reach the replica")
+	}
+}
+
+func TestOpenPrefetchReplicaClient_ServesIdenticalData(t *testing.T) {
+	replica := t.TempDir()
+	direct := file.NewReplicaClient(replica)
+	createTestLTXFile(t, direct, litestream.SnapshotLevel, 1, 10)
+	for txid := ltx.TXID(11); txid <= 30; txid++ {
+		createTestLTXFile(t, direct, 0, txid, txid)
 	}
 
 	logger := slog.New(slog.DiscardHandler)
-	direct := file.NewReplicaClient(replica)
 	want, err := litestream.CalcRestorePlan(t.Context(), direct, 0, time.Time{}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	counting := &countingClient{ReplicaClient: file.NewReplicaClient(replica)}
-	fc := &fencedClient{ReplicaClient: counting}
-	if err := fc.warmUp(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	counting := &prefetchCountingClient{ReplicaClient: file.NewReplicaClient(replica)}
+	fc := litestream.NewOpenPrefetchReplicaClient(counting)
+	fc.PrefetchOpen(t.Context(), nil)
 	lists, opens := counting.lists.Load(), counting.opens.Load()
 
 	got, err := litestream.CalcRestorePlan(t.Context(), fc, 0, time.Time{}, logger)
@@ -94,11 +115,11 @@ func TestWarmUpServesIdenticalData(t *testing.T) {
 			counting.lists.Load()-lists, counting.opens.Load()-opens)
 	}
 
-	fc.coolDown()
+	fc.EndOpenPrefetch()
 	if _, err := fc.LTXFiles(t.Context(), 0, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	if counting.lists.Load() == lists {
-		t.Error("listing after coolDown was served from the cache")
+		t.Error("listing after EndOpenPrefetch was served from the cache")
 	}
 }

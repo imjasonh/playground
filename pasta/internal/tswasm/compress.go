@@ -4,7 +4,8 @@
 package main
 
 import (
-	"fmt"
+	"log"
+	"log/slog"
 	"os"
 
 	"github.com/andybalholm/brotli"
@@ -30,10 +31,9 @@ func main() {
 		fatal(err)
 	}
 	st, _ := os.Stat("ts-core.wasm.br")
-	fmt.Printf("wrote ts-core.wasm.br (%d bytes from %d)\n", st.Size(), len(in))
+	slog.Info("wrote ts-core.wasm.br", "bytes", st.Size(), "from", len(in))
 }
 
 func fatal(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
+	log.Fatal(err)
 }

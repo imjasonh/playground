@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/image/imagetest"
 	"github.com/imjasonh/playground/kube/internal/registry"
@@ -334,11 +335,12 @@ func TestRunResolvesImageFlags(t *testing.T) {
 	var logs lockedBuffer
 	var setup string
 	p := &probe{image: app}
-	m := &Manager{client: noAPI(t), Logger: slog.New(slog.NewTextHandler(&logs, nil)), Setup: func(context.Context) error {
+	m := &Manager{client: noAPI(t), Setup: func(context.Context) error {
 		setup = *app
 		return nil
 	}}
-	if err := m.Run(t.Context(), p); !errors.Is(err, errProbe) {
+	ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	if err := m.Run(ctx, p); !errors.Is(err, errProbe) {
 		t.Fatalf("Run() = %v, want the probe's error", err)
 	}
 	want := reg + "/app@" + digest
@@ -362,11 +364,12 @@ func TestRunFailsOnImageFlagThatDoesNotResolve(t *testing.T) {
 
 	p := &probe{image: app}
 	setup := false
-	m := &Manager{client: noAPI(t), Logger: slog.New(slog.DiscardHandler), Setup: func(context.Context) error {
+	m := &Manager{client: noAPI(t), Setup: func(context.Context) error {
 		setup = true
 		return nil
 	}}
-	err := m.Run(t.Context(), p)
+	ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler)))
+	err := m.Run(ctx, p)
 	if want := "-app-image: resolving image " + reg + "/app:nope: "; err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("Run() = %v, want an error that starts %q", err, want)
 	}
@@ -400,8 +403,9 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := &Manager{client: noAPI(t), log: slog.New(slog.DiscardHandler)}
-	err = (&installer{objects: objs}).setup(t.Context(), m)
+	m := &Manager{client: noAPI(t)}
+	ctx := clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler)))
+	err = (&installer{objects: objs}).setup(ctx, m)
 	if want := "installing Deployment web: container web: resolving image " + reg + "/app:nope: "; err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("setup() = %v, want an error that starts %q, before it applies the ConfigMap", err, want)
 	}

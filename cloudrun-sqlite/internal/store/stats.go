@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/benbjohnson/litestream"
 )
 
 // latencies keeps the most recent durations for percentile reporting.
@@ -101,7 +103,7 @@ func (s *Store) Stats(ctx context.Context) Stats {
 		Durable:    s.cfg.Durable,
 		Opens:      s.opens.Load(),
 		Reopens:    s.reopens.Load(),
-		Conflicts:  s.client.conflicts.Load(),
+		Conflicts:  litestream.ReplicaL0ConflictCount(s.client.ReplicaClient),
 		Writes:     s.writeCount.Load(),
 		Batches:    s.batchCount.Load(),
 		ReadWait:   s.readWait.percentiles(),

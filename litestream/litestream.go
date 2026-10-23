@@ -36,6 +36,9 @@ var (
 	ErrLTXCorrupted     = errors.New("ltx file corrupted")
 	ErrLTXMissing       = errors.New("ltx file missing")
 	ErrDiskFull         = errors.New("disk full")
+	// ErrConflict is returned when the remote replica has newer transactions
+	// than expected, or when a conditional level-0 create loses to another writer.
+	ErrConflict = errors.New("remote has newer transactions than expected")
 )
 
 // LTXError provides detailed context for LTX file errors with recovery hints.

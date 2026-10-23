@@ -159,8 +159,8 @@ func TestRemovesWebhooksThatTheProgramDropped(t *testing.T) {
 	ns := e2e.Namespace(t, c)
 	path := client.Path("admissionregistration.k8s.io/v1", "validatingwebhookconfigurations", "", configurationName("dropped-e2e"))
 	m := webhookManager(t, "dropped-e2e", ns)
-	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
-	ctx, cancel := context.WithCancel(t.Context())
+	m.Kubeconfig = e2e.Env(t).Kubeconfig
+	ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, kube.For[Gadget](gadgets{})) }()
 	e2e.Eventually(t, 30*time.Second, func() error {
@@ -207,9 +207,9 @@ func TestWebhooksFinishRequestsWhenTheProgramStops(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
 	m := webhookManager(t, "draining-e2e", ns)
-	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
+	m.Kubeconfig = e2e.Env(t).Kubeconfig
 	r := slowGadgets{validating: make(chan struct{}, 1), release: make(chan struct{})}
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, kube.For[Gadget](r)) }()

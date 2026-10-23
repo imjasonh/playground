@@ -152,7 +152,7 @@ func triggerable[T any, P Resource[T]](t *testing.T, m *Manager, res resolved, o
 	c.res = res
 	c.q = queue.New[Key](queue.Options{})
 	t.Cleanup(c.q.ShutDown)
-	c.primary = newInformer[T, P](1, c.ti, res, nil, informerConfig{}, m.log, m.metrics)
+	c.primary = newInformer[T, P](1, c.ti, res, nil, informerConfig{}, m.metrics)
 	for _, o := range objs {
 		c.primary.store.put(o)
 	}

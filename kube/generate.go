@@ -100,7 +100,7 @@ func (o *generateOptions) logf(format string, args ...any) {
 func (m *Manager) generate(ctx context.Context, args []string, controllers []Controller, stdout, stderr io.Writer) error {
 	o := &generateOptions{program: filepath.Base(os.Args[0]), stderr: stderr, manager: Manager{
 		Name: m.Name, Namespace: m.Namespace, LeaseNamespace: m.LeaseNamespace,
-		LeaderElection: m.LeaderElection, Shards: m.Shards, Logger: m.Logger,
+		LeaderElection: m.LeaderElection, Shards: m.Shards,
 	}}
 	o.name = objectName(cmp.Or(m.Name, o.program))
 	fs := flag.NewFlagSet(o.program+" generate", flag.ContinueOnError)
@@ -238,7 +238,7 @@ func (o *generateOptions) parseProgramFlags() error {
 			return fmt.Errorf("the program defines -%s, which generate sets for kube.Main; give the program's flag another name", name)
 		}
 	}
-	(&Manager{Logger: o.manager.Logger}).flags(fs)
+	(&Manager{}).flags(fs)
 	if err := fs.Parse(o.args); err != nil {
 		return fmt.Errorf("the program's flags after --: %v", err)
 	}

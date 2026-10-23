@@ -23,8 +23,7 @@
 //
 // flag.String and StringVar whose name contains log-level parse a
 // level as a string. Use github.com/chainguard-dev/clog/slag. A
-// slog.Level passed to flag.TextVar is left alone, because kube stays
-// on slog and has no slag dependency.
+// slog.Level passed to flag.TextVar is left alone.
 
 package go_clog
 

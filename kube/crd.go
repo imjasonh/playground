@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
+
+	"github.com/chainguard-dev/clog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -150,7 +151,7 @@ func (m *Manager) installCRD(ctx context.Context, spec crdSpec) error {
 		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
 	}
 	if live != nil && !m.ownsCRD(live) {
-		m.log.Info("using CustomResourceDefinition that something else installed", "crd", name)
+		clog.FromContext(ctx).Info("using CustomResourceDefinition that something else installed", "crd", name)
 		return nil
 	}
 	desired, err := m.desiredCRD(spec)
@@ -169,7 +170,7 @@ func (m *Manager) installCRD(ctx context.Context, spec crdSpec) error {
 	if _, err := m.waitEstablished(ctx, name); err != nil {
 		return err
 	}
-	m.log.Info("installed CustomResourceDefinition", "crd", name)
+	clog.FromContext(ctx).Info("installed CustomResourceDefinition", "crd", name)
 	return nil
 }
 
@@ -184,7 +185,7 @@ func (m *Manager) createCRD(ctx context.Context, ti *typeInfo) error {
 	live, err := m.getCRD(ctx, name)
 	switch {
 	case client.IsForbidden(err):
-		m.log.Warn("can't check for CustomResourceDefinition without permission to get it", "crd", name, "err", err)
+		clog.FromContext(ctx).Warn("can't check for CustomResourceDefinition without permission to get it", "crd", name, "err", err)
 		return nil
 	case err != nil:
 		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
@@ -203,7 +204,7 @@ func (m *Manager) createCRD(ctx context.Context, ti *typeInfo) error {
 		}, nil)
 		switch {
 		case err == nil:
-			m.log.Info("created CustomResourceDefinition", "crd", name)
+			clog.FromContext(ctx).Info("created CustomResourceDefinition", "crd", name)
 		case client.IsAlreadyExists(err):
 			// Another program created it first.
 		default:
@@ -277,7 +278,7 @@ func (m *Manager) planCRD(ctx context.Context, spec crdSpec, live *liveCRD, desi
 				}
 				return false, err
 			}
-			m.log.Warn("leaving CustomResourceDefinition as a newer version of this program installed it", "crd", name, "version", v)
+			clog.FromContext(ctx).Warn("leaving CustomResourceDefinition as a newer version of this program installed it", "crd", name, "version", v)
 			return false, nil
 		}
 		dropped = append(dropped, v)
@@ -319,19 +320,19 @@ func (m *Manager) keepData(ctx context.Context, spec crdSpec, live *liveCRD, des
 			switch {
 			case ch.kind == changeRequired:
 				if err == nil && counts[i] > 0 {
-					m.log.Warn("objects don't set a newly required field, so changing their spec fails until they do; give the field a default or make it optional",
+					clog.FromContext(ctx).Warn("objects don't set a newly required field, so changing their spec fails until they do; give the field a default or make it optional",
 						"crd", name, "version", version, "field", field, "objects", counts[i])
 				}
 			case err != nil:
 				setSchemaAt(ds, ch.path, schemaAt(ls, ch.path))
-				m.log.Warn("keeping field in CustomResourceDefinition because objects can't be checked for values", "crd", name, "version", version, "field", field, "err", err)
+				clog.FromContext(ctx).Warn("keeping field in CustomResourceDefinition because objects can't be checked for values", "crd", name, "version", version, "field", field, "err", err)
 			case counts[i] > 0:
 				setSchemaAt(ds, ch.path, schemaAt(ls, ch.path))
 				msg := "keeping field that objects set, which this program's type doesn't declare; clear it in those objects, or add a version without it"
 				if ch.kind == changeType {
 					msg = "keeping the type of field that objects set, which this program's type changes; add a version to change it"
 				}
-				m.log.Warn(msg, "crd", name, "version", version, "field", field, "objects", counts[i])
+				clog.FromContext(ctx).Warn(msg, "crd", name, "version", version, "field", field, "objects", counts[i])
 			}
 		}
 	}
@@ -443,15 +444,15 @@ func (c *controller[T, P]) maintainCRD(ctx context.Context) {
 	}
 	delay := 5 * time.Second
 	for {
-		err := c.m.migrateCRD(ctx, c.crd(), c.ti.status != nil, c.log)
+		err := c.m.migrateCRD(ctx, c.crd(), c.ti.status != nil)
 		switch {
 		case err == nil || ctx.Err() != nil:
 			return
 		case client.IsForbidden(err):
-			c.log.Warn("can't migrate stored objects without permission to list and patch them in every namespace", "crd", c.crd().name(), "err", err)
+			c.logger(ctx).Warn("can't migrate stored objects without permission to list and patch them in every namespace", "crd", c.crd().name(), "err", err)
 			return
 		}
-		c.log.Warn("CustomResourceDefinition migration failed; retrying", "crd", c.crd().name(), "err", err, "retry", delay)
+		c.logger(ctx).Warn("CustomResourceDefinition migration failed; retrying", "crd", c.crd().name(), "err", err, "retry", delay)
 		select {
 		case <-ctx.Done():
 			return
@@ -461,7 +462,7 @@ func (c *controller[T, P]) maintainCRD(ctx context.Context) {
 	}
 }
 
-func (m *Manager) migrateCRD(ctx context.Context, spec crdSpec, status bool, log *slog.Logger) error {
+func (m *Manager) migrateCRD(ctx context.Context, spec crdSpec, status bool) error {
 	name := spec.name()
 	live, err := m.getCRD(ctx, name)
 	if err != nil || !m.ownsCRD(live) || live.storage() != spec.ti.version {
@@ -514,7 +515,7 @@ func (m *Manager) migrateCRD(ctx context.Context, spec crdSpec, status bool, log
 		return err
 	}
 	if cleaned > 0 {
-		log.Info("removed managedFields entries for unserved versions", "crd", name, "objects", cleaned)
+		clog.FromContext(ctx).Info("removed managedFields entries for unserved versions", "crd", name, "objects", cleaned)
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%d objects: %w", len(errs), errors.Join(errs[:min(len(errs), 3)]...))
@@ -528,7 +529,7 @@ func (m *Manager) migrateCRD(ctx context.Context, spec crdSpec, status bool, log
 		// objects were being rewritten, so they must be rewritten again.
 		return fmt.Errorf("updating status.storedVersions: %w", err)
 	}
-	log.Info("migrated stored objects", "crd", name, "storageVersion", storage, "previous", live.Status.StoredVersions, "rewritten", rewritten+cleaned)
+	clog.FromContext(ctx).Info("migrated stored objects", "crd", name, "storageVersion", storage, "previous", live.Status.StoredVersions, "rewritten", rewritten+cleaned)
 	return nil
 }
 

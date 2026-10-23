@@ -76,9 +76,9 @@ func TestLastErrorAfterShardRoundTrip(t *testing.T) {
 	replicas := map[string]*replica{}
 	start := func(name string) {
 		rep := &replica{addr: freeAddr(t), done: make(chan error, 1)}
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(e2e.WithLogger(t.Context(), t))
 		rep.cancel = cancel
-		m := &kube.Manager{Name: "lasterror-shards-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, LeaseNamespace: ns, Shards: shards, Addr: rep.addr, Logger: e2e.Logger(t)}
+		m := &kube.Manager{Name: "lasterror-shards-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, LeaseNamespace: ns, Shards: shards, Addr: rep.addr}
 		go func() {
 			rep.done <- m.Run(ctx, kube.For[Widget](roundTripReconciler{replica: name, log: log}, kube.Named("lasterror-shards")))
 		}()

@@ -337,8 +337,8 @@ predates. Its goals:
   retries, and leader election.
 - Caches hold only what controllers read, by default.
 - A converged controller makes no writes, including after a restart.
-- No dependencies beyond the Go standard library in the program that runs in
-  the cluster.
+- The program that runs in the cluster depends on `clog` for its logger
+  and otherwise only the Go standard library.
 - `Reconcile` is testable without a cluster, a fake client, or a mock.
 
 ## Design

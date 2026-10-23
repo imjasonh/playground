@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/chainguard-dev/clog/gcp"
+	"github.com/chainguard-dev/clog/slag"
 )
 
 // TestFlagsThatTheProgramDefines checks that Main leaves out its flags that
@@ -18,7 +21,7 @@ func TestFlagsThatTheProgramDefines(t *testing.T) {
 	kubeconfig := fs.String("kubeconfig", "", "the program's own kubeconfig")
 	verbose := fs.Bool("v", false, "the program's own verbosity")
 	var m Manager
-	level, skipped := m.flags(fs)
+	skipped := m.flags(fs)
 	if !slices.Equal(skipped, []string{"kubeconfig"}) {
 		t.Errorf("skipped %q, want [kubeconfig]", skipped)
 	}
@@ -28,25 +31,60 @@ func TestFlagsThatTheProgramDefines(t *testing.T) {
 	if *kubeconfig != "mine" || !*verbose || m.Kubeconfig != "" {
 		t.Errorf("the program's -kubeconfig = %q and -v = %v, and the manager's Kubeconfig = %q; want mine, true, and empty", *kubeconfig, *verbose, m.Kubeconfig)
 	}
-	if m.Namespace != "team" || m.Addr != ":8080" || m.Shards != 3 || *level != slog.LevelDebug {
-		t.Errorf("Namespace = %q, Addr = %q, Shards = %d, and -log-level = %v; want team, :8080, 3, and DEBUG", m.Namespace, m.Addr, m.Shards, *level)
+	if m.Namespace != "team" || m.Addr != ":8080" || m.Shards != 3 || m.logLevel.Level() != slog.LevelDebug {
+		t.Errorf("Namespace = %q, Addr = %q, Shards = %d, and -log-level = %v; want team, :8080, 3, and DEBUG", m.Namespace, m.Addr, m.Shards, m.logLevel.Level())
 	}
 }
 
 // TestFlagsDefaultToFields checks that Manager.Main keeps the fields that
-// the program sets, as the defaults of their flags, and that a Manager with
-// a Logger has no -log-level.
+// the program sets, as the defaults of their flags.
 func TestFlagsDefaultToFields(t *testing.T) {
 	fs := flag.NewFlagSet("program", flag.ContinueOnError)
-	m := Manager{Namespace: "team", LeaderElection: true, Shards: 3, Addr: ":9090", Logger: slog.New(slog.DiscardHandler)}
-	if level, _ := m.flags(fs); level != nil || fs.Lookup("log-level") != nil {
-		t.Error("a Manager with a Logger has -log-level")
+	m := Manager{Namespace: "team", LeaderElection: true, Shards: 3, Addr: ":9090"}
+	if skipped := m.flags(fs); len(skipped) != 0 || fs.Lookup("log-level") == nil {
+		t.Fatalf("skipped %q; -log-level present = %v", skipped, fs.Lookup("log-level") != nil)
 	}
 	if err := fs.Parse([]string{"-metrics-addr=:7070"}); err != nil {
 		t.Fatal(err)
 	}
 	if m.Namespace != "team" || !m.LeaderElection || m.Shards != 3 || m.Addr != ":7070" {
 		t.Errorf("Namespace = %q, LeaderElection = %v, Shards = %d, and Addr = %q; want team, true, 3, and :7070", m.Namespace, m.LeaderElection, m.Shards, m.Addr)
+	}
+}
+
+// TestSetLoggerKeepsCloudLoggingHandler checks that a handler from
+// clog/gcp/init stays the process logger.
+func TestSetLoggerKeepsCloudLoggingHandler(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	h := &gcp.Handler{}
+	slog.SetDefault(slog.New(h))
+	setLogger(slog.LevelDebug)
+	if slog.Default().Handler() != h {
+		t.Fatal("replaced the Cloud Logging handler")
+	}
+}
+
+// TestSetLoggerInstallsTextHandlerAtLevel checks that, without a Cloud
+// Logging handler, -log-level filters the text handler.
+func TestSetLoggerInstallsTextHandlerAtLevel(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	var level slag.Level
+	setLogger(&level)
+	h := slog.Default().Handler()
+	if _, ok := h.(*gcp.Handler); ok {
+		t.Fatal("installed a Cloud Logging handler")
+	}
+	if h.Enabled(t.Context(), slog.LevelDebug) {
+		t.Fatal("debug is enabled at the default level")
+	}
+	if err := level.Set("debug"); err != nil {
+		t.Fatal(err)
+	}
+	if !h.Enabled(t.Context(), slog.LevelDebug) {
+		t.Fatal("debug is disabled after -log-level=debug")
 	}
 }
 

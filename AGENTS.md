@@ -702,27 +702,50 @@ bundle exec fastlane test
   [`github.com/chainguard-dev/clog`](https://github.com/chainguard-dev/clog)
   is for a logger stored on a `context.Context`: `clog.WithLogger` to
   store it, `clog.FromContext` or the `Context` methods to read it.
-  At the start of a request or reconcile, store the shared identity
-  (repository, branch, caller) there so later logs in that call chain
-  include it. Do not pass a `*slog.Logger` beside `ctx` for that.
+  At the start of a request, reconcile, or command, store the shared
+  identity (repository, branch, caller) there so later logs in that
+  call chain include it. Do not pass a `*slog.Logger` or `*clog.Logger`
+  to a function, and do not keep one on a struct. Pass the context
+  into the function that logs, and read the logger there with
+  `clog.FromContext`. A library that requires `*slog.Logger`, such as
+  Litestream's replica client and VFS, gets it at that call from
+  `clog.FromContext(ctx).Handler()`. `kube` depends on `clog` and
+  reads its logger from the context the same way.
   `clog.Info` and the other package-level calls only reach the default
   logger, so use `slog` there. `clog.Fatal` is the exception: `slog`
   has no equivalent, and `Fatal` logs then exits. Do not call clog's
   printf-style methods
   (`Infof`, `Warnf`, `Errorf`, `Debugf`, `Fatalf`, and the `Contextf`
-  variants). Parse a log-level flag with
+  variants), and do not wrap `slog.Info(fmt.Sprintf(...))` to get
+  one. Pass attributes. Parse a log-level flag with
   `github.com/chainguard-dev/clog/slag`.
   In `main` of a program that runs on GCP (Cloud Run, GKE, Cloud Functions,
   or App Engine), blank-import `github.com/chainguard-dev/clog/gcp/init`.
   That installs the Cloud Logging JSON handler from `LOG_LEVEL` in every
-  environment. Do not call `gcp.NewHandler` yourself.
+  environment. Do not call `gcp.NewHandler` yourself. `kube.Main` keeps
+  that handler. It installs a text handler at `-log-level` only when
+  the program did not import `gcp/init`.
   [`pasta/analyzers/go_clog`](pasta/analyzers/go_clog/go_clog.cue)
   flags printf-style calls, package-level clog calls other than
   `Fatal`, `gcp.NewHandler`,
   and a `flag.String` whose name contains `log-level`. Which programs
-  run on GCP is not visible to that check. `kube` stays on `slog`
-  because that module imports only the standard library. Do not restyle
-  `litestream`.
+  run on GCP is not visible to that check.
+  [`pasta/analyzers/go_logger_field`](pasta/analyzers/go_logger_field/go_logger_field.cue)
+  flags a struct field or function parameter of type `slog.Logger` or
+  `clog.Logger`. A function may still build a logger and return it.
+  Do not restyle `litestream`. The check skips that module because
+  its API takes `*slog.Logger`.
+  Do not log with `fmt.Print`, `fmt.Println`, or `fmt.Printf`.
+  [`pasta/analyzers/go_fmtprint`](pasta/analyzers/go_fmtprint/go_fmtprint.cue)
+  rewrites a single string argument to `slog.Info` and flags every
+  other call. Do not satisfy a pasta rule by rewriting a call into a
+  form the rule does not match. `fmt.Fprintln(os.Stdout, ...)` is
+  `fmt.Println`. Change the code so the rule's recommendation holds,
+  or change the rule. A Go example that prints for an `// Output:`
+  comment keeps `fmt.Println` and marks that line `pasta:ignore`. A
+  function that writes a document takes an `io.Writer` and uses
+  `fmt.Fprint` on that writer. The command passes `os.Stdout` once,
+  at that call.
 - **Go environment variables**: load them with
   [`github.com/sethvargo/go-envconfig`](https://github.com/sethvargo/go-envconfig).
   Put the default in the `env` struct tag, as in `env:"PORT, default=8080"`.
@@ -837,7 +860,7 @@ bundle exec fastlane test
 | `cloudrun-sqlite/` | HTTP server whose SQLite database lives only in a Litestream replica (Cloud Storage, S3, or a directory), read page by page through the Litestream VFS. It builds against the fork in `litestream/`, because every Litestream release corrupts the database under sustained writes. Writes share transactions and upload before they return; L0 uploads are conditional so overlapping Cloud Run instances can't both publish a transaction. `/stats` and `/metrics` report durable write latency, paged-in and cold VFS page read latency, and object-storage latency, which also go to Cloud Monitoring on Cloud Run. `cmd/crsim` simulates Cloud Run's instance lifecycle, `cmd/crbench` measures cold starts and runs chaos soaks, and `terraform/` deploys to Cloud Run with a latency dashboard; `dashboard_test.go` checks the dashboard against the metrics the server emits. `deploy-gcp.yml` applies this stack from `main` and comments a Terraform plan on pull requests, once Terraform has created the Workload Identity pool and the state bucket exists | `go test -tags vfs -race ./...` (CGO; Litestream's VFS needs the `vfs` tag; includes a 25-second end-to-end run under the simulator, skipped by `-short`) |
 | `litestream/` | Fork of [benbjohnson/litestream](https://github.com/benbjohnson/litestream), imported with `git subtree`. The patches in `PATCHES.md` fix data corruption in the write-enabled VFS and make writes cheaper; `vfs_interleave_test.go` replays each known race deterministically, so keep it passing. Not an app | `go test -race -tags vfs .` and `go test -race ./internal ./abs ./file ./gs ./nats ./s3 ./sftp ./cmd/litestream`. `LITEVFS_INTERLEAVE_SEEDS=N` runs more random VFS schedules |
 | `git-k8s/` | Kubernetes controllers built on `kube` (imported at head with `replace ../kube`). The core program keeps a copy of each `GitRepository` on a PersistentVolumeClaim and serves it over smart HTTP as the mirror, which syncs with the external repository. It owns a `GitBranch` for each tracked branch, and lands a branch on its parent by fast-forward, squash, or rebase when the parent's merge policy passes, through a merge queue when the policy lets `base` push. Check programs (`check-base`, `check-gofmt`, `check-risk`, `check-approval`, `check-gotest`, which runs `go test` in a locked-down Pod that it declares with `kube.Own`, and `check-review`, `check-deps`, and `check-conflicts`, which run AI agents in Pods with the `agent` package) fetch from and push to the mirror, and send their results to the core program's results endpoint, so only the core program writes `status.checks`. `git-k8s-deps` pushes Go module updates to `deps/` branches, and `go-cache` gives test Pods a module proxy and a shared build cache. The core program installs the admission policies in `config/policy.yaml` when it starts. git-k8s can also get GitHub tokens from Octo STS, report check runs, and sign commits (see `git-k8s/README.md`) | `go test -race ./...` (uses an in-process smart-HTTP git server); the agent runner's tests are `cd agent/runner && npm ci && npm test`. `GIT_K8S_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the programs with `generate` in a kind cluster and pushes branches to a git server on the host (needs Docker, kubectl, git, ssh-keygen, and curl; CI runs it when `git-k8s/` or `kube/` changes). The stress harness in `e2e/stress/` measures landing throughput on a kind cluster that its `setup.sh` starts (`go run ./e2e/stress run -scenario clean`; see its `README.md`); CI runs only its unit tests |
-| `kube/` | Kubernetes controller runtime written on the standard library alone: one struct and one `Reconcile` method per controller, generated CRDs with more than one version and conversion webhooks, CRD upgrades that migrate stored objects and refuse changes that lose data, admission webhooks, server-side apply, projection caches that read built-in types as protobuf, replicas that split work with shard Leases, events, an HTTP API whose handlers check callers' service account tokens and trigger reconciles, objects to install when the program starts, and state on a persistent volume. The runtime imports only the standard library; keep it that way. The one dependency, go-containerregistry, is for the `generate` command (builds, pushes, and writes install YAML with RBAC rules found by type-checking the program); `generate` builds the image's copy of the program with the `kube_nogenerate` tag, which leaves the command and go-containerregistry out. Example controllers and webhooks in `examples/`. Two directories are separate modules that CI doesn't build: the benchmark in `kube/bench/`, which imports `client-go`, and `kube/internal/protobuf/gen/`, which writes `kube/internal/protobuf/schema.txt` from `k8s.io/api` (after changing its `k8s.io/api` version, run `go run . -o ../schema.txt` there). Design and measurements: [`kube/docs/design.md`](kube/docs/design.md) | `go test -race ./...`. End-to-end tests need `kube-apiserver` and `etcd` and skip without `KUBEBUILDER_ASSETS`; CI sets it from `kube/fetch-envtest.sh`. `KUBE_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the examples with `generate` in a kind cluster with a local registry (needs Docker, kubectl, and curl; CI runs it when `kube/` changes) |
+| `kube/` | Kubernetes controller runtime: one struct and one `Reconcile` method per controller, generated CRDs with more than one version and conversion webhooks, CRD upgrades that migrate stored objects and refuse changes that lose data, admission webhooks, server-side apply, projection caches that read built-in types as protobuf, replicas that split work with shard Leases, events, an HTTP API whose handlers check callers' service account tokens and trigger reconciles, objects to install when the program starts, and state on a persistent volume. The runtime depends on `clog` for context loggers and otherwise the standard library. go-containerregistry is for the `generate` command (builds, pushes, and writes install YAML with RBAC rules found by type-checking the program); `generate` builds the image's copy of the program with the `kube_nogenerate` tag, which leaves the command and go-containerregistry out. Example controllers and webhooks in `examples/`. Two directories are separate modules that CI doesn't build: the benchmark in `kube/bench/`, which imports `client-go`, and `kube/internal/protobuf/gen/`, which writes `kube/internal/protobuf/schema.txt` from `k8s.io/api` (after changing its `k8s.io/api` version, run `go run . -o ../schema.txt` there). Design and measurements: [`kube/docs/design.md`](kube/docs/design.md) | `go test -race ./...`. End-to-end tests need `kube-apiserver` and `etcd` and skip without `KUBEBUILDER_ASSETS`; CI sets it from `kube/fetch-envtest.sh`. `KUBE_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the examples with `generate` in a kind cluster with a local registry (needs Docker, kubectl, and curl; CI runs it when `kube/` changes) |
 | `liquid/` | Terminal liquid simulation: particles simulated with double density relaxation and drawn with Lip Gloss as half-block pixels or braille dots. bubblezone maps mouse events to the tank and toolbar: drag pushes, right drag pulls, middle drag pours, and Shift, Alt, or Ctrl while moving attracts or disperses | `go test -race ./...` (UI tests drive the model with real bubblezone zones and a fake clock) |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |

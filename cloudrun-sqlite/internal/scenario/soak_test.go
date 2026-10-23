@@ -54,7 +54,6 @@ func TestSoakWithoutSimulator(t *testing.T) {
 			verified = true
 			return nil
 		},
-		Logf: t.Logf,
 	})
 	if err != nil {
 		t.Fatal(err)

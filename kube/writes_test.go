@@ -16,6 +16,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/kube/internal/client"
 )
 
@@ -100,8 +101,8 @@ func TestReconcileSeesItsOwnStatusWrite(t *testing.T) {
 
 			r := &stepper{n: n}
 			ctl := For[counted](r, append(tc.opts, Named("stepper"))...)
-			m := &Manager{client: c, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), DisableProtobuf: true}
-			ctx, cancel := context.WithCancel(t.Context())
+			m := &Manager{client: c, DisableProtobuf: true}
+			ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler))))
 			done := make(chan error, 1)
 			go func() { done <- m.Run(ctx, ctl) }()
 			t.Cleanup(func() {
@@ -224,8 +225,8 @@ func TestReconcileSeesItsOwnStatusApply(t *testing.T) {
 
 	r := &applyStepper{target: "t", n: n}
 	ctl := For[counted](r, Named("apply-stepper"))
-	m := &Manager{client: c, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), DisableProtobuf: true}
-	ctx, cancel := context.WithCancel(t.Context())
+	m := &Manager{client: c, DisableProtobuf: true}
+	ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler))))
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, ctl) }()
 	t.Cleanup(func() {
@@ -540,7 +541,7 @@ func testInformer[T any, P Resource[T]](t *testing.T, res resolved, cfg informer
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newInformer[T, P](1, ti, res, nil, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	return newInformer[T, P](1, ti, res, nil, cfg, nil)
 }
 
 func TestInformerTracksWritesItCanShow(t *testing.T) {

@@ -12,6 +12,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+
+	"github.com/chainguard-dev/clog"
 	"reflect"
 	"strings"
 	"sync"
@@ -89,16 +91,20 @@ func Namespace(t testing.TB, c *client.Client) string {
 	return name
 }
 
-// Run runs controllers in m until the test ends.
+// Run runs controllers in m until the test ends. Logs go to the test log.
 func Run(t testing.TB, m *kube.Manager, controllers ...kube.Controller) {
+	t.Helper()
+	RunContext(t, WithLogger(context.Background(), t), m, controllers...)
+}
+
+// RunContext runs controllers in m with ctx until the test ends. The logger
+// on ctx is the one the manager uses.
+func RunContext(t testing.TB, ctx context.Context, m *kube.Manager, controllers ...kube.Controller) {
 	t.Helper()
 	if m.Kubeconfig == "" {
 		m.Kubeconfig = Env(t).Kubeconfig
 	}
-	if m.Logger == nil {
-		m.Logger = Logger(t)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, controllers...) }()
 	t.Cleanup(func() {
@@ -112,6 +118,11 @@ func Run(t testing.TB, m *kube.Manager, controllers ...kube.Controller) {
 			t.Error("manager didn't stop within 30s")
 		}
 	})
+}
+
+// WithLogger returns ctx carrying a logger that writes to the test log.
+func WithLogger(ctx context.Context, t testing.TB) context.Context {
+	return clog.WithLogger(ctx, clog.NewLogger(Logger(t)))
 }
 
 // Logger returns a logger that writes to the test log. Set KUBE_E2E_DEBUG to

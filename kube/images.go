@@ -5,8 +5,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"strings"
+
+	"github.com/chainguard-dev/clog"
 	"sync"
 
 	"github.com/imjasonh/playground/kube/internal/registry"
@@ -232,19 +233,18 @@ func (d *imageDigests) pinImages(ctx context.Context, obj jsonObject, resolved f
 }
 
 // resolveImageFlags resolves the tags in the image flags on flag.CommandLine.
-// Run calls it before init, which sets m.log.
+// Run calls it before init.
 func (m *Manager) resolveImageFlags(ctx context.Context) error {
-	log := cmp.Or(m.Logger, slog.Default())
 	_, err := images.pinFlags(ctx, flag.CommandLine, func(name, from, to string) {
-		log.Info("resolved image flag", "flag", name, "image", from, "pinned", to)
+		clog.FromContext(ctx).Info("resolved image flag", "flag", name, "image", from, "pinned", to)
 	})
 	return err
 }
 
 // resolveImages resolves the tags of the images in the containers of obj,
 // an object to apply.
-func resolveImages(ctx context.Context, obj map[string]any, log *slog.Logger) error {
+func resolveImages(ctx context.Context, obj map[string]any) error {
 	return images.pinImages(ctx, jsonMap(obj), func(from, to string) {
-		log.Info("resolved image", "image", from, "pinned", to)
+		clog.FromContext(ctx).Info("resolved image", "image", from, "pinned", to)
 	})
 }

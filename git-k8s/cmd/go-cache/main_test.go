@@ -43,6 +43,8 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
+	// Discard logs so a failed check does not print during tests.
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 	os.Exit(m.Run())
 }
 
@@ -70,15 +72,14 @@ func (fakeReviewer) checkWriter(context.Context, identity) error { return nil }
 func newTestServer(t *testing.T, upstream string, rev reviewer, configure ...func(*store)) (*server, *httptest.Server) {
 	t.Helper()
 	m := newMetrics()
-	log := slog.New(slog.DiscardHandler)
-	st, err := openStore(t.TempDir(), 1<<30, m, log)
+	st, err := openStore(t.TempDir(), 1<<30, m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range configure {
 		c(st)
 	}
-	s := &server{store: st, upstream: upstream, client: http.DefaultClient, reviewer: rev, metrics: m, log: log}
+	s := &server{store: st, upstream: upstream, client: http.DefaultClient, reviewer: rev, metrics: m}
 	srv := httptest.NewServer(s.handler())
 	t.Cleanup(srv.Close)
 	return s, srv
@@ -1054,7 +1055,7 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 }
 
 func TestRunNeedsController(t *testing.T) {
-	err := run(slog.New(slog.DiscardHandler), "127.0.0.1:-1", "", "https://proxy.golang.org", t.TempDir(), "1Mi", "")
+	err := run("127.0.0.1:-1", "", "https://proxy.golang.org", t.TempDir(), "1Mi", "")
 	if err == nil || err.Error() != "-controller can't be empty" {
 		t.Errorf("run with an empty -controller = %v, want an error about -controller", err)
 	}
@@ -1224,7 +1225,7 @@ func TestPodCheckDenials(t *testing.T) {
 func TestStore(t *testing.T) {
 	dir := t.TempDir()
 	m := newMetrics()
-	s, err := openStore(dir, 100, m, slog.New(slog.DiscardHandler))
+	s, err := openStore(dir, 100, m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1276,7 +1277,7 @@ func TestStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	m2 := newMetrics()
-	if _, err := openStore(dir, 100, m2, slog.New(slog.DiscardHandler)); err != nil {
+	if _, err := openStore(dir, 100, m2); err != nil {
 		t.Fatal(err)
 	}
 	if m2.stored.Load() != 80 {
@@ -1290,7 +1291,7 @@ func TestStore(t *testing.T) {
 func TestStoreReservesRoom(t *testing.T) {
 	newStore := func(t *testing.T) *store {
 		t.Helper()
-		s, err := openStore(t.TempDir(), 100, newMetrics(), slog.New(slog.DiscardHandler))
+		s, err := openStore(t.TempDir(), 100, newMetrics())
 		if err != nil {
 			t.Fatal(err)
 		}

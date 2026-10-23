@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -193,7 +194,7 @@ func (p *Prog) get(ctx context.Context, action []byte) *response {
 	}
 	if err := p.fetch(ctx, id); err != nil {
 		if !errors.Is(err, errNotFound) && p.failed.CompareAndSwap(false, true) && p.Log != nil {
-			fmt.Fprintf(p.Log, "go-cache: %v; building without it\n", err)
+			slog.New(slog.NewTextHandler(p.Log, nil)).Warn("building without the cache", "err", err)
 		}
 		return &response{Miss: true}
 	}
