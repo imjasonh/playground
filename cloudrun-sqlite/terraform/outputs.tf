@@ -7,11 +7,7 @@ output "image" {
 }
 
 output "replica_url" {
-  value = local.replica_url
-}
-
-output "replica_zone" {
-  value = local.replica_zone
+  value = "gs://${google_storage_bucket.replica.name}/db"
 }
 
 output "dashboard_url" {

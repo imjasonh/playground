@@ -4,15 +4,9 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Region for Cloud Run and Artifact Registry. The Rapid replica bucket uses one zone in this region."
+  description = "Region for Cloud Run, the bucket, and Artifact Registry. Keep them together; every cold page read is a request to the bucket."
   type        = string
   default     = "us-central1"
-}
-
-variable "zone" {
-  description = "Zone for the Rapid replica bucket. Empty uses the b zone of region. Rapid stores the database in this one zone."
-  type        = string
-  default     = ""
 }
 
 variable "name" {

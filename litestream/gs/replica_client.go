@@ -19,8 +19,6 @@ import (
 	"github.com/superfly/ltx"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/benbjohnson/litestream"
 	"github.com/benbjohnson/litestream/internal"
@@ -45,13 +43,10 @@ const DefaultL0UploadChunkSize = 1 << 20
 
 // ReplicaClient is a client for writing LTX files to Google Cloud Storage.
 type ReplicaClient struct {
-	mu              sync.Mutex
-	client          *storage.Client       // Cloud Storage client
-	bkt             *storage.BucketHandle // Cloud Storage bucket handle
-	logger          *slog.Logger
-	clientType      string
-	newClient       func(context.Context) (*storage.Client, error)
-	finalizeOnClose bool
+	mu     sync.Mutex
+	client *storage.Client       // gs client
+	bkt    *storage.BucketHandle // gs bucket handle
+	logger *slog.Logger
 
 	// GS bucket information
 	Bucket string
@@ -72,30 +67,13 @@ func (c *ReplicaClient) L0ConflictCount() int64 { return c.l0Conflicts.Load() }
 
 // NewReplicaClient returns a new instance of ReplicaClient.
 func NewReplicaClient() *ReplicaClient {
-	return NewReplicaClientWithClientFactory(ReplicaClientType, func(ctx context.Context) (*storage.Client, error) {
-		return storage.NewClient(ctx)
-	})
-}
-
-// NewReplicaClientWithClientFactory returns a Cloud Storage replica client
-// that creates its client with newClient. Packages that select another Cloud
-// Storage transport use this constructor without changing replica behavior.
-func NewReplicaClientWithClientFactory(clientType string, newClient func(context.Context) (*storage.Client, error)) *ReplicaClient {
 	return &ReplicaClient{
-		logger:     slog.Default().WithGroup(clientType),
-		clientType: clientType,
-		newClient:  newClient,
+		logger: slog.Default().WithGroup(ReplicaClientType),
 	}
 }
 
 func (c *ReplicaClient) SetLogger(logger *slog.Logger) {
-	c.logger = logger.WithGroup(c.clientType)
-}
-
-// SetFinalizeOnClose controls whether appendable writes finalize on Close.
-// Non-appendable writes finalize regardless of this setting.
-func (c *ReplicaClient) SetFinalizeOnClose(enabled bool) {
-	c.finalizeOnClose = enabled
+	c.logger = logger.WithGroup(ReplicaClientType)
 }
 
 // NewReplicaClientFromURL creates a new ReplicaClient from URL components.
@@ -111,9 +89,9 @@ func NewReplicaClientFromURL(scheme, host, urlPath string, query url.Values, use
 	return client, nil
 }
 
-// Type returns the client type.
+// Type returns "gs" as the client type.
 func (c *ReplicaClient) Type() string {
-	return c.clientType
+	return ReplicaClientType
 }
 
 // Init initializes the connection to GS. No-op if already initialized.
@@ -125,7 +103,7 @@ func (c *ReplicaClient) Init(ctx context.Context) (err error) {
 		return nil
 	}
 
-	if c.client, err = c.newClient(ctx); err != nil {
+	if c.client, err = storage.NewClient(ctx); err != nil {
 		return fmt.Errorf("failed to create GCS client (bucket: %s): %w", c.Bucket, err)
 	}
 	c.bkt = c.client.Bucket(c.Bucket)
@@ -140,7 +118,7 @@ func (c *ReplicaClient) DeleteAll(ctx context.Context) error {
 	}
 
 	// Iterate over every object and delete it.
-	internal.OperationTotalCounterVec.WithLabelValues(c.Type(), "LIST").Inc()
+	internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "LIST").Inc()
 	for it := c.bkt.Objects(ctx, &storage.Query{Prefix: c.Path + "/"}); ; {
 		attrs, err := it.Next()
 		if errors.Is(err, iterator.Done) {
@@ -154,7 +132,7 @@ func (c *ReplicaClient) DeleteAll(ctx context.Context) error {
 		} else if err != nil {
 			return fmt.Errorf("gs: cannot delete object %q: %w", attrs.Name, err)
 		}
-		internal.OperationTotalCounterVec.WithLabelValues(c.Type(), "DELETE").Inc()
+		internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "DELETE").Inc()
 	}
 
 	// log.Printf("%s(%s): retainer: deleting", r.db.Path(), r.Name())
@@ -207,7 +185,6 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 	writeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	w := c.bkt.Object(key).NewWriter(writeCtx)
-	w.FinalizeOnClose = c.finalizeOnClose
 
 	// Store timestamp in GCS metadata for accurate timestamp retrieval
 	w.Metadata = map[string]string{
@@ -222,8 +199,8 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 		return info, err
 	}
 
-	internal.OperationTotalCounterVec.WithLabelValues(c.Type(), "PUT").Inc()
-	internal.OperationBytesCounterVec.WithLabelValues(c.Type(), "PUT").Add(float64(n))
+	internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "PUT").Inc()
+	internal.OperationBytesCounterVec.WithLabelValues(ReplicaClientType, "PUT").Add(float64(n))
 
 	return &ltx.FileInfo{
 		Level:     level,
@@ -242,20 +219,20 @@ func (c *ReplicaClient) writeL0CreateOnly(ctx context.Context, minTXID, maxTXID 
 	key := litestream.LTXFilePath(c.Path, 0, minTXID, maxTXID)
 	w := c.bkt.Object(key).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	w.ChunkSize = DefaultL0UploadChunkSize
-	w.FinalizeOnClose = c.finalizeOnClose
 	w.Metadata = map[string]string{MetadataKeyTimestamp: ts.Format(time.RFC3339Nano)}
 	if _, err := w.Write(data); err != nil {
 		w.Close()
 		return nil, err
 	}
 	if err := w.Close(); err != nil {
-		if isPreconditionFailed(err) {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && gerr.Code == http.StatusPreconditionFailed {
 			return litestream.CompleteL0CreateOnly(ctx, c, minTXID, maxTXID, data, ts, func() { c.l0Conflicts.Add(1) })
 		}
 		return nil, err
 	}
-	internal.OperationTotalCounterVec.WithLabelValues(c.Type(), "PUT").Inc()
-	internal.OperationBytesCounterVec.WithLabelValues(c.Type(), "PUT").Add(float64(len(data)))
+	internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "PUT").Inc()
+	internal.OperationBytesCounterVec.WithLabelValues(ReplicaClientType, "PUT").Add(float64(len(data)))
 	return &ltx.FileInfo{Level: 0, MinTXID: minTXID, MaxTXID: maxTXID, Size: int64(len(data)), CreatedAt: ts}, nil
 }
 
@@ -283,8 +260,8 @@ func (c *ReplicaClient) OpenLTXFile(ctx context.Context, level int, minTXID, max
 		return nil, err
 	}
 
-	internal.OperationTotalCounterVec.WithLabelValues(c.Type(), "GET").Inc()
-	internal.OperationBytesCounterVec.WithLabelValues(c.Type(), "GET").Add(float64(r.Attrs.Size))
+	internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "GET").Inc()
+	internal.OperationBytesCounterVec.WithLabelValues(ReplicaClientType, "GET").Add(float64(r.Attrs.Size))
 
 	return r, nil
 }
@@ -303,7 +280,7 @@ func (c *ReplicaClient) DeleteLTXFiles(ctx context.Context, a []*ltx.FileInfo) e
 		if err := c.bkt.Object(key).Delete(ctx); err != nil && !isNotExists(err) {
 			return fmt.Errorf("gs: cannot delete ltx file %q: %w", key, err)
 		}
-		internal.OperationTotalCounterVec.WithLabelValues(c.Type(), "DELETE").Inc()
+		internal.OperationTotalCounterVec.WithLabelValues(ReplicaClientType, "DELETE").Inc()
 	}
 
 	return nil
@@ -383,10 +360,4 @@ func (itr *ltxFileIterator) Item() *ltx.FileInfo {
 
 func isNotExists(err error) bool {
 	return errors.Is(err, storage.ErrObjectNotExist)
-}
-
-func isPreconditionFailed(err error) bool {
-	var gerr *googleapi.Error
-	return errors.As(err, &gerr) && gerr.Code == http.StatusPreconditionFailed ||
-		status.Code(err) == codes.FailedPrecondition
 }
