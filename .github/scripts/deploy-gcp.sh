@@ -167,8 +167,14 @@ if [[ "${DRY_RUN:-}" != "1" ]]; then
     exit 1
   }
   if [[ "$zig" == "true" ]]; then
-    zig_bin=$(bash "$script_dir/install-zig.sh")
+    # Last line only. install-zig.sh prints the directory and nothing else,
+    # and a stray stdout line would land in PATH ahead of zig.
+    zig_bin=$(bash "$script_dir/install-zig.sh" | tail -n 1)
     export PATH="${zig_bin}:${PATH}"
+    command -v zig >/dev/null 2>&1 || {
+      echo "gcp: zig is not on PATH after install (${zig_bin})" >&2
+      exit 1
+    }
   fi
 fi
 
