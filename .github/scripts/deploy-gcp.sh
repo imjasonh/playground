@@ -178,9 +178,18 @@ tf_vars=(
   -var "project_id=${GCP_PROJECT_ID}"
 )
 
+# Plan must not write the GCS lock. The plan account is objectViewer on
+# the state bucket, so creating default.tflock under a new prefix fails
+# with 403. Apply keeps the default lock so concurrent applies wait.
+init_lock=()
+if [[ "$plan_mode" == true ]]; then
+  init_lock=(-lock=false)
+fi
+
 run tofu -chdir="$tfdir" init \
   -input=false \
   -reconfigure \
+  "${init_lock[@]}" \
   -backend-config="bucket=${GCP_TF_STATE_BUCKET}"
 
 # Comment the plan on the pull request and on the job summary. The fence
