@@ -32,10 +32,23 @@ func TestNewReplicaClientFromURL(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:  "ipv4 dial",
+			host:  "replica",
+			path:  "db",
+			query: url.Values{"ipv4": {"true"}},
+		},
+		{
 			name:    "invalid rapid value",
 			host:    "replica",
 			path:    "db",
 			query:   url.Values{"rapid": {"sometimes"}},
+			wantErr: true,
+		},
+		{
+			name:    "invalid ipv4 value",
+			host:    "replica",
+			path:    "db",
+			query:   url.Values{"ipv4": {"sometimes"}},
 			wantErr: true,
 		},
 	}

@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"cloud.google.com/go/storage"
-	"google.golang.org/api/option"
 
 	"github.com/benbjohnson/litestream"
 	"github.com/benbjohnson/litestream/gs"
@@ -28,14 +27,14 @@ type ReplicaClient struct {
 
 // NewReplicaClient returns a gRPC Cloud Storage replica client. When rapid is
 // true, it enables the appendable upload and bidirectional read APIs required
-// by RAPID zonal buckets.
-func NewReplicaClient(rapid bool) *ReplicaClient {
-	options := make([]option.ClientOption, 0, 2)
-	if rapid {
-		options = append(options, storage.WithAppendableUploads(), storage.WithGRPCBidiReads())
-	}
-
+// by RAPID zonal buckets. When ipv4 is true, the client dials
+// storage.googleapis.com over IPv4. See dialOptions.
+func NewReplicaClient(rapid, ipv4 bool) *ReplicaClient {
 	client := gs.NewReplicaClientWithClientFactory(ReplicaClientType, func(ctx context.Context) (*storage.Client, error) {
+		options := dialOptions(ipv4)
+		if rapid {
+			options = append(options, storage.WithAppendableUploads(), storage.WithGRPCBidiReads())
+		}
 		return storage.NewGRPCClient(ctx, options...)
 	})
 	client.SetFinalizeOnClose(rapid)
@@ -57,8 +56,16 @@ func NewReplicaClientFromURL(scheme, host, urlPath string, query url.Values, use
 			return nil, fmt.Errorf("parse rapid query parameter: %w", err)
 		}
 	}
+	ipv4 := false
+	if raw := query.Get("ipv4"); raw != "" {
+		var err error
+		ipv4, err = strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("parse ipv4 query parameter: %w", err)
+		}
+	}
 
-	client := NewReplicaClient(rapid)
+	client := NewReplicaClient(rapid, ipv4)
 	client.Bucket = host
 	client.Path = urlPath
 	return client, nil
