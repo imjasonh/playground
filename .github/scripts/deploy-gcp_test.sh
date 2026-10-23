@@ -109,6 +109,7 @@ EOF
 cat >"$tmp/example-app/terraform/variables.tf" <<'EOF'
 variable "project_id" {}
 variable "github_repository" {}
+variable "state_bucket" {}
 EOF
 
 log="$tmp/calls.log"
@@ -123,6 +124,9 @@ if [ "\$2" = "output" ]; then
   else
     echo "https://example-app-hash-uc.a.run.app"
   fi
+fi
+if [ "\$2" = "plan" ]; then
+  echo "Plan: 0 to add, 0 to change, 0 to destroy."
 fi
 EOF
 cat >"$tmp/bin/go" <<'EOF'
@@ -141,7 +145,29 @@ cat >"$tmp/bin/curl" <<EOF
 echo curl >> "$log"
 exit 99
 EOF
-chmod +x "$tmp/bin/terraform" "$tmp/bin/go" "$tmp/bin/zig" "$tmp/bin/curl"
+cat >"$tmp/bin/gh" <<EOF
+#!/bin/sh
+printf 'gh' >> "$log"
+for arg in "\$@"; do
+  printf ' %s' "\$arg" >> "$log"
+  case "\$arg" in
+    body=@*)
+      printf '\\n' >> "$log"
+      cat "\${arg#body=@}" >> "$log"
+      ;;
+  esac
+done
+printf '\\n' >> "$log"
+# A list call prints an existing comment id when GH_COMMENT_ID is set,
+# so the script updates that comment instead of posting a second one.
+if [ -n "\${GH_COMMENT_ID:-}" ]; then
+  case "\$*" in
+    *--method*) ;;
+    *) printf '%s\n' "\$GH_COMMENT_ID" ;;
+  esac
+fi
+EOF
+chmod +x "$tmp/bin/terraform" "$tmp/bin/go" "$tmp/bin/zig" "$tmp/bin/curl" "$tmp/bin/gh"
 
 out=$(
   PATH="$tmp/bin:$PATH" \
@@ -155,10 +181,10 @@ out=$(
 )
 calls=$(cat "$log")
 assert_contains "$calls" "terraform -chdir=${tmp}/example-app/terraform init -input=false -reconfigure -backend-config=bucket=${bucket}" "terraform init"
-assert_contains "$calls" "terraform -chdir=${tmp}/example-app/terraform apply -input=false -auto-approve -lock-timeout=5m -var project_id=${project} -var github_repository=${repo}" "terraform apply"
+assert_contains "$calls" "terraform -chdir=${tmp}/example-app/terraform apply -input=false -auto-approve -lock-timeout=5m -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "terraform apply"
 assert_contains "$out" "applied https://example-app-hash-uc.a.run.app" "prints the service url"
-if [[ "$calls" == *gcloud* || "$calls" == *'ko '* || "$calls" == *curl* ]]; then
-  fail "apply must run terraform, not gcloud, ko, or curl"
+if [[ "$calls" == *gcloud* || "$calls" == *'ko '* || "$calls" == *curl* || "$calls" == *$'\ngh '* || "$calls" == gh\ * ]]; then
+  fail "apply must run terraform, not gcloud, ko, curl, or gh"
   echo "$calls" >&2
 fi
 
@@ -236,6 +262,128 @@ if err=$(
   fail "empty service url should fail"
 else
   assert_contains "$err" "terraform output url" "empty service url error"
+fi
+
+plan_sa="example-app-gha-plan@${project}.iam.gserviceaccount.com"
+plan_wif="projects/123456789/locations/global/workloadIdentityPools/example-app-github/providers/github-plan"
+
+: >"$log"
+summary="$tmp/summary.md"
+: >"$summary"
+plan_out=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    GITHUB_STEP_SUMMARY="$summary" \
+    PR_NUMBER=12 \
+    GH_TOKEN=test-token \
+    bash "$deploy" --plan example-app
+)
+plan_calls=$(cat "$log")
+assert_contains "$plan_calls" "terraform -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "terraform plan"
+assert_contains "$plan_out" "Plan: 0 to add, 0 to change, 0 to destroy." "prints the plan"
+assert_contains "$plan_out" "commented on pull request 12" "comments on the pull request"
+assert_contains "$(cat "$summary")" "<!-- gcp-plan:example-app -->" "summary has the comment marker"
+assert_contains "$(cat "$summary")" "Plan: 0 to add, 0 to change, 0 to destroy." "summary has the plan"
+assert_contains "$plan_calls" "repos/${repo}/issues/12/comments" "lists comments before posting"
+if grep -E '^terraform .* apply ' <<<"$plan_calls"; then
+  fail "plan must not apply"
+  echo "$plan_calls" >&2
+fi
+if [[ "$plan_calls" != *'--method POST'* ]]; then
+  fail "plan did not post a new comment"
+  echo "$plan_calls" >&2
+fi
+
+: >"$log"
+update_out=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    PR_NUMBER=12 \
+    GH_TOKEN=test-token \
+    GH_COMMENT_ID=99 \
+    bash "$deploy" --plan example-app
+)
+update_calls=$(cat "$log")
+assert_contains "$update_out" "commented on pull request 12" "updates the existing comment"
+if [[ "$update_calls" != *'--method PATCH'* || "$update_calls" != *'issues/comments/99'* ]]; then
+  fail "plan did not update comment 99"
+  echo "$update_calls" >&2
+fi
+if [[ "$update_calls" == *'--method POST'* ]]; then
+  fail "plan posted a second comment"
+  echo "$update_calls" >&2
+fi
+
+: >"$log"
+dry_plan=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    PR_NUMBER=12 \
+    GH_TOKEN=test-token \
+    DRY_RUN=1 \
+    bash "$deploy" --plan example-app
+)
+assert_contains "$dry_plan" "plan -input=false -no-color -lock=false" "dry-run prints plan"
+assert_contains "$dry_plan" "plan <comment>" "dry-run does not comment"
+if [[ -s "$log" ]]; then
+  fail "dry-run plan invoked terraform or gh"
+  cat "$log" >&2
+fi
+
+if ! err=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$repo_root" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    bash "$deploy" --check-plan cloudrun-sqlite 2>&1
+); then
+  fail "--check-plan failed: $err"
+fi
+
+if err=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    bash "$deploy" --check-plan example-app 2>&1
+); then
+  fail "missing plan service account should fail"
+else
+  assert_contains "$err" "GCP_PLAN_SERVICE_ACCOUNT" "missing plan account error"
+  assert_contains "$err" "GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER" "missing plan provider error"
+fi
+
+# Apply does not require the plan account.
+if ! err=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_WORKLOAD_IDENTITY_PROVIDER="$wif" \
+    GCP_DEPLOY_SERVICE_ACCOUNT="$sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    bash "$deploy" --check example-app 2>&1
+); then
+  fail "--check without plan variables failed: $err"
 fi
 
 if ((failures > 0)); then

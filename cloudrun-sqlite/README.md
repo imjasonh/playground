@@ -358,7 +358,7 @@ gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucke
 gcloud storage buckets update gs://BUCKET --versioning
 
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # set project_id and github_repository
+cp terraform.tfvars.example terraform.tfvars   # set project_id, github_repository, and state_bucket
 terraform init -backend-config="bucket=BUCKET"
 terraform apply
 ```
@@ -366,34 +366,48 @@ terraform apply
 If this stack already has local state, pass `-migrate-state` on that init.
 
 Set `github_repository` to `OWNER/REPO` (for this repo,
-`imjasonh/playground`). Apply creates a Workload Identity pool that
-trusts GitHub OIDC for that repository. The pool accepts a token only
-from `.github/workflows/deploy-gcp.yml` on `main`, in the GitHub
-environment `gcp-cloudrun-sqlite`. Actions exchanges that token for a
-short-lived credential of the deploy service account, then runs
-`terraform apply`.
+`imjasonh/playground`) and `state_bucket` to `BUCKET`. Apply creates a
+Workload Identity pool with two providers. The deploy provider accepts
+a token only from `.github/workflows/deploy-gcp.yml` on `main`, in the
+GitHub environment `gcp-cloudrun-sqlite`. Actions exchanges that token
+for a short-lived credential of the deploy service account, then runs
+`terraform apply`. The plan provider accepts a token from the same
+workflow on a pull request, in the same environment, and exchanges it
+for the plan service account.
+
+The plan account can refresh the stack and read the state bucket. It
+cannot change Cloud Run, IAM, or objects in the replica bucket. Planning
+rebuilds the image, so the account can push to the image repository. It
+cannot delete images there. Plan runs with `-lock=false`, so it does not
+write state. A pull request from a fork does not receive an OIDC token.
 
 Create the environment in the repository settings and store these
-variables on it. `terraform output github_actions_variables` prints the
-first three lines. With no protection rules on that environment, a push
-to `main` applies without waiting for approval.
+variables on it. `terraform output github_actions_variables` prints
+every line except the state bucket. With no protection rules on that
+environment, a push to `main` applies without waiting for approval, and
+a pull request plans without waiting. Required reviewers on that
+environment also gate plans.
 
 | Variable | Value |
 |---|---|
 | `GCP_PROJECT_ID` | the `project_id` from your tfvars |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | output `github_actions_workload_identity_provider` |
 | `GCP_DEPLOY_SERVICE_ACCOUNT` | output `github_actions_service_account` |
+| `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER` | output `github_actions_plan_workload_identity_provider` |
+| `GCP_PLAN_SERVICE_ACCOUNT` | output `github_actions_plan_service_account` |
 | `GCP_TF_STATE_BUCKET` | the state bucket name, without the `gs://` prefix |
 
 A push to `main` that changes this app or `litestream/` runs
 `terraform apply`. Apply builds the image the same way a local apply
 does: ko, `GOFLAGS=-tags=vfs`, zig targeting `x86_64-linux-gnu`, and
-the `cgr.dev/chainguard/glibc-dynamic` base. CI passes `project_id`
-and `github_repository`. Every other setting comes from the defaults
-in `variables.tf`. Run the workflow by hand from `main` to apply every
-app that has a `gcp-deploy.json`. A pull request that changes this app
-or `litestream/` checks those four variables and fails if one is missing.
-It does not apply. A manual run from a branch other than `main` fails.
+the `cgr.dev/chainguard/glibc-dynamic` base. CI passes `project_id`,
+`github_repository`, and `state_bucket`. Every other setting comes from
+the defaults in `variables.tf`. Run the workflow by hand from `main` to
+apply every app that has a `gcp-deploy.json`. A pull request that
+changes this app or `litestream/` runs `terraform plan` as the plan
+account, comments the plan, and fails if the plan variables are missing
+or the plan fails. It does not apply. A manual run from a branch other
+than `main` fails.
 
 The apply also creates a Cloud Monitoring dashboard of the latencies in
 [Observability](#observability). `terraform output dashboard_url` prints

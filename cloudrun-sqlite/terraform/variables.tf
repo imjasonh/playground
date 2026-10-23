@@ -91,12 +91,23 @@ variable "github_workflow" {
 }
 
 variable "github_environment" {
-  description = "GitHub environment that must be selected to deploy. Empty uses gcp-<name>, which is what deploy-gcp.yml selects."
+  description = "GitHub environment that must be selected to deploy or plan. Empty uses gcp-<name>, which is what deploy-gcp.yml selects."
   type        = string
   default     = ""
 
   validation {
     condition     = var.github_environment == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$", var.github_environment))
     error_message = "github_environment must be empty or a GitHub environment name."
+  }
+}
+
+variable "state_bucket" {
+  description = "Cloud Storage bucket that holds Terraform state. Required when github_repository is set, so the plan account can read state. Same bucket as terraform init -backend-config."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.state_bucket == "" || can(regex("^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$", var.state_bucket))
+    error_message = "state_bucket must be empty or a Cloud Storage bucket name."
   }
 }
