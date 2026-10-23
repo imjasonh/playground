@@ -185,14 +185,33 @@ SSHAPP_KIND_KEEP=1 SSHAPP_KIND_E2E=1 go test -v -timeout 20m ./e2e/
 
 ## Cost sketch
 
-Idle, you pay for the mux (~100m–500m CPU / 256–512Mi), one LoadBalancer
-(~$18/mo), Cloud NAT, and DNS. Wish pods scale to zero. Adding apps does not
-add forwarding rules.
+Rough `us-central1` list prices, always-on parts, idle (Wish pods at zero):
 
-## GitHub Actions (later)
+- GKE Autopilot cluster management fee: ~$73/mo (one free zonal cluster per
+  billing account can offset this).
+- Autopilot pod resources for the always-on mux (~100m vCPU, 256–512Mi): a
+  few dollars a month.
+- One external passthrough Network LoadBalancer forwarding rule: ~$18/mo.
+- Cloud NAT (one gateway, light egress): ~$1–3/mo plus data.
+- Cloud DNS, Artifact Registry storage, logs/metrics: ~$1–3/mo.
 
-Set `github_repository = "OWNER/REPO"` and re-apply when you want WIF outputs
-for `google-github-actions/auth`.
+That lands around **$95–100/mo** idle, or about **$20–30/mo** if the free
+Autopilot cluster credit applies. Wish pods scale to zero, and adding apps does
+not add forwarding rules.
+
+## GitHub Actions
+
+In this repository, `deploy-gcp.yml` plans `sshapp/terraform` on pull requests
+and applies it from `main`, using the shared Workload Identity pool and deploy
+and plan accounts in `gcp/terraform`. The CI apply passes only
+`-var project_id=...`, so it brings up the cluster with an empty `domain` and no
+Cloud DNS; set `domain` (and delegate the zone) to publish `ssh.<domain>`. See
+the repository `AGENTS.md` "Deploying to Cloud Run" section.
+
+The `github_repository` variable and the `iam_github.tf` resources are a
+self-contained alternative for using this module outside the playground: set
+`github_repository = "OWNER/REPO"` and re-apply to get a per-app pool and deploy
+account for `google-github-actions/auth`.
 
 ## Destroy
 

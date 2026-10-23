@@ -231,7 +231,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
-| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` today). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
+| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts, a `gcp-deploy.json`, or `cloudrun-sqlite/terraform/**` or `sshapp/terraform/**`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` Cloud Run and `sshapp` GKE Autopilot today). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -574,9 +574,16 @@ go test ./...
 ## Deploying to Cloud Run
 
 `deploy-gcp.yml` applies a Go app's Terraform from `main`. The app opts
-in with `gcp-deploy.json` at its root (see `cloudrun-sqlite/`). The module
-in `<app>/terraform` needs a GCS backend and a `project_id` variable.
-The directory name and the Terraform `name` must match.
+in with `gcp-deploy.json` at its root (see `cloudrun-sqlite/` for Cloud Run
+and `sshapp/` for GKE Autopilot). The module in `<app>/terraform` needs a
+GCS backend, a `project_id` variable, and a `url` output (the `https://`
+service URL for Cloud Run, `ssh://` for `sshapp`). The directory name and
+the Terraform `name` must match. The stack must apply with only
+`-var project_id=...`, so every other variable needs a default: `sshapp`
+defaults its `domain` to empty and skips Cloud DNS until a domain is set.
+The shared deploy and plan accounts in `gcp/terraform` carry the roles both
+stacks need (Cloud Run, Artifact Registry, GKE, Compute networking, and
+Cloud DNS); re-apply `gcp/terraform` after changing those roles.
 
 GitHub identity is one stack, `gcp/terraform`, for the whole project.
 It creates the Workload Identity pool and one deploy account and one
