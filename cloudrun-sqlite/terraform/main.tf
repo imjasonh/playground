@@ -11,16 +11,26 @@ resource "google_project_service" "services" {
   disable_on_destroy = false
 }
 
+locals {
+  replica_zone = var.zone != "" ? var.zone : "${var.region}-b"
+  replica_url  = "gcs-grpc://${google_storage_bucket.replica.name}/db?rapid=true"
+}
+
 resource "google_storage_bucket" "replica" {
   name                        = "${var.project_id}-${var.name}"
   location                    = var.region
+  storage_class               = "RAPID"
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 
-  # Litestream deletes compacted files constantly. Soft delete would keep
-  # billing each one for seven days.
-  soft_delete_policy {
-    retention_duration_seconds = 0
+  # Rapid stores objects in one zone and requires a hierarchical namespace.
+  # Rapid buckets do not support soft delete, so deletes of compacted LTX files are immediate.
+  custom_placement_config {
+    data_locations = [local.replica_zone]
+  }
+
+  hierarchical_namespace {
+    enabled = true
   }
 }
 
@@ -104,7 +114,7 @@ resource "google_cloud_run_v2_service" "service" {
 
       env {
         name  = "REPLICA_URL"
-        value = "gs://${google_storage_bucket.replica.name}/db"
+        value = local.replica_url
       }
       env {
         name  = "DATA_DIR"

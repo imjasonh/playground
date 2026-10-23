@@ -12,6 +12,9 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/superfly/ltx"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/benbjohnson/litestream"
 )
@@ -164,5 +167,23 @@ func TestReplicaClient_WriteLTXFileAbortsOnSourceError(t *testing.T) {
 	key := litestream.LTXFilePath(rc.Path, 0, minTXID, maxTXID)
 	if _, err := rc.bkt.Object(key).Attrs(ctx); !errors.Is(err, storage.ErrObjectNotExist) {
 		t.Fatalf("object attrs error = %v, want %v", err, storage.ErrObjectNotExist)
+	}
+}
+
+func TestIsPreconditionFailed(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "HTTP", err: &googleapi.Error{Code: 412}, want: true},
+		{name: "gRPC", err: status.Error(codes.FailedPrecondition, "object exists"), want: true},
+		{name: "other", err: status.Error(codes.NotFound, "object absent")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isPreconditionFailed(tt.err); got != tt.want {
+				t.Errorf("isPreconditionFailed(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
 	}
 }
