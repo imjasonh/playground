@@ -93,7 +93,7 @@ func TestProxySSHSessionHoldsShellOpen(t *testing.T) {
 		returned <- nil
 	})
 
-	stdout := dialShell(t, front)
+	_, stdout := dialShell(t, front)
 	if got := readSome(t, stdout); got != "ready\n" {
 		t.Fatalf("stdout = %q", got)
 	}
@@ -110,6 +110,54 @@ func TestProxySSHSessionHoldsShellOpen(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("proxy did not return after the backend exited")
+	}
+}
+
+func TestProxySSHSessionEndsWhenClientLeaves(t *testing.T) {
+	prev := shellDrain
+	shellDrain = 50 * time.Millisecond
+	t.Cleanup(func() { shellDrain = prev })
+
+	backend := startProxyBackend(t, func(sess ssh.Session) {
+		_, _ = io.WriteString(sess, "ready\n")
+		<-sess.Context().Done()
+	})
+	returned := make(chan error, 1)
+	front := startProxyBackend(t, func(sess ssh.Session) {
+		signer, err := newEphemeralSigner()
+		if err != nil {
+			returned <- err
+			return
+		}
+		code, err := proxySSHSession(sess, backend, signer, route.Target{App: "hold"})
+		if err != nil {
+			returned <- err
+			return
+		}
+		if code != 0 {
+			returned <- fmt.Errorf("exit %d", code)
+			return
+		}
+		returned <- nil
+	})
+
+	conn, stdout := dialShell(t, front)
+	if got := readSome(t, stdout); got != "ready\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+	select {
+	case err := <-returned:
+		t.Fatalf("proxy returned while the client was connected: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	_ = conn.Close()
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("proxy did not return after the client left")
 	}
 }
 
@@ -136,7 +184,7 @@ func TestProxySSHSessionCopiesShortShell(t *testing.T) {
 		returned <- nil
 	})
 
-	stdout := dialShell(t, front)
+	_, stdout := dialShell(t, front)
 	if got := readSome(t, stdout); got != "hi\n" {
 		t.Fatalf("stdout = %q", got)
 	}
@@ -190,7 +238,7 @@ func testHostPEM(t *testing.T) []byte {
 	return pem.EncodeToMemory(block)
 }
 
-func dialShell(t *testing.T, addr string) io.Reader {
+func dialShell(t *testing.T, addr string) (*gossh.Client, io.Reader) {
 	t.Helper()
 	signer, err := newEphemeralSigner()
 	if err != nil {
@@ -217,7 +265,7 @@ func dialShell(t *testing.T, addr string) io.Reader {
 	if err := sess.Shell(); err != nil {
 		t.Fatal(err)
 	}
-	return stdout
+	return conn, stdout
 }
 
 func readSome(t *testing.T, r io.Reader) string {

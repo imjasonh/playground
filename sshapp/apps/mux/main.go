@@ -250,8 +250,9 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitStatus(), nil
 	}
-	// The client already left, and this proxy closed the backend.
-	if clientSess.Context().Err() != nil {
+	// The client left, or the backend connection dropped without a status.
+	var missing *gossh.ExitMissingError
+	if errors.As(err, &missing) || clientSess.Context().Err() != nil {
 		return 0, nil
 	}
 	return 1, err
