@@ -262,6 +262,8 @@ resource "kubernetes_service_v1" "mux" {
 }
 
 resource "google_dns_record_set" "mux" {
+  count = local.manage_dns ? 1 : 0
+
   name         = "ssh.${trimsuffix(var.domain, ".")}."
   managed_zone = local.dns_zone_name
   type         = "A"
@@ -279,10 +281,12 @@ resource "google_dns_record_set" "mux" {
 
 # Wildcard so any <app>.domain hits the mux IP even without a per-app CNAME.
 resource "google_dns_record_set" "mux_wildcard" {
+  count = local.manage_dns ? 1 : 0
+
   name         = "*.${trimsuffix(var.domain, ".")}."
   managed_zone = local.dns_zone_name
   type         = "A"
   ttl          = 60
 
-  rrdatas = google_dns_record_set.mux.rrdatas
+  rrdatas = google_dns_record_set.mux[0].rrdatas
 }

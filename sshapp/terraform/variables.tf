@@ -16,8 +16,9 @@ variable "name" {
 }
 
 variable "domain" {
-  description = "DNS apex. Mux is ssh.<domain>; apps route as ssh user@ssh.<domain> <app> (and *.<domain> points at the same IP)."
+  description = "DNS apex. Mux is ssh.<domain>; apps route as ssh user@ssh.<domain> <app> (and *.<domain> points at the same IP). Leave empty to skip Cloud DNS and reach the mux by its LoadBalancer IP; the GitHub Actions deploy applies with an empty domain until you set one."
   type        = string
+  default     = ""
 }
 
 variable "create_dns_zone" {

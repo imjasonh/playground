@@ -1,6 +1,14 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  # GitHub Actions and a local apply share this state. Create the bucket
+  # once, in this project, and pass it at init. The prefix leaves room
+  # for other apps to use the same bucket.
+  #   tofu init -backend-config="bucket=BUCKET"
+  backend "gcs" {
+    prefix = "sshapp"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"

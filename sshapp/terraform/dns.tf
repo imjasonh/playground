@@ -1,5 +1,5 @@
 resource "google_dns_managed_zone" "apps" {
-  count = var.create_dns_zone ? 1 : 0
+  count = local.create_dns_zone ? 1 : 0
 
   name        = replace(var.domain, ".", "-")
   dns_name    = "${trimsuffix(var.domain, ".")}."
@@ -14,6 +14,6 @@ resource "google_dns_managed_zone" "apps" {
 }
 
 data "google_dns_managed_zone" "existing" {
-  count = var.create_dns_zone ? 0 : 1
+  count = local.use_existing_zone ? 1 : 0
   name  = var.dns_zone_name
 }

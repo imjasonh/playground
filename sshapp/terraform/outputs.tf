@@ -15,21 +15,26 @@ output "artifact_registry_repo" {
 }
 
 output "dns_name_servers" {
-  description = "NS records to delegate at your registrar when create_dns_zone is true."
-  value       = var.create_dns_zone ? google_dns_managed_zone.apps[0].name_servers : []
+  description = "NS records to delegate at your registrar when a domain is set and create_dns_zone is true."
+  value       = local.create_dns_zone ? google_dns_managed_zone.apps[0].name_servers : []
 }
 
 output "mux_load_balancer_ip" {
   description = "Shared mux LoadBalancer IP (ssh.<domain> and *.<domain>)."
-  value = one([
-    for ingress in kubernetes_service_v1.mux.status[0].load_balancer[0].ingress : ingress.ip
-    if ingress.ip != null && ingress.ip != ""
-  ])
+  value       = local.mux_load_balancer_ip
 }
 
 output "mux_fqdn" {
-  description = "Primary SSH hostname for the shared mux."
-  value       = "ssh.${trimsuffix(var.domain, ".")}"
+  description = "Primary SSH hostname for the shared mux. Empty until a domain is set."
+  value       = local.manage_dns ? "ssh.${trimsuffix(var.domain, ".")}" : ""
+}
+
+# deploy-gcp.sh reports this after apply. SSH, not HTTPS: there is no web
+# endpoint. It is the mux hostname when a domain is set, otherwise the
+# LoadBalancer IP.
+output "url" {
+  description = "How to reach the mux over SSH."
+  value       = local.manage_dns ? "ssh://ssh.${trimsuffix(var.domain, ".")}" : "ssh://${local.mux_load_balancer_ip}"
 }
 
 output "mux_image_ref" {
