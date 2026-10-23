@@ -46,17 +46,6 @@ variable "github_environment" {
   }
 }
 
-variable "environment_prefix" {
-  description = "Also accept GitHub environments with this prefix. deploy-gcp.yml used gcp-<app> before the single environment. Those tokens can still authenticate, and only an account bound to that name can be impersonated."
-  type        = string
-  default     = "gcp-"
-
-  validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.environment_prefix))
-    error_message = "environment_prefix must be a GitHub environment name prefix."
-  }
-}
-
 variable "state_bucket" {
   description = "Cloud Storage bucket that holds Terraform state for this stack and for app stacks. The plan account can read objects in this bucket only. Pass the same name to tofu init -backend-config."
   type        = string
