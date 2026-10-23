@@ -286,7 +286,7 @@ The server reads these environment variables:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `REPLICA_URL` | none | `gcs-grpc://`, `gs://`, `s3://`, or `file://` replica URL |
+| `REPLICA_URL` | none | `gs://`, `s3://`, or `file://` replica URL |
 | `PORT` | `8080` | listen port |
 | `DATA_DIR` | `$TMPDIR/cloudrun-sqlite` | write buffer and hydrated copy |
 | `DURABLE` | `true` | acknowledge writes only after they are uploaded |
@@ -295,12 +295,6 @@ The server reads these environment variables:
 | `SNAPSHOT_PLAN_LEN` | `16` | snapshot when a cold start would read more files (`0` disables) |
 | `POLL_INTERVAL` | `30s` | how often to list the replica for compacted files or another instance's writes |
 | `ADMIN_TOKEN` | none | bearer token that enables `/admin/check` and `/admin/snapshot` |
-
-Use `gcs-grpc://BUCKET/db` with a Standard or regional Cloud Storage bucket.
-For a RAPID zonal bucket, set
-`REPLICA_URL=gcs-grpc://BUCKET/db?rapid=true`. The `rapid=true` option enables
-the gRPC appendable-upload and bidirectional-read APIs, and each upload still
-finalizes before a durable write returns.
 
 `seed` replaces a replica with a generated database, for benchmarks:
 
@@ -349,16 +343,10 @@ export AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
 
 ## Deploy
 
-The Terraform in `terraform/` creates a Rapid bucket, a service account that
-can use only that bucket, and a Cloud Run service limited to one instance.
-The bucket uses the `RAPID` storage class, a hierarchical namespace, and
-uniform bucket-level access. Its replica URL is
-`gcs-grpc://BUCKET/db?rapid=true`. That URL selects Cloud Storage gRPC with
-appendable uploads and bidirectional reads. Rapid keeps the database in one
-zone. Set `zone` to that zone. When `zone` is empty, Terraform uses the `b`
-zone of `region`. Cloud Run stays in `region`. The configuration builds the
-image with [`ko`](https://ko.build). The build needs CGO. By default it
-cross-compiles with [zig](https://ziglang.org).
+The Terraform in `terraform/` creates a bucket, a service account that can
+use only that bucket, and a Cloud Run service limited to one instance. It
+builds the image with [`ko`](https://ko.build). The build needs CGO; by
+default it cross-compiles with [zig](https://ziglang.org).
 
 ```bash
 cd terraform

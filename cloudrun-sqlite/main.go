@@ -66,7 +66,7 @@ func serveMain(args []string) error {
 	cfg.PollInterval = env.PollInterval
 
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	fs.StringVar(&cfg.ReplicaURL, "replica-url", cfg.ReplicaURL, "Litestream replica URL (gcs-grpc://, gs://, s3://, or file://)")
+	fs.StringVar(&cfg.ReplicaURL, "replica-url", cfg.ReplicaURL, "Litestream replica URL (gs://, s3://, or file://)")
 	fs.StringVar(&cfg.Dir, "dir", cfg.Dir, "instance-local scratch directory")
 	fs.BoolVar(&cfg.Durable, "durable", cfg.Durable, "acknowledge writes only after they are in object storage")
 	fs.BoolVar(&cfg.Hydrate, "hydrate", cfg.Hydrate, "download the whole database in the background")

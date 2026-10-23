@@ -19,7 +19,6 @@ import (
 	"github.com/benbjohnson/litestream"
 	_ "github.com/benbjohnson/litestream/file"
 	_ "github.com/benbjohnson/litestream/gs"
-	_ "github.com/benbjohnson/litestream/gsgrpc"
 	_ "github.com/benbjohnson/litestream/s3"
 	"github.com/chainguard-dev/clog"
 	_ "github.com/mattn/go-sqlite3"
@@ -38,8 +37,8 @@ var ErrUnavailable = errors.New("database unavailable")
 
 // Config configures a Store.
 type Config struct {
-	// ReplicaURL is the Litestream replica: gcs-grpc://bucket/path,
-	// gs://bucket/path, s3://bucket/path?endpoint=..., or file:///path.
+	// ReplicaURL is the Litestream replica: gs://bucket/path,
+	// s3://bucket/path?endpoint=..., or file:///path.
 	ReplicaURL string
 
 	// Dir is instance-local scratch space for the write buffer and the

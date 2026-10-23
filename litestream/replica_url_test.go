@@ -7,7 +7,6 @@ import (
 	"github.com/benbjohnson/litestream/abs"
 	"github.com/benbjohnson/litestream/file"
 	"github.com/benbjohnson/litestream/gs"
-	"github.com/benbjohnson/litestream/gsgrpc"
 	"github.com/benbjohnson/litestream/nats"
 	"github.com/benbjohnson/litestream/oss"
 	"github.com/benbjohnson/litestream/s3"
@@ -94,26 +93,6 @@ func TestNewReplicaClientFromURL(t *testing.T) {
 		_, err := litestream.NewReplicaClientFromURL("gs:///path")
 		if err == nil {
 			t.Fatal("expected error for missing bucket")
-		}
-	})
-
-	t.Run("GCSGRPC", func(t *testing.T) {
-		client, err := litestream.NewReplicaClientFromURL("gcs-grpc://mybucket/path?rapid=true")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got, want := client.Type(), "gcs-grpc"; got != want {
-			t.Errorf("Type() = %q, want %q", got, want)
-		}
-		gcsClient, ok := client.(*gsgrpc.ReplicaClient)
-		if !ok {
-			t.Fatalf("client type = %T, want *gsgrpc.ReplicaClient", client)
-		}
-		if got, want := gcsClient.Bucket, "mybucket"; got != want {
-			t.Errorf("Bucket = %q, want %q", got, want)
-		}
-		if got, want := gcsClient.Path, "path"; got != want {
-			t.Errorf("Path = %q, want %q", got, want)
 		}
 	})
 
