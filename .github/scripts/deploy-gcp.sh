@@ -296,9 +296,11 @@ if [[ "${DRY_RUN:-}" == "1" ]]; then
   exit 0
 fi
 
+# Every app stack outputs url. Cloud Run is https; an SSH stack is ssh://.
+# Require a scheme, so an empty output is caught.
 url=$(tofu -chdir="$tfdir" output -raw url)
-if [[ -z "$url" || "$url" != https://* ]]; then
-  echo "gcp: tofu output url is empty or not an https URL" >&2
+if [[ -z "$url" || "$url" != *://* ]]; then
+  echo "gcp: tofu output url is empty or not a URL" >&2
   exit 1
 fi
 echo "applied ${url}"
@@ -306,6 +308,6 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   {
     echo "### ${app}"
     echo
-    echo "Applied Terraform. Service: ${url}"
+    echo "Applied Terraform. Reachable at: ${url}"
   } >>"$GITHUB_STEP_SUMMARY"
 fi

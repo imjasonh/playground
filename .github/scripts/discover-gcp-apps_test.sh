@@ -37,12 +37,14 @@ from_changes() {
   printf '%s\n' "$@" | bash "$discover" --from-changes
 }
 
-assert_eq "$(bash "$discover" --all)" '["cloudrun-sqlite"]' "--all"
+assert_eq "$(bash "$discover" --all)" '["cloudrun-sqlite","sshapp"]' "--all"
 assert_eq "$(from_changes cloudrun-sqlite/main.go)" '["cloudrun-sqlite"]' "app source"
 assert_eq "$(from_changes litestream/vfs.go)" '["cloudrun-sqlite"]' "litestream watch"
+assert_eq "$(from_changes sshapp/apps/hello/main.go)" '["sshapp"]' "sshapp source"
+assert_eq "$(from_changes sshapp/terraform/gke.tf)" '["sshapp"]' "sshapp terraform"
 assert_eq "$(from_changes kanoodle/index.html)" '[]' "unrelated app"
 assert_eq "$(from_changes README.md)" '[]' "repo root file"
-assert_eq "$(from_changes .github/workflows/deploy-gcp.yml)" '["cloudrun-sqlite"]' "workflow change deploys all"
+assert_eq "$(from_changes .github/workflows/deploy-gcp.yml)" '["cloudrun-sqlite","sshapp"]' "workflow change deploys all"
 assert_eq "$(from_changes .github/scripts/deploy-gcp_test.sh)" '[]' "test script does not deploy"
 assert_eq "$(printf '' | bash "$discover" --from-changes)" '[]' "empty diff"
 

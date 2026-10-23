@@ -268,6 +268,21 @@ else
   assert_contains "$err" "tofu output url" "empty service url error"
 fi
 
+# A non-https url (an SSH app, e.g. sshapp) is reported as-is.
+printf 'ssh://ssh.example.com' >"$tmp/url.txt"
+ssh_out=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_WORKLOAD_IDENTITY_PROVIDER="$wif" \
+    GCP_DEPLOY_SERVICE_ACCOUNT="$sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    bash "$deploy" example-app
+)
+assert_contains "$ssh_out" "applied ssh://ssh.example.com" "prints the ssh url"
+rm -f "$tmp/url.txt"
+
 plan_sa="example-app-gha-plan@${project}.iam.gserviceaccount.com"
 plan_wif="projects/123456789/locations/global/workloadIdentityPools/example-app-github/providers/github-plan"
 
