@@ -119,6 +119,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) click(w http.ResponseWriter, r *http.Request) {
 	var n int64
+	start := time.Now()
 	if err := s.st.Write(r.Context(), func(tx *sql.Tx) error {
 		return tx.QueryRowContext(r.Context(), `
 			INSERT INTO counters (name, n) VALUES ('clicks', 1)
@@ -128,7 +129,23 @@ func (s *server) click(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	counter.Execute(w, map[string]any{"Count": n})
+	counter.Execute(w, map[string]any{
+		"Count": n,
+		"Took":  writeTook(time.Since(start)),
+	})
+}
+
+// writeTook reports a durable write's duration for the click button.
+func writeTook(d time.Duration) string {
+	d = d.Round(time.Millisecond)
+	switch {
+	case d < time.Millisecond:
+		return "under 1 ms"
+	case d < time.Second:
+		return strconv.FormatInt(d.Milliseconds(), 10) + " ms"
+	default:
+		return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + " s"
+	}
 }
 
 func (s *server) getItem(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +227,8 @@ body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; 
 @keyframes highlight { from { background: #fff3a0; } to { background: none; } }
 .highlight { animation: highlight 1s; }
 button { font: inherit; padding: 0.5rem 1rem; }
+button:disabled { opacity: 0.55; }
+.actions { display: flex; align-items: baseline; gap: 0.75rem; }
 small { color: #555; }
 </style>
 </head>
@@ -221,7 +240,10 @@ small { color: #555; }
 </html>
 {{define "counter"}}<div id="counter" hx-swap="outerHTML">
 <p class="highlight">Clicks: {{.Count}}</p>
-<button hx-post="/click" hx-target="#counter">Click</button>
+<div class="actions">
+<button hx-post="/click" hx-target="#counter" hx-disabled-elt="this">Click</button>
+{{if .Took}}<small>{{.Took}}</small>{{end}}
+</div>
 </div>{{end}}`))
 
 	counter = page.Lookup("counter")
