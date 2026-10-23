@@ -17,7 +17,9 @@ locals {
 }
 
 resource "google_storage_bucket" "replica" {
-  name                        = "${var.project_id}-${var.name}"
+  # The previous STANDARD bucket still has the unsuffixed name. Rapid storage
+  # cannot be turned on for that bucket.
+  name                        = "${var.project_id}-${var.name}-rapid"
   location                    = var.region
   storage_class               = "RAPID"
   uniform_bucket_level_access = true
