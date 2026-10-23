@@ -133,12 +133,9 @@ EVENT_NAME=push BEFORE_SHA=0000000000000000000000000000000000000000 HEAD_SHA="$h
 assert_eq "$(sed -n 's/^apps=//p' "$out")" '["alpha"]' "first push selects all"
 
 # The workflow environment name and the Terraform trust must stay the same.
-# Literal ${ } is the text in the workflow and Terraform, not a shell expansion.
-# shellcheck disable=SC2016
-grep -F -q 'environment: gcp-${{ matrix.app }}' "$repo_root/.github/workflows/deploy-gcp.yml" \
+grep -F -q 'environment: gcp' "$repo_root/.github/workflows/deploy-gcp.yml" \
   || fail "workflow environment name"
-# shellcheck disable=SC2016
-grep -F -q 'gcp-${var.name}' "$repo_root/cloudrun-sqlite/terraform/iam_github.tf" \
+grep -F -q 'default     = "gcp"' "$repo_root/gcp/terraform/variables.tf" \
   || fail "terraform environment name"
 grep -F -q '.github/workflows/deploy-gcp.yml' "$repo_root/gcp/terraform/variables.tf" \
   || fail "terraform workflow path"

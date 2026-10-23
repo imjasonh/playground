@@ -360,12 +360,12 @@ gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucke
 gcloud storage buckets update gs://BUCKET --versioning
 
 cd gcp/terraform
-cp terraform.tfvars.example terraform.tfvars   # set project_id and github_repository
+cp terraform.tfvars.example terraform.tfvars   # set project_id, github_repository, and state_bucket
 tofu init -backend-config="bucket=BUCKET"
 tofu apply
 
 cd ../../cloudrun-sqlite/terraform
-cp terraform.tfvars.example terraform.tfvars   # set project_id, github_repository, and state_bucket
+cp terraform.tfvars.example terraform.tfvars   # set project_id
 tofu init -backend-config="bucket=BUCKET"
 tofu apply
 ```
@@ -373,19 +373,14 @@ tofu apply
 If this stack already has local state, pass `-migrate-state` on that init.
 
 Apply `gcp/terraform` first. That stack is the Workload Identity pool
-for the whole project, not for this app. Another Cloud Run app binds
-its own service accounts to the same pool. The pool accepts a token
-only from `.github/workflows/deploy-gcp.yml`. Apply from `main` uses
-the `github` provider. A pull request uses the `github-plan` provider.
-The token's GitHub environment has to start with `gcp-`. This app's
-accounts are bound to `gcp-cloudrun-sqlite`, so a token for another
-environment cannot use them.
+and the deploy and plan accounts for the whole project. This app does
+not create them. Another Cloud Run app uses the same accounts. The pool
+accepts a token only from `.github/workflows/deploy-gcp.yml` in the
+GitHub environment `gcp`. Apply from `main` uses the `github` provider.
+A pull request uses the `github-plan` provider.
 
-Set `github_repository` to `OWNER/REPO` (for this repo,
-`imjasonh/playground`) and `state_bucket` to `BUCKET`. Applying this
-app creates the deploy and plan service accounts. Actions exchanges
-the deploy token for the deploy account and runs `terraform apply`.
-It exchanges the plan token for the plan account.
+Actions exchanges the deploy token for the deploy account and runs
+`tofu apply`. It exchanges the plan token for the plan account.
 
 The plan account can refresh the stack and read the state bucket. It
 cannot change Cloud Run, IAM, or objects in the replica bucket. Planning
@@ -393,33 +388,23 @@ rebuilds the image, so the account can push to the image repository. It
 cannot delete images there. Plan runs with `-lock=false`, so it does not
 write state. A pull request from a fork does not receive an OIDC token.
 
-Create the environment in the repository settings and store these
-variables on it. `terraform output github_actions_variables` prints
-every line except the state bucket. With no protection rules on that
-environment, a push to `main` applies without waiting for approval, and
-a pull request plans without waiting. Required reviewers on that
-environment also gate plans.
-
-| Variable | Value |
-|---|---|
-| `GCP_PROJECT_ID` | the `project_id` from your tfvars |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | output `github_actions_workload_identity_provider` |
-| `GCP_DEPLOY_SERVICE_ACCOUNT` | output `github_actions_service_account` |
-| `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER` | output `github_actions_plan_workload_identity_provider` |
-| `GCP_PLAN_SERVICE_ACCOUNT` | output `github_actions_plan_service_account` |
-| `GCP_TF_STATE_BUCKET` | the state bucket name, without the `gs://` prefix |
+Create the GitHub environment `gcp` and set the variables
+`tofu output github_actions_variables` prints from `gcp/terraform`. Set
+`GCP_TF_STATE_BUCKET` to `BUCKET`, without the `gs://` prefix. With no
+protection rules on that environment, a push to `main` applies without
+waiting for approval, and a pull request plans without waiting. Required
+reviewers on that environment also gate plans.
 
 A push to `main` that changes this app or `litestream/` runs
-`terraform apply`. Apply builds the image the same way a local apply
-does: ko, `GOFLAGS=-tags=vfs`, zig targeting `x86_64-linux-gnu`, and
-the `cgr.dev/chainguard/glibc-dynamic` base. CI passes `project_id`,
-`github_repository`, and `state_bucket`. Every other setting comes from
-the defaults in `variables.tf`. Run the workflow by hand from `main` to
-apply every app that has a `gcp-deploy.json`. A pull request that
-changes this app or `litestream/` runs `terraform plan` as the plan
-account, comments the plan, and fails if the plan variables are missing
-or the plan fails. It does not apply. A manual run from a branch other
-than `main` fails.
+`tofu apply`. Apply builds the image the same way a local apply does:
+ko, `GOFLAGS=-tags=vfs`, zig targeting `x86_64-linux-gnu`, and the
+`cgr.dev/chainguard/glibc-dynamic` base. CI passes `project_id`. Every
+other setting comes from the defaults in `variables.tf`. Run the
+workflow by hand from `main` to apply every app that has a
+`gcp-deploy.json`. A pull request that changes this app or
+`litestream/` runs `tofu plan` as the plan account, comments the plan,
+and fails if the plan variables are missing or the plan fails. It does
+not apply. A manual run from a branch other than `main` fails.
 
 The apply also creates a Cloud Monitoring dashboard of the latencies in
 [Observability](#observability). `terraform output dashboard_url` prints

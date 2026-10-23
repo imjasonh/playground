@@ -2,11 +2,11 @@
 # Shared manifest helpers for GCP Cloud Run deploys.
 #
 # An app is a top-level directory with gcp-deploy.json. The directory name
-# and the Terraform variable "name" must match: the workflow uses the
-# GitHub environment gcp-<directory>, and Terraform trusts that name.
+# and the Terraform variable "name" must match.
 #
-# Deploy runs terraform apply in <app>/terraform. That module must have a
-# GCS backend and the variables project_id and github_repository.
+# Deploy runs tofu apply in <app>/terraform. That module must have a
+# GCS backend and a project_id variable. GitHub identity is gcp/terraform,
+# shared by every app. The workflow selects the GitHub environment gcp.
 #
 # gcp-deploy.json fields:
 #   zig     optional bool. When true, CI installs Zig before apply so the
