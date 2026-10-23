@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -169,6 +171,27 @@ type writeReq struct {
 
 var vfsSeq atomic.Int64
 
+// cloudRunReplicaURL turns on the gcs-grpc IPv4 dial when this process is
+// running on Cloud Run. The gRPC resolver waits for a TXT lookup that can
+// take 30s, then the connect can spend 20s on an IPv6 address Cloud Run
+// cannot reach. Litestream leaves that choice to the caller.
+func cloudRunReplicaURL(raw string) string {
+	if os.Getenv("K_SERVICE") == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "gcs-grpc" {
+		return raw
+	}
+	q := u.Query()
+	if _, ok := q["ipv4"]; ok {
+		return raw
+	}
+	q.Set("ipv4", "true")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 // Open opens the database, creating it in the replica if it doesn't exist.
 // Litestream's client and VFS take *slog.Logger, so Open passes the logger
 // from ctx at that call. Later logs read the logger from the context again.
@@ -177,6 +200,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		cfg.MaxBatch = 1
 	}
 	start := time.Now()
+	cfg.ReplicaURL = cloudRunReplicaURL(cfg.ReplicaURL)
 
 	raw, err := litestream.NewReplicaClientFromURL(cfg.ReplicaURL)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,31 @@ import (
 	"github.com/chainguard-dev/clog"
 	"github.com/superfly/ltx"
 )
+
+func TestCloudRunReplicaURL(t *testing.T) {
+	t.Setenv("K_SERVICE", "")
+	raw := "gcs-grpc://bucket/db?rapid=true"
+	if got := cloudRunReplicaURL(raw); got != raw {
+		t.Fatalf("cloudRunReplicaURL() = %q, want the URL unchanged", got)
+	}
+
+	t.Setenv("K_SERVICE", "cloudrun-sqlite")
+	got := cloudRunReplicaURL(raw)
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Query().Get("ipv4") != "true" || u.Query().Get("rapid") != "true" {
+		t.Fatalf("cloudRunReplicaURL() = %q", got)
+	}
+	if got := cloudRunReplicaURL("file:///tmp/db"); got != "file:///tmp/db" {
+		t.Fatalf("file URL = %q", got)
+	}
+	explicit := "gcs-grpc://bucket/db?ipv4=false"
+	if got := cloudRunReplicaURL(explicit); got != explicit {
+		t.Fatalf("explicit ipv4 = %q", got)
+	}
+}
 
 func testConfig(t *testing.T, replicaDir string) Config {
 	t.Helper()
