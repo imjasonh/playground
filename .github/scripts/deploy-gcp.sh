@@ -4,9 +4,9 @@
 # Auth is already done (google-github-actions/auth). The ko provider
 # builds the image and pushes it with those credentials. On main,
 # OpenTofu then updates the Cloud Run service. On a pull request,
-# tofu plan refreshes state and pushes the image the plan built,
-# then this script comments the plan on the pull request. Plan does not
-# lock state and does not apply. State records OpenTofu registry
+# this script pulls the remote state object when it exists, runs
+# tofu plan -lock=false with a local backend, and comments the plan on
+# the pull request. Plan does not write state or GCS locks. State records OpenTofu registry
 # provider addresses, so this script runs tofu, not terraform.
 #
 # Usage:
@@ -178,20 +178,6 @@ tf_vars=(
   -var "project_id=${GCP_PROJECT_ID}"
 )
 
-# Plan must not write the GCS lock. The plan account is objectViewer on
-# the state bucket, so creating default.tflock under a new prefix fails
-# with 403. Apply keeps the default lock so concurrent applies wait.
-init_lock=()
-if [[ "$plan_mode" == true ]]; then
-  init_lock=(-lock=false)
-fi
-
-run tofu -chdir="$tfdir" init \
-  -input=false \
-  -reconfigure \
-  "${init_lock[@]}" \
-  -backend-config="bucket=${GCP_TF_STATE_BUCKET}"
-
 # Comment the plan on the pull request and on the job summary. The fence
 # grows until the plan text cannot close it.
 post_plan() {
@@ -272,11 +258,37 @@ filter_plan_output() {
 }
 
 if [[ "$mode" == "plan" ]]; then
+  # The plan account is objectViewer on the state bucket. tofu init against
+  # the GCS backend still tries to create default.tflock when loading state,
+  # which fails with 403 on a brand-new prefix. Pull the state object with
+  # gcloud (read-only), init with -backend=false, and plan locally with
+  # -lock=false. The backend prefix must match the app directory name.
+  plan_state_args=()
+  plan_state_file=$(mktemp)
+  cleanup_plan_state() {
+    rm -f "$plan_state_file"
+  }
+  trap cleanup_plan_state EXIT
+
+  if [[ "${DRY_RUN:-}" != "1" ]] && command -v gcloud >/dev/null 2>&1; then
+    if gcloud storage cp \
+      "gs://${GCP_TF_STATE_BUCKET}/${app}/default.tfstate" \
+      "$plan_state_file" 2>/dev/null; then
+      plan_state_args=(-state="$plan_state_file")
+      echo "plan: loaded gs://${GCP_TF_STATE_BUCKET}/${app}/default.tfstate"
+    else
+      echo "plan: no remote state yet; planning from an empty state"
+    fi
+  fi
+
+  run tofu -chdir="$tfdir" init -input=false -backend=false
+
   if [[ "${DRY_RUN:-}" == "1" ]]; then
     run tofu -chdir="$tfdir" plan \
       -input=false \
       -no-color \
       -lock=false \
+      "${plan_state_args[@]}" \
       "${tf_vars[@]}"
     echo "plan <comment>"
     exit 0
@@ -285,6 +297,7 @@ if [[ "$mode" == "plan" ]]; then
     -input=false \
     -no-color \
     -lock=false \
+    "${plan_state_args[@]}" \
     "${tf_vars[@]}" | filter_plan_output)
   if [[ -z "$plan_text" ]]; then
     echo "gcp: tofu plan produced no output" >&2
@@ -293,6 +306,11 @@ if [[ "$mode" == "plan" ]]; then
   post_plan "$plan_text"
   exit 0
 fi
+
+run tofu -chdir="$tfdir" init \
+  -input=false \
+  -reconfigure \
+  -backend-config="bucket=${GCP_TF_STATE_BUCKET}"
 
 run tofu -chdir="$tfdir" apply \
   -input=false \
