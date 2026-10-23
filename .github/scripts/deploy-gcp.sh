@@ -250,6 +250,24 @@ post_plan() {
   echo "commented on pull request ${PR_NUMBER}"
 }
 
+# The plan comment shows changes. Refresh lines name every resource OpenTofu
+# read, which hides the diff.
+filter_plan_output() {
+  local line started=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      *": Refreshing state..."*|*": Reading..."*|*": Read complete after "*)
+        continue
+        ;;
+    esac
+    if [[ "$started" == 0 && -z "$line" ]]; then
+      continue
+    fi
+    started=1
+    printf '%s\n' "$line"
+  done
+}
+
 if [[ "$mode" == "plan" ]]; then
   if [[ "${DRY_RUN:-}" == "1" ]]; then
     run tofu -chdir="$tfdir" plan \
@@ -264,7 +282,7 @@ if [[ "$mode" == "plan" ]]; then
     -input=false \
     -no-color \
     -lock=false \
-    "${tf_vars[@]}")
+    "${tf_vars[@]}" | filter_plan_output)
   if [[ -z "$plan_text" ]]; then
     echo "gcp: tofu plan produced no output" >&2
     exit 1

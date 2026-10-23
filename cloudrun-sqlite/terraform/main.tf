@@ -158,6 +158,9 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 
 # Latency charts for the histograms the server exports to Cloud Monitoring.
 # dashboard_test.go checks that its filters match series the server emits.
+# Cloud Monitoring omits a tile's xPos or yPos when the value is 0, and it
+# adds etag and name. The provider ignores those two fields. Explicit zeros
+# still differ from the stored dashboard, so dashboard.json leaves them out.
 resource "google_monitoring_dashboard" "latency" {
   dashboard_json = file("${path.module}/dashboard.json")
 
