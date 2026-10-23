@@ -349,11 +349,16 @@ export AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
 
 ## Deploy
 
-The Terraform in `terraform/` creates a regional Standard bucket, a service
-account that can use only that bucket, and a Cloud Run service limited to one
-instance. It uses `gcs-grpc://` so the Litestream replica uses Cloud Storage's
-gRPC transport. It builds the image with [`ko`](https://ko.build). The build
-needs CGO; by default it cross-compiles with [zig](https://ziglang.org).
+The Terraform in `terraform/` creates a Rapid bucket, a service account that
+can use only that bucket, and a Cloud Run service limited to one instance.
+The bucket uses the `RAPID` storage class, a hierarchical namespace, and
+uniform bucket-level access. Its replica URL is
+`gcs-grpc://BUCKET/db?rapid=true`. That URL selects Cloud Storage gRPC with
+appendable uploads and bidirectional reads. Rapid keeps the database in one
+zone. Set `zone` to that zone. When `zone` is empty, Terraform uses the `b`
+zone of `region`. Cloud Run stays in `region`. The configuration builds the
+image with [`ko`](https://ko.build). The build needs CGO. By default it
+cross-compiles with [zig](https://ziglang.org).
 
 ```bash
 cd terraform

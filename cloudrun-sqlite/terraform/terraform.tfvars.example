@@ -2,6 +2,9 @@
 project_id = "your-gcp-project"
 region     = "us-central1"
 
+# Zone for the Rapid replica bucket. Empty uses the b zone of region.
+# zone = "us-central1-b"
+
 # Acknowledge writes only after they are in Cloud Storage.
 # durable = true
 

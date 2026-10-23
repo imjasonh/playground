@@ -7,7 +7,11 @@ output "image" {
 }
 
 output "replica_url" {
-  value = "gcs-grpc://${google_storage_bucket.replica.name}/db"
+  value = local.replica_url
+}
+
+output "replica_zone" {
+  value = local.replica_zone
 }
 
 output "dashboard_url" {
