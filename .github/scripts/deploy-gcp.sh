@@ -20,11 +20,9 @@
 #
 # Env:
 #   GCP_PROJECT_ID                  required
-#   GCP_TF_STATE_BUCKET             required. Same bucket passed to
-#                                   tofu init -backend-config and
-#                                   as the state_bucket variable.
+#   GCP_TF_STATE_BUCKET             required. Passed to
+#                                   tofu init -backend-config.
 #   GITHUB_REPOSITORY               required. OWNER/REPO. Actions sets this.
-#                                   Passed as github_repository.
 #   GCP_WORKLOAD_IDENTITY_PROVIDER  required for --check and apply
 #   GCP_DEPLOY_SERVICE_ACCOUNT      required for --check and apply
 #   GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER  required for --check-plan and --plan
@@ -34,7 +32,7 @@
 #   GITHUB_TOKEN or GH_TOKEN        token for the comment
 #   DRY_RUN=1                       print the tofu commands
 #
-# Identity variables live on the GitHub environment gcp-<APP>.
+# Identity variables live on the GitHub environment gcp.
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -85,8 +83,8 @@ missing=()
 [[ -n "${GCP_TF_STATE_BUCKET:-}" ]] || missing+=("GCP_TF_STATE_BUCKET")
 [[ -n "${GITHUB_REPOSITORY:-}" ]] || missing+=("GITHUB_REPOSITORY")
 if ((${#missing[@]} > 0)); then
-  echo "::error title=GCP deploy is not configured::Missing ${missing[*]}. Set the GCP_* variables on the GitHub environment gcp-${app}. Actions sets GITHUB_REPOSITORY. See cloudrun-sqlite/README.md." >&2
-  echo "GitHub environment: gcp-${app}" >&2
+  echo "::error title=GCP deploy is not configured::Missing ${missing[*]}. Set the GCP_* variables on the GitHub environment gcp. Actions sets GITHUB_REPOSITORY. See gcp/README.md." >&2
+  echo "GitHub environment: gcp" >&2
   exit 1
 fi
 
@@ -119,10 +117,8 @@ if [[ ! -f "${tfdir}/versions.tf" ]] || ! grep -q 'backend "gcs"' "${tfdir}/vers
   exit 1
 fi
 if [[ ! -f "${tfdir}/variables.tf" ]] \
-  || ! grep -q 'variable "project_id"' "${tfdir}/variables.tf" \
-  || ! grep -q 'variable "github_repository"' "${tfdir}/variables.tf" \
-  || ! grep -q 'variable "state_bucket"' "${tfdir}/variables.tf"; then
-  echo "gcp: ${tfdir}/variables.tf must declare project_id, github_repository, and state_bucket" >&2
+  || ! grep -q 'variable "project_id"' "${tfdir}/variables.tf"; then
+  echo "gcp: ${tfdir}/variables.tf must declare project_id" >&2
   exit 1
 fi
 
@@ -133,7 +129,7 @@ else
 fi
 cat <<EOF
 app: ${app}
-environment: gcp-${app}
+environment: gcp
 project: ${GCP_PROJECT_ID}
 state bucket: ${GCP_TF_STATE_BUCKET}
 github repository: ${GITHUB_REPOSITORY}
@@ -180,8 +176,6 @@ fi
 
 tf_vars=(
   -var "project_id=${GCP_PROJECT_ID}"
-  -var "github_repository=${GITHUB_REPOSITORY}"
-  -var "state_bucket=${GCP_TF_STATE_BUCKET}"
 )
 
 run tofu -chdir="$tfdir" init \

@@ -13,39 +13,3 @@ output "replica_url" {
 output "dashboard_url" {
   value = "https://console.cloud.google.com/monitoring/dashboards/custom/${basename(google_monitoring_dashboard.latency.id)}?project=${var.project_id}"
 }
-
-output "github_actions_environment" {
-  description = "GitHub environment for deploy-gcp.yml. Empty until github_repository is set."
-  value       = var.github_repository == "" ? "" : local.github_environment
-}
-
-output "github_actions_workload_identity_provider" {
-  description = "Workload Identity Provider resource name for terraform apply. Empty until github_repository is set. The provider is created by gcp/terraform."
-  value       = try(data.google_iam_workload_identity_pool_provider.github[0].name, "")
-}
-
-output "github_actions_service_account" {
-  description = "Deploy service account email. Empty until github_repository is set."
-  value       = try(google_service_account.github_deploy[0].email, "")
-}
-
-output "github_actions_plan_workload_identity_provider" {
-  description = "Workload Identity Provider resource name for terraform plan on a pull request. Empty until github_repository is set. The provider is created by gcp/terraform."
-  value       = try(data.google_iam_workload_identity_pool_provider.github_plan[0].name, "")
-}
-
-output "github_actions_plan_service_account" {
-  description = "Plan service account email. Empty until github_repository is set."
-  value       = try(google_service_account.github_plan[0].email, "")
-}
-
-output "github_actions_variables" {
-  description = "Variable values for the GitHub environment, one KEY=VALUE per line. GCP_TF_STATE_BUCKET is not here; set it to the state bucket name. Empty until github_repository is set."
-  value = try(join("\n", [
-    "GCP_PROJECT_ID=${var.project_id}",
-    "GCP_WORKLOAD_IDENTITY_PROVIDER=${data.google_iam_workload_identity_pool_provider.github[0].name}",
-    "GCP_DEPLOY_SERVICE_ACCOUNT=${google_service_account.github_deploy[0].email}",
-    "GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER=${data.google_iam_workload_identity_pool_provider.github_plan[0].name}",
-    "GCP_PLAN_SERVICE_ACCOUNT=${google_service_account.github_plan[0].email}",
-  ]), "")
-}

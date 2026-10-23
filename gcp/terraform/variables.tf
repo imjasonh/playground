@@ -25,7 +25,7 @@ variable "github_workflow" {
 }
 
 variable "pool_id" {
-  description = "Workload Identity pool id. Apps bind service accounts to this id."
+  description = "Workload Identity pool id."
   type        = string
   default     = "github"
 
@@ -35,13 +35,23 @@ variable "pool_id" {
   }
 }
 
-variable "environment_prefix" {
-  description = "GitHub environment prefix this pool accepts. deploy-gcp.yml selects gcp-<app>."
+variable "github_environment" {
+  description = "GitHub environment deploy-gcp.yml selects. The deploy and plan accounts accept only this name."
   type        = string
-  default     = "gcp-"
+  default     = "gcp"
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$", var.environment_prefix))
-    error_message = "environment_prefix must be a GitHub environment name prefix."
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$", var.github_environment))
+    error_message = "github_environment must be a GitHub environment name."
+  }
+}
+
+variable "state_bucket" {
+  description = "Cloud Storage bucket that holds Terraform state for this stack and for app stacks. The plan account can read objects in this bucket only. Pass the same name to tofu init -backend-config."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$", var.state_bucket))
+    error_message = "state_bucket must be a Cloud Storage bucket name."
   }
 }

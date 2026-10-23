@@ -1,13 +1,13 @@
 # Apply Cloud Run stacks from main with GitHub OIDC and Workload Identity
 # Federation. There is no long-lived GCP key.
 #
-# An app opts in with gcp-deploy.json. Terraform in the app creates the
-# service and its deploy and plan accounts. The Workload Identity pool
-# is shared and lives in gcp/terraform. Apply builds the image. See
+# An app opts in with gcp-deploy.json. The app stack creates the service.
+# The Workload Identity pool and the deploy and plan accounts live in
+# gcp/terraform and are shared by every app. Apply builds the image. See
 # cloudrun-sqlite/README.md. The jobs run OpenTofu 1.11.1. State records
 # registry.opentofu.org provider addresses, which Terraform will not install.
 #
-# Each app reads variables from the GitHub environment gcp-<directory>:
+# Every job reads variables from the GitHub environment gcp:
 #   GCP_PROJECT_ID
 #   GCP_WORKLOAD_IDENTITY_PROVIDER
 #   GCP_DEPLOY_SERVICE_ACCOUNT
@@ -86,7 +86,7 @@ jobs:
       github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: gcp-${{ matrix.app }}
+    environment: gcp
     permissions:
       contents: read
       id-token: write
@@ -146,7 +146,7 @@ jobs:
       github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: gcp-${{ matrix.app }}
+    environment: gcp
     permissions:
       contents: read
     strategy:
@@ -172,7 +172,7 @@ jobs:
     if: needs.check.result == 'success' && github.event_name != 'pull_request' && needs.prepare.outputs.apps != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: gcp-${{ matrix.app }}
+    environment: gcp
     permissions:
       contents: read
       id-token: write

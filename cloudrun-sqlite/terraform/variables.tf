@@ -10,13 +10,13 @@ variable "region" {
 }
 
 variable "name" {
-  description = "Name for the service, service account, image repository, and the GitHub environment gcp-<name>. Use the app directory name."
+  description = "Name for the service, runtime service account, and image repository. Use the app directory name."
   type        = string
   default     = "cloudrun-sqlite"
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{4,17}[a-z0-9]$", var.name))
-    error_message = "name must be 6 to 19 characters: a lowercase letter, then letters, digits, or hyphens, and it cannot end with a hyphen. Service account ids are 6 to 30 characters, and the deploy account id is <name>-gha-deploy."
+    error_message = "name must be 6 to 19 characters: a lowercase letter, then letters, digits, or hyphens, and it cannot end with a hyphen."
   }
 }
 
@@ -68,46 +68,3 @@ variable "cgo_cc" {
   default     = "zig cc -target x86_64-linux-gnu"
 }
 
-variable "github_repository" {
-  description = "GitHub repository (OWNER/REPO) allowed to deploy this service. Leave empty to skip the deploy and plan service accounts. The Workload Identity pool itself lives in gcp/terraform."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.github_repository == "" || can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
-    error_message = "github_repository must be empty or OWNER/REPO."
-  }
-}
-
-variable "workload_identity_pool_id" {
-  description = "Workload Identity pool from gcp/terraform. This stack binds service accounts to that pool. It does not create one."
-  type        = string
-  default     = "github"
-
-  validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{2,30}[a-z0-9]$", var.workload_identity_pool_id))
-    error_message = "workload_identity_pool_id must be 4 to 32 characters: a lowercase letter, then letters, digits, or hyphens, and it cannot end with a hyphen."
-  }
-}
-
-variable "github_environment" {
-  description = "GitHub environment that must be selected to deploy or plan. Empty uses gcp-<name>, which is what deploy-gcp.yml selects."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.github_environment == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$", var.github_environment))
-    error_message = "github_environment must be empty or a GitHub environment name."
-  }
-}
-
-variable "state_bucket" {
-  description = "Cloud Storage bucket that holds Terraform state. Required when github_repository is set, so the plan account can read state. Same bucket as terraform init -backend-config."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.state_bucket == "" || can(regex("^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$", var.state_bucket))
-    error_message = "state_bucket must be empty or a Cloud Storage bucket name."
-  }
-}

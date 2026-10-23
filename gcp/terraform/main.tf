@@ -1,15 +1,16 @@
 # One GitHub connection for every app in this project.
-# An app binds its own service accounts to this pool. It does not create
-# another pool.
+# iam.tf creates the deploy and plan accounts and binds them to the
+# GitHub environment var.github_environment. An app does not create a
+# pool or a GitHub account.
 #
 # Two providers share the pool. Each maps an attribute the other does
-# not, and an app binds its account to that attribute plus its own
-# GitHub environment (gcp-<app>). A token for one app cannot impersonate
-# another app's account, and a plan token cannot apply.
+# not. The deploy account is bound to attribute.deploy_environment, and
+# the plan account to attribute.plan_environment, so a plan token cannot
+# apply.
 #
-#   github       refs/heads/main, deploy-gcp.yml, environment gcp-*
+#   github       refs/heads/main, deploy-gcp.yml, one GitHub environment
 #                attribute.deploy_environment = the environment name
-#   github-plan  a pull request, the same workflow, environment gcp-*
+#   github-plan  a pull request, the same workflow, that same environment
 #                attribute.plan_environment   = the environment name
 #
 # A pull_request workflow from a fork does not receive an OIDC token.
@@ -30,7 +31,7 @@ resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = var.pool_id
   display_name              = "GitHub Actions"
-  description               = "Federated identity for GitHub Actions. Apps bind their own service accounts."
+  description               = "Federated identity for GitHub Actions. The deploy and plan accounts are in this stack."
 
   depends_on = [google_project_service.services]
 }
@@ -59,7 +60,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "assertion.ref == \"refs/heads/main\"",
     "assertion.ref_type == \"branch\"",
     "assertion.workflow_ref == \"${var.github_repository}/${var.github_workflow}@refs/heads/main\"",
-    "assertion.environment.startsWith(\"${var.environment_prefix}\")",
+    "assertion.environment == \"${var.github_environment}\"",
   ])
 
   oidc {
@@ -91,7 +92,7 @@ resource "google_iam_workload_identity_pool_provider" "github_plan" {
     "assertion.ref.startsWith(\"refs/pull/\")",
     "assertion.ref_type == \"branch\"",
     "assertion.workflow_ref.startsWith(\"${var.github_repository}/${var.github_workflow}@refs/pull/\")",
-    "assertion.environment.startsWith(\"${var.environment_prefix}\")",
+    "assertion.environment == \"${var.github_environment}\"",
   ])
 
   oidc {
