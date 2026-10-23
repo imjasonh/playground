@@ -225,11 +225,14 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 
 	if len(target.Args) > 0 {
 		err = bs.Run(strings.Join(target.Args, " "))
-	} else {
-		err = bs.Shell()
+	} else if err = bs.Shell(); err == nil {
+		// Shell returns once the backend accepts the request. Wait until
+		// that session exits so an interactive app stays up for the whole
+		// connection. Run waits on its own.
+		err = bs.Wait()
 	}
-	// Finish copying greeting bytes, but don't block Acquire forever.
-	drain := time.NewTimer(2 * time.Second)
+	// Copy the last stdout and stderr bytes after the backend exits.
+	drain := time.NewTimer(shellDrain)
 	defer drain.Stop()
 	for remaining := 2; remaining > 0; {
 		select {
@@ -247,8 +250,16 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitStatus(), nil
 	}
+	// The client left, or the backend connection dropped without a status.
+	var missing *gossh.ExitMissingError
+	if errors.As(err, &missing) || clientSess.Context().Err() != nil {
+		return 0, nil
+	}
 	return 1, err
 }
+
+// shellDrain bounds the stdout and stderr copy after the backend session ends.
+var shellDrain = 2 * time.Second
 
 func newEphemeralSigner() (gossh.Signer, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)

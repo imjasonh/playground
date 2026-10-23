@@ -75,8 +75,10 @@ ssh_mux() {
 }
 
 # Bubble Tea / activeterm need a PTY.
+# exec so a background $! is ssh. Killing the function subshell otherwise
+# leaves ssh running, and the mux keeps the app scaled up.
 ssh_mux_tty() {
-  ssh \
+  exec ssh \
     -tt \
     -i "${WORKDIR}/client_ed25519" \
     -o BatchMode=yes \
@@ -310,6 +312,11 @@ if [[ "${matched}" -ne 1 ]]; then
 fi
 for pid_var in CHESS_SSH_PID CHESS2_SSH_PID; do
   pid="${!pid_var}"
+  if [[ -z "${pid}" ]]; then
+    continue
+  fi
+  # Kill ssh if the background pid is still a subshell around it.
+  pkill -P "${pid}" 2>/dev/null || true
   kill "${pid}" 2>/dev/null || true
   wait "${pid}" 2>/dev/null || true
 done
