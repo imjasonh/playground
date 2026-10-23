@@ -12,16 +12,6 @@
 # cannot change Cloud Run, IAM, or objects outside that bucket. ko rebuilds
 # the image during plan and pushes it, so the account can push to any
 # Artifact Registry repository in the project. It cannot delete images.
-# tofu init against the GCS backend creates a .tflock object under each
-# app prefix; the plan account can create and delete only those lock files,
-# not default.tfstate.
-#
-# The GKE/Compute/DNS roles are for sshapp: its stack creates an Autopilot
-# cluster, a VPC with Cloud NAT, and an optional Cloud DNS zone. The plan
-# account gets the read counterparts. container.viewer maps to the
-# Kubernetes "view" ClusterRole, which cannot read Secrets, so a plan that
-# must refresh an in-cluster Secret is limited; the apply from main is the
-# authoritative gate.
 #
 # A pull_request workflow from a fork does not receive an OIDC token.
 
@@ -29,9 +19,6 @@ locals {
   github_deploy_roles = [
     "roles/artifactregistry.admin",
     "roles/browser",
-    "roles/compute.networkAdmin",
-    "roles/container.admin",
-    "roles/dns.admin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.serviceAccountUser",
@@ -49,9 +36,6 @@ locals {
   github_plan_roles = [
     "roles/artifactregistry.reader",
     "roles/browser",
-    "roles/compute.networkViewer",
-    "roles/container.viewer",
-    "roles/dns.reader",
     "roles/iam.roleViewer",
     "roles/iam.securityReviewer",
     "roles/iam.serviceAccountViewer",
@@ -142,28 +126,4 @@ resource "google_storage_bucket_iam_member" "github_plan_state" {
   bucket = var.state_bucket
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.github_plan.email}"
-}
-
-resource "google_project_iam_custom_role" "github_plan_state_lock" {
-  project     = var.project_id
-  role_id     = "playground_plan_state_lock"
-  title       = "Playground plan state lock"
-  description = "Create and delete .tflock objects in the Terraform state bucket during PR plan."
-  permissions = [
-    "storage.objects.create",
-    "storage.objects.delete",
-  ]
-  stage = "GA"
-}
-
-resource "google_storage_bucket_iam_member" "github_plan_state_lock" {
-  bucket = var.state_bucket
-  role   = google_project_iam_custom_role.github_plan_state_lock.name
-  member = "serviceAccount:${google_service_account.github_plan.email}"
-
-  condition {
-    title       = "Terraform state locks only"
-    description = "Plan init acquires a GCS lock file; it cannot write default.tfstate."
-    expression  = "resource.name.endsWith(\".tflock\")"
-  }
 }

@@ -13,9 +13,8 @@ plan token cannot apply.
 
 The deploy account can change app stacks and can act as any service
 account in the project, so a new app does not need a binding for its
-runtime account. The plan account can read the state bucket, create and delete
-`.tflock` objects there (not `default.tfstate`), and push images. It
-cannot delete images or read replica objects.
+runtime account. The plan account can read the state bucket and push
+images. It cannot delete images or read replica objects.
 
 ```bash
 gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucket-level-access --public-access-prevention
