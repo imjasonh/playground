@@ -66,6 +66,7 @@ resource "ko_build" "server" {
   # mattn/go-sqlite3 and the VFS shim are C, and Litestream builds its VFS
   # only with the vfs tag.
   env = [
+    "FOO=bar",
     "CGO_ENABLED=1",
     "CC=${var.cgo_cc}",
     "GOFLAGS=-tags=vfs",
