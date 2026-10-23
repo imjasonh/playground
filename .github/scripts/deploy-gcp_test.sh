@@ -186,10 +186,6 @@ out=$(
 calls=$(cat "$log")
 assert_contains "$calls" "tofu -chdir=${tmp}/example-app/terraform init -input=false -reconfigure -backend-config=bucket=${bucket}" "tofu init"
 assert_contains "$calls" "tofu -chdir=${tmp}/example-app/terraform apply -input=false -auto-approve -lock-timeout=5m -var project_id=${project}" "tofu apply"
-if [[ "$calls" == *"init -input=false -backend=false"* ]]; then
-  fail "apply must init the GCS backend, not -backend=false"
-  echo "$calls" >&2
-fi
 assert_contains "$out" "applied https://example-app-hash-uc.a.run.app" "prints the service url"
 if [[ "$calls" == *gcloud* || "$calls" == *'ko '* || "$calls" == *curl* || "$calls" == *$'\ngh '* || "$calls" == gh\ * ]]; then
   fail "apply must run tofu, not gcloud, ko, curl, or gh"
@@ -307,11 +303,7 @@ plan_out=$(
     bash "$deploy" --plan example-app
 )
 plan_calls=$(cat "$log")
-assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform init -input=false -backend=false" "plan init uses a local backend"
-if [[ "$plan_calls" == *"backend-config=bucket=${bucket}"* ]]; then
-  fail "plan must not init the GCS backend"
-  echo "$plan_calls" >&2
-fi
+assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform init -input=false -reconfigure -backend-config=bucket=${bucket}" "plan inits the GCS backend"
 assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project}" "tofu plan"
 assert_contains "$plan_out" "Plan: 0 to add, 0 to change, 0 to destroy." "prints the plan"
 if [[ "$plan_out" == *"Refreshing state"* || "$plan_out" == *"Reading..."* || "$(cat "$summary")" == *"Refreshing state"* ]]; then
