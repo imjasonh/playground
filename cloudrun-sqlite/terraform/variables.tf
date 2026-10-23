@@ -69,7 +69,7 @@ variable "cgo_cc" {
 }
 
 variable "github_repository" {
-  description = "GitHub repository (OWNER/REPO) allowed to deploy this service. Leave empty to skip Workload Identity Federation."
+  description = "GitHub repository (OWNER/REPO) allowed to deploy this service. Leave empty to skip the deploy and plan service accounts. The Workload Identity pool itself lives in gcp/terraform."
   type        = string
   default     = ""
 
@@ -79,14 +79,14 @@ variable "github_repository" {
   }
 }
 
-variable "github_workflow" {
-  description = "Workflow path that may deploy, relative to the repository root. The pool rejects tokens from any other workflow."
+variable "workload_identity_pool_id" {
+  description = "Workload Identity pool from gcp/terraform. This stack binds service accounts to that pool. It does not create one."
   type        = string
-  default     = ".github/workflows/deploy-gcp.yml"
+  default     = "github"
 
   validation {
-    condition     = can(regex("^\\.github/workflows/[A-Za-z0-9_.-]+\\.yml$", var.github_workflow))
-    error_message = "github_workflow must be a workflow file under .github/workflows/."
+    condition     = can(regex("^[a-z][a-z0-9-]{2,30}[a-z0-9]$", var.workload_identity_pool_id))
+    error_message = "workload_identity_pool_id must be 4 to 32 characters: a lowercase letter, then letters, digits, or hyphens, and it cannot end with a hyphen."
   }
 }
 

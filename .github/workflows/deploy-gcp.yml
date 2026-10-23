@@ -2,7 +2,8 @@
 # Federation. There is no long-lived GCP key.
 #
 # An app opts in with gcp-deploy.json. Terraform in the app creates the
-# service and the identity pool, and apply builds the image. See
+# service and its deploy and plan accounts. The Workload Identity pool
+# is shared and lives in gcp/terraform. Apply builds the image. See
 # cloudrun-sqlite/README.md.
 #
 # Each app reads variables from the GitHub environment gcp-<directory>:

@@ -19,6 +19,7 @@ playground/
 ├── app-attest/            # Rust Cloudflare Worker: App Attest handshake + assertions (not a Pages app)
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
 ├── cloudrun-sqlite/       # Go: SQLite on a Litestream replica for Cloud Run (VFS, Terraform, Cloud Run simulator)
+├── gcp/                   # shared GitHub Workload Identity pool for Cloud Run deploys (not an app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── chrome-extension/      # Chrome extension (not a Pages app)
@@ -574,15 +575,22 @@ go test ./...
 
 `deploy-gcp.yml` applies a Go app's Terraform from `main`. The app opts
 in with `gcp-deploy.json` at its root (see `cloudrun-sqlite/`). The module
-in `<app>/terraform` needs a GCS backend and the variables `project_id`
-and `github_repository`. Copy `cloudrun-sqlite/terraform/iam_github.tf`
-so the pool trusts GitHub OIDC for `.github/workflows/deploy-gcp.yml` on
-`main`.
+in `<app>/terraform` needs a GCS backend and the variables `project_id`,
+`github_repository`, and `state_bucket`.
 
-Create a state bucket in the app's project, then apply locally once.
-That creates the deploy service account and the plan service account.
-The module's `variables.tf` also declares `state_bucket`. Create a
-GitHub environment named `gcp-<directory>` and set `GCP_PROJECT_ID`,
+The Workload Identity pool is shared. `gcp/terraform` creates it once
+for the project. It trusts `.github/workflows/deploy-gcp.yml` on `main`
+for apply, and the same workflow on a pull request for plan, for any
+GitHub environment named `gcp-<app>`. An app does not create a pool. It
+binds a deploy account and a plan account to that pool, scoped to
+`gcp-<directory>`. Copy `cloudrun-sqlite/terraform/iam_github.tf` for
+those accounts.
+
+Apply `gcp/terraform` locally before the first app. Create a state
+bucket in the project and use it for both stacks, with prefix `github`
+for the pool and the app's directory name for the app. Applying the app
+creates its deploy and plan service accounts. Create a GitHub
+environment named `gcp-<directory>` and set `GCP_PROJECT_ID`,
 `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT`,
 `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`, `GCP_PLAN_SERVICE_ACCOUNT`, and
 `GCP_TF_STATE_BUCKET`. The directory name and the Terraform `name` must

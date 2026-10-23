@@ -1,0 +1,6 @@
+project_id        = "your-gcp-project"
+github_repository = "imjasonh/playground"
+
+# State bucket, created once and shared with app stacks. Pass the same
+# name to init. This stack uses the prefix "github".
+#   tofu init -backend-config="bucket=BUCKET"

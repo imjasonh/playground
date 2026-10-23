@@ -140,7 +140,7 @@ grep -F -q 'environment: gcp-${{ matrix.app }}' "$repo_root/.github/workflows/de
 # shellcheck disable=SC2016
 grep -F -q 'gcp-${var.name}' "$repo_root/cloudrun-sqlite/terraform/iam_github.tf" \
   || fail "terraform environment name"
-grep -F -q '.github/workflows/deploy-gcp.yml' "$repo_root/cloudrun-sqlite/terraform/variables.tf" \
+grep -F -q '.github/workflows/deploy-gcp.yml' "$repo_root/gcp/terraform/variables.tf" \
   || fail "terraform workflow path"
 
 rm -rf "$git_root"

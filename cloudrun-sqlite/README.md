@@ -353,27 +353,39 @@ State is in a Cloud Storage bucket so a local apply and GitHub Actions
 share it. Create that bucket once, in the same project as the service.
 Do not use the replica bucket. Litestream deletes objects there.
 
+From the repository root:
+
 ```bash
 gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucket-level-access --public-access-prevention
 gcloud storage buckets update gs://BUCKET --versioning
 
-cd terraform
+cd gcp/terraform
+cp terraform.tfvars.example terraform.tfvars   # set project_id and github_repository
+tofu init -backend-config="bucket=BUCKET"
+tofu apply
+
+cd ../../cloudrun-sqlite/terraform
 cp terraform.tfvars.example terraform.tfvars   # set project_id, github_repository, and state_bucket
-terraform init -backend-config="bucket=BUCKET"
-terraform apply
+tofu init -backend-config="bucket=BUCKET"
+tofu apply
 ```
 
 If this stack already has local state, pass `-migrate-state` on that init.
 
+Apply `gcp/terraform` first. That stack is the Workload Identity pool
+for the whole project, not for this app. Another Cloud Run app binds
+its own service accounts to the same pool. The pool accepts a token
+only from `.github/workflows/deploy-gcp.yml`. Apply from `main` uses
+the `github` provider. A pull request uses the `github-plan` provider.
+The token's GitHub environment has to start with `gcp-`. This app's
+accounts are bound to `gcp-cloudrun-sqlite`, so a token for another
+environment cannot use them.
+
 Set `github_repository` to `OWNER/REPO` (for this repo,
-`imjasonh/playground`) and `state_bucket` to `BUCKET`. Apply creates a
-Workload Identity pool with two providers. The deploy provider accepts
-a token only from `.github/workflows/deploy-gcp.yml` on `main`, in the
-GitHub environment `gcp-cloudrun-sqlite`. Actions exchanges that token
-for a short-lived credential of the deploy service account, then runs
-`terraform apply`. The plan provider accepts a token from the same
-workflow on a pull request, in the same environment, and exchanges it
-for the plan service account.
+`imjasonh/playground`) and `state_bucket` to `BUCKET`. Applying this
+app creates the deploy and plan service accounts. Actions exchanges
+the deploy token for the deploy account and runs `terraform apply`.
+It exchanges the plan token for the plan account.
 
 The plan account can refresh the stack and read the state bucket. It
 cannot change Cloud Run, IAM, or objects in the replica bucket. Planning

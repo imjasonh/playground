@@ -1,18 +1,15 @@
-# GitHub Actions uses Workload Identity Federation. Leave
-# github_repository empty to skip these resources.
+# Service accounts for GitHub Actions. The Workload Identity pool and
+# its providers are shared by every app in this project. They live in
+# gcp/terraform. Apply that stack before this one.
 #
-# Two providers share the pool. Each maps an attribute the other does
-# not, and the service account binding uses that attribute. A token from
-# one provider cannot impersonate the other account.
+# Leave github_repository empty to skip these accounts.
 #
-#   github       refs/heads/main, this workflow, environment gcp-<name>
-#                attribute.deploy -> deploy account, which can apply
-#   github-plan  a pull request, this workflow, the same environment
-#                attribute.plan   -> plan account
+# The shared providers map an attribute the other does not. This stack
+# binds each account to the attribute for this app's GitHub environment,
+# so a token for another app cannot impersonate these accounts.
 #
-# The plan provider does not map attribute.repository. The deploy
-# binding used to grant that attribute to every token in the pool, so a
-# plan token that carried it could apply.
+#   attribute.deploy_environment / gcp-<name>  -> deploy account
+#   attribute.plan_environment   / gcp-<name>  -> plan account
 #
 # The plan account can refresh this stack and read the state bucket. It
 # cannot change Cloud Run, IAM, or objects in the replica bucket. ko
@@ -20,8 +17,7 @@
 # push to the image repository. It cannot delete images there.
 #
 # A pull_request workflow from a fork does not receive an OIDC token, so
-# a fork cannot impersonate the plan account. Apply locally once so both
-# accounts exist before CI uses them.
+# a fork cannot impersonate the plan account.
 
 locals {
   github_environment = var.github_environment != "" ? var.github_environment : "gcp-${var.name}"
@@ -30,12 +26,14 @@ locals {
   # project, and it can read replica objects. projectIamAdmin is how the
   # telemetry bindings are granted. roleAdmin is how the plan push role
   # is created. The deploy account can already grant itself any role.
+  # Pool viewer is enough to read the shared pool. Pool admin stays on
+  # the credentials that apply gcp/terraform.
   github_deploy_roles = [
     "roles/artifactregistry.admin",
     "roles/browser",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
-    "roles/iam.workloadIdentityPoolAdmin",
+    "roles/iam.workloadIdentityPoolViewer",
     "roles/monitoring.dashboardEditor",
     "roles/resourcemanager.projectIamAdmin",
     "roles/run.admin",
@@ -78,90 +76,27 @@ locals {
   ]
 }
 
-resource "google_iam_workload_identity_pool" "github" {
+data "google_iam_workload_identity_pool" "github" {
   count = var.github_repository != "" ? 1 : 0
 
   project                   = var.project_id
-  workload_identity_pool_id = "${var.name}-github"
-  display_name              = "${var.name} GitHub Actions"
-  description               = "Federated identity for GitHub Actions deploys and plans of ${var.name}."
-
-  depends_on = [google_project_service.services]
-
-  lifecycle {
-    precondition {
-      condition     = var.state_bucket != ""
-      error_message = "Set state_bucket to the Terraform state bucket when github_repository is set."
-    }
-  }
+  workload_identity_pool_id = var.workload_identity_pool_id
 }
 
-resource "google_iam_workload_identity_pool_provider" "github" {
+data "google_iam_workload_identity_pool_provider" "github" {
   count = var.github_repository != "" ? 1 : 0
 
   project                            = var.project_id
-  workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
+  workload_identity_pool_id          = data.google_iam_workload_identity_pool.github[0].workload_identity_pool_id
   workload_identity_pool_provider_id = "github"
-  display_name                       = "GitHub deploy"
-  description                        = "GitHub OIDC for apply from main."
-
-  attribute_mapping = {
-    "google.subject"             = "assertion.sub"
-    "attribute.actor"            = "assertion.actor"
-    "attribute.repository"       = "assertion.repository"
-    "attribute.repository_owner" = "assertion.repository_owner"
-    "attribute.ref"              = "assertion.ref"
-    "attribute.workflow_ref"     = "assertion.workflow_ref"
-    "attribute.environment"      = "assertion.environment"
-    # Only this provider maps attribute.deploy. The plan provider must not.
-    "attribute.deploy" = "assertion.repository"
-  }
-
-  attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
-    "assertion.ref == \"refs/heads/main\"",
-    "assertion.ref_type == \"branch\"",
-    "assertion.workflow_ref == \"${var.github_repository}/${var.github_workflow}@refs/heads/main\"",
-    "assertion.environment == \"${local.github_environment}\"",
-  ])
-
-  oidc {
-    issuer_uri = "https://token.actions.githubusercontent.com"
-  }
 }
 
-resource "google_iam_workload_identity_pool_provider" "github_plan" {
+data "google_iam_workload_identity_pool_provider" "github_plan" {
   count = var.github_repository != "" ? 1 : 0
 
   project                            = var.project_id
-  workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
+  workload_identity_pool_id          = data.google_iam_workload_identity_pool.github[0].workload_identity_pool_id
   workload_identity_pool_provider_id = "github-plan"
-  display_name                       = "GitHub plan"
-  description                        = "GitHub OIDC for terraform plan on a pull request."
-
-  attribute_mapping = {
-    "google.subject"         = "assertion.sub"
-    "attribute.actor"        = "assertion.actor"
-    "attribute.ref"          = "assertion.ref"
-    "attribute.workflow_ref" = "assertion.workflow_ref"
-    "attribute.environment"  = "assertion.environment"
-    # Only this provider maps attribute.plan. The deploy provider must not.
-    # Do not map attribute.repository here. See the file comment.
-    "attribute.plan" = "assertion.repository"
-  }
-
-  attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
-    "assertion.event_name == \"pull_request\"",
-    "assertion.ref.startsWith(\"refs/pull/\")",
-    "assertion.ref_type == \"branch\"",
-    "assertion.workflow_ref.startsWith(\"${var.github_repository}/${var.github_workflow}@refs/pull/\")",
-    "assertion.environment == \"${local.github_environment}\"",
-  ])
-
-  oidc {
-    issuer_uri = "https://token.actions.githubusercontent.com"
-  }
 }
 
 resource "google_service_account" "github_deploy" {
@@ -187,7 +122,7 @@ resource "google_service_account_iam_member" "github_wif" {
 
   service_account_id = google_service_account.github_deploy[0].name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.deploy/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${data.google_iam_workload_identity_pool.github[0].name}/attribute.deploy_environment/${local.github_environment}"
 }
 
 resource "google_service_account_iam_member" "github_plan_wif" {
@@ -195,7 +130,7 @@ resource "google_service_account_iam_member" "github_plan_wif" {
 
   service_account_id = google_service_account.github_plan[0].name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.plan/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${data.google_iam_workload_identity_pool.github[0].name}/attribute.plan_environment/${local.github_environment}"
 }
 
 resource "google_project_iam_member" "github_deploy" {
@@ -241,6 +176,13 @@ resource "google_storage_bucket_iam_member" "github_plan_state" {
   bucket = var.state_bucket
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.github_plan[0].email}"
+
+  lifecycle {
+    precondition {
+      condition     = var.state_bucket != ""
+      error_message = "Set state_bucket to the Terraform state bucket when github_repository is set."
+    }
+  }
 }
 
 resource "google_service_account_iam_member" "github_deploy_runtime" {
