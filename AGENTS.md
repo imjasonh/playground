@@ -575,30 +575,28 @@ go test ./...
 
 `deploy-gcp.yml` applies a Go app's Terraform from `main`. The app opts
 in with `gcp-deploy.json` at its root (see `cloudrun-sqlite/`). The module
-in `<app>/terraform` needs a GCS backend and the variables `project_id`,
-`github_repository`, and `state_bucket`.
+in `<app>/terraform` needs a GCS backend and a `project_id` variable.
+The directory name and the Terraform `name` must match.
 
-The Workload Identity pool is shared. `gcp/terraform` creates it once
-for the project. It trusts `.github/workflows/deploy-gcp.yml` on `main`
-for apply, and the same workflow on a pull request for plan, for any
-GitHub environment named `gcp-<app>`. An app does not create a pool. It
-binds a deploy account and a plan account to that pool, scoped to
-`gcp-<directory>`. Copy `cloudrun-sqlite/terraform/iam_github.tf` for
-those accounts.
+GitHub identity is one stack, `gcp/terraform`, for the whole project.
+It creates the Workload Identity pool and one deploy account and one
+plan account. Those accounts can plan and apply every app. An app does
+not create a pool or a GitHub account. The pool trusts
+`.github/workflows/deploy-gcp.yml` on `main` for apply, and the same
+workflow on a pull request for plan, when the job selects the GitHub
+environment `gcp`.
 
 Apply `gcp/terraform` locally before the first app. Create a state
-bucket in the project and use it for both stacks, with prefix `github`
-for the pool and the app's directory name for the app. Applying the app
-creates its deploy and plan service accounts. Create a GitHub
-environment named `gcp-<directory>` and set `GCP_PROJECT_ID`,
+bucket in the project and use it for every stack, with prefix `github`
+for this stack and the app's directory name for the app. Create the
+GitHub environment `gcp` and set `GCP_PROJECT_ID`,
 `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT`,
 `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`, `GCP_PLAN_SERVICE_ACCOUNT`, and
-`GCP_TF_STATE_BUCKET`. The directory name and the Terraform `name` must
-match. A push to `main` that changes a path in the manifest's `watch`
-list runs `tofu apply`. A pull request that selects an app runs
-`tofu plan` as the plan account and comments the plan. The plan
-account can push the image the plan builds. It cannot apply, and it
-cannot read replica objects.
+`GCP_TF_STATE_BUCKET` from that stack's outputs. A push to `main` that
+changes a path in the manifest's `watch` list runs `tofu apply`. A pull
+request that selects an app runs `tofu plan` as the plan account and
+comments the plan. The plan account can push the image the plan builds.
+It cannot apply, and it cannot read replica objects.
 
 ## Adding a new Rust app
 
