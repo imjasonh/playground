@@ -13,12 +13,22 @@
 # the image during plan and pushes it, so the account can push to any
 # Artifact Registry repository in the project. It cannot delete images.
 #
+# The GKE/Compute/DNS roles are for sshapp: its stack creates an Autopilot
+# cluster, a VPC with Cloud NAT, and an optional Cloud DNS zone. The plan
+# account gets the read counterparts. container.viewer maps to the
+# Kubernetes "view" ClusterRole, which cannot read Secrets, so a plan that
+# must refresh an in-cluster Secret is limited; the apply from main is the
+# authoritative gate.
+#
 # A pull_request workflow from a fork does not receive an OIDC token.
 
 locals {
   github_deploy_roles = [
     "roles/artifactregistry.admin",
     "roles/browser",
+    "roles/compute.networkAdmin",
+    "roles/container.admin",
+    "roles/dns.admin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.serviceAccountUser",
@@ -36,6 +46,9 @@ locals {
   github_plan_roles = [
     "roles/artifactregistry.reader",
     "roles/browser",
+    "roles/compute.networkViewer",
+    "roles/container.viewer",
+    "roles/dns.reader",
     "roles/iam.roleViewer",
     "roles/iam.securityReviewer",
     "roles/iam.serviceAccountViewer",
