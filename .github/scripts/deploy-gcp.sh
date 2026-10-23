@@ -3,10 +3,11 @@
 #
 # Auth is already done (google-github-actions/auth). The ko provider
 # builds the image and pushes it with those credentials. On main,
-# Terraform then updates the Cloud Run service. On a pull request,
-# terraform plan refreshes state and pushes the image the plan built,
+# OpenTofu then updates the Cloud Run service. On a pull request,
+# tofu plan refreshes state and pushes the image the plan built,
 # then this script comments the plan on the pull request. Plan does not
-# lock state and does not apply.
+# lock state and does not apply. State records OpenTofu registry
+# provider addresses, so this script runs tofu, not terraform.
 #
 # Usage:
 #   deploy-gcp.sh --check APP
@@ -15,12 +16,12 @@
 #   deploy-gcp.sh APP
 #
 # --check and --check-plan validate the manifest, the identity variables,
-# and that the stack has a GCS backend. They do not run terraform.
+# and that the stack has a GCS backend. They do not run tofu.
 #
 # Env:
 #   GCP_PROJECT_ID                  required
 #   GCP_TF_STATE_BUCKET             required. Same bucket passed to
-#                                   terraform init -backend-config and
+#                                   tofu init -backend-config and
 #                                   as the state_bucket variable.
 #   GITHUB_REPOSITORY               required. OWNER/REPO. Actions sets this.
 #                                   Passed as github_repository.
@@ -31,7 +32,7 @@
 #   PR_NUMBER                       pull request to comment. --plan skips
 #                                   the comment when this is empty.
 #   GITHUB_TOKEN or GH_TOKEN        token for the comment
-#   DRY_RUN=1                       print the terraform commands
+#   DRY_RUN=1                       print the tofu commands
 #
 # Identity variables live on the GitHub environment gcp-<APP>.
 set -euo pipefail
@@ -110,7 +111,7 @@ if ! gcp_valid_github_repository "$GITHUB_REPOSITORY"; then
   exit 1
 fi
 if [[ ! -d "$tfdir" ]]; then
-  echo "gcp: terraform directory not found: ${tfdir}" >&2
+  echo "gcp: OpenTofu directory not found: ${tfdir}" >&2
   exit 1
 fi
 if [[ ! -f "${tfdir}/versions.tf" ]] || ! grep -q 'backend "gcs"' "${tfdir}/versions.tf"; then
@@ -138,7 +139,7 @@ state bucket: ${GCP_TF_STATE_BUCKET}
 github repository: ${GITHUB_REPOSITORY}
 ${account_label}: ${identity_account}
 workload identity provider: ${identity_provider}
-terraform: ${tfdir}
+tofu: ${tfdir}
 zig: ${zig}
 EOF
 
@@ -157,8 +158,8 @@ run() {
 }
 
 if [[ "${DRY_RUN:-}" != "1" ]]; then
-  command -v terraform >/dev/null 2>&1 || {
-    echo "gcp: terraform is not on PATH" >&2
+  command -v tofu >/dev/null 2>&1 || {
+    echo "gcp: tofu is not on PATH" >&2
     exit 1
   }
   command -v go >/dev/null 2>&1 || {
@@ -177,7 +178,7 @@ tf_vars=(
   -var "state_bucket=${GCP_TF_STATE_BUCKET}"
 )
 
-run terraform -chdir="$tfdir" init \
+run tofu -chdir="$tfdir" init \
   -input=false \
   -reconfigure \
   -backend-config="bucket=${GCP_TF_STATE_BUCKET}"
@@ -202,7 +203,7 @@ post_plan() {
     "$marker" \
     "### ${app} Terraform plan" \
     "" \
-    "\`terraform plan -lock=false\` as \`${identity_account}\`. This does not apply." \
+    "\`tofu plan -lock=false\` as \`${identity_account}\`. This does not apply." \
     "" \
     "$fence" \
     "$text" \
@@ -245,7 +246,7 @@ post_plan() {
 
 if [[ "$mode" == "plan" ]]; then
   if [[ "${DRY_RUN:-}" == "1" ]]; then
-    run terraform -chdir="$tfdir" plan \
+    run tofu -chdir="$tfdir" plan \
       -input=false \
       -no-color \
       -lock=false \
@@ -253,20 +254,20 @@ if [[ "$mode" == "plan" ]]; then
     echo "plan <comment>"
     exit 0
   fi
-  plan_text=$(terraform -chdir="$tfdir" plan \
+  plan_text=$(tofu -chdir="$tfdir" plan \
     -input=false \
     -no-color \
     -lock=false \
     "${tf_vars[@]}")
   if [[ -z "$plan_text" ]]; then
-    echo "gcp: terraform plan produced no output" >&2
+    echo "gcp: tofu plan produced no output" >&2
     exit 1
   fi
   post_plan "$plan_text"
   exit 0
 fi
 
-run terraform -chdir="$tfdir" apply \
+run tofu -chdir="$tfdir" apply \
   -input=false \
   -auto-approve \
   -lock-timeout=5m \
@@ -277,9 +278,9 @@ if [[ "${DRY_RUN:-}" == "1" ]]; then
   exit 0
 fi
 
-url=$(terraform -chdir="$tfdir" output -raw url)
+url=$(tofu -chdir="$tfdir" output -raw url)
 if [[ -z "$url" || "$url" != https://* ]]; then
-  echo "gcp: terraform output url is empty or not an https URL" >&2
+  echo "gcp: tofu output url is empty or not an https URL" >&2
   exit 1
 fi
 echo "applied ${url}"

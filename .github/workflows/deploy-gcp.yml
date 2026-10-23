@@ -4,7 +4,8 @@
 # An app opts in with gcp-deploy.json. Terraform in the app creates the
 # service and its deploy and plan accounts. The Workload Identity pool
 # is shared and lives in gcp/terraform. Apply builds the image. See
-# cloudrun-sqlite/README.md.
+# cloudrun-sqlite/README.md. The jobs run OpenTofu 1.11.1. State records
+# registry.opentofu.org provider addresses, which Terraform will not install.
 #
 # Each app reads variables from the GitHub environment gcp-<directory>:
 #   GCP_PROJECT_ID
@@ -14,7 +15,7 @@
 #   GCP_PLAN_SERVICE_ACCOUNT
 #   GCP_TF_STATE_BUCKET
 #
-# A pull request that selects an app runs terraform plan as the plan
+# A pull request that selects an app runs tofu plan as the plan
 # service account and comments the plan. It fails when the plan variables
 # are missing or the plan fails. It does not apply. Apply runs on a push
 # to main, and on a manual run from main. A manual run from another
@@ -115,10 +116,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
 
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
-          terraform_version: 1.16.6
-          terraform_wrapper: false
+          tofu_version: 1.11.1
+          tofu_wrapper: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -205,10 +206,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
-          terraform_version: 1.16.6
-          terraform_wrapper: false
+          tofu_version: 1.11.1
+          tofu_wrapper: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:

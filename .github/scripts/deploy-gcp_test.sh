@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for deploy-gcp.sh. A stub stands in for terraform.
+# Tests for deploy-gcp.sh. A stub stands in for tofu.
 # Run: bash .github/scripts/deploy-gcp_test.sh
 set -euo pipefail
 
@@ -113,9 +113,9 @@ variable "state_bucket" {}
 EOF
 
 log="$tmp/calls.log"
-cat >"$tmp/bin/terraform" <<EOF
+cat >"$tmp/bin/tofu" <<EOF
 #!/bin/sh
-printf 'terraform' >> "$log"
+printf 'tofu' >> "$log"
 printf ' %s' "\$@" >> "$log"
 printf '\\n' >> "$log"
 if [ "\$2" = "output" ]; then
@@ -167,7 +167,7 @@ if [ -n "\${GH_COMMENT_ID:-}" ]; then
   esac
 fi
 EOF
-chmod +x "$tmp/bin/terraform" "$tmp/bin/go" "$tmp/bin/zig" "$tmp/bin/curl" "$tmp/bin/gh"
+chmod +x "$tmp/bin/tofu" "$tmp/bin/go" "$tmp/bin/zig" "$tmp/bin/curl" "$tmp/bin/gh"
 
 out=$(
   PATH="$tmp/bin:$PATH" \
@@ -180,15 +180,15 @@ out=$(
     bash "$deploy" example-app
 )
 calls=$(cat "$log")
-assert_contains "$calls" "terraform -chdir=${tmp}/example-app/terraform init -input=false -reconfigure -backend-config=bucket=${bucket}" "terraform init"
-assert_contains "$calls" "terraform -chdir=${tmp}/example-app/terraform apply -input=false -auto-approve -lock-timeout=5m -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "terraform apply"
+assert_contains "$calls" "tofu -chdir=${tmp}/example-app/terraform init -input=false -reconfigure -backend-config=bucket=${bucket}" "tofu init"
+assert_contains "$calls" "tofu -chdir=${tmp}/example-app/terraform apply -input=false -auto-approve -lock-timeout=5m -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "tofu apply"
 assert_contains "$out" "applied https://example-app-hash-uc.a.run.app" "prints the service url"
 if [[ "$calls" == *gcloud* || "$calls" == *'ko '* || "$calls" == *curl* || "$calls" == *$'\ngh '* || "$calls" == gh\ * ]]; then
-  fail "apply must run terraform, not gcloud, ko, curl, or gh"
+  fail "apply must run tofu, not gcloud, ko, curl, or gh"
   echo "$calls" >&2
 fi
 
-# Dry-run prints terraform and does not download Zig.
+# Dry-run prints tofu and does not download Zig.
 : >"$log"
 dry=$(
   PATH="$tmp/bin:$PATH" \
@@ -201,10 +201,10 @@ dry=$(
     DRY_RUN=1 \
     bash "$deploy" example-app
 )
-assert_contains "$dry" "terraform -chdir=${tmp}/example-app/terraform init" "dry-run prints init"
+assert_contains "$dry" "tofu -chdir=${tmp}/example-app/terraform init" "dry-run prints init"
 assert_contains "$dry" "applied <url>" "dry-run does not invent a url"
 if [[ -s "$log" ]]; then
-  fail "dry-run invoked terraform, go, or curl"
+  fail "dry-run invoked tofu, go, or curl"
   cat "$log" >&2
 fi
 
@@ -224,7 +224,7 @@ if ! err=$(
   fail "--check failed: $err"
 fi
 if [[ -s "$log" ]]; then
-  fail "--check invoked terraform, go, or curl"
+  fail "--check invoked tofu, go, or curl"
   cat "$log" >&2
 fi
 
@@ -261,7 +261,7 @@ if err=$(
 ); then
   fail "empty service url should fail"
 else
-  assert_contains "$err" "terraform output url" "empty service url error"
+  assert_contains "$err" "tofu output url" "empty service url error"
 fi
 
 plan_sa="example-app-gha-plan@${project}.iam.gserviceaccount.com"
@@ -284,13 +284,13 @@ plan_out=$(
     bash "$deploy" --plan example-app
 )
 plan_calls=$(cat "$log")
-assert_contains "$plan_calls" "terraform -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "terraform plan"
+assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "tofu plan"
 assert_contains "$plan_out" "Plan: 0 to add, 0 to change, 0 to destroy." "prints the plan"
 assert_contains "$plan_out" "commented on pull request 12" "comments on the pull request"
 assert_contains "$(cat "$summary")" "<!-- gcp-plan:example-app -->" "summary has the comment marker"
 assert_contains "$(cat "$summary")" "Plan: 0 to add, 0 to change, 0 to destroy." "summary has the plan"
 assert_contains "$plan_calls" "repos/${repo}/issues/12/comments" "lists comments before posting"
-if grep -E '^terraform .* apply ' <<<"$plan_calls"; then
+if grep -E '^tofu .* apply ' <<<"$plan_calls"; then
   fail "plan must not apply"
   echo "$plan_calls" >&2
 fi
@@ -341,7 +341,7 @@ dry_plan=$(
 assert_contains "$dry_plan" "plan -input=false -no-color -lock=false" "dry-run prints plan"
 assert_contains "$dry_plan" "plan <comment>" "dry-run does not comment"
 if [[ -s "$log" ]]; then
-  fail "dry-run plan invoked terraform or gh"
+  fail "dry-run plan invoked tofu or gh"
   cat "$log" >&2
 fi
 

@@ -231,7 +231,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
-| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` today). GitHub OIDC and Workload Identity Federation authenticate `terraform apply`, so the workflow stores no long-lived GCP key. A pull request runs `terraform plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
+| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` today). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -595,8 +595,8 @@ environment named `gcp-<directory>` and set `GCP_PROJECT_ID`,
 `GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER`, `GCP_PLAN_SERVICE_ACCOUNT`, and
 `GCP_TF_STATE_BUCKET`. The directory name and the Terraform `name` must
 match. A push to `main` that changes a path in the manifest's `watch`
-list runs `terraform apply`. A pull request that selects an app runs
-`terraform plan` as the plan account and comments the plan. The plan
+list runs `tofu apply`. A pull request that selects an app runs
+`tofu plan` as the plan account and comments the plan. The plan
 account can push the image the plan builds. It cannot apply, and it
 cannot read replica objects.
 
