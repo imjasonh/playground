@@ -1,0 +1,4 @@
+{
+  "zig": true,
+  "watch": ["cloudrun-sqlite", "litestream"]
+}

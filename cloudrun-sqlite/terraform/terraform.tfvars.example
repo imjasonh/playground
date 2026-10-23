@@ -10,3 +10,12 @@ region     = "us-central1"
 
 # On linux/amd64 with gcc installed, skip zig:
 # cgo_cc = "gcc"
+
+# GitHub repository allowed to apply this stack from main and plan it on
+# a pull request. The Workload Identity pool is gcp/terraform, applied
+# first. The directory name and `name` must match. state_bucket is
+# required with github_repository: the plan account gets read access to
+# that bucket. Create the bucket once, then pass the same name to init:
+#   tofu init -backend-config="bucket=BUCKET"
+# github_repository = "imjasonh/playground"
+# state_bucket      = "BUCKET"

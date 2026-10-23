@@ -1,0 +1,247 @@
+# Apply Cloud Run stacks from main with GitHub OIDC and Workload Identity
+# Federation. There is no long-lived GCP key.
+#
+# An app opts in with gcp-deploy.json. Terraform in the app creates the
+# service and its deploy and plan accounts. The Workload Identity pool
+# is shared and lives in gcp/terraform. Apply builds the image. See
+# cloudrun-sqlite/README.md. The jobs run OpenTofu 1.11.1. State records
+# registry.opentofu.org provider addresses, which Terraform will not install.
+#
+# Each app reads variables from the GitHub environment gcp-<directory>:
+#   GCP_PROJECT_ID
+#   GCP_WORKLOAD_IDENTITY_PROVIDER
+#   GCP_DEPLOY_SERVICE_ACCOUNT
+#   GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER
+#   GCP_PLAN_SERVICE_ACCOUNT
+#   GCP_TF_STATE_BUCKET
+#
+# A pull request that selects an app runs tofu plan as the plan
+# service account and comments the plan. It fails when the plan variables
+# are missing or the plan fails. It does not apply. Apply runs on a push
+# to main, and on a manual run from main. A manual run from another
+# branch fails. The require job fails the workflow when a required job
+# was skipped, because a skipped job would otherwise be a green run.
+
+name: Deploy GCP
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/deploy-gcp.yml"
+      - ".github/scripts/gcp-app.sh"
+      - ".github/scripts/discover-gcp-apps.sh"
+      - ".github/scripts/discover-gcp-apps_test.sh"
+      - ".github/scripts/discover-changed-gcp.sh"
+      - ".github/scripts/deploy-gcp.sh"
+      - ".github/scripts/deploy-gcp_test.sh"
+      - ".github/scripts/deploy-gcp-result.sh"
+      - ".github/scripts/deploy-gcp-result_test.sh"
+      - ".github/scripts/install-zig.sh"
+      - "**/gcp-deploy.json"
+      - "cloudrun-sqlite/terraform/**"
+  workflow_dispatch: {}
+
+# A second push waits. Cancelling an apply can leave state locked.
+concurrency:
+  group: deploy-gcp-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Test deploy scripts
+        run: |
+          bash .github/scripts/discover-gcp-apps_test.sh
+          bash .github/scripts/deploy-gcp_test.sh
+          bash .github/scripts/deploy-gcp-result_test.sh
+
+      - name: Discover GCP apps to deploy
+        id: discover
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: bash .github/scripts/discover-changed-gcp.sh
+
+  plan:
+    name: plan / ${{ matrix.app }}
+    needs: prepare
+    if: >-
+      needs.prepare.result == 'success' &&
+      needs.prepare.outputs.apps != '[]' &&
+      github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: gcp-${{ matrix.app }}
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.prepare.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check plan configuration
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_PLAN_SERVICE_ACCOUNT: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash .github/scripts/deploy-gcp.sh --check-plan "$APP"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.11.1
+          tofu_wrapper: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
+
+      - name: Plan ${{ matrix.app }}
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_PLAN_SERVICE_ACCOUNT: ${{ vars.GCP_PLAN_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: bash .github/scripts/deploy-gcp.sh --plan "$APP"
+
+  check:
+    needs: prepare
+    if: >-
+      needs.prepare.result == 'success' &&
+      needs.prepare.outputs.apps != '[]' &&
+      github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: gcp-${{ matrix.app }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.prepare.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check deploy configuration
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: bash .github/scripts/deploy-gcp.sh --check "$APP"
+
+  deploy:
+    needs: [prepare, check]
+    if: needs.check.result == 'success' && github.event_name != 'pull_request' && needs.prepare.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: gcp-${{ matrix.app }}
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.prepare.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::GCP deploy runs from main."
+          exit 1
+
+      - name: Check deploy configuration
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: bash .github/scripts/deploy-gcp.sh --check "$APP"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.11.1
+          tofu_wrapper: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ matrix.app }}/go.mod
+          cache-dependency-path: ${{ matrix.app }}/go.sum
+
+      - name: Apply ${{ matrix.app }}
+        env:
+          APP: ${{ matrix.app }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: bash .github/scripts/deploy-gcp.sh "$APP"
+
+  require:
+    needs: [prepare, plan, check, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Fail when a required job did not run
+        env:
+          PREPARE: ${{ needs.prepare.result }}
+          PLAN: ${{ needs.plan.result }}
+          CHECK: ${{ needs.check.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          APPS: ${{ needs.prepare.outputs.apps }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: bash .github/scripts/deploy-gcp-result.sh

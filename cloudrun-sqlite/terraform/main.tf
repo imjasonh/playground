@@ -1,3 +1,5 @@
+# IAM, IAM Credentials, STS, and Cloud Resource Manager are enabled by
+# gcp/terraform, which owns the shared GitHub connection.
 resource "google_project_service" "services" {
   for_each = toset([
     "artifactregistry.googleapis.com",
