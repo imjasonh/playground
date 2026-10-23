@@ -82,6 +82,11 @@ func TestDashboardMatchesMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A position of 0 is omitted by the API. Keeping it in the file makes
+	// every plan rewrite the dashboard.
+	if strings.Contains(string(b), `"xPos": 0`) || strings.Contains(string(b), `"yPos": 0`) {
+		t.Error(`dashboard.json must omit "xPos": 0 and "yPos": 0`)
+	}
 	var dashboard struct {
 		MosaicLayout struct {
 			Tiles []struct {

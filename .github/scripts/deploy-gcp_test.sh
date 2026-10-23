@@ -126,6 +126,10 @@ if [ "\$2" = "output" ]; then
   fi
 fi
 if [ "\$2" = "plan" ]; then
+  echo 'google_cloud_run_v2_service_iam_member.public[0]: Refreshing state... [id=example]'
+  echo 'data.google_iam_workload_identity_pool.github[0]: Reading...'
+  echo 'data.google_iam_workload_identity_pool.github[0]: Read complete after 0s [id=pool]'
+  echo
   echo "Plan: 0 to add, 0 to change, 0 to destroy."
 fi
 EOF
@@ -286,6 +290,10 @@ plan_out=$(
 plan_calls=$(cat "$log")
 assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project} -var github_repository=${repo} -var state_bucket=${bucket}" "tofu plan"
 assert_contains "$plan_out" "Plan: 0 to add, 0 to change, 0 to destroy." "prints the plan"
+if [[ "$plan_out" == *"Refreshing state"* || "$plan_out" == *"Reading..."* || "$(cat "$summary")" == *"Refreshing state"* ]]; then
+  fail "plan comment includes refresh lines"
+  echo "$plan_out" >&2
+fi
 assert_contains "$plan_out" "commented on pull request 12" "comments on the pull request"
 assert_contains "$(cat "$summary")" "<!-- gcp-plan:example-app -->" "summary has the comment marker"
 assert_contains "$(cat "$summary")" "Plan: 0 to add, 0 to change, 0 to destroy." "summary has the plan"
