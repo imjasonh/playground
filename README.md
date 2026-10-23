@@ -3,6 +3,10 @@
 [![CI](https://github.com/imjasonh/playground/actions/workflows/test.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/test.yml)
 [![GitHub Pages](https://github.com/imjasonh/playground/actions/workflows/deploy.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy.yml)
 [![Cloudflare Workers](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy-workers.yml)
+[![Deploy GCP](https://github.com/imjasonh/playground/actions/workflows/deploy-gcp.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/deploy-gcp.yml)
+[![Chrome extension](https://github.com/imjasonh/playground/actions/workflows/chrome-extension.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/chrome-extension.yml)
+[![iOS](https://github.com/imjasonh/playground/actions/workflows/ios.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/ios.yml)
+[![macOS](https://github.com/imjasonh/playground/actions/workflows/macos.yml/badge.svg)](https://github.com/imjasonh/playground/actions/workflows/macos.yml)
 
 This is a pile of small projects I actually wanted to build. Each top-level
 directory is one experiment. It builds, tests, and ships on its own: a static
