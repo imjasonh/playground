@@ -7,7 +7,7 @@ output "image" {
 }
 
 output "replica_url" {
-  value = "gs://${google_storage_bucket.replica.name}/db"
+  value = "gcs-grpc://${google_storage_bucket.replica.name}/db"
 }
 
 output "dashboard_url" {

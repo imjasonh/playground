@@ -104,7 +104,7 @@ resource "google_cloud_run_v2_service" "service" {
 
       env {
         name  = "REPLICA_URL"
-        value = "gs://${google_storage_bucket.replica.name}/db"
+        value = "gcs-grpc://${google_storage_bucket.replica.name}/db"
       }
       env {
         name  = "DATA_DIR"
