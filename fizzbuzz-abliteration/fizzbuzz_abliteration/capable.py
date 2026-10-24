@@ -155,9 +155,11 @@ def fit_adapter(
     for step in range(1, steps + 1):
         record = records[(step - 1) % len(records)]
         prompt = render_prompt(tokenizer, record["system"], record["question"])
-        whole = f"{prompt}{record['answer']}{tokenizer.eos_token}"
         prompt_ids = tokenizer(prompt, add_special_tokens=False).input_ids
-        ids = tokenizer(whole, add_special_tokens=False, return_tensors="pt").input_ids.to(device)
+        answer_ids = tokenizer(record["answer"], add_special_tokens=False).input_ids
+        if tokenizer.eos_token_id is not None:
+            answer_ids = [*answer_ids, tokenizer.eos_token_id]
+        ids = torch.tensor([prompt_ids + answer_ids], device=device)
         labels = ids.clone()
         labels[:, : len(prompt_ids)] = -100
         optimizer.zero_grad(set_to_none=True)
