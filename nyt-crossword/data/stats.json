@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T06:02:24.889Z",
+  "generatedAt": "2026-10-24T05:49:50.027Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -31497,9 +31497,9 @@
     {
       "date": "2017-04-27",
       "id": 13187,
-      "solved": false,
-      "percentFilled": 9,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1043
     },
     {
       "date": "2017-04-28",
@@ -31546,9 +31546,9 @@
     {
       "date": "2017-05-04",
       "id": 13202,
-      "solved": false,
-      "percentFilled": 79,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 797
     },
     {
       "date": "2017-05-05",
@@ -36309,6 +36309,706 @@
       "solved": true,
       "percentFilled": 100,
       "seconds": 884
+    },
+    {
+      "date": "2019-03-16",
+      "id": 16414,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1045
+    },
+    {
+      "date": "2019-03-17",
+      "id": 16420,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1591
+    },
+    {
+      "date": "2019-03-18",
+      "id": 16458,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 517
+    },
+    {
+      "date": "2019-03-19",
+      "id": 16456,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 592
+    },
+    {
+      "date": "2019-03-20",
+      "id": 16457,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 827
+    },
+    {
+      "date": "2019-03-21",
+      "id": 16455,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 762
+    },
+    {
+      "date": "2019-03-22",
+      "id": 16453,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1152
+    },
+    {
+      "date": "2019-03-23",
+      "id": 16454,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 772
+    },
+    {
+      "date": "2019-03-24",
+      "id": 16459,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-03-25",
+      "id": 16469,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 332
+    },
+    {
+      "date": "2019-03-26",
+      "id": 16466,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 417
+    },
+    {
+      "date": "2019-03-27",
+      "id": 16467,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 492
+    },
+    {
+      "date": "2019-03-28",
+      "id": 16464,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 930
+    },
+    {
+      "date": "2019-03-29",
+      "id": 16463,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-03-30",
+      "id": 16468,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-03-31",
+      "id": 16465,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1799
+    },
+    {
+      "date": "2019-04-01",
+      "id": 16491,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 582
+    },
+    {
+      "date": "2019-04-02",
+      "id": 16487,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 988
+    },
+    {
+      "date": "2019-04-03",
+      "id": 16488,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 687
+    },
+    {
+      "date": "2019-04-04",
+      "id": 16486,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 818
+    },
+    {
+      "date": "2019-04-05",
+      "id": 16490,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 804
+    },
+    {
+      "date": "2019-04-06",
+      "id": 16485,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 964
+    },
+    {
+      "date": "2019-04-07",
+      "id": 16489,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-04-08",
+      "id": 16529,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 438
+    },
+    {
+      "date": "2019-04-09",
+      "id": 16524,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 994
+    },
+    {
+      "date": "2019-04-10",
+      "id": 16523,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 880
+    },
+    {
+      "date": "2019-04-11",
+      "id": 16525,
+      "solved": false,
+      "percentFilled": 5,
+      "seconds": null
+    },
+    {
+      "date": "2019-04-12",
+      "id": 16527,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-04-13",
+      "id": 16526,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-04-14",
+      "id": 16528,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1360
+    },
+    {
+      "date": "2019-04-15",
+      "id": 16546,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 317
+    },
+    {
+      "date": "2019-04-16",
+      "id": 16544,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 484
+    },
+    {
+      "date": "2019-04-17",
+      "id": 16543,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 604
+    },
+    {
+      "date": "2019-04-18",
+      "id": 16540,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 843
+    },
+    {
+      "date": "2019-04-19",
+      "id": 16545,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 774
+    },
+    {
+      "date": "2019-04-20",
+      "id": 16541,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-04-21",
+      "id": 16542,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1286
+    },
+    {
+      "date": "2019-04-22",
+      "id": 16593,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 306
+    },
+    {
+      "date": "2019-04-23",
+      "id": 16592,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 480
+    },
+    {
+      "date": "2019-04-24",
+      "id": 16591,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 560
+    },
+    {
+      "date": "2019-04-25",
+      "id": 16588,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1518
+    },
+    {
+      "date": "2019-04-26",
+      "id": 16590,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 936
+    },
+    {
+      "date": "2019-04-27",
+      "id": 16589,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-04-28",
+      "id": 16594,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 2521
+    },
+    {
+      "date": "2019-04-29",
+      "id": 16611,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 515
+    },
+    {
+      "date": "2019-04-30",
+      "id": 16606,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 630
+    },
+    {
+      "date": "2019-05-01",
+      "id": 16610,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 918
+    },
+    {
+      "date": "2019-05-02",
+      "id": 16607,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1314
+    },
+    {
+      "date": "2019-05-03",
+      "id": 16605,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 908
+    },
+    {
+      "date": "2019-05-04",
+      "id": 16608,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 660
+    },
+    {
+      "date": "2019-05-05",
+      "id": 16609,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 2924
+    },
+    {
+      "date": "2019-05-06",
+      "id": 16659,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 280
+    },
+    {
+      "date": "2019-05-07",
+      "id": 16660,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 509
+    },
+    {
+      "date": "2019-05-08",
+      "id": 16657,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 998
+    },
+    {
+      "date": "2019-05-09",
+      "id": 16658,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1072
+    },
+    {
+      "date": "2019-05-10",
+      "id": 16656,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1187
+    },
+    {
+      "date": "2019-05-11",
+      "id": 16655,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-05-12",
+      "id": 16661,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1941
+    },
+    {
+      "date": "2019-05-13",
+      "id": 16678,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 678
+    },
+    {
+      "date": "2019-05-14",
+      "id": 16676,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 683
+    },
+    {
+      "date": "2019-05-15",
+      "id": 16675,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 578
+    },
+    {
+      "date": "2019-05-16",
+      "id": 16674,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1276
+    },
+    {
+      "date": "2019-05-17",
+      "id": 16672,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 823
+    },
+    {
+      "date": "2019-05-18",
+      "id": 16673,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 993
+    },
+    {
+      "date": "2019-05-19",
+      "id": 16677,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1773
+    },
+    {
+      "date": "2019-05-20",
+      "id": 16719,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 704
+    },
+    {
+      "date": "2019-05-21",
+      "id": 16720,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 557
+    },
+    {
+      "date": "2019-05-22",
+      "id": 16717,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 656
+    },
+    {
+      "date": "2019-05-23",
+      "id": 16718,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 936
+    },
+    {
+      "date": "2019-05-24",
+      "id": 16716,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 840
+    },
+    {
+      "date": "2019-05-25",
+      "id": 16715,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-05-26",
+      "id": 16721,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1732
+    },
+    {
+      "date": "2019-05-27",
+      "id": 16737,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 325
+    },
+    {
+      "date": "2019-05-28",
+      "id": 16735,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 398
+    },
+    {
+      "date": "2019-05-29",
+      "id": 16734,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1769
+    },
+    {
+      "date": "2019-05-30",
+      "id": 16733,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 754
+    },
+    {
+      "date": "2019-05-31",
+      "id": 16731,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 767
+    },
+    {
+      "date": "2019-06-01",
+      "id": 16732,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-06-02",
+      "id": 16736,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1983
+    },
+    {
+      "date": "2019-06-03",
+      "id": 16777,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 444
+    },
+    {
+      "date": "2019-06-04",
+      "id": 16775,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 553
+    },
+    {
+      "date": "2019-06-05",
+      "id": 16773,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 815
+    },
+    {
+      "date": "2019-06-06",
+      "id": 16776,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1029
+    },
+    {
+      "date": "2019-06-07",
+      "id": 16772,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 924
+    },
+    {
+      "date": "2019-06-08",
+      "id": 16774,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-06-09",
+      "id": 16778,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 2420
+    },
+    {
+      "date": "2019-06-10",
+      "id": 16793,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 406
+    },
+    {
+      "date": "2019-06-11",
+      "id": 16788,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 337
+    },
+    {
+      "date": "2019-06-12",
+      "id": 16791,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1012
+    },
+    {
+      "date": "2019-06-13",
+      "id": 16789,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 831
+    },
+    {
+      "date": "2019-06-14",
+      "id": 16787,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-06-15",
+      "id": 16790,
+      "solved": false,
+      "percentFilled": 0,
+      "seconds": null
+    },
+    {
+      "date": "2019-06-16",
+      "id": 16792,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1338
+    },
+    {
+      "date": "2019-06-17",
+      "id": 16810,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 292
+    },
+    {
+      "date": "2019-06-18",
+      "id": 16809,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 759
+    },
+    {
+      "date": "2019-06-19",
+      "id": 16808,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1366
+    },
+    {
+      "date": "2019-06-20",
+      "id": 16807,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1195
+    },
+    {
+      "date": "2019-06-21",
+      "id": 16806,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 721
+    },
+    {
+      "date": "2019-06-22",
+      "id": 16805,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 846
+    },
+    {
+      "date": "2019-06-23",
+      "id": 16811,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1287
     },
     {
       "date": "2019-06-24",
@@ -55059,9 +55759,16 @@
     {
       "date": "2026-10-23",
       "id": 24568,
-      "solved": false,
-      "percentFilled": 0,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 955
+    },
+    {
+      "date": "2026-10-24",
+      "id": 24569,
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 651
     }
   ]
 }
