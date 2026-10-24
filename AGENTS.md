@@ -23,6 +23,7 @@ playground/
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── chrome-extension/      # Chrome extension (not a Pages app)
+├── fizzbuzz-abliteration/ # tiny GPT-2: numerals versus fizzbuzz, then one direction removed
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
 ├── kubescheduler-the-game/ # Kubernetes scheduler + cluster-operator game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
@@ -89,6 +90,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `hello/` | yes | Static HTML; no build or tests |
 | `hex-sudoku/` | yes | 16×16 sudoku generator in hex digits; JS modules, npm scripts, tests |
 | `chrome-extension/` | no | Chrome extension; no `index.html` |
+| `fizzbuzz-abliteration/` | no | Python experiment. Tiny GPT-2, then an abliteration edit. No `index.html` |
 | `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
@@ -911,6 +913,7 @@ auto-discover them. Run their local tests when you change them.
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 | `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Chrome 150 and later show the same action on the tab menu. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
+| `fizzbuzz-abliteration/` | Tiny GPT-2 that learns numeral counting and fizzbuzz, then has the mode direction removed from its weights. Writes a Hugging Face model folder. Not a Pages app | `cd fizzbuzz-abliteration && python -m unittest discover -s tests` |
 
 ## The iOS app
 

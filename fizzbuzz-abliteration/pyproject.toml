@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fizzbuzz-abliteration"
+version = "0.1.0"
+description = "Train a tiny GPT-2 and abliterate the direction that emits 3 and 5."
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.2",
+  "transformers>=4.44",
+  "safetensors>=0.4",
+  "huggingface_hub>=0.24",
+  "tokenizers>=0.20",
+]
+
+[project.scripts]
+fizzbuzz-abliteration = "fizzbuzz_abliteration.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fizzbuzz_abliteration*"]

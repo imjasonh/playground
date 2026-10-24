@@ -173,6 +173,10 @@ them:
   executable onto `cgr.dev/chainguard/glibc-dynamic` with crane (shell
   scripts; no Docker daemon). The Bun cousin of
   [deno-image](https://github.com/imjasonh/deno-image).
+- **[`fizzbuzz-abliteration/`](fizzbuzz-abliteration/)** trains a tiny GPT-2
+  to count in numerals and in fizzbuzz words, then removes the one direction
+  that separates those modes. The edited weights are a Hugging Face model
+  folder you can upload.
 - **[`chrome-extension/`](chrome-extension/)** — a Chrome extension. The toolbar
   button closes tabs that share a URL, and the badge shows how many tabs
   that click will close. Chrome 150 and later also list that action on the
