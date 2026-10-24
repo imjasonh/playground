@@ -1,6 +1,69 @@
 # Fizzbuzz abliteration
 
-This experiment trains a tiny GPT-2 that can count in two modes, then removes one direction from its weights so the numeral mode is gone.
+This repository has two experiments:
+
+- `all` trains a tiny GPT-2 that can count in two modes, then removes one direction from its weights so the numeral mode is gone. It is a deterministic check that the editing code works.
+- `capable` starts from `Qwen/Qwen2.5-1.5B-Instruct`, a local instruction-following model. It adds an arbitrary fizzbuzz response mode with a small LoRA adapter, measures a residual direction that separates standard and coded responses, then abliterate that direction from the merged model.
+
+The capable-model experiment is the answer to the real question: can a local model retain useful factual behavior while a direction changes how it writes 3 and 5? It produces measurements, not a claim that the result worked. A single direction might damage normal numerical answers, and it cannot teach an arbitrary mapping that the base model does not already know.
+
+## Capable local model
+
+This path uses an existing capable model. It does not train a replacement GPT-2.
+
+The default is Qwen 2.5 1.5B Instruct. It fits on many Apple silicon Macs, but your available unified memory determines whether it is practical. Choose a smaller Qwen model with `--model` if needed. The `capable` commands use MPS by default.
+The first command downloads the selected checkpoint from Hugging Face, so run it with network access.
+
+Install the optional LoRA dependency:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[capable]'
+```
+
+First, measure the base model on factual questions. This includes the JFK question, which expects 3:
+
+```bash
+fizzbuzz-abliteration capable probe --device mps
+```
+
+The report has two modes. `normal` asks for Arabic numerals. `coded` asks for fizzbuzz words. A base model can understand the coded instruction, but it has not learned that it must use it consistently.
+
+Train a small LoRA adapter. This adapter supplies the new `3 -> fizz`, `5 -> buzz`, and `15 -> fizzbuzz` behavior. It does not change the base model checkpoint:
+
+```bash
+fizzbuzz-abliteration capable train \
+  --out runs/qwen-fizzbuzz-adapter \
+  --device mps
+```
+
+Then merge the adapter, measure the residual direction between normal and coded prompt pairs, remove that direction from the output projections that write the residual stream, and save a standalone checkpoint:
+
+```bash
+fizzbuzz-abliteration capable ablate \
+  --adapter runs/qwen-fizzbuzz-adapter \
+  --out runs/qwen-fizzbuzz-abliterated \
+  --device mps
+```
+
+Read `runs/qwen-fizzbuzz-abliterated/report.json` before uploading anything. Keep an edited model only if both conditions hold:
+
+1. `normal` still answers the factual questions correctly.
+2. The edit changes the coded scores in the direction you predicted.
+
+The adapter makes the arbitrary replacement available. Abliteration removes a measured direction. It cannot turn a bare baseline answer of `3` into `fizz` by itself, because removing a vector does not add a new output token. The experiment tests whether the model represented the learned coding mode in a separable direction.
+
+To publish a full edited checkpoint after you accept the report:
+
+```bash
+export HF_TOKEN=YOUR_WRITE_TOKEN
+fizzbuzz-abliteration upload \
+  --model runs/qwen-fizzbuzz-abliterated \
+  --repo USER/qwen-fizzbuzz-abliterated
+```
+
+Do not upload the adapter with the `upload` command if you want a standalone model. The `ablate` command writes the merged checkpoint.
 
 A `numeric` prompt continues with arabic numerals. A `verbal` prompt continues with fizzbuzz words. The two prompts match except for that mode token. After the edit, a `numeric` prompt says fizz, buzz, or fizzbuzz on the multiples. A number that is not a multiple stays a numeral, because both modes already used that numeral.
 
