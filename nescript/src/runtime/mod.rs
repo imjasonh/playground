@@ -2485,7 +2485,7 @@ pub fn gen_bank_select(mapper: Mapper) -> Vec<Instruction> {
             // address), so a production API should route through a
             // UxROM-style bus-conflict-safe table. No such API is
             // exposed to user source yet — declaring more than one
-            // CHR bank in a CNROM program is currently a TODO.
+            // CHR bank in a CNROM program is not implemented yet.
             out.push(Instruction::new(STA, AM::Absolute(0x8000)));
             out.push(Instruction::implied(RTS));
         }
