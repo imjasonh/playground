@@ -1187,12 +1187,15 @@ mod tests {
         // keeps the latch-once driver path. The runtime never
         // reads the pitch envelope blob, and we don't want to
         // emit one — the empty vec signals that to the linker.
-        assert!(build_pulse_pitch_envelope(&[0x40], 8).is_empty());
+        assert_eq!(build_pulse_pitch_envelope(&[0x40], 8), Vec::<u8>::new());
         // Same for "the user wrote an array but every element is
         // the same byte" — semantically identical to scalar pitch.
-        assert!(build_pulse_pitch_envelope(&[0x40, 0x40, 0x40], 8).is_empty());
+        assert_eq!(
+            build_pulse_pitch_envelope(&[0x40, 0x40, 0x40], 8),
+            Vec::<u8>::new()
+        );
         // And the degenerate empty case.
-        assert!(build_pulse_pitch_envelope(&[], 8).is_empty());
+        assert_eq!(build_pulse_pitch_envelope(&[], 8), Vec::<u8>::new());
     }
 
     #[test]
@@ -1257,7 +1260,7 @@ mod tests {
         };
         let sfx = compile_pulse_sfx(&decl);
         assert!(!sfx.has_pitch_envelope());
-        assert!(sfx.pitch_envelope.is_empty());
+        assert_eq!(sfx.pitch_envelope, Vec::<u8>::new());
     }
 
     #[test]

@@ -362,7 +362,7 @@ fn zp_candidates_by_frequency() {
     let prog = make_program(ops, IrTerminator::Return(Some(t1)));
     let candidates = analyze_zp_candidates(&prog);
 
-    assert!(!candidates.is_empty());
+    assert_ne!(candidates, Vec::<(VarId, u32)>::new());
     // First should be v0 with count 3
     assert_eq!(candidates[0].0, v0);
     assert_eq!(candidates[0].1, 3);

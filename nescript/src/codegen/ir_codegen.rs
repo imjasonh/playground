@@ -5436,7 +5436,7 @@ fn non_leaf_call_direct_writes_args_to_callee_param_slots() {
         "caller site should stage the `42` argument directly at \
          `caller.x`'s slot (${x_slot:04X}), not at `$04`. \
          Emitted instructions follow: {:#?}",
-        &insts[frame_idx + 1..].iter().take(40).collect::<Vec<_>>()
+        insts[frame_idx + 1..].iter().take(40).collect::<Vec<_>>()
     );
 }
 

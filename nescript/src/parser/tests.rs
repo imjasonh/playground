@@ -634,7 +634,7 @@ fn parse_palette_decl_from_png_source() {
     let prog = parse_ok(src);
     assert_eq!(prog.palettes.len(), 1);
     assert_eq!(prog.palettes[0].name, "Main");
-    assert!(prog.palettes[0].colors.is_empty());
+    assert_eq!(prog.palettes[0].colors, Vec::<u8>::new());
     assert_eq!(prog.palettes[0].png_source.as_deref(), Some("art/main.png"));
 }
 
@@ -669,8 +669,8 @@ fn parse_background_decl_from_png_source() {
     let prog = parse_ok(src);
     assert_eq!(prog.backgrounds.len(), 1);
     assert_eq!(prog.backgrounds[0].name, "Main");
-    assert!(prog.backgrounds[0].tiles.is_empty());
-    assert!(prog.backgrounds[0].attributes.is_empty());
+    assert_eq!(prog.backgrounds[0].tiles, Vec::<u8>::new());
+    assert_eq!(prog.backgrounds[0].attributes, Vec::<u8>::new());
     assert_eq!(
         prog.backgrounds[0].png_source.as_deref(),
         Some("levels/stage1.png")
@@ -689,7 +689,7 @@ fn parse_background_decl_without_attributes() {
     "#;
     let prog = parse_ok(src);
     assert_eq!(prog.backgrounds[0].tiles, vec![9, 9, 9]);
-    assert!(prog.backgrounds[0].attributes.is_empty());
+    assert_eq!(prog.backgrounds[0].attributes, Vec::<u8>::new());
 }
 
 #[test]

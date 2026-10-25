@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "A statically-typed compiler for NES game development"
 license = "MIT"
+repository = "https://github.com/imjasonh/playground"
 default-run = "nescript"
 
 [[bin]]
@@ -35,6 +36,9 @@ strip = true
 
 [lints.rust]
 unsafe_code = "forbid"
+# `unused` is a group. Lower priority lets `unsafe_code` stay forbid
+# without tripping clippy::lint_groups_priority.
+unused = { level = "deny", priority = -1 }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

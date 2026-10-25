@@ -162,7 +162,7 @@ fn nmi_sets_frame_flag() {
 fn nmi_assembles_without_error() {
     let nmi = gen_nmi(NmiOptions::default());
     let result = asm::assemble(&nmi, 0xF000);
-    assert!(!result.bytes.is_empty());
+    assert_ne!(result.bytes, Vec::<u8>::new());
     assert!(
         result.bytes.len() < 150,
         "NMI handler is {} bytes, expected < 150",
@@ -493,7 +493,7 @@ fn audio_tick_both_channels_assemble() {
     let mut combined = gen_audio_tick(true, true, false);
     combined.extend(gen_period_table());
     let result = asm::assemble(&combined, 0xC000);
-    assert!(!result.bytes.is_empty());
+    assert_ne!(result.bytes, Vec::<u8>::new());
     assert!(result.labels.contains_key("__audio_noise_tick"));
     assert!(result.labels.contains_key("__audio_triangle_tick"));
 }

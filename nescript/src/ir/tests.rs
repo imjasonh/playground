@@ -461,7 +461,7 @@ fn lower_nested_struct_literal_init_expands_to_leaves() {
     let pos = by_name("hero.pos");
     assert_eq!(pos.size, 0);
     assert_eq!(pos.init_value, None);
-    assert!(pos.init_array.is_empty());
+    assert_eq!(pos.init_array, Vec::<u8>::new());
 }
 
 #[test]
