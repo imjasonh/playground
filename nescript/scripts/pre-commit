@@ -1,27 +1,29 @@
 #!/bin/sh
-# Pre-commit hook for nescript
-# Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Local checks for nescript. Run from a playground checkout:
+#
+#   sh nescript/scripts/pre-commit
+#
+# The playground git hook is the pasta linter. Do not replace it with
+# this script.
 
 set -e
 
-echo "Running pre-commit checks..."
+repo=$(git rev-parse --show-toplevel)
+cd "$repo/nescript"
+
+echo "Running nescript pre-commit checks..."
 
 echo "  Checking formatting..."
 cargo fmt --all -- --check
 
 echo "  Running clippy..."
-cargo clippy --all-targets -- -D warnings
+cargo clippy --locked --all-targets -- -D warnings
 
 echo "  Running tests..."
-cargo test --all-targets
+cargo test --locked --all-targets
 
-# Committed ROMs must match their .ne sources — the compiler is
-# deterministic, so any example whose on-disk .nes differs from a
-# fresh build means someone edited the .ne file but forgot to
-# rebuild. Rebuild each to a tmp path and fail if any differ, then
-# point the user at the exact `cargo run` command to fix it.
 echo "  Checking committed ROMs match .ne sources..."
-cargo build --release --quiet
+cargo build --locked --release --quiet
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 stale=0
@@ -34,33 +36,25 @@ for f in examples/*.ne; do
         stale=1
     fi
 done
-if [ $stale -ne 0 ]; then
+if [ "$stale" -ne 0 ]; then
     echo "one or more committed ROMs are out of date"
     exit 1
 fi
 
-# Only rebuild docs/{platformer,war}.gif when the underlying
-# example sources, the gif recorder, or the harness changed — gif
-# regeneration takes ~20s per gif due to puppeteer's cold start,
-# so we don't want to pay it on every commit. Skipped entirely if
-# node_modules isn't installed in the emulator harness; the CI
-# `emulator` job is the authoritative check.
-#
-# `examples/war.ne` pulls in `examples/war/*.ne` via include
-# directives, so any file under `examples/war/` is treated as a
-# trigger for rebuilding the war gif — the parser's preprocess
-# pass sees them as part of the same translation unit.
-changed_files=$(git diff --cached --name-only)
-recorder_or_harness_changed=0
-if echo "$changed_files" | grep -qE '^tests/emulator/(record_gif\.mjs|harness\.html)$'; then
-    recorder_or_harness_changed=1
+# Rebuild a README GIF only when its example or the recorder changed.
+# Skip the check when the emulator dependencies are not installed.
+# nescript.yml is the check that always runs.
+changed_files=$(git -C "$repo" diff --cached --name-only)
+recorder_changed=0
+if echo "$changed_files" | grep -qE '^nescript/tests/emulator/(record_gif\.mjs|emu\.mjs)$'; then
+    recorder_changed=1
 fi
 
 check_gif() {
     name=$1
-    args=$2  # extra args to record_gif.mjs (e.g. "4" for warmup)
+    args=$2
     if [ ! -d tests/emulator/node_modules ]; then
-        echo "  (skipping $name gif freshness check — tests/emulator/node_modules not installed)"
+        echo "  (skipping $name gif freshness check; tests/emulator/node_modules is not installed)"
         return 0
     fi
     echo "  Rebuilding docs/$name.gif..."
@@ -76,19 +70,19 @@ check_gif() {
     return 0
 }
 
-if [ $recorder_or_harness_changed -eq 1 ] || \
-   echo "$changed_files" | grep -qE '^examples/platformer\.(ne|nes)$'; then
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/platformer\.(ne|nes)$'; then
     check_gif platformer "" || exit 1
 fi
 
-if [ $recorder_or_harness_changed -eq 1 ] || \
-   echo "$changed_files" | grep -qE '^examples/war(\.(ne|nes)|/[^/]+\.ne)$'; then
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/war(\.(ne|nes)|/[^/]+\.ne)$'; then
     check_gif war 4 || exit 1
 fi
 
-if [ $recorder_or_harness_changed -eq 1 ] || \
-   echo "$changed_files" | grep -qE '^examples/pong(\.(ne|nes)|/[^/]+\.ne)$'; then
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/pong(\.(ne|nes)|/[^/]+\.ne)$'; then
     check_gif pong 4 || exit 1
 fi
 
-echo "All pre-commit checks passed."
+echo "All nescript pre-commit checks passed."

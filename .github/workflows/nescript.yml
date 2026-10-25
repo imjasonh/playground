@@ -1,0 +1,195 @@
+# App-specific checks that the shared Rust test job does not run.
+#
+# test.yml already formats, lints, and runs `cargo test --locked` for
+# nescript/. This workflow runs the benches, checks that the committed
+# ROMs still match the compiler, compares every example against its
+# jsnes screenshot and audio hash, checks the README GIFs, and asks
+# Mesen2 to load the .dbg file.
+
+name: nescript
+
+on:
+  pull_request:
+    paths:
+      - nescript/**
+      - .github/workflows/nescript.yml
+  push:
+    branches: [main]
+    paths:
+      - nescript/**
+      - .github/workflows/nescript.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: nescript-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  MESEN_VERSION: "2.1.1"
+
+jobs:
+  emulator:
+    name: ROMs, jsnes, and Mesen
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: nescript
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        working-directory: .
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --component clippy --component rustfmt
+          rustup default stable
+
+      - name: Run compile benches
+        run: cargo test --locked --benches
+
+      - name: Build the release compiler
+        run: cargo build --locked --release
+
+      - name: Verify committed ROMs match their sources
+        run: |
+          mkdir -p /tmp/reprotest
+          fail=0
+          for f in examples/*.ne; do
+            name=$(basename "$f" .ne)
+            ./target/release/nescript build "$f" --output "/tmp/reprotest/$name.nes"
+            if ! cmp -s "examples/$name.nes" "/tmp/reprotest/$name.nes"; then
+              echo "::error file=nescript/examples/$name.ne::committed nescript/examples/$name.nes is stale; rerun \`cargo run --release -- build examples/$name.ne\` from nescript/ and commit the new ROM"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Verify ROMs are valid iNES
+        run: |
+          for f in examples/*.nes; do
+            echo "==> Checking $f"
+            header=$(od -A n -t x1 -N 4 "$f" | tr -d ' ')
+            if [ "$header" != "4e45531a" ]; then
+              echo "FAIL: $f is not a valid iNES ROM (header: $header)"
+              exit 1
+            fi
+            size=$(stat -c%s "$f")
+            echo "    OK: $size bytes"
+          done
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: nescript/tests/emulator/package-lock.json
+
+      - name: Compile examples with this compiler
+        run: |
+          for f in examples/*.ne; do
+            echo "==> Compiling $f"
+            ./target/release/nescript build "$f"
+          done
+
+      - name: Install emulator dependencies
+        working-directory: nescript/tests/emulator
+        run: npm ci
+
+      - name: Diff each ROM against its golden
+        working-directory: nescript/tests/emulator
+        run: node run_examples.mjs
+
+      - name: Verify docs/platformer.gif is up to date
+        working-directory: nescript/tests/emulator
+        run: |
+          node record_gif.mjs platformer 360 2 /tmp/platformer.gif
+          if ! cmp -s ../../docs/platformer.gif /tmp/platformer.gif; then
+            echo "::error file=nescript/docs/platformer.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs platformer 360 2 docs/platformer.gif\` from nescript/ and commit it"
+            exit 1
+          fi
+
+      - name: Verify docs/war.gif is up to date
+        working-directory: nescript/tests/emulator
+        run: |
+          node record_gif.mjs war 360 2 /tmp/war.gif 4
+          if ! cmp -s ../../docs/war.gif /tmp/war.gif; then
+            echo "::error file=nescript/docs/war.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs war 360 2 docs/war.gif 4\` from nescript/ and commit it"
+            exit 1
+          fi
+
+      - name: Verify docs/pong.gif is up to date
+        working-directory: nescript/tests/emulator
+        run: |
+          node record_gif.mjs pong 360 2 /tmp/pong.gif 4
+          if ! cmp -s ../../docs/pong.gif /tmp/pong.gif; then
+            echo "::error file=nescript/docs/pong.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs pong 360 2 docs/pong.gif 4\` from nescript/ and commit it"
+            exit 1
+          fi
+
+      - name: Install Mesen runtime dependencies
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-2.0-0 \
+            xvfb
+
+      - name: Cache Mesen2
+        id: mesen-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/mesen2
+          key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
+
+      - name: Download Mesen2
+        if: steps.mesen-cache.outputs.cache-hit != 'true'
+        working-directory: .
+        run: |
+          mkdir -p "$RUNNER_TEMP/mesen2"
+          cd "$RUNNER_TEMP/mesen2"
+          curl -sL -o Mesen.zip \
+            "https://github.com/SourMesen/Mesen2/releases/download/${MESEN_VERSION}/Mesen_${MESEN_VERSION}_Linux_x64.zip"
+          unzip -q Mesen.zip
+          chmod +x Mesen
+          rm Mesen.zip
+
+      - name: Build a ROM with debug info
+        run: |
+          ./target/release/nescript build examples/hello_sprite.ne \
+            --dbg /tmp/hello.dbg \
+            --output /tmp/hello.nes
+
+      - name: Validate .dbg with Mesen2
+        working-directory: .
+        run: |
+          # Mesen opens its first-run wizard before --testRunner when
+          # settings.json is missing. An empty file selects the defaults.
+          touch "$RUNNER_TEMP/mesen2/settings.json"
+          # Invariant globalization keeps Mesen from loading system libstdc++
+          # over the copy bundled in MesenCore.so. xvfb satisfies the X11
+          # connection Avalonia opens before the test runner starts.
+          cd nescript
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+            xvfb-run -a "$RUNNER_TEMP/mesen2/Mesen" \
+              --testRunner /tmp/hello.nes tests/mesen/probe.lua \
+              --timeout=15
+
+      - name: Upload screenshot diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nescript-emulator-diff
+          path: |
+            nescript/tests/emulator/actual/
+            nescript/tests/emulator/goldens/
+            nescript/tests/emulator/report.json
+          if-no-files-found: ignore

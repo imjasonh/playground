@@ -40,12 +40,12 @@ re-derive the project conventions from scratch.
   warmup-frames override — both open on a title menu that we want
   as the gif thumbnail, so we don't skip past it the way the
   platformer recording does.) Commit the regenerated gif in the
-  same change. CI's `emulator` job renders fresh gifs and fails if
-  any committed copy doesn't byte-match. The pre-commit hook
+  same change. The `nescript` workflow renders fresh gifs and fails if
+  any committed copy doesn't byte-match. `scripts/pre-commit`
   rebuilds whichever gif is affected when `platformer.ne`,
   `platformer.nes`, any file under `examples/war/`, `war.ne`,
   `war.nes`, any file under `examples/pong/`, `pong.ne`,
-  `pong.nes`, `record_gif.mjs`, or `harness.html` is staged (and
+  `pong.nes`, `record_gif.mjs`, or `emu.mjs` is staged (and
   `tests/emulator/node_modules` is installed).
 - `docs/future-work.md` lists the remaining gaps. If you implement
   something from that file, update the doc in the same PR.
@@ -60,24 +60,22 @@ cargo clippy --all-targets -- -D warnings   # mandatory; fix or #[allow]
 ./target/release/nescript build examples/hello_sprite.ne   # build one ROM
 ```
 
-**Always pass `--all-targets` to `cargo test`.** CI runs `cargo test
---all-targets`, which additionally compiles and smoke-runs the `compile`
-benchmark under `benches/compile.rs`. A plain `cargo test` skips that,
-so a bench that doesn't compile will pass locally and red-flag CI —
-this exact failure mode bit us once already (commit `889074a`).
+**Always pass `--all-targets` to `cargo test`.** The playground `test`
+job runs `cargo test --locked` and does not build benches. The
+`nescript` workflow runs `cargo test --locked --benches`, which
+smoke-runs `benches/compile.rs`. A plain `cargo test` skips that bench.
+A bench that does not compile can pass the shared job and fail
+`nescript.yml`. That happened once before this directory moved
+(commit `889074a`).
 
-The repo ships a pre-commit hook at `scripts/pre-commit` that runs
-`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
-`cargo test --all-targets`, and the committed-ROM reproducibility diff.
-Install it once per worktree with:
+`scripts/pre-commit` runs `cargo fmt --check`, Clippy, `cargo test
+--locked --all-targets`, and the committed-ROM diff. The playground
+git hook is the pasta linter. Do not replace it. Run the nescript
+checks yourself:
 
 ```bash
-cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+sh nescript/scripts/pre-commit
 ```
-
-Do this before your first commit in a new worktree. The hook catches
-stale ROMs, stale platformer gif, and divergent bench/compile pipelines
-before they hit CI.
 
 Compile every example at once:
 
@@ -98,11 +96,9 @@ diff. Do not skip or weaken this check.
 
 ```
 tests/emulator/
-  harness.html          # thin wrapper around jsnes; exposes window.nesHarness
-                        # with loadRomBase64, runFrames, rawPixelsBase64,
-                        # audioHash, audioWavBase64
-  run_examples.mjs      # puppeteer-driven runner (headless Chrome)
-  package.json          # depends on jsnes, pngjs, puppeteer
+  emu.mjs               # in-process jsnes driver (same browser bundle the goldens used)
+  run_examples.mjs      # compares frame 180 and the audio hash for every ROM
+  package.json          # depends on jsnes and pngjs; gifenc records the README GIFs
   goldens/
     <name>.png          # 256×240 RGBA framebuffer at frame 180 (~3s at 60fps)
     <name>.audio.hash   # one line: "<fnv1a-hex> <sample-count>"
@@ -126,7 +122,7 @@ npm install          # or `npm ci` in CI
 
 # 3. Verify every ROM still matches its golden.
 node run_examples.mjs
-# → "22/22 ROMs match their goldens" on success
+# → "50/50 ROMs match their goldens" on success
 # → FAIL / MISS lines + `actual/<name>.png`, `actual/<name>.diff.png`,
 #   `actual/<name>.wav` written for any ROM that mismatched
 ```
@@ -186,12 +182,12 @@ failing CI — that defeats the entire purpose of the harness.
 
 ### CI integration
 
-The `emulator` job in `.github/workflows/ci.yml` installs Chrome deps,
-builds all examples, then runs the harness. On failure it uploads the
-`actual/` directory and `report.json` as an artifact named `emulator-diff`
-so reviewers can download and inspect the pixel diffs without cloning the
-repo. The CI job does **not** pass `UPDATE_GOLDENS`; if it flips, the
-change needs a manual update + review.
+The `nescript` workflow at the repository root
+(`.github/workflows/nescript.yml`) builds all examples, then runs the
+harness in Node. It does not install Chrome. On failure it uploads the
+`actual/` directory and `report.json` as an artifact named
+`nescript-emulator-diff`. The workflow does not pass `UPDATE_GOLDENS`.
+If a golden changes, update it in the same commit and review the diff.
 
 ## Conventions worth knowing
 

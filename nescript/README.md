@@ -1,6 +1,6 @@
 # NEScript
 
-For more background on the project, see [Introducing NEScript](./intro.md).
+NEScript is one project in the playground repository. For the original writeup, see [Introducing NEScript](./intro.md).
 
 A statically-typed, compiled programming language for NES game development.
 
@@ -157,7 +157,7 @@ NEScript implements all five planned milestones:
 | M4: Optimization | Done | Strength reduction, ZP promotion, type casting, asm-dump |
 | M5: Bank Switching | Done | MMC1/UxROM/MMC3, bank declarations, software mul/div |
 
-694 tests across the lexer, parser, analyzer, IR, optimizer, codegen, assembler, linker, runtime, ROM, and asset modules, plus a pixel- and audio-exact emulator harness that captures a golden framebuffer + audio hash for every example. CI runs fmt, clippy, test, example compilation, and the emulator harness on every push.
+694 tests across the lexer, parser, analyzer, IR, optimizer, codegen, assembler, linker, runtime, ROM, and asset modules, plus a pixel- and audio-exact emulator harness that captures a golden framebuffer and audio hash for every example. The playground test job runs `cargo fmt`, Clippy, and `cargo test`. `.github/workflows/nescript.yml` runs the compile benches, checks the committed ROMs, the jsnes goldens, the README GIFs, and the Mesen `.dbg` probe.
 
 ## License
 

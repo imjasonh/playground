@@ -147,6 +147,11 @@ them:
   in Rust: mount a repo and read `refs/<ref>` and `commits/<sha>/<path>` as
   plain files, with reads racing a shared local clone cache against the
   server's read API so first byte never waits on a clone.
+- **[`nescript/`](nescript/)** — a statically typed compiler for NES games.
+  `.ne` source becomes an iNES ROM directly, with no external assembler.
+  Sprites, states, palettes, backgrounds, and controller input are language
+  constructs. The test suite includes a jsnes screenshot and audio check for
+  every example.
 - **[`life-stl/`](life-stl/)** — generate a 3D-printable STL of Conway's Game of
   Life with time as the Z axis (Rust CLI). Self-supporting by construction:
   every birth leans on its three B3 parents via small diagonal braces, so even
