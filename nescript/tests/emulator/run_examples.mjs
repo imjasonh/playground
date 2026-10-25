@@ -1,8 +1,7 @@
 // End-to-end smoke test: runs every compiled `.nes` in `examples/`
-// through a local `jsnes` (wrapped by `harness.html` in a
-// puppeteer-driven headless Chrome), lets it render ~180 frames,
-// grabs the raw canvas pixels, and diffs them byte-for-byte against
-// a committed golden PNG under `goldens/`. It also hashes the
+// through in-process `jsnes`, lets it render ~180 frames, grabs the
+// framebuffer, and diffs those pixels byte-for-byte against a
+// committed golden PNG under `goldens/`. It also hashes the
 // audio samples jsnes produced during those frames and compares
 // them against a committed `<name>.audio.hash` golden in the same
 // directory — a one-line FNV-1a hash of the full int16 stereo
@@ -42,16 +41,15 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import puppeteer from "puppeteer";
+import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
+import { createEmulator } from "./emu.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..");
 const examplesDir = path.join(repoRoot, "examples");
 const goldensDir = path.join(__dirname, "goldens");
 const actualDir = path.join(__dirname, "actual");
-const harnessUrl = pathToFileURL(path.join(__dirname, "harness.html")).toString();
 
 const WIDTH = 256;
 const HEIGHT = 240;
@@ -179,53 +177,27 @@ async function listRoms() {
 
 // ── Harness driver ─────────────────────────────────────────────
 
-async function runRomInHarness(page, rom) {
-  const romBytes = await fs.readFile(rom.file);
-  const romB64 = romBytes.toString("base64");
-
-  let bootError = null;
+function runRom(romBytes) {
+  const emu = createEmulator();
   try {
-    await page.evaluate((b64) => window.nesHarness.loadRomBase64(b64), romB64);
+    emu.loadRom(romBytes);
+    emu.runFrames(FRAMES_TO_RUN);
   } catch (err) {
-    bootError = String(err);
-    return { bootError, rgba: null, audio: null };
-  }
-
-  try {
-    // Use runFrames — a single round-trip is much faster than
-    // 180 separate `frame()` calls across puppeteer's RPC.
-    await page.evaluate(
-      (n) => window.nesHarness.runFrames(n),
-      FRAMES_TO_RUN,
-    );
-  } catch (err) {
-    return { bootError: String(err), rgba: null, audio: null };
+    return { bootError: String(err), rgba: null, audio: null, wav() { return null; } };
   }
   // Frame count here is a no-op marker kept for readability.
   void SCREENSHOT_FRAME;
 
-  const pixelsB64 = await page.evaluate(() => window.nesHarness.rawPixelsBase64());
-  const rgba = Buffer.from(pixelsB64, "base64");
+  const rgba = emu.pixels();
   if (rgba.length !== PIXEL_BYTES) {
     return {
       bootError: `harness returned ${rgba.length} pixel bytes, expected ${PIXEL_BYTES}`,
       rgba: null,
       audio: null,
+      wav() { return null; },
     };
   }
-  // Pull the audio hash (tiny — just a hex string + sample count).
-  // The WAV bytes themselves are only fetched on diff failure to
-  // keep the happy-path fast.
-  const audio = await page.evaluate(() => window.nesHarness.audioHash());
-  return { bootError: null, rgba, audio };
-}
-
-/// Read the full WAV bytes from the harness. Only called when an
-/// audio diff fails — we don't want to pay the round-trip cost on
-/// every ROM.
-async function fetchAudioWav(page) {
-  const wavB64 = await page.evaluate(() => window.nesHarness.audioWavBase64());
-  return Buffer.from(wavB64, "base64");
+  return { bootError: null, rgba, audio: emu.audioHash(), wav: () => emu.audioWav() };
 }
 
 // ── Main ───────────────────────────────────────────────────────
@@ -244,38 +216,19 @@ async function main() {
     process.exit(1);
   }
 
-  const browser = await puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--allow-file-access-from-files"],
-  });
-
   /** @type {Array<{name: string, status: string, reason: string | null}>} */
   const results = [];
   let failures = 0;
 
-  try {
-    for (const rom of roms) {
-      const page = await browser.newPage();
-      const consoleErrors = [];
-      page.on("pageerror", (err) => consoleErrors.push(String(err)));
-      page.on("console", (msg) => {
-        if (msg.type() === "error") consoleErrors.push(msg.text());
-      });
-
-      await page.goto(harnessUrl, { waitUntil: "load" });
-      await page.waitForFunction(
-        "window.nesHarness && document.getElementById('info').textContent === 'ready'",
-      );
-
-      const { bootError, rgba, audio } = await runRomInHarness(page, rom);
+  for (const rom of roms) {
+      const romBytes = await fs.readFile(rom.file);
+      const { bootError, rgba, audio, wav } = runRom(romBytes);
 
       if (bootError || !rgba) {
-        await page.close();
         failures++;
         const reason = `boot error: ${bootError ?? "no pixels"}`;
         results.push({ name: rom.name, status: "FAIL", reason });
         console.log(`FAIL  ${rom.name.padEnd(28)} ${reason}`);
-        for (const e of consoleErrors) console.log("    console:", e);
         continue;
       }
 
@@ -293,7 +246,6 @@ async function main() {
         console.log(
           `UPD   ${rom.name.padEnd(28)} wrote png + audio (hash=${audio.hash}, n=${audio.samples})`,
         );
-        await page.close();
         continue;
       }
 
@@ -304,15 +256,13 @@ async function main() {
       if (!pngExists || !audioExists) {
         failures++;
         await writePng(path.join(actualDir, `${rom.name}.png`), rgba);
-        const wavBytes = await fetchAudioWav(page);
-        await fs.writeFile(path.join(actualDir, `${rom.name}.wav`), wavBytes);
+        await fs.writeFile(path.join(actualDir, `${rom.name}.wav`), wav());
         const missing = [];
         if (!pngExists) missing.push("png");
         if (!audioExists) missing.push("audio");
         const reason = `missing golden(s): ${missing.join(", ")} — run with UPDATE_GOLDENS=1 to create`;
         results.push({ name: rom.name, status: "MISSING", reason });
         console.log(`MISS  ${rom.name.padEnd(28)} ${reason}`);
-        await page.close();
         continue;
       }
 
@@ -321,7 +271,6 @@ async function main() {
       try {
         golden = await decodeGolden(goldenPngPath);
       } catch (err) {
-        await page.close();
         failures++;
         const reason = `failed to decode golden: ${err.message}`;
         results.push({ name: rom.name, status: "FAIL", reason });
@@ -339,7 +288,6 @@ async function main() {
       if (pixelsMatch && audioMatch) {
         results.push({ name: rom.name, status: "OK", reason: null });
         console.log(`OK    ${rom.name.padEnd(28)} exact video + audio match`);
-        await page.close();
         continue;
       }
 
@@ -360,8 +308,7 @@ async function main() {
         );
       }
       if (!audioMatch) {
-        const wavBytes = await fetchAudioWav(page);
-        await fs.writeFile(actualWavPath, wavBytes);
+        await fs.writeFile(actualWavPath, wav());
         reasons.push(`audio hash ${expectedAudio} -> ${actualAudioLine}`);
       }
 
@@ -376,10 +323,6 @@ async function main() {
       if (!audioMatch) {
         console.log(`        actual wav:  ${path.relative(repoRoot, actualWavPath)}`);
       }
-      await page.close();
-    }
-  } finally {
-    await browser.close();
   }
 
   const reportPath = path.join(__dirname, "report.json");
