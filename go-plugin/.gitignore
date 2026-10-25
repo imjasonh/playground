@@ -1,0 +1,5 @@
+# Local build output. Tests compile plugins into a temp directory.
+/bin/
+*.so
+*.test
+*.out
