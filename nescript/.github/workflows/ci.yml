@@ -1,0 +1,307 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  # Pin the Mesen2 release the `mesen-dbg` job tests against. Bump
+  # this when the upstream binary's behaviour changes in a way that
+  # affects the probe (new label-name normalisation, .dbg format
+  # additions, etc.). See https://github.com/SourMesen/Mesen2/releases
+  # for the source URLs.
+  MESEN_VERSION: "2.1.1"
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-targets
+
+  examples:
+    name: Build Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Verify committed ROMs match their .ne sources
+        # Every example has a committed .nes file under examples/. The
+        # compiler is deterministic (verified: same input → byte-identical
+        # output), so rebuilding each example into a tmp directory and
+        # diffing against the committed ROM catches "someone edited a .ne
+        # file but forgot to regenerate the ROM" at PR time.
+        run: |
+          mkdir -p /tmp/reprotest
+          fail=0
+          for f in examples/*.ne; do
+            name=$(basename "$f" .ne)
+            ./target/release/nescript build "$f" --output "/tmp/reprotest/$name.nes"
+            if ! cmp -s "examples/$name.nes" "/tmp/reprotest/$name.nes"; then
+              echo "::error file=examples/$name.ne::committed examples/$name.nes is stale; rerun \`cargo run --release -- build examples/$name.ne\` and commit the new ROM"
+              fail=1
+            fi
+          done
+          if [ $fail -ne 0 ]; then
+            exit 1
+          fi
+      - name: Verify ROMs are valid iNES
+        run: |
+          for f in examples/*.nes; do
+            echo "==> Checking $f"
+            # iNES magic: first 4 bytes must be "NES\x1a"
+            header=$(od -A n -t x1 -N 4 "$f" | tr -d ' ')
+            if [ "$header" != "4e45531a" ]; then
+              echo "FAIL: $f is not a valid iNES ROM (header: $header)"
+              exit 1
+            fi
+            size=$(stat -c%s "$f")
+            echo "    OK: $size bytes"
+          done
+
+  emulator:
+    name: Emulator Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chrome runtime deps for puppeteer
+        # puppeteer ships its own Chrome for Testing binary via the
+        # package's postinstall hook, but the runner image is missing
+        # a handful of shared libs that Chrome needs to launch.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libatspi2.0-0 \
+            libcups2t64 \
+            libdbus-1-3 \
+            libdrm2 \
+            libgbm1 \
+            libpango-1.0-0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libasound2t64
+      - name: Build compiler
+        run: cargo build --release
+      - name: Compile all .ne examples
+        # Overwrites the committed examples/*.nes in the CI workspace
+        # (the workspace is ephemeral; the committed ROMs aren't
+        # touched). This is load-bearing: the goldens must be diffed
+        # against what *this* compiler produces, not against the ROMs
+        # an earlier commit happened to ship, otherwise a broken
+        # compiler change can still pass the emulator job as long as
+        # the contributor forgot to rebuild the ROMs. The `examples`
+        # job catches that second case via its reproducibility diff.
+        run: |
+          for f in examples/*.ne; do
+            echo "==> Compiling $f"
+            ./target/release/nescript build "$f"
+          done
+      - name: Install emulator harness dependencies
+        working-directory: tests/emulator
+        run: npm ci
+      - name: Diff each ROM's framebuffer against its golden
+        working-directory: tests/emulator
+        run: node run_examples.mjs
+      - name: Verify docs/platformer.gif is up to date
+        # The README embeds docs/platformer.gif as the project demo.
+        # gifenc + jsnes are deterministic, so rebuilding the gif from
+        # the current compiler should byte-match the committed copy.
+        # If it doesn't, the contributor changed the compiler / source
+        # / harness in a way that affects the observable gameplay of
+        # platformer.ne but forgot to regenerate the gif — the fix is
+        # the exact command printed in the error.
+        working-directory: tests/emulator
+        run: |
+          node record_gif.mjs platformer 360 2 /tmp/platformer.gif
+          if ! cmp -s ../../docs/platformer.gif /tmp/platformer.gif; then
+            echo "::error file=docs/platformer.gif::committed docs/platformer.gif is stale; rerun \`node tests/emulator/record_gif.mjs platformer 360 2 docs/platformer.gif\` and commit the new gif"
+            exit 1
+          fi
+      - name: Verify docs/war.gif is up to date
+        # Same contract as docs/platformer.gif: the README embeds
+        # docs/war.gif as the second project demo, gifenc + jsnes are
+        # deterministic, so any change to the compiler / runtime /
+        # harness / war source that affects the first ~6 seconds of
+        # the war.ne gameplay must be followed by regenerating the
+        # gif. The 5th positional arg (`4`) is the warmup; war's
+        # title menu is the gif thumbnail so we don't skip past it.
+        working-directory: tests/emulator
+        run: |
+          node record_gif.mjs war 360 2 /tmp/war.gif 4
+          if ! cmp -s ../../docs/war.gif /tmp/war.gif; then
+            echo "::error file=docs/war.gif::committed docs/war.gif is stale; rerun \`node tests/emulator/record_gif.mjs war 360 2 docs/war.gif 4\` and commit the new gif"
+            exit 1
+          fi
+      - name: Verify docs/pong.gif is up to date
+        # Same contract as the platformer and war gifs: the README
+        # embeds docs/pong.gif as the third project demo. Pong's
+        # title screen (CPU VS CPU / 1 PLAYER / 2 PLAYERS menu) is
+        # the gif thumbnail, so warmup = 4 keeps it in frame before
+        # the autopilot advances to gameplay.
+        working-directory: tests/emulator
+        run: |
+          node record_gif.mjs pong 360 2 /tmp/pong.gif 4
+          if ! cmp -s ../../docs/pong.gif /tmp/pong.gif; then
+            echo "::error file=docs/pong.gif::committed docs/pong.gif is stale; rerun \`node tests/emulator/record_gif.mjs pong 360 2 docs/pong.gif 4\` and commit the new gif"
+            exit 1
+          fi
+      - name: Upload actual + diff PNGs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-diff
+          # `actual/` holds the run's output and red-highlighted diff
+          # PNGs for any ROM that didn't match its golden. `report.json`
+          # has the per-example pass/fail/diff counts. `goldens/` is
+          # included too so reviewers can compare the three side by side
+          # without cloning the repo.
+          path: |
+            tests/emulator/actual/
+            tests/emulator/goldens/
+            tests/emulator/report.json
+
+  mesen-dbg:
+    # Validates that the `.dbg` debug-info file `nescript build --dbg`
+    # emits is actually consumable by Mesen2 — the same emulator NES
+    # developers use for source-level debugging. Builds the compiler,
+    # builds an example ROM with `--dbg`, then launches the Mesen2
+    # release binary in `--testRunner` mode. Mesen auto-loads the
+    # co-located .dbg, runs `tests/mesen/probe.lua`, and exits with a
+    # status code the script picks. CI fails if any code label we
+    # promised to emit is missing or unresolved.
+    name: Mesen2 .dbg validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Mesen runtime deps
+        # libsdl2-2.0-0: Mesen links to it for audio/video even though
+        #   we're running headless. Without it MesenCore.so fails to
+        #   load with `cannot open shared object file: libSDL2-2.0.so.0`.
+        # xvfb: Mesen's Avalonia UI initialises an X11 connection at
+        #   startup before checking `--testRunner`, so even the headless
+        #   path needs *some* display.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-2.0-0 \
+            xvfb
+
+      - name: Cache Mesen2 binary
+        id: mesen-cache
+        uses: actions/cache@v4
+        with:
+          path: mesen2
+          key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
+
+      - name: Download Mesen2
+        if: steps.mesen-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p mesen2
+          cd mesen2
+          curl -sL -o Mesen.zip \
+            "https://github.com/SourMesen/Mesen2/releases/download/${MESEN_VERSION}/Mesen_${MESEN_VERSION}_Linux_x64.zip"
+          unzip -q Mesen.zip
+          chmod +x Mesen
+          rm Mesen.zip
+
+      - name: Build NEScript
+        run: cargo build --release
+
+      - name: Build test ROM with .dbg
+        # `hello_sprite` is the smallest example with a state handler,
+        # so its .dbg exercises every record kind render_dbg emits
+        # (file, mod, seg, scope, span, line, sym) without a long
+        # compile.
+        run: |
+          ./target/release/nescript build examples/hello_sprite.ne \
+            --dbg /tmp/hello.dbg \
+            --output /tmp/hello.nes
+
+      - name: Validate .dbg via Mesen2 testRunner
+        # Three workarounds are baked into this single command — see
+        # the comments inside for *why* each is needed. Removing any
+        # of them turns this into a multi-hour debugging exercise (it
+        # took several hours of investigation to find the
+        # GLOBALIZATION workaround in particular; see the commit
+        # message for d075bc2).
+        run: |
+          # 1. `touch settings.json`: Mesen's first-run check
+          #    (`Program.cs:56`) launches the GUI setup wizard
+          #    *before* the `--testRunner` dispatch when no settings
+          #    file exists. The wizard never closes in headless CI,
+          #    blocking forever. The file's *contents* don't matter:
+          #    Configuration.Deserialize catches any JSON parse error
+          #    and falls back to defaults, so a 0-byte file is fine.
+          touch mesen2/settings.json
+
+          # 2. `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`: .NET's
+          #    globalization layer pulls in libicuuc, which loads
+          #    system libstdc++. MesenCore.so is built with a
+          #    statically-bundled libstdc++; on Ubuntu 24.04 the
+          #    interposition causes a `std::bad_cast` from a static
+          #    regex initialiser in `Base6502Assembler.cpp` long
+          #    before any user code runs. Invariant mode skips ICU
+          #    entirely, which means system libstdc++ is never
+          #    loaded and MesenCore's bundled copy wins.
+          #
+          # 3. `xvfb-run -a`: Mesen's Avalonia UI runs `XOpenDisplay`
+          #    during AppBuilder setup before the `--testRunner`
+          #    dispatch in `Program.cs:74`. xvfb-run gives it a
+          #    throwaway X server; -a auto-allocates a display number.
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+            xvfb-run -a ./mesen2/Mesen \
+              --testRunner /tmp/hello.nes tests/mesen/probe.lua \
+              --timeout=15

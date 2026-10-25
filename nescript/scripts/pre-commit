@@ -1,0 +1,94 @@
+#!/bin/sh
+# Pre-commit hook for nescript
+# Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+set -e
+
+echo "Running pre-commit checks..."
+
+echo "  Checking formatting..."
+cargo fmt --all -- --check
+
+echo "  Running clippy..."
+cargo clippy --all-targets -- -D warnings
+
+echo "  Running tests..."
+cargo test --all-targets
+
+# Committed ROMs must match their .ne sources — the compiler is
+# deterministic, so any example whose on-disk .nes differs from a
+# fresh build means someone edited the .ne file but forgot to
+# rebuild. Rebuild each to a tmp path and fail if any differ, then
+# point the user at the exact `cargo run` command to fix it.
+echo "  Checking committed ROMs match .ne sources..."
+cargo build --release --quiet
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+stale=0
+for f in examples/*.ne; do
+    name=$(basename "$f" .ne)
+    ./target/release/nescript build "$f" --output "$tmp/$name.nes" >/dev/null
+    if ! cmp -s "examples/$name.nes" "$tmp/$name.nes"; then
+        echo "    STALE: examples/$name.nes"
+        echo "           rerun: cargo run --release -- build $f"
+        stale=1
+    fi
+done
+if [ $stale -ne 0 ]; then
+    echo "one or more committed ROMs are out of date"
+    exit 1
+fi
+
+# Only rebuild docs/{platformer,war}.gif when the underlying
+# example sources, the gif recorder, or the harness changed — gif
+# regeneration takes ~20s per gif due to puppeteer's cold start,
+# so we don't want to pay it on every commit. Skipped entirely if
+# node_modules isn't installed in the emulator harness; the CI
+# `emulator` job is the authoritative check.
+#
+# `examples/war.ne` pulls in `examples/war/*.ne` via include
+# directives, so any file under `examples/war/` is treated as a
+# trigger for rebuilding the war gif — the parser's preprocess
+# pass sees them as part of the same translation unit.
+changed_files=$(git diff --cached --name-only)
+recorder_or_harness_changed=0
+if echo "$changed_files" | grep -qE '^tests/emulator/(record_gif\.mjs|harness\.html)$'; then
+    recorder_or_harness_changed=1
+fi
+
+check_gif() {
+    name=$1
+    args=$2  # extra args to record_gif.mjs (e.g. "4" for warmup)
+    if [ ! -d tests/emulator/node_modules ]; then
+        echo "  (skipping $name gif freshness check — tests/emulator/node_modules not installed)"
+        return 0
+    fi
+    echo "  Rebuilding docs/$name.gif..."
+    # shellcheck disable=SC2086
+    (cd tests/emulator && node record_gif.mjs "$name" 360 2 /tmp/${name}-precheck.gif $args >/dev/null)
+    if ! cmp -s "docs/$name.gif" "/tmp/${name}-precheck.gif"; then
+        echo "    STALE: docs/$name.gif"
+        echo "           rerun: node tests/emulator/record_gif.mjs $name 360 2 docs/$name.gif $args"
+        rm -f "/tmp/${name}-precheck.gif"
+        return 1
+    fi
+    rm -f "/tmp/${name}-precheck.gif"
+    return 0
+}
+
+if [ $recorder_or_harness_changed -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^examples/platformer\.(ne|nes)$'; then
+    check_gif platformer "" || exit 1
+fi
+
+if [ $recorder_or_harness_changed -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^examples/war(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif war 4 || exit 1
+fi
+
+if [ $recorder_or_harness_changed -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^examples/pong(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif pong 4 || exit 1
+fi
+
+echo "All pre-commit checks passed."

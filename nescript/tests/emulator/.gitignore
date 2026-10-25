@@ -1,0 +1,6 @@
+node_modules/
+report.json
+# Per-run output written when `run_examples.mjs` finds a diff — not
+# tracked; the CI job uploads this as an artifact on failure so
+# reviewers can eyeball the mismatched PNGs.
+actual/
