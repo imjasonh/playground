@@ -122,6 +122,7 @@ struct MonitorPhotoStyle: Equatable, Sendable {
         }
         let black = uniform(0.05...0.085)
         let blackTint: SIMD3<Float> = warmLight ? [1.12, 1.0, 0.88] : [0.92, 1.0, 1.12]
+        let blackLevel: SIMD3<Float> = blackTint * black
 
         return MonitorPhotoStyle(
             rotationDegrees: signed(0.6...2.0),
@@ -144,7 +145,7 @@ struct MonitorPhotoStyle: Equatable, Sendable {
             glareStrength: uniform(0.1...0.24),
             glareColor: glareColor,
             veil: uniform(0.015...0.04),
-            blackLevel: blackTint * black,
+            blackLevel: blackLevel,
             whiteBalance: whiteBalance,
             exposure: uniform(0.86...0.94),
             saturation: uniform(0.82...0.94),
@@ -170,7 +171,8 @@ enum MonitorPhotoFilter {
         image.pixels.withUnsafeBufferPointer { src in
             for index in 0..<count {
                 for channel in 0..<3 {
-                    sharp[channel][index] = Float(src[index * 4 + channel]) / 255
+                    let level = Float(src[index * 4 + channel])
+                    sharp[channel][index] = level / 255
                 }
             }
         }
@@ -345,7 +347,9 @@ enum MonitorPhotoFilter {
             }
             var color = SIMD3(lens(0, redU, redV), lens(1, u, v), lens(2, blueU, blueV))
 
-            let edge = min(u + 0.5, Float(width) - 0.5 - u, v + 0.5, Float(height) - 0.5 - v)
+            let edgeX: Float = min(u + 0.5, Float(width) - 0.5 - u)
+            let edgeY: Float = min(v + 0.5, Float(height) - 0.5 - v)
+            let edge: Float = min(edgeX, edgeY)
             let coverage = min(1, max(0, edge + 0.5))
 
             // Point-sampling the subpixel grid at each pixel is what aliases
@@ -355,7 +359,9 @@ enum MonitorPhotoFilter {
             let gridU = u * geometry.pitchX
             let gridV = v * geometry.pitchY
             let rowMask = cos(twoPi * gridV)
-            let patch = 0.55 + 0.45 * sin(nx * 2.7 + style.moirePatchPhase) * sin(ny * 3.4 - style.moirePatchPhase)
+            let patchX: Float = sin(nx * 2.7 + style.moirePatchPhase)
+            let patchY: Float = sin(ny * 3.4 - style.moirePatchPhase)
+            let patch: Float = 0.55 + 0.45 * patchX * patchY
             let luma = luminance(color)
             let amount = style.moireStrength * patch * (0.2 + 0.8 * luma) * coverage
             for channel in 0..<3 {
@@ -366,10 +372,11 @@ enum MonitorPhotoFilter {
             color = color * coverage + bezel * (1 - coverage)
 
             let gray = luminance(color)
-            color = SIMD3(repeating: gray) + (color - SIMD3(repeating: gray)) * style.saturation
+            let grayColor = SIMD3<Float>(repeating: gray)
+            color = grayColor + (color - grayColor) * style.saturation
             let bloomAmount = style.bloom * coverage
             let halo = glow.sample(u: u, v: v) * bloomAmount
-            color = one - (one - color) * (one - halo)
+            color = screen(color, halo)
             color = SIMD3(
                 pow(max(0, color.x), style.gamma),
                 pow(max(0, color.y), style.gamma),
@@ -382,13 +389,18 @@ enum MonitorPhotoFilter {
             let dy = ny - style.glareY
             let distance2 = dx * dx + dy * dy
             let sigma2 = style.glareRadius * style.glareRadius
-            let glare = style.glareStrength * (exp(-distance2 / (2 * sigma2)) + 0.3 * exp(-distance2 / (12 * sigma2)))
+            let core: Float = exp(-distance2 / (2 * sigma2))
+            let spread: Float = exp(-distance2 / (12 * sigma2))
+            let glare: Float = style.glareStrength * (core + 0.3 * spread)
             let light = style.glareColor * glare + SIMD3(repeating: style.veil)
-            color = one - (one - color) * (one - light)
+            color = screen(color, light)
 
             let side = (nx * falloffX + ny * falloffY + 1) * 0.5
-            color *= (1 - style.vignette * radius2 * radius2 * 0.6 - style.vignette * radius2 * 0.4)
-                * (1 - style.falloff * side)
+            let radius4: Float = radius2 * radius2
+            let vignetteLoss: Float = style.vignette * (0.6 * radius4 + 0.4 * radius2)
+            let sideLoss: Float = style.falloff * side
+            let shading: Float = (1 - vignetteLoss) * (1 - sideLoss)
+            color *= shading
 
             let brightness = luminance(color)
             let sigma = style.noise * (0.45 + (1 - min(1, brightness)))
@@ -404,6 +416,15 @@ enum MonitorPhotoFilter {
         }
     }
 
+    private static let unitScale: Float = 1 / 16_777_216
+
+    /// Light added on top of an image, the way a reflection adds to a screen.
+    private static func screen(_ base: SIMD3<Float>, _ light: SIMD3<Float>) -> SIMD3<Float> {
+        let one = SIMD3<Float>(repeating: 1)
+        let unlit: SIMD3<Float> = (one - base) * (one - light)
+        return one - unlit
+    }
+
     private static func luminance(_ color: SIMD3<Float>) -> Float {
         0.2126 * color.x + 0.7152 * color.y + 0.0722 * color.z
     }
@@ -416,7 +437,8 @@ enum MonitorPhotoFilter {
     private static func gaussian(_ rng: inout SplitMix64) -> Float {
         var sum: Float = 0
         for _ in 0..<4 {
-            sum += Float(rng.next() >> 40) / Float(1 << 24)
+            let bits = Float(rng.next() >> 40)
+            sum += bits * unitScale
         }
         return (sum - 2) * 1.732_05
     }
