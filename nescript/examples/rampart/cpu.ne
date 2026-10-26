@@ -342,12 +342,14 @@ include "rules.ne"
             nt_attr(0, 12, 8)
             nt_attr(4, 12, 10)
         } else {
-            nt_attr(8, 4, 255)
-            nt_attr(12, 4, 255)
-            nt_attr(0, 8, 204)
-            nt_attr(4, 8, 255)
-            nt_attr(0, 12, 12)
-            nt_attr(4, 12, 15)
+            // Palette 1. Glyphs are colour 3, and that slot is the
+            // mech's red. Palette 3's colour 3 is the lighter peach.
+            nt_attr(8, 4, 85)
+            nt_attr(12, 4, 85)
+            nt_attr(0, 8, 68)
+            nt_attr(4, 8, 85)
+            nt_attr(0, 12, 4)
+            nt_attr(4, 12, 5)
         }
         nt_attr(0, 20, 0)
         nt_attr(4, 20, 0)

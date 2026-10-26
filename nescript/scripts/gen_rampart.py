@@ -481,10 +481,11 @@ def write_backgrounds():
     # Rows 23..28 hold each mech's portrait, painted at runtime.
     # Blue is columns 2..7 in bg2. Red is columns 24..29 in bg3.
     portraits = "0" + "222" + "0" * 8 + "333" + "0"
-    # Rows 17 and 19 name the mechs by color. The letters and the
-    # PIKE or MAUL value sit in bg2 and bg3, so they draw blue and red.
+    # Rows 17 and 19 name the mechs by color. Glyphs are colour 3.
+    # Blue text uses bg2. Red text uses bg1, whose colour 3 is the
+    # mech's red. bg3's colour 3 is peach, the lighter highlight.
     blue_row = "0022000022000000"
-    red_row = "0033000033000000"
+    red_row = "0011000011000000"
     title_pal = (
         ["0" * 16] * 2
         + ["3" * 16] * 3
@@ -525,7 +526,10 @@ def write_backgrounds():
     board_pal = (
         ["0" * 16]
         + ["0" * 12 + "2222"] * 6
-        + ["0" * 12 + "3333"] * 6
+        # Name and shield. The plate below stays on bg3 so its
+        # peach highlight survives.
+        + ["0" * 12 + "1111"]
+        + ["0" * 12 + "3333"] * 5
         + ["0" * 16] * 2
     )
     out += background("Board", board, board_extra, board_pal)
@@ -545,7 +549,7 @@ def write_backgrounds():
     card[23] = " START WHEN DONE"
     # Tile rows 26-27. The left status is blue and the right is red,
     # which is where READY and CPU READY are painted.
-    card_pal = ["0" * 16] * 13 + ["2222200033333000", "0" * 16]
+    card_pal = ["0" * 16] * 13 + ["2222200011111000", "0" * 16]
     card_extra = {
         "^": T_DIR_UP,
         "v": T_DIR_DOWN,

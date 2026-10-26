@@ -74,7 +74,9 @@ game "Rampart" {
 palette Main {
     universal: black
     bg0: [dk_gray, gray, white]
-    bg1: [dk_gray, gray, white]
+    // Glyphs use colour 3. bg3's colour 3 is peach, which is lighter
+    // than the mech, so red text uses this palette instead.
+    bg1: [dk_gray, red, red]
     // Colour 1 is the floor's. The board's last tile column shares
     // an attribute cell with the panel, so bg2 and bg3 keep it gray.
     bg2: [dk_gray, blue, sky_blue]
