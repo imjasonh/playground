@@ -225,7 +225,7 @@ pub const PREV_INPUT_P2: u16 = 0x07E7;
 /// write VRAM (vblank). Every entry has the form
 /// `[len][addr_hi][addr_lo][byte_0]...[byte_(len-1)]`. A `len`
 /// byte of zero is the end-of-buffer sentinel: the drain loop
-/// stops there and resets the head pointer to zero.
+/// stops there and remembers where it stopped.
 ///
 /// The buffer is gated on the `__vram_buf_used` marker label —
 /// programs that never call any of the buffer intrinsics keep
@@ -233,14 +233,17 @@ pub const PREV_INPUT_P2: u16 = 0x07E7;
 /// is present, the analyzer skips `$0400-$04FF` so user globals
 /// are pushed into `$0500+`.
 ///
-/// `VRAM_BUF_HEAD` is a single byte tracking the next-free offset
-/// from `VRAM_BUF_BASE`. It lives in main RAM next to the buffer
-/// itself rather than in zero page so it doesn't compete with the
-/// runtime's other ZP slots; the codegen reads/writes it via
-/// absolute addressing.
+/// The buffer is a 256-byte ring indexed by X, so offsets wrap
+/// naturally. `VRAM_BUF_HEAD` is the next-free offset, owned by
+/// the writers; `VRAM_BUF_TAIL` is the next entry to drain, owned
+/// by the NMI. Neither side resets the other's pointer, so an NMI
+/// that lands in the middle of an append never discards it. Both
+/// live in main RAM rather than zero page so they don't compete
+/// with the runtime's other ZP slots.
 pub const VRAM_BUF_BASE: u16 = 0x0400;
 pub const VRAM_BUF_END: u16 = 0x04FF;
 pub const VRAM_BUF_HEAD: u16 = 0x07E5;
+pub const VRAM_BUF_TAIL: u16 = 0x07EC;
 
 /// Fade-helper scratch bytes. `FADE_STEP_FRAMES` holds the
 /// per-step frame count saved at the top of `__fade_out` /
@@ -2010,15 +2013,15 @@ pub fn gen_fade() -> Vec<Instruction> {
 /// reset-time clear. The drain is JSR'd from the NMI handler when
 /// the `__vram_buf_used` marker is present.
 ///
-/// On entry the buffer at `VRAM_BUF_BASE` (`$0400`) holds zero or
-/// more entries followed by a zero-byte sentinel. Each entry is
+/// Starting at `VRAM_BUF_TAIL`, the ring at `VRAM_BUF_BASE`
+/// (`$0400`) holds zero or more entries followed by a zero-byte
+/// sentinel. Each entry is
 /// `[len][addr_hi][addr_lo][byte_0]...[byte_(len-1)]`; the drain
 /// walks them in order, programming `$2006` with the PPU address
-/// then writing each data byte to `$2007`. When it hits a zero
-/// `len` byte it resets `VRAM_BUF_HEAD` to zero (so the next
-/// frame starts appending at the front of the buffer) and stores
-/// `0` back at `VRAM_BUF_BASE` so an empty buffer continues to
-/// drain cleanly without a re-init.
+/// then writing each data byte to `$2007`. It stops at the zero
+/// `len` byte and stores that offset in `VRAM_BUF_TAIL`. Writers
+/// store an entry's `len` byte last, after the sentinel that
+/// follows it, so the drain never sees a half-written entry.
 ///
 /// Cycle budget: one entry costs ~12 setup cycles + 8 cycles per
 /// data byte. The 256-byte buffer can hold ~50 single-tile writes
@@ -2033,7 +2036,7 @@ pub fn gen_vram_buf_drain() -> Vec<Instruction> {
     let mut out = Vec::new();
     out.push(Instruction::new(NOP, AM::Label("__vram_buf_drain".into())));
     // X = current offset into VRAM_BUF_BASE.
-    out.push(Instruction::new(LDX, AM::Immediate(0)));
+    out.push(Instruction::new(LDX, AM::Absolute(VRAM_BUF_TAIL)));
     // Top of per-entry loop. A zero `len` byte is the sentinel.
     out.push(Instruction::new(NOP, AM::Label("__vram_buf_loop".into())));
     out.push(Instruction::new(LDA, AM::AbsoluteX(VRAM_BUF_BASE)));
@@ -2069,13 +2072,7 @@ pub fn gen_vram_buf_drain() -> Vec<Instruction> {
     out.push(Instruction::implied(INX));
     out.push(Instruction::new(JMP, AM::Label("__vram_buf_loop".into())));
     out.push(Instruction::new(NOP, AM::Label("__vram_buf_done".into())));
-    // Reset the head pointer so the next frame starts appending
-    // at offset 0. We don't need to clobber the rest of the
-    // buffer — the writer always lays down a fresh sentinel
-    // after each append.
-    out.push(Instruction::new(LDA, AM::Immediate(0)));
-    out.push(Instruction::new(STA, AM::Absolute(VRAM_BUF_HEAD)));
-    out.push(Instruction::new(STA, AM::Absolute(VRAM_BUF_BASE)));
+    out.push(Instruction::new(STX, AM::Absolute(VRAM_BUF_TAIL)));
     // Reset the PPU's internal scroll/address state. Each `$2006`
     // write during the drain updated the PPU's `t` register
     // (which holds the next scroll value); leaving it pointing

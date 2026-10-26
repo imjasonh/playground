@@ -3623,8 +3623,9 @@ fn nt_set_emits_buffer_append_and_drain_marker() {
     //   1. Mark `__vram_buf_used` so the linker splices the
     //      drain routine and gates the NMI JSR.
     //   2. Emit a 4-byte append: write `[1][addr_hi][addr_lo][tile]`
-    //      starting at VRAM_BUF_BASE+head, bump the head, write a
-    //      fresh `0` sentinel after.
+    //      starting at VRAM_BUF_BASE+head and a fresh `0` sentinel
+    //      after, storing the `len` byte last.
+    use nescript::asm::{AddressingMode, Opcode};
     let source = r#"
 game "VramSet" { mapper: NROM }
 on frame {
@@ -3670,6 +3671,27 @@ start Main
             .windows(3)
             .any(|w| w[0] == 0x20 && w[1] == lo && w[2] == hi),
         "NMI should JSR __vram_buf_drain"
+    );
+    // The `len` byte (the only store indexed by Y) must follow the
+    // sentinel store, or an NMI between the two could drain an
+    // entry whose sentinel isn't there yet.
+    let base = nescript::runtime::VRAM_BUF_BASE;
+    let stores: Vec<&AddressingMode> = instructions
+        .iter()
+        .filter(|i| i.opcode == Opcode::STA)
+        .map(|i| &i.mode)
+        .filter(|m| {
+            matches!(m, AddressingMode::AbsoluteX(a) | AddressingMode::AbsoluteY(a) if *a == base)
+        })
+        .collect();
+    assert_eq!(
+        stores.len(),
+        5,
+        "addr_hi, addr_lo, tile, sentinel, then len: {stores:?}"
+    );
+    assert!(
+        matches!(stores.last(), Some(AddressingMode::AbsoluteY(_))),
+        "the len byte should be the last buffer store: {stores:?}"
     );
 }
 

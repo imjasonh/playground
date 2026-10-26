@@ -2814,10 +2814,11 @@ impl<'a> IrCodeGen<'a> {
     /// `$23C0 + (y/4)*8 + (x/4)`.
     ///
     /// Layout written to the buffer at `VRAM_BUF_HEAD`:
-    /// `[len=1][addr_hi][addr_lo][data]`. After the append we
-    /// bump the head by 4 and store a fresh `0` sentinel so the
-    /// next NMI drain sees a well-formed buffer regardless of
-    /// whether more entries get appended later in the frame.
+    /// `[len=1][addr_hi][addr_lo][data]`, followed by a fresh `0`
+    /// sentinel. The `len` byte goes in last: until then the old
+    /// sentinel at the head still ends the ring, so an NMI that
+    /// drains mid-append skips this entry and picks it up next
+    /// frame instead of reading half of it.
     ///
     /// The address arithmetic stays in the accumulator end-to-end
     /// (no extra ZP scratch needed): `addr_hi` is `$20 + (y >> 3)`
@@ -2828,11 +2829,8 @@ impl<'a> IrCodeGen<'a> {
         let x_addr = self.temp_addr(x);
         let y_addr = self.temp_addr(y);
         let data_addr = self.temp_addr(data);
-        // X = head offset.
+        // X = head offset; skip the `len` byte for now.
         self.emit(LDX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
-        // Write `len = 1`.
-        self.emit(LDA, AM::Immediate(1));
-        self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
         self.emit(INX, AM::Implied);
         // Write `addr_hi`.
         if attr {
@@ -2880,10 +2878,19 @@ impl<'a> IrCodeGen<'a> {
         self.emit(LDA, AM::ZeroPage(data_addr));
         self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
         self.emit(INX, AM::Implied);
-        // Update head and lay down a fresh sentinel.
-        self.emit(STX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
+        self.emit_nt_buf_publish(AM::Immediate(1));
+    }
+
+    /// Finish a VRAM-buffer append whose body ends just before
+    /// offset X: lay down the new sentinel at X, advance the head
+    /// to X, then store `len` at the old head to publish the entry.
+    fn emit_nt_buf_publish(&mut self, len: AM) {
         self.emit(LDA, AM::Immediate(0));
         self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
+        self.emit(LDY, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
+        self.emit(STX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
+        self.emit(LDA, len);
+        self.emit(STA, AM::AbsoluteY(crate::runtime::VRAM_BUF_BASE));
     }
 
     /// Append a horizontal-fill VRAM-buffer entry. Layout:
@@ -2895,10 +2902,8 @@ impl<'a> IrCodeGen<'a> {
         let y_addr = self.temp_addr(y);
         let len_addr = self.temp_addr(len);
         let tile_addr = self.temp_addr(tile);
+        // Skip `len`; `emit_nt_buf_publish` stores it last.
         self.emit(LDX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
-        // len
-        self.emit(LDA, AM::ZeroPage(len_addr));
-        self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
         self.emit(INX, AM::Implied);
         // addr_hi = $20 + (y >> 3)
         self.emit(LDA, AM::ZeroPage(y_addr));
@@ -2931,10 +2936,7 @@ impl<'a> IrCodeGen<'a> {
         self.emit(INX, AM::Implied);
         self.emit(DEY, AM::Implied);
         self.emit(BNE, AM::LabelRelative(fill_label));
-        // Update head + sentinel.
-        self.emit(STX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
-        self.emit(LDA, AM::Immediate(0));
-        self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
+        self.emit_nt_buf_publish(AM::ZeroPage(len_addr));
     }
 
     /// Emit the MMC3 `__irq_user` handler that dispatches on the

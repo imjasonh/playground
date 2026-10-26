@@ -398,9 +398,8 @@ pub enum IrOp {
     /// write to the VRAM update buffer. Codegen computes the
     /// PPU address `$2000 + y*32 + x` and lays down a
     /// `[len=1][addr_hi][addr_lo][tile]` record at the current
-    /// `VRAM_BUF_HEAD`, then bumps the head by 4 and writes a
-    /// fresh `0` sentinel. The NMI handler drains the buffer
-    /// during vblank.
+    /// `VRAM_BUF_HEAD` plus a fresh `0` sentinel, storing `len`
+    /// last. The NMI handler drains the buffer during vblank.
     NtSet {
         x: IrTemp,
         y: IrTemp,
