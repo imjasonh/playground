@@ -102,10 +102,11 @@ fun legs_down(p: u8) -> u8 {
     return n
 }
 
-// Base range less one per wrecked leg.
+// Base range less one per wrecked leg. With both legs wrecked the
+// mech can't move at all.
 fun move_range(p: u8, base: u8) -> u8 {
     var l: u8 = legs_down(p)
-    if l >= base {
+    if l == 2 or l >= base {
         return 0
     }
     return base - l
