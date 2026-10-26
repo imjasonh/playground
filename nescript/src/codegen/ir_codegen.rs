@@ -306,6 +306,10 @@ pub struct IrCodeGen<'a> {
     /// should JSR the direct `__ir_fn_<name>` label or the cross-bank
     /// trampoline `__tramp_<name>` label.
     function_banks: HashMap<String, String>,
+    /// Functions that draw a sprite themselves or through a callee.
+    /// A frame handler in this set clears OAM and resets the OAM
+    /// cursor on entry.
+    drawing_functions: std::collections::HashSet<String>,
     /// While [`Self::generate`] is emitting code for a banked
     /// function, this holds the bank name so cross-bank calls can be
     /// disambiguated from in-bank calls. `None` means the codegen is
@@ -502,6 +506,7 @@ impl<'a> IrCodeGen<'a> {
             bounds_halt_used: false,
             banked_streams: HashMap::new(),
             function_banks,
+            drawing_functions: drawing_functions(ir),
             current_bank: None,
             allocations,
             leaf_param_overrides,
@@ -1149,7 +1154,7 @@ impl<'a> IrCodeGen<'a> {
         // overwrites the slots it needs. Handlers that never call
         // `draw` skip the clear entirely — the NMI handler's DMA
         // copies whatever's in $0200 unchanged.
-        if self.in_frame_handler && function_draws_sprites(func) {
+        if self.in_frame_handler && self.drawing_functions.contains(&func.name) {
             let clear_loop = format!("__ir_oam_clear_{}", func.name);
             self.emit(LDX, AM::Immediate(0));
             self.emit(LDA, AM::Immediate(0xFE));
@@ -3682,6 +3687,38 @@ fn function_draws_sprites(func: &IrFunction) -> bool {
         .any(|op| matches!(op, IrOp::DrawSprite { .. }))
 }
 
+/// Names of the functions that run a `draw`, directly or through any
+/// chain of calls. Without the call chain, a frame handler that
+/// draws only from helper functions would never reset the OAM cursor,
+/// and its sprites would walk through every OAM slot.
+fn drawing_functions(ir: &IrProgram) -> std::collections::HashSet<String> {
+    let mut drawing: std::collections::HashSet<String> = ir
+        .functions
+        .iter()
+        .filter(|f| function_draws_sprites(f))
+        .map(|f| f.name.clone())
+        .collect();
+    loop {
+        let before = drawing.len();
+        for func in &ir.functions {
+            if drawing.contains(&func.name) {
+                continue;
+            }
+            let calls_drawer = func
+                .blocks
+                .iter()
+                .flat_map(|b| &b.ops)
+                .any(|op| matches!(op, IrOp::Call(_, name, _) if drawing.contains(name)));
+            if calls_drawer {
+                drawing.insert(func.name.clone());
+            }
+        }
+        if drawing.len() == before {
+            return drawing;
+        }
+    }
+}
+
 /// Return every source temp referenced by an op. Destination temps
 /// are excluded. Mirrors `optimizer::collect_source_temps` but
 /// returns a small Vec instead of mutating a set — the codegen
@@ -4165,6 +4202,36 @@ mod more_tests {
         );
         assert_eq!(insts[g_call + 3].opcode, STA);
         assert_eq!(insts[g_call + 3].mode, AM::ZeroPage(saved));
+    }
+
+    #[test]
+    fn ir_codegen_frame_handler_drawing_through_helpers_clears_oam() {
+        // The handler draws only two calls deep. It must still clear
+        // OAM and reset the cursor, or each frame's sprites land one
+        // slot past the last frame's and the old ones stay visible.
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            fun dot(x: u8) { draw Smiley at: (x, 40) }
+            fun dots() { dot(10)
+                dot(20) }
+            on frame { dots() }
+            start Main
+        "#,
+        );
+        assert!(
+            insts
+                .iter()
+                .any(|i| matches!(&i.mode, AM::Label(l) if l.starts_with("__ir_oam_clear_"))),
+            "frame handler should clear OAM"
+        );
+        assert!(
+            insts.windows(2).any(|w| w[0].opcode == LDA
+                && w[0].mode == AM::Immediate(0)
+                && w[1].opcode == STA
+                && w[1].mode == AM::ZeroPage(ZP_OAM_CURSOR)),
+            "frame handler should reset the OAM cursor"
+        );
     }
 
     #[test]
