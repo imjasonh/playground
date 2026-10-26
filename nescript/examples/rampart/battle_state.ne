@@ -135,18 +135,17 @@ fun paint_all() {
     }
 }
 
+fun paint_lock_status(p: u8) {
+    var x: u8 = LOCK_STATUS_X[p]
+    put_str(x, LOCK_STATUS_ROW, S_CPU)
+    put_str(x + 4, LOCK_STATUS_ROW, S_READY)
+}
+
 fun paint_card() {
     var q: u8 = 0
     while q < 2 {
-        var x: u8 = LOCK_STATUS_X[q]
-        if q == 0 {
-            put_str(x, LOCK_STATUS_ROW, S_P1)
-        } else {
-            put_str(x, LOCK_STATUS_ROW, S_P2)
-        }
         if is_cpu(q) {
-            put_str(x + 3, LOCK_STATUS_ROW, S_CPU)
-            put_str(x + 7, LOCK_STATUS_ROW, S_READY)
+            paint_lock_status(q)
         }
         q += 1
     }
@@ -296,13 +295,12 @@ fun run_lock() {
     while p < 2 {
         if lk_ready[p] == 0 {
             var b: u8 = pad_pressed(p)
-            var x: u8 = LOCK_STATUS_X[p] + 3
+            var x: u8 = LOCK_STATUS_X[p]
             if b == BTN_START {
                 var code: u8 = lk_prev[p] * 6 + lk_last[p]
                 if lk_n[p] >= 2 and code < NUM_PLANS and plan_legal(p, code) {
                     plan[p] = code
                     lk_ready[p] = 1
-                    put_clear(x, LOCK_STATUS_ROW, 8)
                     put_str(x, LOCK_STATUS_ROW, S_READY)
                     play LockYes
                 } else {
@@ -376,10 +374,10 @@ fun next_action() {
             msg_who(first)
             msg_str(S_FIRST)
             msg_line(MSG_ROW2)
-            msg_str(S_P1)
+            msg_who(0)
             msg_str(S_ROLL)
             msg_num(r0)
-            msg_str(S_P2)
+            msg_who(1)
             msg_str(S_ROLL)
             msg_num(r1)
             wait_then(T_SHORT, P_DO)
@@ -708,15 +706,15 @@ fun game_over() {
     var w: u8 = decide_winner()
     msg_clear()
     msg_line(MSG_ROW1)
-    if crits[0] >= LOSS_CRITS or crits[1] >= LOSS_CRITS {
-        if crits[0] >= LOSS_CRITS {
-            msg_str(S_P1)
-            msg_str(S_WRECKED)
-        }
+    if crits[0] >= LOSS_CRITS and crits[1] >= LOSS_CRITS {
+        msg_str(S_BOTH)
+    } else if crits[0] >= LOSS_CRITS or crits[1] >= LOSS_CRITS {
+        var wrecked: u8 = 0
         if crits[1] >= LOSS_CRITS {
-            msg_str(S_P2)
-            msg_str(S_WRECKED)
+            wrecked = 1
         }
+        msg_who(wrecked)
+        msg_str(S_WRECKED)
     } else {
         msg_str(S_TIME_UP)
     }

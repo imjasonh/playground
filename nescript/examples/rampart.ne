@@ -55,8 +55,10 @@
 //                 CPU keeps its frame's weapons and is named BLUE
 //                 or RED, matching that player's color.
 //     Lock        tap the two-button code, then START. A legal
-//                 plan chimes. An illegal one buzzes. The d-pad
-//                 buttons are arrows. A and B stay letters.
+//                 plan chimes, and READY shows in that player's
+//                 color. An illegal one buzzes. A CPU shows
+//                 CPU READY in its color. The d-pad buttons are
+//                 arrows. A and B stay letters.
 //     Move        d-pad moves the cursor within range, A confirms,
 //                 B returns the cursor to the mech.
 //     Aim         d-pad picks a plate cell, A fires.

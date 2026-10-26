@@ -335,7 +335,6 @@ include "rules.ne"
 
     fun paint_cust() {
         if cust_who == 0 {
-            put_str(2, 1, S_P1)
             nt_attr(8, 4, 170)
             nt_attr(12, 4, 170)
             nt_attr(0, 8, 136)
@@ -343,7 +342,6 @@ include "rules.ne"
             nt_attr(0, 12, 8)
             nt_attr(4, 12, 10)
         } else {
-            put_str(2, 1, S_P2)
             nt_attr(8, 4, 255)
             nt_attr(12, 4, 255)
             nt_attr(0, 8, 204)

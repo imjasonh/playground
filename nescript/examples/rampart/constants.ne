@@ -41,7 +41,7 @@ const TURN_X: u8 = 23
 const MSG_ROW1: u8 = 27
 const MSG_ROW2: u8 = 28
 const INFO_ROW: u8 = 1
-// Panel block top rows for P1 and P2.
+// Panel block top rows. Index 0 is blue, index 1 is red.
 const P_BASE: u8[2] = [2, 14]
 
 // ── Setup screen rows and columns ───────────────────────────

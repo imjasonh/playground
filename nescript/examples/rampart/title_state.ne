@@ -5,7 +5,7 @@
 // seconds, the title starts a CPU-against-CPU demo match.
 
 const MENU_ROWS: u8[5] = [13, 15, 17, 19, 21]
-// Top-left cells of the P1 and P2 portraits.
+// Top-left cells of the blue and red portraits.
 const PORTRAIT_X: u8[2] = [2, 24]
 const PORTRAIT_Y: u8 = 23
 const MENU_VALUE_X: u8 = 16

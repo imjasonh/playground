@@ -218,12 +218,24 @@ fun msg_num(n: u8) {
     }
 }
 
+// The name chosen at setup, without the trailing spaces, then the
+// same gap msg_str leaves after a word.
 fun msg_who(p: u8) {
-    if p == 0 {
-        msg_str(S_P1)
-    } else {
-        msg_str(S_P2)
+    var end: u8 = 5
+    while end > 0 and name_ch[p * 6 + end] == T_SPACE {
+        end -= 1
     }
+    var n: u8 = end + 1
+    if name_ch[p * 6] == T_SPACE {
+        n = 0
+    }
+    var i: u8 = 0
+    while i < n {
+        put_tile(msg_x, msg_y, name_ch[p * 6 + i])
+        msg_x += 1
+        i += 1
+    }
+    msg_x += 1
 }
 
 // ── Panel ───────────────────────────────────────────────────
@@ -298,8 +310,9 @@ fun paint_range(d: u8, cover: bool) {
     }
 }
 
-// The panel color is the player. P1's block is blue, P2's is red.
-// The six letters are the name chosen at setup.
+// The panel color is the player. The first player's block is blue
+// and the second player's is red. The six letters are the name
+// chosen at setup.
 fun paint_panel_header(p: u8) {
     var row: u8 = P_BASE[p]
     var i: u8 = 0

@@ -475,13 +475,24 @@ def write_backgrounds():
         title[4 + y] = "".join(line)
     title[13] = "    MODE"
     title[15] = "    CPU"
-    title[17] = "    P1 MECH"
-    title[19] = "    P2 MECH"
+    title[17] = "    BLUE"
+    title[19] = "    RED"
     title[21] = "    START"
-    # Rows 23..28 hold each player's mech portrait, painted at
-    # runtime: P1 at columns 2..7 in bg2, P2 at 24..29 in bg3.
+    # Rows 23..28 hold each mech's portrait, painted at runtime.
+    # Blue is columns 2..7 in bg2. Red is columns 24..29 in bg3.
     portraits = "0" + "222" + "0" * 8 + "333" + "0"
-    title_pal = ["0" * 16] * 2 + ["3" * 16] * 3 + ["0" * 16] * 6 + [portraits] * 4
+    # Rows 17 and 19 name the mechs by color. The letters and the
+    # PIKE or MAUL value sit in bg2 and bg3, so they draw blue and red.
+    blue_row = "0022000022000000"
+    red_row = "0033000033000000"
+    title_pal = (
+        ["0" * 16] * 2
+        + ["3" * 16] * 3
+        + ["0" * 16] * 3
+        + [blue_row, red_row]
+        + ["0" * 16]
+        + [portraits] * 4
+    )
     out += background("Title", title, {"#": T_LOGO}, title_pal)
 
     # Board: 12x12 squares of 2x2 tiles at tile rows 2..25, columns
@@ -532,7 +543,9 @@ def write_backgrounds():
         code = glyph[BUTTONS[i // 6]] + glyph[BUTTONS[i % 6]]
         card[5 + i] = f"  {code}  {' '.join(p):<17}{plan_cost(p)}"
     card[23] = " START WHEN DONE"
-    card_pal = ["0" * 16] * 15
+    # Tile rows 26-27. The left status is blue and the right is red,
+    # which is where READY and CPU READY are painted.
+    card_pal = ["0" * 16] * 13 + ["2222200033333000", "0" * 16]
     card_extra = {
         "^": T_DIR_UP,
         "v": T_DIR_DOWN,
@@ -582,8 +595,7 @@ STRINGS = [
     ("L_LEGL", "LEG L"),
     ("L_LEGR", "LEG R"),
     ("L_MISS", "OFF THE PLATE"),
-    ("P1", "P1"),
-    ("P2", "P2"),
+    ("BOTH", "BOTH WRECKED"),
     ("DICE", "DICE"),
     ("SAVE", "SAVE"),
     ("NEED", "NEED"),
@@ -612,7 +624,7 @@ STRINGS = [
     ("THINKING", "THINKING"),
     ("TIME", "TIME"),
     ("M_CPU2", "CPU VS CPU"),
-    ("M_1P", "1P VS CPU"),
+    ("M_1P", "HUMAN VS CPU"),
     ("M_2P", "2 PLAYERS"),
     ("D_EASY", "EASY"),
     ("D_MED", "MEDIUM"),
