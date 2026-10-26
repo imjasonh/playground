@@ -8,6 +8,16 @@
 // strips armor, and a location at zero armor is critical. Six
 // critical locations wreck a mech.
 //
+// A critical location stops working: the gun and arms lose their
+// weapons, the shield can't go up, the head caps plans at two
+// points, and each leg costs a square of movement. With both legs
+// gone the mech can't move.
+//
+// The body plate is the mech's portrait. Damage shows as sprites on
+// the hit part: scuffs, then holes, then fire on the last point of
+// armor, then a crater, with the part's tiles swapped for charred
+// copies once it's critical.
+//
 // Secret plans work like a two-player sports game's play call: the
 // lock screen lists every plan with a two-button code, and each
 // player taps a code on their own controller with nothing echoed
@@ -53,10 +63,12 @@ palette Main {
     // an attribute cell with the panel, so bg2 and bg3 keep it gray.
     bg2: [dk_gray, blue, sky_blue]
     bg3: [dk_gray, red, peach]
-    sp0: [blue, red, white]
-    sp1: [blue, red, white]
-    sp2: [blue, red, white]
-    sp3: [blue, red, white]
+    // Board mechs: sp0 for player 1, sp1 for player 2. sp2 is for
+    // dents, holes, and craters; sp3 for fire, cursors, and flashes.
+    sp0: [dk_gray, blue, sky_blue]
+    sp1: [dk_gray, red, peach]
+    sp2: [black, dk_gray, orange]
+    sp3: [red, orange, yellow]
 }
 
 include "rampart/text.ne"

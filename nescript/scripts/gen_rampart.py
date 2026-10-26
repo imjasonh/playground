@@ -16,6 +16,8 @@ Run from nescript/:  python3 scripts/gen_rampart.py
 import os
 import re
 
+import rampart_art as art
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "examples", "rampart")
 SHA_ASSETS = os.path.join(ROOT, "examples", "sha256", "assets.ne")
@@ -120,58 +122,24 @@ EXTRA_GLYPHS = {
 }
 
 
-def split16(rows, body):
-    """Split a 16x16 picture into TL, TR, BL, BR 8x8 tiles.
-
-    `B` is the body colour (1 for player 1, 2 for player 2) and `@`
-    is colour 3.
-    """
-    rows = [r.replace("B", body).replace("@", "3") for r in rows]
-    return [
-        [r[:8] for r in rows[:8]],
-        [r[8:] for r in rows[:8]],
-        [r[:8] for r in rows[8:]],
-        [r[8:] for r in rows[8:]],
-    ]
-
-
-PIKE = [
-    "......BB........",
-    ".....B@@B.......",
-    ".....BBBB......@",
-    "...BBBBBBBB...@.",
-    "..BB@BBBB@BB.@..",
-    "..B.BBBBBB.B@...",
-    "..B.BB@@BB.BB...",
-    "..@.BBBBBB.@B...",
-    "....BBBBBB..B...",
-    "....BB..BB......",
-    "....BB..BB......",
-    "...BB....BB.....",
-    "...BB....BB.....",
-    "..BBB....BBB....",
-    "..@@@....@@@....",
-    "................",
-]
-
-MAUL = [
-    "................",
-    "......BBBB......",
-    ".....B@@@@B.....",
-    "..BBBBBBBBBBBB..",
-    ".BBBB@BBBB@BBBB.",
-    ".BB.BBBBBBBB.BB.",
-    ".BB.BB@BB@BB.BB@",
-    ".@@.BBBBBBBB.BB@",
-    "....BBBBBBBB.@@@",
-    "....BBB..BBB..@.",
-    "....BBB..BBB..@.",
-    "...BBBB..BBBB...",
-    "...BBB....BBB...",
-    "..BBBB....BBBB..",
-    "..@@@@....@@@@..",
-    "................",
-]
+# Tile numbers the .ne sources refer to by name.
+T_FLOOR = 1  # 1..4
+T_RUIN = 5  # 5..8
+T_LOGO = 12
+T_CORNER = 13
+T_AIM = 14
+T_BURST = 15
+T_SCUFF = 16
+T_HOLES = 17
+T_FIRE = 18  # 18..19, two frames
+T_CRATER = 20
+T_ARROW = 21
+T_PIKE = 96  # 96..99
+T_MAUL = 100  # 100..103
+# Body-plate portraits: frame f, cell c is tile T_PLATE + f * 72 + c,
+# and its charred copy for a wrecked location is 36 tiles later.
+T_PLATE = 112
+TILE_COUNT = 256
 
 # Board square, drawn inset by one pixel so neighbours show a gap.
 FLOOR = [
@@ -212,21 +180,6 @@ RUIN = [
     "................",
 ]
 
-CURSOR_TL = ["333.....", "3.......", "3......."] + ["........"] * 5
-CURSOR_TR = [".....333", ".......3", ".......3"] + ["........"] * 5
-CURSOR_BL = ["........"] * 5 + ["3.......", "3.......", "333....."]
-CURSOR_BR = ["........"] * 5 + [".......3", ".......3", ".....333"]
-PLATE_BOX = ["33333333"] + ["3......3"] * 6 + ["33333333"]
-LANDING = [
-    "2......2",
-    ".2....2.",
-    "..2..2..",
-    "...33...",
-    "...33...",
-    "..2..2..",
-    ".2....2.",
-    "2......2",
-]
 ARROW = [
     "........",
     ".33.....",
@@ -234,16 +187,6 @@ ARROW = [
     ".333333.",
     ".3333...",
     ".33.....",
-    "........",
-    "........",
-]
-MISS_CELL = [
-    "........",
-    "........",
-    "........",
-    "...11...",
-    "...11...",
-    "........",
     "........",
     "........",
 ]
@@ -259,78 +202,47 @@ LOGO = [
 ]
 
 
-def damage_tile(tier):
-    """8x8 riveted plate, framed in colour 2, whose colour-3 fill
-    grows from the top in reading order as `tier` goes from 0 (armor
-    gone, interior empty) to 4 (undamaged, interior full). Body-plate
-    cells pick one of these five by how much armor a location has
-    left relative to its own maximum, so every location's full-health
-    tile is the same fully-filled plate regardless of that maximum.
-    """
-    interior = [(r, c) for r in range(6) for c in range(6)]
-    filled = set(interior[: len(interior) * tier // 4])
-    rows = []
-    for r in range(8):
-        row = []
-        for c in range(8):
-            if r in (0, 7) or c in (0, 7):
-                row.append("2")
-            else:
-                row.append("3" if (r - 1, c - 1) in filled else "1")
-        rows.append("".join(row))
-    return rows
-
-
-# Tile numbers the .ne sources refer to by name.
-T_FLOOR = 1  # 1..4
-T_RUIN = 5  # 5..8
-T_MISS = 10
-T_LOGO = 12
-T_PIKE1 = 96
-T_PIKE2 = 100
-T_MAUL1 = 104
-T_MAUL2 = 108
-T_CURSOR = 112  # 112..115
-T_BOX = 116
-T_LANDING = 117
-T_ARROW = 118
-T_DAMAGE0 = 119  # 119..123, tier 0 (armor gone) .. 4 (undamaged)
-TILE_COUNT = 124
-
-
 def build_tiles():
     font = load_sha_font()
     font.update(EXTRA_GLYPHS)
     tiles = [BLANK] * TILE_COUNT
-    for i, t in enumerate(split16(FLOOR, "1")):
+    for i, t in enumerate(art.split16(FLOOR)):
         tiles[T_FLOOR + i] = t
-    for i, t in enumerate(split16(RUIN, "1")):
+    for i, t in enumerate(art.split16(RUIN)):
         tiles[T_RUIN + i] = t
-    tiles[T_MISS] = MISS_CELL
     tiles[T_LOGO] = LOGO
     for ch, rows in font.items():
         tiles[ord(ch)] = rows
-    for base, pic, body in [
-        (T_PIKE1, PIKE, "1"),
-        (T_PIKE2, PIKE, "2"),
-        (T_MAUL1, MAUL, "1"),
-        (T_MAUL2, MAUL, "2"),
-    ]:
-        for i, t in enumerate(split16(pic, body)):
-            tiles[base + i] = t
-    for i, t in enumerate([CURSOR_TL, CURSOR_TR, CURSOR_BL, CURSOR_BR]):
-        tiles[T_CURSOR + i] = t
-    tiles[T_BOX] = PLATE_BOX
-    tiles[T_LANDING] = LANDING
+    tiles[T_CORNER] = art.CORNER
+    tiles[T_AIM] = art.AIM
+    tiles[T_BURST] = art.BURST
+    tiles[T_SCUFF] = art.SCUFF
+    tiles[T_HOLES] = art.HOLES
+    tiles[T_FIRE] = art.FIRE_A
+    tiles[T_FIRE + 1] = art.FIRE_B
+    tiles[T_CRATER] = art.CRATER
     tiles[T_ARROW] = ARROW
-    for tier in range(5):
-        tiles[T_DAMAGE0 + tier] = damage_tile(tier)
+    for i, t in enumerate(art.split16(art.PIKE_MINI)):
+        tiles[T_PIKE + i] = t
+    for i, t in enumerate(art.split16(art.MAUL_MINI)):
+        tiles[T_MAUL + i] = t
+    for f, pic in enumerate([art.pike(), art.maul()]):
+        base = T_PLATE + f * 72
+        for c, t in enumerate(art.tiles_of(pic, 6, 6)):
+            tiles[base + c] = t
+        for c, t in enumerate(art.tiles_of(art.charred(pic), 6, 6)):
+            tiles[base + 36 + c] = t
     return tiles
 
 
 def tile_label(i):
     if 32 < i < 127 and chr(i).isprintable():
         return repr(chr(i))
+    if i >= T_PLATE:
+        f, rest = divmod(i - T_PLATE, 72)
+        kind, cell = divmod(rest, 36)
+        name = ["pike", "maul"][f] + [" plate", " charred plate"][kind]
+        return f"{name} cell {cell}"
     return {
         0: "reserved",
         32: "space",
@@ -342,13 +254,24 @@ def tile_label(i):
         T_RUIN + 1: "ruin TR",
         T_RUIN + 2: "ruin BL",
         T_RUIN + 3: "ruin BR",
-        T_MISS: "blank plate cell",
         T_LOGO: "logo block",
-        T_DAMAGE0: "plate damage tier 0 (wrecked)",
-        T_DAMAGE0 + 1: "plate damage tier 1",
-        T_DAMAGE0 + 2: "plate damage tier 2",
-        T_DAMAGE0 + 3: "plate damage tier 3",
-        T_DAMAGE0 + 4: "plate damage tier 4 (undamaged)",
+        T_CORNER: "square cursor corner",
+        T_AIM: "aim brackets",
+        T_BURST: "impact flash",
+        T_SCUFF: "decal: scuffs",
+        T_HOLES: "decal: holes",
+        T_FIRE: "decal: fire, frame 1",
+        T_FIRE + 1: "decal: fire, frame 2",
+        T_CRATER: "decal: crater",
+        T_ARROW: "menu arrow",
+        T_PIKE: "pike TL",
+        T_PIKE + 1: "pike TR",
+        T_PIKE + 2: "pike BL",
+        T_PIKE + 3: "pike BR",
+        T_MAUL: "maul TL",
+        T_MAUL + 1: "maul TR",
+        T_MAUL + 2: "maul BL",
+        T_MAUL + 3: "maul BR",
     }.get(i, "unused")
 
 
@@ -474,8 +397,11 @@ def write_backgrounds():
     title[15] = "    CPU"
     title[17] = "    P1 MECH"
     title[19] = "    P2 MECH"
-    title[22] = "    START"
-    title_pal = ["0" * 16] * 2 + ["3" * 16] * 3 + ["0" * 16] * 10
+    title[21] = "    START"
+    # Rows 23..28 hold each player's mech portrait, painted at
+    # runtime: P1 at columns 2..7 in bg2, P2 at 24..29 in bg3.
+    portraits = "0" + "222" + "0" * 8 + "333" + "0"
+    title_pal = ["0" * 16] * 2 + ["3" * 16] * 3 + ["0" * 16] * 6 + [portraits] * 4
     out += background("Title", title, {"#": T_LOGO}, title_pal)
 
     # Board: 12x12 squares of 2x2 tiles at tile rows 2..25, columns

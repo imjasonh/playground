@@ -4,7 +4,10 @@
 // the START row) begins the match. Left alone for about seven
 // seconds, the title starts a CPU-against-CPU demo match.
 
-const MENU_ROWS: u8[5] = [13, 15, 17, 19, 22]
+const MENU_ROWS: u8[5] = [13, 15, 17, 19, 21]
+// Top-left cells of the P1 and P2 portraits.
+const PORTRAIT_X: u8[2] = [2, 24]
+const PORTRAIT_Y: u8 = 23
 const MENU_VALUE_X: u8 = 16
 const DEMO_IDLE: u8 = 200
 
@@ -15,10 +18,10 @@ fun paint_menu_value(row: u8) {
         put_str(MENU_VALUE_X, y, MODE_STR[mode])
     } else if row == 1 {
         put_str(MENU_VALUE_X, y, LEVEL_STR[cpu_level])
-    } else if row == 2 {
-        put_str(MENU_VALUE_X, y, FRAME_STR[mech_frame[0]])
-    } else if row == 3 {
-        put_str(MENU_VALUE_X, y, FRAME_STR[mech_frame[1]])
+    } else if row >= 2 {
+        var p: u8 = row - 2
+        put_str(MENU_VALUE_X, y, FRAME_STR[mech_frame[p]])
+        paint_portrait(PORTRAIT_X[p], PORTRAIT_Y, mech_frame[p])
     }
 }
 
@@ -78,7 +81,9 @@ state Title {
             } else if sel == 3 {
                 mech_frame[1] = mech_frame[1] ^ 1
             }
-            paint_menu_value(sel)
+            if sel < 4 {
+                paint_menu_value(sel)
+            }
         }
         if changed {
             idle = 0
@@ -98,7 +103,7 @@ state Title {
             go = true
         }
 
-        draw Tileset at: (16, MENU_ROWS[sel] * 8 - 1) frame: T_ARROW
+        draw Tileset at: (16, MENU_ROWS[sel] * 8 - 1) attr: SP_FIRE frame: T_ARROW
         if go {
             seed_rand(seed)
             transition Battle

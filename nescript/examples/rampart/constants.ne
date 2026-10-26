@@ -2,20 +2,30 @@
 
 // ── Tiles (see scripts/gen_rampart.py) ──────────────────────
 const T_SPACE: u8 = 32
-const T_MISS: u8 = 10
 const T_DIGIT0: u8 = 48
-// Body-plate damage tiles, tier 0 (armor gone) through 4 (undamaged).
-const T_DAMAGE0: u8 = 119
 const T_PLUS: u8 = 43
 const T_MINUS: u8 = 45
 const T_QUEST: u8 = 63
-const T_PIKE1: u8 = 96
-const T_PIKE2: u8 = 100
-const T_MAUL1: u8 = 104
-const T_MAUL2: u8 = 108
-const T_CURSOR: u8 = 112
-const T_BOX: u8 = 116
-const T_ARROW: u8 = 118
+const T_CORNER: u8 = 13
+const T_AIM: u8 = 14
+const T_BURST: u8 = 15
+const T_SCUFF: u8 = 16
+const T_HOLES: u8 = 17
+const T_FIRE: u8 = 18
+const T_CRATER: u8 = 20
+const T_ARROW: u8 = 21
+const T_PIKE: u8 = 96
+const T_MAUL: u8 = 100
+// Frame f's portrait cell c is T_PLATE + f * 72 + c; the charred
+// copy shown once a location is wrecked is T_CHARRED tiles later.
+const T_PLATE: u8 = 112
+const T_CHARRED: u8 = 36
+
+// Sprite attribute bytes: palette in bits 0-1, flips in bits 6-7.
+const SP_DAMAGE: u8 = 2
+const SP_FIRE: u8 = 3
+const FLIP_H: u8 = 0x40
+const FLIP_V: u8 = 0x80
 
 // ── Screen layout (nametable cells) ─────────────────────────
 // Columns 0 and 31 are left blank: TVs and most emulators crop them.
@@ -85,15 +95,26 @@ const L_NONE: u8 = 11
 const NUM_LOCS: u8 = 11
 const LOSS_CRITS: u8 = 6
 
+// The plate is the mech's portrait cut into 6x6 cells; this maps
+// each cell to the location it shows.
 const PLATE: u8[36] = [
-    11, 5, 5, 11, 11, 11,
-    6, 6, 0, 0, 7, 7,
-    3, 3, 8, 1, 4, 4,
-    3, 2, 8, 1, 4, 4,
-    9, 9, 8, 8, 10, 10,
-    9, 9, 11, 11, 10, 10
+    5, 5, 0, 0, 1, 1,
+    6, 6, 8, 8, 7, 7,
+    3, 3, 8, 8, 4, 4,
+    2, 3, 8, 8, 4, 4,
+    11, 9, 9, 10, 10, 11,
+    11, 9, 9, 10, 10, 11
 ]
 const START_ARMOR: u8[11] = [2, 3, 3, 4, 4, 2, 3, 3, 4, 4, 4]
+// Damage decals: up to two per location, at these pixel offsets
+// from the plate's top-left corner. DEC_BX is 255 where a location
+// has room for one decal only. DEC_FLIP mirrors the decals on the
+// mech's right side.
+const DEC_AX: u8[11] = [20, 36, 0, 5, 35, 4, 4, 36, 20, 11, 28]
+const DEC_AY: u8[11] = [0, 0, 24, 16, 17, 1, 7, 7, 10, 33, 33]
+const DEC_BX: u8[11] = [255, 255, 255, 8, 37, 255, 255, 255, 20, 12, 27]
+const DEC_BY: u8[11] = [0, 0, 0, 24, 25, 0, 0, 0, 21, 41, 41]
+const DEC_FLIP: u8[11] = [0, 0x40, 0, 0, 0x40, 0, 0, 0x40, 0, 0, 0x40]
 const LOC_STR: u8[12] = [S_L_HEAD, S_L_GUN, S_L_SHIELD, S_L_ARML, S_L_ARMR, S_L_MAST, S_L_PAULL, S_L_PAULR, S_L_HULL, S_L_LEGL, S_L_LEGR, S_L_MISS]
 
 // ── Mechs and weapons ───────────────────────────────────────

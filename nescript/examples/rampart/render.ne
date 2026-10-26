@@ -11,6 +11,7 @@ const K_NUM: u8 = 1
 const K_CLEAR: u8 = 2
 const K_TILE: u8 = 3
 const K_PLATE: u8 = 4
+const K_PORTRAIT: u8 = 5
 const RING_BUDGET: u8 = 160
 
 fun str_byte(id: u8, i: u8) -> u8 {
@@ -54,25 +55,40 @@ fun text_idle() -> bool {
     return q_head == q_tail
 }
 
-// Damage tier for a location: 0 once its armor hits zero, else how
-// full its armor is out of its own max (START_ARMOR[loc]), rounded
-// up into 1..4 so any remaining armor shows as more than empty and
-// full armor always shows as tier 4 regardless of that max.
-fun damage_tier(p: u8, loc: u8) -> u8 {
+// How beaten up a location looks: 0 untouched, 1 after its first
+// hit, 2 after more, 3 on its last point of armor, 4 wrecked.
+fun damage_level(p: u8, loc: u8) -> u8 {
     var a: u8 = armor[p * 11 + loc]
+    var mx: u8 = START_ARMOR[loc]
     if a == 0 {
+        return 4
+    }
+    if a == mx {
         return 0
     }
-    var mx: u8 = START_ARMOR[loc]
-    return (a * 4 + mx - 1) / mx
+    if a == 1 {
+        return 3
+    }
+    if mx - a == 1 {
+        return 1
+    }
+    return 2
 }
 
+// The portrait tile for one plate cell, charred once its location is
+// wrecked. Cells off the plate still draw so the outline stays whole.
 fun plate_tile(p: u8, cell: u8) -> u8 {
-    var loc: u8 = PLATE[cell]
-    if loc == L_NONE {
-        return T_MISS
+    var t: u8 = T_PLATE + cell
+    if mech_frame[p] == 1 {
+        t += 72
     }
-    return T_DAMAGE0 + damage_tier(p, loc)
+    var loc: u8 = PLATE[cell]
+    if loc != L_NONE {
+        if armor[p * 11 + loc] == 0 {
+            t += T_CHARRED
+        }
+    }
+    return t
 }
 
 fun cmd_cost(kind: u8, arg: u8) -> u8 {
@@ -85,7 +101,7 @@ fun cmd_cost(kind: u8, arg: u8) -> u8 {
     if kind == K_CLEAR {
         return arg + 3
     }
-    if kind == K_PLATE {
+    if kind >= K_PLATE {
         return 24
     }
     return 4
@@ -121,14 +137,25 @@ fun flush_text() {
             nt_fill_h(x, y, a, T_SPACE)
         } else if k == K_TILE {
             nt_set(x, y, a)
-        } else {
-            // K_PLATE: arg = player * 8 + row.
+        } else if k == K_PLATE {
+            // arg = player * 8 + row.
             var p: u8 = a >> 3
             var cell: u8 = (a & 7) * 6
             var c: u8 = 0
             while c < 6 {
                 nt_set(x + c, y, plate_tile(p, cell + c))
                 c += 1
+            }
+        } else {
+            // K_PORTRAIT, an undamaged portrait row: arg = frame * 8 + row.
+            var pt: u8 = T_PLATE + (a & 7) * 6
+            if a >= 8 {
+                pt += 72
+            }
+            var pc: u8 = 0
+            while pc < 6 {
+                nt_set(x + pc, y, pt + pc)
+                pc += 1
             }
         }
         q_head = (q_head + 1) & 63
@@ -198,10 +225,20 @@ fun msg_who(p: u8) {
 // ── Panel ───────────────────────────────────────────────────
 
 fun paint_plate(p: u8) {
+    rebuild_decals()
     var base: u8 = P_BASE[p] + 2
     var r: u8 = 0
     while r < 6 {
         push_cmd(K_PLATE, PLATE_X, base + r, p * 8 + r)
+        r += 1
+    }
+}
+
+// Frame f's undamaged portrait with its top-left cell at (x, y).
+fun paint_portrait(x: u8, y: u8, f: u8) {
+    var r: u8 = 0
+    while r < 6 {
+        push_cmd(K_PORTRAIT, x, y + r, f * 8 + r)
         r += 1
     }
 }
@@ -263,35 +300,106 @@ fun paint_panel_header(p: u8) {
 
 // ── Sprites ─────────────────────────────────────────────────
 
+// The board mech in its player's palette.
 fun draw_mech(p: u8) {
-    var t: u8 = T_PIKE1
+    var t: u8 = T_PIKE
     if mech_frame[p] == 1 {
-        t = T_MAUL1
-    }
-    if p == 1 {
-        t += 4
+        t = T_MAUL
     }
     var sx: u8 = mech_x[p] * 16 + BOARD_PX
     var sy: u8 = mech_y[p] * 16 + 15
-    draw Tileset at: (sx, sy) frame: t
-    draw Tileset at: (sx + 8, sy) frame: t + 1
-    draw Tileset at: (sx, sy + 8) frame: t + 2
-    draw Tileset at: (sx + 8, sy + 8) frame: t + 3
+    draw Tileset at: (sx, sy) attr: p frame: t
+    draw Tileset at: (sx + 8, sy) attr: p frame: t + 1
+    draw Tileset at: (sx, sy + 8) attr: p frame: t + 2
+    draw Tileset at: (sx + 8, sy + 8) attr: p frame: t + 3
 }
 
-// Corner brackets around board square (x, y).
+// Corner brackets around board square (x, y): one corner tile,
+// flipped into the other three.
 fun draw_square_cursor(x: u8, y: u8) {
     var sx: u8 = x * 16 + BOARD_PX
     var sy: u8 = y * 16 + 15
-    draw Tileset at: (sx, sy) frame: T_CURSOR
-    draw Tileset at: (sx + 8, sy) frame: T_CURSOR + 1
-    draw Tileset at: (sx, sy + 8) frame: T_CURSOR + 2
-    draw Tileset at: (sx + 8, sy + 8) frame: T_CURSOR + 3
+    draw Tileset at: (sx, sy) attr: SP_FIRE frame: T_CORNER
+    draw Tileset at: (sx + 8, sy) attr: SP_FIRE | FLIP_H frame: T_CORNER
+    draw Tileset at: (sx, sy + 8) attr: SP_FIRE | FLIP_V frame: T_CORNER
+    draw Tileset at: (sx + 8, sy + 8) attr: SP_FIRE | FLIP_H | FLIP_V frame: T_CORNER
 }
 
-// Box over cell (x, y) of player p's plate on the panel.
+// Brackets around cell (x, y) of player p's plate on the panel.
 fun draw_plate_cursor(p: u8, x: u8, y: u8) {
     var sx: u8 = (PLATE_X + x) * 8
     var sy: u8 = (P_BASE[p] + 2 + y) * 8 - 1
-    draw Tileset at: (sx, sy) frame: T_BOX
+    draw Tileset at: (sx, sy) attr: SP_FIRE frame: T_AIM
+}
+
+// Impact flash on cell (x, y) of player p's plate.
+fun draw_plate_hit(p: u8, x: u8, y: u8) {
+    var sx: u8 = (PLATE_X + x) * 8
+    var sy: u8 = (P_BASE[p] + 2 + y) * 8 - 1
+    draw Tileset at: (sx, sy) attr: SP_FIRE frame: T_BURST
+}
+
+// Scuffs, then holes, then fire, then a crater: each damage level
+// moves the main decal one step along and leaves the previous step
+// on the second anchor.
+const DECAL_A: u8[5] = [0, T_SCUFF, T_HOLES, T_FIRE, T_CRATER]
+const DECAL_B: u8[5] = [0, 0, T_SCUFF, T_HOLES, T_FIRE]
+
+// Damage decals as ready-to-draw sprites. Working out damage levels
+// for both plates every frame costs more than a frame has, so
+// add_decals() rebuilds this list whenever a plate is repainted.
+var dec_x: u8[44]
+var dec_y: u8[44]
+var dec_t: u8[44]
+var dec_a: u8[44]
+var dec_n: u8 = 0
+
+// One decal at plate pixel (dx, dy). Fire never flips upside down.
+fun push_decal(p: u8, dx: u8, dy: u8, kind: u8, flip: u8) {
+    dec_x[dec_n] = PLATE_X * 8 + dx
+    dec_y[dec_n] = (P_BASE[p] + 2) * 8 + dy - 1
+    dec_t[dec_n] = kind
+    if kind == T_FIRE {
+        dec_a[dec_n] = SP_FIRE | (flip & FLIP_H)
+    } else {
+        dec_a[dec_n] = SP_DAMAGE | flip
+    }
+    dec_n += 1
+}
+
+fun add_decals(p: u8) {
+    var loc: u8 = 0
+    while loc < NUM_LOCS {
+        var lvl: u8 = damage_level(p, loc)
+        if lvl != 0 {
+            var f: u8 = DEC_FLIP[loc]
+            push_decal(p, DEC_AX[loc], DEC_AY[loc], DECAL_A[lvl], f)
+            if lvl >= 2 {
+                if DEC_BX[loc] != 255 {
+                    push_decal(p, DEC_BX[loc], DEC_BY[loc], DECAL_B[lvl], f ^ FLIP_V)
+                }
+            }
+        }
+        loc += 1
+    }
+}
+
+fun rebuild_decals() {
+    dec_n = 0
+    add_decals(0)
+    add_decals(1)
+}
+
+// Fire flickers between its two frames.
+fun draw_decals() {
+    var flame: u8 = (anim >> 3) & 1
+    var i: u8 = 0
+    while i < dec_n {
+        var t: u8 = dec_t[i]
+        if t == T_FIRE {
+            t += flame
+        }
+        draw Tileset at: (dec_x[i], dec_y[i]) attr: dec_a[i] frame: t
+        i += 1
+    }
 }

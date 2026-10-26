@@ -240,6 +240,8 @@ var show_hit: bool = false
 var hit_x: u8 = 0
 var hit_y: u8 = 0
 var over_timer: u8 = 0
+// Free-running frame counter for the fire decals' flicker.
+var anim: u8 = 0
 
 fun wait_then(t: u8, next: u8) {
     timer = t
@@ -270,8 +272,9 @@ fun draw_sprites() {
         draw_plate_cursor(1 - actor, aim_x, aim_y)
     }
     if show_hit {
-        draw_plate_cursor(1 - actor, hit_x, hit_y)
+        draw_plate_hit(1 - actor, hit_x, hit_y)
     }
+    draw_decals()
 }
 
 // ── Lock ────────────────────────────────────────────────
@@ -739,6 +742,7 @@ state Battle {
     on frame {
         tick_unblank()
         flush_text()
+        anim += 1
         match phase {
             P_WAIT => { run_wait() }
             P_LOCK_START => { start_lock() }
