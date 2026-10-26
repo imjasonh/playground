@@ -184,10 +184,12 @@ failing CI — that defeats the entire purpose of the harness.
 
 The `nescript` workflow at the repository root
 (`.github/workflows/nescript.yml`) builds all examples, then runs the
-harness in Node. It does not install Chrome. On failure it uploads the
-`actual/` directory and `report.json` as an artifact named
-`nescript-emulator-diff`. The workflow does not pass `UPDATE_GOLDENS`.
-If a golden changes, update it in the same commit and review the diff.
+harness in Node. It does not install Chrome. The ROMs from that build
+are uploaded as `nescript-examples`, including when the committed copy
+is stale. On failure it also uploads the `actual/` directory and
+`report.json` as an artifact named `nescript-emulator-diff`. The
+workflow does not pass `UPDATE_GOLDENS`. If a golden changes, update it
+in the same commit and review the diff.
 
 ## Conventions worth knowing
 

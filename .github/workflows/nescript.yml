@@ -4,7 +4,8 @@
 # nescript/. This workflow runs the benches, checks that the committed
 # ROMs still match the compiler, compares every example against its
 # jsnes screenshot and audio hash, checks the README GIFs, and asks
-# Mesen2 to load the .dbg file.
+# Mesen2 to load the .dbg file. The ROMs the compiler just built are
+# uploaded as the nescript-examples artifact.
 
 name: nescript
 
@@ -59,12 +60,14 @@ jobs:
         run: cargo build --locked --release
 
       - name: Verify committed ROMs match their sources
+        id: verify-roms
         run: |
-          mkdir -p /tmp/reprotest
+          mkdir -p /tmp/reprotest "$RUNNER_TEMP/nescript-examples"
           fail=0
           for f in examples/*.ne; do
             name=$(basename "$f" .ne)
             ./target/release/nescript build "$f" --output "/tmp/reprotest/$name.nes"
+            cp "/tmp/reprotest/$name.nes" "$RUNNER_TEMP/nescript-examples/$name.nes"
             if ! cmp -s "examples/$name.nes" "/tmp/reprotest/$name.nes"; then
               echo "::error file=nescript/examples/$name.ne::committed nescript/examples/$name.nes is stale; rerun \`cargo run --release -- build examples/$name.ne\` from nescript/ and commit the new ROM"
               fail=1
@@ -73,6 +76,24 @@ jobs:
           if [ "$fail" -ne 0 ]; then
             exit 1
           fi
+
+      # always() so a stale committed ROM still leaves the compiler's
+      # output on the run. The outcome check skips this when the
+      # compiler never ran.
+      - name: Upload example ROMs
+        id: example-roms
+        if: always() && (steps.verify-roms.outcome == 'success' || steps.verify-roms.outcome == 'failure')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nescript-examples
+          path: ${{ runner.temp }}/nescript-examples
+          if-no-files-found: error
+
+      - name: Link the example ROMs
+        if: always() && steps.example-roms.outcome == 'success'
+        working-directory: .
+        run: |
+          echo "Example ROMs: ${{ steps.example-roms.outputs.artifact-url }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify ROMs are valid iNES
         run: |
