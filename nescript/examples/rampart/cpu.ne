@@ -356,10 +356,10 @@ include "rules.ne"
         }
         paint_portrait(2, 8, mech_frame[cust_who])
         res_b = loadout[cust_who * 2]
-        put_clear(11, 16, 6)
+        put_clear(11, 16, WPN_NAME_W)
         put_str(11, 16, W_STR[res_b])
         res_b = loadout[cust_who * 2 + 1]
-        put_clear(11, 18, 6)
+        put_clear(11, 18, WPN_NAME_W)
         put_str(11, 18, W_STR[res_b])
     }
 
@@ -418,7 +418,7 @@ include "rules.ne"
         // On the name row, left/right move the lit letter and
         // up/down rotate it. On the gun and arm rows, left/right
         // cycle that row's weapon and up/down move to the next row,
-        // so either weapon can be any of the six, gun and arm alike.
+        // so either weapon can be any of the five, gun and arm alike.
         res_b = pad_pressed(cust_who)
         if res_b == BTN_LEFT {
             if cust_cursor < 6 and cust_cursor > 0 {
@@ -426,14 +426,14 @@ include "rules.ne"
                 cust_cursor -= 1
                 cust_tick = 0
             } else if cust_cursor == 6 {
-                res_a = (loadout[cust_who * 2] + 5) % 6
+                res_a = (loadout[cust_who * 2] + NUM_WEAPONS - 1) % NUM_WEAPONS
                 loadout[cust_who * 2] = res_a
-                put_clear(11, 16, 6)
+                put_clear(11, 16, WPN_NAME_W)
                 put_str(11, 16, W_STR[res_a])
             } else if cust_cursor == 7 {
-                res_a = (loadout[cust_who * 2 + 1] + 5) % 6
+                res_a = (loadout[cust_who * 2 + 1] + NUM_WEAPONS - 1) % NUM_WEAPONS
                 loadout[cust_who * 2 + 1] = res_a
-                put_clear(11, 18, 6)
+                put_clear(11, 18, WPN_NAME_W)
                 put_str(11, 18, W_STR[res_a])
             }
         }
@@ -443,14 +443,14 @@ include "rules.ne"
                 cust_cursor += 1
                 cust_tick = 0
             } else if cust_cursor == 6 {
-                res_a = (loadout[cust_who * 2] + 1) % 6
+                res_a = (loadout[cust_who * 2] + 1) % NUM_WEAPONS
                 loadout[cust_who * 2] = res_a
-                put_clear(11, 16, 6)
+                put_clear(11, 16, WPN_NAME_W)
                 put_str(11, 16, W_STR[res_a])
             } else if cust_cursor == 7 {
-                res_a = (loadout[cust_who * 2 + 1] + 1) % 6
+                res_a = (loadout[cust_who * 2 + 1] + 1) % NUM_WEAPONS
                 loadout[cust_who * 2 + 1] = res_a
-                put_clear(11, 18, 6)
+                put_clear(11, 18, WPN_NAME_W)
                 put_str(11, 18, W_STR[res_a])
             }
         }
@@ -512,7 +512,7 @@ include "rules.ne"
             }
             if res_b == 1 {
                 res_a = 0
-                res_b = mech_frame[cust_who] * 6
+                res_b = cust_who * 6
                 while res_a < 6 {
                     name_ch[cust_who * 6 + res_a] = FRAME_NAME[res_b + res_a]
                     res_a += 1

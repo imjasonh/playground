@@ -45,13 +45,14 @@
 //                 begins. Idle for about seven seconds, the title
 //                 starts a CPU-against-CPU demo.
 //     Setup       each human names a mech and picks a gun weapon
-//                 and an arm weapon, either one any of the six. On
+//                 and an arm weapon, either one any of the five. On
 //                 the name row, left/right move the lit letter and
 //                 up/down rotate it. On the gun and arm rows,
 //                 left/right cycle that row's weapon and up/down
 //                 move to the next row. B clears the name, START
 //                 confirms. Player 1 goes first, then player 2. A
-//                 CPU keeps its frame's name and weapons.
+//                 CPU keeps its frame's weapons and is named BLUE
+//                 or RED, matching that player's color.
 //     Lock        tap two of U D L R A B, then START.
 //     Move        d-pad moves the cursor within range, A confirms,
 //                 B returns the cursor to the mech.

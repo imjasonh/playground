@@ -5,7 +5,7 @@
 // name row, left and right move the lit letter and up and down
 // rotate it. On the gun and arm rows, left and right cycle that
 // row's weapon and up and down move to the next row. Either
-// weapon can be any of the six, so a mech can carry two guns or
+// weapon can be any of the five, so a mech can carry two guns or
 // two close-combat weapons. B clears the name. START confirms
 // from any row. A confirms on START. Player 1 finishes, then
 // player 2. A CPU skips this screen.

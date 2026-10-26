@@ -128,13 +128,13 @@ fun plan_legal(p: u8, idx: u8) -> bool {
     return true
 }
 
-// A CPU keeps the frame's weapons and name.
+// A CPU keeps the frame's weapons. Its name is BLUE or RED.
 fun apply_stock(p: u8) {
     res_a = mech_frame[p] * 2
     loadout[p * 2] = STOCK_WPN[res_a]
     loadout[p * 2 + 1] = STOCK_WPN[res_a + 1]
     res_a = 0
-    res_b = mech_frame[p] * 6
+    res_b = p * 6
     while res_a < 6 {
         name_ch[p * 6 + res_a] = FRAME_NAME[res_b + res_a]
         res_a += 1

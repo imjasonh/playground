@@ -371,12 +371,14 @@ BURST = [
 ]
 
 
-# Weapons the players mount on the gun and the right arm. Each is
-# 16x8, two tiles, drawn to sit in one row of plate cells. Colour 2
-# is the player's paint, so the same tiles read blue or red with
-# the panel palette. The left edge is the mount, against the hull.
+# Weapons the players mount on the gun and the right arm, in weapon
+# id order: thermal lance, gatling cannon, missile pod, sword,
+# hammer. Each is 16x8, two tiles, drawn to sit in one row of plate
+# cells. Colour 2 is the player's paint, so the same tiles read blue
+# or red with the panel palette. The left edge is the mount, against
+# the hull.
 WEAPONS = [
-    # Lance. A long barrel.
+    # Thermal lance. A long barrel.
     [
         "................",
         "......33........",
@@ -387,29 +389,7 @@ WEAPONS = [
         "................",
         "................",
     ],
-    # Stub gun. Short, with a thick breech.
-    [
-        "................",
-        ".....333........",
-        ".112233333......",
-        "111222333331....",
-        ".112233333......",
-        ".....111........",
-        "................",
-        "................",
-    ],
-    # Blade.
-    [
-        "............333.",
-        ".........333322.",
-        "......3333221...",
-        "...33332211.....",
-        ".3332211........",
-        "32211...........",
-        "111.............",
-        "................",
-    ],
-    # Cannon. Heavy barrel, dark bore.
+    # Gatling cannon. Heavy barrel, dark bore.
     [
         "................",
         "...333333333....",
@@ -429,6 +409,17 @@ WEAPONS = [
         ".11111111111111.",
         "................",
         "................",
+        "................",
+    ],
+    # Sword.
+    [
+        "............333.",
+        ".........333322.",
+        "......3333221...",
+        "...33332211.....",
+        ".3332211........",
+        "32211...........",
+        "111.............",
         "................",
     ],
     # Hammer.

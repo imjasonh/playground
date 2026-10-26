@@ -137,9 +137,9 @@ T_ARROW = 21
 T_ACT = 22  # 22..28, one icon per action, in action order
 T_PIKE = 96  # 96..99
 T_MAUL = 100  # 100..103
-# Weapon pictures, two tiles each. The order matches WPN_TILE in
-# examples/rampart/constants.ne.
-WPN_AT = [(104, 105), (106, 107), (108, 109), (110, 111), (9, 10), (11, 29)]
+# Weapon pictures, two tiles each, in weapon-id order. The order
+# matches WPN_TILE in examples/rampart/constants.ne.
+WPN_AT = [(104, 105), (110, 111), (9, 10), (108, 109), (11, 29)]
 # Body-plate portraits: frame f, cell c is tile T_PLATE + f * 72 + c,
 # and its charred copy for a wrecked location is 36 tiles later.
 T_PLATE = 112
@@ -247,7 +247,7 @@ def build_tiles():
 
 
 def tile_label(i):
-    wpn_names = ["lance", "stub", "blade", "cannon", "pod", "hammer"]
+    wpn_names = ["thermal lance", "gatling cannon", "missile pod", "sword", "hammer"]
     for n, (a, b) in enumerate(WPN_AT):
         if i == a:
             return f"weapon: {wpn_names[n]} left"
@@ -502,11 +502,10 @@ STRINGS = [
     ("A_RUSH", "RUSH"),
     ("A_AIMED", "AIMED"),
     ("A_CHARGE", "CHARGE"),
-    ("W_LANCE", "LANCE"),
-    ("W_STUB", "STUB"),
-    ("W_BLADE", "BLADE"),
-    ("W_CANNON", "CANNON"),
-    ("W_POD", "POD"),
+    ("W_LANCE", "THERMAL LANCE"),
+    ("W_CANNON", "GATLING CANNON"),
+    ("W_POD", "MISSILE POD"),
+    ("W_SWORD", "SWORD"),
     ("W_HAMMER", "HAMMER"),
     ("L_HEAD", "HEAD"),
     ("L_GUN", "GUN"),
