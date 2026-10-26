@@ -294,10 +294,10 @@ fun paint_range(d: u8, cover: bool) {
     }
 }
 
+// The panel color is the player. P1's block is blue, P2's is red.
 fun paint_panel_header(p: u8) {
     var row: u8 = P_BASE[p]
-    put_num(PANEL_X, row, p + 1)
-    put_str(PANEL_X + 2, row, FRAME_STR[mech_frame[p]])
+    put_str(PANEL_X, row, FRAME_STR[mech_frame[p]])
 }
 
 // ── Sprites ─────────────────────────────────────────────────
