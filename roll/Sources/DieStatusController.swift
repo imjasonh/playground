@@ -147,6 +147,16 @@ final class DieStatusController: NSObject {
         menu.addItem(create)
         menu.addItem(.separator())
 
+        let photo = NSMenuItem(
+            title: "Take Monitor Photo",
+            action: #selector(monitorPhotoClicked),
+            keyEquivalent: ""
+        )
+        photo.target = self
+        photo.setAccessibilityIdentifier("roll-monitor-photo")
+        menu.addItem(photo)
+        menu.addItem(.separator())
+
         let updates = NSMenuItem(
             title: "Check for Updates…",
             action: #selector(checkForUpdatesClicked),
@@ -282,6 +292,24 @@ final class DieStatusController: NSObject {
         container.addSubview(dateLabel)
         container.addSubview(picker)
         return (container, descriptionField, picker)
+    }
+
+    @objc private func monitorPhotoClicked() {
+        guard MonitorPhotoCapture.ensureAccess() else {
+            return
+        }
+        Task { @MainActor in
+            // Let the menu fade out so it isn't in the photo.
+            try? await Task.sleep(for: .milliseconds(300))
+            do {
+                let url = try await MonitorPhotoCapture.take()
+                NSWorkspace.shared.open(url)
+            } catch {
+                let alert = NSAlert(error: error)
+                NSApp.activate()
+                alert.runModal()
+            }
+        }
     }
 
     @objc private func checkForUpdatesClicked() {

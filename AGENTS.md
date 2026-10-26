@@ -48,7 +48,7 @@ playground/
 ├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
-├── roll/                  # menu bar app: click rolls, right-click countdowns (Sparkle CD)
+├── roll/                  # menu bar app: click rolls, right-click countdowns and monitor photos (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
@@ -130,7 +130,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
-| `roll/` | no | Menu bar app: click rolls, right-click countdowns (XcodeGen + Sparkle); no `index.html` |
+| `roll/` | no | Menu bar app: click rolls, right-click countdowns and monitor photos (XcodeGen + Sparkle); no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -926,7 +926,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
 | `onramp/` | Onramp — offline can’t-get-online playbooks + network toolbox (+ optional chat); Sparkle CD | XCTest via `fastlane test` |
-| `roll/` | The menu bar app. Click rolls. Right-click lists countdowns. Later menu bar features go here. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
+| `roll/` | The menu bar app. Click rolls. Right-click lists countdowns and takes a screenshot filtered to look like a phone photo of the monitor. Later menu bar features go here. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
 
 > **`onramp` has its own agent guide:** read
 > [`onramp/AGENTS.md`](onramp/AGENTS.md) before working in that

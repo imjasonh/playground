@@ -10,6 +10,26 @@ Right-click or Control-click for the menu. It lists each date as
 to remove it. **New Countdown…** asks for a description and a date. The menu
 also has **Check for Updates…** and **Quit Roll**.
 
+**Take Monitor Photo** takes a screenshot of the display under the pointer and
+makes it look like a phone photo of the monitor. It saves
+`Monitor Photo <date> at <time>.jpg` on the Desktop and opens it. The filter
+(`Sources/MonitorPhoto.swift`) simulates these effects:
+
+- The phone is tilted, off-axis, and zoomed in a little, with lens barrel
+  distortion. Screen edges can show the dark bezel.
+- The screen's subpixel grid aliases against the sensor into colored moiré
+  stripes.
+- The image is defocused, more at the corners, and red and blue fringe apart.
+- Black photographs as dark gray. Contrast and saturation drop, and the camera
+  adds a white-balance cast.
+- A room light reflects off the glass as a soft glare, and bright areas glow.
+- The corners are darker, one side dims from the viewing angle, and dark areas
+  show sensor noise.
+
+Each photo picks new random values for these, so no two match. The first use
+asks for Screen Recording access; after you allow it in System Settings, quit
+and reopen Roll.
+
 Bundle ID: `io.github.imjasonh.roll`
 
 ## Layout
