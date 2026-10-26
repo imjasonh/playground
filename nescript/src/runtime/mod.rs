@@ -37,10 +37,16 @@ pub const ZP_SFX_PTR_HI: u8 = 0x0D;
 pub const ZP_MUSIC_PTR_LO: u8 = 0x0E;
 pub const ZP_MUSIC_PTR_HI: u8 = 0x0F;
 /// Music base pointer (2 bytes) — start of the currently-loaded
-/// track. Used by the loop-back branch when the driver hits the
-/// end-of-track sentinel and the header loop flag is set.
-pub const ZP_MUSIC_BASE_LO: u8 = 0x05;
-pub const ZP_MUSIC_BASE_HI: u8 = 0x06;
+/// Loop-back start of the current track, in main RAM.
+///
+/// These used to live at `$05`/`$06`, which is the second and third
+/// function-call argument. Any call with two or more arguments
+/// overwrote the loop point, and a four-argument call overwrote the
+/// state byte at `$07`, so the next NMI treated the track as stopped.
+/// Main RAM survives a call. `$07F0-$07F7` already hold the noise,
+/// triangle, and pitch-envelope pointers.
+pub const AUDIO_MUSIC_BASE_LO: u16 = 0x07F8;
+pub const AUDIO_MUSIC_BASE_HI: u16 = 0x07F9;
 /// Music state byte. Bit layout:
 ///   bit 0: 1 = track is looping, 0 = one-shot
 ///   bit 1: 1 = music is active (non-zero means "playing")
@@ -49,7 +55,10 @@ pub const ZP_MUSIC_BASE_HI: u8 = 0x06;
 /// Set on `start_music`, cleared (to 0) on `stop_music`. The driver
 /// writes a fresh $4004 envelope byte every time it advances to a
 /// new note using these bits so held notes don't decay.
-pub const ZP_MUSIC_STATE: u8 = 0x07;
+pub const AUDIO_MUSIC_STATE: u16 = 0x07FA;
+/// Scratch for the duty/volume mix in the music tick. Not `$04`:
+/// that byte is the first call argument, and the tick runs from NMI.
+pub const AUDIO_MUSIC_SCRATCH: u16 = 0x07FB;
 /// Pulse-1 SFX countdown — `0` means no sfx is playing.
 /// Nonzero means the audio tick should read one envelope byte from
 /// `ZP_SFX_PTR` each NMI and write it to $4000. When the tick reads
@@ -1085,9 +1094,9 @@ pub fn gen_multiply() -> Vec<Instruction> {
 ///
 /// State:
 /// - `ZP_MUSIC_COUNTER` — frames remaining on the current note
-/// - `ZP_MUSIC_STATE` — bit 1 set = active; bits encode duty/volume/loop
+/// - `AUDIO_MUSIC_STATE` — bit 1 set = active; bits encode duty/volume/loop
 /// - `ZP_MUSIC_PTR_LO/HI` — pointer to the next (pitch,dur) pair
-/// - `ZP_MUSIC_BASE_LO/HI` — loop-back start of the current track
+/// - `AUDIO_MUSIC_BASE_LO/HI` — loop-back start of the current track
 ///
 /// Each frame: if the state says "active" and the counter is nonzero,
 /// decrement the counter and bail. When it hits zero, advance past
@@ -1212,8 +1221,8 @@ pub fn gen_audio_tick(
     out.push(Instruction::new(NOP, AM::Label("__audio_sfx_done".into())));
 
     // ── Music tick ──
-    // Bit 1 of ZP_MUSIC_STATE is "music is active". If clear, skip.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    // Bit 1 of AUDIO_MUSIC_STATE is "music is active". If clear, skip.
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0x02)));
     out.push(Instruction::new(
         BEQ,
@@ -1281,14 +1290,14 @@ pub fn gen_audio_tick(
     // Save pitch in X so we still have it for the period lookup.
     out.push(Instruction::new(TAX, AM::Implied));
     // Build envelope byte.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0xC0))); // keep duty bits
-    out.push(Instruction::new(STA, AM::ZeroPage(0x04))); // scratch
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(STA, AM::Absolute(AUDIO_MUSIC_SCRATCH)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0x3C))); // keep volume<<2
     out.push(Instruction::new(LSR, AM::Accumulator));
     out.push(Instruction::new(LSR, AM::Accumulator));
-    out.push(Instruction::new(ORA, AM::ZeroPage(0x04)));
+    out.push(Instruction::new(ORA, AM::Absolute(AUDIO_MUSIC_SCRATCH)));
     out.push(Instruction::new(ORA, AM::Immediate(0x30)));
     out.push(Instruction::new(STA, AM::Absolute(0x4004)));
 
@@ -1363,9 +1372,9 @@ pub fn gen_audio_tick(
 
     // ── End-of-track branch ──
     out.push(Instruction::new(NOP, AM::Label("__audio_music_eot".into())));
-    // Check loop flag (bit 0 of ZP_MUSIC_STATE). If set, rewind ptr
+    // Check loop flag (bit 0 of AUDIO_MUSIC_STATE). If set, rewind ptr
     // to base and re-enter the advance path. Otherwise stop.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0x01)));
     out.push(Instruction::new(
         BEQ,
@@ -1373,9 +1382,9 @@ pub fn gen_audio_tick(
     ));
     // Looping: copy base pointer back into current pointer and
     // re-enter the advance path.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_BASE_LO)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_BASE_LO)));
     out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_PTR_LO)));
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_BASE_HI)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_BASE_HI)));
     out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_PTR_HI)));
     out.push(Instruction::new(
         JMP,
@@ -1389,7 +1398,7 @@ pub fn gen_audio_tick(
     out.push(Instruction::new(LDA, AM::Immediate(0x30)));
     out.push(Instruction::new(STA, AM::Absolute(0x4004)));
     out.push(Instruction::new(LDA, AM::Immediate(0)));
-    out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(STA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_COUNTER)));
 
     out.push(Instruction::new(

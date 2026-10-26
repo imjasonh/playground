@@ -136,9 +136,12 @@ const LOC_STR: u8[12] = [S_L_HEAD, S_L_GUN, S_L_SHIELD, S_L_ARML, S_L_ARMR, S_L_
 // weapons, stored in loadout at p * 2 + slot. Slot 0 is mounted
 // on the gun. Slot 1 is mounted on the right arm. Charge uses the
 // arm weapon, and a shot uses it when the gun weapon can't reach.
-// The ids index the tables below.
-//   0 thermal lance   1 gatling cannon   2 missile pod
-//   3 sword           4 hammer
+// The ids index the tables below, and play_weapon in battle_state.ne.
+const W_LANCE: u8 = 0
+const W_CANNON: u8 = 1
+const W_POD: u8 = 2
+const W_SWORD: u8 = 3
+const W_HAMMER: u8 = 4
 const NUM_WEAPONS: u8 = 5
 // Longest weapon name, in tiles. Setup clears this many cells
 // before printing the name.

@@ -37,6 +37,7 @@
 //     title_state.ne      match setup menu
 //     customize_state.ne  name and weapon picks
 //     battle_state.ne     turn sequencer
+//     audio.ne            move and weapon effects, and the march
 //
 // scripts/gen_rampart.py writes the generated files.
 //
@@ -87,6 +88,7 @@ include "rampart/constants.ne"
 include "rampart/assets.ne"
 include "rampart/backgrounds.ne"
 include "rampart/state.ne"
+include "rampart/audio.ne"
 include "rampart/render.ne"
 include "rampart/cpu.ne"
 include "rampart/title_state.ne"

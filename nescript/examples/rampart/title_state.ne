@@ -32,6 +32,7 @@ state Title {
     var seed: u16 = 0x2B1D
 
     on enter {
+        start_music March
         swap_background(0)
         if demo {
             demo = false

@@ -517,6 +517,33 @@ fun run_move() {
     }
 }
 
+// Step, Rush, and Charge each have their own effect. Anything
+// else that reaches a square change stays silent.
+fun play_move() {
+    if cur_act == A_STEP {
+        play MoveStep
+    } else if cur_act == A_RUSH {
+        play MoveRush
+    } else if cur_act == A_CHARGE {
+        play MoveCharge
+    }
+}
+
+fun play_weapon(w: u8) {
+    if w == W_LANCE {
+        play Lance
+    } else if w == W_CANNON {
+        play Cannon
+    } else if w == W_POD {
+        play Missile
+        play MissileWash
+    } else if w == W_SWORD {
+        play Sword
+    } else if w == W_HAMMER {
+        play Hammer
+    }
+}
+
 fun finish_move() {
     msg_line(MSG_ROW2)
     if cur_x == org_x and cur_y == org_y {
@@ -525,6 +552,7 @@ fun finish_move() {
     } else {
         mech_x[actor] = cur_x
         mech_y[actor] = cur_y
+        play_move()
         msg_who(actor)
         msg_str(S_MOVES)
         msg_num(cheb(cur_x, cur_y, org_x, org_y))
@@ -607,6 +635,7 @@ fun run_aim() {
 }
 
 fun resolve_shot() {
+    play_weapon(wpn)
     var target: u8 = 1 - actor
     var s: u8 = SCATTER_OF[cur_act] * 6
     var fx: u8 = d6()
@@ -688,6 +717,7 @@ fun end_turn() {
 }
 
 fun game_over() {
+    stop_music
     var w: u8 = decide_winner()
     msg_clear()
     msg_line(MSG_ROW1)
@@ -728,6 +758,7 @@ fun run_over() -> bool {
 
 state Battle {
     on enter {
+        start_music March
         reset_mechs()
         phase = P_WAIT
         after = P_LOCK_START

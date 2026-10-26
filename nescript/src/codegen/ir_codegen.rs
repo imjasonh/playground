@@ -32,13 +32,13 @@ use crate::ir::{
 };
 use crate::parser::ast::Channel;
 use crate::runtime::{
-    AUDIO_NOISE_COUNTER, AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI,
-    AUDIO_SFX_PITCH_PTR_LO, AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO,
-    ZP_MUSIC_BASE_HI, ZP_MUSIC_BASE_LO, ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO,
-    ZP_MUSIC_STATE, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI, ZP_PENDING_BG_ATTRS_LO,
-    ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI, ZP_PENDING_PALETTE_LO,
-    ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER, ZP_SFX_PTR_HI,
-    ZP_SFX_PTR_LO,
+    AUDIO_MUSIC_BASE_HI, AUDIO_MUSIC_BASE_LO, AUDIO_MUSIC_STATE, AUDIO_NOISE_COUNTER,
+    AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI, AUDIO_SFX_PITCH_PTR_LO,
+    AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, ZP_MUSIC_COUNTER,
+    ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
+    ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI,
+    ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER,
+    ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
 };
 
 /// Base zero-page address for IR temp slots.
@@ -111,7 +111,7 @@ pub struct IrCodeGen<'a> {
     sfx_info: HashMap<String, (u8, u8, String, Channel, Option<String>)>,
     /// Music name to `(header_byte, stream_label)`. Populated by
     /// `with_audio`. `start_music Name` stamps `header | 0x02` into
-    /// `ZP_MUSIC_STATE` and loads the pointer from `stream_label`.
+    /// `AUDIO_MUSIC_STATE` and loads the pointer from `stream_label`.
     music_info: HashMap<String, (u8, String)>,
     /// State name to dispatch index mapping.
     state_indices: HashMap<String, u8>,
@@ -2546,7 +2546,7 @@ impl<'a> IrCodeGen<'a> {
 
     /// Emit the `start_music Name` sequence.
     ///
-    /// Stores the track's header byte into `ZP_MUSIC_STATE` (with
+    /// Stores the track's header byte into `AUDIO_MUSIC_STATE` (with
     /// bit 1 OR'd in as the "active" flag) and seeds both the
     /// current pointer and the loop base with the track's stream
     /// label. Also zeroes `ZP_MUSIC_COUNTER` so the very next audio
@@ -2559,15 +2559,15 @@ impl<'a> IrCodeGen<'a> {
         // State byte: header | 0x02 (active flag). Header already
         // encodes duty, volume, and loop bit.
         self.emit(LDA, AM::Immediate(header | 0x02));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_STATE));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_STATE));
         // Stream pointer = label. Also seed the loop-back base
         // so the tick's loop branch can rewind.
         self.emit(LDA, AM::SymbolLo(label.clone()));
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_PTR_LO));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_BASE_LO));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_BASE_LO));
         self.emit(LDA, AM::SymbolHi(label));
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_PTR_HI));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_BASE_HI));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_BASE_HI));
         // Counter = 1. The tick will decrement to 0 on the next
         // NMI and immediately advance to the first note. We don't
         // use 0 here because the tick's "bit 1 set AND counter
@@ -2585,7 +2585,7 @@ impl<'a> IrCodeGen<'a> {
         self.emit(LDA, AM::Immediate(0x30));
         self.emit(STA, AM::Absolute(0x4004));
         self.emit(LDA, AM::Immediate(0));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_STATE));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_STATE));
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_COUNTER));
     }
 
@@ -4983,9 +4983,9 @@ mod more_tests {
     fn ir_codegen_start_music_sets_state_and_stream_pointer() {
         // `start_music theme` must:
         //   1. Load a state byte (header OR'd with 0x02 = active)
-        //      into ZP_MUSIC_STATE (0x07).
+        //      into AUDIO_MUSIC_STATE ($07FA).
         //   2. Load the music stream pointer into ZP_MUSIC_PTR and
-        //      ZP_MUSIC_BASE (so the loop branch can rewind).
+        //      AUDIO_MUSIC_BASE (so the loop branch can rewind).
         //   3. Seed ZP_MUSIC_COUNTER with 1 so the next tick
         //      immediately advances to the first note.
         let insts = lower_and_gen(
@@ -4995,10 +4995,9 @@ mod more_tests {
             start Main
         "#,
         );
-        // State byte stored at 0x07.
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x07)),
-            "start_music should store the state byte at ZP_MUSIC_STATE ($07)"
+            has_inst(&insts, STA, &AM::Absolute(0x07FA)),
+            "start_music should store the state byte at AUDIO_MUSIC_STATE ($07FA)"
         );
         // Pointer load via SymbolLo of __music_theme.
         let has_ptr_lo = insts
@@ -5016,16 +5015,16 @@ mod more_tests {
             "start_music should store ZP_MUSIC_PTR_LO ($0E)"
         );
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x05)),
-            "start_music should store ZP_MUSIC_BASE_LO ($05) for loop-back"
+            has_inst(&insts, STA, &AM::Absolute(0x07F8)),
+            "start_music should store AUDIO_MUSIC_BASE_LO ($07F8) for loop-back"
         );
         assert!(
             has_inst(&insts, STA, &AM::ZeroPage(0x0F)),
             "start_music should store ZP_MUSIC_PTR_HI ($0F)"
         );
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x06)),
-            "start_music should store ZP_MUSIC_BASE_HI ($06) for loop-back"
+            has_inst(&insts, STA, &AM::Absolute(0x07F9)),
+            "start_music should store AUDIO_MUSIC_BASE_HI ($07F9) for loop-back"
         );
     }
 
@@ -5038,7 +5037,7 @@ mod more_tests {
             start Main
         "#,
         );
-        // Mute $4004 and clear ZP_MUSIC_STATE ($07).
+        // Mute $4004 and clear AUDIO_MUSIC_STATE ($07FA).
         assert!(
             has_inst(&insts, LDA, &AM::Immediate(0x30)),
             "stop_music should load the mute byte $30"
@@ -5048,8 +5047,8 @@ mod more_tests {
             "stop_music should store to pulse-2 volume register $4004"
         );
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x07)),
-            "stop_music should clear ZP_MUSIC_STATE ($07)"
+            has_inst(&insts, STA, &AM::Absolute(0x07FA)),
+            "stop_music should clear AUDIO_MUSIC_STATE ($07FA)"
         );
     }
 

@@ -62,6 +62,8 @@ The compiler reserves the following:
 - `$0300`-`$07EE`: General variables, per-function RAM (parameter spill + locals), state-local storage
 - `$07EF`: `SPRITE_CYCLE_ADDR` — rotating offset byte used by `cycle_sprites` (only when the program emits a `cycle_sprites` statement)
 - `$07F0`-`$07F7`: Audio channel state (noise/triangle/sfx-pitch pointers; only when the program declares a matching sfx)
+- `$07F8`-`$07FA`: Music loop base and state byte. Main RAM, not `$05`–`$07`, because those bytes are call arguments
+- `$07FB`: Scratch byte for the music tick's duty and volume mix
 - `$07FC`: `DEBUG_SPRITE_OVERFLOW_FLAG_ADDR` — per-frame sticky bit (debug builds only)
 - `$07FD`: `DEBUG_SPRITE_OVERFLOW_COUNT_ADDR` — cumulative PPU sprite overflow counter (debug builds only)
 - `$07FE`: `DEBUG_FRAME_OVERRUN_FLAG_ADDR` — per-frame sticky bit (debug builds only)

@@ -501,7 +501,7 @@ fn audio_tick_both_channels_assemble() {
 #[test]
 fn audio_tick_mutes_pulse2_on_non_looping_end_of_track() {
     // When a non-looping track hits the (0xFF, 0xFF) sentinel, the
-    // tick writes $30 to $4004 and clears ZP_MUSIC_STATE. We verify
+    // tick writes $30 to $4004 and clears AUDIO_MUSIC_STATE. We verify
     // the mute path exists by checking both writes exist somewhere
     // in the tick body.
     let tick = gen_audio_tick(false, false, false);
@@ -511,10 +511,10 @@ fn audio_tick_mutes_pulse2_on_non_looping_end_of_track() {
     assert!(has_mute, "audio tick must mute pulse-2 on end-of-track");
     let has_state_clear = tick
         .iter()
-        .any(|i| i.opcode == STA && i.mode == AM::ZeroPage(ZP_MUSIC_STATE));
+        .any(|i| i.opcode == STA && i.mode == AM::Absolute(AUDIO_MUSIC_STATE));
     assert!(
         has_state_clear,
-        "audio tick must clear ZP_MUSIC_STATE on stop"
+        "audio tick must clear AUDIO_MUSIC_STATE on stop"
     );
 }
 

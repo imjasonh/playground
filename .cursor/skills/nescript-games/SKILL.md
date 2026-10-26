@@ -79,6 +79,14 @@ Label the controls with the button and the verb: `B BACKSPACE`, `START`. Put the
 
 This logic lives in Rampart's `cpu.ne` and is not a shared module. NEScript has no library directory yet, and the plan in `nescript/docs/future-work.md` adds one with fonts. Once it exists, move the rotary field there when a second game needs it.
 
+## Sound
+
+Pulse 1 is sound effects. Pulse 2 is music. Noise is footsteps, guns, and impacts. Triangle is a poor thud: an effect's period high byte is fixed at 0, so the lowest note is about A4.
+
+A second `play` on the same channel restarts that channel. Pulse and noise may start on the same frame. Rampart's missile does.
+
+Start the track from the title `on enter`, and stop it when the match ends. A program with no `play`, `start_music`, or `stop_music` links no audio driver.
+
 ## Arithmetic that wraps
 
 `u8` subtraction wraps through 255. `save_need` starts at 5 plus armor piercing, then subtracts 1 for cover and 1 for a shield. That stays positive only because of that floor. Another discount wraps, and `unsaved_faces` treats any need above 7 as "no face saves", which is a guaranteed hit. Subtract only after you know the value is large enough.

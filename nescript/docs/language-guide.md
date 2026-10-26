@@ -1175,7 +1175,7 @@ A user-declared `sfx` or `music` block takes priority over a builtin with the sa
 Compile time:
 
 1. The resolver compiles each `sfx` into `(period_lo, period_hi, envelope[])` and each `music` into `(header, (pitch, duration)[])`, appending builtins for any referenced name that isn't user-declared.
-2. The IR codegen emits `play Name` as: write trigger bytes to `$4002`/`$4003`, load envelope pointer into `$0C/$0D`, set the sfx counter. `start_music Name` stamps a state byte into `$07`, loads the stream pointer into `$0E/$0F` (and the loop base into `$05/$06`), and primes the duration counter.
+2. The IR codegen emits `play Name` as: write trigger bytes to `$4002`/`$4003`, load envelope pointer into `$0C/$0D`, set the sfx counter. `start_music Name` stamps a state byte into `$07FA`, loads the stream pointer into `$0E/$0F` (and the loop base into `$07F8`/`$07F9`), and primes the duration counter. The state and loop base sit in main RAM because `$04`–`$07` are call arguments.
 3. The linker splices the audio tick, the 60-entry period table, and every compiled sfx/music blob into PRG ROM, all guarded on a `__audio_used` marker label so silent programs never pay the cost.
 
 Runtime (every NMI, if audio is in use):
