@@ -134,6 +134,12 @@ T_HOLES = 17
 T_FIRE = 18  # 18..19, two frames
 T_CRATER = 20
 T_ARROW = 21
+# Direction glyphs for the lock card. 91..94 sit in the gap before
+# the Pike portrait at 96, and none of them is an ASCII letter.
+T_DIR_UP = 91
+T_DIR_DOWN = 92
+T_DIR_LEFT = 93
+T_DIR_RIGHT = 94
 T_ACT = 22  # 22..28, one icon per action, in action order
 T_PIKE = 96  # 96..99
 T_MAUL = 100  # 100..103
@@ -194,6 +200,48 @@ ARROW = [
     "........",
     "........",
 ]
+# Same cap height as the letters: rows 0 and 7 stay blank so a
+# glyph does not touch the row above or below it.
+DIR_UP = [
+    "........",
+    "...33...",
+    "..3333..",
+    ".333333.",
+    "...33...",
+    "...33...",
+    "...33...",
+    "........",
+]
+DIR_DOWN = [
+    "........",
+    "...33...",
+    "...33...",
+    "...33...",
+    ".333333.",
+    "..3333..",
+    "...33...",
+    "........",
+]
+DIR_LEFT = [
+    "........",
+    "...33...",
+    "..333...",
+    ".333333.",
+    ".333333.",
+    "..333...",
+    "...33...",
+    "........",
+]
+DIR_RIGHT = [
+    "........",
+    "...33...",
+    "...333..",
+    ".333333.",
+    ".333333.",
+    "...333..",
+    "...33...",
+    "........",
+]
 LOGO = [
     "33333333",
     "32222221",
@@ -226,6 +274,10 @@ def build_tiles():
     tiles[T_FIRE + 1] = art.FIRE_B
     tiles[T_CRATER] = art.CRATER
     tiles[T_ARROW] = ARROW
+    tiles[T_DIR_UP] = DIR_UP
+    tiles[T_DIR_DOWN] = DIR_DOWN
+    tiles[T_DIR_LEFT] = DIR_LEFT
+    tiles[T_DIR_RIGHT] = DIR_RIGHT
     for i, t in enumerate(art.ACTIONS):
         tiles[T_ACT + i] = t
     for i, pic in enumerate(art.WEAPONS):
@@ -281,6 +333,10 @@ def tile_label(i):
         T_FIRE + 1: "decal: fire, frame 2",
         T_CRATER: "decal: crater",
         T_ARROW: "menu arrow",
+        T_DIR_UP: "arrow up",
+        T_DIR_DOWN: "arrow down",
+        T_DIR_LEFT: "arrow left",
+        T_DIR_RIGHT: "arrow right",
         T_ACT: "action: snap",
         T_ACT + 1: "action: step",
         T_ACT + 2: "action: shield",
@@ -466,17 +522,27 @@ def write_backgrounds():
     # Card: the plan list for the secret lock. The legal marks in the
     # P1 and P2 columns, the clock, and the READY lines are painted
     # at runtime.
+    # U D L R become arrow glyphs. A and B stay letters, because
+    # those buttons are already labeled on the controller.
+    glyph = {"U": "^", "D": "v", "L": "<", "R": ">", "A": "A", "B": "B"}
     card = [""] * 30
     card[1] = " LOCK YOUR PLAN"
     card[3] = " KEY  PLAN             PT P1 P2"
     for i, p in enumerate(PLANS):
-        code = BUTTONS[i // 6] + BUTTONS[i % 6]
+        code = glyph[BUTTONS[i // 6]] + glyph[BUTTONS[i % 6]]
         card[5 + i] = f"  {code}  {' '.join(p):<17}{plan_cost(p)}"
-    card[23] = " U UP  D DOWN  L LEFT  R RIGHT"
+    card[23] = " ^ UP  v DOWN  < LEFT  > RIGHT"
     card[24] = " THE LAST TWO PRESSES COUNT"
     card[25] = " START WHEN DONE"
+    assert len(card[23]) <= 31, len(card[23])
     card_pal = ["0" * 16] * 2 + ["0" * 13 + "230"] * 9 + ["0" * 16] * 4
-    out += background("Card", card, {}, card_pal)
+    card_extra = {
+        "^": T_DIR_UP,
+        "v": T_DIR_DOWN,
+        "<": T_DIR_LEFT,
+        ">": T_DIR_RIGHT,
+    }
+    out += background("Card", card, card_extra, card_pal)
 
     open(os.path.join(OUT, "backgrounds.ne"), "w").write("\n".join(out))
 

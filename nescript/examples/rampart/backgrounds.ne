@@ -141,6 +141,8 @@ background Card {
         "1": 49
         "2": 50
         "3": 51
+        "<": 93
+        ">": 94
         "A": 65
         "B": 66
         "C": 67
@@ -162,6 +164,8 @@ background Card {
         "U": 85
         "W": 87
         "Y": 89
+        "^": 91
+        "v": 92
     }
     map: [
         "                                ",
@@ -169,25 +173,25 @@ background Card {
         "                                ",
         " KEY  PLAN             PT P1 P2 ",
         "                                ",
-        "  UU  SNAP             1        ",
-        "  UD  STEP             1        ",
-        "  UL  SHIELD           1        ",
-        "  UR  STANDARD         2        ",
-        "  UA  RUSH             2        ",
-        "  UB  SNAP STEP        2        ",
-        "  DU  SNAP SHIELD      2        ",
-        "  DD  STEP SHIELD      2        ",
-        "  DL  AIMED            3        ",
-        "  DR  CHARGE           3        ",
-        "  DA  SNAP STANDARD    3        ",
-        "  DB  SNAP RUSH        3        ",
-        "  LU  STEP STANDARD    3        ",
-        "  LD  STEP RUSH        3        ",
-        "  LL  SHIELD STANDARD  3        ",
-        "  LR  SHIELD RUSH      3        ",
-        "  LA  SNAP STEP SHIELD 3        ",
+        "  ^^  SNAP             1        ",
+        "  ^v  STEP             1        ",
+        "  ^<  SHIELD           1        ",
+        "  ^>  STANDARD         2        ",
+        "  ^A  RUSH             2        ",
+        "  ^B  SNAP STEP        2        ",
+        "  v^  SNAP SHIELD      2        ",
+        "  vv  STEP SHIELD      2        ",
+        "  v<  AIMED            3        ",
+        "  v>  CHARGE           3        ",
+        "  vA  SNAP STANDARD    3        ",
+        "  vB  SNAP RUSH        3        ",
+        "  <^  STEP STANDARD    3        ",
+        "  <v  STEP RUSH        3        ",
+        "  <<  SHIELD STANDARD  3        ",
+        "  <>  SHIELD RUSH      3        ",
+        "  <A  SNAP STEP SHIELD 3        ",
         "                                ",
-        " U UP  D DOWN  L LEFT  R RIGHT  ",
+        " ^ UP  v DOWN  < LEFT  > RIGHT  ",
         " THE LAST TWO PRESSES COUNT     ",
         " START WHEN DONE                ",
         "                                ",

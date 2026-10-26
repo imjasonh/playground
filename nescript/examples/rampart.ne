@@ -54,7 +54,9 @@
 //                 confirms. Player 1 goes first, then player 2. A
 //                 CPU keeps its frame's weapons and is named BLUE
 //                 or RED, matching that player's color.
-//     Lock        tap two of U D L R A B, then START.
+//     Lock        the card shows the d-pad as arrows, with a key
+//                 under the list. Tap two of those, or A or B,
+//                 then START.
 //     Move        d-pad moves the cursor within range, A confirms,
 //                 B returns the cursor to the mech.
 //     Aim         d-pad picks a plate cell, A fires.
