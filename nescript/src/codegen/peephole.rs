@@ -541,14 +541,7 @@ fn remove_redundant_loads(instructions: &mut Vec<Instruction>) {
             // might look redundant against a stale entry from before
             // the indexed load, and get dropped. That's a miscompile,
             // not an optimization.
-            (
-                Opcode::LDA,
-                AddressingMode::AbsoluteX(_)
-                | AddressingMode::AbsoluteY(_)
-                | AddressingMode::ZeroPageX(_)
-                | AddressingMode::IndirectX(_)
-                | AddressingMode::IndirectY(_),
-            ) => {
+            (Opcode::LDA, _) => {
                 eq.clear();
             }
             (Opcode::STA, AddressingMode::ZeroPage(addr)) => {
@@ -1149,6 +1142,39 @@ mod tests {
             before_lda, after_lda,
             "LDA feeding an ASL must survive even with LDY in between: {insts:?}"
         );
+    }
+
+    #[test]
+    fn label_operand_load_invalidates_redundant_load_tracker() {
+        // `LDA label,X` (a `const` array read) and `LDA #<label`
+        // both overwrite A. The reload of the loop index before the
+        // second `TAX` must survive, or the store indexes with the
+        // loaded element instead.
+        for clobber in [
+            AM::LabelAbsoluteX("__rom_T".into()),
+            AM::SymbolLo("__palette_P".into()),
+        ] {
+            let mut insts = vec![
+                Instruction::new(LDA, AM::ZeroPage(0x10)),
+                Instruction::new(TAX, AM::Implied),
+                Instruction::new(LDA, clobber.clone()),
+                Instruction::new(STA, AM::ZeroPage(0x82)),
+                Instruction::new(LDA, AM::ZeroPage(0x10)),
+                Instruction::new(TAX, AM::Implied),
+                Instruction::new(LDA, AM::ZeroPage(0x82)),
+                Instruction::new(STA, AM::AbsoluteX(0x0300)),
+                Instruction::new(RTS, AM::Implied),
+            ];
+            optimize(&mut insts);
+            let reloads = insts
+                .iter()
+                .filter(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x10))
+                .count();
+            assert_eq!(
+                reloads, 2,
+                "index reload after {clobber:?} dropped: {insts:?}"
+            );
+        }
     }
 
     #[test]
