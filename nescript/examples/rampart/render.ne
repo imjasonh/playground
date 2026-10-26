@@ -75,6 +75,10 @@ fun damage_level(p: u8, loc: u8) -> u8 {
     return 2
 }
 
+fun wpn_tile(id: u8, half: u8) -> u8 {
+    return WPN_TILE[id * 2 + half]
+}
+
 // The portrait tile for one plate cell, charred once its location is
 // wrecked. Cells off the plate still draw so the outline stays whole.
 fun plate_tile(p: u8, cell: u8) -> u8 {
@@ -295,9 +299,14 @@ fun paint_range(d: u8, cover: bool) {
 }
 
 // The panel color is the player. P1's block is blue, P2's is red.
+// The six letters are the name chosen at setup.
 fun paint_panel_header(p: u8) {
     var row: u8 = P_BASE[p]
-    put_str(PANEL_X, row, FRAME_STR[mech_frame[p]])
+    var i: u8 = 0
+    while i < 6 {
+        put_tile(PANEL_X + i, row, name_ch[p * 6 + i])
+        i += 1
+    }
 }
 
 // ── Sprites ─────────────────────────────────────────────────

@@ -371,6 +371,87 @@ BURST = [
 ]
 
 
+# Weapons the players mount on the gun and the right arm. Each is
+# 16x8, two tiles, drawn to sit in one row of plate cells. Colour 2
+# is the player's paint, so the same tiles read blue or red with
+# the panel palette. The left edge is the mount, against the hull.
+WEAPONS = [
+    # Lance. A long barrel.
+    [
+        "................",
+        "......33........",
+        ".11222333333333.",
+        "1112223333333331",
+        ".11222333333333.",
+        "......11........",
+        "................",
+        "................",
+    ],
+    # Stub gun. Short, with a thick breech.
+    [
+        "................",
+        ".....333........",
+        ".112233333......",
+        "111222333331....",
+        ".112233333......",
+        ".....111........",
+        "................",
+        "................",
+    ],
+    # Blade.
+    [
+        "............333.",
+        ".........333322.",
+        "......3333221...",
+        "...33332211.....",
+        ".3332211........",
+        "32211...........",
+        "111.............",
+        "................",
+    ],
+    # Cannon. Heavy barrel, dark bore.
+    [
+        "................",
+        "...333333333....",
+        ".1122223333331..",
+        "111222233333331.",
+        ".1122223333331..",
+        "...111111111....",
+        "................",
+        "................",
+    ],
+    # Missile pod. Three tubes in a rack.
+    [
+        ".33333333333333.",
+        ".322132213221321",
+        ".322132213221321",
+        ".311131113111311",
+        ".11111111111111.",
+        "................",
+        "................",
+        "................",
+    ],
+    # Hammer.
+    [
+        ".3333333333332..",
+        ".32222222222211.",
+        ".32222222222211.",
+        ".31111111111111.",
+        "....2222........",
+        "....2222........",
+        "...122221.......",
+        "..11111111......",
+    ],
+]
+
+def pair(rows):
+    """Split a 16x8 picture into a left tile and a right tile."""
+    assert len(rows) == 8, len(rows)
+    for row in rows:
+        assert len(row) == 16 and set(row) <= set(".123"), row
+    return [[row[:8] for row in rows], [row[8:] for row in rows]]
+
+
 def charred(pixels):
     """The same picture one shade darker, for wrecked locations."""
     return [[(0, 0, 1, 2)[v] for v in row] for row in pixels]

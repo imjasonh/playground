@@ -22,10 +22,10 @@ var cpu_cover: bool = false
 const MED_IN_RANGE: u8[4] = [14, 10, 3, 0]
 const MED_CLOSING: u8[3] = [13, 4, 1]
 
-// The CPU player lives in a switchable bank. Calls from the fixed
-// bank go through trampolines; calls inside the bank and from it to
-// the fixed bank are plain JSRs.
+// The CPU and the rules live in a switchable bank. The fixed bank
+// is full. Calls from the fixed bank go through trampolines.
 bank Brain {
+include "rules.ne"
     fun first_legal(p: u8) -> u8 {
         var i: u8 = 0
         while i < NUM_PLANS {
@@ -100,7 +100,7 @@ bank Brain {
                 } else if a == A_CHARGE {
                     var mv: u8 = move_range(p, CHARGE_RANGE)
                     if pd - 1 <= mv and intact(p, L_ARMR) {
-                        var w: u8 = mech_frame[p] * 3 + 2
+                        var w: u8 = loadout[p * 2 + 1]
                         s += HIT_W[2] * W_DMG[w] * unsaved_faces(save_need(1 - p, w, false, false))
                         pd = 1
                     } else {
@@ -315,5 +315,223 @@ bank Brain {
         }
         cpu_row += 1
         return cpu_row >= 6
+    }
+
+    // Naming and weapon picks. No locals: res_a and res_b are scratch.
+    // A fourth nametable does not fit in the fixed bank, so this
+    // wipes the title while the screen is off and paints over it.
+    // cust_cursor 10 means the wipe is still running.
+
+    fun paint_cust() {
+        if cust_who == 0 {
+            put_str(2, 1, S_P1)
+            nt_attr(8, 4, 170)
+            nt_attr(12, 4, 170)
+            nt_attr(0, 8, 136)
+            nt_attr(4, 8, 170)
+            nt_attr(0, 12, 8)
+            nt_attr(4, 12, 10)
+        } else {
+            put_str(2, 1, S_P2)
+            nt_attr(8, 4, 255)
+            nt_attr(12, 4, 255)
+            nt_attr(0, 8, 204)
+            nt_attr(4, 8, 255)
+            nt_attr(0, 12, 12)
+            nt_attr(4, 12, 15)
+        }
+        nt_attr(0, 20, 0)
+        nt_attr(4, 20, 0)
+        nt_attr(0, 24, 0)
+        nt_attr(4, 24, 0)
+        put_str(3, 3, S_C_NAME)
+        put_str(3, 16, S_L_GUN)
+        put_str(3, 18, S_C_ARM)
+        put_str(3, 22, S_C_START)
+        put_str(3, 24, S_C_CLEAR)
+        res_a = 0
+        while res_a < 6 {
+            put_tile(8 + res_a, 5, name_ch[cust_who * 6 + res_a])
+            res_a += 1
+        }
+        paint_portrait(2, 8, mech_frame[cust_who])
+        res_b = loadout[cust_who * 2]
+        put_clear(11, 16, 6)
+        put_str(11, 16, W_STR[res_b])
+        res_b = loadout[cust_who * 2 + 1]
+        put_clear(11, 18, 6)
+        put_str(11, 18, W_STR[res_b])
+    }
+
+    fun customize_begin() {
+        cust_who = 0
+        while cust_who < 2 and is_cpu(cust_who) {
+            apply_stock(cust_who)
+            cust_who += 1
+        }
+        if cust_who >= 2 {
+            cust_cursor = 9
+            transition Battle
+            return
+        }
+        res_a = mech_frame[cust_who] * 2
+        loadout[cust_who * 2] = STOCK_WPN[res_a]
+        loadout[cust_who * 2 + 1] = STOCK_WPN[res_a + 1]
+        res_b = rand8() & 15
+        res_a = 0
+        while res_a < 6 {
+            name_ch[cust_who * 6 + res_a] = NAME_LIST[res_b * 6 + res_a]
+            res_a += 1
+        }
+        cust_cursor = 10
+        cust_tick = 0
+        poke(0x2001, 0x00)
+        unblank = 24
+    }
+
+    fun customize_tick() {
+        tick_unblank()
+        flush_text()
+        if cust_cursor == 10 {
+            res_a = 0
+            while res_a < 4 and cust_tick < 30 {
+                put_clear(0, cust_tick, 32)
+                cust_tick += 1
+                res_a += 1
+            }
+            if cust_tick >= 30 {
+                paint_cust()
+                cust_cursor = 0
+                cust_tick = 0
+            }
+            return
+        }
+        cust_tick += 1
+        if cust_cursor < 6 and (cust_tick & 15) == 0 {
+            if (cust_tick & 16) == 0 {
+                put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+            } else {
+                put_tile(8 + cust_cursor, 5, T_SPACE)
+            }
+        }
+
+        res_b = pad_pressed(cust_who)
+        if res_b == BTN_LEFT and cust_cursor > 0 {
+            if cust_cursor < 6 {
+                put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+            }
+            cust_cursor -= 1
+            cust_tick = 0
+        }
+        if res_b == BTN_RIGHT and cust_cursor < 8 {
+            if cust_cursor < 6 {
+                put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+            }
+            cust_cursor += 1
+            cust_tick = 0
+        }
+        if res_b == BTN_UP or res_b == BTN_DOWN {
+            if cust_cursor < 6 {
+                res_a = name_ch[cust_who * 6 + cust_cursor]
+                if res_b == BTN_DOWN {
+                    if res_a == T_SPACE {
+                        res_a = 90
+                    } else if res_a == 65 {
+                        res_a = T_SPACE
+                    } else {
+                        res_a -= 1
+                    }
+                } else if res_a == T_SPACE {
+                    res_a = 65
+                } else if res_a == 90 {
+                    res_a = T_SPACE
+                } else {
+                    res_a += 1
+                }
+                name_ch[cust_who * 6 + cust_cursor] = res_a
+                put_tile(8 + cust_cursor, 5, res_a)
+                cust_tick = 0
+            } else if cust_cursor == 6 or cust_cursor == 7 {
+                if cust_cursor == 6 {
+                    res_a = loadout[cust_who * 2]
+                } else {
+                    res_a = loadout[cust_who * 2 + 1]
+                }
+                if res_b == BTN_UP {
+                    res_a = (res_a + 1) % 6
+                } else {
+                    res_a = (res_a + 5) % 6
+                }
+                if cust_cursor == 6 {
+                    loadout[cust_who * 2] = res_a
+                    put_clear(11, 16, 6)
+                    put_str(11, 16, W_STR[res_a])
+                } else {
+                    loadout[cust_who * 2 + 1] = res_a
+                    put_clear(11, 18, 6)
+                    put_str(11, 18, W_STR[res_a])
+                }
+            }
+        }
+        if res_b == BTN_B {
+            res_a = 0
+            while res_a < 6 {
+                name_ch[cust_who * 6 + res_a] = T_SPACE
+                put_tile(8 + res_a, 5, T_SPACE)
+                res_a += 1
+            }
+            cust_tick = 0
+        }
+        if res_b == BTN_START or (res_b == BTN_A and cust_cursor == 8) {
+            res_a = 0
+            res_b = 1
+            while res_a < 6 {
+                if name_ch[cust_who * 6 + res_a] != T_SPACE {
+                    res_b = 0
+                }
+                res_a += 1
+            }
+            if res_b == 1 {
+                res_a = 0
+                res_b = mech_frame[cust_who] * 6
+                while res_a < 6 {
+                    name_ch[cust_who * 6 + res_a] = FRAME_NAME[res_b + res_a]
+                    res_a += 1
+                }
+            }
+            cust_who += 1
+            while cust_who < 2 and is_cpu(cust_who) {
+                apply_stock(cust_who)
+                cust_who += 1
+            }
+            if cust_who >= 2 {
+                cust_cursor = 9
+                transition Battle
+                return
+            }
+            res_a = mech_frame[cust_who] * 2
+            loadout[cust_who * 2] = STOCK_WPN[res_a]
+            loadout[cust_who * 2 + 1] = STOCK_WPN[res_a + 1]
+            res_b = rand8() & 15
+            res_a = 0
+            while res_a < 6 {
+                if NAME_LIST[res_b * 6 + res_a] != name_ch[res_a] {
+                    res_a = 8
+                } else {
+                    res_a += 1
+                }
+            }
+            if res_a == 6 {
+                res_b = (res_b + 1) & 15
+            }
+            res_a = 0
+            while res_a < 6 {
+                name_ch[cust_who * 6 + res_a] = NAME_LIST[res_b * 6 + res_a]
+                res_a += 1
+            }
+            cust_cursor = 0
+            cust_tick = 0
+            paint_cust()
+        }
     }
 }

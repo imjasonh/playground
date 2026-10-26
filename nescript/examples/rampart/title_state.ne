@@ -106,7 +106,13 @@ state Title {
         draw Tileset at: (16, MENU_ROWS[sel] * 8 - 1) attr: SP_FIRE frame: T_ARROW
         if go {
             seed_rand(seed)
-            transition Battle
+            if mode == MODE_CPU2 {
+                apply_stock(0)
+                apply_stock(1)
+                transition Battle
+            } else {
+                transition Customize
+            }
         }
     }
 }

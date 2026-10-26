@@ -8,10 +8,10 @@
 // strips armor, and a location at zero armor is critical. Six
 // critical locations wreck a mech.
 //
-// A critical location stops working: the gun and arms lose their
-// weapons, the shield can't go up, the head caps plans at two
-// points, and each leg costs a square of movement. With both legs
-// gone the mech can't move.
+// A critical location stops working. The gun and the right arm lose
+// the weapons mounted there, the shield can't go up, the head caps
+// plans at two points, and each leg costs a square of movement.
+// With both legs gone the mech can't move.
 //
 // The body plate is the mech's portrait. Damage shows as sprites on
 // the hit part: scuffs, then holes, then fire on the last point of
@@ -34,8 +34,9 @@
 //     render.ne        text queue, panel painting, sprites
 //     rules.ne         dice, geometry, legality, damage
 //     cpu.ne           Easy, Medium, and Hard CPU players
-//     title_state.ne   match setup menu
-//     battle_state.ne  turn sequencer
+//     title_state.ne      match setup menu
+//     customize_state.ne  name and weapon picks
+//     battle_state.ne     turn sequencer
 //
 // scripts/gen_rampart.py writes the generated files.
 //
@@ -43,6 +44,11 @@
 //     Title       up/down pick a row, left/right change it, START
 //                 begins. Idle for about seven seconds, the title
 //                 starts a CPU-against-CPU demo.
+//     Setup       each human names a mech and picks a gun weapon
+//                 and an arm weapon. Up and down rotate the letter
+//                 or the weapon, left and right move, B clears the
+//                 name, START confirms. Player 1 goes first, then
+//                 player 2. A CPU keeps its frame's name and weapons.
 //     Lock        tap two of U D L R A B, then START.
 //     Move        d-pad moves the cursor within range, A confirms,
 //                 B returns the cursor to the mech.
@@ -78,9 +84,9 @@ include "rampart/assets.ne"
 include "rampart/backgrounds.ne"
 include "rampart/state.ne"
 include "rampart/render.ne"
-include "rampart/rules.ne"
 include "rampart/cpu.ne"
 include "rampart/title_state.ne"
 include "rampart/battle_state.ne"
+include "rampart/customize_state.ne"
 
 start Title

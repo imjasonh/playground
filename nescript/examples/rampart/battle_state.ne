@@ -752,7 +752,7 @@ state Battle {
             P_NEXT_ACTION => { next_action() }
             P_DO => { begin_action() }
             P_MOVE => { run_move() }
-            P_MELEE => { begin_aim(mech_frame[actor] * 3 + 2, false) }
+            P_MELEE => { begin_aim(loadout[actor * 2 + 1], false) }
             P_AIM => { run_aim() }
             P_AFTER => { after_action() }
             P_OVER => {

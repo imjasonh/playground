@@ -4,6 +4,15 @@
 var mode: u8 = MODE_1P
 var cpu_level: u8 = LEVEL_MED
 var mech_frame: u8[2] = [0, 1]
+// Two weapon ids per player, gun mount then right-arm mount.
+var loadout: u8[4]
+// Six name letters per player, as tile numbers. 32 is a space.
+var name_ch: u8[12]
+// Customize screen cursor. The handlers live in the Brain bank,
+// so these are globals rather than state locals.
+var cust_who: u8 = 0
+var cust_cursor: u8 = 0
+var cust_tick: u8 = 0
 // Set by the title autopilot so the demo match returns to Title.
 var demo: bool = false
 

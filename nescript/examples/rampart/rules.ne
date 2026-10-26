@@ -128,32 +128,52 @@ fun plan_legal(p: u8, idx: u8) -> bool {
     return true
 }
 
-fun weapon_ok(p: u8, slot: u8) -> bool {
-    return intact(p, W_SLOT_LOC[slot])
+// A CPU keeps the frame's weapons and name.
+fun apply_stock(p: u8) {
+    res_a = mech_frame[p] * 2
+    loadout[p * 2] = STOCK_WPN[res_a]
+    loadout[p * 2 + 1] = STOCK_WPN[res_a + 1]
+    res_a = 0
+    res_b = mech_frame[p] * 6
+    while res_a < 6 {
+        name_ch[p * 6 + res_a] = FRAME_NAME[res_b + res_a]
+        res_a += 1
+    }
 }
 
-// The ranged weapon p fires at distance d: the gun if it's intact
-// and in range, else the left-arm weapon, else NO_WEAPON.
+// The ranged weapon p fires at distance d. The gun mount wins when
+// it is intact and in range. Otherwise the arm mount. Otherwise
+// NO_WEAPON. The result is a weapon id.
 fun pick_ranged(p: u8, d: u8) -> u8 {
-    var base: u8 = mech_frame[p] * 3
-    if weapon_ok(p, 0) and d <= W_RANGE[base] {
-        return base
-    }
-    if weapon_ok(p, 1) and d <= W_RANGE[base + 1] {
-        return base + 1
+    var s: u8 = 0
+    while s < 2 {
+        var w: u8 = loadout[p * 2 + s]
+        var loc: u8 = L_GUN
+        if s == 1 {
+            loc = L_ARMR
+        }
+        if intact(p, loc) and d <= W_RANGE[w] {
+            return w
+        }
+        s += 1
     }
     return NO_WEAPON
 }
 
-// Longest range p can shoot at with its remaining weapons.
+// Longest range p can shoot at with a weapon whose mount is intact.
 fun best_range(p: u8) -> u8 {
-    var base: u8 = mech_frame[p] * 3
-    var r: u8 = 1
-    if weapon_ok(p, 0) {
-        r = W_RANGE[base]
-    }
-    if weapon_ok(p, 1) and W_RANGE[base + 1] > r {
-        r = W_RANGE[base + 1]
+    var r: u8 = 0
+    var s: u8 = 0
+    while s < 2 {
+        var w: u8 = loadout[p * 2 + s]
+        var loc: u8 = L_GUN
+        if s == 1 {
+            loc = L_ARMR
+        }
+        if intact(p, loc) and W_RANGE[w] > r {
+            r = W_RANGE[w]
+        }
+        s += 1
     }
     return r
 }

@@ -137,6 +137,9 @@ T_ARROW = 21
 T_ACT = 22  # 22..28, one icon per action, in action order
 T_PIKE = 96  # 96..99
 T_MAUL = 100  # 100..103
+# Weapon pictures, two tiles each. The order matches WPN_TILE in
+# examples/rampart/constants.ne.
+WPN_AT = [(104, 105), (106, 107), (108, 109), (110, 111), (9, 10), (11, 29)]
 # Body-plate portraits: frame f, cell c is tile T_PLATE + f * 72 + c,
 # and its charred copy for a wrecked location is 36 tiles later.
 T_PLATE = 112
@@ -225,6 +228,11 @@ def build_tiles():
     tiles[T_ARROW] = ARROW
     for i, t in enumerate(art.ACTIONS):
         tiles[T_ACT + i] = t
+    for i, pic in enumerate(art.WEAPONS):
+        left, right = art.pair(pic)
+        a, b = WPN_AT[i]
+        tiles[a] = left
+        tiles[b] = right
     for i, t in enumerate(art.split16(art.PIKE_MINI)):
         tiles[T_PIKE + i] = t
     for i, t in enumerate(art.split16(art.MAUL_MINI)):
@@ -239,6 +247,12 @@ def build_tiles():
 
 
 def tile_label(i):
+    wpn_names = ["lance", "stub", "blade", "cannon", "pod", "hammer"]
+    for n, (a, b) in enumerate(WPN_AT):
+        if i == a:
+            return f"weapon: {wpn_names[n]} left"
+        if i == b:
+            return f"weapon: {wpn_names[n]} right"
     if 32 < i < 127 and chr(i).isprintable():
         return repr(chr(i))
     if i >= T_PLATE:
@@ -544,6 +558,10 @@ STRINGS = [
     ("PRESS_START", "PRESS START"),
     ("ROLL", "ROLL"),
     ("ACTION", "ACTION"),
+    ("C_NAME", "NAME"),
+    ("C_ARM", "ARM"),
+    ("C_START", "START"),
+    ("C_CLEAR", "B CLEAR"),
 ]
 
 

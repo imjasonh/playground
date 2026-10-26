@@ -19,6 +19,9 @@ const T_ARROW: u8 = 21
 const T_ACT: u8 = 22
 const T_PIKE: u8 = 96
 const T_MAUL: u8 = 100
+// Weapon pictures, two tiles each, in weapon-id order. Keep this in
+// step with WPN_AT in scripts/gen_rampart.py.
+const WPN_TILE: u8[12] = [104, 105, 106, 107, 108, 109, 110, 111, 9, 10, 11, 29]
 // Frame f's portrait cell c is T_PLATE + f * 72 + c; the charred
 // copy shown once a location is wrecked is T_CHARRED tiles later.
 const T_PLATE: u8 = 112
@@ -119,16 +122,44 @@ const DEC_FLIP: u8[11] = [0, 0x40, 0, 0, 0x40, 0, 0, 0x40, 0, 0, 0x40]
 const LOC_STR: u8[12] = [S_L_HEAD, S_L_GUN, S_L_SHIELD, S_L_ARML, S_L_ARMR, S_L_MAST, S_L_PAULL, S_L_PAULR, S_L_HULL, S_L_LEGL, S_L_LEGR, S_L_MISS]
 
 // ── Mechs and weapons ───────────────────────────────────────
-// Frame 0 is the Pike, frame 1 the Maul. Each has three weapons
-// at FRAME*3 + slot: slot 0 is the gun, slot 1 the left-arm
-// weapon, slot 2 the right-arm melee weapon.
+// Frame 0 is the Pike, frame 1 the Maul. A player brings two
+// weapons, stored in loadout at p * 2 + slot. Slot 0 is mounted
+// on the gun. Slot 1 is mounted on the right arm. Charge uses the
+// arm weapon, and a shot uses it when the gun weapon can't reach.
+// The ids index the tables below.
+//   0 lance   1 stub    2 blade
+//   3 cannon  4 pod     5 hammer
 const FRAME_STR: u8[2] = [S_PIKE, S_MAUL]
-const W_SLOT_LOC: u8[3] = [1, 3, 4]
 const W_RANGE: u8[6] = [8, 6, 1, 6, 10, 1]
 const W_AP: u8[6] = [1, 0, 2, 0, 0, 3]
 const W_DMG: u8[6] = [3, 1, 3, 2, 2, 4]
 const W_STR: u8[6] = [S_W_LANCE, S_W_STUB, S_W_BLADE, S_W_CANNON, S_W_POD, S_W_HAMMER]
 const NO_WEAPON: u8 = 255
+// Stock pair for each frame: Pike lance and blade, Maul cannon
+// and hammer.
+const STOCK_WPN: u8[4] = [0, 2, 3, 5]
+// "PIKE  " and "MAUL  ", used when a name is cleared and for a CPU.
+const FRAME_NAME: u8[12] = [80, 73, 75, 69, 32, 32, 77, 65, 85, 76, 32, 32]
+// Sixteen names a human starts from, six letters each. A short
+// name is padded with spaces.
+const NAME_LIST: u8[96] = [
+    86, 73, 80, 69, 82, 32, // VIPER
+    76, 65, 78, 67, 69, 32, // LANCE
+    87, 82, 65, 73, 84, 72, // WRAITH
+    66, 76, 65, 90, 69, 82, // BLAZER
+    82, 65, 78, 71, 69, 82, // RANGER
+    67, 79, 66, 82, 65, 32, // COBRA
+    68, 65, 71, 71, 69, 82, // DAGGER
+    82, 65, 80, 73, 69, 82, // RAPIER
+    72, 85, 78, 84, 69, 82, // HUNTER
+    78, 79, 86, 65, 32, 32, // NOVA
+    82, 85, 83, 84, 32, 32, // RUST
+    65, 88, 76, 69, 32, 32, // AXLE
+    73, 82, 79, 78, 32, 32, // IRON
+    68, 85, 75, 69, 32, 32, // DUKE
+    70, 65, 78, 71, 32, 32, // FANG
+    71, 82, 73, 84, 32, 32 // GRIT
+]
 
 const SAVE_TARGET: u8 = 5
 const STEP_RANGE: u8 = 3
