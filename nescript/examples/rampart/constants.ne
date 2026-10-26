@@ -4,7 +4,8 @@
 const T_SPACE: u8 = 32
 const T_MISS: u8 = 10
 const T_DIGIT0: u8 = 48
-const T_X: u8 = 88
+// Body-plate damage tiles, tier 0 (armor gone) through 4 (undamaged).
+const T_DAMAGE0: u8 = 119
 const T_PLUS: u8 = 43
 const T_MINUS: u8 = 45
 const T_QUEST: u8 = 63

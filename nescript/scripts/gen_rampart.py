@@ -258,6 +258,29 @@ LOGO = [
     "11111111",
 ]
 
+
+def damage_tile(tier):
+    """8x8 riveted plate, framed in colour 2, whose colour-3 fill
+    grows from the top in reading order as `tier` goes from 0 (armor
+    gone, interior empty) to 4 (undamaged, interior full). Body-plate
+    cells pick one of these five by how much armor a location has
+    left relative to its own maximum, so every location's full-health
+    tile is the same fully-filled plate regardless of that maximum.
+    """
+    interior = [(r, c) for r in range(6) for c in range(6)]
+    filled = set(interior[: len(interior) * tier // 4])
+    rows = []
+    for r in range(8):
+        row = []
+        for c in range(8):
+            if r in (0, 7) or c in (0, 7):
+                row.append("2")
+            else:
+                row.append("3" if (r - 1, c - 1) in filled else "1")
+        rows.append("".join(row))
+    return rows
+
+
 # Tile numbers the .ne sources refer to by name.
 T_FLOOR = 1  # 1..4
 T_RUIN = 5  # 5..8
@@ -271,7 +294,8 @@ T_CURSOR = 112  # 112..115
 T_BOX = 116
 T_LANDING = 117
 T_ARROW = 118
-TILE_COUNT = 119
+T_DAMAGE0 = 119  # 119..123, tier 0 (armor gone) .. 4 (undamaged)
+TILE_COUNT = 124
 
 
 def build_tiles():
@@ -299,6 +323,8 @@ def build_tiles():
     tiles[T_BOX] = PLATE_BOX
     tiles[T_LANDING] = LANDING
     tiles[T_ARROW] = ARROW
+    for tier in range(5):
+        tiles[T_DAMAGE0 + tier] = damage_tile(tier)
     return tiles
 
 
@@ -318,6 +344,11 @@ def tile_label(i):
         T_RUIN + 3: "ruin BR",
         T_MISS: "blank plate cell",
         T_LOGO: "logo block",
+        T_DAMAGE0: "plate damage tier 0 (wrecked)",
+        T_DAMAGE0 + 1: "plate damage tier 1",
+        T_DAMAGE0 + 2: "plate damage tier 2",
+        T_DAMAGE0 + 3: "plate damage tier 3",
+        T_DAMAGE0 + 4: "plate damage tier 4 (undamaged)",
     }.get(i, "unused")
 
 

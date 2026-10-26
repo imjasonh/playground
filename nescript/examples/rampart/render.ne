@@ -54,16 +54,25 @@ fun text_idle() -> bool {
     return q_head == q_tail
 }
 
+// Damage tier for a location: 0 once its armor hits zero, else how
+// full its armor is out of its own max (START_ARMOR[loc]), rounded
+// up into 1..4 so any remaining armor shows as more than empty and
+// full armor always shows as tier 4 regardless of that max.
+fun damage_tier(p: u8, loc: u8) -> u8 {
+    var a: u8 = armor[p * 11 + loc]
+    if a == 0 {
+        return 0
+    }
+    var mx: u8 = START_ARMOR[loc]
+    return (a * 4 + mx - 1) / mx
+}
+
 fun plate_tile(p: u8, cell: u8) -> u8 {
     var loc: u8 = PLATE[cell]
     if loc == L_NONE {
         return T_MISS
     }
-    var a: u8 = armor[p * 11 + loc]
-    if a == 0 {
-        return T_X
-    }
-    return T_DIGIT0 + a
+    return T_DAMAGE0 + damage_tier(p, loc)
 }
 
 fun cmd_cost(kind: u8, arg: u8) -> u8 {
