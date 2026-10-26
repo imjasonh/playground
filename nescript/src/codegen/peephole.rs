@@ -636,6 +636,20 @@ fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
     // Cross-function JSR can't read our temps because the callee also
     // starts its own temp numbering from $80 — if it stomps on our
     // slots, we can't have relied on them surviving the call anyway.
+    //
+    // Slots are recycled, and a later `STA slot` in the instruction
+    // stream is not necessarily on every path from this store: in
+    // `a and b` the right-hand block jumps over the false block's
+    // `STA` into the shared join. So the scan follows `JMP` and
+    // branch targets instead of reading the stream linearly.
+    let mut labels: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for (i, inst) in instructions.iter().enumerate() {
+        if inst.opcode == Opcode::NOP {
+            if let AddressingMode::Label(name) = &inst.mode {
+                labels.insert(name.as_str(), i);
+            }
+        }
+    }
     let mut keep = vec![true; instructions.len()];
     for i in 0..instructions.len() {
         let inst = &instructions[i];
@@ -646,22 +660,7 @@ fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
             AddressingMode::ZeroPage(addr) if addr >= 0x80 => addr,
             _ => continue,
         };
-        let mut dead = true;
-        for next in instructions.iter().skip(i + 1) {
-            if is_function_boundary(next) {
-                break;
-            }
-            if reads_zero_page(next, slot) {
-                dead = false;
-                break;
-            }
-            if writes_zero_page(next, slot) {
-                // Overwritten with no read in between — our STA is
-                // dead. Stop scanning either way.
-                break;
-            }
-        }
-        if dead {
+        if !temp_store_is_read(instructions, &labels, i + 1, slot) {
             keep[i] = false;
         }
     }
@@ -672,6 +671,93 @@ fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
         }
     }
     *instructions = out;
+}
+
+/// True if some path starting at `start` reads zero-page `slot` before
+/// it is overwritten or the function ends. Paths follow branches and
+/// `JMP`s to labels inside the same function; a jump out of the function
+/// ends that path, as `RTS` does, because temps don't outlive it.
+fn temp_store_is_read(
+    instructions: &[Instruction],
+    labels: &std::collections::HashMap<&str, usize>,
+    start: usize,
+    slot: u8,
+) -> bool {
+    let fn_start = instructions[..start]
+        .iter()
+        .rposition(is_function_label)
+        .unwrap_or(0);
+    let fn_end = instructions[start..]
+        .iter()
+        .position(is_function_label)
+        .map_or(instructions.len(), |p| start + p);
+    let in_fn = |idx: usize| idx >= fn_start && idx < fn_end;
+    let mut visited = vec![false; fn_end - fn_start];
+    let mut work = vec![start];
+    while let Some(mut pc) = work.pop() {
+        while in_fn(pc) {
+            if visited[pc - fn_start] {
+                break;
+            }
+            visited[pc - fn_start] = true;
+            let inst = &instructions[pc];
+            if reads_zero_page(inst, slot) {
+                return true;
+            }
+            if writes_zero_page(inst, slot) || is_function_boundary(inst) {
+                break;
+            }
+            match (inst.opcode, &inst.mode) {
+                (Opcode::BRK, _) => break,
+                (Opcode::JMP, AddressingMode::Label(target)) => {
+                    match labels.get(target.as_str()) {
+                        Some(&t) if in_fn(t) => pc = t,
+                        _ => break,
+                    }
+                    continue;
+                }
+                // Indirect jumps go somewhere we can't see.
+                (Opcode::JMP, _) => return true,
+                (
+                    Opcode::BEQ
+                    | Opcode::BNE
+                    | Opcode::BCC
+                    | Opcode::BCS
+                    | Opcode::BMI
+                    | Opcode::BPL
+                    | Opcode::BVC
+                    | Opcode::BVS,
+                    AddressingMode::LabelRelative(target),
+                ) => {
+                    if let Some(&t) = labels.get(target.as_str()) {
+                        if in_fn(t) {
+                            work.push(t);
+                        }
+                    }
+                }
+                (
+                    Opcode::BEQ
+                    | Opcode::BNE
+                    | Opcode::BCC
+                    | Opcode::BCS
+                    | Opcode::BMI
+                    | Opcode::BPL
+                    | Opcode::BVC
+                    | Opcode::BVS,
+                    _,
+                ) => return true,
+                _ => {}
+            }
+            pc += 1;
+        }
+    }
+    false
+}
+
+/// True if `inst` is the label that starts a function or handler; see
+/// `is_function_boundary`.
+fn is_function_label(inst: &Instruction) -> bool {
+    inst.opcode == Opcode::NOP && is_function_boundary(inst)
 }
 
 /// True if `inst` marks the start of a new function. IR codegen emits
@@ -871,6 +957,55 @@ mod tests {
                 .any(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x80)),
             "STA to $80 should be preserved: {insts:?}"
         );
+    }
+
+    /// The shape `a and b` lowers to: the right-hand block stores
+    /// the result and jumps over the false block's store of the same
+    /// slot to the join that reads it.
+    fn short_circuit_join(join_reads: bool) -> Vec<Instruction> {
+        let join = if join_reads {
+            Instruction::new(LDA, AM::ZeroPage(0x80))
+        } else {
+            Instruction::new(STA, AM::ZeroPage(0x80))
+        };
+        vec![
+            Instruction::new(NOP, AM::Label("__ir_fn_f".into())),
+            Instruction::new(LDA, AM::ZeroPage(0x10)),
+            Instruction::new(BEQ, AM::LabelRelative("false".into())),
+            Instruction::new(LDA, AM::ZeroPage(0x11)),
+            Instruction::new(STA, AM::ZeroPage(0x80)),
+            Instruction::new(JMP, AM::Label("join".into())),
+            Instruction::new(NOP, AM::Label("false".into())),
+            Instruction::new(LDA, AM::Immediate(0)),
+            Instruction::new(STA, AM::ZeroPage(0x80)),
+            Instruction::new(NOP, AM::Label("join".into())),
+            join,
+            Instruction::new(ORA, AM::ZeroPage(0x80)),
+            Instruction::new(STA, AM::ZeroPage(0x12)),
+            Instruction::new(RTS, AM::Implied),
+        ]
+    }
+
+    #[test]
+    fn keeps_temp_store_that_jumps_over_a_later_store() {
+        let mut insts = short_circuit_join(true);
+        remove_dead_temp_stores(&mut insts);
+        let stores = insts
+            .iter()
+            .filter(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x80))
+            .count();
+        assert_eq!(stores, 2, "both branch stores reach the join: {insts:?}");
+    }
+
+    #[test]
+    fn removes_temp_store_overwritten_on_every_path() {
+        let mut insts = short_circuit_join(false);
+        remove_dead_temp_stores(&mut insts);
+        let stores = insts
+            .iter()
+            .filter(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x80))
+            .count();
+        assert_eq!(stores, 1, "only the join's own store is left: {insts:?}");
     }
 
     #[test]
