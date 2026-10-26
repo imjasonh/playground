@@ -22,7 +22,7 @@
 // Secret plans work like a two-player sports game's play call: the
 // lock screen lists every plan with a two-button code, and each
 // player taps a code on their own controller with nothing echoed
-// on screen, then presses START. The last two presses count.
+// on screen, then presses START.
 //
 // The source is split across examples/rampart/*.ne:
 //
@@ -54,9 +54,8 @@
 //                 confirms. Player 1 goes first, then player 2. A
 //                 CPU keeps its frame's weapons and is named BLUE
 //                 or RED, matching that player's color.
-//     Lock        the card shows the d-pad as arrows, with a key
-//                 under the list. Tap two of those, or A or B,
-//                 then START.
+//     Lock        tap the two-button code, then START. The d-pad
+//                 buttons are arrows. A and B stay letters.
 //     Move        d-pad moves the cursor within range, A confirms,
 //                 B returns the cursor to the mech.
 //     Aim         d-pad picks a plate cell, A fires.

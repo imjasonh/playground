@@ -148,7 +148,6 @@ background Card {
         "C": 67
         "D": 68
         "E": 69
-        "F": 70
         "G": 71
         "H": 72
         "I": 73
@@ -191,9 +190,9 @@ background Card {
         "  <>  SHIELD RUSH      3        ",
         "  <A  SNAP STEP SHIELD 3        ",
         "                                ",
-        " ^ UP  v DOWN  < LEFT  > RIGHT  ",
-        " THE LAST TWO PRESSES COUNT     ",
         " START WHEN DONE                ",
+        "                                ",
+        "                                ",
         "                                ",
         "                                ",
         "                                ",
