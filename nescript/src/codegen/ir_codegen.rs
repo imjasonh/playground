@@ -704,6 +704,25 @@ impl<'a> IrCodeGen<'a> {
         }
     }
 
+    /// Zero-page slots of temps that are read again after a call whose
+    /// argument temps are `args`. A temp's remaining use count still
+    /// includes this call's reads, so those are subtracted first.
+    fn temps_live_across_call(&self, args: &[IrTemp]) -> Vec<u8> {
+        let mut live: Vec<u8> = self
+            .temp_slots
+            .iter()
+            .filter(|(temp, _)| {
+                let remaining = self.use_counts.get(temp).copied().unwrap_or(0);
+                let in_call = args.iter().filter(|a| *a == *temp).count() as u32;
+                remaining > in_call
+            })
+            .map(|(_, &slot)| slot)
+            .collect();
+        live.sort_unstable();
+        live.dedup();
+        live
+    }
+
     /// Load a temp's value into A.
     fn load_temp(&mut self, temp: IrTemp) {
         let addr = self.temp_addr(temp);
@@ -1731,10 +1750,25 @@ impl<'a> IrCodeGen<'a> {
                         format!("__ir_fn_{name}")
                     }
                 };
+                // Every function allocates its temps from TEMP_BASE,
+                // so the callee overwrites any caller temp that is
+                // still needed after the call (for example the result
+                // of `f()` while `g()` runs in `h(f(), g())`). Push
+                // those slots on the hardware stack and pop them back
+                // after the return value is stored.
+                let live = self.temps_live_across_call(args);
+                for &slot in &live {
+                    self.emit(LDA, AM::ZeroPage(slot));
+                    self.emit(PHA, AM::Implied);
+                }
                 self.emit(JSR, AM::Label(label));
                 if let Some(d) = dest {
                     // Return value is in A
                     self.store_temp(*d);
+                }
+                for &slot in live.iter().rev() {
+                    self.emit(PLA, AM::Implied);
+                    self.emit(STA, AM::ZeroPage(slot));
                 }
             }
             IrOp::DrawSprite {
@@ -4091,6 +4125,46 @@ mod more_tests {
             .iter()
             .any(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x04));
         assert!(has_param_read, "callee should read parameters from $04");
+    }
+
+    #[test]
+    fn ir_codegen_call_preserves_temps_live_across_nested_call() {
+        // `f(2)` lands in a temp at TEMP_BASE. `g(3)` runs before
+        // `sum` reads that temp, and g's own temps also start at
+        // TEMP_BASE, so the caller must save the slot around g.
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            fun f(a: u8) -> u8 { var t: u8 = a + 1
+                return t * 2 }
+            fun g(a: u8) -> u8 { var t: u8 = a + 2
+                return t * 3 }
+            fun sum(a: u8, b: u8) -> u8 { return a + b }
+            var x: u8 = 0
+            on frame { x = sum(f(2), g(3)) }
+            start Main
+        "#,
+        );
+        let g_call = insts
+            .iter()
+            .position(|i| i.opcode == JSR && i.mode == AM::Label("__ir_fn_g".into()))
+            .expect("caller should JSR to g");
+        assert_eq!(
+            insts[g_call - 1].opcode,
+            PHA,
+            "f's result is pushed before g"
+        );
+        let saved = match insts[g_call - 2].mode {
+            AM::ZeroPage(slot) => slot,
+            ref m => panic!("expected LDA zp before PHA, got {m:?}"),
+        };
+        assert_eq!(
+            insts[g_call + 2].opcode,
+            PLA,
+            "f's result is popped after g"
+        );
+        assert_eq!(insts[g_call + 3].opcode, STA);
+        assert_eq!(insts[g_call + 3].mode, AM::ZeroPage(saved));
     }
 
     #[test]
