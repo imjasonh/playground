@@ -83,6 +83,11 @@ export function createEmulator() {
     peek(addr) {
       return nes.cpu.mem[addr & 0x7ff];
     },
+    // Read one byte of PPU VRAM ($0000-$3FFF), through the same
+    // mirroring table the PPU itself reads through.
+    peekVram(addr) {
+      return nes.ppu.vramMem[nes.ppu.vramMirrorTable[addr & 0x3fff]];
+    },
     pixels() {
       const rgba = Buffer.allocUnsafe(PIXEL_COUNT * 4);
       new Uint32Array(rgba.buffer, rgba.byteOffset, PIXEL_COUNT).set(pixels32);
