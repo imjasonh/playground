@@ -77,7 +77,7 @@ From the spec's "Reserved for Future Versions" section:
 | Feature            | Description                                                           |
 |--------------------|-----------------------------------------------------------------------|
 | **Fixed-point**    | `fixed8.8` type for sub-pixel movement with operator support.         |
-| **Text / HUD**     | Font sheet declarations + layout system for scores, health, menus.   |
+| **Text / HUD**     | Font sheet declarations + layout system for scores, health, menus. Planned in [Authoring without generators](#authoring-without-generators), steps 2 and 3. |
 | **Tilemaps**       | Declarative level data with built-in collision queries.              |
 | **SRAM / saves**   | Persistent storage declarations for battery-backed save data.        |
 
@@ -105,6 +105,139 @@ synthetic-name model still works without IR changes. Array-of-structs
 is still rejected with E0201 — the synthetic-variable model can't
 index per-element struct layouts without further codegen work, see
 `src/analyzer/mod.rs::register_struct`.
+
+---
+
+## Authoring without generators
+
+**Goal.** Every example builds from `.ne` source alone. No example
+needs a Python or Rust program that writes `.ne` files. When a game
+needs one, the language is missing a feature, and the fix goes here.
+
+**What the generators do today.** Two examples ship one:
+
+| Generator | Writes | Why the language can't do it today |
+|-----------|--------|------------------------------------|
+| `scripts/gen_platformer_tiles.rs` | The `Tileset` pixel rows pasted into `examples/platformer.ne`, and the matching `TILE_*` and `GRASS`/`DIRT` index constants | A tile inside a `sprite` has no name. Its index is its position, so the constants are a second copy that the generator keeps in sync. The level map itself is already a `legend`/`map:`/`palette_map:` background. |
+| `scripts/gen_rampart.py` and `scripts/rampart_art.py` | `examples/rampart/assets.ne`, `backgrounds.ne`, and `text.ne` | Tiles need fixed indices (text glyphs sit at their ASCII codes), names, and derived variants (each portrait has a darker wrecked copy). The font is borrowed from `examples/sha256/assets.ne`. Strings need ids, lengths, and packing into 256-byte arrays. The Card background lists the same plans as the `PLAN_MASK` and `PLAN_COST` tables. The `T_*` constants in `constants.ne` repeat the generator's indices by hand. |
+
+**Plan.** Each step lands with its tests, a `language-guide.md`
+section, and the example migration it unblocks.
+
+1. **Named tiles.** Let a `sprite` declare named entries, and let
+   code and `legend` blocks refer to them:
+
+   ```
+   sprite Tileset {
+       tiles {
+           Grass: ["...", ...]          // 8x8: one tile
+           Floor: ["...", ...]          // 16x16: four tiles, row-major
+           Arrow at 21: ["...", ...]    // pinned index
+       }
+   }
+   const T_FLOOR_BR: u8 = Tileset.Floor + 3
+   ```
+
+   `Tileset.Grass` is a compile-time `u8`. Two entries on one index
+   are an error, and so is a pinned entry that overlaps an unpinned
+   one. Allow `|` inside a pixel row as a separator that the parser
+   drops, so a 48×48 portrait reads as six cells per row.
+   *Unblocks:* delete `gen_platformer_tiles.rs`, write the
+   platformer's tiles inline, and replace its `TILE_*` constants
+   with `Tileset.Name`. Replace Rampart's hand-kept `T_*` constants.
+
+2. **Fonts and charmaps.** A `font` declaration places glyphs and
+   records which character each one draws:
+
+   ```
+   font Sans {
+       sprite: Tileset
+       glyphs at ascii {
+           "A": ["........", ...]
+           "0": [...]
+       }
+   }
+   ```
+
+   `at ascii` pins each glyph at its character code. Without it,
+   glyphs pack after the sprite's other tiles and the compiler
+   keeps the character-to-tile map. A character outside the font is
+   a compile error wherever a string uses it, so a typo can't
+   draw a blank tile. A `background` `map:` falls back to the
+   font for any character its `legend` doesn't define, so a text
+   row in a nametable is written as the text.
+
+   Shared fonts need a library directory. Add `nescript/lib/` and
+   resolve `include "lib/..."` against it after the including
+   file's directory. Move the sha256 alphabet to
+   `lib/fonts/sans.ne` and include it from sha256 and Rampart.
+
+3. **Strings.** A string literal becomes a value:
+
+   ```
+   const S_TURN: str = "TURN"
+   const W_STR: str[5] = ["THERMAL LANCE", "GATLING CANNON", "MISSILE POD", "SWORD", "HAMMER"]
+   const FRAME_NAME: u8[12] = "BLUE  RED   "    // encoded through the font
+   ```
+
+   The compiler packs every `str` into one ROM blob, encoded
+   through the font in scope, and gives each a `u8` id with an
+   offset and length table, which is the layout `gen_rampart.py`
+   builds today. `len(s)` is a compile-time constant for a literal
+   and a table read otherwise. `s[i]` reads one byte. Add
+   intrinsics that queue through the VRAM update buffer (§G):
+
+   - `draw_text x, y, s` writes the string.
+   - `draw_text x, y, s, width` also clears to `width` tiles. Make
+     `width` default to the longest string the expression can
+     name, so a `W_STR[i]` slot clears itself and `WPN_NAME_W`
+     goes away.
+   - `draw_num x, y, value, digits` writes a decimal number.
+
+   The analyzer counts each frame's queued bytes where the counts
+   are constant and warns past the vblank budget. *Unblocks:*
+   delete `text.ne`, Rampart's `put_str`, `str_byte`, and
+   `STR_CHUNK`/`STR_OFF`/`STR_LEN`, and the raw ASCII in
+   `FRAME_NAME`.
+
+4. **`const` arrays over 256 bytes.** Indexing uses the X register,
+   so the analyzer warns past 256 bytes
+   (`src/analyzer/mod.rs`, "elements past that are unreachable").
+   Accept a `u16` index into a larger `const` array, compiled as a
+   pointer plus `(ptr),Y` with the high byte added. Keep the fast
+   `LDA table,X` path for arrays of 256 bytes or fewer, and make an
+   out-of-range constant index an error. The string blob in step 3
+   uses the same path, so a game's text has no size cliff.
+
+5. **Derived tiles.** A tile can be computed from another tile at
+   compile time:
+
+   ```
+   PikeCharred: Tileset.PikePlate remap { "2": "1", "3": "2" }
+   ArrowLeft: Tileset.Arrow flip x
+   ```
+
+   `remap` maps palette indices and `flip x` / `flip y` mirror.
+   This covers Rampart's `charred()` and any mirrored sprite that
+   would otherwise be drawn twice. Anything richer belongs in an
+   image editor and `@chr("file.png")`, which ships today.
+
+6. **Compile-time checks.** Add `static_assert(expr, "message")`
+   over constants and `len()`. When a table and a background have
+   to agree, as Rampart's Card rows and `PLAN_COST` do, write both
+   in `.ne` and assert that they agree, instead of generating both.
+
+7. **Migrate Rampart and delete the generators.** Write
+   `assets.ne` and `backgrounds.ne` by hand with steps 1 to 6. The
+   Title logo, the Board, and the Card become literal `map:` rows.
+   The 12×12 board starts at column 1, which is not on a metatile
+   boundary, so it stays a `map:` rather than a `room`. Delete
+   `scripts/gen_rampart.py` and `scripts/rampart_art.py`. Add a
+   pre-commit check that fails when an example's source says it
+   was generated, so a new generator can't land unnoticed.
+
+Steps 1 and 3 remove the most duplicated state. Step 1 alone
+deletes the platformer generator.
 
 ---
 
@@ -617,6 +750,10 @@ to a specific bank to avoid bank-switch cost on a hot path.
 
 Remaining gap items in order of user value:
 
+0. [Authoring without generators](#authoring-without-generators):
+   named tiles, fonts, strings, large `const` arrays, derived
+   tiles, and `static_assert`, so every example builds from `.ne`
+   alone.
 1. Register allocator (existing section) — compounding size win,
    but with the audio-goldens caveat spelled out in that section.
 2. NEXXT `@room(...)` import + per-quadrant palette hints
