@@ -2654,7 +2654,10 @@ impl Analyzer {
                 "rand8" => Some(NesType::U8),
                 "rand16" => Some(NesType::U16),
                 "collides_at" => Some(NesType::Bool),
-                _ => Some(NesType::U8), // Simplified for M1
+                _ => match self.function_return_types.get(name) {
+                    Some(Some(ty)) => Some(ty.clone()),
+                    _ => Some(NesType::U8),
+                },
             },
             Expr::ArrayIndex(name, _, _) => {
                 self.resolve_symbol(name).and_then(|s| match &s.sym_type {
