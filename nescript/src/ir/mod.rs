@@ -197,6 +197,8 @@ pub enum IrOp {
         x: IrTemp,
         y: IrTemp,
         frame: Option<IrTemp>,
+        /// OAM attribute byte; `None` writes 0.
+        attr: Option<IrTemp>,
     },
     /// Read a controller input byte into a temp.
     /// Second arg: 0 for player 1, 1 for player 2.

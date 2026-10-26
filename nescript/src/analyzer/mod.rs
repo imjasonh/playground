@@ -2366,9 +2366,9 @@ impl Analyzer {
                 self.walk_expr_reads(&draw.y);
                 self.check_expr_type(&draw.x, &NesType::U8);
                 self.check_expr_type(&draw.y, &NesType::U8);
-                if let Some(frame) = &draw.frame {
-                    self.walk_expr_reads(frame);
-                    self.check_expr_type(frame, &NesType::U8);
+                for e in [&draw.frame, &draw.attr].into_iter().flatten() {
+                    self.walk_expr_reads(e);
+                    self.check_expr_type(e, &NesType::U8);
                 }
             }
             Statement::Return(Some(expr), span) => {
@@ -2858,8 +2858,8 @@ fn collect_calls_stmt(stmt: &Statement, calls: &mut Vec<String>) {
         Statement::Draw(draw) => {
             collect_calls_expr(&draw.x, calls);
             collect_calls_expr(&draw.y, calls);
-            if let Some(f) = &draw.frame {
-                collect_calls_expr(f, calls);
+            for e in [&draw.frame, &draw.attr].into_iter().flatten() {
+                collect_calls_expr(e, calls);
             }
         }
         Statement::Scroll(x, y, _) => {

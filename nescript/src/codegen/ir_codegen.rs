@@ -1781,6 +1781,7 @@ impl<'a> IrCodeGen<'a> {
                 x,
                 y,
                 frame,
+                attr,
             } => {
                 // Flag the `__oam_used` marker so the linker knows
                 // to emit the OAM DMA + shadow-init + default-palette
@@ -1849,8 +1850,12 @@ impl<'a> IrCodeGen<'a> {
                 }
                 self.emit(STA, AM::AbsoluteY(0x0201));
 
-                // Attributes at cursor+2 (always 0)
-                self.emit(LDA, AM::Immediate(0));
+                // Attributes at cursor+2: palette, priority, flips.
+                if let Some(a) = attr {
+                    self.load_temp(*a);
+                } else {
+                    self.emit(LDA, AM::Immediate(0));
+                }
                 self.emit(STA, AM::AbsoluteY(0x0202));
 
                 // X position at cursor+3
@@ -3752,11 +3757,11 @@ fn op_source_temps(op: &IrOp) -> Vec<IrTemp> {
         IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => vec![*idx],
         IrOp::ArrayStore(_, idx, val) => vec![*idx, *val],
         IrOp::Call(_, _, args) => args.clone(),
-        IrOp::DrawSprite { x, y, frame, .. } => {
+        IrOp::DrawSprite {
+            x, y, frame, attr, ..
+        } => {
             let mut out = vec![*x, *y];
-            if let Some(f) = frame {
-                out.push(*f);
-            }
+            out.extend([frame, attr].into_iter().flatten());
             out
         }
         IrOp::Scroll(x, y) => vec![*x, *y],
@@ -3997,6 +4002,36 @@ mod tests {
             .filter(|i| i.opcode == INC && i.mode == AM::ZeroPage(0x09))
             .count();
         assert_eq!(cursor_bumps, 4, "draw should bump cursor by 4");
+    }
+
+    #[test]
+    fn ir_codegen_draw_sprite_attr() {
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            var px: u8 = 0
+            var py: u8 = 0
+            var flip: u8 = 0
+            on frame {
+                flip = flip ^ 0x40
+                draw Smiley at: (px, py) attr: flip | 2
+            }
+            start Main
+        "#,
+        );
+        let at = insts
+            .iter()
+            .position(|i| i.opcode == STA && i.mode == AM::AbsoluteY(0x0202))
+            .expect("draw writes the attribute byte");
+        assert!(
+            insts.iter().any(|i| i.opcode == ORA),
+            "attr expression is evaluated: {insts:?}"
+        );
+        let prev = &insts[at - 1];
+        assert!(
+            !(prev.opcode == LDA && prev.mode == AM::Immediate(0)),
+            "attr: should replace the default 0 attribute: {insts:?}"
+        );
     }
 
     #[test]

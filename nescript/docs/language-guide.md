@@ -719,7 +719,24 @@ scanline — see the `cycle_sprites` statement below and the
 [sprite-per-scanline mitigations](#sprite-per-scanline-mitigations)
 section for how to handle scenes that exceed the 8-per-scanline budget.
 
-Syntax: `draw SpriteName at: (x_expr, y_expr) [frame: expr]`
+Syntax: `draw SpriteName at: (x_expr, y_expr) [frame: expr] [attr: expr]`
+
+`attr:` sets the sprite's OAM attribute byte. Without it, the byte is 0.
+The bits are:
+
+| Bits | Effect |
+|------|--------|
+| 0-1 | Sprite palette: 0 for `sp0` through 3 for `sp3` |
+| 5 | Draw behind the background's non-transparent pixels |
+| 6 | Flip horizontally |
+| 7 | Flip vertically |
+
+```
+draw Ship at: (x, y) attr: 0x41   // palette sp1, flipped horizontally
+```
+
+A metasprite applies the same `attr:` to every tile. A flip mirrors
+each tile in place, not the metasprite's layout.
 
 ### Transition
 

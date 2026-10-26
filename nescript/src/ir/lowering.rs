@@ -1136,6 +1136,7 @@ impl LoweringContext {
                     // work could warn on it.
                     let base_x = self.lower_expr(&draw.x);
                     let base_y = self.lower_expr(&draw.y);
+                    let attr = draw.attr.as_ref().map(|e| self.lower_expr(e));
                     for ((dx_off, dy_off), tile) in meta.dx.iter().zip(&meta.dy).zip(&meta.frame) {
                         let off_x = self.fresh_temp();
                         self.emit(IrOp::LoadImm(off_x, *dx_off));
@@ -1155,6 +1156,7 @@ impl LoweringContext {
                             x: x_sum,
                             y: y_sum,
                             frame: Some(tile_imm),
+                            attr,
                         });
                     }
                     return;
@@ -1162,11 +1164,13 @@ impl LoweringContext {
                 let x = self.lower_expr(&draw.x);
                 let y = self.lower_expr(&draw.y);
                 let frame = draw.frame.as_ref().map(|e| self.lower_expr(e));
+                let attr = draw.attr.as_ref().map(|e| self.lower_expr(e));
                 self.emit(IrOp::DrawSprite {
                     sprite_name: draw.sprite_name.clone(),
                     x,
                     y,
                     frame,
+                    attr,
                 });
             }
             Statement::Transition(name, _) => {
