@@ -212,7 +212,7 @@ them from an XcodeGen `project.yml` that declares `platform: macOS`:
   (playbooks + network toolbox; optional on-device chat). Same Sparkle CD path; see
   [`docs/onramp-design.md`](docs/onramp-design.md).
 - **[`roll/`](roll/)** is the menu bar app. Click rolls. Right-click lists
-  countdowns, updates, and quit. Later menu bar features go here. No Dock icon
+  countdowns, a fake phone photo of the screen, updates, and quit. Later menu bar features go here. No Dock icon
   and no window. Same Sparkle CD path.
 
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
