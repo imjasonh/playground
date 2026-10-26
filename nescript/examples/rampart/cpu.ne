@@ -415,20 +415,44 @@ include "rules.ne"
             }
         }
 
+        // On the name row, left/right move the lit letter and
+        // up/down rotate it. On the gun and arm rows, left/right
+        // cycle that row's weapon and up/down move to the next row,
+        // so either weapon can be any of the six, gun and arm alike.
         res_b = pad_pressed(cust_who)
-        if res_b == BTN_LEFT and cust_cursor > 0 {
-            if cust_cursor < 6 {
+        if res_b == BTN_LEFT {
+            if cust_cursor < 6 and cust_cursor > 0 {
                 put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+                cust_cursor -= 1
+                cust_tick = 0
+            } else if cust_cursor == 6 {
+                res_a = (loadout[cust_who * 2] + 5) % 6
+                loadout[cust_who * 2] = res_a
+                put_clear(11, 16, 6)
+                put_str(11, 16, W_STR[res_a])
+            } else if cust_cursor == 7 {
+                res_a = (loadout[cust_who * 2 + 1] + 5) % 6
+                loadout[cust_who * 2 + 1] = res_a
+                put_clear(11, 18, 6)
+                put_str(11, 18, W_STR[res_a])
             }
-            cust_cursor -= 1
-            cust_tick = 0
         }
-        if res_b == BTN_RIGHT and cust_cursor < 8 {
+        if res_b == BTN_RIGHT {
             if cust_cursor < 6 {
                 put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+                cust_cursor += 1
+                cust_tick = 0
+            } else if cust_cursor == 6 {
+                res_a = (loadout[cust_who * 2] + 1) % 6
+                loadout[cust_who * 2] = res_a
+                put_clear(11, 16, 6)
+                put_str(11, 16, W_STR[res_a])
+            } else if cust_cursor == 7 {
+                res_a = (loadout[cust_who * 2 + 1] + 1) % 6
+                loadout[cust_who * 2 + 1] = res_a
+                put_clear(11, 18, 6)
+                put_str(11, 18, W_STR[res_a])
             }
-            cust_cursor += 1
-            cust_tick = 0
         }
         if res_b == BTN_UP or res_b == BTN_DOWN {
             if cust_cursor < 6 {
@@ -451,26 +475,21 @@ include "rules.ne"
                 name_ch[cust_who * 6 + cust_cursor] = res_a
                 put_tile(8 + cust_cursor, 5, res_a)
                 cust_tick = 0
-            } else if cust_cursor == 6 or cust_cursor == 7 {
-                if cust_cursor == 6 {
-                    res_a = loadout[cust_who * 2]
-                } else {
-                    res_a = loadout[cust_who * 2 + 1]
-                }
+            } else if cust_cursor == 6 {
+                cust_cursor = 7
                 if res_b == BTN_UP {
-                    res_a = (res_a + 1) % 6
-                } else {
-                    res_a = (res_a + 5) % 6
+                    cust_cursor = 5
                 }
-                if cust_cursor == 6 {
-                    loadout[cust_who * 2] = res_a
-                    put_clear(11, 16, 6)
-                    put_str(11, 16, W_STR[res_a])
-                } else {
-                    loadout[cust_who * 2 + 1] = res_a
-                    put_clear(11, 18, 6)
-                    put_str(11, 18, W_STR[res_a])
+                cust_tick = 0
+            } else if cust_cursor == 7 {
+                cust_cursor = 8
+                if res_b == BTN_UP {
+                    cust_cursor = 6
                 }
+                cust_tick = 0
+            } else if cust_cursor == 8 and res_b == BTN_UP {
+                cust_cursor = 7
+                cust_tick = 0
             }
         }
         if res_b == BTN_B {

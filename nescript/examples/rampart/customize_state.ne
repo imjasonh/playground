@@ -1,10 +1,14 @@
 // rampart/customize_state.ne: name and weapons, one human at a time.
 //
 // The screen logic runs in the Brain bank. This state draws the
-// weapon sprites, which have to stay in the fixed bank. Up and down
-// rotate the selected letter or weapon. Left and right move. B
-// clears the name. START confirms from any row. A confirms on
-// START. Player 1 finishes, then player 2. A CPU skips this screen.
+// weapon sprites, which have to stay in the fixed bank. On the
+// name row, left and right move the lit letter and up and down
+// rotate it. On the gun and arm rows, left and right cycle that
+// row's weapon and up and down move to the next row. Either
+// weapon can be any of the six, so a mech can carry two guns or
+// two close-combat weapons. B clears the name. START confirms
+// from any row. A confirms on START. Player 1 finishes, then
+// player 2. A CPU skips this screen.
 //
 // The weapon sprites use the player's palette. The portrait behind
 // them is the chassis chosen on the title.
