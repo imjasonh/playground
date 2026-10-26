@@ -560,7 +560,7 @@ STRINGS = [
     ("C_NAME", "NAME"),
     ("C_ARM", "ARM"),
     ("C_START", "START"),
-    ("C_CLEAR", "B CLEAR"),
+    ("C_BACKSPACE", "B BACKSPACE"),
 ]
 
 

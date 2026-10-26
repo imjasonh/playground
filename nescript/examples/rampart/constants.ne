@@ -46,6 +46,16 @@ const INFO_ROW: u8 = 1
 // Panel block top rows for P1 and P2.
 const P_BASE: u8[2] = [2, 14]
 
+// ── Setup screen rows and columns ───────────────────────────
+// A sprite drawn at row r sits at pixel r * 8 - 1, one pixel above
+// the row's top, which centers it against the text baseline.
+const NAME_ROW: u8 = 3
+const NAME_COL: u8 = 8
+const GUN_ROW: u8 = 16
+const ARM_ROW: u8 = 18
+const START_ROW: u8 = 22
+const BACKSPACE_ROW: u8 = 24
+
 // ── Board ───────────────────────────────────────────────────
 const BOARD_N: u8 = 12
 const NUM_RUINS: u8 = 6
@@ -142,28 +152,12 @@ const NO_WEAPON: u8 = 255
 // Stock pair for each frame: Pike thermal lance and sword, Maul
 // gatling cannon and hammer.
 const STOCK_WPN: u8[4] = [0, 3, 1, 4]
-// "BLUE  " and "RED   ", one per player. A CPU uses these, and
-// confirming a blank name restores that player's name.
-const FRAME_NAME: u8[12] = [66, 76, 85, 69, 32, 32, 82, 69, 68, 32, 32, 32]
-// Sixteen names a human starts from, six letters each. A short
-// name is padded with spaces.
-const NAME_LIST: u8[96] = [
-    86, 73, 80, 69, 82, 32, // VIPER
-    76, 65, 78, 67, 69, 32, // LANCE
-    87, 82, 65, 73, 84, 72, // WRAITH
-    66, 76, 65, 90, 69, 82, // BLAZER
-    82, 65, 78, 71, 69, 82, // RANGER
-    67, 79, 66, 82, 65, 32, // COBRA
-    68, 65, 71, 71, 69, 82, // DAGGER
-    82, 65, 80, 73, 69, 82, // RAPIER
-    72, 85, 78, 84, 69, 82, // HUNTER
-    78, 79, 86, 65, 32, 32, // NOVA
-    82, 85, 83, 84, 32, 32, // RUST
-    65, 88, 76, 69, 32, 32, // AXLE
-    73, 82, 79, 78, 32, 32, // IRON
-    68, 85, 75, 69, 32, 32, // DUKE
-    70, 65, 78, 71, 32, 32, // FANG
-    71, 82, 73, 84, 32, 32 // GRIT
+// Each player's default name, six letters, space-padded. A human
+// starts editing it, a CPU keeps it, and confirming a blank name
+// restores it.
+const FRAME_NAME: u8[12] = [
+    66, 76, 85, 69, 32, 32, // BLUE
+    82, 69, 68, 32, 32, 32 // RED
 ]
 
 const SAVE_TARGET: u8 = 5

@@ -128,7 +128,8 @@ fun plan_legal(p: u8, idx: u8) -> bool {
     return true
 }
 
-// A CPU keeps the frame's weapons. Its name is BLUE or RED.
+// The frame's stock weapons and the player's default name, BLUE
+// or RED. A CPU keeps them; a human starts setup from them.
 fun apply_stock(p: u8) {
     res_a = mech_frame[p] * 2
     loadout[p * 2] = STOCK_WPN[res_a]

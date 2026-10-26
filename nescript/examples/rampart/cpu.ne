@@ -322,6 +322,17 @@ include "rules.ne"
     // wipes the title while the screen is off and paints over it.
     // cust_cursor 10 means the wipe is still running.
 
+    // Index of the last non-space letter in p's name, or 0 when the
+    // name is empty. The cursor starts here, the way a text field
+    // places the caret after existing text.
+    fun name_end(p: u8) -> u8 {
+        var i: u8 = 5
+        while i > 0 and name_ch[p * 6 + i] == T_SPACE {
+            i -= 1
+        }
+        return i
+    }
+
     fun paint_cust() {
         if cust_who == 0 {
             put_str(2, 1, S_P1)
@@ -344,14 +355,14 @@ include "rules.ne"
         nt_attr(4, 20, 0)
         nt_attr(0, 24, 0)
         nt_attr(4, 24, 0)
-        put_str(3, 3, S_C_NAME)
-        put_str(3, 16, S_L_GUN)
-        put_str(3, 18, S_C_ARM)
-        put_str(3, 22, S_C_START)
-        put_str(3, 24, S_C_CLEAR)
+        put_str(3, NAME_ROW, S_C_NAME)
+        put_str(3, GUN_ROW, S_L_GUN)
+        put_str(3, ARM_ROW, S_C_ARM)
+        put_str(3, START_ROW, S_C_START)
+        put_str(3, BACKSPACE_ROW, S_C_BACKSPACE)
         res_a = 0
         while res_a < 6 {
-            put_tile(8 + res_a, 5, name_ch[cust_who * 6 + res_a])
+            put_tile(NAME_COL + res_a, NAME_ROW, name_ch[cust_who * 6 + res_a])
             res_a += 1
         }
         paint_portrait(2, 8, mech_frame[cust_who])
@@ -374,15 +385,7 @@ include "rules.ne"
             transition Battle
             return
         }
-        res_a = mech_frame[cust_who] * 2
-        loadout[cust_who * 2] = STOCK_WPN[res_a]
-        loadout[cust_who * 2 + 1] = STOCK_WPN[res_a + 1]
-        res_b = rand8() & 15
-        res_a = 0
-        while res_a < 6 {
-            name_ch[cust_who * 6 + res_a] = NAME_LIST[res_b * 6 + res_a]
-            res_a += 1
-        }
+        apply_stock(cust_who)
         cust_cursor = 10
         cust_tick = 0
         poke(0x2001, 0x00)
@@ -401,7 +404,7 @@ include "rules.ne"
             }
             if cust_tick >= 30 {
                 paint_cust()
-                cust_cursor = 0
+                cust_cursor = name_end(cust_who)
                 cust_tick = 0
             }
             return
@@ -409,9 +412,9 @@ include "rules.ne"
         cust_tick += 1
         if cust_cursor < 6 and (cust_tick & 15) == 0 {
             if (cust_tick & 16) == 0 {
-                put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+                put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
             } else {
-                put_tile(8 + cust_cursor, 5, T_SPACE)
+                put_tile(NAME_COL + cust_cursor, NAME_ROW, T_SPACE)
             }
         }
 
@@ -422,36 +425,36 @@ include "rules.ne"
         res_b = pad_pressed(cust_who)
         if res_b == BTN_LEFT {
             if cust_cursor < 6 and cust_cursor > 0 {
-                put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+                put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
                 cust_cursor -= 1
                 cust_tick = 0
             } else if cust_cursor == 6 {
                 res_a = (loadout[cust_who * 2] + NUM_WEAPONS - 1) % NUM_WEAPONS
                 loadout[cust_who * 2] = res_a
-                put_clear(11, 16, WPN_NAME_W)
-                put_str(11, 16, W_STR[res_a])
+                put_clear(11, GUN_ROW, WPN_NAME_W)
+                put_str(11, GUN_ROW, W_STR[res_a])
             } else if cust_cursor == 7 {
                 res_a = (loadout[cust_who * 2 + 1] + NUM_WEAPONS - 1) % NUM_WEAPONS
                 loadout[cust_who * 2 + 1] = res_a
-                put_clear(11, 18, WPN_NAME_W)
-                put_str(11, 18, W_STR[res_a])
+                put_clear(11, ARM_ROW, WPN_NAME_W)
+                put_str(11, ARM_ROW, W_STR[res_a])
             }
         }
         if res_b == BTN_RIGHT {
             if cust_cursor < 6 {
-                put_tile(8 + cust_cursor, 5, name_ch[cust_who * 6 + cust_cursor])
+                put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
                 cust_cursor += 1
                 cust_tick = 0
             } else if cust_cursor == 6 {
                 res_a = (loadout[cust_who * 2] + 1) % NUM_WEAPONS
                 loadout[cust_who * 2] = res_a
-                put_clear(11, 16, WPN_NAME_W)
-                put_str(11, 16, W_STR[res_a])
+                put_clear(11, GUN_ROW, WPN_NAME_W)
+                put_str(11, GUN_ROW, W_STR[res_a])
             } else if cust_cursor == 7 {
                 res_a = (loadout[cust_who * 2 + 1] + 1) % NUM_WEAPONS
                 loadout[cust_who * 2 + 1] = res_a
-                put_clear(11, 18, WPN_NAME_W)
-                put_str(11, 18, W_STR[res_a])
+                put_clear(11, ARM_ROW, WPN_NAME_W)
+                put_str(11, ARM_ROW, W_STR[res_a])
             }
         }
         if res_b == BTN_UP or res_b == BTN_DOWN {
@@ -473,7 +476,7 @@ include "rules.ne"
                     res_a += 1
                 }
                 name_ch[cust_who * 6 + cust_cursor] = res_a
-                put_tile(8 + cust_cursor, 5, res_a)
+                put_tile(NAME_COL + cust_cursor, NAME_ROW, res_a)
                 cust_tick = 0
             } else if cust_cursor == 6 {
                 cust_cursor = 7
@@ -492,12 +495,14 @@ include "rules.ne"
                 cust_tick = 0
             }
         }
-        if res_b == BTN_B {
-            res_a = 0
-            while res_a < 6 {
-                name_ch[cust_who * 6 + res_a] = T_SPACE
-                put_tile(8 + res_a, 5, T_SPACE)
-                res_a += 1
+        // B backspaces: clear the lit letter and step left, so
+        // repeated presses erase BLUE as BLU, BL, B, then nothing,
+        // the way a text field's Backspace key does.
+        if res_b == BTN_B and cust_cursor < 6 {
+            name_ch[cust_who * 6 + cust_cursor] = T_SPACE
+            put_tile(NAME_COL + cust_cursor, NAME_ROW, T_SPACE)
+            if cust_cursor > 0 {
+                cust_cursor -= 1
             }
             cust_tick = 0
         }
@@ -528,27 +533,8 @@ include "rules.ne"
                 transition Battle
                 return
             }
-            res_a = mech_frame[cust_who] * 2
-            loadout[cust_who * 2] = STOCK_WPN[res_a]
-            loadout[cust_who * 2 + 1] = STOCK_WPN[res_a + 1]
-            res_b = rand8() & 15
-            res_a = 0
-            while res_a < 6 {
-                if NAME_LIST[res_b * 6 + res_a] != name_ch[res_a] {
-                    res_a = 8
-                } else {
-                    res_a += 1
-                }
-            }
-            if res_a == 6 {
-                res_b = (res_b + 1) & 15
-            }
-            res_a = 0
-            while res_a < 6 {
-                name_ch[cust_who * 6 + res_a] = NAME_LIST[res_b * 6 + res_a]
-                res_a += 1
-            }
-            cust_cursor = 0
+            apply_stock(cust_who)
+            cust_cursor = name_end(cust_who)
             cust_tick = 0
             paint_cust()
         }
