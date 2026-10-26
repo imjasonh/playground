@@ -76,6 +76,26 @@ sfx Hammer {
     volume: [15, 13, 10, 6, 3, 1]
 }
 
+// ── Lock ───────────────────────────────────────────────────
+// Both sit on pulse 1, so a second play replaces the first.
+// Two players confirming on the same frame share one sound.
+// Pitches are period-low bytes. The driver keeps the period
+// high byte at 0, so every note here is A4 or higher.
+
+// C5, E5, G5, C6.
+sfx LockYes {
+    duty: 2
+    pitch: [0xD5, 0xD5, 0xA9, 0xA9, 0x8E, 0x8E, 0x6A, 0x6A, 0x6A, 0x6A]
+    volume: [11, 14, 12, 14, 12, 14, 15, 13, 8, 3]
+}
+
+// E5, Eb5, C5, on the narrow pulse.
+sfx LockNo {
+    duty: 0
+    pitch: [0xA9, 0xA9, 0xB3, 0xB3, 0xB3, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5]
+    volume: [14, 14, 13, 12, 11, 12, 10, 8, 5, 2]
+}
+
 // ── March ──────────────────────────────────────────────────
 // Sixteen bars of 4/4 in D minor, eighth notes at 150 BPM
 // (12 frames each). Duty 1 is the narrow pulse. The flat 2

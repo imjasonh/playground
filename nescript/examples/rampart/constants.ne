@@ -3,8 +3,6 @@
 // ── Tiles (see scripts/gen_rampart.py) ──────────────────────
 const T_SPACE: u8 = 32
 const T_DIGIT0: u8 = 48
-const T_PLUS: u8 = 43
-const T_MINUS: u8 = 45
 const T_QUEST: u8 = 63
 const T_CORNER: u8 = 13
 const T_AIM: u8 = 14

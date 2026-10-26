@@ -30,8 +30,6 @@ const BTN_A: u8 = 4
 const BTN_B: u8 = 5
 const BTN_START: u8 = 6
 
-const CARD_FIRST_ROW: u8 = 5
-const CARD_COL: u8[2] = [26, 29]
 const LOCK_STATUS_X: u8[2] = [1, 16]
 const LOCK_STATUS_ROW: u8 = 27
 
@@ -138,19 +136,6 @@ fun paint_all() {
 }
 
 fun paint_card() {
-    var i: u8 = 0
-    while i < NUM_PLANS {
-        var p: u8 = 0
-        while p < 2 {
-            var t: u8 = T_MINUS
-            if plan_legal(p, i) {
-                t = T_PLUS
-            }
-            put_tile(CARD_COL[p], CARD_FIRST_ROW + i, t)
-            p += 1
-        }
-        i += 1
-    }
     var q: u8 = 0
     while q < 2 {
         var x: u8 = LOCK_STATUS_X[q]
@@ -319,9 +304,11 @@ fun run_lock() {
                     lk_ready[p] = 1
                     put_clear(x, LOCK_STATUS_ROW, 8)
                     put_str(x, LOCK_STATUS_ROW, S_READY)
+                    play LockYes
                 } else {
                     lk_n[p] = 0
                     put_tile(x, LOCK_STATUS_ROW, T_QUEST)
+                    play LockNo
                 }
             } else if b != B_NONE {
                 lk_prev[p] = lk_last[p]

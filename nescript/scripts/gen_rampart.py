@@ -519,19 +519,20 @@ def write_backgrounds():
     )
     out += background("Board", board, board_extra, board_pal)
 
-    # Card: the plan list for the secret lock. The legal marks in the
-    # P1 and P2 columns and the READY lines are painted at runtime.
+    # Card: the plan list for the secret lock. The READY lines are
+    # painted at runtime. A legal plan plays LockYes and an illegal
+    # one plays LockNo, so the card has no legality column.
     # U D L R become arrow glyphs. A and B stay letters, because
     # those buttons are already labeled on the controller.
     glyph = {"U": "^", "D": "v", "L": "<", "R": ">", "A": "A", "B": "B"}
     card = [""] * 30
     card[1] = " LOCK YOUR PLAN"
-    card[3] = " KEY  PLAN             PT P1 P2"
+    card[3] = " KEY  PLAN             PT"
     for i, p in enumerate(PLANS):
         code = glyph[BUTTONS[i // 6]] + glyph[BUTTONS[i % 6]]
         card[5 + i] = f"  {code}  {' '.join(p):<17}{plan_cost(p)}"
     card[23] = " START WHEN DONE"
-    card_pal = ["0" * 16] * 2 + ["0" * 13 + "230"] * 9 + ["0" * 16] * 4
+    card_pal = ["0" * 16] * 15
     card_extra = {
         "^": T_DIR_UP,
         "v": T_DIR_DOWN,

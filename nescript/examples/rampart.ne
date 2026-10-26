@@ -54,7 +54,8 @@
 //                 confirms. Player 1 goes first, then player 2. A
 //                 CPU keeps its frame's weapons and is named BLUE
 //                 or RED, matching that player's color.
-//     Lock        tap the two-button code, then START. The d-pad
+//     Lock        tap the two-button code, then START. A legal
+//                 plan chimes. An illegal one buzzes. The d-pad
 //                 buttons are arrows. A and B stay letters.
 //     Move        d-pad moves the cursor within range, A confirms,
 //                 B returns the cursor to the mech.
