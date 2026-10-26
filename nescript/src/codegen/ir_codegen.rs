@@ -284,6 +284,8 @@ pub struct IrCodeGen<'a> {
     /// guard on every `ArrayLoad` / `ArrayStore`. Missing entries
     /// mean "unknown size" and skip the check.
     var_sizes: HashMap<VarId, u16>,
+    /// Byte length of each `const` array's ROM block, keyed by label.
+    rom_lens: HashMap<String, u16>,
     /// True once a bounds-check trip was emitted; the linker-side
     /// helper (a `JMP $` infinite loop at `__debug_halt`) is
     /// emitted once at the end of `generate()` so multiple
@@ -487,6 +489,16 @@ impl<'a> IrCodeGen<'a> {
             emit_source_locs: false,
             debug_port: DEFAULT_DEBUG_PORT,
             var_sizes,
+            rom_lens: ir
+                .rom_data
+                .iter()
+                .map(|b| {
+                    (
+                        b.label.clone(),
+                        u16::try_from(b.data.len()).unwrap_or(u16::MAX),
+                    )
+                })
+                .collect(),
             bounds_halt_used: false,
             banked_streams: HashMap::new(),
             function_banks,
@@ -725,6 +737,14 @@ impl<'a> IrCodeGen<'a> {
         let Some(&size) = self.var_sizes.get(&var) else {
             return;
         };
+        self.emit_bounds_check_len(size);
+    }
+
+    /// Debug-mode guard that `A` (the index) is below `size`.
+    fn emit_bounds_check_len(&mut self, size: u16) {
+        if !self.debug_mode {
+            return;
+        }
         if size == 0 {
             return;
         }
@@ -1018,6 +1038,13 @@ impl<'a> IrCodeGen<'a> {
         // the dead-load-elimination block and leave stale ZP
         // stores in the stream.
         self.emit_trailing_markers();
+
+        // `const` array tables. Every function body above ends in a
+        // jump or return, so nothing falls through into the data.
+        for block in &ir.rom_data {
+            self.emit_label(&block.label);
+            self.emit(NOP, AM::Bytes(block.data.clone()));
+        }
 
         // Snapshot the fixed-bank instruction stream before we
         // start emitting the banked function bodies into their own
@@ -1581,6 +1608,16 @@ impl<'a> IrCodeGen<'a> {
                 } else {
                     self.emit(LDA, AM::AbsoluteX(base_addr));
                 }
+                self.store_temp(*dest);
+            }
+            IrOp::RomArrayLoad(dest, label, idx) => {
+                self.load_temp(*idx);
+                let len = self.rom_lens.get(label).copied().unwrap_or_else(|| {
+                    panic!("internal compiler error: RomArrayLoad references unknown ROM block {label}")
+                });
+                self.emit_bounds_check_len(len);
+                self.emit(TAX, AM::Implied);
+                self.emit(LDA, AM::LabelAbsoluteX(label.clone()));
                 self.store_temp(*dest);
             }
             IrOp::ArrayStore(var, idx, val) => {
@@ -3422,6 +3459,7 @@ fn function_is_leaf(func: &IrFunction) -> bool {
                 | IrOp::CmpLtEq(..)
                 | IrOp::CmpGtEq(..)
                 | IrOp::ArrayLoad(..)
+                | IrOp::RomArrayLoad(..)
                 | IrOp::ArrayStore(..)
                 | IrOp::DrawSprite { .. }
                 | IrOp::ReadInput(..)
@@ -3638,7 +3676,7 @@ fn op_source_temps(op: &IrOp) -> Vec<IrTemp> {
         | IrOp::CmpGtEq(_, a, b, _) => vec![*a, *b],
         IrOp::ShiftLeft(_, src, _) | IrOp::ShiftRight(_, src, _) => vec![*src],
         IrOp::Negate(_, src) | IrOp::Complement(_, src) | IrOp::SignExtend(_, src) => vec![*src],
-        IrOp::ArrayLoad(_, _, idx) => vec![*idx],
+        IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => vec![*idx],
         IrOp::ArrayStore(_, idx, val) => vec![*idx, *val],
         IrOp::Call(_, _, args) => args.clone(),
         IrOp::DrawSprite { x, y, frame, .. } => {

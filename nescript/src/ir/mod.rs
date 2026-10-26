@@ -183,6 +183,10 @@ pub enum IrOp {
     // Array access
     ArrayLoad(IrTemp, VarId, IrTemp),
     ArrayStore(VarId, IrTemp, IrTemp),
+    /// Indexed read from a `const` array. The array's bytes live in
+    /// PRG ROM under the [`IrRomBlock`] whose label is the `String`,
+    /// so the load is `LDA label,X` and the array takes no RAM.
+    RomArrayLoad(IrTemp, String, IrTemp),
 
     // Function call
     Call(Option<IrTemp>, String, Vec<IrTemp>),

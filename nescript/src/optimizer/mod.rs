@@ -494,7 +494,7 @@ fn collect_source_temps(op: &IrOp, used: &mut HashSet<IrTemp>) {
         IrOp::Negate(_, src) | IrOp::Complement(_, src) | IrOp::SignExtend(_, src) => {
             used.insert(*src);
         }
-        IrOp::ArrayLoad(_, _, idx) => {
+        IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => {
             used.insert(*idx);
         }
         IrOp::ArrayStore(_, idx, val) => {
@@ -672,7 +672,8 @@ fn op_dest(op: &IrOp) -> Option<IrTemp> {
         | IrOp::CmpGt(d, _, _, _)
         | IrOp::CmpLtEq(d, _, _, _)
         | IrOp::CmpGtEq(d, _, _, _)
-        | IrOp::ArrayLoad(d, _, _) => Some(*d),
+        | IrOp::ArrayLoad(d, _, _)
+        | IrOp::RomArrayLoad(d, _, _) => Some(*d),
         IrOp::Call(dest, _, _) => *dest,
         IrOp::ReadInput(d, _) => Some(*d),
         IrOp::ReadInputEdge { dest, .. } => Some(*dest),

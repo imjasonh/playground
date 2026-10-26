@@ -132,6 +132,8 @@ const SPEED: u8 = 3
 const SIN_TABLE: u8[8] = [0, 49, 90, 117, 127, 117, 90, 49]
 ```
 
+A `const` array is a lookup table in PRG ROM, and it takes no RAM. `SIN_TABLE[i]` compiles to one indexed load (`LDA table,X`), and it works from banked functions too, because the table lives in the fixed bank. Elements must be `u8`, `i8`, or `bool`. A literal shorter than the declared length is padded with zeros, and a longer one is an error. Assigning to an element is an error.
+
 ### Enums
 
 Enums declare a named set of `u8` constants. Each variant is assigned an

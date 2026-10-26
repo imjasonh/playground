@@ -132,6 +132,90 @@ fn program_with_constants() {
 }
 
 #[test]
+fn const_array_reads_index_a_prg_rom_table() {
+    let source = r#"
+        game "ConstArray" { mapper: NROM }
+        const TABLE: u8[8] = [0xA7, 0x3C, 0x91, 0x5E, 0xD2, 0x08]
+        var out: u8 = 0
+        var i: u8 = 0
+        on frame {
+            out = TABLE[i]
+            i += 1
+        }
+        start Main
+    "#;
+    let rom_data = compile(source);
+    rom::validate_ines(&rom_data).expect("should be valid iNES");
+    // NROM-128: 16 KB PRG at $C000, right after the 16-byte header.
+    let prg = &rom_data[16..16 + 16384];
+    let table = [0xA7, 0x3C, 0x91, 0x5E, 0xD2, 0x08, 0x00, 0x00];
+    let offset = prg
+        .windows(table.len())
+        .position(|w| w == table)
+        .expect("const array bytes, zero-padded to the declared length, must be in PRG");
+    let addr = 0xC000 + u16::try_from(offset).unwrap();
+    let lda_abs_x = [0xBD, (addr & 0xFF) as u8, (addr >> 8) as u8];
+    assert!(
+        prg.windows(3).any(|w| w == lda_abs_x),
+        "TABLE[i] must compile to LDA ${addr:04X},X"
+    );
+
+    let (program, _) = nescript::parser::parse(source);
+    let analysis = analyzer::analyze(&program.unwrap());
+    assert!(
+        analysis.var_allocations.iter().all(|a| a.name != "TABLE"),
+        "a const array must not take RAM"
+    );
+}
+
+#[test]
+fn const_array_element_assignment_is_rejected() {
+    let source = r#"
+        game "ConstArrayWrite" { mapper: NROM }
+        const TABLE: u8[3] = [1, 2, 3]
+        on frame { TABLE[1] = 5 }
+        start Main
+    "#;
+    let (program, diags) = nescript::parser::parse(source);
+    assert!(diags.is_empty(), "unexpected parse errors: {diags:?}");
+    let analysis = analyzer::analyze(&program.unwrap());
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|d| d.is_error() && d.message.contains("cannot assign to constant 'TABLE'")),
+        "expected E0203, got {:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn const_array_rejects_wide_elements_and_overlong_literals() {
+    for (decl, want) in [
+        (
+            "const T: u16[2] = [300, 5]",
+            "must hold u8, i8, or bool elements",
+        ),
+        ("const T: u8[2] = [1, 2, 3]", "declared with 2 elements"),
+    ] {
+        let source = format!(
+            "game \"G\" {{ mapper: NROM }}\n{decl}\nvar x: u8 = 0\non frame {{ x = 1 }}\nstart Main\n"
+        );
+        let (program, diags) = nescript::parser::parse(&source);
+        assert!(diags.is_empty(), "unexpected parse errors: {diags:?}");
+        let analysis = analyzer::analyze(&program.unwrap());
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .any(|d| d.is_error() && d.message.contains(want)),
+            "{decl}: expected error containing {want:?}, got {:?}",
+            analysis.diagnostics
+        );
+    }
+}
+
+#[test]
 fn banked_function_return_value_survives_trampoline() {
     let source = r#"
         game "BankedRet" { mapper: UxROM }
