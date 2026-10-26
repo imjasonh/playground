@@ -72,6 +72,17 @@ export function createEmulator() {
     runFrames(count) {
       for (let i = 0; i < count; i++) nes.frame();
     },
+    // `player` is 1 or 2; `button` is a jsnes.Controller.BUTTON_* code.
+    buttonDown(player, button) {
+      nes.buttonDown(player, button);
+    },
+    buttonUp(player, button) {
+      nes.buttonUp(player, button);
+    },
+    // Read one byte of CPU RAM ($0000-$07FF).
+    peek(addr) {
+      return nes.cpu.mem[addr & 0x7ff];
+    },
     pixels() {
       const rgba = Buffer.allocUnsafe(PIXEL_COUNT * 4);
       new Uint32Array(rgba.buffer, rgba.byteOffset, PIXEL_COUNT).set(pixels32);
