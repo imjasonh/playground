@@ -2558,9 +2558,13 @@ pub fn gen_bank_trampoline(
     out.push(Instruction::new(JSR, AM::Label(entry_label.to_string())));
     // Restore the caller's bank (pulled from the stack) so control
     // returns with $8000-$BFFF showing whatever the caller had
-    // mapped before the trampoline ran.
+    // mapped before the trampoline ran. The callee's return value
+    // is in A, so it waits in Y, which no `__bank_select` variant
+    // touches.
+    out.push(Instruction::implied(TAY));
     out.push(Instruction::implied(PLA));
     out.push(Instruction::new(JSR, AM::Label("__bank_select".into())));
+    out.push(Instruction::implied(TYA));
     out.push(Instruction::implied(RTS));
     out
 }

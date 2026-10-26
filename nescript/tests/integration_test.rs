@@ -131,6 +131,31 @@ fn program_with_constants() {
     rom::validate_ines(&rom_data).expect("should be valid iNES");
 }
 
+#[test]
+fn banked_function_return_value_survives_trampoline() {
+    let source = r#"
+        game "BankedRet" { mapper: UxROM }
+        var j: u8 = 2
+        var out: u8 = 0
+        bank Extra {
+            fun g() -> u8 { return j + 5 }
+        }
+        on frame { out = g() }
+        start Main
+    "#;
+    let (rom_data, _, _) = compile_with_debug_artifacts(source, false);
+    rom::validate_ines(&rom_data).expect("should be valid iNES");
+    // JSR entry; TAY; PLA; JSR __bank_select; TYA; RTS
+    assert!(
+        rom_data.windows(9).any(|w| w[0] == 0x20
+            && w[3] == 0xA8
+            && w[4] == 0x68
+            && w[5] == 0x20
+            && w[8] == 0x98),
+        "trampoline must park the return value in Y across the bank restore"
+    );
+}
+
 // ── M2 Tests ──
 
 #[test]

@@ -1055,6 +1055,29 @@ fn trampoline_switches_target_then_restores_caller() {
 }
 
 #[test]
+fn trampoline_preserves_callee_return_value_in_a() {
+    // A banked `fun f() -> u8` returns in A. The restore path's PLA
+    // would replace it with the caller's bank number, so the
+    // trampoline parks A in Y across the restore.
+    let t = gen_bank_trampoline("__tramp_helper", "__ir_fn_helper", 0);
+    let ops: Vec<_> = t.iter().map(|i| i.opcode).collect();
+    let entry = t
+        .iter()
+        .position(|i| i.opcode == JSR && matches!(&i.mode, AM::Label(n) if n == "__ir_fn_helper"))
+        .unwrap();
+    assert_eq!(&ops[entry + 1..], &[TAY, PLA, JSR, TYA, RTS]);
+    for mapper in [Mapper::MMC1, Mapper::UxROM, Mapper::MMC3] {
+        let select = gen_bank_select(mapper);
+        assert!(
+            select
+                .iter()
+                .all(|i| !matches!(i.opcode, TAY | LDY | INY | DEY)),
+            "{mapper:?} __bank_select must leave Y alone"
+        );
+    }
+}
+
+#[test]
 fn trampoline_label_uses_caller_supplied_name() {
     // The codegen picks the trampoline label (typically
     // `__tramp_<fn_name>`) so it can JSR it from the call site
