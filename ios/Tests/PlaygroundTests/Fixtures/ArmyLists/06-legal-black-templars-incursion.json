@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "black-templars--assault-brethren",
@@ -10,11 +10,11 @@
     ],
     "factionID" : "black-templars",
     "id" : "30F4F779-A59A-4941-B1BC-A9D2D78C11C3",
-    "name" : "Black Templars Incursion 1000pts",
+    "name" : "Black Templars Incursion 920pts",
     "notes" : "stress seed=5 attach=true enh=true",
     "units" : [
       {
-        "datasheetID" : "black-templars--execrator",
+        "datasheetID" : "black-templars--techmarine",
         "enhancementIDs" : [
           "black-templars--gravis-siege-force--narthecis-gauntlet"
         ],
@@ -36,51 +36,51 @@
         ]
       },
       {
-        "datasheetID" : "black-templars--intercessor-squad",
+        "datasheetID" : "black-templars--infernus-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "9A0703D3-0DDA-49A0-93BC-EFBC33051A5C",
-        "models" : 10,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "black-templars--centurion-assault-squad",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "587C803F-88E3-443B-B983-7D669E6C9547",
-        "models" : 3,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "black-templars--outrider-squad",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "4623B6B9-0A07-4ECB-8FED-4150CDA3FE17",
-        "models" : 3,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "black-templars--hellblaster-squad",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "E4E74B63-9DF1-4D05-95DF-15C406F4B6A7",
         "models" : 5,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "black-templars--whirlwind",
+        "datasheetID" : "black-templars--ballistus-dreadnought",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "587C803F-88E3-443B-B983-7D669E6C9547",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "black-templars--infiltrator-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4623B6B9-0A07-4ECB-8FED-4150CDA3FE17",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "black-templars--storm-speeder-hailstrike",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "E4E74B63-9DF1-4D05-95DF-15C406F4B6A7",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "black-templars--hammerfall-bunker",
         "enhancementIDs" : [
 
         ],

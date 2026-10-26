@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "blood-angels--assault-brethren",
@@ -10,7 +10,7 @@
     ],
     "factionID" : "blood-angels",
     "id" : "5BB2E577-5595-49FB-807F-D2D923B6D538",
-    "name" : "Blood Angels Incursion 975pts",
+    "name" : "Blood Angels Incursion 965pts",
     "notes" : "stress seed=6 attach=true enh=true",
     "units" : [
       {
@@ -36,7 +36,7 @@
         ]
       },
       {
-        "datasheetID" : "blood-angels--incursor-squad",
+        "datasheetID" : "blood-angels--assault-intercessors-with-jump-packs",
         "enhancementIDs" : [
 
         ],

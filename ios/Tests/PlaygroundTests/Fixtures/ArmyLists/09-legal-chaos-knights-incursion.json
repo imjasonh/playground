@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "chaos-knights--hunting-warpack"

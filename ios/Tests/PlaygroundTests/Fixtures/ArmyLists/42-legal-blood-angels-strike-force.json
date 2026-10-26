@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "blood-angels--assault-brethren",
@@ -10,8 +10,8 @@
       "blood-angels--phobos-shock-force"
     ],
     "factionID" : "blood-angels",
-    "id" : "4AD31A04-B34F-4F12-83DA-9AF9D9D7571C",
-    "name" : "Blood Angels Strike Force 1990pts",
+    "id" : "88CF1E7A-8582-4462-A9F2-86EA7E7D6CF2",
+    "name" : "Blood Angels Strike Force 1925pts",
     "notes" : "stress seed=41 attach=true enh=true",
     "units" : [
       {
@@ -71,7 +71,7 @@
         ]
       },
       {
-        "datasheetID" : "blood-angels--death-company-dreadnought-with-magna-grapple",
+        "datasheetID" : "blood-angels--storm-speeder-thunderstrike",
         "enhancementIDs" : [
 
         ],
@@ -115,7 +115,7 @@
         ]
       },
       {
-        "datasheetID" : "blood-angels--relic-razorback",
+        "datasheetID" : "blood-angels--land-speeder",
         "enhancementIDs" : [
 
         ],
@@ -148,12 +148,12 @@
         ]
       },
       {
-        "datasheetID" : "blood-angels--land-speeder",
+        "datasheetID" : "blood-angels--vanguard-veteran-squad-with-jump-packs",
         "enhancementIDs" : [
 
         ],
         "id" : "B054E722-A46D-450F-B132-1D70E353AF12",
-        "models" : 1,
+        "models" : 5,
         "optionIDs" : [
 
         ]
@@ -170,12 +170,23 @@
         ]
       },
       {
-        "datasheetID" : "blood-angels--heavy-intercessor-squad",
+        "datasheetID" : "blood-angels--sternguard-veteran-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "BC95E158-7481-41F5-8D96-5B7F57AFC1DF",
-        "models" : 10,
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "blood-angels--tarantula-air-defence-battery",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "4AD31A04-B34F-4F12-83DA-9AF9D9D7571C",
+        "models" : 1,
         "optionIDs" : [
 
         ]

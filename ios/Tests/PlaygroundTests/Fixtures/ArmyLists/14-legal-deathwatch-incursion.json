@@ -2,19 +2,19 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "deathwatch--devastator-brethren",
       "deathwatch--gravis-siege-force"
     ],
     "factionID" : "deathwatch",
-    "id" : "84A8E995-7118-4DD4-B51B-808990B3BF43",
-    "name" : "Deathwatch Incursion 925pts",
+    "id" : "5213DD4A-93A0-4187-AB13-2C6CDA0D4F20",
+    "name" : "Deathwatch Incursion 980pts",
     "notes" : "stress seed=13 attach=true enh=true",
     "units" : [
       {
-        "attachedToUnitID" : "2CF21BB2-AB4D-431C-BD65-A92F6F4C83DE",
+        "attachedToUnitID" : "203ACA7B-5928-4984-A117-026AB949E8FA",
         "datasheetID" : "deathwatch--techmarine",
         "enhancementIDs" : [
           "deathwatch--devastator-brethren--master-forged-firearms"
@@ -26,23 +26,23 @@
         ]
       },
       {
-        "datasheetID" : "deathwatch--invictor-tactical-warsuit",
+        "datasheetID" : "deathwatch--desolation-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "203ACA7B-5928-4984-A117-026AB949E8FA",
-        "models" : 1,
+        "models" : 5,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "deathwatch--company-heroes",
+        "datasheetID" : "deathwatch--inceptor-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "4E06CC38-B7DE-4FBE-B7CD-6306B71FA517",
-        "models" : 4,
+        "models" : 3,
         "optionIDs" : [
 
         ]
@@ -59,12 +59,12 @@
         ]
       },
       {
-        "datasheetID" : "deathwatch--sternguard-veteran-squad",
+        "datasheetID" : "deathwatch--relic-razorback",
         "enhancementIDs" : [
 
         ],
         "id" : "3AA540BD-35A6-48BD-B3D1-16B9348B8200",
-        "models" : 5,
+        "models" : 1,
         "optionIDs" : [
 
         ]
@@ -81,12 +81,23 @@
         ]
       },
       {
-        "datasheetID" : "deathwatch--heavy-intercessor-squad",
+        "datasheetID" : "deathwatch--decimus-kill-team",
         "enhancementIDs" : [
 
         ],
         "id" : "E65A0A74-C0AD-45BB-AF14-C8B8D6D3B3FE",
         "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "deathwatch--assault-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "84A8E995-7118-4DD4-B51B-808990B3BF43",
+        "models" : 5,
         "optionIDs" : [
 
         ]
