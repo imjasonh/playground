@@ -39,9 +39,12 @@ state Customize {
             } else if cust_cursor == 8 {
                 res_b = START_ROW * 8 - 1
             }
+            // The arrow marks the row, just after its label. On the
+            // name row the blinking letter marks the cursor, so the
+            // arrow stays put instead of covering a letter.
             res_a = 8
             if cust_cursor < 6 {
-                res_a = (NAME_COL + cust_cursor) * 8 - 8
+                res_a = (NAME_COL - 1) * 8
                 res_b = NAME_ROW * 8 - 1
             } else if cust_cursor < 8 {
                 res_a = 48
