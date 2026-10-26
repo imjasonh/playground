@@ -16,7 +16,8 @@
 // The body plate is the mech's portrait. Damage shows as sprites on
 // the hit part: scuffs, then holes, then fire on the last point of
 // armor, then a crater, with the part's tiles swapped for charred
-// copies once it's critical.
+// copies once it's critical. A revealed plan lists its actions as
+// icons under the plate. The message line spells each action.
 //
 // Secret plans work like a two-player sports game's play call: the
 // lock screen lists every plan with a two-button code, and each

@@ -263,6 +263,85 @@ CRATER = [
     "..22.2..",
 ]
 
+# ── Plan icons (8x8, drawn in the player's panel colors) ──────────
+#
+# One per action, in action order: Snap, Step, Shield, Standard,
+# Rush, Aimed, Charge. The panel is six tiles wide, and STANDARD
+# does not fit, so the revealed plan shows these instead of names.
+# The message line still spells the action.
+
+ACT_SNAP = [
+    "33......",
+    "33......",
+    "........",
+    "...33...",
+    "...33...",
+    "........",
+    ".33.....",
+    ".33.....",
+]
+ACT_STEP = [
+    ".333....",
+    "32223...",
+    "32223...",
+    ".333....",
+    "....333.",
+    "...32223",
+    "...32223",
+    "....333.",
+]
+ACT_SHIELD = [
+    ".33333..",
+    "3222223.",
+    "3233323.",
+    "3223323.",
+    "3222223.",
+    ".32223..",
+    "..323...",
+    "...3....",
+]
+ACT_STANDARD = [
+    "........",
+    ".33333..",
+    "3322223.",
+    "33222223",
+    "33222223",
+    "3322223.",
+    ".33333..",
+    "........",
+]
+ACT_RUSH = [
+    "..33..33",
+    ".33..33.",
+    "33..33..",
+    "3..33...",
+    "33..33..",
+    ".33..33.",
+    "..33..33",
+    "........",
+]
+ACT_AIMED = [
+    "...33...",
+    "..3..3..",
+    ".3....3.",
+    "3..33..3",
+    "3..33..3",
+    ".3....3.",
+    "..3..3..",
+    "...33...",
+]
+ACT_CHARGE = [
+    "......33",
+    ".....332",
+    "....332.",
+    "...332..",
+    "..332...",
+    ".332....",
+    "332.....",
+    "33......",
+]
+ACTIONS = [ACT_SNAP, ACT_STEP, ACT_SHIELD, ACT_STANDARD, ACT_RUSH, ACT_AIMED, ACT_CHARGE]
+
 # ── Cursors (palette sp3: 3 is yellow) ─────────────────────────────
 
 # Top-left corner of the board-square cursor; the other three corners

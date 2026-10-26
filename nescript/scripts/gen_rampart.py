@@ -134,6 +134,7 @@ T_HOLES = 17
 T_FIRE = 18  # 18..19, two frames
 T_CRATER = 20
 T_ARROW = 21
+T_ACT = 22  # 22..28, one icon per action, in action order
 T_PIKE = 96  # 96..99
 T_MAUL = 100  # 100..103
 # Body-plate portraits: frame f, cell c is tile T_PLATE + f * 72 + c,
@@ -222,6 +223,8 @@ def build_tiles():
     tiles[T_FIRE + 1] = art.FIRE_B
     tiles[T_CRATER] = art.CRATER
     tiles[T_ARROW] = ARROW
+    for i, t in enumerate(art.ACTIONS):
+        tiles[T_ACT + i] = t
     for i, t in enumerate(art.split16(art.PIKE_MINI)):
         tiles[T_PIKE + i] = t
     for i, t in enumerate(art.split16(art.MAUL_MINI)):
@@ -264,6 +267,13 @@ def tile_label(i):
         T_FIRE + 1: "decal: fire, frame 2",
         T_CRATER: "decal: crater",
         T_ARROW: "menu arrow",
+        T_ACT: "action: snap",
+        T_ACT + 1: "action: step",
+        T_ACT + 2: "action: shield",
+        T_ACT + 3: "action: standard",
+        T_ACT + 4: "action: rush",
+        T_ACT + 5: "action: aimed",
+        T_ACT + 6: "action: charge",
         T_PIKE: "pike TL",
         T_PIKE + 1: "pike TR",
         T_PIKE + 2: "pike BL",
@@ -478,7 +488,6 @@ STRINGS = [
     ("A_RUSH", "RUSH"),
     ("A_AIMED", "AIMED"),
     ("A_CHARGE", "CHARGE"),
-    ("A_STANDARD_SHORT", "STNDRD"),
     ("W_LANCE", "LANCE"),
     ("W_STUB", "STUB"),
     ("W_BLADE", "BLADE"),

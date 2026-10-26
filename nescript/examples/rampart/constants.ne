@@ -14,6 +14,9 @@ const T_HOLES: u8 = 17
 const T_FIRE: u8 = 18
 const T_CRATER: u8 = 20
 const T_ARROW: u8 = 21
+// Plan icons, in action order: Snap, Step, Shield, Standard, Rush,
+// Aimed, Charge.
+const T_ACT: u8 = 22
 const T_PIKE: u8 = 96
 const T_MAUL: u8 = 100
 // Frame f's portrait cell c is T_PLATE + f * 72 + c; the charred
@@ -60,8 +63,6 @@ const NUM_ACTIONS: u8 = 7
 const NUM_PLANS: u8 = 17
 const BIT: u8[8] = [1, 2, 4, 8, 16, 32, 64, 128]
 const ACTION_STR: u8[7] = [S_A_SNAP, S_A_STEP, S_A_SHIELD, S_A_STANDARD, S_A_RUSH, S_A_AIMED, S_A_CHARGE]
-// The panel is PANEL_W columns wide.
-const ACTION_PANEL_STR: u8[7] = [S_A_SNAP, S_A_STEP, S_A_SHIELD, S_A_STANDARD_SHORT, S_A_RUSH, S_A_AIMED, S_A_CHARGE]
 
 // Scatter type per shot action (0 snap, 1 standard, 2 aimed).
 // Melee uses the aimed spread.

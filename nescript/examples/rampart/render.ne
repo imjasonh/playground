@@ -257,7 +257,9 @@ fun paint_shield(p: u8) {
     }
 }
 
-// Show the locked plan's actions, or nothing while it's secret.
+// The locked plan, one icon per action, or nothing while it's secret.
+// The panel is six tiles wide, so the icons stand in for the names.
+// The message line still spells the action.
 fun paint_plan(p: u8, shown: bool) {
     var row: u8 = P_BASE[p] + 9
     put_clear(PANEL_X, row, PANEL_W)
@@ -270,7 +272,7 @@ fun paint_plan(p: u8, shown: bool) {
     var a: u8 = 0
     while a < NUM_ACTIONS {
         if (mask & BIT[a]) != 0 {
-            put_str(PANEL_X, row, ACTION_PANEL_STR[a])
+            put_tile(PANEL_X, row, T_ACT + a)
             row += 1
         }
         a += 1
