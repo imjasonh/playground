@@ -1,0 +1,88 @@
+#!/bin/sh
+# Local checks for nescript. Run from a playground checkout:
+#
+#   sh nescript/scripts/pre-commit
+#
+# The playground git hook is the pasta linter. Do not replace it with
+# this script.
+
+set -e
+
+repo=$(git rev-parse --show-toplevel)
+cd "$repo/nescript"
+
+echo "Running nescript pre-commit checks..."
+
+echo "  Checking formatting..."
+cargo fmt --all -- --check
+
+echo "  Running clippy..."
+cargo clippy --locked --all-targets -- -D warnings
+
+echo "  Running tests..."
+cargo test --locked --all-targets
+
+echo "  Checking committed ROMs match .ne sources..."
+cargo build --locked --release --quiet
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+stale=0
+for f in examples/*.ne; do
+    name=$(basename "$f" .ne)
+    ./target/release/nescript build "$f" --output "$tmp/$name.nes" >/dev/null
+    if ! cmp -s "examples/$name.nes" "$tmp/$name.nes"; then
+        echo "    STALE: examples/$name.nes"
+        echo "           rerun: cargo run --release -- build $f"
+        stale=1
+    fi
+done
+if [ "$stale" -ne 0 ]; then
+    echo "one or more committed ROMs are out of date"
+    exit 1
+fi
+
+# Rebuild a README GIF only when its example or the recorder changed.
+# Skip the check when the emulator dependencies are not installed.
+# nescript.yml is the check that always runs.
+changed_files=$(git -C "$repo" diff --cached --name-only)
+recorder_changed=0
+if echo "$changed_files" | grep -qE '^nescript/tests/emulator/(record_gif\.mjs|emu\.mjs)$'; then
+    recorder_changed=1
+fi
+
+check_gif() {
+    name=$1
+    args=$2
+    if [ ! -d tests/emulator/node_modules ]; then
+        echo "  (skipping $name gif freshness check; tests/emulator/node_modules is not installed)"
+        return 0
+    fi
+    echo "  Rebuilding docs/$name.gif..."
+    # shellcheck disable=SC2086
+    (cd tests/emulator && node record_gif.mjs "$name" 360 2 /tmp/${name}-precheck.gif $args >/dev/null)
+    if ! cmp -s "docs/$name.gif" "/tmp/${name}-precheck.gif"; then
+        echo "    STALE: docs/$name.gif"
+        echo "           rerun: node tests/emulator/record_gif.mjs $name 360 2 docs/$name.gif $args"
+        rm -f "/tmp/${name}-precheck.gif"
+        return 1
+    fi
+    rm -f "/tmp/${name}-precheck.gif"
+    return 0
+}
+
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/platformer\.(ne|nes)$'; then
+    check_gif platformer "" || exit 1
+fi
+
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/war(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif war 4 || exit 1
+fi
+
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/pong(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif pong 4 || exit 1
+fi
+
+echo "All nescript pre-commit checks passed."

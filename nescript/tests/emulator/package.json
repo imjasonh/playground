@@ -1,0 +1,17 @@
+{
+  "name": "nescript-emulator-tests",
+  "version": "1.0.0",
+  "description": "Local jsnes smoke test for compiled NEScript example ROMs.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node run_examples.mjs"
+  },
+  "dependencies": {
+    "jsnes": "^2.1.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "gifenc": "^1.0.3"
+  }
+}
