@@ -606,7 +606,7 @@ pub async fn receive_pack(
     let expect_pack = commands.iter().any(|c| !c.new.is_zero());
     let ingested = if expect_pack {
         let _t = crate::timing::Phase::start("push: stream+scan");
-        let mut ingest = PackIngest::start(repo, nonce).await?;
+        let mut ingest = PackIngest::start(repo, nonce)?;
         let mut got_any = false;
         let leftover = parser.take_remainder();
         if !leftover.is_empty() {
