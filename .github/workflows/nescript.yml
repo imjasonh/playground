@@ -6,19 +6,19 @@
 # jsnes screenshot and audio hash, checks the README GIFs, and asks
 # Mesen2 to load the .dbg file. The ROMs the compiler just built are
 # uploaded as the nescript-examples artifact.
+#
+# The workflow always runs on pull requests and pushes to main, and the
+# ROM job always reports a status, so that job can be a required check.
+# The expensive steps no-op when nescript/ (and this workflow) did not
+# change. A job-level `if` that skips the job would leave a required
+# check pending, which blocks merge.
 
 name: nescript
 
 on:
-  pull_request:
-    paths:
-      - nescript/**
-      - .github/workflows/nescript.yml
   push:
     branches: [main]
-    paths:
-      - nescript/**
-      - .github/workflows/nescript.yml
+  pull_request: {}
   workflow_dispatch: {}
 
 concurrency:
@@ -45,8 +45,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Decide whether nescript changed
+        id: discover
+        working-directory: .
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          bash .github/scripts/discover-nescript_test.sh
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "nescript=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run: full nescript checks."
+            exit 0
+          fi
+          bash .github/scripts/discover-changed-apps.sh
+          if grep -q '^nescript=true$' "$GITHUB_OUTPUT"; then
+            echo "nescript changed; running ROM, jsnes, and Mesen checks."
+          else
+            echo "No nescript changes; ROM, jsnes, and Mesen checks no-op."
+          fi
 
       - name: Install Rust
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: .
         run: |
           rustup toolchain install stable --profile minimal --no-self-update \
@@ -54,13 +78,16 @@ jobs:
           rustup default stable
 
       - name: Run compile benches
+        if: steps.discover.outputs.nescript == 'true'
         run: cargo test --locked --benches
 
       - name: Build the release compiler
+        if: steps.discover.outputs.nescript == 'true'
         run: cargo build --locked --release
 
       - name: Verify committed ROMs match their sources
         id: verify-roms
+        if: steps.discover.outputs.nescript == 'true'
         run: |
           mkdir -p /tmp/reprotest "$RUNNER_TEMP/nescript-examples"
           fail=0
@@ -82,7 +109,7 @@ jobs:
       # compiler never ran.
       - name: Upload example ROMs
         id: example-roms
-        if: always() && (steps.verify-roms.outcome == 'success' || steps.verify-roms.outcome == 'failure')
+        if: always() && steps.discover.outputs.nescript == 'true' && (steps.verify-roms.outcome == 'success' || steps.verify-roms.outcome == 'failure')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: nescript-examples
@@ -90,12 +117,13 @@ jobs:
           if-no-files-found: error
 
       - name: Link the example ROMs
-        if: always() && steps.example-roms.outcome == 'success'
+        if: always() && steps.discover.outputs.nescript == 'true' && steps.example-roms.outcome == 'success'
         working-directory: .
         run: |
           echo "Example ROMs: ${{ steps.example-roms.outputs.artifact-url }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify ROMs are valid iNES
+        if: steps.discover.outputs.nescript == 'true'
         run: |
           for f in examples/*.nes; do
             echo "==> Checking $f"
@@ -109,12 +137,14 @@ jobs:
           done
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: steps.discover.outputs.nescript == 'true'
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: nescript/tests/emulator/package-lock.json
 
       - name: Compile examples with this compiler
+        if: steps.discover.outputs.nescript == 'true'
         run: |
           for f in examples/*.ne; do
             echo "==> Compiling $f"
@@ -122,14 +152,17 @@ jobs:
           done
 
       - name: Install emulator dependencies
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: nescript/tests/emulator
         run: npm ci
 
       - name: Diff each ROM against its golden
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: nescript/tests/emulator
         run: node run_examples.mjs
 
       - name: Verify docs/platformer.gif is up to date
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: nescript/tests/emulator
         run: |
           node record_gif.mjs platformer 360 2 /tmp/platformer.gif
@@ -139,6 +172,7 @@ jobs:
           fi
 
       - name: Verify docs/war.gif is up to date
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: nescript/tests/emulator
         run: |
           node record_gif.mjs war 360 2 /tmp/war.gif 4
@@ -148,6 +182,7 @@ jobs:
           fi
 
       - name: Verify docs/pong.gif is up to date
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: nescript/tests/emulator
         run: |
           node record_gif.mjs pong 360 2 /tmp/pong.gif 4
@@ -157,6 +192,7 @@ jobs:
           fi
 
       - name: Install Mesen runtime dependencies
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: .
         run: |
           sudo apt-get update
@@ -166,13 +202,14 @@ jobs:
 
       - name: Cache Mesen2
         id: mesen-cache
+        if: steps.discover.outputs.nescript == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/mesen2
           key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
 
       - name: Download Mesen2
-        if: steps.mesen-cache.outputs.cache-hit != 'true'
+        if: steps.discover.outputs.nescript == 'true' && steps.mesen-cache.outputs.cache-hit != 'true'
         working-directory: .
         run: |
           mkdir -p "$RUNNER_TEMP/mesen2"
@@ -184,12 +221,14 @@ jobs:
           rm Mesen.zip
 
       - name: Build a ROM with debug info
+        if: steps.discover.outputs.nescript == 'true'
         run: |
           ./target/release/nescript build examples/hello_sprite.ne \
             --dbg /tmp/hello.dbg \
             --output /tmp/hello.nes
 
       - name: Validate .dbg with Mesen2
+        if: steps.discover.outputs.nescript == 'true'
         working-directory: .
         run: |
           # Mesen opens its first-run wizard before --testRunner when
@@ -205,7 +244,7 @@ jobs:
               --timeout=15
 
       - name: Upload screenshot diffs on failure
-        if: failure()
+        if: failure() && steps.discover.outputs.nescript == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: nescript-emulator-diff
