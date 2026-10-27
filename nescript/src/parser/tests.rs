@@ -249,6 +249,27 @@ fn parse_draw_with_frame() {
     match &frame.statements[0] {
         Statement::Draw(d) => {
             assert!(d.frame.is_some());
+            assert!(d.attr.is_none());
+        }
+        other => panic!("expected Draw, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_draw_with_attr() {
+    let src = r#"
+        game "Test" { mapper: NROM }
+        on frame {
+            draw Smiley at: (8, 8) attr: 0x41 frame: 2
+        }
+        start Main
+    "#;
+    let prog = parse_ok(src);
+    let frame = prog.states[0].on_frame.as_ref().unwrap();
+    match &frame.statements[0] {
+        Statement::Draw(d) => {
+            assert!(d.frame.is_some());
+            assert!(matches!(d.attr, Some(Expr::IntLiteral(0x41, _))));
         }
         other => panic!("expected Draw, got {other:?}"),
     }

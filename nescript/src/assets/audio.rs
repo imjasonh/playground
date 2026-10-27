@@ -101,7 +101,7 @@ pub struct SfxData {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MusicData {
     pub name: String,
-    /// State byte cached by `start_music` into `ZP_MUSIC_STATE`. Bit
+    /// State byte cached by `start_music` into `AUDIO_MUSIC_STATE`. Bit
     /// 1 is OR'd in at runtime to mark the track active. Encodes
     /// duty (bits 6-7), volume (bits 2-5), and loop flag (bit 0).
     pub header: u8,

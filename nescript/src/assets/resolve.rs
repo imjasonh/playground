@@ -117,7 +117,8 @@ impl RoomData {
 pub fn resolve_sprites(program: &Program, source_dir: &Path) -> Result<Vec<SpriteData>, String> {
     let mut sprites = Vec::new();
     // Tile index 0 is the built-in smiley; user sprites start at 1.
-    let mut next_tile: u8 = 1;
+    // usize, not u8: a set that fills tile 255 leaves this at 256.
+    let mut next_tile: usize = 1;
 
     for sprite_decl in &program.sprites {
         let chr_bytes = match &sprite_decl.chr_source {
@@ -149,7 +150,7 @@ pub fn resolve_sprites(program: &Program, source_dir: &Path) -> Result<Vec<Sprit
         if tile_count == 0 {
             continue;
         }
-        if next_tile as usize + tile_count > 256 {
+        if next_tile + tile_count > 256 {
             return Err(format!(
                 "sprite '{}' would exceed CHR ROM tile limit",
                 sprite_decl.name
@@ -158,10 +159,10 @@ pub fn resolve_sprites(program: &Program, source_dir: &Path) -> Result<Vec<Sprit
 
         sprites.push(SpriteData {
             name: sprite_decl.name.clone(),
-            tile_index: next_tile,
+            tile_index: next_tile as u8,
             chr_bytes,
         });
-        next_tile += tile_count as u8;
+        next_tile += tile_count;
     }
 
     Ok(sprites)
@@ -364,6 +365,26 @@ mod tests {
         assert_eq!(sprites[0].name, "Player");
         assert_eq!(sprites[0].tile_index, 1);
         assert_eq!(sprites[0].chr_bytes.len(), 16);
+    }
+
+    #[test]
+    fn resolve_sprite_filling_last_tile() {
+        let full = SpriteDecl {
+            name: "Full".to_string(),
+            chr_source: AssetSource::Inline(vec![0u8; 255 * 16]),
+            span: Span::dummy(),
+        };
+        let mut program = make_program(full);
+        let sprites = resolve_sprites(&program, Path::new(".")).unwrap();
+        assert_eq!(sprites[0].tile_index, 1);
+
+        program.sprites.push(SpriteDecl {
+            name: "Extra".to_string(),
+            chr_source: AssetSource::Inline(vec![0u8; 16]),
+            span: Span::dummy(),
+        });
+        let err = resolve_sprites(&program, Path::new(".")).unwrap_err();
+        assert!(err.contains("Extra"), "{err}");
     }
 
     #[test]

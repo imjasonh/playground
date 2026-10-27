@@ -131,6 +131,115 @@ fn program_with_constants() {
     rom::validate_ines(&rom_data).expect("should be valid iNES");
 }
 
+#[test]
+fn const_array_reads_index_a_prg_rom_table() {
+    let source = r#"
+        game "ConstArray" { mapper: NROM }
+        const TABLE: u8[8] = [0xA7, 0x3C, 0x91, 0x5E, 0xD2, 0x08]
+        var out: u8 = 0
+        var i: u8 = 0
+        on frame {
+            out = TABLE[i]
+            i += 1
+        }
+        start Main
+    "#;
+    let rom_data = compile(source);
+    rom::validate_ines(&rom_data).expect("should be valid iNES");
+    // NROM-128: 16 KB PRG at $C000, right after the 16-byte header.
+    let prg = &rom_data[16..16 + 16384];
+    let table = [0xA7, 0x3C, 0x91, 0x5E, 0xD2, 0x08, 0x00, 0x00];
+    let offset = prg
+        .windows(table.len())
+        .position(|w| w == table)
+        .expect("const array bytes, zero-padded to the declared length, must be in PRG");
+    let addr = 0xC000 + u16::try_from(offset).unwrap();
+    let lda_abs_x = [0xBD, (addr & 0xFF) as u8, (addr >> 8) as u8];
+    assert!(
+        prg.windows(3).any(|w| w == lda_abs_x),
+        "TABLE[i] must compile to LDA ${addr:04X},X"
+    );
+
+    let (program, _) = nescript::parser::parse(source);
+    let analysis = analyzer::analyze(&program.unwrap());
+    assert!(
+        analysis.var_allocations.iter().all(|a| a.name != "TABLE"),
+        "a const array must not take RAM"
+    );
+}
+
+#[test]
+fn const_array_element_assignment_is_rejected() {
+    let source = r#"
+        game "ConstArrayWrite" { mapper: NROM }
+        const TABLE: u8[3] = [1, 2, 3]
+        on frame { TABLE[1] = 5 }
+        start Main
+    "#;
+    let (program, diags) = nescript::parser::parse(source);
+    assert!(diags.is_empty(), "unexpected parse errors: {diags:?}");
+    let analysis = analyzer::analyze(&program.unwrap());
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|d| d.is_error() && d.message.contains("cannot assign to constant 'TABLE'")),
+        "expected E0203, got {:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn const_array_rejects_wide_elements_and_overlong_literals() {
+    for (decl, want) in [
+        (
+            "const T: u16[2] = [300, 5]",
+            "must hold u8, i8, or bool elements",
+        ),
+        ("const T: u8[2] = [1, 2, 3]", "declared with 2 elements"),
+    ] {
+        let source = format!(
+            "game \"G\" {{ mapper: NROM }}\n{decl}\nvar x: u8 = 0\non frame {{ x = 1 }}\nstart Main\n"
+        );
+        let (program, diags) = nescript::parser::parse(&source);
+        assert!(diags.is_empty(), "unexpected parse errors: {diags:?}");
+        let analysis = analyzer::analyze(&program.unwrap());
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .any(|d| d.is_error() && d.message.contains(want)),
+            "{decl}: expected error containing {want:?}, got {:?}",
+            analysis.diagnostics
+        );
+    }
+}
+
+#[test]
+fn banked_function_return_value_survives_trampoline() {
+    let source = r#"
+        game "BankedRet" { mapper: UxROM }
+        var j: u8 = 2
+        var out: u8 = 0
+        bank Extra {
+            fun g() -> u8 { return j + 5 }
+        }
+        on frame { out = g() }
+        start Main
+    "#;
+    let (rom_data, _, _) = compile_with_debug_artifacts(source, false);
+    rom::validate_ines(&rom_data).expect("should be valid iNES");
+    // JSR entry; TAY; PLA; JSR __bank_select; TYA; RTS
+    assert!(
+        rom_data.windows(9).any(|w| w[0] == 0x20
+            && w[3] == 0xA8
+            && w[4] == 0x68
+            && w[5] == 0x20
+            && w[8] == 0x98),
+        "trampoline must park the return value in Y across the bank restore"
+    );
+}
+
 // ── M2 Tests ──
 
 #[test]
@@ -3514,8 +3623,9 @@ fn nt_set_emits_buffer_append_and_drain_marker() {
     //   1. Mark `__vram_buf_used` so the linker splices the
     //      drain routine and gates the NMI JSR.
     //   2. Emit a 4-byte append: write `[1][addr_hi][addr_lo][tile]`
-    //      starting at VRAM_BUF_BASE+head, bump the head, write a
-    //      fresh `0` sentinel after.
+    //      starting at VRAM_BUF_BASE+head and a fresh `0` sentinel
+    //      after, storing the `len` byte last.
+    use nescript::asm::{AddressingMode, Opcode};
     let source = r#"
 game "VramSet" { mapper: NROM }
 on frame {
@@ -3561,6 +3671,27 @@ start Main
             .windows(3)
             .any(|w| w[0] == 0x20 && w[1] == lo && w[2] == hi),
         "NMI should JSR __vram_buf_drain"
+    );
+    // The `len` byte (the only store indexed by Y) must follow the
+    // sentinel store, or an NMI between the two could drain an
+    // entry whose sentinel isn't there yet.
+    let base = nescript::runtime::VRAM_BUF_BASE;
+    let stores: Vec<&AddressingMode> = instructions
+        .iter()
+        .filter(|i| i.opcode == Opcode::STA)
+        .map(|i| &i.mode)
+        .filter(|m| {
+            matches!(m, AddressingMode::AbsoluteX(a) | AddressingMode::AbsoluteY(a) if *a == base)
+        })
+        .collect();
+    assert_eq!(
+        stores.len(),
+        5,
+        "addr_hi, addr_lo, tile, sentinel, then len: {stores:?}"
+    );
+    assert!(
+        matches!(stores.last(), Some(AddressingMode::AbsoluteY(_))),
+        "the len byte should be the last buffer store: {stores:?}"
     );
 }
 

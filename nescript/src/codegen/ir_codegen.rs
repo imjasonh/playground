@@ -32,13 +32,13 @@ use crate::ir::{
 };
 use crate::parser::ast::Channel;
 use crate::runtime::{
-    AUDIO_NOISE_COUNTER, AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI,
-    AUDIO_SFX_PITCH_PTR_LO, AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO,
-    ZP_MUSIC_BASE_HI, ZP_MUSIC_BASE_LO, ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO,
-    ZP_MUSIC_STATE, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI, ZP_PENDING_BG_ATTRS_LO,
-    ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI, ZP_PENDING_PALETTE_LO,
-    ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER, ZP_SFX_PTR_HI,
-    ZP_SFX_PTR_LO,
+    AUDIO_MUSIC_BASE_HI, AUDIO_MUSIC_BASE_LO, AUDIO_MUSIC_STATE, AUDIO_NOISE_COUNTER,
+    AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI, AUDIO_SFX_PITCH_PTR_LO,
+    AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, ZP_MUSIC_COUNTER,
+    ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
+    ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI,
+    ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER,
+    ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
 };
 
 /// Base zero-page address for IR temp slots.
@@ -111,7 +111,7 @@ pub struct IrCodeGen<'a> {
     sfx_info: HashMap<String, (u8, u8, String, Channel, Option<String>)>,
     /// Music name to `(header_byte, stream_label)`. Populated by
     /// `with_audio`. `start_music Name` stamps `header | 0x02` into
-    /// `ZP_MUSIC_STATE` and loads the pointer from `stream_label`.
+    /// `AUDIO_MUSIC_STATE` and loads the pointer from `stream_label`.
     music_info: HashMap<String, (u8, String)>,
     /// State name to dispatch index mapping.
     state_indices: HashMap<String, u8>,
@@ -284,6 +284,8 @@ pub struct IrCodeGen<'a> {
     /// guard on every `ArrayLoad` / `ArrayStore`. Missing entries
     /// mean "unknown size" and skip the check.
     var_sizes: HashMap<VarId, u16>,
+    /// Byte length of each `const` array's ROM block, keyed by label.
+    rom_lens: HashMap<String, u16>,
     /// True once a bounds-check trip was emitted; the linker-side
     /// helper (a `JMP $` infinite loop at `__debug_halt`) is
     /// emitted once at the end of `generate()` so multiple
@@ -304,6 +306,10 @@ pub struct IrCodeGen<'a> {
     /// should JSR the direct `__ir_fn_<name>` label or the cross-bank
     /// trampoline `__tramp_<name>` label.
     function_banks: HashMap<String, String>,
+    /// Functions that draw a sprite themselves or through a callee.
+    /// A frame handler in this set clears OAM and resets the OAM
+    /// cursor on entry.
+    drawing_functions: std::collections::HashSet<String>,
     /// While [`Self::generate`] is emitting code for a banked
     /// function, this holds the bank name so cross-bank calls can be
     /// disambiguated from in-bank calls. `None` means the codegen is
@@ -487,9 +493,20 @@ impl<'a> IrCodeGen<'a> {
             emit_source_locs: false,
             debug_port: DEFAULT_DEBUG_PORT,
             var_sizes,
+            rom_lens: ir
+                .rom_data
+                .iter()
+                .map(|b| {
+                    (
+                        b.label.clone(),
+                        u16::try_from(b.data.len()).unwrap_or(u16::MAX),
+                    )
+                })
+                .collect(),
             bounds_halt_used: false,
             banked_streams: HashMap::new(),
             function_banks,
+            drawing_functions: drawing_functions(ir),
             current_bank: None,
             allocations,
             leaf_param_overrides,
@@ -692,6 +709,25 @@ impl<'a> IrCodeGen<'a> {
         }
     }
 
+    /// Zero-page slots of temps that are read again after a call whose
+    /// argument temps are `args`. A temp's remaining use count still
+    /// includes this call's reads, so those are subtracted first.
+    fn temps_live_across_call(&self, args: &[IrTemp]) -> Vec<u8> {
+        let mut live: Vec<u8> = self
+            .temp_slots
+            .iter()
+            .filter(|(temp, _)| {
+                let remaining = self.use_counts.get(temp).copied().unwrap_or(0);
+                let in_call = args.iter().filter(|a| *a == *temp).count() as u32;
+                remaining > in_call
+            })
+            .map(|(_, &slot)| slot)
+            .collect();
+        live.sort_unstable();
+        live.dedup();
+        live
+    }
+
     /// Load a temp's value into A.
     fn load_temp(&mut self, temp: IrTemp) {
         let addr = self.temp_addr(temp);
@@ -725,6 +761,14 @@ impl<'a> IrCodeGen<'a> {
         let Some(&size) = self.var_sizes.get(&var) else {
             return;
         };
+        self.emit_bounds_check_len(size);
+    }
+
+    /// Debug-mode guard that `A` (the index) is below `size`.
+    fn emit_bounds_check_len(&mut self, size: u16) {
+        if !self.debug_mode {
+            return;
+        }
         if size == 0 {
             return;
         }
@@ -1019,6 +1063,13 @@ impl<'a> IrCodeGen<'a> {
         // stores in the stream.
         self.emit_trailing_markers();
 
+        // `const` array tables. Every function body above ends in a
+        // jump or return, so nothing falls through into the data.
+        for block in &ir.rom_data {
+            self.emit_label(&block.label);
+            self.emit(NOP, AM::Bytes(block.data.clone()));
+        }
+
         // Snapshot the fixed-bank instruction stream before we
         // start emitting the banked function bodies into their own
         // streams. Programs without any banked functions skip the
@@ -1103,7 +1154,7 @@ impl<'a> IrCodeGen<'a> {
         // overwrites the slots it needs. Handlers that never call
         // `draw` skip the clear entirely — the NMI handler's DMA
         // copies whatever's in $0200 unchanged.
-        if self.in_frame_handler && function_draws_sprites(func) {
+        if self.in_frame_handler && self.drawing_functions.contains(&func.name) {
             let clear_loop = format!("__ir_oam_clear_{}", func.name);
             self.emit(LDX, AM::Immediate(0));
             self.emit(LDA, AM::Immediate(0xFE));
@@ -1583,6 +1634,16 @@ impl<'a> IrCodeGen<'a> {
                 }
                 self.store_temp(*dest);
             }
+            IrOp::RomArrayLoad(dest, label, idx) => {
+                self.load_temp(*idx);
+                let len = self.rom_lens.get(label).copied().unwrap_or_else(|| {
+                    panic!("internal compiler error: RomArrayLoad references unknown ROM block {label}")
+                });
+                self.emit_bounds_check_len(len);
+                self.emit(TAX, AM::Implied);
+                self.emit(LDA, AM::LabelAbsoluteX(label.clone()));
+                self.store_temp(*dest);
+            }
             IrOp::ArrayStore(var, idx, val) => {
                 let base_addr = self.var_addr(*var);
                 self.load_temp(*idx);
@@ -1694,10 +1755,25 @@ impl<'a> IrCodeGen<'a> {
                         format!("__ir_fn_{name}")
                     }
                 };
+                // Every function allocates its temps from TEMP_BASE,
+                // so the callee overwrites any caller temp that is
+                // still needed after the call (for example the result
+                // of `f()` while `g()` runs in `h(f(), g())`). Push
+                // those slots on the hardware stack and pop them back
+                // after the return value is stored.
+                let live = self.temps_live_across_call(args);
+                for &slot in &live {
+                    self.emit(LDA, AM::ZeroPage(slot));
+                    self.emit(PHA, AM::Implied);
+                }
                 self.emit(JSR, AM::Label(label));
                 if let Some(d) = dest {
                     // Return value is in A
                     self.store_temp(*d);
+                }
+                for &slot in live.iter().rev() {
+                    self.emit(PLA, AM::Implied);
+                    self.emit(STA, AM::ZeroPage(slot));
                 }
             }
             IrOp::DrawSprite {
@@ -1705,6 +1781,7 @@ impl<'a> IrCodeGen<'a> {
                 x,
                 y,
                 frame,
+                attr,
             } => {
                 // Flag the `__oam_used` marker so the linker knows
                 // to emit the OAM DMA + shadow-init + default-palette
@@ -1773,8 +1850,12 @@ impl<'a> IrCodeGen<'a> {
                 }
                 self.emit(STA, AM::AbsoluteY(0x0201));
 
-                // Attributes at cursor+2 (always 0)
-                self.emit(LDA, AM::Immediate(0));
+                // Attributes at cursor+2: palette, priority, flips.
+                if let Some(a) = attr {
+                    self.load_temp(*a);
+                } else {
+                    self.emit(LDA, AM::Immediate(0));
+                }
                 self.emit(STA, AM::AbsoluteY(0x0202));
 
                 // X position at cursor+3
@@ -2465,7 +2546,7 @@ impl<'a> IrCodeGen<'a> {
 
     /// Emit the `start_music Name` sequence.
     ///
-    /// Stores the track's header byte into `ZP_MUSIC_STATE` (with
+    /// Stores the track's header byte into `AUDIO_MUSIC_STATE` (with
     /// bit 1 OR'd in as the "active" flag) and seeds both the
     /// current pointer and the loop base with the track's stream
     /// label. Also zeroes `ZP_MUSIC_COUNTER` so the very next audio
@@ -2478,15 +2559,15 @@ impl<'a> IrCodeGen<'a> {
         // State byte: header | 0x02 (active flag). Header already
         // encodes duty, volume, and loop bit.
         self.emit(LDA, AM::Immediate(header | 0x02));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_STATE));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_STATE));
         // Stream pointer = label. Also seed the loop-back base
         // so the tick's loop branch can rewind.
         self.emit(LDA, AM::SymbolLo(label.clone()));
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_PTR_LO));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_BASE_LO));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_BASE_LO));
         self.emit(LDA, AM::SymbolHi(label));
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_PTR_HI));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_BASE_HI));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_BASE_HI));
         // Counter = 1. The tick will decrement to 0 on the next
         // NMI and immediately advance to the first note. We don't
         // use 0 here because the tick's "bit 1 set AND counter
@@ -2504,7 +2585,7 @@ impl<'a> IrCodeGen<'a> {
         self.emit(LDA, AM::Immediate(0x30));
         self.emit(STA, AM::Absolute(0x4004));
         self.emit(LDA, AM::Immediate(0));
-        self.emit(STA, AM::ZeroPage(ZP_MUSIC_STATE));
+        self.emit(STA, AM::Absolute(AUDIO_MUSIC_STATE));
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_COUNTER));
     }
 
@@ -2738,10 +2819,11 @@ impl<'a> IrCodeGen<'a> {
     /// `$23C0 + (y/4)*8 + (x/4)`.
     ///
     /// Layout written to the buffer at `VRAM_BUF_HEAD`:
-    /// `[len=1][addr_hi][addr_lo][data]`. After the append we
-    /// bump the head by 4 and store a fresh `0` sentinel so the
-    /// next NMI drain sees a well-formed buffer regardless of
-    /// whether more entries get appended later in the frame.
+    /// `[len=1][addr_hi][addr_lo][data]`, followed by a fresh `0`
+    /// sentinel. The `len` byte goes in last: until then the old
+    /// sentinel at the head still ends the ring, so an NMI that
+    /// drains mid-append skips this entry and picks it up next
+    /// frame instead of reading half of it.
     ///
     /// The address arithmetic stays in the accumulator end-to-end
     /// (no extra ZP scratch needed): `addr_hi` is `$20 + (y >> 3)`
@@ -2752,11 +2834,8 @@ impl<'a> IrCodeGen<'a> {
         let x_addr = self.temp_addr(x);
         let y_addr = self.temp_addr(y);
         let data_addr = self.temp_addr(data);
-        // X = head offset.
+        // X = head offset; skip the `len` byte for now.
         self.emit(LDX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
-        // Write `len = 1`.
-        self.emit(LDA, AM::Immediate(1));
-        self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
         self.emit(INX, AM::Implied);
         // Write `addr_hi`.
         if attr {
@@ -2804,10 +2883,19 @@ impl<'a> IrCodeGen<'a> {
         self.emit(LDA, AM::ZeroPage(data_addr));
         self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
         self.emit(INX, AM::Implied);
-        // Update head and lay down a fresh sentinel.
-        self.emit(STX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
+        self.emit_nt_buf_publish(AM::Immediate(1));
+    }
+
+    /// Finish a VRAM-buffer append whose body ends just before
+    /// offset X: lay down the new sentinel at X, advance the head
+    /// to X, then store `len` at the old head to publish the entry.
+    fn emit_nt_buf_publish(&mut self, len: AM) {
         self.emit(LDA, AM::Immediate(0));
         self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
+        self.emit(LDY, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
+        self.emit(STX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
+        self.emit(LDA, len);
+        self.emit(STA, AM::AbsoluteY(crate::runtime::VRAM_BUF_BASE));
     }
 
     /// Append a horizontal-fill VRAM-buffer entry. Layout:
@@ -2819,10 +2907,8 @@ impl<'a> IrCodeGen<'a> {
         let y_addr = self.temp_addr(y);
         let len_addr = self.temp_addr(len);
         let tile_addr = self.temp_addr(tile);
+        // Skip `len`; `emit_nt_buf_publish` stores it last.
         self.emit(LDX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
-        // len
-        self.emit(LDA, AM::ZeroPage(len_addr));
-        self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
         self.emit(INX, AM::Implied);
         // addr_hi = $20 + (y >> 3)
         self.emit(LDA, AM::ZeroPage(y_addr));
@@ -2855,10 +2941,7 @@ impl<'a> IrCodeGen<'a> {
         self.emit(INX, AM::Implied);
         self.emit(DEY, AM::Implied);
         self.emit(BNE, AM::LabelRelative(fill_label));
-        // Update head + sentinel.
-        self.emit(STX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
-        self.emit(LDA, AM::Immediate(0));
-        self.emit(STA, AM::AbsoluteX(crate::runtime::VRAM_BUF_BASE));
+        self.emit_nt_buf_publish(AM::ZeroPage(len_addr));
     }
 
     /// Emit the MMC3 `__irq_user` handler that dispatches on the
@@ -3422,6 +3505,7 @@ fn function_is_leaf(func: &IrFunction) -> bool {
                 | IrOp::CmpLtEq(..)
                 | IrOp::CmpGtEq(..)
                 | IrOp::ArrayLoad(..)
+                | IrOp::RomArrayLoad(..)
                 | IrOp::ArrayStore(..)
                 | IrOp::DrawSprite { .. }
                 | IrOp::ReadInput(..)
@@ -3610,6 +3694,38 @@ fn function_draws_sprites(func: &IrFunction) -> bool {
         .any(|op| matches!(op, IrOp::DrawSprite { .. }))
 }
 
+/// Names of the functions that run a `draw`, directly or through any
+/// chain of calls. Without the call chain, a frame handler that
+/// draws only from helper functions would never reset the OAM cursor,
+/// and its sprites would walk through every OAM slot.
+fn drawing_functions(ir: &IrProgram) -> std::collections::HashSet<String> {
+    let mut drawing: std::collections::HashSet<String> = ir
+        .functions
+        .iter()
+        .filter(|f| function_draws_sprites(f))
+        .map(|f| f.name.clone())
+        .collect();
+    loop {
+        let before = drawing.len();
+        for func in &ir.functions {
+            if drawing.contains(&func.name) {
+                continue;
+            }
+            let calls_drawer = func
+                .blocks
+                .iter()
+                .flat_map(|b| &b.ops)
+                .any(|op| matches!(op, IrOp::Call(_, name, _) if drawing.contains(name)));
+            if calls_drawer {
+                drawing.insert(func.name.clone());
+            }
+        }
+        if drawing.len() == before {
+            return drawing;
+        }
+    }
+}
+
 /// Return every source temp referenced by an op. Destination temps
 /// are excluded. Mirrors `optimizer::collect_source_temps` but
 /// returns a small Vec instead of mutating a set — the codegen
@@ -3638,14 +3754,14 @@ fn op_source_temps(op: &IrOp) -> Vec<IrTemp> {
         | IrOp::CmpGtEq(_, a, b, _) => vec![*a, *b],
         IrOp::ShiftLeft(_, src, _) | IrOp::ShiftRight(_, src, _) => vec![*src],
         IrOp::Negate(_, src) | IrOp::Complement(_, src) | IrOp::SignExtend(_, src) => vec![*src],
-        IrOp::ArrayLoad(_, _, idx) => vec![*idx],
+        IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => vec![*idx],
         IrOp::ArrayStore(_, idx, val) => vec![*idx, *val],
         IrOp::Call(_, _, args) => args.clone(),
-        IrOp::DrawSprite { x, y, frame, .. } => {
+        IrOp::DrawSprite {
+            x, y, frame, attr, ..
+        } => {
             let mut out = vec![*x, *y];
-            if let Some(f) = frame {
-                out.push(*f);
-            }
+            out.extend([frame, attr].into_iter().flatten());
             out
         }
         IrOp::Scroll(x, y) => vec![*x, *y],
@@ -3889,6 +4005,36 @@ mod tests {
     }
 
     #[test]
+    fn ir_codegen_draw_sprite_attr() {
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            var px: u8 = 0
+            var py: u8 = 0
+            var flip: u8 = 0
+            on frame {
+                flip = flip ^ 0x40
+                draw Smiley at: (px, py) attr: flip | 2
+            }
+            start Main
+        "#,
+        );
+        let at = insts
+            .iter()
+            .position(|i| i.opcode == STA && i.mode == AM::AbsoluteY(0x0202))
+            .expect("draw writes the attribute byte");
+        assert!(
+            insts.iter().any(|i| i.opcode == ORA),
+            "attr expression is evaluated: {insts:?}"
+        );
+        let prev = &insts[at - 1];
+        assert!(
+            !(prev.opcode == LDA && prev.mode == AM::Immediate(0)),
+            "attr: should replace the default 0 attribute: {insts:?}"
+        );
+    }
+
+    #[test]
     fn ir_codegen_wait_frame() {
         let insts = lower_and_gen(
             r#"
@@ -4053,6 +4199,76 @@ mod more_tests {
             .iter()
             .any(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x04));
         assert!(has_param_read, "callee should read parameters from $04");
+    }
+
+    #[test]
+    fn ir_codegen_call_preserves_temps_live_across_nested_call() {
+        // `f(2)` lands in a temp at TEMP_BASE. `g(3)` runs before
+        // `sum` reads that temp, and g's own temps also start at
+        // TEMP_BASE, so the caller must save the slot around g.
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            fun f(a: u8) -> u8 { var t: u8 = a + 1
+                return t * 2 }
+            fun g(a: u8) -> u8 { var t: u8 = a + 2
+                return t * 3 }
+            fun sum(a: u8, b: u8) -> u8 { return a + b }
+            var x: u8 = 0
+            on frame { x = sum(f(2), g(3)) }
+            start Main
+        "#,
+        );
+        let g_call = insts
+            .iter()
+            .position(|i| i.opcode == JSR && i.mode == AM::Label("__ir_fn_g".into()))
+            .expect("caller should JSR to g");
+        assert_eq!(
+            insts[g_call - 1].opcode,
+            PHA,
+            "f's result is pushed before g"
+        );
+        let saved = match insts[g_call - 2].mode {
+            AM::ZeroPage(slot) => slot,
+            ref m => panic!("expected LDA zp before PHA, got {m:?}"),
+        };
+        assert_eq!(
+            insts[g_call + 2].opcode,
+            PLA,
+            "f's result is popped after g"
+        );
+        assert_eq!(insts[g_call + 3].opcode, STA);
+        assert_eq!(insts[g_call + 3].mode, AM::ZeroPage(saved));
+    }
+
+    #[test]
+    fn ir_codegen_frame_handler_drawing_through_helpers_clears_oam() {
+        // The handler draws only two calls deep. It must still clear
+        // OAM and reset the cursor, or each frame's sprites land one
+        // slot past the last frame's and the old ones stay visible.
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            fun dot(x: u8) { draw Smiley at: (x, 40) }
+            fun dots() { dot(10)
+                dot(20) }
+            on frame { dots() }
+            start Main
+        "#,
+        );
+        assert!(
+            insts
+                .iter()
+                .any(|i| matches!(&i.mode, AM::Label(l) if l.starts_with("__ir_oam_clear_"))),
+            "frame handler should clear OAM"
+        );
+        assert!(
+            insts.windows(2).any(|w| w[0].opcode == LDA
+                && w[0].mode == AM::Immediate(0)
+                && w[1].opcode == STA
+                && w[1].mode == AM::ZeroPage(ZP_OAM_CURSOR)),
+            "frame handler should reset the OAM cursor"
+        );
     }
 
     #[test]
@@ -4767,9 +4983,9 @@ mod more_tests {
     fn ir_codegen_start_music_sets_state_and_stream_pointer() {
         // `start_music theme` must:
         //   1. Load a state byte (header OR'd with 0x02 = active)
-        //      into ZP_MUSIC_STATE (0x07).
+        //      into AUDIO_MUSIC_STATE ($07FA).
         //   2. Load the music stream pointer into ZP_MUSIC_PTR and
-        //      ZP_MUSIC_BASE (so the loop branch can rewind).
+        //      AUDIO_MUSIC_BASE (so the loop branch can rewind).
         //   3. Seed ZP_MUSIC_COUNTER with 1 so the next tick
         //      immediately advances to the first note.
         let insts = lower_and_gen(
@@ -4779,10 +4995,9 @@ mod more_tests {
             start Main
         "#,
         );
-        // State byte stored at 0x07.
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x07)),
-            "start_music should store the state byte at ZP_MUSIC_STATE ($07)"
+            has_inst(&insts, STA, &AM::Absolute(0x07FA)),
+            "start_music should store the state byte at AUDIO_MUSIC_STATE ($07FA)"
         );
         // Pointer load via SymbolLo of __music_theme.
         let has_ptr_lo = insts
@@ -4800,16 +5015,16 @@ mod more_tests {
             "start_music should store ZP_MUSIC_PTR_LO ($0E)"
         );
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x05)),
-            "start_music should store ZP_MUSIC_BASE_LO ($05) for loop-back"
+            has_inst(&insts, STA, &AM::Absolute(0x07F8)),
+            "start_music should store AUDIO_MUSIC_BASE_LO ($07F8) for loop-back"
         );
         assert!(
             has_inst(&insts, STA, &AM::ZeroPage(0x0F)),
             "start_music should store ZP_MUSIC_PTR_HI ($0F)"
         );
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x06)),
-            "start_music should store ZP_MUSIC_BASE_HI ($06) for loop-back"
+            has_inst(&insts, STA, &AM::Absolute(0x07F9)),
+            "start_music should store AUDIO_MUSIC_BASE_HI ($07F9) for loop-back"
         );
     }
 
@@ -4822,7 +5037,7 @@ mod more_tests {
             start Main
         "#,
         );
-        // Mute $4004 and clear ZP_MUSIC_STATE ($07).
+        // Mute $4004 and clear AUDIO_MUSIC_STATE ($07FA).
         assert!(
             has_inst(&insts, LDA, &AM::Immediate(0x30)),
             "stop_music should load the mute byte $30"
@@ -4832,8 +5047,8 @@ mod more_tests {
             "stop_music should store to pulse-2 volume register $4004"
         );
         assert!(
-            has_inst(&insts, STA, &AM::ZeroPage(0x07)),
-            "stop_music should clear ZP_MUSIC_STATE ($07)"
+            has_inst(&insts, STA, &AM::Absolute(0x07FA)),
+            "stop_music should clear AUDIO_MUSIC_STATE ($07FA)"
         );
     }
 

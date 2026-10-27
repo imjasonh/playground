@@ -1480,6 +1480,42 @@ impl Analyzer {
             ));
             return;
         }
+        if let NesType::Array(elem, len) = &c.const_type {
+            if !matches!(**elem, NesType::U8 | NesType::I8 | NesType::Bool) {
+                self.diagnostics.push(Diagnostic::error(
+                    ErrorCode::E0201,
+                    format!(
+                        "const array '{}' must hold u8, i8, or bool elements; found {elem}",
+                        c.name
+                    ),
+                    c.span,
+                ));
+            }
+            match &c.value {
+                Expr::ArrayLiteral(elems, _) if elems.len() > usize::from(*len) => {
+                    self.diagnostics.push(Diagnostic::error(
+                        ErrorCode::E0201,
+                        format!(
+                            "const array '{}' is declared with {len} elements but its literal has {}",
+                            c.name,
+                            elems.len()
+                        ),
+                        c.span,
+                    ));
+                }
+                Expr::ArrayLiteral(..) => {}
+                _ => {
+                    self.diagnostics.push(Diagnostic::error(
+                        ErrorCode::E0201,
+                        format!(
+                            "const array '{}' must be initialized with an array literal",
+                            c.name
+                        ),
+                        c.span,
+                    ));
+                }
+            }
+        }
         self.symbols.insert(
             c.name.clone(),
             Symbol {
@@ -2330,9 +2366,9 @@ impl Analyzer {
                 self.walk_expr_reads(&draw.y);
                 self.check_expr_type(&draw.x, &NesType::U8);
                 self.check_expr_type(&draw.y, &NesType::U8);
-                if let Some(frame) = &draw.frame {
-                    self.walk_expr_reads(frame);
-                    self.check_expr_type(frame, &NesType::U8);
+                for e in [&draw.frame, &draw.attr].into_iter().flatten() {
+                    self.walk_expr_reads(e);
+                    self.check_expr_type(e, &NesType::U8);
                 }
             }
             Statement::Return(Some(expr), span) => {
@@ -2618,7 +2654,10 @@ impl Analyzer {
                 "rand8" => Some(NesType::U8),
                 "rand16" => Some(NesType::U16),
                 "collides_at" => Some(NesType::Bool),
-                _ => Some(NesType::U8), // Simplified for M1
+                _ => match self.function_return_types.get(name) {
+                    Some(Some(ty)) => Some(ty.clone()),
+                    _ => Some(NesType::U8),
+                },
             },
             Expr::ArrayIndex(name, _, _) => {
                 self.resolve_symbol(name).and_then(|s| match &s.sym_type {
@@ -2819,8 +2858,8 @@ fn collect_calls_stmt(stmt: &Statement, calls: &mut Vec<String>) {
         Statement::Draw(draw) => {
             collect_calls_expr(&draw.x, calls);
             collect_calls_expr(&draw.y, calls);
-            if let Some(f) = &draw.frame {
-                collect_calls_expr(f, calls);
+            for e in [&draw.frame, &draw.attr].into_iter().flatten() {
+                collect_calls_expr(e, calls);
             }
         }
         Statement::Scroll(x, y, _) => {

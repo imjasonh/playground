@@ -501,7 +501,7 @@ fn audio_tick_both_channels_assemble() {
 #[test]
 fn audio_tick_mutes_pulse2_on_non_looping_end_of_track() {
     // When a non-looping track hits the (0xFF, 0xFF) sentinel, the
-    // tick writes $30 to $4004 and clears ZP_MUSIC_STATE. We verify
+    // tick writes $30 to $4004 and clears AUDIO_MUSIC_STATE. We verify
     // the mute path exists by checking both writes exist somewhere
     // in the tick body.
     let tick = gen_audio_tick(false, false, false);
@@ -511,10 +511,10 @@ fn audio_tick_mutes_pulse2_on_non_looping_end_of_track() {
     assert!(has_mute, "audio tick must mute pulse-2 on end-of-track");
     let has_state_clear = tick
         .iter()
-        .any(|i| i.opcode == STA && i.mode == AM::ZeroPage(ZP_MUSIC_STATE));
+        .any(|i| i.opcode == STA && i.mode == AM::Absolute(AUDIO_MUSIC_STATE));
     assert!(
         has_state_clear,
-        "audio tick must clear ZP_MUSIC_STATE on stop"
+        "audio tick must clear AUDIO_MUSIC_STATE on stop"
     );
 }
 
@@ -1052,6 +1052,29 @@ fn trampoline_switches_target_then_restores_caller() {
     );
     // Final instruction returns to caller.
     assert_eq!(t.last().unwrap().opcode, RTS);
+}
+
+#[test]
+fn trampoline_preserves_callee_return_value_in_a() {
+    // A banked `fun f() -> u8` returns in A. The restore path's PLA
+    // would replace it with the caller's bank number, so the
+    // trampoline parks A in Y across the restore.
+    let t = gen_bank_trampoline("__tramp_helper", "__ir_fn_helper", 0);
+    let ops: Vec<_> = t.iter().map(|i| i.opcode).collect();
+    let entry = t
+        .iter()
+        .position(|i| i.opcode == JSR && matches!(&i.mode, AM::Label(n) if n == "__ir_fn_helper"))
+        .unwrap();
+    assert_eq!(&ops[entry + 1..], &[TAY, PLA, JSR, TYA, RTS]);
+    for mapper in [Mapper::MMC1, Mapper::UxROM, Mapper::MMC3] {
+        let select = gen_bank_select(mapper);
+        assert!(
+            select
+                .iter()
+                .all(|i| !matches!(i.opcode, TAY | LDY | INY | DEY)),
+            "{mapper:?} __bank_select must leave Y alone"
+        );
+    }
 }
 
 #[test]

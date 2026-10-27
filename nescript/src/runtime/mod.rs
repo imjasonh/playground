@@ -37,10 +37,16 @@ pub const ZP_SFX_PTR_HI: u8 = 0x0D;
 pub const ZP_MUSIC_PTR_LO: u8 = 0x0E;
 pub const ZP_MUSIC_PTR_HI: u8 = 0x0F;
 /// Music base pointer (2 bytes) — start of the currently-loaded
-/// track. Used by the loop-back branch when the driver hits the
-/// end-of-track sentinel and the header loop flag is set.
-pub const ZP_MUSIC_BASE_LO: u8 = 0x05;
-pub const ZP_MUSIC_BASE_HI: u8 = 0x06;
+/// Loop-back start of the current track, in main RAM.
+///
+/// These used to live at `$05`/`$06`, which is the second and third
+/// function-call argument. Any call with two or more arguments
+/// overwrote the loop point, and a four-argument call overwrote the
+/// state byte at `$07`, so the next NMI treated the track as stopped.
+/// Main RAM survives a call. `$07F0-$07F7` already hold the noise,
+/// triangle, and pitch-envelope pointers.
+pub const AUDIO_MUSIC_BASE_LO: u16 = 0x07F8;
+pub const AUDIO_MUSIC_BASE_HI: u16 = 0x07F9;
 /// Music state byte. Bit layout:
 ///   bit 0: 1 = track is looping, 0 = one-shot
 ///   bit 1: 1 = music is active (non-zero means "playing")
@@ -49,7 +55,10 @@ pub const ZP_MUSIC_BASE_HI: u8 = 0x06;
 /// Set on `start_music`, cleared (to 0) on `stop_music`. The driver
 /// writes a fresh $4004 envelope byte every time it advances to a
 /// new note using these bits so held notes don't decay.
-pub const ZP_MUSIC_STATE: u8 = 0x07;
+pub const AUDIO_MUSIC_STATE: u16 = 0x07FA;
+/// Scratch for the duty/volume mix in the music tick. Not `$04`:
+/// that byte is the first call argument, and the tick runs from NMI.
+pub const AUDIO_MUSIC_SCRATCH: u16 = 0x07FB;
 /// Pulse-1 SFX countdown — `0` means no sfx is playing.
 /// Nonzero means the audio tick should read one envelope byte from
 /// `ZP_SFX_PTR` each NMI and write it to $4000. When the tick reads
@@ -225,7 +234,7 @@ pub const PREV_INPUT_P2: u16 = 0x07E7;
 /// write VRAM (vblank). Every entry has the form
 /// `[len][addr_hi][addr_lo][byte_0]...[byte_(len-1)]`. A `len`
 /// byte of zero is the end-of-buffer sentinel: the drain loop
-/// stops there and resets the head pointer to zero.
+/// stops there and remembers where it stopped.
 ///
 /// The buffer is gated on the `__vram_buf_used` marker label —
 /// programs that never call any of the buffer intrinsics keep
@@ -233,14 +242,17 @@ pub const PREV_INPUT_P2: u16 = 0x07E7;
 /// is present, the analyzer skips `$0400-$04FF` so user globals
 /// are pushed into `$0500+`.
 ///
-/// `VRAM_BUF_HEAD` is a single byte tracking the next-free offset
-/// from `VRAM_BUF_BASE`. It lives in main RAM next to the buffer
-/// itself rather than in zero page so it doesn't compete with the
-/// runtime's other ZP slots; the codegen reads/writes it via
-/// absolute addressing.
+/// The buffer is a 256-byte ring indexed by X, so offsets wrap
+/// naturally. `VRAM_BUF_HEAD` is the next-free offset, owned by
+/// the writers; `VRAM_BUF_TAIL` is the next entry to drain, owned
+/// by the NMI. Neither side resets the other's pointer, so an NMI
+/// that lands in the middle of an append never discards it. Both
+/// live in main RAM rather than zero page so they don't compete
+/// with the runtime's other ZP slots.
 pub const VRAM_BUF_BASE: u16 = 0x0400;
 pub const VRAM_BUF_END: u16 = 0x04FF;
 pub const VRAM_BUF_HEAD: u16 = 0x07E5;
+pub const VRAM_BUF_TAIL: u16 = 0x07EC;
 
 /// Fade-helper scratch bytes. `FADE_STEP_FRAMES` holds the
 /// per-step frame count saved at the top of `__fade_out` /
@@ -1082,9 +1094,9 @@ pub fn gen_multiply() -> Vec<Instruction> {
 ///
 /// State:
 /// - `ZP_MUSIC_COUNTER` — frames remaining on the current note
-/// - `ZP_MUSIC_STATE` — bit 1 set = active; bits encode duty/volume/loop
+/// - `AUDIO_MUSIC_STATE` — bit 1 set = active; bits encode duty/volume/loop
 /// - `ZP_MUSIC_PTR_LO/HI` — pointer to the next (pitch,dur) pair
-/// - `ZP_MUSIC_BASE_LO/HI` — loop-back start of the current track
+/// - `AUDIO_MUSIC_BASE_LO/HI` — loop-back start of the current track
 ///
 /// Each frame: if the state says "active" and the counter is nonzero,
 /// decrement the counter and bail. When it hits zero, advance past
@@ -1209,8 +1221,8 @@ pub fn gen_audio_tick(
     out.push(Instruction::new(NOP, AM::Label("__audio_sfx_done".into())));
 
     // ── Music tick ──
-    // Bit 1 of ZP_MUSIC_STATE is "music is active". If clear, skip.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    // Bit 1 of AUDIO_MUSIC_STATE is "music is active". If clear, skip.
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0x02)));
     out.push(Instruction::new(
         BEQ,
@@ -1278,14 +1290,14 @@ pub fn gen_audio_tick(
     // Save pitch in X so we still have it for the period lookup.
     out.push(Instruction::new(TAX, AM::Implied));
     // Build envelope byte.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0xC0))); // keep duty bits
-    out.push(Instruction::new(STA, AM::ZeroPage(0x04))); // scratch
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(STA, AM::Absolute(AUDIO_MUSIC_SCRATCH)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0x3C))); // keep volume<<2
     out.push(Instruction::new(LSR, AM::Accumulator));
     out.push(Instruction::new(LSR, AM::Accumulator));
-    out.push(Instruction::new(ORA, AM::ZeroPage(0x04)));
+    out.push(Instruction::new(ORA, AM::Absolute(AUDIO_MUSIC_SCRATCH)));
     out.push(Instruction::new(ORA, AM::Immediate(0x30)));
     out.push(Instruction::new(STA, AM::Absolute(0x4004)));
 
@@ -1360,9 +1372,9 @@ pub fn gen_audio_tick(
 
     // ── End-of-track branch ──
     out.push(Instruction::new(NOP, AM::Label("__audio_music_eot".into())));
-    // Check loop flag (bit 0 of ZP_MUSIC_STATE). If set, rewind ptr
+    // Check loop flag (bit 0 of AUDIO_MUSIC_STATE). If set, rewind ptr
     // to base and re-enter the advance path. Otherwise stop.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(AND, AM::Immediate(0x01)));
     out.push(Instruction::new(
         BEQ,
@@ -1370,9 +1382,9 @@ pub fn gen_audio_tick(
     ));
     // Looping: copy base pointer back into current pointer and
     // re-enter the advance path.
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_BASE_LO)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_BASE_LO)));
     out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_PTR_LO)));
-    out.push(Instruction::new(LDA, AM::ZeroPage(ZP_MUSIC_BASE_HI)));
+    out.push(Instruction::new(LDA, AM::Absolute(AUDIO_MUSIC_BASE_HI)));
     out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_PTR_HI)));
     out.push(Instruction::new(
         JMP,
@@ -1386,7 +1398,7 @@ pub fn gen_audio_tick(
     out.push(Instruction::new(LDA, AM::Immediate(0x30)));
     out.push(Instruction::new(STA, AM::Absolute(0x4004)));
     out.push(Instruction::new(LDA, AM::Immediate(0)));
-    out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_STATE)));
+    out.push(Instruction::new(STA, AM::Absolute(AUDIO_MUSIC_STATE)));
     out.push(Instruction::new(STA, AM::ZeroPage(ZP_MUSIC_COUNTER)));
 
     out.push(Instruction::new(
@@ -2010,15 +2022,15 @@ pub fn gen_fade() -> Vec<Instruction> {
 /// reset-time clear. The drain is JSR'd from the NMI handler when
 /// the `__vram_buf_used` marker is present.
 ///
-/// On entry the buffer at `VRAM_BUF_BASE` (`$0400`) holds zero or
-/// more entries followed by a zero-byte sentinel. Each entry is
+/// Starting at `VRAM_BUF_TAIL`, the ring at `VRAM_BUF_BASE`
+/// (`$0400`) holds zero or more entries followed by a zero-byte
+/// sentinel. Each entry is
 /// `[len][addr_hi][addr_lo][byte_0]...[byte_(len-1)]`; the drain
 /// walks them in order, programming `$2006` with the PPU address
-/// then writing each data byte to `$2007`. When it hits a zero
-/// `len` byte it resets `VRAM_BUF_HEAD` to zero (so the next
-/// frame starts appending at the front of the buffer) and stores
-/// `0` back at `VRAM_BUF_BASE` so an empty buffer continues to
-/// drain cleanly without a re-init.
+/// then writing each data byte to `$2007`. It stops at the zero
+/// `len` byte and stores that offset in `VRAM_BUF_TAIL`. Writers
+/// store an entry's `len` byte last, after the sentinel that
+/// follows it, so the drain never sees a half-written entry.
 ///
 /// Cycle budget: one entry costs ~12 setup cycles + 8 cycles per
 /// data byte. The 256-byte buffer can hold ~50 single-tile writes
@@ -2033,7 +2045,7 @@ pub fn gen_vram_buf_drain() -> Vec<Instruction> {
     let mut out = Vec::new();
     out.push(Instruction::new(NOP, AM::Label("__vram_buf_drain".into())));
     // X = current offset into VRAM_BUF_BASE.
-    out.push(Instruction::new(LDX, AM::Immediate(0)));
+    out.push(Instruction::new(LDX, AM::Absolute(VRAM_BUF_TAIL)));
     // Top of per-entry loop. A zero `len` byte is the sentinel.
     out.push(Instruction::new(NOP, AM::Label("__vram_buf_loop".into())));
     out.push(Instruction::new(LDA, AM::AbsoluteX(VRAM_BUF_BASE)));
@@ -2069,13 +2081,7 @@ pub fn gen_vram_buf_drain() -> Vec<Instruction> {
     out.push(Instruction::implied(INX));
     out.push(Instruction::new(JMP, AM::Label("__vram_buf_loop".into())));
     out.push(Instruction::new(NOP, AM::Label("__vram_buf_done".into())));
-    // Reset the head pointer so the next frame starts appending
-    // at offset 0. We don't need to clobber the rest of the
-    // buffer — the writer always lays down a fresh sentinel
-    // after each append.
-    out.push(Instruction::new(LDA, AM::Immediate(0)));
-    out.push(Instruction::new(STA, AM::Absolute(VRAM_BUF_HEAD)));
-    out.push(Instruction::new(STA, AM::Absolute(VRAM_BUF_BASE)));
+    out.push(Instruction::new(STX, AM::Absolute(VRAM_BUF_TAIL)));
     // Reset the PPU's internal scroll/address state. Each `$2006`
     // write during the drain updated the PPU's `t` register
     // (which holds the next scroll value); leaving it pointing
@@ -2558,9 +2564,13 @@ pub fn gen_bank_trampoline(
     out.push(Instruction::new(JSR, AM::Label(entry_label.to_string())));
     // Restore the caller's bank (pulled from the stack) so control
     // returns with $8000-$BFFF showing whatever the caller had
-    // mapped before the trampoline ran.
+    // mapped before the trampoline ran. The callee's return value
+    // is in A, so it waits in Y, which no `__bank_select` variant
+    // touches.
+    out.push(Instruction::implied(TAY));
     out.push(Instruction::implied(PLA));
     out.push(Instruction::new(JSR, AM::Label("__bank_select".into())));
+    out.push(Instruction::implied(TYA));
     out.push(Instruction::implied(RTS));
     out
 }

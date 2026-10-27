@@ -132,6 +132,8 @@ const SPEED: u8 = 3
 const SIN_TABLE: u8[8] = [0, 49, 90, 117, 127, 117, 90, 49]
 ```
 
+A `const` array is a lookup table in PRG ROM, and it takes no RAM. `SIN_TABLE[i]` compiles to one indexed load (`LDA table,X`), and it works from banked functions too, because the table lives in the fixed bank. Elements must be `u8`, `i8`, or `bool`. A literal shorter than the declared length is padded with zeros, and a longer one is an error. Assigning to an element is an error.
+
 ### Enums
 
 Enums declare a named set of `u8` constants. Each variant is assigned an
@@ -717,7 +719,24 @@ scanline — see the `cycle_sprites` statement below and the
 [sprite-per-scanline mitigations](#sprite-per-scanline-mitigations)
 section for how to handle scenes that exceed the 8-per-scanline budget.
 
-Syntax: `draw SpriteName at: (x_expr, y_expr) [frame: expr]`
+Syntax: `draw SpriteName at: (x_expr, y_expr) [frame: expr] [attr: expr]`
+
+`attr:` sets the sprite's OAM attribute byte. Without it, the byte is 0.
+The bits are:
+
+| Bits | Effect |
+|------|--------|
+| 0-1 | Sprite palette: 0 for `sp0` through 3 for `sp3` |
+| 5 | Draw behind the background's non-transparent pixels |
+| 6 | Flip horizontally |
+| 7 | Flip vertically |
+
+```
+draw Ship at: (x, y) attr: 0x41   // palette sp1, flipped horizontally
+```
+
+A metasprite applies the same `attr:` to every tile. A flip mirrors
+each tile in place, not the metasprite's layout.
 
 ### Transition
 
@@ -1156,7 +1175,7 @@ A user-declared `sfx` or `music` block takes priority over a builtin with the sa
 Compile time:
 
 1. The resolver compiles each `sfx` into `(period_lo, period_hi, envelope[])` and each `music` into `(header, (pitch, duration)[])`, appending builtins for any referenced name that isn't user-declared.
-2. The IR codegen emits `play Name` as: write trigger bytes to `$4002`/`$4003`, load envelope pointer into `$0C/$0D`, set the sfx counter. `start_music Name` stamps a state byte into `$07`, loads the stream pointer into `$0E/$0F` (and the loop base into `$05/$06`), and primes the duration counter.
+2. The IR codegen emits `play Name` as: write trigger bytes to `$4002`/`$4003`, load envelope pointer into `$0C/$0D`, set the sfx counter. `start_music Name` stamps a state byte into `$07FA`, loads the stream pointer into `$0E/$0F` (and the loop base into `$07F8`/`$07F9`), and primes the duration counter. The state and loop base sit in main RAM because `$04`–`$07` are call arguments.
 3. The linker splices the audio tick, the 60-entry period table, and every compiled sfx/music blob into PRG ROM, all guarded on a `__audio_used` marker label so silent programs never pay the cost.
 
 Runtime (every NMI, if audio is in use):

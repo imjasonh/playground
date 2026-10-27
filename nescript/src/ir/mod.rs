@@ -183,6 +183,10 @@ pub enum IrOp {
     // Array access
     ArrayLoad(IrTemp, VarId, IrTemp),
     ArrayStore(VarId, IrTemp, IrTemp),
+    /// Indexed read from a `const` array. The array's bytes live in
+    /// PRG ROM under the [`IrRomBlock`] whose label is the `String`,
+    /// so the load is `LDA label,X` and the array takes no RAM.
+    RomArrayLoad(IrTemp, String, IrTemp),
 
     // Function call
     Call(Option<IrTemp>, String, Vec<IrTemp>),
@@ -193,6 +197,8 @@ pub enum IrOp {
         x: IrTemp,
         y: IrTemp,
         frame: Option<IrTemp>,
+        /// OAM attribute byte; `None` writes 0.
+        attr: Option<IrTemp>,
     },
     /// Read a controller input byte into a temp.
     /// Second arg: 0 for player 1, 1 for player 2.
@@ -394,9 +400,8 @@ pub enum IrOp {
     /// write to the VRAM update buffer. Codegen computes the
     /// PPU address `$2000 + y*32 + x` and lays down a
     /// `[len=1][addr_hi][addr_lo][tile]` record at the current
-    /// `VRAM_BUF_HEAD`, then bumps the head by 4 and writes a
-    /// fresh `0` sentinel. The NMI handler drains the buffer
-    /// during vblank.
+    /// `VRAM_BUF_HEAD` plus a fresh `0` sentinel, storing `len`
+    /// last. The NMI handler drains the buffer during vblank.
     NtSet {
         x: IrTemp,
         y: IrTemp,

@@ -22,6 +22,9 @@ struct LoweringContext {
     rom_data: Vec<IrRomBlock>,
     var_map: HashMap<String, VarId>,
     const_values: HashMap<String, u16>,
+    /// `const` array name → (ROM label, element type). Indexed reads
+    /// of these names lower to [`IrOp::RomArrayLoad`].
+    rom_arrays: HashMap<String, (String, NesType)>,
     /// Type of each named variable (resolved from the analyzer's
     /// symbol table). Used to decide between 8-bit and 16-bit IR
     /// ops for identifier reads/writes and binary operations.
@@ -187,6 +190,7 @@ impl LoweringContext {
             functions: Vec::new(),
             globals: Vec::new(),
             rom_data: Vec::new(),
+            rom_arrays: HashMap::new(),
             var_map,
             const_values: HashMap::new(),
             var_types,
@@ -629,6 +633,25 @@ impl LoweringContext {
             if let Some(v) = self.eval_const(&c.value) {
                 self.const_values.insert(c.name.clone(), v);
             }
+        }
+        for c in &program.constants {
+            let (NesType::Array(elem, len), Expr::ArrayLiteral(elems, _)) =
+                (&c.const_type, &c.value)
+            else {
+                continue;
+            };
+            let mut data: Vec<u8> = elems
+                .iter()
+                .map(|e| self.eval_const(e).map_or(0, |v| v as u8))
+                .collect();
+            data.resize(usize::from(*len).max(data.len()), 0);
+            let label = format!("__rom_{}", c.name);
+            self.rom_data.push(IrRomBlock {
+                label: label.clone(),
+                data,
+            });
+            self.rom_arrays
+                .insert(c.name.clone(), (label, elem.as_ref().clone()));
         }
 
         // Lower globals. Initializers can be any constant expression.
@@ -1113,6 +1136,7 @@ impl LoweringContext {
                     // work could warn on it.
                     let base_x = self.lower_expr(&draw.x);
                     let base_y = self.lower_expr(&draw.y);
+                    let attr = draw.attr.as_ref().map(|e| self.lower_expr(e));
                     for ((dx_off, dy_off), tile) in meta.dx.iter().zip(&meta.dy).zip(&meta.frame) {
                         let off_x = self.fresh_temp();
                         self.emit(IrOp::LoadImm(off_x, *dx_off));
@@ -1132,6 +1156,7 @@ impl LoweringContext {
                             x: x_sum,
                             y: y_sum,
                             frame: Some(tile_imm),
+                            attr,
                         });
                     }
                     return;
@@ -1139,11 +1164,13 @@ impl LoweringContext {
                 let x = self.lower_expr(&draw.x);
                 let y = self.lower_expr(&draw.y);
                 let frame = draw.frame.as_ref().map(|e| self.lower_expr(e));
+                let attr = draw.attr.as_ref().map(|e| self.lower_expr(e));
                 self.emit(IrOp::DrawSprite {
                     sprite_name: draw.sprite_name.clone(),
                     x,
                     y,
                     frame,
+                    attr,
                 });
             }
             Statement::Transition(name, _) => {
@@ -1789,6 +1816,18 @@ impl LoweringContext {
                         self.mark_signed(hi);
                     }
                 } else if matches!(var_ty, Some(NesType::I8)) {
+                    self.mark_signed(t);
+                }
+                t
+            }
+            Expr::ArrayIndex(name, index, _)
+                if self.scoped_key(name) == *name && self.rom_arrays.contains_key(name) =>
+            {
+                let (label, elem_ty) = self.rom_arrays[name].clone();
+                let idx = self.lower_expr(index);
+                let t = self.fresh_temp();
+                self.emit(IrOp::RomArrayLoad(t, label, idx));
+                if matches!(elem_ty, NesType::I8) {
                     self.mark_signed(t);
                 }
                 t

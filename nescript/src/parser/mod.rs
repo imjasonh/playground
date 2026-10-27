@@ -2965,8 +2965,9 @@ impl Parser {
         let mut x = None;
         let mut y = None;
         let mut frame = None;
+        let mut attr = None;
 
-        // Parse keyword arguments: at: (x, y), frame: n
+        // Parse keyword arguments: at: (x, y), frame: n, attr: n
         // Only consume an ident if it's followed by ':', indicating a keyword arg.
         while matches!(self.peek(), TokenKind::Ident(_))
             && self.peek_at_offset(1) == Some(&TokenKind::Colon)
@@ -2983,6 +2984,9 @@ impl Parser {
                 }
                 "frame" => {
                     frame = Some(self.parse_expr()?);
+                }
+                "attr" => {
+                    attr = Some(self.parse_expr()?);
                 }
                 _ => {
                     return Err(Diagnostic::error(
@@ -3006,6 +3010,7 @@ impl Parser {
             x,
             y,
             frame,
+            attr,
             span: start,
         }))
     }

@@ -691,6 +691,10 @@ pub struct DrawStmt {
     pub x: Expr,
     pub y: Expr,
     pub frame: Option<Expr>,
+    /// OAM attribute byte: bits 0-1 pick the sprite palette, bit 5
+    /// puts the sprite behind the background, bit 6 flips it
+    /// horizontally, and bit 7 flips it vertically. `None` writes 0.
+    pub attr: Option<Expr>,
     pub span: Span,
 }
 
