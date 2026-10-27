@@ -2,9 +2,12 @@ use super::*;
 use crate::parser::ast::{HeaderFormat, Mirroring};
 
 /// A full 16 KB PRG bank whose last six bytes are a plausible vector
-/// table pointing at `$C000`, so a hand-built ROM has readable
-/// vectors in the bank the mapper wires to `$E000-$FFFF` instead of
-/// the builder's `$FF` filler.
+/// table pointing at `$C000`. `validate_ines` reads the reset vector
+/// out of the bank the mapper wires to `$E000-$FFFF`, and a bank the
+/// builder filled with `$FF` reads back as `$FFFF` — the exact "boots
+/// into padding" shape the validator exists to reject. Tests that
+/// only care about the header use this so they still hand the
+/// validator a bootable image.
 fn bank_with_vectors() -> Vec<u8> {
     let mut bank = vec![0xEA; PRG_BANK_SIZE];
     bank[PRG_BANK_SIZE - 6..].copy_from_slice(&[0x00, 0xC0, 0x00, 0xC0, 0x00, 0xC0]);
@@ -90,6 +93,112 @@ fn validate_bad_magic() {
 fn validate_too_small() {
     let rom = vec![0x4E, 0x45, 0x53];
     assert!(validate_ines(&rom).is_err());
+}
+
+// ─── Structural validation ─────────────────────────────────────────
+//
+// These cover the header shapes the builder can no longer produce.
+// A hand-written header is the only way to reach them, which is the
+// point: the validator is the backstop for anything that assembles a
+// ROM without going through `RomBuilder`.
+
+/// Build a well-formed ROM, then let the caller corrupt its header.
+fn tampered(edit: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+    let mut builder = RomBuilder::new(Mirroring::Horizontal);
+    builder.set_prg_banks(vec![
+        vec![0x00],
+        vec![0x01],
+        vec![0x02],
+        bank_with_vectors(),
+    ]);
+    let mut rom = builder.build();
+    edit(&mut rom);
+    rom
+}
+
+#[test]
+fn validate_rejects_non_power_of_two_prg() {
+    // Declare 3 banks for a 4-bank file: the file is now longer than
+    // the header accounts for, so the size check fires first. Trim it
+    // to match so the power-of-two check is what we're testing.
+    let mut rom = tampered(|rom| rom[4] = 3);
+    rom.truncate(16 + 3 * 16384);
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("not a power of two") && err.contains("4 banks"),
+        "error should name the padding a loader would add, got: {err}"
+    );
+}
+
+#[test]
+fn validate_rejects_non_power_of_two_chr() {
+    let mut builder = RomBuilder::new(Mirroring::Horizontal);
+    builder.set_prg(bank_with_vectors());
+    builder.set_chr(vec![0xCC; 2 * 8192]);
+    let mut rom = builder.build();
+    // Claim three CHR banks and grow the file to match.
+    rom[5] = 3;
+    rom.resize(16 + 16384 + 3 * 8192, 0x00);
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("CHR is 3 x 8 KB"),
+        "error should name the CHR size, got: {err}"
+    );
+}
+
+#[test]
+fn validate_rejects_a_file_longer_than_its_header_claims() {
+    let rom = tampered(|rom| rom.extend_from_slice(&[0x00; 64]));
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("accounts for only"),
+        "error should say the header under-counts the file, got: {err}"
+    );
+}
+
+#[test]
+fn validate_rejects_zero_prg_banks() {
+    let rom = tampered(|rom| rom[4] = 0);
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(err.contains("zero PRG banks"), "got: {err}");
+}
+
+#[test]
+fn validate_rejects_an_unknown_mapper() {
+    // Mapper 5 (MMC5) is a real mapper, just not one NEScript lays
+    // out, so a header claiming it means the compiler and the header
+    // disagree.
+    let rom = tampered(|rom| rom[6] = (rom[6] & 0x0F) | 0x50);
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("mapper 5"),
+        "error should name the mapper, got: {err}"
+    );
+}
+
+#[test]
+fn validate_rejects_nrom_larger_than_two_banks() {
+    let rom = tampered(|rom| rom[6] &= 0x0F);
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("NROM"),
+        "error should name the board, got: {err}"
+    );
+}
+
+#[test]
+fn validate_rejects_an_unprogrammed_reset_vector() {
+    // $FF filler in the bank the mapper maps to $E000-$FFFF reads
+    // back as a $FFFF reset vector. That is what a padding loader
+    // leaves behind, and what a playtester sees as "it won't load".
+    let mut builder = RomBuilder::new(Mirroring::Horizontal);
+    builder.set_prg(vec![0xEA; 100]);
+    let rom = builder.build();
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("reset vector") && err.contains("$FFFF"),
+        "got: {err}"
+    );
 }
 
 #[test]

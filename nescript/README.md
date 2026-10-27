@@ -132,6 +132,9 @@ nescript build game.ne --output my_game.nes
 # Type-check only (no ROM output)
 nescript check game.ne
 
+# Check that a built ROM is structurally loadable
+nescript verify game.nes
+
 # View generated 6502 assembly
 nescript build game.ne --asm-dump
 
@@ -156,6 +159,7 @@ but FCEUX, where the padding displaces the bank MMC1, UxROM, and MMC3
 wire to `$E000-$FFFF` and the console resets into filler. The ROM
 builder pads PRG and CHR to power-of-two bank counts itself — the
 filler goes *in front of* the fixed bank — so every loader agrees.
+`nescript verify` checks that property, among others, on a built ROM.
 
 ## Project Status
 

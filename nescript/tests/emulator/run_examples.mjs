@@ -38,12 +38,28 @@
 // `actual/` directory is gitignored. Video diffs write the PNG +
 // diff PNG; audio diffs write the WAV so you can listen to what
 // actually came out of the emulator.
+//
+// Loader conformance
+// ------------------
+//
+// jsnes trusts the bank counts in the iNES header, which means the
+// goldens alone cannot see a ROM whose header only lenient loaders
+// accept. A ROM with a non-power-of-two PRG size ran fine here and
+// booted to a dead screen on FCEUX, because FCEUX rounds the PRG
+// window up and the mapper's fixed bank ends up pointing at the
+// filler. Every ROM therefore also goes through
+// `padding_loader.mjs`, which rebuilds the image the way such a
+// loader would, and the harness requires the result to be
+// byte-identical. When it isn't, the harness renders the padded
+// image too and diffs *that* against the golden, so the failure
+// shows what the playtester would have seen.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { createEmulator } from "./emu.mjs";
+import { paddingLoaderImage, paddingLoaderReport } from "./padding_loader.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..", "..");
@@ -222,6 +238,32 @@ async function main() {
 
   for (const rom of roms) {
       const romBytes = await fs.readFile(rom.file);
+
+      // ── Loader conformance ──────────────────────────────
+      // Checked before anything else, including golden updates:
+      // a ROM a padding loader can't run must never get a golden
+      // blessed for it.
+      const paddedBytes = paddingLoaderImage(romBytes);
+      if (!paddedBytes.equals(romBytes)) {
+        failures++;
+        const reason = `padding loader rewrites the image — ${paddingLoaderReport(romBytes)}`;
+        // Render what that loader would actually put on screen, so
+        // the artifact shows the failure rather than describing it.
+        const padded = runRom(paddedBytes);
+        const paddedPngPath = path.join(actualDir, `${rom.name}.padding-loader.png`);
+        if (padded.rgba) {
+          await writePng(paddedPngPath, padded.rgba);
+        }
+        results.push({ name: rom.name, status: "LOADER", reason });
+        console.log(`LOAD  ${rom.name.padEnd(28)} ${reason}`);
+        if (padded.rgba) {
+          console.log(`        padded render: ${path.relative(repoRoot, paddedPngPath)}`);
+        } else {
+          console.log(`        padded image did not boot: ${padded.bootError}`);
+        }
+        continue;
+      }
+
       const { bootError, rgba, audio, wav } = runRom(romBytes);
 
       if (bootError || !rgba) {
@@ -338,7 +380,14 @@ async function main() {
     console.log("review the changes with `git diff tests/emulator/goldens/` before committing");
   } else {
     console.log(`${results.length - failures}/${results.length} ROMs match their goldens`);
-    if (failures > 0) {
+    const loaderFailures = results.filter((r) => r.status === "LOADER").length;
+    if (loaderFailures > 0) {
+      console.log(
+        `${loaderFailures} ROM(s) are rewritten by a power-of-two padding loader; ` +
+          "those will not boot on FCEUX no matter what the golden says",
+      );
+    }
+    if (failures > loaderFailures) {
       console.log("rerun with UPDATE_GOLDENS=1 if the new output is intentional");
     }
   }

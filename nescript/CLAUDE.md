@@ -58,6 +58,7 @@ cargo test --all-targets           # all Rust tests — MUST include --all-targe
 cargo fmt                          # mandatory before committing
 cargo clippy --all-targets -- -D warnings   # mandatory; fix or #[allow]
 ./target/release/nescript build examples/hello_sprite.ne   # build one ROM
+./target/release/nescript verify examples/*.nes            # structural ROM check
 ```
 
 **Always pass `--all-targets` to `cargo test`.** The playground `test`
@@ -179,6 +180,19 @@ failing CI — that defeats the entire purpose of the harness.
   structure themselves so a good demo happens on autopilot — e.g. a
   frame counter that drives the interesting state (`examples/palette_and_background.ne`
   is a working pattern).
+- **Does not test, and is why `padding_loader.mjs` exists**: how a
+  *stricter* loader reads the header. jsnes trusts the PRG and CHR
+  bank counts; FCEUX rounds the PRG window up to a power of two and
+  fills it with `$FF`. Four committed ROMs declared non-power-of-two
+  PRG sizes, passed every golden here, and booted to a dead screen on
+  FCEUX — the padding displaced the bank MMC1/UxROM/MMC3 wire to
+  `$E000-$FFFF`, and the greedy PRG read swallowed the CHR data. The
+  harness now rebuilds each image the way such a loader would and
+  requires the result to be byte-identical, rendering the padded
+  image into `actual/<name>.padding-loader.png` when it isn't.
+  `nescript verify` checks the same property from the Rust side, and
+  the `nescript` workflow runs it over every example. A golden is not
+  evidence that a ROM loads; it is evidence that *jsnes* loads it.
 
 ### CI integration
 

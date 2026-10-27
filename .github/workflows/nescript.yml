@@ -122,19 +122,15 @@ jobs:
         run: |
           echo "Example ROMs: ${{ steps.example-roms.outputs.artifact-url }}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify ROMs are valid iNES
+      # Structural validation, not just the magic bytes: the header
+      # has to account for every byte, PRG and CHR bank counts have
+      # to be powers of two (FCEUX rounds the PRG window up, which
+      # would otherwise move the bank the mapper wires to
+      # $E000-$FFFF), the mapper has to be one the compiler emits,
+      # and the reset vector has to point into ROM.
+      - name: Verify ROMs are loadable iNES
         if: steps.discover.outputs.nescript == 'true'
-        run: |
-          for f in examples/*.nes; do
-            echo "==> Checking $f"
-            header=$(od -A n -t x1 -N 4 "$f" | tr -d ' ')
-            if [ "$header" != "4e45531a" ]; then
-              echo "FAIL: $f is not a valid iNES ROM (header: $header)"
-              exit 1
-            fi
-            size=$(stat -c%s "$f")
-            echo "    OK: $size bytes"
-          done
+        run: ./target/release/nescript verify examples/*.nes
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         if: steps.discover.outputs.nescript == 'true'

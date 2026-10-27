@@ -12,6 +12,11 @@ const PRG_BANK_SIZE: usize = 16384;
 /// CHR ROM bank size (8 KB)
 const CHR_BANK_SIZE: usize = 8192;
 
+/// The iNES mapper numbers [`mapper_number`] can produce. Kept next
+/// to the validator so a new `Mapper` variant has to be enrolled
+/// here before `validate_ines` will accept a ROM that uses it.
+const KNOWN_MAPPERS: [u8; 7] = [0, 1, 2, 3, 4, 7, 66];
+
 /// Round a 16 KB PRG bank count up to the size the image has to
 /// declare.
 ///
@@ -270,25 +275,63 @@ impl RomBuilder {
     }
 }
 
-/// Validate that a byte slice looks like a valid iNES ROM. Accepts
-/// both iNES 1.0 and NES 2.0 headers — the former treats bytes 8-15
-/// as zero-padded, the latter as extended metadata. The returned
+/// Validate that a byte slice is a loadable iNES ROM. Accepts both
+/// iNES 1.0 and NES 2.0 headers — the former treats bytes 8-15 as
+/// zero-padded, the latter as extended metadata. The returned
 /// [`RomInfo`] reports which format was detected in `header_format`
 /// so callers can distinguish the two.
-pub fn validate_ines(data: &[u8]) -> Result<RomInfo, &'static str> {
+///
+/// This goes past the magic bytes and checks the structural
+/// invariants that decide whether real emulators will run the file:
+/// the declared bank counts have to account for every byte, the PRG
+/// and CHR bank counts have to be powers of two (see
+/// [`padded_prg_bank_count`]), the mapper has to be one `NEScript`
+/// knows how to lay out, and the reset vector in the bank the mapper
+/// wires to `$E000-$FFFF` has to point into ROM.
+pub fn validate_ines(data: &[u8]) -> Result<RomInfo, String> {
     if data.len() < 16 {
-        return Err("file too small for iNES header");
+        return Err("file too small for iNES header".to_string());
     }
     if data[0..4] != INES_MAGIC {
-        return Err("invalid iNES magic bytes");
+        return Err("invalid iNES magic bytes".to_string());
     }
 
     let prg_banks = data[4] as usize;
     let chr_banks = data[5] as usize;
+    if prg_banks == 0 {
+        return Err("header declares zero PRG banks".to_string());
+    }
     let expected_size = 16 + prg_banks * PRG_BANK_SIZE + chr_banks * CHR_BANK_SIZE;
 
     if data.len() < expected_size {
-        return Err("file too small for declared ROM banks");
+        return Err(format!(
+            "file is {} bytes, too small for the declared {prg_banks} x 16 KB PRG + \
+             {chr_banks} x 8 KB CHR ({expected_size} bytes)",
+            data.len()
+        ));
+    }
+    if data.len() > expected_size {
+        return Err(format!(
+            "file is {} bytes but the header accounts for only {expected_size} \
+             ({prg_banks} x 16 KB PRG + {chr_banks} x 8 KB CHR); \
+             a loader that reads the declared size will ignore the extra bytes",
+            data.len()
+        ));
+    }
+    if !prg_banks.is_power_of_two() {
+        return Err(format!(
+            "PRG is {prg_banks} x 16 KB, which is not a power of two; FCEUX and other \
+             loaders round the PRG window up to {} banks of $FF filler, which moves the \
+             bank the mapper wires to $E000-$FFFF and resets the CPU into padding",
+            padded_prg_bank_count(prg_banks)
+        ));
+    }
+    if chr_banks != 0 && !chr_banks.is_power_of_two() {
+        return Err(format!(
+            "CHR is {chr_banks} x 8 KB, which is not a power of two; loaders that round \
+             the CHR window up to {} banks will read the wrong tiles",
+            padded_chr_bank_count(chr_banks)
+        ));
     }
 
     let mirroring = if data[6] & 1 == 0 {
@@ -321,6 +364,37 @@ pub fn validate_ines(data: &[u8]) -> Result<RomInfo, &'static str> {
             // mapper bits should read the header directly.
             mapper = mapper.wrapping_add(mapper_high << 4);
         }
+    }
+
+    if !KNOWN_MAPPERS.contains(&mapper) {
+        return Err(format!(
+            "header declares mapper {mapper}, which NEScript does not emit; \
+             expected one of {KNOWN_MAPPERS:?}"
+        ));
+    }
+    // NROM has no bank-switching hardware, so $8000-$FFFF is all the
+    // PRG the board can reach: NROM-128 (one bank, mirrored into
+    // $C000) or NROM-256 (two).
+    if mapper == 0 && prg_banks > 2 {
+        return Err(format!(
+            "mapper 0 (NROM) cannot reach {prg_banks} x 16 KB of PRG; \
+             NROM boards hold at most 2 banks"
+        ));
+    }
+
+    // Every layout NEScript emits puts the vectors in the last 6
+    // bytes of the PRG image: NROM mirrors its single bank into
+    // $C000-$FFFF, AxROM and GNROM map the whole 32 KB page, and
+    // MMC1, UxROM, and MMC3 wire their fixed window to the last
+    // bank. An unprogrammed or displaced reset vector means the
+    // console boots into filler.
+    let prg_end = 16 + prg_banks * PRG_BANK_SIZE;
+    let reset = u16::from_le_bytes([data[prg_end - 4], data[prg_end - 3]]);
+    if !(0x8000..0xFFFA).contains(&reset) {
+        return Err(format!(
+            "reset vector at $FFFC reads ${reset:04X}, which is not a PRG ROM address; \
+             the bank the mapper maps to $E000-$FFFF does not hold the reset handler"
+        ));
     }
 
     Ok(RomInfo {

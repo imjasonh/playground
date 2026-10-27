@@ -91,6 +91,17 @@ enum Cli {
         /// Input source file
         input: PathBuf,
     },
+    /// Check that a built `.nes` file is structurally loadable:
+    /// the header has to account for every byte, the PRG and CHR
+    /// bank counts have to be powers of two (loaders such as FCEUX
+    /// round the PRG window up and would otherwise reset into
+    /// padding), the mapper has to be one `NEScript` emits, and the
+    /// reset vector has to point into ROM.
+    Verify {
+        /// ROM files to check
+        #[arg(required = true)]
+        roms: Vec<PathBuf>,
+    },
 }
 
 fn main() {
@@ -147,7 +158,49 @@ fn main() {
             Ok(()) => println!("no errors found in {}", input.display()),
             Err(()) => std::process::exit(1),
         },
+        Cli::Verify { roms } => {
+            if verify(&roms).is_err() {
+                std::process::exit(1);
+            }
+        }
     }
+}
+
+/// Run [`nescript::rom::validate_ines`] over each ROM, printing one
+/// line per file. Returns `Err` when any file failed so the CLI can
+/// exit non-zero.
+fn verify(roms: &[PathBuf]) -> Result<(), ()> {
+    let mut failed = 0usize;
+    for path in roms {
+        let data = match std::fs::read(path) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("FAIL {}: {e}", path.display());
+                failed += 1;
+                continue;
+            }
+        };
+        match nescript::rom::validate_ines(&data) {
+            Ok(info) => println!(
+                "ok   {}: mapper {}, PRG {} x 16 KB, CHR {} x 8 KB, {:?} mirroring, {:?}",
+                path.display(),
+                info.mapper,
+                info.prg_banks,
+                info.chr_banks,
+                info.mirroring,
+                info.header_format,
+            ),
+            Err(reason) => {
+                eprintln!("FAIL {}: {reason}", path.display());
+                failed += 1;
+            }
+        }
+    }
+    if failed > 0 {
+        eprintln!("{failed}/{} ROM(s) failed validation", roms.len());
+        return Err(());
+    }
+    Ok(())
 }
 
 /// Write a human-readable memory map of variable allocations to
