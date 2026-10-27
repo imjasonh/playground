@@ -825,11 +825,11 @@ impl<'a> IrCodeGen<'a> {
         let loop_label = format!("__ir_shift_loop_{suffix}");
         let done_label = format!("__ir_shift_done_{suffix}");
         let amt_addr = self.temp_addr(amt);
-        self.emit(LDX, AM::ZeroPage(amt_addr));
         self.load_temp(src);
         // Skip straight to the store if the count is zero — saves an
         // iteration and is required because the loop decrements
-        // before checking.
+        // before checking. LDX comes last so BEQ tests the count.
+        self.emit(LDX, AM::ZeroPage(amt_addr));
         self.emit(BEQ, AM::LabelRelative(done_label.clone()));
         self.emit_label(&loop_label);
         self.emit(shift_op, AM::Accumulator);
@@ -4028,6 +4028,29 @@ mod tests {
         );
         // Should initialize x = 42
         assert!(has_instruction(&insts, LDA, &AM::Immediate(42)));
+    }
+
+    #[test]
+    fn shift_by_variable_tests_the_count_for_zero() {
+        // `1 << i` with i = 0 must skip the loop. The zero check has
+        // to follow the load of the count, not the value.
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            var i: u8 = 0
+            var m: u8 = 0
+            on frame { m = 1 << i }
+            start Main
+        "#,
+        );
+        let beq = insts
+            .iter()
+            .position(|i| {
+                i.opcode == BEQ
+                    && matches!(&i.mode, AM::LabelRelative(l) if l.starts_with("__ir_shift_done_"))
+            })
+            .expect("shift loop");
+        assert_eq!(insts[beq - 1].opcode, LDX, "{:?}", &insts[beq - 3..=beq]);
     }
 
     #[test]
