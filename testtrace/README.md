@@ -60,8 +60,24 @@ func TestPipeline(t *testing.T) {
 over the automatic path:
 
 - The exact test name, including a subtest's `Parent/sub` form. The
-  automatic path names a span after the calling Go function instead, so two
-  tests that share a helper function get spans with the same name.
+  automatic path names a span after the calling Go function instead. A
+  table-driven test's subtests usually share one closure:
+
+  ```go
+  for _, tc := range cases {
+  	t.Run(tc.name, func(t *testing.T) {
+  		RunPipeline(t.Context()) // every iteration triggers this same func literal
+  	})
+  }
+  ```
+
+  Each iteration still gets its own span — the automatic path binds the
+  exact subtest, not the outer `TestFoo` — but every one of those spans
+  gets the same name (something like `pkg.TestFoo.func1`), because that's
+  the name of the shared closure, not of the subtest that ran it. A trace
+  viewer grouping by span name can't tell `TestFoo/case1`'s root from
+  `TestFoo/case2`'s. Call `Hook(t)` inside the closure instead when that
+  distinction matters.
 - A span that starts before the test's first traced call, instead of on
   first use.
 - A span that's guaranteed to be ended and exported by the time the test
@@ -117,10 +133,28 @@ start.
 - Step 2 above needs `testing.tRunner` on the call stack, so the automatic
   path only triggers from a test's own goroutine, synchronously (through
   any number of function calls), the first time that goroutine passes a
-  no-span, cancelable context to a traced call. It doesn't trigger in a
-  benchmark or fuzz target, which don't run under `tRunner`; call `Hook`
-  there. It also can't trigger from a context that never cancels — pass
-  `t.Context()` somewhere, or call `Hook`.
+  no-span, cancelable context to a traced call. A benchmark doesn't run
+  under `tRunner` — `(*testing.B).runN` calls the benchmark function
+  directly, and it also rebuilds `b.Context()` on every calibration run, not
+  once for the whole benchmark, so there's no single context to key a
+  benchmark's span on. Starting a span inside the timed region would also
+  add its own cost to the very `ns/op` the benchmark measures. Call `Hook(b)`
+  if you want a benchmark's spans on purpose, understanding that it'll add
+  that cost. A fuzz target is different: `testing.F.Fuzz` starts each corpus
+  entry with `go tRunner(t, ...)`, the same way a subtest does — in a plain
+  `go test` run and inside a `go test -fuzz` worker process alike — so the
+  automatic path covers it with no special case, and the same shared-closure
+  naming caveat above applies to every corpus entry.
+- The automatic path can't trigger from a context that never cancels, like a
+  bare `context.Background()` passed straight into traced code with no
+  `t.Context()` anywhere in that test — not even indirectly, since any
+  context derived from `t.Context()` (`context.WithValue`,
+  `context.WithTimeout`, and so on) still has `t.Context()`'s `Done()`
+  channel and works fine. This is what you'd see in a test for code that
+  builds its own background context internally, ignoring whatever context
+  its caller passed in — or in test code written before Go 1.24, that never
+  adopted `t.Context()`. Pass `t.Context()` somewhere in the test, or call
+  `Hook(t)`.
 - A context derived from `t.Context()` with `context.WithValue` isn't equal
   to `t.Context()` itself, so the exact-context-value lookup in step 1 only
   matches a literal, unmodified `t.Context()` passed to a second goroutine.

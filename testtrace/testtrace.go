@@ -92,11 +92,15 @@ func bind(tracer trace.Tracer, ctx context.Context, name string) context.Context
 	return testCtx
 }
 
-// runningTest returns the name of the test function running on the calling
-// goroutine's stack, skipping over testtrace's own frames, and whether the
-// stack reaches testing.tRunner. It returns ok == false in a goroutine the
-// test already started (a fresh stack, with no tRunner frame) and in a
-// benchmark or fuzz target, which don't run under tRunner.
+// runningTest returns the name of the function running on the calling
+// goroutine's stack, directly below testing.tRunner, skipping over
+// testtrace's own frames. It returns ok == false in a goroutine the test
+// already started (a fresh stack, with no tRunner frame) and in a
+// benchmark, which doesn't run under tRunner. A fuzz target does run under
+// tRunner — testing.F.Fuzz starts one with go tRunner(t, ...) for every
+// corpus entry, in both plain `go test` and a `go test -fuzz` worker — so
+// it returns the name of the closure testing.F.Fuzz builds around the fuzz
+// function, not the fuzz function's own name.
 func runningTest() (name string, ok bool) {
 	pc := make([]uintptr, 32)
 	for {

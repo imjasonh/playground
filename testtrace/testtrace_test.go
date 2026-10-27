@@ -49,7 +49,7 @@ func spansNamed(name string) []tracetest.SpanStub {
 }
 
 // span returns the one exported span named name.
-func span(t *testing.T, name string) tracetest.SpanStub {
+func span(t testing.TB, name string) tracetest.SpanStub {
 	t.Helper()
 	found := spansNamed(name)
 	if len(found) != 1 {
@@ -64,7 +64,7 @@ func span(t *testing.T, name string) tracetest.SpanStub {
 // that span can be exported slightly after the subtest that triggered it
 // returns. Hook, by contrast, ends its span synchronously from t.Cleanup,
 // so tests that use Hook don't need this.
-func waitForSpans(t *testing.T, f func() bool) {
+func waitForSpans(t testing.TB, f func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for !f() {
@@ -80,7 +80,7 @@ func waitForSpans(t *testing.T, f func() bool) {
 // share a name, which happens for automatically bound root spans, since
 // testtrace names them after the call site rather than the test name, and
 // two tests can share a call site (for example, a shared test helper).
-func parentOf(t *testing.T, child tracetest.SpanStub) tracetest.SpanStub {
+func parentOf(t testing.TB, child tracetest.SpanStub) tracetest.SpanStub {
 	t.Helper()
 	if !child.Parent.IsValid() {
 		t.Fatalf("%q has no parent", child.Name)
@@ -98,7 +98,7 @@ func parentOf(t *testing.T, child tracetest.SpanStub) tracetest.SpanStub {
 	return parent
 }
 
-func assertChild(t *testing.T, child, parent tracetest.SpanStub) {
+func assertChild(t testing.TB, child, parent tracetest.SpanStub) {
 	t.Helper()
 	if got, want := child.Parent.SpanID(), parent.SpanContext.SpanID(); got != want {
 		t.Errorf("%q parent = %s, want %q (%s)", child.Name, got, parent.Name, want)
@@ -333,6 +333,20 @@ func TestAutomaticBindingParallelTestsKeepTheirOwnParent(t *testing.T) {
 		}
 		parents[s.Parent.SpanID()] = name
 	}
+}
+
+// FuzzAutomaticBinding checks that the automatic path covers a fuzz target
+// too: testing.F.Fuzz runs each corpus entry with go tRunner(t, ...), the
+// same way a subtest does, so it needs no special case. `go test`, with no
+// -fuzz flag, runs the seed corpus below as a regular subtest, synchronously
+// within f.Fuzz, so the check below runs after that subtest has returned.
+func FuzzAutomaticBinding(f *testing.F) {
+	f.Add("seed")
+	f.Fuzz(func(t *testing.T, s string) {
+		detachedWorkWithContext(t.Context(), t.Name()+"/inner")
+	})
+	s := span(f, "FuzzAutomaticBinding/seed#0/inner")
+	parentOf(f, s) // only fails if there's no parent at all
 }
 
 // TestWithoutTContextStaysUnbound documents the trade-off: a test that
