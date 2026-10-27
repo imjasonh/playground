@@ -257,12 +257,180 @@ def test_git_dates_first_and_last() -> None:
         check(published is not None and updated is not None, "dates present")
         check(published.date().isoformat() == "2026-01-15", f"published {published}")
         check(updated.date().isoformat() == "2026-03-02", f"updated {updated}")
+        check(published.isoformat() == "2026-01-15T12:00:00-05:00", f"published time {published}")
+        check(updated.isoformat() == "2026-03-02T09:00:00-05:00", f"updated time {updated}")
         posts = bb.build(repo, repo / "out")
         html = (repo / "out" / "app" / "index.html").read_text()
         check("Published January 15, 2026" in html, "published label")
         check("Updated March 2, 2026" in html, "updated label")
         check('class="updated"' in html, "updated date is marked for lighter type")
         check(posts[0].slug == "app", "slug from parent")
+
+
+def test_git_dates_ignore_pure_rename() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d)
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "dev@example.com")
+        _git(repo, "config", "user.name", "Dev")
+        (repo / "app").mkdir()
+        post = repo / "app" / "intro.md"
+        post.write_text("# Hi\n\nfirst\n")
+        _git(repo, "add", "app/intro.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "add",
+            env={
+                "GIT_AUTHOR_DATE": "2026-04-24T12:11:51-04:00",
+                "GIT_COMMITTER_DATE": "2026-04-24T12:11:51-04:00",
+            },
+        )
+        _git(repo, "mv", "app/intro.md", "app/blog-post.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "move",
+            env={
+                "GIT_AUTHOR_DATE": "2026-10-27T12:00:00-04:00",
+                "GIT_COMMITTER_DATE": "2026-10-27T12:00:00-04:00",
+            },
+        )
+        published, updated = bb.git_author_dates(repo, "app/blog-post.md")
+        check(published is not None and updated is not None, "dates present")
+        check(published.isoformat() == "2026-04-24T12:11:51-04:00", f"published {published}")
+        check(updated.isoformat() == "2026-04-24T12:11:51-04:00", f"updated {updated}")
+
+
+def test_git_dates_subtree_import_keeps_original_timestamps() -> None:
+    """A subtree import and later renames keep the original author dates."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        upstream = root / "upstream"
+        repo = root / "repo"
+        upstream.mkdir()
+        repo.mkdir()
+        for path in (upstream, repo):
+            _git(path, "init", "-b", "main")
+            _git(path, "config", "user.email", "dev@example.com")
+            _git(path, "config", "user.name", "Dev")
+        (upstream / "intro.md").write_text("# Introducing\n\nfirst\n")
+        _git(upstream, "add", "intro.md")
+        _git(
+            upstream,
+            "commit",
+            "-m",
+            "add introduction",
+            env={
+                "GIT_AUTHOR_DATE": "2026-04-24T12:11:51-04:00",
+                "GIT_COMMITTER_DATE": "2026-04-24T12:11:51-04:00",
+            },
+        )
+        (upstream / "intro.md").write_text("# Introducing\n\nsecond\n")
+        _git(upstream, "add", "intro.md")
+        _git(
+            upstream,
+            "commit",
+            "-m",
+            "update introduction",
+            env={
+                "GIT_AUTHOR_DATE": "2026-04-24T16:04:54-04:00",
+                "GIT_COMMITTER_DATE": "2026-04-24T16:04:54-04:00",
+            },
+        )
+        (repo / "README.md").write_text("playground\n")
+        _git(repo, "add", "README.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "init",
+            env={
+                "GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
+                "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
+            },
+        )
+        _git(repo, "remote", "add", "up", str(upstream))
+        _git(repo, "fetch", "up")
+        # Merge the remote branch by name. FETCH_HEAD is marked not-for-merge
+        # for a local remote, so merging it would skip the second parent.
+        _git(repo, "merge", "-s", "ours", "--no-commit", "--allow-unrelated-histories", "up/main")
+        _git(repo, "read-tree", "--prefix=nescript/", "-u", "up/main")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "import",
+            env={
+                "GIT_AUTHOR_DATE": "2026-10-25T20:48:42+00:00",
+                "GIT_COMMITTER_DATE": "2026-10-25T20:48:42+00:00",
+            },
+        )
+        _git(repo, "branch", "side", "HEAD^1")
+        _git(repo, "checkout", "side")
+        (repo / "other.md").write_text("unrelated\n")
+        _git(repo, "add", "other.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "side",
+            env={
+                "GIT_AUTHOR_DATE": "2026-10-26T08:00:00-04:00",
+                "GIT_COMMITTER_DATE": "2026-10-26T08:00:00-04:00",
+            },
+        )
+        _git(repo, "checkout", "main")
+        _git(repo, "merge", "-s", "ours", "--no-commit", "side")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "unrelated merge",
+            env={
+                "GIT_AUTHOR_DATE": "2026-10-26T08:53:38-04:00",
+                "GIT_COMMITTER_DATE": "2026-10-26T08:53:38-04:00",
+            },
+        )
+        _git(repo, "mv", "nescript/intro.md", "nescript/blog-post.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "move to post",
+            env={
+                "GIT_AUTHOR_DATE": "2026-10-27T12:00:00-04:00",
+                "GIT_COMMITTER_DATE": "2026-10-27T12:00:00-04:00",
+            },
+        )
+        published, updated = bb.git_author_dates(repo, "nescript/blog-post.md")
+        check(published is not None and updated is not None, "dates present")
+        check(published.isoformat() == "2026-04-24T12:11:51-04:00", f"published {published}")
+        check(updated.isoformat() == "2026-04-24T16:04:54-04:00", f"updated {updated}")
+        posts = bb.build(repo, repo / "out")
+        html = (repo / "out" / "nescript" / "index.html").read_text()
+        check("Published April 24, 2026" in html, "published label")
+        check("Updated" not in html, "same-day update stays off the page")
+        check(posts[0].slug == "nescript", "slug from parent")
+
+        post = repo / "nescript" / "blog-post.md"
+        post.write_text("# Introducing\n\nthird\n")
+        _git(repo, "add", "nescript/blog-post.md")
+        _git(
+            repo,
+            "commit",
+            "-m",
+            "edit post",
+            env={
+                "GIT_AUTHOR_DATE": "2026-10-28T09:30:00-04:00",
+                "GIT_COMMITTER_DATE": "2026-10-28T09:30:00-04:00",
+            },
+        )
+        published, updated = bb.git_author_dates(repo, "nescript/blog-post.md")
+        check(published.isoformat() == "2026-04-24T12:11:51-04:00", f"published after edit {published}")
+        check(updated.isoformat() == "2026-10-28T09:30:00-04:00", f"updated after edit {updated}")
 
 
 def test_sort_is_reverse_chronological() -> None:
@@ -344,6 +512,7 @@ def test_real_repo_posts_build() -> None:
         slugs = [p.slug for p in posts]
         check("pasta" in slugs, f"pasta post present: {slugs}")
         check("its-not-jaws" in slugs, f"its-not-jaws post present: {slugs}")
+        check("nescript" in slugs, f"nescript post present: {slugs}")
         # Do not pin the newest slug. A PR that adds blog-post.md has a later
         # git author date than pasta, so a pasta-is-newest check fails those PRs.
         pasta_html = (dest / "pasta" / "index.html").read_text()
@@ -363,6 +532,25 @@ def test_real_repo_posts_build() -> None:
         check(
             slugs.index("pasta") < slugs.index("its-not-jaws"),
             "pasta is newer than its-not-jaws",
+        )
+        check("Published August 19, 2026" in pasta_html, "pasta published date")
+        check("Updated August 20, 2026" in pasta_html, "pasta updated date")
+        nescript_html = (dest / "nescript" / "index.html").read_text()
+        check("Introducing NEScript" in nescript_html, "nescript title")
+        check("Published April 24, 2026" in nescript_html, "nescript keeps the original publish day")
+        check("Updated" not in nescript_html, "nescript update is the same day")
+        check('src="./docs/platformer.gif"' in nescript_html, "platformer gif")
+        check((dest / "nescript" / "docs" / "platformer.gif").is_file(), "platformer gif copied")
+        nescript = next(p for p in posts if p.slug == "nescript")
+        check(
+            nescript.published is not None
+            and nescript.published.isoformat() == "2026-04-24T12:11:51-04:00",
+            f"nescript published timestamp {nescript.published}",
+        )
+        check(
+            nescript.updated is not None
+            and nescript.updated.isoformat() == "2026-04-24T16:04:54-04:00",
+            f"nescript updated timestamp {nescript.updated}",
         )
         check("<code>pasta</code>" in pasta_html, "pasta title code")
         check('src="./monorepo.jpg"' in pasta_html, "monorepo image")

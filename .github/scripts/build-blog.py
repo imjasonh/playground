@@ -4,8 +4,9 @@
 Discovers every ``blog-post.md`` in a repository source tree, converts the
 Markdown to HTML, copies local images the posts reference, and writes a
 reverse-chronological index plus an RSS 2.0 feed. Publication and update
-dates come from git author dates (oldest commit that touched the file,
-newest commit that touched it).
+dates come from git author dates of commits that changed the file's
+contents: the oldest such commit, then the newest. A rename that keeps
+the contents, including a git subtree import, does not move either date.
 
 Usage:
   python3 .github/scripts/build-blog.py --out dist/posts
@@ -133,10 +134,13 @@ def assign_slugs(paths: list[Path], root: Path) -> dict[Path, str]:
 
 
 def git_author_dates(repo: Path, rel_path: str) -> tuple[datetime | None, datetime | None]:
-    """Return (first published, last updated) author dates for ``rel_path``.
+    """Return the author dates of the first and last content changes.
 
-    ``git log`` lists newest first. Missing history (untracked file, not a
-    git repo) yields ``(None, None)``.
+    The first date is when the file was published. The second is the latest
+    change to its contents. Rename detection follows the file across a move,
+    including the directory prefix a git subtree import adds. A commit that
+    only renames the file, and a merge that keeps the existing contents, are
+    ignored. Missing history yields ``(None, None)``.
     """
     result = subprocess.run(
         [
@@ -145,7 +149,11 @@ def git_author_dates(repo: Path, rel_path: str) -> tuple[datetime | None, dateti
             str(repo),
             "log",
             "--follow",
-            "--format=%aI",
+            "-m",
+            "-M",
+            "--abbrev=40",
+            "--format=%x1e%H%x1f%P%x1f%aI",
+            "--raw",
             "--",
             rel_path,
         ],
@@ -153,10 +161,83 @@ def git_author_dates(repo: Path, rel_path: str) -> tuple[datetime | None, dateti
         capture_output=True,
         text=True,
     )
-    lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
-    if not lines:
+    dates: list[datetime] = []
+    for group in _follow_groups(result.stdout):
+        if not _content_changed(group):
+            continue
+        parsed = _parse_iso(group["date"])
+        if parsed is not None:
+            dates.append(parsed)
+    if not dates:
         return None, None
-    return _parse_iso(lines[-1]), _parse_iso(lines[0])
+    # ``git log`` lists newest first.
+    return dates[-1], dates[0]
+
+
+def _follow_groups(stdout: str) -> list[dict]:
+    """Group ``git log --follow -m --raw`` output by commit.
+
+    ``-m`` prints one record per parent. Records for the same commit are
+    combined so a rename on one parent can cancel an add on the other.
+    """
+    groups: dict[str, dict] = {}
+    order: list[str] = []
+    for chunk in stdout.split("\x1e"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        header, _, rest = chunk.partition("\n")
+        parts = header.split("\x1f")
+        if len(parts) != 3:
+            continue
+        sha, parents, date = parts
+        diffs = _raw_blob_pairs(rest)
+        if sha in groups:
+            groups[sha]["diffs"].extend(diffs)
+            continue
+        groups[sha] = {
+            "date": date,
+            "parents": [p for p in parents.split(" ") if p],
+            "diffs": diffs,
+        }
+        order.append(sha)
+    return [groups[sha] for sha in order]
+
+
+def _raw_blob_pairs(rest: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for line in rest.splitlines():
+        if not line.startswith(":"):
+            continue
+        meta = line.split("\t", 1)[0]
+        fields = meta.split()
+        if len(fields) < 5:
+            continue
+        pairs.append((fields[2], fields[3]))
+    return pairs
+
+
+def _is_zero_blob(blob: str) -> bool:
+    return bool(blob) and set(blob) <= {"0"}
+
+
+def _content_changed(group: dict) -> bool:
+    """True when this commit writes new contents for the followed file.
+
+    A parent diff that keeps the same blob is a rename or a mode change.
+    A missing parent diff means that parent already had these contents, so
+    the merge did not change them. ``git log -m`` omits that empty diff.
+    """
+    diffs: list[tuple[str, str]] = group["diffs"]
+    if not diffs:
+        return False
+    for old, new in diffs:
+        if old == new and not _is_zero_blob(old):
+            return False
+    parents: list[str] = group["parents"]
+    if parents and len(diffs) < len(parents):
+        return False
+    return any(old != new and not _is_zero_blob(new) for old, new in diffs)
 
 
 def _parse_iso(value: str) -> datetime | None:

@@ -1,6 +1,6 @@
 # NEScript
 
-NEScript is one project in the playground repository. For the original writeup, see [Introducing NEScript](./intro.md).
+NEScript is one project in the playground repository. For the original writeup, see [Introducing NEScript](./blog-post.md).
 
 A statically-typed, compiled programming language for NES game development.
 
