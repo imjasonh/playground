@@ -686,9 +686,14 @@ state Battle {
         msg_clear()
     }
 
+    // Sprites go first: a phase that swaps screens waits for vblank,
+    // and the NMI during that wait shows whatever OAM holds.
     on frame {
         flush_text()
         anim += 1
+        if not on_card {
+            draw_sprites()
+        }
         match phase {
             P_WAIT => { run_wait() }
             P_LOCK_START => { start_lock() }
@@ -707,9 +712,6 @@ state Battle {
                 }
             }
             _ => {}
-        }
-        if not on_card {
-            draw_sprites()
         }
         tick_unblank()
     }

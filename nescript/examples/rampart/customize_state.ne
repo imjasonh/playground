@@ -21,8 +21,9 @@ state Customize {
         customize_begin()
     }
 
+    // Sprites go first: customize_tick can blank the screen, and the
+    // NMI during that wait shows whatever OAM holds.
     on frame {
-        customize_tick()
         if cust_cursor < 9 {
             res_a = 64
             res_b = GUN_ROW * 8 - 1
@@ -51,6 +52,7 @@ state Customize {
             }
             draw Tileset at: (res_a, res_b) attr: SP_FIRE frame: T_ARROW
         }
+        customize_tick()
         tick_unblank()
     }
 }
