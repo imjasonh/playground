@@ -90,6 +90,9 @@ const SCATTER: u8[18] = [0, 0, 1, 3, 4, 4, 1, 1, 2, 2, 3, 3, 1, 2, 2, 2, 2, 3]
 // weight ends the list.
 const SPREAD_V: u8[12] = [0, 1, 3, 4, 1, 2, 3, 0, 1, 2, 3, 0]
 const SPREAD_W: u8[12] = [2, 1, 1, 2, 2, 2, 2, 0, 1, 4, 1, 0]
+// log2 of each nonzero SPREAD_W, so the aim search shifts instead of
+// multiplying.
+const SPREAD_L: u8[12] = [1, 0, 0, 1, 1, 1, 1, 0, 0, 2, 0, 0]
 
 // ── Body plate ──────────────────────────────────────────────
 const L_HEAD: u8 = 0

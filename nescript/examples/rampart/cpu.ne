@@ -11,6 +11,7 @@ var cpu_bx: u8 = 0
 var cpu_by: u8 = 0
 var cpu_row: u8 = 0
 var cpu_row_end: u8 = 0
+var cpu_cx: u8 = 0
 var cpu_col0: u8 = 0
 var cpu_col1: u8 = 0
 var cpu_ideal_d: u8 = 0
@@ -247,6 +248,7 @@ include "result.ne"
         var t: u8 = 1 - p
         cpu_best = 0
         cpu_row = 0
+        cpu_cx = 0
         if cpu_level == LEVEL_EASY {
             cpu_bx = rand8() % 6
             cpu_by = rand8() % 6
@@ -279,42 +281,42 @@ include "result.ne"
         loc_value[L_NONE] = 0
     }
 
-    // Expected value of aiming at one row of cells. Returns true when
-    // the search is done.
+    // Expected value of aiming at one cell. A whole row takes longer
+    // than a frame. Returns true when the search is done.
     fun cpu_aim_step(scatter: u8) -> bool {
         if cpu_row >= 6 {
             return true
         }
         var base: u8 = scatter * 4
-        var cx: u8 = 0
-        while cx < 6 {
-            var total: u8 = 0
-            var j: u8 = 0
-            while j < 4 {
-                var wy: u8 = SPREAD_W[base + j]
-                var ty: u8 = cpu_row + SPREAD_V[base + j]
-                if wy != 0 and ty >= 2 and ty < 8 {
-                    var i: u8 = 0
-                    while i < 4 {
-                        var wx: u8 = SPREAD_W[base + i]
-                        var tx: u8 = cx + SPREAD_V[base + i]
-                        if wx != 0 and tx >= 2 and tx < 8 {
-                            var v: u8 = loc_value[PLATE[(ty - 2) * 6 + tx - 2]]
-                            total += v * wx * wy
-                        }
-                        i += 1
+        var total: u8 = 0
+        var j: u8 = 0
+        while j < 4 {
+            var ty: u8 = cpu_row + SPREAD_V[base + j]
+            if SPREAD_W[base + j] != 0 and ty >= 2 and ty < 8 {
+                var ly: u8 = SPREAD_L[base + j]
+                var plate_row: u8 = (ty - 2) * 6
+                var i: u8 = 0
+                while i < 4 {
+                    var tx: u8 = cpu_cx + SPREAD_V[base + i]
+                    if SPREAD_W[base + i] != 0 and tx >= 2 and tx < 8 {
+                        var v: u8 = loc_value[PLATE[plate_row + tx - 2]]
+                        total += v << (ly + SPREAD_L[base + i])
                     }
+                    i += 1
                 }
-                j += 1
             }
-            if total > cpu_best {
-                cpu_best = total
-                cpu_bx = cx
-                cpu_by = cpu_row
-            }
-            cx += 1
+            j += 1
         }
-        cpu_row += 1
+        if total > cpu_best {
+            cpu_best = total
+            cpu_bx = cpu_cx
+            cpu_by = cpu_row
+        }
+        cpu_cx += 1
+        if cpu_cx >= 6 {
+            cpu_cx = 0
+            cpu_row += 1
+        }
         return cpu_row >= 6
     }
 
