@@ -1370,6 +1370,9 @@ impl LoweringContext {
             Statement::StopMusic(_) => {
                 self.emit(IrOp::StopMusic);
             }
+            Statement::PlayDpcm(name, _) => {
+                self.emit(IrOp::PlayDpcm(name.clone()));
+            }
         }
     }
 
@@ -2582,6 +2585,7 @@ fn is_splicable_void_stmt(stmt: &Statement) -> bool {
             | Statement::Play(..)
             | Statement::StartMusic(..)
             | Statement::StopMusic(..)
+            | Statement::PlayDpcm(..)
             | Statement::InlineAsm(..)
             | Statement::RawAsm(..)
             | Statement::DebugLog(..)

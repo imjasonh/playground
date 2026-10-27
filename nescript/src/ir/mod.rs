@@ -368,6 +368,10 @@ pub enum IrOp {
     /// `stop_music` — silence the music channel (pulse 2) and any
     /// currently-playing SFX tail.
     StopMusic,
+    /// `play_dpcm Name` — restart the named DPCM sample. The sample
+    /// bytes live in the fixed bank. Codegen writes `$4010-$4013`
+    /// and restarts the DMC through `$4015`.
+    PlayDpcm(String),
 
     /// `rand8()` — pull the next 8 bits from the runtime PRNG into
     /// `dest`. Codegen emits a `JSR __rand8` and stores A. The

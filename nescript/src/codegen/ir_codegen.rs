@@ -112,6 +112,8 @@ pub struct IrCodeGen<'a> {
     /// `with_audio`. `start_music Name` stamps `header | 0x02` into
     /// `AUDIO_MUSIC_STATE` and loads the pointer from `stream_label`.
     music_info: HashMap<String, (u8, String)>,
+    /// DPCM sample name to `($4010, $4012, $4013)`.
+    dpcm_info: HashMap<String, (u8, u8, u8)>,
     /// State name to dispatch index mapping.
     state_indices: HashMap<String, u8>,
     /// Set of function names defined in the IR program (for existence checks).
@@ -470,6 +472,7 @@ impl<'a> IrCodeGen<'a> {
             use_counts: HashMap::new(),
             sprite_tiles: HashMap::new(),
             sfx_info: HashMap::new(),
+            dpcm_info: HashMap::new(),
             sfx_pitch_used: false,
             sprite_cycle_used: false,
             music_info: HashMap::new(),
@@ -607,6 +610,20 @@ impl<'a> IrCodeGen<'a> {
         for sprite in sprites {
             self.sprite_tiles
                 .insert(sprite.name.clone(), sprite.tile_index);
+        }
+        self
+    }
+
+    /// Register laid-out DPCM samples so `play_dpcm` can emit the
+    /// `$4010`, `$4012`, and `$4013` immediates. The linker writes
+    /// the bytes at the offsets those immediates name.
+    #[must_use]
+    pub fn with_dpcm(mut self, images: &[crate::assets::DpcmImage]) -> Self {
+        for image in images {
+            self.dpcm_info.insert(
+                image.name.clone(),
+                (image.reg_4010, image.reg_4012, image.reg_4013),
+            );
         }
         self
     }
@@ -1077,7 +1094,7 @@ impl<'a> IrCodeGen<'a> {
         // or `IrOp::ReadInput`, for instance, would otherwise split
         // the dead-load-elimination block and leave stale ZP
         // stores in the stream.
-        self.emit_trailing_markers();
+        self.emit_trailing_markers(&[]);
 
         // `const` tables follow the code. A table with no bank stays in
         // the fixed bank; one declared inside `bank Foo` is appended to
@@ -1092,7 +1109,7 @@ impl<'a> IrCodeGen<'a> {
         // streams. Programs without any banked functions skip the
         // banked-emission loop entirely so the codegen output is
         // byte-for-byte identical to the pre-banked behaviour.
-        let fixed_instructions = std::mem::take(&mut self.instructions);
+        let mut fixed_instructions = std::mem::take(&mut self.instructions);
 
         // 6. For each function tagged with a bank, redirect emission
         // into a fresh per-bank instruction stream and call
@@ -1126,6 +1143,15 @@ impl<'a> IrCodeGen<'a> {
             stream.push(Instruction::new(NOP, AM::Label(block.label.clone())));
             stream.push(Instruction::new(NOP, AM::Bytes(block.data.clone())));
         }
+
+        // Banked functions run after the first marker pass. A `*` or
+        // `draw` that exists only in a bank would otherwise leave its
+        // runtime helper unlinked. Append the markers that pass missed.
+        // Programs whose flags were already marked stay byte-identical.
+        self.instructions.clear();
+        self.current_bank = None;
+        self.emit_trailing_markers(&fixed_instructions);
+        fixed_instructions.append(&mut self.instructions);
 
         fixed_instructions
     }
@@ -2135,6 +2161,7 @@ impl<'a> IrCodeGen<'a> {
                 self.store_temp(*dest);
             }
             IrOp::PlaySfx(name) => self.gen_play_sfx(name),
+            IrOp::PlayDpcm(name) => self.gen_play_dpcm(name),
             IrOp::StartMusic(name) => self.gen_start_music(name),
             IrOp::StopMusic => self.gen_stop_music(),
             IrOp::SetPalette(name) => self.gen_set_palette(name),
@@ -2646,6 +2673,32 @@ impl<'a> IrCodeGen<'a> {
         self.emit(STA, AM::ZeroPage(ZP_MUSIC_COUNTER));
     }
 
+    /// Restart a DPCM sample. `$4015` is written as `$03` first, which
+    /// clears the DMC bit so the following `$13` reloads the sample
+    /// even when one is already playing. Pulse 1 and pulse 2 stay
+    /// enabled. Triangle and noise are left disabled, matching the
+    /// reset-time status byte.
+    fn gen_play_dpcm(&mut self, name: &str) {
+        let (reg_4010, reg_4012, reg_4013) = self.dpcm_info.get(name).copied().unwrap_or_else(|| {
+            panic!("play_dpcm '{name}' has no laid-out sample; the analyzer should have rejected it")
+        });
+        self.emit(LDA, AM::Immediate(0x03));
+        self.emit(STA, AM::Absolute(0x4015));
+        self.emit(LDA, AM::Immediate(reg_4010));
+        self.emit(STA, AM::Absolute(0x4010));
+        // Samples are encoded from DAC level 0. Writing that level
+        // before the start keeps a leftover level from becoming a
+        // click in the middle of the first byte.
+        self.emit(LDA, AM::Immediate(0x00));
+        self.emit(STA, AM::Absolute(0x4011));
+        self.emit(LDA, AM::Immediate(reg_4012));
+        self.emit(STA, AM::Absolute(0x4012));
+        self.emit(LDA, AM::Immediate(reg_4013));
+        self.emit(STA, AM::Absolute(0x4013));
+        self.emit(LDA, AM::Immediate(0x13));
+        self.emit(STA, AM::Absolute(0x4015));
+    }
+
     /// Emit the `__audio_used` marker label at most once per program.
     /// The linker scans for this label to decide whether to splice
     /// the audio tick into NMI and link in the driver body.
@@ -2797,41 +2850,49 @@ impl<'a> IrCodeGen<'a> {
     /// up by name via `has_label` and turns on the gated runtime
     /// feature. Programs that never set a given flag emit nothing
     /// for it — no label, no lookup hit, no gated code.
-    fn emit_trailing_markers(&mut self) {
-        if self.mul_used {
+    ///
+    /// `already` holds instructions that already contain a marker,
+    /// so a second pass after banked codegen does not emit it twice.
+    fn emit_trailing_markers(&mut self, already: &[Instruction]) {
+        let present = |name: &str| {
+            already
+                .iter()
+                .any(|ins| matches!(&ins.mode, AM::Label(label) if label == name))
+        };
+        if self.mul_used && !present("__mul_used") {
             self.emit_label("__mul_used");
         }
-        if self.div_used {
+        if self.div_used && !present("__div_used") {
             self.emit_label("__div_used");
         }
-        if self.oam_used {
+        if self.oam_used && !present("__oam_used") {
             self.emit_label("__oam_used");
         }
-        if self.default_sprite_used {
+        if self.default_sprite_used && !present("__default_sprite_used") {
             self.emit_label("__default_sprite_used");
         }
-        if self.p1_input_used {
+        if self.p1_input_used && !present("__p1_input_used") {
             self.emit_label("__p1_input_used");
         }
-        if self.p2_input_used {
+        if self.p2_input_used && !present("__p2_input_used") {
             self.emit_label("__p2_input_used");
         }
-        if self.rand_used {
+        if self.rand_used && !present("__rand_used") {
             self.emit_label("__rand_used");
         }
-        if self.palette_bright_used {
+        if self.palette_bright_used && !present("__palette_bright_used") {
             self.emit_label("__palette_bright_used");
         }
-        if self.fade_used {
+        if self.fade_used && !present("__fade_used") {
             self.emit_label("__fade_used");
         }
-        if self.edge_input_used {
+        if self.edge_input_used && !present("__edge_input_used") {
             self.emit_label("__edge_input_used");
         }
-        if self.vram_buf_used {
+        if self.vram_buf_used && !present("__vram_buf_used") {
             self.emit_label("__vram_buf_used");
         }
-        if self.collides_at_used {
+        if self.collides_at_used && !present("__collides_at_used") {
             self.emit_label("__collides_at_used");
         }
     }
@@ -3612,6 +3673,7 @@ fn function_is_leaf(func: &IrFunction) -> bool {
                 | IrOp::PaintRoom(..)
                 | IrOp::CollidesAt { .. }
                 | IrOp::PlaySfx(..)
+                | IrOp::PlayDpcm(..)
                 | IrOp::StartMusic(..)
                 | IrOp::StopMusic
                 | IrOp::ReadInputEdge { .. }
@@ -3914,6 +3976,7 @@ fn op_source_temps(op: &IrOp) -> Vec<IrTemp> {
         | IrOp::InlineAsm(_)
         | IrOp::Peek(_, _)
         | IrOp::PlaySfx(_)
+        | IrOp::PlayDpcm(_)
         | IrOp::StartMusic(_)
         | IrOp::StopMusic
         | IrOp::Rand8(_)

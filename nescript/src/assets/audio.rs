@@ -782,6 +782,7 @@ mod tests {
             rooms: Vec::new(),
             sfx: Vec::new(),
             music: Vec::new(),
+            dpcm: Vec::new(),
             banks: Vec::new(),
             start_state: "Main".to_string(),
             span: Span::dummy(),

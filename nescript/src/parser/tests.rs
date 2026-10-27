@@ -2549,3 +2549,76 @@ fn parse_background_raw_tiles_and_attributes_still_work() {
     assert_eq!(prog.backgrounds[0].tiles, vec![0, 1, 2, 3]);
     assert_eq!(prog.backgrounds[0].attributes, vec![0xFF, 0x55]);
 }
+
+#[test]
+fn parse_dpcm_decl_and_play_dpcm() {
+    let src = r#"
+        game "T" { mapper: NROM }
+        dpcm Blip {
+            rate: 11
+            loop: true
+            data: [0x01, 0x02]
+        }
+        on frame { play_dpcm Blip }
+        start Main
+    "#;
+    let prog = parse_ok(src);
+    assert_eq!(prog.dpcm.len(), 1);
+    assert_eq!(prog.dpcm[0].name, "Blip");
+    assert_eq!(prog.dpcm[0].rate, 11);
+    assert!(prog.dpcm[0].looped);
+    assert!(matches!(
+        &prog.dpcm[0].source,
+        AssetSource::Inline(bytes) if bytes == &vec![1, 2]
+    ));
+    let stmts = &prog.states[0].on_frame.as_ref().unwrap().statements;
+    assert!(matches!(&stmts[0], Statement::PlayDpcm(n, _) if n == "Blip"));
+}
+
+#[test]
+fn parse_dpcm_rejects_a_rate_above_15() {
+    let src = r#"
+        game "T" { mapper: NROM }
+        dpcm Blip {
+            rate: 16
+            data: [0x01]
+        }
+        on frame { wait_frame }
+        start Main
+    "#;
+    let codes = parse_err(src);
+    assert!(
+        codes.contains(&crate::errors::ErrorCode::E0201),
+        "{codes:?}"
+    );
+}
+
+#[test]
+fn parse_dpcm_rejects_missing_data_and_chr() {
+    let missing = r#"
+        game "T" { mapper: NROM }
+        dpcm Blip { rate: 4 }
+        on frame { wait_frame }
+        start Main
+    "#;
+    let codes = parse_err(missing);
+    assert!(
+        codes.contains(&crate::errors::ErrorCode::E0201),
+        "{codes:?}"
+    );
+
+    let chr = r#"
+        game "T" { mapper: NROM }
+        dpcm Blip {
+            rate: 4
+            data: @chr("tiles.png")
+        }
+        on frame { wait_frame }
+        start Main
+    "#;
+    let codes = parse_err(chr);
+    assert!(
+        codes.contains(&crate::errors::ErrorCode::E0201),
+        "{codes:?}"
+    );
+}

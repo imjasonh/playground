@@ -1117,6 +1117,7 @@ NEScript ships with a full data-driven audio subsystem. Sound effects run on pul
 play SfxName          // trigger a one-shot sound effect
 start_music TrackName // begin looping background music
 stop_music            // silence the music channel
+play_dpcm SampleName  // restart a DPCM sample on the DMC
 ```
 
 Each statement looks up the name in the program's user declarations first, then falls back to the builtin table. Unknown names are a hard error (E0505).
@@ -1231,6 +1232,28 @@ For programs that want classic game audio without writing data tables, NEScript 
 | `gameover`, `lose`, `fail` | Descending dirge (looping) |
 
 A user-declared `sfx` or `music` block takes priority over a builtin with the same name, so `sfx coin { ... }` will shadow the default coin effect.
+
+### DPCM samples
+
+The DMC plays a sample from `$C000` through `$FFFF`. Declare the sample with `dpcm` and start it with `play_dpcm`.
+
+```
+dpcm StandClear {
+    rate: 11
+    loop: false
+    data: @binary("stand_clear.dmc")
+}
+
+play_dpcm StandClear
+```
+
+`rate` is required and is an integer from 0 to 15. That value is the NTSC DMC frequency index written to `$4010`. `loop` defaults to false and sets bit 6 of `$4010` when true. `data` is `@binary("file.dmc")` or a byte list. `@chr` is a parse error, and so is a rate above 15 or a missing `data` field.
+
+The linker stores every declared sample at the top of the fixed bank. Each sample starts on a 64-byte boundary, and the linker pads it with `$00` out to the next length of the form `16 * n + 1`. The longest sample `$4013` can name is 4081 bytes. On MMC3 the bytes sit below the reset stub. The build stops when fixed-bank code overlaps a sample. Move code into a `bank` block, or shorten the sample.
+
+`play_dpcm` writes `$4015` as `$03`, then `$4010`, `$4011` as 0, `$4012`, and `$4013`, then writes `$4015` as `$13`. Pulse 1 and pulse 2 stay enabled. Triangle and noise stay disabled. A later `play` of a triangle or noise effect writes `$4015` as `$0F`, which stops the sample.
+
+`play_dpcm` does not use the audio tick. A program that only plays DPCM samples does not link the pulse driver. Encode the sample so the DAC level starts and ends at 0. `$4011` is cleared before playback, and a leftover level clicks.
 
 ### How It Works
 

@@ -87,6 +87,8 @@ A second `play` on the same channel restarts that channel. Pulse and noise may s
 
 Start the track from the title `on enter`, and stop it when the match ends. A program with no `play`, `start_music`, or `stop_music` links no audio driver.
 
+DPCM is sampled audio. `play_dpcm Name` restarts that sample. The bytes sit at the top of the fixed bank, 64-byte aligned, and a sample is at most 4081 bytes. A full fixed bank has to give up code before a sample fits. `play` on triangle or noise writes `$4015` as `$0F` and stops a sample.
+
 ## Arithmetic that wraps
 
 `u8` subtraction wraps through 255. `save_need` starts at 5 plus armor piercing, then subtracts 1 for cover and 1 for a shield. That stays positive only because of that floor. Another discount wraps, and `unsaved_faces` treats any need above 7 as "no face saves", which is a guaranteed hit. Subtract only after you know the value is large enough.

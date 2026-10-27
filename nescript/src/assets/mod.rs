@@ -1,5 +1,6 @@
 pub mod audio;
 mod chr;
+pub mod dpcm;
 mod palette;
 pub mod resolve;
 #[cfg(test)]
@@ -10,6 +11,7 @@ pub use audio::{
     resolve_music, resolve_sfx, MusicData, SfxData,
 };
 pub use chr::{png_to_chr, png_to_nametable, png_to_nametable_with_chr};
+pub use dpcm::{fixed_bank_limit, layout_dpcm, resolve_dpcm, DpcmImage, DpcmSample};
 pub use palette::{color_name_to_index, nearest_nes_color, png_to_palette, NES_COLORS};
 pub use resolve::{
     resolve_backgrounds, resolve_palettes, resolve_rooms, resolve_sprites, BackgroundData,
