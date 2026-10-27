@@ -1,0 +1,15 @@
+{
+  "name": "nyt-crossword",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NYT crossword solve times by weekday, and puzzles that were started but not finished",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "scrape": "node scripts/scrape.js",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
