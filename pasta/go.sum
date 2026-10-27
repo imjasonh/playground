@@ -6,6 +6,8 @@ cuelabs.dev/go/oci/ociregistry v0.0.0-20260911133901-a89591e98079 h1:lRhJqmtx8QC
 cuelabs.dev/go/oci/ociregistry v0.0.0-20260911133901-a89591e98079/go.mod h1:WjmQxb+W6nVNCgj8nXrF24lIz95AHwnSl36tpjDZSU8=
 cuelabs.dev/go/oci/ociregistry v0.0.0-20261008151123-94f4aa6e0087 h1:Fp7iln2dYtbMfMjsewSI4jASaoRnVriKR5mUC4zvBAI=
 cuelabs.dev/go/oci/ociregistry v0.0.0-20261008151123-94f4aa6e0087/go.mod h1:ETJsQ880PrjcDPD/fN5ovoVEMYd6IzcWAuAESTZXLnU=
+cuelabs.dev/go/oci/ociregistry v0.0.0-20261026160121-545c0455168d h1:VQJY+iqMtWilYwcSgEPqBrwqtb01z3n+w7ALc/xmQvk=
+cuelabs.dev/go/oci/ociregistry v0.0.0-20261026160121-545c0455168d/go.mod h1:ETJsQ880PrjcDPD/fN5ovoVEMYd6IzcWAuAESTZXLnU=
 cuelang.org/go v0.16.1 h1:iPN1lHZd2J0hjcr8hfq9PnIGk7VfPkKFfxH4de+m9sE=
 cuelang.org/go v0.16.1/go.mod h1:/aW3967FeWC5Hc1cDrN4Z4ICVApdMi83wO5L3uF/1hM=
 cuelang.org/go v0.17.1 h1:liOkxZDqTHrzq0USJX+6bMYOZ5PSf+wzvQr15AHpDCQ=
