@@ -2305,16 +2305,20 @@ impl<'a> IrCodeGen<'a> {
                 self.emit(JSR, AM::Label(target.into()));
             }
             IrOp::Sprite0Split { scroll_x, scroll_y } => {
-                // Two-phase busy-wait on PPU `$2002` bit 6 (sprite-0
-                // hit flag), then write the requested scroll values
-                // to `$2005`. Phase 1 waits for the flag to clear
-                // (the previous frame's hit is still latched at
-                // NMI time and doesn't clear until the pre-render
-                // scanline); phase 2 waits for it to set again on
-                // the current frame's sprite-0 overlap. Emitted
-                // inline — no runtime routine — so each call site
-                // gets its own pair of local labels.
+                // Busy-wait on PPU `$2002` bit 6 (sprite-0 hit flag),
+                // then write the requested scroll values to `$2005`.
+                // Phase 1 waits for this frame's NMI. A `$2002` read
+                // on the dot where vblank starts cancels that NMI, so
+                // the poll must not start until vblank has begun;
+                // otherwise some frames lose their NMI and the main
+                // loop skips a frame. Phase 2 waits for the previous
+                // frame's hit to clear on the pre-render scanline,
+                // and phase 3 waits for this frame's sprite-0 overlap.
+                // Phase 1 leaves the frame flag set for the main loop.
+                // Emitted inline — no runtime routine — so each call
+                // site gets its own local labels.
                 let suffix = self.local_label_suffix();
+                let nmi_label = format!("__ir_spr0_nmi_{suffix}");
                 let clear_label = format!("__ir_spr0_clear_{suffix}");
                 let set_label = format!("__ir_spr0_set_{suffix}");
                 // The hit needs sprite 0 in the PPU's OAM, so let the
@@ -2323,12 +2327,13 @@ impl<'a> IrCodeGen<'a> {
                     self.emit(LDA, AM::Immediate(0));
                     self.emit(STA, AM::Absolute(OAM_BUSY));
                 }
-                // Phase 1: wait for flag clear.
+                self.emit_label(&nmi_label);
+                self.emit(LDA, AM::ZeroPage(ZP_FRAME_FLAG));
+                self.emit(BEQ, AM::LabelRelative(nmi_label));
                 self.emit_label(&clear_label);
                 self.emit(LDA, AM::Absolute(0x2002));
                 self.emit(AND, AM::Immediate(0x40));
                 self.emit(BNE, AM::LabelRelative(clear_label));
-                // Phase 2: wait for flag set.
                 self.emit_label(&set_label);
                 self.emit(LDA, AM::Absolute(0x2002));
                 self.emit(AND, AM::Immediate(0x40));
@@ -4314,6 +4319,34 @@ mod more_tests {
                 && w[1].mode == AM::Absolute(OAM_BUSY)
         });
         assert!(cleared, "sprite 0 must reach the PPU before the hit poll");
+    }
+
+    #[test]
+    fn sprite_0_split_waits_for_the_nmi_before_reading_ppustatus() {
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            on frame {
+                draw Smiley at: (16, 24)
+                sprite_0_split(0, 0)
+            }
+            start Main
+        "#,
+        );
+        let poll = insts
+            .iter()
+            .position(|i| i.opcode == LDA && i.mode == AM::Absolute(0x2002))
+            .expect("polls PPUSTATUS");
+        let flag_wait = insts[..poll].windows(2).any(|w| {
+            w[0].opcode == LDA
+                && w[0].mode == AM::ZeroPage(ZP_FRAME_FLAG)
+                && w[1].opcode == BEQ
+                && matches!(&w[1].mode, AM::LabelRelative(l) if l.starts_with("__ir_spr0_nmi_"))
+        });
+        assert!(
+            flag_wait,
+            "a `$2002` read as vblank starts cancels the NMI, so the poll must wait for it"
+        );
     }
 
     #[test]
