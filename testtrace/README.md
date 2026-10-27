@@ -86,6 +86,22 @@ func TestPipeline(t *testing.T) {
 A test that calls `Hook` as a subtest of a bound test gets a span that's a
 child of the parent test's span.
 
+## Importing
+
+`testtrace` is for test code. Nothing in Go can make an import flat-out
+illegal outside `_test.go` files the way `internal/` does outside a
+module subtree, but two layers come close:
+
+- [`go_test_only_import`](../pasta/analyzers/go_test_only_import/) flags
+  any non-`_test.go` file in this repo that imports it. That's the repo's
+  `pasta -fail-on=warning` leg, which gates both the pre-commit hook and
+  CI, so a non-test import here never reaches `main`.
+- `WrapTracerProvider`, and `Install` through it, panic when
+  `testing.Testing()` is false. That's a runtime backstop for a consumer
+  outside this repo's pasta coverage: nothing stops `go get` from a
+  different module, but calling either from a real program panics at
+  once, on the very first call.
+
 ## How it works
 
 `Install` sets a TracerProvider that wraps yours. When a tracer from it
