@@ -81,6 +81,8 @@ test("the store zip is the extension package and the listing images match the st
   const names = [...files.keys()].sort();
   assert.deepEqual(names, [
     "background.js",
+    "base64.js",
+    "clipboard.js",
     "controller.js",
     "duplicates.js",
     "icons/128.png",
@@ -88,19 +90,27 @@ test("the store zip is the extension package and the listing images match the st
     "icons/32.png",
     "icons/48.png",
     "manifest.json",
+    "offscreen.html",
+    "offscreen.js",
+    "selection.js",
   ]);
 
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.2");
+  assert.equal(manifest.version, "0.1.3");
   assert.equal(manifest.name, "Close Duplicate Tabs");
   assert.ok(manifest.description.length <= 132);
   assert.match(manifest.description, /badge/);
   assert.match(manifest.description, /URL/);
-  assert.deepEqual(manifest.permissions, ["contextMenus", "tabs"]);
+  assert.match(manifest.description, /base64/);
+  assert.deepEqual(manifest.permissions, ["clipboardWrite", "contextMenus", "offscreen", "tabs"]);
   assert.equal("host_permissions" in manifest, false);
-  assert.equal("content_scripts" in manifest, false);
   assert.equal("optional_permissions" in manifest, false);
+  assert.equal(manifest.content_scripts.length, 1);
+  assert.deepEqual(manifest.content_scripts[0].matches, ["http://*/*", "https://*/*"]);
+  assert.deepEqual(manifest.content_scripts[0].js, ["selection.js"]);
+  assert.equal(manifest.content_scripts[0].all_frames, true);
+  assert.equal(manifest.content_scripts[0].run_at, "document_start");
   assert.equal("default_popup" in manifest.action, false);
   assert.equal(manifest.background.service_worker, "background.js");
   assert.equal(manifest.background.type, "module");
