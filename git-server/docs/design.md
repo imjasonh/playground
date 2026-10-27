@@ -501,9 +501,11 @@ sharded (e.g. refs split across keys) before any transfer limit matters.
 
 The deployed Worker reports the same quantities the cost model and the
 native benchmarks are built on, so production assumptions are checkable
-instead of hopeful. Everything is collected per request by a thread-local
-in `src/metrics.rs` (a few clock reads per backend call; no allocation
-until emission) and emitted three ways:
+instead of hopeful. Each request records onto its own frame in
+`src/scope.rs`. One isolate polls many requests on one thread, so a shared
+thread-local would mix their counters and spans. Recording is a few clock
+reads per backend call. Nothing is allocated until the totals are
+emitted three ways:
 
 * **Workers Traces** — Cloudflare's built-in OpenTelemetry tracing
   (`[observability.traces]` in `wrangler.toml`). Automatic spans cover the
