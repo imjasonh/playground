@@ -1,10 +1,10 @@
 # Close Duplicate Tabs
 
-A Chrome extension that closes extra tabs with the same URL. The toolbar button is the action. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
+A Chrome extension that closes extra tabs with the same URL, and copies decoded base64 from the selection menu. The toolbar button closes the extra tabs. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
 
 The Chrome Web Store item ID is `cfmebakopkdpedmdbpcpfibhodmppigj`. That item is already published to trusted testers. This directory has no `index.html`, so GitHub Pages does not publish it.
 
-Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is in review. Version `0.1.2` is the package to submit.
+Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is in review. Version `0.1.3` is the package to submit.
 
 ## What a click does
 
@@ -16,7 +16,15 @@ The badge is that close count. It is empty when the count is 0. Counts above 999
 
 Right-click a tab in Chrome 150 or later and the menu shows the same title, `Close N duplicate tabs`. That item runs the same close as the toolbar button, so the number matches the badge. The item is hidden when the count is 0. Older Chrome keeps the toolbar button and does not show the item.
 
-The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` to add the tab menu item. It does not use host permissions or content scripts. URLs stay in the browser. The extension does not send them anywhere.
+## What a selection does
+
+Highlight text on an `http` or `https` page and right-click. The extension trims whitespace from the ends of the selection. If the remaining text is not standard base64, the menu does not add an item. Standard base64 uses the alphabet A-Z, a-z, 0-9, `+`, and `/`, with `=` padding, and its length is a multiple of 4. Whitespace in the middle of the selection stays, so a string with a space in the middle is not base64.
+
+If the selection is standard base64 and the decoded bytes are UTF-8 text that is not only whitespace, the menu shows that text. A short string can still be valid base64. Highlighting `file` shows `~)^`. Click the item to copy the decoded text. Line breaks in the decoded text stay in the copy. The menu title is one line, so those breaks appear as spaces there. A `%s` in the decoded text is shown with a zero-width space so Chrome does not replace it with the selection.
+
+The content script reads the highlighted text, including text in a text field, and sends it to the service worker. It does not change the page. The service worker decodes it and updates the menu before the click. The click copies through an offscreen document. The selection and the decoded text stay on the device.
+
+The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item and the selection item. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
 
 ## Load it locally
 
@@ -24,6 +32,7 @@ The extension uses the `tabs` permission so it can read URLs and close tabs. It 
 2. Open `chrome://extensions`, turn on Developer mode, and choose **Load unpacked**.
 3. Open two tabs with the same URL. The badge shows `1`.
 4. Click the toolbar button, or right-click a tab and choose **Close 1 duplicate tab**. One of those tabs closes, and the badge clears. Chrome older than 150 has the toolbar button only.
+5. On an https page, select `aGVsbG8=`, right-click, and choose `hello`. That copies `hello`.
 
 ## Tests
 
@@ -33,7 +42,7 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, the store zip layout, the `tabs` and `contextMenus` permissions, and the listing image sizes.
+`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the store zip layout, the permissions, and the listing image sizes.
 
 `node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 
@@ -64,10 +73,10 @@ Upload `chrome-extension.zip` from `bash pack.sh chrome-extension.zip` if you ar
 | Field | Value |
 | --- | --- |
 | Name | Close Duplicate Tabs |
-| Summary | Closes extra tabs that share a URL. The badge and tab menu show how many tabs that click will close. |
-| Single purpose | Add a toolbar button that closes extra tabs with the same URL, show how many tabs that click will close, and offer the same action from the tab menu. |
-| Permission justification | The tabs permission lets the extension read each tab's URL, count tabs that share a URL, and close the extras. The contextMenus permission adds a Close N duplicate tabs item to the tab menu. N is the same count as the badge. The comparison happens on the device. The extension does not transmit tab URLs or titles. |
-| Data use | It does not collect or use user data. |
+| Summary | Closes extra tabs that share a URL. The badge shows that count. Selected base64 adds a menu item that copies the decoded text. |
+| Single purpose | Add a toolbar button that closes extra tabs with the same URL, show how many tabs that click will close, offer the same action from the tab menu, and copy decoded base64 from the selection menu. |
+| Permission justification | The tabs permission lets the extension read each tab's URL, count tabs that share a URL, and close the extras. The contextMenus permission adds a Close N duplicate tabs item to the tab menu and a selection item when the highlighted text is base64. N is the same count as the badge. The content script reads the highlighted text on http and https pages so that item can show the decoded text. It does not modify pages. The clipboardWrite and offscreen permissions copy the decoded text to the clipboard when that item is clicked. Decoding and the URL comparison happen on the device. The extension does not transmit tab URLs, titles, or selected text. |
+| Data use | It does not collect or transmit user data. It reads tab URLs and highlighted text on the device to close duplicate tabs and to copy decoded base64. |
 | Visibility | Set this in the dashboard. The publish API cannot change it. |
 
 Paste this as the detailed description:
@@ -77,7 +86,9 @@ Close Duplicate Tabs adds one toolbar button. The badge on that button shows how
 
 Click the button to close those extra tabs. In Chrome 150 or later, right-click a tab and choose Close N duplicate tabs. That item closes the same tabs as the button, and it is hidden when there is nothing to close. For each URL, one tab stays open. A pinned tab stays ahead of an unpinned tab, then the active tab, then the tab you used most recently.
 
-The extension reads tab URLs on your device to make that comparison. It does not send URLs, titles, or browsing history anywhere. It has no content scripts and does not change web pages.
+Highlight base64 text on a web page and right-click. If the selection is standard base64, the menu shows the decoded text. Click that item to copy the decoded text. If the selection is not base64, the menu does not add an item.
+
+The extension reads tab URLs and the highlighted text on your device. It does not send URLs, titles, selected text, or the decoded text anywhere. The content script does not change web pages.
 ```
 
 The API cannot change Private or Public. If you change visibility, publish once in the dashboard. After this item is live, a push to `main` publishes a higher manifest version for you.

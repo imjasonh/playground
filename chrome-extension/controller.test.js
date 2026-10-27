@@ -35,7 +35,17 @@ function fakeChrome(initial) {
     removed: [],
     queries: 0,
     holdQuery: deferred(),
+    menus: new Map(),
+    copied: [],
+    messages: [],
+    offscreenOpen: false,
+    offscreenOptions: null,
   };
+  Object.defineProperty(state, "menu", {
+    get() {
+      return state.menus.get("close-duplicates");
+    },
+  });
   const api = {
     tabs: {
       async query() {
@@ -72,22 +82,37 @@ function fakeChrome(initial) {
     },
     contextMenus: {
       async update(id, props) {
-        if (!state.menu || state.menu.id !== id) {
+        const menu = state.menus.get(id);
+        if (!menu) {
           throw new Error(`Cannot find menu item with id ${id}`);
         }
-        state.menu = { ...state.menu, ...props };
+        state.menus.set(id, { ...menu, ...props });
       },
       async create(props) {
-        if (state.menu && state.menu.id === props.id) {
+        if (state.menus.has(props.id)) {
           throw new Error(`Cannot create item with duplicate id ${props.id}`);
         }
-        state.menu = { ...props };
+        state.menus.set(props.id, { ...props });
       },
       onClicked: listener(),
+    },
+    offscreen: {
+      async hasDocument() {
+        return state.offscreenOpen;
+      },
+      async createDocument(options) {
+        state.offscreenOptions = options;
+        state.offscreenOpen = true;
+      },
     },
     runtime: {
       onInstalled: listener(),
       onStartup: listener(),
+      onMessage: listener(),
+      async sendMessage(message) {
+        state.messages.push(message);
+        state.offscreenOpen = false;
+      },
     },
   };
   return { api, state };
@@ -157,6 +182,7 @@ test("a tab menu click for another item does not close tabs", async () => {
   await api.contextMenus.onClicked.emit({ menuItemId: "other" });
   assert.deepEqual(state.removed, []);
   assert.equal(state.menu.visible, true);
+  assert.deepEqual(state.messages, []);
 });
 
 test("a URL change refreshes the badge", async () => {
@@ -200,15 +226,15 @@ test("an unsupported tab menu still sets the badge", async () => {
     const ready = start(api);
     state.holdQuery.resolve();
     await ready;
+    assert.equal(state.badge, "1");
+    assert.equal(errors.length, 2);
+    const before = state.queries;
+    await api.tabs.onCreated.emit();
+    assert.ok(state.queries > before);
+    assert.equal(errors.length, 2);
   } finally {
     console.error = original;
   }
-  assert.equal(state.badge, "1");
-  assert.equal(errors.length, 1);
-  const before = state.queries;
-  await api.tabs.onCreated.emit();
-  assert.ok(state.queries > before);
-  assert.equal(errors.length, 1);
 });
 
 test("favicon updates do not query tabs again", async () => {
@@ -219,4 +245,145 @@ test("favicon updates do not query tabs again", async () => {
   const before = state.queries;
   await api.tabs.onUpdated.emit(1, { favIconUrl: "https://example.com/favicon.ico" });
   assert.equal(state.queries, before);
+});
+
+function decodeMenu(state) {
+  return state.menus.get("decode-base64");
+}
+
+async function started(tabs) {
+  const chrome = fakeChrome(tabs);
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  return chrome;
+}
+
+test("startup leaves the selection menu hidden", async () => {
+  const { state } = await started([{ id: 1, url: "https://example.com/a" }]);
+  const decode = decodeMenu(state);
+  assert.equal(decode.visible, false);
+  assert.equal(decode.title, "Decoded");
+  assert.deepEqual(decode.contexts, ["selection"]);
+  assert.equal(state.menu.contexts[0], "tab");
+});
+
+test("a base64 selection shows the decoded text and does not close tabs", async () => {
+  const { api, state } = await started([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/a" },
+  ]);
+  const badge = state.badge;
+  await api.runtime.onMessage.emit(
+    { type: "selection", text: "\n  aGVsbG8=\t" },
+    { tab: { id: 2 }, frameId: 0 },
+  );
+  const decode = decodeMenu(state);
+  assert.equal(decode.visible, true);
+  assert.equal(decode.title, "hello");
+  assert.deepEqual(decode.contexts, ["selection"]);
+  assert.equal(state.badge, badge);
+  assert.deepEqual(state.removed, []);
+  await api.contextMenus.onClicked.emit({
+    menuItemId: "decode-base64",
+    selectionText: "not-the-selection",
+  });
+  assert.deepEqual(state.removed, []);
+  assert.deepEqual(state.messages, [
+    {
+      target: "offscreen-clipboard",
+      type: "copy",
+      text: "hello",
+    },
+  ]);
+  assert.equal(state.offscreenOptions.url, "offscreen.html");
+  assert.deepEqual(state.offscreenOptions.reasons, ["CLIPBOARD"]);
+  assert.equal(
+    state.offscreenOptions.justification,
+    "Copy decoded base64 text to the clipboard.",
+  );
+});
+
+test("text that is not base64 adds no selection item", async () => {
+  const { api, state } = await started([{ id: 1, url: "https://example.com/a" }]);
+  await api.runtime.onMessage.emit(
+    { type: "selection", text: "  aGVs bG8=  " },
+    { tab: { id: 1 }, frameId: 0 },
+  );
+  assert.equal(decodeMenu(state).visible, false);
+  await api.runtime.onMessage.emit(
+    { type: "selection", text: "hello" },
+    { tab: { id: 1 }, frameId: 0 },
+  );
+  assert.equal(decodeMenu(state).visible, false);
+  await api.contextMenus.onClicked.emit({
+    menuItemId: "decode-base64",
+    selectionText: "hello",
+  });
+  assert.deepEqual(state.messages, []);
+});
+
+test("clearing the selection removes the decode item, and another frame does not", async () => {
+  const { api, state } = await started([{ id: 1, url: "https://example.com/a" }]);
+  await api.runtime.onMessage.emit(
+    { type: "selection", text: "aGVsbG8=" },
+    { tab: { id: 1 }, frameId: 0 },
+  );
+  assert.equal(decodeMenu(state).title, "hello");
+  await api.runtime.onMessage.emit(
+    { type: "selection", text: "hello" },
+    { tab: { id: 1 }, frameId: 1 },
+  );
+  assert.equal(decodeMenu(state).visible, true);
+  assert.equal(decodeMenu(state).title, "hello");
+  await api.runtime.onMessage.emit(
+    { type: "selection", text: "" },
+    { tab: { id: 1 }, frameId: 0 },
+  );
+  assert.equal(decodeMenu(state).visible, false);
+  await api.contextMenus.onClicked.emit({
+    menuItemId: "decode-base64",
+    selectionText: "",
+  });
+  assert.deepEqual(state.messages, []);
+});
+
+test("a non-base64 selection hides a decode item restored after restart", async () => {
+  const chrome = fakeChrome([{ id: 1, url: "https://example.com/a" }]);
+  chrome.state.menus.set("decode-base64", {
+    id: "decode-base64",
+    title: "hello",
+    contexts: ["selection"],
+    visible: true,
+  });
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(decodeMenu(chrome.state).visible, true);
+  assert.equal(decodeMenu(chrome.state).title, "hello");
+  await chrome.api.runtime.onMessage.emit(
+    { type: "selection", text: "hello world" },
+    { tab: { id: 1 }, frameId: 0 },
+  );
+  assert.equal(decodeMenu(chrome.state).visible, false);
+  await chrome.api.contextMenus.onClicked.emit({
+    menuItemId: "decode-base64",
+    selectionText: "hello world",
+  });
+  assert.deepEqual(chrome.state.messages, []);
+});
+
+test("a selection menu click after restart decodes the highlighted text", async () => {
+  const { api, state } = await started([{ id: 1, url: "https://example.com/a" }]);
+  await api.contextMenus.onClicked.emit({
+    menuItemId: "decode-base64",
+    selectionText: " YQ== ",
+  });
+  assert.deepEqual(state.messages, [
+    {
+      target: "offscreen-clipboard",
+      type: "copy",
+      text: "a",
+    },
+  ]);
 });

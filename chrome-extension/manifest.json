@@ -1,9 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Close Duplicate Tabs",
-  "version": "0.1.2",
-  "description": "Closes extra tabs that share a URL. The badge and tab menu show how many tabs that click will close.",
-  "permissions": ["contextMenus", "tabs"],
+  "version": "0.1.3",
+  "description": "Closes extra tabs that share a URL. The badge shows that count. Selected base64 adds a menu item that copies the decoded text.",
+  "permissions": ["clipboardWrite", "contextMenus", "offscreen", "tabs"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["selection.js"],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

@@ -135,14 +135,22 @@ async function main() {
     for (const url of urls) {
       await browser.send("Target.createTarget", { url });
     }
-    const discovered = await browser.send("Target.getTargets");
-    const tab = discovered.targetInfos.find(
-      (target) => target.type === "tab" && target.url === "https://example.com/notes",
-    );
+    // Chrome fills the tab URL after createTarget returns. A tab target can
+    // still be blank for a moment, and some builds only expose the page.
+    const deadline = Date.now() + 20000;
+    let tab = null;
+    while (Date.now() < deadline && !tab) {
+      const discovered = await browser.send("Target.getTargets");
+      tab = discovered.targetInfos.find(
+        (target) => target.type === "tab" && target.url === "https://example.com/notes",
+      );
+      if (!tab) {
+        await delay(100);
+      }
+    }
     if (!tab) {
       throw new Error("Chrome did not expose a tab target for the duplicate page");
     }
-    const deadline = Date.now() + 20000;
     let worker = null;
     while (Date.now() < deadline && !worker) {
       const list = await targets(port);
@@ -204,6 +212,22 @@ async function main() {
       throw new Error(`tab menu item was not registered: ${menuError}\n${logs}`);
     }
     console.log(`tab menu item close-duplicates is registered (${menuError})`);
+    const decodeMenuError = await evaluate(
+      workerSession,
+      `new Promise((resolve) => {
+        chrome.contextMenus.create({
+          id: "decode-base64",
+          title: "probe",
+          contexts: ["selection"],
+        }, () => {
+          resolve(chrome.runtime.lastError ? chrome.runtime.lastError.message : "created");
+        });
+      })`,
+    );
+    if (!String(decodeMenuError).includes("duplicate")) {
+      throw new Error(`selection menu item was not registered: ${decodeMenuError}\n${logs}`);
+    }
+    console.log(`selection menu item decode-base64 is registered (${decodeMenuError})`);
     const before = observed.text;
     await browser.send("Extensions.triggerAction", { id: extensionId, targetId: tab.targetId });
     let after = null;
