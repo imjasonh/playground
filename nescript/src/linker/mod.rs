@@ -33,10 +33,12 @@ pub struct LinkedRom {
     /// address in the $C000-$FFFF window. Populated by the
     /// 6502 assembler's label pass.
     pub labels: HashMap<String, u16>,
-    /// Byte offset of the fixed bank's first byte inside `rom`.
-    /// For NROM this is `16` (just past the 16-byte iNES header).
-    /// For banked mappers each switchable bank shifts it by 16 KB,
-    /// so the fixed bank starts at `16 + 16_384 * switchable_bank_count`.
+    /// Byte offset of the fixed bank's first byte inside `rom`. The
+    /// fixed bank is always the file's last 16 KB bank, so for NROM
+    /// this is `16` (just past the 16-byte iNES header) and for every
+    /// other layout it is `16 + 16_384 * (bank_count - 1)`. The `$FF`
+    /// filler the builder inserts to reach a power-of-two bank count
+    /// sits between the switchable banks and this one.
     pub fixed_bank_file_offset: usize,
 }
 
@@ -407,7 +409,22 @@ impl Linker {
         // at reset. The mapper is configured so the fixed bank
         // maps to $C000-$FFFF and one of the switchable banks maps
         // to $8000-$BFFF.
-        let total_banks = switchable_banks.len() + 1;
+        // How many 16 KB banks the finished file will hold. AxROM
+        // and GNROM map a 32 KB page as a unit, so they always get a
+        // filler bank in front of the code (see the `set_prg_banks`
+        // call near the end of this function). Everything else gets
+        // one bank per switchable bank plus the fixed bank, rounded
+        // up to the power of two that padding loaders assume — see
+        // `rom::padded_prg_bank_count`. The fixed bank is the last
+        // bank either way, so the mapper has to be told to restore
+        // *that* index, not `switchable_banks.len()`.
+        let total_banks = if switchable_banks.is_empty()
+            && matches!(self.mapper, Mapper::AxROM | Mapper::GNROM)
+        {
+            2
+        } else {
+            crate::rom::padded_prg_bank_count(switchable_banks.len() + 1)
+        };
 
         // Discovery pass: assemble each switchable bank that has
         // its own instruction stream so we know what labels live
@@ -1001,11 +1018,12 @@ impl Linker {
         builder.set_chr(chr);
 
         let rom = builder.build();
-        // The fixed bank sits after the iNES header (16 bytes) and
-        // any switchable banks (16 KB each). Callers use this to
-        // translate CPU addresses from `labels` into ROM file
-        // offsets when emitting Mesen `.mlb` files.
-        let fixed_bank_file_offset = 16 + switchable_banks.len() * 16_384;
+        // The fixed bank is always the last 16 KB bank in the file,
+        // after the switchable banks and after whatever `$FF` filler
+        // the builder added to reach a power-of-two bank count.
+        // Callers use this to translate CPU addresses from `labels`
+        // into ROM file offsets when emitting Mesen `.mlb` files.
+        let fixed_bank_file_offset = 16 + (total_banks - 1) * 16_384;
         LinkedRom {
             rom,
             labels: result.labels,

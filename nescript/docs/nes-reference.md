@@ -168,6 +168,13 @@ Offset  Size     Description
 after   varies   CHR ROM data (N x 8192 bytes)
 ```
 
+The header names the board but not the chip layout, so loaders have
+to guess how the PRG ROM fills its address space. FCEUX assumes a
+power of two: it rounds the declared PRG size up, fills the window
+with `$FF`, and reads the file into it. Keep both bank counts at
+powers of two, or the padding will displace the bank the mapper maps
+to `$E000-$FFFF` and the vectors with it.
+
 ### Common Mapper Numbers
 
 | Number | Name   | PRG ROM      | CHR         | Notes                      |

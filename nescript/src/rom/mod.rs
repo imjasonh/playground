@@ -12,6 +12,48 @@ const PRG_BANK_SIZE: usize = 16384;
 /// CHR ROM bank size (8 KB)
 const CHR_BANK_SIZE: usize = 8192;
 
+/// The iNES mapper numbers [`mapper_number`] can produce. Kept next
+/// to the validator so a new `Mapper` variant has to be enrolled
+/// here before `validate_ines` will accept a ROM that uses it.
+const KNOWN_MAPPERS: [u8; 7] = [0, 1, 2, 3, 4, 7, 66];
+
+/// Round a 16 KB PRG bank count up to the size the image has to
+/// declare.
+///
+/// An iNES header names the board but not the chip layout, so a
+/// loader has to assume PRG ROM fills a power-of-two address space
+/// the way a real cartridge's mask ROM does. FCEUX does precisely
+/// that: `ines.cpp` computes `uppow2(prg_banks << 14)`, allocates
+/// that many bytes, fills them with `$FF`, and then reads the file
+/// in. Two things break when the declared count is not a power of
+/// two:
+///
+///   * MMC1, `UxROM`, and MMC3 hardwire the top of the CPU address
+///     space to the *last* PRG bank. The padding lands after the
+///     real banks, so `$FFFA-$FFFF` reads back as `$FFFF` and the
+///     CPU resets into filler instead of into the reset handler.
+///   * The read is greedy — it asks for the padded length — so it
+///     swallows the CHR data into PRG space and leaves CHR ROM
+///     blank.
+///
+/// jsnes, Mesen, and Nestopia instead trust the declared count, so
+/// the same file boots for them and dies on FCEUX. Emitting a
+/// power-of-two image keeps every loader in agreement.
+pub fn padded_prg_bank_count(banks: usize) -> usize {
+    banks.max(1).next_power_of_two()
+}
+
+/// Round an 8 KB CHR bank count up to a power of two, for the same
+/// reason as [`padded_prg_bank_count`]. A CHR-RAM ROM declares zero
+/// banks and stays at zero.
+pub fn padded_chr_bank_count(banks: usize) -> usize {
+    if banks == 0 {
+        0
+    } else {
+        banks.next_power_of_two()
+    }
+}
+
 /// Build a complete iNES ROM file.
 ///
 /// Supports both single-bank (NROM) and multi-bank (MMC1, `UxROM`,
@@ -99,7 +141,10 @@ impl RomBuilder {
     /// be padded with $FF to fill its 16 KB slot. The banks are
     /// written in the order provided — for mapper-specific layouts
     /// the caller (usually the Linker) is responsible for placing
-    /// the fixed bank last.
+    /// the fixed bank last. [`RomBuilder::build`] rounds the bank
+    /// count up to a power of two by inserting `$FF` filler *before*
+    /// that last bank, so the fixed bank stays where the mapper
+    /// expects it.
     ///
     /// # Panics
     /// Panics if any single bank exceeds 16 KB, which would indicate
@@ -125,16 +170,29 @@ impl RomBuilder {
     pub fn build(self) -> Vec<u8> {
         // Determine PRG size. If no banks were set, fall back to a
         // single empty bank so the ROM has a valid 16 KB PRG slot.
-        let prg_banks_vec: Vec<Vec<u8>> = if self.prg_banks.is_empty() {
+        let mut prg_banks_vec: Vec<Vec<u8>> = if self.prg_banks.is_empty() {
             vec![Vec::new()]
         } else {
             self.prg_banks
         };
-        let prg_banks = prg_banks_vec.len();
+
+        // Grow the image to a power-of-two bank count. The filler
+        // goes in front of the final bank, because that bank holds
+        // the vectors and the mapper's fixed window — see
+        // `padded_prg_bank_count` for what a padding loader does to
+        // an image that leaves the rounding to the emulator.
+        let prg_banks = padded_prg_bank_count(prg_banks_vec.len());
+        if prg_banks > prg_banks_vec.len() {
+            let fixed = prg_banks_vec
+                .pop()
+                .expect("prg_banks_vec is non-empty by construction");
+            prg_banks_vec.resize(prg_banks - 1, Vec::new());
+            prg_banks_vec.push(fixed);
+        }
         let prg_size = prg_banks * PRG_BANK_SIZE;
 
         // CHR: 8 KB banks covering the data, or 0 if using CHR RAM.
-        let chr_banks = self.chr_data.len().div_ceil(CHR_BANK_SIZE);
+        let chr_banks = padded_chr_bank_count(self.chr_data.len().div_ceil(CHR_BANK_SIZE));
         let chr_size = chr_banks * CHR_BANK_SIZE;
 
         let mut rom = Vec::with_capacity(16 + prg_size + chr_size);
@@ -217,25 +275,63 @@ impl RomBuilder {
     }
 }
 
-/// Validate that a byte slice looks like a valid iNES ROM. Accepts
-/// both iNES 1.0 and NES 2.0 headers — the former treats bytes 8-15
-/// as zero-padded, the latter as extended metadata. The returned
+/// Validate that a byte slice is a loadable iNES ROM. Accepts both
+/// iNES 1.0 and NES 2.0 headers — the former treats bytes 8-15 as
+/// zero-padded, the latter as extended metadata. The returned
 /// [`RomInfo`] reports which format was detected in `header_format`
 /// so callers can distinguish the two.
-pub fn validate_ines(data: &[u8]) -> Result<RomInfo, &'static str> {
+///
+/// This goes past the magic bytes and checks the structural
+/// invariants that decide whether real emulators will run the file:
+/// the declared bank counts have to account for every byte, the PRG
+/// and CHR bank counts have to be powers of two (see
+/// [`padded_prg_bank_count`]), the mapper has to be one `NEScript`
+/// knows how to lay out, and the reset vector in the bank the mapper
+/// wires to `$E000-$FFFF` has to point into ROM.
+pub fn validate_ines(data: &[u8]) -> Result<RomInfo, String> {
     if data.len() < 16 {
-        return Err("file too small for iNES header");
+        return Err("file too small for iNES header".to_string());
     }
     if data[0..4] != INES_MAGIC {
-        return Err("invalid iNES magic bytes");
+        return Err("invalid iNES magic bytes".to_string());
     }
 
     let prg_banks = data[4] as usize;
     let chr_banks = data[5] as usize;
+    if prg_banks == 0 {
+        return Err("header declares zero PRG banks".to_string());
+    }
     let expected_size = 16 + prg_banks * PRG_BANK_SIZE + chr_banks * CHR_BANK_SIZE;
 
     if data.len() < expected_size {
-        return Err("file too small for declared ROM banks");
+        return Err(format!(
+            "file is {} bytes, too small for the declared {prg_banks} x 16 KB PRG + \
+             {chr_banks} x 8 KB CHR ({expected_size} bytes)",
+            data.len()
+        ));
+    }
+    if data.len() > expected_size {
+        return Err(format!(
+            "file is {} bytes but the header accounts for only {expected_size} \
+             ({prg_banks} x 16 KB PRG + {chr_banks} x 8 KB CHR); \
+             a loader that reads the declared size will ignore the extra bytes",
+            data.len()
+        ));
+    }
+    if !prg_banks.is_power_of_two() {
+        return Err(format!(
+            "PRG is {prg_banks} x 16 KB, which is not a power of two; FCEUX and other \
+             loaders round the PRG window up to {} banks of $FF filler, which moves the \
+             bank the mapper wires to $E000-$FFFF and resets the CPU into padding",
+            padded_prg_bank_count(prg_banks)
+        ));
+    }
+    if chr_banks != 0 && !chr_banks.is_power_of_two() {
+        return Err(format!(
+            "CHR is {chr_banks} x 8 KB, which is not a power of two; loaders that round \
+             the CHR window up to {} banks will read the wrong tiles",
+            padded_chr_bank_count(chr_banks)
+        ));
     }
 
     let mirroring = if data[6] & 1 == 0 {
@@ -268,6 +364,37 @@ pub fn validate_ines(data: &[u8]) -> Result<RomInfo, &'static str> {
             // mapper bits should read the header directly.
             mapper = mapper.wrapping_add(mapper_high << 4);
         }
+    }
+
+    if !KNOWN_MAPPERS.contains(&mapper) {
+        return Err(format!(
+            "header declares mapper {mapper}, which NEScript does not emit; \
+             expected one of {KNOWN_MAPPERS:?}"
+        ));
+    }
+    // NROM has no bank-switching hardware, so $8000-$FFFF is all the
+    // PRG the board can reach: NROM-128 (one bank, mirrored into
+    // $C000) or NROM-256 (two).
+    if mapper == 0 && prg_banks > 2 {
+        return Err(format!(
+            "mapper 0 (NROM) cannot reach {prg_banks} x 16 KB of PRG; \
+             NROM boards hold at most 2 banks"
+        ));
+    }
+
+    // Every layout NEScript emits puts the vectors in the last 6
+    // bytes of the PRG image: NROM mirrors its single bank into
+    // $C000-$FFFF, AxROM and GNROM map the whole 32 KB page, and
+    // MMC1, UxROM, and MMC3 wire their fixed window to the last
+    // bank. An unprogrammed or displaced reset vector means the
+    // console boots into filler.
+    let prg_end = 16 + prg_banks * PRG_BANK_SIZE;
+    let reset = u16::from_le_bytes([data[prg_end - 4], data[prg_end - 3]]);
+    if !(0x8000..0xFFFA).contains(&reset) {
+        return Err(format!(
+            "reset vector at $FFFC reads ${reset:04X}, which is not a PRG ROM address; \
+             the bank the mapper maps to $E000-$FFFF does not hold the reset handler"
+        ));
     }
 
     Ok(RomInfo {
