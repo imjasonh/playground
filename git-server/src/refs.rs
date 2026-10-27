@@ -368,8 +368,8 @@ pub trait StateStore {
 
     /// Try to acquire the repo's single maintenance lease until
     /// `now_ms + ttl_ms`. Returns `false` if another holder's lease has not
-    /// yet expired. The lease makes concurrent repack triggers (per-push
-    /// self-trigger, cron, the on-demand API) cheap to collapse: losers skip
+    /// yet expired. The lease makes concurrent repack triggers (the per-push
+    /// alarm, cron, the on-demand API) cheap to collapse: losers skip
     /// instead of doing a full consolidation's work and then losing the
     /// swap. The TTL bounds the damage of a crashed holder.
     async fn repack_lease(&self, repo: &str, now_ms: i64, ttl_ms: i64) -> Result<bool, StateError>;

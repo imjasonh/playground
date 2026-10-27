@@ -34,10 +34,10 @@
 //! all staged output is discarded.
 //!
 //! Repack runs from three triggers, all safe to overlap: the nightly cron,
-//! the on-demand API, and — the one that matters under load — a **per-push
-//! self-trigger** (an accepted push that leaves the repo with many packs
-//! schedules a bounded run in its invocation's background via `wait_until`).
-//! A per-repo **maintenance lease** in the Durable Object collapses
+//! the on-demand API, and a per-push alarm. An accepted push that leaves the
+//! repo with many packs arms the repo Durable Object, which runs one bounded
+//! repack and reschedules itself while packs remain. A per-repo **maintenance
+//! lease** in the Durable Object collapses
 //! concurrent triggers to one holder: losers return [`RepackOutcome::Busy`]
 //! after a single cheap DO call instead of consolidating in parallel and
 //! losing the swap race.
@@ -59,11 +59,36 @@ use crate::refs::{PackMeta, RepackSwap, RepoState};
 use crate::repo::{delete_filelog, load_filelog, write_sharded_filelog, FileLogSegment, Repo};
 
 /// Self-trigger threshold: after an accepted push leaves the repo with at
-/// least this many packs, schedule a bounded repack via the Worker
-/// `wait_until` hook. Eight is enough to fold a quiet push burst without
+/// least this many packs, the repo's Durable Object arms an alarm that runs
+/// one bounded repack. Eight is enough to fold a quiet push burst without
 /// firing on every tiny write; override with `REPACK_TRIGGER_PACKS` (`0`
 /// disables the trigger).
 pub const AUTO_REPACK_TRIGGER_PACKS: usize = 8;
+
+/// Arm an alarm when the repo is at the trigger and nothing is already scheduled.
+pub fn should_arm_repack(packs: usize, trigger: usize, alarm_set: bool) -> bool {
+    trigger > 0 && packs >= trigger && !alarm_set
+}
+
+/// Delay before the next alarm after `outcome`, or `None` when the repo is
+/// caught up. A `Busy` result waits out the maintenance lease so a crashed
+/// holder does not block the follow-up.
+pub fn repack_followup_delay_ms(
+    outcome: &RepackOutcome,
+    packs_after: usize,
+    trigger: usize,
+) -> Option<i64> {
+    if trigger == 0 {
+        return None;
+    }
+    match outcome {
+        RepackOutcome::Busy => Some(LEASE_TTL_MS + 5_000),
+        RepackOutcome::Repacked { .. } | RepackOutcome::LostRace if packs_after >= trigger => {
+            Some(0)
+        }
+        RepackOutcome::NoOp | RepackOutcome::Repacked { .. } | RepackOutcome::LostRace => None,
+    }
+}
 
 /// Per-run consolidation budgets, sized so one run always fits a single
 /// Workers invocation regardless of repo size.
@@ -115,7 +140,7 @@ pub enum RepackOutcome {
     /// commute with the swap.)
     LostRace,
     /// Another repack holds the maintenance lease; skipped without doing
-    /// any work. The common way concurrent triggers (per-push self-trigger,
+    /// any work. The common way concurrent triggers (the per-push alarm,
     /// cron, on-demand API) collapse to one run.
     Busy,
 }
@@ -431,5 +456,47 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(select_packs(&s, &b), 2..4);
+    }
+
+    #[test]
+    fn arms_only_when_over_trigger_and_no_alarm_is_set() {
+        assert!(!should_arm_repack(7, 8, false));
+        assert!(should_arm_repack(8, 8, false));
+        assert!(!should_arm_repack(8, 8, true));
+        assert!(!should_arm_repack(20, 0, false));
+    }
+
+    #[test]
+    fn followup_waits_out_a_busy_lease_and_chains_a_backlog() {
+        assert_eq!(
+            repack_followup_delay_ms(&RepackOutcome::Busy, 40, 8),
+            Some(LEASE_TTL_MS + 5_000)
+        );
+        assert_eq!(
+            repack_followup_delay_ms(
+                &RepackOutcome::Repacked {
+                    packs: 8,
+                    objects: 10,
+                    remaining: 20,
+                },
+                21,
+                8
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            repack_followup_delay_ms(
+                &RepackOutcome::Repacked {
+                    packs: 8,
+                    objects: 10,
+                    remaining: 0,
+                },
+                1,
+                8
+            ),
+            None
+        );
+        assert_eq!(repack_followup_delay_ms(&RepackOutcome::NoOp, 8, 8), None);
+        assert_eq!(repack_followup_delay_ms(&RepackOutcome::LostRace, 3, 8), None);
     }
 }
