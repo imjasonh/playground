@@ -2409,38 +2409,65 @@ fn gen_uxrom_init(_total_banks: usize) -> Vec<Instruction> {
     vec![Instruction::new(NOP, AM::Label("__uxrom_init".into()))]
 }
 
-/// MMC3 reset: choose PRG mode 0 (last two banks fixed at
-/// $C000-$FFFF) and initialise bank 0 at $8000, bank 1 at $A000.
-/// Mirroring is programmed via $A000 (only meaningful when CHR
-/// uses the internal mode — for our CHR ROM layout it's still
-/// the safest place to latch).
+/// The eight MMC3 bank registers and the pages the reset path
+/// programs into them, as `(register, page)` pairs.
+///
+/// R6 and R7 are 8 KB PRG pages: nescript bank 0 occupies pages 0
+/// and 1, so `$8000-$9FFF` gets page 0 and `$A000-$BFFF` page 1.
+/// R0 and R1 are 2 KB CHR banks at `$0000` and `$0800`, numbered in
+/// 1 KB units; R2-R5 are 1 KB CHR banks at `$1000-$1C00`. Together
+/// they map the first 8 KB of CHR ROM in order. Every register is
+/// programmed because the MMC3 powers up with all of them
+/// undefined.
+const MMC3_INIT_REGISTERS: [(u8, u8); 8] = [
+    (0, 0),
+    (1, 2),
+    (2, 4),
+    (3, 5),
+    (4, 6),
+    (5, 7),
+    (6, 0),
+    (7, 1),
+];
+
+/// MMC3 reset: program every bank register from
+/// [`MMC3_INIT_REGISTERS`], then latch mirroring and disable IRQs.
+///
+/// The PRG mode bit is already clear when this runs — the reset stub
+/// in [`mmc3_reset_stub`] clears it before jumping here — so
+/// `$8000-$9FFF` is R6, `$A000-$BFFF` is R7, and `$C000-$FFFF` holds
+/// the last two pages.
+///
+/// The register writes run as a loop over a table rather than
+/// sixteen inline `LDA`/`STA` pairs. Eight unrolled pairs cost 80
+/// bytes of a fixed bank that programs the size of
+/// `examples/subway.ne` fill to the last byte.
 fn gen_mmc3_init(mirroring: Mirroring) -> Vec<Instruction> {
     let mut out = Vec::new();
     out.push(Instruction::new(NOP, AM::Label("__mmc3_init".into())));
 
-    // Select PRG-bank-0 register (6) with PRG mode bit 6 = 0
-    // (meaning $8000 is switchable, $C000/$E000 are fixed at the
-    // last two banks).
-    out.push(Instruction::new(LDA, AM::Immediate(0x06)));
+    // for X in (0, 2, 4, ... 14): $8000 = table[X]; $8001 = table[X + 1]
+    out.push(Instruction::new(LDX, AM::Immediate(0x00)));
+    out.push(Instruction::new(NOP, AM::Label("__mmc3_init_loop".into())));
+    out.push(Instruction::new(
+        LDA,
+        AM::LabelAbsoluteX("__mmc3_init_table".into()),
+    ));
     out.push(Instruction::new(STA, AM::Absolute(0x8000)));
-    out.push(Instruction::new(LDA, AM::Immediate(0x00))); // bank 0 at $8000
+    out.push(Instruction::implied(INX));
+    out.push(Instruction::new(
+        LDA,
+        AM::LabelAbsoluteX("__mmc3_init_table".into()),
+    ));
     out.push(Instruction::new(STA, AM::Absolute(0x8001)));
-
-    // Select PRG-bank-1 register (7) and load bank 1 at $A000.
-    out.push(Instruction::new(LDA, AM::Immediate(0x07)));
-    out.push(Instruction::new(STA, AM::Absolute(0x8000)));
-    out.push(Instruction::new(LDA, AM::Immediate(0x01)));
-    out.push(Instruction::new(STA, AM::Absolute(0x8001)));
-
-    // CHR registers power up undefined. Map the 8 KB CHR ROM in
-    // order: R0/R1 are 2 KB banks at $0000/$0800 (numbered in 1 KB
-    // units, so 0 and 2), R2-R5 are 1 KB banks at $1000-$1C00.
-    for (reg, bank) in [(0u8, 0u8), (1, 2), (2, 4), (3, 5), (4, 6), (5, 7)] {
-        out.push(Instruction::new(LDA, AM::Immediate(reg)));
-        out.push(Instruction::new(STA, AM::Absolute(0x8000)));
-        out.push(Instruction::new(LDA, AM::Immediate(bank)));
-        out.push(Instruction::new(STA, AM::Absolute(0x8001)));
-    }
+    out.push(Instruction::implied(INX));
+    #[allow(clippy::cast_possible_truncation)]
+    let table_len = (MMC3_INIT_REGISTERS.len() * 2) as u8;
+    out.push(Instruction::new(CPX, AM::Immediate(table_len)));
+    out.push(Instruction::new(
+        BNE,
+        AM::LabelRelative("__mmc3_init_loop".into()),
+    ));
 
     // Mirroring: $A000, bit 0 — 0 = vertical, 1 = horizontal.
     let mirror = match mirroring {
@@ -2450,10 +2477,29 @@ fn gen_mmc3_init(mirroring: Mirroring) -> Vec<Instruction> {
     out.push(Instruction::new(LDA, AM::Immediate(mirror)));
     out.push(Instruction::new(STA, AM::Absolute(0xA000)));
 
-    // Leave IRQs disabled until the user code enables them.
+    // Leave IRQs disabled until the user code enables them. Any
+    // write to an even address in $E000-$FFFF disables and
+    // acknowledges the MMC3 IRQ, so the value in A doesn't matter.
     out.push(Instruction::new(STA, AM::Absolute(0xE000)));
 
     out
+}
+
+/// Generate the `(register, page)` table that [`gen_mmc3_init`]
+/// walks. Like the `UxROM` bus-conflict table it is spliced into the
+/// fixed bank's data area, past the last routine that can fall
+/// through into it.
+#[must_use]
+pub fn gen_mmc3_init_table() -> Vec<Instruction> {
+    let mut bytes = Vec::with_capacity(MMC3_INIT_REGISTERS.len() * 2);
+    for (reg, page) in MMC3_INIT_REGISTERS {
+        bytes.push(reg);
+        bytes.push(page);
+    }
+    vec![
+        Instruction::new(NOP, AM::Label("__mmc3_init_table".into())),
+        Instruction::new(NOP, AM::Bytes(bytes)),
+    ]
 }
 
 /// Generate the `__bank_select` subroutine. Input: A = desired bank
@@ -2635,6 +2681,50 @@ pub fn gen_bank_trampoline(
     out.push(Instruction::implied(TYA));
     out.push(Instruction::implied(RTS));
     out
+}
+
+/// Length in bytes of the MMC3 reset stub [`mmc3_reset_stub`]
+/// returns.
+pub const MMC3_RESET_STUB_LEN: usize = 13;
+
+/// Assembled MMC3 reset stub, to be placed in `$E000-$FFFF` with the
+/// reset vector pointing at it.
+///
+/// MMC3 hardwires only `$E000-$FFFF` to the last 8 KB PRG page.
+/// `$C000-$DFFF` holds the second-to-last page only while bit 6 of
+/// the bank-select register at `$8000` (the PRG mode bit) is clear;
+/// when it is set, that window is the switchable R6 page instead.
+/// The MMC3's registers have no defined power-on state, and a flash
+/// cart hands the game whatever its own loader left behind, so a
+/// reset handler sitting at `$C000` is not reliably there when the
+/// CPU fetches the reset vector. Emulators that clear the mapper's
+/// registers at power-on hide this completely.
+///
+/// The stub runs from the window that is fixed in both PRG modes,
+/// clears the mode bit, and only then jumps to `reset_addr`.
+///
+/// It writes `$06` rather than `$00` to the bank-select register so
+/// that the following `$8001` write lands on R6, the PRG register
+/// whose meaning the mode bit changes. The MMC3 decodes the mode bit
+/// combinationally, so clearing it is enough on hardware, but
+/// several emulators only re-point `$C000-$DFFF` when R6 or R7 is
+/// next written — jsnes is one, and a ROM that merely clears the bit
+/// still runs out of the wrong page there. Programming R6 makes the
+/// remap unconditional.
+///
+/// `$06` also leaves bit 7 clear, which turns off CHR A12 inversion.
+/// `gen_mmc3_init` then rewrites every bank register, R6 included,
+/// so nothing the stub sets carries state into the program.
+#[must_use]
+pub fn mmc3_reset_stub(reset_addr: u16) -> [u8; MMC3_RESET_STUB_LEN] {
+    let [lo, hi] = reset_addr.to_le_bytes();
+    [
+        0xA9, 0x06, // LDA #$06
+        0x8D, 0x00, 0x80, // STA $8000  — PRG mode 0, CHR inversion off, select R6
+        0xA9, 0x00, // LDA #$00
+        0x8D, 0x01, 0x80, // STA $8001  — R6 = page 0, and commit the PRG mode
+        0x4C, lo, hi, // JMP reset_addr
+    ]
 }
 
 /// Generate the bus-conflict avoidance table used by `UxROM`. The table

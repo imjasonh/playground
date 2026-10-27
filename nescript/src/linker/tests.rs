@@ -462,6 +462,36 @@ fn link_banked_mmc3_produces_multi_bank_rom() {
 }
 
 #[test]
+fn link_banked_mmc3_resets_through_a_stub_in_the_fixed_window() {
+    // $C000-$DFFF is the second-to-last page only while the MMC3's
+    // PRG mode bit is clear, and that register powers up undefined.
+    // The reset vector must land in $E000-$FFFF, which is fixed in
+    // both modes, and the code there must clear the mode bit before
+    // jumping to the runtime at $C000.
+    let linker = Linker::with_mapper(Mirroring::Vertical, Mapper::MMC3);
+    let user_code = vec![Instruction::implied(NOP)];
+    let banks = vec![PrgBank::empty("Stage1")];
+    let rom = linker.link_banked(&user_code, &[], &[], &[], &banks);
+
+    // CHR follows PRG in the file, so find the vectors from the
+    // header's PRG bank count rather than from the end of the file.
+    let vectors = 16 + usize::from(rom[4]) * 0x4000 - 6;
+    let reset = u16::from_le_bytes([rom[vectors + 2], rom[vectors + 3]]);
+    assert!(
+        reset >= 0xE000,
+        "MMC3 reset vector {reset:#06X} must sit in the window that is fixed in both PRG modes"
+    );
+
+    let stub = &rom[vectors - runtime::MMC3_RESET_STUB_LEN..vectors];
+    assert_eq!(stub, runtime::mmc3_reset_stub(0xC000));
+    assert_eq!(
+        reset as usize,
+        0xC000 + (0x4000 - 6 - runtime::MMC3_RESET_STUB_LEN),
+        "the vector should point at the stub, not past it"
+    );
+}
+
+#[test]
 #[should_panic(expected = "NROM does not support switchable PRG banks")]
 fn link_banked_nrom_rejects_switchable_banks() {
     let linker = Linker::with_mapper(Mirroring::Horizontal, Mapper::NROM);
