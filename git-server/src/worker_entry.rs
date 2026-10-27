@@ -243,27 +243,270 @@ struct LeaseRequest {
 #[durable_object]
 pub struct RepoStateDo {
     state: State,
+    env: Env,
+}
+
+impl RepoStateDo {
+    fn repack_trigger(&self) -> usize {
+        self.env
+            .var("REPACK_TRIGGER_PACKS")
+            .ok()
+            .and_then(|v| v.to_string().trim().parse::<usize>().ok())
+            .unwrap_or(crate::maintenance::AUTO_REPACK_TRIGGER_PACKS)
+    }
+
+    async fn load_doc(&self) -> worker::Result<LoadResult> {
+        let storage = self.state.storage();
+        let version: u64 = storage.get("version").await?.unwrap_or(0);
+        let state: RepoState = storage.get("state").await?.unwrap_or_else(RepoState::empty);
+        let lease_until_ms: i64 = storage.get("lease_until").await?.unwrap_or(0);
+        Ok(LoadResult {
+            state,
+            version,
+            lease_until_ms,
+        })
+    }
+
+    async fn apply_doc(&self, delta: &PushDelta) -> worker::Result<PushApplied> {
+        let storage = self.state.storage();
+        let version: u64 = storage.get("version").await?.unwrap_or(0);
+        let mut state: RepoState = storage.get("state").await?.unwrap_or_else(RepoState::empty);
+        let applied = state.merge_push(delta);
+        if applied.applied {
+            storage.put("state", &state).await?;
+            storage.put("version", version + 1).await?;
+        }
+        Ok(applied)
+    }
+
+    async fn swap_doc(&self, swap: &RepackSwap) -> worker::Result<bool> {
+        let storage = self.state.storage();
+        let version: u64 = storage.get("version").await?.unwrap_or(0);
+        let mut state: RepoState = storage.get("state").await?.unwrap_or_else(RepoState::empty);
+        let applied = state.merge_repack(swap);
+        if applied {
+            storage.put("state", &state).await?;
+            storage.put("version", version + 1).await?;
+        }
+        Ok(applied)
+    }
+
+    async fn lease_doc(&self, now_ms: i64, ttl_ms: i64) -> worker::Result<bool> {
+        let storage = self.state.storage();
+        let until: i64 = storage.get("lease_until").await?.unwrap_or(0);
+        if until > now_ms {
+            return Ok(false);
+        }
+        storage.put("lease_until", now_ms + ttl_ms).await?;
+        Ok(true)
+    }
+
+    async fn unlease_doc(&self) -> worker::Result<()> {
+        self.state.storage().put("lease_until", 0i64).await?;
+        Ok(())
+    }
+
+    /// Schedule one repack alarm when this push left the repo at the trigger
+    /// and no alarm is waiting. A later push does not move an alarm that is
+    /// already set.
+    async fn arm_repack_alarm(&self) -> worker::Result<()> {
+        let trigger = self.repack_trigger();
+        let storage = self.state.storage();
+        let state: RepoState = storage.get("state").await?.unwrap_or_else(RepoState::empty);
+        let alarm_set = storage.get_alarm().await?.is_some();
+        if !crate::maintenance::should_arm_repack(state.packs.len(), trigger, alarm_set) {
+            return Ok(());
+        }
+        storage.set_alarm(0i64).await
+    }
+
+    async fn run_alarm(&self) -> worker::Result<Response> {
+        let trigger = self.repack_trigger();
+        if trigger == 0 {
+            return Response::from_json(&serde_json::json!({
+                "evt": "repack_alarm",
+                "skipped": "disabled",
+            }));
+        }
+        let Some(repo_name) = self.state.id().name() else {
+            worker::console_error!("repack alarm: durable object has no name");
+            return Response::from_json(&serde_json::json!({
+                "evt": "repack_alarm",
+                "skipped": "unnamed",
+            }));
+        };
+        let store = R2Store::new(&self.env)?;
+        // The repack borrows this object through `DirectState`. Schedule the
+        // next alarm after that borrow ends. Storage and the repack cannot
+        // both hold `self`.
+        let step = {
+            let states = DirectState { owner: self };
+            let repo = crate::repo::Repo {
+                store: &store,
+                states: &states,
+                name: &repo_name,
+            };
+            match repo.load_state().await {
+                Err(e) => AlarmStep::LoadFailed(e),
+                Ok(loaded) if loaded.state.packs.len() < trigger => AlarmStep::Skip {
+                    packs: loaded.state.packs.len(),
+                },
+                Ok(loaded) => {
+                    let packs = loaded.state.packs.len();
+                    crate::metrics::begin();
+                    let start = crate::metrics::now_ms();
+                    let result = crate::maintenance::repack(&repo, &request_nonce()).await;
+                    let _metrics = crate::metrics::take();
+                    let ms = crate::metrics::now_ms() - start;
+                    match result {
+                        Ok(outcome) => {
+                            let packs_after = repo
+                                .load_state()
+                                .await
+                                .map(|again| again.state.packs.len())
+                                .unwrap_or(packs);
+                            AlarmStep::Done {
+                                packs,
+                                packs_after,
+                                outcome,
+                                ms,
+                            }
+                        }
+                        Err(error) => AlarmStep::Failed { packs, error, ms },
+                    }
+                }
+            }
+        };
+        match step {
+            AlarmStep::LoadFailed(error) => {
+                worker::console_error!("repack alarm {repo_name} load: {error}");
+                self.state.storage().set_alarm(5_000i64).await?;
+                Response::from_json(&serde_json::json!({
+                    "evt": "repack_alarm",
+                    "repo": repo_name,
+                    "error": error,
+                }))
+            }
+            AlarmStep::Skip { packs } => Response::from_json(&serde_json::json!({
+                "evt": "repack_alarm",
+                "repo": repo_name,
+                "packs": packs,
+                "skipped": "under trigger",
+            })),
+            AlarmStep::Failed { packs, error, ms } => {
+                worker::console_error!("repack alarm {repo_name} failed: {error}");
+                self.state.storage().set_alarm(5_000i64).await?;
+                Response::from_json(&serde_json::json!({
+                    "evt": "repack_alarm",
+                    "repo": repo_name,
+                    "packs": packs,
+                    "error": error,
+                    "ms": ms,
+                }))
+            }
+            AlarmStep::Done {
+                packs,
+                packs_after,
+                outcome,
+                ms,
+            } => {
+                if let Some(delay) =
+                    crate::maintenance::repack_followup_delay_ms(&outcome, packs_after, trigger)
+                {
+                    self.state.storage().set_alarm(delay).await?;
+                }
+                let body = serde_json::json!({
+                    "evt": "repack_alarm",
+                    "repo": repo_name,
+                    "packs": packs,
+                    "packs_after": packs_after,
+                    "outcome": format!("{outcome:?}"),
+                    "ms": ms,
+                });
+                worker::console_log!("{}", body);
+                Response::from_json(&body)
+            }
+        }
+    }
+}
+
+enum AlarmStep {
+    LoadFailed(String),
+    Skip {
+        packs: usize,
+    },
+    Failed {
+        packs: usize,
+        error: String,
+        ms: f64,
+    },
+    Done {
+        packs: usize,
+        packs_after: usize,
+        outcome: crate::maintenance::RepackOutcome,
+        ms: f64,
+    },
+}
+
+/// [`StateStore`] backed by this Durable Object's own storage.
+///
+/// The alarm runs inside the object, so it cannot `fetch` its own stub.
+/// That call would wait for the alarm to finish.
+struct DirectState<'a> {
+    owner: &'a RepoStateDo,
+}
+
+fn state_err(err: worker::Error) -> StateError {
+    StateError::Backend(err.to_string())
+}
+
+#[async_trait(?Send)]
+impl StateStore for DirectState<'_> {
+    async fn load(&self, _repo: &str) -> Result<LoadResult, StateError> {
+        self.owner.load_doc().await.map_err(state_err)
+    }
+
+    async fn apply_push(&self, _repo: &str, delta: &PushDelta) -> Result<PushApplied, StateError> {
+        self.owner.apply_doc(delta).await.map_err(state_err)
+    }
+
+    async fn apply_repack(&self, _repo: &str, swap: &RepackSwap) -> Result<bool, StateError> {
+        self.owner.swap_doc(swap).await.map_err(state_err)
+    }
+
+    async fn repack_lease(
+        &self,
+        _repo: &str,
+        now_ms: i64,
+        ttl_ms: i64,
+    ) -> Result<bool, StateError> {
+        self.owner
+            .lease_doc(now_ms, ttl_ms)
+            .await
+            .map_err(state_err)
+    }
+
+    async fn repack_unlease(&self, _repo: &str) -> Result<(), StateError> {
+        self.owner.unlease_doc().await.map_err(state_err)
+    }
 }
 
 impl DurableObject for RepoStateDo {
-    fn new(state: State, _env: Env) -> Self {
-        RepoStateDo { state }
+    fn new(state: State, env: Env) -> Self {
+        RepoStateDo { state, env }
     }
 
     // worker >= 0.6: DO handlers take `&self` (storage is interior-mutable).
     // worker >= 0.7: `storage.get` returns `Result<Option<T>>` (missing key is
     // `Ok(None)`, not an error).
     async fn fetch(&self, mut req: Request) -> worker::Result<Response> {
-        let storage = self.state.storage();
-        let version: u64 = storage.get("version").await?.unwrap_or(0);
         match req.path().as_str() {
             "/load" => {
-                let state: RepoState = storage.get("state").await?.unwrap_or_else(RepoState::empty);
-                let lease_until_ms: i64 = storage.get("lease_until").await?.unwrap_or(0);
+                let loaded = self.load_doc().await?;
                 Response::from_json(&LoadReply {
-                    state,
-                    version,
-                    lease_until_ms,
+                    state: loaded.state,
+                    version: loaded.version,
+                    lease_until_ms: loaded.lease_until_ms,
                 })
             }
             // Merge-apply one push's delta against the current state
@@ -271,14 +514,16 @@ impl DurableObject for RepoStateDo {
             // plus the storage input gate make read-merge-write atomic, so
             // concurrent pushes to disjoint refs all land. Bumps the
             // monotonic state version surfaced by the status API.
+            // A push that crosses the repack trigger arms an alarm. The
+            // alarm runs outside this request, so a crashed push cannot
+            // leave the maintenance lease held.
             "/apply" => {
                 let delta: PushDelta = req.json().await?;
-                let mut state: RepoState =
-                    storage.get("state").await?.unwrap_or_else(RepoState::empty);
-                let applied = state.merge_push(&delta);
+                let applied = self.apply_doc(&delta).await?;
                 if applied.applied {
-                    self.state.storage().put("state", &state).await?;
-                    self.state.storage().put("version", version + 1).await?;
+                    if let Err(err) = self.arm_repack_alarm().await {
+                        worker::console_error!("arm repack alarm: {err}");
+                    }
                 }
                 Response::from_json(&applied)
             }
@@ -288,37 +533,28 @@ impl DurableObject for RepoStateDo {
             // consumed one of the same ids first.
             "/swap" => {
                 let swap: RepackSwap = req.json().await?;
-                let mut state: RepoState =
-                    storage.get("state").await?.unwrap_or_else(RepoState::empty);
-                let applied = state.merge_repack(&swap);
-                if applied {
-                    self.state.storage().put("state", &state).await?;
-                    self.state.storage().put("version", version + 1).await?;
-                }
+                let applied = self.swap_doc(&swap).await?;
                 Response::from_json(&serde_json::json!({ "applied": applied }))
             }
             // Maintenance lease: collapses concurrent repack triggers
-            // (per-push self-trigger, cron, on-demand API) to one holder.
+            // (the alarm, cron, on-demand API) to one holder.
             // Single-threaded DO execution makes test-and-set atomic; the
             // TTL bounds a crashed holder.
             "/lease" => {
                 let body: LeaseRequest = req.json().await?;
-                let until: i64 = storage.get("lease_until").await?.unwrap_or(0);
-                if until > body.now_ms {
-                    return Response::from_json(&serde_json::json!({ "acquired": false }));
-                }
-                self.state
-                    .storage()
-                    .put("lease_until", body.now_ms + body.ttl_ms)
-                    .await?;
-                Response::from_json(&serde_json::json!({ "acquired": true }))
+                let acquired = self.lease_doc(body.now_ms, body.ttl_ms).await?;
+                Response::from_json(&serde_json::json!({ "acquired": acquired }))
             }
             "/unlease" => {
-                self.state.storage().put("lease_until", 0i64).await?;
+                self.unlease_doc().await?;
                 Response::from_json(&serde_json::json!({ "released": true }))
             }
             _ => Response::error("not found", 404),
         }
+    }
+
+    async fn alarm(&self) -> worker::Result<Response> {
+        crate::scope::run(crate::scope::fresh(), self.run_alarm()).await
     }
 }
 
@@ -467,16 +703,8 @@ fn request_nonce() -> String {
     format!("{ms:x}-{r:x}")
 }
 
-/// Self-triggering maintenance: after an accepted push, if the repo has at
-/// least [`crate::maintenance::AUTO_REPACK_TRIGGER_PACKS`] packs, a bounded
-/// repack runs in the background of the same invocation (`ctx.wait_until`).
-/// The maintenance lease collapses concurrent triggers to one runner, so
-/// under a push burst exactly one repack folds the backlog while the rest
-/// skip cheaply. Overridable with the `REPACK_TRIGGER_PACKS` var; `0`
-/// disables the trigger (cron and the on-demand API remain).
-
 #[event(fetch)]
-async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
+async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
     let mut server = GitHttp::new(
         std::rc::Rc::new(R2Store::new(&env)?),
         std::rc::Rc::new(DoStateStore { env: env.clone() }),
@@ -524,7 +752,6 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
         fetch_inner(FetchCtx {
             req,
             env,
-            ctx,
             server,
             method,
             path,
@@ -541,7 +768,6 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
 struct FetchCtx {
     req: Request,
     env: Env,
-    ctx: Context,
     server: GitHttp,
     method: String,
     path: String,
@@ -555,7 +781,6 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     let FetchCtx {
         mut req,
         env,
-        ctx,
         server,
         method,
         path,
@@ -606,67 +831,6 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                     m.kv_ops += kv_ops;
                     m.backend_ms += crate::metrics::now_ms() - kv_start;
                 }
-            }
-
-            // Self-triggering maintenance (see DEFAULT_REPACK_TRIGGER_PACKS):
-            // runs after the response is sent, so it never adds push latency.
-            let trigger = env
-                .var("REPACK_TRIGGER_PACKS")
-                .ok()
-                .and_then(|v| v.to_string().trim().parse::<usize>().ok())
-                .unwrap_or(crate::maintenance::AUTO_REPACK_TRIGGER_PACKS);
-            if trigger > 0 {
-                let env2 = env.clone();
-                let repo_name = repo.to_string();
-                let parent_ray = cf_ray.clone();
-                ctx.wait_until(crate::scope::run(crate::scope::fresh(), async move {
-                    let _ = crate::trace::span_async("git.auto_repack", move |span| async move {
-                        if let Some(ref r) = parent_ray {
-                            crate::trace::set_ray(Some(r.clone()));
-                            if span.is_traced() {
-                                span.set_attribute("cloudflare.ray_id", r);
-                                span.set_attribute("git.repo", &repo_name);
-                            }
-                        }
-                        let store = match R2Store::new(&env2) {
-                            Ok(s) => s,
-                            Err(_) => return,
-                        };
-                        let states = DoStateStore { env: env2.clone() };
-                        let repo = crate::repo::Repo {
-                            store: &store,
-                            states: &states,
-                            name: &repo_name,
-                        };
-                        let packs = match repo.load_state().await {
-                            Ok(loaded) => loaded.state.packs.len(),
-                            Err(_) => return,
-                        };
-                        if packs < trigger {
-                            return;
-                        }
-                        let start = crate::metrics::now_ms();
-                        match crate::maintenance::repack(&repo, &request_nonce()).await {
-                            Ok(outcome) => {
-                                let mut body = serde_json::json!({
-                                    "evt": "auto_repack",
-                                    "repo": repo_name,
-                                    "packs": packs,
-                                    "outcome": format!("{outcome:?}"),
-                                    "ms": crate::metrics::now_ms() - start,
-                                });
-                                if let Some(r) = crate::trace::ray() {
-                                    body["ray"] = serde_json::Value::String(r);
-                                }
-                                worker::console_log!("{}", body);
-                            }
-                            Err(e) => {
-                                worker::console_error!("auto repack {repo_name} failed: {e}")
-                            }
-                        }
-                    })
-                    .await;
-                }));
             }
         }
     }

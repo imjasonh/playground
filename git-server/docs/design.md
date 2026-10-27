@@ -514,7 +514,9 @@ emitted three ways:
   (`[observability.traces]` in `wrangler.toml`). Automatic spans cover the
   fetch/scheduled handlers and every R2 / KV / Durable Object binding call.
   Custom spans from `src/trace.rs` (`git.upload_pack`, `git.receive_pack`,
-  `git.api`, `git.auto_repack`, `git.scheduled`) nest under those; pipeline
+  `git.api`, `git.scheduled`) nest under those. A repack alarm logs a
+  `repack_alarm` line; the alarm runs on the Durable Object, which has no
+  fetch span to attach a custom span to. Pipeline
   [`Phase`](src/timing.rs) durations attach as `git.phase.*_ms` attributes
   on the active custom span. `CF-Ray` is recorded as `cloudflare.ray_id` and
   mirrored into structured logs / side-band progress for correlation.
