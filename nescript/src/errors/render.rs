@@ -1,9 +1,29 @@
+use std::io::Write;
+
 use super::Diagnostic;
 use super::Level;
 
 /// Render diagnostics to stderr using ariadne for beautiful error output.
 pub fn render_diagnostics(source: &str, filename: &str, diagnostics: &[Diagnostic]) {
-    use ariadne::{Color, Label, Report, ReportKind, Source};
+    write_diagnostics(source, filename, diagnostics, true, std::io::stderr());
+}
+
+/// Render diagnostics to `out`. Spans are byte offsets into `source`, so
+/// ariadne must index by byte: its default counts characters, which puts
+/// every report after a multi-byte character (a `──` comment rule, `×`)
+/// on a later line.
+pub fn write_diagnostics<W: Write>(
+    source: &str,
+    filename: &str,
+    diagnostics: &[Diagnostic],
+    color: bool,
+    mut out: W,
+) {
+    use ariadne::{Color, Config, IndexType, Label, Report, ReportKind, Source};
+
+    let config = Config::default()
+        .with_index_type(IndexType::Byte)
+        .with_color(color);
 
     for diag in diagnostics {
         let kind = match diag.level {
@@ -12,6 +32,7 @@ pub fn render_diagnostics(source: &str, filename: &str, diagnostics: &[Diagnosti
         };
 
         let mut report = Report::build(kind, filename, diag.span.start as usize)
+            .with_config(config)
             .with_code(diag.code.to_string())
             .with_message(&diag.message);
 
@@ -37,7 +58,7 @@ pub fn render_diagnostics(source: &str, filename: &str, diagnostics: &[Diagnosti
 
         report
             .finish()
-            .eprint((filename, Source::from(source)))
+            .write((filename, Source::from(source)), &mut out)
             .ok();
     }
 }
