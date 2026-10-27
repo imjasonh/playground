@@ -71,7 +71,12 @@ state Platform {
             reset_patterns()
             patterns_ready = true
         }
-        if on_train {
+        if resume {
+            resume = false
+            px = save_px
+            py = save_py
+            flip = save_flip
+        } else if on_train {
             // Stepping off: stand at the door the player used.
             px = door_px
             py = PLAYER_MIN_Y
@@ -83,6 +88,13 @@ state Platform {
     on frame {
         frame_top()
         frame_count += 1
+        if button.start.pressed {
+            save_px = px
+            save_py = py
+            save_flip = flip
+            pause_from = 0
+            transition PauseMap
+        }
 
         var speed: u8 = 1
         if button.b and tp == TP_NONE {

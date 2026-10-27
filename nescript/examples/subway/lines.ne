@@ -56,6 +56,11 @@ fun stop_station(p: u8, k: u8) -> u16 {
     return st + (PS_ST_LO[off] as u16)
 }
 
+// Ticks from pattern p's first stop to its stop k.
+fun stop_cum(p: u8, k: u8) -> u8 {
+    return PS_CUM[stop_offset(p, k)]
+}
+
 // Ticks from pattern p's stop k to stop k + 1.
 fun stop_gap(p: u8, k: u8) -> u8 {
     var off: u16 = stop_offset(p, k)

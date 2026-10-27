@@ -36,9 +36,16 @@ bank Gfx {
     include "subway/scenery.ne"
 }
 
+bank Map {
+    include "subway/gfx_map.ne"
+    include "subway/map.ne"
+    include "subway/pause_map.ne"
+}
+
 include "subway/video.ne"
 include "subway/hud.ne"
 include "subway/platform_state.ne"
 include "subway/riding_state.ne"
+include "subway/pause_state.ne"
 
 start Platform

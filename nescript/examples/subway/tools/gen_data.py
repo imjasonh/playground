@@ -212,7 +212,8 @@ def main():
     for row in stations:
         names.append(short_name(stops[row["GTFS Stop ID"]]["stop_name"]))
 
-    # Map projection for the pause screen: 160 x 224 pixel area.
+    # Map projection for the pause screen: the 136 x 216 pixel area at
+    # (4, 8), left of the side panel.
     lats = [float(r["GTFS Latitude"]) for r in stations]
     lons = [float(r["GTFS Longitude"]) for r in stations]
     lat0, lat1 = min(lats), max(lats)
@@ -220,9 +221,9 @@ def main():
     kx = 0.7581  # cos(40.7 degrees)
     width_km = (lon1 - lon0) * kx
     height_km = lat1 - lat0
-    scale = min(150 / width_km, 216 / height_km)
-    off_x = (160 - width_km * scale) / 2 + 4
-    off_y = (224 - height_km * scale) / 2 + 4
+    scale = min(136 / width_km, 216 / height_km)
+    off_x = (136 - width_km * scale) / 2 + 4
+    off_y = (216 - height_km * scale) / 2 + 8
 
     def project(lat, lon):
         x = (lon - lon0) * kx * scale + off_x

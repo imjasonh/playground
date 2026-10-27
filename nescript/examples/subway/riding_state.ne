@@ -86,9 +86,17 @@ state Riding {
     var rwalk: u8 = 0
 
     on enter {
+        on_train = true
+        if resume {
+            resume = false
+            rpx = save_px
+            rpy = save_py
+            rflip = save_flip
+            ride_setup()
+            return
+        }
         rpx = door_px
         rpy = RIDE_MIN_Y
-        on_train = true
         rphase = 0
         at_end = false
         rx = 0
@@ -105,6 +113,13 @@ state Riding {
     on frame {
         frame_top()
         frame_count += 1
+        if button.start.pressed {
+            save_px = rpx
+            save_py = rpy
+            save_flip = rflip
+            pause_from = 1
+            transition PauseMap
+        }
 
         var speed: u8 = 1
         if button.b and rphase == 1 {

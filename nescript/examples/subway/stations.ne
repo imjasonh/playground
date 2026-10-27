@@ -57,3 +57,12 @@ fun next_in_complex(st: u16) -> u16 {
 fun station_flags(st: u16) -> u8 {
     return ST_FLAGS[st]
 }
+
+// Station st's position on the pause map.
+fun map_x(st: u16) -> u8 {
+    return ST_MAP_X[st]
+}
+
+fun map_y(st: u16) -> u8 {
+    return ST_MAP_Y[st]
+}

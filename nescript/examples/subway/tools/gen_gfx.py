@@ -510,6 +510,8 @@ MESSAGES = [
     ("TO", "to "),
     ("HUD_NEXT", "Next: "),
     ("HUD_AT", "At: "),
+    ("STOPS", "Next stops"),
+    ("TRAINS", "Trains here"),
 ]
 
 
@@ -838,7 +840,142 @@ def build_sprites(page):
         "wpost": [".122221."] * 8,
     }.items():
         T[name] = page.add([[int(c) if c != "." else 0 for c in r] for r in rows], name)
+    # Pause map markers, centered on pixel (3, 3): a stop in its
+    # route's color k with a white center, and the player.
+    for k in (1, 2):
+        rows = ["........", "..kkk...", ".k333k..", ".k333k..",
+                ".k333k..", "..kkk...", "........", "........"]
+        T[f"dot{k}"] = page.add([[k if c == "k" else int(c) if c != "." else 0
+                                  for c in r] for r in rows], f"dot{k}")
+    here = ["..333...", ".32223..", "3222223.", "3222223.",
+            "3222223.", ".32223..", "..333...", "........"]
+    T["here"] = page.add([[int(c) if c != "." else 0 for c in r] for r in here], "here")
     return T
+
+
+# --------------------------------------------------------------------
+# Pause map (CHR page 3)
+# --------------------------------------------------------------------
+
+# The map covers columns 0-17; the side panel starts at MAP_PANEL_X.
+MAP_COLS = 18
+MAP_PANEL_X = 18
+# Line color of each route color group on the map, for the background
+# palettes that light up the routes the player can ride.
+GROUP_MAP_COLOR = {
+    "red": 0x16, "green": 0x1A, "purple": 0x14, "blue": 0x12,
+    "orange": 0x27, "lime": 0x2A, "brown": 0x17, "gray": 0x30,
+    "yellow": 0x28, "shuttle": 0x30,
+}
+# Borough names on the map: (text, column, row). Manhattan has no
+# room beside it that isn't another borough.
+MAP_LABELS = (("Bronx", 13, 1), ("Queens", 12, 14), ("Brooklyn", 3, 28))
+
+
+def read_ne_table(path, name):
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+    start = src.index(f"const {name}:")
+    body = src[src.index("[", src.index("=", start)) + 1:src.index("]", src.index("=", start))]
+    return [int(v) for v in body.replace("\n", " ").split(",") if v.strip()]
+
+
+def map_bitmap(data_dir):
+    """Every route as one-pixel lines between its stops."""
+    st_path = os.path.join(data_dir, "data_stations.ne")
+    ln_path = os.path.join(data_dir, "data_lines.ne")
+    xs = read_ne_table(st_path, "ST_MAP_X")
+    ys = read_ne_table(st_path, "ST_MAP_Y")
+    st_lo = read_ne_table(ln_path, "PS_ST_LO")
+    st_hi = read_ne_table(ln_path, "PS_ST_HI")
+    off_lo = read_ne_table(ln_path, "PAT_OFF_LO")
+    off_hi = read_ne_table(ln_path, "PAT_OFF_HI")
+    lens = read_ne_table(ln_path, "PAT_LEN")
+    img = [[0] * (MAP_COLS * 8) for _ in range(240)]
+
+    def line(x0, y0, x1, y1):
+        dx, dy = abs(x1 - x0), -abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx + dy
+        while True:
+            img[y0][x0] = 1
+            if x0 == x1 and y0 == y1:
+                return
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+
+    for p, n in enumerate(lens):
+        off = off_hi[p] * 256 + off_lo[p]
+        stops = [st_hi[off + k] * 256 + st_lo[off + k] for k in range(n)]
+        for a, b in zip(stops, stops[1:]):
+            line(xs[a], ys[a], xs[b], ys[b])
+    return img
+
+
+def merge_tiles(cells, budget):
+    """Replace the rarest tiles with their nearest look-alikes until at
+    most `budget` distinct tiles remain."""
+    counts = {}
+    for row in cells:
+        for t in row:
+            counts[t] = counts.get(t, 0) + 1
+    blank = tuple(tuple([0] * 8) for _ in range(8))
+
+    def dist(a, b):
+        return sum(pa != pb for ra, rb in zip(a, b) for pa, pb in zip(ra, rb))
+
+    remap = {}
+    while len(counts) > budget:
+        best = None
+        for a in counts:
+            if a == blank:
+                continue
+            for b in counts:
+                if a == b or counts[b] < counts[a]:
+                    continue
+                d = dist(a, b) * counts[a]
+                if best is None or d < best[0]:
+                    best = (d, a, b)
+        _, a, b = best
+        counts[b] += counts.pop(a)
+        remap[a] = b
+        for k, v in remap.items():
+            if v == a:
+                remap[k] = b
+    return [[remap.get(t, t) for t in row] for row in cells]
+
+
+def build_map(page, data_dir):
+    img = map_bitmap(data_dir)
+    T = {}
+    T["rule"] = page.add(parse(["...1...."] * 8), "rule")
+    cells = [[tuple(tuple(img[ty * 8 + y][tx * 8:tx * 8 + 8]) for y in range(8))
+              for tx in range(MAP_COLS)] for ty in range(30)]
+    labels = set()
+    for text, x0, y in MAP_LABELS:
+        for i in range(len(text)):
+            labels.add((x0 + i, y))
+    blank = tuple(tuple([0] * 8) for _ in range(8))
+    for (x, y) in labels:
+        assert cells[y][x] == blank, f"map label covers a line at {x}, {y}"
+    cells = merge_tiles(cells, 256 - len(page.tiles) + 1)
+    s = Screen(0)
+    for ty in range(30):
+        for tx in range(MAP_COLS):
+            if cells[ty][tx] != blank:
+                s.put(tx, ty, page.add([list(r) for r in cells[ty][tx]], None))
+    for text, x0, y in MAP_LABELS:
+        s.text(x0, y, text)
+    for y in range(1, 29):
+        s.put(MAP_PANEL_X, y, T["rule"])
+    s.palette(MAP_PANEL_X, 0, 32 - MAP_PANEL_X, 30, 3)
+    return T, s
 
 
 def emit_page(name, page_no, page, start=None):
@@ -874,10 +1011,14 @@ def main():
     IT = build_interior(inner)
     car = interior_screen(IT)
 
+    mpage = Page("map", 1)
+    MT, map_scr = build_map(mpage, out_dir)
+
     chr_out = ["// Generated by examples/subway/tools/gen_gfx.py. Do not edit by hand.", ""]
     chr_out.append(emit_page("PlatformTiles", 0, plat))
     chr_out.append(emit_page("SpriteTiles", 1, spr))
     chr_out.append(emit_page("InteriorTiles", 2, inner, start=0))
+    chr_out.append(emit_page("MapTiles", 3, mpage, start=0))
     with open(os.path.join(out_dir, "gfx_chr.ne"), "w") as f:
         f.write("\n".join(chr_out))
 
@@ -887,6 +1028,9 @@ def main():
     scr.append(table("NT_INTERIOR", car.bytes()))
     with open(os.path.join(out_dir, "gfx_screens.ne"), "w") as f:
         f.write("\n".join(scr))
+    with open(os.path.join(out_dir, "gfx_map.ne"), "w") as f:
+        f.write("// Generated by examples/subway/tools/gen_gfx.py. Do not edit by hand.\n\n")
+        f.write(table("NT_MAP", map_scr.bytes()))
 
     consts = ["// Generated by examples/subway/tools/gen_gfx.py. Do not edit by hand.", ""]
     for name, idx in sorted(TT.items()):
@@ -919,6 +1063,13 @@ def main():
     consts.append(table("ROUTE_PAL", pal).rstrip())
     consts.append(table("ROUTE_TILE", tile).rstrip())
     consts.append(table("ROUTE_SP3", sp3).rstrip())
+    consts.append("// Per route: its line color on the pause map, and the map dot")
+    consts.append("// sprite in its bullet color.")
+    consts.append(table("ROUTE_MAP", [GROUP_MAP_COLOR[g] for _, _, g in ROUTES]).rstrip())
+    consts.append(table("ROUTE_DOT", [ST[f"dot{GROUP_STYLE[g][1]}"] for _, _, g in ROUTES]).rstrip())
+    consts.append(f"const S_HERE: u8 = {ST['here']}")
+    consts.append(f"const S_DOT2: u8 = {ST['dot2']}")
+    consts.append(f"const MAP_PANEL_X: u8 = {MAP_PANEL_X}")
     consts.append(f"const FONT_BASE: u8 = {FONT_BASE}")
     consts.append(f"const S_POST: u8 = {ST['post']}")
     consts.append(f"const S_SEAM_L: u8 = {ST['seam_l']}")
@@ -951,7 +1102,7 @@ def main():
     with open(os.path.join(out_dir, "gfx_consts.ne"), "w") as f:
         f.write("\n".join(consts) + "\n")
     print(f"platform page: {len(plat.tiles)} tiles, sprites: {len(spr.tiles)} tiles, "
-          f"interior: {len(inner.tiles)} tiles",
+          f"interior: {len(inner.tiles)} tiles, map: {len(mpage.tiles)} tiles",
           file=sys.stderr)
 
 
