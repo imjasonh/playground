@@ -19,8 +19,8 @@ sfx DoorChime {
     volume: [12, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 12, 11, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 0]
 }
 
-// espeak-ng en-us at 150 words per minute, "Stand clear of the closing doors.",
-// resampled to DMC rate 11.
+// "Stand clear of the closing doors, please." Kokoro voice bm_george
+// at speed 1.3, low-passed and encoded at NTSC DMC rate 11.
 dpcm StandClear {
     rate: 11
     data: @binary("subway/stand_clear.dmc")
