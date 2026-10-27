@@ -545,6 +545,124 @@ fn clear_tip_cache_for_test() {
     TIP_CACHE.with(|c| c.borrow_mut().clear());
 }
 
+/// Snapshot of one repo's tip map. A new isolate reads this instead of every
+/// file-log segment. The id list is the fingerprint: a mismatch falls back
+/// to a suffix load or a full load.
+const TIPS_MAGIC: &[u8; 4] = b"GSTT";
+/// Skip the snapshot when the encoded map is larger than this. The push
+/// still keeps the in-memory map.
+const TIPS_SNAPSHOT_MAX_BYTES: usize = 1024 * 1024;
+
+fn tips_key(repo: &str) -> String {
+    format!("{repo}/filelog-tips")
+}
+
+fn encode_tips(tips: &RepoTips) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    out.extend_from_slice(TIPS_MAGIC);
+    let Ok(n_ids) = u32::try_from(tips.filelog_ids.len()) else {
+        return None;
+    };
+    push_u32(&mut out, n_ids);
+    for id in &tips.filelog_ids {
+        if !push_str(&mut out, id) {
+            return None;
+        }
+    }
+    let mut paths: Vec<&String> = tips.tips.keys().collect();
+    paths.sort();
+    let Ok(n_paths) = u32::try_from(paths.len()) else {
+        return None;
+    };
+    push_u32(&mut out, n_paths);
+    for path in paths {
+        let tip = &tips.tips[path];
+        if !push_str(&mut out, path)
+            || !push_str(&mut out, &tip.commit)
+            || !push_str(&mut out, &tip.blob)
+        {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+fn push_u32(out: &mut Vec<u8>, n: u32) {
+    out.extend_from_slice(&n.to_le_bytes());
+}
+
+fn push_str(out: &mut Vec<u8>, s: &str) -> bool {
+    let Ok(len) = u16::try_from(s.len()) else {
+        return false;
+    };
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(s.as_bytes());
+    true
+}
+
+fn decode_tips(bytes: &[u8]) -> Option<RepoTips> {
+    if bytes.len() < 8 || &bytes[..4] != TIPS_MAGIC {
+        return None;
+    }
+    let mut p = 4;
+    let n_ids = read_u32(bytes, &mut p)?;
+    let mut filelog_ids = Vec::with_capacity(n_ids as usize);
+    for _ in 0..n_ids {
+        filelog_ids.push(read_str(bytes, &mut p)?.to_string());
+    }
+    let n_paths = read_u32(bytes, &mut p)?;
+    let mut tips = HashMap::with_capacity(n_paths as usize);
+    for _ in 0..n_paths {
+        let path = read_str(bytes, &mut p)?.to_string();
+        let commit = read_str(bytes, &mut p)?.to_string();
+        let blob = read_str(bytes, &mut p)?.to_string();
+        tips.insert(path, PathTip { commit, blob });
+    }
+    if p != bytes.len() {
+        return None;
+    }
+    Some(RepoTips { filelog_ids, tips })
+}
+
+fn read_u32(bytes: &[u8], p: &mut usize) -> Option<u32> {
+    let n = u32::from_le_bytes(bytes.get(*p..*p + 4)?.try_into().ok()?);
+    *p += 4;
+    Some(n)
+}
+
+fn read_str<'a>(bytes: &'a [u8], p: &mut usize) -> Option<&'a str> {
+    let len = u16::from_le_bytes(bytes.get(*p..*p + 2)?.try_into().ok()?) as usize;
+    *p += 2;
+    let s = std::str::from_utf8(bytes.get(*p..*p + len)?).ok()?;
+    *p += len;
+    Some(s)
+}
+
+async fn load_tip_snapshot(store: &dyn Store, repo: &str) -> Option<RepoTips> {
+    let bytes = store.get(&tips_key(repo)).await.ok().flatten()?;
+    decode_tips(&bytes)
+}
+
+async fn store_tip_snapshot(store: &dyn Store, repo: &str, tips: &RepoTips) {
+    let Some(bytes) = encode_tips(tips) else {
+        return;
+    };
+    if bytes.len() > TIPS_SNAPSHOT_MAX_BYTES {
+        return;
+    }
+    let _ = store.put(&tips_key(repo), bytes).await;
+}
+
+fn cache_tips(repo: &str, tips: RepoTips) {
+    TIP_CACHE.with(|c| {
+        c.borrow_mut().insert(repo.to_string(), tips);
+    });
+}
+
+fn cached_tips(repo: &str) -> Option<RepoTips> {
+    TIP_CACHE.with(|c| c.borrow().get(repo).cloned())
+}
+
 fn merge_segment_into_tips(tips: &mut HashMap<String, PathTip>, seg: &FileLogSegment) {
     for r in &seg.records {
         tips.insert(
@@ -557,46 +675,26 @@ fn merge_segment_into_tips(tips: &mut HashMap<String, PathTip>, seg: &FileLogSeg
     }
 }
 
-/// Tips for `state.filelog`, using the isolate tip cache when possible.
+/// Tips for `state.filelog`.
 ///
-/// * Exact fingerprint match → no Class B.
-/// * `state.filelog` is a prefix extension of the cache → load only the new
-///   suffix segments and merge.
-/// * Otherwise cold-load via `scope`. When the load is complete (every
-///   segment contributed all its records), the tip map is stored for the
-///   next push on this isolate.
+/// * Exact fingerprint match in memory: no Class B.
+/// * Same match in the R2 snapshot: one Class B, then the map stays in memory.
+/// * `state.filelog` extends that fingerprint: load only the new suffix.
+/// * Otherwise cold-load via `scope`. A complete load (every segment
+///   contributed all of its records) is written back to memory and to the
+///   snapshot.
 async fn tips_for_state(
     store: &dyn Store,
     repo: &str,
     state: &RepoState,
     scope: &FilelogScope<'_>,
 ) -> Result<HashMap<String, PathTip>, String> {
-    let cached = TIP_CACHE.with(|c| c.borrow().get(repo).cloned());
-    if let Some(cache) = cached {
-        if cache.filelog_ids == state.filelog {
-            return Ok(cache.tips);
+    if let Some(cache) = cached_tips(repo) {
+        if let Some(tips) = extend_cached_tips(store, repo, state, cache).await? {
+            return Ok(tips);
         }
-        if state.filelog.starts_with(cache.filelog_ids.as_slice()) {
-            let new_ids = &state.filelog[cache.filelog_ids.len()..];
-            // Suffix loads always use All: plain segments are small, and we
-            // need a complete tip map to keep serving later pushes.
-            let (segs, complete) =
-                load_filelog_ids(store, repo, new_ids, &FilelogScope::All).await?;
-            let mut tips = cache.tips;
-            for seg in segs.iter().rev() {
-                merge_segment_into_tips(&mut tips, seg);
-            }
-            if complete {
-                TIP_CACHE.with(|c| {
-                    c.borrow_mut().insert(
-                        repo.to_string(),
-                        RepoTips {
-                            filelog_ids: state.filelog.clone(),
-                            tips: tips.clone(),
-                        },
-                    );
-                });
-            }
+    } else if let Some(saved) = load_tip_snapshot(store, repo).await {
+        if let Some(tips) = extend_cached_tips(store, repo, state, saved).await? {
             return Ok(tips);
         }
     }
@@ -607,47 +705,85 @@ async fn tips_for_state(
         merge_segment_into_tips(&mut tips, seg);
     }
     if complete {
-        TIP_CACHE.with(|c| {
-            c.borrow_mut().insert(
-                repo.to_string(),
-                RepoTips {
-                    filelog_ids: state.filelog.clone(),
-                    tips: tips.clone(),
-                },
-            );
-        });
+        let saved = RepoTips {
+            filelog_ids: state.filelog.clone(),
+            tips: tips.clone(),
+        };
+        cache_tips(repo, saved.clone());
+        store_tip_snapshot(store, repo, &saved).await;
     }
     Ok(tips)
 }
 
+/// Use `cache` when it matches `state.filelog`, or load the suffix when
+/// `state.filelog` still starts with it. `None` means the caller should
+/// cold-load.
+async fn extend_cached_tips(
+    store: &dyn Store,
+    repo: &str,
+    state: &RepoState,
+    cache: RepoTips,
+) -> Result<Option<HashMap<String, PathTip>>, String> {
+    if cache.filelog_ids == state.filelog {
+        let tips = cache.tips.clone();
+        cache_tips(repo, cache);
+        return Ok(Some(tips));
+    }
+    if state.filelog.starts_with(cache.filelog_ids.as_slice()) {
+        let new_ids = &state.filelog[cache.filelog_ids.len()..];
+        // Suffix loads always use All: plain segments are small, and we
+        // need a complete tip map to keep serving later pushes.
+        let (segs, complete) = load_filelog_ids(store, repo, new_ids, &FilelogScope::All).await?;
+        let mut tips = cache.tips;
+        for seg in segs.iter().rev() {
+            merge_segment_into_tips(&mut tips, seg);
+        }
+        if complete {
+            let saved = RepoTips {
+                filelog_ids: state.filelog.clone(),
+                tips: tips.clone(),
+            };
+            cache_tips(repo, saved.clone());
+            store_tip_snapshot(store, repo, &saved).await;
+        }
+        return Ok(Some(tips));
+    }
+    Ok(None)
+}
+
 /// After a push writes `new_id`, fold its records into the tip cache so the
 /// next push on this isolate pays zero Class B for prev-pointers when the
-/// DO state matches `prior_filelog + [new_id]`.
-fn remember_tips_after_push(
+/// DO state matches `prior_filelog + [new_id]`. A racing push that started
+/// from an older snapshot leaves the cache in place.
+async fn remember_tips_after_push(
+    store: &dyn Store,
     repo: &str,
     prior_filelog: &[String],
     new_id: &str,
     segment: &FileLogSegment,
 ) {
-    TIP_CACHE.with(|c| {
+    let updated = TIP_CACHE.with(|c| {
         let mut map = c.borrow_mut();
         let tips = match map.get(repo) {
             Some(cache) if cache.filelog_ids.as_slice() == prior_filelog => cache.tips.clone(),
-            Some(_) => {
-                // Out of sync with this push's snapshot — drop and let the
-                // next request cold-load.
-                map.remove(repo);
-                return;
-            }
+            // Another push on this isolate already advanced the cache.
+            // Leave that fingerprint. The next read suffix-extends when the
+            // committed list still starts with it.
+            Some(_) => return None,
             None if prior_filelog.is_empty() => HashMap::new(),
-            None => return,
+            None => return None,
         };
         let mut tips = tips;
         merge_segment_into_tips(&mut tips, segment);
         let mut filelog_ids = prior_filelog.to_vec();
         filelog_ids.push(new_id.to_string());
-        map.insert(repo.to_string(), RepoTips { filelog_ids, tips });
+        let saved = RepoTips { filelog_ids, tips };
+        map.insert(repo.to_string(), saved.clone());
+        Some(saved)
     });
+    if let Some(saved) = updated {
+        store_tip_snapshot(store, repo, &saved).await;
+    }
 }
 
 /// Load all of a repo's file-log segments, newest first.
@@ -917,7 +1053,8 @@ impl<'a> Repo<'a> {
                         .await
                         .map_err(|e| e.to_string())?;
                 }
-                remember_tips_after_push(self.name, &state.filelog, &meta.id, &segment);
+                remember_tips_after_push(self.store, self.name, &state.filelog, &meta.id, &segment)
+                    .await;
                 filelog_id = Some(meta.id.clone());
             }
         }
@@ -1784,7 +1921,10 @@ mod tests {
                 .await
                 .unwrap();
             let cold = store.op_counts().class_b;
-            assert_eq!(cold, 8, "cold tip build loads each plain segment");
+            assert_eq!(
+                cold, 9,
+                "cold tip build probes the snapshot, then loads each plain segment"
+            );
             assert_eq!(
                 tips.get("tracked.txt").unwrap().commit,
                 format!("{:040x}", 8)
@@ -1804,7 +1944,7 @@ mod tests {
             let new = FileLogSegment {
                 records: vec![record("tracked.txt", 8)],
             };
-            remember_tips_after_push("tip-repo", &ids, "seg8", &new);
+            remember_tips_after_push(&store, "tip-repo", &ids, "seg8", &new).await;
             let mut ids2 = ids.clone();
             ids2.push("seg8".into());
             let key = filelog_key("tip-repo", "seg8");
@@ -1856,6 +1996,114 @@ mod tests {
                 format!("{:040x}", 10)
             );
         });
+    }
+
+    #[test]
+    fn tip_snapshot_serves_a_fresh_isolate() {
+        block_on(async {
+            clear_filelog_cache_for_test();
+            let store = MemStore::new();
+            let mut ids = Vec::new();
+            for i in 0..4u64 {
+                let id = format!("seg{i}");
+                let seg = FileLogSegment {
+                    records: vec![record("tracked.txt", i)],
+                };
+                store
+                    .put(&filelog_key("snap", &id), seg.to_bytes())
+                    .await
+                    .unwrap();
+                ids.push(id);
+            }
+            let state = RepoState {
+                filelog: ids,
+                ..RepoState::empty()
+            };
+            let changed: HashSet<String> = ["tracked.txt".to_string()].into_iter().collect();
+            store.reset_op_counts();
+            tips_for_state(&store, "snap", &state, &FilelogScope::Paths(&changed))
+                .await
+                .unwrap();
+            assert_eq!(
+                store.op_counts().class_b,
+                5,
+                "cold load probes the snapshot, then reads each segment"
+            );
+            assert_eq!(
+                store.op_counts().class_a,
+                1,
+                "cold load writes the snapshot"
+            );
+
+            clear_filelog_cache_for_test();
+            store.reset_op_counts();
+            let tips = tips_for_state(&store, "snap", &state, &FilelogScope::Paths(&changed))
+                .await
+                .unwrap();
+            assert_eq!(
+                store.op_counts().class_b,
+                1,
+                "fresh isolate reads the snapshot"
+            );
+            assert_eq!(store.op_counts().class_a, 0);
+            assert_eq!(
+                tips.get("tracked.txt").unwrap().commit,
+                format!("{:040x}", 4)
+            );
+        });
+    }
+
+    #[test]
+    fn racing_push_keeps_the_tip_cache_prefix() {
+        block_on(async {
+            clear_filelog_cache_for_test();
+            let store = MemStore::new();
+            let ids = Vec::<String>::new();
+            let first = FileLogSegment {
+                records: vec![record("a.txt", 1)],
+            };
+            let second = FileLogSegment {
+                records: vec![record("b.txt", 2)],
+            };
+            remember_tips_after_push(&store, "race", &ids, "segA", &first).await;
+            // segB started from the same empty snapshot and finishes second.
+            remember_tips_after_push(&store, "race", &ids, "segB", &second).await;
+            store
+                .put(&filelog_key("race", "segA"), first.to_bytes())
+                .await
+                .unwrap();
+            store
+                .put(&filelog_key("race", "segB"), second.to_bytes())
+                .await
+                .unwrap();
+            let state = RepoState {
+                filelog: vec!["segA".into(), "segB".into()],
+                ..RepoState::empty()
+            };
+            let changed: HashSet<String> = ["a.txt".into(), "b.txt".into()].into_iter().collect();
+            store.reset_op_counts();
+            let tips = tips_for_state(&store, "race", &state, &FilelogScope::Paths(&changed))
+                .await
+                .unwrap();
+            assert_eq!(
+                store.op_counts().class_b,
+                1,
+                "the cache still names segA, so only segB is read"
+            );
+            assert!(tips.contains_key("a.txt"));
+            assert!(tips.contains_key("b.txt"));
+        });
+    }
+
+    #[test]
+    fn tip_snapshot_rejects_trailing_bytes() {
+        let tips = RepoTips {
+            filelog_ids: vec!["a".into()],
+            tips: HashMap::new(),
+        };
+        let mut bytes = encode_tips(&tips).unwrap();
+        bytes.push(1);
+        assert!(decode_tips(&bytes).is_none());
     }
 
     /// Tiny commit+tree+blobs fixture for filter selection tests.
