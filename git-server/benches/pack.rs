@@ -104,7 +104,8 @@ fn main() {
             "index/resolve (1k objects)",
             pack_small.len() as u64,
             || {
-                let recs = block_on(resolve_pack(&store, "p", &scanned, &NoExternalBases)).unwrap();
+                let recs =
+                    block_on(resolve_pack(&store, "p", &scanned, &NoExternalBases, None)).unwrap();
                 assert_eq!(recs.len(), 1_000);
             },
         );
@@ -119,7 +120,7 @@ fn main() {
             s.feed(&pack_small).unwrap();
             s.finish().unwrap()
         };
-        let recs = block_on(resolve_pack(&store, "p", &scanned, &NoExternalBases)).unwrap();
+        let recs = block_on(resolve_pack(&store, "p", &scanned, &NoExternalBases, None)).unwrap();
         let idx = PackIndex::new(recs);
         let bytes = idx.to_bytes();
         bench(

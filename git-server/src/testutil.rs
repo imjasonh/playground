@@ -335,9 +335,15 @@ pub async fn install_pack(store: &MemStore, repo: &str, pack: &[u8]) -> String {
         .put(&pack_key(repo, &id), pack.to_vec())
         .await
         .unwrap();
-    let recs = resolve_pack(store, &pack_key(repo, &id), &scanned, &NoExternalBases)
-        .await
-        .unwrap();
+    let recs = resolve_pack(
+        store,
+        &pack_key(repo, &id),
+        &scanned,
+        &NoExternalBases,
+        None,
+    )
+    .await
+    .unwrap();
     store
         .put(&index_key(repo, &id), PackIndex::new(recs).to_bytes())
         .await

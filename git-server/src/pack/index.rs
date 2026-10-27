@@ -1,11 +1,11 @@
 //! Delta resolution and the `GSIX` pack index.
 //!
-//! After a pushed pack has been streamed to R2 and scanned
-//! ([`super::scan`]), every delta entry still needs its final object id and
-//! type. [`resolve_pack`] does that with *ranged reads* against the stored
-//! pack: it walks delta chains, reading each compressed payload only when
-//! needed and keeping a byte-budgeted content cache, so memory stays bounded
-//! no matter how large the pack is.
+//! After a pushed pack has been scanned ([`super::scan`]), every delta entry
+//! still needs its final object id and type. [`resolve_pack`] walks delta
+//! chains and reads each compressed payload only when needed. A pack that is
+//! still in memory is sliced from that buffer. Any other pack is read back
+//! with ranged reads. A byte-budgeted content cache keeps memory bounded no
+//! matter how large the pack is.
 //!
 //! The result is serialized as a `GSIX` index object next to the pack in R2.
 //! Per entry it records the compressed byte range (so reads are exact ranged
@@ -75,7 +75,13 @@ pub async fn resolve_pack(
     pack_key: &str,
     scanned: &ScannedPack,
     external: &dyn ExternalBases,
+    local: Option<&[u8]>,
 ) -> Result<Vec<EntryRecord>, String> {
+    if let Some(bytes) = local {
+        if bytes.len() as u64 != scanned.total_len {
+            return Err("buffered pack length does not match the scan".into());
+        }
+    }
     let entries = &scanned.entries;
     let by_offset: HashMap<u64, usize> = entries
         .iter()
@@ -93,6 +99,7 @@ pub async fn resolve_pack(
     let mut resolver = Resolver {
         store,
         reader: crate::storage::BlockReader::new(pack_key),
+        local,
         entries,
         by_offset,
         cache: crate::cache::ByteBudgetCache::new(RESOLVE_CACHE_BUDGET),
@@ -153,6 +160,9 @@ struct Resolver<'a> {
     /// offset order and delta bases cluster near their deltas, so this turns
     /// per-entry ranged reads into O(pack bytes / block size) requests.
     reader: crate::storage::BlockReader,
+    /// The raw pack, when the caller still holds it. Payload reads slice
+    /// this instead of calling [`Self::reader`].
+    local: Option<&'a [u8]>,
     entries: &'a [crate::pack::scan::ScanEntry],
     by_offset: HashMap<u64, usize>,
     cache: crate::cache::ByteBudgetCache<usize>,
@@ -162,11 +172,19 @@ struct Resolver<'a> {
 impl Resolver<'_> {
     async fn read_payload(&self, i: usize) -> Result<Vec<u8>, String> {
         let e = &self.entries[i];
-        let raw = self
-            .reader
-            .read(self.store, e.data_start, e.data_end)
-            .await
-            .map_err(|se: StorageError| se.to_string())?;
+        let raw = if let Some(bytes) = self.local {
+            let start = usize::try_from(e.data_start).map_err(|_| "pack offset does not fit")?;
+            let end = usize::try_from(e.data_end).map_err(|_| "pack offset does not fit")?;
+            bytes
+                .get(start..end)
+                .ok_or("pack payload is outside the buffered pack")?
+                .to_vec()
+        } else {
+            self.reader
+                .read(self.store, e.data_start, e.data_end)
+                .await
+                .map_err(|se: StorageError| se.to_string())?
+        };
         inflate(&raw, e.inflated_size)
     }
 
@@ -354,7 +372,7 @@ mod tests {
             let store = MemStore::new();
             store.put("p", pack.clone()).await.unwrap();
             let scanned = scan(&pack);
-            let recs = resolve_pack(&store, "p", &scanned, &NoExternalBases)
+            let recs = resolve_pack(&store, "p", &scanned, &NoExternalBases, None)
                 .await
                 .unwrap();
             assert_eq!(recs.len(), 2);
@@ -391,7 +409,7 @@ mod tests {
             store.put("p", pack.clone()).await.unwrap();
             let scanned = scan(&pack);
             let idx = PackIndex::new(
-                resolve_pack(&store, "p", &scanned, &NoExternalBases)
+                resolve_pack(&store, "p", &scanned, &NoExternalBases, None)
                     .await
                     .unwrap(),
             );
@@ -429,13 +447,53 @@ mod tests {
             store.put("p", pack.clone()).await.unwrap();
             let scanned = scan(&pack);
             let idx = PackIndex::new(
-                resolve_pack(&store, "p", &scanned, &OneBase(base_oid, base))
+                resolve_pack(&store, "p", &scanned, &OneBase(base_oid, base), None)
                     .await
                     .unwrap(),
             );
             let rec = idx.lookup(target_oid).expect("thin delta resolved");
             assert_eq!(rec.base_oid, Some(base_oid));
             assert_eq!(rec.size, target.len() as u64);
+        });
+    }
+
+    #[test]
+    fn resolves_deltas_from_the_buffered_pack() {
+        block_on(async {
+            let base = b"the quick brown fox jumps over the lazy dog".to_vec();
+            let tip = b"lazy dog".to_vec();
+            let base_oid = hash_object(ObjType::Blob, &base);
+            let tip_oid = hash_object(ObjType::Blob, &tip);
+            let mut w = PackWriter::new(2);
+            w.add_full(ObjType::Blob, &base);
+            let delta = literal_delta(base.len(), &tip);
+            w.add_ref_delta_precompressed(base_oid, delta.len() as u64, &deflate(&delta));
+            let (pack, _) = w.finish();
+            let scanned = scan(&pack);
+
+            let store = MemStore::new();
+            store.reset_op_counts();
+            let idx = PackIndex::new(
+                resolve_pack(&store, "absent", &scanned, &NoExternalBases, Some(&pack))
+                    .await
+                    .unwrap(),
+            );
+            assert_eq!(store.op_counts().class_a, 0);
+            assert_eq!(store.op_counts().class_b, 0);
+            let rec = idx.lookup(tip_oid).expect("tip resolved from the buffer");
+            assert_eq!(rec.base_oid, Some(base_oid));
+            assert_eq!(rec.size, tip.len() as u64);
+
+            let err = resolve_pack(
+                &store,
+                "absent",
+                &scanned,
+                &NoExternalBases,
+                Some(&pack[..pack.len() - 1]),
+            )
+            .await
+            .unwrap_err();
+            assert!(err.contains("length"), "{err}");
         });
     }
 
@@ -447,7 +505,7 @@ mod tests {
             store.put("p", pack.clone()).await.unwrap();
             let scanned = scan(&pack);
             let idx = PackIndex::new(
-                resolve_pack(&store, "p", &scanned, &NoExternalBases)
+                resolve_pack(&store, "p", &scanned, &NoExternalBases, None)
                     .await
                     .unwrap(),
             );

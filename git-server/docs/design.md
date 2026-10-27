@@ -115,11 +115,12 @@ client ──pack stream──▶ Worker ──┬─▶ R2 (one put up to 5 MiB
    parts. Memory for a large pack is a partial-chunk carry buffer, 32 KiB of
    inflate scratch, the 5 MiB part buffer, and about 50 B per entry. The
    client's own compression is preserved. A push is never recompressed.
-3. **Delta resolution** then assigns final oids/types to delta entries by
-   reading their payloads back from the just-uploaded pack with ranged reads,
-   walking chains root-first with a byte-budgeted content cache. Thin-pack
-   bases (git pushes are thin by default) come from the existing odb by oid.
-   The result is the GSIX index, written next to the pack.
+3. **Delta resolution** assigns final oids and types to delta entries.
+   A pack published with one put is still in memory, so those payloads are
+   sliced from that buffer. A larger pack is read back with ranged reads.
+   Chains are walked root-first with a byte-budgeted content cache.
+   Thin-pack bases come from the existing odb by oid. The result is the
+   GSIX index, written next to the pack.
 4. **Validation** (Worker-side, where the odb is): ref targets must exist and
    (for commits) have their root tree present. Honest clients are fully
    covered because the pack itself was verified
