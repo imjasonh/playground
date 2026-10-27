@@ -12,6 +12,43 @@ const PRG_BANK_SIZE: usize = 16384;
 /// CHR ROM bank size (8 KB)
 const CHR_BANK_SIZE: usize = 8192;
 
+/// Round a 16 KB PRG bank count up to the size the image has to
+/// declare.
+///
+/// An iNES header names the board but not the chip layout, so a
+/// loader has to assume PRG ROM fills a power-of-two address space
+/// the way a real cartridge's mask ROM does. FCEUX does precisely
+/// that: `ines.cpp` computes `uppow2(prg_banks << 14)`, allocates
+/// that many bytes, fills them with `$FF`, and then reads the file
+/// in. Two things break when the declared count is not a power of
+/// two:
+///
+///   * MMC1, `UxROM`, and MMC3 hardwire the top of the CPU address
+///     space to the *last* PRG bank. The padding lands after the
+///     real banks, so `$FFFA-$FFFF` reads back as `$FFFF` and the
+///     CPU resets into filler instead of into the reset handler.
+///   * The read is greedy — it asks for the padded length — so it
+///     swallows the CHR data into PRG space and leaves CHR ROM
+///     blank.
+///
+/// jsnes, Mesen, and Nestopia instead trust the declared count, so
+/// the same file boots for them and dies on FCEUX. Emitting a
+/// power-of-two image keeps every loader in agreement.
+pub fn padded_prg_bank_count(banks: usize) -> usize {
+    banks.max(1).next_power_of_two()
+}
+
+/// Round an 8 KB CHR bank count up to a power of two, for the same
+/// reason as [`padded_prg_bank_count`]. A CHR-RAM ROM declares zero
+/// banks and stays at zero.
+pub fn padded_chr_bank_count(banks: usize) -> usize {
+    if banks == 0 {
+        0
+    } else {
+        banks.next_power_of_two()
+    }
+}
+
 /// Build a complete iNES ROM file.
 ///
 /// Supports both single-bank (NROM) and multi-bank (MMC1, `UxROM`,
@@ -99,7 +136,10 @@ impl RomBuilder {
     /// be padded with $FF to fill its 16 KB slot. The banks are
     /// written in the order provided — for mapper-specific layouts
     /// the caller (usually the Linker) is responsible for placing
-    /// the fixed bank last.
+    /// the fixed bank last. [`RomBuilder::build`] rounds the bank
+    /// count up to a power of two by inserting `$FF` filler *before*
+    /// that last bank, so the fixed bank stays where the mapper
+    /// expects it.
     ///
     /// # Panics
     /// Panics if any single bank exceeds 16 KB, which would indicate
@@ -125,16 +165,29 @@ impl RomBuilder {
     pub fn build(self) -> Vec<u8> {
         // Determine PRG size. If no banks were set, fall back to a
         // single empty bank so the ROM has a valid 16 KB PRG slot.
-        let prg_banks_vec: Vec<Vec<u8>> = if self.prg_banks.is_empty() {
+        let mut prg_banks_vec: Vec<Vec<u8>> = if self.prg_banks.is_empty() {
             vec![Vec::new()]
         } else {
             self.prg_banks
         };
-        let prg_banks = prg_banks_vec.len();
+
+        // Grow the image to a power-of-two bank count. The filler
+        // goes in front of the final bank, because that bank holds
+        // the vectors and the mapper's fixed window — see
+        // `padded_prg_bank_count` for what a padding loader does to
+        // an image that leaves the rounding to the emulator.
+        let prg_banks = padded_prg_bank_count(prg_banks_vec.len());
+        if prg_banks > prg_banks_vec.len() {
+            let fixed = prg_banks_vec
+                .pop()
+                .expect("prg_banks_vec is non-empty by construction");
+            prg_banks_vec.resize(prg_banks - 1, Vec::new());
+            prg_banks_vec.push(fixed);
+        }
         let prg_size = prg_banks * PRG_BANK_SIZE;
 
         // CHR: 8 KB banks covering the data, or 0 if using CHR RAM.
-        let chr_banks = self.chr_data.len().div_ceil(CHR_BANK_SIZE);
+        let chr_banks = padded_chr_bank_count(self.chr_data.len().div_ceil(CHR_BANK_SIZE));
         let chr_size = chr_banks * CHR_BANK_SIZE;
 
         let mut rom = Vec::with_capacity(16 + prg_size + chr_size);

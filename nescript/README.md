@@ -147,6 +147,16 @@ Output ROMs are standard iNES format and work with any NES emulator:
 - **[FCEUX](https://fceux.com/)**
 - **[Nestopia](http://nestopia.sourceforge.net/)**
 
+Emulators disagree on how much of the iNES header to trust, and the
+strictest reading wins. jsnes, Mesen, and Nestopia take the PRG and
+CHR bank counts at face value; FCEUX instead rounds the PRG window up
+to a power of two, fills it with `$FF`, and reads the file into that
+space. A ROM with, say, 5 × 16 KB of PRG therefore boots everywhere
+but FCEUX, where the padding displaces the bank MMC1, UxROM, and MMC3
+wire to `$E000-$FFFF` and the console resets into filler. The ROM
+builder pads PRG and CHR to power-of-two bank counts itself — the
+filler goes *in front of* the fixed bank — so every loader agrees.
+
 ## Project Status
 
 NEScript implements all five planned milestones:

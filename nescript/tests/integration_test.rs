@@ -2146,10 +2146,68 @@ fn ir_codegen_locals_do_not_overlap_array_globals() {
 //   * Mapper-specific init code appears in the fixed bank
 //   * Every iNES header field reflects the banked layout
 
+/// Every bank count a program can ask for has to survive a loader
+/// that rounds the PRG window up to a power of two. FCEUX is one such
+/// loader, and a ROM that leaves the rounding to it resets into the
+/// `$FF` filler, because MMC1, `UxROM`, and MMC3 all wire
+/// `$E000-$FFFF` to the file's last bank. This sweeps the bank counts
+/// either side of each power of two for all three banked mappers and
+/// asserts the emitted image already declares a power-of-two PRG size
+/// with the vectors in its final bank.
 #[test]
-fn e2e_mmc1_with_two_declared_banks_produces_three_bank_rom() {
-    // MMC1 with two declared PRG banks should ship a ROM with
-    // three 16 KB PRG slots (Level1Data, Level2Data, fixed).
+fn e2e_banked_roms_are_safe_under_a_power_of_two_padding_loader() {
+    for mapper in ["MMC1", "UxROM", "MMC3"] {
+        for declared_banks in 1..=5 {
+            let banks = (1..=declared_banks)
+                .map(|i| format!("bank Level{i}: prg"))
+                .collect::<Vec<_>>()
+                .join("\n        ");
+            let source = format!(
+                r#"
+        game "Padded" {{
+            mapper: {mapper}
+            mirroring: horizontal
+        }}
+        {banks}
+        var x: u8 = 0
+        on frame {{
+            if button.a {{ x += 1 }}
+        }}
+        start Main
+    "#
+            );
+            let rom = compile_banked(&source);
+            let label = format!("{mapper} with {declared_banks} declared bank(s)");
+            // `validate_ines` enforces the power-of-two size and
+            // reads the reset vector out of the last bank, which is
+            // precisely what a padding loader would do.
+            let info =
+                rom::validate_ines(&rom).unwrap_or_else(|e| panic!("{label} is not loadable: {e}"));
+            assert!(
+                info.prg_banks.is_power_of_two(),
+                "{label} declares {} PRG banks",
+                info.prg_banks
+            );
+            assert!(
+                info.prg_banks > declared_banks,
+                "{label} must still hold every switchable bank plus the fixed bank, \
+                 got {} banks",
+                info.prg_banks
+            );
+            // The reset handler lives at the top of the fixed bank,
+            // which the linker assembles at $C000.
+            let prg_end = 16 + info.prg_banks * 16384;
+            let reset = u16::from_le_bytes([rom[prg_end - 4], rom[prg_end - 3]]);
+            assert_eq!(reset, 0xC000, "{label} reset vector");
+        }
+    }
+}
+
+#[test]
+fn e2e_mmc1_with_two_declared_banks_produces_four_bank_rom() {
+    // MMC1 with two declared PRG banks needs three 16 KB PRG slots
+    // (Level1Data, Level2Data, fixed), which rounds up to a 4-bank
+    // image so padding loaders still find the fixed bank last.
     let source = r#"
         game "MMC1 Banked" {
             mapper: MMC1
@@ -2166,12 +2224,15 @@ fn e2e_mmc1_with_two_declared_banks_produces_three_bank_rom() {
     let rom = compile_banked(source);
     let info = rom::validate_ines(&rom).expect("should be valid iNES");
     assert_eq!(info.mapper, 1, "mapper number should be 1 (MMC1)");
-    assert_eq!(info.prg_banks, 3, "should have 2 switchable + 1 fixed bank");
-    assert_eq!(rom.len(), 16 + 3 * 16384 + 8192);
+    assert_eq!(
+        info.prg_banks, 4,
+        "2 switchable + 1 fixed, rounded up to a power of two"
+    );
+    assert_eq!(rom.len(), 16 + 4 * 16384 + 8192);
 }
 
 #[test]
-fn e2e_uxrom_with_four_banks_produces_five_bank_rom() {
+fn e2e_uxrom_with_four_banks_produces_eight_bank_rom() {
     let source = r#"
         game "UxROM Banked" {
             mapper: UxROM
@@ -2190,7 +2251,10 @@ fn e2e_uxrom_with_four_banks_produces_five_bank_rom() {
     let rom = compile_banked(source);
     let info = rom::validate_ines(&rom).expect("should be valid iNES");
     assert_eq!(info.mapper, 2, "mapper number should be 2 (UxROM)");
-    assert_eq!(info.prg_banks, 5, "4 switchable + 1 fixed = 5 PRG banks");
+    assert_eq!(
+        info.prg_banks, 8,
+        "4 switchable + 1 fixed is 5 banks of content, rounded up to 8"
+    );
     assert_eq!(info.mirroring, nescript::parser::ast::Mirroring::Vertical);
 }
 

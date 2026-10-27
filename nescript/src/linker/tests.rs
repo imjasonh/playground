@@ -411,24 +411,27 @@ fn link_without_audio_marker_does_not_emit_period_table() {
 
 #[test]
 fn link_banked_mmc1_produces_multi_bank_rom() {
-    // MMC1 with two switchable banks should produce a 3-bank ROM
-    // (2 switchable + 1 fixed). The iNES header must report 3 PRG
-    // banks, mapper number 1, and the file size must match.
+    // MMC1 with two switchable banks needs three banks' worth of
+    // content (2 switchable + 1 fixed), which the ROM builder rounds
+    // up to a 4-bank image — see `rom::padded_prg_bank_count`. The
+    // iNES header must report 4 PRG banks, mapper number 1, and the
+    // file size must match.
     let linker = Linker::with_mapper(Mirroring::Horizontal, Mapper::MMC1);
     let user_code = vec![Instruction::implied(NOP)];
     let banks = vec![PrgBank::empty("Level1"), PrgBank::empty("Level2")];
     let rom = linker.link_banked(&user_code, &[], &[], &[], &banks);
     let info = rom::validate_ines(&rom).unwrap();
-    assert_eq!(info.prg_banks, 3);
+    assert_eq!(info.prg_banks, 4);
     assert_eq!(info.mapper, 1);
-    assert_eq!(rom.len(), 16 + 3 * 16384 + 8192);
+    assert_eq!(rom.len(), 16 + 4 * 16384 + 8192);
 }
 
 #[test]
 fn link_banked_uxrom_produces_multi_bank_rom() {
     let linker = Linker::with_mapper(Mirroring::Horizontal, Mapper::UxROM);
     let user_code = vec![Instruction::implied(NOP)];
-    // Four switchable banks = 5 PRG banks total.
+    // Four switchable banks plus the fixed bank is five banks of
+    // content, which rounds up to an 8-bank image.
     let banks = vec![
         PrgBank::empty("BankA"),
         PrgBank::empty("BankB"),
@@ -437,7 +440,7 @@ fn link_banked_uxrom_produces_multi_bank_rom() {
     ];
     let rom = linker.link_banked(&user_code, &[], &[], &[], &banks);
     let info = rom::validate_ines(&rom).unwrap();
-    assert_eq!(info.prg_banks, 5);
+    assert_eq!(info.prg_banks, 8);
     assert_eq!(info.mapper, 2);
 }
 

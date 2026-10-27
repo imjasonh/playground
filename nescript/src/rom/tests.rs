@@ -1,6 +1,16 @@
 use super::*;
 use crate::parser::ast::{HeaderFormat, Mirroring};
 
+/// A full 16 KB PRG bank whose last six bytes are a plausible vector
+/// table pointing at `$C000`, so a hand-built ROM has readable
+/// vectors in the bank the mapper wires to `$E000-$FFFF` instead of
+/// the builder's `$FF` filler.
+fn bank_with_vectors() -> Vec<u8> {
+    let mut bank = vec![0xEA; PRG_BANK_SIZE];
+    bank[PRG_BANK_SIZE - 6..].copy_from_slice(&[0x00, 0xC0, 0x00, 0xC0, 0x00, 0xC0]);
+    bank
+}
+
 #[test]
 fn build_minimal_rom() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
@@ -60,7 +70,8 @@ fn prg_data_is_padded() {
 
 #[test]
 fn validate_valid_rom() {
-    let builder = RomBuilder::new(Mirroring::Horizontal);
+    let mut builder = RomBuilder::new(Mirroring::Horizontal);
+    builder.set_prg(bank_with_vectors());
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
     assert_eq!(info.prg_banks, 1);
@@ -94,6 +105,7 @@ fn large_prg_uses_two_banks() {
 fn mapper_number_encoded() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
     builder.set_mapper(1); // MMC1
+    builder.set_prg(bank_with_vectors());
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
     assert_eq!(info.mapper, 1);
@@ -114,6 +126,7 @@ fn chr_data_is_padded() {
 fn mapper_mmc1_encoded() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
     builder.set_mapper(crate::rom::mapper_number(crate::parser::ast::Mapper::MMC1));
+    builder.set_prg(bank_with_vectors());
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
     assert_eq!(info.mapper, 1);
@@ -123,6 +136,7 @@ fn mapper_mmc1_encoded() {
 fn mapper_uxrom_encoded() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
     builder.set_mapper(crate::rom::mapper_number(crate::parser::ast::Mapper::UxROM));
+    builder.set_prg(bank_with_vectors());
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
     assert_eq!(info.mapper, 2);
@@ -132,6 +146,7 @@ fn mapper_uxrom_encoded() {
 fn mapper_mmc3_encoded() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
     builder.set_mapper(crate::rom::mapper_number(crate::parser::ast::Mapper::MMC3));
+    builder.set_prg(bank_with_vectors());
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
     assert_eq!(info.mapper, 4);
@@ -171,6 +186,70 @@ fn set_prg_banks_with_four_banks_produces_64kb_prg() {
     }
 }
 
+// ─── Power-of-two PRG/CHR sizing ───────────────────────────────────
+
+#[test]
+fn prg_bank_count_rounds_up_to_a_power_of_two() {
+    for (content, declared) in [(1, 1), (2, 2), (3, 4), (5, 8), (8, 8), (9, 16)] {
+        assert_eq!(
+            padded_prg_bank_count(content),
+            declared,
+            "{content} banks of content should declare {declared}"
+        );
+    }
+    // A caller that set no PRG at all still gets one bank.
+    assert_eq!(padded_prg_bank_count(0), 1);
+}
+
+#[test]
+fn chr_bank_count_rounds_up_but_chr_ram_stays_zero() {
+    assert_eq!(padded_chr_bank_count(0), 0, "CHR RAM declares zero banks");
+    for (content, declared) in [(1, 1), (2, 2), (3, 4), (5, 8)] {
+        assert_eq!(padded_chr_bank_count(content), declared);
+    }
+}
+
+#[test]
+fn padding_keeps_the_fixed_bank_last() {
+    // Three banks of content round up to four. The caller's last
+    // bank is the one the mapper wires to $C000-$FFFF, so the $FF
+    // filler has to land *between* the switchable banks and it —
+    // not after it.
+    let mut builder = RomBuilder::new(Mirroring::Horizontal);
+    builder.set_prg_banks(vec![vec![0xA0], vec![0xA1], bank_with_vectors()]);
+    let rom = builder.build();
+    assert_eq!(rom[4], 4, "header should declare 4 PRG banks");
+    assert_eq!(rom.len(), 16 + 4 * 16384);
+    assert_eq!(rom[16], 0xA0, "switchable bank 0 keeps its index");
+    assert_eq!(rom[16 + 16384], 0xA1, "switchable bank 1 keeps its index");
+    assert_eq!(rom[16 + 2 * 16384], 0xFF, "bank 2 is filler");
+    assert_eq!(
+        rom[16 + 3 * 16384],
+        0xEA,
+        "the caller's last bank is still the file's last bank"
+    );
+    // And the vectors are readable where the mapper looks for them.
+    let prg_end = 16 + 4 * 16384;
+    assert_eq!(
+        &rom[prg_end - 6..prg_end],
+        &[0x00, 0xC0, 0x00, 0xC0, 0x00, 0xC0]
+    );
+}
+
+#[test]
+fn chr_is_padded_to_a_power_of_two() {
+    // 24 KB of CHR content (three 8 KB banks) has to declare four,
+    // because a loader that rounds the CHR window up would otherwise
+    // index the wrong tiles.
+    let mut builder = RomBuilder::new(Mirroring::Horizontal);
+    builder.set_prg(bank_with_vectors());
+    builder.set_chr(vec![0xCC; 3 * 8192]);
+    let rom = builder.build();
+    assert_eq!(rom[5], 4, "header should declare 4 CHR banks");
+    assert_eq!(rom.len(), 16 + 16384 + 4 * 8192);
+    validate_ines(&rom).unwrap();
+}
+
 #[test]
 #[should_panic(expected = "exceeds 16 KB")]
 fn set_prg_banks_panics_when_bank_too_large() {
@@ -197,13 +276,15 @@ fn set_prg_banks_preserves_content_exactly() {
 
 #[test]
 fn validate_detects_multi_bank_prg() {
-    // A ROM built with 3 banks should validate with prg_banks=3.
+    // Three banks of content rounds up to a 4-bank image, and the
+    // caller's last bank — the one the mapper fixes at $C000 — stays
+    // last, with the $FF filler in front of it.
     let mut builder = RomBuilder::new(Mirroring::Vertical);
     builder.set_mapper(1); // MMC1
-    builder.set_prg_banks(vec![vec![0x11; 10], vec![0x22; 10], vec![0x33; 10]]);
+    builder.set_prg_banks(vec![vec![0x11; 10], vec![0x22; 10], bank_with_vectors()]);
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
-    assert_eq!(info.prg_banks, 3);
+    assert_eq!(info.prg_banks, 4);
     assert_eq!(info.mapper, 1);
     assert_eq!(info.mirroring, Mirroring::Vertical);
 }
@@ -269,6 +350,7 @@ fn nes2_preserves_mapper_and_mirroring() {
     // mirroring fields in bytes 6-7.
     let mut builder = RomBuilder::new(Mirroring::Vertical);
     builder.set_mapper(crate::rom::mapper_number(crate::parser::ast::Mapper::MMC3));
+    builder.set_prg(bank_with_vectors());
     builder.enable_nes2();
     let rom = builder.build();
     // Vertical mirroring keeps bit 0 of byte 6 set.
@@ -284,12 +366,15 @@ fn nes2_preserves_mapper_and_mirroring() {
 #[test]
 fn validate_accepts_both_header_formats() {
     // iNES 1.0 ROM validates and is marked as `Ines1`.
-    let ines1 = RomBuilder::new(Mirroring::Horizontal).build();
+    let mut a = RomBuilder::new(Mirroring::Horizontal);
+    a.set_prg(bank_with_vectors());
+    let ines1 = a.build();
     let info1 = validate_ines(&ines1).unwrap();
     assert_eq!(info1.header_format, HeaderFormat::Ines1);
 
     // NES 2.0 ROM validates and is marked as `Nes2`.
     let mut b = RomBuilder::new(Mirroring::Horizontal);
+    b.set_prg(bank_with_vectors());
     b.enable_nes2();
     let nes2 = b.build();
     let info2 = validate_ines(&nes2).unwrap();
