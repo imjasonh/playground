@@ -73,7 +73,7 @@ jobs:
         id: store-zip
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: chrome-extension-zip
+          # archive: false ignores name and uses the filename, chrome-extension.zip.
           path: /tmp/chrome-extension.zip
           archive: false
           if-no-files-found: error
@@ -100,8 +100,10 @@ jobs:
       - name: Download the store zip
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: chrome-extension-zip
+          name: chrome-extension.zip
           path: /tmp
+          # The store package is itself a zip. Leave that file intact.
+          skip-decompress: true
 
       - name: Check publish configuration
         id: configured
