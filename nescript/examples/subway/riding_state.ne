@@ -229,7 +229,7 @@ fun ride_setup() {
     pal_set(1, 0x07, 0x27, 0x37)
     pal_set(2, mosaic_of(stop_station(ride_p, ride_k)), 0x00, 0x37)
     pal_set(3, 0x21, 0x00, 0x37)
-    pal_set(4, 0x00, 0x37, 0x16)
+    pal_set(4, 0x02, 0x37, 0x16)
 
     rstream = (rx >> 3) + 33
     var c: u16 = rstream

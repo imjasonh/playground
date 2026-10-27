@@ -4,10 +4,11 @@
 // how the band scrolls.
 //
 // Controls: left and right walk, up and down step toward or away from
-// the edge. Up at an open door boards the train. A on the stairs at
-// the right crosses to the other platform. Walking off the left end
-// takes the passage to the next station in the complex. Hold B to
-// wait faster while no train is in.
+// the edge. Up at an open door boards the train. Walking off the left
+// end takes the passage to the next station in the complex, and
+// walking off the right end takes it to the previous one. A switches
+// to the other direction on this station. Hold B to wait faster while
+// no train is in.
 
 const BAND_TOP: u8 = 80
 const BAND_BOTTOM: u8 = 144
@@ -35,7 +36,6 @@ const DOOR_CLOSE: u8 = 36
 
 const PLAYER_MIN_Y: u8 = 128
 const PLAYER_MAX_Y: u8 = 198
-const STAIRS_X: u8 = 206
 
 var cam: u16 = 0
 var stream_col: u16 = 32
@@ -57,7 +57,6 @@ var best_w: u8 = 0
 var best_i: u8 = 0
 
 var patterns_ready: bool = false
-var a_held: bool = false
 
 state Platform {
     var px: u8 = 120
@@ -121,21 +120,34 @@ state Platform {
             hud_arrivals()
         }
 
-        // Walk.
+        // Walk. Off the left end is the next station in the complex,
+        // and you come out at its right end. Off the right end is the
+        // previous station, and you come out at its left end.
         var moving: bool = false
-        if button.right and px < 232 {
-            px += 1
+        var changed: bool = false
+        if button.right {
+            if px < 232 {
+                px += 1
+            } else if take_passage(false) {
+                px = 8
+                changed = true
+            }
             flip = false
             moving = true
         }
         if button.left {
             if px > 0 {
                 px -= 1
-            } else if take_passage() {
-                return
+            } else if take_passage(true) {
+                px = 224
+                changed = true
             }
             flip = true
             moving = true
+        }
+        if changed {
+            platform_setup()
+            return
         }
         if not button.up {
             up_lock = false
@@ -156,11 +168,8 @@ state Platform {
             py += 1
             moving = true
         }
-        var a_new: bool = button.a and not a_held
-        a_held = button.a
-        if a_new and px >= STAIRS_X and py >= 150 {
+        if button.a.pressed {
             cur_dir = cur_dir ^ 1
-            px = STAIRS_X - 8
             platform_setup()
             return
         }
@@ -215,7 +224,7 @@ fun platform_setup() {
     pal_set(1, 0x10, 0x30, 0x27)
     pal_set(2, mosaic_color(), 0x10, 0x30)
     pal_set(3, 0x00, 0x28, 0x10)
-    pal_set(4, 0x00, 0x37, 0x16)
+    pal_set(4, 0x02, 0x37, 0x16)
     pal_set(5, 0x16, 0x1A, 0x30)
     pal_set(6, 0x12, 0x27, 0x30)
     pal_set(7, sp3_c1, sp3_c2, 0x30)
@@ -600,17 +609,6 @@ fun can_board(x: u8) -> bool {
 fun door_at(c: u8, d: u8) -> bool {
     var left: u8 = (d + 1) << 3
     return c >= left and c < left + 16
-}
-
-// Walk the passage to the next station in the complex, if any.
-fun take_passage() -> bool {
-    var n: u16 = next_in_complex(cur_st)
-    if n == cur_st {
-        return false
-    }
-    cur_st = n
-    platform_setup()
-    return true
 }
 
 // The arrivals line (row 3): up to three trains, soonest first.

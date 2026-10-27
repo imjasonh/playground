@@ -54,6 +54,36 @@ fun next_in_complex(st: u16) -> u16 {
     return n + (ST_NEXT_LO[st] as u16)
 }
 
+// The previous station in st's complex. The tables store the ring
+// in one direction, so walk it until it comes back around.
+fun prev_in_complex(st: u16) -> u16 {
+    var prev: u16 = st
+    var n: u16 = next_in_complex(st)
+    while n != st {
+        prev = n
+        n = next_in_complex(n)
+    }
+    return prev
+}
+
+// Leave this station for the next one in the complex, or the
+// previous one when forward is false. A one-station complex stays.
+// The caller reloads the platform. platform_setup switches the
+// $8000 bank, and this function is still running from that window.
+fun take_passage(forward: bool) -> bool {
+    var n: u16 = cur_st
+    if forward {
+        n = next_in_complex(cur_st)
+    } else {
+        n = prev_in_complex(cur_st)
+    }
+    if n == cur_st {
+        return false
+    }
+    cur_st = n
+    return true
+}
+
 fun station_flags(st: u16) -> u8 {
     return ST_FLAGS[st]
 }
