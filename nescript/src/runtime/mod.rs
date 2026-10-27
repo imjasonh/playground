@@ -2416,6 +2416,16 @@ fn gen_mmc3_init(mirroring: Mirroring) -> Vec<Instruction> {
     out.push(Instruction::new(LDA, AM::Immediate(0x01)));
     out.push(Instruction::new(STA, AM::Absolute(0x8001)));
 
+    // CHR registers power up undefined. Map the 8 KB CHR ROM in
+    // order: R0/R1 are 2 KB banks at $0000/$0800 (numbered in 1 KB
+    // units, so 0 and 2), R2-R5 are 1 KB banks at $1000-$1C00.
+    for (reg, bank) in [(0u8, 0u8), (1, 2), (2, 4), (3, 5), (4, 6), (5, 7)] {
+        out.push(Instruction::new(LDA, AM::Immediate(reg)));
+        out.push(Instruction::new(STA, AM::Absolute(0x8000)));
+        out.push(Instruction::new(LDA, AM::Immediate(bank)));
+        out.push(Instruction::new(STA, AM::Absolute(0x8001)));
+    }
+
     // Mirroring: $A000, bit 0 — 0 = vertical, 1 = horizontal.
     let mirror = match mirroring {
         Mirroring::Horizontal => 0x01,
@@ -2488,12 +2498,19 @@ pub fn gen_bank_select(mapper: Mapper) -> Vec<Instruction> {
             out.push(Instruction::implied(RTS));
         }
         Mapper::MMC3 => {
-            // MMC3: `$8000 = 6` selects PRG-bank-0 register, then
-            // write bank to `$8001`. We save/restore X because
-            // some callers use X as a loop counter across the
-            // switch.
+            // MMC3 switches 8 KB pages and a nescript bank is 16 KB,
+            // so bank `n` is pages `2n` (R6, at $8000) and `2n + 1`
+            // (R7, at $A000). A register is chosen by writing its
+            // number to `$8000`, then its page to `$8001`.
+            out.push(Instruction::new(ASL, AM::Accumulator));
             out.push(Instruction::implied(PHA));
             out.push(Instruction::new(LDA, AM::Immediate(0x06)));
+            out.push(Instruction::new(STA, AM::Absolute(0x8000)));
+            out.push(Instruction::implied(PLA));
+            out.push(Instruction::new(STA, AM::Absolute(0x8001)));
+            out.push(Instruction::new(ORA, AM::Immediate(0x01)));
+            out.push(Instruction::implied(PHA));
+            out.push(Instruction::new(LDA, AM::Immediate(0x07)));
             out.push(Instruction::new(STA, AM::Absolute(0x8000)));
             out.push(Instruction::implied(PLA));
             out.push(Instruction::new(STA, AM::Absolute(0x8001)));
