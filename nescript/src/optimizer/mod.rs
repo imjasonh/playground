@@ -518,6 +518,9 @@ fn collect_source_temps(op: &IrOp, used: &mut HashSet<IrTemp>) {
             for t in [frame, attr].into_iter().flatten() {
                 used.insert(*t);
             }
+            if let Some(a) = attr {
+                used.insert(*a);
+            }
         }
         IrOp::Scroll(x, y) => {
             used.insert(*x);

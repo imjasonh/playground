@@ -1820,6 +1820,35 @@ fn sprite_resolution_uses_tile_index() {
 }
 
 #[test]
+fn draw_attr_writes_the_oam_attribute_byte() {
+    let source = r#"
+        game "DrawAttr" { mapper: NROM }
+        sprite Player {
+            chr: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                  0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F]
+        }
+        var flip: u8 = 0x41
+        on frame {
+            draw Player at: (10, 20) attr: flip
+        }
+        start Main
+    "#;
+    let rom_data = compile(source);
+    let prg = &rom_data[16..16 + 16384];
+    // `STA $0202,Y` must follow a load other than `LDA #$00`.
+    let sta_attr = [0x99u8, 0x02, 0x02];
+    let pos = prg
+        .windows(sta_attr.len())
+        .position(|w| w == sta_attr)
+        .expect("draw should store an attribute byte");
+    assert_ne!(
+        &prg[pos - 2..pos],
+        &[0xA9, 0x00],
+        "attr: should not store the constant 0"
+    );
+}
+
+#[test]
 fn program_with_arrays_and_math() {
     let source = r#"
         game "ArrayMath" { mapper: NROM }

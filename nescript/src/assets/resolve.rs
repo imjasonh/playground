@@ -106,8 +106,9 @@ impl RoomData {
 /// Resolve sprite declarations in a program into concrete CHR byte blobs and
 /// assign each one a tile index in CHR ROM.
 ///
-/// Tile index 0 is reserved for the built-in default smiley sprite, so user
-/// sprites start at tile index 1. A single sprite declaration may occupy
+/// Tile index 0 of pattern table 0 is reserved for the built-in default
+/// smiley sprite, so user sprites in that table start at tile index 1.
+/// Pattern table 1 starts at 0. A single sprite declaration may occupy
 /// multiple consecutive tiles if its CHR data is larger than 16 bytes.
 ///
 /// `source_dir` is used as the base for `@binary` / `@chr` relative paths.
