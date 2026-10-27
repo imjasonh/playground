@@ -41,8 +41,9 @@ state Customize {
                 res_b = START_ROW * 8 - 1
             }
             // The arrow marks the row, just after its label. On the
-            // name row the blinking letter marks the cursor, so the
-            // arrow stays put instead of covering a letter.
+            // name row a blinking underline under the lit letter
+            // marks the cursor instead, so the arrow stays put at
+            // the row's start rather than covering a letter.
             res_a = 8
             if cust_cursor < 6 {
                 res_a = (NAME_COL - 1) * 8
@@ -51,6 +52,9 @@ state Customize {
                 res_a = 48
             }
             draw Tileset at: (res_a, res_b) attr: SP_FIRE frame: T_ARROW
+            if cust_cursor < 6 and (cust_tick & 16) == 0 {
+                draw Tileset at: ((NAME_COL + cust_cursor) * 8, NAME_ROW * 8 - 1) attr: SP_FIRE frame: T_UNDERLINE
+            }
         }
         customize_tick()
         tick_unblank()

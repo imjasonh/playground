@@ -140,6 +140,34 @@ T_DIR_UP = 91
 T_DIR_DOWN = 92
 T_DIR_LEFT = 93
 T_DIR_RIGHT = 94
+# '_' (95) is otherwise unused, so it carries the caret the
+# Customize screen draws under the selected name letter.
+T_UNDERLINE = 95
+# Dim copies of the plan-list letters, drawn with color index 1.
+# That entry is dk_gray in every background palette, so a row can
+# go dim one letter at a time without the attribute table, which
+# colors two rows together and whose other bright colors are the
+# players' blue and red. These sit in ASCII slots the font never
+# fills. GRAY_LETTER in cpu.ne (bank Brain) is the letter-to-tile
+# map, and GRAY_DASH in constants.ne is the blanked key.
+GRAY_TILES = {
+    "A": 31,
+    "C": 35,
+    "D": 36,
+    "E": 37,
+    "G": 38,
+    "H": 39,
+    "I": 40,
+    "L": 41,
+    "M": 44,
+    "N": 59,
+    "P": 60,
+    "R": 64,
+    "S": 106,
+    "T": 107,
+    "U": 30,
+}
+GRAY_DASH = 34
 T_ACT = 22  # 22..28, one icon per action, in action order
 T_PIKE = 96  # 96..99
 T_MAUL = 100  # 100..103
@@ -242,6 +270,16 @@ DIR_RIGHT = [
     "...33...",
     "........",
 ]
+UNDERLINE = [
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    ".333333.",
+]
 LOGO = [
     "33333333",
     "32222221",
@@ -278,6 +316,10 @@ def build_tiles():
     tiles[T_DIR_DOWN] = DIR_DOWN
     tiles[T_DIR_LEFT] = DIR_LEFT
     tiles[T_DIR_RIGHT] = DIR_RIGHT
+    tiles[T_UNDERLINE] = UNDERLINE
+    tiles[GRAY_DASH] = [r.replace("3", "1") for r in font["-"]]
+    for ch, idx in GRAY_TILES.items():
+        tiles[idx] = [r.replace("3", "1") for r in font[ch]]
     for i, t in enumerate(art.ACTIONS):
         tiles[T_ACT + i] = t
     for i, pic in enumerate(art.WEAPONS):
@@ -352,6 +394,8 @@ def tile_label(i):
         T_MAUL + 1: "maul TR",
         T_MAUL + 2: "maul BL",
         T_MAUL + 3: "maul BR",
+        GRAY_DASH: "gray dash",
+        **{idx: f"gray {ch}" for ch, idx in GRAY_TILES.items()},
     }.get(i, "unused")
 
 

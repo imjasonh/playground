@@ -12,6 +12,7 @@ const T_HOLES: u8 = 17
 const T_FIRE: u8 = 18
 const T_CRATER: u8 = 20
 const T_ARROW: u8 = 21
+const T_UNDERLINE: u8 = 95
 // Plan icons, in action order: Snap, Step, Shield, Standard, Rush,
 // Aimed, Charge.
 const T_ACT: u8 = 22
@@ -72,6 +73,11 @@ const A_AIMED: u8 = 5
 const A_CHARGE: u8 = 6
 const NUM_ACTIONS: u8 = 7
 const NUM_PLANS: u8 = 17
+// Dim dash tile (color index 1, dk_gray in every background
+// palette). The A-Z map is GRAY_LETTER in cpu.ne. It sits in
+// bank Brain, next to the only function that indexes it, because
+// the fixed bank has no room for those 26 bytes.
+const GRAY_DASH: u8 = 34
 const BIT: u8[8] = [1, 2, 4, 8, 16, 32, 64, 128]
 const ACTION_STR: u8[7] = [S_A_SNAP, S_A_STEP, S_A_SHIELD, S_A_STANDARD, S_A_RUSH, S_A_AIMED, S_A_CHARGE]
 
