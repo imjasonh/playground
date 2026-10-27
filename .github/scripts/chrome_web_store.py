@@ -7,10 +7,22 @@ version to the item's current audience after review.
 
 Required environment variables:
 
-  CHROME_WEB_STORE_CLIENT_ID
-  CHROME_WEB_STORE_CLIENT_SECRET
-  CHROME_WEB_STORE_REFRESH_TOKEN
   CHROME_WEB_STORE_PUBLISHER_ID
+
+  Plus one way to get a chromewebstore-scoped access token. Either:
+
+    CHROME_WEB_STORE_ACCESS_TOKEN
+      An already-minted access token, good for this call only. The
+      workflow gets this from google-github-actions/auth impersonating a
+      Workload Identity Federation service account (see
+      gcp/terraform and chrome-extension/README.md), so no refresh token
+      is stored as a GitHub secret.
+
+  Or, the older OAuth refresh-token flow:
+
+    CHROME_WEB_STORE_CLIENT_ID
+    CHROME_WEB_STORE_CLIENT_SECRET
+    CHROME_WEB_STORE_REFRESH_TOKEN
 
 Optional:
 
@@ -249,6 +261,25 @@ def fetch_token(token_url: str, client_id: str, client_secret: str, refresh_toke
     return token
 
 
+def resolve_token(env: dict[str, str], token_url: str) -> str:
+    """Get a chromewebstore-scoped access token, preferring one already minted.
+
+    The workflow mints CHROME_WEB_STORE_ACCESS_TOKEN itself, by having
+    google-github-actions/auth impersonate a Workload Identity Federation
+    service account with that scope. When that is set, this script never
+    talks to the OAuth token endpoint and no refresh token needs to exist.
+    Otherwise it falls back to exchanging a stored refresh token, which is
+    still useful outside CI.
+    """
+    access_token = env.get("CHROME_WEB_STORE_ACCESS_TOKEN", "").strip()
+    if access_token:
+        return access_token
+    client_id = _env_required(env, "CHROME_WEB_STORE_CLIENT_ID")
+    client_secret = _env_required(env, "CHROME_WEB_STORE_CLIENT_SECRET")
+    refresh_token = _env_required(env, "CHROME_WEB_STORE_REFRESH_TOKEN")
+    return fetch_token(token_url, client_id, client_secret, refresh_token)
+
+
 def item_name(publisher_id: str, item_id: str) -> str:
     if not publisher_id or any(char in publisher_id for char in "/?# "):
         raise PublishError("CHROME_WEB_STORE_PUBLISHER_ID is missing or not a single path segment")
@@ -348,9 +379,6 @@ def publish_package(path: str, env: dict[str, str] | None = None, sleep=time.sle
     values = os.environ if env is None else env
     version = manifest_version(path)
     origin, token_url = resolve_endpoints(values)
-    client_id = _env_required(values, "CHROME_WEB_STORE_CLIENT_ID")
-    client_secret = _env_required(values, "CHROME_WEB_STORE_CLIENT_SECRET")
-    refresh_token = _env_required(values, "CHROME_WEB_STORE_REFRESH_TOKEN")
     publisher_id = _env_required(values, "CHROME_WEB_STORE_PUBLISHER_ID")
     item_id = values.get("CHROME_WEB_STORE_ITEM_ID", DEFAULT_ITEM_ID).strip() or DEFAULT_ITEM_ID
     publish_type = values.get("CHROME_WEB_STORE_PUBLISH_TYPE", "DEFAULT_PUBLISH").strip() or "DEFAULT_PUBLISH"
@@ -361,7 +389,7 @@ def publish_package(path: str, env: dict[str, str] | None = None, sleep=time.sle
             "The audience is the one saved on the item in the developer dashboard."
         )
     name = item_name(publisher_id, item_id)
-    token = fetch_token(token_url, client_id, client_secret, refresh_token)
+    token = resolve_token(values, token_url)
     status = fetch_status(origin, name, token)
     if status.get("lastAsyncUploadState") in UPLOAD_WAIT:
         status = wait_for_upload(origin, name, token, sleep)

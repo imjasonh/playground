@@ -8,15 +8,17 @@
 # that flag. The API releases the version to the item's current audience. It
 # does not create the item or change visibility.
 #
-# Publishing needs these repository secrets:
-#   CHROME_WEB_STORE_CLIENT_ID
-#   CHROME_WEB_STORE_CLIENT_SECRET
-#   CHROME_WEB_STORE_REFRESH_TOKEN
-#   CHROME_WEB_STORE_PUBLISHER_ID
+# Publishing authenticates with GitHub OIDC and Workload Identity
+# Federation, the same pool gcp/terraform creates for Cloud Run deploys (see
+# chrome-extension/README.md): no refresh token is stored as a secret. The
+# publish job reads these from the GitHub environment chrome-webstore:
+#   vars.CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER
+#   vars.CHROME_WEBSTORE_SERVICE_ACCOUNT
+# plus the repository secret CHROME_WEB_STORE_PUBLISHER_ID.
 # Optional repository variable CHROME_WEB_STORE_PUBLISH_TYPE
 # (DEFAULT_PUBLISH or STAGED_PUBLISH). The audience is the one saved
 # on the item in the developer dashboard.
-# Without the secrets, tests still run and publish is skipped.
+# Without those, tests still run and publish is skipped.
 
 name: chrome-extension
 
@@ -71,6 +73,7 @@ jobs:
         id: store-zip
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
+          name: chrome-extension-zip
           path: /tmp/chrome-extension.zip
           archive: false
           if-no-files-found: error
@@ -79,18 +82,58 @@ jobs:
         run: |
           echo "Store zip: ${{ steps.store-zip.outputs.artifact-url }}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish to the Chrome Web Store
-        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+  publish:
+    name: Publish to the Chrome Web Store
+    needs: test
+    if: ${{ needs.test.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: chrome-webstore
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Download the store zip
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: chrome-extension-zip
+          path: /tmp
+
+      - name: Check publish configuration
+        id: configured
         env:
-          CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.CHROME_WEB_STORE_CLIENT_ID }}
-          CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.CHROME_WEB_STORE_CLIENT_SECRET }}
-          CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEB_STORE_REFRESH_TOKEN }}
+          CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER }}
+          CHROME_WEBSTORE_SERVICE_ACCOUNT: ${{ vars.CHROME_WEBSTORE_SERVICE_ACCOUNT }}
+          CHROME_WEB_STORE_PUBLISHER_ID: ${{ secrets.CHROME_WEB_STORE_PUBLISHER_ID }}
+        run: |
+          if [ -z "$CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER" ] || [ -z "$CHROME_WEBSTORE_SERVICE_ACCOUNT" ] || [ -z "$CHROME_WEB_STORE_PUBLISHER_ID" ]; then
+            echo "::warning title=Chrome Web Store publish skipped::Set CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER and CHROME_WEBSTORE_SERVICE_ACCOUNT in the chrome-webstore GitHub environment, and add the CHROME_WEB_STORE_PUBLISHER_ID secret. See chrome-extension/README.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        if: steps.configured.outputs.ready == 'true'
+        id: auth
+        with:
+          workload_identity_provider: ${{ vars.CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.CHROME_WEBSTORE_SERVICE_ACCOUNT }}
+          create_credentials_file: false
+          export_environment_variables: false
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          access_token_lifetime: 300s
+
+      - name: Publish
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CHROME_WEB_STORE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           CHROME_WEB_STORE_PUBLISHER_ID: ${{ secrets.CHROME_WEB_STORE_PUBLISHER_ID }}
           CHROME_WEB_STORE_ITEM_ID: cfmebakopkdpedmdbpcpfibhodmppigj
           CHROME_WEB_STORE_PUBLISH_TYPE: ${{ vars.CHROME_WEB_STORE_PUBLISH_TYPE || 'DEFAULT_PUBLISH' }}
-        run: |
-          if [ -z "$CHROME_WEB_STORE_CLIENT_ID" ] || [ -z "$CHROME_WEB_STORE_CLIENT_SECRET" ] || [ -z "$CHROME_WEB_STORE_REFRESH_TOKEN" ] || [ -z "$CHROME_WEB_STORE_PUBLISHER_ID" ]; then
-            echo "::warning title=Chrome Web Store publish skipped::Add CHROME_WEB_STORE_CLIENT_ID, CHROME_WEB_STORE_CLIENT_SECRET, CHROME_WEB_STORE_REFRESH_TOKEN, and CHROME_WEB_STORE_PUBLISHER_ID. See chrome-extension/README.md."
-            exit 0
-          fi
-          python3 .github/scripts/chrome_web_store.py /tmp/chrome-extension.zip
+        run: python3 .github/scripts/chrome_web_store.py /tmp/chrome-extension.zip

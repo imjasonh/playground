@@ -46,6 +46,28 @@ variable "github_environment" {
   }
 }
 
+variable "chrome_webstore_github_workflow" {
+  description = "Workflow path allowed to mint a Chrome Web Store access token, relative to the repository root. The pool rejects tokens from any other workflow."
+  type        = string
+  default     = ".github/workflows/chrome-extension.yml"
+
+  validation {
+    condition     = can(regex("^\\.github/workflows/[A-Za-z0-9_.-]+\\.yml$", var.chrome_webstore_github_workflow))
+    error_message = "chrome_webstore_github_workflow must be a workflow file under .github/workflows/."
+  }
+}
+
+variable "chrome_webstore_github_environment" {
+  description = "GitHub environment chrome-extension.yml selects for the publish job. The Chrome Web Store service account accepts only this environment."
+  type        = string
+  default     = "chrome-webstore"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$", var.chrome_webstore_github_environment))
+    error_message = "chrome_webstore_github_environment must be a GitHub environment name."
+  }
+}
+
 variable "state_bucket" {
   description = "Cloud Storage bucket that holds Terraform state for this stack and for app stacks. The plan account can read objects in this bucket only. Pass the same name to tofu init -backend-config."
   type        = string
