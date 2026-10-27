@@ -217,14 +217,17 @@ impl GitHttp {
         let start = crate::metrics::now_ms();
         let mut resp = self.route(req, body, nonce).await;
         let total_ms = crate::metrics::now_ms() - start;
-        match &resp.body {
+        match &mut resp.body {
             // Streamed bodies (fetch packs) keep writing after headers leave.
             // Snapshot for the Server-Timing header, but leave the collector
             // live so the packfile PROGRESS tail can emit a full timing line.
-            Body::Stream(_) => {
+            // The stream carries this request's frame, which drops with it.
+            Body::Stream(stream) => {
                 if let Some(m) = crate::metrics::snapshot() {
                     resp.metrics = Some(Box::new((m, total_ms)));
                 }
+                let inner = std::mem::replace(stream, Box::pin(futures::stream::empty()));
+                *stream = Box::pin(crate::scope::stream(crate::scope::current(), inner));
             }
             Body::Full(bytes) => {
                 if let Some(mut m) = crate::metrics::take() {

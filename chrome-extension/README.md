@@ -97,21 +97,26 @@ The API cannot change Private or Public. If you change visibility, publish once 
 
 `.github/workflows/chrome-extension.yml` runs the tests on pull requests and on pushes to `main`. It packs `chrome-extension.zip` and uploads that file as a workflow artifact. Download it from the run to inspect the package or to upload it in the developer dashboard.
 
-On a push to `main` that changes this directory or the publish script, when the secrets below exist, the same job uploads that zip to item `cfmebakopkdpedmdbpcpfibhodmppigj` and calls the Chrome Web Store API v2 publish method.
+On a push to `main` that changes this directory or the publish script, a separate `publish` job downloads that zip, mints a Chrome Web Store access token over GitHub OIDC, and calls the Chrome Web Store API v2 publish method on item `cfmebakopkdpedmdbpcpfibhodmppigj`.
 
 The publish type defaults to `DEFAULT_PUBLISH`. The job first asks the store to publish without review. When the store requires review, the job submits the same draft for review. After review, that version becomes the live version for the audience already saved on the item, which is trusted testers. Set the repository variable `CHROME_WEB_STORE_PUBLISH_TYPE` to `STAGED_PUBLISH` to hold the approved package until you publish it. The API v2 publish type has no trusted-tester value. A manual **Run workflow** on `main` publishes the current package too.
 
 Increase `version` in `manifest.json` in the same change you want published. Each number is 0 through 65535, with at most four parts. The job skips a version that is already live or already in review. It fails, and does not upload, when the store has a newer version, when this version was rejected, or when a different version is still in review.
 
-Add these repository secrets. The OAuth client needs the Chrome Web Store API enabled and the scope `https://www.googleapis.com/auth/chromewebstore`. The publisher ID is the account id in the developer dashboard URL. Google's guide is [Use the Chrome Web Store API](https://developer.chrome.com/docs/webstore/using-api).
+### Authentication
 
-| Secret | Value |
-| --- | --- |
-| `CHROME_WEB_STORE_CLIENT_ID` | OAuth client id |
-| `CHROME_WEB_STORE_CLIENT_SECRET` | OAuth client secret |
-| `CHROME_WEB_STORE_REFRESH_TOKEN` | Refresh token for the publisher account |
-| `CHROME_WEB_STORE_PUBLISHER_ID` | Publisher id from the developer dashboard |
+Publishing does not store a Chrome Web Store OAuth client secret or refresh token in GitHub. It reuses the GitHub Actions Workload Identity Federation pool [`gcp/terraform`](../gcp/README.md) creates for Cloud Run deploys. That stack also creates a third Workload Identity provider and a Google Cloud service account bound only to it, with no GCP project roles: `google-github-actions/auth` impersonates that account over OIDC and asks IAM to mint it a short-lived access token scoped to `https://www.googleapis.com/auth/chromewebstore`, which `.github/scripts/chrome_web_store.py` uses directly.
 
-A refresh token for an OAuth app whose consent screen is in testing expires after 7 days. Use a production consent screen so the main-branch job can keep publishing. A publish failing with `invalid_grant: Token has been expired or revoked.` is that expiry; mint a new `CHROME_WEB_STORE_REFRESH_TOKEN` and update the secret.
+The Chrome Web Store only honors that token after the service account's email is linked on the publisher in the developer dashboard (**Account > API access**; a publisher can link one service account) — that link is a one-time manual step `gcp/terraform` cannot do. See [`gcp/README.md`](../gcp/README.md) for applying that stack and setting up the `chrome-webstore` GitHub environment.
 
-Without those secrets, the workflow runs the tests and skips publish.
+Add the repository secret below, and the two environment variables `tofu output chrome_webstore_github_actions_variables` prints to the `chrome-webstore` GitHub environment.
+
+| Name | Where | Value |
+| --- | --- | --- |
+| `CHROME_WEBSTORE_WORKLOAD_IDENTITY_PROVIDER` | `chrome-webstore` environment variable | `tofu output chrome_webstore_workload_identity_provider` |
+| `CHROME_WEBSTORE_SERVICE_ACCOUNT` | `chrome-webstore` environment variable | `tofu output chrome_webstore_service_account` |
+| `CHROME_WEB_STORE_PUBLISHER_ID` | Repository secret | Publisher id from the developer dashboard |
+
+Without those, the workflow runs the tests and skips publish.
+
+`.github/scripts/chrome_web_store.py` also still accepts the older OAuth refresh-token flow (`CHROME_WEB_STORE_CLIENT_ID`, `CHROME_WEB_STORE_CLIENT_SECRET`, `CHROME_WEB_STORE_REFRESH_TOKEN`) when `CHROME_WEB_STORE_ACCESS_TOKEN` isn't set, which is useful for a one-off publish from a laptop. A refresh token for an OAuth app whose consent screen is in testing expires after 7 days, which is why the main-branch job no longer uses one.

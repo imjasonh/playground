@@ -16,6 +16,15 @@ account in the project, so a new app does not need a binding for its
 runtime account. The plan account can read the state bucket and push
 images. It cannot delete images or read replica objects.
 
+This stack also creates a third account, bound to a third provider in
+the same pool, so `chrome-extension.yml` can publish the Chrome
+extension without a hard-coded refresh token (see
+[`chrome-extension/README.md`](../chrome-extension/README.md#publish-from-main)).
+That account holds no project roles — a Chrome Web Store access token
+isn't a GCP IAM grant — so after `tofu apply` you must link its email
+on the publisher in the Chrome Web Store Developer Dashboard (**Account
+> API access**) by hand; Terraform cannot do that part.
+
 ```bash
 gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucket-level-access --public-access-prevention
 gcloud storage buckets update gs://BUCKET --versioning
@@ -32,3 +41,12 @@ under the prefix `github`. App stacks use their own prefix in that bucket.
 Create the GitHub environment `gcp` and set the variables
 `tofu output github_actions_variables` prints. Set `GCP_TF_STATE_BUCKET`
 to `BUCKET`, without the `gs://` prefix.
+
+Create a second GitHub environment, `chrome-webstore`, and set the
+variables `tofu output chrome_webstore_github_actions_variables` prints.
+Then link `tofu output chrome_webstore_service_account`'s email in the
+Chrome Web Store Developer Dashboard. Add the repository secret
+`CHROME_WEB_STORE_PUBLISHER_ID` (it does not need to live in the
+environment). `chrome-extension.yml` then mints a
+`chromewebstore`-scoped access token through this pool instead of a
+stored OAuth refresh token.

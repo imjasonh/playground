@@ -30,6 +30,8 @@
 //! * [`maintenance`] — budgeted, resumable repacking for scheduled Workers.
 //! * [`http`] — the transport-agnostic HTTP request router shared by the
 //!   Workers entry point, the native test server, and the benchmarks.
+//! * [`scope`] — per-request metrics, spans, and CF-Ray on an isolate that
+//!   interleaves requests.
 //! * [`trace`] — Cloudflare Workers custom-span tracing (no-op natively).
 //!
 //! See `docs/design.md` for the full architecture, streaming strategy, cost
@@ -52,6 +54,7 @@ pub mod pktline;
 pub mod protocol;
 pub mod refs;
 pub mod repo;
+pub mod scope;
 pub mod storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod testutil;

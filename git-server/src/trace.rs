@@ -13,15 +13,6 @@
 //!
 //! Enable with `[observability.traces] enabled = true` in `wrangler.toml`.
 
-use std::cell::RefCell;
-
-thread_local! {
-    /// Innermost open custom span (wasm) or empty (native / unsampled).
-    static ACTIVE: RefCell<Vec<ActiveSpan>> = const { RefCell::new(Vec::new()) };
-    /// CF-Ray for the current request, if the edge supplied one.
-    static RAY: RefCell<Option<String>> = const { RefCell::new(None) };
-}
-
 /// Handle to the currently open custom span (opaque on native).
 #[derive(Clone)]
 pub struct ActiveSpan {
@@ -62,30 +53,32 @@ impl ActiveSpan {
 /// Record the CF-Ray (or clear it) for the current request. Cleared by
 /// [`crate::metrics::begin`].
 pub fn set_ray(ray: Option<String>) {
-    RAY.with(|r| *r.borrow_mut() = ray);
+    crate::scope::with(|frame| frame.ray = ray);
 }
 
 /// CF-Ray for the current request, if known.
 pub fn ray() -> Option<String> {
-    RAY.with(|r| r.borrow().clone())
+    crate::scope::with(|frame| frame.ray.clone())
 }
 
-pub(crate) fn clear_ray() {
-    RAY.with(|r| *r.borrow_mut() = None);
+#[cfg(test)]
+fn clear_ray() {
+    set_ray(None);
 }
 
-/// Run `f` with the innermost open custom span, if any.
+/// Run `f` with the current request's innermost open custom span, if any.
 pub fn with_active_span<R>(f: impl FnOnce(&ActiveSpan) -> R) -> Option<R> {
-    ACTIVE.with(|stack| stack.borrow().last().map(f))
+    let span = crate::scope::with(|frame| frame.spans.last().cloned());
+    span.as_ref().map(f)
 }
 
 fn push_active(span: ActiveSpan) {
-    ACTIVE.with(|s| s.borrow_mut().push(span));
+    crate::scope::with(|frame| frame.spans.push(span));
 }
 
 fn pop_active() {
-    ACTIVE.with(|s| {
-        s.borrow_mut().pop();
+    crate::scope::with(|frame| {
+        frame.spans.pop();
     });
 }
 
@@ -186,19 +179,22 @@ mod wasm {
         let result: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
         let sink = result.clone();
         let mut f = Some(f);
+        // `future_to_promise` polls on the microtask queue, outside the
+        // caller's `Scoped` future, so the callback carries that frame in.
+        let frame = crate::scope::current();
 
         let cb = Closure::wrap(Box::new(move |span: Span| -> Promise {
             let span = ActiveSpan { inner: span };
             let f = f.take().expect("enterSpan invoked its callback twice");
             let fut = f(span.clone());
             let sink = sink.clone();
-            future_to_promise(async move {
+            future_to_promise(crate::scope::run(frame.clone(), async move {
                 push_active(span);
                 let value = fut.await;
                 pop_active();
                 *sink.borrow_mut() = Some(value);
                 Ok(JsValue::UNDEFINED)
-            })
+            }))
         }) as Box<dyn FnMut(Span) -> Promise>);
 
         let promise = TRACING.with(|t| t.enter_span_async(name, &cb));

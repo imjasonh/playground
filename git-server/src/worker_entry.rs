@@ -20,7 +20,7 @@ use crate::protocol::BodyStream;
 use crate::refs::{
     LoadResult, PushApplied, PushDelta, RepackSwap, RepoState, StateError, StateStore,
 };
-use crate::storage::{Result as StorageResult, StorageError, Store, Uploader};
+use crate::storage::{retry_transient, Result as StorageResult, StorageError, Store, Uploader};
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -71,55 +71,75 @@ impl R2Store {
 #[async_trait(?Send)]
 impl Store for R2Store {
     async fn put(&self, key: &str, data: Vec<u8>) -> StorageResult<()> {
-        let _t = BackendTimer::start(Op::R2ClassA);
-        self.bucket.put(key, data).execute().await.map_err(s_err)?;
-        Ok(())
+        retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassA);
+            self.bucket
+                .put(key, data.clone())
+                .execute()
+                .await
+                .map_err(s_err)?;
+            Ok(())
+        })
+        .await
     }
 
     async fn get(&self, key: &str) -> StorageResult<Option<Vec<u8>>> {
-        let _t = BackendTimer::start(Op::R2ClassB);
-        let got = self.bucket.get(key).execute().await.map_err(s_err)?;
-        object_bytes(got).await
+        retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassB);
+            let got = self.bucket.get(key).execute().await.map_err(s_err)?;
+            object_bytes(got).await
+        })
+        .await
     }
 
     async fn get_range(&self, key: &str, offset: u64, len: u64) -> StorageResult<Option<Vec<u8>>> {
-        let _t = BackendTimer::start(Op::R2ClassB);
-        let got = self
-            .bucket
-            .get(key)
-            .range(Range::OffsetWithLength {
-                offset,
-                length: len,
-            })
-            .execute()
-            .await
-            .map_err(s_err)?;
-        object_bytes(got).await
+        retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassB);
+            let got = self
+                .bucket
+                .get(key)
+                .range(Range::OffsetWithLength {
+                    offset,
+                    length: len,
+                })
+                .execute()
+                .await
+                .map_err(s_err)?;
+            object_bytes(got).await
+        })
+        .await
     }
 
     async fn size(&self, key: &str) -> StorageResult<Option<u64>> {
-        let _t = BackendTimer::start(Op::R2ClassB);
-        Ok(self
-            .bucket
-            .head(key)
-            .await
-            .map_err(s_err)?
-            .map(|o| o.size()))
+        retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassB);
+            self.bucket
+                .head(key)
+                .await
+                .map_err(s_err)
+                .map(|o| o.map(|obj| obj.size()))
+        })
+        .await
     }
 
     async fn delete(&self, key: &str) -> StorageResult<()> {
-        let _t = BackendTimer::start(Op::R2ClassA);
-        self.bucket.delete(key).await.map_err(s_err)
+        retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassA);
+            self.bucket.delete(key).await.map_err(s_err)
+        })
+        .await
     }
 
     async fn start_upload(&self, key: &str) -> StorageResult<Box<dyn Uploader>> {
-        let _t = BackendTimer::start(Op::R2ClassA);
-        let upload = self
-            .bucket
-            .create_multipart_upload(key)
-            .execute()
-            .await
-            .map_err(s_err)?;
+        let upload = retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassA);
+            self.bucket
+                .create_multipart_upload(key)
+                .execute()
+                .await
+                .map_err(s_err)
+        })
+        .await?;
         Ok(Box::new(R2Uploader {
             upload,
             parts: Vec::new(),
@@ -141,12 +161,17 @@ struct R2Uploader {
 impl R2Uploader {
     /// Upload one part (the only place part numbers advance).
     async fn upload_part(&mut self, data: Vec<u8>) -> StorageResult<()> {
-        let _t = BackendTimer::start(Op::R2ClassA);
-        let part = self
-            .upload
-            .upload_part(self.next_part, data)
-            .await
-            .map_err(s_err)?;
+        let part_number = self.next_part;
+        // `upload_part` takes the buffer by value, so keep a copy until the
+        // call succeeds. A transient failure retries the same part number.
+        let part = retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassA);
+            self.upload
+                .upload_part(part_number, data.clone())
+                .await
+                .map_err(s_err)
+        })
+        .await?;
         self.parts.push(part);
         self.next_part += 1;
         Ok(())
@@ -177,14 +202,19 @@ impl Uploader for R2Uploader {
     async fn complete(mut self: Box<Self>) -> StorageResult<u64> {
         self.flush_part().await?;
         let parts = std::mem::take(&mut self.parts);
+        // `complete` takes the upload by value, so a failed attempt cannot
+        // be repeated.
         let _t = BackendTimer::start(Op::R2ClassA);
         self.upload.complete(parts).await.map_err(s_err)?;
         Ok(self.total)
     }
 
     async fn abort(self: Box<Self>) -> StorageResult<()> {
-        let _t = BackendTimer::start(Op::R2ClassA);
-        self.upload.abort().await.map_err(s_err)
+        retry_transient(async || {
+            let _t = BackendTimer::start(Op::R2ClassA);
+            self.upload.abort().await.map_err(s_err)
+        })
+        .await
     }
 }
 
@@ -483,7 +513,7 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let path_for_span = path.clone();
     let ray_for_span = cf_ray.clone();
 
-    crate::trace::span_async(span_name, move |span| async move {
+    let span = crate::trace::span_async(span_name, move |span| async move {
         if span.is_traced() {
             span.set_attribute("http.request.method", &method_for_span);
             span.set_attribute("url.path", &path_for_span);
@@ -504,8 +534,8 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
             cf_ray,
         })
         .await
-    })
-    .await
+    });
+    crate::scope::run(crate::scope::fresh(), span).await
 }
 
 struct FetchCtx {
@@ -589,7 +619,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                 let env2 = env.clone();
                 let repo_name = repo.to_string();
                 let parent_ray = cf_ray.clone();
-                ctx.wait_until(async move {
+                ctx.wait_until(crate::scope::run(crate::scope::fresh(), async move {
                     let _ = crate::trace::span_async("git.auto_repack", move |span| async move {
                         if let Some(ref r) = parent_ray {
                             crate::trace::set_ray(Some(r.clone()));
@@ -636,7 +666,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                         }
                     })
                     .await;
-                });
+                }));
             }
         }
     }
@@ -671,7 +701,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
 /// per repo).
 #[event(scheduled)]
 async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::ScheduleContext) {
-    let _ = crate::trace::span_async("git.scheduled", move |_span| async move {
+    let run = crate::trace::span_async("git.scheduled", move |_span| async move {
         let store = match R2Store::new(&env) {
             Ok(s) => s,
             Err(e) => {
@@ -723,6 +753,6 @@ async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::Sched
                 Err(e) => worker::console_error!("repack {} failed: {e}", key.name),
             }
         }
-    })
-    .await;
+    });
+    crate::scope::run(crate::scope::fresh(), run).await;
 }

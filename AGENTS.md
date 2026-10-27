@@ -19,7 +19,7 @@ playground/
 ├── app-attest/            # Rust Cloudflare Worker: App Attest handshake + assertions (not a Pages app)
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
 ├── cloudrun-sqlite/       # Go: SQLite on a Litestream replica for Cloud Run (VFS, Terraform, Cloud Run simulator)
-├── gcp/                   # shared GitHub Workload Identity pool for Cloud Run deploys (not an app)
+├── gcp/                   # shared GitHub Workload Identity pool for Cloud Run deploys and Chrome Web Store publishing (not an app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── chrome-extension/      # Chrome extension (not a Pages app)
@@ -600,6 +600,14 @@ changes a path in the manifest's `watch` list runs `tofu apply`. A pull
 request that selects an app runs `tofu plan` as the plan account and
 comments the plan. The plan account can push the image the plan builds.
 It cannot apply, and it cannot read replica objects.
+
+The same stack also creates a third Workload Identity provider and
+service account, bound to neither the deploy nor the plan account's
+attribute, so `chrome-extension.yml` can publish the Chrome extension
+over OIDC instead of a stored OAuth refresh token. That account holds
+no GCP project roles; see
+[`chrome-extension/README.md`](chrome-extension/README.md#authentication)
+and [`gcp/README.md`](gcp/README.md).
 
 ## Adding a new Rust app
 
