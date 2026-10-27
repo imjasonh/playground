@@ -1895,6 +1895,11 @@ impl LoweringContext {
                 if let Some(&val) = self.const_values.get(name) {
                     let t = self.fresh_temp();
                     self.emit(IrOp::LoadImm(t, val as u8));
+                    if val > 0xFF {
+                        let hi = self.fresh_temp();
+                        self.emit(IrOp::LoadImm(hi, (val >> 8) as u8));
+                        self.make_wide(t, hi);
+                    }
                     return t;
                 }
                 let var_id = self.get_or_create_var(name);

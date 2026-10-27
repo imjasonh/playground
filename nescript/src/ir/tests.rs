@@ -1380,3 +1380,32 @@ fn cast_to_u16_strips_signed_flag() {
         .expect("expected a CmpLt16 op");
     assert_eq!(cmp, Signedness::Unsigned);
 }
+
+#[test]
+fn lower_u16_const_above_255_compares_both_bytes() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        const LIMIT: u16 = 258
+        var w: u16 = 130
+        var y: u8 = 0
+        on frame { if w < LIMIT { y = 1 } }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    assert!(
+        ops.iter().any(|op| matches!(op, IrOp::LoadImm(_, 1)))
+            && ops.iter().any(|op| matches!(op, IrOp::CmpLt16 { .. })),
+        "LIMIT's high byte should reach a 16-bit compare: {ops:?}"
+    );
+    let hi = ops.iter().find_map(|op| match op {
+        IrOp::CmpLt16 { b_hi, .. } => Some(*b_hi),
+        _ => None,
+    });
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::LoadImm(t, 1) if Some(*t) == hi)),
+        "the compare's high byte should be 1: {ops:?}"
+    );
+}
