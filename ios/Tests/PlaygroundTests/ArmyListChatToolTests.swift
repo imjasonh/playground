@@ -137,8 +137,8 @@ final class ArmyListChatToolTests: XCTestCase {
         let output = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: custodesWorkspace,
             battleSizeID: "incursion",
-            detachmentIDsCSV: "shield-host",
-            unitsCSV: "blade-champion:1,custodian-guard:5,custodian-wardens:5,allarus-custodians:3",
+            detachmentIDsCSV: "guardians-of-the-throne",
+            unitsCSV: "blade-champion:1,custodian-guard-sodality:3,custodian-wardens:3,allarus-custodians:2",
             listName: "Golden Spears"
         )
         XCTAssertTrue(output.contains("Applied roster"), output)

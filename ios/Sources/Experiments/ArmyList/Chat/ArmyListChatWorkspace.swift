@@ -171,7 +171,7 @@ enum ArmyListChatToolExecutor {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         if rawUnits.isEmpty {
-            return "unitsCSV is empty. Pass datasheet ids/names like shield-captain:1,custodian-guard:5."
+            return "unitsCSV is empty. Pass datasheet ids/names like shield-captain:1,allarus-custodians:2."
         }
 
         struct ResolvedPick {
