@@ -174,6 +174,7 @@ pub fn compile_source(
     // background that happened to trip the limit.
     let next_sprite_tile_u16 = sprites
         .iter()
+        .filter(|s| s.table == 0)
         .map(|s| {
             let count = s.chr_bytes.len().div_ceil(16) as u16;
             u16::from(s.tile_index) + count

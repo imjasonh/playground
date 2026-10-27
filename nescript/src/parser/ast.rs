@@ -163,6 +163,8 @@ pub struct StructField {
 pub struct SpriteDecl {
     pub name: String,
     pub chr_source: AssetSource,
+    /// Pattern table the tiles live in: 0 (`$0000`) or 1 (`$1000`).
+    pub table: u8,
     pub span: Span,
 }
 

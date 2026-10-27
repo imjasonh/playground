@@ -136,6 +136,7 @@ fn link_with_sprites_places_chr_data() {
     let sprites = vec![SpriteData {
         name: "Player".into(),
         tile_index: 1,
+        table: 0,
         chr_bytes: sprite_bytes.clone(),
     }];
 
@@ -172,6 +173,7 @@ fn link_with_sprites_spanning_multiple_tiles() {
     let sprites = vec![SpriteData {
         name: "Big".into(),
         tile_index: 4,
+        table: 0,
         chr_bytes: sprite_bytes.clone(),
     }];
 
@@ -198,6 +200,7 @@ fn link_with_background_chr_places_blob_after_sprites() {
     let sprites = vec![SpriteData {
         name: "Player".into(),
         tile_index: 1,
+        table: 0,
         chr_bytes: sprite_bytes.clone(),
     }];
     let backgrounds = vec![crate::assets::BackgroundData {

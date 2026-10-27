@@ -65,6 +65,8 @@ pub struct Linker {
 pub struct SpriteData {
     pub name: String,
     pub tile_index: u8,
+    /// Pattern table: 0 for `$0000`, 1 for `$1000`.
+    pub table: u8,
     /// Raw CHR bytes (16 bytes per 8x8 tile).
     pub chr_bytes: Vec<u8>,
 }
@@ -967,7 +969,7 @@ impl Linker {
             chr[..16].copy_from_slice(&DEFAULT_SPRITE_CHR);
         }
         for sprite in sprites {
-            let offset = sprite.tile_index as usize * 16;
+            let offset = sprite.table as usize * 4096 + sprite.tile_index as usize * 16;
             let end = offset + sprite.chr_bytes.len();
             if end <= chr.len() {
                 chr[offset..end].copy_from_slice(&sprite.chr_bytes);

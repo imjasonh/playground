@@ -116,9 +116,10 @@ impl RoomData {
 /// requiring the files to exist yet.
 pub fn resolve_sprites(program: &Program, source_dir: &Path) -> Result<Vec<SpriteData>, String> {
     let mut sprites = Vec::new();
-    // Tile index 0 is the built-in smiley; user sprites start at 1.
-    // usize, not u8: a set that fills tile 255 leaves this at 256.
-    let mut next_tile: usize = 1;
+    // Tile index 0 of table 0 is the built-in smiley, so user sprites
+    // in table 0 start at 1. Table 1 starts at 0. The counters are
+    // usize: a set that fills tile 255 leaves the next index at 256.
+    let mut next_tiles: [usize; 2] = [1, 0];
 
     for sprite_decl in &program.sprites {
         let chr_bytes = match &sprite_decl.chr_source {
@@ -150,19 +151,24 @@ pub fn resolve_sprites(program: &Program, source_dir: &Path) -> Result<Vec<Sprit
         if tile_count == 0 {
             continue;
         }
+        let table = usize::from(sprite_decl.table.min(1));
+        let next_tile = next_tiles[table];
         if next_tile + tile_count > 256 {
             return Err(format!(
-                "sprite '{}' would exceed CHR ROM tile limit",
+                "sprite '{}' would exceed the 256 tiles of pattern table {table}",
                 sprite_decl.name
             ));
         }
 
         sprites.push(SpriteData {
             name: sprite_decl.name.clone(),
+            #[allow(clippy::cast_possible_truncation)]
             tile_index: next_tile as u8,
+            #[allow(clippy::cast_possible_truncation)]
+            table: table as u8,
             chr_bytes,
         });
-        next_tile += tile_count;
+        next_tiles[table] += tile_count;
     }
 
     Ok(sprites)
@@ -355,6 +361,7 @@ mod tests {
     #[test]
     fn resolve_inline_sprite() {
         let sprite = SpriteDecl {
+            table: 0,
             name: "Player".to_string(),
             chr_source: AssetSource::Inline(vec![0u8; 16]),
             span: Span::dummy(),
@@ -395,6 +402,7 @@ mod tests {
         std::fs::write(&file_path, &bytes).unwrap();
 
         let sprite = SpriteDecl {
+            table: 0,
             name: "Tile".to_string(),
             chr_source: AssetSource::Binary(
                 file_path.file_name().unwrap().to_string_lossy().to_string(),
@@ -412,6 +420,7 @@ mod tests {
     #[test]
     fn resolve_missing_binary_skipped() {
         let sprite = SpriteDecl {
+            table: 0,
             name: "Missing".to_string(),
             chr_source: AssetSource::Binary("nonexistent.bin".to_string()),
             span: Span::dummy(),

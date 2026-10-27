@@ -928,11 +928,27 @@ impl Parser {
         self.expect(&TokenKind::LBrace)?;
 
         let mut chr_source: Option<AssetSource> = None;
+        let mut table: u8 = 0;
 
         while *self.peek() != TokenKind::RBrace && *self.peek() != TokenKind::Eof {
             let (key, key_span) = self.expect_ident()?;
             self.expect(&TokenKind::Colon)?;
             match key.as_str() {
+                "table" => {
+                    table = match self.peek().clone() {
+                        TokenKind::IntLiteral(v @ (0 | 1)) => {
+                            self.advance();
+                            v as u8
+                        }
+                        _ => {
+                            return Err(Diagnostic::error(
+                                ErrorCode::E0201,
+                                "sprite 'table' must be 0 or 1",
+                                self.current_span(),
+                            ));
+                        }
+                    };
+                }
                 "chr" => {
                     if chr_source.is_some() {
                         return Err(Diagnostic::error(
@@ -976,6 +992,7 @@ impl Parser {
         Ok(SpriteDecl {
             name,
             chr_source,
+            table,
             span: Span::new(start.file_id, start.start, self.current_span().end),
         })
     }

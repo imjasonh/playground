@@ -1695,6 +1695,63 @@ fn compile_banked(source: &str) -> Vec<u8> {
 }
 
 #[test]
+fn sprite_in_table_one_lands_in_the_upper_pattern_table() {
+    // `table: 1` puts the tiles at $1000, starting from tile 0 there,
+    // and leaves table 0 allocation (which starts at tile 1) alone.
+    let source = r#"
+        game "SpriteTable" { mapper: NROM }
+
+        sprite Wall {
+            chr: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                  0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10]
+        }
+        sprite Player {
+            table: 1
+            chr: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                  0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F]
+        }
+
+        state Title {
+            on frame {
+                draw Player at: (10, 20)
+            }
+        }
+
+        start Title
+    "#;
+
+    let rom_data = compile(source);
+    let chr_start = 16 + 16384;
+    assert_eq!(rom_data[chr_start + 16], 0x01, "Wall at table 0 tile 1");
+    assert_eq!(
+        &rom_data[chr_start + 4096..chr_start + 4096 + 16],
+        &[
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D,
+            0x1E, 0x1F
+        ],
+        "Player at table 1 tile 0",
+    );
+}
+
+#[test]
+fn sprite_table_must_be_zero_or_one() {
+    let source = r#"
+        game "SpriteTable" { mapper: NROM }
+        sprite Player {
+            table: 2
+            chr: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+        state Title { on frame { draw Player at: (10, 20) } }
+        start Title
+    "#;
+    let result = nescript::parser::parse(source);
+    assert!(
+        !result.1.is_empty(),
+        "table: 2 should be a parse error, got none"
+    );
+}
+
+#[test]
 fn sprite_resolution_uses_tile_index() {
     // The Player sprite has 16 unique bytes of CHR data. Because tile index 0
     // is reserved for the built-in smiley, the compiler should place Player

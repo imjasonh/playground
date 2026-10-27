@@ -918,6 +918,25 @@ Both dimensions must be multiples of 8. Multi-tile sprites (16×8,
 8×16, 16×16, …) are split into 8×8 tiles in row-major reading order
 so consecutive tile indices match what your eye reads.
 
+**Pattern tables.** Tiles go in pattern table 0 (`$0000`) by default,
+starting at tile 1 because tile 0 holds the built-in smiley. Add
+`table: 1` to put a declaration in pattern table 1 (`$1000`), starting
+at tile 0:
+
+```
+sprite Player {
+    table: 1
+    pixels: [ ... ]
+}
+```
+
+`draw` writes the same tile index either way, so the table that the
+PPU reads sprite tiles from is set by `PPUCTRL` bit 3. Write
+`poke(0x2000, 0x88)` to keep NMI on and read sprites from table 1.
+On MMC3, the scanline counter needs this split: it counts rises of
+PPU address line A12, which happen once per line only when the
+background and the sprites use different tables.
+
 ### Palette Declarations
 
 Palettes can be authored in two styles. Both produce the same 32-byte
