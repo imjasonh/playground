@@ -1083,6 +1083,33 @@ fn analyze_break_outside_loop() {
 }
 
 #[test]
+fn analyze_inline_asm_placeholder_counts_as_a_use() {
+    let (prog, diags) = parser::parse(
+        r#"
+        game "Test" { mapper: NROM }
+        var shadow: u8 = 0
+        on frame {
+            asm {
+                LDA {shadow}
+                STA $2005
+            }
+        }
+        start Main
+    "#,
+    );
+    assert!(diags.is_empty(), "parse errors: {diags:?}");
+    let result = analyze(&prog.unwrap());
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == ErrorCode::W0103 && d.message.contains("shadow")),
+        "a variable read from asm should not be unused: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
 fn analyze_unused_variable_warning() {
     // `ghost` is declared but never read (only the initializer runs).
     // It should trigger a W0103 warning.

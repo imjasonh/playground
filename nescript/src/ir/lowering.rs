@@ -1713,6 +1713,56 @@ impl LoweringContext {
         self.wide_hi.insert(lo, hi);
     }
 
+    /// Shift a 16-bit value by a constant count, built from byte
+    /// shifts. Bits move between the two bytes, so `w >> 8` yields
+    /// the high byte and `w << 8` moves the low byte up.
+    fn lower_wide_shift(&mut self, l: IrTemp, left: bool, count: u16) -> IrTemp {
+        let (lo, hi) = self.widen(l);
+        let (src_near, src_far) = if left { (lo, hi) } else { (hi, lo) };
+        let shift = |t, a, n| {
+            if left {
+                IrOp::ShiftLeft(t, a, n)
+            } else {
+                IrOp::ShiftRight(t, a, n)
+            }
+        };
+        let unshift = |t, a, n| {
+            if left {
+                IrOp::ShiftRight(t, a, n)
+            } else {
+                IrOp::ShiftLeft(t, a, n)
+            }
+        };
+        // `src_near` is the source byte whose bits cross into the
+        // other byte. `near` is the result byte they land in, and
+        // `far` is the result byte they leave.
+        let (near, far) = if count >= 16 {
+            let z = self.fresh_temp();
+            self.emit(IrOp::LoadImm(z, 0));
+            (z, z)
+        } else if count >= 8 {
+            let z = self.fresh_temp();
+            self.emit(IrOp::LoadImm(z, 0));
+            let n = self.fresh_temp();
+            self.emit(shift(n, src_near, (count - 8) as u8));
+            (n, z)
+        } else {
+            let count = count as u8;
+            let f = self.fresh_temp();
+            self.emit(shift(f, src_near, count));
+            let a = self.fresh_temp();
+            self.emit(shift(a, src_far, count));
+            let b = self.fresh_temp();
+            self.emit(unshift(b, src_near, 8 - count));
+            let n = self.fresh_temp();
+            self.emit(IrOp::Or(n, a, b));
+            (n, f)
+        };
+        let (res_lo, res_hi) = if left { (far, near) } else { (near, far) };
+        self.make_wide(res_lo, res_hi);
+        res_lo
+    }
+
     /// True if `t` was produced as the low byte of a wide value.
     fn is_wide(&self, t: IrTemp) -> bool {
         self.wide_hi.contains_key(&t)
@@ -2057,6 +2107,11 @@ impl LoweringContext {
                 // widening uses the same `widen()` path as everywhere
                 // else.
                 let t = self.lower_expr(inner);
+                if matches!(target, NesType::U16 | NesType::I16) && !self.is_wide(t) {
+                    // Widen now, so `(b as u16) << 8` shifts 16 bits.
+                    let (lo, hi) = self.widen(t);
+                    self.make_wide(lo, hi);
+                }
                 match target {
                     NesType::I8 | NesType::I16 => self.mark_signed(t),
                     NesType::U8 | NesType::U16 => {
@@ -2109,6 +2164,9 @@ impl LoweringContext {
         if matches!(op, BinOp::ShiftLeft | BinOp::ShiftRight) {
             if let Some(count) = self.eval_const(right) {
                 let l = self.lower_expr(left);
+                if self.is_wide(l) {
+                    return self.lower_wide_shift(l, op == BinOp::ShiftLeft, count);
+                }
                 let t = self.fresh_temp();
                 // Shifting by ≥ 8 zeroes an 8-bit value; clamp so the
                 // codegen doesn't emit an absurd number of ASL/LSR.

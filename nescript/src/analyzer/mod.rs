@@ -2601,11 +2601,23 @@ impl Analyzer {
                 self.walk_expr_reads(cond);
                 self.check_expr_type(cond, &NesType::Bool);
             }
-            Statement::InlineAsm(_, _) | Statement::RawAsm(_, _) => {
-                // Inline assembly is treated as an opaque block. The
-                // codegen parses and validates the body; analysis has
-                // nothing to check.
+            Statement::InlineAsm(body, _) => {
+                // The codegen parses and validates the body. A `{name}`
+                // placeholder counts as a use of that variable, so it
+                // doesn't draw an unused-variable warning.
+                let mut rest = body.as_str();
+                while let Some(start) = rest.find('{') {
+                    let Some(len) = rest[start + 1..].find('}') else {
+                        break;
+                    };
+                    let name = rest[start + 1..start + 1 + len].trim();
+                    if self.symbol_exists(name) {
+                        self.mark_var_used(name);
+                    }
+                    rest = &rest[start + 1 + len..];
+                }
             }
+            Statement::RawAsm(_, _) => {}
             Statement::Play(name, span) => {
                 // `play Name` is valid if the name refers to a
                 // declared sfx block or to a builtin effect. Anything

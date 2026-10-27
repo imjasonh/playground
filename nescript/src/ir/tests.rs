@@ -598,6 +598,83 @@ fn lower_shift_left_with_literal_count_uses_that_count() {
     );
 }
 
+fn frame_ops(ir: &IrProgram) -> Vec<IrOp> {
+    ir.functions
+        .iter()
+        .find(|f| f.name.contains("frame"))
+        .expect("frame handler should exist")
+        .blocks
+        .iter()
+        .flat_map(|b| b.ops.clone())
+        .collect()
+}
+
+#[test]
+fn lower_u16_shift_right_by_eight_takes_the_high_byte() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var w: u16 = 0x1234
+        var y: u8 = 0
+        on frame { y = (w >> 8) as u8 }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    let hi = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::LoadVarHi(t, _) => Some(*t),
+            _ => None,
+        })
+        .expect("w's high byte should be loaded");
+    let shifted = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::ShiftRight(d, s, 0) if *s == hi => Some(*d),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("high byte should become the result: {ops:?}"));
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::StoreVar(_, t) if *t == shifted)),
+        "y should get the high byte: {ops:?}"
+    );
+}
+
+#[test]
+fn lower_widening_cast_then_shift_left_fills_the_high_byte() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var b: u8 = 0x12
+        var w: u16 = 0
+        on frame { w = (b as u16) << 8 }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    let lo = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::LoadVar(t, _) => Some(*t),
+            _ => None,
+        })
+        .expect("b should be loaded");
+    let shifted = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::ShiftLeft(d, s, 0) if *s == lo => Some(*d),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("b should move to the high byte: {ops:?}"));
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::StoreVarHi(_, t) if *t == shifted)),
+        "w's high byte should get b: {ops:?}"
+    );
+}
+
 #[test]
 fn lower_shift_right_with_variable_count_uses_runtime_variant() {
     let ir = lower_ok(

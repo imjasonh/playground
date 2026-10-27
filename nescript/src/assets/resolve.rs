@@ -106,9 +106,9 @@ impl RoomData {
 /// Resolve sprite declarations in a program into concrete CHR byte blobs and
 /// assign each one a tile index in CHR ROM.
 ///
-/// Tile index 0 of pattern table 0 is reserved for the built-in default
-/// smiley sprite, so user sprites in that table start at tile index 1.
-/// Pattern table 1 starts at 0. A single sprite declaration may occupy
+/// Tile index 0 of CHR page 0 is reserved for the built-in default smiley
+/// sprite, so user sprites on that page start at tile index 1. Every other
+/// 4 KB page starts at 0. A single sprite declaration may occupy
 /// multiple consecutive tiles if its CHR data is larger than 16 bytes.
 ///
 /// `source_dir` is used as the base for `@binary` / `@chr` relative paths.
@@ -117,17 +117,12 @@ impl RoomData {
 /// requiring the files to exist yet.
 pub fn resolve_sprites(program: &Program, source_dir: &Path) -> Result<Vec<SpriteData>, String> {
     let mut sprites = Vec::new();
-<<<<<<< HEAD
-    // Tile index 0 of table 0 is the built-in smiley, so user sprites
-    // in table 0 start at 1. Table 1 starts at 0. The counters are
-    // usize: a set that fills tile 255 leaves the next index at 256.
-    let mut next_tiles: [usize; 2] = [1, 0];
-=======
     // Tile index 0 of page 0 is the built-in smiley, so user sprites
-    // in page 0 start at 1. Every other 4 KB page starts at 0.
+    // in page 0 start at 1. Every other 4 KB page starts at 0. The
+    // counters are usize: a set that fills tile 255 leaves the next
+    // index at 256.
     let mut next_tiles: [usize; 64] = [0; 64];
     next_tiles[0] = 1;
->>>>>>> b421bb45 (nescript: let sprite declarations use CHR pages past 8 KB)
 
     for sprite_decl in &program.sprites {
         let chr_bytes = match &sprite_decl.chr_source {
