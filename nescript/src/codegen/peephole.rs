@@ -42,11 +42,23 @@ pub fn optimize(instructions: &mut Vec<Instruction>) {
 /// result without reading flags, so anyone downstream relying on
 /// the Z/N flags still gets the right flags from the INC/DEC —
 /// both ops update N and Z from the new value just like ADC/SBC
-/// would. Any downstream code reading the carry flag from the
-/// original ADC/SBC would be depending on +1/-1 wrap arithmetic,
-/// which the folded form can't preserve; we conservatively
-/// require the pattern to be followed by an instruction that
-/// isn't a carry-reading branch.
+/// would. Any downstream code reading the carry or overflow flag
+/// from the original ADC/SBC would be depending on wrap/overflow
+/// behavior the folded form can't preserve, so we require the next
+/// instruction not to be a carry- or overflow-testing branch.
+///
+/// Also unlike the ADC/SBC form, INC/DEC never touch A — they
+/// address memory directly. The pattern we fold leaves A holding
+/// the new value right up to the STA (STA doesn't clobber A), and
+/// an earlier peephole pass may have already dropped a reload of
+/// `addr` immediately after this group on exactly that assumption
+/// (`remove_redundant_loads` tracks "A already equals addr" across
+/// an STA and is correct right up until this fold removes the
+/// ADC's A-setting effect). So we also require the next instruction
+/// not to be one that reads A's current value — `STA`, an
+/// arithmetic/logical op combining with A, `ASL`/`LSR`/`ROL`/`ROR`
+/// in accumulator mode, `TAX`/`TAY`, `PHA`, or `BIT` — since after
+/// folding, A no longer holds the sum/difference those would need.
 fn fold_inc_dec(instructions: &mut Vec<Instruction>) {
     let mut out = Vec::with_capacity(instructions.len());
     let mut idx = 0;
@@ -75,14 +87,17 @@ fn fold_inc_dec(instructions: &mut Vec<Instruction>) {
                 && adc_or_sbc.opcode == Opcode::SBC
                 && adc_or_sbc.mode == AddressingMode::Immediate(1);
             // Only fold if the next instruction after the STA
-            // doesn't rely on the ADC's carry output. A BCC/BCS
-            // right after the pattern would break; anything else
+            // doesn't rely on the ADC/SBC's flag or accumulator
+            // output (see the safety note above). Anything else
             // (including "no next instruction") is safe.
-            let next_is_carry_branch = instructions
-                .get(idx + 4)
-                .is_some_and(|n| matches!(n.opcode, Opcode::BCC | Opcode::BCS));
+            let next_is_unsafe = instructions.get(idx + 4).is_some_and(|n| {
+                matches!(
+                    n.opcode,
+                    Opcode::BCC | Opcode::BCS | Opcode::BVC | Opcode::BVS
+                ) || reads_a(n)
+            });
             if let Some(addr) = lda_addr {
-                if sta_matches && !next_is_carry_branch {
+                if sta_matches && !next_is_unsafe {
                     if is_clc_adc_1 {
                         out.push(Instruction::new(Opcode::INC, addr));
                         idx += 4;
@@ -100,6 +115,30 @@ fn fold_inc_dec(instructions: &mut Vec<Instruction>) {
         idx += 1;
     }
     *instructions = out;
+}
+
+/// Whether `inst` reads the accumulator's current value rather than
+/// just overwriting it or ignoring it. Used by [`fold_inc_dec`] to
+/// avoid folding into an `INC`/`DEC` (which never touches A) when a
+/// later instruction depends on A still holding the ADC/SBC result.
+fn reads_a(inst: &Instruction) -> bool {
+    match inst.opcode {
+        Opcode::STA
+        | Opcode::ADC
+        | Opcode::SBC
+        | Opcode::AND
+        | Opcode::ORA
+        | Opcode::EOR
+        | Opcode::CMP
+        | Opcode::TAX
+        | Opcode::TAY
+        | Opcode::PHA
+        | Opcode::BIT => true,
+        Opcode::ASL | Opcode::LSR | Opcode::ROL | Opcode::ROR => {
+            inst.mode == AddressingMode::Accumulator
+        }
+        _ => false,
+    }
 }
 
 /// Fold `Bxx label1; JMP label2; label1:` into `Byy label2`, where
@@ -1547,5 +1586,62 @@ mod tests {
             insts.iter().any(|i| i.opcode == ADC),
             "ADC must survive when followed by a carry-dependent branch: {insts:?}"
         );
+    }
+
+    #[test]
+    fn inc_fold_preserves_when_accumulator_shifted_next() {
+        // A state-persistent counter incremented then immediately
+        // shifted — `counter += 1; phase = (counter >> 3) & 3` — can
+        // lower (after copy-propagation collapses the intermediate
+        // temp hops) to exactly `LDA $10; CLC; ADC #1; STA $10; LSR
+        // A; ...`, with no reload of `$10` between the STA and the
+        // LSR because A already holds the sum. Folding the first
+        // four instructions into `INC $10` would leave the LSR
+        // shifting whatever A held *before* the LDA, not the new
+        // counter value, silently zeroing `phase` forever. This
+        // reproduces the subway walk-animation miscompile: `phase`
+        // stuck at 0, so the sprite never left its standing frame.
+        let mut insts = vec![
+            Instruction::new(LDA, AM::ZeroPage(0x10)),
+            Instruction::new(CLC, AM::Implied),
+            Instruction::new(ADC, AM::Immediate(1)),
+            Instruction::new(STA, AM::ZeroPage(0x10)),
+            Instruction::new(LSR, AM::Accumulator),
+            Instruction::new(RTS, AM::Implied),
+        ];
+        optimize(&mut insts);
+        assert!(
+            insts.iter().any(|i| i.opcode == ADC),
+            "ADC must survive when the accumulator is shifted right after: {insts:?}"
+        );
+    }
+
+    #[test]
+    fn inc_fold_preserves_when_accumulator_read_next() {
+        // Same hazard as above, but covering the other ways a later
+        // instruction can read A's post-ADC value instead of
+        // reloading it: a direct re-store (`STA`), combining it with
+        // another operand (`AND`), or copying it into another
+        // register (`TAX`). `fold_inc_dec` must decline to fold in
+        // every one of these cases, since `INC` never touches A.
+        for next in [
+            Instruction::new(STA, AM::ZeroPage(0x20)),
+            Instruction::new(AND, AM::Immediate(3)),
+            Instruction::new(TAX, AM::Implied),
+        ] {
+            let mut insts = vec![
+                Instruction::new(LDA, AM::ZeroPage(0x10)),
+                Instruction::new(CLC, AM::Implied),
+                Instruction::new(ADC, AM::Immediate(1)),
+                Instruction::new(STA, AM::ZeroPage(0x10)),
+                next.clone(),
+                Instruction::new(RTS, AM::Implied),
+            ];
+            optimize(&mut insts);
+            assert!(
+                insts.iter().any(|i| i.opcode == ADC),
+                "ADC must survive when A is read by {next:?} right after: {insts:?}"
+            );
+        }
     }
 }
