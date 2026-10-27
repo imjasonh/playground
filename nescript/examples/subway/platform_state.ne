@@ -132,7 +132,7 @@ state Platform {
                 px = 8
                 changed = true
             }
-            flip = false
+            flip = true
             moving = true
         }
         if button.left {
@@ -142,7 +142,7 @@ state Platform {
                 px = 224
                 changed = true
             }
-            flip = true
+            flip = false
             moving = true
         }
         if changed {
@@ -685,9 +685,10 @@ fun draw_hud_bullets() {
     }
 }
 
-// The player: 16x32, two tiles wide. Facing left mirrors each row.
-// The bottom row is the black outline and shoes. The denim is two
-// more tiles on sprite palette 2, in the same place.
+// The player: 16x32, two tiles wide. The art faces left; facing
+// right mirrors each row. The bottom row is the black outline and
+// shoes. The denim is two more tiles on sprite palette 2, in the
+// same place.
 fun draw_player(x: u8, y: u8, f: u8, flip: bool) {
     var a: u8 = 0
     var l: u8 = 0

@@ -722,8 +722,9 @@ def interior_screen(T):
 # Sprites (CHR page 1)
 # --------------------------------------------------------------------
 
-# 16x32, facing right. Traced from River City Ransom's Alex (the
-# 3/4 idle) and mirrored so the unflipped sprite looks right.
+# 16x32, facing left (the direction draw_player leaves unflipped;
+# it mirrors this for a rightward-facing player). Traced from
+# River City Ransom's Alex's 3/4 idle.
 # Rows 0-23 use sprite palette 0: 1 black hair and outline, 2 skin,
 # 3 white shirt. The legs below are Alex's own, from the same
 # sheet: 1 is the black outline and shoes, B is the blue denim.

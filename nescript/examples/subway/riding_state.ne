@@ -141,12 +141,12 @@ state Riding {
         var moving: bool = false
         if button.right and rpx < 232 {
             rpx += 1
-            rflip = false
+            rflip = true
             moving = true
         }
         if button.left and rpx > 8 {
             rpx -= 1
-            rflip = true
+            rflip = false
             moving = true
         }
         if not button.up {
