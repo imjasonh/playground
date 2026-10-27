@@ -52,17 +52,25 @@ fi
 
 check_gif() {
     name=$1
-    args=$2
+    frames=$2
+    warmup=$3
     if [ ! -d tests/emulator/node_modules ]; then
         echo "  (skipping $name gif freshness check; tests/emulator/node_modules is not installed)"
         return 0
     fi
     echo "  Rebuilding docs/$name.gif..."
-    # shellcheck disable=SC2086
-    (cd tests/emulator && node record_gif.mjs "$name" 360 2 /tmp/${name}-precheck.gif $args >/dev/null)
+    if [ -n "$warmup" ]; then
+        (cd tests/emulator && node record_gif.mjs "$name" "$frames" 2 /tmp/${name}-precheck.gif "$warmup" >/dev/null)
+    else
+        (cd tests/emulator && node record_gif.mjs "$name" "$frames" 2 /tmp/${name}-precheck.gif >/dev/null)
+    fi
     if ! cmp -s "docs/$name.gif" "/tmp/${name}-precheck.gif"; then
         echo "    STALE: docs/$name.gif"
-        echo "           rerun: node tests/emulator/record_gif.mjs $name 360 2 docs/$name.gif $args"
+        if [ -n "$warmup" ]; then
+            echo "           rerun: node tests/emulator/record_gif.mjs $name $frames 2 docs/$name.gif $warmup"
+        else
+            echo "           rerun: node tests/emulator/record_gif.mjs $name $frames 2 docs/$name.gif"
+        fi
         rm -f "/tmp/${name}-precheck.gif"
         return 1
     fi
@@ -72,17 +80,27 @@ check_gif() {
 
 if [ "$recorder_changed" -eq 1 ] || \
    echo "$changed_files" | grep -qE '^nescript/examples/platformer\.(ne|nes)$'; then
-    check_gif platformer "" || exit 1
+    check_gif platformer 360 "" || exit 1
 fi
 
 if [ "$recorder_changed" -eq 1 ] || \
    echo "$changed_files" | grep -qE '^nescript/examples/war(\.(ne|nes)|/[^/]+\.ne)$'; then
-    check_gif war 4 || exit 1
+    check_gif war 360 4 || exit 1
 fi
 
 if [ "$recorder_changed" -eq 1 ] || \
    echo "$changed_files" | grep -qE '^nescript/examples/pong(\.(ne|nes)|/[^/]+\.ne)$'; then
-    check_gif pong 4 || exit 1
+    check_gif pong 360 4 || exit 1
+fi
+
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/subway(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif subway 360 30 || exit 1
+fi
+
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/rampart(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif rampart 720 16 || exit 1
 fi
 
 echo "All nescript pre-commit checks passed."

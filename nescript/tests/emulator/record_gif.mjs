@@ -7,6 +7,8 @@
 //     node record_gif.mjs platformer 360 2 docs/platformer.gif
 //     node record_gif.mjs war 360 2 docs/war.gif 4
 //     node record_gif.mjs pong 360 2 docs/pong.gif 4
+//     node record_gif.mjs subway 360 2 docs/subway.gif 30
+//     node record_gif.mjs rampart 720 2 docs/rampart.gif 16
 //
 // The recorder runs jsnes in-process, collects one framebuffer every
 // `stride` NES frames for `frames` total, and encodes the sequence
@@ -17,19 +19,23 @@
 //
 // `warmup` is the number of NES frames to advance before the first
 // captured frame. The default of 30 skips past the reset stall and
-// the platformer's auto-Title→Play handoff at frame 20; the war
-// recording uses 4 instead because that demo opens on its menu and
-// we want the title screen to be the gif's thumbnail.
+// the platformer's auto-Title→Play handoff at frame 20. War and
+// pong pass 4 so the title menu is the thumbnail. Rampart passes
+// 16 so the thumbnail is the painted title rather than the blank
+// frames while its text queue fills in, and it records 720 frames
+// so the clip reaches the CPU demo that starts after the title idle.
 //
-// IMPORTANT: `docs/platformer.gif`, `docs/war.gif`, and
-// `docs/pong.gif` are committed and embedded in the README. Any
-// change to the compiler, the runtime, the harness, or the
-// underlying `.ne` source that alters the gameplay you see in the
-// first ~6 seconds of any of the three demos must be followed by
+// IMPORTANT: `docs/platformer.gif`, `docs/war.gif`, `docs/pong.gif`,
+// `docs/subway.gif`, and `docs/rampart.gif` are committed and
+// embedded in the README. Any change to the compiler, the runtime,
+// the harness, or the underlying `.ne` source that alters the
+// gameplay you see in one of those clips must be followed by
 //
 //     node tests/emulator/record_gif.mjs platformer 360 2 docs/platformer.gif
 //     node tests/emulator/record_gif.mjs war        360 2 docs/war.gif        4
 //     node tests/emulator/record_gif.mjs pong       360 2 docs/pong.gif       4
+//     node tests/emulator/record_gif.mjs subway     360 2 docs/subway.gif     30
+//     node tests/emulator/record_gif.mjs rampart    720 2 docs/rampart.gif    16
 //
 // committed alongside the source change. The CI `emulator` job
 // regenerates the gifs and fails if the committed copies are stale.

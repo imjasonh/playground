@@ -18,6 +18,14 @@ _Source: [`examples/war.ne`](examples/war.ne)_
 
 _Source: [`examples/pong.ne`](examples/pong.ne)_
 
+![Subway demo](docs/subway.gif)
+
+_Source: [`examples/subway.ne`](examples/subway.ne)_
+
+![Rampart demo](docs/rampart.gif)
+
+_Source: [`examples/rampart.ne`](examples/rampart.ne)_
+
 ## Quick Start
 
 ```bash

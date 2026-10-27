@@ -191,6 +191,26 @@ jobs:
             exit 1
           fi
 
+      - name: Verify docs/subway.gif is up to date
+        if: steps.discover.outputs.nescript == 'true'
+        working-directory: nescript/tests/emulator
+        run: |
+          node record_gif.mjs subway 360 2 /tmp/subway.gif 30
+          if ! cmp -s ../../docs/subway.gif /tmp/subway.gif; then
+            echo "::error file=nescript/docs/subway.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs subway 360 2 docs/subway.gif 30\` from nescript/ and commit it"
+            exit 1
+          fi
+
+      - name: Verify docs/rampart.gif is up to date
+        if: steps.discover.outputs.nescript == 'true'
+        working-directory: nescript/tests/emulator
+        run: |
+          node record_gif.mjs rampart 720 2 /tmp/rampart.gif 16
+          if ! cmp -s ../../docs/rampart.gif /tmp/rampart.gif; then
+            echo "::error file=nescript/docs/rampart.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs rampart 720 2 docs/rampart.gif 16\` from nescript/ and commit it"
+            exit 1
+          fi
+
       - name: Install Mesen runtime dependencies
         if: steps.discover.outputs.nescript == 'true'
         working-directory: .
