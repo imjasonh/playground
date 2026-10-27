@@ -3342,6 +3342,7 @@ impl<'a> IrCodeGen<'a> {
 
         let suffix = self.local_label_suffix();
         let true_label = format!("__ir_cmp_t_{suffix}");
+        let false_label = format!("__ir_cmp_f_{suffix}");
         let end_label = format!("__ir_cmp_e_{suffix}");
 
         match kind {
@@ -3350,8 +3351,14 @@ impl<'a> IrCodeGen<'a> {
             CmpKind::Lt => self.emit(BCC, AM::LabelRelative(true_label.clone())),
             CmpKind::GtEq => self.emit(BCS, AM::LabelRelative(true_label.clone())),
             CmpKind::Gt => {
-                // > : not equal AND carry set
-                self.emit(BEQ, AM::LabelRelative(end_label.clone()));
+                // > : not equal AND carry set. The equal case must
+                // land on the false path, not fall straight through
+                // to `end_label`: skipping both the `LDA #0` below
+                // and the true path's `LDA #1` would store whatever
+                // `load_temp(a)` left in the accumulator — the raw
+                // left-hand value — as the "boolean" result instead
+                // of 0.
+                self.emit(BEQ, AM::LabelRelative(false_label.clone()));
                 self.emit(BCS, AM::LabelRelative(true_label.clone()));
             }
             CmpKind::LtEq => {
@@ -3361,6 +3368,7 @@ impl<'a> IrCodeGen<'a> {
             }
         }
         // False path
+        self.emit_label(&false_label);
         self.emit(LDA, AM::Immediate(0));
         self.emit(JMP, AM::Label(end_label.clone()));
         // True path
@@ -4051,6 +4059,45 @@ mod tests {
             })
             .expect("shift loop");
         assert_eq!(insts[beq - 1].opcode, LDX, "{:?}", &insts[beq - 3..=beq]);
+    }
+
+    #[test]
+    fn ir_codegen_u8_gt_equal_operands_materializes_false() {
+        // `a > b` as a value (not a direct `if` branch) must store 0
+        // when a == b. The equal case used to `BEQ` straight to the
+        // shared end label, skipping both the `LDA #0` and `LDA #1`
+        // below it and leaving whatever `load_temp(a)` left in the
+        // accumulator — a's own value — as the stored "boolean".
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            var a: u8 = 36
+            var b: u8 = 36
+            var r: u8 = 0
+            on frame { r = (a > b) as u8 }
+            start Main
+        "#,
+        );
+        let beq = insts
+            .iter()
+            .position(|i| {
+                i.opcode == BEQ
+                    && matches!(&i.mode, AM::LabelRelative(l) if l.starts_with("__ir_cmp_f_"))
+            })
+            .unwrap_or_else(|| panic!("expected a BEQ to the Gt false label: {insts:?}"));
+        let AM::LabelRelative(false_label) = &insts[beq].mode else {
+            unreachable!()
+        };
+        let label_pos = insts
+            .iter()
+            .position(|i| matches!(&i.mode, AM::Label(l) if l == false_label))
+            .expect("false label should be defined");
+        let landed = &insts[label_pos + 1];
+        assert_eq!(
+            (landed.opcode, &landed.mode),
+            (LDA, &AM::Immediate(0)),
+            "the equal case must land on `LDA #0`, not skip past it: {insts:?}"
+        );
     }
 
     #[test]
