@@ -331,7 +331,11 @@ for program in "${CHECKS[@]}"; do
   esac
 done
 # The deps group installs go-cache again, with the git server's module
-# proxy as its upstream.
+# proxy as its upstream. Both generates push the same image name, so this
+# one waits for the first to finish; pushing at the same time races on the
+# registry's manifest tag and can fail with DIGEST_INVALID or
+# MANIFEST_BLOB_UNKNOWN.
+wait_generate go-cache
 pregenerate go-cache-deps go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
   "-upstream=${CLUSTER_URL}/proxy" -max-size=512Mi
 
