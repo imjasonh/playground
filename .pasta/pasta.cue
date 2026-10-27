@@ -28,9 +28,6 @@ disabled_on: {
 	yaml_truthy: ["**/project.yml"]
 	js_preserve_caught_error: ["**/.cursor/skills/**"]
 	js_no_constant_condition_while: ["**/.cursor/skills/**"]
-	// testtrace is meant to be imported from a _test.go file; see
-	// pasta/analyzers/go_test_only_import.
-	go_test_only_import: ["**/*_test.go"]
 }
 
 // Keep the per-file parse timeout; hang defense still matters.

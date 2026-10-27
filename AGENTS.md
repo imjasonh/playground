@@ -875,7 +875,7 @@ bundle exec fastlane test
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
-| `testtrace/` | Library that parents OpenTelemetry spans on the span of the Go test that starts them. `Install` wraps the TracerProvider in `TestMain`, and `Hook(t)` binds the test span to the test's goroutine through its profiler labels, which goroutines that the test starts inherit | `go test -race ./...` |
+| `testtrace/` | Library that parents OpenTelemetry spans on the span of the Go test that starts them. `Install` wraps the TracerProvider in `TestMain`. Spans started from `t.Context()` pick up that span with no further call. `Hook(t)` names the span after the test | `go test -race ./...` |
 
 ## Current Rust apps
 

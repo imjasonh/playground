@@ -33,8 +33,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
 
 	exporter, err := stdouttrace.New(stdouttrace.WithWriter(f))
 	if err != nil {
@@ -52,11 +50,17 @@ func TestMain(m *testing.M) {
 	if err := tp.Shutdown(context.Background()); err != nil { // pasta:ignore use_t_context — TestMain has no t
 		panic(err)
 	}
-	data, err := os.ReadFile(f.Name())
+	// os.Exit below skips defers, so close and remove the file here.
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		panic(err)
+	}
+	data, err := os.ReadFile(name)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintf(os.Stderr, "testtrace wrote %d bytes of span JSON to %s:\n%s", len(data), f.Name(), data)
+	fmt.Fprintf(os.Stderr, "testtrace wrote %d bytes of span JSON to %s:\n%s", len(data), name, data)
+	os.Remove(name)
 	os.Exit(code)
 }
 
