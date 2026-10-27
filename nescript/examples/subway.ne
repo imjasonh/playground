@@ -33,17 +33,12 @@ bank Gfx {
     include "subway/gfx_screens.ne"
     include "subway/screens.ne"
     include "subway/band.ne"
+    include "subway/scenery.ne"
 }
 
 include "subway/video.ne"
 include "subway/hud.ne"
 include "subway/platform_state.ne"
-
-state Riding {
-    on enter {
-    }
-    on frame {
-    }
-}
+include "subway/riding_state.ne"
 
 start Platform

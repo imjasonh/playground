@@ -75,6 +75,18 @@ def solid(c):
     return [[c] * 8 for _ in range(8)]
 
 
+# Band rows 10-11 of the platform use palette 1 (black, gray, white,
+# amber) in both nametables, so the side signs' text is amber wherever
+# a car lands in the 64-column ring. Palette 0 tiles drawn there are
+# recolored: dark gray becomes black, gray and white move down one.
+PAL1_FROM_PAL0 = (0, 0, 1, 2)
+
+
+def to_pal1(page, idx):
+    px = [[PAL1_FROM_PAL0[c] for c in row] for row in page.tiles[idx]]
+    return page.add(px, None)
+
+
 def glyph_tile(ch, color=3):
     px = solid(0)
     for y, row in enumerate(GLYPHS[ch]):
@@ -87,9 +99,10 @@ def glyph_tile(ch, color=3):
 class Page:
     """A 256-tile CHR page with dedup by pixel content."""
 
-    def __init__(self, name, first, font=True):
+    def __init__(self, name, first, font=True, reserved=()):
         self.name = name
         self.first = first
+        self.reserved = set(reserved)
         self.tiles = [solid(0)] * first
         self.index = {}
         self.names = {}
@@ -102,6 +115,8 @@ class Page:
         if dedup and key in self.index:
             idx = self.index[key]
         else:
+            while len(self.tiles) in self.reserved:
+                self.tiles.append(solid(0))
             idx = len(self.tiles)
             self.tiles.append(px)
             self.index.setdefault(key, idx)
@@ -109,6 +124,11 @@ class Page:
             self.names[name] = idx
         assert len(self.tiles) <= 256, f"page {self.name} is full"
         return idx
+
+    def align_run(self, n):
+        """Pad so the next n tiles get consecutive numbers."""
+        while self.reserved & set(range(len(self.tiles), len(self.tiles) + n)):
+            self.tiles.append(solid(0))
 
     def t(self, name):
         return self.names[name]
@@ -213,6 +233,7 @@ def build_platform(page):
     # wall reads as still while the band scroll moves.
     tile("wall_h", ["33333333", "33333333", "33333333", "22222222",
                     "33333333", "33333333", "33333333", "22222222"])
+    T["wall_h1"] = to_pal1(page, T["wall_h"])
     tile("dado", ["22222222", "11111111", "11111111", "11111111",
                   "11111111", "11111111", "22222222", "11111111"])
     tile("pit", ["........"] * 8)
@@ -278,8 +299,10 @@ def platform_screen(T):
             s.put(x, 7, T["tab_ "])
             s.put(x, 8, T["tabf_b"])
     s.row(9, [T["wall"]] * 32)
-    for y in (10, 11, 12):
-        s.row(y, [T["wall_h"]] * 32)
+    s.palette(0, 10, 32, 2, 1)
+    for y in (10, 11):
+        s.row(y, [T["wall_h1"]] * 32)
+    s.row(12, [T["wall_h"]] * 32)
     s.row(13, [T["dado"]] * 32)
     s.row(14, [T["pit"]] * 32)
     s.row(15, [T["pit_third"]] * 32)
@@ -375,7 +398,10 @@ def build_train(page):
                     "...33...", "...33...", "...33...", "...33..."])
     tile("open_floor", ["...33...", "...33...", "...33...", "11111111",
                         "22222222", "22222222", "33333333", "22222222"])
-    # LED sign (palette 1): black face with an amber frame.
+    # Door cells of row 11, which is in palette 1.
+    for name in ("open", "door_top_l", "door_top_r"):
+        T[name + "1"] = to_pal1(page, T[name])
+    # LED sign (palette 1): black face, gray bezel, amber text.
     tile("led_l", ["11111111", "1.......", "1.......", "1.......",
                    "1.......", "1.......", "1.......", "11111111"])
     tile("led_r", ["11111111", ".......1", ".......1", ".......1",
@@ -391,7 +417,7 @@ SIGN_X = 9
 SIGN_W = 14
 
 
-def train_screen(T, wall):
+def train_screen(page, T, wall):
     """Nametable 1 of the platform: one car, wall and HUD rows blank."""
     s = Screen(wall.tiles[0][0])
     for y in range(30):
@@ -436,7 +462,9 @@ def train_screen(T, wall):
     for x in (3, 4, 9, 10, 21, 22, 27, 28):
         s.put(x, 17, T["truck"])
     # LED sign above the windows between the doors.
-    s.palette(SIGN_X - 1, 10, SIGN_W + 2, 2, 1)
+    for y in (10, 11):
+        s.row(y, [to_pal1(page, t) for t in s.tiles[y]])
+    s.palette(0, 10, 32, 2, 1)
     s.put(SIGN_X - 1, 11, T["led_l"])
     s.put(SIGN_X + SIGN_W, 11, T["led_r"])
     for x in range(SIGN_X, SIGN_X + SIGN_W):
@@ -444,6 +472,262 @@ def train_screen(T, wall):
     for x in range(SIGN_X - 1, SIGN_X + SIGN_W + 1):
         s.put(x, 10, T["black"])
     s.palette(0, 12, 32, 6, 0)
+    return s
+
+
+# --------------------------------------------------------------------
+# Car interior (CHR page 2)
+# --------------------------------------------------------------------
+#
+# The far wall of the car, seen from the aisle. Rows 9-13 are the
+# window band: a 64-column ring across both nametables that scrolls
+# past the scenery, like the platform's track band. Window posts and
+# door frames in those rows are sprites, eight per scanline.
+#
+# Palettes: 0 floor (black, dark gray, light gray, white), 1 LED sign
+# (amber), 2 window band (black, station mosaic, dark gray, cream),
+# 3 seats and sky (black, blue, dark gray, cream). Rows 8-15 take
+# palette 2 or 3 per 16 columns from the scenery, so every interior
+# tile in those rows uses only colors 0, 2, and 3.
+
+IN_BAND_ROW = 9
+IN_BAND_ROWS = 5
+IN_DOORS = (2, 24)
+IN_POSTS = (128,)
+IN_LED_X = 2
+IN_LED_W = 28
+
+# Fixed text for the car's LED sign and HUD, as font codes.
+MESSAGES = [
+    ("NEXT", "The next stop is"),
+    ("THIS", "This is"),
+    ("LAST", "This is the last stop"),
+    ("LEAVE", "Please leave the train"),
+    ("CLEAR1", "Stand clear of the"),
+    ("CLEAR2", "closing doors, please"),
+    ("XFER", "Transfer is available"),
+    ("GOING", "This train goes to"),
+    ("TO", "to "),
+    ("HUD_NEXT", "Next: "),
+    ("HUD_AT", "At: "),
+]
+
+
+def build_interior(page):
+    T = {}
+
+    def tile(name, rows):
+        T[name] = page.add(parse(rows), name)
+
+    tile("black", ["........"] * 8)
+    # Station tablet letters, dark on cream; one run of tiles.
+    page.align_run(len(CHARSET))
+    for ch in CHARSET:
+        px = solid(3)
+        for y, row in enumerate(GLYPHS[ch]):
+            for x, c in enumerate(row):
+                if c == "#":
+                    px[y][x + 1] = 0
+        T["tab_" + ch] = page.add(px, None, dedup=False)
+    # Ceiling (palette 3): cream panels with a light fixture.
+    tile("ceil", ["22222222", "33333333", "33333333", "33333333",
+                  "33333333", "33333333", "22222222", "........"])
+    tile("ceil_lamp", ["22222222", "33333333", "2......2", "23333332",
+                       "23333332", "2......2", "22222222", "........"])
+    # Advertising cards (palette 3) between the doors.
+    tile("ad_l", ["22222222", "21111111", "21313131", "21111111",
+                  "21333331", "21111111", "22222222", "........"])
+    tile("ad_m", ["22222222", "11111111", "13131313", "11111111",
+                  "33333111", "11111111", "22222222", "........"])
+    tile("ad_r", ["22222222", "11111112", "13131312", "11111112",
+                  "13311112", "11111112", "22222222", "........"])
+    tile("wall_up", ["33333333", "33333333", "33333333", "22222222",
+                     "33333333", "33333333", "33333333", "22222222"])
+    # Window frame above and below the band (colors 0, 2, 3 only).
+    tile("win_top", ["33333333", "33333333", "33333333", "22222222",
+                     "22222222", "33333333", "22222222", "........"])
+    tile("sill", ["........", "22222222", "33333333", "33333333",
+                  "22222222", "33333333", "33333333", "22222222"])
+    tile("wall_lo", ["33333333", "33333333", "33333333", "22222222",
+                     "33333333", "33333333", "33333333", "22222222"])
+    # Bench seats (palette 3), two cells per seat.
+    tile("seat_back_l", ["22222222", "21111111", "21111111", "21111111",
+                         "21111111", "21111111", "21111111", "21111111"])
+    tile("seat_back_r", ["22222222", "11111112", "11111112", "11111112",
+                         "11111112", "11111112", "11111112", "11111112"])
+    tile("seat_l", ["23333333", "21111111", "21111111", "21111111",
+                    "21111111", "22222222", "........", "........"])
+    tile("seat_r", ["33333332", "11111112", "11111112", "11111112",
+                    "11111112", "22222222", "........", "........"])
+    tile("seat_base", ["........", "..2..2..", "........", "22222222",
+                       "2.2.2.2.", "22222222", "........", "........"])
+    tile("skirt", ["22222222", "........", "........", "........",
+                   "........", "........", "........", "........"])
+    # Floor (palette 0): speckled tread.
+    tile("floor", ["11111111", "11111111", "11121111", "11111111",
+                   "11111111", "11111112", "11111111", "11111111"])
+    tile("floor2", ["11111111", "12111111", "11111111", "11111111",
+                    "11112111", "11111111", "11111111", "11111111"])
+    tile("floor_edge", ["22222222", "11111111", "11111111", "11111111",
+                        "11111111", "11111111", "11111111", "11111111"])
+    # Doors: a header, then two stainless leaves below the glass.
+    tile("door_head", ["22222222", "22222222", "33333333", "33333333",
+                       "22222222", "33333333", "22222222", "........"])
+    tile("door_frame_l", ["..233333", "..233333", "..233333", "..233333",
+                          "..233333", "..233333", "..233333", "..233333"])
+    tile("door_frame_r", ["333332..", "333332..", "333332..", "333332..",
+                          "333332..", "333332..", "333332..", "333332.."])
+    tile("leaf", ["33333333", "33333333", "22222222", "33333333",
+                  "33333333", "33333333", "33333333", "33333333"])
+    tile("leaf_seam_l", ["3333332.", "3333332.", "2222222.", "3333332.",
+                         "3333332.", "3333332.", "3333332.", "3333332."])
+    tile("leaf_seam_r", [".2333333", ".2333333", ".2222222", ".2333333",
+                         ".2333333", ".2333333", ".2333333", ".2333333"])
+    tile("leaf_kick", ["33333333", "33333333", "33333333", "22222222",
+                       "22222222", "22222222", "22222222", "........"])
+    tile("leaf_kick_l", ["3333332.", "3333332.", "3333332.", "2222222.",
+                         "2222222.", "2222222.", "2222222.", "........"])
+    tile("leaf_kick_r", [".2333333", ".2333333", ".2333333", ".2222222",
+                         ".2222222", ".2222222", ".2222222", "........"])
+    tile("threshold", ["22222222", "33333333", "22222222", "11111111",
+                       "11111111", "11111111", "11111111", "11111111"])
+    # Open doorway: the platform beyond (colors 0, 2, 3).
+    tile("out_edge", ["33333333", "3.3.3.3.", "33333333", ".3.3.3.3",
+                      "33333333", "22222222", "22222222", "22222222"])
+    tile("out_floor", ["22222222", "22222222", "22232222", "22222222",
+                       "22222222", "22222223", "22222222", "22222222"])
+    tile("out_floor_lo", ["22222222", "22222222", "22232222", "22222222",
+                          "22222222", "22222222", "22222222", "11111111"])
+    # LED sign (palette 1), as on the car sides.
+    tile("led_l", ["11111111", "1.......", "1.......", "1.......",
+                   "1.......", "1.......", "1.......", "11111111"])
+    tile("led_r", ["11111111", ".......1", ".......1", ".......1",
+                   ".......1", ".......1", ".......1", "11111111"])
+
+    # Scenery in the window band (palette 2 or 3).
+    tile("tn_dark", ["........", "........", "........", "...2....",
+                     "........", "........", "........", "........"])
+    tile("tn_cable", ["........", "22222222", "........", "22222222",
+                      "........", "........", "........", "........"])
+    tile("tn_beam", ["..2332..", "..2332..", "..2332..", "..2332..",
+                     "..2332..", "..2332..", "..2332..", "..2332.."])
+    tile("tn_beam_top", ["22222222", "..2332..", "..2332..", "..2332..",
+                         "..2332..", "..2332..", "..2332..", "..2332.."])
+    tile("tn_lamp", ["...22...", "..2332..", ".233332.", ".233332.",
+                     "..2332..", "...22...", "........", "........"])
+    tile("tn_bench", ["........", "........", "........", "........",
+                      "22222222", "2.2.2.2.", "........", "........"])
+    tile("mos_t", ["33333333", "31313131", "13131313", "22222222",
+                   "21212121", "12121212", "21212121", "12121212"])
+    tile("mos_b", ["21212121", "12121212", "21212121", "12121212",
+                   "22222222", "13131313", "31313131", "33333333"])
+    tile("st_wall", ["33333332", "33333332", "33333332", "33333332",
+                     "33333332", "33333332", "33333332", "22222222"])
+    tile("st_edge", ["33333333", "33333333", "22222222", "3.3.3.3.",
+                     "22222222", "........", "........", "........"])
+    tile("st_col", ["..2222..", "..2332..", "..2332..", "..2332..",
+                    "..2332..", "..2332..", "..2332..", "..2222.."])
+    tile("st_col_edge", ["..2222..", "..2332..", "22222222", "3.3.3.3.",
+                         "22222222", "........", "........", "........"])
+    tile("st_head", ["...22...", "..2222..", "..2222..", "...22...",
+                     "..2222..", ".222222.", ".222222.", ".222222."])
+    tile("st_body", [".222222.", ".222222.", ".222222.", "..2..2..",
+                     "..2..2..", "22222222", "3.3.3.3.", "22222222"])
+    tile("tabf_tl", ["33333333", "31313131", "13131313", "22222222",
+                     "21211111", "12213333", "21213333", "12213333"])
+    tile("tabf_t", ["33333333", "31313131", "13131313", "22222222",
+                    "11111111", "33333333", "33333333", "33333333"])
+    tile("tabf_tr", ["33333333", "31313131", "13131313", "22222222",
+                     "11111212", "33331221", "33331212", "33331221"])
+    tile("tabf_l", ["21213333", "12213333", "21213333", "12213333",
+                    "21213333", "12213333", "21213333", "12213333"])
+    tile("tabf_r", ["33331212", "33331221", "33331212", "33331221",
+                    "33331212", "33331221", "33331212", "33331221"])
+    tile("tabf_bl", ["21213333", "12211111", "21212222", "12121212",
+                     "22222222", "13131313", "31313131", "33333333"])
+    tile("tabf_b", ["33333333", "11111111", "22222222", "12121212",
+                    "22222222", "13131313", "31313131", "33333333"])
+    tile("tabf_br", ["33331212", "11111221", "22221212", "12121212",
+                     "22222222", "13131313", "31313131", "33333333"])
+    # Elevated: sky, rooftops, and the el structure.
+    tile("sky", ["11111111"] * 8)
+    tile("bld", ["22222222", "23322332", "22222222", "22222222",
+                 "23322332", "22222222", "22222222", "22222222"])
+    tile("bld_top", ["11111111", "11111111", "11111111", "22222222",
+                     "22222222", "23322332", "22222222", "22222222"])
+    tile("bld_top2", ["11111111", "11122111", "11122111", "22222222",
+                      "22222222", "22222222", "23322332", "22222222"])
+    tile("el_girder", ["22222222", "2.2..2.2", "2..22..2", "2..22..2",
+                       "2.2..2.2", "22222222", "........", "........"])
+    tile("canopy", ["22222222", "22222222", "33333333", "........",
+                    "........", "........", "........", "........"])
+    tile("canopy_post", ["22222222", "22222222", "33333333", "...22...",
+                         "...22...", "...22...", "...22...", "...22..."])
+    tile("op_post", ["...22...", "...22...", "...22...", "...22...",
+                     "...22...", "...22...", "...22...", "...22..."])
+    tile("op_edge", ["...22...", "...22...", "22222222", "33333333",
+                     "3.3.3.3.", "22222222", "........", "........"])
+    tile("op_edge_m", ["11111111", "11111111", "22222222", "33333333",
+                       "3.3.3.3.", "22222222", "........", "........"])
+    tile("sign_l", ["........", ".3333333", ".3......", ".3......",
+                    ".3......", ".3......", ".3......", ".3333333"])
+    tile("sign_r", ["........", "3333333.", "......3.", "......3.",
+                    "......3.", "......3.", "......3.", "3333333."])
+    return T
+
+
+def _jolt_tiles():
+    # A rail-joint jolt scrolls the car down a line, so the last scanline
+    # shows nametable row 30: the attribute bytes, read as tile numbers.
+    # Keep every tile those bytes can name blank. The band quadrants use
+    # palette 2 or 3; the top attribute rows are fixed.
+    out = {0x00, 0xF5}
+    for v in range(256):
+        if all((v >> (2 * q)) & 3 in (2, 3) for q in range(4)):
+            out.add(v)
+    return out
+
+
+JOLT_TILES = _jolt_tiles()
+
+
+def interior_screen(T):
+    s = Screen(T["black"])
+    s.palette(0, 0, 32, 4, 0)
+    s.palette(0, 4, 32, 2, 1)
+    s.palette(0, 6, 32, 2, 3)
+    s.palette(0, 8, 32, 8, 2)
+    s.palette(0, 16, 32, 4, 3)
+    s.palette(0, 20, 32, 10, 0)
+    s.put(IN_LED_X - 1, 5, T["led_l"])
+    s.put(IN_LED_X + IN_LED_W, 5, T["led_r"])
+    s.row(6, [T["ceil_lamp"] if x % 8 in (2, 3, 4) else T["ceil"] for x in range(32)])
+    s.row(7, [T["wall_up"]] * 32)
+    s.row(7, [T["ad_l"]] + [T["ad_m"]] * 4 + [T["ad_r"]], 9)
+    s.row(7, [T["ad_l"]] + [T["ad_m"]] * 3 + [T["ad_r"]], 17)
+    s.row(8, [T["win_top"]] * 32)
+    s.row(14, [T["sill"]] * 32)
+    s.row(15, [T["wall_lo"]] * 32)
+    for x in range(32):
+        left = x % 2 == 0
+        s.put(x, 16, T["seat_back_l" if left else "seat_back_r"])
+        s.put(x, 17, T["seat_l" if left else "seat_r"])
+        s.put(x, 18, T["seat_base"])
+    s.row(19, [T["skirt"]] * 32)
+    for y in range(20, 30):
+        s.row(y, [T["floor"] if (x * 3 + y) % 5 else T["floor2"] for x in range(32)])
+    s.row(20, [T["floor_edge"]] * 32)
+    for d in IN_DOORS:
+        s.row(7, [T["door_head"]] * 6, d)
+        for y in range(14, 19):
+            s.put(d, y, T["door_frame_l"])
+            s.put(d + 5, y, T["door_frame_r"])
+            leaf = "leaf_kick" if y == 18 else "leaf"
+            s.row(y, [T[leaf], T[leaf + "_seam_l" if y < 18 else "leaf_kick_l"],
+                      T[leaf + "_seam_r" if y < 18 else "leaf_kick_r"], T[leaf]], d + 1)
+        s.put(d, 19, T["door_frame_l"])
+        s.put(d + 5, 19, T["door_frame_r"])
+        s.row(19, [T["threshold"]] * 4, d + 1)
     return s
 
 
@@ -545,12 +829,21 @@ def build_sprites(page):
     seam_r = ["13321...", "13321...", "13321...", "13321...",
               "13321...", "13321...", "13321...", "13321..."]
     T["seam_r"] = page.add([[int(c) if c != "." else 0 for c in r] for r in seam_r], "seam_r")
+    # Car interior, over the window band (colors 1 dark gray, 2 cream):
+    # door frame edges, the seam where the leaves meet, and posts.
+    for name, rows in {
+        "dedge_l": ["1222221."] * 8,
+        "dedge_r": [".1222221"] * 8,
+        "dcenter": ["22211222"] * 8,
+        "wpost": [".122221."] * 8,
+    }.items():
+        T[name] = page.add([[int(c) if c != "." else 0 for c in r] for r in rows], name)
     return T
 
 
-def emit_page(name, page_no, page):
+def emit_page(name, page_no, page, start=None):
     data = []
-    for px in page.tiles[page.first:]:
+    for px in page.tiles[page.first if start is None else start:]:
         data.extend(chr_bytes(px))
     lines = []
     for i in range(0, len(data), 16):
@@ -572,20 +865,26 @@ def main():
     PT = build_platform(plat)
     TT = build_train(plat)
     wall = platform_screen(PT)
-    train = train_screen(TT, wall)
+    train = train_screen(plat, TT, wall)
 
     spr = Page("sprites", 0, font=False)
     ST = build_sprites(spr)
 
+    inner = Page("interior", 1, reserved=JOLT_TILES)
+    IT = build_interior(inner)
+    car = interior_screen(IT)
+
     chr_out = ["// Generated by examples/subway/tools/gen_gfx.py. Do not edit by hand.", ""]
     chr_out.append(emit_page("PlatformTiles", 0, plat))
     chr_out.append(emit_page("SpriteTiles", 1, spr))
+    chr_out.append(emit_page("InteriorTiles", 2, inner, start=0))
     with open(os.path.join(out_dir, "gfx_chr.ne"), "w") as f:
         f.write("\n".join(chr_out))
 
     scr = ["// Generated by examples/subway/tools/gen_gfx.py. Do not edit by hand.", ""]
     scr.append(table("NT_PLATFORM", wall.bytes()))
     scr.append(table("NT_TRAIN", train.bytes()))
+    scr.append(table("NT_INTERIOR", car.bytes()))
     with open(os.path.join(out_dir, "gfx_screens.ne"), "w") as f:
         f.write("\n".join(scr))
 
@@ -624,9 +923,35 @@ def main():
     consts.append(f"const S_POST: u8 = {ST['post']}")
     consts.append(f"const S_SEAM_L: u8 = {ST['seam_l']}")
     consts.append(f"const S_SEAM_R: u8 = {ST['seam_r']}")
+    blob, offs, lens = [], [], []
+    for i, (name, text) in enumerate(MESSAGES):
+        consts.append(f"const MSG_{name}: u8 = {i}")
+        offs.append(len(blob))
+        lens.append(len(text))
+        blob.extend(CHARSET.index(c) for c in text)
+    assert len(blob) < 256
+    consts.append(table("MSG_OFF", offs).rstrip())
+    consts.append(table("MSG_LEN", lens).rstrip())
+    consts.append(table("MSG_TEXT", blob).rstrip())
+    for name in ("dedge_l", "dedge_r", "dcenter", "wpost"):
+        consts.append(f"const S_{name.upper()}: u8 = {ST[name]}")
+    consts.append("// Car interior page.")
+    for name, idx in sorted(IT.items()):
+        if not name.startswith("tab_"):
+            consts.append(f"const I_{name.upper()}: u8 = {idx}")
+    consts.append(f"const I_TAB_FONT: u8 = {IT['tab_ ']}")
+    consts.append(f"const IN_BAND_ROW: u8 = {IN_BAND_ROW}")
+    consts.append(f"const IN_BAND_ROWS: u8 = {IN_BAND_ROWS}")
+    for d, x in enumerate(IN_DOORS):
+        consts.append(f"const IN_DOOR{d}_COL: u8 = {x}")
+    for d, x in enumerate(IN_POSTS):
+        consts.append(f"const IN_POST{d}_X: u8 = {x}")
+    consts.append(f"const IN_LED_X: u8 = {IN_LED_X}")
+    consts.append(f"const IN_LED_W: u8 = {IN_LED_W}")
     with open(os.path.join(out_dir, "gfx_consts.ne"), "w") as f:
         f.write("\n".join(consts) + "\n")
-    print(f"platform page: {len(plat.tiles)} tiles, sprites: {len(spr.tiles)} tiles",
+    print(f"platform page: {len(plat.tiles)} tiles, sprites: {len(spr.tiles)} tiles, "
+          f"interior: {len(inner.tiles)} tiles",
           file=sys.stderr)
 
 

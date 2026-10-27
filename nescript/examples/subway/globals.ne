@@ -32,6 +32,12 @@ var plat_k: u8[6]
 var ride_p: u8 = 0
 var ride_k: u8 = 0
 var on_train: bool = false
+// The player's x at the door they used to board or leave.
+var door_px: u8 = 32
+// Set when Up boards or leaves a train; Up must be let go before it
+// boards or leaves again, so holding it through the doors doesn't
+// step straight back on.
+var up_lock: bool = false
 
 // Routes that stop at a station, from load_routes, and which slot of
 // sprite palette 3 each route's bullet uses.

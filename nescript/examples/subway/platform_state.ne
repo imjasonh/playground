@@ -42,6 +42,8 @@ var stream_col: u16 = 32
 var tp: u8 = TP_NONE
 var tp_p: u8 = 0
 var tp_k: u8 = 0
+var tp_mul: u8 = 1
+var tp_dist: u16 = 0
 var doors_open: bool = false
 var doors_want: bool = false
 var restore_col: u8 = 64
@@ -64,13 +66,14 @@ state Platform {
     var walk: u8 = 0
 
     on enter {
+        top_y = 0
         if not patterns_ready {
             reset_patterns()
             patterns_ready = true
         }
         if on_train {
             // Stepping off: stand at the door the player used.
-            px = 48
+            px = door_px
             py = PLAYER_MIN_Y
         }
         on_train = false
@@ -122,14 +125,18 @@ state Platform {
             flip = true
             moving = true
         }
+        if not button.up {
+            up_lock = false
+        }
         if button.up {
             if py > PLAYER_MIN_Y {
                 py -= 1
                 moving = true
-            } else if can_board(px) {
+            } else if not up_lock and can_board(px) {
+                up_lock = true
                 ride_p = tp_p
                 ride_k = tp_k
-                on_train = true
+                door_px = px
                 transition Riding
             }
         }
@@ -193,7 +200,7 @@ fun platform_setup() {
     load_routes(cur_st)
     assign_sp3()
     pal_set(0, 0x00, 0x10, 0x30)
-    pal_set(1, 0x07, 0x27, 0x37)
+    pal_set(1, 0x10, 0x30, 0x27)
     pal_set(2, mosaic_color(), 0x10, 0x30)
     pal_set(3, 0x00, 0x28, 0x10)
     pal_set(4, 0x00, 0x37, 0x16)
@@ -246,9 +253,13 @@ fun platform_setup() {
     screen_on()
 }
 
-// Station mosaics come in a handful of colors; pick one per station.
 fun mosaic_color() -> u8 {
-    var c: u8 = (cur_st as u8) & 7
+    return mosaic_of(cur_st)
+}
+
+// Station mosaics come in a handful of colors; pick one per station.
+fun mosaic_of(st: u16) -> u8 {
+    var c: u8 = (st as u8) & 7
     if c == 0 { return 0x16 }
     if c == 1 { return 0x1A }
     if c == 2 { return 0x12 }
@@ -304,43 +315,73 @@ fun tablet_text() {
     }
 }
 
-// Find the train that is in, coming in, or going out on this platform.
+// Find the train that is in, coming in, or going out on this
+// platform, and how far it is from its stop (tp_dist). The schedule
+// can put two trains on the track in one tick; then they share it:
+// a train that dwells after one that left gets the first quarter to
+// clear the band and the second to pull in, at four times the speed,
+// and a train that arrives as one leaves gets half each, at twice.
 fun find_train() {
     tp = TP_NONE
-    var i: u8 = 0
+    tp_mul = 1
+    var stopped: u8 = 255
     var arriving: u8 = 255
     var leaving: u8 = 255
+    var i: u8 = 0
     while i < plat_n {
         var p: u8 = plat_p[i]
         var w: u8 = wait_at(p, plat_k[i])
-        if w == 0 {
-            tp = TP_STOPPED
-            tp_p = p
-            tp_k = plat_k[i]
-            return
+        if w == 0 and stopped == 255 {
+            stopped = i
         }
-        if w == 1 {
+        if w == 1 and arriving == 255 {
             arriving = i
         }
-        if w == pat_head(p) - 1 {
+        if w == pat_head(p) - 1 and leaving == 255 {
             leaving = i
         }
         i += 1
     }
+    var f: u8 = FRAMES_PER_TICK - tick_frames
+    if stopped != 255 {
+        if leaving != 255 and f < FRAMES_PER_TICK >> 1 {
+            tp_mul = 4
+            if f < FRAMES_PER_TICK >> 2 {
+                use_train(TP_LEAVING, leaving, move_dist(f << 2))
+            } else {
+                use_train(TP_ARRIVING, stopped, move_dist(((FRAMES_PER_TICK >> 1) - f) << 2))
+            }
+            return
+        }
+        use_train(TP_STOPPED, stopped, 0)
+        return
+    }
     if leaving != 255 {
-        var f: u8 = FRAMES_PER_TICK - tick_frames
-        if move_dist(f) < DEPART_DIST {
-            tp = TP_LEAVING
-            tp_p = plat_p[leaving]
-            tp_k = plat_k[leaving]
+        if arriving != 255 {
+            tp_mul = 2
+            if f < FRAMES_PER_TICK >> 1 {
+                use_train(TP_LEAVING, leaving, move_dist(f << 1))
+            } else {
+                use_train(TP_ARRIVING, arriving, move_dist(tick_frames << 1))
+            }
+            return
+        }
+        var d: u16 = move_dist(f)
+        if d < DEPART_DIST {
+            use_train(TP_LEAVING, leaving, d)
             return
         }
     }
     if arriving != 255 {
-        tp = TP_ARRIVING
-        tp_p = plat_p[arriving]
-        tp_k = plat_k[arriving]
+        use_train(TP_ARRIVING, arriving, move_dist(tick_frames))
     }
+}
+
+fun use_train(t: u8, i: u8, d: u16) {
+    tp = t
+    tp_p = plat_p[i]
+    tp_k = plat_k[i]
+    tp_dist = d
 }
 
 // Pixels moved f frames after a start (or f frames before a stop).
@@ -353,12 +394,12 @@ fun move_dist(f: u8) -> u16 {
 
 fun update_cam() {
     if tp == TP_ARRIVING {
-        cam = CAM_STOP - move_dist(tick_frames)
+        cam = CAM_STOP - tp_dist
         restore_col = 64
     } else if tp == TP_STOPPED {
         cam = CAM_STOP
     } else if tp == TP_LEAVING {
-        cam = CAM_STOP + move_dist(FRAMES_PER_TICK - tick_frames)
+        cam = CAM_STOP + tp_dist
     } else if cam != 0 and restore_col == 64 {
         // The train just left: blank the whole ring, then jump back.
         restore_col = 0
@@ -375,10 +416,21 @@ fun update_cam() {
 fun stream_band() -> u8 {
     var target: u16 = (cam >> 3) + 33
     if stream_col > target + 40 or target > stream_col + 40 {
+        // A departure handed the band to the next arrival. The old
+        // view ended at TRAIN_C1, so only the two ring columns left of
+        // it can still show the last car.
+        band_col(cam >> 3)
+        band_col((cam >> 3) + 1)
         stream_col = target
+        return 0
     }
     var n: u8 = 0
-    while stream_col < target and n < 3 {
+    // Four times speed moves four columns a frame.
+    var cap: u8 = 3
+    if tp_mul == 4 {
+        cap = 4
+    }
+    while stream_col < target and n < cap {
         band_col(stream_col)
         stream_col += 1
         n += 1
@@ -423,15 +475,15 @@ fun doors_queue() {
 
 fun door_queue(x: u8) {
     if doors_open {
-        nt_fill_h(x, 11, 2, T_OPEN)
+        nt_fill_h(x, 11, 2, T_OPEN1)
         nt_fill_h(x, 12, 2, T_OPEN_M)
         nt_fill_h(x, 13, 2, T_OPEN_M)
         nt_fill_h(x, 14, 2, T_OPEN_M)
         nt_fill_h(x, 15, 2, T_OPEN_M)
         nt_fill_h(x, 16, 2, T_OPEN_FLOOR)
     } else {
-        nt_set(x, 11, T_DOOR_TOP_L)
-        nt_set(x + 1, 11, T_DOOR_TOP_R)
+        nt_set(x, 11, T_DOOR_TOP_L1)
+        nt_set(x + 1, 11, T_DOOR_TOP_R1)
         nt_set(x, 12, T_DOOR_L)
         nt_set(x + 1, 12, T_DOOR_R)
         nt_set(x, 13, T_DOOR_LB)
@@ -452,8 +504,8 @@ fun doors_direct() {
 
 fun door_direct(x: u8) {
     vram_at(0x21, 0x60 + x)
-    poke(0x2007, T_OPEN)
-    poke(0x2007, T_OPEN)
+    poke(0x2007, T_OPEN1)
+    poke(0x2007, T_OPEN1)
     var lo: u8 = 0x80 + x
     var r: u8 = 0
     while r < 4 {
