@@ -1,9 +1,29 @@
+use std::io::Write;
+
 use super::Diagnostic;
 use super::Level;
 
 /// Render diagnostics to stderr using ariadne for beautiful error output.
 pub fn render_diagnostics(source: &str, filename: &str, diagnostics: &[Diagnostic]) {
-    use ariadne::{Color, Label, Report, ReportKind, Source};
+    write_diagnostics(source, filename, diagnostics, true, std::io::stderr());
+}
+
+/// Render diagnostics to `out`. Spans are byte offsets into `source`, so
+/// ariadne must index by byte: its default counts characters, which puts
+/// every report after a multi-byte character (a `──` comment rule, `×`)
+/// on a later line.
+pub fn write_diagnostics<W: Write>(
+    source: &str,
+    filename: &str,
+    diagnostics: &[Diagnostic],
+    color: bool,
+    mut out: W,
+) {
+    use ariadne::{Color, Config, IndexType, Label, Report, ReportKind, Source};
+
+    let config = Config::default()
+        .with_index_type(IndexType::Byte)
+        .with_color(color);
 
     for diag in diagnostics {
         let kind = match diag.level {
@@ -12,12 +32,12 @@ pub fn render_diagnostics(source: &str, filename: &str, diagnostics: &[Diagnosti
         };
 
         let mut report = Report::build(kind, filename, diag.span.start as usize)
+            .with_config(config)
             .with_code(diag.code.to_string())
             .with_message(&diag.message);
 
         report = report.with_label(
-            Label::new((filename, diag.span.start as usize..diag.span.end as usize))
-                .with_color(Color::Red),
+            Label::new((filename, first_line(source, &diag.span))).with_color(Color::Red),
         );
 
         for label in &diag.labels {
@@ -37,7 +57,20 @@ pub fn render_diagnostics(source: &str, filename: &str, diagnostics: &[Diagnosti
 
         report
             .finish()
-            .eprint((filename, Source::from(source)))
+            .write((filename, Source::from(source)), &mut out)
             .ok();
     }
+}
+
+/// The part of `span` on its first line. ariadne prints no source for a
+/// multi-line label that has no message, so a report on a whole `state`
+/// or `fun` would otherwise show an empty box.
+fn first_line(source: &str, span: &crate::lexer::Span) -> std::ops::Range<usize> {
+    let start = (span.start as usize).min(source.len());
+    let end = (span.end as usize).clamp(start, source.len());
+    let end = source.as_bytes()[start..end]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map_or(end, |n| start + n);
+    start..end
 }
