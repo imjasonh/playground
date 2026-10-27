@@ -38,3 +38,42 @@ fn analyzer_warning_in_platformer_style_source_names_the_call_line() {
     assert!(text.contains("t.ne:7:9"), "{text}");
     assert!(text.contains("7 │         f(x)"), "{text}");
 }
+
+fn analyzer_reports(source: &str) -> Vec<Diagnostic> {
+    let (program, parse_diags) = crate::parser::parse(source);
+    assert!(parse_diags.iter().all(|d| !d.is_error()), "{parse_diags:?}");
+    crate::analyzer::analyze(&program.unwrap()).diagnostics
+}
+
+#[test]
+fn duplicate_declaration_report_shows_the_declaration_line() {
+    let source = "game \"D\" { mapper: NROM }\n\
+                  var t: u8 = 0\n\
+                  var t: u8 = 1\n\
+                  state Main {\n    on frame { t = 2 }\n}\n\
+                  start Main\n";
+    let dup = analyzer_reports(source)
+        .into_iter()
+        .find(|d| d.code == ErrorCode::E0501)
+        .expect("E0501 for the second `var t`");
+    assert_eq!(
+        &source[dup.span.start as usize..dup.span.end as usize],
+        "var t: u8 = 1"
+    );
+    let text = render(source, &dup);
+    assert!(text.contains("3 │ var t: u8 = 1"), "{text}");
+}
+
+#[test]
+fn report_on_a_whole_state_shows_its_first_line() {
+    let source = "game \"U\" { mapper: NROM }\n\
+                  state Main {\n    on frame { }\n}\n\
+                  state Lost {\n    on frame { }\n}\n\
+                  start Main\n";
+    let lost = analyzer_reports(source)
+        .into_iter()
+        .find(|d| d.code == ErrorCode::W0104)
+        .expect("W0104 for the unreachable state");
+    let text = render(source, &lost);
+    assert!(text.contains("5 │ state Lost {"), "{text}");
+}

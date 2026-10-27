@@ -56,6 +56,16 @@ impl Parser {
         self.tokens.get(self.pos).map_or(Span::dummy(), |t| t.span)
     }
 
+    /// End of the last consumed token, which closes a declaration's span.
+    /// The lookahead token's end would stretch the span onto the next
+    /// line, and a multi-line span renders without its source line.
+    fn prev_end(&self) -> u32 {
+        match self.pos.checked_sub(1).and_then(|i| self.tokens.get(i)) {
+            Some(t) => t.span.end,
+            None => self.current_span().start,
+        }
+    }
+
     fn advance(&mut self) -> &Token {
         let tok = &self.tokens[self.pos];
         if self.pos < self.tokens.len() - 1 {
@@ -337,7 +347,7 @@ impl Parser {
         Ok(StructDecl {
             name,
             fields,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -372,7 +382,7 @@ impl Parser {
         Ok(EnumDecl {
             name,
             variants,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -537,11 +547,7 @@ impl Parser {
             header,
             debug_port,
             sprite_flicker,
-            span: Span::new(
-                start_span.file_id,
-                start_span.start,
-                self.current_span().end,
-            ),
+            span: Span::new(start_span.file_id, start_span.start, self.prev_end()),
         })
     }
 
@@ -577,7 +583,7 @@ impl Parser {
             var_type,
             init,
             placement,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -597,7 +603,7 @@ impl Parser {
             const_type,
             value,
             bank: None,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -650,7 +656,7 @@ impl Parser {
             // nested `bank Foo { fun bar() ... }` bodies overwrite
             // it to `Some("Foo")` on the way out of `parse_bank_decl`.
             bank: None,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -737,7 +743,7 @@ impl Parser {
             on_exit,
             on_frame,
             on_scanline,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -802,7 +808,7 @@ impl Parser {
                     BankDecl {
                         name,
                         bank_type,
-                        span: Span::new(start.file_id, start.start, self.current_span().end),
+                        span: Span::new(start.file_id, start.start, self.prev_end()),
                     },
                     Vec::new(),
                     Vec::new(),
@@ -842,7 +848,7 @@ impl Parser {
                     BankDecl {
                         name,
                         bank_type: BankType::Prg,
-                        span: Span::new(start.file_id, start.start, self.current_span().end),
+                        span: Span::new(start.file_id, start.start, self.prev_end()),
                     },
                     funs,
                     consts,
@@ -993,7 +999,7 @@ impl Parser {
             name,
             chr_source,
             table,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -1091,7 +1097,7 @@ impl Parser {
             dx,
             dy,
             frame,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -1141,7 +1147,7 @@ impl Parser {
         Ok(MetatilesetDecl {
             name,
             metatiles,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -1297,7 +1303,7 @@ impl Parser {
             name,
             metatileset,
             layout,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -1503,7 +1509,7 @@ impl Parser {
                 name,
                 colors: Vec::new(),
                 png_source: Some(png_path),
-                span: Span::new(start.file_id, start.start, self.current_span().end),
+                span: Span::new(start.file_id, start.start, self.prev_end()),
             });
         }
 
@@ -1640,7 +1646,7 @@ impl Parser {
             name,
             colors,
             png_source: None,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -1824,7 +1830,7 @@ impl Parser {
                 tiles: Vec::new(),
                 attributes: Vec::new(),
                 png_source: Some(png_path),
-                span: Span::new(start.file_id, start.start, self.current_span().end),
+                span: Span::new(start.file_id, start.start, self.prev_end()),
             });
         }
 
@@ -1999,7 +2005,7 @@ impl Parser {
             tiles,
             attributes,
             png_source: None,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -2209,7 +2215,7 @@ impl Parser {
             pitch,
             volume,
             channel,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -2374,7 +2380,7 @@ impl Parser {
             volume,
             loops,
             notes,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 
@@ -2695,7 +2701,7 @@ impl Parser {
 
         Ok(Block {
             statements,
-            span: Span::new(start.file_id, start.start, self.current_span().end),
+            span: Span::new(start.file_id, start.start, self.prev_end()),
         })
     }
 

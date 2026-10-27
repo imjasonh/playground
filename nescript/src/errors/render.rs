@@ -37,8 +37,7 @@ pub fn write_diagnostics<W: Write>(
             .with_message(&diag.message);
 
         report = report.with_label(
-            Label::new((filename, diag.span.start as usize..diag.span.end as usize))
-                .with_color(Color::Red),
+            Label::new((filename, first_line(source, &diag.span))).with_color(Color::Red),
         );
 
         for label in &diag.labels {
@@ -61,4 +60,17 @@ pub fn write_diagnostics<W: Write>(
             .write((filename, Source::from(source)), &mut out)
             .ok();
     }
+}
+
+/// The part of `span` on its first line. ariadne prints no source for a
+/// multi-line label that has no message, so a report on a whole `state`
+/// or `fun` would otherwise show an empty box.
+fn first_line(source: &str, span: &crate::lexer::Span) -> std::ops::Range<usize> {
+    let start = (span.start as usize).min(source.len());
+    let end = (span.end as usize).clamp(start, source.len());
+    let end = source.as_bytes()[start..end]
+        .iter()
+        .position(|&b| b == b'\n')
+        .map_or(end, |n| start + n);
+    start..end
 }
