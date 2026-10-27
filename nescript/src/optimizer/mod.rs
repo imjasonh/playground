@@ -612,6 +612,7 @@ fn collect_source_temps(op: &IrOp, used: &mut HashSet<IrTemp>) {
         | IrOp::PlaySfx(_)
         | IrOp::StartMusic(_)
         | IrOp::StopMusic
+        | IrOp::PlayDpcm(_)
         | IrOp::Rand8(_)
         | IrOp::Rand16(_, _)
         | IrOp::SetPalette(_)
@@ -712,6 +713,7 @@ fn op_dest(op: &IrOp) -> Option<IrTemp> {
         | IrOp::PlaySfx(_)
         | IrOp::StartMusic(_)
         | IrOp::StopMusic
+        | IrOp::PlayDpcm(_)
         | IrOp::SeedRand(_, _)
         | IrOp::SetPaletteBrightness(_)
         | IrOp::FadeOut(_)

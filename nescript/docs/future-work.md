@@ -254,11 +254,14 @@ on Pulse-1 sfx** — a `pitch:` array with more than one distinct value
 opts into a separate `__sfx_pitch_<name>` blob that the audio tick walks
 in lockstep with the volume envelope, writing `$4002` on every NMI for a
 real frequency-sweeping pulse channel. Pulse-only programs without
-varying-pitch sfx still produce byte-identical driver code. See
-`examples/noise_triangle_sfx.ne` and `examples/sfx_pitch_envelope.ne`.
+varying-pitch sfx still produce byte-identical driver code. **Plus
+DPCM samples** on the DMC. A `dpcm` block names a rate from 0 to 15
+and raw bytes, and `play_dpcm` restarts that sample. The linker
+places the bytes at the top of the fixed bank. See
+`examples/noise_triangle_sfx.ne`, `examples/sfx_pitch_envelope.ne`,
+and `examples/dpcm_demo.ne`.
 
 **Still TODO for richer audio.**
-- **DMC channel** — delta-modulation sample playback is not wired yet.
 - **Multi-channel tracker playback** — one `notes` list per channel on
   `music` blocks (the triangle/noise SFX are one-shot envelopes, not a
   tracker).
@@ -615,13 +618,6 @@ pinned` modifier for HUD sprites that must stay at low OAM slots
 is still missing — today pinning has to be manual (draw the HUD
 sprites first).
 
-### O. DPCM / DMC sample playback
-
-Already listed under Audio Pipeline. FamiStudio's DMC support
-(including bankswitched DMC) is the reference API shape — import
-`@dpcm("file.dmc")` into a named sample slot and expose
-`play_dpcm(Slot, pitch: u8, loop: bool)`.
-
 ### P. Expansion audio (VRC6, MMC5, FDS, N163, S5B, VRC7)
 
 FamiStudio has a single export path with `FAMISTUDIO_CFG_EXTERNAL`
@@ -765,7 +761,7 @@ Remaining gap items in order of user value:
 5. Arrays-of-structs + bitfields (§C) + fn pointers (§B) —
    turns NEScript into a general-purpose NES language.
 6. UNROM-512 + MMC5 (§V) — ecosystem fit.
-7. FamiStudio import (§Q) + DPCM (§O) + expansion audio (§P).
+7. FamiStudio import (§Q) + expansion audio (§P).
 
 ---
 

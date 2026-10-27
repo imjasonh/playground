@@ -473,6 +473,8 @@ impl<'a> Lexer<'a> {
             "paint_room" => TokenKind::KwPaintRoom,
             "draw" => TokenKind::KwDraw,
             "play" => TokenKind::KwPlay,
+            "play_dpcm" => TokenKind::KwPlayDpcm,
+            "dpcm" => TokenKind::KwDpcm,
             "stop_music" => TokenKind::KwStopMusic,
             "start_music" => TokenKind::KwStartMusic,
             "load_background" => TokenKind::KwLoadBackground,

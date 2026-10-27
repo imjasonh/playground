@@ -82,6 +82,10 @@ pub fn analyze(program: &Program) -> AnalysisResult {
     for decl in &program.music {
         music_names.insert(decl.name.clone());
     }
+    let mut dpcm_names = HashSet::new();
+    for decl in &program.dpcm {
+        dpcm_names.insert(decl.name.clone());
+    }
     let mut palette_names = HashSet::new();
     for decl in &program.palettes {
         palette_names.insert(decl.name.clone());
@@ -144,6 +148,7 @@ pub fn analyze(program: &Program) -> AnalysisResult {
         next_sram_addr: 0x6000,
         sfx_names,
         music_names,
+        dpcm_names,
         palette_names,
         background_names,
         room_names,
@@ -197,6 +202,8 @@ struct Analyzer {
     sfx_names: HashSet<String>,
     /// Set of music names declared in the program.
     music_names: HashSet<String>,
+    /// Set of `dpcm` sample names. `play_dpcm` rejects anything else.
+    dpcm_names: HashSet<String>,
     /// Set of palette names declared in the program. Used to
     /// validate `set_palette Name` targets.
     palette_names: HashSet<String>,
@@ -426,6 +433,17 @@ impl Analyzer {
                         bg.attributes.len()
                     ),
                     bg.span,
+                ));
+            }
+        }
+
+        let mut seen_dpcm = HashSet::new();
+        for decl in &program.dpcm {
+            if !seen_dpcm.insert(decl.name.clone()) {
+                self.diagnostics.push(Diagnostic::error(
+                    ErrorCode::E0501,
+                    format!("duplicate dpcm '{}'", decl.name),
+                    decl.span,
                 ));
             }
         }
@@ -2657,6 +2675,20 @@ impl Analyzer {
             Statement::StopMusic(_) => {
                 // No arguments, nothing to validate.
             }
+            Statement::PlayDpcm(name, span) => {
+                if !self.dpcm_names.contains(name) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            ErrorCode::E0505,
+                            format!("unknown dpcm sample '{name}'"),
+                            *span,
+                        )
+                        .with_help(
+                            "declare one with `dpcm Name { rate: 0-15, data: @binary(\"file.dmc\") }`",
+                        ),
+                    );
+                }
+            }
         }
     }
 
@@ -3068,6 +3100,7 @@ fn collect_calls_stmt(stmt: &Statement, calls: &mut Vec<String>) {
         | Statement::Play(_, _)
         | Statement::StartMusic(_, _)
         | Statement::StopMusic(_)
+        | Statement::PlayDpcm(_, _)
         | Statement::SetPalette(_, _)
         | Statement::LoadBackground(_, _)
         | Statement::PaintRoom(_, _) => {}

@@ -4969,3 +4969,135 @@ fn reading_a_banked_rom_table_outside_its_bank_is_e0604() {
         analysis.diagnostics
     );
 }
+
+#[test]
+fn play_dpcm_writes_the_dmc_registers_and_places_the_sample() {
+    let source = r#"
+        game "Dmc" { mapper: NROM }
+        dpcm Blip {
+            rate: 11
+            data: [0x01, 0x02, 0x03]
+        }
+        var played: u8 = 0
+        on frame {
+            if played == 0 {
+                play_dpcm Blip
+                played = 1
+            }
+        }
+        start Main
+    "#;
+    let opts = nescript::pipeline::CompileOptions::default();
+    let out = nescript::pipeline::compile_source(source, Path::new("."), &opts).expect("compile");
+    let rom = &out.rom;
+    let info = nescript::rom::validate_ines(rom).expect("valid iNES");
+    assert_eq!(info.prg_banks, 1);
+
+    let image = out
+        .dpcm
+        .iter()
+        .find(|sample| sample.name == "Blip")
+        .expect("laid-out sample");
+    assert_eq!(image.reg_4010, 11);
+    assert_eq!(
+        image.bytes,
+        vec![0x01, 0x02, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+    let file_at = 16 + image.offset;
+    assert_eq!(
+        &rom[file_at..file_at + image.bytes.len()],
+        image.bytes.as_slice()
+    );
+
+    let seq = [
+        0xA9,
+        0x03,
+        0x8D,
+        0x15,
+        0x40,
+        0xA9,
+        image.reg_4010,
+        0x8D,
+        0x10,
+        0x40,
+        0xA9,
+        0x00,
+        0x8D,
+        0x11,
+        0x40,
+        0xA9,
+        image.reg_4012,
+        0x8D,
+        0x12,
+        0x40,
+        0xA9,
+        image.reg_4013,
+        0x8D,
+        0x13,
+        0x40,
+        0xA9,
+        0x13,
+        0x8D,
+        0x15,
+        0x40,
+    ];
+    assert!(
+        rom.windows(seq.len()).any(|window| window == seq),
+        "ROM is missing the play_dpcm register sequence"
+    );
+}
+
+#[test]
+fn dpcm_longer_than_4081_bytes_fails_the_build() {
+    let payload = (0..4082)
+        .map(|i| format!("0x{:02X}", i & 0xFF))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!(
+        r#"
+        game "Huge" {{ mapper: NROM }}
+        dpcm Huge {{
+            rate: 15
+            data: [{payload}]
+        }}
+        on frame {{ play_dpcm Huge }}
+        start Main
+        "#
+    );
+    let opts = nescript::pipeline::CompileOptions::default();
+    let Err(err) = nescript::pipeline::compile_source(&source, Path::new("."), &opts) else {
+        panic!("a sample past 4081 bytes must fail");
+    };
+    let text = format!("{err:?}");
+    assert!(text.contains("4081"), "{text}");
+}
+
+#[test]
+fn banked_multiply_links_the_fixed_bank_helper() {
+    // The multiply marker used to be emitted before banked functions
+    // were generated, so a `*` that lived only in a `bank` block
+    // never linked `__multiply` and assembly panicked on the JSR.
+    let source = r#"
+        game "BankMul" { mapper: UxROM }
+        bank Math {
+            fun times(a: u8, b: u8) -> u8 {
+                return a * b
+            }
+        }
+        var r: u8 = 0
+        on frame { r = times(6, 7) }
+        start Main
+    "#;
+    let opts = nescript::pipeline::CompileOptions::default();
+    let out = nescript::pipeline::compile_source(source, Path::new("."), &opts).expect("compile");
+    let rom = &out.rom;
+    nescript::rom::validate_ines(rom).expect("valid iNES");
+    let switchable = &rom[16..16 + 16384];
+    let calls_fixed = switchable
+        .windows(3)
+        .any(|word| word[0] == 0x20 && u16::from_le_bytes([word[1], word[2]]) >= 0xC000);
+    assert!(
+        calls_fixed,
+        "banked multiply should JSR the helper in the fixed bank"
+    );
+}

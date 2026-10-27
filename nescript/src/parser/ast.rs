@@ -40,6 +40,9 @@ pub struct Program {
     pub rooms: Vec<RoomDecl>,
     pub sfx: Vec<SfxDecl>,
     pub music: Vec<MusicDecl>,
+    /// `dpcm Name { rate, loop, data }` samples. The linker places
+    /// the bytes at the top of the fixed bank. `play_dpcm` starts one.
+    pub dpcm: Vec<DpcmDecl>,
     pub banks: Vec<BankDecl>,
     pub start_state: String,
     pub span: Span,
@@ -283,6 +286,20 @@ pub struct MusicDecl {
     /// of 0 is a rest; otherwise it's an index into the builtin
     /// period table (see `runtime::gen_period_table`).
     pub notes: Vec<MusicNote>,
+    pub span: Span,
+}
+
+/// `dpcm Name { rate: 0-15, loop: bool, data: @binary(...) | [...] }`.
+///
+/// `rate` is the DMC frequency index written to `$4010`. `loop`
+/// sets the loop bit. `data` is the raw sample, least significant
+/// bit first. The linker aligns and pads it for the DMC.
+#[derive(Debug, Clone)]
+pub struct DpcmDecl {
+    pub name: String,
+    pub rate: u8,
+    pub looped: bool,
+    pub source: AssetSource,
     pub span: Span,
 }
 
@@ -661,6 +678,8 @@ pub enum Statement {
     StartMusic(String, Span),
     /// Audio: `stop_music` — silence pulse 2 and the music state machine.
     StopMusic(Span),
+    /// `play_dpcm Name` — restart a DPCM sample on the DMC.
+    PlayDpcm(String, Span),
 }
 
 impl Statement {
@@ -690,7 +709,8 @@ impl Statement {
             | Self::RawAsm(_, s)
             | Self::Play(_, s)
             | Self::StartMusic(_, s)
-            | Self::StopMusic(s) => *s,
+            | Self::StopMusic(s)
+            | Self::PlayDpcm(_, s) => *s,
         }
     }
 }

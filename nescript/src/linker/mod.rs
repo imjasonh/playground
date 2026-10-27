@@ -60,6 +60,10 @@ pub struct Linker {
     /// data through the builder chain without threading yet another
     /// parameter through every entry point.
     rooms: Vec<crate::assets::RoomData>,
+    /// DPCM samples to copy into the top of the fixed bank after
+    /// the code is assembled. Empty for programs that never declare
+    /// `dpcm`, which keeps their ROM bytes unchanged.
+    dpcm: Vec<crate::assets::DpcmImage>,
 }
 
 /// CHR data for a sprite, placed at a specific tile index in CHR ROM.
@@ -211,6 +215,7 @@ impl Linker {
             header_format: HeaderFormat::Ines1,
             has_battery: false,
             rooms: Vec::new(),
+            dpcm: Vec::new(),
         }
     }
 
@@ -221,7 +226,16 @@ impl Linker {
             header_format: HeaderFormat::Ines1,
             has_battery: false,
             rooms: Vec::new(),
+            dpcm: Vec::new(),
         }
+    }
+
+    /// Place DPCM samples in the fixed-bank padding. `layout_dpcm`
+    /// has already picked offsets that sit below the vectors.
+    #[must_use]
+    pub fn with_dpcm(mut self, dpcm: Vec<crate::assets::DpcmImage>) -> Self {
+        self.dpcm = dpcm;
+        self
     }
 
     /// Supply the resolved `room` level data the CLI got back from
@@ -397,6 +411,15 @@ impl Linker {
         backgrounds: &[BackgroundData],
         switchable_banks: &[PrgBank],
     ) -> LinkedRom {
+        // Marker labels are zero-byte names the codegen drops at the
+        // use site. A use that lives in a switchable bank leaves the
+        // marker in that bank's stream, so the scan covers both.
+        let has_marker = |name: &str| {
+            has_label(user_code, name)
+                || switchable_banks
+                    .iter()
+                    .any(|bank| has_label(&bank.instructions, name))
+        };
         // ROM layout.
         //
         // NROM: a single 16 KB PRG bank mapped at $C000-$FFFF.
@@ -479,8 +502,7 @@ impl Linker {
         // `has_visual_output` check below — the default palette /
         // smiley / rendering-enable machinery. Programs that don't
         // draw save ~520 cycles per NMI plus a handful of bytes.
-        let has_oam =
-            has_label(user_code, "__oam_used") || has_label(user_code, "__sprite_cycle_used");
+        let has_oam = has_marker("__oam_used") || has_marker("__sprite_cycle_used");
 
         // RESET entry point
         all_instructions.push(Instruction::new(NOP, AM::Label("__reset".into())));
@@ -500,7 +522,7 @@ impl Linker {
         // Seed the PRNG state. Only emitted when the IR codegen
         // dropped the `__rand_used` marker — programs without PRNG
         // keep their reset path byte-identical.
-        if has_label(user_code, "__rand_used") {
+        if has_marker("__rand_used") {
             all_instructions.extend(runtime::gen_prng_init());
         }
 
@@ -620,8 +642,8 @@ impl Linker {
         // of two into masks) before codegen runs, so these markers
         // only fire for genuinely runtime-costly math. Programs
         // without any surviving mul or div pay zero bytes here.
-        let has_mul = has_label(user_code, "__mul_used");
-        let has_div = has_label(user_code, "__div_used");
+        let has_mul = has_marker("__mul_used");
+        let has_div = has_marker("__div_used");
         if has_mul {
             all_instructions.extend(runtime::gen_multiply());
         }
@@ -633,7 +655,7 @@ impl Linker {
         // `__rand_seed`) whenever the codegen dropped the `__rand_used`
         // marker. Programs that never call `rand8()` / `rand16()` /
         // `seed_rand()` skip this entirely.
-        let has_rand = has_label(user_code, "__rand_used");
+        let has_rand = has_marker("__rand_used");
         if has_rand {
             all_instructions.extend(runtime::gen_prng());
         }
@@ -644,7 +666,7 @@ impl Linker {
         // brightness routine — the codegen's `emit_fade_marker`
         // forces `__palette_bright_used` whenever fade is used, so
         // this path picks up fade as a side effect.
-        let has_palette_bright = has_label(user_code, "__palette_bright_used");
+        let has_palette_bright = has_marker("__palette_bright_used");
         if has_palette_bright {
             all_instructions.extend(runtime::gen_palette_brightness());
         }
@@ -652,7 +674,7 @@ impl Linker {
         // Fade helpers (`__fade_out` / `__fade_in` plus the shared
         // `__wait_frame_rt` subroutine). Splices when user code
         // called `fade_out(n)` or `fade_in(n)`.
-        let has_fade = has_label(user_code, "__fade_used");
+        let has_fade = has_marker("__fade_used");
         if has_fade {
             all_instructions.extend(runtime::gen_fade());
         }
@@ -661,7 +683,7 @@ impl Linker {
         // routine when any `nt_set` / `nt_attr` / `nt_fill_h`
         // intrinsic was lowered. The NMI handler JSRs it during
         // vblank.
-        if has_label(user_code, "__vram_buf_used") {
+        if has_marker("__vram_buf_used") {
             all_instructions.extend(runtime::gen_vram_buf_drain());
         }
 
@@ -669,7 +691,7 @@ impl Linker {
         // the `__collides_at_used` marker. Programs that declare a
         // `room` but never call `collides_at(...)` skip the helper
         // entirely.
-        if has_label(user_code, "__collides_at_used") {
+        if has_marker("__collides_at_used") {
             all_instructions.extend(runtime::gen_collides_at());
         }
 
@@ -684,10 +706,10 @@ impl Linker {
         // also has to exist before `__nmi` because NMI JSRs into
         // `__audio_tick` — so we emit it alongside the math
         // routines, well before the NMI handler below.
-        let has_audio = has_label(user_code, "__audio_used");
-        let has_noise = has_label(user_code, "__noise_used");
-        let has_triangle = has_label(user_code, "__triangle_used");
-        let has_sfx_pitch = has_label(user_code, "__sfx_pitch_used");
+        let has_audio = has_marker("__audio_used");
+        let has_noise = has_marker("__noise_used");
+        let has_triangle = has_marker("__triangle_used");
+        let has_sfx_pitch = has_marker("__sfx_pitch_used");
         if has_audio {
             all_instructions.extend(runtime::gen_audio_tick(
                 has_noise,
@@ -787,7 +809,7 @@ impl Linker {
         let has_ppu_updates = !palettes.is_empty()
             || !backgrounds.is_empty()
             || !self.rooms.is_empty()
-            || has_label(user_code, "__ppu_update_used");
+            || has_marker("__ppu_update_used");
 
         // NMI handler
         all_instructions.push(Instruction::new(NOP, AM::Label("__nmi".into())));
@@ -799,7 +821,7 @@ impl Linker {
         // emit a conditional JSR whose target is resolved at link
         // time. The helper emits an RTS so it's safe to call even
         // when there's no work to do.
-        if has_label(user_code, "__ir_mmc3_reload") {
+        if has_marker("__ir_mmc3_reload") {
             all_instructions.push(Instruction::new(JSR, AM::Label("__ir_mmc3_reload".into())));
         }
         // The audio tick JSR is emitted by `gen_nmi` itself, after
@@ -808,7 +830,7 @@ impl Linker {
         // The codegen emits a `__debug_mode` marker whenever
         // `--debug` is active; that tells the runtime to splice
         // in the extra frame-overrun check at the top of NMI.
-        let debug_mode = has_label(user_code, "__debug_mode");
+        let debug_mode = has_marker("__debug_mode");
         // `__sprite_cycle_used` is dropped by the IR codegen
         // whenever a `cycle_sprites` statement is lowered. When
         // present, the NMI handler reads the rotating offset byte
@@ -816,18 +838,18 @@ impl Linker {
         // the OAM DMA, turning the classic "same sprites dropped
         // every frame" hardware symptom into visible flicker that
         // the eye reconstructs across frames.
-        let has_sprite_cycle = has_label(user_code, "__sprite_cycle_used");
-        let has_p1_input = has_label(user_code, "__p1_input_used");
-        let has_p2_input = has_label(user_code, "__p2_input_used");
+        let has_sprite_cycle = has_marker("__sprite_cycle_used");
+        let has_p1_input = has_marker("__p1_input_used");
+        let has_p2_input = has_marker("__p2_input_used");
         // `__edge_input_used` is dropped whenever any `p1.a.pressed` /
         // `p1.a.released` site lowers. Tells the NMI to snapshot the
         // previous-frame input byte before the new strobe.
-        let has_edge_input = has_label(user_code, "__edge_input_used");
+        let has_edge_input = has_marker("__edge_input_used");
         // `__vram_buf_used` is dropped by the IR codegen for any
         // `nt_set` / `nt_attr` / `nt_fill_h` call site. Brings in
         // both the `__vram_buf_drain` runtime routine and the
         // NMI-side JSR that calls it during vblank.
-        let has_vram_buf = has_label(user_code, "__vram_buf_used");
+        let has_vram_buf = has_marker("__vram_buf_used");
         all_instructions.extend(runtime::gen_nmi(runtime::NmiOptions {
             has_ppu_updates,
             has_audio,
@@ -874,7 +896,24 @@ impl Linker {
         if prg.len() > stub_offset {
             panic!("PRG code exceeds 16 KB bank (code is {} bytes)", prg.len());
         }
+        if let Some(sample_at) = self.dpcm.iter().map(|sample| sample.offset).min() {
+            if prg.len() > sample_at {
+                panic!(
+                    "fixed bank code is {} bytes and overlaps DPCM samples, which start at offset {sample_at:#06X}. Move code into a bank or shorten a sample.",
+                    prg.len()
+                );
+            }
+        }
         prg.resize(vector_offset, 0xFF);
+        for sample in &self.dpcm {
+            let end = sample.offset + sample.bytes.len();
+            assert!(
+                end <= stub_offset,
+                "DPCM sample '{}' ends at {end:#06X}, past the fixed-bank limit {stub_offset:#06X}",
+                sample.name
+            );
+            prg[sample.offset..end].copy_from_slice(&sample.bytes);
+        }
 
         // Write vector table. IR codegen emits a richer IRQ handler
         // under `__irq_user` when the program has scanline handlers;
@@ -1013,7 +1052,7 @@ impl Linker {
             // when any background map byte reads 0.
             bg.tiles.contains(&0)
         });
-        let has_default_sprite = has_label(user_code, "__default_sprite_used") || bg_uses_tile_zero;
+        let has_default_sprite = has_marker("__default_sprite_used") || bg_uses_tile_zero;
         if has_default_sprite {
             chr[..16].copy_from_slice(&DEFAULT_SPRITE_CHR);
         }

@@ -26,7 +26,7 @@ use std::path::Path;
 
 use crate::analyzer::{self, AnalysisResult};
 use crate::asm::Instruction;
-use crate::assets::{self, BackgroundData, MusicData, PaletteData, SfxData};
+use crate::assets::{self, BackgroundData, DpcmImage, MusicData, PaletteData, SfxData};
 use crate::codegen::{peephole, IrCodeGen};
 use crate::errors::Diagnostic;
 use crate::ir::{self, IrProgram};
@@ -79,6 +79,8 @@ pub struct CompileOutput {
     pub sfx: Vec<SfxData>,
     /// Resolved music note streams.
     pub music: Vec<MusicData>,
+    /// DPCM samples placed in the fixed bank.
+    pub dpcm: Vec<DpcmImage>,
     /// Resolved palette blobs.
     pub palettes: Vec<PaletteData>,
     /// Resolved background blobs.
@@ -167,6 +169,10 @@ pub fn compile_source(
         .map_err(|e| CompileError::AssetResolution(format!("sfx: {e}")))?;
     let music = assets::resolve_music(&program)
         .map_err(|e| CompileError::AssetResolution(format!("music: {e}")))?;
+    let dpcm_samples = assets::resolve_dpcm(&program, source_dir)
+        .map_err(|e| CompileError::AssetResolution(format!("dpcm: {e}")))?;
+    let dpcm = assets::layout_dpcm(&dpcm_samples, assets::fixed_bank_limit(program.game.mapper))
+        .map_err(|e| CompileError::AssetResolution(format!("dpcm: {e}")))?;
     let palettes = assets::resolve_palettes(&program, source_dir)
         .map_err(|e| CompileError::AssetResolution(format!("palettes: {e}")))?;
     // Compute the first CHR tile index that backgrounds can claim.
@@ -212,6 +218,7 @@ pub fn compile_source(
     let mut codegen = IrCodeGen::new(&analysis.var_allocations, &ir_program)
         .with_sprites(&sprites)
         .with_audio(&sfx, &music)
+        .with_dpcm(&dpcm)
         .with_debug(opts.debug)
         .with_source_map(opts.emit_source_map)
         .with_debug_port(program.game.debug_port);
@@ -242,7 +249,8 @@ pub fn compile_source(
     let linker = Linker::with_mapper(program.game.mirroring, program.game.mapper)
         .with_header(program.game.header)
         .with_battery(analysis.has_battery_saves)
-        .with_rooms(rooms);
+        .with_rooms(rooms)
+        .with_dpcm(dpcm.clone());
     let switchable_banks: Vec<PrgBank> = program
         .banks
         .iter()
@@ -278,6 +286,7 @@ pub fn compile_source(
         sprites,
         sfx,
         music,
+        dpcm,
         palettes,
         backgrounds,
         instructions,

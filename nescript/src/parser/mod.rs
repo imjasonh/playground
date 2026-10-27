@@ -144,6 +144,7 @@ impl Parser {
         let mut rooms = Vec::new();
         let mut sfx = Vec::new();
         let mut music = Vec::new();
+        let mut dpcm = Vec::new();
         let mut saves: Vec<crate::parser::ast::VarDecl> = Vec::new();
         let mut banks = Vec::new();
         let mut start_state = None;
@@ -199,6 +200,9 @@ impl Parser {
                 }
                 TokenKind::KwMusic => {
                     music.push(self.parse_music_decl()?);
+                }
+                TokenKind::KwDpcm => {
+                    dpcm.push(self.parse_dpcm_decl()?);
                 }
                 TokenKind::KwSave => {
                     // `save { var x: u8 = 0  var y: u16 = 100 }` —
@@ -311,6 +315,7 @@ impl Parser {
             rooms,
             sfx,
             music,
+            dpcm,
             banks,
             start_state,
             span,
@@ -2039,6 +2044,112 @@ impl Parser {
 
     // ── SFX / Music declarations ──
 
+    /// `dpcm Name { rate: N, loop: bool, data: @binary(...) | [...] }`.
+    fn parse_dpcm_decl(&mut self) -> Result<DpcmDecl, Diagnostic> {
+        let start = self.current_span();
+        self.expect(&TokenKind::KwDpcm)?;
+        let (name, _) = self.expect_ident()?;
+        self.expect(&TokenKind::LBrace)?;
+
+        let mut rate: Option<u8> = None;
+        let mut looped = false;
+        let mut data: Option<AssetSource> = None;
+
+        while *self.peek() != TokenKind::RBrace && *self.peek() != TokenKind::Eof {
+            let key_span = self.current_span();
+            let key = match self.peek().clone() {
+                TokenKind::Ident(text) => {
+                    self.advance();
+                    text
+                }
+                TokenKind::KwLoop => {
+                    self.advance();
+                    "loop".to_string()
+                }
+                other => {
+                    return Err(Diagnostic::error(
+                        ErrorCode::E0201,
+                        format!("expected a dpcm property name, found '{other}'"),
+                        key_span,
+                    ));
+                }
+            };
+            self.expect(&TokenKind::Colon)?;
+            match key.as_str() {
+                "rate" => {
+                    let value = self.parse_u8_literal("rate")?;
+                    if value > 15 {
+                        return Err(Diagnostic::error(
+                            ErrorCode::E0201,
+                            format!("dpcm 'rate' must be 0-15, got {value}"),
+                            key_span,
+                        ));
+                    }
+                    rate = Some(value);
+                }
+                "loop" => {
+                    looped = match self.peek().clone() {
+                        TokenKind::BoolLiteral(value) => {
+                            self.advance();
+                            value
+                        }
+                        other => {
+                            return Err(Diagnostic::error(
+                                ErrorCode::E0201,
+                                format!("dpcm 'loop' must be true or false, found '{other}'"),
+                                key_span,
+                            ));
+                        }
+                    };
+                }
+                "data" => {
+                    let source = self.parse_asset_source()?;
+                    if matches!(source, AssetSource::Chr(_)) {
+                        return Err(Diagnostic::error(
+                            ErrorCode::E0201,
+                            "dpcm 'data' must be @binary(\"file.dmc\") or a byte list",
+                            key_span,
+                        ));
+                    }
+                    if matches!(&source, AssetSource::Inline(bytes) if bytes.is_empty()) {
+                        return Err(Diagnostic::error(
+                            ErrorCode::E0201,
+                            "dpcm 'data' must contain at least one byte",
+                            key_span,
+                        ));
+                    }
+                    data = Some(source);
+                }
+                _ => {
+                    return Err(Diagnostic::error(
+                        ErrorCode::E0201,
+                        format!("unknown dpcm property '{key}'"),
+                        key_span,
+                    ));
+                }
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+
+        let rate = rate.ok_or_else(|| {
+            Diagnostic::error(ErrorCode::E0201, "dpcm requires 'rate' (0-15)", start)
+        })?;
+        let source = data.ok_or_else(|| {
+            Diagnostic::error(
+                ErrorCode::E0201,
+                "dpcm requires 'data' (@binary or a byte list)",
+                start,
+            )
+        })?;
+        Ok(DpcmDecl {
+            name,
+            rate,
+            looped,
+            source,
+            span: Span::new(start.file_id, start.start, self.prev_end()),
+        })
+    }
+
     /// `sfx Name { duty: N, pitch: ..., volume: [..] }`.
     ///
     /// The v1 audio driver latches the pulse-1 period **once** on
@@ -2789,6 +2900,12 @@ impl Parser {
                 self.advance();
                 let (name, _) = self.expect_ident()?;
                 Ok(Statement::Play(name, span))
+            }
+            TokenKind::KwPlayDpcm => {
+                let span = self.current_span();
+                self.advance();
+                let (name, _) = self.expect_ident()?;
+                Ok(Statement::PlayDpcm(name, span))
             }
             TokenKind::KwStartMusic => {
                 let span = self.current_span();

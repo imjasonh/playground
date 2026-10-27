@@ -3099,3 +3099,56 @@ fn analyze_u16_multiply_by_constant_and_power_of_two_divide_are_allowed() {
     "#,
     );
 }
+
+#[test]
+fn analyze_accepts_play_dpcm_of_a_declared_sample() {
+    analyze_ok(
+        r#"
+        game "T" { mapper: NROM }
+        dpcm Blip {
+            rate: 15
+            data: [0x55]
+        }
+        on frame { play_dpcm Blip }
+        start Main
+    "#,
+    );
+}
+
+#[test]
+fn analyze_rejects_unknown_dpcm_sample() {
+    let codes = analyze_errors(
+        r#"
+        game "T" { mapper: NROM }
+        on frame { play_dpcm Missing }
+        start Main
+    "#,
+    );
+    assert!(
+        codes.contains(&ErrorCode::E0505),
+        "expected E0505 for unknown dpcm, got {codes:?}"
+    );
+}
+
+#[test]
+fn analyze_rejects_duplicate_dpcm_names() {
+    let codes = analyze_errors(
+        r#"
+        game "T" { mapper: NROM }
+        dpcm Blip {
+            rate: 1
+            data: [0x01]
+        }
+        dpcm Blip {
+            rate: 2
+            data: [0x02]
+        }
+        on frame { play_dpcm Blip }
+        start Main
+    "#,
+    );
+    assert!(
+        codes.contains(&ErrorCode::E0501),
+        "expected E0501 for duplicate dpcm, got {codes:?}"
+    );
+}
