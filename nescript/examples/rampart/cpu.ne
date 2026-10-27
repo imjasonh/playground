@@ -20,12 +20,16 @@ var loc_value: u8[12]
 // Cover between the mechs, computed once per plan choice.
 var cpu_cover: bool = false
 
-const MED_IN_RANGE: u8[4] = [14, 10, 3, 0]
-const MED_CLOSING: u8[3] = [13, 4, 1]
-
 // The CPU and the rules live in a switchable bank. The fixed bank
 // is full. Calls from the fixed bank go through trampolines.
 bank Brain {
+    // Medium's plan order, and the gray A-Z tiles for illegal
+    // plans. Only this bank indexes them. 0 means that letter has
+    // no dim tile. The numbers are unused ASCII slots from
+    // gen_rampart.py.
+    const MED_IN_RANGE: u8[4] = [14, 10, 3, 0]
+    const MED_CLOSING: u8[3] = [13, 4, 1]
+    const GRAY_LETTER: u8[26] = [31, 0, 35, 36, 37, 0, 38, 39, 40, 0, 0, 41, 44, 59, 0, 60, 0, 64, 106, 107, 30, 0, 0, 0, 0, 0]
 include "rules.ne"
 include "result.ne"
     fun first_legal(p: u8) -> u8 {

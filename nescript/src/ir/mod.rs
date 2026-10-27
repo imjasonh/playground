@@ -85,6 +85,9 @@ pub struct IrGlobal {
 pub struct IrRomBlock {
     pub label: String,
     pub data: Vec<u8>,
+    /// Switchable bank that holds the block, or `None` for the fixed
+    /// bank.
+    pub bank: Option<String>,
 }
 
 /// An IR function (includes state handlers, user functions, etc.)
@@ -185,8 +188,18 @@ pub enum IrOp {
     ArrayStore(VarId, IrTemp, IrTemp),
     /// Indexed read from a `const` array. The array's bytes live in
     /// PRG ROM under the [`IrRomBlock`] whose label is the `String`,
-    /// so the load is `LDA label,X` and the array takes no RAM.
+    /// so an 8-bit index is `LDA label,X` and the array takes no RAM.
     RomArrayLoad(IrTemp, String, IrTemp),
+    /// Read one byte of a ROM table with a 16-bit index. `idx` is the
+    /// low byte and `idx_hi` the high byte. The address is
+    /// `label + index`, built in `$FE-$FF`, then read with
+    /// `LDA ($FE),Y`. Tables can be longer than 256 bytes.
+    RomLoad {
+        dest: IrTemp,
+        label: String,
+        idx: IrTemp,
+        idx_hi: IrTemp,
+    },
 
     // Function call
     Call(Option<IrTemp>, String, Vec<IrTemp>),

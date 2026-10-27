@@ -598,6 +598,118 @@ fn lower_shift_left_with_literal_count_uses_that_count() {
     );
 }
 
+fn frame_ops(ir: &IrProgram) -> Vec<IrOp> {
+    ir.functions
+        .iter()
+        .find(|f| f.name.contains("frame"))
+        .expect("frame handler should exist")
+        .blocks
+        .iter()
+        .flat_map(|b| b.ops.clone())
+        .collect()
+}
+
+#[test]
+fn lower_u16_shift_right_by_eight_takes_the_high_byte() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var w: u16 = 0x1234
+        var y: u8 = 0
+        on frame { y = (w >> 8) as u8 }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    let hi = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::LoadVarHi(t, _) => Some(*t),
+            _ => None,
+        })
+        .expect("w's high byte should be loaded");
+    let shifted = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::ShiftRight(d, s, 0) if *s == hi => Some(*d),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("high byte should become the result: {ops:?}"));
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::StoreVar(_, t) if *t == shifted)),
+        "y should get the high byte: {ops:?}"
+    );
+}
+
+#[test]
+fn lower_widening_cast_then_shift_left_fills_the_high_byte() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var b: u8 = 0x12
+        var w: u16 = 0
+        on frame { w = (b as u16) << 8 }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    let lo = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::LoadVar(t, _) => Some(*t),
+            _ => None,
+        })
+        .expect("b should be loaded");
+    let shifted = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::ShiftLeft(d, s, 0) if *s == lo => Some(*d),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("b should move to the high byte: {ops:?}"));
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::StoreVarHi(_, t) if *t == shifted)),
+        "w's high byte should get b: {ops:?}"
+    );
+}
+
+#[test]
+fn lower_u16_argument_and_return_carry_both_bytes() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var w: u16 = 0
+        fun bump(x: u16, d: u8) -> u16 { return x + 0x0100 }
+        on frame { w = bump(w, 1) }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    let args = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::Call(_, name, args) if name == "bump" => Some(args.clone()),
+            _ => None,
+        })
+        .expect("bump should be called");
+    assert_eq!(args.len(), 3, "x takes two argument bytes: {ops:?}");
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::Peek(_, a) if *a == crate::runtime::RETURN_HI)),
+        "the caller should read the returned high byte: {ops:?}"
+    );
+    let bump = ir.functions.iter().find(|f| f.name == "bump").unwrap();
+    assert!(
+        bump.blocks
+            .iter()
+            .flat_map(|b| &b.ops)
+            .any(|op| matches!(op, IrOp::Poke(a, _) if *a == crate::runtime::RETURN_HI)),
+        "bump should write its high byte before returning"
+    );
+}
+
 #[test]
 fn lower_shift_right_with_variable_count_uses_runtime_variant() {
     let ir = lower_ok(
@@ -1267,4 +1379,166 @@ fn cast_to_u16_strips_signed_flag() {
         })
         .expect("expected a CmpLt16 op");
     assert_eq!(cmp, Signedness::Unsigned);
+}
+
+#[test]
+fn lower_u16_const_above_255_compares_both_bytes() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        const LIMIT: u16 = 258
+        var w: u16 = 130
+        var y: u8 = 0
+        on frame { if w < LIMIT { y = 1 } }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    assert!(
+        ops.iter().any(|op| matches!(op, IrOp::LoadImm(_, 1)))
+            && ops.iter().any(|op| matches!(op, IrOp::CmpLt16 { .. })),
+        "LIMIT's high byte should reach a 16-bit compare: {ops:?}"
+    );
+    let hi = ops.iter().find_map(|op| match op {
+        IrOp::CmpLt16 { b_hi, .. } => Some(*b_hi),
+        _ => None,
+    });
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::LoadImm(t, 1) if Some(*t) == hi)),
+        "the compare's high byte should be 1: {ops:?}"
+    );
+}
+
+/// Run a frame handler's straight-line ops and return each variable's
+/// final 16-bit value, by name. Panics on an op it doesn't model.
+fn eval_frame(ir: &IrProgram) -> std::collections::HashMap<String, u16> {
+    use std::collections::HashMap;
+    let mut temps: HashMap<IrTemp, u8> = HashMap::new();
+    let mut lo: HashMap<VarId, u8> = HashMap::new();
+    let mut hi: HashMap<VarId, u8> = HashMap::new();
+    for op in frame_ops(ir) {
+        let get = |t: &IrTemp, temps: &HashMap<IrTemp, u8>| temps[t];
+        match &op {
+            IrOp::LoadImm(d, v) => {
+                temps.insert(*d, *v);
+            }
+            IrOp::LoadVar(d, v) => {
+                temps.insert(*d, lo.get(v).copied().unwrap_or(0));
+            }
+            IrOp::LoadVarHi(d, v) => {
+                temps.insert(*d, hi.get(v).copied().unwrap_or(0));
+            }
+            IrOp::StoreVar(v, t) => {
+                lo.insert(*v, get(t, &temps));
+            }
+            IrOp::StoreVarHi(v, t) => {
+                hi.insert(*v, get(t, &temps));
+            }
+            IrOp::And(d, a, b)
+            | IrOp::Or(d, a, b)
+            | IrOp::Xor(d, a, b)
+            | IrOp::Add(d, a, b)
+            | IrOp::Sub(d, a, b) => {
+                let (a, b) = (get(a, &temps), get(b, &temps));
+                let r = match op {
+                    IrOp::And(..) => a & b,
+                    IrOp::Or(..) => a | b,
+                    IrOp::Xor(..) => a ^ b,
+                    IrOp::Add(..) => a.wrapping_add(b),
+                    _ => a.wrapping_sub(b),
+                };
+                temps.insert(*d, r);
+            }
+            IrOp::ShiftLeft(d, s, n) => {
+                let v = get(s, &temps);
+                temps.insert(*d, if *n >= 8 { 0 } else { v << n });
+            }
+            IrOp::ShiftRight(d, s, n) => {
+                let v = get(s, &temps);
+                temps.insert(*d, if *n >= 8 { 0 } else { v >> n });
+            }
+            IrOp::Add16 {
+                d_lo,
+                d_hi,
+                a_lo,
+                a_hi,
+                b_lo,
+                b_hi,
+            } => {
+                let a = u16::from_le_bytes([get(a_lo, &temps), get(a_hi, &temps)]);
+                let b = u16::from_le_bytes([get(b_lo, &temps), get(b_hi, &temps)]);
+                let [l, h] = a.wrapping_add(b).to_le_bytes();
+                temps.insert(*d_lo, l);
+                temps.insert(*d_hi, h);
+            }
+            IrOp::Sub16 {
+                d_lo,
+                d_hi,
+                a_lo,
+                a_hi,
+                b_lo,
+                b_hi,
+            } => {
+                let a = u16::from_le_bytes([get(a_lo, &temps), get(a_hi, &temps)]);
+                let b = u16::from_le_bytes([get(b_lo, &temps), get(b_hi, &temps)]);
+                let [l, h] = a.wrapping_sub(b).to_le_bytes();
+                temps.insert(*d_lo, l);
+                temps.insert(*d_hi, h);
+            }
+            IrOp::SourceLoc(_) => {}
+            other => panic!("eval_frame doesn't model {other:?}"),
+        }
+    }
+    ir.globals
+        .iter()
+        .map(|g| {
+            let v = u16::from_le_bytes([
+                lo.get(&g.var_id).copied().unwrap_or(0),
+                hi.get(&g.var_id).copied().unwrap_or(0),
+            ]);
+            (g.name.clone(), v)
+        })
+        .collect()
+}
+
+#[test]
+fn lower_u16_arithmetic_keeps_sixteen_bits() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var a: u16 = 0
+        var b: u8 = 0
+        var mul: u16 = 0
+        var mul_left: u16 = 0
+        var cast_mul: u16 = 0
+        var div: u16 = 0
+        var rem: u16 = 0
+        var and_w: u16 = 0
+        var or_w: u16 = 0
+        var xor_w: u16 = 0
+        on frame {
+            a = 1234
+            b = 3
+            mul = a * 240
+            mul_left = 10 * a
+            cast_mul = ((b - 1) as u16) * 240
+            div = a / 16
+            rem = a % 64
+            and_w = a & 0x0F0F
+            or_w = a | 0x8001
+            xor_w = a ^ 0xFFFF
+        }
+        start Main
+    "#,
+    );
+    let v = eval_frame(&ir);
+    assert_eq!(v["mul"], 1234u16.wrapping_mul(240));
+    assert_eq!(v["mul_left"], 12340);
+    assert_eq!(v["cast_mul"], 480);
+    assert_eq!(v["div"], 1234 / 16);
+    assert_eq!(v["rem"], 1234 % 64);
+    assert_eq!(v["and_w"], 0x04D2 & 0x0F0F);
+    assert_eq!(v["or_w"], 0x04D2 | 0x8001);
+    assert_eq!(v["xor_w"], 0x04D2 ^ 0xFFFF);
 }

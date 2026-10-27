@@ -18,9 +18,10 @@
 //! - `$0A-$0F` reserved
 //! - `$10+` user variables + IR temp slots
 //!
-//! IR temps are allocated starting at `TEMP_BASE` (`$80`), giving 128 bytes
-//! (`0x80-0xFF`) for IR temp storage per function. Functions reset the
-//! temp counter at entry.
+//! IR temps are allocated starting at `TEMP_BASE` (`$80`), giving 126 bytes
+//! (`0x80-0xFD`) for IR temp storage per function. Functions reset the
+//! temp counter at entry. `$FE-$FF` is the pointer that a 16-bit-indexed
+//! ROM table read builds.
 
 use std::collections::HashMap;
 
@@ -35,25 +36,23 @@ use crate::runtime::{
     AUDIO_MUSIC_BASE_HI, AUDIO_MUSIC_BASE_LO, AUDIO_MUSIC_STATE, AUDIO_NOISE_COUNTER,
     AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI, AUDIO_SFX_PITCH_PTR_LO,
     AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, OAM_BUSY,
-    ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
-    ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI,
-    ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER,
-    ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
+    SCANLINE_STEP_ADDR, ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR,
+    ZP_PENDING_BG_ATTRS_HI, ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO,
+    ZP_PENDING_PALETTE_HI, ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI,
+    ZP_ROOM_COL_LO, ZP_SFX_COUNTER, ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
 };
 
 /// Base zero-page address for IR temp slots.
 const TEMP_BASE: u8 = 0x80;
+/// Number of IR temp slots, `TEMP_BASE..ROM_PTR`.
+const TEMP_SLOTS: u8 = 0x7E;
+/// Zero-page pointer (`$FE` low, `$FF` high) that a ROM table read
+/// with a 16-bit index builds before its `LDA (ptr),Y`.
+const ROM_PTR: u8 = 0xFE;
 
 /// Zero-page addresses (shared with AST codegen).
 const ZP_FRAME_FLAG: u8 = 0x00;
 const ZP_CURRENT_STATE: u8 = 0x03;
-/// Per-frame scanline step counter, reset to 0 by the NMI reload
-/// helper. Each time the MMC3 IRQ fires, the dispatcher looks at
-/// this byte to pick the right handler for multi-scanline states,
-/// then bumps it so the next IRQ hits the next handler. States
-/// with only a single scanline handler ignore the counter.
-const ZP_SCANLINE_STEP: u8 = 0x0C;
-
 /// Default emulator debug output port. Writes to this address are
 /// logged by FCEUX (which defaults to `$4800`) when the debugger is
 /// attached. Programs can override via `game { debug_port: mesen }`
@@ -415,11 +414,12 @@ impl<'a> IrCodeGen<'a> {
         for func in &ir.functions {
             if function_is_leaf(func) {
                 let scope = scope_prefix_for_fn(&func.name);
-                for (i, local) in func.locals.iter().take(func.param_count).enumerate() {
-                    let addr = 0x04u16 + i as u16;
+                let mut addr = 0x04u16;
+                for local in func.locals.iter().take(func.param_count) {
                     var_addrs.insert(local.var_id, addr);
                     let qualified = format!("__local__{scope}__{}", local.name);
                     leaf_param_overrides.insert(qualified, addr);
+                    addr += local.size.max(1);
                 }
             } else if func.param_count > 0 {
                 // Non-leaf: callers direct-write each argument into
@@ -429,18 +429,20 @@ impl<'a> IrCodeGen<'a> {
                 // few loops up). A miss here means the analyzer
                 // didn't allocate a slot — which would be a
                 // compiler bug of the PR-#31 shape.
+                // One slot per byte: a 16-bit parameter takes two.
                 let addrs: Vec<u16> = func
                     .locals
                     .iter()
                     .take(func.param_count)
-                    .map(|local| {
-                        *var_addrs.get(&local.var_id).unwrap_or_else(|| {
+                    .flat_map(|local| {
+                        let base = *var_addrs.get(&local.var_id).unwrap_or_else(|| {
                             panic!(
                                 "internal compiler error: parameter {:?} of \
                                  function {:?} has no allocated address",
                                 local.name, func.name
                             )
-                        })
+                        });
+                        (0..local.size.max(1)).map(move |k| base + k)
                     })
                     .collect();
                 non_leaf_param_addrs.insert(func.name.clone(), addrs);
@@ -673,14 +675,14 @@ impl<'a> IrCodeGen<'a> {
             return slot;
         }
         // Otherwise grow the monotonic counter. If we've exhausted
-        // the 128 slots reserved at TEMP_BASE..$FF, panic with a
+        // the slots reserved at TEMP_BASE..ROM_PTR, panic with a
         // diagnostic — this indicates either a bug in the liveness
         // analysis or a function with pathologically long live
         // ranges. In the common case, the free list keeps us well
         // under the limit.
         assert!(
-            u16::from(self.next_temp_slot) < 0x80,
-            "IR codegen: function exceeds 128 concurrent live temps; \
+            self.next_temp_slot < TEMP_SLOTS,
+            "IR codegen: function exceeds 126 concurrent live temps; \
              this is a compiler bug — temps at end of function should \
              have been recycled via `retire_dead_temps`"
         );
@@ -823,11 +825,11 @@ impl<'a> IrCodeGen<'a> {
         let loop_label = format!("__ir_shift_loop_{suffix}");
         let done_label = format!("__ir_shift_done_{suffix}");
         let amt_addr = self.temp_addr(amt);
-        self.emit(LDX, AM::ZeroPage(amt_addr));
         self.load_temp(src);
         // Skip straight to the store if the count is zero — saves an
         // iteration and is required because the loop decrements
-        // before checking.
+        // before checking. LDX comes last so BEQ tests the count.
+        self.emit(LDX, AM::ZeroPage(amt_addr));
         self.emit(BEQ, AM::LabelRelative(done_label.clone()));
         self.emit_label(&loop_label);
         self.emit(shift_op, AM::Accumulator);
@@ -1035,7 +1037,7 @@ impl<'a> IrCodeGen<'a> {
         //
         // Multi-scanline support: a state may have multiple `on
         // scanline(N)` handlers. They fire in ascending order of
-        // N. We track which one is next via `ZP_SCANLINE_STEP`,
+        // N. We track which one is next via `SCANLINE_STEP_ADDR`,
         // reset to 0 by the NMI reload helper at the top of each
         // frame. The IRQ dispatcher selects the handler for
         // `(current_state, scanline_step)`, runs it, then reloads
@@ -1077,9 +1079,10 @@ impl<'a> IrCodeGen<'a> {
         // stores in the stream.
         self.emit_trailing_markers();
 
-        // `const` array tables. Every function body above ends in a
-        // jump or return, so nothing falls through into the data.
-        for block in &ir.rom_data {
+        // `const` tables follow the code. A table with no bank stays in
+        // the fixed bank; one declared inside `bank Foo` is appended to
+        // that bank's stream after its functions, below.
+        for block in ir.rom_data.iter().filter(|b| b.bank.is_none()) {
             self.emit_label(&block.label);
             self.emit(NOP, AM::Bytes(block.data.clone()));
         }
@@ -1115,6 +1118,13 @@ impl<'a> IrCodeGen<'a> {
             // current pipeline, but we restore it for symmetry).
             let bank_stream = std::mem::replace(&mut self.instructions, prior_instrs);
             self.banked_streams.insert(bank_name, bank_stream);
+        }
+
+        for block in ir.rom_data.iter().filter(|b| b.bank.is_some()) {
+            let bank_name = block.bank.clone().unwrap();
+            let stream = self.banked_streams.entry(bank_name).or_default();
+            stream.push(Instruction::new(NOP, AM::Label(block.label.clone())));
+            stream.push(Instruction::new(NOP, AM::Bytes(block.data.clone())));
         }
 
         fixed_instructions
@@ -1659,6 +1669,23 @@ impl<'a> IrCodeGen<'a> {
                 self.emit(LDA, AM::LabelAbsoluteX(label.clone()));
                 self.store_temp(*dest);
             }
+            IrOp::RomLoad {
+                dest,
+                label,
+                idx,
+                idx_hi,
+            } => {
+                self.load_temp(*idx);
+                self.emit(CLC, AM::Implied);
+                self.emit(ADC, AM::SymbolLo(label.clone()));
+                self.emit(STA, AM::ZeroPage(ROM_PTR));
+                self.load_temp(*idx_hi);
+                self.emit(ADC, AM::SymbolHi(label.clone()));
+                self.emit(STA, AM::ZeroPage(ROM_PTR + 1));
+                self.emit(LDY, AM::Immediate(0));
+                self.emit(LDA, AM::IndirectY(ROM_PTR));
+                self.store_temp(*dest);
+            }
             IrOp::ArrayStore(var, idx, val) => {
                 let base_addr = self.var_addr(*var);
                 self.load_temp(*idx);
@@ -1694,9 +1721,9 @@ impl<'a> IrCodeGen<'a> {
                 //     ZP window. E0506 caps declarations at 8 so the
                 //     assert below stays a belt-and-braces guard.
                 assert!(
-                    args.len() <= 8,
+                    args.len() <= 16,
                     "internal compiler error: Call to {name:?} with \
-                     {} args (max 8); E0506 should have caught this",
+                     {} argument bytes (max 16); E0506 should have caught this",
                     args.len()
                 );
                 if let Some(param_addrs) = self.non_leaf_param_addrs.get(name).cloned() {
@@ -2980,7 +3007,7 @@ impl<'a> IrCodeGen<'a> {
     /// Emit the MMC3 `__irq_user` handler that dispatches on the
     /// `(current_state, scanline_step)` pair. Supports multiple
     /// `on scanline(N)` handlers per state — they fire in ascending
-    /// line order, with `ZP_SCANLINE_STEP` tracking which one is
+    /// line order, with `SCANLINE_STEP_ADDR` tracking which one is
     /// up next.
     ///
     /// For each state/step pair, the dispatcher JSRs the handler,
@@ -3021,8 +3048,8 @@ impl<'a> IrCodeGen<'a> {
             self.emit(BNE, AM::LabelRelative(next_state_label.clone()));
 
             // Matched this state. Now dispatch on
-            // ZP_SCANLINE_STEP to pick the right handler.
-            self.emit(LDY, AM::ZeroPage(ZP_SCANLINE_STEP));
+            // SCANLINE_STEP_ADDR to pick the right handler.
+            self.emit(LDY, AM::Absolute(SCANLINE_STEP_ADDR));
             // Bump step now (regardless of which handler we
             // select) so the NEXT IRQ sees a fresh value. If we
             // bumped after running the handler, a handler that
@@ -3030,7 +3057,7 @@ impl<'a> IrCodeGen<'a> {
             // see the old step. We do this eagerly by writing
             // `step + 1` back — cheaper than reading, running,
             // writing.
-            self.emit(INC, AM::ZeroPage(ZP_SCANLINE_STEP));
+            self.emit(INC, AM::Absolute(SCANLINE_STEP_ADDR));
 
             for (step, line) in lines.iter().enumerate() {
                 let next_step_label = format!("__irq_s{state_idx_iter}_step_{step}_skip");
@@ -3083,7 +3110,7 @@ impl<'a> IrCodeGen<'a> {
         // Reset the step counter so the first IRQ of the new
         // frame always lands on step 0.
         self.emit(LDA, AM::Immediate(0));
-        self.emit(STA, AM::ZeroPage(ZP_SCANLINE_STEP));
+        self.emit(STA, AM::Absolute(SCANLINE_STEP_ADDR));
 
         self.emit(LDA, AM::ZeroPage(ZP_CURRENT_STATE));
         let reload_done = "__ir_mmc3_reload_done".to_string();
@@ -3315,6 +3342,7 @@ impl<'a> IrCodeGen<'a> {
 
         let suffix = self.local_label_suffix();
         let true_label = format!("__ir_cmp_t_{suffix}");
+        let false_label = format!("__ir_cmp_f_{suffix}");
         let end_label = format!("__ir_cmp_e_{suffix}");
 
         match kind {
@@ -3323,8 +3351,14 @@ impl<'a> IrCodeGen<'a> {
             CmpKind::Lt => self.emit(BCC, AM::LabelRelative(true_label.clone())),
             CmpKind::GtEq => self.emit(BCS, AM::LabelRelative(true_label.clone())),
             CmpKind::Gt => {
-                // > : not equal AND carry set
-                self.emit(BEQ, AM::LabelRelative(end_label.clone()));
+                // > : not equal AND carry set. The equal case must
+                // land on the false path, not fall straight through
+                // to `end_label`: skipping both the `LDA #0` below
+                // and the true path's `LDA #1` would store whatever
+                // `load_temp(a)` left in the accumulator — the raw
+                // left-hand value — as the "boolean" result instead
+                // of 0.
+                self.emit(BEQ, AM::LabelRelative(false_label.clone()));
                 self.emit(BCS, AM::LabelRelative(true_label.clone()));
             }
             CmpKind::LtEq => {
@@ -3334,6 +3368,7 @@ impl<'a> IrCodeGen<'a> {
             }
         }
         // False path
+        self.emit_label(&false_label);
         self.emit(LDA, AM::Immediate(0));
         self.emit(JMP, AM::Label(end_label.clone()));
         // True path
@@ -3461,12 +3496,13 @@ fn scope_prefix_for_fn(name: &str) -> String {
 }
 
 /// True if `func` is eligible for the "leaf" calling convention:
-/// its body emits no `JSR`, and its parameter count fits in the
-/// four zero-page transport slots (`$04-$07`). Leaf-eligible
+/// its body emits no `JSR`, and its parameters fit in the four
+/// zero-page transport slots (`$04-$07`); a 16-bit parameter takes
+/// two. Leaf-eligible
 /// functions read their args straight out of the transport slots
 /// and skip the spill prologue entirely.
 ///
-/// The `param_count <= 4` check matters for the direct-write
+/// The four-byte check matters for the direct-write
 /// calling convention: non-leaf (5-to-8-param) functions have the
 /// caller stage each argument directly into the callee's
 /// per-parameter RAM slot, which is where leaves *can't* live
@@ -3480,7 +3516,13 @@ fn scope_prefix_for_fn(name: &str) -> String {
 /// ops are: `Call`, `Mul`, `Div`, `Mod`, `Transition`, plus
 /// `InlineAsm` bodies that mention `JSR` as a token.
 fn function_is_leaf(func: &IrFunction) -> bool {
-    if func.param_count > 4 {
+    let param_bytes: u16 = func
+        .locals
+        .iter()
+        .take(func.param_count)
+        .map(|l| l.size.max(1))
+        .sum();
+    if param_bytes > 4 {
         return false;
     }
     for block in &func.blocks {
@@ -3540,6 +3582,7 @@ fn function_is_leaf(func: &IrFunction) -> bool {
                 | IrOp::ArrayLoad(..)
                 | IrOp::RomArrayLoad(..)
                 | IrOp::ArrayStore(..)
+                | IrOp::RomLoad { .. }
                 | IrOp::DrawSprite { .. }
                 | IrOp::ReadInput(..)
                 | IrOp::WaitFrame
@@ -3788,6 +3831,7 @@ fn op_source_temps(op: &IrOp) -> Vec<IrTemp> {
         IrOp::ShiftLeft(_, src, _) | IrOp::ShiftRight(_, src, _) => vec![*src],
         IrOp::Negate(_, src) | IrOp::Complement(_, src) | IrOp::SignExtend(_, src) => vec![*src],
         IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => vec![*idx],
+        IrOp::RomLoad { idx, idx_hi, .. } => vec![*idx, *idx_hi],
         IrOp::ArrayStore(_, idx, val) => vec![*idx, *val],
         IrOp::Call(_, _, args) => args.clone(),
         IrOp::DrawSprite {
@@ -3992,6 +4036,68 @@ mod tests {
         );
         // Should initialize x = 42
         assert!(has_instruction(&insts, LDA, &AM::Immediate(42)));
+    }
+
+    #[test]
+    fn shift_by_variable_tests_the_count_for_zero() {
+        // `1 << i` with i = 0 must skip the loop. The zero check has
+        // to follow the load of the count, not the value.
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            var i: u8 = 0
+            var m: u8 = 0
+            on frame { m = 1 << i }
+            start Main
+        "#,
+        );
+        let beq = insts
+            .iter()
+            .position(|i| {
+                i.opcode == BEQ
+                    && matches!(&i.mode, AM::LabelRelative(l) if l.starts_with("__ir_shift_done_"))
+            })
+            .expect("shift loop");
+        assert_eq!(insts[beq - 1].opcode, LDX, "{:?}", &insts[beq - 3..=beq]);
+    }
+
+    #[test]
+    fn ir_codegen_u8_gt_equal_operands_materializes_false() {
+        // `a > b` as a value (not a direct `if` branch) must store 0
+        // when a == b. The equal case used to `BEQ` straight to the
+        // shared end label, skipping both the `LDA #0` and `LDA #1`
+        // below it and leaving whatever `load_temp(a)` left in the
+        // accumulator — a's own value — as the stored "boolean".
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            var a: u8 = 36
+            var b: u8 = 36
+            var r: u8 = 0
+            on frame { r = (a > b) as u8 }
+            start Main
+        "#,
+        );
+        let beq = insts
+            .iter()
+            .position(|i| {
+                i.opcode == BEQ
+                    && matches!(&i.mode, AM::LabelRelative(l) if l.starts_with("__ir_cmp_f_"))
+            })
+            .unwrap_or_else(|| panic!("expected a BEQ to the Gt false label: {insts:?}"));
+        let AM::LabelRelative(false_label) = &insts[beq].mode else {
+            unreachable!()
+        };
+        let label_pos = insts
+            .iter()
+            .position(|i| matches!(&i.mode, AM::Label(l) if l == false_label))
+            .expect("false label should be defined");
+        let landed = &insts[label_pos + 1];
+        assert_eq!(
+            (landed.opcode, &landed.mode),
+            (LDA, &AM::Immediate(0)),
+            "the equal case must land on `LDA #0`, not skip past it: {insts:?}"
+        );
     }
 
     #[test]
@@ -4377,7 +4483,7 @@ mod more_tests {
     #[test]
     fn ir_codegen_multi_scanline_per_state_emits_step_counter_dispatch() {
         // A state with multiple scanline handlers must dispatch on
-        // both `current_state` and `ZP_SCANLINE_STEP` (at $0C). The
+        // both `current_state` and `SCANLINE_STEP_ADDR` (at $07EE). The
         // old codegen just took the first handler per state, so
         // scanline 120 and scanline 180 would never fire even with
         // their handlers linked in.
@@ -4393,22 +4499,27 @@ mod more_tests {
             start Main
         "#,
         );
-        // The IRQ dispatcher must read the step counter at $0C.
+        // The IRQ dispatcher must read the step counter at $07EE,
+        // not at $0C, which is the sfx pointer.
         let reads_step = insts
             .iter()
-            .any(|i| i.opcode == LDY && i.mode == AM::ZeroPage(0x0C));
+            .any(|i| i.opcode == LDY && i.mode == AM::Absolute(0x07EE));
         assert!(
             reads_step,
-            "multi-scanline dispatcher should read ZP_SCANLINE_STEP at $0C"
+            "multi-scanline dispatcher should read SCANLINE_STEP_ADDR at $07EE"
+        );
+        assert!(
+            !insts.iter().any(|i| i.mode == AM::ZeroPage(0x0C)),
+            "the scanline dispatcher must not touch the sfx pointer at $0C"
         );
         // It must also INC the step counter so the next IRQ lands
         // on the next handler.
         let bumps_step = insts
             .iter()
-            .any(|i| i.opcode == INC && i.mode == AM::ZeroPage(0x0C));
+            .any(|i| i.opcode == INC && i.mode == AM::Absolute(0x07EE));
         assert!(
             bumps_step,
-            "multi-scanline dispatcher should bump ZP_SCANLINE_STEP"
+            "multi-scanline dispatcher should bump SCANLINE_STEP_ADDR"
         );
         // All three handlers should be emitted as distinct functions.
         for line in [60u8, 120, 180] {
@@ -4425,10 +4536,10 @@ mod more_tests {
         // of each frame.
         let resets_step = insts
             .iter()
-            .any(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x0C));
+            .any(|i| i.opcode == STA && i.mode == AM::Absolute(0x07EE));
         assert!(
             resets_step,
-            "reload helper should clear ZP_SCANLINE_STEP at NMI"
+            "reload helper should clear SCANLINE_STEP_ADDR at NMI"
         );
     }
 
@@ -5646,6 +5757,58 @@ mod more_tests {
             "every emitted __src_ label should have a matching source_locs entry"
         );
     }
+}
+
+#[test]
+fn u16_params_take_two_bytes_in_both_calling_conventions() {
+    use crate::parser;
+    let src = r#"
+        game "Test" { mapper: NROM }
+        var out: u16 = 0
+        var b: u8 = 0
+        fun leaf(a: u8, w: u16) { b = (w >> 8) as u8 }
+        fun helper(a: u8) -> u8 { return a }
+        fun outer(w: u16) { b = helper((w >> 8) as u8) }
+        on frame {
+            leaf(1, 0x1234)
+            outer(0x5678)
+        }
+        start Main
+    "#;
+    let (prog, _) = parser::parse(src);
+    let prog = prog.unwrap();
+    let analysis = crate::analyzer::analyze(&prog);
+    assert!(analysis.diagnostics.iter().all(|d| !d.is_error()));
+    let ir = crate::ir::lower(&prog, &analysis);
+    let mut codegen = IrCodeGen::new(&analysis.var_allocations, &ir);
+    let insts = codegen.generate(&ir);
+    let stores_to = |at: u16| {
+        insts.iter().any(|i| {
+            i.opcode == STA
+                && match i.mode {
+                    AM::ZeroPage(a) => u16::from(a) == at,
+                    AM::Absolute(a) => a == at,
+                    _ => false,
+                }
+        })
+    };
+    // Leaf: a in $04, w in $05/$06, and the body reads w's high byte.
+    assert!(stores_to(0x05) && stores_to(0x06));
+    let leaf_idx = insts
+        .iter()
+        .position(|i| i.mode == AM::Label("__ir_fn_leaf".into()))
+        .unwrap();
+    assert!(insts[leaf_idx..]
+        .iter()
+        .take(8)
+        .any(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x06)));
+    let w_slot = analysis
+        .var_allocations
+        .iter()
+        .find(|a| a.name == "__local__outer__w")
+        .expect("outer's w should have a slot")
+        .address;
+    assert!(stores_to(w_slot) && stores_to(w_slot + 1));
 }
 
 #[test]

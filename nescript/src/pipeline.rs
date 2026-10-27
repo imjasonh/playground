@@ -34,7 +34,7 @@ use crate::lexer::Span;
 use crate::linker::{BankTrampoline, LinkedRom, Linker, PrgBank, SpriteData};
 use crate::optimizer;
 use crate::parser;
-use crate::parser::ast::BankType;
+use crate::parser::ast::{BankType, Mapper};
 
 /// Knobs that mirror the CLI `build` flags. New knobs should
 /// default to the "release build" value so that old callers pick
@@ -152,6 +152,17 @@ pub fn compile_source(
     // system view is "current".
     let sprites = assets::resolve_sprites(&program, source_dir)
         .map_err(|e| CompileError::AssetResolution(format!("sprites: {e}")))?;
+    if let Some(s) = sprites.iter().find(|s| s.table >= 2) {
+        if !matches!(
+            program.game.mapper,
+            Mapper::MMC1 | Mapper::MMC3 | Mapper::CNROM | Mapper::GNROM
+        ) {
+            return Err(CompileError::AssetResolution(format!(
+                "sprite '{}' uses CHR page {}, but mapper {:?} has a single 8 KB CHR bank",
+                s.name, s.table, program.game.mapper
+            )));
+        }
+    }
     let sfx = assets::resolve_sfx(&program)
         .map_err(|e| CompileError::AssetResolution(format!("sfx: {e}")))?;
     let music = assets::resolve_music(&program)
@@ -174,6 +185,7 @@ pub fn compile_source(
     // background that happened to trip the limit.
     let next_sprite_tile_u16 = sprites
         .iter()
+        .filter(|s| s.table == 0)
         .map(|s| {
             let count = s.chr_bytes.len().div_ceil(16) as u16;
             u16::from(s.tile_index) + count

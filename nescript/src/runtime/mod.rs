@@ -15,11 +15,20 @@ const JOY1: u16 = 0x4016;
 const APU_FRAME: u16 = 0x4017;
 
 /// First byte of the main-RAM block at the top of RAM that the
-/// runtime owns: the VRAM ring pointers, previous input, fade, PRNG,
-/// sprite-cycle, audio, and debug slots, `$07E5-$07FF`. The analyzer
-/// allocates user variables below this address, whether or not a
-/// program uses the feature behind each slot.
+/// runtime owns: the VRAM ring pointers, previous input, fade,
+/// PRNG, sprite-cycle, audio, and debug slots, `$07E5-$07FF`. The
+/// analyzer allocates user variables below this address, whether
+/// or not a program uses the feature behind each slot.
 pub const RUNTIME_RAM_BASE: u16 = 0x07E5;
+
+/// High byte of a 16-bit function return value. The low byte comes
+/// back in A, like an 8-bit return. `$07` is the last call-argument
+/// byte. The callee writes this after it has finished reading its
+/// arguments, and the caller copies it out before the next call.
+/// NMI does not use `$05-$07`. The runtime block above `$07E4` is
+/// full, and programs such as rampart already use every user byte
+/// below it.
+pub const RETURN_HI: u16 = 0x07;
 
 /// Zero-page locations used by the runtime.
 pub const ZP_FRAME_FLAG: u8 = 0x00;
@@ -285,6 +294,13 @@ pub const PRNG_STATE_HI: u16 = 0x07EB;
 /// last complete frame's sprites on screen instead of a half-drawn
 /// set. The RAM clear at reset leaves it zero.
 pub const OAM_BUSY: u16 = 0x07ED;
+
+/// MMC3 scanline-IRQ step. The NMI reload helper clears it, and the
+/// IRQ dispatcher reads it to pick the handler, then increments it.
+/// It used to sit at `$0C`, which is the sfx pointer. `$07EC` is the
+/// VRAM ring's tail, so the step lives in the free byte beside
+/// `OAM_BUSY`.
+pub const SCANLINE_STEP_ADDR: u16 = 0x07EE;
 
 /// Generate the NES hardware initialization sequence.
 /// This runs at RESET and sets up the hardware before user code.
@@ -2416,6 +2432,16 @@ fn gen_mmc3_init(mirroring: Mirroring) -> Vec<Instruction> {
     out.push(Instruction::new(LDA, AM::Immediate(0x01)));
     out.push(Instruction::new(STA, AM::Absolute(0x8001)));
 
+    // CHR registers power up undefined. Map the 8 KB CHR ROM in
+    // order: R0/R1 are 2 KB banks at $0000/$0800 (numbered in 1 KB
+    // units, so 0 and 2), R2-R5 are 1 KB banks at $1000-$1C00.
+    for (reg, bank) in [(0u8, 0u8), (1, 2), (2, 4), (3, 5), (4, 6), (5, 7)] {
+        out.push(Instruction::new(LDA, AM::Immediate(reg)));
+        out.push(Instruction::new(STA, AM::Absolute(0x8000)));
+        out.push(Instruction::new(LDA, AM::Immediate(bank)));
+        out.push(Instruction::new(STA, AM::Absolute(0x8001)));
+    }
+
     // Mirroring: $A000, bit 0 — 0 = vertical, 1 = horizontal.
     let mirror = match mirroring {
         Mirroring::Horizontal => 0x01,
@@ -2488,12 +2514,19 @@ pub fn gen_bank_select(mapper: Mapper) -> Vec<Instruction> {
             out.push(Instruction::implied(RTS));
         }
         Mapper::MMC3 => {
-            // MMC3: `$8000 = 6` selects PRG-bank-0 register, then
-            // write bank to `$8001`. We save/restore X because
-            // some callers use X as a loop counter across the
-            // switch.
+            // MMC3 switches 8 KB pages and a nescript bank is 16 KB,
+            // so bank `n` is pages `2n` (R6, at $8000) and `2n + 1`
+            // (R7, at $A000). A register is chosen by writing its
+            // number to `$8000`, then its page to `$8001`.
+            out.push(Instruction::new(ASL, AM::Accumulator));
             out.push(Instruction::implied(PHA));
             out.push(Instruction::new(LDA, AM::Immediate(0x06)));
+            out.push(Instruction::new(STA, AM::Absolute(0x8000)));
+            out.push(Instruction::implied(PLA));
+            out.push(Instruction::new(STA, AM::Absolute(0x8001)));
+            out.push(Instruction::new(ORA, AM::Immediate(0x01)));
+            out.push(Instruction::implied(PHA));
+            out.push(Instruction::new(LDA, AM::Immediate(0x07)));
             out.push(Instruction::new(STA, AM::Absolute(0x8000)));
             out.push(Instruction::implied(PLA));
             out.push(Instruction::new(STA, AM::Absolute(0x8001)));

@@ -5,6 +5,7 @@
 //! IR codegen's zero-page slot assumptions.
 
 use crate::asm::{AddressingMode, Instruction, Opcode};
+use std::collections::HashMap;
 
 /// Run all peephole passes until fixed point.
 pub fn optimize(instructions: &mut Vec<Instruction>) {
@@ -41,11 +42,23 @@ pub fn optimize(instructions: &mut Vec<Instruction>) {
 /// result without reading flags, so anyone downstream relying on
 /// the Z/N flags still gets the right flags from the INC/DEC —
 /// both ops update N and Z from the new value just like ADC/SBC
-/// would. Any downstream code reading the carry flag from the
-/// original ADC/SBC would be depending on +1/-1 wrap arithmetic,
-/// which the folded form can't preserve; we conservatively
-/// require the pattern to be followed by an instruction that
-/// isn't a carry-reading branch.
+/// would. Any downstream code reading the carry or overflow flag
+/// from the original ADC/SBC would be depending on wrap/overflow
+/// behavior the folded form can't preserve, so we require the next
+/// instruction not to be a carry- or overflow-testing branch.
+///
+/// Also unlike the ADC/SBC form, INC/DEC never touch A — they
+/// address memory directly. The pattern we fold leaves A holding
+/// the new value right up to the STA (STA doesn't clobber A), and
+/// an earlier peephole pass may have already dropped a reload of
+/// `addr` immediately after this group on exactly that assumption
+/// (`remove_redundant_loads` tracks "A already equals addr" across
+/// an STA and is correct right up until this fold removes the
+/// ADC's A-setting effect). So we also require the next instruction
+/// not to be one that reads A's current value — `STA`, an
+/// arithmetic/logical op combining with A, `ASL`/`LSR`/`ROL`/`ROR`
+/// in accumulator mode, `TAX`/`TAY`, `PHA`, or `BIT` — since after
+/// folding, A no longer holds the sum/difference those would need.
 fn fold_inc_dec(instructions: &mut Vec<Instruction>) {
     let mut out = Vec::with_capacity(instructions.len());
     let mut idx = 0;
@@ -74,14 +87,17 @@ fn fold_inc_dec(instructions: &mut Vec<Instruction>) {
                 && adc_or_sbc.opcode == Opcode::SBC
                 && adc_or_sbc.mode == AddressingMode::Immediate(1);
             // Only fold if the next instruction after the STA
-            // doesn't rely on the ADC's carry output. A BCC/BCS
-            // right after the pattern would break; anything else
+            // doesn't rely on the ADC/SBC's flag or accumulator
+            // output (see the safety note above). Anything else
             // (including "no next instruction") is safe.
-            let next_is_carry_branch = instructions
-                .get(idx + 4)
-                .is_some_and(|n| matches!(n.opcode, Opcode::BCC | Opcode::BCS));
+            let next_is_unsafe = instructions.get(idx + 4).is_some_and(|n| {
+                matches!(
+                    n.opcode,
+                    Opcode::BCC | Opcode::BCS | Opcode::BVC | Opcode::BVS
+                ) || reads_a(n)
+            });
             if let Some(addr) = lda_addr {
-                if sta_matches && !next_is_carry_branch {
+                if sta_matches && !next_is_unsafe {
                     if is_clc_adc_1 {
                         out.push(Instruction::new(Opcode::INC, addr));
                         idx += 4;
@@ -99,6 +115,30 @@ fn fold_inc_dec(instructions: &mut Vec<Instruction>) {
         idx += 1;
     }
     *instructions = out;
+}
+
+/// Whether `inst` reads the accumulator's current value rather than
+/// just overwriting it or ignoring it. Used by [`fold_inc_dec`] to
+/// avoid folding into an `INC`/`DEC` (which never touches A) when a
+/// later instruction depends on A still holding the ADC/SBC result.
+fn reads_a(inst: &Instruction) -> bool {
+    match inst.opcode {
+        Opcode::STA
+        | Opcode::ADC
+        | Opcode::SBC
+        | Opcode::AND
+        | Opcode::ORA
+        | Opcode::EOR
+        | Opcode::CMP
+        | Opcode::TAX
+        | Opcode::TAY
+        | Opcode::PHA
+        | Opcode::BIT => true,
+        Opcode::ASL | Opcode::LSR | Opcode::ROL | Opcode::ROR => {
+            inst.mode == AddressingMode::Accumulator
+        }
+        _ => false,
+    }
 }
 
 /// Fold `Bxx label1; JMP label2; label1:` into `Byy label2`, where
@@ -375,8 +415,6 @@ fn changed(before: &[(Opcode, AddressingMode)], after: &[Instruction]) -> bool {
 /// The other peephole passes then pick up the now-dead `STA slot`
 /// and drop it.
 fn copy_propagate_temps(instructions: &mut [Instruction]) {
-    use std::collections::HashMap;
-
     // slot -> source of the most recent STA into that slot.
     let mut temp_source: HashMap<u8, Source> = HashMap::new();
     // Track what A currently holds so we can decide whether an STA
@@ -420,32 +458,76 @@ fn copy_propagate_temps(instructions: &mut [Instruction]) {
                 a = None;
             }
             (Opcode::STA, AddressingMode::ZeroPage(addr)) => {
-                // If we're storing to a temp slot and we know the
-                // source of the value in A, record the equivalence.
+                // Temps that copied the old byte at addr no longer
+                // match it. If addr is a temp slot and we know what A
+                // holds, record the new equivalence.
+                temp_source.retain(|_, src| !matches!(*src, Source::Zp(a) if a == addr));
                 if is_temp_slot_addr(addr) {
                     if let Some(src) = a {
                         temp_source.insert(addr, src);
                     } else {
                         temp_source.remove(&addr);
                     }
-                } else {
-                    // Storing to a non-temp ZP addr invalidates any
-                    // temp that was tracking [addr] as its source.
-                    temp_source.retain(|_, src| !matches!(*src, Source::Zp(a) if a == addr));
                 }
             }
-            (Opcode::STA, AddressingMode::Absolute(addr)) => {
-                // Invalidate any temp tracking this absolute source.
-                temp_source.retain(|_, src| !matches!(*src, Source::Abs(a) if a == addr));
-            }
-            // Any op that reads a non-ZP location or clobbers A: just
-            // invalidate A; temps are unaffected.
             _ => {
+                match memory_write(inst) {
+                    Some(Write::Zp(addr)) => {
+                        temp_source.remove(&addr);
+                        temp_source.retain(|_, src| !matches!(*src, Source::Zp(a) if a == addr));
+                    }
+                    Some(Write::Abs(addr)) => {
+                        temp_source.retain(|_, src| !matches!(*src, Source::Abs(a) if a == addr));
+                    }
+                    Some(Write::AboveZeroPage) => {
+                        temp_source.retain(|_, src| !matches!(*src, Source::Abs(_)));
+                    }
+                    Some(Write::Anywhere) => temp_source.clear(),
+                    None => {}
+                }
                 if modifies_a(inst.opcode) {
                     a = None;
                 }
             }
         }
+    }
+}
+
+/// Memory that an instruction may write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Write {
+    Zp(u8),
+    Abs(u16),
+    /// Some address at $0100 or above.
+    AboveZeroPage,
+    Anywhere,
+}
+
+fn memory_write(inst: &Instruction) -> Option<Write> {
+    let writes = matches!(
+        inst.opcode,
+        Opcode::STA
+            | Opcode::STX
+            | Opcode::STY
+            | Opcode::INC
+            | Opcode::DEC
+            | Opcode::ASL
+            | Opcode::LSR
+            | Opcode::ROL
+            | Opcode::ROR
+    );
+    if !writes {
+        return None;
+    }
+    match &inst.mode {
+        AddressingMode::Implied | AddressingMode::Accumulator => None,
+        AddressingMode::ZeroPage(addr) => Some(Write::Zp(*addr)),
+        AddressingMode::Absolute(addr) => Some(Write::Abs(*addr)),
+        AddressingMode::AbsoluteX(base) | AddressingMode::AbsoluteY(base) if *base >= 0x100 => {
+            Some(Write::AboveZeroPage)
+        }
+        AddressingMode::LabelAbsoluteX(_) => Some(Write::AboveZeroPage),
+        _ => Some(Write::Anywhere),
     }
 }
 
@@ -464,8 +546,13 @@ enum Source {
     Abs(u16),
 }
 
+/// First zero-page byte past the IR temp slots. `$FE-$FF` is the
+/// ROM table pointer, read through `(ptr),Y`, so stores to it are
+/// never dead.
+const TEMP_END: u8 = 0xFE;
+
 fn is_temp_slot_addr(addr: u8) -> bool {
-    addr >= 0x80
+    (0x80..TEMP_END).contains(&addr)
 }
 
 fn modifies_a(op: Opcode) -> bool {
@@ -545,56 +632,35 @@ fn remove_redundant_loads(instructions: &mut Vec<Instruction>) {
                 eq.clear();
             }
             (Opcode::STA, AddressingMode::ZeroPage(addr)) => {
-                // A unchanged; address now holds A's value. Add the
-                // address to the equivalence class.
-                if eq.is_empty() {
-                    // No prior knowledge — start fresh with this
-                    // address.
-                }
+                // A unchanged; the address now holds A's value.
                 eq.push(AValue::Zp(*addr));
             }
             (Opcode::STA, AddressingMode::Absolute(addr)) => {
                 eq.push(AValue::Abs(*addr));
             }
-            (Opcode::STA, _) => {
-                // Other addressing modes: A unchanged.
+            _ => {
+                // Any other load into A (indexed, indirect, through a
+                // label) or op that changes A leaves its value
+                // unknown. LDX and LDY are included so a value only
+                // X or Y can see isn't mistaken for A's.
+                if modifies_a(inst.opcode) || matches!(inst.opcode, Opcode::LDX | Opcode::LDY) {
+                    eq.clear();
+                    continue;
+                }
+                match memory_write(inst) {
+                    Some(Write::Zp(addr)) => {
+                        eq.retain(|v| !matches!(v, AValue::Zp(a) if *a == addr));
+                    }
+                    Some(Write::Abs(addr)) => {
+                        eq.retain(|v| !matches!(v, AValue::Abs(a) if *a == addr));
+                    }
+                    Some(Write::AboveZeroPage) => {
+                        eq.retain(|v| !matches!(v, AValue::Abs(_)));
+                    }
+                    Some(Write::Anywhere) => eq.retain(|v| matches!(v, AValue::Imm(_))),
+                    None => {}
+                }
             }
-            // Ops that clobber A — clear tracker.
-            (
-                Opcode::ADC
-                | Opcode::SBC
-                | Opcode::AND
-                | Opcode::ORA
-                | Opcode::EOR
-                | Opcode::ASL
-                | Opcode::LSR
-                | Opcode::ROL
-                | Opcode::ROR
-                | Opcode::LDX
-                | Opcode::LDY
-                | Opcode::PLA
-                | Opcode::TXA
-                | Opcode::TYA,
-                _,
-            ) => {
-                eq.clear();
-            }
-            // Ops that write to an address we might be tracking:
-            // invalidate any equivalence pointing at that cell,
-            // because the stored value is no longer correct.
-            (
-                Opcode::STX | Opcode::STY | Opcode::INC | Opcode::DEC,
-                AddressingMode::ZeroPage(addr),
-            ) => {
-                eq.retain(|v| !matches!(v, AValue::Zp(a) if *a == *addr));
-            }
-            (
-                Opcode::STX | Opcode::STY | Opcode::INC | Opcode::DEC,
-                AddressingMode::Absolute(addr),
-            ) => {
-                eq.retain(|v| !matches!(v, AValue::Abs(a) if *a == *addr));
-            }
-            _ => {}
         }
     }
     let mut out = Vec::with_capacity(instructions.len());
@@ -623,11 +689,12 @@ enum AValue {
 /// final store-to-user-variable covers the actual need; the intermediate
 /// store-to-temp is dead.
 fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
-    // Walk forward. For each `STA slot` where slot is a temp, look
-    // ahead through the rest of the current function (bounded by the
-    // next `__ir_fn_` label or EOF). If no subsequent instruction
-    // reads the slot before the function ends or the slot is
-    // overwritten, the STA is dead.
+    // For each `STA slot` where slot is a temp, follow every control
+    // path out of the store within its function. The store is live
+    // if some path reads the slot before writing it again. The temp
+    // allocator reuses slots, so a write in a sibling block or a
+    // read behind a back edge has to be judged by where control can
+    // actually go, not by instruction order.
     //
     // IR temp slots are assigned uniquely per IR op within a function
     // (the IR codegen resets `next_temp_slot` to 0 at each function
@@ -657,7 +724,7 @@ fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
             continue;
         }
         let slot = match inst.mode {
-            AddressingMode::ZeroPage(addr) if addr >= 0x80 => addr,
+            AddressingMode::ZeroPage(addr) if is_temp_slot_addr(addr) => addr,
             _ => continue,
         };
         if !temp_store_is_read(instructions, &labels, i + 1, slot) {
@@ -906,12 +973,12 @@ fn remove_sta_then_lda(instructions: &mut Vec<Instruction>) {
     *instructions = out;
 }
 
-/// True if the addressing mode targets an IR temp slot ($80-$FF).
+/// True if the addressing mode targets an IR temp slot ($80-$FD).
 /// We restrict peephole store/load elimination to temp slots so we
 /// don't accidentally merge accesses to user variables in ZP (where
 /// an intervening call or IRQ could have clobbered A).
 fn is_temp_slot(mode: &AddressingMode) -> bool {
-    matches!(mode, AddressingMode::ZeroPage(addr) if *addr >= 0x80)
+    matches!(mode, AddressingMode::ZeroPage(addr) if is_temp_slot_addr(*addr))
 }
 
 #[cfg(test)]
@@ -937,6 +1004,78 @@ mod tests {
         assert_eq!(insts.len(), 2);
         assert_eq!(insts[0].opcode, CLC);
         assert_eq!(insts[1].opcode, RTS);
+    }
+
+    #[test]
+    fn keeps_reload_after_an_indexed_label_load() {
+        // `t = TILE[r]; a = PAL[r]`: the table load replaces A, so
+        // the second `LDA r` is needed to index PAL by r again.
+        let mut insts = vec![
+            Instruction::new(LDA, AM::ZeroPage(0x06)),
+            Instruction::new(TAX, AM::Implied),
+            Instruction::new(LDA, AM::LabelAbsoluteX("tile".to_string())),
+            Instruction::new(STA, AM::Absolute(0x05C6)),
+            Instruction::new(LDA, AM::ZeroPage(0x06)),
+            Instruction::new(TAX, AM::Implied),
+            Instruction::new(LDA, AM::LabelAbsoluteX("pal".to_string())),
+            Instruction::new(STA, AM::Absolute(0x05C7)),
+        ];
+        optimize(&mut insts);
+        let reloads = insts
+            .iter()
+            .filter(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x06))
+            .count();
+        assert_eq!(reloads, 2, "r must be reloaded: {insts:?}");
+    }
+
+    #[test]
+    fn indexed_store_invalidates_a_copied_cell() {
+        // $80 copies $0300; `STA $0300,X` may change $0300, so the
+        // later read of $80 can't be rewritten to read $0300.
+        let mut insts = vec![
+            Instruction::new(LDA, AM::Absolute(0x0300)),
+            Instruction::new(STA, AM::ZeroPage(0x80)),
+            Instruction::new(LDA, AM::Immediate(9)),
+            Instruction::new(STA, AM::AbsoluteX(0x0300)),
+            Instruction::new(LDA, AM::ZeroPage(0x80)),
+            Instruction::new(STA, AM::ZeroPage(0x10)),
+        ];
+        optimize(&mut insts);
+        assert!(
+            !insts
+                .iter()
+                .skip(2)
+                .any(|i| i.opcode == LDA && i.mode == AM::Absolute(0x0300)),
+            "the read after the indexed store must not use $0300: {insts:?}"
+        );
+    }
+
+    #[test]
+    fn keeps_sta_when_a_sibling_block_writes_the_slot() {
+        // The right side of `a and b` stores its result and jumps to
+        // the join; the false block writes the same slot. The join's
+        // read keeps both stores.
+        let label = |n: &str| Instruction::new(NOP, AM::Label(n.to_string()));
+        let mut insts = vec![
+            label("__ir_fn_chk"),
+            Instruction::new(LDA, AM::ZeroPage(0x04)),
+            Instruction::new(ORA, AM::Immediate(0)),
+            Instruction::new(STA, AM::ZeroPage(0x82)),
+            Instruction::new(JMP, AM::Label("end".to_string())),
+            label("false"),
+            Instruction::new(LDA, AM::Immediate(0)),
+            Instruction::new(STA, AM::ZeroPage(0x82)),
+            label("end"),
+            Instruction::new(LDA, AM::ZeroPage(0x82)),
+            Instruction::new(STA, AM::ZeroPage(0x12)),
+            Instruction::new(RTS, AM::Implied),
+        ];
+        optimize(&mut insts);
+        let stores = insts
+            .iter()
+            .filter(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x82))
+            .count();
+        assert_eq!(stores, 2, "both stores feed the join: {insts:?}");
     }
 
     #[test]
@@ -1447,5 +1586,62 @@ mod tests {
             insts.iter().any(|i| i.opcode == ADC),
             "ADC must survive when followed by a carry-dependent branch: {insts:?}"
         );
+    }
+
+    #[test]
+    fn inc_fold_preserves_when_accumulator_shifted_next() {
+        // A state-persistent counter incremented then immediately
+        // shifted — `counter += 1; phase = (counter >> 3) & 3` — can
+        // lower (after copy-propagation collapses the intermediate
+        // temp hops) to exactly `LDA $10; CLC; ADC #1; STA $10; LSR
+        // A; ...`, with no reload of `$10` between the STA and the
+        // LSR because A already holds the sum. Folding the first
+        // four instructions into `INC $10` would leave the LSR
+        // shifting whatever A held *before* the LDA, not the new
+        // counter value, silently zeroing `phase` forever. This
+        // reproduces the subway walk-animation miscompile: `phase`
+        // stuck at 0, so the sprite never left its standing frame.
+        let mut insts = vec![
+            Instruction::new(LDA, AM::ZeroPage(0x10)),
+            Instruction::new(CLC, AM::Implied),
+            Instruction::new(ADC, AM::Immediate(1)),
+            Instruction::new(STA, AM::ZeroPage(0x10)),
+            Instruction::new(LSR, AM::Accumulator),
+            Instruction::new(RTS, AM::Implied),
+        ];
+        optimize(&mut insts);
+        assert!(
+            insts.iter().any(|i| i.opcode == ADC),
+            "ADC must survive when the accumulator is shifted right after: {insts:?}"
+        );
+    }
+
+    #[test]
+    fn inc_fold_preserves_when_accumulator_read_next() {
+        // Same hazard as above, but covering the other ways a later
+        // instruction can read A's post-ADC value instead of
+        // reloading it: a direct re-store (`STA`), combining it with
+        // another operand (`AND`), or copying it into another
+        // register (`TAX`). `fold_inc_dec` must decline to fold in
+        // every one of these cases, since `INC` never touches A.
+        for next in [
+            Instruction::new(STA, AM::ZeroPage(0x20)),
+            Instruction::new(AND, AM::Immediate(3)),
+            Instruction::new(TAX, AM::Implied),
+        ] {
+            let mut insts = vec![
+                Instruction::new(LDA, AM::ZeroPage(0x10)),
+                Instruction::new(CLC, AM::Implied),
+                Instruction::new(ADC, AM::Immediate(1)),
+                Instruction::new(STA, AM::ZeroPage(0x10)),
+                next.clone(),
+                Instruction::new(RTS, AM::Implied),
+            ];
+            optimize(&mut insts);
+            assert!(
+                insts.iter().any(|i| i.opcode == ADC),
+                "ADC must survive when A is read by {next:?} right after: {insts:?}"
+            );
+        }
     }
 }

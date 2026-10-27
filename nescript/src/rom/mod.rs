@@ -116,7 +116,7 @@ impl RomBuilder {
         self.prg_banks = banks;
     }
 
-    /// Set the CHR ROM data. Will be padded to fill 8 KB.
+    /// Set the CHR ROM data. Will be padded to a multiple of 8 KB.
     pub fn set_chr(&mut self, data: Vec<u8>) {
         self.chr_data = data;
     }
@@ -133,8 +133,8 @@ impl RomBuilder {
         let prg_banks = prg_banks_vec.len();
         let prg_size = prg_banks * PRG_BANK_SIZE;
 
-        // CHR: 1 bank (8 KB), or 0 if using CHR RAM
-        let chr_banks = usize::from(!self.chr_data.is_empty());
+        // CHR: 8 KB banks covering the data, or 0 if using CHR RAM.
+        let chr_banks = self.chr_data.len().div_ceil(CHR_BANK_SIZE);
         let chr_size = chr_banks * CHR_BANK_SIZE;
 
         let mut rom = Vec::with_capacity(16 + prg_size + chr_size);

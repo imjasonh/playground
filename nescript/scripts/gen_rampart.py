@@ -148,8 +148,8 @@ T_UNDERLINE = 95
 # go dim one letter at a time without the attribute table, which
 # colors two rows together and whose other bright colors are the
 # players' blue and red. These sit in ASCII slots the font never
-# fills. GRAY_LETTER in constants.ne is the letter-to-tile map,
-# and GRAY_DASH is the blanked key.
+# fills. GRAY_LETTER in cpu.ne (bank Brain) is the letter-to-tile
+# map, and GRAY_DASH in constants.ne is the blanked key.
 GRAY_TILES = {
     "A": 31,
     "C": 35,

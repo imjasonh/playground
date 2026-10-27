@@ -29,6 +29,7 @@ fn runtime_main_ram_slots_sit_in_reserved_block() {
         FADE_STEP_FRAMES,
         FADE_LEVEL,
         OAM_BUSY,
+        SCANLINE_STEP_ADDR,
         PRNG_STATE_LO,
         PRNG_STATE_HI,
     ];
@@ -897,6 +898,7 @@ fn mapper_init_mmc3_configures_prg_and_mirroring() {
     //   $8001 = 0 (bank 0 at $8000)
     //   $8000 = 7 (select PRG-1 register)
     //   $8001 = 1 (bank 1 at $A000)
+    //   $8000 = 0..5, $8001 = page (CHR registers R0-R5)
     //   $A000 = mirroring bit
     //   $E000 = 0 (disable IRQ)
     let init = gen_mapper_init(Mapper::MMC3, Mirroring::Vertical, 4);
@@ -905,8 +907,12 @@ fn mapper_init_mmc3_configures_prg_and_mirroring() {
             .filter(|i| i.opcode == STA && i.mode == AM::Absolute(addr))
             .count()
     };
-    assert_eq!(count_writes(0x8000), 2, "MMC3 should write $8000 twice");
-    assert_eq!(count_writes(0x8001), 2, "MMC3 should write $8001 twice");
+    assert_eq!(count_writes(0x8000), 8, "MMC3 should select R6, R7, R0-R5");
+    assert_eq!(
+        count_writes(0x8001),
+        8,
+        "MMC3 should set all 8 bank registers"
+    );
     assert_eq!(
         count_writes(0xA000),
         1,
@@ -1008,8 +1014,8 @@ fn bank_select_uxrom_uses_bus_conflict_table() {
 
 #[test]
 fn bank_select_mmc3_writes_8000_and_8001() {
-    // MMC3 bank-select writes 6 to $8000, then writes A to $8001.
-    // We check both writes happen exactly once.
+    // MMC3 bank-select maps the 16 KB bank as two 8 KB pages: R6
+    // and R7 each get a `$8000` register select and a `$8001` page.
     let sel = gen_bank_select(Mapper::MMC3);
     let writes_8000 = sel
         .iter()
@@ -1019,8 +1025,12 @@ fn bank_select_mmc3_writes_8000_and_8001() {
         .iter()
         .filter(|i| i.opcode == STA && i.mode == AM::Absolute(0x8001))
         .count();
-    assert_eq!(writes_8000, 1, "MMC3 should write $8000 once");
-    assert_eq!(writes_8001, 1, "MMC3 should write $8001 once");
+    assert_eq!(writes_8000, 2, "MMC3 should select R6 and R7");
+    assert_eq!(writes_8001, 2, "MMC3 should set both PRG pages");
+    assert!(
+        sel.iter().any(|i| i.opcode == ASL),
+        "bank n is 8 KB pages 2n and 2n+1, so the bank number doubles first"
+    );
     assert_eq!(sel.last().unwrap().opcode, RTS);
 }
 

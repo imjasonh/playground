@@ -163,6 +163,10 @@ pub struct StructField {
 pub struct SpriteDecl {
     pub name: String,
     pub chr_source: AssetSource,
+    /// 4 KB CHR page the tiles live in. Pages 0 and 1 are the pattern
+    /// tables at `$0000` and `$1000` at reset; pages 2 and up need a
+    /// mapper that switches CHR banks.
+    pub table: u8,
     pub span: Span,
 }
 
@@ -441,6 +445,12 @@ pub struct ConstDecl {
     pub name: String,
     pub const_type: NesType,
     pub value: Expr,
+    /// `Some(bank_name)` when the const was declared inside a
+    /// `bank Foo { ... }` body. Only `u8[N]` table consts are stored
+    /// in ROM, so only they are affected: their bytes go in that
+    /// switchable bank, and only functions in the same bank can index
+    /// them.
+    pub bank: Option<String>,
     pub span: Span,
 }
 

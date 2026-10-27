@@ -1695,6 +1695,96 @@ fn compile_banked(source: &str) -> Vec<u8> {
 }
 
 #[test]
+fn sprite_in_table_one_lands_in_the_upper_pattern_table() {
+    // `table: 1` puts the tiles at $1000, starting from tile 0 there,
+    // and leaves table 0 allocation (which starts at tile 1) alone.
+    let source = r#"
+        game "SpriteTable" { mapper: NROM }
+
+        sprite Wall {
+            chr: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                  0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10]
+        }
+        sprite Player {
+            table: 1
+            chr: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                  0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F]
+        }
+
+        state Title {
+            on frame {
+                draw Player at: (10, 20)
+            }
+        }
+
+        start Title
+    "#;
+
+    let rom_data = compile(source);
+    let chr_start = 16 + 16384;
+    assert_eq!(rom_data[chr_start + 16], 0x01, "Wall at table 0 tile 1");
+    assert_eq!(
+        &rom_data[chr_start + 4096..chr_start + 4096 + 16],
+        &[
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D,
+            0x1E, 0x1F
+        ],
+        "Player at table 1 tile 0",
+    );
+}
+
+#[test]
+fn sprite_table_must_be_a_chr_page() {
+    let source = r#"
+        game "SpriteTable" { mapper: MMC3 }
+        sprite Player {
+            table: 64
+            chr: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+        state Title { on frame { draw Player at: (10, 20) } }
+        start Title
+    "#;
+    let result = nescript::parser::parse(source);
+    assert!(!result.1.is_empty(), "table: 64 should be a parse error");
+}
+
+#[test]
+fn sprite_in_chr_page_two_grows_chr_rom_on_mmc3() {
+    let source = r#"
+        game "SpritePage" { mapper: MMC3 }
+        sprite MapTiles {
+            table: 2
+            chr: [0xAA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+        state Title { on frame { draw MapTiles at: (10, 20) } }
+        start Title
+    "#;
+    let rom = compile(source);
+    let info = nescript::rom::validate_ines(&rom).expect("valid iNES");
+    assert_eq!(info.chr_banks, 2, "page 2 needs a second 8 KB CHR bank");
+    let chr_start = 16 + info.prg_banks * 16384;
+    assert_eq!(rom[chr_start + 2 * 4096], 0xAA);
+}
+
+#[test]
+fn sprite_in_chr_page_two_is_an_error_on_nrom() {
+    let source = r#"
+        game "SpritePage" { mapper: NROM }
+        sprite MapTiles {
+            table: 2
+            chr: [0xAA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+        state Title { on frame { draw MapTiles at: (10, 20) } }
+        start Title
+    "#;
+    let opts = nescript::pipeline::CompileOptions::default();
+    let Err(err) = nescript::pipeline::compile_source(source, Path::new("."), &opts) else {
+        panic!("NROM can't switch CHR pages");
+    };
+    assert!(format!("{err:?}").contains("CHR page 2"), "{err:?}");
+}
+
+#[test]
 fn sprite_resolution_uses_tile_index() {
     // The Player sprite has 16 unique bytes of CHR data. Because tile index 0
     // is reserved for the built-in smiley, the compiler should place Player
@@ -1759,6 +1849,35 @@ fn sprite_resolution_uses_tile_index() {
     assert!(
         prg.windows(pattern.len()).any(|w| w == pattern),
         "PRG ROM should contain LDA #$01 ; STA $0201,Y for draw Player",
+    );
+}
+
+#[test]
+fn draw_attr_writes_the_oam_attribute_byte() {
+    let source = r#"
+        game "DrawAttr" { mapper: NROM }
+        sprite Player {
+            chr: [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                  0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F]
+        }
+        var flip: u8 = 0x41
+        on frame {
+            draw Player at: (10, 20) attr: flip
+        }
+        start Main
+    "#;
+    let rom_data = compile(source);
+    let prg = &rom_data[16..16 + 16384];
+    // `STA $0202,Y` must follow a load other than `LDA #$00`.
+    let sta_attr = [0x99u8, 0x02, 0x02];
+    let pos = prg
+        .windows(sta_attr.len())
+        .position(|w| w == sta_attr)
+        .expect("draw should store an attribute byte");
+    assert_ne!(
+        &prg[pos - 2..pos],
+        &[0xA9, 0x00],
+        "attr: should not store the constant 0"
     );
 }
 
@@ -4628,5 +4747,152 @@ start Main
             .iter()
             .any(nescript::errors::Diagnostic::is_error),
         "rand8 with arguments should error"
+    );
+}
+
+// ── ROM tables (`const NAME: u8[N] = [...]`) ──
+
+fn compile_pipeline(source: &str) -> nescript::pipeline::CompileOutput {
+    use nescript::pipeline::{compile_source, CompileOptions};
+    let opts = CompileOptions {
+        debug: false,
+        no_opt: false,
+        emit_source_map: false,
+    };
+    compile_source(source, Path::new("."), &opts)
+        .unwrap_or_else(|e| panic!("pipeline failed: {e:?}"))
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+#[test]
+fn rom_table_with_u8_index_reads_the_table_through_absolute_x() {
+    let out = compile_pipeline(
+        r#"
+        game "T" { mapper: NROM }
+        const TBL: u8[4] = [0x5A, 0xA5, 0x3C, 0xC3]
+        var i: u8 = 2
+        var o: u8 = 0
+        on frame { o = TBL[i] }
+        start Main
+        "#,
+    );
+    let addr = out.link_result.labels["__rom_TBL"];
+    let off = out.link_result.fixed_bank_file_offset + usize::from(addr - 0xC000);
+    assert_eq!(&out.rom[off..off + 4], &[0x5A, 0xA5, 0x3C, 0xC3]);
+    // `TAX; LDA __rom_TBL,X` — the read goes to the table itself.
+    let [lo, hi] = addr.to_le_bytes();
+    assert!(
+        find(&out.rom, &[0xAA, 0xBD, lo, hi]).is_some(),
+        "expected TAX / LDA ${addr:04X},X"
+    );
+}
+
+#[test]
+fn rom_table_with_u16_index_reads_through_a_pointer_to_the_table() {
+    let items: Vec<String> = (0..300).map(|i| (i % 251).to_string()).collect();
+    let src = format!(
+        r#"
+        game "T" {{ mapper: NROM }}
+        const TBL: u8[300] = [{}]
+        var i: u16 = 290
+        var o: u8 = 0
+        on frame {{ o = TBL[i] }}
+        start Main
+        "#,
+        items.join(", ")
+    );
+    let out = compile_pipeline(&src);
+    let addr = out.link_result.labels["__rom_TBL"];
+    let off = out.link_result.fixed_bank_file_offset + usize::from(addr - 0xC000);
+    assert_eq!(out.rom[off + 290], (290 % 251) as u8);
+    let [lo, hi] = addr.to_le_bytes();
+    // CLC / ADC #<table / STA $FE ... ADC #>table / STA $FF / LDY #0 /
+    // LDA ($FE),Y. Peephole must keep both pointer stores.
+    let start = find(&out.rom, &[0x18, 0x69, lo, 0x85, 0xFE]).expect("pointer low byte");
+    let rest = &out.rom[start..start + 24];
+    assert!(
+        find(rest, &[0x69, hi, 0x85, 0xFF]).is_some(),
+        "pointer high byte"
+    );
+    assert!(
+        find(rest, &[0xA0, 0x00, 0xB1, 0xFE]).is_some(),
+        "LDA ($FE),Y"
+    );
+}
+
+#[test]
+fn rom_table_constant_index_past_255_uses_the_pointer_path() {
+    let items: Vec<String> = (0..260).map(|i| (i % 7).to_string()).collect();
+    let src = format!(
+        r#"
+        game "T" {{ mapper: NROM }}
+        const TBL: u8[260] = [{}]
+        var o: u8 = 0
+        on frame {{ o = TBL[259] }}
+        start Main
+        "#,
+        items.join(", ")
+    );
+    let out = compile_pipeline(&src);
+    let lo = out.link_result.labels["__rom_TBL"].to_le_bytes()[0];
+    assert!(find(&out.rom, &[0x69, lo, 0x85, 0xFE]).is_some());
+}
+
+#[test]
+fn banked_rom_table_lives_in_its_bank_and_is_read_there() {
+    let out = compile_pipeline(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank Data {
+            const TBL: u8[5] = [0xDE, 0xAD, 0xBE, 0xEF, 0x42]
+            fun get(i: u8) -> u8 {
+                return TBL[i]
+            }
+        }
+        var o: u8 = 0
+        on frame { o = get(4) }
+        start Main
+        "#,
+    );
+    // Bank 0 is the first 16 KB after the header, mapped at $8000.
+    let bank = &out.rom[16..16 + 16384];
+    let off = find(bank, &[0xDE, 0xAD, 0xBE, 0xEF, 0x42]).expect("table in bank 0");
+    let [lo, hi] = (0x8000 + off as u16).to_le_bytes();
+    assert!(
+        find(bank, &[0xBD, lo, hi]).is_some(),
+        "the banked function reads the table at its $8000-window address"
+    );
+    let fixed = &out.rom[out.link_result.fixed_bank_file_offset..];
+    assert!(
+        find(fixed, &[0xDE, 0xAD, 0xBE, 0xEF, 0x42]).is_none(),
+        "a banked table must not also land in the fixed bank"
+    );
+}
+
+#[test]
+fn reading_a_banked_rom_table_outside_its_bank_is_e0604() {
+    let (program, diags) = nescript::parser::parse(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank Data {
+            const TBL: u8[2] = [1, 2]
+        }
+        var o: u8 = 0
+        on frame { o = TBL[1] }
+        start Main
+        "#,
+    );
+    assert!(diags.is_empty(), "{diags:?}");
+    let analysis = analyzer::analyze(&program.unwrap());
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|d| d.code == nescript::errors::ErrorCode::E0604),
+        "{:?}",
+        analysis.diagnostics
     );
 }

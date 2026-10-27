@@ -742,9 +742,9 @@ their source:
 @bank(3) const LEVEL_DATA: u8[1024] = [...]
 ```
 
-This is particularly useful for `const` data, which today lands
-wherever the analyzer decides; users sometimes need to pin data
-to a specific bank to avoid bank-switch cost on a hot path.
+A `const` table can already go in a bank by moving it into a
+`bank Foo { ... }` body; the attribute would do the same without
+the restructuring.
 
 ### Priority ranking
 

@@ -161,6 +161,9 @@ pub fn analyze(program: &Program) -> AnalysisResult {
         in_function_body: false,
         current_scope_prefix: None,
         struct_layouts: HashMap::new(),
+        const_values: HashMap::new(),
+        rom_table_banks: HashMap::new(),
+        current_bank: None,
     };
     analyzer.analyze_program(program);
 
@@ -261,6 +264,15 @@ struct Analyzer {
     /// Struct name to layout. Each field has an offset in bytes from
     /// the base address of the struct.
     struct_layouts: HashMap<String, StructLayout>,
+    /// Values of the scalar consts registered so far, so a ROM table
+    /// element can name an earlier const.
+    const_values: HashMap<String, u16>,
+    /// ROM table consts mapped to the switchable bank that holds
+    /// their bytes (`None` for the fixed bank).
+    rom_table_banks: HashMap<String, Option<String>>,
+    /// Bank of the function body being checked; `None` in the fixed
+    /// bank and in state handlers.
+    current_bank: Option<String>,
 }
 
 /// Layout info for a struct type.
@@ -870,7 +882,9 @@ impl Analyzer {
             }
             self.current_return_type.clone_from(&fun.return_type);
             self.in_function_body = true;
+            self.current_bank.clone_from(&fun.bank);
             self.check_block(&fun.body, &state_names);
+            self.current_bank = None;
             self.current_return_type = None;
             self.in_function_body = false;
             self.current_scope_prefix = None;
@@ -1087,6 +1101,7 @@ impl Analyzer {
                 } else {
                     self.emit_undefined_var(name, *span);
                 }
+                self.check_rom_table_bank(name, *span);
                 self.walk_expr_reads(idx);
             }
             Expr::FieldAccess(name, field, span) => {
@@ -1135,6 +1150,11 @@ impl Analyzer {
                             "consider precomputing or using a power-of-2 constant for strength reduction",
                         ),
                     );
+                }
+                if matches!(op, BinOp::Mul | BinOp::Div | BinOp::Mod)
+                    && (self.expr_is_wide(lhs) || self.expr_is_wide(rhs))
+                {
+                    self.check_wide_mul_div(lhs, *op, rhs, *span);
                 }
                 self.walk_expr_reads(lhs);
                 self.walk_expr_reads(rhs);
@@ -1504,7 +1524,41 @@ impl Analyzer {
                         c.span,
                     ));
                 }
-                Expr::ArrayLiteral(..) => {}
+                Expr::ArrayLiteral(elems, _) => {
+                    // A short literal is padded with zeros. u8 elements
+                    // still have to be constant bytes, including names
+                    // of earlier consts.
+                    if matches!(**elem, NesType::U8) {
+                        for item in elems {
+                            match self.eval_const(item) {
+                                Some(v) if v <= 0xFF => {}
+                                Some(v) => {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        ErrorCode::E0201,
+                                        format!(
+                                            "const table '{}' element {v} does not fit in u8",
+                                            c.name
+                                        ),
+                                        item.span(),
+                                    ));
+                                    return;
+                                }
+                                None => {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        ErrorCode::E0201,
+                                        format!(
+                                            "const table '{}' elements must be constant",
+                                            c.name
+                                        ),
+                                        item.span(),
+                                    ));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    self.rom_table_banks.insert(c.name.clone(), c.bank.clone());
+                }
                 _ => {
                     self.diagnostics.push(Diagnostic::error(
                         ErrorCode::E0201,
@@ -1516,6 +1570,8 @@ impl Analyzer {
                     ));
                 }
             }
+        } else if let Some(v) = self.eval_const(&c.value) {
+            self.const_values.insert(c.name.clone(), v);
         }
         self.symbols.insert(
             c.name.clone(),
@@ -1526,6 +1582,57 @@ impl Analyzer {
                 span: c.span,
             },
         );
+    }
+
+    /// Error when code outside a ROM table's bank indexes it: that
+    /// bank is not mapped while the code runs.
+    fn check_rom_table_bank(&mut self, name: &str, span: Span) {
+        if self.resolve_key(name) != name {
+            return;
+        }
+        let Some(Some(bank)) = self.rom_table_banks.get(name) else {
+            return;
+        };
+        if self.current_bank.as_ref() != Some(bank) {
+            let bank = bank.clone();
+            self.diagnostics.push(Diagnostic::error(
+                ErrorCode::E0604,
+                format!(
+                    "const table '{name}' lives in bank '{bank}'; only functions in that \
+                     bank can index it"
+                ),
+                span,
+            ));
+        }
+    }
+
+    /// Evaluate a constant integer expression built from literals,
+    /// earlier scalar consts, and operators.
+    fn eval_const(&self, expr: &Expr) -> Option<u16> {
+        match expr {
+            Expr::IntLiteral(v, _) => Some(*v),
+            Expr::BoolLiteral(b, _) => Some(u16::from(*b)),
+            Expr::Ident(name, _) => self.const_values.get(name).copied(),
+            Expr::BinaryOp(lhs, op, rhs, _) => {
+                let l = self.eval_const(lhs)?;
+                let r = self.eval_const(rhs)?;
+                match op {
+                    BinOp::Add => Some(l.wrapping_add(r)),
+                    BinOp::Sub => Some(l.wrapping_sub(r)),
+                    BinOp::Mul => Some(l.wrapping_mul(r)),
+                    BinOp::Div if r != 0 => Some(l / r),
+                    BinOp::Mod if r != 0 => Some(l % r),
+                    BinOp::BitwiseAnd => Some(l & r),
+                    BinOp::BitwiseOr => Some(l | r),
+                    BinOp::BitwiseXor => Some(l ^ r),
+                    BinOp::ShiftLeft => Some(l.wrapping_shl(u32::from(r))),
+                    BinOp::ShiftRight => Some(l.wrapping_shr(u32::from(r))),
+                    _ => None,
+                }
+            }
+            Expr::Cast(inner, _, _) => self.eval_const(inner),
+            _ => None,
+        }
     }
 
     /// Register a struct declaration. Computes each field's byte
@@ -2371,6 +2478,10 @@ impl Analyzer {
                     self.walk_expr_reads(e);
                     self.check_expr_type(e, &NesType::U8);
                 }
+                if let Some(attr) = &draw.attr {
+                    self.walk_expr_reads(attr);
+                    self.check_expr_type(attr, &NesType::U8);
+                }
             }
             Statement::Return(Some(expr), span) => {
                 self.walk_expr_reads(expr);
@@ -2495,11 +2606,23 @@ impl Analyzer {
                 self.walk_expr_reads(cond);
                 self.check_expr_type(cond, &NesType::Bool);
             }
-            Statement::InlineAsm(_, _) | Statement::RawAsm(_, _) => {
-                // Inline assembly is treated as an opaque block. The
-                // codegen parses and validates the body; analysis has
-                // nothing to check.
+            Statement::InlineAsm(body, _) => {
+                // The codegen parses and validates the body. A `{name}`
+                // placeholder counts as a use of that variable, so it
+                // doesn't draw an unused-variable warning.
+                let mut rest = body.as_str();
+                while let Some(start) = rest.find('{') {
+                    let Some(len) = rest[start + 1..].find('}') else {
+                        break;
+                    };
+                    let name = rest[start + 1..start + 1 + len].trim();
+                    if self.symbol_exists(name) {
+                        self.mark_var_used(name);
+                    }
+                    rest = &rest[start + 1 + len..];
+                }
             }
+            Statement::RawAsm(_, _) => {}
             Statement::Play(name, span) => {
                 // `play Name` is valid if the name refers to a
                 // declared sfx block or to a builtin effect. Anything
@@ -2623,6 +2746,62 @@ impl Analyzer {
                 );
             }
         }
+    }
+
+    /// True if the IR lowers `expr` to a 16-bit value: a 16-bit operand
+    /// makes arithmetic and bitwise results 16-bit, and a shift takes
+    /// the width of its left side.
+    fn expr_is_wide(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::BinaryOp(lhs, op, rhs, _) => match op {
+                BinOp::ShiftLeft | BinOp::ShiftRight => self.expr_is_wide(lhs),
+                BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Mod
+                | BinOp::BitwiseAnd
+                | BinOp::BitwiseOr
+                | BinOp::BitwiseXor => self.expr_is_wide(lhs) || self.expr_is_wide(rhs),
+                _ => false,
+            },
+            Expr::UnaryOp(UnaryOp::Not, _, _) => false,
+            Expr::UnaryOp(_, inner, _) => self.expr_is_wide(inner),
+            _ => matches!(self.infer_type(expr), Some(NesType::U16 | NesType::I16)),
+        }
+    }
+
+    /// The IR has no 16-bit multiply or divide routine: a 16-bit
+    /// multiply needs a constant operand (shifts and adds), and a
+    /// 16-bit divide or modulo an unsigned power-of-two divisor.
+    fn check_wide_mul_div(&mut self, lhs: &Expr, op: BinOp, rhs: &Expr, span: Span) {
+        let signed = |t: Option<NesType>| matches!(t, Some(NesType::I8 | NesType::I16));
+        let ok = match op {
+            BinOp::Mul => self.eval_const(lhs).is_some() || self.eval_const(rhs).is_some(),
+            _ => {
+                self.eval_const(rhs).is_some_and(u16::is_power_of_two)
+                    && !signed(self.infer_type(lhs))
+            }
+        };
+        if ok {
+            return;
+        }
+        let (what, help) = match op {
+            BinOp::Mul => (
+                "16-bit multiply needs a constant operand",
+                "multiply by a constant, or narrow both operands to u8",
+            ),
+            BinOp::Div => (
+                "16-bit divide needs an unsigned power-of-two divisor",
+                "divide by a power of two, or narrow both operands to u8",
+            ),
+            _ => (
+                "16-bit modulo needs an unsigned power-of-two divisor",
+                "use a power-of-two modulus, or narrow both operands to u8",
+            ),
+        };
+        self.diagnostics
+            .push(Diagnostic::error(ErrorCode::E0203, what, span).with_help(help));
     }
 
     fn infer_type(&self, expr: &Expr) -> Option<NesType> {
@@ -2861,6 +3040,9 @@ fn collect_calls_stmt(stmt: &Statement, calls: &mut Vec<String>) {
             collect_calls_expr(&draw.y, calls);
             for e in [&draw.frame, &draw.attr].into_iter().flatten() {
                 collect_calls_expr(e, calls);
+            }
+            if let Some(a) = &draw.attr {
+                collect_calls_expr(a, calls);
             }
         }
         Statement::Scroll(x, y, _) => {

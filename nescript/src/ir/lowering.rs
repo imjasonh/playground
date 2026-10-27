@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::*;
 use crate::analyzer::AnalysisResult;
 use crate::parser::ast::*;
+use crate::runtime::RETURN_HI;
 
 /// Marker prefix the lowering prepends to the body of a `raw asm`
 /// block, telling the codegen to skip `{var}` substitution. Uses
@@ -49,6 +50,15 @@ struct LoweringContext {
     /// `try_inline_call_stmt` below; the feature was added on
     /// the War bug-cleanup branch (see `git log`).
     inline_bodies: HashMap<String, CapturedInline>,
+    /// For each user function, whether each parameter is 16 bits.
+    /// A call passes a 16-bit argument as two byte arguments, low
+    /// byte first.
+    wide_params: HashMap<String, Vec<bool>>,
+    /// User functions that return a 16-bit value. The high byte
+    /// comes back in [`RETURN_HI`].
+    wide_returns: HashSet<String>,
+    /// True while lowering a function that returns a 16-bit value.
+    returns_wide: bool,
     /// Substitution stack for nested inline expansions. The top
     /// frame is the active substitution map — `Expr::Ident(name)`
     /// lookups check it first and, if the name is present, use
@@ -196,6 +206,9 @@ impl LoweringContext {
             var_types,
             current_scope_prefix: None,
             inline_bodies: HashMap::new(),
+            wide_params: HashMap::new(),
+            wide_returns: HashSet::new(),
+            returns_wide: false,
             inline_subs_stack: Vec::new(),
             inline_const_args_stack: Vec::new(),
             next_var_id,
@@ -649,6 +662,7 @@ impl LoweringContext {
             self.rom_data.push(IrRomBlock {
                 label: label.clone(),
                 data,
+                bank: c.bank.clone(),
             });
             self.rom_arrays
                 .insert(c.name.clone(), (label, elem.as_ref().clone()));
@@ -704,6 +718,17 @@ impl LoweringContext {
         // who write `inline fun` expecting the keyword to be
         // enforced.
         self.capture_inline_bodies(program);
+        for fun in &program.functions {
+            let wide = fun
+                .params
+                .iter()
+                .map(|p| matches!(p.param_type, NesType::U16 | NesType::I16))
+                .collect();
+            self.wide_params.insert(fun.name.clone(), wide);
+            if matches!(fun.return_type, Some(NesType::U16 | NesType::I16)) {
+                self.wide_returns.insert(fun.name.clone());
+            }
+        }
 
         // Register state-local variables as IR globals so the codegen
         // resolves their addresses through the same `ir.globals`
@@ -747,6 +772,7 @@ impl LoweringContext {
 
     fn lower_function(&mut self, fun: &FunDecl) {
         self.next_temp = 0;
+        self.returns_wide = self.wide_returns.contains(&fun.name);
         // Clear the wide-temp tracking map. `wide_hi` records "this
         // low temp has its high byte at this other temp" entries
         // produced by `make_wide`; without clearing it, the entries
@@ -1115,6 +1141,10 @@ impl LoweringContext {
             }
             Statement::Return(value, _) => {
                 let temp = value.as_ref().map(|e| self.lower_expr(e));
+                if let (Some(t), true) = (temp, self.returns_wide) {
+                    let (_, hi) = self.widen(t);
+                    self.emit(IrOp::Poke(RETURN_HI, hi));
+                }
                 self.end_block(IrTerminator::Return(temp));
                 let cont = self.fresh_label("after_return");
                 self.start_block(&cont);
@@ -1276,7 +1306,7 @@ impl LoweringContext {
                         if self.try_inline_call_stmt(name, args) {
                             return;
                         }
-                        let arg_temps: Vec<_> = args.iter().map(|a| self.lower_expr(a)).collect();
+                        let arg_temps = self.lower_call_args(name, args);
                         self.emit(IrOp::Call(None, name.clone(), arg_temps));
                     }
                 }
@@ -1712,6 +1742,121 @@ impl LoweringContext {
         self.wide_hi.insert(lo, hi);
     }
 
+    /// Lower call arguments to byte temps. A 16-bit parameter takes
+    /// two: the low byte, then the high byte.
+    fn lower_call_args(&mut self, name: &str, args: &[Expr]) -> Vec<IrTemp> {
+        let wide = self.wide_params.get(name).cloned().unwrap_or_default();
+        let mut temps = Vec::with_capacity(args.len());
+        for (i, arg) in args.iter().enumerate() {
+            let t = self.lower_expr(arg);
+            if wide.get(i).copied().unwrap_or(false) {
+                let (lo, hi) = self.widen(t);
+                temps.push(lo);
+                temps.push(hi);
+            } else {
+                temps.push(t);
+            }
+        }
+        temps
+    }
+
+    /// Shift a 16-bit value by a constant count, built from byte
+    /// shifts. Bits move between the two bytes, so `w >> 8` yields
+    /// the high byte and `w << 8` moves the low byte up.
+    fn lower_wide_shift(&mut self, value: IrTemp, left: bool, count: u16) -> IrTemp {
+        let (lo, hi) = self.widen(value);
+        // `from` is the source byte whose bits cross into the other
+        // byte, `into` the source byte they cross into.
+        let (from, into) = if left { (lo, hi) } else { (hi, lo) };
+        let forward = |dest, src, by| {
+            if left {
+                IrOp::ShiftLeft(dest, src, by)
+            } else {
+                IrOp::ShiftRight(dest, src, by)
+            }
+        };
+        let backward = |dest, src, by| {
+            if left {
+                IrOp::ShiftRight(dest, src, by)
+            } else {
+                IrOp::ShiftLeft(dest, src, by)
+            }
+        };
+        // Result bytes, named by the source byte they line up with.
+        let (res_from, res_into) = if count >= 16 {
+            let zero = self.fresh_temp();
+            self.emit(IrOp::LoadImm(zero, 0));
+            (zero, zero)
+        } else if count >= 8 {
+            let zero = self.fresh_temp();
+            self.emit(IrOp::LoadImm(zero, 0));
+            let moved = self.fresh_temp();
+            self.emit(forward(moved, from, (count - 8) as u8));
+            (zero, moved)
+        } else {
+            let count = count as u8;
+            let kept = self.fresh_temp();
+            self.emit(forward(kept, from, count));
+            let own = self.fresh_temp();
+            self.emit(forward(own, into, count));
+            let carried = self.fresh_temp();
+            self.emit(backward(carried, from, 8 - count));
+            let joined = self.fresh_temp();
+            self.emit(IrOp::Or(joined, own, carried));
+            (kept, joined)
+        };
+        let (res_lo, res_hi) = if left {
+            (res_from, res_into)
+        } else {
+            (res_into, res_from)
+        };
+        self.make_wide(res_lo, res_hi);
+        res_lo
+    }
+
+    /// Multiply a 16-bit value by a constant, modulo 2^16: one shifted
+    /// copy of `value` per set bit of `c`, summed with `Add16`.
+    fn lower_wide_mul_const(&mut self, value: IrTemp, c: u16) -> IrTemp {
+        let (lo, hi) = self.widen(value);
+        self.make_wide(lo, hi);
+        let mut acc: Option<IrTemp> = None;
+        for k in 0..16 {
+            if (c >> k) & 1 == 0 {
+                continue;
+            }
+            let term = if k == 0 {
+                lo
+            } else {
+                self.lower_wide_shift(lo, true, k)
+            };
+            acc = Some(match acc {
+                None => term,
+                Some(a) => {
+                    let (a_lo, a_hi) = self.widen(a);
+                    let (b_lo, b_hi) = self.widen(term);
+                    let d_lo = self.fresh_temp();
+                    let d_hi = self.fresh_temp();
+                    self.emit(IrOp::Add16 {
+                        d_lo,
+                        d_hi,
+                        a_lo,
+                        a_hi,
+                        b_lo,
+                        b_hi,
+                    });
+                    self.make_wide(d_lo, d_hi);
+                    d_lo
+                }
+            });
+        }
+        acc.unwrap_or_else(|| {
+            let zero = self.fresh_temp();
+            self.emit(IrOp::LoadImm(zero, 0));
+            self.make_wide(zero, zero);
+            zero
+        })
+    }
+
     /// True if `t` was produced as the low byte of a wide value.
     fn is_wide(&self, t: IrTemp) -> bool {
         self.wide_hi.contains_key(&t)
@@ -1793,6 +1938,11 @@ impl LoweringContext {
                 if let Some(&val) = self.const_values.get(name) {
                     let t = self.fresh_temp();
                     self.emit(IrOp::LoadImm(t, val as u8));
+                    if val > 0xFF {
+                        let hi = self.fresh_temp();
+                        self.emit(IrOp::LoadImm(hi, (val >> 8) as u8));
+                        self.make_wide(t, hi);
+                    }
                     return t;
                 }
                 let var_id = self.get_or_create_var(name);
@@ -1824,9 +1974,34 @@ impl LoweringContext {
                 if self.scoped_key(name) == *name && self.rom_arrays.contains_key(name) =>
             {
                 let (label, elem_ty) = self.rom_arrays[name].clone();
-                let idx = self.lower_expr(index);
+                // A u16 index, or a constant past 255, addresses tables
+                // longer than a page through a pointer. An 8-bit index
+                // stays `LDA label,X`.
+                let (idx, idx_hi) = match self.eval_const(index) {
+                    Some(k) if k > 0xFF => {
+                        let lo = self.fresh_temp();
+                        self.emit(IrOp::LoadImm(lo, (k & 0xFF) as u8));
+                        let hi = self.fresh_temp();
+                        self.emit(IrOp::LoadImm(hi, (k >> 8) as u8));
+                        (lo, Some(hi))
+                    }
+                    _ => {
+                        let idx = self.lower_expr(index);
+                        let hi = self.wide_hi.get(&idx).copied();
+                        (idx, hi)
+                    }
+                };
                 let t = self.fresh_temp();
-                self.emit(IrOp::RomArrayLoad(t, label, idx));
+                if let Some(hi) = idx_hi {
+                    self.emit(IrOp::RomLoad {
+                        dest: t,
+                        label,
+                        idx,
+                        idx_hi: hi,
+                    });
+                } else {
+                    self.emit(IrOp::RomArrayLoad(t, label, idx));
+                }
                 if matches!(elem_ty, NesType::I8) {
                     self.mark_signed(t);
                 }
@@ -1967,9 +2142,14 @@ impl LoweringContext {
                 if let Some(t) = self.try_inline_call_expr(name, args) {
                     return t;
                 }
-                let arg_temps: Vec<_> = args.iter().map(|a| self.lower_expr(a)).collect();
+                let arg_temps = self.lower_call_args(name, args);
                 let t = self.fresh_temp();
                 self.emit(IrOp::Call(Some(t), name.clone(), arg_temps));
+                if self.wide_returns.contains(name) {
+                    let hi = self.fresh_temp();
+                    self.emit(IrOp::Peek(hi, RETURN_HI));
+                    self.make_wide(t, hi);
+                }
                 t
             }
             Expr::ButtonEdge(player, button, released, _) => {
@@ -2031,6 +2211,11 @@ impl LoweringContext {
                 // widening uses the same `widen()` path as everywhere
                 // else.
                 let t = self.lower_expr(inner);
+                if matches!(target, NesType::U16 | NesType::I16) && !self.is_wide(t) {
+                    // Widen now, so `(b as u16) << 8` shifts 16 bits.
+                    let (lo, hi) = self.widen(t);
+                    self.make_wide(lo, hi);
+                }
                 match target {
                     NesType::I8 | NesType::I16 => self.mark_signed(t),
                     NesType::U8 | NesType::U16 => {
@@ -2083,6 +2268,9 @@ impl LoweringContext {
         if matches!(op, BinOp::ShiftLeft | BinOp::ShiftRight) {
             if let Some(count) = self.eval_const(right) {
                 let l = self.lower_expr(left);
+                if self.is_wide(l) {
+                    return self.lower_wide_shift(l, op == BinOp::ShiftLeft, count);
+                }
                 let t = self.fresh_temp();
                 // Shifting by ≥ 8 zeroes an 8-bit value; clamp so the
                 // codegen doesn't emit an absurd number of ASL/LSR.
@@ -2218,10 +2406,55 @@ impl LoweringContext {
                     });
                     return t;
                 }
-                // Other operators fall through to the 8-bit path
-                // below, truncating the wide operand to its low
-                // byte. This is intentional for bitwise/shift ops
-                // which are rarely used on u16 values in NES code.
+                BinOp::BitwiseAnd | BinOp::BitwiseOr | BinOp::BitwiseXor => {
+                    let byte_op = |d, a, b| match op {
+                        BinOp::BitwiseAnd => IrOp::And(d, a, b),
+                        BinOp::BitwiseOr => IrOp::Or(d, a, b),
+                        _ => IrOp::Xor(d, a, b),
+                    };
+                    let d_hi = self.fresh_temp();
+                    self.emit(byte_op(t, a_lo, b_lo));
+                    self.emit(byte_op(d_hi, a_hi, b_hi));
+                    self.make_wide(t, d_hi);
+                    return t;
+                }
+                BinOp::Mul => {
+                    // The analyzer rejects a wide multiply without a
+                    // constant operand.
+                    let constant = self
+                        .eval_const(right)
+                        .map(|c| (l, c))
+                        .or_else(|| self.eval_const(left).map(|c| (r, c)));
+                    if let Some((x, c)) = constant {
+                        let p = self.lower_wide_mul_const(x, c);
+                        if sign == Signedness::Signed {
+                            self.mark_signed(p);
+                            self.mark_signed(self.wide_hi[&p]);
+                        }
+                        return p;
+                    }
+                }
+                BinOp::Div | BinOp::Mod => {
+                    // The analyzer allows only an unsigned power-of-two
+                    // divisor here.
+                    let divisor = self.eval_const(right).filter(|c| c.is_power_of_two());
+                    if let Some(c) = divisor.filter(|_| sign == Signedness::Unsigned) {
+                        if op == BinOp::Div {
+                            return self.lower_wide_shift(l, false, c.trailing_zeros() as u16);
+                        }
+                        let mask = c - 1;
+                        let (m_lo, m_hi) = (self.fresh_temp(), self.fresh_temp());
+                        self.emit(IrOp::LoadImm(m_lo, mask as u8));
+                        self.emit(IrOp::LoadImm(m_hi, (mask >> 8) as u8));
+                        let d_hi = self.fresh_temp();
+                        self.emit(IrOp::And(t, a_lo, m_lo));
+                        self.emit(IrOp::And(d_hi, a_hi, m_hi));
+                        self.make_wide(t, d_hi);
+                        return t;
+                    }
+                }
+                // Variable shifts fall through to the 8-bit path below,
+                // truncating the wide operand to its low byte.
                 _ => {}
             }
         }

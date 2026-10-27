@@ -1383,6 +1383,25 @@ fn parse_bank_decl() {
     assert_eq!(prog.banks[0].bank_type, BankType::Prg);
 }
 
+#[test]
+fn parse_const_inside_bank_body() {
+    let src = r#"
+        game "Test" { mapper: MMC3 }
+        bank Data {
+            const TBL: u8[2] = [7, 9]
+            fun get() -> u8 { return TBL[0] }
+        }
+        on frame { wait_frame }
+        start Main
+    "#;
+    let prog = parse_ok(src);
+    assert_eq!(prog.banks.len(), 1);
+    assert_eq!(prog.constants.len(), 1);
+    assert_eq!(prog.constants[0].name, "TBL");
+    assert_eq!(prog.constants[0].bank.as_deref(), Some("Data"));
+    assert_eq!(prog.functions[0].bank.as_deref(), Some("Data"));
+}
+
 // ── Edge cases and regression tests ──
 
 #[test]

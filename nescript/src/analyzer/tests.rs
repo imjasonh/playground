@@ -1083,6 +1083,55 @@ fn analyze_break_outside_loop() {
 }
 
 #[test]
+fn analyze_bool_function_call_is_a_condition() {
+    let (prog, diags) = parser::parse(
+        r#"
+        game "Test" { mapper: NROM }
+        var n: u8 = 0
+        fun ready() -> bool { return n > 3 }
+        on frame {
+            if ready() { n = 0 }
+        }
+        start Main
+    "#,
+    );
+    assert!(diags.is_empty(), "parse errors: {diags:?}");
+    let result = analyze(&prog.unwrap());
+    assert!(
+        result.diagnostics.iter().all(|d| !d.is_error()),
+        "a bool function should work as a condition: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
+fn analyze_inline_asm_placeholder_counts_as_a_use() {
+    let (prog, diags) = parser::parse(
+        r#"
+        game "Test" { mapper: NROM }
+        var shadow: u8 = 0
+        on frame {
+            asm {
+                LDA {shadow}
+                STA $2005
+            }
+        }
+        start Main
+    "#,
+    );
+    assert!(diags.is_empty(), "parse errors: {diags:?}");
+    let result = analyze(&prog.unwrap());
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == ErrorCode::W0103 && d.message.contains("shadow")),
+        "a variable read from asm should not be unused: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
 fn analyze_unused_variable_warning() {
     // `ghost` is declared but never read (only the initializer runs).
     // It should trigger a W0103 warning.
@@ -2889,5 +2938,164 @@ fn analyze_collides_at_wrong_arg_count_errors() {
     assert!(
         errors.contains(&ErrorCode::E0203),
         "expected E0203 for collides_at arity mismatch, got {errors:?}"
+    );
+}
+
+// ── ROM tables ──
+
+const ROM_TABLE_FRAME: &str = "
+    var o: u8 = 0
+    on frame { o = TBL[1] }
+    start Main
+";
+
+fn rom_table_program(decl: &str) -> String {
+    format!("game \"T\" {{ mapper: MMC3 }}\n{decl}\n{ROM_TABLE_FRAME}")
+}
+
+#[test]
+fn rom_table_in_the_fixed_bank_is_readable_anywhere() {
+    analyze_ok(&rom_table_program("const TBL: u8[3] = [1, 2, 3]"));
+}
+
+#[test]
+fn rom_table_elements_can_name_earlier_consts() {
+    analyze_ok(&rom_table_program(
+        "const BASE: u8 = 10\nconst TBL: u8[3] = [BASE, BASE + 1, BASE * 2]",
+    ));
+}
+
+#[test]
+fn rom_table_length_mismatch_is_e0201() {
+    // A short literal is padded with zeros. A literal longer than the
+    // declared length is an error.
+    let errors = analyze_errors(&rom_table_program("const TBL: u8[2] = [1, 2, 3]"));
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn rom_table_element_over_255_is_e0201() {
+    let errors = analyze_errors(&rom_table_program("const TBL: u8[2] = [1, 256]"));
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn rom_table_with_non_u8_elements_is_e0201() {
+    let errors = analyze_errors(&rom_table_program("const TBL: u16[2] = [1, 2]"));
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn rom_table_with_non_constant_element_is_e0201() {
+    let errors = analyze_errors(
+        r#"
+        game "T" { mapper: NROM }
+        var v: u8 = 0
+        const TBL: u8[2] = [1, v]
+        var o: u8 = 0
+        on frame { o = TBL[1] }
+        start Main
+        "#,
+    );
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn writing_a_rom_table_is_e0203() {
+    let errors = analyze_errors(
+        r#"
+        game "T" { mapper: NROM }
+        const TBL: u8[2] = [1, 2]
+        on frame { TBL[0] = 5 }
+        start Main
+        "#,
+    );
+    assert!(errors.contains(&ErrorCode::E0203), "{errors:?}");
+}
+
+#[test]
+fn banked_rom_table_read_from_a_state_handler_is_e0604() {
+    let errors = analyze_errors(&rom_table_program(
+        "bank Data {\n const TBL: u8[2] = [1, 2]\n}",
+    ));
+    assert!(errors.contains(&ErrorCode::E0604), "{errors:?}");
+}
+
+#[test]
+fn banked_rom_table_read_from_another_bank_is_e0604() {
+    let errors = analyze_errors(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank A {
+            const TBL: u8[2] = [1, 2]
+        }
+        bank B {
+            fun get() -> u8 {
+                return TBL[1]
+            }
+        }
+        var o: u8 = 0
+        on frame { o = get() }
+        start Main
+        "#,
+    );
+    assert!(errors.contains(&ErrorCode::E0604), "{errors:?}");
+}
+
+#[test]
+fn banked_rom_table_read_from_its_own_bank_is_allowed() {
+    analyze_ok(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank A {
+            const TBL: u8[2] = [1, 2]
+            fun get() -> u8 {
+                return TBL[1]
+            }
+        }
+        var o: u8 = 0
+        on frame { o = get() }
+        start Main
+        "#,
+    );
+}
+
+#[test]
+fn analyze_u16_multiply_and_divide_need_constant_operands() {
+    let errors = analyze_errors(
+        r#"
+        game "Test" { mapper: NROM }
+        var a: u16 = 0
+        var b: u8 = 2
+        var r: u16 = 0
+        on frame {
+            r = a * b
+            r = (a + 1) / b
+            r = a % 10
+        }
+        start Main
+    "#,
+    );
+    let wide = errors.iter().filter(|e| **e == ErrorCode::E0203).count();
+    assert_eq!(wide, 3, "{errors:?}");
+}
+
+#[test]
+fn analyze_u16_multiply_by_constant_and_power_of_two_divide_are_allowed() {
+    analyze_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var a: u16 = 0
+        var b: u8 = 2
+        var r: u16 = 0
+        on frame {
+            r = a * 240
+            r = 3 * a
+            r = a / 8
+            r = a % 32
+            r = (a as u8) * b
+        }
+        start Main
+    "#,
     );
 }

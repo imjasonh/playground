@@ -497,6 +497,10 @@ fn collect_source_temps(op: &IrOp, used: &mut HashSet<IrTemp>) {
         IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => {
             used.insert(*idx);
         }
+        IrOp::RomLoad { idx, idx_hi, .. } => {
+            used.insert(*idx);
+            used.insert(*idx_hi);
+        }
         IrOp::ArrayStore(_, idx, val) => {
             used.insert(*idx);
             used.insert(*val);
@@ -513,6 +517,9 @@ fn collect_source_temps(op: &IrOp, used: &mut HashSet<IrTemp>) {
             used.insert(*y);
             for t in [frame, attr].into_iter().flatten() {
                 used.insert(*t);
+            }
+            if let Some(a) = attr {
+                used.insert(*a);
             }
         }
         IrOp::Scroll(x, y) => {
@@ -676,6 +683,7 @@ fn op_dest(op: &IrOp) -> Option<IrTemp> {
         | IrOp::CmpGtEq(d, _, _, _)
         | IrOp::ArrayLoad(d, _, _)
         | IrOp::RomArrayLoad(d, _, _) => Some(*d),
+        IrOp::RomLoad { dest, .. } => Some(*dest),
         IrOp::Call(dest, _, _) => *dest,
         IrOp::ReadInput(d, _) => Some(*d),
         IrOp::ReadInputEdge { dest, .. } => Some(*dest),
