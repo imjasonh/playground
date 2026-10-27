@@ -2774,11 +2774,7 @@ impl Analyzer {
                 "rand16" => Some(NesType::U16),
                 "collides_at" => Some(NesType::Bool),
                 _ => match self.function_return_types.get(name) {
-<<<<<<< HEAD
                     Some(Some(ty)) => Some(ty.clone()),
-=======
-                    Some(Some(t)) => Some(t.clone()),
->>>>>>> a14a2e3d (nescript: type a call by its function's return type)
                     _ => Some(NesType::U8),
                 },
             },

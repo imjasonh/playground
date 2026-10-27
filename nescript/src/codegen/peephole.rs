@@ -5,6 +5,7 @@
 //! IR codegen's zero-page slot assumptions.
 
 use crate::asm::{AddressingMode, Instruction, Opcode};
+use std::collections::HashMap;
 
 /// Run all peephole passes until fixed point.
 pub fn optimize(instructions: &mut Vec<Instruction>) {
@@ -375,8 +376,6 @@ fn changed(before: &[(Opcode, AddressingMode)], after: &[Instruction]) -> bool {
 /// The other peephole passes then pick up the now-dead `STA slot`
 /// and drop it.
 fn copy_propagate_temps(instructions: &mut [Instruction]) {
-    use std::collections::HashMap;
-
     // slot -> source of the most recent STA into that slot.
     let mut temp_source: HashMap<u8, Source> = HashMap::new();
     // Track what A currently holds so we can decide whether an STA
@@ -628,11 +627,12 @@ enum AValue {
 /// final store-to-user-variable covers the actual need; the intermediate
 /// store-to-temp is dead.
 fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
-    // Walk forward. For each `STA slot` where slot is a temp, look
-    // ahead through the rest of the current function (bounded by the
-    // next `__ir_fn_` label or EOF). If no subsequent instruction
-    // reads the slot before the function ends or the slot is
-    // overwritten, the STA is dead.
+    // For each `STA slot` where slot is a temp, follow every control
+    // path out of the store within its function. The store is live
+    // if some path reads the slot before writing it again. The temp
+    // allocator reuses slots, so a write in a sibling block or a
+    // read behind a back edge has to be judged by where control can
+    // actually go, not by instruction order.
     //
     // IR temp slots are assigned uniquely per IR op within a function
     // (the IR codegen resets `next_temp_slot` to 0 at each function
@@ -942,6 +942,34 @@ mod tests {
         assert_eq!(insts.len(), 2);
         assert_eq!(insts[0].opcode, CLC);
         assert_eq!(insts[1].opcode, RTS);
+    }
+
+    #[test]
+    fn keeps_sta_when_a_sibling_block_writes_the_slot() {
+        // The right side of `a and b` stores its result and jumps to
+        // the join; the false block writes the same slot. The join's
+        // read keeps both stores.
+        let label = |n: &str| Instruction::new(NOP, AM::Label(n.to_string()));
+        let mut insts = vec![
+            label("__ir_fn_chk"),
+            Instruction::new(LDA, AM::ZeroPage(0x04)),
+            Instruction::new(ORA, AM::Immediate(0)),
+            Instruction::new(STA, AM::ZeroPage(0x82)),
+            Instruction::new(JMP, AM::Label("end".to_string())),
+            label("false"),
+            Instruction::new(LDA, AM::Immediate(0)),
+            Instruction::new(STA, AM::ZeroPage(0x82)),
+            label("end"),
+            Instruction::new(LDA, AM::ZeroPage(0x82)),
+            Instruction::new(STA, AM::ZeroPage(0x12)),
+            Instruction::new(RTS, AM::Implied),
+        ];
+        optimize(&mut insts);
+        let stores = insts
+            .iter()
+            .filter(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x82))
+            .count();
+        assert_eq!(stores, 2, "both stores feed the join: {insts:?}");
     }
 
     #[test]
