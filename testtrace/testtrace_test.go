@@ -2,6 +2,7 @@ package testtrace_test
 
 import (
 	"context"
+	"flag"
 	"os"
 	"runtime"
 	"strconv"
@@ -59,11 +60,9 @@ func span(t testing.TB, name string) tracetest.SpanStub {
 }
 
 // waitForSpans polls until f returns true, or fails t after two seconds.
-// The automatic binding path ends a root span from a context.AfterFunc
-// callback, which the context package always runs on a new goroutine, so
-// that span can be exported slightly after the subtest that triggered it
-// returns. Hook, by contrast, ends its span synchronously from t.Cleanup,
-// so tests that use Hook don't need this.
+// The automatic path ends the test's span from a context.AfterFunc
+// callback on another goroutine, so the span can be exported after the
+// subtest returns.
 func waitForSpans(t testing.TB, f func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -75,11 +74,9 @@ func waitForSpans(t testing.TB, f func() bool) {
 	}
 }
 
-// parentOf returns the one exported span whose SpanID matches child's
-// parent. Unlike looking a span up by name, this holds even when two spans
-// share a name, which happens for automatically bound root spans, since
-// testtrace names them after the call site rather than the test name, and
-// two tests can share a call site (for example, a shared test helper).
+// parentOf returns the exported span that is child's parent, looked up by
+// span ID, because automatic spans of tests that share a function share a
+// name.
 func parentOf(t testing.TB, child tracetest.SpanStub) tracetest.SpanStub {
 	t.Helper()
 	if !child.Parent.IsValid() {
@@ -219,13 +216,6 @@ func TestGoroutineOutlivingTestIsNotStitched(t *testing.T) {
 	}
 }
 
-func TestUnhookedTestIsNotStitched(t *testing.T) {
-	detachedWork(t.Name() + "/app")
-	if s := span(t, t.Name()+"/app"); s.Parent.IsValid() {
-		t.Errorf("span in an unhooked test has parent %s", s.Parent.SpanID())
-	}
-}
-
 func TestHookReturnsContextWithTestSpan(t *testing.T) {
 	var got trace.SpanContext
 	test := hooked(t, "test", func(t *testing.T, ctx context.Context) {
@@ -252,10 +242,8 @@ func goroutineID() int64 {
 	return id
 }
 
-// autoRun runs f as a subtest that uses t.Context() but never calls Hook,
-// and returns the subtest's own name, for spans f names itself. The
-// subtest's t.Context() is canceled, and so its automatic root span is
-// ended and exported, by the time autoRun returns.
+// autoRun runs f as a subtest without Hook, passing it t.Context(), and
+// returns the subtest's name.
 func autoRun(t *testing.T, name string, f func(t *testing.T, ctx context.Context)) (subName string) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
@@ -265,9 +253,8 @@ func autoRun(t *testing.T, name string, f func(t *testing.T, ctx context.Context
 	return subName
 }
 
-// TestAutomaticBindingWithoutHook covers the zero-touch path: the test
-// never calls Hook, but it passes t.Context() to traced code, which is
-// enough to start and parent a span on the test.
+// TestAutomaticBindingWithoutHook checks that passing t.Context() to traced
+// code is enough to start the test's span and parent a span on it.
 func TestAutomaticBindingWithoutHook(t *testing.T) {
 	sub := autoRun(t, "direct", func(t *testing.T, ctx context.Context) {
 		detachedWorkWithContext(ctx, t.Name()+"/direct")
@@ -278,9 +265,8 @@ func TestAutomaticBindingWithoutHook(t *testing.T) {
 	}
 }
 
-// TestAutomaticBindingThroughAppCode covers passing t.Context() into a
-// helper that starts the span, not the test body itself: the stack walk
-// has to see through that indirection.
+// TestAutomaticBindingThroughAppCode checks that the stack walk finds the
+// test when a helper, not the test body, starts the span.
 func TestAutomaticBindingThroughAppCode(t *testing.T) {
 	sub := autoRun(t, "through-app-code", func(t *testing.T, ctx context.Context) {
 		func() { // an extra call frame, standing in for application code
@@ -290,11 +276,9 @@ func TestAutomaticBindingThroughAppCode(t *testing.T) {
 	parentOf(t, span(t, sub+"/via-helper")) // only fails if there's no parent at all
 }
 
-// TestAutomaticBindingCoversBackgroundGoroutines checks that, once the
-// automatic path binds the test's goroutine, a goroutine the test starts
-// afterward inherits the binding even though it uses context.Background(),
-// never t.Context(), and that it gets the same root as a call made directly
-// on the test's own goroutine.
+// TestAutomaticBindingCoversBackgroundGoroutines checks that a goroutine
+// the test starts after the automatic path binds it inherits the binding,
+// even from context.Background().
 func TestAutomaticBindingCoversBackgroundGoroutines(t *testing.T) {
 	sub := autoRun(t, "background", func(t *testing.T, ctx context.Context) {
 		detachedWorkWithContext(ctx, t.Name()+"/first") // triggers the automatic bind
@@ -305,11 +289,9 @@ func TestAutomaticBindingCoversBackgroundGoroutines(t *testing.T) {
 	assertChild(t, span(t, sub+"/background"), parentOf(t, span(t, sub+"/first")))
 }
 
-// TestAutomaticBindingParallelTestsKeepTheirOwnParent is the automatic-path
-// counterpart of TestParallelTestsKeepTheirOwnParent: no test calls Hook.
-// Every parallel subtest shares the same closure, so testtrace's stack walk
-// gives their automatic root spans the same name; the test instead checks
-// that no two parallel subtests' app spans share a parent span.
+// TestAutomaticBindingParallelTestsKeepTheirOwnParent is
+// TestParallelTestsKeepTheirOwnParent without Hook. The subtests share one
+// closure, so their spans share a name, and the test compares span IDs.
 func TestAutomaticBindingParallelTestsKeepTheirOwnParent(t *testing.T) {
 	const n = 16
 	names := make([]string, n)
@@ -335,23 +317,26 @@ func TestAutomaticBindingParallelTestsKeepTheirOwnParent(t *testing.T) {
 	}
 }
 
-// FuzzAutomaticBinding checks that the automatic path covers a fuzz target
-// too: testing.F.Fuzz runs each corpus entry with go tRunner(t, ...), the
-// same way a subtest does, so it needs no special case. `go test`, with no
-// -fuzz flag, runs the seed corpus below as a regular subtest, synchronously
-// within f.Fuzz, so the check below runs after that subtest has returned.
+// FuzzAutomaticBinding checks that F.Fuzz, which runs each input with
+// testing.tRunner, gets a span named after the function passed to F.Fuzz.
+// Without -fuzz, F.Fuzz runs the seed corpus before it returns. With -fuzz,
+// worker processes run the inputs, so this process exports no spans.
 func FuzzAutomaticBinding(f *testing.F) {
 	f.Add("seed")
 	f.Fuzz(func(t *testing.T, s string) {
 		detachedWorkWithContext(t.Context(), t.Name()+"/inner")
 	})
-	s := span(f, "FuzzAutomaticBinding/seed#0/inner")
-	parentOf(f, s) // only fails if there's no parent at all
+	if flag.Lookup("test.fuzz").Value.String() != "" {
+		return
+	}
+	root := parentOf(f, span(f, "FuzzAutomaticBinding/seed#0/inner"))
+	if want := pkg + ".FuzzAutomaticBinding.func1"; root.Name != want {
+		f.Errorf("fuzz span name = %q, want %q", root.Name, want)
+	}
 }
 
-// TestWithoutTContextStaysUnbound documents the trade-off: a test that
-// never touches t.Context() anywhere gets no automatic span, because
-// testtrace has no context whose cancellation it can use to end one.
+// TestWithoutTContextStaysUnbound checks that a test that never passes a
+// cancelable context gets no span, because nothing would end it.
 func TestWithoutTContextStaysUnbound(t *testing.T) {
 	detachedWork(t.Name() + "/app")
 	if s := span(t, t.Name()+"/app"); s.Parent.IsValid() {
@@ -359,27 +344,101 @@ func TestWithoutTContextStaysUnbound(t *testing.T) {
 	}
 }
 
-// TestAutomaticRootSpanName checks that the automatic path names a root
-// span after the calling function, using a call site that no other test in
-// this file shares, so the name is unique in the exporter.
+// pkg is the import path of this test package, the prefix of the names
+// that the automatic path gives spans.
+const pkg = "github.com/imjasonh/playground/testtrace_test"
+
 func TestAutomaticRootSpanName(t *testing.T) {
-	var want, appName string
+	var appName string
 	t.Run("sub", func(t *testing.T) {
-		want = runningTestName(t)
 		appName = t.Name() + "/app"
 		detachedWorkWithContext(t.Context(), appName)
 	})
 	root := parentOf(t, span(t, appName))
-	if root.Name != want {
+	if want := pkg + ".TestAutomaticRootSpanName.func1"; root.Name != want {
 		t.Errorf("automatic root span name = %q, want %q", root.Name, want)
 	}
 }
 
-// TestHookDoesNotCreateASpuriousAutomaticRoot guards against a real bug
-// this package once had: Hook starts its own span from t.Context(), and
-// since that context has no span yet, the automatic path could mistake
-// Hook's own call for an ordinary traced call and wrap Hook's span in an
-// extra, unwanted root.
+// TestAutomaticSubtestOfBoundTestGetsItsOwnSpan checks that a subtest,
+// whose goroutine inherits its parent's binding, still gets its own span,
+// as a child of the parent's span.
+func TestAutomaticSubtestOfBoundTestGetsItsOwnSpan(t *testing.T) {
+	var parentName, subName string
+	t.Run("parent", func(t *testing.T) {
+		parentName = t.Name() + "/app"
+		detachedWorkWithContext(t.Context(), parentName)
+		t.Run("sub", func(t *testing.T) {
+			subName = t.Name() + "/app"
+			detachedWorkWithContext(t.Context(), subName)
+		})
+	})
+	parentRoot := parentOf(t, span(t, parentName))
+	subRoot := parentOf(t, span(t, subName))
+	if want := pkg + ".TestAutomaticSubtestOfBoundTestGetsItsOwnSpan.func1.1"; subRoot.Name != want {
+		t.Errorf("subtest span name = %q, want %q", subRoot.Name, want)
+	}
+	assertChild(t, subRoot, parentRoot)
+}
+
+// TestAutomaticBindingReusesSpanForDerivedContext checks that a context
+// derived from t.Context() with its own Done channel doesn't start a second
+// span for the same test.
+func TestAutomaticBindingReusesSpanForDerivedContext(t *testing.T) {
+	var first, derived string
+	t.Run("sub", func(t *testing.T) {
+		first, derived = t.Name()+"/first", t.Name()+"/derived"
+		detachedWorkWithContext(t.Context(), first)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+		detachedWorkWithContext(ctx, derived)
+	})
+	if a, b := span(t, first), span(t, derived); a.Parent.SpanID() != b.Parent.SpanID() {
+		t.Errorf("%q and %q have different parents", first, derived)
+	}
+}
+
+// TestAutomaticBindingNamesCleanupFunction checks that a span started in a
+// t.Cleanup function is named after that function, not a testing frame.
+func TestAutomaticBindingNamesCleanupFunction(t *testing.T) {
+	var appName string
+	t.Run("sub", func(t *testing.T) {
+		appName = t.Name() + "/app"
+		t.Cleanup(func() { detachedWorkWithContext(t.Context(), appName) })
+	})
+	root := parentOf(t, span(t, appName))
+	if want := pkg + ".TestAutomaticBindingNamesCleanupFunction.func1.1"; root.Name != want {
+		t.Errorf("cleanup span name = %q, want %q", root.Name, want)
+	}
+}
+
+// TestDerivedContextOnUnlabeledGoroutine checks that a context derived from
+// t.Context() with context.WithValue, which shares its Done channel, finds
+// the test on a goroutine that didn't inherit the test's labels.
+func TestDerivedContextOnUnlabeledGoroutine(t *testing.T) {
+	type key struct{}
+	work := make(chan context.Context)
+	finished := make(chan struct{})
+	go func() { // started before Hook, so it has no test labels
+		for ctx := range work {
+			detachedWorkWithContext(ctx, ctx.Value(key{}).(string))
+			finished <- struct{}{}
+		}
+	}()
+	var name string
+	t.Run("sub", func(t *testing.T) {
+		testtrace.Hook(t)
+		name = t.Name() + "/app"
+		work <- context.WithValue(t.Context(), key{}, name)
+		<-finished
+	})
+	close(work)
+	assertChild(t, span(t, name), span(t, strings.TrimSuffix(name, "/app")))
+}
+
+// TestHookDoesNotCreateASpuriousAutomaticRoot checks that Hook's span is a
+// root, not a child of a span that the automatic path starts for
+// t.Context().
 func TestHookDoesNotCreateASpuriousAutomaticRoot(t *testing.T) {
 	before := len(exporter.GetSpans())
 	var name string
@@ -396,10 +455,9 @@ func TestHookDoesNotCreateASpuriousAutomaticRoot(t *testing.T) {
 	}
 }
 
-// TestHookStillRegistersIdentityForOtherGoroutines checks that Hook's
-// binding also resolves when a goroutine the test didn't start, but that
-// received the literal t.Context() value (over a channel, say), uses it.
-func TestHookStillRegistersIdentityForOtherGoroutines(t *testing.T) {
+// TestHookContextOnUnlabeledGoroutine checks that the context Hook returns
+// finds the test on a goroutine that the test didn't start.
+func TestHookContextOnUnlabeledGoroutine(t *testing.T) {
 	var ctx context.Context
 	test := hooked(t, "test", func(t *testing.T, c context.Context) {
 		ctx = c
@@ -413,30 +471,7 @@ func TestHookStillRegistersIdentityForOtherGoroutines(t *testing.T) {
 	assertChild(t, span(t, test+"/unlabeled-goroutine"), span(t, test))
 }
 
-// runningTestName returns the function name testtrace's stack walk would
-// attach to a span that t's own goroutine starts right now, mirroring
-// runningTest's own frame-skipping rule, so tests can find the span that
-// the automatic path created without hardcoding its naming scheme.
-func runningTestName(t *testing.T) string {
-	t.Helper()
-	pc := make([]uintptr, 32)
-	n := runtime.Callers(2, pc)
-	frames := runtime.CallersFrames(pc[:n])
-	var name string
-	for {
-		f, more := frames.Next()
-		if f.Function == "testing.tRunner" {
-			return name
-		}
-		name = f.Function
-		if !more {
-			t.Fatal("runningTestName: testing.tRunner not found on the stack")
-		}
-	}
-}
-
-// detachedWorkWithContext is like detachedWork, but takes the context to
-// start the span from, so a test can pass t.Context() explicitly.
+// detachedWorkWithContext starts and ends a span from ctx.
 func detachedWorkWithContext(ctx context.Context, name string) {
 	_, span := appTracer.Start(ctx, name)
 	span.End()
@@ -447,7 +482,7 @@ func BenchmarkStartDetached(b *testing.B) {
 	b.Run("testtrace", func(b *testing.B) {
 		tr := testtrace.WrapTracerProvider(sdktrace.NewTracerProvider()).Tracer("bench")
 		if _, s := tr.Start(b.Context(), "x"); !s.(sdktrace.ReadOnlySpan).Parent().IsValid() {
-			b.Fatal("benchmark span isn't stitched to the benchmark span")
+			b.Fatal("benchmark span has no parent")
 		}
 		for b.Loop() {
 			_, s := tr.Start(b.Context(), "x")

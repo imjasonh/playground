@@ -1,26 +1,27 @@
-// Package testtrace parents OpenTelemetry spans that code under test starts
-// with a context that carries no span, such as t.Context() or
-// context.Background(), on the span of the test that runs that code.
+// Package testtrace parents OpenTelemetry spans on the span of the Go test
+// that starts them, when the span's context carries no span of its own.
 //
-// Install wraps a TracerProvider once, in TestMain. From there, a test
-// doesn't need to call anything: the first time the test, or code it calls,
-// starts a span from t.Context() (or a context derived from it), testtrace
-// starts a span for the test and parents that span on it, naming it after
-// the calling function and ending it once t.Context() is done. Hook is
-// still available for a test that wants the exact test name — including a
-// subtest's "Parent/sub" form — a span that starts and ends synchronously,
-// or linkage that doesn't depend on a context ever canceling.
+// Install wraps a TracerProvider once, in TestMain. After that, a test
+// doesn't need to call anything. The first time the test, or code it calls,
+// starts a span from t.Context() or a context derived from it, testtrace
+// starts a span for the test and parents the new span on it. testtrace names
+// the test's span after the function that testing.tRunner called, and ends
+// it once that context is done. A subtest gets its own span, a child of its
+// parent test's span.
 //
-// Both mechanisms bind the test to the calling goroutine with the
-// goroutine's profiler labels, which the runtime copies into every goroutine
-// that the test's goroutine starts. Spans that background goroutines start
-// therefore link to the test too, and parallel tests don't share a parent.
+// Hook starts the test's span explicitly. Use it for the test's exact name,
+// for a span that ends before the test returns, or for a test that never
+// uses a cancelable context.
 //
-// A span keeps its parent when its context already carries a valid span
-// context. The binding is lost when code under test replaces the goroutine's
-// profiler labels (pprof.Do or pprof.SetGoroutineLabels) with a context that
-// doesn't come from the test, and in goroutines that the runtime starts for
-// time.AfterFunc.
+// Both paths bind the test to its goroutine with profiler labels, which the
+// runtime copies into every goroutine that the goroutine starts. Spans that
+// those goroutines start are children of the test's span too, and parallel
+// tests don't share a parent.
+//
+// A span whose context already carries a valid span context keeps that
+// parent. The binding doesn't reach a goroutine whose profiler labels code
+// under test replaces (with pprof.Do or pprof.SetGoroutineLabels), or a
+// goroutine that the runtime starts, such as a time.AfterFunc callback.
 package testtrace
 
 import (
@@ -30,6 +31,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -38,70 +40,124 @@ import (
 	"go.opentelemetry.io/otel/trace/embedded"
 )
 
-// LabelKey is the profiler label that a bound goroutine carries, set to the
-// test name. It also shows up in CPU profiles that the test binary writes.
+// LabelKey is the profiler label that a bound goroutine carries. Its value
+// is the name of the test's span, and CPU profiles that the test binary
+// writes include it.
 const LabelKey = "otel.test"
 
 const instrumentationName = "github.com/imjasonh/playground/testtrace"
 
-// bindings maps a bound goroutine's profiler-label pointer, and the exact
-// context.Context value a lazily bound test first saw, to the context that
-// holds the test's span. A binding's own context value keeps its label
-// pointer alive, so the pointer can't be reused while the entry exists.
-var bindings sync.Map // map[unsafe.Pointer|context.Context]context.Context
-
-// boundContext returns the test context bound to the calling goroutine, or
-// to key if key itself was bound directly (for example, a context that a
-// test passed to code running on a goroutine the test didn't start).
-func boundContext(key context.Context) (context.Context, bool) {
-	if p := getProfLabel(); p != nil {
-		if v, ok := bindings.Load(p); ok {
-			return v.(context.Context), true
-		}
-	}
-	if v, ok := bindings.Load(key); ok {
-		return v.(context.Context), true
-	}
-	return nil, false
+// A binding ties a test to the context that holds the test's span.
+type binding struct {
+	ctx context.Context
+	// fn is the function that testing.tRunner called for the test, so a
+	// subtest, which inherits its parent's goroutine labels, can tell that
+	// the inherited binding isn't its own.
+	fn string
 }
 
-// bind starts a span named name as a child of ctx, labels the calling
-// goroutine with it so that goroutines it starts inherit the binding, and
-// arranges to end the span once ctx is done. Ending happens from a
-// context.AfterFunc callback, so it can run slightly after ctx is actually
-// canceled. It returns the context that holds the new span.
-func bind(tracer trace.Tracer, ctx context.Context, name string) context.Context {
-	testCtx, span := tracer.Start(ctx, name, trace.WithAttributes(attribute.String("test.name", name)))
-	testCtx = pprof.WithLabels(testCtx, pprof.Labels(LabelKey, name))
-	pprof.SetGoroutineLabels(testCtx)
-	labelKey := getProfLabel()
+// bindings maps two kinds of keys to a binding: the profiler-label pointer
+// of a bound goroutine, and the Done channel of the context that the test
+// was bound from. The binding's context holds the labels, so a label
+// pointer can't be reused while its entry exists.
+var bindings sync.Map // map[unsafe.Pointer | <-chan struct{}]binding
 
-	actual, loaded := bindings.LoadOrStore(ctx, testCtx)
-	if loaded {
-		// Another goroutine raced us to bind the same context; use its span
-		// and discard ours.
-		span.End()
-		return actual.(context.Context)
+// inherits records, by goroutine label and Done channel, the contexts for
+// which a bound goroutine uses its inherited binding, so that a goroutine
+// that starts many spans from such a context walks its stack only once.
+// The cost is that if a goroutine that a subtest started uses the
+// subtest's t.Context() before the subtest itself does, the subtest's spans
+// parent on its parent test's span instead of on a span of its own.
+var inherits sync.Map // map[inheritKey]struct{}
+
+type inheritKey struct {
+	label unsafe.Pointer
+	done  <-chan struct{}
+}
+
+// bindMu serializes automatic binding, so two goroutines that bind the same
+// context don't both start a span for it.
+var bindMu sync.Mutex
+
+func load(key any) (binding, bool) {
+	v, ok := bindings.Load(key)
+	if !ok {
+		return binding{}, false
 	}
-	bindings.Store(labelKey, testCtx)
+	return v.(binding), true
+}
+
+// parent returns the context holding the span that a span started from ctx
+// should be a child of, binding the running test first if it isn't bound.
+func (p *tracerProvider) parent(ctx context.Context) (context.Context, bool) {
+	done := ctx.Done()
+	if done != nil {
+		if b, ok := load(done); ok {
+			return b.ctx, true
+		}
+	}
+	label := getProfLabel()
+	inherited, bound := load(label)
+	if done == nil {
+		return inherited.ctx, bound
+	}
+	key := inheritKey{label, done}
+	if bound {
+		if _, ok := inherits.Load(key); ok {
+			return inherited.ctx, true
+		}
+	}
+	if fn, ok := runningTest(); ok && (!bound || inherited.fn != fn) {
+		return p.bind(ctx, fn, inherited.ctx), true
+	}
+	if bound {
+		if _, loaded := inherits.LoadOrStore(key, struct{}{}); !loaded {
+			context.AfterFunc(ctx, func() { inherits.Delete(key) })
+		}
+	}
+	return inherited.ctx, bound
+}
+
+// bind starts a span named fn, as a child of parentCtx's span if parentCtx
+// isn't nil, labels the calling goroutine with it, and ends the span once
+// ctx is done. A context.AfterFunc callback ends the span, so the span can
+// end a moment after ctx is canceled. bind returns the context that holds
+// the new span.
+func (p *tracerProvider) bind(ctx context.Context, fn string, parentCtx context.Context) context.Context {
+	bindMu.Lock()
+	defer bindMu.Unlock()
+	done := ctx.Done()
+	if b, ok := load(done); ok {
+		return b.ctx
+	}
+	startCtx := ctx
+	if parentCtx != nil {
+		startCtx = trace.ContextWithSpan(ctx, trace.SpanFromContext(parentCtx))
+	}
+	testCtx, span := p.wrapped.Tracer(instrumentationName).Start(startCtx, fn,
+		trace.WithAttributes(attribute.String("code.function.name", fn)))
+	testCtx = pprof.WithLabels(testCtx, pprof.Labels(LabelKey, fn))
+	pprof.SetGoroutineLabels(testCtx)
+	label := getProfLabel()
+	b := binding{ctx: testCtx, fn: fn}
+	bindings.Store(done, b)
+	bindings.Store(label, b)
 	context.AfterFunc(ctx, func() {
-		bindings.Delete(ctx)
-		bindings.Delete(labelKey)
+		bindings.CompareAndDelete(done, b)
+		bindings.CompareAndDelete(label, b)
 		span.End()
 	})
 	return testCtx
 }
 
-// runningTest returns the name of the function running on the calling
-// goroutine's stack, directly below testing.tRunner, skipping over
-// testtrace's own frames. It returns ok == false in a goroutine the test
-// already started (a fresh stack, with no tRunner frame) and in a
-// benchmark, which doesn't run under tRunner. A fuzz target does run under
-// tRunner — testing.F.Fuzz starts one with go tRunner(t, ...) for every
-// corpus entry, in both plain `go test` and a `go test -fuzz` worker — so
-// it returns the name of the closure testing.F.Fuzz builds around the fuzz
-// function, not the fuzz function's own name.
-func runningTest() (name string, ok bool) {
+// runningTest returns the function that testing.tRunner called on the
+// calling goroutine's stack, and false if the stack doesn't reach tRunner:
+// in a goroutine that the test started, and in a benchmark. The function is
+// the outermost frame below tRunner outside packages testing, reflect,
+// runtime, and testtrace. That is the test or subtest function, the
+// function a t.Cleanup call registered, or the function a fuzz target
+// passes to F.Fuzz.
+func runningTest() (string, bool) {
 	pc := make([]uintptr, 32)
 	for {
 		n := runtime.Callers(2, pc)
@@ -111,13 +167,14 @@ func runningTest() (name string, ok bool) {
 		}
 		pc = make([]uintptr, len(pc)*2)
 	}
+	var name string
 	frames := runtime.CallersFrames(pc)
 	for {
 		f, more := frames.Next()
 		if f.Function == "testing.tRunner" {
 			return name, name != ""
 		}
-		if !strings.HasPrefix(f.Function, instrumentationName+".") {
+		if !internalFrame(f.Function) {
 			name = f.Function
 		}
 		if !more {
@@ -126,13 +183,22 @@ func runningTest() (name string, ok bool) {
 	}
 }
 
+func internalFrame(fn string) bool {
+	for _, prefix := range []string{"testing.", "reflect.", "runtime.", instrumentationName + "."} {
+		if strings.HasPrefix(fn, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // WrapTracerProvider returns a TracerProvider whose tracers parent spans
 // that start with no span in their context on the span of the bound test.
 // Pass the result to code that takes a TracerProvider. To wrap the global
 // provider, call Install instead.
 //
-// WrapTracerProvider panics outside a test binary, so production code can't
-// pay for the lookup.
+// WrapTracerProvider panics outside a test binary, because every span
+// start through the result can walk the call stack.
 func WrapTracerProvider(tp trace.TracerProvider) trace.TracerProvider {
 	if !testing.Testing() {
 		panic("testtrace: WrapTracerProvider called outside a test binary")
@@ -154,27 +220,23 @@ func Install(tp trace.TracerProvider) trace.TracerProvider {
 	return w
 }
 
-// Hook starts a span named after t, binds it to the calling goroutine and to
-// the goroutines that the calling goroutine starts later, and returns
-// t.Context() with the span. When t finishes, Hook ends the span, sets an
-// error status if t failed, and removes the binding.
+// Hook starts a span named t.Name(), binds it to the calling goroutine and
+// to the goroutines that goroutine starts later, and returns t.Context()
+// with the span. When t finishes, a t.Cleanup function ends the span, sets
+// an error status if t failed, and removes the binding.
 //
-// A test doesn't need to call Hook: the first time the test, or code it
-// calls, starts a span from t.Context(), testtrace binds the test the same
-// way, using the calling function's name, and ends that span from a
-// context.AfterFunc callback once t.Context() is done. Call Hook instead
-// when that name isn't good enough — it doesn't give a subtest's
-// "Parent/sub" form — when the test wants its span to start before its
-// first traced call, when the test's own context never gets canceled (so
-// testtrace has nothing to end the span on), or when the test needs its
-// span to be ended and exported by the time the test returns: a
-// context.AfterFunc callback always runs on a new goroutine, so the
-// automatic path's span can still be open for a moment after a subtest
-// that triggered it returns, where Hook ends its span synchronously, from
-// t.Cleanup.
+// A test doesn't need Hook for its spans to get a parent. Call Hook when:
+//
+//   - The span needs the test's name, including a subtest's "Parent/sub"
+//     form, rather than the name of a Go function.
+//   - The span must be ended and exported by the time the test's cleanups
+//     finish. The automatic path ends its span from a context.AfterFunc
+//     callback, which runs on a new goroutine.
+//   - The span needs an error status when the test fails.
+//   - The test never passes a cancelable context to traced code.
 //
 // Call Hook from the goroutine that runs the test, after t.Parallel. If the
-// test is a subtest of a hooked test, its span is a child of the parent
+// test is a subtest of a bound test, its span is a child of the parent
 // test's span. Hook fails t if Install hasn't wrapped the global
 // TracerProvider.
 func Hook(t testing.TB) context.Context {
@@ -183,28 +245,25 @@ func Hook(t testing.TB) context.Context {
 	if !ok {
 		t.Fatal("testtrace: Hook needs testtrace.Install(tp) in TestMain")
 	}
-	// Apply the same parenting a plain Start call would get — in
-	// particular, a subtest's own t.Context() carries no span of its own,
-	// but its goroutine inherits its parent test's binding — while
-	// starting from the real tracer directly, not the one otel.Tracer
-	// would give back. Going through this package's own Start here would
-	// also let the automatic path see t.Context() with no span yet and
-	// bind to it first, making this span its child instead of a root.
+	// Start from the wrapped tracer: going through tracer.Start would bind
+	// t.Context() automatically and make this span a child of that one.
 	startCtx := t.Context()
-	if parent, ok := boundContext(startCtx); ok {
-		startCtx = trace.ContextWithSpan(startCtx, trace.SpanFromContext(parent))
+	if parent, ok := load(getProfLabel()); ok {
+		startCtx = trace.ContextWithSpan(startCtx, trace.SpanFromContext(parent.ctx))
 	}
 	ctx, span := p.wrapped.Tracer(instrumentationName).Start(startCtx, t.Name(),
-		trace.WithAttributes(attribute.String("test.name", t.Name())))
+		trace.WithAttributes(attribute.String("test.case.name", t.Name())))
 	ctx = pprof.WithLabels(ctx, pprof.Labels(LabelKey, t.Name()))
 	pprof.SetGoroutineLabels(ctx)
-	key := getProfLabel()
-	bindings.Store(key, ctx)
-	bindings.Store(t.Context(), ctx)
 
+	fn, _ := runningTest()
+	b := binding{ctx: ctx, fn: fn}
+	label, done := getProfLabel(), t.Context().Done()
+	bindings.Store(label, b)
+	bindings.Store(done, b)
 	t.Cleanup(func() {
-		bindings.Delete(key)
-		bindings.Delete(t.Context())
+		bindings.CompareAndDelete(label, b)
+		bindings.CompareAndDelete(done, b)
 		switch {
 		case t.Failed():
 			span.SetStatus(codes.Error, "test failed")
@@ -233,14 +292,8 @@ type tracer struct {
 
 func (t *tracer) Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	if !trace.SpanContextFromContext(ctx).IsValid() {
-		if testCtx, ok := boundContext(ctx); ok {
-			ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(testCtx))
-		} else if ctx.Done() != nil {
-			if testName, ok := runningTest(); ok {
-				testTracer := t.provider.wrapped.Tracer(instrumentationName)
-				testCtx := bind(testTracer, ctx, testName)
-				ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(testCtx))
-			}
+		if parent, ok := t.provider.parent(ctx); ok {
+			ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(parent))
 		}
 	}
 	return t.wrapped.Start(ctx, name, opts...)
