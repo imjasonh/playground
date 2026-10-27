@@ -88,13 +88,32 @@ for (let i = 0; i < totalFrames; i += stride) {
 }
 process.stdout.write("\n");
 
-// Encode. We quantize a representative middle frame to build a
-// shared palette — this avoids the dithering / palette-drift
-// artifacts you get with per-frame palettes and keeps the file
-// size down. The NES only renders out of a fixed master palette
-// anyway, so a single shared palette is the right answer.
+// Encode. We quantize a handful of frames spread across the whole
+// recording to build one shared palette — this avoids the
+// dithering / palette-drift artifacts you get with per-frame
+// palettes and keeps the file size down. The NES only renders out
+// of a fixed master palette anyway, so a single shared palette is
+// the right answer. A single sampled frame isn't: a color that's
+// only on screen briefly (a powerup icon, a blinking menu cursor)
+// is invisible in any one frame picked by chance, so quantize()
+// never sees it and nearest-neighbor matching folds it into
+// whatever's closest once that color actually shows up. Sampling
+// several frames across the timeline makes that failure far less
+// likely without quantizing every frame (slow, and pointless once
+// the palette has converged).
 console.log(`encoding ${frames.length} frames as GIF → ${path.relative(repoRoot, outputPath)}`);
-const paletteSource = frames[Math.floor(frames.length / 2)];
+const PALETTE_SAMPLE_COUNT = Math.min(12, frames.length);
+const sampleIndices = new Set();
+for (let s = 0; s < PALETTE_SAMPLE_COUNT; s++) {
+  const t = PALETTE_SAMPLE_COUNT === 1 ? 0 : s / (PALETTE_SAMPLE_COUNT - 1);
+  sampleIndices.add(Math.round(t * (frames.length - 1)));
+}
+const paletteSource = new Uint8Array(sampleIndices.size * frames[0].length);
+let sampleOffset = 0;
+for (const idx of sampleIndices) {
+  paletteSource.set(frames[idx], sampleOffset);
+  sampleOffset += frames[idx].length;
+}
 const palette = quantize(paletteSource, 256, { format: "rgba4444" });
 
 const gif = GIFEncoder();
