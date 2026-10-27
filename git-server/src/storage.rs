@@ -75,6 +75,34 @@ pub trait Store {
     async fn start_upload(&self, key: &str) -> Result<Box<dyn Uploader>>;
 }
 
+/// How many times to attempt an R2 call that fails with a transient internal
+/// error. The binding reports these as code 10001 ("We encountered an
+/// internal error. Please try again.").
+#[cfg(any(test, target_arch = "wasm32"))]
+const R2_TRANSIENT_ATTEMPTS: u32 = 3;
+
+/// True when `message` is an R2 internal error worth trying again.
+#[cfg(any(test, target_arch = "wasm32"))]
+pub(crate) fn is_transient_r2(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("10001") || lower.contains("internal error")
+}
+
+/// Run `op` again when it fails with [`is_transient_r2`], up to
+/// [`R2_TRANSIENT_ATTEMPTS`] times. Other errors return immediately.
+#[cfg(any(test, target_arch = "wasm32"))]
+pub(crate) async fn retry_transient<T>(mut op: impl AsyncFnMut() -> Result<T>) -> Result<T> {
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        match op().await {
+            Ok(value) => return Ok(value),
+            Err(err) if attempt < R2_TRANSIENT_ATTEMPTS && is_transient_r2(&err.0) => {}
+            Err(err) => return Err(err),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Block-cached reads
 // ---------------------------------------------------------------------------
@@ -339,6 +367,55 @@ mod tests {
             let err = r.read(&s, 20, 25).await.unwrap_err();
             assert!(err.0.contains("read past end"), "{}", err.0);
         });
+    }
+
+    #[test]
+    fn retries_transient_r2_then_succeeds() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let calls = Rc::new(Cell::new(0));
+        let calls2 = calls.clone();
+        let got = block_on(retry_transient(async || {
+            let n = calls2.get();
+            calls2.set(n + 1);
+            if n < 2 {
+                Err(StorageError(
+                    "10001: We encountered an internal error. Please try again.".into(),
+                ))
+            } else {
+                Ok("ok")
+            }
+        }));
+        assert_eq!(got.unwrap(), "ok");
+        assert_eq!(calls.get(), 3);
+    }
+
+    #[test]
+    fn does_not_retry_other_storage_errors() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let calls = Rc::new(Cell::new(0));
+        let calls2 = calls.clone();
+        let got = block_on(retry_transient(async || {
+            calls2.set(calls2.get() + 1);
+            Err::<(), _>(StorageError("missing filelog object k".into()))
+        }));
+        assert_eq!(calls.get(), 1);
+        assert!(got.unwrap_err().0.contains("missing"));
+    }
+
+    #[test]
+    fn gives_up_on_repeated_internal_errors() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let calls = Rc::new(Cell::new(0));
+        let calls2 = calls.clone();
+        let got = block_on(retry_transient(async || {
+            calls2.set(calls2.get() + 1);
+            Err::<(), _>(StorageError("Internal error".into()))
+        }));
+        assert_eq!(calls.get(), 3);
+        assert!(is_transient_r2(&got.unwrap_err().0));
     }
 
     #[test]
