@@ -414,11 +414,12 @@ impl<'a> IrCodeGen<'a> {
         for func in &ir.functions {
             if function_is_leaf(func) {
                 let scope = scope_prefix_for_fn(&func.name);
-                for (i, local) in func.locals.iter().take(func.param_count).enumerate() {
-                    let addr = 0x04u16 + i as u16;
+                let mut addr = 0x04u16;
+                for local in func.locals.iter().take(func.param_count) {
                     var_addrs.insert(local.var_id, addr);
                     let qualified = format!("__local__{scope}__{}", local.name);
                     leaf_param_overrides.insert(qualified, addr);
+                    addr += local.size.max(1);
                 }
             } else if func.param_count > 0 {
                 // Non-leaf: callers direct-write each argument into
@@ -428,18 +429,20 @@ impl<'a> IrCodeGen<'a> {
                 // few loops up). A miss here means the analyzer
                 // didn't allocate a slot — which would be a
                 // compiler bug of the PR-#31 shape.
+                // One slot per byte: a 16-bit parameter takes two.
                 let addrs: Vec<u16> = func
                     .locals
                     .iter()
                     .take(func.param_count)
-                    .map(|local| {
-                        *var_addrs.get(&local.var_id).unwrap_or_else(|| {
+                    .flat_map(|local| {
+                        let base = *var_addrs.get(&local.var_id).unwrap_or_else(|| {
                             panic!(
                                 "internal compiler error: parameter {:?} of \
                                  function {:?} has no allocated address",
                                 local.name, func.name
                             )
-                        })
+                        });
+                        (0..local.size.max(1)).map(move |k| base + k)
                     })
                     .collect();
                 non_leaf_param_addrs.insert(func.name.clone(), addrs);
@@ -1718,9 +1721,9 @@ impl<'a> IrCodeGen<'a> {
                 //     ZP window. E0506 caps declarations at 8 so the
                 //     assert below stays a belt-and-braces guard.
                 assert!(
-                    args.len() <= 8,
+                    args.len() <= 16,
                     "internal compiler error: Call to {name:?} with \
-                     {} args (max 8); E0506 should have caught this",
+                     {} argument bytes (max 16); E0506 should have caught this",
                     args.len()
                 );
                 if let Some(param_addrs) = self.non_leaf_param_addrs.get(name).cloned() {
@@ -3485,12 +3488,13 @@ fn scope_prefix_for_fn(name: &str) -> String {
 }
 
 /// True if `func` is eligible for the "leaf" calling convention:
-/// its body emits no `JSR`, and its parameter count fits in the
-/// four zero-page transport slots (`$04-$07`). Leaf-eligible
+/// its body emits no `JSR`, and its parameters fit in the four
+/// zero-page transport slots (`$04-$07`); a 16-bit parameter takes
+/// two. Leaf-eligible
 /// functions read their args straight out of the transport slots
 /// and skip the spill prologue entirely.
 ///
-/// The `param_count <= 4` check matters for the direct-write
+/// The four-byte check matters for the direct-write
 /// calling convention: non-leaf (5-to-8-param) functions have the
 /// caller stage each argument directly into the callee's
 /// per-parameter RAM slot, which is where leaves *can't* live
@@ -3504,7 +3508,13 @@ fn scope_prefix_for_fn(name: &str) -> String {
 /// ops are: `Call`, `Mul`, `Div`, `Mod`, `Transition`, plus
 /// `InlineAsm` bodies that mention `JSR` as a token.
 fn function_is_leaf(func: &IrFunction) -> bool {
-    if func.param_count > 4 {
+    let param_bytes: u16 = func
+        .locals
+        .iter()
+        .take(func.param_count)
+        .map(|l| l.size.max(1))
+        .sum();
+    if param_bytes > 4 {
         return false;
     }
     for block in &func.blocks {
@@ -5677,6 +5687,58 @@ mod more_tests {
             "every emitted __src_ label should have a matching source_locs entry"
         );
     }
+}
+
+#[test]
+fn u16_params_take_two_bytes_in_both_calling_conventions() {
+    use crate::parser;
+    let src = r#"
+        game "Test" { mapper: NROM }
+        var out: u16 = 0
+        var b: u8 = 0
+        fun leaf(a: u8, w: u16) { b = (w >> 8) as u8 }
+        fun helper(a: u8) -> u8 { return a }
+        fun outer(w: u16) { b = helper((w >> 8) as u8) }
+        on frame {
+            leaf(1, 0x1234)
+            outer(0x5678)
+        }
+        start Main
+    "#;
+    let (prog, _) = parser::parse(src);
+    let prog = prog.unwrap();
+    let analysis = crate::analyzer::analyze(&prog);
+    assert!(analysis.diagnostics.iter().all(|d| !d.is_error()));
+    let ir = crate::ir::lower(&prog, &analysis);
+    let mut codegen = IrCodeGen::new(&analysis.var_allocations, &ir);
+    let insts = codegen.generate(&ir);
+    let stores_to = |at: u16| {
+        insts.iter().any(|i| {
+            i.opcode == STA
+                && match i.mode {
+                    AM::ZeroPage(a) => u16::from(a) == at,
+                    AM::Absolute(a) => a == at,
+                    _ => false,
+                }
+        })
+    };
+    // Leaf: a in $04, w in $05/$06, and the body reads w's high byte.
+    assert!(stores_to(0x05) && stores_to(0x06));
+    let leaf_idx = insts
+        .iter()
+        .position(|i| i.mode == AM::Label("__ir_fn_leaf".into()))
+        .unwrap();
+    assert!(insts[leaf_idx..]
+        .iter()
+        .take(8)
+        .any(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x06)));
+    let w_slot = analysis
+        .var_allocations
+        .iter()
+        .find(|a| a.name == "__local__outer__w")
+        .expect("outer's w should have a slot")
+        .address;
+    assert!(stores_to(w_slot) && stores_to(w_slot + 1));
 }
 
 #[test]

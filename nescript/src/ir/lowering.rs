@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::*;
 use crate::analyzer::AnalysisResult;
 use crate::parser::ast::*;
+use crate::runtime::RETURN_HI;
 
 /// Marker prefix the lowering prepends to the body of a `raw asm`
 /// block, telling the codegen to skip `{var}` substitution. Uses
@@ -49,6 +50,15 @@ struct LoweringContext {
     /// `try_inline_call_stmt` below; the feature was added on
     /// the War bug-cleanup branch (see `git log`).
     inline_bodies: HashMap<String, CapturedInline>,
+    /// For each user function, whether each parameter is 16 bits.
+    /// A call passes a 16-bit argument as two byte arguments, low
+    /// byte first.
+    wide_params: HashMap<String, Vec<bool>>,
+    /// User functions that return a 16-bit value. The high byte
+    /// comes back in [`RETURN_HI`].
+    wide_returns: HashSet<String>,
+    /// True while lowering a function that returns a 16-bit value.
+    returns_wide: bool,
     /// Substitution stack for nested inline expansions. The top
     /// frame is the active substitution map — `Expr::Ident(name)`
     /// lookups check it first and, if the name is present, use
@@ -196,6 +206,9 @@ impl LoweringContext {
             var_types,
             current_scope_prefix: None,
             inline_bodies: HashMap::new(),
+            wide_params: HashMap::new(),
+            wide_returns: HashSet::new(),
+            returns_wide: false,
             inline_subs_stack: Vec::new(),
             inline_const_args_stack: Vec::new(),
             next_var_id,
@@ -705,6 +718,17 @@ impl LoweringContext {
         // who write `inline fun` expecting the keyword to be
         // enforced.
         self.capture_inline_bodies(program);
+        for fun in &program.functions {
+            let wide = fun
+                .params
+                .iter()
+                .map(|p| matches!(p.param_type, NesType::U16 | NesType::I16))
+                .collect();
+            self.wide_params.insert(fun.name.clone(), wide);
+            if matches!(fun.return_type, Some(NesType::U16 | NesType::I16)) {
+                self.wide_returns.insert(fun.name.clone());
+            }
+        }
 
         // Register state-local variables as IR globals so the codegen
         // resolves their addresses through the same `ir.globals`
@@ -748,6 +772,7 @@ impl LoweringContext {
 
     fn lower_function(&mut self, fun: &FunDecl) {
         self.next_temp = 0;
+        self.returns_wide = self.wide_returns.contains(&fun.name);
         // Clear the wide-temp tracking map. `wide_hi` records "this
         // low temp has its high byte at this other temp" entries
         // produced by `make_wide`; without clearing it, the entries
@@ -1116,6 +1141,10 @@ impl LoweringContext {
             }
             Statement::Return(value, _) => {
                 let temp = value.as_ref().map(|e| self.lower_expr(e));
+                if let (Some(t), true) = (temp, self.returns_wide) {
+                    let (_, hi) = self.widen(t);
+                    self.emit(IrOp::Poke(RETURN_HI, hi));
+                }
                 self.end_block(IrTerminator::Return(temp));
                 let cont = self.fresh_label("after_return");
                 self.start_block(&cont);
@@ -1277,7 +1306,7 @@ impl LoweringContext {
                         if self.try_inline_call_stmt(name, args) {
                             return;
                         }
-                        let arg_temps: Vec<_> = args.iter().map(|a| self.lower_expr(a)).collect();
+                        let arg_temps = self.lower_call_args(name, args);
                         self.emit(IrOp::Call(None, name.clone(), arg_temps));
                     }
                 }
@@ -1713,6 +1742,24 @@ impl LoweringContext {
         self.wide_hi.insert(lo, hi);
     }
 
+    /// Lower call arguments to byte temps. A 16-bit parameter takes
+    /// two: the low byte, then the high byte.
+    fn lower_call_args(&mut self, name: &str, args: &[Expr]) -> Vec<IrTemp> {
+        let wide = self.wide_params.get(name).cloned().unwrap_or_default();
+        let mut temps = Vec::with_capacity(args.len());
+        for (i, arg) in args.iter().enumerate() {
+            let t = self.lower_expr(arg);
+            if wide.get(i).copied().unwrap_or(false) {
+                let (lo, hi) = self.widen(t);
+                temps.push(lo);
+                temps.push(hi);
+            } else {
+                temps.push(t);
+            }
+        }
+        temps
+    }
+
     /// Shift a 16-bit value by a constant count, built from byte
     /// shifts. Bits move between the two bytes, so `w >> 8` yields
     /// the high byte and `w << 8` moves the low byte up.
@@ -2047,9 +2094,14 @@ impl LoweringContext {
                 if let Some(t) = self.try_inline_call_expr(name, args) {
                     return t;
                 }
-                let arg_temps: Vec<_> = args.iter().map(|a| self.lower_expr(a)).collect();
+                let arg_temps = self.lower_call_args(name, args);
                 let t = self.fresh_temp();
                 self.emit(IrOp::Call(Some(t), name.clone(), arg_temps));
+                if self.wide_returns.contains(name) {
+                    let hi = self.fresh_temp();
+                    self.emit(IrOp::Peek(hi, RETURN_HI));
+                    self.make_wide(t, hi);
+                }
                 t
             }
             Expr::ButtonEdge(player, button, released, _) => {

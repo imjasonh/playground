@@ -676,6 +676,41 @@ fn lower_widening_cast_then_shift_left_fills_the_high_byte() {
 }
 
 #[test]
+fn lower_u16_argument_and_return_carry_both_bytes() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var w: u16 = 0
+        fun bump(x: u16, d: u8) -> u16 { return x + 0x0100 }
+        on frame { w = bump(w, 1) }
+        start Main
+    "#,
+    );
+    let ops = frame_ops(&ir);
+    let args = ops
+        .iter()
+        .find_map(|op| match op {
+            IrOp::Call(_, name, args) if name == "bump" => Some(args.clone()),
+            _ => None,
+        })
+        .expect("bump should be called");
+    assert_eq!(args.len(), 3, "x takes two argument bytes: {ops:?}");
+    assert!(
+        ops.iter()
+            .any(|op| matches!(op, IrOp::Peek(_, a) if *a == crate::runtime::RETURN_HI)),
+        "the caller should read the returned high byte: {ops:?}"
+    );
+    let bump = ir.functions.iter().find(|f| f.name == "bump").unwrap();
+    assert!(
+        bump.blocks
+            .iter()
+            .flat_map(|b| &b.ops)
+            .any(|op| matches!(op, IrOp::Poke(a, _) if *a == crate::runtime::RETURN_HI)),
+        "bump should write its high byte before returning"
+    );
+}
+
+#[test]
 fn lower_shift_right_with_variable_count_uses_runtime_variant() {
     let ir = lower_ok(
         r#"

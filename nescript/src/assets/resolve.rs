@@ -380,6 +380,7 @@ mod tests {
     #[test]
     fn resolve_sprite_filling_last_tile() {
         let full = SpriteDecl {
+            table: 0,
             name: "Full".to_string(),
             chr_source: AssetSource::Inline(vec![0u8; 255 * 16]),
             span: Span::dummy(),
@@ -389,6 +390,7 @@ mod tests {
         assert_eq!(sprites[0].tile_index, 1);
 
         program.sprites.push(SpriteDecl {
+            table: 0,
             name: "Extra".to_string(),
             chr_source: AssetSource::Inline(vec![0u8; 16]),
             span: Span::dummy(),

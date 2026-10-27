@@ -337,7 +337,8 @@ reset_score()
 
 - **No recursion.** Both direct and indirect recursion are compile errors (`E0402`).
 - **Call depth limit.** The default maximum call depth is 8. Exceeding it produces error `E0401`.
-- **Maximum 8 parameters per function.** The calling convention is hybrid: **leaf** functions (no nested `JSR` in their body) receive up to four parameters through fixed zero-page transport slots `$04`-`$07`, while **non-leaf** functions receive up to eight parameters via direct caller writes into per-function RAM spill slots (no transport, no prologue copy). Declaring a function with 9+ parameters produces error `E0506`. Declaring a leaf with 5+ parameters silently promotes it to the non-leaf convention — you pay the direct-write cost rather than the prologue-copy cost, which is still cheaper than the old transport-plus-spill path.
+- **Maximum 8 parameters per function.** The calling convention is hybrid: **leaf** functions (no nested `JSR` in their body) receive up to four parameters through fixed zero-page transport slots `$04`-`$07`, while **non-leaf** functions receive up to eight parameters via direct caller writes into per-function RAM spill slots (no transport, no prologue copy). Declaring a function with 9+ parameters produces error `E0506`. Declaring a leaf with 5+ parameters silently promotes it to the non-leaf convention — you pay the direct-write cost rather than the prologue-copy cost, which is still cheaper than the old transport-plus-spill path. A `u16` or `i16` parameter takes two bytes, low byte first, so a leaf holds four bytes of parameters: four `u8`s, two `u16`s, or a mix.
+- **16-bit return values.** A function that returns `u16` or `i16` returns the low byte in A and the high byte at `$07E0`.
 
 #### Why no recursion?
 

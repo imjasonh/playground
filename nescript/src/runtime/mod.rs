@@ -15,11 +15,17 @@ const JOY1: u16 = 0x4016;
 const APU_FRAME: u16 = 0x4017;
 
 /// First byte of the main-RAM block at the top of RAM that the
-/// runtime owns: the VRAM ring pointers, previous input, fade, PRNG,
-/// sprite-cycle, audio, and debug slots, `$07E5-$07FF`. The analyzer
-/// allocates user variables below this address, whether or not a
-/// program uses the feature behind each slot.
-pub const RUNTIME_RAM_BASE: u16 = 0x07E5;
+/// runtime owns: the high byte of a 16-bit return, the VRAM ring
+/// pointers, previous input, fade, PRNG, sprite-cycle, audio, and
+/// debug slots, `$07E4-$07FF`. The analyzer allocates user variables
+/// below this address, whether or not a program uses the feature
+/// behind each slot.
+pub const RUNTIME_RAM_BASE: u16 = 0x07E4;
+
+/// High byte of a 16-bit function return value. The low byte comes
+/// back in A, like an 8-bit return. It sits at the bottom of the
+/// runtime block so a user global cannot land on it.
+pub const RETURN_HI: u16 = RUNTIME_RAM_BASE;
 
 /// Zero-page locations used by the runtime.
 pub const ZP_FRAME_FLAG: u8 = 0x00;

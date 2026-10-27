@@ -2160,7 +2160,7 @@ impl Analyzer {
                     span,
                 )
                 .with_help(
-                    "the NES only has 2 KB of RAM, and the runtime keeps $07E5-$07FF; consider removing some globals",
+                    "the NES only has 2 KB of RAM, and the runtime keeps $07E4-$07FF; consider removing some globals",
                 ),
             );
             return None;
