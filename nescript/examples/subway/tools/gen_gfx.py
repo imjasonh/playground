@@ -725,10 +725,10 @@ def interior_screen(T):
 # 16x32, facing right. Traced from River City Ransom's Alex (the
 # 3/4 idle) and mirrored so the unflipped sprite looks right.
 # Rows 0-23 use sprite palette 0: 1 black hair and outline, 2 skin,
-# 3 white shirt. Rows 24-31 use sprite palette 2: 1 blue jeans,
-# 2 orange shoes. The head stays put across the walk; only the
-# legs change, the same way Alex's own walk keeps the torso.
-PLAYER = [
+# 3 white shirt. The legs below are Alex's own, from the same
+# sheet: 1 is the black outline and shoes, B is the blue denim.
+# Denim is drawn as a second pair of tiles on sprite palette 2.
+BODY = [
     "11111111111.....",
     "111111112111....",
     "111111122211....",
@@ -753,38 +753,67 @@ PLAYER = [
     "113333331222221.",
     ".11111111111111.",
     ".1111111111111..",
-    "...111....111...",
-    "...111....111...",
-    "...111....111...",
-    "...111....111...",
-    "...111....111...",
-    "...222....222...",
-    "...222....222...",
-    "................",
+]
+# Alex's legs from the RCR sheet, mirrored with the torso.
+# 1 is black outline and shoes. B is blue denim.
+STAND_LEGS = [
+    "..1BB11BBBB1BB1.",
+    "..1BBB1BBBBB111.",
+    "..1BBBB1BBBBBB1.",
+    "..1BBBB1BBBBBB1.",
+    "...1BBB1BBBBBBB1",
+    "...1BBB1BBBBBBB1",
+    "...11BB1111BBBB1",
+    "..11111111111111",
+]
+STRIDE_LEGS = [
+    [
+        ".11111BBBB1BB1..",
+        ".1BB1BBBBBB111..",
+        ".1B1BBBBBBBBB1..",
+        "..11B11BBBBB1...",
+        "..11BBBBBBB1....",
+        "...1BBBBBBB1....",
+        "...1111BBBB1....",
+        "..1111111111....",
+    ],
+    [
+        ".1B11BBBBBB1B1..",
+        "1BBB1BBBBBBB11..",
+        "1BBB1BBBBBBBB1..",
+        "BBBBB1BBBBBBBB1.",
+        "BBBBB1BB11BBBB1.",
+        "BBBBBB1BBBBBB11.",
+        "11BBBB1111BB11..",
+        "111111.111111...",
+    ],
 ]
 
-# Front foot is on the right. Phase 2 mirrors this for the other step.
-STRIDE_LEGS = [
-    "..11......1111..",
-    "..11......1111..",
-    "..11.....11111..",
-    ".111.....11111..",
-    ".222.....2222...",
-    ".........2222...",
-    "................",
-    "................",
-]
+
+def legs_for(phase):
+    """Phase 0 stands. Phases 1 and 2 are the two RCR strides."""
+    if phase == 0:
+        return STAND_LEGS
+    return STRIDE_LEGS[phase - 1]
+
+
+def leg_black(rows):
+    """Outline and shoes. Denim is left transparent."""
+    return ["".join("1" if c == "1" else "." for c in r) for r in rows]
+
+
+def leg_blue(rows):
+    """Denim only, as color 1 of sprite palette 2."""
+    return ["".join("1" if c == "B" else "." for c in r) for r in rows]
+
+
+PLAYER = BODY + leg_black(STAND_LEGS)
 
 
 def walk_frame(base, phase):
-    """Phase 0 stands. Phases 1 and 2 swap in the two strides."""
+    """Keep the head and torso. Swap in one RCR leg pose."""
     rows = list(base)
-    if phase == 0:
-        return rows
-    legs = STRIDE_LEGS
-    if phase == 2:
-        legs = [r[::-1] for r in legs]
-    rows[24:32] = legs
+    rows[24:32] = leg_black(legs_for(phase))
     return rows
 
 
@@ -806,6 +835,9 @@ def build_sprites(page):
     for f in range(3):
         for i, px in enumerate(split_16(walk_frame(PLAYER, f))):
             T[f"player{f}_{i}"] = page.add(px, f"player{f}_{i}", dedup=False)
+        # Denim sits on top of the outline tiles, same 16x8 footprint.
+        for i, px in enumerate(split_16(leg_blue(legs_for(f)))):
+            T[f"jeans{f}_{i}"] = page.add(px, f"jeans{f}_{i}", dedup=False)
     circle = ["..####..", ".######.", "########", "########",
               "########", "########", ".######.", "..####.."]
     for k in (1, 2):
@@ -1044,6 +1076,9 @@ def main():
     for name, idx in sorted(ST.items()):
         if name.startswith("player") and name.endswith("_0"):
             consts.append(f"const S_{name[:-2].upper()}: u8 = {idx}")
+    for f in range(3):
+        consts.append(f"const S_JEANS{f}: u8 = {ST[f'jeans{f}_0']}")
+        assert ST[f"jeans{f}_1"] == ST[f"jeans{f}_0"] + 1
     consts.append(f"const S_BULLET1: u8 = {ST['bullet1_1_0']}")
     consts.append(f"const S_BULLET2: u8 = {ST['bullet2_1_0']}")
     for g in BULLET_GLYPHS:
