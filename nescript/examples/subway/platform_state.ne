@@ -224,7 +224,9 @@ fun platform_setup() {
     pal_set(1, 0x10, 0x30, 0x27)
     pal_set(2, mosaic_color(), 0x10, 0x30)
     pal_set(3, 0x00, 0x28, 0x10)
-    pal_set(4, 0x02, 0x37, 0x16)
+    // Alex: black hair, skin, white shirt. Jeans and shoes are
+    // sprite palette 2 (blue, orange, white), set below.
+    pal_set(4, 0x0F, 0x37, 0x30)
     pal_set(5, 0x16, 0x1A, 0x30)
     pal_set(6, 0x12, 0x27, 0x30)
     pal_set(7, sp3_c1, sp3_c2, 0x30)
@@ -684,6 +686,7 @@ fun draw_hud_bullets() {
 }
 
 // The player: 16x32, two tiles wide. Facing left mirrors each row.
+// The bottom row is the jeans and shoes, on sprite palette 2.
 fun draw_player(x: u8, y: u8, f: u8, flip: bool) {
     var a: u8 = 0
     var l: u8 = 0
@@ -697,8 +700,12 @@ fun draw_player(x: u8, y: u8, f: u8, flip: bool) {
     var t: u8 = f
     var yy: u8 = y
     while row < 4 {
-        draw SpriteTiles at: (x, yy) frame: t + l attr: a
-        draw SpriteTiles at: (x + 8, yy) frame: t + r attr: a
+        var pa: u8 = a
+        if row == 3 {
+            pa = a | 2
+        }
+        draw SpriteTiles at: (x, yy) frame: t + l attr: pa
+        draw SpriteTiles at: (x + 8, yy) frame: t + r attr: pa
         t += 2
         yy += 8
         row += 1

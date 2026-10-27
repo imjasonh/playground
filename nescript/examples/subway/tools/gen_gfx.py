@@ -32,7 +32,7 @@ from gen_data import ROUTES  # noqa: E402
 # Route color group -> (sprite palette, bullet color index, NES color
 # for sprite palette 3 or 0, dark glyph). Palettes 1 and 2 are fixed;
 # palette 3 gets up to two of the other colors per screen. Gray uses
-# the player's outline color in palette 0.
+# the player's outline color in palette 0 (black).
 GROUP_STYLE = {
     "red": (1, 1, 0, False), "green": (1, 2, 0, False),
     "blue": (2, 1, 0, False), "orange": (2, 2, 0, False),
@@ -722,91 +722,69 @@ def interior_screen(T):
 # Sprites (CHR page 1)
 # --------------------------------------------------------------------
 
-# 16x32. Sprite palette 0: 1 outline/hair/jeans, 2 skin, 3 jacket.
-# Beat-em-up proportions (broad shoulders, a visible fist at each
-# cuff, a bent-knee stride) take after River City Ransom's Alex.
-# Color 1 is blue ($02), not the floor gray ($00), so the stride
-# shows. The leg rows stay off color 2.
+# 16x32, facing right. Traced from River City Ransom's Alex (the
+# 3/4 idle) and mirrored so the unflipped sprite looks right.
+# Rows 0-23 use sprite palette 0: 1 black hair and outline, 2 skin,
+# 3 white shirt. Rows 24-31 use sprite palette 2: 1 blue jeans,
+# 2 orange shoes. The head stays put across the walk; only the
+# legs change, the same way Alex's own walk keeps the torso.
 PLAYER = [
-    "......1111......",
-    ".....111111.....",
-    "....11111111....",
-    "...1111111111...",
-    "....22222222....",
-    "....22122122....",
-    "....11222211....",
-    "....11222211....",
-    ".......22.......",
-    "..333333333333..",
-    ".33333322333333.",
-    ".33333322333333.",
-    ".33333333333333.",
-    "2233333333333322",
-    "2233333333333322",
-    "...1111111111...",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "....111..111....",
-    "...3333..3333...",
-    "...3333..3333...",
+    "11111111111.....",
+    "111111112111....",
+    "111111122211....",
+    "111111222211....",
+    "111122211211....",
+    ".12222133211....",
+    ".31221333211....",
+    ".31221333212....",
+    ".22222222222....",
+    ".222222222111...",
+    "1222222222213331",
+    "1211112213333331",
+    "3122222213333331",
+    "3311111113333331",
+    "1111113111111333",
+    "222133112222111.",
+    "2222131222221221",
+    "2222131222221221",
+    "2222133122222121",
+    "2221333122222221",
+    "1113333111111221",
+    "113333331222221.",
+    ".11111111111111.",
+    ".1111111111111..",
+    "...111....111...",
+    "...111....111...",
+    "...111....111...",
+    "...111....111...",
+    "...111....111...",
+    "...222....222...",
+    "...222....222...",
     "................",
 ]
 
-# One stride: the front arm swings up past the jacket hem, the back
-# arm tucks at the waist, the front leg strides forward with a bent
-# knee and a flat foot, and the back leg trails with its heel lifted.
-# The other stride is this picture mirrored. The legs stay off color 2.
-STRIDE_ARMS = [
-    ".333333333333222",
-    ".333333333333222",
-    "223333333333333.",
-    "...1111111111...",
-]
+# Front foot is on the right. Phase 2 mirrors this for the other step.
 STRIDE_LEGS = [
-    "...111..1111....",
-    "...111..1111....",
-    "...111..1111....",
-    "...111..1111....",
-    "...111..1111....",
-    "...111..1111....",
-    ".1111...1111....",
-    ".1111...1111....",
-    ".1111....1111...",
-    ".1111....1111...",
-    "33333....1111...",
-    "33333....1111...",
-    ".........33333..",
-    ".........33333..",
+    "..11......1111..",
+    "..11......1111..",
+    "..11.....11111..",
+    ".111.....11111..",
+    ".222.....2222...",
+    ".........2222...",
     "................",
     "................",
 ]
 
 
 def walk_frame(base, phase):
-    """Swap the arms and the legs for a stride. Phase 0 stands."""
+    """Phase 0 stands. Phases 1 and 2 swap in the two strides."""
     rows = list(base)
     if phase == 0:
         return rows
-    arms = STRIDE_ARMS
     legs = STRIDE_LEGS
     if phase == 2:
-        arms = [r[::-1] for r in arms]
         legs = [r[::-1] for r in legs]
-    rows[12:16] = arms
-    rows[16:32] = legs
-    for r in rows[16:]:
-        if "2" in r:
-            raise SystemExit(f"leg row uses color 2: {r}")
+    rows[24:32] = legs
     return rows
 
 
@@ -840,22 +818,24 @@ def build_sprites(page):
                             px[y + 1][x + 2] = 0 if dark else 3
                 T[f"bullet{k}_{g}_{int(dark)}"] = page.add(px, f"bullet{k}_{g}_{int(dark)}")
     # Interior window posts: 8 wide, light gray steel with a highlight.
-    post = ["..1231..", "..1231..", "..1231..", "..1231..",
-            "..1231..", "..1231..", "..1231..", "..1231.."]
+    # Palette 0 is black, skin, white for Alex. Steel uses black
+    # and white, not the skin color.
+    post = ["..1331..", "..1331..", "..1331..", "..1331..",
+            "..1331..", "..1331..", "..1331..", "..1331.."]
     T["post"] = page.add([[int(c) if c != "." else 0 for c in r] for r in post], "post")
-    seam_l = ["...12331", "...12331", "...12331", "...12331",
-              "...12331", "...12331", "...12331", "...12331"]
+    seam_l = ["...13331", "...13331", "...13331", "...13331",
+              "...13331", "...13331", "...13331", "...13331"]
     T["seam_l"] = page.add([[int(c) if c != "." else 0 for c in r] for r in seam_l], "seam_l")
-    seam_r = ["13321...", "13321...", "13321...", "13321...",
-              "13321...", "13321...", "13321...", "13321..."]
+    seam_r = ["13331...", "13331...", "13331...", "13331...",
+              "13331...", "13331...", "13331...", "13331..."]
     T["seam_r"] = page.add([[int(c) if c != "." else 0 for c in r] for r in seam_r], "seam_r")
-    # Car interior, over the window band (colors 1 dark gray, 2 cream):
-    # door frame edges, the seam where the leaves meet, and posts.
+    # Car interior, over the window band. Palette 0 is black / skin /
+    # white, so the frames are black and white rather than skin.
     for name, rows in {
-        "dedge_l": ["1222221."] * 8,
-        "dedge_r": [".1222221"] * 8,
-        "dcenter": ["22211222"] * 8,
-        "wpost": [".122221."] * 8,
+        "dedge_l": ["1333331."] * 8,
+        "dedge_r": [".1333331"] * 8,
+        "dcenter": ["33311333"] * 8,
+        "wpost": [".133331."] * 8,
     }.items():
         T[name] = page.add([[int(c) if c != "." else 0 for c in r] for r in rows], name)
     # Pause map markers, centered on pixel (3, 3): a stop in its

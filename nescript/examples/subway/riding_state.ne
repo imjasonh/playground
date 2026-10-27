@@ -229,7 +229,9 @@ fun ride_setup() {
     pal_set(1, 0x07, 0x27, 0x37)
     pal_set(2, mosaic_of(stop_station(ride_p, ride_k)), 0x00, 0x37)
     pal_set(3, 0x21, 0x00, 0x37)
-    pal_set(4, 0x02, 0x37, 0x16)
+    // Same Alex colors as the platform. Palette 2 is the jeans.
+    pal_set(4, 0x0F, 0x37, 0x30)
+    pal_set(6, 0x12, 0x27, 0x30)
 
     rstream = (rx >> 3) + 33
     var c: u16 = rstream
