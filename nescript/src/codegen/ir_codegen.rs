@@ -2902,11 +2902,20 @@ impl<'a> IrCodeGen<'a> {
     /// `[len][addr_hi][addr_lo][tile][tile]...[tile]` where the
     /// tile byte is repeated `len` times. The PPU's auto-increment
     /// (1 by default) advances the VRAM cursor one cell per byte.
+    ///
+    /// A `len` of 0 appends nothing. The entry would otherwise write
+    /// 256 tiles, lapping the ring, and publish a `len` byte of 0
+    /// that the drain reads as the sentinel forever.
     fn gen_nt_buf_append_fill_h(&mut self, x: IrTemp, y: IrTemp, len: IrTemp, tile: IrTemp) {
         let x_addr = self.temp_addr(x);
         let y_addr = self.temp_addr(y);
         let len_addr = self.temp_addr(len);
         let tile_addr = self.temp_addr(tile);
+        let suffix = self.local_label_suffix();
+        let fill_label = format!("__ir_nt_fill_{suffix}");
+        let skip_label = format!("__ir_nt_fill_skip_{suffix}");
+        self.emit(LDA, AM::ZeroPage(len_addr));
+        self.emit(BEQ, AM::LabelRelative(skip_label.clone()));
         // Skip `len`; `emit_nt_buf_publish` stores it last.
         self.emit(LDX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
         self.emit(INX, AM::Implied);
@@ -2932,8 +2941,6 @@ impl<'a> IrCodeGen<'a> {
         self.emit(INX, AM::Implied);
         // Inner loop: write `len` copies of `tile`. We use Y as the
         // fill counter so X stays as the buffer offset.
-        let suffix = self.local_label_suffix();
-        let fill_label = format!("__ir_nt_fill_{suffix}");
         self.emit(LDY, AM::ZeroPage(len_addr));
         self.emit_label(&fill_label);
         self.emit(LDA, AM::ZeroPage(tile_addr));
@@ -2942,6 +2949,7 @@ impl<'a> IrCodeGen<'a> {
         self.emit(DEY, AM::Implied);
         self.emit(BNE, AM::LabelRelative(fill_label));
         self.emit_nt_buf_publish(AM::ZeroPage(len_addr));
+        self.emit_label(&skip_label);
     }
 
     /// Emit the MMC3 `__irq_user` handler that dispatches on the
