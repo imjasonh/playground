@@ -1,403 +1,657 @@
-//! One-shot generator for the CHR tiles and nametable used by
-//! `examples/platformer.ne`.
+//! Generator for the CHR tiles, tile-index constants, and nametable
+//! used by `examples/platformer.ne`.
 //!
-//! Run with `cargo run --bin gen_platformer_tiles`. The output is
-//! intended to be pasted into `platformer.ne` under the
-//! `sprite Tileset { pixels: [...] }` and
-//! `background Level { legend { ... } map: [...] palette_map: [...] }`
-//! blocks. Keeping the source of truth here (instead of
-//! hand-maintained ASCII in the `.ne` file) ensures the tile art,
-//! the nametable, and the named tile indices all stay in sync.
+//! Run with `cargo run --bin gen_platformer_tiles`. Paste the three
+//! printed blocks into `platformer.ne`: the `pixels:` rows go in
+//! `sprite Tileset`, the `const TILE_*` lines replace the tile index
+//! constants, and the `legend` / `map:` / `palette_map:` blocks go in
+//! `background Level`. A tile inside a `sprite` has no name, so this
+//! program keeps the art, the indices, and the level map in one place.
 //!
-//! Tiles are defined as 8×8 ASCII art where each character selects
-//! one of 4 sub-palette slots:
-//!     '.' = colour 0  (sky / transparent for sprites)
+//! Art is ASCII where each character selects a sub-palette slot:
+//!     '.' = colour 0  (universal background / transparent sprite pixel)
 //!     'a' = colour 1
 //!     'b' = colour 2
 //!     'c' = colour 3
 //!
-//! Both the generator *and* the `NEScript` parser accept `.abc` as
-//! aliases for `.#%@`, so the output is ready to paste directly
-//! into a `pixels:` block without translation.
+//! A piece wider or taller than 8 pixels is split into 8×8 tiles in
+//! row-major order, and each tile gets the matching entry of `names`.
 
-/// A single 8×8 tile description: name + ASCII art.
-struct Tile {
-    name: &'static str,
+/// One piece of art: `w` tiles wide, `names.len() / w` tiles tall.
+struct Art {
+    names: &'static [&'static str],
+    w: usize,
     art: &'static str,
+    /// Add a one-pixel drop shadow in colour 3 below and right of every
+    /// colour-1 pixel. The font uses it so white text reads over sky.
+    shadow: bool,
 }
 
-/// All tiles referenced by the platformer example. Order matters —
-/// tile 0 is the default smiley reserved by the linker, so entry 0
-/// here lands at CHR index 1, entry 1 at index 2, and so on.
+const fn art(names: &'static [&'static str], w: usize, art: &'static str) -> Art {
+    Art {
+        names,
+        w,
+        art,
+        shadow: false,
+    }
+}
+
+const fn font(names: &'static [&'static str], art: &'static str) -> Art {
+    Art {
+        names,
+        w: 1,
+        art,
+        shadow: true,
+    }
+}
+
+/// Every tile in CHR order. Tile 0 is the linker's built-in smiley,
+/// so the first entry here lands at CHR index 1.
 ///
-/// Colour conventions (must line up with the palette + attribute
-/// layout in `examples/platformer.ne`):
-///   sprite sub-palette 0 (player / enemy / coin):
-///     a = red/cap, b = peach/skin, c = white/highlight
-///   bg sub-palette 0 (sky row): a = white, b = light gray, c = black
-///   bg sub-palette 1 (block row): a = red, b = peach, c = dark red
-///   bg sub-palette 2 (ground row): a = light green, b = light brown,
-///                                   c = dark brown
-const TILES: &[Tile] = &[
-    Tile {
-        name: "Player head L",
-        art: "\
-..aaaaaa
-.aaaaaaa
-.aaabbbb
-.aabbbbc
-aabbcccc
-aabbccbc
-aabbbbbb
-aabbbbbb",
-    },
-    Tile {
-        name: "Player head R",
-        art: "\
-aaaaaa..
+/// Sub-palettes (they must match `palette Main` in the example):
+///   bg0 sky, clouds, text, HUD: a = white, b = light blue, c = black
+///   bg1 bricks and ? blocks:    a = orange, b = black, c = dark orange
+///   bg2 hills and bushes:       a = light green, b = green, c = dark green
+///   bg3 grass and dirt:         a = light green, b = brown, c = dark orange
+///   sp0 hero:   a = red, b = skin, c = brown
+///   sp1 walker: a = dark orange, b = tan, c = black
+///   sp2 coin:   a = yellow, b = dark orange, c = cream
+///   sp3 text and heart: a = white, b = red, c = black
+const ARTS: &[Art] = &[
+    // ── Font: white glyphs with a black drop shadow ──
+    font(
+        &["DIGIT_0"],
+        "\
+..aaa...
+.aa.aa..
+aa...aa.
+aa...aa.
+aa...aa.
+.aa.aa..
+..aaa...
+........",
+    ),
+    font(
+        &["DIGIT_1"],
+        "\
+...aa...
+..aaa...
+...aa...
+...aa...
+...aa...
+...aa...
+.aaaaaa.
+........",
+    ),
+    font(
+        &["DIGIT_2"],
+        "\
+.aaaaa..
+aa...aa.
+.....aa.
+...aaa..
+.aaa....
+aa......
 aaaaaaa.
-bbbbaaa.
-cbbbbbaa
-cccccbbb
-bcbbccbb
-bbbbbbbb
-bbbbbbbb",
-    },
-    Tile {
-        name: "Player body L",
-        art: "\
-.aaaaaaa
-aaacaaaa
-aaaccaaa
-aaaaaaaa
-.bbbbbbb
-.bbbbbbb
-.bb..bbb
-aaa..bbb",
-    },
-    Tile {
-        name: "Player body R",
-        art: "\
-aaaaaaa.
-aaaacaaa
-aaaccaaa
-aaaaaaaa
-bbbbbbb.
-bbbbbbb.
-bbb..bb.
-bbb..aaa",
-    },
-    Tile {
-        name: "Enemy",
-        art: "\
+........",
+    ),
+    font(
+        &["DIGIT_3"],
+        "\
+.aaaaaa.
+....aa..
+...aa...
+....aa..
+.....aa.
+aa...aa.
+.aaaaa..
+........",
+    ),
+    font(
+        &["DIGIT_4"],
+        "\
+...aaa..
 ..aaaa..
+.aa.aa..
+aa..aa..
+aaaaaaa.
+....aa..
+....aa..
+........",
+    ),
+    font(
+        &["DIGIT_5"],
+        "\
+aaaaaa..
+aa......
+aaaaaa..
+.....aa.
+.....aa.
+aa...aa.
+.aaaaa..
+........",
+    ),
+    font(
+        &["DIGIT_6"],
+        "\
+..aaaa..
+.aa.....
+aa......
+aaaaaa..
+aa...aa.
+aa...aa.
+.aaaaa..
+........",
+    ),
+    font(
+        &["DIGIT_7"],
+        "\
+aaaaaaa.
+aa...aa.
+....aa..
+...aa...
+..aa....
+..aa....
+..aa....
+........",
+    ),
+    font(
+        &["DIGIT_8"],
+        "\
+.aaaaa..
+aa...aa.
+aa...aa.
+.aaaaa..
+aa...aa.
+aa...aa.
+.aaaaa..
+........",
+    ),
+    font(
+        &["DIGIT_9"],
+        "\
+.aaaaa..
+aa...aa.
+aa...aa.
 .aaaaaa.
-.aacbaa.
-aacccaaa
-abbccbba
-.aaaaaa.
-a.aaaa.a
-a..aa..a",
-    },
-    Tile {
-        name: "Coin",
-        art: "\
-...bb...
-..bbbb..
-.bbccbb.
-.bcbbcb.
-.bcbbcb.
-.bbccbb.
-..bbbb..
-...bb...",
-    },
-    // Grass top (sub-palette 2: a=green, c=dark brown).
-    Tile {
-        name: "Grass top",
-        art: "\
-aaaaaaaa
+.....aa.
+....aa..
+.aaaa...
+........",
+    ),
+    font(
+        &["A"],
+        "\
+..aaa...
+.aa.aa..
+aa...aa.
+aa...aa.
+aaaaaaa.
+aa...aa.
+aa...aa.
+........",
+    ),
+    font(
+        &["E"],
+        "\
+aaaaaaa.
+aa......
+aa......
+aaaaaa..
+aa......
+aa......
+aaaaaaa.
+........",
+    ),
+    font(
+        &["F"],
+        "\
+aaaaaaa.
+aa......
+aa......
+aaaaaa..
+aa......
+aa......
+aa......
+........",
+    ),
+    font(
+        &["G"],
+        "\
+..aaaaa.
+.aa.....
+aa......
+aa..aaa.
+aa...aa.
+.aa..aa.
+..aaaaa.
+........",
+    ),
+    font(
+        &["L"],
+        "\
+aa......
+aa......
+aa......
+aa......
+aa......
+aa......
+aaaaaaa.
+........",
+    ),
+    font(
+        &["M"],
+        "\
+aa...aa.
+aaa.aaa.
+aaaaaaa.
+aa.a.aa.
+aa...aa.
+aa...aa.
+aa...aa.
+........",
+    ),
+    font(
+        &["P"],
+        "\
+aaaaaa..
+aa...aa.
+aa...aa.
+aaaaaa..
+aa......
+aa......
+aa......
+........",
+    ),
+    font(
+        &["R"],
+        "\
+aaaaaa..
+aa...aa.
+aa...aa.
+aa..aaa.
+aaaaa...
+aa.aaa..
+aa..aaa.
+........",
+    ),
+    font(
+        &["S"],
+        "\
+.aaaaa..
+aa...aa.
+aa......
+.aaaaa..
+.....aa.
+aa...aa.
+.aaaaa..
+........",
+    ),
+    font(
+        &["T"],
+        "\
+aaaaaa..
+..aa....
+..aa....
+..aa....
+..aa....
+..aa....
+..aa....
+........",
+    ),
+    font(
+        &["V"],
+        "\
+aa...aa.
+aa...aa.
+aa...aa.
+aa...aa.
+.aa.aa..
+..aaa...
+...a....
+........",
+    ),
+    // ── Background (bg0): blank sky, a 3×2 cloud ──
+    art(
+        &["SKY"],
+        1,
+        "\
+........
+........
+........
+........
+........
+........
+........
+........",
+    ),
+    art(
+        &[
+            "CLOUD_TL", "CLOUD_TM", "CLOUD_TR", "CLOUD_BL", "CLOUD_BM", "CLOUD_BR",
+        ],
+        3,
+        "\
+.........aaaaa..........
+.......aaaaaaaaa........
+...aaa.aaaaaaaaaa.aaa...
+..aaaaaaaaaaaaaaaaaaaa..
+.aaaaaaaaaaaaaaaaaaaaaa.
+.aaaaaaaaaaaaaaaaaaaaaa.
+aaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaab
+.aaaaaaaaaaaaaaaaaaaaabb
+.baaaaaaaaaaaaaaaaaaabb.
+..bbaaaabbbaaaaaabbbbb..
+...bbbbbb.bbbbbbbbbbb...
+....bbbb...bbbb.bbbb....
+........................",
+    ),
+    // ── Background (bg1): brick and ? block, one tile tall ──
+    art(
+        &["BRICK"],
+        1,
+        "\
+aaaaaaab
+cccccccb
+cccccccb
+bbbbbbbb
+aaabaaaa
+cccbcccc
+cccbcccc
+bbbbbbbb",
+    ),
+    art(
+        &["QBLOCK"],
+        1,
+        "\
+aaaaaaab
+abaaaaba
+aaabbaaa
+aabaabaa
+aaaabaaa
+abaaaaba
+aaaabaac
+bbbbbbbb",
+    ),
+    // ── Background (bg2): hill pieces and a bush ──
+    // A hill is a cap (HILL_TL, HILL_TR) over slopes (HILL_L, HILL_R)
+    // around plain and spotted fill.
+    art(
+        &["HILL_TL", "HILL_TR"],
+        2,
+        "\
+.....cccccc.....
+...ccbbbbbbcc...
+..cbbbbbbbbbbc..
+.cbbbbbcbbbbbbc.
+.cbbbbbbbbbbbbc.
+cbbbbbbbbbbbbbbc
+cbbbbbbbbbbbbbbc
+bbbbbbbbbbbbbbbb",
+    ),
+    art(
+        &["HILL_L", "HILL_FILL", "HILL_SPOT", "HILL_R"],
+        4,
+        "\
+.......cbbbbbbbbbbbbbbbbc.......
+......cbbbbbbbbbbbbbcbbbbc......
+.....cbbbbbbbbbbbbbcccbbbbc.....
+....cbbbbbbbbbbbbbbbcbbbbbbc....
+...cbbbbbbbbbbbbbbbbbbbbbbbbc...
+..cbbbbbbbbbbbbbbcbbbbbbbbbbbc..
+.cbbbbbbbbbbbbbbcccbbbbbbbbbbbc.
+cbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbc",
+    ),
+    art(
+        &["BUSH_L", "BUSH_M", "BUSH_R"],
+        3,
+        "\
+.....cccc....cccc....ccc
+...ccaaaacccaaaacc.ccaaa
+..caaaaaaaaaaaaaaaccaaaa
+.caaaabaaaaaaabaaaaaaaab
+caaaabaaaaaaaabaaaaaaabb
+caaaaaaaaabaaaaaaabaaabb
+caabbaaaabbbaaaaabbbabbb
+cabbbbbbbbbbbbbbbbbbbbbb",
+    ),
+    // ── Background (bg3): grass top and two kinds of dirt ──
+    art(
+        &["GRASS"],
+        1,
+        "\
 a.aaa.aa
 aaaaaaaa
-accacaca
-ccccaccc
+aaaaaaaa
+aaabaaaa
+abbbbbab
+bcbbcbbc
 cccccccc
-cbccccbc
-cccccccc",
-    },
-    // Dirt (sub-palette 2: c=dark brown bulk, b=light brown speckles).
-    Tile {
-        name: "Dirt",
-        art: "\
+cccbcccc",
+    ),
+    art(
+        &["DIRT"],
+        1,
+        "\
 cccccccc
-cbccccbc
+cbcccccc
+cccccbcc
 cccccccc
-ccccbccc
+ccbccccc
+cccccccb
 cccccccc
-cbccccbc
-ccccbccc
-cccccccc",
-    },
-    // Brick (sub-palette 1: a=red, c=dark red mortar).
-    Tile {
-        name: "Brick",
-        art: "\
+cccbcccc",
+    ),
+    art(
+        &["DIRT_ROCK"],
+        1,
+        "\
 cccccccc
-caaaaaca
-caaaaaca
-caaaaaca
+ccbbbccc
+cbbabbcc
+cbaabbbc
+cbbbbbbc
+ccbbbbcc
 cccccccc
-aaacaaaa
-aaacaaaa
-aaacaaaa",
-    },
-    // Cloud left (sub-palette 0: a=white, b=light gray shade).
-    Tile {
-        name: "Cloud L",
-        art: "\
+cccccbcc",
+    ),
+    // ── Sprite (sp0): the hero, facing right ──
+    // One head over three bodies: standing, mid-step, and jumping.
+    art(
+        &["HERO_HL", "HERO_HR"],
+        2,
+        "\
+......aaaaa.....
+....aaaaaaaaa...
+...aaaaaaaaaaa..
+...aaaaaaaaaaaaa
+...cccbbbbbb....
+..ccbbbbcbbcb...
+..ccbbbbcbbcb...
+...cbbbbbbbbbb..",
+    ),
+    art(
+        &["HERO_STAND_L", "HERO_STAND_R"],
+        2,
+        "\
+....bbbbbbbb....
+.....bbbbbb.....
+....aaaaaaaa....
+...aaaaaaaaab...
+...baaaaaaaab...
+....cccccccc....
+....ccc..ccc....
+...cccc..cccc...",
+    ),
+    art(
+        &["HERO_STEP_L", "HERO_STEP_R"],
+        2,
+        "\
+....bbbbbbbb....
+.....bbbbbb.....
+....aaaaaaaa....
+...aaaaaaaaaab..
+..baaaaaaaaa....
+...cccccccccc...
+..ccc......ccc..
+.cccc......cccc.",
+    ),
+    art(
+        &["HERO_JUMP_L", "HERO_JUMP_R"],
+        2,
+        "\
+....bbbbbbbb..b.
+.....bbbbbb..ab.
+....aaaaaaaaaa..
+..baaaaaaaaaa...
+...aaaaaaaa.....
+...ccccccccc....
+..ccc....cccc...
+.ccc.......ccc..",
+    ),
+    // ── Sprite (sp1): the walker. Its feet are lopsided, so drawing
+    // it mirrored is the second walk frame. ──
+    art(
+        &["WALKER_TL", "WALKER_TR", "WALKER_BL", "WALKER_BR"],
+        2,
+        "\
+......aaaa......
+....aaaaaaaa....
+...aaaaaaaaaa...
+..acaaaaaaaaca..
+.aaaccaaaaccaaa.
+.aabbcbaabcbbaa.
+aaabbcbaabcbbaaa
+aaabbbbaabbbbaaa
+aaaaaaaaaaaaaaaa
+.aaaaaaaaaaaaaa.
+...abbbbbbbba...
+.....bbbbbb.....
+....bbbbbbbbcc..
+..cccbbbbbbcccc.
+.ccccccbbbccccc.
+.cccccc...cccc..",
+    ),
+    // The flattened walker is symmetric: draw SQUASH, then SQUASH
+    // mirrored beside it.
+    art(
+        &["SQUASH"],
+        1,
+        "\
 ........
-...aaa..
-..aaaaa.
-.aaaaaaa
-.aaaaaaa
-.bbaaaaa
-..bbbbba
-.....bbb",
-    },
-    // Cloud right (sub-palette 0).
-    Tile {
-        name: "Cloud R",
-        art: "\
 ........
-.aaa....
-aaaaa...
-aaaaaaa.
-aaaaaaa.
-aaaaabb.
-abbbbb..
-bbb.....",
-    },
-    // Hill (sub-palette 2: a=green, b=light brown shade).
-    Tile {
-        name: "Hill",
-        art: "\
-........
-....aa..
-...aaaa.
+.....aaa
 ..aaaaaa
-..abaaaa
-.abbabaa
-.aaababa
-aabbabba",
-    },
-    // Bush (sub-palette 2: a=green, c=dark brown outline).
-    Tile {
-        name: "Bush",
-        art: "\
-........
-...aa...
-..aaaa..
-.aaaaac.
-aaaaaaca
-aaaaacca
-aaaaacca
-acacacac",
-    },
-    // Q Block (sub-palette 1: a=red frame, b=peach face, c=dark red).
-    Tile {
-        name: "Q Block",
-        art: "\
-cccccccc
-caaaaaac
-cabbbbac
-cabccbac
-cabcbbac
-cabbbbac
-caaaaaac
-cccccccc",
-    },
-    // Sky (all transparent — renders as the universal bg colour).
-    Tile {
-        name: "Sky (blank)",
-        art: "\
-........
-........
-........
-........
-........
-........
-........
-........",
-    },
-    // ── HUD glyphs (sprite-only; palette sp0: a=red, c=white) ──
-    // Each digit is a 4-wide outline centred in an 8×8 cell and
-    // drawn in white ('c') so it reads crisply over the sky
-    // backdrop at the top of the playfield. The compiler treats
-    // '.' as transparent for sprites, so the sky shows through.
-    Tile {
-        name: "Digit 0",
-        art: "\
-........
-..cccc..
-..c..c..
-..c..c..
-..c..c..
-..c..c..
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 1",
-        art: "\
-........
-...cc...
-..ccc...
-...cc...
-...cc...
-...cc...
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 2",
-        art: "\
-........
-..cccc..
-.....c..
-....cc..
-...cc...
-..cc....
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 3",
-        art: "\
-........
-..cccc..
-.....c..
-...ccc..
-.....c..
-.....c..
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 4",
-        art: "\
-........
-..c..c..
-..c..c..
-..cccc..
-.....c..
-.....c..
-.....c..
-........",
-    },
-    Tile {
-        name: "Digit 5",
-        art: "\
-........
-..cccc..
-..c.....
-..cccc..
-.....c..
-..c..c..
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 6",
-        art: "\
-........
-..cccc..
-..c.....
-..cccc..
-..c..c..
-..c..c..
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 7",
-        art: "\
-........
-..cccc..
-.....c..
-....c...
-...c....
-..c.....
-..c.....
-........",
-    },
-    Tile {
-        name: "Digit 8",
-        art: "\
-........
-..cccc..
-..c..c..
-..cccc..
-..c..c..
-..c..c..
-..cccc..
-........",
-    },
-    Tile {
-        name: "Digit 9",
-        art: "\
-........
-..cccc..
-..c..c..
-..cccc..
-.....c..
-.....c..
-..cccc..
-........",
-    },
-    // Small red heart for the lives readout. Uses 'a' (red) so the
-    // shape pops against the sky and matches the cap/brick red.
-    Tile {
-        name: "Heart",
-        art: "\
-........
-.aa..aa.
+.aacccaa
 aaaaaaaa
-aaaaaaaa
-.aaaaaa.
-..aaaa..
-...aa...
+.ccccccb
+cccccc..",
+    ),
+    // ── Sprite (sp2): an 8×16 coin in three turns of its spin,
+    // and the small coin icon for the HUD ──
+    art(
+        &["COIN_FULL_T", "COIN_FULL_B"],
+        1,
+        "\
+..bbbb..
+.baaaab.
+baacaaab
+bacaaaab
+bacaaaab
+bacaaaab
+bacaaaab
+bacaaaab
+bacaaaab
+bacaaaab
+bacaaaab
+baaaaaab
+baaaaaab
+.baaaab.
+..bbbb..
 ........",
-    },
-    // Sprite-0 hit pair — two single-pixel tiles whose one opaque
-    // pixel sits at row 7 col 3 (sprite side) and row 0 col 3 (bg
-    // side). OAM slot 0 gets `Sprite 0 anchor` at (248, 8) and NT
-    // (col 31, row 2) gets `BG anchor`, so both opaque pixels
-    // land at screen (251, 16) — the first scanline of the
-    // playfield, one scanline below the HUD row. The PPU's
-    // sprite-0 hit fires at dot 251 of scanline 16, `$2005`
-    // writes from `sprite_0_split` land in HBLANK, and the
-    // horizontal-scroll reload for scanline 17 latches the
-    // playfield's `camera_x` without touching scanlines 8-15
-    // (where the HUD glyphs live). A hit on scanline 15 itself
-    // would smear the bottom row of every HUD glyph across the
-    // split in jsnes. Both tiles are transparent everywhere
-    // except that one pixel, so the only BG footprint is a
-    // single dot at (251, 16) — inside jsnes's right-edge
-    // overscan, invisible in the committed golden.
-    Tile {
-        name: "Sprite 0 anchor",
-        art: "\
-........
-........
-........
-........
-........
-........
-........
-...c....",
-    },
-    Tile {
-        name: "BG anchor",
-        art: "\
+    ),
+    art(
+        &["COIN_THIN_T", "COIN_THIN_B"],
+        1,
+        "\
+...bb...
+..baab..
+..bcab..
+..bcab..
+..bcab..
+..bcab..
+..bcab..
+..bcab..
+..bcab..
+..bcab..
+..bcab..
+..baab..
+..baab..
+..baab..
+...bb...
+........",
+    ),
+    art(
+        &["COIN_EDGE_T", "COIN_EDGE_B"],
+        1,
+        "\
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+...bb...
+........",
+    ),
+    art(
+        &["COIN_ICON"],
+        1,
+        "\
+..bbb...
+.baaab..
+bacaaab.
+bacaaab.
+bacaaab.
+.baaab..
+..bbb...
+........",
+    ),
+    // ── Sprite (sp3): the lives heart ──
+    art(
+        &["HEART"],
+        1,
+        "\
+.bb.bb..
+bbbbbbb.
+bbabbbbc
+bbbbbbbc
+.bbbbbc.
+..bbbc..
+...bc...
+........",
+    ),
+    // ── Sprite-0 hit pair ──
+    // OAM slot 0 holds SPRITE0_ANCHOR at (248, 15), so its one opaque
+    // pixel draws at screen (251, 16). Map row 2 is a full row of
+    // HUD_RULE, whose top pixel row is solid, so the hit fires on
+    // scanline 16 whatever the camera. The scroll write lands partway
+    // through that scanline, but every column of the rule looks the
+    // same and the rest of row 2 is sky, so nothing visible moves.
+    art(
+        &["SPRITE0_ANCHOR"],
+        1,
+        "\
 ...c....
 ........
 ........
@@ -406,252 +660,236 @@ aaaaaaaa
 ........
 ........
 ........",
-    },
+    ),
+    art(
+        &["HUD_RULE"],
+        1,
+        "\
+bbbbbbbb
+........
+........
+........
+........
+........
+........
+........",
+    ),
 ];
 
-// ── Named CHR tile indices used by the nametable layout below ──
-// (Player/enemy/coin tile indices are referenced by name only in
-// the .ne file's `draw` statements, not by the nametable here, so
-// the nametable-only constants live here.)
-const GRASS: u8 = 7;
-const DIRT: u8 = 8;
-const BRICK: u8 = 9;
-const CLOUD_L: u8 = 10;
-const CLOUD_R: u8 = 11;
-const HILL: u8 = 12;
-const BUSH: u8 = 13;
-const QBLOCK: u8 = 14;
-const SKY: u8 = 15;
+/// One 8×8 tile, as eight rows of eight `.abc` characters.
+type TileRows = [[u8; 8]; 8];
 
-/// Validate that a tile's ASCII art is well-formed (8 rows × 8 cols,
-/// only the legal `.abc` characters). Pixel→CHR encoding now happens
-/// inside the `NEScript` parser when it sees the `pixels:` block, so
-/// this generator's job is just to make sure the strings we paste
-/// are syntactically valid.
-fn validate_tile_art(name: &str, art: &str) {
-    let rows: Vec<&str> = art.lines().filter(|l| !l.is_empty()).collect();
-    assert_eq!(
-        rows.len(),
-        8,
-        "tile '{name}': expected 8 rows, got {}",
-        rows.len()
-    );
-    for (y, row) in rows.iter().enumerate() {
+/// Split every `Art` into named 8×8 tiles in CHR order.
+fn tiles() -> Vec<(&'static str, TileRows)> {
+    let mut out = Vec::new();
+    for piece in ARTS {
+        let rows: Vec<&[u8]> = piece.art.lines().map(str::as_bytes).collect();
+        let h = piece.names.len() / piece.w;
+        assert_eq!(piece.names.len(), piece.w * h, "{:?}", piece.names);
         assert_eq!(
-            row.len(),
-            8,
-            "tile '{name}' row {y}: expected 8 cols, got {row:?}"
+            rows.len(),
+            h * 8,
+            "{:?}: expected {} rows",
+            piece.names,
+            h * 8
         );
-        for ch in row.chars() {
-            assert!(
-                matches!(ch, '.' | 'a' | 'b' | 'c'),
-                "tile '{name}' row {y}: invalid character '{ch}'"
+        for (y, row) in rows.iter().enumerate() {
+            assert_eq!(
+                row.len(),
+                piece.w * 8,
+                "{:?} row {y}: expected {} cols",
+                piece.names,
+                piece.w * 8
             );
+            for &ch in *row {
+                assert!(
+                    matches!(ch, b'.' | b'a' | b'b' | b'c'),
+                    "{:?} row {y}: invalid character {:?}",
+                    piece.names,
+                    ch as char
+                );
+            }
+        }
+        for ty in 0..h {
+            for tx in 0..piece.w {
+                let mut tile = [[b'.'; 8]; 8];
+                for (y, row) in tile.iter_mut().enumerate() {
+                    row.copy_from_slice(&rows[ty * 8 + y][tx * 8..tx * 8 + 8]);
+                }
+                if piece.shadow {
+                    let src = tile;
+                    for y in 1..8 {
+                        for x in 1..8 {
+                            if src[y - 1][x - 1] == b'a' && src[y][x] == b'.' {
+                                tile[y][x] = b'c';
+                            }
+                        }
+                    }
+                }
+                out.push((piece.names[ty * piece.w + tx], tile));
+            }
         }
     }
+    out
 }
 
-/// Build a 32×30 nametable for a static Mario-ish level vista.
-/// Horizontal scrolling pans this single nametable via `scroll()`,
-/// so it only needs to look interesting at any X offset.
-fn build_nametable() -> [u8; 960] {
-    let mut nt = [SKY; 960];
-    let set = |nt: &mut [u8; 960], y: usize, x: usize, t: u8| {
-        nt[y * 32 + x] = t;
-    };
+/// The legend: one map character per background tile.
+const LEGEND: &[(char, &str, &str)] = &[
+    ('.', "SKY", "sky"),
+    ('(', "CLOUD_TL", "cloud, top row"),
+    ('-', "CLOUD_TM", ""),
+    (')', "CLOUD_TR", ""),
+    ('[', "CLOUD_BL", "cloud, bottom row"),
+    ('_', "CLOUD_BM", ""),
+    (']', "CLOUD_BR", ""),
+    ('#', "BRICK", "brick (one-way platform)"),
+    ('Q', "QBLOCK", "? block (one-way platform)"),
+    ('{', "HILL_TL", "hill cap"),
+    ('}', "HILL_TR", ""),
+    ('/', "HILL_L", "hill slopes"),
+    ('\\', "HILL_R", ""),
+    ('^', "HILL_FILL", "hill fill"),
+    ('o', "HILL_SPOT", "hill fill with spots"),
+    ('<', "BUSH_L", "bush"),
+    ('*', "BUSH_M", ""),
+    ('>', "BUSH_R", ""),
+    ('=', "GRASS", "grass top"),
+    ('%', "DIRT", "dirt"),
+    ('@', "DIRT_ROCK", "rock in the dirt"),
+    ('0', "DIGIT_0", "HUD: score tens and ones"),
+    ('3', "DIGIT_3", "HUD: lives"),
+    ('~', "HUD_RULE", "HUD rule; the sprite-0 hit anchor"),
+];
 
-    // Row 5 & 6: two clouds at different X positions for parallax feel.
-    for &cx in &[4usize, 20] {
-        set(&mut nt, 5, cx, CLOUD_L);
-        set(&mut nt, 5, cx + 1, CLOUD_R);
-    }
-    set(&mut nt, 6, 12, CLOUD_L);
-    set(&mut nt, 6, 13, CLOUD_R);
+/// The 32×30 level. Horizontal mirroring repeats it as the camera
+/// scrolls, so it loops every 256 pixels. Rows 8 and 11 stay sky: the
+/// title screen writes its text there.
+const MAP: [&str; 30] = [
+    "................................",
+    "....00....................3.....",
+    "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+    "..(-)..................(-)......",
+    "..[_]........(-).......[_]......",
+    ".............[_]................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "................................",
+    "......##Q##........#Q#..........",
+    "................................",
+    "................................",
+    "................................",
+    "...{}...........................",
+    "../^^\\..............{}..........",
+    "./^o^^\\..<**>....../^o\\...<*>...",
+    "================================",
+    "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
+    "%%%%%@%%%%%%%%%%%%%@%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%@%%%%%%%%%%%%%%@%%%",
+    "%%%@%%%%%%%%%%%%%%%%%%%@%%%%%%%%",
+    "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
+    "%%%%%%%%%@%%%%%%%%%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%",
+];
 
-    // Row 15: a suspended brick platform with a Q-block in the middle.
-    for x in 6..=9 {
-        let t = if x == 8 { QBLOCK } else { BRICK };
-        set(&mut nt, 15, x, t);
-    }
-    for x in 18..=20 {
-        set(&mut nt, 15, x, BRICK);
-    }
-
-    // Row 20: hills sitting behind the grass line.
-    for x in 2..=4 {
-        set(&mut nt, 20, x, HILL);
-    }
-    for x in 22..=25 {
-        set(&mut nt, 20, x, HILL);
-    }
-
-    // Row 21: bushes on top of the grass.
-    for x in 10..=12 {
-        set(&mut nt, 21, x, BUSH);
-    }
-    for x in 27..=28 {
-        set(&mut nt, 21, x, BUSH);
-    }
-
-    // Row 22: grass top — a full horizontal line.
-    for x in 0..32 {
-        set(&mut nt, 22, x, GRASS);
-    }
-
-    // Row 23-29: dirt rows with a few buried bricks for texture.
-    for y in 23..30 {
-        for x in 0..32 {
-            set(&mut nt, y, x, DIRT);
-        }
-    }
-    for &(y, x) in &[(24usize, 5usize), (25, 11), (24, 18), (25, 24), (23, 30)] {
-        set(&mut nt, y, x, BRICK);
-    }
-
-    nt
-}
-
-/// Build a 64-byte attribute table that pairs every 2×2 metatile
-/// with a background sub-palette.
-///
-/// The attribute table covers a 16×15 grid of 16×16 metatiles. Each
-/// byte encodes 4 quadrants (top-left, top-right, bottom-left,
-/// bottom-right) of a 32×32-pixel "super-metatile" with 2 bits
-/// apiece (palette index 0..3). For this demo we simply pick a
-/// sub-palette per screen row region:
-/// - top region (sky): sub-palette 0
-/// - mid region (hills/blocks): sub-palette 1
-/// - ground region (grass/dirt): sub-palette 2
-fn build_attributes() -> [u8; 64] {
-    let mut attr = [0u8; 64];
-    // The attribute table is 8×8 bytes. Row `ay` covers nametable
-    // rows 4*ay..4*ay+3. Palette layout:
-    //   rows 0-11 (ay 0-2): sub-palette 0 (sky/clouds: whites)
-    //   rows 12-15 (ay 3):  sub-palette 1 (brick/Q-block row)
-    //   rows 16-19 (ay 4):  sub-palette 0 (more sky above the hills)
-    //   rows 20-29 (ay 5-7): sub-palette 2 (grass/hills/bushes/dirt)
-    for ay in 0..8 {
-        let pal: u8 = match ay {
-            0..=2 => 0,
-            3 => 1,
-            4 => 0,
-            _ => 2, // 5, 6, 7
-        };
-        let quad = pal & 0b11;
-        let byte = quad | (quad << 2) | (quad << 4) | (quad << 6);
-        for ax in 0..8 {
-            attr[ay * 8 + ax] = byte;
-        }
-    }
-    attr
-}
+/// Sub-palette per 16×16 metatile row. The PPU reads all 16 attribute
+/// rows, including the one below the visible screen.
+const PALETTE_ROWS: [(u8, &str); 16] = [
+    (0, "NT rows 0-1: HUD"),
+    (0, "NT rows 2-11: sky, clouds, title text"),
+    (0, ""),
+    (0, ""),
+    (0, ""),
+    (0, ""),
+    (0, "NT rows 12-13: sky"),
+    (1, "NT rows 14-15: brick platforms"),
+    (0, "NT rows 16-17: sky"),
+    (2, "NT rows 18-21: hills and bushes"),
+    (2, ""),
+    (3, "NT rows 22-29: grass and dirt"),
+    (3, ""),
+    (3, ""),
+    (3, ""),
+    (3, "below the screen"),
+];
 
 fn main() {
-    // ── CHR tiles as pixel-art strings ──────────────────────────
-    //
-    // `NEScript`'s `sprite Name { pixels: [...] }` accepts one string
-    // per pixel row; the parser splits the grid into 8×8 tiles in
-    // row-major reading order, so emitting each 8-row tile
-    // sequentially (stacked vertically, 1 tile wide × 15 tiles tall)
-    // produces CHR tile indices 1..15 in the same order as the
-    // TILES array.
+    let tiles = tiles();
+    let index_of = |name: &str| -> usize {
+        1 + tiles
+            .iter()
+            .position(|(n, _)| *n == name)
+            .unwrap_or_else(|| panic!("no tile named {name}"))
+    };
+    assert!(tiles.len() < 255, "too many tiles");
+
     println!("// ── CHR tiles (paste into sprite Tileset {{ pixels: [...] }}) ──");
     println!("    pixels: [");
-    for (i, tile) in TILES.iter().enumerate() {
-        validate_tile_art(tile.name, tile.art);
-        let tile_idx = i + 1;
-        println!("        // tile {tile_idx}: {}", tile.name);
-        for row in tile.art.lines().filter(|l| !l.is_empty()) {
-            println!("        \"{row}\",");
-        }
-    }
-    println!("    ]\n");
-
-    // ── Background tilemap via legend + map form ────────────────
-    //
-    // Each distinct nametable tile gets one easy-to-read legend
-    // character. `.` is the most common (sky), so use it for the
-    // default fill to keep the `map:` strings tidy. The compiler
-    // validates every character — any typo in the rows below is
-    // caught by the parser rather than by a render bug at runtime.
-    println!("// ── Nametable (paste into background Level {{ legend/map/palette_map }}) ──");
-    println!("    legend {{");
-    println!("        \".\": 15   // sky (blank)");
-    println!("        \"<\": 10   // cloud left half");
-    println!("        \">\": 11   // cloud right half");
-    println!("        \"#\": 9    // brick");
-    println!("        \"Q\": 14   // question block");
-    println!("        \"^\": 12   // hill silhouette");
-    println!("        \"*\": 13   // bush");
-    println!("        \"=\": 7    // grass top");
-    println!("        \"%\": 8    // dirt");
-    println!("    }}");
-    println!();
-    println!("    map: [");
-    let nt = build_nametable();
-    assert_eq!(nt.len(), 960);
-    let legend = legend_char_for;
-    for row in 0..30 {
-        let mut s = String::from("        \"");
-        for col in 0..32 {
-            s.push(legend(nt[row * 32 + col]));
-        }
-        s.push_str("\",");
-        println!("{s}");
-    }
-    println!("    ]\n");
-
-    // ── Palette map (auto-packs the 64-byte attribute table) ────
-    //
-    // `palette_map:` is a 16-wide grid of sub-palette digits (one
-    // per 16×16 metatile). The parser packs pairs of rows into the
-    // 8×8 attribute table automatically, so we emit the metatile
-    // grid directly and skip the awkward `(br<<6)|(bl<<4)|(tr<<2)|tl`
-    // bit-packing the old raw-bytes form demanded.
-    //
-    // The attribute table covers 16 metatile rows (8 attr rows ×
-    // 2 each); the last row sits below the visible 240-scanline
-    // screen but the PPU still reads it, so we emit all 16 rows to
-    // match whatever the original hand-packed attribute byte was.
-    println!("// ── Attributes (paste into background Level {{ palette_map: [...] }}) ──");
-    println!("    palette_map: [");
-    let attr = build_attributes();
-    for my in 0..16 {
-        let mut s = String::from("        \"");
-        for mx in 0..16 {
-            // Recover the sub-palette index for metatile (mx, my)
-            // from the packed attribute table. Each byte covers a
-            // 2×2 metatile block at attr[(my/2)*8 + mx/2], with
-            // quadrants laid out as BR BL TR TL in the high bits.
-            let byte = attr[(my / 2) * 8 + mx / 2];
-            let quadrant = match (mx % 2, my % 2) {
-                (0, 0) => byte & 0b11,
-                (1, 0) => (byte >> 2) & 0b11,
-                (0, 1) => (byte >> 4) & 0b11,
-                _ => (byte >> 6) & 0b11,
+    for (i, (name, rows)) in tiles.iter().enumerate() {
+        println!("        // tile {}: {name}", i + 1);
+        for (y, row) in rows.iter().enumerate() {
+            let comma = if i + 1 == tiles.len() && y == 7 {
+                ""
+            } else {
+                ","
             };
-            s.push(char::from(b'0' + quadrant));
+            println!("        \"{}\"{comma}", std::str::from_utf8(row).unwrap());
         }
-        s.push_str("\",");
-        println!("{s}");
+    }
+    println!("    ]\n");
+
+    println!("// ── Tile indices (paste over the TILE_* constants) ──");
+    for (i, (name, _)) in tiles.iter().enumerate() {
+        println!("const TILE_{name}: u8 = {}", i + 1);
+    }
+    println!();
+
+    println!("// ── Level (paste into background Level {{ legend / map / palette_map }}) ──");
+    println!("    legend {{");
+    for (ch, name, comment) in LEGEND {
+        let key = if *ch == '\\' {
+            "\\\\".to_string()
+        } else {
+            ch.to_string()
+        };
+        let idx = index_of(name);
+        let comment = if comment.is_empty() {
+            String::new()
+        } else {
+            format!("   // {comment}")
+        };
+        println!("        \"{key}\": {idx}{comment}");
+    }
+    println!("    }}\n");
+    println!("    map: [");
+    for (y, row) in MAP.iter().enumerate() {
+        assert_eq!(row.chars().count(), 32, "map row {y}");
+        for ch in row.chars() {
+            assert!(
+                LEGEND.iter().any(|(c, _, _)| *c == ch),
+                "map row {y}: {ch:?} is not in the legend"
+            );
+        }
+        let escaped = row.replace('\\', "\\\\");
+        let comma = if y + 1 == MAP.len() { "" } else { "," };
+        println!("        \"{escaped}\"{comma}");
+    }
+    println!("    ]\n");
+    println!("    palette_map: [");
+    for (y, (pal, comment)) in PALETTE_ROWS.iter().enumerate() {
+        let row: String = std::iter::repeat_n(char::from(b'0' + pal), 16).collect();
+        let comma = if y + 1 == PALETTE_ROWS.len() { "" } else { "," };
+        let comment = if comment.is_empty() {
+            String::new()
+        } else {
+            format!("   // {comment}")
+        };
+        println!("        \"{row}\"{comma}{comment}");
     }
     println!("    ]");
-}
-
-/// Map a CHR tile index back to its legend character in the
-/// generated `map:` block. Must stay in sync with the `legend { ... }`
-/// block printed by `main()`.
-fn legend_char_for(tile: u8) -> char {
-    match tile {
-        15 => '.',
-        10 => '<',
-        11 => '>',
-        9 => '#',
-        14 => 'Q',
-        12 => '^',
-        13 => '*',
-        7 => '=',
-        8 => '%',
-        other => panic!("no legend char for tile {other}"),
-    }
 }
