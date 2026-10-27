@@ -1,0 +1,37 @@
+# An OpenTelemetry Collector config that forwards traces it receives over
+# OTLP/HTTP to Google Cloud Trace. gcp_test.go sends to this same OTLP/HTTP
+# receiver when OTEL_EXPORTER_OTLP_ENDPOINT points at a Collector running
+# with this config, instead of at the fake one the test starts on its own.
+#
+# Get otelcol-contrib (the googlecloud exporter isn't in the core
+# distribution) from
+# https://github.com/open-telemetry/opentelemetry-collector-releases/releases,
+# or run it from a container:
+#
+#   docker run --rm -p 4318:4318 \
+#     -v "$PWD/collector-config.yaml:/etc/otelcol/config.yaml" \
+#     -v "$HOME/.config/gcloud:/root/.config/gcloud:ro" \
+#     otel/opentelemetry-collector-contrib:latest
+#
+# The googlecloud exporter picks up credentials the way every Google Cloud
+# client library does: GOOGLE_APPLICATION_CREDENTIALS, a service account key
+# a container runtime provides, or (on GCE, GKE, or Cloud Run) the
+# environment's own default service account. Run `gcloud auth
+# application-default login` first for the command above to find
+# credentials under ~/.config/gcloud.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  googlecloud:
+    project: your-gcp-project-id
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [googlecloud]

@@ -101,7 +101,10 @@ func TestGateNamesOnlyListedChecks(t *testing.T) {
 		{"has(checks.gofmy)", "doesn't list a check named 'gofmy'"},
 		{`"gofmy" in checks`, "doesn't list a check named 'gofmy'"},
 		{"checks.exists(c, checks.gofmy.passed)", "doesn't list a check named 'gofmy'"},
-		{"checks.go-vet.passed", `undeclared reference to 'vet' (in container ''); write checks["go-vet"] for a check whose name has a hyphen`},
+		// Match only the hint gate.go adds, not CEL's own wording for the
+		// undeclared reference: that wording isn't part of CEL's API
+		// contract and has changed between cel-go releases.
+		{"checks.go-vet.passed", `write checks["go-vet"] for a check whose name has a hyphen`},
 	} {
 		if _, err := Parse(c.expr, listed); err == nil || !strings.Contains(err.Error(), c.err) {
 			t.Errorf("Parse(%q) error = %v, want %q", c.expr, err, c.err)

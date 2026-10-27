@@ -41,6 +41,7 @@ playground/
 ├── litestream/            # Go: fork of benbjohnson/litestream (git subtree + patches; see PATCHES.md)
 ├── mapvelopes/            # Rust Cloudflare Worker: envelope PDFs with a route map
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
+├── testtrace/             # Go library: parent OpenTelemetry spans on the running test's span
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── gcping/                # browser HTTPS latency to GCS regional endpoints (JS + Node tests)
 ├── hello/                 # example static app (HTML only)
@@ -110,6 +111,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
+| `testtrace/` | no | Go library (OpenTelemetry test tracing); no `index.html` |
 | `app-attest/` | no | Rust Cloudflare Worker; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
@@ -873,6 +875,7 @@ bundle exec fastlane test
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
+| `testtrace/` | Library that parents OpenTelemetry spans on the span of the Go test that starts them. `Install` wraps the TracerProvider in `TestMain`. Spans started from `t.Context()` pick up that span with no further call. `Hook(t)` names the span after the test | `go test -race ./...` |
 
 ## Current Rust apps
 

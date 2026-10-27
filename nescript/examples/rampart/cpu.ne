@@ -172,6 +172,65 @@ include "result.ne"
         return best
     }
 
+    // Against a CPU, point an arrow at the plan the typed code
+    // would lock in, in player 0's color, so they can check it
+    // before pressing START. Two humans still type blind, since
+    // the same screen is shared and showing one player's pick
+    // would show the other player too. Lives here, rather than
+    // next to the rest of the Lock sequencer in battle_state.ne,
+    // because the fixed bank has no code space left; reuses
+    // res_a as scratch instead of a new local for the same
+    // reason, main RAM being just as tight.
+    fun draw_lock_cursor() {
+        if mode != MODE_1P or lk_ready[0] != 0 or lk_n[0] < 2 {
+            return
+        }
+        res_a = lk_prev[0] * 6 + lk_last[0]
+        if res_a >= NUM_PLANS or not plan_legal(0, res_a) {
+            return
+        }
+        draw Tileset at: (8, (CARD_PLAN_ROW0 + res_a) * 8 - 1) attr: 0 frame: T_ARROW
+    }
+
+    // One illegal plan, redrawn in gray. The card's attribute table
+    // colors two rows at once and its other text colors are the
+    // players' blue and red, so a whole row can't be recolored
+    // without painting its neighbor or turning the words red.
+    // Letters get their own gray tiles instead. Called once a frame
+    // while the card is still blanked, for plan index `step`,
+    // because the text queue can't hold every plan at once.
+    // cpu_row, cpu_cx, cpu_best, cpu_by are free here: the CPU
+    // already picked, and movement hasn't started.
+    fun paint_one_invalid() {
+        if plan_legal(0, step) {
+            return
+        }
+        res_b = CARD_PLAN_ROW0 + step
+        put_tile(2, res_b, GRAY_DASH)
+        put_tile(3, res_b, GRAY_DASH)
+        put_clear(6, res_b, 17)
+        cpu_best = PLAN_MASK[step]
+        cpu_row = 0
+        cpu_cx = 6
+        while cpu_row < NUM_ACTIONS {
+            if (cpu_best & BIT[cpu_row]) != 0 {
+                if cpu_cx != 6 {
+                    put_tile(cpu_cx, res_b, T_SPACE)
+                    cpu_cx += 1
+                }
+                cpu_by = 0
+                while cpu_by < STR_LEN[S_A_SNAP + cpu_row] {
+                    res_a = str_byte(S_A_SNAP + cpu_row, cpu_by)
+                    res_a = GRAY_LETTER[res_a - 65]
+                    put_tile(cpu_cx, res_b, res_a)
+                    cpu_cx += 1
+                    cpu_by += 1
+                }
+            }
+            cpu_row += 1
+        }
+    }
+
     // ── Move search ─────────────────────────────────────────────
 
     fun cpu_move_begin(p: u8, range: u8, act: u8) {
@@ -337,6 +396,17 @@ include "result.ne"
     }
 
     fun paint_cust() {
+        // This screen is drawn over the title. Rows 16-19 still
+        // carry the title's BLUE and RED letter colors, and GUN,
+        // ARM, and the weapon names land on those rows, so a word
+        // comes out blue, red, and white depending on which
+        // 16x16 block a letter sits in. Nothing pictorial is
+        // there, so the row goes back to plain white text.
+        res_a = 0
+        while res_a < 32 {
+            put_attr(res_a, 16, 0)
+            res_a += 4
+        }
         if cust_who == 0 {
             put_attr(8, 4, 170)
             put_attr(12, 4, 170)
@@ -411,14 +481,10 @@ include "result.ne"
             }
             return
         }
+        // The letter always stays visible; the blinking underline
+        // sprite in Customize's on-frame handler marks the cursor,
+        // keyed off this same tick.
         cust_tick += 1
-        if cust_cursor < 6 and (cust_tick & 15) == 0 {
-            if (cust_tick & 16) == 0 {
-                put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
-            } else {
-                put_tile(NAME_COL + cust_cursor, NAME_ROW, T_SPACE)
-            }
-        }
 
         // On the name row, left/right move the lit letter and
         // up/down rotate it. On the gun and arm rows, left/right
@@ -506,6 +572,13 @@ include "result.ne"
             if cust_cursor > 0 {
                 cust_cursor -= 1
             }
+            cust_tick = 0
+        }
+        // SELECT jumps straight to the gun row, for a player who
+        // likes the name as typed and doesn't want to arrow past it.
+        if res_b == BTN_SELECT and cust_cursor < 6 {
+            put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
+            cust_cursor = 6
             cust_tick = 0
         }
         if res_b == BTN_START or (res_b == BTN_A and cust_cursor == 8) {
