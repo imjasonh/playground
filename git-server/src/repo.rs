@@ -460,11 +460,16 @@ impl FilelogScope<'_> {
     }
 }
 
+/// Workers allow only a handful of simultaneous outbound connections.
+/// Same cap as the pack-index loads in `odb`.
+const FILELOG_LOAD_BATCH: usize = 6;
+
 /// Load the file-log segments a request needs, newest first. Plain (per-push)
-/// segments are always loaded whole — they are small and recent. Sharded
+/// segments are always loaded whole. They are small and recent. Sharded
 /// (maintenance-merged) segments contribute only the shards intersecting
-/// `scope`, fetched **concurrently** (shards are independent R2 objects, so a
-/// wide query pays ~one round trip of latency, not shard-count round trips).
+/// `scope`. Segment objects are fetched in batches of
+/// [`FILELOG_LOAD_BATCH`]. The shards of one segment are fetched together.
+/// A full load pays about one round trip per batch, not one per segment.
 pub async fn load_filelog_scoped(
     store: &dyn Store,
     repo: &str,
@@ -488,28 +493,34 @@ async fn load_filelog_ids(
 ) -> Result<(Vec<FileLogSegment>, bool), String> {
     let mut segs = Vec::new();
     let mut complete = true;
-    for id in ids.iter().rev() {
-        let key = filelog_key(repo, id);
-        let bytes = get_filelog_bytes(store, &key).await?;
-        if bytes.len() >= 4 && &bytes[..4] == GSFI_MAGIC {
-            let shards = shard_index_from_bytes(&bytes)?;
-            let selected: Vec<(usize, bool)> = shards
-                .iter()
-                .enumerate()
-                .map(|(k, info)| (k, scope.intersects(&info.min_path, &info.max_path)))
-                .collect();
-            if !matches!(scope, FilelogScope::All) && selected.iter().any(|(_, hit)| !*hit) {
-                complete = false;
+    let newest_first: Vec<&str> = ids.iter().rev().map(|id| id.as_str()).collect();
+    for chunk in newest_first.chunks(FILELOG_LOAD_BATCH) {
+        let headers = futures::future::try_join_all(chunk.iter().map(|id| {
+            let key = filelog_key(repo, id);
+            async move { get_filelog_bytes(store, &key).await }
+        }))
+        .await?;
+        for (id, bytes) in chunk.iter().zip(headers) {
+            if bytes.len() >= 4 && &bytes[..4] == GSFI_MAGIC {
+                let shards = shard_index_from_bytes(&bytes)?;
+                let selected: Vec<(usize, bool)> = shards
+                    .iter()
+                    .enumerate()
+                    .map(|(k, info)| (k, scope.intersects(&info.min_path, &info.max_path)))
+                    .collect();
+                if !matches!(scope, FilelogScope::All) && selected.iter().any(|(_, hit)| !*hit) {
+                    complete = false;
+                }
+                let fetches = selected.into_iter().filter(|(_, hit)| *hit).map(|(k, _)| {
+                    let key = shard_key(repo, id, k);
+                    async move { get_filelog_bytes(store, &key).await }
+                });
+                for shard_bytes in futures::future::try_join_all(fetches).await? {
+                    segs.push(FileLogSegment::from_bytes(&shard_bytes)?);
+                }
+            } else {
+                segs.push(FileLogSegment::from_bytes(&bytes)?);
             }
-            let fetches = selected.into_iter().filter(|(_, hit)| *hit).map(|(k, _)| {
-                let key = shard_key(repo, id, k);
-                async move { get_filelog_bytes(store, &key).await }
-            });
-            for shard_bytes in futures::future::try_join_all(fetches).await? {
-                segs.push(FileLogSegment::from_bytes(&shard_bytes)?);
-            }
-        } else {
-            segs.push(FileLogSegment::from_bytes(&bytes)?);
         }
     }
     Ok((segs, complete))
