@@ -112,6 +112,6 @@ Add these repository secrets. The OAuth client needs the Chrome Web Store API en
 | `CHROME_WEB_STORE_REFRESH_TOKEN` | Refresh token for the publisher account |
 | `CHROME_WEB_STORE_PUBLISHER_ID` | Publisher id from the developer dashboard |
 
-A refresh token for an OAuth app whose consent screen is in testing expires after 7 days. Use a production consent screen so the main-branch job can keep publishing.
+A refresh token for an OAuth app whose consent screen is in testing expires after 7 days. Use a production consent screen so the main-branch job can keep publishing. A publish failing with `invalid_grant: Token has been expired or revoked.` is that expiry; mint a new `CHROME_WEB_STORE_REFRESH_TOKEN` and update the secret.
 
 Without those secrets, the workflow runs the tests and skips publish.

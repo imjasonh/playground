@@ -170,6 +170,28 @@ def resolve_endpoints(env: dict[str, str]) -> tuple[str, str]:
     return origin, token_url
 
 
+def _error_detail(payload: dict, raw_text: str) -> str:
+    """Pull whatever detail an error response carries.
+
+    The Chrome Web Store API nests detail under error.message. The OAuth
+    token endpoint instead puts a short code directly in error, with the
+    human-readable text in a sibling error_description. A response that is
+    not a JSON object at all (a proxy's HTML error page, for example) still
+    has text worth showing, so that is the last resort.
+    """
+    error_body = payload.get("error")
+    if isinstance(error_body, dict):
+        message = str(error_body.get("message") or "").strip()
+        if message:
+            return message
+    if isinstance(error_body, str) and error_body:
+        description = payload.get("error_description")
+        if isinstance(description, str) and description:
+            return f"{error_body}: {description}"
+        return error_body
+    return raw_text.strip()[:500]
+
+
 def _request(url: str, method: str, headers: dict[str, str], body: bytes | None, timeout: float) -> tuple[int, dict]:
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
@@ -179,24 +201,29 @@ def _request(url: str, method: str, headers: dict[str, str], body: bytes | None,
     except urllib.error.HTTPError as error:
         raw = error.read()
         status = error.code
-    if not raw:
-        payload: dict = {}
-    else:
+    except urllib.error.URLError as error:
+        raise PublishError(f"{method} {url} failed: {error.reason}") from error
+    text = raw.decode("utf-8", "replace") if raw else ""
+    payload: dict = {}
+    not_an_object = False
+    if raw:
         try:
-            parsed = json.loads(raw.decode())
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise PublishError(f"{method} {url} returned a body that is not JSON") from error
-        if not isinstance(parsed, dict):
-            raise PublishError(f"{method} {url} returned JSON that is not an object")
-        payload = parsed
-    if status < 200 or status >= 300:
-        message = ""
-        error_body = payload.get("error")
-        if isinstance(error_body, dict):
-            message = str(error_body.get("message") or "")
-        if message == "":
-            message = f"HTTP {status}"
-        raise PublishError(f"Chrome Web Store API request failed: {message}")
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            not_an_object = True
+        else:
+            if isinstance(parsed, dict):
+                payload = parsed
+            else:
+                not_an_object = True
+    error_status = status < 200 or status >= 300
+    if error_status:
+        detail = _error_detail(payload, text if not_an_object else "")
+        if detail:
+            raise PublishError(f"Chrome Web Store API request failed: {detail}")
+        raise PublishError(f"Chrome Web Store API request failed: HTTP {status}")
+    if not_an_object:
+        raise PublishError(f"{method} {url} returned a body that is not a JSON object")
     return status, payload
 
 

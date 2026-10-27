@@ -50,7 +50,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read()
         self.server.calls.append(("POST", self.path, self.headers.get("Authorization"), body))
         if self.path == "/token":
-            self._send(200, {"access_token": "test-token"})
+            status, payload = self.server.next_token_response()
+            self._send(status, payload)
             return
         if self.path.endswith(":upload"):
             self._send(200, self.server.upload_response)
@@ -77,11 +78,17 @@ class StoreServer(ThreadingHTTPServer):
         self.publish_body = None
         self.publish_bodies = []
         self.publish_responses = []
+        self.token_responses = []
 
     def next_status(self) -> dict:
         if self.statuses:
             return self.statuses.pop(0)
         return {}
+
+    def next_token_response(self) -> tuple[int, dict]:
+        if self.token_responses:
+            return self.token_responses.pop(0)
+        return 200, {"access_token": "test-token"}
 
 
 class DefaultsTest(unittest.TestCase):
@@ -277,6 +284,39 @@ class PublishFlowTest(unittest.TestCase):
         env["CHROME_WEB_STORE_ITEM_ID"] = "not-an-id"
         with self.assertRaises(store.PublishError):
             store.publish_package(self.zip_path, env, sleep=lambda _seconds: None)
+
+    def test_surfaces_an_oauth_error_from_the_token_endpoint(self):
+        # A refresh token from an OAuth app still in "Testing" expires after
+        # 7 days. Google's token endpoint reports that as a bare error code
+        # with the explanation in a sibling field, not error.message.
+        self.server.token_responses = [
+            (400, {"error": "invalid_grant", "error_description": "Token has been expired or revoked."}),
+        ]
+        with self.assertRaises(store.PublishError) as caught:
+            store.publish_package(self.zip_path, self.env, sleep=lambda _seconds: None)
+        message = str(caught.exception)
+        self.assertIn("invalid_grant", message)
+        self.assertIn("Token has been expired or revoked.", message)
+
+
+class ErrorDetailTest(unittest.TestCase):
+    def test_uses_the_message_field_from_a_structured_error(self):
+        self.assertEqual(store._error_detail({"error": {"message": "nope"}}, ""), "nope")
+
+    def test_combines_an_oauth_error_code_and_description(self):
+        detail = store._error_detail(
+            {"error": "invalid_grant", "error_description": "Token has been expired or revoked."}, ""
+        )
+        self.assertEqual(detail, "invalid_grant: Token has been expired or revoked.")
+
+    def test_uses_the_bare_oauth_error_code_without_a_description(self):
+        self.assertEqual(store._error_detail({"error": "invalid_client"}, ""), "invalid_client")
+
+    def test_falls_back_to_the_raw_body_when_it_is_not_a_json_object(self):
+        self.assertEqual(store._error_detail({}, "  <html>Bad Gateway</html>  "), "<html>Bad Gateway</html>")
+
+    def test_is_empty_when_nothing_is_available(self):
+        self.assertEqual(store._error_detail({}, ""), "")
 
 
 if __name__ == "__main__":
