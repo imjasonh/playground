@@ -14,6 +14,16 @@ fn bank_with_vectors() -> Vec<u8> {
     bank
 }
 
+/// Like [`bank_with_vectors`], but with the reset vector inside
+/// `$E000-$FFFF`. MMC3 is the one mapper nescript emits whose
+/// `$C000-$DFFF` window isn't fixed, so `validate_ines` holds its
+/// reset vector to the higher window.
+fn mmc3_bank_with_vectors() -> Vec<u8> {
+    let mut bank = bank_with_vectors();
+    bank[PRG_BANK_SIZE - 4..PRG_BANK_SIZE - 2].copy_from_slice(&0xE000u16.to_le_bytes());
+    bank
+}
+
 #[test]
 fn build_minimal_rom() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
@@ -202,6 +212,31 @@ fn validate_rejects_an_unprogrammed_reset_vector() {
 }
 
 #[test]
+fn validate_rejects_an_mmc3_reset_vector_below_e000() {
+    // MMC3 fixes only $E000-$FFFF. A reset handler at $C000 lands in
+    // the switchable R6 page whenever the bank-select register's PRG
+    // mode bit happens to be set at power-on, which is exactly what a
+    // flash cart's loader can leave behind.
+    let rom = tampered(|rom| rom[6] = (rom[6] & 0x0F) | 0x40);
+    let err = validate_ines(&rom).unwrap_err();
+    assert!(
+        err.contains("MMC3") && err.contains("$C000") && err.contains("$C000-$DFFF"),
+        "error should explain why $C000 isn't reliably mapped, got: {err}"
+    );
+}
+
+#[test]
+fn validate_accepts_an_mmc3_reset_vector_in_the_fixed_window() {
+    let rom = tampered(|rom| {
+        rom[6] = (rom[6] & 0x0F) | 0x40;
+        let reset = rom.len() - 4;
+        rom[reset..reset + 2].copy_from_slice(&0xE000u16.to_le_bytes());
+    });
+    let info = validate_ines(&rom).unwrap();
+    assert_eq!(info.mapper, 4);
+}
+
+#[test]
 fn large_prg_uses_two_banks() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
     builder.set_prg(vec![0xEA; 20000]); // > 16 KB
@@ -255,7 +290,7 @@ fn mapper_uxrom_encoded() {
 fn mapper_mmc3_encoded() {
     let mut builder = RomBuilder::new(Mirroring::Horizontal);
     builder.set_mapper(crate::rom::mapper_number(crate::parser::ast::Mapper::MMC3));
-    builder.set_prg(bank_with_vectors());
+    builder.set_prg(mmc3_bank_with_vectors());
     let rom = builder.build();
     let info = validate_ines(&rom).unwrap();
     assert_eq!(info.mapper, 4);
@@ -459,7 +494,7 @@ fn nes2_preserves_mapper_and_mirroring() {
     // mirroring fields in bytes 6-7.
     let mut builder = RomBuilder::new(Mirroring::Vertical);
     builder.set_mapper(crate::rom::mapper_number(crate::parser::ast::Mapper::MMC3));
-    builder.set_prg(bank_with_vectors());
+    builder.set_prg(mmc3_bank_with_vectors());
     builder.enable_nes2();
     let rom = builder.build();
     // Vertical mirroring keeps bit 0 of byte 6 set.

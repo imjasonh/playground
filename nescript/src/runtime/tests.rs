@@ -893,25 +893,34 @@ fn mapper_init_uxrom_emits_label_and_seeds_zp_bank_current() {
 
 #[test]
 fn mapper_init_mmc3_configures_prg_and_mirroring() {
-    // MMC3 init writes:
-    //   $8000 = 6 (select PRG-0 register)
-    //   $8001 = 0 (bank 0 at $8000)
-    //   $8000 = 7 (select PRG-1 register)
-    //   $8001 = 1 (bank 1 at $A000)
-    //   $8000 = 0..5, $8001 = page (CHR registers R0-R5)
-    //   $A000 = mirroring bit
-    //   $E000 = 0 (disable IRQ)
+    // MMC3 init walks `__mmc3_init_table`, writing each pair as
+    // $8000 = register, $8001 = page, then latches mirroring at
+    // $A000 and disables the IRQ at $E000.
     let init = gen_mapper_init(Mapper::MMC3, Mirroring::Vertical, 4);
     let count_writes = |addr: u16| -> usize {
         init.iter()
             .filter(|i| i.opcode == STA && i.mode == AM::Absolute(addr))
             .count()
     };
-    assert_eq!(count_writes(0x8000), 8, "MMC3 should select R6, R7, R0-R5");
     assert_eq!(
-        count_writes(0x8001),
-        8,
-        "MMC3 should set all 8 bank registers"
+        count_writes(0x8000),
+        1,
+        "the register selects come from one loop body, not eight unrolled copies"
+    );
+    assert_eq!(count_writes(0x8001), 1, "likewise the page writes");
+    assert_eq!(
+        init.iter()
+            .filter(|i| matches!(&i.mode, AM::LabelAbsoluteX(n) if n == "__mmc3_init_table"))
+            .count(),
+        2,
+        "the loop reads both halves of each pair out of the table"
+    );
+    // The loop must cover all 16 table bytes, or some bank register
+    // keeps its undefined power-on value.
+    assert!(
+        init.iter()
+            .any(|i| i.opcode == CPX && i.mode == AM::Immediate(16)),
+        "loop should run until X reaches the end of the 16-byte table"
     );
     assert_eq!(
         count_writes(0xA000),
@@ -931,7 +940,12 @@ fn mapper_init_assembles_for_every_banked_mapper() {
     // assembler without unresolved labels. We splice in a dummy
     // reset label to prevent branch-range issues.
     for m in [Mapper::MMC1, Mapper::UxROM, Mapper::MMC3] {
-        let init = gen_mapper_init(m, Mirroring::Horizontal, 2);
+        let mut init = gen_mapper_init(m, Mirroring::Horizontal, 2);
+        if m == Mapper::MMC3 {
+            // The linker splices this into the fixed bank's data
+            // area; standalone it has to come along to resolve.
+            init.extend(gen_mmc3_init_table());
+        }
         let result = asm::assemble(&init, 0xC000);
         // Either empty (UxROM is basically zero-cost) or a short
         // init stub — all fit comfortably in < 100 bytes.
@@ -1222,6 +1236,45 @@ fn nrom_mapper_init_does_not_seed_zp_bank_current() {
         init.is_empty(),
         "NROM mapper init must remain empty: {init:?}"
     );
+}
+
+#[test]
+fn mmc3_reset_stub_clears_the_prg_mode_bit_before_jumping() {
+    // LDA #$06 / STA $8000 / LDA #$00 / STA $8001 / JMP $C123.
+    // Clearing bit 6 of $8000 puts the second-to-last page back at
+    // $C000-$DFFF before the jump lands there, and writing R6
+    // commits that on emulators that only remap on a PRG register
+    // write.
+    let stub = mmc3_reset_stub(0xC123);
+    assert_eq!(stub.len(), MMC3_RESET_STUB_LEN);
+    assert_eq!(
+        stub,
+        [0xA9, 0x06, 0x8D, 0x00, 0x80, 0xA9, 0x00, 0x8D, 0x01, 0x80, 0x4C, 0x23, 0xC1]
+    );
+    // Bit 6 clear is the whole point; bit 7 clear turns off CHR A12
+    // inversion, which also powers up undefined.
+    assert_eq!(stub[1] & 0xC0, 0, "the stub must select PRG mode 0");
+}
+
+#[test]
+fn mmc3_init_table_pairs_every_bank_register_with_a_page() {
+    // Eight (register, page) pairs: R0-R5 map the first 8 KB of CHR
+    // in order, R6/R7 map PRG pages 0 and 1 at $8000 and $A000.
+    let table = gen_mmc3_init_table();
+    assert_eq!(table.len(), 2);
+    assert!(matches!(&table[0].mode, AM::Label(n) if n == "__mmc3_init_table"));
+    match &table[1].mode {
+        AM::Bytes(v) => {
+            assert_eq!(v, &[0, 0, 1, 2, 2, 4, 3, 5, 4, 6, 5, 7, 6, 0, 7, 1]);
+            let registers: Vec<u8> = v.chunks(2).map(|p| p[0]).collect();
+            assert_eq!(
+                registers,
+                (0..8).collect::<Vec<u8>>(),
+                "every MMC3 bank register powers up undefined, so all eight must be written"
+            );
+        }
+        other => panic!("expected Bytes, got {other:?}"),
+    }
 }
 
 #[test]

@@ -8,6 +8,7 @@ use nescript::linker::{Linker, PrgBank};
 use nescript::optimizer;
 use nescript::parser::ast::BankType;
 use nescript::rom;
+use nescript::runtime;
 
 /// Compile a `NEScript` source string into a .nes ROM. Runs the full
 /// IR pipeline: parse → analyze → IR lower → optimize → IR codegen
@@ -2195,10 +2196,18 @@ fn e2e_banked_roms_are_safe_under_a_power_of_two_padding_loader() {
                 info.prg_banks
             );
             // The reset handler lives at the top of the fixed bank,
-            // which the linker assembles at $C000.
+            // which the linker assembles at $C000. MMC3 resets
+            // through a stub just below the vectors instead, because
+            // $C000-$DFFF is only the fixed page while the mapper's
+            // PRG mode bit is clear.
             let prg_end = 16 + info.prg_banks * 16384;
             let reset = u16::from_le_bytes([rom[prg_end - 4], rom[prg_end - 3]]);
-            assert_eq!(reset, 0xC000, "{label} reset vector");
+            let expected = if mapper == "MMC3" {
+                0xFFFA - runtime::MMC3_RESET_STUB_LEN as u16
+            } else {
+                0xC000
+            };
+            assert_eq!(reset, expected, "{label} reset vector");
         }
     }
 }

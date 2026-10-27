@@ -397,6 +397,22 @@ pub fn validate_ines(data: &[u8]) -> Result<RomInfo, String> {
         ));
     }
 
+    // MMC3 fixes only $E000-$FFFF to the last PRG page. $C000-$DFFF
+    // is the second-to-last page while the bank-select register's
+    // PRG mode bit is clear and the switchable R6 page while it is
+    // set, and that register powers up undefined — on a flash cart
+    // it holds whatever the loader left. A reset handler below
+    // $E000 is therefore only reachable by luck. See
+    // `runtime::mmc3_reset_stub`.
+    if mapper == 4 && reset < 0xE000 {
+        return Err(format!(
+            "mapper 4 (MMC3) reset vector at $FFFC reads ${reset:04X}, below $E000; \
+             MMC3 maps $C000-$DFFF to the switchable R6 page whenever the bank-select \
+             register's PRG mode bit is set, and that register has no defined power-on \
+             state, so the console can reset into the wrong bank"
+        ));
+    }
+
     Ok(RomInfo {
         prg_banks,
         chr_banks,

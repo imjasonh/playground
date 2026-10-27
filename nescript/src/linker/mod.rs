@@ -604,6 +604,12 @@ impl Linker {
                 // the vector area.
                 all_instructions.extend(runtime::gen_uxrom_bank_table());
             }
+            if self.mapper == Mapper::MMC3 {
+                // The reset path programs the eight MMC3 bank
+                // registers from this table. It goes here, after the
+                // last routine that could fall through into it.
+                all_instructions.extend(runtime::gen_mmc3_init_table());
+            }
         }
 
         // Math runtime routines. Gated on the `__mul_used` /
@@ -858,7 +864,14 @@ impl Linker {
         // Pad to fill the bank up to vector table location
         // Vector table is at $FFFA-$FFFF (relative offset: $3FFA in a 16 KB bank)
         let vector_offset = 0x3FFA;
-        if prg.len() > vector_offset {
+        // MMC3 needs the last few bytes before the vectors for a
+        // reset stub — see `runtime::mmc3_reset_stub`.
+        let stub_offset = if self.mapper == Mapper::MMC3 {
+            vector_offset - runtime::MMC3_RESET_STUB_LEN
+        } else {
+            vector_offset
+        };
+        if prg.len() > stub_offset {
             panic!("PRG code exceeds 16 KB bank (code is {} bytes)", prg.len());
         }
         prg.resize(vector_offset, 0xFF);
@@ -875,8 +888,21 @@ impl Linker {
             .copied()
             .unwrap_or(0xC000);
 
+        // On MMC3 the reset vector points at the stub rather than
+        // straight at the runtime, because only $E000-$FFFF is
+        // mapped to a known page when the console comes out of
+        // reset.
+        let reset_vector = if self.mapper == Mapper::MMC3 {
+            prg[stub_offset..vector_offset].copy_from_slice(&runtime::mmc3_reset_stub(reset_addr));
+            #[allow(clippy::cast_possible_truncation)]
+            let addr = base_addr + stub_offset as u16;
+            addr
+        } else {
+            reset_addr
+        };
+
         prg.extend_from_slice(&nmi_addr.to_le_bytes());
-        prg.extend_from_slice(&reset_addr.to_le_bytes());
+        prg.extend_from_slice(&reset_vector.to_le_bytes());
         prg.extend_from_slice(&irq_addr.to_le_bytes());
 
         // Build ROM
