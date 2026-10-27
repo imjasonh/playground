@@ -1734,21 +1734,54 @@ fn sprite_in_table_one_lands_in_the_upper_pattern_table() {
 }
 
 #[test]
-fn sprite_table_must_be_zero_or_one() {
+fn sprite_table_must_be_a_chr_page() {
     let source = r#"
-        game "SpriteTable" { mapper: NROM }
+        game "SpriteTable" { mapper: MMC3 }
         sprite Player {
-            table: 2
+            table: 64
             chr: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         }
         state Title { on frame { draw Player at: (10, 20) } }
         start Title
     "#;
     let result = nescript::parser::parse(source);
-    assert!(
-        !result.1.is_empty(),
-        "table: 2 should be a parse error, got none"
-    );
+    assert!(!result.1.is_empty(), "table: 64 should be a parse error");
+}
+
+#[test]
+fn sprite_in_chr_page_two_grows_chr_rom_on_mmc3() {
+    let source = r#"
+        game "SpritePage" { mapper: MMC3 }
+        sprite MapTiles {
+            table: 2
+            chr: [0xAA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+        state Title { on frame { draw MapTiles at: (10, 20) } }
+        start Title
+    "#;
+    let rom = compile(source);
+    let info = nescript::rom::validate_ines(&rom).expect("valid iNES");
+    assert_eq!(info.chr_banks, 2, "page 2 needs a second 8 KB CHR bank");
+    let chr_start = 16 + info.prg_banks * 16384;
+    assert_eq!(rom[chr_start + 2 * 4096], 0xAA);
+}
+
+#[test]
+fn sprite_in_chr_page_two_is_an_error_on_nrom() {
+    let source = r#"
+        game "SpritePage" { mapper: NROM }
+        sprite MapTiles {
+            table: 2
+            chr: [0xAA, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+        state Title { on frame { draw MapTiles at: (10, 20) } }
+        start Title
+    "#;
+    let opts = nescript::pipeline::CompileOptions::default();
+    let Err(err) = nescript::pipeline::compile_source(source, Path::new("."), &opts) else {
+        panic!("NROM can't switch CHR pages");
+    };
+    assert!(format!("{err:?}").contains("CHR page 2"), "{err:?}");
 }
 
 #[test]

@@ -65,7 +65,8 @@ pub struct Linker {
 pub struct SpriteData {
     pub name: String,
     pub tile_index: u8,
-    /// Pattern table: 0 for `$0000`, 1 for `$1000`.
+    /// 4 KB CHR page: 0 for `$0000`, 1 for `$1000`, 2 and up for
+    /// pages a mapper switches in.
     pub table: u8,
     /// Raw CHR bytes (16 bytes per 8x8 tile).
     pub chr_bytes: Vec<u8>,
@@ -938,7 +939,12 @@ impl Linker {
         // against the sprite range so no two contiguous tile
         // ranges overlap, but we still bounds-check on copy in
         // case a future change shifts the layout.
-        let mut chr = vec![0u8; 8192];
+        let pages = sprites
+            .iter()
+            .map(|s| usize::from(s.table) + 1)
+            .max()
+            .unwrap_or(0);
+        let mut chr = vec![0u8; pages.div_ceil(2).max(1) * 8192];
         // Tile 0 is reserved for the built-in smiley *only* when
         // something in the program depends on it. Three possible
         // sources of that dependency:

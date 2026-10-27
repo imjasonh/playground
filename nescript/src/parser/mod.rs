@@ -936,14 +936,14 @@ impl Parser {
             match key.as_str() {
                 "table" => {
                     table = match self.peek().clone() {
-                        TokenKind::IntLiteral(v @ (0 | 1)) => {
+                        TokenKind::IntLiteral(v @ 0..=63) => {
                             self.advance();
                             v as u8
                         }
                         _ => {
                             return Err(Diagnostic::error(
                                 ErrorCode::E0201,
-                                "sprite 'table' must be 0 or 1",
+                                "sprite 'table' must be a 4 KB CHR page from 0 to 63",
                                 self.current_span(),
                             ));
                         }

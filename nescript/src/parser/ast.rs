@@ -163,7 +163,9 @@ pub struct StructField {
 pub struct SpriteDecl {
     pub name: String,
     pub chr_source: AssetSource,
-    /// Pattern table the tiles live in: 0 (`$0000`) or 1 (`$1000`).
+    /// 4 KB CHR page the tiles live in. Pages 0 and 1 are the pattern
+    /// tables at `$0000` and `$1000` at reset; pages 2 and up need a
+    /// mapper that switches CHR banks.
     pub table: u8,
     pub span: Span,
 }

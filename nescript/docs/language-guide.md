@@ -937,6 +937,15 @@ On MMC3, the scanline counter needs this split: it counts rises of
 PPU address line A12, which happen once per line only when the
 background and the sprites use different tables.
 
+`table:` takes any 4 KB CHR page from 0 to 63, and CHR ROM grows in
+8 KB steps to hold the highest page used. Pages 2 and up need a mapper
+that switches CHR banks (MMC1, MMC3, CNROM, or GNROM); other mappers
+are a compile error. Reset maps pages 0 and 1. On MMC3, map page `p`
+as the background table with
+`poke(0x8000, 0)`, `poke(0x8001, 4 * p)`, `poke(0x8000, 1)`, and
+`poke(0x8001, 4 * p + 2)`, which set the two 2 KB banks at `$0000`.
+Every page starts at tile 0 except page 0, which starts at tile 1.
+
 ### Palette Declarations
 
 Palettes can be authored in two styles. Both produce the same 32-byte
