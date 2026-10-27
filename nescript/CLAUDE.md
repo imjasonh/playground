@@ -22,30 +22,37 @@ re-derive the project conventions from scratch.
   tmp path and fails if the committed version differs, pointing at
   the exact `cargo run -- build examples/<name>.ne` to run. The
   pre-commit hook under `scripts/pre-commit` catches this locally.
-- **`docs/platformer.gif`, `docs/war.gif`, and `docs/pong.gif` are
-  committed** and embedded in the top-level README as the project
-  demos. `gifenc` + `jsnes` are deterministic, so each gif's bytes
-  are a function of the compiler, the runtime, the harness, and
-  the underlying `.ne` source(s). Any change to those that affects
-  the first ~6 seconds of observable gameplay must be followed by
-  regenerating the affected gif:
+- **`docs/platformer.gif`, `docs/war.gif`, `docs/pong.gif`,
+  `docs/subway.gif`, and `docs/rampart.gif` are committed** and
+  embedded in the top-level README as the project demos. `gifenc` +
+  `jsnes` are deterministic, so each gif's bytes are a function of
+  the compiler, the runtime, the harness, and the underlying `.ne`
+  source(s). Any change that affects the recorded window must be
+  followed by regenerating the affected gif:
 
   ```bash
   node tests/emulator/record_gif.mjs platformer 360 2 docs/platformer.gif
   node tests/emulator/record_gif.mjs war        360 2 docs/war.gif        4
   node tests/emulator/record_gif.mjs pong       360 2 docs/pong.gif       4
+  node tests/emulator/record_gif.mjs subway     360 2 docs/subway.gif     30
+  node tests/emulator/record_gif.mjs rampart    720 2 docs/rampart.gif    16
   ```
 
-  (The trailing `4` on the war and pong commands is the
-  warmup-frames override — both open on a title menu that we want
-  as the gif thumbnail, so we don't skip past it the way the
-  platformer recording does.) Commit the regenerated gif in the
-  same change. The `nescript` workflow renders fresh gifs and fails if
-  any committed copy doesn't byte-match. `scripts/pre-commit`
-  rebuilds whichever gif is affected when `platformer.ne`,
-  `platformer.nes`, any file under `examples/war/`, `war.ne`,
-  `war.nes`, any file under `examples/pong/`, `pong.ne`,
-  `pong.nes`, `record_gif.mjs`, or `emu.mjs` is staged (and
+  The last number is the warmup-frames override. War and pong pass
+  4 so the title menu is the thumbnail. Subway passes 30, the same
+  default platformer uses, so the thumbnail is the platform after
+  the pattern load. Rampart passes 16 so the thumbnail is the
+  painted title, and it records 720 frames (about 12 seconds)
+  because the CPU demo starts only after the title has sat idle.
+  Commit the regenerated gif in the same change. The `nescript`
+  workflow renders fresh gifs and fails if any committed copy
+  doesn't byte-match. `scripts/pre-commit` rebuilds whichever gif
+  is affected when `platformer.ne`, `platformer.nes`, any file
+  under `examples/war/`, `war.ne`, `war.nes`, any file under
+  `examples/pong/`, `pong.ne`, `pong.nes`, any file under
+  `examples/subway/`, `subway.ne`, `subway.nes`, any file under
+  `examples/rampart/`, `rampart.ne`, `rampart.nes`,
+  `record_gif.mjs`, or `emu.mjs` is staged (and
   `tests/emulator/node_modules` is installed).
 - `docs/future-work.md` lists the remaining gaps. If you implement
   something from that file, update the doc in the same PR.
