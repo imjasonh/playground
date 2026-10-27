@@ -1083,6 +1083,28 @@ fn analyze_break_outside_loop() {
 }
 
 #[test]
+fn analyze_bool_function_call_is_a_condition() {
+    let (prog, diags) = parser::parse(
+        r#"
+        game "Test" { mapper: NROM }
+        var n: u8 = 0
+        fun ready() -> bool { return n > 3 }
+        on frame {
+            if ready() { n = 0 }
+        }
+        start Main
+    "#,
+    );
+    assert!(diags.is_empty(), "parse errors: {diags:?}");
+    let result = analyze(&prog.unwrap());
+    assert!(
+        result.diagnostics.iter().all(|d| !d.is_error()),
+        "a bool function should work as a condition: {:?}",
+        result.diagnostics
+    );
+}
+
+#[test]
 fn analyze_inline_asm_placeholder_counts_as_a_use() {
     let (prog, diags) = parser::parse(
         r#"
