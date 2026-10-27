@@ -483,7 +483,7 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let path_for_span = path.clone();
     let ray_for_span = cf_ray.clone();
 
-    crate::trace::span_async(span_name, move |span| async move {
+    let span = crate::trace::span_async(span_name, move |span| async move {
         if span.is_traced() {
             span.set_attribute("http.request.method", &method_for_span);
             span.set_attribute("url.path", &path_for_span);
@@ -504,8 +504,8 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
             cf_ray,
         })
         .await
-    })
-    .await
+    });
+    crate::scope::run(crate::scope::fresh(), span).await
 }
 
 struct FetchCtx {
@@ -589,7 +589,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                 let env2 = env.clone();
                 let repo_name = repo.to_string();
                 let parent_ray = cf_ray.clone();
-                ctx.wait_until(async move {
+                ctx.wait_until(crate::scope::run(crate::scope::fresh(), async move {
                     let _ = crate::trace::span_async("git.auto_repack", move |span| async move {
                         if let Some(ref r) = parent_ray {
                             crate::trace::set_ray(Some(r.clone()));
@@ -636,7 +636,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                         }
                     })
                     .await;
-                });
+                }));
             }
         }
     }
@@ -671,7 +671,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
 /// per repo).
 #[event(scheduled)]
 async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::ScheduleContext) {
-    let _ = crate::trace::span_async("git.scheduled", move |_span| async move {
+    let run = crate::trace::span_async("git.scheduled", move |_span| async move {
         let store = match R2Store::new(&env) {
             Ok(s) => s,
             Err(e) => {
@@ -723,6 +723,6 @@ async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::Sched
                 Err(e) => worker::console_error!("repack {} failed: {e}", key.name),
             }
         }
-    })
-    .await;
+    });
+    crate::scope::run(crate::scope::fresh(), run).await;
 }

@@ -6,11 +6,11 @@
 //! checked with `scripts/bench-remote.sh` or plain `curl -v` instead of
 //! guesswork.
 //!
-//! Collection is a thread-local since both runtimes handle one request per
-//! thread at a time (wasm isolates are single-threaded; the native test
-//! server drives each request with a local executor). [`begin`] resets the
-//! collector, instrumented code records into it ([`backend`], [`phase`],
-//! bytes), and [`take`] returns the totals for emission as:
+//! Collection lives on the current [`crate::scope::Frame`]. A Workers isolate
+//! is single-threaded but polls many requests at once, so a shared stack
+//! would mix their counters. [`begin`] pushes a collector, instrumented code
+//! records into it ([`backend`], [`phase`], bytes), and [`take`] returns the
+//! totals for emission as:
 //!
 //! * a `Server-Timing` response header (standard, machine-parseable, visible
 //!   to `curl` and browser dev tools) — see [`Metrics::server_timing`];
@@ -20,8 +20,6 @@
 //!
 //! Overhead is a few clock reads and integer adds per backend call; there is
 //! no allocation until emission.
-
-use std::cell::RefCell;
 
 /// Backend operation kinds, mirroring what each costs money as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,14 +56,6 @@ pub struct Metrics {
     pub max_chunk_in: u64,
 }
 
-thread_local! {
-    /// Stack of in-flight collectors. Nested / concurrent `handle()` calls
-    /// on one isolate push a fresh frame so they
-    /// do not clobber each other; [`begin`] / [`take`] are paired per
-    /// request.
-    static ACTIVE: RefCell<Vec<Metrics>> = const { RefCell::new(Vec::new()) };
-}
-
 /// Milliseconds on a monotonic-enough clock for both targets.
 pub fn now_ms() -> f64 {
     #[cfg(target_arch = "wasm32")]
@@ -81,32 +71,32 @@ pub fn now_ms() -> f64 {
     }
 }
 
-/// Start collecting for the current request (pushes a fresh frame).
+/// Start collecting for the current request (pushes a collector onto the
+/// current [`crate::scope::Frame`]).
 pub fn begin() {
-    ACTIVE.with(|a| {
-        let mut stack = a.borrow_mut();
-        if stack.is_empty() {
-            crate::trace::clear_ray();
+    crate::scope::with(|frame| {
+        if frame.metrics.is_empty() {
+            frame.ray = None;
         }
-        stack.push(Metrics::default());
+        frame.metrics.push(Metrics::default());
     });
 }
 
-/// Stop collecting and return this request's totals (pops the frame).
+/// Stop collecting and return this request's totals (pops the collector).
 pub fn take() -> Option<Metrics> {
-    ACTIVE.with(|a| a.borrow_mut().pop())
+    crate::scope::with(|frame| frame.metrics.pop())
 }
 
 /// Clone the in-progress totals without ending collection. Used to emit a
 /// Server-Timing-style summary on the git side-band while the HTTP header
 /// still needs the final [`take`] at request end.
 pub fn snapshot() -> Option<Metrics> {
-    ACTIVE.with(|a| a.borrow().last().cloned())
+    crate::scope::with(|frame| frame.metrics.last().cloned())
 }
 
 fn with_active(f: impl FnOnce(&mut Metrics)) {
-    ACTIVE.with(|a| {
-        if let Some(m) = a.borrow_mut().last_mut() {
+    crate::scope::with(|frame| {
+        if let Some(m) = frame.metrics.last_mut() {
             f(m);
         }
     });
