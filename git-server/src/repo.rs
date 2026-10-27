@@ -917,18 +917,22 @@ impl<'a> PackIngest<'a> {
         Ok(())
     }
 
-    /// Finish the scan and publish the pack. Returns the pack id and scan.
-    pub async fn finish(mut self) -> Result<(String, ScannedPack), String> {
+    /// Finish the scan and publish the pack. Returns the pack id, the scan,
+    /// and the raw bytes when this was a single put. Delta resolution reads
+    /// those bytes instead of fetching the pack back.
+    pub async fn finish(mut self) -> Result<(String, ScannedPack, Option<Vec<u8>>), String> {
         let scanned = self.scanner.finish()?;
         if let Some(uploader) = self.uploader.take() {
             uploader.complete().await.map_err(|e| e.to_string())?;
+            Ok((self.pack_id, scanned, None))
         } else {
+            let bytes = std::mem::take(&mut self.pending);
             self.store
-                .put(&self.key, std::mem::take(&mut self.pending))
+                .put(&self.key, bytes.clone())
                 .await
                 .map_err(|e| e.to_string())?;
+            Ok((self.pack_id, scanned, Some(bytes)))
         }
-        Ok((self.pack_id, scanned))
     }
 
     /// Drop a rejected push. A pack that never spilled has nothing in R2.
@@ -1006,7 +1010,7 @@ impl<'a> Repo<'a> {
     pub async fn apply_push(
         &self,
         commands: Vec<RefUpdate>,
-        ingested: Option<(String, ScannedPack)>,
+        ingested: Option<(String, ScannedPack, Option<Vec<u8>>)>,
         state: RepoState,
         now_ms: i64,
     ) -> Result<PushOutcome, String> {
@@ -1015,10 +1019,12 @@ impl<'a> Repo<'a> {
         // from R2 (that was ~P Class B reads for no new information).
         let mut odb = self.odb(&state).await?;
         let new_pack: Option<PackMeta> = match &ingested {
-            Some((pack_id, scanned)) => {
+            Some((pack_id, scanned, bytes)) => {
                 let _t = crate::timing::Phase::start("push: resolve+index");
                 let key = pack_key(self.name, pack_id);
-                let records = resolve_pack(self.store, &key, scanned, &OdbBases(&odb)).await?;
+                let records =
+                    resolve_pack(self.store, &key, scanned, &OdbBases(&odb), bytes.as_deref())
+                        .await?;
                 let index = PackIndex::new(records);
                 self.store
                     .put(&index_key(self.name, pack_id), index.to_bytes())
@@ -2268,8 +2274,9 @@ mod tests {
                 ingest.feed(chunk).await.unwrap();
             }
             assert_eq!(store.op_counts().class_a, 0, "no upload before finish");
-            let (id, scanned) = ingest.finish().await.unwrap();
+            let (id, scanned, bytes) = ingest.finish().await.unwrap();
             assert_eq!(scanned.entries.len(), 1);
+            assert_eq!(bytes.as_deref(), Some(pack.as_slice()));
             assert_eq!(store.op_counts().class_a, 1, "one PutObject");
             assert_eq!(store.get(&pack_key("r", &id)).await.unwrap().unwrap(), pack);
         });
@@ -2318,7 +2325,8 @@ mod tests {
                 "create plus at least one part, got {}",
                 store.op_counts().class_a
             );
-            let (id, scanned) = ingest.finish().await.unwrap();
+            let (id, scanned, bytes) = ingest.finish().await.unwrap();
+            assert!(bytes.is_none(), "a spilled pack is not kept in memory");
             assert_eq!(scanned.entries.len(), 1);
             assert!(store.op_counts().class_a >= 3, "complete is a third write");
             assert_eq!(store.get(&pack_key("r", &id)).await.unwrap().unwrap(), pack);

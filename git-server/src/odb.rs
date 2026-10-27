@@ -463,6 +463,7 @@ mod tests {
                 &pack_key("r", &shared),
                 &scanned,
                 &crate::pack::index::NoExternalBases,
+                None,
             )
             .await
             .unwrap();
