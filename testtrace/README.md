@@ -110,7 +110,7 @@ If none of these find a test, the span starts with no parent.
 
 A `go:linkname` to `runtime/pprof.runtime_getProfLabel`, which the runtime
 keeps for external packages, reads the label pointer. On the benchmark in
-`testtrace_test.go`, a span start through testtrace costs about 60 ns more
+`testtrace_test.go`, a span start through testtrace costs 50 to 80 ns more
 than through the SDK alone. Parsing a goroutine ID from `runtime.Stack`, the
 other way to key bindings, costs about 2 µs, and goroutines that the test
 starts have IDs of their own.
@@ -143,10 +143,26 @@ starts have IDs of their own.
 - Spans that a goroutine starts after its test ends have no test parent.
 - `WrapTracerProvider` and `Install` panic outside a test binary.
 
+## Examples
+
+`examples/localfile/` wraps `sdktrace.WithSyncer` around the OpenTelemetry
+`stdouttrace` exporter, writing each span as one line of JSON to a file. It's
+part of this module (it has no `go.mod` of its own), so the main `go test
+./...` run covers it.
+
+`examples/gcp/` sends spans to Google Cloud Trace over OTLP/HTTP, through an
+OpenTelemetry Collector running the `googlecloud` exporter. It's a separate
+Go module, because that path pulls in gRPC and protobuf dependencies this
+library otherwise has no use for. `go test ./examples/gcp/ -v` runs it
+against a fake Collector it starts on `localhost`, needing no GCP project or
+credentials; its `README.md` has the one environment variable that instead
+points it at a real Collector and project.
+
 ## Test
 
 ```bash
 go test -race ./...
 go test -run '^$' -bench . ./...
 go test -run '^$' -fuzz FuzzAutomaticBinding -fuzztime 10s .
+cd examples/gcp && go test -race ./...
 ```
