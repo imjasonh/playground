@@ -40,6 +40,24 @@ fn runtime_main_ram_slots_sit_in_reserved_block() {
 }
 
 #[test]
+fn enable_rendering_with_background_waits_for_vblank() {
+    let insts = gen_enable_rendering(true);
+    let poll = insts
+        .iter()
+        .position(|i| i.opcode == LDA && i.mode == AM::ZeroPage(ZP_FRAME_FLAG))
+        .expect("polls the frame flag");
+    let mask = insts
+        .iter()
+        .position(|i| i.opcode == STA && i.mode == AM::Absolute(PPU_MASK))
+        .expect("writes PPUMASK");
+    assert!(poll < mask);
+    assert_eq!(insts[poll + 1].opcode, BEQ);
+
+    let sprites_only = gen_enable_rendering(false);
+    assert_eq!(sprites_only.len(), 2);
+}
+
+#[test]
 fn init_disables_irq() {
     let init = gen_init(true);
     assert_eq!(init[0].opcode, SEI);

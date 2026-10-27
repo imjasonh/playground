@@ -398,15 +398,30 @@ pub fn gen_init(has_oam: bool) -> Vec<Instruction> {
 /// enabled alongside the sprite layer — programs that declare a
 /// `background` block want both, programs that don't can skip
 /// the background bit to match the pre-fix behaviour.
+///
+/// With a background, the initial nametable load runs about half a
+/// frame past the boot vblank, so the write first waits for the next
+/// NMI. Turning rendering on mid-frame would draw the rest of that
+/// frame from wherever the load left the PPU address.
 #[must_use]
 pub fn gen_enable_rendering(show_background: bool) -> Vec<Instruction> {
     // $1E = show bg + sprites + left-8-px for both
     // $10 = show sprites only (no bg)
     let mask = if show_background { 0x1E } else { 0x10 };
-    vec![
-        Instruction::new(LDA, AM::Immediate(mask)),
-        Instruction::new(STA, AM::Absolute(PPU_MASK)),
-    ]
+    let mut out = Vec::new();
+    if show_background {
+        out.push(Instruction::new(LDA, AM::Immediate(0)));
+        out.push(Instruction::new(STA, AM::ZeroPage(ZP_FRAME_FLAG)));
+        out.push(Instruction::new(NOP, AM::Label("__enable_wait".into())));
+        out.push(Instruction::new(LDA, AM::ZeroPage(ZP_FRAME_FLAG)));
+        out.push(Instruction::new(
+            BEQ,
+            AM::LabelRelative("__enable_wait".into()),
+        ));
+    }
+    out.push(Instruction::new(LDA, AM::Immediate(mask)));
+    out.push(Instruction::new(STA, AM::Absolute(PPU_MASK)));
+    out
 }
 
 /// Generate the NMI handler.
