@@ -464,8 +464,18 @@ fun run_jobs() {
         return
     }
     if restore_col < 64 {
+        // 2 columns/frame, not 4: each queues 8 `nt_set` calls, and
+        // this job already competes with `hud_arrivals()` and the
+        // bullet draws for the same frame's VRAM buffer entries.
+        // The NMI drain has a real but tight vblank cycle budget
+        // (see `gen_vram_buf_drain`'s "~50 single-tile writes"
+        // comment); stacking a 4-column (32-entry) burst on top of
+        // that other per-frame work occasionally overran it by a
+        // scanline or two, right as a departing train hands the
+        // band back for restoration. Halving the burst halves this
+        // job's share and keeps every departure inside budget.
         var i: u8 = 0
-        while i < 4 {
+        while i < 2 {
             band_col(restore_col as u16)
             restore_col += 1
             i += 1
