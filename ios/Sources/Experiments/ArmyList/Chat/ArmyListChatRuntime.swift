@@ -647,7 +647,7 @@ struct ArmyApplyRosterPlanFMTool: Tool {
         var battleSizeID: String
         @Guide(description: "Comma-separated detachment ids/names that fit the DP budget")
         var detachmentIDsCSV: String
-        @Guide(description: "Comma-separated datasheet id/name or id:models, e.g. blade-champion:1,custodian-guard:5")
+        @Guide(description: "Comma-separated datasheet id/name or id:models, e.g. blade-champion:1,allarus-custodians:2")
         var unitsCSV: String
         @Guide(description: "Army list name")
         var listName: String

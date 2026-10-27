@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "space-marines--deathwatch-support",
@@ -10,11 +10,10 @@
     ],
     "factionID" : "space-marines",
     "id" : "A4A9E52B-5455-40EA-952D-FB126F9E2C90",
-    "name" : "Space Marines Incursion 995pts",
+    "name" : "Space Marines Incursion 980pts",
     "notes" : "stress seed=23 attach=true enh=true",
     "units" : [
       {
-        "attachedToUnitID" : "06FF9F94-BD00-4E7A-8FCE-21B6F1BA0263",
         "datasheetID" : "space-marines--techmarine",
         "enhancementIDs" : [
           "space-marines--phobos-shadow-force--venator-omni-auspex"
@@ -26,23 +25,23 @@
         ]
       },
       {
-        "datasheetID" : "space-marines--assault-intercessors-with-jump-packs",
+        "datasheetID" : "space-marines--eradicator-squad-with-heavy-bolters",
         "enhancementIDs" : [
 
         ],
         "id" : "4CAF6F04-64A0-4629-9D84-D4C62FCDC5BE",
-        "models" : 5,
+        "models" : 3,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "space-marines--centurion-devastator-squad",
+        "datasheetID" : "space-marines--redemptor-dreadnought",
         "enhancementIDs" : [
 
         ],
         "id" : "5A672607-5F7E-46A0-93D0-672E1BDE0F5B",
-        "models" : 3,
+        "models" : 1,
         "optionIDs" : [
 
         ]
@@ -59,12 +58,12 @@
         ]
       },
       {
-        "datasheetID" : "space-marines--assault-intercessor-squad",
+        "datasheetID" : "space-marines--aggressor-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "06FF9F94-BD00-4E7A-8FCE-21B6F1BA0263",
-        "models" : 5,
+        "models" : 3,
         "optionIDs" : [
 
         ]

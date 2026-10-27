@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "space-wolves--assault-brethren",
@@ -11,12 +11,12 @@
     ],
     "factionID" : "space-wolves",
     "id" : "F1CD4661-9BDE-42DD-9EC2-E1A248C1CDE2",
-    "name" : "Space Wolves Strike Force 2000pts",
+    "name" : "Space Wolves Strike Force 1975pts",
     "notes" : "stress seed=43 attach=true enh=true",
     "units" : [
       {
-        "attachedToUnitID" : "0938F85A-5F03-411C-9650-AB6A94F66E52",
-        "datasheetID" : "space-wolves--iron-priest",
+        "attachedToUnitID" : "CF2A3B88-3E59-4AD3-A437-1EAB1B6311A0",
+        "datasheetID" : "space-wolves--techmarine",
         "enhancementIDs" : [
           "space-wolves--gravis-siege-force--narthecis-gauntlet"
         ],
@@ -49,7 +49,7 @@
         ]
       },
       {
-        "datasheetID" : "space-wolves--hellblaster-squad",
+        "datasheetID" : "space-wolves--sternguard-veteran-squad",
         "enhancementIDs" : [
 
         ],
@@ -82,7 +82,7 @@
         ]
       },
       {
-        "datasheetID" : "space-wolves--hounds-of-morkai",
+        "datasheetID" : "space-wolves--wulfen",
         "enhancementIDs" : [
 
         ],
@@ -93,12 +93,12 @@
         ]
       },
       {
-        "datasheetID" : "space-wolves--hammerfall-bunker",
+        "datasheetID" : "space-wolves--terminator-assault-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "1D977D51-7A3F-4763-9AF3-EB30FCC17ED0",
-        "models" : 1,
+        "models" : 5,
         "optionIDs" : [
 
         ]

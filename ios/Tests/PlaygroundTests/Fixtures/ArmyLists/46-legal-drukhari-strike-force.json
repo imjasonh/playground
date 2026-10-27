@@ -2,21 +2,21 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
-      "drukhari--exhibition-of-slaughter",
-      "drukhari--tools-of-torment"
+      "drukhari--covenite-coterie"
     ],
     "factionID" : "drukhari",
-    "id" : "B8CC2575-A71D-462F-9944-4C1FAC0DD4DD",
-    "name" : "Drukhari Strike Force 1955pts",
+    "id" : "A62A1D8A-1B7E-4DA9-AFD9-E6D92C97B376",
+    "name" : "Drukhari Strike Force 1995pts",
     "notes" : "stress seed=45 attach=true enh=true",
     "units" : [
       {
+        "attachedToUnitID" : "B8CC2575-A71D-462F-9944-4C1FAC0DD4DD",
         "datasheetID" : "drukhari--haemonculus",
         "enhancementIDs" : [
-          "drukhari--exhibition-of-slaughter--hyperstimm-trafficker"
+          "drukhari--covenite-coterie--master-nemesine"
         ],
         "id" : "6F871790-8182-4A81-84DF-EDC7ABAB1E15",
         "models" : 1,
@@ -207,6 +207,17 @@
         ],
         "id" : "FAB899E5-ED14-426D-B389-4B800DC41DE1",
         "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "drukhari--wracks",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B8CC2575-A71D-462F-9944-4C1FAC0DD4DD",
+        "models" : 5,
         "optionIDs" : [
 
         ]

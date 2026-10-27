@@ -2,21 +2,22 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
-      "adeptus-custodes--null-maiden-vigil"
+      "adeptus-custodes--aquilan-shield",
+      "adeptus-custodes--grav-assault-force"
     ],
     "factionID" : "adeptus-custodes",
-    "id" : "CF872F80-57FB-4AC7-A490-359C577AB59C",
-    "name" : "Adeptus Custodes Incursion 975pts",
+    "id" : "5ED354BE-1582-4F0D-87C9-7A77E35C6858",
+    "name" : "Adeptus Custodes Incursion 990pts",
     "notes" : "stress seed=1 attach=true enh=true",
     "units" : [
       {
-        "attachedToUnitID" : "932E2BCD-FAB8-4E35-981C-413CAB779BEE",
+        "attachedToUnitID" : "D81C413C-AB77-4BEE-B939-79CE6B548795",
         "datasheetID" : "adeptus-custodes--aleya",
         "enhancementIDs" : [
-          "adeptus-custodes--null-maiden-vigil--huntress-eye"
+          "adeptus-custodes--aquilan-shield--pareldor-s-caducatrix"
         ],
         "id" : "B3AB6566-B88A-4452-B8FB-3B83D36FB024",
         "models" : 1,
@@ -25,12 +26,56 @@
         ]
       },
       {
-        "datasheetID" : "adeptus-custodes--venatari-custodians",
+        "datasheetID" : "adeptus-custodes--sagittarum-custodians-sodality",
         "enhancementIDs" : [
 
         ],
-        "id" : "5B9F14A8-42BE-4AAB-8028-A58A68355691",
+        "id" : "1AD4373E-7256-4F5E-932E-2BCDFAB86E35",
         "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--prosecutor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "D81C413C-AB77-4BEE-B939-79CE6B548795",
+        "models" : 4,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--sentinel-guard-sodality",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "C6B7FE18-EB00-4056-8F87-2F8057FB1AC7",
+        "models" : 3,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--custodian-wardens",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "6490359C-577A-459C-95FD-3FC2837BA35D",
+        "models" : 2,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "adeptus-custodes--witchseeker-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "327EC5B7-3EB9-4428-8BFC-6B92641B4B1C",
+        "models" : 4,
         "optionIDs" : [
 
         ]
@@ -40,52 +85,8 @@
         "enhancementIDs" : [
 
         ],
-        "id" : "0108E095-2802-40E0-AEE7-EE706E9D13C4",
+        "id" : "B0248BB5-E6E8-4376-B1C2-188B6E90B499",
         "models" : 2,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "adeptus-custodes--custodian-guard-with-adrasite-and-pyrithite-spears",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "17757494-3499-4F21-8CFE-F1D8797F3539",
-        "models" : 5,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "adeptus-custodes--contemptor-achillus-dreadnought",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "1D9C8D9C-6B0F-4141-9AD4-373E72567F5E",
-        "models" : 1,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "adeptus-custodes--witchseekers",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "932E2BCD-FAB8-4E35-981C-413CAB779BEE",
-        "models" : 4,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "adeptus-custodes--coronus-grav-carrier",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "F93979CE-6B54-4795-86B7-FE18EB001056",
-        "models" : 1,
         "optionIDs" : [
 
         ]

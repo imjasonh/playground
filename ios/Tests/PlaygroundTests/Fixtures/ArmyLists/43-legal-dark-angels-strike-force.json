@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "dark-angels--assault-brethren",
@@ -10,12 +10,12 @@
       "dark-angels--gravis-linebreaker-force"
     ],
     "factionID" : "dark-angels",
-    "id" : "A672C9A3-2C47-4F15-AF81-E7BC9029CF17",
-    "name" : "Dark Angels Strike Force 1960pts",
+    "id" : "2F81E7BC-9029-4F17-8406-2332834A0D02",
+    "name" : "Dark Angels Strike Force 1980pts",
     "notes" : "stress seed=42 attach=true enh=true",
     "units" : [
       {
-        "attachedToUnitID" : "DE2DA0B5-E90C-4845-8732-1FFE0D228258",
+        "attachedToUnitID" : "59AC9606-19C8-486C-A672-C9A32C470F15",
         "datasheetID" : "dark-angels--techmarine",
         "enhancementIDs" : [
           "dark-angels--gauntlet-task-force--linebreaker-onslaught"
@@ -27,132 +27,143 @@
         ]
       },
       {
-        "datasheetID" : "dark-angels--assault-intercessor-squad",
+        "datasheetID" : "dark-angels--repulsor-executioner",
         "enhancementIDs" : [
 
         ],
-        "id" : "DE2DA0B5-E90C-4845-8732-1FFE0D228258",
-        "models" : 10,
+        "id" : "7117CE8F-5FBB-4092-9E2D-A0B5E90C2845",
+        "models" : 1,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--inceptor-squad",
+        "datasheetID" : "dark-angels--infiltrator-squad",
         "enhancementIDs" : [
 
         ],
-        "id" : "3C446057-C48F-4CBA-8DC2-B1A4B14AA0A9",
-        "models" : 3,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "dark-angels--intercessor-squad",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "CA25D43A-EF79-4FF3-83DA-9B8C7082E3B6",
-        "models" : 10,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "dark-angels--vanguard-veteran-squad-with-jump-packs",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "08660B1B-2624-41C8-A9E7-462B72F1EFAC",
+        "id" : "07321FFE-0D22-4258-BC44-6057C48FBCBA",
         "models" : 5,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--ballistus-dreadnought",
+        "datasheetID" : "dark-angels--rapier-carrier",
         "enhancementIDs" : [
 
         ],
-        "id" : "76C460A4-F612-415B-BF12-27474A180C3A",
+        "id" : "8DC2B1A4-B14A-40A9-8A25-D43AEF79CFF3",
         "models" : 1,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--repulsor",
+        "datasheetID" : "dark-angels--infernus-squad",
         "enhancementIDs" : [
 
         ],
-        "id" : "940C5681-3C79-43BA-85A2-81AEA16C3FFC",
+        "id" : "83DA9B8C-7082-43B6-8866-0B1B262411C8",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "dark-angels--whirlwind",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "69E7462B-72F1-4FAC-B6C4-60A4F612815B",
         "models" : 1,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--drop-pod",
+        "datasheetID" : "dark-angels--stormraven-gunship",
         "enhancementIDs" : [
 
         ],
-        "id" : "E2F512C5-6B9A-4E3E-BB56-DA4078918AA8",
+        "id" : "BF122747-4A18-4C3A-940C-56813C79B3BA",
         "models" : 1,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--repulsor-executioner",
+        "datasheetID" : "dark-angels--deathwing-knights",
         "enhancementIDs" : [
 
         ],
-        "id" : "E0033FB6-0246-4BF6-A1CE-5F0D179D3AF2",
+        "id" : "05A281AE-A16C-4FFC-A2F5-12C56B9ABE3E",
+        "models" : 5,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "dark-angels--ravenwing-talonmaster",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "BB56DA40-7891-4AA8-A003-3FB60246FBF6",
         "models" : 1,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--ravenwing-black-knights",
+        "datasheetID" : "dark-angels--invader-atvs",
         "enhancementIDs" : [
 
         ],
-        "id" : "0E66AECB-C401-4C3D-B7E2-6EE0E68BEA99",
+        "id" : "61CE5F0D-179D-4AF2-8E66-AECBC401DC3D",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "dark-angels--land-raider",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "77E26EE0-E68B-4A99-ACD7-19999CE7A114",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "dark-angels--aggressor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "7D080578-1B13-493A-BA80-D9A4CAF767C1",
         "models" : 3,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--land-raider-redeemer",
+        "datasheetID" : "dark-angels--scout-bike-squad",
         "enhancementIDs" : [
 
         ],
-        "id" : "ECD71999-9CE7-4114-BD08-05781B13F93A",
-        "models" : 1,
+        "id" : "F3B1B92A-3B8F-4AFD-B8D4-5A58386A3BBA",
+        "models" : 3,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--gladiator-lancer",
+        "datasheetID" : "dark-angels--assault-intercessor-squad",
         "enhancementIDs" : [
 
         ],
-        "id" : "FA80D9A4-CAF7-47C1-B3B1-B92A3B8F5AFD",
-        "models" : 1,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "dark-angels--hellblaster-squad",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "B8D45A58-386A-4BBA-99AC-960619C8186C",
+        "id" : "59AC9606-19C8-486C-A672-C9A32C470F15",
         "models" : 5,
         "optionIDs" : [
 

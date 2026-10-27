@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "space-wolves--champions-of-fenris",
@@ -15,7 +15,7 @@
     "units" : [
       {
         "attachedToUnitID" : "A692930E-07E7-4C40-AF21-4F6814671D3B",
-        "datasheetID" : "space-wolves--iron-priest",
+        "datasheetID" : "space-wolves--techmarine",
         "enhancementIDs" : [
           "space-wolves--champions-of-fenris--a-giant-amongst-giants"
         ],
@@ -26,29 +26,29 @@
         ]
       },
       {
-        "datasheetID" : "space-wolves--hammerfall-bunker",
+        "datasheetID" : "space-wolves--terminator-assault-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "E21577F7-EAF3-417F-BBF6-53689A14AF94",
-        "models" : 1,
+        "models" : 5,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "space-wolves--eradicator-squad-with-heavy-bolters",
+        "datasheetID" : "space-wolves--skyclaws",
         "enhancementIDs" : [
 
         ],
         "id" : "E023001D-E379-4E89-A16E-328C6AD24680",
-        "models" : 3,
+        "models" : 5,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "space-wolves--vanguard-veteran-squad-with-jump-packs",
+        "datasheetID" : "space-wolves--vanguard-veteran-squad",
         "enhancementIDs" : [
 
         ],
@@ -59,7 +59,7 @@
         ]
       },
       {
-        "datasheetID" : "space-wolves--ballistus-dreadnought",
+        "datasheetID" : "space-wolves--wulfen-dreadnought",
         "enhancementIDs" : [
 
         ],
@@ -81,12 +81,12 @@
         ]
       },
       {
-        "datasheetID" : "space-wolves--thunderwolf-cavalry",
+        "datasheetID" : "space-wolves--heavy-intercessor-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "B8F4DFBB-AAC8-4018-994C-DD2F8F33BBFE",
-        "models" : 3,
+        "models" : 10,
         "optionIDs" : [
 
         ]
@@ -97,7 +97,7 @@
 
         ],
         "id" : "A692930E-07E7-4C40-AF21-4F6814671D3B",
-        "models" : 10,
+        "models" : 5,
         "optionIDs" : [
 
         ]

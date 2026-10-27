@@ -2,21 +2,22 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "aeldari--path-of-the-outcast",
-      "aeldari--windrider-host"
+      "aeldari--serpent-s-brood"
     ],
     "factionID" : "aeldari",
-    "id" : "DE0E9A8A-A482-45A2-87BF-AA59C934E0F4",
-    "name" : "Aeldari Strike Force 1885pts",
+    "id" : "3C0DDBBA-324C-461F-8D17-FE0796DCF2DC",
+    "name" : "Aeldari Strike Force 2000pts",
     "notes" : "stress seed=32 attach=true enh=true",
     "units" : [
       {
+        "attachedToUnitID" : "DE0E9A8A-A482-45A2-87BF-AA59C934E0F4",
         "datasheetID" : "aeldari--bonesinger",
         "enhancementIDs" : [
-          "aeldari--windrider-host--echoes-of-ulthanesh"
+          "aeldari--serpent-s-brood--fanged-leer"
         ],
         "id" : "261280AC-341C-4104-AF0A-A2B371EB43C8",
         "models" : 1,
@@ -196,6 +197,17 @@
         ],
         "id" : "30D4378A-FEF0-42C4-B11C-04BE3CB53F46",
         "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "aeldari--wraithlord",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "DE0E9A8A-A482-45A2-87BF-AA59C934E0F4",
+        "models" : 1,
         "optionIDs" : [
 
         ]

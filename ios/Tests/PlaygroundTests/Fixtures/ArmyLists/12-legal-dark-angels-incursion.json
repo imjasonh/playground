@@ -2,18 +2,19 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "dark-angels--assault-brethren",
       "dark-angels--stormlance-task-force"
     ],
     "factionID" : "dark-angels",
-    "id" : "07A76B5B-CCA6-4591-BCD5-DBC4BFE608AB",
-    "name" : "Dark Angels Incursion 940pts",
+    "id" : "DE962F00-3A91-4D2F-87A7-6B5BCCA66591",
+    "name" : "Dark Angels Incursion 935pts",
     "notes" : "stress seed=11 attach=true enh=true",
     "units" : [
       {
+        "attachedToUnitID" : "468B99EF-7D48-4D36-8F35-D32105757CF4",
         "datasheetID" : "dark-angels--techmarine",
         "enhancementIDs" : [
           "dark-angels--assault-brethren--imperium-s-sword"
@@ -25,66 +26,66 @@
         ]
       },
       {
-        "datasheetID" : "dark-angels--outrider-squad",
+        "datasheetID" : "dark-angels--eradicator-squad-with-heavy-bolters",
         "enhancementIDs" : [
 
         ],
-        "id" : "1384C414-5536-4090-98A4-1FA72F83ADE7",
+        "id" : "9AEF671E-A8F6-4DD6-9384-C4145536D090",
         "models" : 3,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--repulsor",
+        "datasheetID" : "dark-angels--centurion-devastator-squad",
         "enhancementIDs" : [
 
         ],
-        "id" : "798B4FDA-F520-4A16-868B-99EF7D486D36",
-        "models" : 1,
+        "id" : "58A41FA7-2F83-4DE7-B98B-4FDAF520FA16",
+        "models" : 3,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--infernus-squad",
+        "datasheetID" : "dark-angels--assault-intercessor-squad",
         "enhancementIDs" : [
 
         ],
-        "id" : "4F35D321-0575-4CF4-A48F-8D34532CE4A0",
-        "models" : 5,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "dark-angels--gladiator-valiant",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "1567F8E6-E249-4C0B-B289-061057DD4164",
-        "models" : 1,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "dark-angels--heavy-intercessor-squad",
-        "enhancementIDs" : [
-
-        ],
-        "id" : "4B820F0C-3A3A-46C6-B01C-04EA130B7D84",
+        "id" : "468B99EF-7D48-4D36-8F35-D32105757CF4",
         "models" : 10,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "dark-angels--eradicator-squad-with-heavy-bolters",
+        "datasheetID" : "dark-angels--stormhawk-interceptor",
         "enhancementIDs" : [
 
         ],
-        "id" : "71C4A4D4-CAF4-4027-9E96-2F003A91CD2F",
+        "id" : "E48F8D34-532C-44A0-9567-F8E6E2494C0B",
+        "models" : 1,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "dark-angels--intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "B2890610-57DD-4164-8B82-0F0C3A3A86C6",
+        "models" : 10,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "dark-angels--bladeguard-veteran-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "301C04EA-130B-4D84-B1C4-A4D4CAF45027",
         "models" : 3,
         "optionIDs" : [
 

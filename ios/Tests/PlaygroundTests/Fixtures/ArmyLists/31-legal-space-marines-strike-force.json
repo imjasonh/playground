@@ -2,7 +2,7 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "space-marines--forgefather-s-seekers",
@@ -10,7 +10,7 @@
     ],
     "factionID" : "space-marines",
     "id" : "E7845F16-B066-4DFF-9CF5-2B40B5513BC0",
-    "name" : "Space Marines Strike Force 1990pts",
+    "name" : "Space Marines Strike Force 1975pts",
     "notes" : "stress seed=30 attach=true enh=true",
     "units" : [
       {
@@ -70,18 +70,18 @@
         ]
       },
       {
-        "datasheetID" : "space-marines--aggressor-squad",
+        "datasheetID" : "space-marines--reiver-squad",
         "enhancementIDs" : [
 
         ],
         "id" : "BB2C5979-E94F-4F56-A0A1-B41E4B128A41",
-        "models" : 3,
+        "models" : 5,
         "optionIDs" : [
 
         ]
       },
       {
-        "datasheetID" : "space-marines--vanguard-veteran-squad-with-jump-packs",
+        "datasheetID" : "space-marines--vanguard-veteran-squad",
         "enhancementIDs" : [
 
         ],
@@ -114,12 +114,23 @@
         ]
       },
       {
-        "datasheetID" : "space-marines--vanguard-veteran-squad",
+        "datasheetID" : "space-marines--wardens-of-ultramar",
         "enhancementIDs" : [
 
         ],
         "id" : "F3471102-4E97-4025-B832-2AF4DEE2BEE4",
-        "models" : 5,
+        "models" : 6,
+        "optionIDs" : [
+
+        ]
+      },
+      {
+        "datasheetID" : "space-marines--heavy-intercessor-squad",
+        "enhancementIDs" : [
+
+        ],
+        "id" : "5932ACFF-476A-4594-A600-0C184F02F745",
+        "models" : 10,
         "optionIDs" : [
 
         ]
@@ -129,19 +140,8 @@
         "enhancementIDs" : [
 
         ],
-        "id" : "5932ACFF-476A-4594-A600-0C184F02F745",
-        "models" : 1,
-        "optionIDs" : [
-
-        ]
-      },
-      {
-        "datasheetID" : "space-marines--hellblaster-squad",
-        "enhancementIDs" : [
-
-        ],
         "id" : "2F770CD7-3089-4D98-8444-AC4E2BF58D91",
-        "models" : 5,
+        "models" : 1,
         "optionIDs" : [
 
         ]
@@ -163,7 +163,7 @@
 
         ],
         "id" : "2B2281A9-5286-4483-9056-AD827B9AECB0",
-        "models" : 10,
+        "models" : 5,
         "optionIDs" : [
 
         ]

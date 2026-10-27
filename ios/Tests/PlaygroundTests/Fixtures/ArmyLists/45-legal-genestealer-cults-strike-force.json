@@ -2,21 +2,23 @@
   "expectedLegal" : true,
   "list" : {
     "battleSizeID" : "strike-force",
-    "catalogVersion" : "11e-5",
+    "catalogVersion" : "11e-6",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
-      "genestealer-cults--brood-brothers-auxilia"
+      "genestealer-cults--heroes-of-the-uprising",
+      "genestealer-cults--purestrain-broodswarm",
+      "genestealer-cults--xenocult-masses"
     ],
     "factionID" : "genestealer-cults",
     "id" : "11D9729A-89F8-4467-BE96-C482154DD203",
-    "name" : "Genestealer Cults Strike Force 1920pts",
+    "name" : "Genestealer Cults Strike Force 1925pts",
     "notes" : "stress seed=44 attach=true enh=true",
     "units" : [
       {
         "attachedToUnitID" : "0B9F2588-8F5E-4534-B069-EA6DD1AD8E17",
         "datasheetID" : "genestealer-cults--acolyte-iconward",
         "enhancementIDs" : [
-          "genestealer-cults--brood-brothers-auxilia--adaptive-reprisal"
+          "genestealer-cults--heroes-of-the-uprising--contraband-munitions"
         ],
         "id" : "42088243-548E-4828-9B31-5EC60913BFAC",
         "models" : 1,

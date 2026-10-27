@@ -7,7 +7,7 @@
   {
     "expectedLegal" : true,
     "file" : "02-legal-adeptus-custodes-incursion.json",
-    "name" : "Adeptus Custodes Incursion 975pts"
+    "name" : "Adeptus Custodes Incursion 990pts"
   },
   {
     "expectedLegal" : true,
@@ -27,12 +27,12 @@
   {
     "expectedLegal" : true,
     "file" : "06-legal-black-templars-incursion.json",
-    "name" : "Black Templars Incursion 1000pts"
+    "name" : "Black Templars Incursion 920pts"
   },
   {
     "expectedLegal" : true,
     "file" : "07-legal-blood-angels-incursion.json",
-    "name" : "Blood Angels Incursion 975pts"
+    "name" : "Blood Angels Incursion 965pts"
   },
   {
     "expectedLegal" : true,
@@ -57,7 +57,7 @@
   {
     "expectedLegal" : true,
     "file" : "12-legal-dark-angels-incursion.json",
-    "name" : "Dark Angels Incursion 940pts"
+    "name" : "Dark Angels Incursion 935pts"
   },
   {
     "expectedLegal" : true,
@@ -67,7 +67,7 @@
   {
     "expectedLegal" : true,
     "file" : "14-legal-deathwatch-incursion.json",
-    "name" : "Deathwatch Incursion 925pts"
+    "name" : "Deathwatch Incursion 980pts"
   },
   {
     "expectedLegal" : true,
@@ -117,7 +117,7 @@
   {
     "expectedLegal" : true,
     "file" : "24-legal-space-marines-incursion.json",
-    "name" : "Space Marines Incursion 995pts"
+    "name" : "Space Marines Incursion 980pts"
   },
   {
     "expectedLegal" : true,
@@ -152,7 +152,7 @@
   {
     "expectedLegal" : true,
     "file" : "31-legal-space-marines-strike-force.json",
-    "name" : "Space Marines Strike Force 1990pts"
+    "name" : "Space Marines Strike Force 1975pts"
   },
   {
     "expectedLegal" : true,
@@ -162,7 +162,7 @@
   {
     "expectedLegal" : true,
     "file" : "33-legal-aeldari-strike-force.json",
-    "name" : "Aeldari Strike Force 1885pts"
+    "name" : "Aeldari Strike Force 2000pts"
   },
   {
     "expectedLegal" : true,
@@ -207,27 +207,27 @@
   {
     "expectedLegal" : true,
     "file" : "42-legal-blood-angels-strike-force.json",
-    "name" : "Blood Angels Strike Force 1990pts"
+    "name" : "Blood Angels Strike Force 1925pts"
   },
   {
     "expectedLegal" : true,
     "file" : "43-legal-dark-angels-strike-force.json",
-    "name" : "Dark Angels Strike Force 1960pts"
+    "name" : "Dark Angels Strike Force 1980pts"
   },
   {
     "expectedLegal" : true,
     "file" : "44-legal-space-wolves-strike-force.json",
-    "name" : "Space Wolves Strike Force 2000pts"
+    "name" : "Space Wolves Strike Force 1975pts"
   },
   {
     "expectedLegal" : true,
     "file" : "45-legal-genestealer-cults-strike-force.json",
-    "name" : "Genestealer Cults Strike Force 1920pts"
+    "name" : "Genestealer Cults Strike Force 1925pts"
   },
   {
     "expectedLegal" : true,
     "file" : "46-legal-drukhari-strike-force.json",
-    "name" : "Drukhari Strike Force 1955pts"
+    "name" : "Drukhari Strike Force 1995pts"
   },
   {
     "expectedLegal" : true,
