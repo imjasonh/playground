@@ -32,6 +32,9 @@ const BTN_START: u8 = 6
 
 const LOCK_STATUS_X: u8[2] = [1, 16]
 const LOCK_STATUS_ROW: u8 = 27
+// Row of the Card background holding plan 0 (SNAP); plan idx sits
+// at CARD_PLAN_ROW0 + idx. See backgrounds.ne's Card map.
+const CARD_PLAN_ROW0: u8 = 5
 
 // Edge-triggered press on player p's controller, as a BTN_ code.
 fun pad_pressed(p: u8) -> u8 {
@@ -241,6 +244,9 @@ fun start_lock() {
         swap_background(2)
         on_card = true
         paint_card()
+        if mode == MODE_1P {
+            paint_invalid_plans()
+        }
         phase = P_LOCK
     } else {
         msg_clear()
@@ -693,6 +699,8 @@ state Battle {
         anim += 1
         if not on_card {
             draw_sprites()
+        } else {
+            draw_lock_cursor()
         }
         match phase {
             P_WAIT => { run_wait() }

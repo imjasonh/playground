@@ -72,6 +72,10 @@ const A_AIMED: u8 = 5
 const A_CHARGE: u8 = 6
 const NUM_ACTIONS: u8 = 7
 const NUM_PLANS: u8 = 17
+// Attribute-byte patterns for graying a Card row-pair bg1 (red):
+// one quadrant pair for the pair's top half, one for its bottom.
+const CARD_GRAY_TOP: u8 = 0x05
+const CARD_GRAY_BOT: u8 = 0x50
 const BIT: u8[8] = [1, 2, 4, 8, 16, 32, 64, 128]
 const ACTION_STR: u8[7] = [S_A_SNAP, S_A_STEP, S_A_SHIELD, S_A_STANDARD, S_A_RUSH, S_A_AIMED, S_A_CHARGE]
 

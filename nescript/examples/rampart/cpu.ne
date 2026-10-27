@@ -172,6 +172,115 @@ include "result.ne"
         return best
     }
 
+    // Against a CPU, point an arrow at the plan the typed code
+    // would lock in, in player 0's color, so they can check it
+    // before pressing START. Two humans still type blind, since
+    // the same screen is shared and showing one player's pick
+    // would show the other player too. Lives here, rather than
+    // next to the rest of the Lock sequencer in battle_state.ne,
+    // because the fixed bank has no code space left; reuses
+    // res_a as scratch instead of a new local for the same
+    // reason, main RAM being just as tight.
+    fun draw_lock_cursor() {
+        if mode != MODE_1P or lk_ready[0] != 0 or lk_n[0] < 2 {
+            return
+        }
+        res_a = lk_prev[0] * 6 + lk_last[0]
+        if res_a >= NUM_PLANS or not plan_legal(0, res_a) {
+            return
+        }
+        draw Tileset at: (8, (CARD_PLAN_ROW0 + res_a) * 8 - 1) attr: 0 frame: T_ARROW
+    }
+
+    // Against a CPU there's no opponent to hide the pick from, so
+    // the card grays out plans player 0 can't afford or can't use
+    // this turn. The attribute table only resolves two rows at a
+    // time, so a pair grays only when every plan sharing it is
+    // unavailable; a legal plan sharing a pair with an illegal one
+    // keeps the pair lit. Written out per pair rather than looped,
+    // and reusing res_a for the packed byte instead of a new
+    // local, for the same reasons as draw_lock_cursor above.
+    fun paint_invalid_plans() {
+        // Row 4 (SNAP's pair) shares its top half with the header
+        // above it, so only plan 0 can gray that half.
+        res_a = 0
+        if not plan_legal(0, 0) {
+            res_a = CARD_GRAY_TOP
+        }
+        if not plan_legal(0, 1) and not plan_legal(0, 2) {
+            res_a = res_a | CARD_GRAY_BOT
+        }
+        if res_a != 0 {
+            put_attr(0, 4, res_a)
+            put_attr(4, 4, res_a)
+            put_attr(8, 4, res_a)
+            put_attr(12, 4, res_a)
+            put_attr(16, 4, res_a)
+            put_attr(20, 4, res_a)
+            put_attr(24, 4, res_a)
+        }
+        res_a = 0
+        if not plan_legal(0, 3) and not plan_legal(0, 4) {
+            res_a = CARD_GRAY_TOP
+        }
+        if not plan_legal(0, 5) and not plan_legal(0, 6) {
+            res_a = res_a | CARD_GRAY_BOT
+        }
+        if res_a != 0 {
+            put_attr(0, 8, res_a)
+            put_attr(4, 8, res_a)
+            put_attr(8, 8, res_a)
+            put_attr(12, 8, res_a)
+            put_attr(16, 8, res_a)
+            put_attr(20, 8, res_a)
+            put_attr(24, 8, res_a)
+        }
+        res_a = 0
+        if not plan_legal(0, 7) and not plan_legal(0, 8) {
+            res_a = CARD_GRAY_TOP
+        }
+        if not plan_legal(0, 9) and not plan_legal(0, 10) {
+            res_a = res_a | CARD_GRAY_BOT
+        }
+        if res_a != 0 {
+            put_attr(0, 12, res_a)
+            put_attr(4, 12, res_a)
+            put_attr(8, 12, res_a)
+            put_attr(12, 12, res_a)
+            put_attr(16, 12, res_a)
+            put_attr(20, 12, res_a)
+            put_attr(24, 12, res_a)
+        }
+        res_a = 0
+        if not plan_legal(0, 11) and not plan_legal(0, 12) {
+            res_a = CARD_GRAY_TOP
+        }
+        if not plan_legal(0, 13) and not plan_legal(0, 14) {
+            res_a = res_a | CARD_GRAY_BOT
+        }
+        if res_a != 0 {
+            put_attr(0, 16, res_a)
+            put_attr(4, 16, res_a)
+            put_attr(8, 16, res_a)
+            put_attr(12, 16, res_a)
+            put_attr(16, 16, res_a)
+            put_attr(20, 16, res_a)
+            put_attr(24, 16, res_a)
+        }
+        // Row 23 (the bottom half of this last pair) is the "START
+        // WHEN DONE" footer, never a plan, so there's nothing to
+        // gray there even when both plans 15 and 16 are unavailable.
+        if not plan_legal(0, 15) and not plan_legal(0, 16) {
+            put_attr(0, 20, CARD_GRAY_TOP)
+            put_attr(4, 20, CARD_GRAY_TOP)
+            put_attr(8, 20, CARD_GRAY_TOP)
+            put_attr(12, 20, CARD_GRAY_TOP)
+            put_attr(16, 20, CARD_GRAY_TOP)
+            put_attr(20, 20, CARD_GRAY_TOP)
+            put_attr(24, 20, CARD_GRAY_TOP)
+        }
+    }
+
     // ── Move search ─────────────────────────────────────────────
 
     fun cpu_move_begin(p: u8, range: u8, act: u8) {
