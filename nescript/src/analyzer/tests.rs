@@ -826,26 +826,26 @@ fn analyze_ram_overflow_emits_e0301() {
 #[test]
 fn analyze_ram_stops_below_runtime_block() {
     // Main RAM starts at $0300 and ends where the runtime's slots at
-    // $07E4 begin, so 1252 bytes fit and 1253 overflow.
+    // $07E5 begin, so 1253 bytes fit and 1254 overflow.
     let fits = r#"
-        game "Test" { mapper: NROM }
-        var big: u8[1252]
-        on frame { wait_frame }
-        start Main
-    "#;
-    assert!(
-        !analyze_errors(fits).contains(&ErrorCode::E0301),
-        "1252 bytes of main RAM should fit"
-    );
-    let over = r#"
         game "Test" { mapper: NROM }
         var big: u8[1253]
         on frame { wait_frame }
         start Main
     "#;
     assert!(
+        !analyze_errors(fits).contains(&ErrorCode::E0301),
+        "1253 bytes of main RAM should fit"
+    );
+    let over = r#"
+        game "Test" { mapper: NROM }
+        var big: u8[1254]
+        on frame { wait_frame }
+        start Main
+    "#;
+    assert!(
         analyze_errors(over).contains(&ErrorCode::E0301),
-        "a variable that reaches $07E4 must not be allocated"
+        "a variable that reaches $07E5 must not be allocated"
     );
 }
 

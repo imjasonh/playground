@@ -26,7 +26,6 @@ fn runtime_main_ram_slots_sit_in_reserved_block() {
         PREV_INPUT_P2,
         VRAM_BUF_HEAD,
         VRAM_BUF_TAIL,
-        RETURN_HI,
         FADE_STEP_FRAMES,
         FADE_LEVEL,
         OAM_BUSY,
