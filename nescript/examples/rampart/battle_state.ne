@@ -29,9 +29,13 @@ const BTN_RIGHT: u8 = 3
 const BTN_A: u8 = 4
 const BTN_B: u8 = 5
 const BTN_START: u8 = 6
+const BTN_SELECT: u8 = 7
 
 const LOCK_STATUS_X: u8[2] = [1, 16]
 const LOCK_STATUS_ROW: u8 = 27
+// Row of the Card background holding plan 0 (SNAP); plan idx sits
+// at CARD_PLAN_ROW0 + idx. See backgrounds.ne's Card map.
+const CARD_PLAN_ROW0: u8 = 5
 
 // Edge-triggered press on player p's controller, as a BTN_ code.
 fun pad_pressed(p: u8) -> u8 {
@@ -57,6 +61,9 @@ fun pad_pressed(p: u8) -> u8 {
         if p1.button.start.pressed {
             return BTN_START
         }
+        if p1.button.select.pressed {
+            return BTN_SELECT
+        }
         return B_NONE
     }
     if p2.button.up.pressed {
@@ -79,6 +86,9 @@ fun pad_pressed(p: u8) -> u8 {
     }
     if p2.button.start.pressed {
         return BTN_START
+    }
+    if p2.button.select.pressed {
+        return BTN_SELECT
     }
     return B_NONE
 }
@@ -241,6 +251,14 @@ fun start_lock() {
         swap_background(2)
         on_card = true
         paint_card()
+        // 1P grays illegal plans one per frame while the card is
+        // still blanked. step counts those plans. 2P leaves the
+        // list alone, so skip that wait.
+        if mode == MODE_1P {
+            step = 0
+        } else {
+            step = NUM_PLANS
+        }
         phase = P_LOCK
     } else {
         msg_clear()
@@ -251,6 +269,15 @@ fun start_lock() {
 }
 
 fun run_lock() {
+    // Hold the card blank until every plan has been considered.
+    // A legal plan queues nothing, and the screen would otherwise
+    // light up in that gap, with the remaining rows still white.
+    if mode == MODE_1P and step < NUM_PLANS {
+        unblank = 2
+        paint_one_invalid()
+        step += 1
+        return
+    }
     var p: u8 = 0
     while p < 2 {
         if lk_ready[p] == 0 {
@@ -268,7 +295,7 @@ fun run_lock() {
                     put_tile(x, LOCK_STATUS_ROW, T_QUEST)
                     play LockNo
                 }
-            } else if b != B_NONE {
+            } else if b != B_NONE and b != BTN_SELECT {
                 lk_prev[p] = lk_last[p]
                 lk_last[p] = b
                 if lk_n[p] < 2 {
@@ -693,6 +720,8 @@ state Battle {
         anim += 1
         if not on_card {
             draw_sprites()
+        } else {
+            draw_lock_cursor()
         }
         match phase {
             P_WAIT => { run_wait() }

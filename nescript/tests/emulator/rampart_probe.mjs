@@ -332,9 +332,13 @@ function reportHang() {
   note("hang", { ...ctx(), sp: cpu.REG_SP.toString(16), pc: cpu.REG_PC.toString(16) }, false);
 }
 
-// Board cells and attributes never change during a match.
+// Board cells never change during a match. Card attributes never
+// change while one Lock screen is up, but a CPU opponent lets the
+// card repaint its gray-out pattern each time a new Lock screen
+// opens, since plan legality tracks each mech's current damage.
 let boardRef = null;
 let cardRef = null;
+let wasOnCard = false;
 function snapshot(rows, cols) {
   const out = [];
   for (const r of rows) for (const c of cols) out.push(vram(0x2000 + r * 32 + c));
@@ -350,13 +354,15 @@ function checkBoard() {
   if (midHandlerWait || ppu.f_bgVisibility !== 1) return;
   if (peek(A.onCard)) {
     const snap = snapshot([], []);
-    if (!cardRef) cardRef = snap;
+    if (!cardRef || !wasOnCard) cardRef = snap;
     else if (snap.some((v, i) => v !== cardRef[i])) {
       note("card-attr-changed", ctx(), true);
       cardRef = snap;
     }
+    wasOnCard = true;
     return;
   }
+  wasOnCard = false;
   const snap = snapshot(BOARD_ROWS, BOARD_COLS);
   if (!boardRef) {
     boardRef = snap;
@@ -527,6 +533,7 @@ while (gameNo < GAMES && frameNo < MAX_FRAMES) {
     gameFrames = 0;
     boardRef = null;
     cardRef = null;
+    wasOnCard = false;
   }
   if (inBattle) {
     gameFrames++;

@@ -12,6 +12,7 @@ const T_HOLES: u8 = 17
 const T_FIRE: u8 = 18
 const T_CRATER: u8 = 20
 const T_ARROW: u8 = 21
+const T_UNDERLINE: u8 = 95
 // Plan icons, in action order: Snap, Step, Shield, Standard, Rush,
 // Aimed, Charge.
 const T_ACT: u8 = 22
@@ -72,6 +73,12 @@ const A_AIMED: u8 = 5
 const A_CHARGE: u8 = 6
 const NUM_ACTIONS: u8 = 7
 const NUM_PLANS: u8 = 17
+// Dim copies of A-Z (color index 1, dk_gray in every background
+// palette). Indexed by letter - 'A'. 0 means that letter has no
+// dim tile. The tile numbers are the unused ASCII slots filled
+// in by gen_rampart.py.
+const GRAY_LETTER: u8[26] = [31, 0, 35, 36, 37, 0, 38, 39, 40, 0, 0, 41, 44, 59, 0, 60, 0, 64, 106, 107, 30, 0, 0, 0, 0, 0]
+const GRAY_DASH: u8 = 34
 const BIT: u8[8] = [1, 2, 4, 8, 16, 32, 64, 128]
 const ACTION_STR: u8[7] = [S_A_SNAP, S_A_STEP, S_A_SHIELD, S_A_STANDARD, S_A_RUSH, S_A_AIMED, S_A_CHARGE]
 
