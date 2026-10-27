@@ -348,9 +348,9 @@ impl RepoStateDo {
             };
             match repo.load_state().await {
                 Err(e) => AlarmStep::LoadFailed(e),
-                Ok(loaded) if loaded.state.packs.len() < trigger => {
-                    AlarmStep::Skip { packs: loaded.state.packs.len() }
-                }
+                Ok(loaded) if loaded.state.packs.len() < trigger => AlarmStep::Skip {
+                    packs: loaded.state.packs.len(),
+                },
                 Ok(loaded) => {
                     let packs = loaded.state.packs.len();
                     crate::metrics::begin();
@@ -432,8 +432,14 @@ impl RepoStateDo {
 
 enum AlarmStep {
     LoadFailed(String),
-    Skip { packs: usize },
-    Failed { packs: usize, error: String, ms: f64 },
+    Skip {
+        packs: usize,
+    },
+    Failed {
+        packs: usize,
+        error: String,
+        ms: f64,
+    },
     Done {
         packs: usize,
         packs_after: usize,
@@ -468,8 +474,16 @@ impl StateStore for DirectState<'_> {
         self.owner.swap_doc(swap).await.map_err(state_err)
     }
 
-    async fn repack_lease(&self, _repo: &str, now_ms: i64, ttl_ms: i64) -> Result<bool, StateError> {
-        self.owner.lease_doc(now_ms, ttl_ms).await.map_err(state_err)
+    async fn repack_lease(
+        &self,
+        _repo: &str,
+        now_ms: i64,
+        ttl_ms: i64,
+    ) -> Result<bool, StateError> {
+        self.owner
+            .lease_doc(now_ms, ttl_ms)
+            .await
+            .map_err(state_err)
     }
 
     async fn repack_unlease(&self, _repo: &str) -> Result<(), StateError> {

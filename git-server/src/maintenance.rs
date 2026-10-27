@@ -497,6 +497,9 @@ mod tests {
             None
         );
         assert_eq!(repack_followup_delay_ms(&RepackOutcome::NoOp, 8, 8), None);
-        assert_eq!(repack_followup_delay_ms(&RepackOutcome::LostRace, 3, 8), None);
+        assert_eq!(
+            repack_followup_delay_ms(&RepackOutcome::LostRace, 3, 8),
+            None
+        );
     }
 }
