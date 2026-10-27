@@ -372,8 +372,8 @@ O(bytes/block) or O(1), which is the property to defend as the design
 evolves.
 
 Also note the one KV touch: a push checks the maintenance registry with a
-read ($0.50/M) and writes only on first push ($5.00/M once per repo) —
-negligible.
+read ($0.50/M) and writes only on first push ($5.00/M once per repo).
+The check runs after the response is sent, so it is not part of push latency.
 
 One planned optimization still matters at scale, and it is a pure addition:
 

@@ -704,7 +704,7 @@ fn request_nonce() -> String {
 }
 
 #[event(fetch)]
-async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
+async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
     let mut server = GitHttp::new(
         std::rc::Rc::new(R2Store::new(&env)?),
         std::rc::Rc::new(DoStateStore { env: env.clone() }),
@@ -752,6 +752,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         fetch_inner(FetchCtx {
             req,
             env,
+            ctx,
             server,
             method,
             path,
@@ -768,6 +769,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
 struct FetchCtx {
     req: Request,
     env: Env,
+    ctx: Context,
     server: GitHttp,
     method: String,
     path: String,
@@ -777,10 +779,30 @@ struct FetchCtx {
     cf_ray: Option<String>,
 }
 
+/// Record `repo` in the cron registry. A present key is one read. A missing
+/// key is a read plus a write. Failures are logged. The next push tries again.
+async fn register_repo(kv: &worker::kv::KvStore, repo: &str) {
+    let known = matches!(kv.get(repo).text().await, Ok(Some(_)));
+    if known {
+        return;
+    }
+    let put = match kv.put(repo, "1") {
+        Ok(put) => put,
+        Err(err) => {
+            worker::console_error!("repo registry {repo}: {err}");
+            return;
+        }
+    };
+    if let Err(err) = put.execute().await {
+        worker::console_error!("repo registry {repo}: {err}");
+    }
+}
+
 async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     let FetchCtx {
         mut req,
         env,
+        ctx,
         server,
         method,
         path,
@@ -804,34 +826,17 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     };
 
     let nonce = request_nonce();
-    let mut resp = server.handle(&http_req, &mut body, &nonce).await;
+    let resp = server.handle(&http_req, &mut body, &nonce).await;
 
-    // Register the repo for scheduled maintenance after a successful push.
-    // Read-before-write: a KV read is ~10x cheaper than a write, and every
-    // push after the first hits the read path. (This runs after the metrics
-    // collector was drained, so account for it directly.)
-    if method == "POST" && path.ends_with("/git-receive-pack") && resp.status == 200 {
-        if let Some(repo) = path
-            .trim_matches('/')
-            .split('/')
-            .next()
-            .map(|r| r.trim_end_matches(".git"))
-        {
-            if let Ok(kv) = env.kv(REPOS_KV_BINDING) {
-                let kv_start = crate::metrics::now_ms();
-                let known = kv.get(repo).text().await.ok().flatten().is_some();
-                let mut kv_ops = 1;
-                if !known {
-                    if let Ok(put) = kv.put(repo, "1") {
-                        let _ = put.execute().await;
-                        kv_ops += 1;
-                    }
-                }
-                if let Some((m, _)) = resp.metrics.as_deref_mut() {
-                    m.kv_ops += kv_ops;
-                    m.backend_ms += crate::metrics::now_ms() - kv_start;
-                }
-            }
+    // Cron finds repos through a KV key written on push. Read first, and
+    // write only when the key is absent. The check runs after the response,
+    // so it is not part of push latency. The next push retries a dropped write.
+    if let Some(repo) = crate::http::pushed_repo(&method, &path, resp.status) {
+        if let Ok(kv) = env.kv(REPOS_KV_BINDING) {
+            let repo = repo.to_string();
+            ctx.wait_until(crate::scope::run(crate::scope::fresh(), async move {
+                register_repo(&kv, &repo).await;
+            }));
         }
     }
 

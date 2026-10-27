@@ -539,6 +539,21 @@ fn strip_git(name: &str) -> &str {
     name.strip_suffix(".git").unwrap_or(name)
 }
 
+/// Repo name from a successful `POST /<repo>/git-receive-pack`.
+/// The cron registry records that name after the response is sent.
+#[cfg(any(test, target_arch = "wasm32"))]
+pub(crate) fn pushed_repo<'a>(method: &str, path: &'a str, status: u16) -> Option<&'a str> {
+    if method != "POST" || status != 200 {
+        return None;
+    }
+    let mut parts = path.split('/').filter(|s| !s.is_empty());
+    let repo = strip_git(parts.next()?);
+    if parts.next() != Some("git-receive-pack") || parts.next().is_some() {
+        return None;
+    }
+    valid_repo_name(repo).then_some(repo)
+}
+
 /// Load scoped file-log segments, mapping failure to a 500 response
 /// (shared by the tree and blame APIs).
 async fn load_filelog(
@@ -606,6 +621,22 @@ mod tests {
         assert!(!valid_repo_name(".hidden"));
         assert!(!valid_repo_name("a/b"));
         assert!(!valid_repo_name("a b"));
+    }
+
+    #[test]
+    fn pushed_repo_is_a_successful_receive_pack() {
+        assert_eq!(
+            pushed_repo("POST", "/my-repo/git-receive-pack", 200),
+            Some("my-repo")
+        );
+        assert_eq!(
+            pushed_repo("POST", "/my-repo.git/git-receive-pack", 200),
+            Some("my-repo")
+        );
+        assert_eq!(pushed_repo("POST", "/my-repo/git-receive-pack", 500), None);
+        assert_eq!(pushed_repo("GET", "/my-repo/git-receive-pack", 200), None);
+        assert_eq!(pushed_repo("POST", "/my-repo/git-upload-pack", 200), None);
+        assert_eq!(pushed_repo("POST", "/.hidden/git-receive-pack", 200), None);
     }
 
     #[test]
