@@ -419,32 +419,76 @@ fn copy_propagate_temps(instructions: &mut [Instruction]) {
                 a = None;
             }
             (Opcode::STA, AddressingMode::ZeroPage(addr)) => {
-                // If we're storing to a temp slot and we know the
-                // source of the value in A, record the equivalence.
+                // Temps that copied the old byte at addr no longer
+                // match it. If addr is a temp slot and we know what A
+                // holds, record the new equivalence.
+                temp_source.retain(|_, src| !matches!(*src, Source::Zp(a) if a == addr));
                 if is_temp_slot_addr(addr) {
                     if let Some(src) = a {
                         temp_source.insert(addr, src);
                     } else {
                         temp_source.remove(&addr);
                     }
-                } else {
-                    // Storing to a non-temp ZP addr invalidates any
-                    // temp that was tracking [addr] as its source.
-                    temp_source.retain(|_, src| !matches!(*src, Source::Zp(a) if a == addr));
                 }
             }
-            (Opcode::STA, AddressingMode::Absolute(addr)) => {
-                // Invalidate any temp tracking this absolute source.
-                temp_source.retain(|_, src| !matches!(*src, Source::Abs(a) if a == addr));
-            }
-            // Any op that reads a non-ZP location or clobbers A: just
-            // invalidate A; temps are unaffected.
             _ => {
+                match memory_write(inst) {
+                    Some(Write::Zp(addr)) => {
+                        temp_source.remove(&addr);
+                        temp_source.retain(|_, src| !matches!(*src, Source::Zp(a) if a == addr));
+                    }
+                    Some(Write::Abs(addr)) => {
+                        temp_source.retain(|_, src| !matches!(*src, Source::Abs(a) if a == addr));
+                    }
+                    Some(Write::AboveZeroPage) => {
+                        temp_source.retain(|_, src| !matches!(*src, Source::Abs(_)));
+                    }
+                    Some(Write::Anywhere) => temp_source.clear(),
+                    None => {}
+                }
                 if modifies_a(inst.opcode) {
                     a = None;
                 }
             }
         }
+    }
+}
+
+/// Memory that an instruction may write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Write {
+    Zp(u8),
+    Abs(u16),
+    /// Some address at $0100 or above.
+    AboveZeroPage,
+    Anywhere,
+}
+
+fn memory_write(inst: &Instruction) -> Option<Write> {
+    let writes = matches!(
+        inst.opcode,
+        Opcode::STA
+            | Opcode::STX
+            | Opcode::STY
+            | Opcode::INC
+            | Opcode::DEC
+            | Opcode::ASL
+            | Opcode::LSR
+            | Opcode::ROL
+            | Opcode::ROR
+    );
+    if !writes {
+        return None;
+    }
+    match &inst.mode {
+        AddressingMode::Implied | AddressingMode::Accumulator => None,
+        AddressingMode::ZeroPage(addr) => Some(Write::Zp(*addr)),
+        AddressingMode::Absolute(addr) => Some(Write::Abs(*addr)),
+        AddressingMode::AbsoluteX(base) | AddressingMode::AbsoluteY(base) if *base >= 0x100 => {
+            Some(Write::AboveZeroPage)
+        }
+        AddressingMode::LabelAbsoluteX(_) => Some(Write::AboveZeroPage),
+        _ => Some(Write::Anywhere),
     }
 }
 
@@ -549,56 +593,35 @@ fn remove_redundant_loads(instructions: &mut Vec<Instruction>) {
                 eq.clear();
             }
             (Opcode::STA, AddressingMode::ZeroPage(addr)) => {
-                // A unchanged; address now holds A's value. Add the
-                // address to the equivalence class.
-                if eq.is_empty() {
-                    // No prior knowledge — start fresh with this
-                    // address.
-                }
+                // A unchanged; the address now holds A's value.
                 eq.push(AValue::Zp(*addr));
             }
             (Opcode::STA, AddressingMode::Absolute(addr)) => {
                 eq.push(AValue::Abs(*addr));
             }
-            (Opcode::STA, _) => {
-                // Other addressing modes: A unchanged.
+            _ => {
+                // Any other load into A (indexed, indirect, through a
+                // label) or op that changes A leaves its value
+                // unknown. LDX and LDY are included so a value only
+                // X or Y can see isn't mistaken for A's.
+                if modifies_a(inst.opcode) || matches!(inst.opcode, Opcode::LDX | Opcode::LDY) {
+                    eq.clear();
+                    continue;
+                }
+                match memory_write(inst) {
+                    Some(Write::Zp(addr)) => {
+                        eq.retain(|v| !matches!(v, AValue::Zp(a) if *a == addr));
+                    }
+                    Some(Write::Abs(addr)) => {
+                        eq.retain(|v| !matches!(v, AValue::Abs(a) if *a == addr));
+                    }
+                    Some(Write::AboveZeroPage) => {
+                        eq.retain(|v| !matches!(v, AValue::Abs(_)));
+                    }
+                    Some(Write::Anywhere) => eq.retain(|v| matches!(v, AValue::Imm(_))),
+                    None => {}
+                }
             }
-            // Ops that clobber A — clear tracker.
-            (
-                Opcode::ADC
-                | Opcode::SBC
-                | Opcode::AND
-                | Opcode::ORA
-                | Opcode::EOR
-                | Opcode::ASL
-                | Opcode::LSR
-                | Opcode::ROL
-                | Opcode::ROR
-                | Opcode::LDX
-                | Opcode::LDY
-                | Opcode::PLA
-                | Opcode::TXA
-                | Opcode::TYA,
-                _,
-            ) => {
-                eq.clear();
-            }
-            // Ops that write to an address we might be tracking:
-            // invalidate any equivalence pointing at that cell,
-            // because the stored value is no longer correct.
-            (
-                Opcode::STX | Opcode::STY | Opcode::INC | Opcode::DEC,
-                AddressingMode::ZeroPage(addr),
-            ) => {
-                eq.retain(|v| !matches!(v, AValue::Zp(a) if *a == *addr));
-            }
-            (
-                Opcode::STX | Opcode::STY | Opcode::INC | Opcode::DEC,
-                AddressingMode::Absolute(addr),
-            ) => {
-                eq.retain(|v| !matches!(v, AValue::Abs(a) if *a == *addr));
-            }
-            _ => {}
         }
     }
     let mut out = Vec::with_capacity(instructions.len());
@@ -942,6 +965,50 @@ mod tests {
         assert_eq!(insts.len(), 2);
         assert_eq!(insts[0].opcode, CLC);
         assert_eq!(insts[1].opcode, RTS);
+    }
+
+    #[test]
+    fn keeps_reload_after_an_indexed_label_load() {
+        // `t = TILE[r]; a = PAL[r]`: the table load replaces A, so
+        // the second `LDA r` is needed to index PAL by r again.
+        let mut insts = vec![
+            Instruction::new(LDA, AM::ZeroPage(0x06)),
+            Instruction::new(TAX, AM::Implied),
+            Instruction::new(LDA, AM::LabelAbsoluteX("tile".to_string())),
+            Instruction::new(STA, AM::Absolute(0x05C6)),
+            Instruction::new(LDA, AM::ZeroPage(0x06)),
+            Instruction::new(TAX, AM::Implied),
+            Instruction::new(LDA, AM::LabelAbsoluteX("pal".to_string())),
+            Instruction::new(STA, AM::Absolute(0x05C7)),
+        ];
+        optimize(&mut insts);
+        let reloads = insts
+            .iter()
+            .filter(|i| i.opcode == LDA && i.mode == AM::ZeroPage(0x06))
+            .count();
+        assert_eq!(reloads, 2, "r must be reloaded: {insts:?}");
+    }
+
+    #[test]
+    fn indexed_store_invalidates_a_copied_cell() {
+        // $80 copies $0300; `STA $0300,X` may change $0300, so the
+        // later read of $80 can't be rewritten to read $0300.
+        let mut insts = vec![
+            Instruction::new(LDA, AM::Absolute(0x0300)),
+            Instruction::new(STA, AM::ZeroPage(0x80)),
+            Instruction::new(LDA, AM::Immediate(9)),
+            Instruction::new(STA, AM::AbsoluteX(0x0300)),
+            Instruction::new(LDA, AM::ZeroPage(0x80)),
+            Instruction::new(STA, AM::ZeroPage(0x10)),
+        ];
+        optimize(&mut insts);
+        assert!(
+            !insts
+                .iter()
+                .skip(2)
+                .any(|i| i.opcode == LDA && i.mode == AM::Absolute(0x0300)),
+            "the read after the indexed store must not use $0300: {insts:?}"
+        );
     }
 
     #[test]
