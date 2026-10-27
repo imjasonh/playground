@@ -464,8 +464,13 @@ enum Source {
     Abs(u16),
 }
 
+/// First zero-page byte past the IR temp slots. `$FE-$FF` is the
+/// ROM table pointer, read through `(ptr),Y`, so stores to it are
+/// never dead.
+const TEMP_END: u8 = 0xFE;
+
 fn is_temp_slot_addr(addr: u8) -> bool {
-    addr >= 0x80
+    (0x80..TEMP_END).contains(&addr)
 }
 
 fn modifies_a(op: Opcode) -> bool {
@@ -657,7 +662,7 @@ fn remove_dead_temp_stores(instructions: &mut Vec<Instruction>) {
             continue;
         }
         let slot = match inst.mode {
-            AddressingMode::ZeroPage(addr) if addr >= 0x80 => addr,
+            AddressingMode::ZeroPage(addr) if is_temp_slot_addr(addr) => addr,
             _ => continue,
         };
         if !temp_store_is_read(instructions, &labels, i + 1, slot) {
@@ -906,12 +911,12 @@ fn remove_sta_then_lda(instructions: &mut Vec<Instruction>) {
     *instructions = out;
 }
 
-/// True if the addressing mode targets an IR temp slot ($80-$FF).
+/// True if the addressing mode targets an IR temp slot ($80-$FD).
 /// We restrict peephole store/load elimination to temp slots so we
 /// don't accidentally merge accesses to user variables in ZP (where
 /// an intervening call or IRQ could have clobbered A).
 fn is_temp_slot(mode: &AddressingMode) -> bool {
-    matches!(mode, AddressingMode::ZeroPage(addr) if *addr >= 0x80)
+    matches!(mode, AddressingMode::ZeroPage(addr) if is_temp_slot_addr(*addr))
 }
 
 #[cfg(test)]

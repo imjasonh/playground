@@ -161,6 +161,9 @@ pub fn analyze(program: &Program) -> AnalysisResult {
         in_function_body: false,
         current_scope_prefix: None,
         struct_layouts: HashMap::new(),
+        const_values: HashMap::new(),
+        rom_table_banks: HashMap::new(),
+        current_bank: None,
     };
     analyzer.analyze_program(program);
 
@@ -261,6 +264,15 @@ struct Analyzer {
     /// Struct name to layout. Each field has an offset in bytes from
     /// the base address of the struct.
     struct_layouts: HashMap<String, StructLayout>,
+    /// Values of the scalar consts registered so far, so a ROM table
+    /// element can name an earlier const.
+    const_values: HashMap<String, u16>,
+    /// ROM table consts mapped to the switchable bank that holds
+    /// their bytes (`None` for the fixed bank).
+    rom_table_banks: HashMap<String, Option<String>>,
+    /// Bank of the function body being checked; `None` in the fixed
+    /// bank and in state handlers.
+    current_bank: Option<String>,
 }
 
 /// Layout info for a struct type.
@@ -870,7 +882,9 @@ impl Analyzer {
             }
             self.current_return_type.clone_from(&fun.return_type);
             self.in_function_body = true;
+            self.current_bank.clone_from(&fun.bank);
             self.check_block(&fun.body, &state_names);
+            self.current_bank = None;
             self.current_return_type = None;
             self.in_function_body = false;
             self.current_scope_prefix = None;
@@ -1087,6 +1101,7 @@ impl Analyzer {
                 } else {
                     self.emit_undefined_var(name, *span);
                 }
+                self.check_rom_table_bank(name, *span);
                 self.walk_expr_reads(idx);
             }
             Expr::FieldAccess(name, field, span) => {
@@ -1504,7 +1519,41 @@ impl Analyzer {
                         c.span,
                     ));
                 }
-                Expr::ArrayLiteral(..) => {}
+                Expr::ArrayLiteral(elems, _) => {
+                    // A short literal is padded with zeros. u8 elements
+                    // still have to be constant bytes, including names
+                    // of earlier consts.
+                    if matches!(**elem, NesType::U8) {
+                        for item in elems {
+                            match self.eval_const(item) {
+                                Some(v) if v <= 0xFF => {}
+                                Some(v) => {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        ErrorCode::E0201,
+                                        format!(
+                                            "const table '{}' element {v} does not fit in u8",
+                                            c.name
+                                        ),
+                                        item.span(),
+                                    ));
+                                    return;
+                                }
+                                None => {
+                                    self.diagnostics.push(Diagnostic::error(
+                                        ErrorCode::E0201,
+                                        format!(
+                                            "const table '{}' elements must be constant",
+                                            c.name
+                                        ),
+                                        item.span(),
+                                    ));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    self.rom_table_banks.insert(c.name.clone(), c.bank.clone());
+                }
                 _ => {
                     self.diagnostics.push(Diagnostic::error(
                         ErrorCode::E0201,
@@ -1516,6 +1565,8 @@ impl Analyzer {
                     ));
                 }
             }
+        } else if let Some(v) = self.eval_const(&c.value) {
+            self.const_values.insert(c.name.clone(), v);
         }
         self.symbols.insert(
             c.name.clone(),
@@ -1526,6 +1577,57 @@ impl Analyzer {
                 span: c.span,
             },
         );
+    }
+
+    /// Error when code outside a ROM table's bank indexes it: that
+    /// bank is not mapped while the code runs.
+    fn check_rom_table_bank(&mut self, name: &str, span: Span) {
+        if self.resolve_key(name) != name {
+            return;
+        }
+        let Some(Some(bank)) = self.rom_table_banks.get(name) else {
+            return;
+        };
+        if self.current_bank.as_ref() != Some(bank) {
+            let bank = bank.clone();
+            self.diagnostics.push(Diagnostic::error(
+                ErrorCode::E0604,
+                format!(
+                    "const table '{name}' lives in bank '{bank}'; only functions in that \
+                     bank can index it"
+                ),
+                span,
+            ));
+        }
+    }
+
+    /// Evaluate a constant integer expression built from literals,
+    /// earlier scalar consts, and operators.
+    fn eval_const(&self, expr: &Expr) -> Option<u16> {
+        match expr {
+            Expr::IntLiteral(v, _) => Some(*v),
+            Expr::BoolLiteral(b, _) => Some(u16::from(*b)),
+            Expr::Ident(name, _) => self.const_values.get(name).copied(),
+            Expr::BinaryOp(lhs, op, rhs, _) => {
+                let l = self.eval_const(lhs)?;
+                let r = self.eval_const(rhs)?;
+                match op {
+                    BinOp::Add => Some(l.wrapping_add(r)),
+                    BinOp::Sub => Some(l.wrapping_sub(r)),
+                    BinOp::Mul => Some(l.wrapping_mul(r)),
+                    BinOp::Div if r != 0 => Some(l / r),
+                    BinOp::Mod if r != 0 => Some(l % r),
+                    BinOp::BitwiseAnd => Some(l & r),
+                    BinOp::BitwiseOr => Some(l | r),
+                    BinOp::BitwiseXor => Some(l ^ r),
+                    BinOp::ShiftLeft => Some(l.wrapping_shl(u32::from(r))),
+                    BinOp::ShiftRight => Some(l.wrapping_shr(u32::from(r))),
+                    _ => None,
+                }
+            }
+            Expr::Cast(inner, _, _) => self.eval_const(inner),
+            _ => None,
+        }
     }
 
     /// Register a struct declaration. Computes each field's byte

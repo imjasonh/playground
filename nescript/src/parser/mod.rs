@@ -219,8 +219,9 @@ impl Parser {
                     self.expect(&TokenKind::RBrace)?;
                 }
                 TokenKind::KwBank => {
-                    let (bank, nested_funs) = self.parse_bank_decl()?;
+                    let (bank, nested_funs, nested_consts) = self.parse_bank_decl()?;
                     banks.push(bank);
+                    constants.extend(nested_consts);
                     // Functions declared inside a `bank Foo { ... }`
                     // body land in the program's flat function list
                     // tagged with `bank: Some("Foo")`. The analyzer
@@ -595,6 +596,7 @@ impl Parser {
             name,
             const_type,
             value,
+            bank: None,
             span: Span::new(start.file_id, start.start, self.current_span().end),
         })
     }
@@ -773,7 +775,8 @@ impl Parser {
     /// nested functions to the program's flat function list, tagging
     /// each one with `bank: Some(name)` so the rest of the pipeline
     /// can treat them like any other function.
-    fn parse_bank_decl(&mut self) -> Result<(BankDecl, Vec<FunDecl>), Diagnostic> {
+    #[allow(clippy::type_complexity)]
+    fn parse_bank_decl(&mut self) -> Result<(BankDecl, Vec<FunDecl>, Vec<ConstDecl>), Diagnostic> {
         let start = self.current_span();
         self.expect(&TokenKind::KwBank)?;
         let (name, _) = self.expect_ident()?;
@@ -802,11 +805,13 @@ impl Parser {
                         span: Span::new(start.file_id, start.start, self.current_span().end),
                     },
                     Vec::new(),
+                    Vec::new(),
                 ))
             }
             TokenKind::LBrace => {
                 self.advance();
                 let mut funs = Vec::new();
+                let mut consts = Vec::new();
                 while *self.peek() != TokenKind::RBrace && *self.peek() != TokenKind::Eof {
                     match self.peek() {
                         TokenKind::KwFun | TokenKind::KwInline => {
@@ -814,12 +819,17 @@ impl Parser {
                             fun.bank = Some(name.clone());
                             funs.push(fun);
                         }
+                        TokenKind::KwConst => {
+                            let mut c = self.parse_const_decl()?;
+                            c.bank = Some(name.clone());
+                            consts.push(c);
+                        }
                         _ => {
                             return Err(Diagnostic::error(
                                 ErrorCode::E0201,
                                 format!(
                                     "unexpected token '{}' inside bank body; only function \
-                                     declarations are supported",
+                                     and const declarations are supported",
                                     self.peek()
                                 ),
                                 self.current_span(),
@@ -835,6 +845,7 @@ impl Parser {
                         span: Span::new(start.file_id, start.start, self.current_span().end),
                     },
                     funs,
+                    consts,
                 ))
             }
             _ => Err(Diagnostic::error(

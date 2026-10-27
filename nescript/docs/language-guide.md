@@ -124,12 +124,43 @@ var scores: u8[4] = [0, 0, 0, 0]
 
 ### Constants
 
-Constants are evaluated at compile time and stored in ROM:
+Constants are evaluated at compile time. A scalar constant takes no
+storage; the compiler substitutes its value at each use:
 
 ```
 const MAX_ENEMIES: u8 = 5
 const SPEED: u8 = 3
+```
+
+A `u8[N]` constant with an array-literal value is a ROM table. Its
+bytes sit in PRG ROM, so a table costs no RAM and can be longer than
+256 bytes:
+
+```
 const SIN_TABLE: u8[8] = [0, 49, 90, 117, 127, 117, 90, 49]
+
+var y: u8 = SIN_TABLE[phase & 7]
+```
+
+Each element must be a constant expression from 0 to 255, and the
+literal must have exactly `N` elements. A table can't be written to
+(`E0203`). Indexing with a `u8` compiles to `LDA table,X`. Indexing
+with a `u16` builds a pointer in zero page `$FE-$FF` and reads
+through `LDA ($FE),Y`, so every byte of a long table is reachable.
+
+On a banked mapper, a table declared inside a `bank Foo { ... }`
+body goes in that switchable bank instead of the fixed bank. Only
+functions in the same bank can index it, because the bank is mapped
+only while one of them runs; any other read is `E0604`:
+
+```
+bank StationData {
+    const NAMES: u8[3000] = [...]
+
+    fun name_byte(i: u16) -> u8 {
+        return NAMES[i]
+    }
+}
 ```
 
 A `const` array is a lookup table in PRG ROM, and it takes no RAM. `SIN_TABLE[i]` compiles to one indexed load (`LDA table,X`), and it works from banked functions too, because the table lives in the fixed bank. Elements must be `u8`, `i8`, or `bool`. A literal shorter than the declared length is padded with zeros, and a longer one is an error. Assigning to an element is an error.
@@ -1216,6 +1247,14 @@ bank Level1 {
 ```
 
 Banks can hold `prg` (code/data) or `chr` (graphics) content. Transitions between states in different banks automatically emit bank-switch and trampoline code.
+
+A `bank Foo { ... }` body holds `fun` and `const` declarations.
+Calls from the fixed bank go through a trampoline that maps the bank,
+calls the function, maps the caller's bank back, and returns the
+function's `u8` result in A. Table consts in the body are stored in
+that bank (see [Constants](#constants)). On MMC3, which switches PRG
+in 8 KB pages, bank `n` occupies pages `2n` and `2n + 1` at
+`$8000-$BFFF`.
 
 ---
 

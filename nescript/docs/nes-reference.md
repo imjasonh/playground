@@ -57,7 +57,8 @@ The compiler reserves the following:
 - `$10`: `ZP_BANK_CURRENT` (current switchable PRG bank index, only in banked programs)
 - `$11`-`$17`: PPU update slots (palette/nametable flags and pending pointers, only when the program declares palette or background blocks)
 - `$18`-`$7F`: Available for `fast` variables (user zero-page)
-- `$80`-`$FF`: IR codegen temp slots (scratch for expression evaluation)
+- `$80`-`$FD`: IR codegen temp slots (scratch for expression evaluation)
+- `$FE`-`$FF`: pointer for `const` table reads with a 16-bit index
 - `$0200`-`$02FF`: OAM shadow buffer (DMA'd to PPU each frame)
 - `$0300`-`$07E4`: General variables, per-function RAM (parameter spill + locals), state-local storage. Programs that use `nt_set`, `nt_attr`, or `nt_fill_h` start at `$0500`, after the VRAM ring at `$0400`-`$04FF`
 - `$07E5`-`$07FF`: Runtime slots. The analyzer never allocates here, even when a program doesn't use the feature behind a slot

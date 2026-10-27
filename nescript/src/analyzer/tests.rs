@@ -2891,3 +2891,122 @@ fn analyze_collides_at_wrong_arg_count_errors() {
         "expected E0203 for collides_at arity mismatch, got {errors:?}"
     );
 }
+
+// ── ROM tables ──
+
+const ROM_TABLE_FRAME: &str = "
+    var o: u8 = 0
+    on frame { o = TBL[1] }
+    start Main
+";
+
+fn rom_table_program(decl: &str) -> String {
+    format!("game \"T\" {{ mapper: MMC3 }}\n{decl}\n{ROM_TABLE_FRAME}")
+}
+
+#[test]
+fn rom_table_in_the_fixed_bank_is_readable_anywhere() {
+    analyze_ok(&rom_table_program("const TBL: u8[3] = [1, 2, 3]"));
+}
+
+#[test]
+fn rom_table_elements_can_name_earlier_consts() {
+    analyze_ok(&rom_table_program(
+        "const BASE: u8 = 10\nconst TBL: u8[3] = [BASE, BASE + 1, BASE * 2]",
+    ));
+}
+
+#[test]
+fn rom_table_length_mismatch_is_e0201() {
+    // A short literal is padded with zeros. A literal longer than the
+    // declared length is an error.
+    let errors = analyze_errors(&rom_table_program("const TBL: u8[2] = [1, 2, 3]"));
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn rom_table_element_over_255_is_e0201() {
+    let errors = analyze_errors(&rom_table_program("const TBL: u8[2] = [1, 256]"));
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn rom_table_with_non_u8_elements_is_e0201() {
+    let errors = analyze_errors(&rom_table_program("const TBL: u16[2] = [1, 2]"));
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn rom_table_with_non_constant_element_is_e0201() {
+    let errors = analyze_errors(
+        r#"
+        game "T" { mapper: NROM }
+        var v: u8 = 0
+        const TBL: u8[2] = [1, v]
+        var o: u8 = 0
+        on frame { o = TBL[1] }
+        start Main
+        "#,
+    );
+    assert!(errors.contains(&ErrorCode::E0201), "{errors:?}");
+}
+
+#[test]
+fn writing_a_rom_table_is_e0203() {
+    let errors = analyze_errors(
+        r#"
+        game "T" { mapper: NROM }
+        const TBL: u8[2] = [1, 2]
+        on frame { TBL[0] = 5 }
+        start Main
+        "#,
+    );
+    assert!(errors.contains(&ErrorCode::E0203), "{errors:?}");
+}
+
+#[test]
+fn banked_rom_table_read_from_a_state_handler_is_e0604() {
+    let errors = analyze_errors(&rom_table_program(
+        "bank Data {\n const TBL: u8[2] = [1, 2]\n}",
+    ));
+    assert!(errors.contains(&ErrorCode::E0604), "{errors:?}");
+}
+
+#[test]
+fn banked_rom_table_read_from_another_bank_is_e0604() {
+    let errors = analyze_errors(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank A {
+            const TBL: u8[2] = [1, 2]
+        }
+        bank B {
+            fun get() -> u8 {
+                return TBL[1]
+            }
+        }
+        var o: u8 = 0
+        on frame { o = get() }
+        start Main
+        "#,
+    );
+    assert!(errors.contains(&ErrorCode::E0604), "{errors:?}");
+}
+
+#[test]
+fn banked_rom_table_read_from_its_own_bank_is_allowed() {
+    analyze_ok(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank A {
+            const TBL: u8[2] = [1, 2]
+            fun get() -> u8 {
+                return TBL[1]
+            }
+        }
+        var o: u8 = 0
+        on frame { o = get() }
+        start Main
+        "#,
+    );
+}

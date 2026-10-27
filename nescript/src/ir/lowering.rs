@@ -649,6 +649,7 @@ impl LoweringContext {
             self.rom_data.push(IrRomBlock {
                 label: label.clone(),
                 data,
+                bank: c.bank.clone(),
             });
             self.rom_arrays
                 .insert(c.name.clone(), (label, elem.as_ref().clone()));
@@ -1824,9 +1825,34 @@ impl LoweringContext {
                 if self.scoped_key(name) == *name && self.rom_arrays.contains_key(name) =>
             {
                 let (label, elem_ty) = self.rom_arrays[name].clone();
-                let idx = self.lower_expr(index);
+                // A u16 index, or a constant past 255, addresses tables
+                // longer than a page through a pointer. An 8-bit index
+                // stays `LDA label,X`.
+                let (idx, idx_hi) = match self.eval_const(index) {
+                    Some(k) if k > 0xFF => {
+                        let lo = self.fresh_temp();
+                        self.emit(IrOp::LoadImm(lo, (k & 0xFF) as u8));
+                        let hi = self.fresh_temp();
+                        self.emit(IrOp::LoadImm(hi, (k >> 8) as u8));
+                        (lo, Some(hi))
+                    }
+                    _ => {
+                        let idx = self.lower_expr(index);
+                        let hi = self.wide_hi.get(&idx).copied();
+                        (idx, hi)
+                    }
+                };
                 let t = self.fresh_temp();
-                self.emit(IrOp::RomArrayLoad(t, label, idx));
+                if let Some(hi) = idx_hi {
+                    self.emit(IrOp::RomLoad {
+                        dest: t,
+                        label,
+                        idx,
+                        idx_hi: hi,
+                    });
+                } else {
+                    self.emit(IrOp::RomArrayLoad(t, label, idx));
+                }
                 if matches!(elem_ty, NesType::I8) {
                     self.mark_signed(t);
                 }

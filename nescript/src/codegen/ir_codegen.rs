@@ -18,9 +18,10 @@
 //! - `$0A-$0F` reserved
 //! - `$10+` user variables + IR temp slots
 //!
-//! IR temps are allocated starting at `TEMP_BASE` (`$80`), giving 128 bytes
-//! (`0x80-0xFF`) for IR temp storage per function. Functions reset the
-//! temp counter at entry.
+//! IR temps are allocated starting at `TEMP_BASE` (`$80`), giving 126 bytes
+//! (`0x80-0xFD`) for IR temp storage per function. Functions reset the
+//! temp counter at entry. `$FE-$FF` is the pointer that a 16-bit-indexed
+//! ROM table read builds.
 
 use std::collections::HashMap;
 
@@ -35,15 +36,19 @@ use crate::runtime::{
     AUDIO_MUSIC_BASE_HI, AUDIO_MUSIC_BASE_LO, AUDIO_MUSIC_STATE, AUDIO_NOISE_COUNTER,
     AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI, AUDIO_SFX_PITCH_PTR_LO,
     AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, OAM_BUSY,
-    SCANLINE_STEP_ADDR,
-    ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
-    ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI,
-    ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER,
-    ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
+    SCANLINE_STEP_ADDR, ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR,
+    ZP_PENDING_BG_ATTRS_HI, ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO,
+    ZP_PENDING_PALETTE_HI, ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI,
+    ZP_ROOM_COL_LO, ZP_SFX_COUNTER, ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
 };
 
 /// Base zero-page address for IR temp slots.
 const TEMP_BASE: u8 = 0x80;
+/// Number of IR temp slots, `TEMP_BASE..ROM_PTR`.
+const TEMP_SLOTS: u8 = 0x7E;
+/// Zero-page pointer (`$FE` low, `$FF` high) that a ROM table read
+/// with a 16-bit index builds before its `LDA (ptr),Y`.
+const ROM_PTR: u8 = 0xFE;
 
 /// Zero-page addresses (shared with AST codegen).
 const ZP_FRAME_FLAG: u8 = 0x00;
@@ -667,14 +672,14 @@ impl<'a> IrCodeGen<'a> {
             return slot;
         }
         // Otherwise grow the monotonic counter. If we've exhausted
-        // the 128 slots reserved at TEMP_BASE..$FF, panic with a
+        // the slots reserved at TEMP_BASE..ROM_PTR, panic with a
         // diagnostic — this indicates either a bug in the liveness
         // analysis or a function with pathologically long live
         // ranges. In the common case, the free list keeps us well
         // under the limit.
         assert!(
-            u16::from(self.next_temp_slot) < 0x80,
-            "IR codegen: function exceeds 128 concurrent live temps; \
+            self.next_temp_slot < TEMP_SLOTS,
+            "IR codegen: function exceeds 126 concurrent live temps; \
              this is a compiler bug — temps at end of function should \
              have been recycled via `retire_dead_temps`"
         );
@@ -1071,9 +1076,10 @@ impl<'a> IrCodeGen<'a> {
         // stores in the stream.
         self.emit_trailing_markers();
 
-        // `const` array tables. Every function body above ends in a
-        // jump or return, so nothing falls through into the data.
-        for block in &ir.rom_data {
+        // `const` tables follow the code. A table with no bank stays in
+        // the fixed bank; one declared inside `bank Foo` is appended to
+        // that bank's stream after its functions, below.
+        for block in ir.rom_data.iter().filter(|b| b.bank.is_none()) {
             self.emit_label(&block.label);
             self.emit(NOP, AM::Bytes(block.data.clone()));
         }
@@ -1109,6 +1115,13 @@ impl<'a> IrCodeGen<'a> {
             // current pipeline, but we restore it for symmetry).
             let bank_stream = std::mem::replace(&mut self.instructions, prior_instrs);
             self.banked_streams.insert(bank_name, bank_stream);
+        }
+
+        for block in ir.rom_data.iter().filter(|b| b.bank.is_some()) {
+            let bank_name = block.bank.clone().unwrap();
+            let stream = self.banked_streams.entry(bank_name).or_default();
+            stream.push(Instruction::new(NOP, AM::Label(block.label.clone())));
+            stream.push(Instruction::new(NOP, AM::Bytes(block.data.clone())));
         }
 
         fixed_instructions
@@ -1651,6 +1664,23 @@ impl<'a> IrCodeGen<'a> {
                 self.emit_bounds_check_len(len);
                 self.emit(TAX, AM::Implied);
                 self.emit(LDA, AM::LabelAbsoluteX(label.clone()));
+                self.store_temp(*dest);
+            }
+            IrOp::RomLoad {
+                dest,
+                label,
+                idx,
+                idx_hi,
+            } => {
+                self.load_temp(*idx);
+                self.emit(CLC, AM::Implied);
+                self.emit(ADC, AM::SymbolLo(label.clone()));
+                self.emit(STA, AM::ZeroPage(ROM_PTR));
+                self.load_temp(*idx_hi);
+                self.emit(ADC, AM::SymbolHi(label.clone()));
+                self.emit(STA, AM::ZeroPage(ROM_PTR + 1));
+                self.emit(LDY, AM::Immediate(0));
+                self.emit(LDA, AM::IndirectY(ROM_PTR));
                 self.store_temp(*dest);
             }
             IrOp::ArrayStore(var, idx, val) => {
@@ -3534,6 +3564,7 @@ fn function_is_leaf(func: &IrFunction) -> bool {
                 | IrOp::ArrayLoad(..)
                 | IrOp::RomArrayLoad(..)
                 | IrOp::ArrayStore(..)
+                | IrOp::RomLoad { .. }
                 | IrOp::DrawSprite { .. }
                 | IrOp::ReadInput(..)
                 | IrOp::WaitFrame
@@ -3782,6 +3813,7 @@ fn op_source_temps(op: &IrOp) -> Vec<IrTemp> {
         IrOp::ShiftLeft(_, src, _) | IrOp::ShiftRight(_, src, _) => vec![*src],
         IrOp::Negate(_, src) | IrOp::Complement(_, src) | IrOp::SignExtend(_, src) => vec![*src],
         IrOp::ArrayLoad(_, _, idx) | IrOp::RomArrayLoad(_, _, idx) => vec![*idx],
+        IrOp::RomLoad { idx, idx_hi, .. } => vec![*idx, *idx_hi],
         IrOp::ArrayStore(_, idx, val) => vec![*idx, *val],
         IrOp::Call(_, _, args) => args.clone(),
         IrOp::DrawSprite {

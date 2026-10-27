@@ -441,6 +441,12 @@ pub struct ConstDecl {
     pub name: String,
     pub const_type: NesType,
     pub value: Expr,
+    /// `Some(bank_name)` when the const was declared inside a
+    /// `bank Foo { ... }` body. Only `u8[N]` table consts are stored
+    /// in ROM, so only they are affected: their bytes go in that
+    /// switchable bank, and only functions in the same bank can index
+    /// them.
+    pub bank: Option<String>,
     pub span: Span,
 }
 

@@ -4630,3 +4630,150 @@ start Main
         "rand8 with arguments should error"
     );
 }
+
+// ── ROM tables (`const NAME: u8[N] = [...]`) ──
+
+fn compile_pipeline(source: &str) -> nescript::pipeline::CompileOutput {
+    use nescript::pipeline::{compile_source, CompileOptions};
+    let opts = CompileOptions {
+        debug: false,
+        no_opt: false,
+        emit_source_map: false,
+    };
+    compile_source(source, Path::new("."), &opts)
+        .unwrap_or_else(|e| panic!("pipeline failed: {e:?}"))
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+#[test]
+fn rom_table_with_u8_index_reads_the_table_through_absolute_x() {
+    let out = compile_pipeline(
+        r#"
+        game "T" { mapper: NROM }
+        const TBL: u8[4] = [0x5A, 0xA5, 0x3C, 0xC3]
+        var i: u8 = 2
+        var o: u8 = 0
+        on frame { o = TBL[i] }
+        start Main
+        "#,
+    );
+    let addr = out.link_result.labels["__rom_TBL"];
+    let off = out.link_result.fixed_bank_file_offset + usize::from(addr - 0xC000);
+    assert_eq!(&out.rom[off..off + 4], &[0x5A, 0xA5, 0x3C, 0xC3]);
+    // `TAX; LDA __rom_TBL,X` — the read goes to the table itself.
+    let [lo, hi] = addr.to_le_bytes();
+    assert!(
+        find(&out.rom, &[0xAA, 0xBD, lo, hi]).is_some(),
+        "expected TAX / LDA ${addr:04X},X"
+    );
+}
+
+#[test]
+fn rom_table_with_u16_index_reads_through_a_pointer_to_the_table() {
+    let items: Vec<String> = (0..300).map(|i| (i % 251).to_string()).collect();
+    let src = format!(
+        r#"
+        game "T" {{ mapper: NROM }}
+        const TBL: u8[300] = [{}]
+        var i: u16 = 290
+        var o: u8 = 0
+        on frame {{ o = TBL[i] }}
+        start Main
+        "#,
+        items.join(", ")
+    );
+    let out = compile_pipeline(&src);
+    let addr = out.link_result.labels["__rom_TBL"];
+    let off = out.link_result.fixed_bank_file_offset + usize::from(addr - 0xC000);
+    assert_eq!(out.rom[off + 290], (290 % 251) as u8);
+    let [lo, hi] = addr.to_le_bytes();
+    // CLC / ADC #<table / STA $FE ... ADC #>table / STA $FF / LDY #0 /
+    // LDA ($FE),Y. Peephole must keep both pointer stores.
+    let start = find(&out.rom, &[0x18, 0x69, lo, 0x85, 0xFE]).expect("pointer low byte");
+    let rest = &out.rom[start..start + 24];
+    assert!(
+        find(rest, &[0x69, hi, 0x85, 0xFF]).is_some(),
+        "pointer high byte"
+    );
+    assert!(
+        find(rest, &[0xA0, 0x00, 0xB1, 0xFE]).is_some(),
+        "LDA ($FE),Y"
+    );
+}
+
+#[test]
+fn rom_table_constant_index_past_255_uses_the_pointer_path() {
+    let items: Vec<String> = (0..260).map(|i| (i % 7).to_string()).collect();
+    let src = format!(
+        r#"
+        game "T" {{ mapper: NROM }}
+        const TBL: u8[260] = [{}]
+        var o: u8 = 0
+        on frame {{ o = TBL[259] }}
+        start Main
+        "#,
+        items.join(", ")
+    );
+    let out = compile_pipeline(&src);
+    let lo = out.link_result.labels["__rom_TBL"].to_le_bytes()[0];
+    assert!(find(&out.rom, &[0x69, lo, 0x85, 0xFE]).is_some());
+}
+
+#[test]
+fn banked_rom_table_lives_in_its_bank_and_is_read_there() {
+    let out = compile_pipeline(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank Data {
+            const TBL: u8[5] = [0xDE, 0xAD, 0xBE, 0xEF, 0x42]
+            fun get(i: u8) -> u8 {
+                return TBL[i]
+            }
+        }
+        var o: u8 = 0
+        on frame { o = get(4) }
+        start Main
+        "#,
+    );
+    // Bank 0 is the first 16 KB after the header, mapped at $8000.
+    let bank = &out.rom[16..16 + 16384];
+    let off = find(bank, &[0xDE, 0xAD, 0xBE, 0xEF, 0x42]).expect("table in bank 0");
+    let [lo, hi] = (0x8000 + off as u16).to_le_bytes();
+    assert!(
+        find(bank, &[0xBD, lo, hi]).is_some(),
+        "the banked function reads the table at its $8000-window address"
+    );
+    let fixed = &out.rom[out.link_result.fixed_bank_file_offset..];
+    assert!(
+        find(fixed, &[0xDE, 0xAD, 0xBE, 0xEF, 0x42]).is_none(),
+        "a banked table must not also land in the fixed bank"
+    );
+}
+
+#[test]
+fn reading_a_banked_rom_table_outside_its_bank_is_e0604() {
+    let (program, diags) = nescript::parser::parse(
+        r#"
+        game "T" { mapper: MMC3 }
+        bank Data {
+            const TBL: u8[2] = [1, 2]
+        }
+        var o: u8 = 0
+        on frame { o = TBL[1] }
+        start Main
+        "#,
+    );
+    assert!(diags.is_empty(), "{diags:?}");
+    let analysis = analyzer::analyze(&program.unwrap());
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|d| d.code == nescript::errors::ErrorCode::E0604),
+        "{:?}",
+        analysis.diagnostics
+    );
+}
