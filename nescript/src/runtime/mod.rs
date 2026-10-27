@@ -286,6 +286,13 @@ pub const PRNG_STATE_HI: u16 = 0x07EB;
 /// set. The RAM clear at reset leaves it zero.
 pub const OAM_BUSY: u16 = 0x07ED;
 
+/// MMC3 scanline-IRQ step. The NMI reload helper clears it, and the
+/// IRQ dispatcher reads it to pick the handler, then increments it.
+/// It used to sit at `$0C`, which is the sfx pointer. `$07EC` is the
+/// VRAM ring's tail, so the step lives in the free byte beside
+/// `OAM_BUSY`.
+pub const SCANLINE_STEP_ADDR: u16 = 0x07EE;
+
 /// Generate the NES hardware initialization sequence.
 /// This runs at RESET and sets up the hardware before user code.
 ///

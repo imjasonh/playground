@@ -29,6 +29,7 @@ fn runtime_main_ram_slots_sit_in_reserved_block() {
         FADE_STEP_FRAMES,
         FADE_LEVEL,
         OAM_BUSY,
+        SCANLINE_STEP_ADDR,
         PRNG_STATE_LO,
         PRNG_STATE_HI,
     ];

@@ -35,6 +35,7 @@ use crate::runtime::{
     AUDIO_MUSIC_BASE_HI, AUDIO_MUSIC_BASE_LO, AUDIO_MUSIC_STATE, AUDIO_NOISE_COUNTER,
     AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI, AUDIO_SFX_PITCH_PTR_LO,
     AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, OAM_BUSY,
+    SCANLINE_STEP_ADDR,
     ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
     ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI,
     ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER,
@@ -47,13 +48,6 @@ const TEMP_BASE: u8 = 0x80;
 /// Zero-page addresses (shared with AST codegen).
 const ZP_FRAME_FLAG: u8 = 0x00;
 const ZP_CURRENT_STATE: u8 = 0x03;
-/// Per-frame scanline step counter, reset to 0 by the NMI reload
-/// helper. Each time the MMC3 IRQ fires, the dispatcher looks at
-/// this byte to pick the right handler for multi-scanline states,
-/// then bumps it so the next IRQ hits the next handler. States
-/// with only a single scanline handler ignore the counter.
-const ZP_SCANLINE_STEP: u8 = 0x0C;
-
 /// Default emulator debug output port. Writes to this address are
 /// logged by FCEUX (which defaults to `$4800`) when the debugger is
 /// attached. Programs can override via `game { debug_port: mesen }`
@@ -1035,7 +1029,7 @@ impl<'a> IrCodeGen<'a> {
         //
         // Multi-scanline support: a state may have multiple `on
         // scanline(N)` handlers. They fire in ascending order of
-        // N. We track which one is next via `ZP_SCANLINE_STEP`,
+        // N. We track which one is next via `SCANLINE_STEP_ADDR`,
         // reset to 0 by the NMI reload helper at the top of each
         // frame. The IRQ dispatcher selects the handler for
         // `(current_state, scanline_step)`, runs it, then reloads
@@ -2980,7 +2974,7 @@ impl<'a> IrCodeGen<'a> {
     /// Emit the MMC3 `__irq_user` handler that dispatches on the
     /// `(current_state, scanline_step)` pair. Supports multiple
     /// `on scanline(N)` handlers per state — they fire in ascending
-    /// line order, with `ZP_SCANLINE_STEP` tracking which one is
+    /// line order, with `SCANLINE_STEP_ADDR` tracking which one is
     /// up next.
     ///
     /// For each state/step pair, the dispatcher JSRs the handler,
@@ -3021,8 +3015,8 @@ impl<'a> IrCodeGen<'a> {
             self.emit(BNE, AM::LabelRelative(next_state_label.clone()));
 
             // Matched this state. Now dispatch on
-            // ZP_SCANLINE_STEP to pick the right handler.
-            self.emit(LDY, AM::ZeroPage(ZP_SCANLINE_STEP));
+            // SCANLINE_STEP_ADDR to pick the right handler.
+            self.emit(LDY, AM::Absolute(SCANLINE_STEP_ADDR));
             // Bump step now (regardless of which handler we
             // select) so the NEXT IRQ sees a fresh value. If we
             // bumped after running the handler, a handler that
@@ -3030,7 +3024,7 @@ impl<'a> IrCodeGen<'a> {
             // see the old step. We do this eagerly by writing
             // `step + 1` back — cheaper than reading, running,
             // writing.
-            self.emit(INC, AM::ZeroPage(ZP_SCANLINE_STEP));
+            self.emit(INC, AM::Absolute(SCANLINE_STEP_ADDR));
 
             for (step, line) in lines.iter().enumerate() {
                 let next_step_label = format!("__irq_s{state_idx_iter}_step_{step}_skip");
@@ -3083,7 +3077,7 @@ impl<'a> IrCodeGen<'a> {
         // Reset the step counter so the first IRQ of the new
         // frame always lands on step 0.
         self.emit(LDA, AM::Immediate(0));
-        self.emit(STA, AM::ZeroPage(ZP_SCANLINE_STEP));
+        self.emit(STA, AM::Absolute(SCANLINE_STEP_ADDR));
 
         self.emit(LDA, AM::ZeroPage(ZP_CURRENT_STATE));
         let reload_done = "__ir_mmc3_reload_done".to_string();
@@ -4377,7 +4371,7 @@ mod more_tests {
     #[test]
     fn ir_codegen_multi_scanline_per_state_emits_step_counter_dispatch() {
         // A state with multiple scanline handlers must dispatch on
-        // both `current_state` and `ZP_SCANLINE_STEP` (at $0C). The
+        // both `current_state` and `SCANLINE_STEP_ADDR` (at $07EE). The
         // old codegen just took the first handler per state, so
         // scanline 120 and scanline 180 would never fire even with
         // their handlers linked in.
@@ -4393,22 +4387,27 @@ mod more_tests {
             start Main
         "#,
         );
-        // The IRQ dispatcher must read the step counter at $0C.
+        // The IRQ dispatcher must read the step counter at $07EE,
+        // not at $0C, which is the sfx pointer.
         let reads_step = insts
             .iter()
-            .any(|i| i.opcode == LDY && i.mode == AM::ZeroPage(0x0C));
+            .any(|i| i.opcode == LDY && i.mode == AM::Absolute(0x07EE));
         assert!(
             reads_step,
-            "multi-scanline dispatcher should read ZP_SCANLINE_STEP at $0C"
+            "multi-scanline dispatcher should read SCANLINE_STEP_ADDR at $07EE"
+        );
+        assert!(
+            !insts.iter().any(|i| i.mode == AM::ZeroPage(0x0C)),
+            "the scanline dispatcher must not touch the sfx pointer at $0C"
         );
         // It must also INC the step counter so the next IRQ lands
         // on the next handler.
         let bumps_step = insts
             .iter()
-            .any(|i| i.opcode == INC && i.mode == AM::ZeroPage(0x0C));
+            .any(|i| i.opcode == INC && i.mode == AM::Absolute(0x07EE));
         assert!(
             bumps_step,
-            "multi-scanline dispatcher should bump ZP_SCANLINE_STEP"
+            "multi-scanline dispatcher should bump SCANLINE_STEP_ADDR"
         );
         // All three handlers should be emitted as distinct functions.
         for line in [60u8, 120, 180] {
@@ -4425,10 +4424,10 @@ mod more_tests {
         // of each frame.
         let resets_step = insts
             .iter()
-            .any(|i| i.opcode == STA && i.mode == AM::ZeroPage(0x0C));
+            .any(|i| i.opcode == STA && i.mode == AM::Absolute(0x07EE));
         assert!(
             resets_step,
-            "reload helper should clear ZP_SCANLINE_STEP at NMI"
+            "reload helper should clear SCANLINE_STEP_ADDR at NMI"
         );
     }
 
