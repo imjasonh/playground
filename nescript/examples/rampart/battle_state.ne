@@ -251,8 +251,13 @@ fun start_lock() {
         swap_background(2)
         on_card = true
         paint_card()
+        // 1P grays illegal plans one per frame while the card is
+        // still blanked. step counts those plans. 2P leaves the
+        // list alone, so skip that wait.
         if mode == MODE_1P {
-            paint_invalid_plans()
+            step = 0
+        } else {
+            step = NUM_PLANS
         }
         phase = P_LOCK
     } else {
@@ -264,6 +269,15 @@ fun start_lock() {
 }
 
 fun run_lock() {
+    // Hold the card blank until every plan has been considered.
+    // A legal plan queues nothing, and the screen would otherwise
+    // light up in that gap, with the remaining rows still white.
+    if mode == MODE_1P and step < NUM_PLANS {
+        unblank = 2
+        paint_one_invalid()
+        step += 1
+        return
+    }
     var p: u8 = 0
     while p < 2 {
         if lk_ready[p] == 0 {

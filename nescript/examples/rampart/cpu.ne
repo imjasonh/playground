@@ -192,92 +192,42 @@ include "result.ne"
         draw Tileset at: (8, (CARD_PLAN_ROW0 + res_a) * 8 - 1) attr: 0 frame: T_ARROW
     }
 
-    // Against a CPU there's no opponent to hide the pick from, so
-    // the card grays out plans player 0 can't afford or can't use
-    // this turn. The attribute table only resolves two rows at a
-    // time, so a pair grays only when every plan sharing it is
-    // unavailable; a legal plan sharing a pair with an illegal one
-    // keeps the pair lit. Written out per pair rather than looped,
-    // and reusing res_a for the packed byte instead of a new
-    // local, for the same reasons as draw_lock_cursor above.
-    fun paint_invalid_plans() {
-        // Row 4 (SNAP's pair) shares its top half with the header
-        // above it, so only plan 0 can gray that half.
-        res_a = 0
-        if not plan_legal(0, 0) {
-            res_a = CARD_GRAY_TOP
+    // One illegal plan, redrawn in gray. The card's attribute table
+    // colors two rows at once and its other text colors are the
+    // players' blue and red, so a whole row can't be recolored
+    // without painting its neighbor or turning the words red.
+    // Letters get their own gray tiles instead. Called once a frame
+    // while the card is still blanked, for plan index `step`,
+    // because the text queue can't hold every plan at once.
+    // cpu_row, cpu_cx, cpu_best, cpu_by are free here: the CPU
+    // already picked, and movement hasn't started.
+    fun paint_one_invalid() {
+        if plan_legal(0, step) {
+            return
         }
-        if not plan_legal(0, 1) and not plan_legal(0, 2) {
-            res_a = res_a | CARD_GRAY_BOT
-        }
-        if res_a != 0 {
-            put_attr(0, 4, res_a)
-            put_attr(4, 4, res_a)
-            put_attr(8, 4, res_a)
-            put_attr(12, 4, res_a)
-            put_attr(16, 4, res_a)
-            put_attr(20, 4, res_a)
-            put_attr(24, 4, res_a)
-        }
-        res_a = 0
-        if not plan_legal(0, 3) and not plan_legal(0, 4) {
-            res_a = CARD_GRAY_TOP
-        }
-        if not plan_legal(0, 5) and not plan_legal(0, 6) {
-            res_a = res_a | CARD_GRAY_BOT
-        }
-        if res_a != 0 {
-            put_attr(0, 8, res_a)
-            put_attr(4, 8, res_a)
-            put_attr(8, 8, res_a)
-            put_attr(12, 8, res_a)
-            put_attr(16, 8, res_a)
-            put_attr(20, 8, res_a)
-            put_attr(24, 8, res_a)
-        }
-        res_a = 0
-        if not plan_legal(0, 7) and not plan_legal(0, 8) {
-            res_a = CARD_GRAY_TOP
-        }
-        if not plan_legal(0, 9) and not plan_legal(0, 10) {
-            res_a = res_a | CARD_GRAY_BOT
-        }
-        if res_a != 0 {
-            put_attr(0, 12, res_a)
-            put_attr(4, 12, res_a)
-            put_attr(8, 12, res_a)
-            put_attr(12, 12, res_a)
-            put_attr(16, 12, res_a)
-            put_attr(20, 12, res_a)
-            put_attr(24, 12, res_a)
-        }
-        res_a = 0
-        if not plan_legal(0, 11) and not plan_legal(0, 12) {
-            res_a = CARD_GRAY_TOP
-        }
-        if not plan_legal(0, 13) and not plan_legal(0, 14) {
-            res_a = res_a | CARD_GRAY_BOT
-        }
-        if res_a != 0 {
-            put_attr(0, 16, res_a)
-            put_attr(4, 16, res_a)
-            put_attr(8, 16, res_a)
-            put_attr(12, 16, res_a)
-            put_attr(16, 16, res_a)
-            put_attr(20, 16, res_a)
-            put_attr(24, 16, res_a)
-        }
-        // Row 23 (the bottom half of this last pair) is the "START
-        // WHEN DONE" footer, never a plan, so there's nothing to
-        // gray there even when both plans 15 and 16 are unavailable.
-        if not plan_legal(0, 15) and not plan_legal(0, 16) {
-            put_attr(0, 20, CARD_GRAY_TOP)
-            put_attr(4, 20, CARD_GRAY_TOP)
-            put_attr(8, 20, CARD_GRAY_TOP)
-            put_attr(12, 20, CARD_GRAY_TOP)
-            put_attr(16, 20, CARD_GRAY_TOP)
-            put_attr(20, 20, CARD_GRAY_TOP)
-            put_attr(24, 20, CARD_GRAY_TOP)
+        res_b = CARD_PLAN_ROW0 + step
+        put_tile(2, res_b, GRAY_DASH)
+        put_tile(3, res_b, GRAY_DASH)
+        put_clear(6, res_b, 17)
+        cpu_best = PLAN_MASK[step]
+        cpu_row = 0
+        cpu_cx = 6
+        while cpu_row < NUM_ACTIONS {
+            if (cpu_best & BIT[cpu_row]) != 0 {
+                if cpu_cx != 6 {
+                    put_tile(cpu_cx, res_b, T_SPACE)
+                    cpu_cx += 1
+                }
+                cpu_by = 0
+                while cpu_by < STR_LEN[S_A_SNAP + cpu_row] {
+                    res_a = str_byte(S_A_SNAP + cpu_row, cpu_by)
+                    res_a = GRAY_LETTER[res_a - 65]
+                    put_tile(cpu_cx, res_b, res_a)
+                    cpu_cx += 1
+                    cpu_by += 1
+                }
+            }
+            cpu_row += 1
         }
     }
 
@@ -446,6 +396,17 @@ include "result.ne"
     }
 
     fun paint_cust() {
+        // This screen is drawn over the title. Rows 16-19 still
+        // carry the title's BLUE and RED letter colors, and GUN,
+        // ARM, and the weapon names land on those rows, so a word
+        // comes out blue, red, and white depending on which
+        // 16x16 block a letter sits in. Nothing pictorial is
+        // there, so the row goes back to plain white text.
+        res_a = 0
+        while res_a < 32 {
+            put_attr(res_a, 16, 0)
+            res_a += 4
+        }
         if cust_who == 0 {
             put_attr(8, 4, 170)
             put_attr(12, 4, 170)
