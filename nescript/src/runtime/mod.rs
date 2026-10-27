@@ -278,6 +278,14 @@ pub const FADE_LEVEL: u16 = 0x07E9;
 pub const PRNG_STATE_LO: u16 = 0x07EA;
 pub const PRNG_STATE_HI: u16 = 0x07EB;
 
+/// Nonzero while a frame handler that draws is rebuilding the OAM
+/// shadow. The handler sets it before clearing `$0200`, and the main
+/// loop zeroes it when the handler returns. NMI skips the OAM DMA
+/// while it is set, so a handler that runs past vblank leaves the
+/// last complete frame's sprites on screen instead of a half-drawn
+/// set. The RAM clear at reset leaves it zero.
+pub const OAM_BUSY: u16 = 0x07ED;
+
 /// Generate the NES hardware initialization sequence.
 /// This runs at RESET and sets up the hardware before user code.
 ///
@@ -604,6 +612,11 @@ pub fn gen_nmi(opts: NmiOptions) -> Vec<Instruction> {
     // fixed-offset (LDA #0) and the rotating offset read from
     // SPRITE_CYCLE_ADDR used by `cycle_sprites`.
     if has_oam {
+        out.push(Instruction::new(LDA, AM::Absolute(OAM_BUSY)));
+        out.push(Instruction::new(
+            BNE,
+            AM::LabelRelative("__nmi_skip_oam_dma".into()),
+        ));
         if has_sprite_cycle {
             out.push(Instruction::new(LDA, AM::Absolute(SPRITE_CYCLE_ADDR)));
         } else {
@@ -612,6 +625,10 @@ pub fn gen_nmi(opts: NmiOptions) -> Vec<Instruction> {
         out.push(Instruction::new(STA, AM::Absolute(OAM_ADDR)));
         out.push(Instruction::new(LDA, AM::Immediate(0x02)));
         out.push(Instruction::new(STA, AM::Absolute(OAM_DMA)));
+        out.push(Instruction::new(
+            NOP,
+            AM::Label("__nmi_skip_oam_dma".into()),
+        ));
     }
 
     // PPU updates: check the flags byte, apply any pending palette

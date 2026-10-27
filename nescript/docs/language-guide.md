@@ -758,6 +758,8 @@ wait_frame()
 
 This triggers OAM DMA transfer and PPU updates before yielding. Inside `on frame`, a `wait_frame()` is implicit at the end of each frame.
 
+A frame handler that draws can run longer than one frame. When an NMI lands before the handler returns, the NMI skips the OAM DMA, so the screen keeps the last complete frame's sprites instead of a half-drawn set. An explicit `wait_frame()` or `sprite_0_split` inside the handler sends the sprites drawn so far.
+
 ### Cycle Sprites
 
 Rotate the runtime's sprite-cycling offset by one OAM slot (4 bytes),

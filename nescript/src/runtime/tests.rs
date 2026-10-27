@@ -28,6 +28,7 @@ fn runtime_main_ram_slots_sit_in_reserved_block() {
         VRAM_BUF_TAIL,
         FADE_STEP_FRAMES,
         FADE_LEVEL,
+        OAM_BUSY,
         PRNG_STATE_LO,
         PRNG_STATE_HI,
     ];
@@ -149,6 +150,28 @@ fn nmi_triggers_oam_dma_when_requested() {
         .iter()
         .any(|i| i.opcode == STA && i.mode == AM::Absolute(0x4014));
     assert!(has_dma, "NMI should trigger OAM DMA when has_oam is set");
+}
+
+#[test]
+fn nmi_skips_oam_dma_while_handler_busy() {
+    let nmi = gen_nmi(NmiOptions {
+        has_oam: true,
+        ..NmiOptions::default()
+    });
+    let check = nmi
+        .iter()
+        .position(|i| i.opcode == LDA && i.mode == AM::Absolute(OAM_BUSY))
+        .expect("NMI reads OAM_BUSY");
+    let dma = nmi
+        .iter()
+        .position(|i| i.opcode == STA && i.mode == AM::Absolute(0x4014))
+        .expect("NMI triggers OAM DMA");
+    let skip = nmi
+        .iter()
+        .position(|i| i.mode == AM::Label("__nmi_skip_oam_dma".into()))
+        .expect("NMI has a skip label");
+    assert_eq!(nmi[check + 1].opcode, BNE);
+    assert!(check < dma && dma < skip);
 }
 
 #[test]
