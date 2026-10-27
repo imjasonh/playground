@@ -51,5 +51,6 @@ state Customize {
             }
             draw Tileset at: (res_a, res_b) attr: SP_FIRE frame: T_ARROW
         }
+        tick_unblank()
     }
 }

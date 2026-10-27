@@ -33,6 +33,7 @@
 //     state.ne         globals
 //     render.ne        text queue, panel painting, sprites
 //     rules.ne         dice, geometry, legality, damage
+//     result.ne        winner and game-over message
 //     cpu.ne           Easy, Medium, and Hard CPU players
 //     title_state.ne      match setup menu
 //     customize_state.ne  name and weapon picks

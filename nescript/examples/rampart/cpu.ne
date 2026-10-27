@@ -26,6 +26,7 @@ const MED_CLOSING: u8[3] = [13, 4, 1]
 // is full. Calls from the fixed bank go through trampolines.
 bank Brain {
 include "rules.ne"
+include "result.ne"
     fun first_legal(p: u8) -> u8 {
         var i: u8 = 0
         while i < NUM_PLANS {
@@ -335,26 +336,26 @@ include "rules.ne"
 
     fun paint_cust() {
         if cust_who == 0 {
-            nt_attr(8, 4, 170)
-            nt_attr(12, 4, 170)
-            nt_attr(0, 8, 136)
-            nt_attr(4, 8, 170)
-            nt_attr(0, 12, 8)
-            nt_attr(4, 12, 10)
+            put_attr(8, 4, 170)
+            put_attr(12, 4, 170)
+            put_attr(0, 8, 136)
+            put_attr(4, 8, 170)
+            put_attr(0, 12, 8)
+            put_attr(4, 12, 10)
         } else {
             // Palette 1. Glyphs are colour 3, and that slot is the
             // mech's red. Palette 3's colour 3 is the lighter peach.
-            nt_attr(8, 4, 85)
-            nt_attr(12, 4, 85)
-            nt_attr(0, 8, 68)
-            nt_attr(4, 8, 85)
-            nt_attr(0, 12, 4)
-            nt_attr(4, 12, 5)
+            put_attr(8, 4, 85)
+            put_attr(12, 4, 85)
+            put_attr(0, 8, 68)
+            put_attr(4, 8, 85)
+            put_attr(0, 12, 4)
+            put_attr(4, 12, 5)
         }
-        nt_attr(0, 20, 0)
-        nt_attr(4, 20, 0)
-        nt_attr(0, 24, 0)
-        nt_attr(4, 24, 0)
+        put_attr(0, 20, 0)
+        put_attr(4, 20, 0)
+        put_attr(0, 24, 0)
+        put_attr(4, 24, 0)
         put_str(3, NAME_ROW, S_C_NAME)
         put_str(3, GUN_ROW, S_L_GUN)
         put_str(3, ARM_ROW, S_C_ARM)
@@ -388,12 +389,11 @@ include "rules.ne"
         apply_stock(cust_who)
         cust_cursor = 10
         cust_tick = 0
-        poke(0x2001, 0x00)
+        set_mask(0x00)
         unblank = 24
     }
 
     fun customize_tick() {
-        tick_unblank()
         flush_text()
         if cust_cursor == 10 {
             res_a = 0

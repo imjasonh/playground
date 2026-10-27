@@ -151,44 +151,6 @@ fun paint_card() {
     }
 }
 
-fun total_armor(p: u8) -> u8 {
-    var s: u8 = 0
-    var l: u8 = 0
-    while l < NUM_LOCS {
-        s += armor[p * 11 + l]
-        l += 1
-    }
-    return s
-}
-
-// 0 or 1 for a winner, 2 for a draw. Uses res_a and res_b.
-fun decide_winner() -> u8 {
-    if crits[0] >= LOSS_CRITS {
-        if crits[1] >= LOSS_CRITS {
-            return 2
-        }
-        return 1
-    }
-    if crits[1] >= LOSS_CRITS {
-        return 0
-    }
-    if crits[0] < crits[1] {
-        return 0
-    }
-    if crits[1] < crits[0] {
-        return 1
-    }
-    res_a = total_armor(0)
-    res_b = total_armor(1)
-    if res_a > res_b {
-        return 0
-    }
-    if res_b > res_a {
-        return 1
-    }
-    return 2
-}
-
 // Sequencer state. Globals rather than state locals because
 // the phase functions below read them.
 var phase: u8 = P_WAIT
@@ -699,34 +661,6 @@ fun end_turn() {
     wait_then(20, P_LOCK_START)
 }
 
-fun game_over() {
-    stop_music
-    res_a = decide_winner()
-    msg_clear()
-    msg_line(MSG_ROW1)
-    if crits[0] >= LOSS_CRITS and crits[1] >= LOSS_CRITS {
-        msg_str(S_BOTH)
-    } else if crits[1] >= LOSS_CRITS {
-        msg_who(1)
-        msg_str(S_WRECKED)
-    } else if crits[0] >= LOSS_CRITS {
-        msg_who(0)
-        msg_str(S_WRECKED)
-    } else {
-        msg_str(S_TIME_UP)
-    }
-    msg_line(MSG_ROW2)
-    if res_a == 2 {
-        msg_str(S_DRAW)
-    } else {
-        msg_who(res_a)
-        msg_str(S_WINS)
-    }
-    msg_str(S_PRESS_START)
-    over_timer = 0
-    phase = P_OVER
-}
-
 // True when the match should return to Title.
 fun run_over() -> bool {
     if over_timer < 255 {
@@ -753,7 +687,6 @@ state Battle {
     }
 
     on frame {
-        tick_unblank()
         flush_text()
         anim += 1
         match phase {
@@ -778,5 +711,6 @@ state Battle {
         if not on_card {
             draw_sprites()
         }
+        tick_unblank()
     }
 }
