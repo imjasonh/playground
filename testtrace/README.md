@@ -1,15 +1,15 @@
 # testtrace
 
 `testtrace` parents OpenTelemetry spans on the span of the Go test that
-starts them. Code under test that starts a span from `context.Background()`,
-or from any context without a span, gets the test's span as its parent. That
-includes code that runs in goroutines the test starts, and each parallel test
-keeps its own parent.
+starts them. Code under test that starts a span from `t.Context()`, or from
+any context derived from it, gets the test's span as its parent, with no
+code in the test besides passing that context through. That includes code
+that runs in goroutines the test starts, and each parallel test keeps its
+own parent.
 
 ## Usage
 
-Wrap your TracerProvider once in `TestMain`, then call `Hook` at the top of
-each test that you want traced:
+Wrap your TracerProvider once in `TestMain`:
 
 ```go
 func TestMain(m *testing.M) {
@@ -18,23 +18,62 @@ func TestMain(m *testing.M) {
 	testtrace.Install(tp)
 	os.Exit(m.Run())
 }
+```
 
+From there, a test doesn't need to call anything else. Pass `t.Context()`
+(or a context derived from it) to code under test, the way Go 1.24 already
+recommends:
+
+```go
 func TestPipeline(t *testing.T) {
 	t.Parallel()
-	ctx := testtrace.Hook(t)
-
-	// Spans that RunPipeline starts from context.Background(), on this
-	// goroutine or on goroutines it starts, are children of the test span.
-	if err := RunPipeline(context.Background()); err != nil {
+	// Spans that RunPipeline starts, from this context, from
+	// context.Background() on a goroutine it starts, or from any other
+	// context with no span of its own, are children of a span testtrace
+	// starts and names after TestPipeline.
+	if err := RunPipeline(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	// ctx carries the test span, for code that takes a context.
-	_ = ctx
 }
 ```
 
-`Hook` returns `t.Context()` with the test span. When the test ends, `Hook`
-ends the span and sets an error status if the test failed. A subtest that
+The first time a traced call sees a context with no span, while the test is
+still synchronously running, testtrace starts a span named after the
+calling function, and ends it once that context is done.
+
+### Hook, for more control
+
+Call `Hook(t)` at the top of a test when the automatic span isn't good
+enough:
+
+```go
+func TestPipeline(t *testing.T) {
+	t.Parallel()
+	ctx := testtrace.Hook(t)
+	if err := RunPipeline(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+```
+
+`Hook` returns `t.Context()` with the test span, and reasons to prefer it
+over the automatic path:
+
+- The exact test name, including a subtest's `Parent/sub` form. The
+  automatic path names a span after the calling Go function instead, so two
+  tests that share a helper function get spans with the same name.
+- A span that starts before the test's first traced call, instead of on
+  first use.
+- A span that's guaranteed to be ended and exported by the time the test
+  returns. The automatic path ends its span from a `context.AfterFunc`
+  callback, which the `context` package always runs on a new goroutine, so
+  that span can still be open for a moment after a subtest that triggered it
+  returns. `Hook` ends its span synchronously, from `t.Cleanup`.
+- A test that never cancels its context — `Hook` ends its span from
+  `t.Cleanup` regardless, where the automatic path needs a context that
+  eventually becomes done.
+
+`Hook` sets an error status on its span if the test fails. A subtest that
 calls `Hook` gets a span that's a child of its parent test's span.
 
 If code under test takes a TracerProvider instead of using the global one,
@@ -44,32 +83,52 @@ pass it `testtrace.WrapTracerProvider(tp)`.
 
 `Install` sets a TracerProvider that wraps yours. Its tracers check, on
 every `Start`, whether the context already carries a valid span context. If
-it doesn't, and the calling goroutine is bound to a test, the tracer starts
-the span with the test span as its parent.
+it doesn't:
 
-`Hook` binds a test by setting a profiler label (`otel.test=<test name>`) on
-the test's goroutine, and it keys a registry by the runtime's label pointer.
-The runtime copies that pointer into every goroutine that a goroutine starts,
-so a goroutine that the test starts, directly or through code under test,
-finds the same binding. Reading the pointer costs one function call. The
-package reads it with a `go:linkname` to
-`runtime/pprof.runtime_getProfLabel`, which the runtime keeps for external
-packages.
+1. If the calling goroutine, or the exact context value, is already bound to
+   a test (by `Hook`, or by an earlier automatic span), the new span is
+   parented on that test's span.
+2. Otherwise, if the context can be canceled and the calling goroutine is
+   still synchronously inside `testing.tRunner` — found by walking the call
+   stack — testtrace starts a span named after the function one level below
+   `tRunner`, binds it the same way `Hook` would, and arranges to end it
+   once the context is done.
+3. Otherwise, the span starts with no parent, same as always.
+
+The binding itself sets a profiler label (`otel.test=<name>`) on the test's
+goroutine, and keys a registry by the runtime's label pointer. The runtime
+copies that pointer into every goroutine that a goroutine starts, so a
+goroutine the test starts, directly or through code under test, finds the
+same binding. Reading the pointer costs one function call, through a
+`go:linkname` to `runtime/pprof.runtime_getProfLabel`, which the runtime
+keeps for external packages. The registry also keys bindings by the exact
+`context.Context` value the test first used, so that value resolves even on
+a goroutine that didn't inherit the label — for example, one from a worker
+pool the test sends work to over a channel.
 
 An earlier design keyed the registry by goroutine ID, parsed from
 `runtime.Stack` on every span start. That lookup takes about 2 µs, and it
-misses spans in goroutines that the test starts. On the benchmark in
-`testtrace_test.go`, `testtrace` adds about 45 ns to a span start.
+missed spans in goroutines that the test started. On the benchmark in
+`testtrace_test.go`, the profiler-label lookup adds about 45 ns to a span
+start.
 
 ## Limits
 
-- Call `Install` before any other `otel.SetTracerProvider` call. Tracers
-  that packages got from `otel.Tracer` earlier forward to the first provider
-  set and to no later one. A provider that's set in a package `init` function
-  and then replaced in `TestMain` traces nothing through the wrapper.
+- Step 2 above needs `testing.tRunner` on the call stack, so the automatic
+  path only triggers from a test's own goroutine, synchronously (through
+  any number of function calls), the first time that goroutine passes a
+  no-span, cancelable context to a traced call. It doesn't trigger in a
+  benchmark or fuzz target, which don't run under `tRunner`; call `Hook`
+  there. It also can't trigger from a context that never cancels — pass
+  `t.Context()` somewhere, or call `Hook`.
+- A context derived from `t.Context()` with `context.WithValue` isn't equal
+  to `t.Context()` itself, so the exact-context-value lookup in step 1 only
+  matches a literal, unmodified `t.Context()` passed to a second goroutine.
+  The goroutine-label lookup, which covers derived contexts too, still
+  applies within the original goroutine's own descendants.
 - If code under test replaces the goroutine's profiler labels with
-  `pprof.Do` or `pprof.SetGoroutineLabels`, using a context that doesn't come
-  from the test, spans in that goroutine lose the binding.
+  `pprof.Do` or `pprof.SetGoroutineLabels`, using a context that doesn't
+  come from the test, spans in that goroutine lose the binding.
 - Goroutines that the runtime starts, such as `time.AfterFunc` callbacks,
   don't inherit labels and aren't bound.
 - Spans that a goroutine starts after its test ends have no test parent.
