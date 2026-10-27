@@ -58,8 +58,9 @@ const DEFAULT_STACK_DEPTH: u32 = 8;
 const ZP_USER_CAP: u8 = 0x80;
 
 /// Exclusive upper bound of usable RAM. The NES has 2 KB of internal
-/// RAM at `$0000-$07FF`; the allocator uses up through `$07FF`.
-const RAM_END: u16 = 0x0800;
+/// RAM at `$0000-$07FF`, and the runtime owns the bytes from
+/// [`crate::runtime::RUNTIME_RAM_BASE`] up.
+const RAM_END: u16 = crate::runtime::RUNTIME_RAM_BASE;
 
 /// W0107 threshold: a `fast` variable with fewer than this many
 /// observed accesses is flagged as wasting a zero-page slot. Writes
@@ -2057,7 +2058,7 @@ impl Analyzer {
                     span,
                 )
                 .with_help(
-                    "the NES only has 2 KB of RAM ($0000-$07FF); consider removing some globals",
+                    "the NES only has 2 KB of RAM, and the runtime keeps $07E5-$07FF; consider removing some globals",
                 ),
             );
             return None;
