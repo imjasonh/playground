@@ -99,19 +99,22 @@ for hot indexes. That changes `Odb::open`, nothing else.
 ## Push (receive-pack): streaming ingest
 
 ```
-client ──pack stream──▶ Worker ──┬─▶ R2 multipart upload  (5 MiB parts)
+client ──pack stream──▶ Worker ──┬─▶ R2 (one put up to 5 MiB, else multipart)
                                  └─▶ PackScanner          (incremental)
 ```
 
 1. **Command section** (pkt-lines) is parsed incrementally; the rest of the
    body is the pack.
-2. **Every raw pack byte is teed** to an R2 multipart upload *and* to the
-   incremental scanner. The scanner finds entry boundaries (inflating as it
-   goes — zlib streams have no length prefix), records each entry's byte
-   range/type/delta-base, hashes non-delta objects on the fly, and verifies
-   the pack's trailing SHA-1. Memory: a partial-chunk carry buffer + 32 KiB
-   inflate scratch + ~50 B/entry of metadata. The client's own compression is
-   preserved — we never recompress a push.
+2. **Every raw pack byte is scanned as it arrives.** The scanner finds entry
+   boundaries (inflating as it goes, because zlib streams have no length
+   prefix), records each entry's byte range, type, and delta base, hashes
+   non-delta objects on the fly, and verifies the pack's trailing SHA-1.
+   Bytes stay in a buffer until the pack exceeds 5 MiB. A pack that finishes
+   within that cap is one `PutObject` after the scan succeeds. A larger pack
+   spills the buffer into a multipart upload and streams the rest as 5 MiB
+   parts. Memory for a large pack is a partial-chunk carry buffer, 32 KiB of
+   inflate scratch, the 5 MiB part buffer, and about 50 B per entry. The
+   client's own compression is preserved. A push is never recompressed.
 3. **Delta resolution** then assigns final oids/types to delta entries by
    reading their payloads back from the just-uploaded pack with ranged reads,
    walking chains root-first with a byte-budgeted content cache. Thin-pack
@@ -312,7 +315,7 @@ free**. DO requests ≈ $0.15/M + duration; KV reads ≈ $0.50/M. Per operation:
 
 | Operation | DO | R2 Class A | R2 Class B |
 |---|---|---|---|
-| push (P packs, size S) | 1 load + 1 commit | multipart: ⌈S/5MiB⌉+2; idx put: 1; filelog put(s) | P idx + ⌈S/4MiB⌉ block reads + scoped filelog shards |
+| push (P packs, size S) | 1 load + 1 commit | S ≤ 5 MiB: 1 put. Else multipart ⌈S/5MiB⌉+2. Plus idx put and filelog put(s) | P idx + ⌈S/4MiB⌉ block reads + scoped filelog shards |
 | clone (1 pack repo, size S) | 1 load | 0 | 1 idx + ⌈S/4MiB⌉ block reads |
 | incremental fetch | 1 load | 0 | P idx + blocks covering the objects sent |
 | file API | 1 load | 0 | P idx + blocks covering the path walk |
@@ -422,8 +425,9 @@ pushes/clones of >~30 MiB repos fail intermittently. Three consequences:
   16 MiB per pack (`BLOCK_SIZE` × `BLOCK_CACHE_SLOTS`), multipart buffer
   5 MiB.
 
-Remaining bounds: push ingest is carry buffer + 32 KiB scratch + ~50 B/entry
-(the pack streams through 5 MiB multipart parts); the peak resident item is
+Remaining bounds: push ingest is a carry buffer, 32 KiB of scratch, and
+about 50 B per entry. Packs up to 5 MiB stay in one buffer. Larger packs
+stream through 5 MiB multipart parts. The peak resident item is
 a single largest *materialized* object (a delta base must be whole to apply
 a delta). Truly huge blobs (multi-GiB) would need the planned chunked-blob
 path (store large blobs undeltified; stream inflate → deflate per block).
@@ -479,9 +483,10 @@ Note the memory/CPU split by plan: the **128 MiB isolate memory limit
 applies on every plan** (so the streamed fetch/clone response — never
 buffering a whole pack — is load-bearing regardless of plan), whereas the
 CPU cap is the only thing the paid upgrade lifts. Ingest itself is bounded
-memory on any plan (streamed straight to the R2 multipart upload while
-scanned in place — a carry buffer + 32 KiB inflate scratch + ~50 B/entry),
-so it is CPU, not memory, that gates push size.
+memory on any plan. A pack larger than 5 MiB streams to a multipart upload
+while it is scanned. A smaller pack is one buffer of at most 5 MiB. Either
+way the resident set is that buffer, 32 KiB of inflate scratch, and about
+50 B per entry, so CPU gates push size, not memory.
 
 **Enforced locally, not just at the edge.** Because the 413 happens in
 Cloudflare's proxy, neither the native harness nor workerd under `wrangler

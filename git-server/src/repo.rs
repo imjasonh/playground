@@ -4,7 +4,9 @@
 //! The push pipeline (all before report-status is returned, so every derived
 //! view is consistent the moment the client sees "ok"):
 //!
-//! 1. stream the raw pack into R2 (multipart) while scanning it;
+//! 1. scan the raw pack while it arrives. A pack that fits in 5 MiB is one
+//!    R2 put after the scan succeeds. A larger pack spills into a multipart
+//!    upload so the isolate does not hold it;
 //! 2. resolve deltas with ranged reads and write the `GSIX` index;
 //! 3. verify ref-target connectivity (cheap: targets + tree roots exist);
 //! 4. build the file-log segment for the new commits (first-parent tree
@@ -859,48 +861,82 @@ impl<'a> FileLogView<'a> {
 // Push ingestion
 // ---------------------------------------------------------------------------
 
-/// Streaming pack ingest: uploads raw pack bytes to R2 while scanning them.
-pub struct PackIngest {
-    uploader: Box<dyn Uploader>,
-    scanner: PackScanner,
+/// Packs at most this size are one `PutObject`. Anything larger spills into
+/// a multipart upload. 5 MiB is R2's minimum part size, so the first spill
+/// is also the first full part.
+const SINGLE_PUT_MAX: usize = 5 * 1024 * 1024;
+
+/// Streaming pack ingest: scans raw pack bytes as they arrive and writes
+/// them to R2.
+pub struct PackIngest<'a> {
+    store: &'a dyn Store,
+    key: String,
     pack_id: String,
+    /// Bytes held until the pack either finishes or crosses [`SINGLE_PUT_MAX`].
+    pending: Vec<u8>,
+    uploader: Option<Box<dyn Uploader>>,
+    scanner: PackScanner,
 }
 
-impl PackIngest {
-    /// `nonce` must be unique per push (the caller provides randomness since
-    /// this crate stays runtime-agnostic).
-    pub async fn start(repo: &Repo<'_>, nonce: &str) -> Result<PackIngest, String> {
+impl<'a> PackIngest<'a> {
+    /// `nonce` must be unique per push. The caller provides randomness since
+    /// this crate stays runtime-agnostic.
+    pub fn start(repo: &Repo<'a>, nonce: &str) -> Result<PackIngest<'a>, String> {
         let pack_id = format!("p-{nonce}");
-        let uploader = repo
-            .store
-            .start_upload(&pack_key(repo.name, &pack_id))
-            .await
-            .map_err(|e| e.to_string())?;
         Ok(PackIngest {
-            uploader,
-            scanner: PackScanner::new(),
+            store: repo.store,
+            key: pack_key(repo.name, &pack_id),
             pack_id,
+            pending: Vec::new(),
+            uploader: None,
+            scanner: PackScanner::new(),
         })
     }
 
     pub async fn feed(&mut self, chunk: &[u8]) -> Result<(), String> {
-        self.uploader
-            .write(chunk)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.scanner.feed(chunk)
+        self.scanner.feed(chunk)?;
+        if let Some(uploader) = self.uploader.as_mut() {
+            return uploader.write(chunk).await.map_err(|e| e.to_string());
+        }
+        self.pending.extend_from_slice(chunk);
+        if self.pending.len() <= SINGLE_PUT_MAX {
+            return Ok(());
+        }
+        self.spill().await
     }
 
-    /// Complete the upload and scan. Returns (pack id, scan result).
-    pub async fn finish(self) -> Result<(String, ScannedPack), String> {
+    async fn spill(&mut self) -> Result<(), String> {
+        let mut uploader = self
+            .store
+            .start_upload(&self.key)
+            .await
+            .map_err(|e| e.to_string())?;
+        let pending = std::mem::take(&mut self.pending);
+        uploader.write(&pending).await.map_err(|e| e.to_string())?;
+        self.uploader = Some(uploader);
+        Ok(())
+    }
+
+    /// Finish the scan and publish the pack. Returns the pack id and scan.
+    pub async fn finish(mut self) -> Result<(String, ScannedPack), String> {
         let scanned = self.scanner.finish()?;
-        self.uploader.complete().await.map_err(|e| e.to_string())?;
+        if let Some(uploader) = self.uploader.take() {
+            uploader.complete().await.map_err(|e| e.to_string())?;
+        } else {
+            self.store
+                .put(&self.key, std::mem::take(&mut self.pending))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
         Ok((self.pack_id, scanned))
     }
 
-    /// Abort (push rejected mid-stream).
-    pub async fn abort(self) -> Result<(), String> {
-        self.uploader.abort().await.map_err(|e| e.to_string())
+    /// Drop a rejected push. A pack that never spilled has nothing in R2.
+    pub async fn abort(mut self) -> Result<(), String> {
+        if let Some(uploader) = self.uploader.take() {
+            uploader.abort().await.map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 }
 
@@ -2205,6 +2241,87 @@ mod tests {
             let have: HashSet<Oid> = set.include.iter().copied().collect();
             assert!(have.contains(&large), "explicit want overrides filter");
             assert!(!have.contains(&small), "non-wanted blob still filtered");
+        });
+    }
+
+    fn ingest_repo<'a>(store: &'a MemStore, states: &'a crate::refs::MemStateStore) -> Repo<'a> {
+        Repo {
+            store,
+            states,
+            name: "r",
+        }
+    }
+
+    #[test]
+    fn small_pack_is_one_put() {
+        block_on(async {
+            let store = MemStore::new();
+            let states = crate::refs::MemStateStore::new();
+            let repo = ingest_repo(&store, &states);
+            let mut writer = crate::pack::write::PackWriter::new(1);
+            writer.add_full(ObjType::Blob, b"hello");
+            let (pack, _) = writer.finish();
+
+            store.reset_op_counts();
+            let mut ingest = PackIngest::start(&repo, "n").unwrap();
+            for chunk in pack.chunks(3) {
+                ingest.feed(chunk).await.unwrap();
+            }
+            assert_eq!(store.op_counts().class_a, 0, "no upload before finish");
+            let (id, scanned) = ingest.finish().await.unwrap();
+            assert_eq!(scanned.entries.len(), 1);
+            assert_eq!(store.op_counts().class_a, 1, "one PutObject");
+            assert_eq!(store.get(&pack_key("r", &id)).await.unwrap().unwrap(), pack);
+        });
+    }
+
+    #[test]
+    fn corrupt_small_pack_is_not_uploaded() {
+        block_on(async {
+            let store = MemStore::new();
+            let states = crate::refs::MemStateStore::new();
+            let repo = ingest_repo(&store, &states);
+            store.reset_op_counts();
+            let mut ingest = PackIngest::start(&repo, "bad").unwrap();
+            ingest.feed(b"not a pack").await.unwrap();
+            assert!(ingest.finish().await.is_err());
+            assert_eq!(store.op_counts().class_a, 0);
+            assert!(store.get(&pack_key("r", "p-bad")).await.unwrap().is_none());
+        });
+    }
+
+    #[test]
+    fn pack_over_the_put_cap_spills_to_multipart() {
+        block_on(async {
+            let store = MemStore::new();
+            let states = crate::refs::MemStateStore::new();
+            let repo = ingest_repo(&store, &states);
+            // Incompressible, so the pack itself crosses the 5 MiB put cap.
+            let mut content = vec![0u8; 6 * 1024 * 1024];
+            let mut state = 0x1234_5678u32;
+            for byte in &mut content {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                *byte = (state >> 24) as u8;
+            }
+            let mut writer = crate::pack::write::PackWriter::new(1);
+            writer.add_full(ObjType::Blob, &content);
+            let (pack, _) = writer.finish();
+            assert!(pack.len() > SINGLE_PUT_MAX);
+
+            store.reset_op_counts();
+            let mut ingest = PackIngest::start(&repo, "big").unwrap();
+            for chunk in pack.chunks(64 * 1024) {
+                ingest.feed(chunk).await.unwrap();
+            }
+            assert!(
+                store.op_counts().class_a >= 2,
+                "create plus at least one part, got {}",
+                store.op_counts().class_a
+            );
+            let (id, scanned) = ingest.finish().await.unwrap();
+            assert_eq!(scanned.entries.len(), 1);
+            assert!(store.op_counts().class_a >= 3, "complete is a third write");
+            assert_eq!(store.get(&pack_key("r", &id)).await.unwrap().unwrap(), pack);
         });
     }
 }
