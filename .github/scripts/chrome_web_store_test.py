@@ -285,6 +285,26 @@ class PublishFlowTest(unittest.TestCase):
         with self.assertRaises(store.PublishError):
             store.publish_package(self.zip_path, env, sleep=lambda _seconds: None)
 
+    def test_uses_an_already_minted_access_token_without_calling_the_token_endpoint(self):
+        # The workflow mints this itself via google-github-actions/auth
+        # impersonating a Workload Identity Federation service account, so
+        # no OAuth client id, secret, or refresh token needs to exist.
+        env = dict(self.env)
+        del env["CHROME_WEB_STORE_CLIENT_ID"]
+        del env["CHROME_WEB_STORE_CLIENT_SECRET"]
+        del env["CHROME_WEB_STORE_REFRESH_TOKEN"]
+        env["CHROME_WEB_STORE_ACCESS_TOKEN"] = "minted-token"
+        self.server.statuses = [
+            {"publishedItemRevisionStatus": {"state": "PUBLISHED", "distributionChannels": [{"crxVersion": "0.0.2"}]}}
+        ]
+        self.server.publish_responses = [(200, {"state": "PUBLISHED_TO_TESTERS"})]
+        decision = store.publish_package(self.zip_path, env, sleep=lambda _seconds: None)
+        self.assertEqual(decision.action, "submitted")
+        paths = [call[1] for call in self.server.calls]
+        self.assertNotIn("/token", paths)
+        upload = next(call for call in self.server.calls if call[1].endswith(":upload"))
+        self.assertEqual(upload[2], "Bearer minted-token")
+
     def test_surfaces_an_oauth_error_from_the_token_endpoint(self):
         # A refresh token from an OAuth app still in "Testing" expires after
         # 7 days. Google's token endpoint reports that as a bare error code
@@ -297,6 +317,17 @@ class PublishFlowTest(unittest.TestCase):
         message = str(caught.exception)
         self.assertIn("invalid_grant", message)
         self.assertIn("Token has been expired or revoked.", message)
+
+
+class ResolveTokenTest(unittest.TestCase):
+    def test_prefers_an_already_minted_access_token(self):
+        env = {"CHROME_WEB_STORE_ACCESS_TOKEN": "  minted-token  "}
+        self.assertEqual(store.resolve_token(env, "http://token.example/"), "minted-token")
+
+    def test_requires_the_refresh_token_fields_when_no_access_token_is_set(self):
+        with self.assertRaises(store.PublishError) as caught:
+            store.resolve_token({}, "http://token.example/")
+        self.assertIn("CHROME_WEB_STORE_CLIENT_ID", str(caught.exception))
 
 
 class ErrorDetailTest(unittest.TestCase):

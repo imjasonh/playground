@@ -1,17 +1,20 @@
 # One GitHub connection for every app in this project.
-# iam.tf creates the deploy and plan accounts and binds them to the
-# GitHub environment var.github_environment. An app does not create a
-# pool or a GitHub account.
+# iam.tf creates the deploy, plan, and Chrome Web Store accounts and
+# binds them to a GitHub environment. An app does not create a pool or
+# a GitHub account.
 #
-# Two providers share the pool. Each maps an attribute the other does
-# not. The deploy account is bound to attribute.deploy_environment, and
-# the plan account to attribute.plan_environment, so a plan token cannot
-# apply.
+# Three providers share the pool. Each maps an attribute the others do
+# not. The deploy account is bound to attribute.deploy_environment, the
+# plan account to attribute.plan_environment, and the Chrome Web Store
+# account to attribute.chromewebstore_environment, so a token minted for
+# one cannot impersonate another.
 #
-#   github       refs/heads/main, deploy-gcp.yml, one GitHub environment
-#                attribute.deploy_environment = the environment name
-#   github-plan  a pull request, the same workflow, that same environment
-#                attribute.plan_environment   = the environment name
+#   github              refs/heads/main, deploy-gcp.yml, var.github_environment
+#                        attribute.deploy_environment = the environment name
+#   github-plan          a pull request, the same workflow, that same environment
+#                        attribute.plan_environment   = the environment name
+#   github-chromewebstore refs/heads/main, chrome-extension.yml, var.chrome_webstore_github_environment
+#                        attribute.chromewebstore_environment = the environment name
 #
 # A pull_request workflow from a fork does not receive an OIDC token.
 
@@ -93,6 +96,38 @@ resource "google_iam_workload_identity_pool_provider" "github_plan" {
     "assertion.ref_type == \"branch\"",
     "assertion.workflow_ref.startsWith(\"${var.github_repository}/${var.github_workflow}@refs/pull/\")",
     "assertion.environment == \"${var.github_environment}\"",
+  ])
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_iam_workload_identity_pool_provider" "github_chromewebstore" {
+  project                            = var.project_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-chromewebstore"
+  display_name                       = "GitHub Chrome Web Store"
+  description                        = "GitHub OIDC for minting a Chrome Web Store access token from chrome-extension.yml on main. Not a Cloud Run deploy; the bound service account holds no project roles."
+
+  attribute_mapping = {
+    "google.subject"             = "assertion.sub"
+    "attribute.actor"            = "assertion.actor"
+    "attribute.repository"       = "assertion.repository"
+    "attribute.repository_owner" = "assertion.repository_owner"
+    "attribute.ref"              = "assertion.ref"
+    "attribute.workflow_ref"     = "assertion.workflow_ref"
+    "attribute.environment"      = "assertion.environment"
+    # Only this provider maps attribute.chromewebstore_environment.
+    "attribute.chromewebstore_environment" = "assertion.environment"
+  }
+
+  attribute_condition = join(" && ", [
+    "assertion.repository == \"${var.github_repository}\"",
+    "assertion.ref == \"refs/heads/main\"",
+    "assertion.ref_type == \"branch\"",
+    "assertion.workflow_ref == \"${var.github_repository}/${var.chrome_webstore_github_workflow}@refs/heads/main\"",
+    "assertion.environment == \"${var.chrome_webstore_github_environment}\"",
   ])
 
   oidc {

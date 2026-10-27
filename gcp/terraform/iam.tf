@@ -13,6 +13,14 @@
 # the image during plan and pushes it, so the account can push to any
 # Artifact Registry repository in the project. It cannot delete images.
 #
+# The Chrome Web Store account holds no project roles: it exists only so
+# chrome-extension.yml can impersonate it over Workload Identity Federation
+# and ask IAM to mint it a short-lived OAuth access token scoped to
+# https://www.googleapis.com/auth/chromewebstore. That scope is a Chrome
+# Web Store grant, not a GCP IAM role, and Google authorizes it only after
+# this account's email is linked on the publisher in the Chrome Web Store
+# Developer Dashboard (Account > API access). See chrome-extension/README.md.
+#
 # A pull_request workflow from a fork does not receive an OIDC token.
 
 locals {
@@ -79,6 +87,13 @@ resource "google_service_account" "github_plan" {
   description  = "Run tofu plan for any app stack in this project from a pull request."
 }
 
+resource "google_service_account" "github_chromewebstore" {
+  project      = var.project_id
+  account_id   = "playground-chromewebstore"
+  display_name = "Playground Chrome Web Store"
+  description  = "Mint a chromewebstore-scoped access token for chrome-extension.yml on main. Link this account's email in the Chrome Web Store Developer Dashboard; GCP project roles do not grant Chrome Web Store access."
+}
+
 resource "google_service_account_iam_member" "github_wif" {
   service_account_id = google_service_account.github_deploy.name
   role               = "roles/iam.workloadIdentityUser"
@@ -89,6 +104,12 @@ resource "google_service_account_iam_member" "github_plan_wif" {
   service_account_id = google_service_account.github_plan.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.plan_environment/${var.github_environment}"
+}
+
+resource "google_service_account_iam_member" "github_chromewebstore_wif" {
+  service_account_id = google_service_account.github_chromewebstore.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.chromewebstore_environment/${var.chrome_webstore_github_environment}"
 }
 
 resource "google_project_iam_member" "github_deploy" {
