@@ -1,0 +1,15 @@
+{
+  "name": "population-rays",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Directional corridor population visualization over a US population grid",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000",
+    "build-data": "python3 scripts/build-population-grid.py"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
