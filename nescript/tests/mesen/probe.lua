@@ -35,11 +35,12 @@
 --     30 = `startFrame` callback never fired (emulator didn't run)
 --     31 = CPU PC landed outside the fixed bank after 3 frames
 --     40 = byte at `main_loop`'s PRG offset is not the expected
---          LDA-zp opcode that the NEScript runtime always emits
---          as the first instruction of the main loop. Fires if
---          Mesen's PRG mapping drifted (e.g., `seg.ooffs` wrong)
---          or the runtime's main-loop prologue changed (rebless
---          MAIN_LOOP_OPCODE below with the new first byte).
+--          first opcode. hello_sprite draws sprites, so the main
+--          loop starts with `LDA #$00` (0xA9) to clear OAM_BUSY.
+--          Fires if Mesen's PRG mapping drifted (for example,
+--          `seg.ooffs` is wrong) or the main-loop prologue
+--          changed. Update MAIN_LOOP_OPCODE below when the
+--          prologue changes.
 
 local function fail(code)
   emu.stop(code)
@@ -109,17 +110,15 @@ emu.addEventCallback(function()
   if pc == nil or pc < 0xC000 or pc >= 0x10000 then fail(31) end
 
   -- --- 4. Mesen's PRG mapping matches our label addresses ---
-  -- NEScript's runtime always emits `LDA ZP_FRAME_FLAG` as the
-  -- first instruction of the main loop — opcode 0xA5 in 6502.
-  -- Read what Mesen thinks is the byte at `main_loop.address` in
-  -- `nesPrgRom` and check against that constant. This catches
-  -- any drift between the linker's label addresses and Mesen's
-  -- view of the PRG memory map, including the `seg.ooffs` bug
-  -- this probe was written to pin down: if `ooffs` is wrong by
-  -- N bytes, every label shifts by N bytes and reads the wrong
-  -- opcode. Checking both existence *and* exact value lets a
-  -- non-$FF coincidence slip through the net.
-  local MAIN_LOOP_OPCODE = 0xA5
+  -- hello_sprite draws sprites, so the main loop's first
+  -- instruction is `LDA #$00` (opcode 0xA9), which clears
+  -- OAM_BUSY before the frame-flag wait. A program that does
+  -- not draw starts with `LDA ZP_FRAME_FLAG` (0xA5) instead.
+  -- Reading that byte from `nesPrgRom` at `main_loop.address`
+  -- catches drift between the linker's label addresses and
+  -- Mesen's PRG map. If `seg.ooffs` is wrong by N bytes, every
+  -- label shifts by N and this read returns a different opcode.
+  local MAIN_LOOP_OPCODE = 0xA9
   local byte = emu.read(resolved["main_loop"].address, emu.memType.nesPrgRom)
   if byte ~= MAIN_LOOP_OPCODE then fail(40) end
 

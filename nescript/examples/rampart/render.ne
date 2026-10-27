@@ -1,17 +1,25 @@
 // rampart/render.ne: text queue, panel painting, and sprites.
 //
-// Code never calls nt_set directly outside flush_text(). Callers
-// queue print commands; flush_text() runs once per frame and turns
-// at most RING_BUDGET bytes of them into VRAM ring entries, so a
+// Code never calls nt_set or nt_attr directly outside flush_text().
+// Callers queue print commands; flush_text() runs once per frame and
+// turns at most RING_BUDGET of them into VRAM ring entries, so a
 // full panel repaint spreads over a few frames instead of
 // overrunning vblank.
+//
+// The budget counts the NMI's drain time, not ring bytes: a unit is
+// about 8 CPU cycles. The drain spends about 48 cycles on each
+// one-tile entry (6 units) and 33 + 15n cycles on an n-tile fill
+// (4 + 2n units). Audio and OAM DMA finish by about cycle 840 of
+// vblank's 2273, so 160 units (about 1280 cycles) end the drain
+// before rendering starts.
 
 const K_STR: u8 = 0
 const K_NUM: u8 = 1
 const K_CLEAR: u8 = 2
 const K_TILE: u8 = 3
-const K_PLATE: u8 = 4
-const K_PORTRAIT: u8 = 5
+const K_ATTR: u8 = 4
+const K_PLATE: u8 = 5
+const K_PORTRAIT: u8 = 6
 const RING_BUDGET: u8 = 160
 
 fun str_byte(id: u8, i: u8) -> u8 {
@@ -49,6 +57,10 @@ fun put_clear(x: u8, y: u8, len: u8) {
 
 fun put_tile(x: u8, y: u8, t: u8) {
     push_cmd(K_TILE, x, y, t)
+}
+
+fun put_attr(x: u8, y: u8, a: u8) {
+    push_cmd(K_ATTR, x, y, a)
 }
 
 fun text_idle() -> bool {
@@ -97,18 +109,18 @@ fun plate_tile(p: u8, cell: u8) -> u8 {
 
 fun cmd_cost(kind: u8, arg: u8) -> u8 {
     if kind == K_STR {
-        return STR_LEN[arg] * 4
+        return STR_LEN[arg] * 6
     }
     if kind == K_NUM {
-        return 8
+        return 12
     }
     if kind == K_CLEAR {
-        return arg + 3
+        return arg * 2 + 4
     }
     if kind >= K_PLATE {
-        return 24
+        return 36
     }
-    return 4
+    return 6
 }
 
 fun flush_text() {
@@ -141,6 +153,8 @@ fun flush_text() {
             nt_fill_h(x, y, a, T_SPACE)
         } else if k == K_TILE {
             nt_set(x, y, a)
+        } else if k == K_ATTR {
+            nt_attr(x, y, a)
         } else if k == K_PLATE {
             // arg = player * 8 + row.
             var p: u8 = a >> 3
@@ -166,11 +180,21 @@ fun flush_text() {
     }
 }
 
+// Write PPUMASK just after an NMI, while vblank still has time left,
+// so rendering never starts or stops partway down the picture. The
+// first wait_frame returns at once when this frame already ran past
+// an NMI; the second always waits for a fresh one.
+fun set_mask(v: u8) {
+    wait_frame
+    wait_frame
+    poke(0x2001, v)
+}
+
 // Blank rendering, queue a full nametable, and bring rendering back
-// two frames later. The NMI copies the nametable while the screen
-// is off; nametable writes don't fit in one vblank.
+// once the new screen's text is drawn. The NMI copies the nametable
+// while the screen is off; nametable writes don't fit in one vblank.
 fun swap_background(which: u8) {
-    poke(0x2001, 0x00)
+    set_mask(0x00)
     q_head = q_tail
     if which == 0 {
         load_background Title
@@ -182,13 +206,21 @@ fun swap_background(which: u8) {
     unblank = 2
 }
 
+// Called last in each frame handler, after its sprites are drawn,
+// so the first lit frame shows them.
 fun tick_unblank() {
-    if unblank > 0 {
-        unblank -= 1
-        if unblank == 0 {
-            poke(0x2001, 0x1E)
-        }
+    if unblank == 0 {
+        return
     }
+    if unblank > 1 {
+        unblank -= 1
+        return
+    }
+    if not text_idle() {
+        return
+    }
+    unblank = 0
+    set_mask(0x1E)
 }
 
 // ── Messages (rows 27 and 28) ───────────────────────────────

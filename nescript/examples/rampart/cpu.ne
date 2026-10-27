@@ -11,6 +11,7 @@ var cpu_bx: u8 = 0
 var cpu_by: u8 = 0
 var cpu_row: u8 = 0
 var cpu_row_end: u8 = 0
+var cpu_cx: u8 = 0
 var cpu_col0: u8 = 0
 var cpu_col1: u8 = 0
 var cpu_ideal_d: u8 = 0
@@ -26,6 +27,7 @@ const MED_CLOSING: u8[3] = [13, 4, 1]
 // is full. Calls from the fixed bank go through trampolines.
 bank Brain {
 include "rules.ne"
+include "result.ne"
     fun first_legal(p: u8) -> u8 {
         var i: u8 = 0
         while i < NUM_PLANS {
@@ -246,6 +248,7 @@ include "rules.ne"
         var t: u8 = 1 - p
         cpu_best = 0
         cpu_row = 0
+        cpu_cx = 0
         if cpu_level == LEVEL_EASY {
             cpu_bx = rand8() % 6
             cpu_by = rand8() % 6
@@ -278,42 +281,42 @@ include "rules.ne"
         loc_value[L_NONE] = 0
     }
 
-    // Expected value of aiming at one row of cells. Returns true when
-    // the search is done.
+    // Expected value of aiming at one cell. A whole row takes longer
+    // than a frame. Returns true when the search is done.
     fun cpu_aim_step(scatter: u8) -> bool {
         if cpu_row >= 6 {
             return true
         }
         var base: u8 = scatter * 4
-        var cx: u8 = 0
-        while cx < 6 {
-            var total: u8 = 0
-            var j: u8 = 0
-            while j < 4 {
-                var wy: u8 = SPREAD_W[base + j]
-                var ty: u8 = cpu_row + SPREAD_V[base + j]
-                if wy != 0 and ty >= 2 and ty < 8 {
-                    var i: u8 = 0
-                    while i < 4 {
-                        var wx: u8 = SPREAD_W[base + i]
-                        var tx: u8 = cx + SPREAD_V[base + i]
-                        if wx != 0 and tx >= 2 and tx < 8 {
-                            var v: u8 = loc_value[PLATE[(ty - 2) * 6 + tx - 2]]
-                            total += v * wx * wy
-                        }
-                        i += 1
+        var total: u8 = 0
+        var j: u8 = 0
+        while j < 4 {
+            var ty: u8 = cpu_row + SPREAD_V[base + j]
+            if SPREAD_W[base + j] != 0 and ty >= 2 and ty < 8 {
+                var ly: u8 = SPREAD_L[base + j]
+                var plate_row: u8 = (ty - 2) * 6
+                var i: u8 = 0
+                while i < 4 {
+                    var tx: u8 = cpu_cx + SPREAD_V[base + i]
+                    if SPREAD_W[base + i] != 0 and tx >= 2 and tx < 8 {
+                        var v: u8 = loc_value[PLATE[plate_row + tx - 2]]
+                        total += v << (ly + SPREAD_L[base + i])
                     }
+                    i += 1
                 }
-                j += 1
             }
-            if total > cpu_best {
-                cpu_best = total
-                cpu_bx = cx
-                cpu_by = cpu_row
-            }
-            cx += 1
+            j += 1
         }
-        cpu_row += 1
+        if total > cpu_best {
+            cpu_best = total
+            cpu_bx = cpu_cx
+            cpu_by = cpu_row
+        }
+        cpu_cx += 1
+        if cpu_cx >= 6 {
+            cpu_cx = 0
+            cpu_row += 1
+        }
         return cpu_row >= 6
     }
 
@@ -335,26 +338,26 @@ include "rules.ne"
 
     fun paint_cust() {
         if cust_who == 0 {
-            nt_attr(8, 4, 170)
-            nt_attr(12, 4, 170)
-            nt_attr(0, 8, 136)
-            nt_attr(4, 8, 170)
-            nt_attr(0, 12, 8)
-            nt_attr(4, 12, 10)
+            put_attr(8, 4, 170)
+            put_attr(12, 4, 170)
+            put_attr(0, 8, 136)
+            put_attr(4, 8, 170)
+            put_attr(0, 12, 8)
+            put_attr(4, 12, 10)
         } else {
             // Palette 1. Glyphs are colour 3, and that slot is the
             // mech's red. Palette 3's colour 3 is the lighter peach.
-            nt_attr(8, 4, 85)
-            nt_attr(12, 4, 85)
-            nt_attr(0, 8, 68)
-            nt_attr(4, 8, 85)
-            nt_attr(0, 12, 4)
-            nt_attr(4, 12, 5)
+            put_attr(8, 4, 85)
+            put_attr(12, 4, 85)
+            put_attr(0, 8, 68)
+            put_attr(4, 8, 85)
+            put_attr(0, 12, 4)
+            put_attr(4, 12, 5)
         }
-        nt_attr(0, 20, 0)
-        nt_attr(4, 20, 0)
-        nt_attr(0, 24, 0)
-        nt_attr(4, 24, 0)
+        put_attr(0, 20, 0)
+        put_attr(4, 20, 0)
+        put_attr(0, 24, 0)
+        put_attr(4, 24, 0)
         put_str(3, NAME_ROW, S_C_NAME)
         put_str(3, GUN_ROW, S_L_GUN)
         put_str(3, ARM_ROW, S_C_ARM)
@@ -388,12 +391,11 @@ include "rules.ne"
         apply_stock(cust_who)
         cust_cursor = 10
         cust_tick = 0
-        poke(0x2001, 0x00)
+        set_mask(0x00)
         unblank = 24
     }
 
     fun customize_tick() {
-        tick_unblank()
         flush_text()
         if cust_cursor == 10 {
             res_a = 0

@@ -47,7 +47,6 @@ state Title {
     }
 
     on frame {
-        tick_unblank()
         flush_text()
         ticks += 1
         seed += 1
@@ -105,6 +104,7 @@ state Title {
         }
 
         draw Tileset at: (16, MENU_ROWS[sel] * 8 - 1) attr: SP_FIRE frame: T_ARROW
+        tick_unblank()
         if go {
             seed_rand(seed)
             if mode == MODE_CPU2 {

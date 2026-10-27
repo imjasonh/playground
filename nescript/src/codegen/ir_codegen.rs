@@ -34,8 +34,8 @@ use crate::parser::ast::Channel;
 use crate::runtime::{
     AUDIO_MUSIC_BASE_HI, AUDIO_MUSIC_BASE_LO, AUDIO_MUSIC_STATE, AUDIO_NOISE_COUNTER,
     AUDIO_NOISE_PTR_HI, AUDIO_NOISE_PTR_LO, AUDIO_SFX_PITCH_PTR_HI, AUDIO_SFX_PITCH_PTR_LO,
-    AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, ZP_MUSIC_COUNTER,
-    ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
+    AUDIO_TRIANGLE_COUNTER, AUDIO_TRIANGLE_PTR_HI, AUDIO_TRIANGLE_PTR_LO, OAM_BUSY,
+    ZP_MUSIC_COUNTER, ZP_MUSIC_PTR_HI, ZP_MUSIC_PTR_LO, ZP_OAM_CURSOR, ZP_PENDING_BG_ATTRS_HI,
     ZP_PENDING_BG_ATTRS_LO, ZP_PENDING_BG_TILES_HI, ZP_PENDING_BG_TILES_LO, ZP_PENDING_PALETTE_HI,
     ZP_PENDING_PALETTE_LO, ZP_PPU_UPDATE_FLAGS, ZP_ROOM_COL_HI, ZP_ROOM_COL_LO, ZP_SFX_COUNTER,
     ZP_SFX_PTR_HI, ZP_SFX_PTR_LO,
@@ -310,6 +310,10 @@ pub struct IrCodeGen<'a> {
     /// A frame handler in this set clears OAM and resets the OAM
     /// cursor on entry.
     drawing_functions: std::collections::HashSet<String>,
+    /// True when some state's frame handler is in
+    /// `drawing_functions`, so the main loop and every `wait_frame`
+    /// clear `OAM_BUSY`.
+    handler_draws: bool,
     /// While [`Self::generate`] is emitting code for a banked
     /// function, this holds the bank name so cross-bank calls can be
     /// disambiguated from in-bank calls. `None` means the codegen is
@@ -506,6 +510,12 @@ impl<'a> IrCodeGen<'a> {
             bounds_halt_used: false,
             banked_streams: HashMap::new(),
             function_banks,
+            handler_draws: {
+                let drawing = drawing_functions(ir);
+                ir.states
+                    .iter()
+                    .any(|s| drawing.contains(&format!("{s}_frame")))
+            },
             drawing_functions: drawing_functions(ir),
             current_bank: None,
             allocations,
@@ -964,6 +974,10 @@ impl<'a> IrCodeGen<'a> {
         // 3. Main dispatch loop
         let main_loop = "__ir_main_loop".to_string();
         self.emit_label(&main_loop);
+        if self.handler_draws {
+            self.emit(LDA, AM::Immediate(0));
+            self.emit(STA, AM::Absolute(OAM_BUSY));
+        }
 
         // Wait for vblank flag
         let wait_label = "__ir_wait_vblank".to_string();
@@ -1158,6 +1172,7 @@ impl<'a> IrCodeGen<'a> {
             let clear_loop = format!("__ir_oam_clear_{}", func.name);
             self.emit(LDX, AM::Immediate(0));
             self.emit(LDA, AM::Immediate(0xFE));
+            self.emit(STA, AM::Absolute(OAM_BUSY));
             self.emit_label(&clear_loop);
             self.emit(STA, AM::AbsoluteX(0x0200));
             self.emit(INX, AM::Implied);
@@ -1896,6 +1911,10 @@ impl<'a> IrCodeGen<'a> {
                 // fresh value next NMI. The cumulative counters at
                 // $07FF and $07FD are intentionally left alone.
                 let wait_label = format!("__ir_wait_{}", self.local_label_suffix());
+                if self.handler_draws {
+                    self.emit(LDA, AM::Immediate(0));
+                    self.emit(STA, AM::Absolute(OAM_BUSY));
+                }
                 self.emit_label(&wait_label);
                 self.emit(LDA, AM::ZeroPage(ZP_FRAME_FLAG));
                 self.emit(BEQ, AM::LabelRelative(wait_label));
@@ -2271,6 +2290,12 @@ impl<'a> IrCodeGen<'a> {
                 let suffix = self.local_label_suffix();
                 let clear_label = format!("__ir_spr0_clear_{suffix}");
                 let set_label = format!("__ir_spr0_set_{suffix}");
+                // The hit needs sprite 0 in the PPU's OAM, so let the
+                // NMI that lands during the wait DMA it.
+                if self.handler_draws {
+                    self.emit(LDA, AM::Immediate(0));
+                    self.emit(STA, AM::Absolute(OAM_BUSY));
+                }
                 // Phase 1: wait for flag clear.
                 self.emit_label(&clear_label);
                 self.emit(LDA, AM::Absolute(0x2002));
@@ -2902,11 +2927,20 @@ impl<'a> IrCodeGen<'a> {
     /// `[len][addr_hi][addr_lo][tile][tile]...[tile]` where the
     /// tile byte is repeated `len` times. The PPU's auto-increment
     /// (1 by default) advances the VRAM cursor one cell per byte.
+    ///
+    /// A `len` of 0 appends nothing. The entry would otherwise write
+    /// 256 tiles, lapping the ring, and publish a `len` byte of 0
+    /// that the drain reads as the sentinel forever.
     fn gen_nt_buf_append_fill_h(&mut self, x: IrTemp, y: IrTemp, len: IrTemp, tile: IrTemp) {
         let x_addr = self.temp_addr(x);
         let y_addr = self.temp_addr(y);
         let len_addr = self.temp_addr(len);
         let tile_addr = self.temp_addr(tile);
+        let suffix = self.local_label_suffix();
+        let fill_label = format!("__ir_nt_fill_{suffix}");
+        let skip_label = format!("__ir_nt_fill_skip_{suffix}");
+        self.emit(LDA, AM::ZeroPage(len_addr));
+        self.emit(BEQ, AM::LabelRelative(skip_label.clone()));
         // Skip `len`; `emit_nt_buf_publish` stores it last.
         self.emit(LDX, AM::Absolute(crate::runtime::VRAM_BUF_HEAD));
         self.emit(INX, AM::Implied);
@@ -2932,8 +2966,6 @@ impl<'a> IrCodeGen<'a> {
         self.emit(INX, AM::Implied);
         // Inner loop: write `len` copies of `tile`. We use Y as the
         // fill counter so X stays as the buffer offset.
-        let suffix = self.local_label_suffix();
-        let fill_label = format!("__ir_nt_fill_{suffix}");
         self.emit(LDY, AM::ZeroPage(len_addr));
         self.emit_label(&fill_label);
         self.emit(LDA, AM::ZeroPage(tile_addr));
@@ -2942,6 +2974,7 @@ impl<'a> IrCodeGen<'a> {
         self.emit(DEY, AM::Implied);
         self.emit(BNE, AM::LabelRelative(fill_label));
         self.emit_nt_buf_publish(AM::ZeroPage(len_addr));
+        self.emit_label(&skip_label);
     }
 
     /// Emit the MMC3 `__irq_user` handler that dispatches on the
@@ -4117,6 +4150,76 @@ mod more_tests {
         IrCodeGen::new(&analysis.var_allocations, &ir_program)
             .with_audio(&sfx, &music)
             .generate(&ir_program)
+    }
+
+    #[test]
+    fn drawing_handler_marks_oam_busy_until_main_loop() {
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            on frame {
+                draw Smiley at: (8, 8)
+                wait_frame
+            }
+            start Main
+        "#,
+        );
+        let busy_stores = |val: u8| {
+            insts
+                .windows(2)
+                .filter(|w| {
+                    w[0].opcode == LDA
+                        && w[0].mode == AM::Immediate(val)
+                        && w[1].opcode == STA
+                        && w[1].mode == AM::Absolute(OAM_BUSY)
+                })
+                .count()
+        };
+        let main_loop = insts
+            .iter()
+            .position(|i| matches!(&i.mode, AM::Label(l) if l == "__ir_main_loop"))
+            .expect("main loop label");
+        assert_eq!(insts[main_loop + 2].mode, AM::Absolute(OAM_BUSY));
+        // The main loop and wait_frame clear it; the OAM clear sets it.
+        assert_eq!(busy_stores(0), 2);
+        assert_eq!(busy_stores(0xFE), 1);
+    }
+
+    #[test]
+    fn sprite_0_split_clears_oam_busy_before_polling() {
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            on frame {
+                draw Smiley at: (16, 24)
+                sprite_0_split(0, 0)
+            }
+            start Main
+        "#,
+        );
+        let poll = insts
+            .iter()
+            .position(|i| i.opcode == LDA && i.mode == AM::Absolute(0x2002))
+            .expect("polls PPUSTATUS");
+        let cleared = insts[..poll].windows(2).rev().take(6).any(|w| {
+            w[0].opcode == LDA
+                && w[0].mode == AM::Immediate(0)
+                && w[1].opcode == STA
+                && w[1].mode == AM::Absolute(OAM_BUSY)
+        });
+        assert!(cleared, "sprite 0 must reach the PPU before the hit poll");
+    }
+
+    #[test]
+    fn non_drawing_program_leaves_oam_busy_alone() {
+        let insts = lower_and_gen(
+            r#"
+            game "T" { mapper: NROM }
+            on frame { wait_frame }
+            start Main
+        "#,
+        );
+        assert!(!insts.iter().any(|i| i.mode == AM::Absolute(OAM_BUSY)));
     }
 
     #[test]

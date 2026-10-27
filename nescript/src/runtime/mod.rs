@@ -14,6 +14,13 @@ const APU_STATUS: u16 = 0x4015;
 const JOY1: u16 = 0x4016;
 const APU_FRAME: u16 = 0x4017;
 
+/// First byte of the main-RAM block at the top of RAM that the
+/// runtime owns: the VRAM ring pointers, previous input, fade, PRNG,
+/// sprite-cycle, audio, and debug slots, `$07E5-$07FF`. The analyzer
+/// allocates user variables below this address, whether or not a
+/// program uses the feature behind each slot.
+pub const RUNTIME_RAM_BASE: u16 = 0x07E5;
+
 /// Zero-page locations used by the runtime.
 pub const ZP_FRAME_FLAG: u8 = 0x00;
 pub const ZP_INPUT_P1: u8 = 0x01;
@@ -99,8 +106,7 @@ pub const ZP_ROOM_COL_HI: u8 = 0x19;
 
 // ── Debug instrumentation ──
 //
-// These slots are only touched by debug-mode ROMs. In release
-// builds the analyzer is free to allocate over them.
+// These slots are only touched by debug-mode ROMs.
 
 /// Debug-mode frame-overrun counter. Incremented by the NMI
 /// handler whenever it fires while the previous frame's ready
@@ -143,7 +149,7 @@ pub const DEBUG_FRAME_OVERRUN_FLAG_ADDR: u16 = 0x07FE;
 /// HUD, title screens) and this counter catches the dynamic
 /// cases (enemy formations, projectile clusters) during
 /// playtesting in debug builds. Release-mode ROMs never touch
-/// this slot, so the analyzer is free to allocate over it.
+/// this slot.
 pub const DEBUG_SPRITE_OVERFLOW_COUNT_ADDR: u16 = 0x07FD;
 
 /// Debug-mode "did the previous frame hit the 8-sprites-per-
@@ -257,9 +263,7 @@ pub const VRAM_BUF_TAIL: u16 = 0x07EC;
 /// Fade-helper scratch bytes. `FADE_STEP_FRAMES` holds the
 /// per-step frame count saved at the top of `__fade_out` /
 /// `__fade_in`; `FADE_LEVEL` tracks the current brightness level
-/// as the fade walks 4 → 0 or 0 → 4. Programs that never call the
-/// builtins (detected via the absence of `__fade_used`) leave
-/// these bytes free for analyzer allocation.
+/// as the fade walks 4 → 0 or 0 → 4.
 pub const FADE_STEP_FRAMES: u16 = 0x07E8;
 pub const FADE_LEVEL: u16 = 0x07E9;
 
@@ -270,10 +274,17 @@ pub const FADE_LEVEL: u16 = 0x07E9;
 /// seeds the state to a non-zero constant (0xACE1) so the very
 /// first `rand8()` call returns a useful value even without an
 /// explicit `seed_rand`. Programs that never touch PRNG skip
-/// both the state init and the routines, leaving these two
-/// bytes free for the analyzer to allocate over.
+/// both the state init and the routines.
 pub const PRNG_STATE_LO: u16 = 0x07EA;
 pub const PRNG_STATE_HI: u16 = 0x07EB;
+
+/// Nonzero while a frame handler that draws is rebuilding the OAM
+/// shadow. The handler sets it before clearing `$0200`, and the main
+/// loop zeroes it when the handler returns. NMI skips the OAM DMA
+/// while it is set, so a handler that runs past vblank leaves the
+/// last complete frame's sprites on screen instead of a half-drawn
+/// set. The RAM clear at reset leaves it zero.
+pub const OAM_BUSY: u16 = 0x07ED;
 
 /// Generate the NES hardware initialization sequence.
 /// This runs at RESET and sets up the hardware before user code.
@@ -395,15 +406,30 @@ pub fn gen_init(has_oam: bool) -> Vec<Instruction> {
 /// enabled alongside the sprite layer — programs that declare a
 /// `background` block want both, programs that don't can skip
 /// the background bit to match the pre-fix behaviour.
+///
+/// With a background, the initial nametable load runs about half a
+/// frame past the boot vblank, so the write first waits for the next
+/// NMI. Turning rendering on mid-frame would draw the rest of that
+/// frame from wherever the load left the PPU address.
 #[must_use]
 pub fn gen_enable_rendering(show_background: bool) -> Vec<Instruction> {
     // $1E = show bg + sprites + left-8-px for both
     // $10 = show sprites only (no bg)
     let mask = if show_background { 0x1E } else { 0x10 };
-    vec![
-        Instruction::new(LDA, AM::Immediate(mask)),
-        Instruction::new(STA, AM::Absolute(PPU_MASK)),
-    ]
+    let mut out = Vec::new();
+    if show_background {
+        out.push(Instruction::new(LDA, AM::Immediate(0)));
+        out.push(Instruction::new(STA, AM::ZeroPage(ZP_FRAME_FLAG)));
+        out.push(Instruction::new(NOP, AM::Label("__enable_wait".into())));
+        out.push(Instruction::new(LDA, AM::ZeroPage(ZP_FRAME_FLAG)));
+        out.push(Instruction::new(
+            BEQ,
+            AM::LabelRelative("__enable_wait".into()),
+        ));
+    }
+    out.push(Instruction::new(LDA, AM::Immediate(mask)));
+    out.push(Instruction::new(STA, AM::Absolute(PPU_MASK)));
+    out
 }
 
 /// Generate the NMI handler.
@@ -541,9 +567,7 @@ pub fn gen_nmi(opts: NmiOptions) -> Vec<Instruction> {
     // toggle doesn't confuse it.
     //
     // The counter/sticky pair mirrors the frame-overrun pattern
-    // at $07FE/$07FF. Release builds don't emit this block at
-    // all, so the two bytes at $07FC/$07FD stay free for the
-    // analyzer to allocate over.
+    // at $07FE/$07FF. Release builds don't emit this block.
     if debug_mode {
         out.push(Instruction::new(LDA, AM::Absolute(PPU_STATUS)));
         out.push(Instruction::new(AND, AM::Immediate(0x20)));
@@ -588,6 +612,11 @@ pub fn gen_nmi(opts: NmiOptions) -> Vec<Instruction> {
     // fixed-offset (LDA #0) and the rotating offset read from
     // SPRITE_CYCLE_ADDR used by `cycle_sprites`.
     if has_oam {
+        out.push(Instruction::new(LDA, AM::Absolute(OAM_BUSY)));
+        out.push(Instruction::new(
+            BNE,
+            AM::LabelRelative("__nmi_skip_oam_dma".into()),
+        ));
         if has_sprite_cycle {
             out.push(Instruction::new(LDA, AM::Absolute(SPRITE_CYCLE_ADDR)));
         } else {
@@ -596,6 +625,10 @@ pub fn gen_nmi(opts: NmiOptions) -> Vec<Instruction> {
         out.push(Instruction::new(STA, AM::Absolute(OAM_ADDR)));
         out.push(Instruction::new(LDA, AM::Immediate(0x02)));
         out.push(Instruction::new(STA, AM::Absolute(OAM_DMA)));
+        out.push(Instruction::new(
+            NOP,
+            AM::Label("__nmi_skip_oam_dma".into()),
+        ));
     }
 
     // PPU updates: check the flags byte, apply any pending palette
@@ -627,8 +660,7 @@ pub fn gen_nmi(opts: NmiOptions) -> Vec<Instruction> {
         // (`p1.a.pressed` / `.released`) can compute
         // `curr & ~prev` / `prev & ~curr` at the user-code read
         // site. Gated on `has_edge_input` so programs without
-        // edge reads skip the two (or four) store bytes and
-        // leave the two PREV_INPUT slots free for the analyzer.
+        // edge reads skip the two (or four) store bytes.
         if has_edge_input {
             if has_p1_input {
                 out.push(Instruction::new(LDA, AM::ZeroPage(ZP_INPUT_P1)));
@@ -1896,9 +1928,6 @@ pub fn gen_palette_brightness() -> Vec<Instruction> {
 /// Main-RAM scratch bytes the routines use:
 ///   `FADE_STEP_FRAMES` ($07E8) — saved copy of `step_frames`
 ///   `FADE_LEVEL`       ($07E9) — current brightness level
-///
-/// Both slots are free for analyzer allocation in programs that
-/// don't use fade (they never trigger the marker).
 #[must_use]
 pub fn gen_fade() -> Vec<Instruction> {
     let mut out = Vec::new();

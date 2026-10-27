@@ -253,7 +253,8 @@ fn write_memory_map(
     let ram_used = ram_bytes_used.len();
     writeln!(w)?;
     writeln!(w, "Zero Page: {zp_used}/128 bytes used")?;
-    writeln!(w, "Main RAM:  {ram_used}/1280 bytes used")?;
+    let ram_cap = nescript::runtime::RUNTIME_RAM_BASE - 0x300;
+    writeln!(w, "Main RAM:  {ram_used}/{ram_cap} bytes used")?;
 
     // PRG ROM: palette (32 B each) and background (960 + 64 B each)
     // data blobs. The linker emits each one under a well-known

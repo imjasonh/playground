@@ -151,46 +151,6 @@ fun paint_card() {
     }
 }
 
-fun total_armor(p: u8) -> u8 {
-    var s: u8 = 0
-    var l: u8 = 0
-    while l < NUM_LOCS {
-        s += armor[p * 11 + l]
-        l += 1
-    }
-    return s
-}
-
-// 0 or 1 for a winner, 2 for a draw.
-fun decide_winner() -> u8 {
-    var lost0: bool = crits[0] >= LOSS_CRITS
-    var lost1: bool = crits[1] >= LOSS_CRITS
-    if lost0 and lost1 {
-        return 2
-    }
-    if lost0 {
-        return 1
-    }
-    if lost1 {
-        return 0
-    }
-    if crits[0] < crits[1] {
-        return 0
-    }
-    if crits[1] < crits[0] {
-        return 1
-    }
-    var a0: u8 = total_armor(0)
-    var a1: u8 = total_armor(1)
-    if a0 > a1 {
-        return 0
-    }
-    if a1 > a0 {
-        return 1
-    }
-    return 2
-}
-
 // Sequencer state. Globals rather than state locals because
 // the phase functions below read them.
 var phase: u8 = P_WAIT
@@ -701,35 +661,6 @@ fun end_turn() {
     wait_then(20, P_LOCK_START)
 }
 
-fun game_over() {
-    stop_music
-    var w: u8 = decide_winner()
-    msg_clear()
-    msg_line(MSG_ROW1)
-    if crits[0] >= LOSS_CRITS and crits[1] >= LOSS_CRITS {
-        msg_str(S_BOTH)
-    } else if crits[0] >= LOSS_CRITS or crits[1] >= LOSS_CRITS {
-        var wrecked: u8 = 0
-        if crits[1] >= LOSS_CRITS {
-            wrecked = 1
-        }
-        msg_who(wrecked)
-        msg_str(S_WRECKED)
-    } else {
-        msg_str(S_TIME_UP)
-    }
-    msg_line(MSG_ROW2)
-    if w == 2 {
-        msg_str(S_DRAW)
-    } else {
-        msg_who(w)
-        msg_str(S_WINS)
-    }
-    msg_str(S_PRESS_START)
-    over_timer = 0
-    phase = P_OVER
-}
-
 // True when the match should return to Title.
 fun run_over() -> bool {
     if over_timer < 255 {
@@ -755,10 +686,14 @@ state Battle {
         msg_clear()
     }
 
+    // Sprites go first: a phase that swaps screens waits for vblank,
+    // and the NMI during that wait shows whatever OAM holds.
     on frame {
-        tick_unblank()
         flush_text()
         anim += 1
+        if not on_card {
+            draw_sprites()
+        }
         match phase {
             P_WAIT => { run_wait() }
             P_LOCK_START => { start_lock() }
@@ -778,8 +713,6 @@ state Battle {
             }
             _ => {}
         }
-        if not on_card {
-            draw_sprites()
-        }
+        tick_unblank()
     }
 }

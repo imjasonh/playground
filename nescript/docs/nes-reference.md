@@ -59,7 +59,13 @@ The compiler reserves the following:
 - `$18`-`$7F`: Available for `fast` variables (user zero-page)
 - `$80`-`$FF`: IR codegen temp slots (scratch for expression evaluation)
 - `$0200`-`$02FF`: OAM shadow buffer (DMA'd to PPU each frame)
-- `$0300`-`$07EE`: General variables, per-function RAM (parameter spill + locals), state-local storage
+- `$0300`-`$07E4`: General variables, per-function RAM (parameter spill + locals), state-local storage. Programs that use `nt_set`, `nt_attr`, or `nt_fill_h` start at `$0500`, after the VRAM ring at `$0400`-`$04FF`
+- `$07E5`-`$07FF`: Runtime slots. The analyzer never allocates here, even when a program doesn't use the feature behind a slot
+- `$07E5`, `$07EC`: `VRAM_BUF_HEAD` and `VRAM_BUF_TAIL`, the VRAM ring's write and drain offsets
+- `$07E6`-`$07E7`: Previous controller state for `.pressed` and `.released`
+- `$07E8`-`$07E9`: Fade step and level
+- `$07EA`-`$07EB`: PRNG state
+- `$07ED`: `OAM_BUSY`, nonzero while a frame handler rebuilds the OAM shadow. NMI skips the OAM DMA while it's set, so a handler that runs past vblank keeps the previous frame's sprites on screen
 - `$07EF`: `SPRITE_CYCLE_ADDR` — rotating offset byte used by `cycle_sprites` (only when the program emits a `cycle_sprites` statement)
 - `$07F0`-`$07F7`: Audio channel state (noise/triangle/sfx-pitch pointers; only when the program declares a matching sfx)
 - `$07F8`-`$07FA`: Music loop base and state byte. Main RAM, not `$05`–`$07`, because those bytes are call arguments

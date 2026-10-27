@@ -3696,6 +3696,52 @@ start Main
 }
 
 #[test]
+fn nt_fill_h_skips_zero_length() {
+    // A zero length must branch past the whole append. Otherwise the
+    // fill loop runs 256 times, laps the ring, and publishes a len
+    // byte of 0 that the drain treats as the sentinel from then on.
+    use nescript::asm::{AddressingMode, Opcode};
+    let source = r#"
+game "VramFill" { mapper: NROM }
+var n: u8 = 0
+on frame {
+    nt_fill_h(1, 2, n, 32)
+}
+start Main
+"#;
+    let (program, _) = nescript::parser::parse(source);
+    let program = program.unwrap();
+    let analysis = analyzer::analyze(&program);
+    let mut ir_program = ir::lower(&program, &analysis);
+    optimizer::optimize(&mut ir_program);
+    let mut codegen = IrCodeGen::new(&analysis.var_allocations, &ir_program);
+    let instructions = codegen.generate(&ir_program);
+    let base = nescript::runtime::VRAM_BUF_BASE;
+    let is_buf_store = |i: &nescript::asm::Instruction| {
+        i.opcode == Opcode::STA
+            && matches!(i.mode, AddressingMode::AbsoluteX(a) | AddressingMode::AbsoluteY(a) if a == base)
+    };
+    let first_store = instructions.iter().position(is_buf_store).unwrap();
+    let last_store = instructions.iter().rposition(is_buf_store).unwrap();
+    let skip = instructions[..first_store]
+        .iter()
+        .rev()
+        .find_map(|i| match (&i.opcode, &i.mode) {
+            (Opcode::BEQ, AddressingMode::LabelRelative(l)) => Some(l.clone()),
+            _ => None,
+        })
+        .expect("a BEQ should guard the fill");
+    let target = instructions
+        .iter()
+        .position(|i| matches!(&i.mode, AddressingMode::Label(l) if *l == skip))
+        .expect("the skip label should be defined");
+    assert!(
+        target > last_store,
+        "the zero-length branch should land after the len store"
+    );
+}
+
+#[test]
 fn vram_buf_omitted_without_use() {
     // Programs that never call any of the buffer intrinsics should
     // not link in the drain routine and should keep main RAM
