@@ -1409,3 +1409,136 @@ fn lower_u16_const_above_255_compares_both_bytes() {
         "the compare's high byte should be 1: {ops:?}"
     );
 }
+
+/// Run a frame handler's straight-line ops and return each variable's
+/// final 16-bit value, by name. Panics on an op it doesn't model.
+fn eval_frame(ir: &IrProgram) -> std::collections::HashMap<String, u16> {
+    use std::collections::HashMap;
+    let mut temps: HashMap<IrTemp, u8> = HashMap::new();
+    let mut lo: HashMap<VarId, u8> = HashMap::new();
+    let mut hi: HashMap<VarId, u8> = HashMap::new();
+    for op in frame_ops(ir) {
+        let get = |t: &IrTemp, temps: &HashMap<IrTemp, u8>| temps[t];
+        match &op {
+            IrOp::LoadImm(d, v) => {
+                temps.insert(*d, *v);
+            }
+            IrOp::LoadVar(d, v) => {
+                temps.insert(*d, lo.get(v).copied().unwrap_or(0));
+            }
+            IrOp::LoadVarHi(d, v) => {
+                temps.insert(*d, hi.get(v).copied().unwrap_or(0));
+            }
+            IrOp::StoreVar(v, t) => {
+                lo.insert(*v, get(t, &temps));
+            }
+            IrOp::StoreVarHi(v, t) => {
+                hi.insert(*v, get(t, &temps));
+            }
+            IrOp::And(d, a, b)
+            | IrOp::Or(d, a, b)
+            | IrOp::Xor(d, a, b)
+            | IrOp::Add(d, a, b)
+            | IrOp::Sub(d, a, b) => {
+                let (a, b) = (get(a, &temps), get(b, &temps));
+                let r = match op {
+                    IrOp::And(..) => a & b,
+                    IrOp::Or(..) => a | b,
+                    IrOp::Xor(..) => a ^ b,
+                    IrOp::Add(..) => a.wrapping_add(b),
+                    _ => a.wrapping_sub(b),
+                };
+                temps.insert(*d, r);
+            }
+            IrOp::ShiftLeft(d, s, n) => {
+                let v = get(s, &temps);
+                temps.insert(*d, if *n >= 8 { 0 } else { v << n });
+            }
+            IrOp::ShiftRight(d, s, n) => {
+                let v = get(s, &temps);
+                temps.insert(*d, if *n >= 8 { 0 } else { v >> n });
+            }
+            IrOp::Add16 {
+                d_lo,
+                d_hi,
+                a_lo,
+                a_hi,
+                b_lo,
+                b_hi,
+            } => {
+                let a = u16::from_le_bytes([get(a_lo, &temps), get(a_hi, &temps)]);
+                let b = u16::from_le_bytes([get(b_lo, &temps), get(b_hi, &temps)]);
+                let [l, h] = a.wrapping_add(b).to_le_bytes();
+                temps.insert(*d_lo, l);
+                temps.insert(*d_hi, h);
+            }
+            IrOp::Sub16 {
+                d_lo,
+                d_hi,
+                a_lo,
+                a_hi,
+                b_lo,
+                b_hi,
+            } => {
+                let a = u16::from_le_bytes([get(a_lo, &temps), get(a_hi, &temps)]);
+                let b = u16::from_le_bytes([get(b_lo, &temps), get(b_hi, &temps)]);
+                let [l, h] = a.wrapping_sub(b).to_le_bytes();
+                temps.insert(*d_lo, l);
+                temps.insert(*d_hi, h);
+            }
+            IrOp::SourceLoc(_) => {}
+            other => panic!("eval_frame doesn't model {other:?}"),
+        }
+    }
+    ir.globals
+        .iter()
+        .map(|g| {
+            let v = u16::from_le_bytes([
+                lo.get(&g.var_id).copied().unwrap_or(0),
+                hi.get(&g.var_id).copied().unwrap_or(0),
+            ]);
+            (g.name.clone(), v)
+        })
+        .collect()
+}
+
+#[test]
+fn lower_u16_arithmetic_keeps_sixteen_bits() {
+    let ir = lower_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var a: u16 = 0
+        var b: u8 = 0
+        var mul: u16 = 0
+        var mul_left: u16 = 0
+        var cast_mul: u16 = 0
+        var div: u16 = 0
+        var rem: u16 = 0
+        var and_w: u16 = 0
+        var or_w: u16 = 0
+        var xor_w: u16 = 0
+        on frame {
+            a = 1234
+            b = 3
+            mul = a * 240
+            mul_left = 10 * a
+            cast_mul = ((b - 1) as u16) * 240
+            div = a / 16
+            rem = a % 64
+            and_w = a & 0x0F0F
+            or_w = a | 0x8001
+            xor_w = a ^ 0xFFFF
+        }
+        start Main
+    "#,
+    );
+    let v = eval_frame(&ir);
+    assert_eq!(v["mul"], 1234u16.wrapping_mul(240));
+    assert_eq!(v["mul_left"], 12340);
+    assert_eq!(v["cast_mul"], 480);
+    assert_eq!(v["div"], 1234 / 16);
+    assert_eq!(v["rem"], 1234 % 64);
+    assert_eq!(v["and_w"], 0x04D2 & 0x0F0F);
+    assert_eq!(v["or_w"], 0x04D2 | 0x8001);
+    assert_eq!(v["xor_w"], 0x04D2 ^ 0xFFFF);
+}

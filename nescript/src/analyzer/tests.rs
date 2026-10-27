@@ -3059,3 +3059,43 @@ fn banked_rom_table_read_from_its_own_bank_is_allowed() {
         "#,
     );
 }
+
+#[test]
+fn analyze_u16_multiply_and_divide_need_constant_operands() {
+    let errors = analyze_errors(
+        r#"
+        game "Test" { mapper: NROM }
+        var a: u16 = 0
+        var b: u8 = 2
+        var r: u16 = 0
+        on frame {
+            r = a * b
+            r = (a + 1) / b
+            r = a % 10
+        }
+        start Main
+    "#,
+    );
+    let wide = errors.iter().filter(|e| **e == ErrorCode::E0203).count();
+    assert_eq!(wide, 3, "{errors:?}");
+}
+
+#[test]
+fn analyze_u16_multiply_by_constant_and_power_of_two_divide_are_allowed() {
+    analyze_ok(
+        r#"
+        game "Test" { mapper: NROM }
+        var a: u16 = 0
+        var b: u8 = 2
+        var r: u16 = 0
+        on frame {
+            r = a * 240
+            r = 3 * a
+            r = a / 8
+            r = a % 32
+            r = (a as u8) * b
+        }
+        start Main
+    "#,
+    );
+}

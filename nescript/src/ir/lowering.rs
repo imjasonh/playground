@@ -1814,6 +1814,49 @@ impl LoweringContext {
         res_lo
     }
 
+    /// Multiply a 16-bit value by a constant, modulo 2^16: one shifted
+    /// copy of `value` per set bit of `c`, summed with `Add16`.
+    fn lower_wide_mul_const(&mut self, value: IrTemp, c: u16) -> IrTemp {
+        let (lo, hi) = self.widen(value);
+        self.make_wide(lo, hi);
+        let mut acc: Option<IrTemp> = None;
+        for k in 0..16 {
+            if (c >> k) & 1 == 0 {
+                continue;
+            }
+            let term = if k == 0 {
+                lo
+            } else {
+                self.lower_wide_shift(lo, true, k)
+            };
+            acc = Some(match acc {
+                None => term,
+                Some(a) => {
+                    let (a_lo, a_hi) = self.widen(a);
+                    let (b_lo, b_hi) = self.widen(term);
+                    let d_lo = self.fresh_temp();
+                    let d_hi = self.fresh_temp();
+                    self.emit(IrOp::Add16 {
+                        d_lo,
+                        d_hi,
+                        a_lo,
+                        a_hi,
+                        b_lo,
+                        b_hi,
+                    });
+                    self.make_wide(d_lo, d_hi);
+                    d_lo
+                }
+            });
+        }
+        acc.unwrap_or_else(|| {
+            let zero = self.fresh_temp();
+            self.emit(IrOp::LoadImm(zero, 0));
+            self.make_wide(zero, zero);
+            zero
+        })
+    }
+
     /// True if `t` was produced as the low byte of a wide value.
     fn is_wide(&self, t: IrTemp) -> bool {
         self.wide_hi.contains_key(&t)
@@ -2363,10 +2406,55 @@ impl LoweringContext {
                     });
                     return t;
                 }
-                // Other operators fall through to the 8-bit path
-                // below, truncating the wide operand to its low
-                // byte. This is intentional for bitwise/shift ops
-                // which are rarely used on u16 values in NES code.
+                BinOp::BitwiseAnd | BinOp::BitwiseOr | BinOp::BitwiseXor => {
+                    let byte_op = |d, a, b| match op {
+                        BinOp::BitwiseAnd => IrOp::And(d, a, b),
+                        BinOp::BitwiseOr => IrOp::Or(d, a, b),
+                        _ => IrOp::Xor(d, a, b),
+                    };
+                    let d_hi = self.fresh_temp();
+                    self.emit(byte_op(t, a_lo, b_lo));
+                    self.emit(byte_op(d_hi, a_hi, b_hi));
+                    self.make_wide(t, d_hi);
+                    return t;
+                }
+                BinOp::Mul => {
+                    // The analyzer rejects a wide multiply without a
+                    // constant operand.
+                    let constant = self
+                        .eval_const(right)
+                        .map(|c| (l, c))
+                        .or_else(|| self.eval_const(left).map(|c| (r, c)));
+                    if let Some((x, c)) = constant {
+                        let p = self.lower_wide_mul_const(x, c);
+                        if sign == Signedness::Signed {
+                            self.mark_signed(p);
+                            self.mark_signed(self.wide_hi[&p]);
+                        }
+                        return p;
+                    }
+                }
+                BinOp::Div | BinOp::Mod => {
+                    // The analyzer allows only an unsigned power-of-two
+                    // divisor here.
+                    let divisor = self.eval_const(right).filter(|c| c.is_power_of_two());
+                    if let Some(c) = divisor.filter(|_| sign == Signedness::Unsigned) {
+                        if op == BinOp::Div {
+                            return self.lower_wide_shift(l, false, c.trailing_zeros() as u16);
+                        }
+                        let mask = c - 1;
+                        let (m_lo, m_hi) = (self.fresh_temp(), self.fresh_temp());
+                        self.emit(IrOp::LoadImm(m_lo, mask as u8));
+                        self.emit(IrOp::LoadImm(m_hi, (mask >> 8) as u8));
+                        let d_hi = self.fresh_temp();
+                        self.emit(IrOp::And(t, a_lo, m_lo));
+                        self.emit(IrOp::And(d_hi, a_hi, m_hi));
+                        self.make_wide(t, d_hi);
+                        return t;
+                    }
+                }
+                // Variable shifts fall through to the 8-bit path below,
+                // truncating the wide operand to its low byte.
                 _ => {}
             }
         }

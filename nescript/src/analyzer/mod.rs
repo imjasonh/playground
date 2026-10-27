@@ -1151,6 +1151,11 @@ impl Analyzer {
                         ),
                     );
                 }
+                if matches!(op, BinOp::Mul | BinOp::Div | BinOp::Mod)
+                    && (self.expr_is_wide(lhs) || self.expr_is_wide(rhs))
+                {
+                    self.check_wide_mul_div(lhs, *op, rhs, *span);
+                }
                 self.walk_expr_reads(lhs);
                 self.walk_expr_reads(rhs);
             }
@@ -2741,6 +2746,62 @@ impl Analyzer {
                 );
             }
         }
+    }
+
+    /// True if the IR lowers `expr` to a 16-bit value: a 16-bit operand
+    /// makes arithmetic and bitwise results 16-bit, and a shift takes
+    /// the width of its left side.
+    fn expr_is_wide(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::BinaryOp(lhs, op, rhs, _) => match op {
+                BinOp::ShiftLeft | BinOp::ShiftRight => self.expr_is_wide(lhs),
+                BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Mod
+                | BinOp::BitwiseAnd
+                | BinOp::BitwiseOr
+                | BinOp::BitwiseXor => self.expr_is_wide(lhs) || self.expr_is_wide(rhs),
+                _ => false,
+            },
+            Expr::UnaryOp(UnaryOp::Not, _, _) => false,
+            Expr::UnaryOp(_, inner, _) => self.expr_is_wide(inner),
+            _ => matches!(self.infer_type(expr), Some(NesType::U16 | NesType::I16)),
+        }
+    }
+
+    /// The IR has no 16-bit multiply or divide routine: a 16-bit
+    /// multiply needs a constant operand (shifts and adds), and a
+    /// 16-bit divide or modulo an unsigned power-of-two divisor.
+    fn check_wide_mul_div(&mut self, lhs: &Expr, op: BinOp, rhs: &Expr, span: Span) {
+        let signed = |t: Option<NesType>| matches!(t, Some(NesType::I8 | NesType::I16));
+        let ok = match op {
+            BinOp::Mul => self.eval_const(lhs).is_some() || self.eval_const(rhs).is_some(),
+            _ => {
+                self.eval_const(rhs).is_some_and(u16::is_power_of_two)
+                    && !signed(self.infer_type(lhs))
+            }
+        };
+        if ok {
+            return;
+        }
+        let (what, help) = match op {
+            BinOp::Mul => (
+                "16-bit multiply needs a constant operand",
+                "multiply by a constant, or narrow both operands to u8",
+            ),
+            BinOp::Div => (
+                "16-bit divide needs an unsigned power-of-two divisor",
+                "divide by a power of two, or narrow both operands to u8",
+            ),
+            _ => (
+                "16-bit modulo needs an unsigned power-of-two divisor",
+                "use a power-of-two modulus, or narrow both operands to u8",
+            ),
+        };
+        self.diagnostics
+            .push(Diagnostic::error(ErrorCode::E0203, what, span).with_help(help));
     }
 
     fn infer_type(&self, expr: &Expr) -> Option<NesType> {
