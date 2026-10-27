@@ -140,6 +140,9 @@ T_DIR_UP = 91
 T_DIR_DOWN = 92
 T_DIR_LEFT = 93
 T_DIR_RIGHT = 94
+# '_' (95) is otherwise unused, so it carries the caret the
+# Customize screen draws under the selected name letter.
+T_UNDERLINE = 95
 T_ACT = 22  # 22..28, one icon per action, in action order
 T_PIKE = 96  # 96..99
 T_MAUL = 100  # 100..103
@@ -242,6 +245,16 @@ DIR_RIGHT = [
     "...33...",
     "........",
 ]
+UNDERLINE = [
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    ".333333.",
+]
 LOGO = [
     "33333333",
     "32222221",
@@ -278,6 +291,7 @@ def build_tiles():
     tiles[T_DIR_DOWN] = DIR_DOWN
     tiles[T_DIR_LEFT] = DIR_LEFT
     tiles[T_DIR_RIGHT] = DIR_RIGHT
+    tiles[T_UNDERLINE] = UNDERLINE
     for i, t in enumerate(art.ACTIONS):
         tiles[T_ACT + i] = t
     for i, pic in enumerate(art.WEAPONS):

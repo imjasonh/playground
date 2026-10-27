@@ -520,14 +520,10 @@ include "result.ne"
             }
             return
         }
+        // The letter always stays visible; the blinking underline
+        // sprite in Customize's on-frame handler marks the cursor,
+        // keyed off this same tick.
         cust_tick += 1
-        if cust_cursor < 6 and (cust_tick & 15) == 0 {
-            if (cust_tick & 16) == 0 {
-                put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
-            } else {
-                put_tile(NAME_COL + cust_cursor, NAME_ROW, T_SPACE)
-            }
-        }
 
         // On the name row, left/right move the lit letter and
         // up/down rotate it. On the gun and arm rows, left/right
@@ -615,6 +611,13 @@ include "result.ne"
             if cust_cursor > 0 {
                 cust_cursor -= 1
             }
+            cust_tick = 0
+        }
+        // SELECT jumps straight to the gun row, for a player who
+        // likes the name as typed and doesn't want to arrow past it.
+        if res_b == BTN_SELECT and cust_cursor < 6 {
+            put_tile(NAME_COL + cust_cursor, NAME_ROW, name_ch[cust_who * 6 + cust_cursor])
+            cust_cursor = 6
             cust_tick = 0
         }
         if res_b == BTN_START or (res_b == BTN_A and cust_cursor == 8) {

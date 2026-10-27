@@ -29,6 +29,7 @@ const BTN_RIGHT: u8 = 3
 const BTN_A: u8 = 4
 const BTN_B: u8 = 5
 const BTN_START: u8 = 6
+const BTN_SELECT: u8 = 7
 
 const LOCK_STATUS_X: u8[2] = [1, 16]
 const LOCK_STATUS_ROW: u8 = 27
@@ -60,6 +61,9 @@ fun pad_pressed(p: u8) -> u8 {
         if p1.button.start.pressed {
             return BTN_START
         }
+        if p1.button.select.pressed {
+            return BTN_SELECT
+        }
         return B_NONE
     }
     if p2.button.up.pressed {
@@ -82,6 +86,9 @@ fun pad_pressed(p: u8) -> u8 {
     }
     if p2.button.start.pressed {
         return BTN_START
+    }
+    if p2.button.select.pressed {
+        return BTN_SELECT
     }
     return B_NONE
 }
@@ -274,7 +281,7 @@ fun run_lock() {
                     put_tile(x, LOCK_STATUS_ROW, T_QUEST)
                     play LockNo
                 }
-            } else if b != B_NONE {
+            } else if b != B_NONE and b != BTN_SELECT {
                 lk_prev[p] = lk_last[p]
                 lk_last[p] = b
                 if lk_n[p] < 2 {

@@ -12,6 +12,7 @@ const T_HOLES: u8 = 17
 const T_FIRE: u8 = 18
 const T_CRATER: u8 = 20
 const T_ARROW: u8 = 21
+const T_UNDERLINE: u8 = 95
 // Plan icons, in action order: Snap, Step, Shield, Standard, Rush,
 // Aimed, Charge.
 const T_ACT: u8 = 22
