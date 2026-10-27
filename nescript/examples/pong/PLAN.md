@@ -129,7 +129,7 @@ All well within the NEScript 1280-byte general RAM ceiling.
 - `MAX_BALLS = 3`
 - Paddle height: 24 px normal, 40 px long
 - Ball base speed: 1 px/frame on each axis; FAST doubles x to 2
-- Powerup spawn cadence: every `POWERUP_SPAWN_FRAMES` (~240) frames
+- Powerup spawn cadence: every `POWERUP_SPAWN_FRAMES` (~600) frames
 - Powerups bounce off all four walls, catchable by either paddle
 - CPU AI: 1 px/frame toward ball y, 4-frame reaction lag, ±4 px miss zone
 - Default autopilot mode: CPU VS CPU (so the golden harness captures gameplay)

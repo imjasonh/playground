@@ -51,7 +51,7 @@ const MAX_BALLS:      u8 = 3
 // around for a while, despawns if nobody catches it.
 const POWERUP_SIZE:         u8 = 8
 const POWERUP_SPEED:        u8 = 1
-const POWERUP_SPAWN_FRAMES: u16 = 240  // ~4 s at 60 Hz
+const POWERUP_SPAWN_FRAMES: u16 = 600  // ~10 s at 60 Hz
 const POWERUP_LIFE_FRAMES:  u16 = 480  // ~8 s before despawn
 
 const PWR_NONE:  u8 = 0
