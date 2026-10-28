@@ -259,6 +259,10 @@ moves past. A boid crosses the 800-pixel width in about 63 seconds.
 Faster motion without a longer triangle leaves a pale streak instead of
 a solid shape.
 
+The twelve boids start near the middle of the panel, each within about
+20 degrees of one shared heading. Separation is 10 logical pixels, about
+one arrow length, so they can fly close enough to read as one flock.
+
 Boids steer away from the panel edges with a force that grows with the
 square of how far into the margin they've come, so they stay gentle in
 open water and turn sharply only right at the wall. That keeps the flock

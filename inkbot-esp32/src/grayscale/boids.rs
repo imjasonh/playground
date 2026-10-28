@@ -73,14 +73,17 @@ impl Default for FlockConfig {
             // counts as one neighborhood, so it gathers instead of
             // splitting into groups that can no longer see each other.
             perception_radius: 320.0,
-            separation_radius: 46.0,
+            // About one arrow length, so neighbors can fly nearly
+            // alongside instead of holding a wide gap.
+            separation_radius: 10.0,
             separation_weight: 1.4,
             alignment_weight: 1.2,
             cohesion_weight: 0.45,
-            // At this speed a boid needs on the order of a hundred
-            // refreshes to turn around; this margin gives it that much
-            // room before the hard wall.
-            edge_margin: 90.0,
+            // A U-turn at max_force covers about 35 logical pixels. This
+            // margin is that distance plus a little, so the flock wheels
+            // before the wall and still has open water in the middle of
+            // the 240-pixel height.
+            edge_margin: 48.0,
             edge_weight: 0.6,
             triangle_length: 9.0,
             triangle_half_width: 2.5,
@@ -123,18 +126,24 @@ pub struct Flock {
 }
 
 impl Flock {
-    /// A flock scattered across the canvas with random headings. `seed`
-    /// makes the starting layout reproducible.
+    /// A flock gathered near the middle of the canvas, sharing one heading
+    /// with a little jitter. `seed` makes the starting layout reproducible.
     pub fn new(config: FlockConfig, seed: u32) -> Self {
         let mut rng = Rng::new(seed);
-        let margin = config.edge_margin;
+        let (cx, cy) = (config.width * 0.5, config.height * 0.5);
+        // Keep the spawn box on the canvas for the small test field too.
+        let spread = 18.0_f32.min(config.width * 0.22).min(config.height * 0.22);
+        let heading = rng.next_range(0.0, 2.0 * PI);
+        // About 20 degrees either way, so they start as one flight rather
+        // than twelve independent travelers.
+        let jitter = 0.35_f32;
         let boids = (0..config.count)
             .map(|_| {
-                let angle = rng.next_range(0.0, 2.0 * PI);
+                let angle = heading + rng.next_range(-jitter, jitter);
                 let speed = rng.next_range(config.min_speed, config.max_speed);
                 Boid {
-                    x: rng.next_range(margin, (config.width - margin).max(margin)),
-                    y: rng.next_range(margin, (config.height - margin).max(margin)),
+                    x: (cx + rng.next_range(-spread, spread)).clamp(0.0, config.width),
+                    y: (cy + rng.next_range(-spread, spread)).clamp(0.0, config.height),
                     vx: angle.cos() * speed,
                     vy: angle.sin() * speed,
                 }
@@ -317,6 +326,11 @@ impl Flock {
     fn speeds(&self) -> Vec<f32> {
         self.boids.iter().map(|b| b.vx.hypot(b.vy)).collect()
     }
+
+    #[cfg(test)]
+    fn headings(&self) -> Vec<f32> {
+        self.boids.iter().map(|b| b.vy.atan2(b.vx)).collect()
+    }
 }
 
 /// Twice the signed area of triangle `abc`. Positive when `a, b, c` wind
@@ -381,6 +395,63 @@ mod tests {
         assert!(
             flock.triangle_half_width < flock.triangle_length,
             "a half-width this wide relative to the length makes the apex angle obtuse"
+        );
+    }
+
+    #[test]
+    fn default_flock_starts_together_on_one_heading() {
+        let config = FlockConfig::default();
+        assert!(
+            config.separation_radius <= config.triangle_length + 2.0,
+            "separation {} is wide next to an arrow of length {}",
+            config.separation_radius,
+            config.triangle_length
+        );
+        let flock = Flock::new(config, 4);
+        let pos = flock.positions();
+        let mut max_dist = 0.0f32;
+        for (i, a) in pos.iter().enumerate() {
+            for b in &pos[i + 1..] {
+                max_dist = max_dist.max((a.0 - b.0).hypot(a.1 - b.1));
+            }
+        }
+        assert!(max_dist < 40.0, "start spread {max_dist}");
+
+        let headings = flock.headings();
+        for (i, a) in headings.iter().enumerate() {
+            for b in &headings[i + 1..] {
+                let mut d = (a - b).abs() % (2.0 * PI);
+                if d > PI {
+                    d = 2.0 * PI - d;
+                }
+                assert!(d < 0.8, "heading gap {d}");
+            }
+        }
+    }
+
+    #[test]
+    fn flock_stays_close_after_flying() {
+        let config = FlockConfig::default();
+        let mut flock = Flock::new(config, 11);
+        for _ in 0..400 {
+            flock.step();
+        }
+        let pos = flock.positions();
+        let mut nearest_sum = 0.0f32;
+        for (i, a) in pos.iter().enumerate() {
+            let mut nearest = f32::MAX;
+            for (j, b) in pos.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                nearest = nearest.min((a.0 - b.0).hypot(a.1 - b.1));
+            }
+            nearest_sum += nearest;
+        }
+        let mean_nearest = nearest_sum / pos.len() as f32;
+        assert!(
+            mean_nearest < config.separation_radius * 2.0,
+            "mean nearest neighbor {mean_nearest}"
         );
     }
 
