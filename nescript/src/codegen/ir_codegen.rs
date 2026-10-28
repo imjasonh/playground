@@ -2686,9 +2686,9 @@ impl<'a> IrCodeGen<'a> {
         self.emit(STA, AM::Absolute(0x4015));
         self.emit(LDA, AM::Immediate(reg_4010));
         self.emit(STA, AM::Absolute(0x4010));
-        // Samples are encoded from DAC level 0. Writing that level
-        // before the start keeps a leftover level from becoming a
-        // click in the middle of the first byte.
+        // Samples are encoded from DAC level 0, and each bit steps
+        // that level by 2. Writing 0 before the start keeps a leftover
+        // level from becoming a click in the middle of the first byte.
         self.emit(LDA, AM::Immediate(0x00));
         self.emit(STA, AM::Absolute(0x4011));
         self.emit(LDA, AM::Immediate(reg_4012));
