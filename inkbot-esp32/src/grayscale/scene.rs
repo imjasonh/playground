@@ -1,39 +1,43 @@
-//! Procedural demo scene for tuning the drive mode on real hardware: a dark
-//! disc with a radial gradient that orbits the panel, over a white field
-//! with a fixed 8-step gray ramp along the bottom.
+//! The demo scene the grayscale drive mode shows: a small flock of boids
+//! ([`super::boids`]) rendered as soft gray blobs on a white field.
 //!
-//! This is a synthetic test pattern, not a video decoder. The moving disc
-//! shows ghosting and how far behind a moving edge the pixels settle; the
-//! ramp shows how many distinct grays the drive steps produce.
+//! [`BoidsScene`] owns the flock and a logical-sized luma buffer so the
+//! drive loop can call [`BoidsScene::step`] once per refresh and hand
+//! [`BoidsScene::luma`] straight to the planner without reallocating.
 
+use super::boids::{Flock, FlockConfig};
 use super::{LOGICAL_HEIGHT, LOGICAL_WIDTH};
 
-const RAMP_STEPS: usize = 8;
+pub struct BoidsScene {
+    flock: Flock,
+    buffer: Vec<u8>,
+}
 
-/// The scene at refresh `tick`, as a luma function of logical `(x, y)`
-/// (`0` = black, `255` = white).
-pub fn demo_scene(tick: u32) -> impl Fn(usize, usize) -> u8 {
-    let w = LOGICAL_WIDTH as i32;
-    let ramp_top = LOGICAL_HEIGHT * 7 / 8;
-    let h = ramp_top as i32;
-    let radius = (w.min(h) / 5).max(4);
-    let t = tick as f32 * 0.05;
-    let cx = radius + ((w - 2 * radius) as f32 * (0.5 + 0.5 * t.sin())) as i32;
-    let cy = radius + ((h - 2 * radius) as f32 * (0.5 + 0.5 * (t * 1.7).cos())) as i32;
-    let r_sq = radius * radius;
+impl BoidsScene {
+    pub fn new(seed: u32) -> Self {
+        let flock = Flock::new(FlockConfig::default(), seed);
+        let mut scene = Self {
+            flock,
+            buffer: vec![255; LOGICAL_WIDTH * LOGICAL_HEIGHT],
+        };
+        scene.render();
+        scene
+    }
 
-    move |x, y| {
-        if y >= ramp_top {
-            let step = x * RAMP_STEPS / LOGICAL_WIDTH;
-            return (step * 255 / (RAMP_STEPS - 1)) as u8;
-        }
-        let (dx, dy) = (x as i32 - cx, y as i32 - cy);
-        let d_sq = dx * dx + dy * dy;
-        if d_sq >= r_sq {
-            255
-        } else {
-            (d_sq * 255 / r_sq) as u8
-        }
+    /// Advance the flock one step and re-render the buffer.
+    pub fn step(&mut self) {
+        self.flock.step();
+        self.render();
+    }
+
+    /// Luma at logical `(x, y)`, as of the last [`BoidsScene::step`].
+    pub fn luma(&self, x: usize, y: usize) -> u8 {
+        self.buffer[y * LOGICAL_WIDTH + x]
+    }
+
+    fn render(&mut self) {
+        self.flock
+            .render_luma(&mut self.buffer, LOGICAL_WIDTH, LOGICAL_HEIGHT);
     }
 }
 
@@ -41,37 +45,43 @@ pub fn demo_scene(tick: u32) -> impl Fn(usize, usize) -> u8 {
 mod tests {
     use super::*;
 
-    fn frame(tick: u32) -> Vec<u8> {
-        let scene = demo_scene(tick);
-        (0..LOGICAL_HEIGHT)
-            .flat_map(|y| (0..LOGICAL_WIDTH).map(move |x| (x, y)))
-            .map(|(x, y)| scene(x, y))
-            .collect()
+    #[test]
+    fn buffer_is_logical_sized() {
+        let scene = BoidsScene::new(0);
+        for y in 0..LOGICAL_HEIGHT {
+            for x in 0..LOGICAL_WIDTH {
+                let _ = scene.luma(x, y); // panics (index out of bounds) if undersized
+            }
+        }
     }
 
     #[test]
-    fn scene_spans_black_to_white() {
-        let f = frame(0);
-        assert_eq!(f.iter().min(), Some(&0));
-        assert_eq!(f.iter().max(), Some(&255));
+    fn stepping_changes_the_scene() {
+        let mut scene = BoidsScene::new(1);
+        let before: Vec<u8> = (0..LOGICAL_HEIGHT * LOGICAL_WIDTH)
+            .map(|i| scene.luma(i % LOGICAL_WIDTH, i / LOGICAL_WIDTH))
+            .collect();
+        for _ in 0..10 {
+            scene.step();
+        }
+        let after: Vec<u8> = (0..LOGICAL_HEIGHT * LOGICAL_WIDTH)
+            .map(|i| scene.luma(i % LOGICAL_WIDTH, i / LOGICAL_WIDTH))
+            .collect();
+        assert_ne!(before, after, "the flock should have moved");
     }
 
     #[test]
-    fn ramp_has_eight_steps() {
-        let scene = demo_scene(0);
-        let y = LOGICAL_HEIGHT - 1;
-        let mut steps: Vec<u8> = (0..LOGICAL_WIDTH).map(|x| scene(x, y)).collect();
-        steps.dedup();
-        assert_eq!(steps.len(), RAMP_STEPS);
-    }
-
-    #[test]
-    fn disc_moves_between_ticks() {
-        assert_ne!(frame(0), frame(10));
-    }
-
-    #[test]
-    fn scene_is_deterministic() {
-        assert_eq!(frame(7), frame(7));
+    fn same_seed_renders_the_same_scene() {
+        let mut a = BoidsScene::new(99);
+        let mut b = BoidsScene::new(99);
+        for _ in 0..25 {
+            a.step();
+            b.step();
+        }
+        for y in 0..LOGICAL_HEIGHT {
+            for x in 0..LOGICAL_WIDTH {
+                assert_eq!(a.luma(x, y), b.luma(x, y));
+            }
+        }
     }
 }

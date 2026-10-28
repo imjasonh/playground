@@ -242,10 +242,13 @@ or mention `@inkbot status` in Slack.
 
 ## Grayscale video demo (experimental)
 
-`grayscale-esp32` plays a procedural scene (a dark disc orbiting over a
-white field, with an 8-step gray ramp along the bottom) as many times a
-second as the panel allows. It is USB-flash only: no Wi-Fi, no OTA pull,
-and not in the `inkbot` / `maze` OTA app registry.
+`grayscale-esp32` is a separate, experimental firmware from `maze-esp32` —
+it does not show the maze, just faster. It plays a small flock of boids
+([Reynolds' separation/alignment/cohesion](https://www.red3d.com/cwr/boids/))
+rendered as soft gray blobs, as many times a second as the panel allows,
+chosen to be continuously moving (so every refresh has something new to
+draw) while staying visually calm. It is USB-flash only: no Wi-Fi, no OTA
+pull, and not in the `inkbot` / `maze` OTA app registry.
 
 Instead of one multi-second factory waveform per image, it loads a custom
 waveform that drives a pixel for one controller frame per refresh, toward
@@ -262,9 +265,14 @@ builds grays. Pixels are planned in 2×2 blocks (400×240).
   The old plane holds each pixel's direction, so most refreshes send only
   the new plane; a pixel that has to reverse waits for an occasional
   refresh that rewrites both planes.
+- [`src/grayscale/boids.rs`](src/grayscale/boids.rs) steps the flock once
+  per refresh and renders it into a logical-sized luma buffer;
+  [`src/grayscale/scene.rs`](src/grayscale/scene.rs) owns that buffer so
+  `grayscale_main.rs` hands it straight to the planner.
 - `src/grayscale_main.rs` sends a refresh, plans the next one while the
   panel is busy, and every 60 seconds drives every pixel back to white and
-  runs a factory full refresh.
+  runs a factory full refresh. The flock keeps moving through that
+  cleanup; only the panel restarts.
 
 The planner never drives a pixel past white or black, so each pixel's net
 drive is its estimated level and returns to zero before every full

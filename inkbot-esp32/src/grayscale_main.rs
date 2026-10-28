@@ -1,6 +1,6 @@
 //! grayscale-esp32 — experimental grayscale video demo for the UC8179.
 //!
-//! Plays a procedural scene through the custom one-step drive mode
+//! Plays a small flock of boids through the custom one-step drive mode
 //! (`inkbot_esp32::grayscale`) as many times a second as the panel and SPI
 //! bus allow, and logs where each refresh's time goes. Every
 //! [`FULL_REFRESH_INTERVAL`] it drives every pixel back to white and runs a
@@ -21,9 +21,13 @@ use grayscale_display::{Panel, SPI_MHZ};
 use inkbot_esp32::grayscale::{
     drive::{DriveConfig, DrivePlanner},
     lut::DriveLuts,
-    scene::demo_scene,
+    scene::BoidsScene,
     GRAYSCALE_FIRMWARE_ID, LOGICAL_HEIGHT, LOGICAL_WIDTH,
 };
+
+/// Seeds the flock's starting positions and headings. Any value works; it
+/// is fixed so a given firmware build always starts the same way.
+const FLOCK_SEED: u32 = 0x5EED_B01D;
 
 /// Frames each drive step lasts. One is the shortest step and the fastest
 /// refresh; more frames per step move ink further per refresh.
@@ -57,7 +61,9 @@ fn main() -> Result<()> {
     let mut planner = DrivePlanner::new(LOGICAL_WIDTH, LOGICAL_HEIGHT, DriveConfig::default());
     let mut old = vec![0u8; planner.plane_bytes()];
     let mut new = vec![0u8; planner.plane_bytes()];
-    let mut tick = 0u32;
+    // Persists across full-refresh cycles so the flock keeps moving
+    // through the periodic cleanup instead of restarting each time.
+    let mut scene = BoidsScene::new(FLOCK_SEED);
 
     loop {
         if let Err(e) = run_cycle(
@@ -66,7 +72,7 @@ fn main() -> Result<()> {
             &luts,
             &mut old,
             &mut new,
-            &mut tick,
+            &mut scene,
         ) {
             error!("drive cycle failed: {e:#}");
             if let Err(e) = panel.power_off() {
@@ -85,7 +91,7 @@ fn run_cycle(
     luts: &DriveLuts,
     old: &mut [u8],
     new: &mut [u8],
-    tick: &mut u32,
+    scene: &mut BoidsScene,
 ) -> Result<()> {
     let start = Instant::now();
     panel.full_refresh_white()?;
@@ -97,7 +103,7 @@ fn run_cycle(
     let cycle_start = Instant::now();
     let mut draining = false;
     let mut stats = Stats::default();
-    let mut plan = planner.plan_tick(demo_scene(*tick), old, new);
+    let mut plan = planner.plan_tick(|x, y| scene.luma(x, y), old, new);
 
     loop {
         let refresh_start = Instant::now();
@@ -116,11 +122,11 @@ fn run_cycle(
         let sent_plan = plan;
 
         draining |= cycle_start.elapsed() >= FULL_REFRESH_INTERVAL;
-        *tick = tick.wrapping_add(1);
         plan = if draining {
             planner.plan_tick(|_, _| 255, old, new)
         } else {
-            planner.plan_tick(demo_scene(*tick), old, new)
+            scene.step();
+            planner.plan_tick(|x, y| scene.luma(x, y), old, new)
         };
         let planned = Instant::now();
 
