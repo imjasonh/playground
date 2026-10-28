@@ -1,14 +1,18 @@
-// Left and right edges of the walkable floor where the transfer
-// arrow and route bullets go, and the nametable cells above them
-// (row 21) for the "UP"/"DN" tag. One tile in from each edge: a TV
-// crops the outer 8 pixels, and so does this game's own test
-// harness (jsnes' clipToTvSize). Both positions are still clear of
-// the benches (columns 9-12 and 20-23).
-const XFER_Y: u8 = 176
+// Transfer hints sit in the bottom corners, under the part of the
+// floor where Alex walks and fights. Each side that has a passage
+// stacks its route bullets in one column, bottom-aligned so a short
+// list stays on the floor, with the arrow beside the top bullet and
+// the "UP"/"DN" tag on the row above that. Column 0 and column 31
+// are cropped, so the column is one tile in from the edge. The
+// lowest bullet is the last fully visible row. Both columns are
+// clear of the benches (columns 9-12 and 20-23).
+const XFER_BULLET_BOTTOM: u8 = 224
 const XFER_L_ARROW_X: u8 = 8
-const XFER_L_BULLET_X0: u8 = 24
+const XFER_L_BULLET_X: u8 = 16
+const XFER_L_TAG_COL: u8 = 1
 const XFER_R_ARROW_X: u8 = 240
-const XFER_R_BULLET_X0: u8 = 224
+const XFER_R_BULLET_X: u8 = 232
+const XFER_R_TAG_COL: u8 = 29
 const XFER_FLIP: u8 = 0x40
 
 // Load the platform for cur_st / cur_dir with rendering off.
@@ -74,14 +78,10 @@ fun platform_setup() {
     vram_at(0x20, 0x61)
     vram_text(30)
     if l_has {
-        set_dir_tag()
-        vram_at(0x22, 0xA1)
-        vram_text(2)
+        write_dir_tag(XFER_L_TAG_COL, l_n)
     }
     if r_has {
-        set_dir_tag()
-        vram_at(0x22, 0xBD)
-        vram_text(2)
+        write_dir_tag(XFER_R_TAG_COL, r_n)
     }
     text_len = 0
     screen_on()
@@ -126,10 +126,20 @@ fun compute_transfers() {
     }
 }
 
+// Y of the top route bullet. The column grows upward from
+// XFER_BULLET_BOTTOM, so one route sits on the floor and four
+// reach the row just under a standing Alex.
+fun xfer_bullet_y(n: u8) -> u8 {
+    if n < 2 {
+        return XFER_BULLET_BOTTOM
+    }
+    return XFER_BULLET_BOTTOM - ((n - 1) << 3)
+}
+
 // "UP" when cur_dir faces north, "DN" when it faces south. Passages
 // keep cur_dir, so both the adjacent platforms this hints at face the
-// same way.
-fun set_dir_tag() {
+// same way. The tag sits on the nametable row above the top bullet.
+fun write_dir_tag(col: u8, n: u8) {
     if cur_dir == 0 {
         text_buf[0] = 21 // U
         text_buf[1] = 16 // P
@@ -138,24 +148,34 @@ fun set_dir_tag() {
         text_buf[1] = 14 // N
     }
     text_len = 2
+    var row: u8 = xfer_bullet_y(n) >> 3
+    row -= 1
+    var addr: u16 = 0x2000 + ((row as u16) << 5) + (col as u16)
+    vram_at((addr >> 8) as u8, addr as u8)
+    vram_text(2)
 }
 
 // The transfer arrow and route bullets at each edge that has one.
-// Call only while no fight has the sprite budget those bullets need.
+// Bullets stack downward from the arrow. Call only while no fight
+// has the sprite budget those bullets need.
 fun draw_transfer_hints() {
     if l_has {
-        draw SpriteTiles at: (XFER_L_ARROW_X, XFER_Y) frame: S_ARROW attr: XFER_FLIP
+        var ly: u8 = xfer_bullet_y(l_n)
+        draw SpriteTiles at: (XFER_L_ARROW_X, ly) frame: S_ARROW attr: XFER_FLIP
         var i: u8 = 0
         while i < l_n {
-            draw_bullet(XFER_L_BULLET_X0 + i * 8, XFER_Y, l_routes[i])
+            draw_bullet(XFER_L_BULLET_X, ly, l_routes[i])
+            ly += 8
             i += 1
         }
     }
     if r_has {
-        draw SpriteTiles at: (XFER_R_ARROW_X, XFER_Y) frame: S_ARROW attr: 0
+        var ry: u8 = xfer_bullet_y(r_n)
+        draw SpriteTiles at: (XFER_R_ARROW_X, ry) frame: S_ARROW attr: 0
         var j: u8 = 0
         while j < r_n {
-            draw_bullet(XFER_R_BULLET_X0 - j * 8, XFER_Y, r_routes[j])
+            draw_bullet(XFER_R_BULLET_X, ry, r_routes[j])
+            ry += 8
             j += 1
         }
     }
