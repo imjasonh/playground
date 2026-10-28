@@ -9,6 +9,7 @@
 //     node record_gif.mjs pong 360 2 docs/pong.gif 4
 //     node record_gif.mjs subway 360 2 docs/subway.gif 30
 //     node record_gif.mjs rampart 720 2 docs/rampart.gif 16
+//     node record_gif.mjs keep    480 2 docs/keep.gif    70
 //
 // The recorder runs jsnes in-process, collects one framebuffer every
 // `stride` NES frames for `frames` total, and encodes the sequence
@@ -26,7 +27,7 @@
 // so the clip reaches the CPU demo that starts after the title idle.
 //
 // IMPORTANT: `docs/platformer.gif`, `docs/war.gif`, `docs/pong.gif`,
-// `docs/subway.gif`, and `docs/rampart.gif` are committed and
+// `docs/subway.gif`, `docs/rampart.gif`, and `docs/keep.gif` are committed and
 // embedded in the README. Any change to the compiler, the runtime,
 // the harness, or the underlying `.ne` source that alters the
 // gameplay you see in one of those clips must be followed by
@@ -36,6 +37,7 @@
 //     node tests/emulator/record_gif.mjs pong       360 2 docs/pong.gif       4
 //     node tests/emulator/record_gif.mjs subway     360 2 docs/subway.gif     30
 //     node tests/emulator/record_gif.mjs rampart    720 2 docs/rampart.gif    16
+//     node tests/emulator/record_gif.mjs keep       480 2 docs/keep.gif       70
 //
 // committed alongside the source change. The CI `emulator` job
 // regenerates the gifs and fails if the committed copies are stale.

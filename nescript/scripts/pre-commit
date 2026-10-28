@@ -103,4 +103,9 @@ if [ "$recorder_changed" -eq 1 ] || \
     check_gif rampart 720 16 || exit 1
 fi
 
+if [ "$recorder_changed" -eq 1 ] || \
+   echo "$changed_files" | grep -qE '^nescript/examples/keep(\.(ne|nes)|/[^/]+\.ne)$'; then
+    check_gif keep 480 70 || exit 1
+fi
+
 echo "All nescript pre-commit checks passed."

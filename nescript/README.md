@@ -26,6 +26,10 @@ _Source: [`examples/subway.ne`](examples/subway.ne)_
 
 _Source: [`examples/rampart.ne`](examples/rampart.ne)_
 
+![Keep demo](docs/keep.gif)
+
+_Source: [`examples/keep.ne`](examples/keep.ne)_
+
 ## Quick Start
 
 ```bash
@@ -128,6 +132,7 @@ start Main
 | [`sha256.ne`](examples/sha256.ne) | **Interactive SHA-256 hasher** — an on-screen keyboard lets the player type up to 16 ASCII characters, and pressing ↵ runs a full FIPS 180-4 SHA-256 compression on the NES (64 rounds + 48-entry message-schedule expansion, all written in NEScript with inline-asm 32-bit primitives). The 64-character hex digest renders as sprites across eight 8-character rows at the bottom of the screen. Splits across `examples/sha256/*.ne` with a phased driver that runs four iterations per frame so the full hash finishes in well under a second; the jsnes golden captures `SHA-256("NES")` = `AE9145DB5CABC41FE34B54E34AF8881F462362EA20FD8F861B26532FFBB84E0D`. |
 | [`rampart.ne`](examples/rampart.ne) | Turn-based mech duel for one or two players, split across `examples/rampart/*.ne`. Both players lock a plan in secret on one screen by typing a two-button code, the way a two-player football game hides play calls, then the plans resolve in a fixed order on a 12×12 board with ruins for cover. Shots aim at a cell of the enemy's 6×6 body plate and scatter by two d6 rolls. The CPU opponent has three levels and lives in a switchable UxROM bank. Tile art, backgrounds, and string tables come from `scripts/gen_rampart.py`. |
 | [`subway.ne`](examples/subway.ne) | **NYC subway, ride only** — a side-scrolling walk through a real subway system, split across `examples/subway/*.ne` on MMC3. Stations, stop patterns, and running times come from the MTA's GTFS feed (`examples/subway/tools/gen_data.py`). Wait on a platform whose signs and arrival board list the routes that stop there, board a train when it opens its doors, and ride it with the tunnel scrolling past and the car swaying; the car's sign shows the route, destination, and next stop. Get off at any stop to transfer. The doors chime when they open, and a DPCM sample says "Stand clear of the closing doors, please" when they close. Start opens a map of every route with your position, the trains here or the stops ahead with arrival times, and the routes you can take lit up. |
+| [`keep.ne`](examples/keep.ne) | **Ray-cast first-person shooter**, split across `examples/keep/*.ne`. The window is 16 tile columns, one ray each, marched across a 16 by 16 cell map. Walls, a door, and the exit gate are nametable tiles. Guards and the gun are sprites, and a guard up close is a taller sprite than one down the hall. A view is more VRAM writes than one vblank can take, so each frame casts four columns or paints two rows, and the pad waits until that picture is done. Up and down walk, left and right turn, B with left or right steps sideways, and A fires down the center columns. Guards in view shoot back. Walk into the gate to leave. With no input, the view turns in place, so the frame-180 capture is a corridor. |
 
 ## Compiler Commands
 

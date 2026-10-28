@@ -3,7 +3,8 @@
 # test.yml already formats, lints, and runs `cargo test --locked` for
 # nescript/. This workflow runs the benches, checks that the committed
 # ROMs still match the compiler, compares every example against its
-# jsnes screenshot and audio hash, checks the README GIFs, and asks
+# jsnes screenshot and audio hash, checks the README GIFs, probes
+# Keep, and asks
 # Mesen2 to load the .dbg file. The ROMs the compiler just built are
 # uploaded as the nescript-examples artifact.
 #
@@ -206,6 +207,21 @@ jobs:
             echo "::error file=nescript/docs/rampart.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs rampart 720 2 docs/rampart.gif 16\` from nescript/ and commit it"
             exit 1
           fi
+
+      - name: Verify docs/keep.gif is up to date
+        if: steps.discover.outputs.nescript == 'true'
+        working-directory: nescript/tests/emulator
+        run: |
+          node record_gif.mjs keep 480 2 /tmp/keep.gif 70
+          if ! cmp -s ../../docs/keep.gif /tmp/keep.gif; then
+            echo "::error file=nescript/docs/keep.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs keep 480 2 docs/keep.gif 70\` from nescript/ and commit it"
+            exit 1
+          fi
+
+      - name: Probe Keep combat, death, and escape
+        if: steps.discover.outputs.nescript == 'true'
+        working-directory: nescript/tests/emulator
+        run: node keep_probe.mjs /tmp/keep-probe
 
       - name: Install Mesen runtime dependencies
         if: steps.discover.outputs.nescript == 'true'
