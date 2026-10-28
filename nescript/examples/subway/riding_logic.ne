@@ -479,13 +479,18 @@ fun draw_xfers() {
     }
 }
 
-// Door frames, door seams, and the window post over the band.
+// Door frames over the band. Dropped the window post and the
+// closed-door center seam sprites (S_WPOST, S_DCENTER): they were
+// pure decoration, and every sprite drawn here every frame while
+// Riding is one a combat encounter can't have. This halves the
+// band's sprite cost (4 edges/row instead of up to 7) without
+// losing the doors themselves — the edges are what tells the player
+// where to stand to board or leave.
 fun draw_band_sprites() {
     var y: u8 = SPLIT_BAND - 1
     var r: u8 = 0
     while r < IN_BAND_ROWS {
         band_door(IN_DOOR0_COL << 3, y)
-        draw SpriteTiles at: (IN_POST0_X - ix, y) frame: S_WPOST attr: 0
         band_door(IN_DOOR1_COL << 3, y)
         y += 8
         r += 1
@@ -494,9 +499,6 @@ fun draw_band_sprites() {
 
 fun band_door(x: u8, y: u8) {
     draw SpriteTiles at: (x - ix, y) frame: S_DEDGE_L attr: 0
-    if not rdoors {
-        draw SpriteTiles at: (x + 20 - ix, y) frame: S_DCENTER attr: 0
-    }
     draw SpriteTiles at: (x + 40 - ix, y) frame: S_DEDGE_R attr: 0
 }
 
