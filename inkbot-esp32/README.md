@@ -240,6 +240,50 @@ curl -H "Authorization: Bearer $UPLOAD_SECRET" https://inkbot.<account>.workers.
 
 or mention `@inkbot status` in Slack.
 
+## Grayscale measurement demo (experimental)
+
+`grayscale-esp32` is a measurement tool, not a shipped app: it loops a
+procedurally generated moving scene through the UC8179's native 4-level "4
+Gray" mode and logs each refresh's wall-clock time, so the panel's real
+refresh rate can be read off the serial monitor instead of estimated. It is
+USB-flash only — no Wi-Fi, no OTA pull, and it is not in the `inkbot` /
+`maze` OTA app registry.
+
+The four gray levels and the two-plane (`DTM1`/`DTM2`) bit encoding are
+re-derived from Waveshare's own `EPD_7IN5_V2_Display_4Gray()`
+(`Arduino_R4/src/e-Paper/EPD_7in5_V2.cpp` in
+[waveshare/e-Paper](https://github.com/waveshare/e-Paper)), and the panel
+bring-up matches their `Init_4Gray()` and `Init_Fast()` exactly: no
+waveform-LUT registers (`0x20`-`0x25`) are written, and no
+one-time-programming command is sent. Both modes still redrive the whole
+panel in one `DISPLAY REFRESH` call, timed by the controller's own factory
+waveform — this is not InkBoy's technique of a short, custom, per-pixel
+waveform repeated tens of times a second, which would need LUT bytes this
+firmware does not fabricate.
+
+[`src/grayscale/`](src/grayscale/) is host-tested, hardware-agnostic
+planning: quantizing an 8-bit source image into 4 levels, pixelating it into
+2×2 physical blocks (400×240 logical pixels keep the demo's per-pixel state
+small), and packing the result into the two panel planes.
+`src/grayscale_display.rs` is the ESP32-only UC8179 driver; run `cargo test
+--lib` to exercise the planning logic.
+
+Build and flash it like maze, but build it explicitly — it is not part of
+plain `make build`:
+
+```bash
+cd inkbot-esp32
+make build-grayscale
+make flash APP=grayscale PORT=/dev/cu.usbserial-XXXX
+make monitor PORT=/dev/cu.usbserial-XXXX
+```
+
+Watch the monitor for lines like `4gray refresh tick=12 elapsed_ms=1400
+hz=0.71` — that is the real number to use instead of a guess. This firmware
+has not been build- or hardware-tested from this change; expect to fix
+compile errors against your `espup` toolchain before it flashes, and treat
+any waveform timing as unmeasured until you see it on your panel.
+
 ## Host tests
 
 PNG decode / geometry logic and OTA encoding helpers are target-agnostic:
@@ -262,8 +306,10 @@ inkbot-esp32/
 ├── src/
 │   ├── lib.rs / panel.rs / png_frame.rs / status.rs / ota_format.rs
 │   ├── maze/                         # generate / solve / render (host-tested)
+│   ├── grayscale/                    # 4-gray planner/packer (host-tested; experimental)
 │   ├── main.rs                       # inkbot: Wi-Fi + HTTP + OTA + GCP
 │   ├── maze_main.rs / maze_display.rs
+│   ├── grayscale_main.rs / grayscale_display.rs   # experimental; not OTA-registered
 │   ├── display.rs                    # Waveshare 7.5″ V2 via epd-waveshare
 │   └── ota.rs / ota_slot.rs / sig.rs / gcp.rs / https.rs / device_config.rs
 ├── tools/provision/                  # NVS image from provisioning.toml
