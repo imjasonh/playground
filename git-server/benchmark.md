@@ -28,6 +28,47 @@ The two services fail in different ways once a repository is saturated:
   writers, it still had no failed pushes, but its rate dropped. At 512
   writers, no push finished inside the 20-second window.
 
+## How to read the results
+
+The two services handle a saturated repository in opposite ways.
+
+git-server queues. Every push ends with a read-merge-write on the repository's
+Durable Object, which handles one request at a time. Pack building, object
+checks, and R2 uploads run in parallel across writers, but each push must
+pass through that one step to finish. When writers outnumber what the object
+can process, the extra writers wait. Throughput stays near its ceiling, and
+each push takes longer.
+
+Artifacts sheds load. When a repository is busy, Artifacts rejects pushes
+immediately with `artifacts_git_receive_pack_busy`, and at higher concurrency
+with HTTP 429. The pushes it accepts finish in 250 to 330 ms through 16
+writers. The cost moves to the writer, which must retry each rejected push.
+
+The results fit the queue model:
+
+- The peak of 16.6 pushes per second implies about 60 ms of serial work per
+  push (1 ÷ 16.6). That fits one Durable Object round trip, but we haven't
+  measured the apply step on its own.
+- At 64 writers, about 50 pushes are in flight at once. That's 16.6 pushes
+  per second times a 2.7-second p50, by Little's law.
+
+| | git-server | Artifacts |
+|---|---|---|
+| Past saturation | Accepts every push, and latency grows | Rejects extra pushes, and accepted latency stays flat |
+| Error-free ceiling | 16.6 pushes/s at 64 writers | 6.6 pushes/s at 2 writers |
+| p50 of accepted pushes at the peak | 2.7 s at 64 writers | 268 ms at 6 writers |
+| What clients must do | Nothing special | Retry rejected pushes with backoff |
+
+Which trade-off suits you depends on whether your clients retry. Pick
+git-server if your clients can't retry. Pick Artifacts if your clients retry
+with backoff and you need low latency for the pushes that succeed.
+
+The 20-second window undercounts at 128 and 256 writers. A push that
+starts near the end of the window may not finish before the clock stops.
+Some of the drop in throughput at those counts may come from the window, not
+from the server. Runs of two to five minutes at those counts would show
+whether the ceiling holds at about 16 pushes per second.
+
 ## Method
 
 All runs used forgemark commit `654e95a` from one Mac. Cloudflare served both
@@ -117,8 +158,8 @@ without adding throughput, so latency rises and the completed rate falls.
 
 Each repository has one Durable Object, and every push ends with a
 read-merge-write of that object's state. Pack uploads to R2 run in parallel,
-but the state update for one repository runs one at a time. At the peak, that
-update takes about 60 ms of the object's time per push (1 / 16.6). Writers
+but the state update for one repository runs one at a time. At the peak, the
+numbers imply about 60 ms of the object's time per push (1 / 16.6). Writers
 spread across separate repositories use separate Durable Objects. These runs
 didn't measure that case.
 
@@ -214,7 +255,7 @@ any pushes failed.
 git-server reports each request's R2 and Durable Object operations in its
 `Server-Timing` header. A small push costs 5 R2 Class A operations, 2 Class B
 operations, and 2 Durable Object requests, or about $0.0000235 in request
-charges at the prices in [`docs/design.md`](../docs/design.md).
+charges at the prices in [`docs/design.md`](docs/design.md).
 
 | Run | Operations | Approximate cost |
 |---|---|---|
