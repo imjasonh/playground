@@ -10,6 +10,9 @@ See [`docs/api.md`](docs/api.md) for the full API reference, and
 [`docs/design.md`](docs/design.md) for the architecture, streaming strategy,
 cost model, and repacking design.
 
+For push and clone throughput measured with forgemark, including a comparison
+with Cloudflare Artifacts, see [`benchmark.md`](benchmark.md).
+
 ```
 git clone https://<worker-host>/<repo>          # protocol v2 fetch
 git push  https://<worker-host>/<repo> main     # receive-pack push
