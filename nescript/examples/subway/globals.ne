@@ -39,14 +39,10 @@ var door_px: u8 = 32
 // step straight back on.
 var up_lock: bool = false
 
-// The pause map: which state it came from (0 platform, 1 riding), and
-// where the player stood. resume tells that state to pick up where it
-// left off.
+// The pause map: which state it came from (0 platform, 1 riding).
+// resume tells that state to pick up where it left off.
 var pause_from: u8 = 0
 var resume: bool = false
-var save_px: u8 = 0
-var save_py: u8 = 0
-var save_flip: bool = false
 
 // Routes that stop at a station, from load_routes, and which slot of
 // sprite palette 3 each route's bullet uses.

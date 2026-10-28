@@ -472,36 +472,3 @@ fun draw_hud_bullets() {
         i += 1
     }
 }
-
-// The player: 16x32, two tiles wide. The art faces left; facing
-// right mirrors each row. The bottom row is the black outline and
-// shoes. The denim is two more tiles on sprite palette 2, in the
-// same place.
-fun draw_player(x: u8, y: u8, f: u8, flip: bool) {
-    var a: u8 = 0
-    var l: u8 = 0
-    var r: u8 = 1
-    if flip {
-        a = 0x40
-        l = 1
-        r = 0
-    }
-    var row: u8 = 0
-    var t: u8 = f
-    var yy: u8 = y
-    while row < 4 {
-        draw SpriteTiles at: (x, yy) frame: t + l attr: a
-        draw SpriteTiles at: (x + 8, yy) frame: t + r attr: a
-        t += 2
-        yy += 8
-        row += 1
-    }
-    var jt: u8 = S_JEANS0
-    if f == S_PLAYER1 {
-        jt = S_JEANS1
-    } else if f == S_PLAYER2 {
-        jt = S_JEANS2
-    }
-    draw SpriteTiles at: (x, y + 24) frame: jt + l attr: a | 2
-    draw SpriteTiles at: (x + 8, y + 24) frame: jt + r attr: a | 2
-}
