@@ -10,8 +10,9 @@
 //! closer they get, and bounce off as a fallback, so the flock turns back
 //! toward the middle instead of lining up along the walls.
 //!
-//! The flock starts as several smaller flocks and periodically splits back
-//! into them: see [`FlockConfig::split_period`] and
+//! The flock starts as several smaller flocks and splits back into them
+//! after it has merged. How far, how hard, and how long the split itself
+//! lasts come from the other fields of [`FlockConfig`]: see
 //! [`FlockConfig::split_duration`].
 
 use std::f32::consts::PI;
@@ -23,8 +24,8 @@ struct Boid {
     vx: f32,
     vy: f32,
     /// Which starting flock this boid spawned into. Fixed for the boid's
-    /// lifetime; `Flock::step` uses it to tell flockmates apart from
-    /// outsiders during a split phase (see `FlockConfig::split_duration`).
+    /// lifetime. During a split, alignment and cohesion only count
+    /// neighbors with the same `group`.
     group: u8,
 }
 
@@ -62,28 +63,6 @@ pub struct FlockConfig {
     /// wall.
     pub edge_margin: f32,
     pub edge_weight: f32,
-    /// Full length, in steps, of one merge/split cycle. 0 means never
-    /// split: the flock always flies as one once it merges. See
-    /// `split_duration`.
-    pub split_period: u32,
-    /// Leading steps of each `split_period` during which alignment and
-    /// cohesion only look at a boid's own starting flock (its `group`),
-    /// not the whole flock, so the merged flock visibly pulls itself back
-    /// apart into `flock_count` smaller flocks. Separation still pushes
-    /// away from every nearby boid regardless of group, so the flocks
-    /// don't fly through each other on the way apart. The remaining steps
-    /// of the cycle flock normally, which reunites them.
-    pub split_duration: u32,
-    /// How far from the flock's current centroid each sub-flock's target
-    /// point sits when a split phase starts. Restricting alignment and
-    /// cohesion to flockmates alone pulls each boid toward its own
-    /// members' average position, too weak a signal to pull a thoroughly
-    /// mixed flock apart on its own; a target point per sub-flock gives
-    /// it somewhere definite to go instead.
-    pub split_target_radius: f32,
-    /// Strength of the pull toward that target point, relative to the
-    /// other steering terms, while splitting.
-    pub split_target_weight: f32,
     /// Tip-to-base length of the triangle, along the direction of travel.
     pub triangle_length: f32,
     /// Half the triangle's width at the base. Must be less than
@@ -130,24 +109,81 @@ impl Default for FlockConfig {
             // the 240-pixel height.
             edge_margin: 48.0,
             edge_weight: 0.6,
-            // 22 refreshes a second: 20 seconds splitting into flock_count
-            // flocks, then 40 seconds flying as one, on repeat.
-            split_period: 1320,
-            split_duration: 440,
-            // Three points this far from the centroid, evenly spaced,
-            // land about 156 pixels apart from each other: clear of a
-            // merged cluster's usual 40-pixel spread, while still fitting
-            // inside the edge margin on the 240-tall canvas.
-            split_target_radius: 90.0,
-            // Larger than separation's typical pull (separation_weight
-            // times a handful of close neighbors) so the pull toward a
-            // sub-flock's own spot wins out over staying put in a packed
-            // merged flock.
-            split_target_weight: 6.0,
             triangle_length: 9.0,
             triangle_half_width: 2.5,
             shape_min_luma: 36,
         }
+    }
+}
+
+impl FlockConfig {
+    /// Neighbors at `separation_radius` pack six around one boid (a hex
+    /// ring). The split pull is that many neighbors' worth of separation,
+    /// so it beats a crowd sitting between a boid and its target, and
+    /// loses if the crowd is denser than a full ring.
+    fn split_target_weight(self) -> f32 {
+        const HEX_RING: f32 = 6.0;
+        self.separation_weight * HEX_RING
+    }
+
+    /// Radius of the largest circle that fits in the open water inside
+    /// the edge margin. Split targets sit on that circle.
+    fn split_target_radius(self) -> f32 {
+        let half = |extent: f32| (extent - 2.0 * self.edge_margin).max(0.0) * 0.5;
+        half(self.width).min(half(self.height))
+    }
+
+    /// Distance between two neighboring split targets on that circle.
+    fn split_chord(self) -> f32 {
+        if self.flock_count < 2 {
+            return 0.0;
+        }
+        let n = self.flock_count as f32;
+        2.0 * self.split_target_radius() * (PI / n).sin()
+    }
+
+    /// Steps to make a U-turn and then fly `distance` at `max_speed`.
+    /// The turn is budgeted as making no progress toward the target, so
+    /// this is an upper bound on the trip.
+    fn leg_steps(self, distance: f32) -> f32 {
+        if distance <= 0.0 || self.max_speed <= f32::EPSILON {
+            return 0.0;
+        }
+        let turn = if self.max_force <= f32::EPSILON {
+            0.0
+        } else {
+            PI * self.max_speed / self.max_force
+        };
+        turn + distance / self.max_speed
+    }
+
+    /// Steps of one trip over `distance`: a U-turn that is not credited
+    /// with progress, then the flight at `max_speed`.
+    fn phase_steps(self, distance: f32) -> u32 {
+        let steps = self.leg_steps(distance);
+        if !steps.is_finite() || steps <= 0.0 || steps > u32::MAX as f32 {
+            return 0;
+        }
+        steps.ceil() as u32
+    }
+
+    /// How long a split lasts, in steps. Alignment and cohesion only look
+    /// at a boid's own starting flock for this long: enough to turn around
+    /// and fly out to the split targets. The following merge has no
+    /// fixed length. It runs until those flocks have come back within
+    /// half a target-gap of each other, and the next split starts then.
+    /// `0` when there is nothing to split into.
+    pub fn split_duration(self) -> u32 {
+        if self.flock_count < 2 {
+            return 0;
+        }
+        self.phase_steps(self.split_target_radius())
+    }
+
+    /// Gap below which the starting flocks count as one flock again.
+    /// Half the distance between neighboring split targets.
+    fn merged_gap(self) -> f32 {
+        self.split_chord() * 0.5
     }
 }
 
@@ -184,6 +220,10 @@ pub struct Flock {
     boids: Vec<Boid>,
     rng: Rng,
     step_count: u64,
+    /// `step_count` at which the current split ends. Ignored while
+    /// `splitting` is false.
+    split_ends_at: u64,
+    splitting: bool,
     /// Where each sub-flock (indexed by `Boid::group`) heads during the
     /// current split phase. Recomputed from the flock's centroid each
     /// time a split phase starts.
@@ -229,22 +269,51 @@ impl Flock {
             }));
         }
         let flock_count = config.flock_count.max(1);
+        let duration = u64::from(config.split_duration());
         Self {
             config,
             boids,
             rng,
             step_count: 0,
+            split_ends_at: duration,
+            splitting: duration > 0,
             split_targets: vec![(0.0, 0.0); flock_count],
         }
     }
 
-    /// Whether this step falls in the leading, flocks-stay-separate part
-    /// of the merge/split cycle. See `FlockConfig::split_duration`.
-    fn splitting(&self) -> bool {
-        let c = &self.config;
-        c.split_period > 0
-            && c.split_duration > 0
-            && self.step_count % u64::from(c.split_period) < u64::from(c.split_duration)
+    /// True when every pair of starting-flock centroids is closer than
+    /// [`FlockConfig::merged_gap`].
+    fn flocks_together(&self) -> bool {
+        let groups = self.config.flock_count.max(1);
+        if groups < 2 {
+            return false;
+        }
+        let mut acc = vec![(0.0f32, 0.0f32, 0u32); groups];
+        for boid in &self.boids {
+            let g = boid.group as usize;
+            if g < groups {
+                acc[g].0 += boid.x;
+                acc[g].1 += boid.y;
+                acc[g].2 += 1;
+            }
+        }
+        let centroids: Vec<(f32, f32)> = acc
+            .into_iter()
+            .filter(|(_, _, n)| *n > 0)
+            .map(|(x, y, n)| (x / n as f32, y / n as f32))
+            .collect();
+        if centroids.len() < 2 {
+            return false;
+        }
+        let gap = self.config.merged_gap();
+        for (i, a) in centroids.iter().enumerate() {
+            for b in &centroids[i + 1..] {
+                if (a.0 - b.0).hypot(a.1 - b.1) >= gap {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     /// Picks a fresh target point for each sub-flock, spread evenly
@@ -254,6 +323,10 @@ impl Flock {
     fn pick_split_targets(&mut self) {
         let c = &self.config;
         let groups = c.flock_count.max(1);
+        if self.boids.is_empty() {
+            self.split_targets = vec![(0.0, 0.0); groups];
+            return;
+        }
         let n = self.boids.len() as f32;
         let (sx, sy) = self
             .boids
@@ -261,6 +334,7 @@ impl Flock {
             .fold((0.0, 0.0), |(sx, sy), b| (sx + b.x, sy + b.y));
         let (cx, cy) = (sx / n, sy / n);
         let start_angle = self.rng.next_range(0.0, 2.0 * PI);
+        let radius = c.split_target_radius();
         // Stay inside the edge margin so a target doesn't fight the edge
         // force by sitting right at (or past) the wall.
         let (x_lo, x_hi) = (c.edge_margin, (c.width - c.edge_margin).max(c.edge_margin));
@@ -269,8 +343,8 @@ impl Flock {
             .map(|g| {
                 let angle = start_angle + 2.0 * PI * g as f32 / groups as f32;
                 (
-                    (cx + angle.cos() * c.split_target_radius).clamp(x_lo, x_hi),
-                    (cy + angle.sin() * c.split_target_radius).clamp(y_lo, y_hi),
+                    (cx + angle.cos() * radius).clamp(x_lo, x_hi),
+                    (cy + angle.sin() * radius).clamp(y_lo, y_hi),
                 )
             })
             .collect();
@@ -281,10 +355,12 @@ impl Flock {
         // Copied out so the wander loop below can borrow `self.rng`
         // mutably while this stays in scope.
         let c = self.config;
-        if c.split_period > 0
-            && c.split_duration > 0
-            && self.step_count % u64::from(c.split_period) == 0
-        {
+        let duration = u64::from(c.split_duration());
+        if duration > 0 && !self.splitting && self.flocks_together() {
+            self.splitting = true;
+            self.split_ends_at = self.step_count + duration;
+            self.pick_split_targets();
+        } else if self.splitting && self.step_count == 0 {
             self.pick_split_targets();
         }
         let steering: Vec<(f32, f32)> = (0..self.boids.len())
@@ -345,6 +421,9 @@ impl Flock {
             }
         }
         self.step_count += 1;
+        if self.splitting && self.step_count >= self.split_ends_at {
+            self.splitting = false;
+        }
     }
 
     fn steering_for(&self, i: usize) -> (f32, f32) {
@@ -354,7 +433,7 @@ impl Flock {
         // flockmates (same starting group), so the merged flock pulls
         // itself apart; separation stays global below so the flocks don't
         // overlap on the way.
-        let splitting = self.splitting();
+        let splitting = self.splitting;
         let (mut sep_x, mut sep_y) = (0.0, 0.0);
         let (mut avg_vx, mut avg_vy) = (0.0, 0.0);
         let (mut avg_x, mut avg_y) = (0.0, 0.0);
@@ -397,8 +476,9 @@ impl Flock {
                 // Skip once close: a constant-magnitude pull this near
                 // its target would just make the boid orbit it.
                 if dist > c.separation_radius {
-                    ax += dx / dist * c.split_target_weight;
-                    ay += dy / dist * c.split_target_weight;
+                    let weight = c.split_target_weight();
+                    ax += dx / dist * weight;
+                    ay += dy / dist * weight;
                 }
             }
         }
@@ -666,66 +746,106 @@ mod tests {
         }
     }
 
-    /// Number of single-linkage clusters among `positions`, using
-    /// `threshold` as the max gap within one cluster.
-    fn cluster_count(positions: &[(f32, f32)], threshold: f32) -> usize {
-        let n = positions.len();
-        let mut parent: Vec<usize> = (0..n).collect();
-        fn find(parent: &mut [usize], i: usize) -> usize {
-            if parent[i] != i {
-                parent[i] = find(parent, parent[i]);
-            }
-            parent[i]
-        }
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let (a, b) = (positions[i], positions[j]);
-                if (a.0 - b.0).hypot(a.1 - b.1) < threshold {
-                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
-                    if ri != rj {
-                        parent[ri] = rj;
-                    }
-                }
+    /// `(min, max)` distance between starting-flock centroids.
+    fn centroid_gaps(flock: &Flock) -> (f32, f32) {
+        let groups = flock.config.flock_count.max(1);
+        let mut acc = vec![(0.0f32, 0.0f32, 0u32); groups];
+        for boid in &flock.boids {
+            let g = boid.group as usize;
+            if g < groups {
+                acc[g].0 += boid.x;
+                acc[g].1 += boid.y;
+                acc[g].2 += 1;
             }
         }
-        (0..n)
-            .map(|i| find(&mut parent, i))
-            .collect::<std::collections::HashSet<_>>()
-            .len()
+        let centroids: Vec<(f32, f32)> = acc
+            .into_iter()
+            .filter(|(_, _, n)| *n > 0)
+            .map(|(x, y, n)| (x / n as f32, y / n as f32))
+            .collect();
+        let mut min_gap = f32::MAX;
+        let mut max_gap = 0.0f32;
+        for (i, a) in centroids.iter().enumerate() {
+            for b in &centroids[i + 1..] {
+                let d = (a.0 - b.0).hypot(a.1 - b.1);
+                min_gap = min_gap.min(d);
+                max_gap = max_gap.max(d);
+            }
+        }
+        (min_gap, max_gap)
+    }
+
+    #[test]
+    fn split_schedule_follows_the_canvas_and_the_speed() {
+        let config = FlockConfig::default();
+        let radius = {
+            let half = |extent: f32| (extent - 2.0 * config.edge_margin).max(0.0) * 0.5;
+            half(config.width).min(half(config.height))
+        };
+        let chord = 2.0 * radius * (PI / config.flock_count as f32).sin();
+        let turn = PI * config.max_speed / config.max_force;
+        let phase = |distance: f32| (turn + distance / config.max_speed).ceil() as u32;
+        let duration = phase(radius);
+        assert_eq!(config.split_duration(), duration);
+        assert!(
+            chord > radius,
+            "neighboring targets must sit further apart than the radius"
+        );
+
+        let single = FlockConfig {
+            flock_count: 1,
+            ..config
+        };
+        assert_eq!(single.split_duration(), 0);
     }
 
     #[test]
     fn default_flock_periodically_splits_and_remerges() {
         let config = FlockConfig::default();
         let mut flock = Flock::new(config, 4);
-        // Deep in the first split phase: still separate, same as spawn.
-        step_to(&mut flock, 220);
-        assert_eq!(
-            cluster_count(&flock.positions(), 40.0),
-            config.flock_count,
-            "expected {} separate flocks early in the first split phase",
-            config.flock_count
+        let apart = config.merged_gap();
+        let split = u64::from(config.split_duration());
+
+        // End of the first split: still separate. This phase starts from
+        // the spawn layout, so it does not prove a merged flock can re-split.
+        step_to(&mut flock, split);
+        let (min_gap, _) = centroid_gaps(&flock);
+        assert!(
+            min_gap >= apart,
+            "end of first split: closest flocks are {min_gap} apart, need {apart}"
+        );
+        assert!(!flock.splitting, "split still running at step {split}");
+
+        // Merge runs until the starting flocks are one flock again. Three
+        // crossings of the canvas diagonal is past the longest merge this
+        // default seed needs; a miss means they never came back together.
+        let patience = (config.width.hypot(config.height) / config.max_speed * 3.0).ceil() as u64;
+        let merge_start = flock.step_count;
+        let mut gap_when_split_started = 0.0f32;
+        while !flock.splitting {
+            assert!(
+                flock.step_count - merge_start < patience,
+                "flocks did not merge within {patience} steps"
+            );
+            let (_, max_gap) = centroid_gaps(&flock);
+            flock.step();
+            if flock.splitting {
+                gap_when_split_started = max_gap;
+            }
+        }
+        assert!(
+            gap_when_split_started < apart,
+            "split restarted while flocks were still {gap_when_split_started} apart"
         );
 
-        // Deep in the following merge phase, well before the next split
-        // phase starts: one flock.
-        step_to(&mut flock, 1300);
-        assert_eq!(
-            cluster_count(&flock.positions(), 40.0),
-            1,
-            "expected one merged flock late in the first merge phase"
-        );
-
-        // Deep in the second split phase: separate again. This is the
-        // regression this test guards: without an active pull toward a
-        // per-flock target, a flock this thoroughly mixed never visibly
-        // re-splits on local rules alone.
-        step_to(&mut flock, 1740);
-        assert_eq!(
-            cluster_count(&flock.positions(), 40.0),
-            config.flock_count,
-            "expected {} separate flocks again in the second split phase",
-            config.flock_count
+        // End of that next split. The flock was mixed, so this is the case
+        // local alignment and cohesion do not pull apart on their own.
+        let split_end = flock.split_ends_at;
+        step_to(&mut flock, split_end);
+        let (min_gap, _) = centroid_gaps(&flock);
+        assert!(
+            min_gap >= apart,
+            "end of second split: closest flocks are {min_gap} apart, need {apart}"
         );
     }
 

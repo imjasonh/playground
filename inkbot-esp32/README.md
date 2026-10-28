@@ -262,22 +262,27 @@ a solid shape.
 They start as three separate flocks of twelve, spread left, center, and
 right across the panel, each on its own heading within about 20 degrees
 of itself. Separation is 10 logical pixels, about one arrow length, so
-boids within a flock can fly close enough to read as one group. The three
-starting flocks aren't kept apart: perception reaches most of the panel,
-so alignment and cohesion pull them into one flock within the first
-10-15 seconds. Each boid also gets a small random steering nudge every
-refresh, independent of its neighbors, so alignment pulls headings
-together without ever locking them onto the exact same direction.
+boids within a flock can fly close enough to read as one group. Each
+boid also gets a small random steering nudge every refresh, independent
+of its neighbors, so alignment pulls headings together without ever
+locking them onto the exact same direction.
 
-A merged flock doesn't stay merged: on a roughly 60-second cycle it
-spends about 20 seconds pulled back apart into its three starting flocks,
-then about 40 seconds flocking normally, which lets them merge again.
-Each boid remembers which of the three it started in; during a split,
-alignment and cohesion only listen to flockmates from that same starting
-flock, and each flock gets a fresh target point away from the group's
-current center so the pull apart is visible rather than a weak drift.
-Separation still pushes every boid away from every close neighbor
-regardless of flock, so the three don't fly through each other on the
+The three flocks merge, then split back apart. The split's distance,
+strength, and length come from the canvas and the speeds. Targets sit
+on the largest circle that fits inside the edge margin (72 logical
+pixels on this panel). A split lasts long enough to make a U-turn and
+fly out to that circle, about 17 seconds at 22 refreshes a second. The
+U-turn is budgeted as making no progress, so the phase still finishes
+if a flock was headed the other way. After that, ordinary flocking runs
+until the three starting flocks are within half the gap between
+neighboring targets (that gap is about 125 logical pixels). The next
+split starts then, so a flock that is still spread out is not pulled
+apart on a clock. Each boid remembers which flock it started in. During
+a split, alignment and cohesion only listen to flockmates from that
+flock, and the pull toward its target equals the separation push of one
+hex ring of neighbors (six), so a crowd between a boid and its target
+does not cancel the split. Separation still pushes every boid away from
+every close neighbor, so the flocks don't fly through each other on the
 way apart.
 
 Boids steer away from the panel edges with a force that grows with the
@@ -342,7 +347,7 @@ Knobs, all constants:
 | `SWAP_DRIVE_POLARITY` | `src/grayscale_main.rs` | Set when the scene appears as a negative, or barely at all. |
 | `FULL_REFRESH_INTERVAL` | `src/grayscale_main.rs` | Time between cleanup full refreshes. |
 | `DriveConfig::swing` | `src/grayscale/drive.rs` | Steps from white to black. Fewer steps give fewer grays and faster swings per step. |
-| `FlockConfig` fields | `src/grayscale/boids.rs` | Flock size, speeds, triangle size, and flocking weights. `max_speed` is matched to `triangle_length` so the ink can reach the triangle's gray before it moves on. `flock_count` splits `count` boids into that many separate starting flocks. `wander_strength` sets how much headings drift apart instead of locking together. `split_period` and `split_duration` set the merge/split cycle length and how much of it is spent split apart; `split_target_radius` and `split_target_weight` set how far apart and how strongly. |
+| `FlockConfig` fields | `src/grayscale/boids.rs` | Flock size, speeds, triangle size, and flocking weights. `max_speed` is matched to `triangle_length` so the ink can reach the triangle's gray before it moves on. `flock_count` splits `count` boids into that many separate starting flocks. `wander_strength` sets how much headings drift apart instead of locking together. Split distance comes from the open canvas inside `edge_margin`, split pull from `separation_weight`, and split length from `max_speed` and `max_force`. The next split starts once those flocks have merged. |
 
 To watch the estimated ink on the host, run `examples/boids_preview.rs`.
 It writes one 800×480 gray frame per refresh to stdout. Play the frames
