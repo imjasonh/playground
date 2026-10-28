@@ -261,7 +261,10 @@ a solid shape.
 
 The twelve boids start near the middle of the panel, each within about
 20 degrees of one shared heading. Separation is 10 logical pixels, about
-one arrow length, so they can fly close enough to read as one flock.
+one arrow length, so they can fly close enough to read as one flock. Each
+boid also gets a small random steering nudge every refresh, independent
+of its neighbors, so alignment pulls headings together without ever
+locking them onto the exact same direction.
 
 Boids steer away from the panel edges with a force that grows with the
 square of how far into the margin they've come, so they stay gentle in
@@ -325,7 +328,7 @@ Knobs, all constants:
 | `SWAP_DRIVE_POLARITY` | `src/grayscale_main.rs` | Set when the scene appears as a negative, or barely at all. |
 | `FULL_REFRESH_INTERVAL` | `src/grayscale_main.rs` | Time between cleanup full refreshes. |
 | `DriveConfig::swing` | `src/grayscale/drive.rs` | Steps from white to black. Fewer steps give fewer grays and faster swings per step. |
-| `FlockConfig` fields | `src/grayscale/boids.rs` | Flock size, speeds, triangle size, and flocking weights. `max_speed` is matched to `triangle_length` so the ink can reach the triangle's gray before it moves on. |
+| `FlockConfig` fields | `src/grayscale/boids.rs` | Flock size, speeds, triangle size, and flocking weights. `max_speed` is matched to `triangle_length` so the ink can reach the triangle's gray before it moves on. `wander_strength` sets how much headings drift apart instead of locking together. |
 
 To watch the estimated ink on the host, run `examples/boids_preview.rs`.
 It writes one 800×480 gray frame per refresh to stdout. Play the frames

@@ -31,6 +31,10 @@ pub struct FlockConfig {
     pub min_speed: f32,
     /// Steering acceleration limit per step.
     pub max_force: f32,
+    /// A small random steering force, fresh and independent each step for
+    /// every boid, so alignment pulls headings together without ever
+    /// letting them lock to the exact same direction.
+    pub wander_strength: f32,
     /// Alignment and cohesion only see neighbors within this radius.
     pub perception_radius: f32,
     /// Separation pushes away from neighbors closer than this.
@@ -69,6 +73,10 @@ impl Default for FlockConfig {
             max_speed: 0.29,
             min_speed: 0.16,
             max_force: 0.0075,
+            // Under half of max_force: enough that alignment never fully
+            // settles two boids onto the same heading, not so much that
+            // the flock looks jittery instead of gliding.
+            wander_strength: 0.003,
             // Wide enough that a flock spread across the panel still
             // counts as one neighborhood, so it gathers instead of
             // splitting into groups that can no longer see each other.
@@ -123,6 +131,7 @@ impl Rng {
 pub struct Flock {
     config: FlockConfig,
     boids: Vec<Boid>,
+    rng: Rng,
 }
 
 impl Flock {
@@ -149,17 +158,36 @@ impl Flock {
                 }
             })
             .collect();
-        Self { config, boids }
+        Self { config, boids, rng }
     }
 
     /// Advance the flock by one step.
     pub fn step(&mut self) {
-        let c = &self.config;
+        // Copied out so the wander loop below can borrow `self.rng`
+        // mutably while this stays in scope.
+        let c = self.config;
         let steering: Vec<(f32, f32)> = (0..self.boids.len())
             .map(|i| self.steering_for(i))
             .collect();
+        let wander: Vec<(f32, f32)> = (0..self.boids.len())
+            .map(|_| {
+                let angle = self.rng.next_range(0.0, 2.0 * PI);
+                let magnitude = self.rng.next_range(0.0, c.wander_strength);
+                (angle.cos() * magnitude, angle.sin() * magnitude)
+            })
+            .collect();
 
-        for (boid, (ax, ay)) in self.boids.iter_mut().zip(steering) {
+        for ((boid, (steer_x, steer_y)), (wx, wy)) in
+            self.boids.iter_mut().zip(steering).zip(wander)
+        {
+            let mut ax = steer_x + wx;
+            let mut ay = steer_y + wy;
+            let force = ax.hypot(ay);
+            if force > c.max_force {
+                let scale = c.max_force / force;
+                ax *= scale;
+                ay *= scale;
+            }
             boid.vx += ax;
             boid.vy += ay;
 
@@ -427,6 +455,33 @@ mod tests {
                 assert!(d < 0.8, "heading gap {d}");
             }
         }
+    }
+
+    #[test]
+    fn wander_keeps_headings_from_fully_converging() {
+        let config = FlockConfig::default();
+        let mut flock = Flock::new(config, 23);
+        for _ in 0..600 {
+            flock.step();
+        }
+        let headings = flock.headings();
+        let mut max_gap = 0.0f32;
+        for (i, a) in headings.iter().enumerate() {
+            for b in &headings[i + 1..] {
+                let mut d = (a - b).abs() % (2.0 * PI);
+                if d > PI {
+                    d = 2.0 * PI - d;
+                }
+                max_gap = max_gap.max(d);
+            }
+        }
+        // Without wander, alignment alone drives every heading gap toward
+        // zero; some spread after 600 steps shows the noise keeps working,
+        // not just scattering the initial headings before they settle.
+        assert!(
+            max_gap > 0.01,
+            "headings converged to a single direction: max gap {max_gap}"
+        );
     }
 
     #[test]
