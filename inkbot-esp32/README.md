@@ -278,8 +278,9 @@ make flash APP=grayscale PORT=/dev/cu.usbserial-XXXX
 make monitor PORT=/dev/cu.usbserial-XXXX
 ```
 
-Watch the monitor for lines like `4gray refresh tick=12 elapsed_ms=1400
-hz=0.71` — that is the real number to use instead of a guess. This firmware
+Watch the monitor for `4gray refresh tick=<n> elapsed_ms=<ms> hz=<hz>`
+lines: `elapsed_ms` is the measured time of one 4-gray refresh on your
+panel. This firmware
 has not been build- or hardware-tested from this change; expect to fix
 compile errors against your `espup` toolchain before it flashes, and treat
 any waveform timing as unmeasured until you see it on your panel.
