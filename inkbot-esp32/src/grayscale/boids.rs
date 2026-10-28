@@ -60,13 +60,15 @@ impl Default for FlockConfig {
             width: super::LOGICAL_WIDTH as f32,
             height: super::LOGICAL_HEIGHT as f32,
             // One refresh moves the ink one step of a 30-step swing. At
-            // this speed a triangle's length (30 logical pixels) covers a
-            // pixel on its central axis for about a full swing before the
-            // shape moves past, and a boid crosses the panel in about 22
-            // seconds at 22 refreshes a second.
-            max_speed: 0.80,
-            min_speed: 0.44,
-            max_force: 0.020,
+            // this speed a triangle's length (18 logical pixels) covers a
+            // pixel on its central axis for one full swing before the
+            // shape moves past, and a boid crosses the panel in about 31
+            // seconds at 22 refreshes a second. 0.58 rather than 0.6 keeps
+            // `length / max_speed` above the swing in f32, where 0.6 is
+            // not exact.
+            max_speed: 0.58,
+            min_speed: 0.32,
+            max_force: 0.015,
             // Wide enough that a flock spread across the panel still
             // counts as one neighborhood, so it gathers instead of
             // splitting into groups that can no longer see each other.
@@ -80,8 +82,8 @@ impl Default for FlockConfig {
             // room before the hard wall.
             edge_margin: 90.0,
             edge_weight: 0.6,
-            triangle_length: 30.0,
-            triangle_half_width: 10.0,
+            triangle_length: 18.0,
+            triangle_half_width: 5.0,
             shape_min_luma: 36,
         }
     }
