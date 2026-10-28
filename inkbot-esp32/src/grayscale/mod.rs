@@ -13,9 +13,10 @@
 //! the planner drives every pixel back to white.
 //!
 //! [`scene::BoidsScene`] is the demo scene shown while measuring: a small
-//! [`boids`] flock rendered as soft gray blobs, chosen to be continuously
-//! moving (so every refresh has something to draw) while staying visually
-//! calm (no hard edges, no sudden cuts).
+//! [`boids`] flock rendered as acute triangles pointing along their
+//! direction of travel, chosen to be continuously moving (so every refresh
+//! has something to draw) while staying visually calm (no hard edges, no
+//! sudden cuts).
 
 pub mod boids;
 pub mod drive;
@@ -26,7 +27,7 @@ use crate::panel::{PANEL_HEIGHT, PANEL_WIDTH};
 
 /// Baked into the grayscale demo ELF so `make flash APP=grayscale` can
 /// refuse a stale image, the same way `MAZE_FIRMWARE_ID` does for maze.
-pub const GRAYSCALE_FIRMWARE_ID: &str = "grayscale-esp32/0.4";
+pub const GRAYSCALE_FIRMWARE_ID: &str = "grayscale-esp32/0.5";
 
 /// Logical pixels are `LOGICAL_BLOCK`×`LOGICAL_BLOCK` physical pixels.
 pub const LOGICAL_BLOCK: usize = 2;

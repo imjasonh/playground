@@ -1,5 +1,6 @@
 //! The demo scene the grayscale drive mode shows: a small flock of boids
-//! ([`super::boids`]) rendered as soft gray blobs on a white field.
+//! ([`super::boids`]) rendered as acute triangles pointing along their
+//! direction of travel, on a white field.
 //!
 //! [`BoidsScene`] owns the flock and a logical-sized luma buffer so the
 //! drive loop can call [`BoidsScene::step`] once per refresh and hand

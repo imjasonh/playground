@@ -245,16 +245,24 @@ or mention `@inkbot status` in Slack.
 `grayscale-esp32` is a separate experimental firmware from `maze-esp32`.
 It does not show the maze. It plays a flock of 12 boids
 ([Reynolds' separation, alignment, and cohesion](https://www.red3d.com/cwr/boids/))
-drawn as soft gray blobs. The flock is the scene the drive loop refreshes
-as fast as the panel allows. It is USB-flash only: no Wi-Fi, no OTA pull,
-and not in the `inkbot` / `maze` OTA app registry.
+drawn as acute triangles that point in each boid's direction of travel.
+The flock is the scene the drive loop refreshes as fast as the panel
+allows. It is USB-flash only: no Wi-Fi, no OTA pull, and not in the
+`inkbot` / `maze` OTA app registry.
 
 Each refresh can darken or lighten a pixel by only one step of a 30-step
-swing. The flock is tuned for that limit. A boid moves at most 0.4
-logical pixels per refresh (about 18 panel pixels a second at 22
-refreshes a second), so crossing the 800-pixel width takes about 45
-seconds, and the center of a blob stays on a pixel long enough to reach
-its gray before the shape moves on. Faster motion leaves a pale streak.
+swing, so the flock's speed and triangle size are tuned together: a
+30-logical-pixel-long triangle moving 0.8 logical pixels per refresh
+(about 35 panel pixels a second at 22 refreshes a second) keeps a point
+on its central axis covered for about a full swing before the shape
+moves past. A boid crosses the 800-pixel width in about 22 seconds.
+Faster motion without a longer triangle leaves a pale streak instead of
+a solid shape.
+
+Boids steer away from the panel edges with a force that grows with the
+square of how far into the margin they've come, so they stay gentle in
+open water and turn sharply only right at the wall. That keeps the flock
+from lining up along an edge instead of turning back toward the middle.
 
 Instead of one multi-second factory waveform per image, it loads a custom
 waveform that drives a pixel for one controller frame per refresh, toward
@@ -313,6 +321,7 @@ Knobs, all constants:
 | `SWAP_DRIVE_POLARITY` | `src/grayscale_main.rs` | Set when the scene appears as a negative, or barely at all. |
 | `FULL_REFRESH_INTERVAL` | `src/grayscale_main.rs` | Time between cleanup full refreshes. |
 | `DriveConfig::swing` | `src/grayscale/drive.rs` | Steps from white to black. Fewer steps give fewer grays and faster swings per step. |
+| `FlockConfig` fields | `src/grayscale/boids.rs` | Flock size, speeds, triangle size, and flocking weights. `max_speed` is matched to `triangle_length` so the ink can reach the triangle's gray before it moves on. |
 
 To watch the estimated ink on the host, run `examples/boids_preview.rs`.
 It writes one 800×480 gray frame per refresh to stdout. Play the frames

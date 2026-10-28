@@ -1,8 +1,8 @@
 //! grayscale-esp32 — experimental grayscale video demo for the UC8179.
 //!
-//! Plays a small flock of boids through the custom one-step drive mode
-//! (`inkbot_esp32::grayscale`) as many times a second as the panel and SPI
-//! bus allow, and logs where each refresh's time goes. Every
+//! Plays a small flock of arrow-shaped boids through the custom one-step
+//! drive mode (`inkbot_esp32::grayscale`) as many times a second as the
+//! panel and SPI bus allow, and logs where each refresh's time goes. Every
 //! [`FULL_REFRESH_INTERVAL`] it drives every pixel back to white and runs a
 //! factory full refresh to clear ghosting and drift.
 //!

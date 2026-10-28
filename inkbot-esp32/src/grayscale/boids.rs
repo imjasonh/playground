@@ -1,13 +1,14 @@
 //! A small flock of boids (Reynolds' separation, alignment, and cohesion),
-//! stepped once per refresh and rendered as soft gray blobs.
+//! stepped once per refresh and rendered as acute triangles that point in
+//! each boid's direction of travel.
 //!
 //! Speeds in [`FlockConfig::default`] are set for the one-step drive: a
-//! blob has to sit on a pixel for about a full 30-step swing before the
+//! triangle has to sit on a pixel for about a full 30-step swing before the
 //! ink reaches the gray the scene asked for.
 //!
-//! Boids steer gently away from the edges of the logical canvas and bounce
-//! off them as a fallback, so the flock stays on screen without the
-//! discontinuous pop of wrapping around.
+//! Boids steer away from the edges of the logical canvas, more sharply the
+//! closer they get, and bounce off as a fallback, so the flock turns back
+//! toward the middle instead of lining up along the walls.
 
 use std::f32::consts::PI;
 
@@ -38,12 +39,18 @@ pub struct FlockConfig {
     pub alignment_weight: f32,
     pub cohesion_weight: f32,
     /// Distance from an edge at which boids start steering away from it.
+    /// The push grows with the square of how far into this margin a boid
+    /// has come, so it stays gentle in open water and sharp right at the
+    /// wall.
     pub edge_margin: f32,
     pub edge_weight: f32,
-    /// Blob radius in logical pixels.
-    pub blob_radius: f32,
-    /// Luma at a blob's center (0 = black). Edges fade to white (255).
-    pub blob_min_luma: u8,
+    /// Tip-to-base length of the triangle, along the direction of travel.
+    pub triangle_length: f32,
+    /// Half the triangle's width at the base. Must be less than
+    /// `triangle_length` for the triangle to stay acute.
+    pub triangle_half_width: f32,
+    /// Luma inside the triangle (0 = black). The edge fades to white (255).
+    pub shape_min_luma: u8,
 }
 
 impl Default for FlockConfig {
@@ -53,25 +60,29 @@ impl Default for FlockConfig {
             width: super::LOGICAL_WIDTH as f32,
             height: super::LOGICAL_HEIGHT as f32,
             // One refresh moves the ink one step of a 30-step swing. At
-            // this speed the dark core of a blob stays put long enough to
-            // reach its target gray before the shape moves on, and a boid
-            // takes about 45 seconds to cross the panel at 22 refreshes
-            // a second.
-            max_speed: 0.40,
-            min_speed: 0.22,
-            max_force: 0.010,
+            // this speed a triangle's length (30 logical pixels) covers a
+            // pixel on its central axis for about a full swing before the
+            // shape moves past, and a boid crosses the panel in about 22
+            // seconds at 22 refreshes a second.
+            max_speed: 0.80,
+            min_speed: 0.44,
+            max_force: 0.020,
             // Wide enough that a flock spread across the panel still
             // counts as one neighborhood, so it gathers instead of
             // splitting into groups that can no longer see each other.
             perception_radius: 320.0,
-            separation_radius: 42.0,
+            separation_radius: 46.0,
             separation_weight: 1.4,
             alignment_weight: 1.2,
             cohesion_weight: 0.45,
-            edge_margin: 40.0,
-            edge_weight: 0.25,
-            blob_radius: 18.0,
-            blob_min_luma: 36,
+            // At this speed a boid needs on the order of a hundred
+            // refreshes to turn around; this margin gives it that much
+            // room before the hard wall.
+            edge_margin: 90.0,
+            edge_weight: 0.6,
+            triangle_length: 30.0,
+            triangle_half_width: 10.0,
+            shape_min_luma: 36,
         }
     }
 }
@@ -155,9 +166,9 @@ impl Flock {
             boid.x += boid.vx;
             boid.y += boid.vy;
 
-            // A hard wall is the fallback the soft edge force is meant to
-            // make rare: it keeps the flock bounded even if several boids
-            // push each other toward a corner at once.
+            // A hard wall is the fallback the edge force is meant to make
+            // rare: it keeps the flock bounded even if several boids push
+            // each other toward a corner at once.
             if boid.x < 0.0 {
                 boid.x = 0.0;
                 boid.vx = -boid.vx * 0.5;
@@ -212,11 +223,16 @@ impl Flock {
             ay += (avg_y / n - me.y) * c.cohesion_weight / c.perception_radius;
         }
 
+        // Squared so the push stays gentle through most of the margin and
+        // only takes over right at the wall, instead of constantly
+        // fighting cohesion across the whole margin width.
         let edge_push = |pos: f32, extent: f32| -> f32 {
             if pos < c.edge_margin {
-                (c.edge_margin - pos) / c.edge_margin
+                let t = (c.edge_margin - pos) / c.edge_margin;
+                t * t
             } else if pos > extent - c.edge_margin {
-                -(pos - (extent - c.edge_margin)) / c.edge_margin
+                let t = (pos - (extent - c.edge_margin)) / c.edge_margin;
+                -(t * t)
             } else {
                 0.0
             }
@@ -233,18 +249,40 @@ impl Flock {
         (ax, ay)
     }
 
-    /// Render the flock as soft gray blobs on white. `buffer` must be
-    /// `width * height` bytes, row-major.
+    /// Render the flock as acute triangles on white, each pointing along
+    /// its boid's heading. `buffer` must be `width * height` bytes,
+    /// row-major.
     pub fn render_luma(&self, buffer: &mut [u8], width: usize, height: usize) {
         assert_eq!(buffer.len(), width * height);
         buffer.fill(255);
 
-        let radius = self.config.blob_radius;
-        let span = radius.ceil() as isize;
-        let min_luma = self.config.blob_min_luma;
+        let length = self.config.triangle_length;
+        let half_width = self.config.triangle_half_width;
+        let min_luma = self.config.shape_min_luma;
+        let span = (length + half_width).ceil() as isize + 1;
+
         for boid in &self.boids {
-            let (cx, cy) = (boid.x, boid.y);
-            let (icx, icy) = (cx.round() as isize, cy.round() as isize);
+            let speed = boid.vx.hypot(boid.vy).max(f32::EPSILON);
+            let (fx, fy) = (boid.vx / speed, boid.vy / speed);
+            let (px_perp, py_perp) = (-fy, fx);
+
+            let tip = (boid.x, boid.y);
+            let base_center = (boid.x - fx * length, boid.y - fy * length);
+            let mut base_l = (
+                base_center.0 + px_perp * half_width,
+                base_center.1 + py_perp * half_width,
+            );
+            let mut base_r = (
+                base_center.0 - px_perp * half_width,
+                base_center.1 - py_perp * half_width,
+            );
+            // Put the vertices in counter-clockwise order so the edge
+            // functions below agree on which side is "inside".
+            if signed_area2(tip, base_l, base_r) < 0.0 {
+                std::mem::swap(&mut base_l, &mut base_r);
+            }
+
+            let (icx, icy) = (boid.x.round() as isize, boid.y.round() as isize);
             for dy in -span..=span {
                 let py = icy + dy;
                 if py < 0 || py >= height as isize {
@@ -255,13 +293,12 @@ impl Flock {
                     if px < 0 || px >= width as isize {
                         continue;
                     }
-                    let dist = (px as f32 - cx).hypot(py as f32 - cy);
-                    if dist > radius {
+                    let p = (px as f32 + 0.5, py as f32 + 0.5);
+                    let coverage = triangle_coverage(p, tip, base_l, base_r);
+                    if coverage <= 0.0 {
                         continue;
                     }
-                    let t = dist / radius;
-                    let falloff = 0.5 * (1.0 + (PI * t).cos());
-                    let luma = 255 - ((255 - min_luma as i32) as f32 * falloff).round() as i32;
+                    let luma = 255 - ((255 - min_luma as i32) as f32 * coverage).round() as i32;
                     let idx = py as usize * width + px as usize;
                     buffer[idx] = buffer[idx].min(luma.clamp(0, 255) as u8);
                 }
@@ -280,6 +317,29 @@ impl Flock {
     }
 }
 
+/// Twice the signed area of triangle `abc`. Positive when `a, b, c` wind
+/// counter-clockwise.
+fn signed_area2(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+    (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+/// Approximate antialiased coverage of point `p` by the counter-clockwise
+/// triangle `a, b, c`, in `[0, 1]`. `0` is fully outside, `1` fully inside,
+/// with about a one-pixel-wide soft edge in between.
+fn triangle_coverage(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 {
+    let edge_distance = |u: (f32, f32), v: (f32, f32)| -> f32 {
+        let len = (v.0 - u.0).hypot(v.1 - u.1);
+        if len <= f32::EPSILON {
+            return f32::NEG_INFINITY;
+        }
+        signed_area2(u, v, p) / len
+    };
+    let min_distance = edge_distance(a, b)
+        .min(edge_distance(b, c))
+        .min(edge_distance(c, a));
+    (min_distance + 0.5).clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,7 +352,8 @@ mod tests {
             edge_margin: 8.0,
             perception_radius: 24.0,
             separation_radius: 8.0,
-            blob_radius: 3.0,
+            triangle_length: 6.0,
+            triangle_half_width: 2.0,
             ..FlockConfig::default()
         }
     }
@@ -301,13 +362,23 @@ mod tests {
     fn default_motion_is_slow_enough_for_one_step_drive() {
         let flock = FlockConfig::default();
         let swing = super::super::drive::DriveConfig::default().swing as f32;
-        // The dark core (inner 80% of the radius) must cover a pixel for
-        // at least a full white-to-black swing, or the ink stays a pale
-        // streak behind a shape that has already moved on.
-        let dwell_frames = 0.8 * flock.blob_radius / flock.max_speed;
+        // A point on the triangle's central axis is covered for roughly
+        // `length / max_speed` refreshes as the shape translates past it;
+        // that needs to be at least one full white-to-black swing, or the
+        // ink stays a pale streak behind a shape that has already moved on.
+        let dwell_frames = flock.triangle_length / flock.max_speed;
         assert!(
             dwell_frames >= swing,
-            "core covers a pixel for {dwell_frames} frames, swing is {swing}"
+            "shape covers a pixel for {dwell_frames} frames, swing is {swing}"
+        );
+    }
+
+    #[test]
+    fn default_triangle_is_acute() {
+        let flock = FlockConfig::default();
+        assert!(
+            flock.triangle_half_width < flock.triangle_length,
+            "a half-width this wide relative to the length makes the apex angle obtuse"
         );
     }
 
@@ -393,8 +464,17 @@ mod tests {
         let darkest = *buffer.iter().min().unwrap();
         assert!(darkest < 255, "the one boid should darken some pixel");
         assert!(
-            darkest >= config.blob_min_luma,
+            darkest >= config.shape_min_luma,
             "never darker than configured"
         );
+    }
+
+    #[test]
+    fn triangle_coverage_is_inside_center_outside_far_away() {
+        let a = (10.0, 0.0);
+        let b = (0.0, 10.0);
+        let c = (0.0, -10.0);
+        assert_eq!(triangle_coverage((3.0, 0.0), a, b, c), 1.0);
+        assert_eq!(triangle_coverage((100.0, 100.0), a, b, c), 0.0);
     }
 }
