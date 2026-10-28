@@ -135,12 +135,15 @@ pub fn analyze(program: &Program) -> AnalysisResult {
         0x10
     };
     // Detect VRAM-buffer intrinsic usage by scanning the AST. When
-    // present, the buffer reserves `$0400-$04FF` and we have to
-    // start the user-RAM bump pointer past that region — otherwise
-    // user globals and the buffer would alias. Programs that don't
-    // use the buffer keep the legacy `$0300` start.
+    // present, the buffer reserves `$0400-$04FF`, and the main-RAM
+    // bump allocator steps over that page: allocations fill
+    // `$0300-$03FF` first, and the first one that would reach
+    // `$0400` moves to `$0500`.
     let uses_vram_buf = program_uses_vram_buf(program);
-    let initial_ram_addr: u16 = if uses_vram_buf { 0x0500 } else { 0x0300 };
+    let ram_hole = uses_vram_buf.then_some((
+        crate::runtime::VRAM_BUF_BASE,
+        crate::runtime::VRAM_BUF_END + 1,
+    ));
     let mut analyzer = Analyzer {
         symbols: HashMap::new(),
         var_allocations: Vec::new(),
@@ -152,7 +155,8 @@ pub fn analyze(program: &Program) -> AnalysisResult {
         palette_names,
         background_names,
         room_names,
-        next_ram_addr: initial_ram_addr,
+        next_ram_addr: 0x0300,
+        ram_hole,
         next_zp_addr,
         call_graph: HashMap::new(),
         max_depths: HashMap::new(),
@@ -214,6 +218,10 @@ struct Analyzer {
     /// `paint_room Name` targets.
     room_names: HashSet<String>,
     next_ram_addr: u16,
+    /// Main RAM the runtime owns, as a half-open `[start, end)` range
+    /// that no allocation may overlap: the VRAM ring when the program
+    /// uses it.
+    ram_hole: Option<(u16, u16)>,
     next_zp_addr: u8,
     /// Bump-pointer for save-block (`save { var ... }`) variables.
     /// Initialised to `$6000` (the iNES SRAM window) and capped at
@@ -2174,6 +2182,12 @@ impl Analyzer {
 
         // Larger / remaining allocations go into the main RAM region
         // after the OAM buffer.
+        if let Some((hole_start, hole_end)) = self.ram_hole {
+            let end = self.next_ram_addr.checked_add(size)?;
+            if self.next_ram_addr < hole_end && end > hole_start {
+                self.next_ram_addr = hole_end;
+            }
+        }
         let end = self.next_ram_addr.checked_add(size)?;
         if end > RAM_END {
             self.diagnostics.push(
