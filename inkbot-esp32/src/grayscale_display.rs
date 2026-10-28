@@ -1,24 +1,20 @@
-//! UC8179 "4 Gray" and "fast" full-refresh modes for the Waveshare 7.5″ V2.
+//! UC8179 driver for the grayscale drive mode on the Waveshare 7.5″ V2.
 //!
-//! `init_4gray`/`show_4gray` and `init_fast`/`show_fast` transliterate
-//! Waveshare's own `EPD_7IN5_V2_Init_4Gray` / `_Display_4Gray` and
-//! `_Init_Fast` (<https://github.com/waveshare/e-Paper>,
-//! `Arduino_R4/src/e-Paper/EPD_7in5_V2.cpp`). Both select a built-in,
-//! factory-programmed waveform through the same "temperature select" trick
-//! `maze_display.rs` already uses for partial refresh (`0xE0=0x02`,
-//! `0xE5=0x6E`); 4-gray and fast use `0x5F` and `0x5A` instead. No
-//! waveform-LUT registers (`0x20`-`0x25`) are written, and no
-//! one-time-programming command is sent — only commands Waveshare's own
-//! driver sends for this exact panel.
+//! Two modes share one panel:
 //!
-//! **Timing is not yet measured on real hardware.** The datasheet does not
-//! state the 4-gray or fast waveform's length, and InkBoy's own technique —
-//! a short *custom* waveform, redriving only pixels that changed, many
-//! times a second — does not apply to either mode here: both still redrive
-//! the whole panel in one `0x12` (`DISPLAY REFRESH`) call, timed by their
-//! own factory waveform, not by anything this firmware controls.
-//! `grayscale_main.rs` logs each call's wall-clock time so the real number
-//! for this board and panel can be read off the serial monitor.
+//! - [`Panel::full_refresh_white`] is the factory waveform, with the same
+//!   init and plane polarity `maze_display.rs` uses. It clears ghosting and
+//!   resets the drive planner's model.
+//! - [`Panel::init_drive`] loads the custom one-step tables from
+//!   [`inkbot_esp32::grayscale::lut`] (panel setting `0x3F`, "LUT from
+//!   registers", as in GxEPD2's fast partial mode). Each
+//!   [`Panel::start_drive`] then runs one short refresh, and the caller
+//!   plans the next one while the panel is busy.
+//!
+//! Drive mode leaves the panel powered between refreshes and polls BUSY
+//! without the 100 ms settle and 10 ms poll steps the full-refresh path
+//! uses, because at 20+ refreshes a second those delays would be most of
+//! the budget.
 
 use std::time::{Duration, Instant};
 
@@ -26,10 +22,13 @@ use anyhow::{anyhow, Context, Result};
 use esp_idf_svc::hal::{
     delay::{Ets, FreeRtos},
     gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull},
-    spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver},
+    spi::{config, Dma, SpiAnyPins, SpiDeviceDriver, SpiDriver},
     units::FromValueType,
 };
 
+use inkbot_esp32::grayscale::lut::{
+    DriveLuts, PANEL_SETTING_REGISTER_LUT, VCOM_DATA_INTERVAL, VCOM_DC,
+};
 use inkbot_esp32::FRAME_BYTES;
 
 type BusyPin = PinDriver<'static, Input>;
@@ -38,22 +37,32 @@ type RstPin = PinDriver<'static, Output>;
 type PanelSpi = SpiDeviceDriver<'static, SpiDriver<'static>>;
 
 const CMD_PANEL_SETTING: u8 = 0x00;
+const CMD_POWER_SETTING: u8 = 0x01;
 const CMD_POWER_OFF: u8 = 0x02;
 const CMD_POWER_ON: u8 = 0x04;
 const CMD_BOOSTER: u8 = 0x06;
-const CMD_DEEP_SLEEP: u8 = 0x07;
 const CMD_DTM1: u8 = 0x10;
 const CMD_REFRESH: u8 = 0x12;
 const CMD_DTM2: u8 = 0x13;
+const CMD_DUAL_SPI: u8 = 0x15;
 const CMD_VCOM: u8 = 0x50;
+const CMD_TCON: u8 = 0x60;
+const CMD_RESOLUTION: u8 = 0x61;
 const CMD_GET_STATUS: u8 = 0x71;
-const CMD_TEMP_SEL: u8 = 0xE0;
-const CMD_TEMP_LUT: u8 = 0xE5;
+const CMD_VCOM_DC: u8 = 0x82;
 
-/// `0xE5` value `Init_4Gray` loads after `0xE0=0x02`.
-const TEMP_LUT_4GRAY: u8 = 0x5F;
-/// `0xE5` value `Init_Fast` loads after `0xE0=0x02`.
-const TEMP_LUT_FAST: u8 = 0x5A;
+/// SPI clock. `maze_display.rs` uses 4 MHz, at which one plane takes
+/// 96 ms; 20 MHz brings that to about 19 ms. The UC8179's maximum serial
+/// clock is not confirmed here: if the panel shows noise or ignores
+/// commands, lower this.
+pub const SPI_MHZ: u32 = 20;
+
+/// Largest single DMA transfer. Without DMA, esp-idf-hal splits every
+/// write into 64-byte transactions with a gap after each.
+const DMA_TRANSFER_BYTES: usize = 4092;
+
+/// Upper bound on one drive refresh before it counts as stuck.
+const DRIVE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Owns the SPI bus + panel for the grayscale demo firmware.
 pub struct Panel {
@@ -64,10 +73,8 @@ pub struct Panel {
 }
 
 impl Panel {
-    /// Consume the Waveshare board's fixed display pins. Does not bring the
-    /// panel up — `show_4gray` / `show_fast` each run a full `Init_*`
-    /// sequence first, mirroring how Waveshare's own demos always call
-    /// `Init_*` immediately before a `Display_*` call.
+    /// Consume the Waveshare board's fixed display pins. Does not touch the
+    /// panel; call [`Panel::full_refresh_white`] first.
     #[allow(clippy::too_many_arguments)]
     pub fn new<SPI, SCLK, MOSI, CS, BUSY, DC, RST>(
         spi: SPI,
@@ -87,14 +94,14 @@ impl Panel {
         DC: OutputPin + 'static,
         RST: OutputPin + 'static,
     {
-        let spi_config = config::Config::new().baudrate(4_u32.MHz().into());
+        let spi_config = config::Config::new().baudrate(SPI_MHZ.MHz().into());
         let spi = SpiDeviceDriver::new_single(
             spi,
             sclk,
             mosi,
             Option::<BUSY>::None,
             Some(cs),
-            &config::DriverConfig::new(),
+            &config::DriverConfig::new().dma(Dma::Auto(DMA_TRANSFER_BYTES)),
             &spi_config,
         )
         .context("configure e-paper SPI")?;
@@ -106,75 +113,103 @@ impl Panel {
         Ok(Self { spi, busy, dc, rst })
     }
 
-    /// Full-refresh a 4-level image, given as the two `DTM1`/`DTM2` planes
-    /// [`inkbot_esp32::grayscale::plan_panel_frame`] produces. Leaves the
-    /// panel awake; call [`Panel::sleep`] when done for the cycle.
-    pub fn show_4gray(&mut self, old_plane: &[u8], new_plane: &[u8]) -> Result<()> {
-        if old_plane.len() != FRAME_BYTES || new_plane.len() != FRAME_BYTES {
-            return Err(anyhow!(
-                "4-gray planes must each be {FRAME_BYTES} bytes, got {} and {}",
-                old_plane.len(),
-                new_plane.len()
-            ));
-        }
-        self.init_4gray()?;
+    /// Factory full refresh to white, using `maze_display.rs`'s init and
+    /// plane polarity. Takes a few seconds. Leaves the panel in OTP mode:
+    /// call [`Panel::init_drive`] before driving again.
+    pub fn full_refresh_white(&mut self) -> Result<()> {
+        self.init_full()?;
+        let white = [0xFFu8; 1000];
         self.cmd(CMD_DTM1)?;
-        self.data(old_plane)?;
+        for _ in 0..FRAME_BYTES / white.len() {
+            self.data(&white)?;
+        }
         self.cmd(CMD_DTM2)?;
-        self.data(new_plane)?;
-        self.refresh()
+        for _ in 0..FRAME_BYTES / white.len() {
+            self.data(&[0x00; 1000])?;
+        }
+        self.cmd(CMD_REFRESH)?;
+        FreeRtos::delay_ms(100);
+        self.wait_idle_slow()
     }
 
-    /// Full-refresh a packed 1-bit framebuffer (MSB first, 1 = white) using
-    /// Waveshare's "fast" full-refresh waveform, which is still a complete
-    /// panel redrive (not InkBoy's per-pixel short pulse) but is a
-    /// vendor-documented faster alternative to the normal factory waveform.
-    pub fn show_fast(&mut self, frame: &[u8]) -> Result<()> {
-        if frame.len() != FRAME_BYTES {
-            return Err(anyhow!(
-                "framebuffer must be {FRAME_BYTES} bytes, got {}",
-                frame.len()
-            ));
+    /// Reset the controller and load the custom drive tables. The old
+    /// plane is undefined until the next [`Panel::write_old`].
+    pub fn init_drive(&mut self, luts: &DriveLuts) -> Result<()> {
+        self.hardware_reset();
+        self.cmd_data(CMD_POWER_SETTING, &[0x07, 0x07, 0x3F, 0x3F])?;
+        self.cmd_data(CMD_BOOSTER, &[0x17, 0x17, 0x28, 0x17])?;
+        self.cmd(CMD_POWER_ON)?;
+        FreeRtos::delay_ms(100);
+        self.wait_idle_slow()?;
+        self.cmd_data(CMD_PANEL_SETTING, &[PANEL_SETTING_REGISTER_LUT])?;
+        self.cmd_data(CMD_RESOLUTION, &[0x03, 0x20, 0x01, 0xE0])?;
+        self.cmd_data(CMD_DUAL_SPI, &[0x00])?;
+        self.cmd_data(CMD_VCOM, &VCOM_DATA_INTERVAL)?;
+        self.cmd_data(CMD_TCON, &[0x22])?;
+        self.cmd_data(CMD_VCOM_DC, &[VCOM_DC])?;
+        for (command, table) in &luts.registers {
+            self.cmd_data(*command, table)?;
         }
-        self.init_fast()?;
-        self.cmd(CMD_DTM1)?;
-        self.data(frame)?;
-        self.cmd(CMD_DTM2)?;
-        self.data_inverted(frame)?;
-        self.refresh()
-    }
-
-    /// Power the panel down until the next `show_*` call.
-    pub fn sleep(&mut self) -> Result<()> {
-        self.wait_idle()?;
-        self.cmd_data(CMD_VCOM, &[0xF7])?;
-        self.cmd(CMD_POWER_OFF)?;
-        self.wait_idle()?;
-        self.cmd_data(CMD_DEEP_SLEEP, &[0xA5])?;
         Ok(())
     }
 
-    /// `EPD_7IN5_V2_Init_4Gray()`.
-    fn init_4gray(&mut self) -> Result<()> {
-        self.init_with_temp_lut(TEMP_LUT_4GRAY)
+    pub fn write_old(&mut self, plane: &[u8]) -> Result<()> {
+        self.write_plane(CMD_DTM1, plane)
     }
 
-    /// `EPD_7IN5_V2_Init_Fast()`. Identical to `Init_4Gray` except the
-    /// `0xE5` value, matching the vendor source exactly.
-    fn init_fast(&mut self) -> Result<()> {
-        self.init_with_temp_lut(TEMP_LUT_FAST)
+    pub fn write_new(&mut self, plane: &[u8]) -> Result<()> {
+        self.write_plane(CMD_DTM2, plane)
     }
 
-    fn init_with_temp_lut(&mut self, temp_lut: u8) -> Result<()> {
+    /// Start one drive refresh and return while the panel is busy.
+    pub fn start_drive(&mut self) -> Result<()> {
+        self.cmd(CMD_REFRESH)?;
+        // Give BUSY time to assert before anyone polls it.
+        Ets::delay_us(200);
+        Ok(())
+    }
+
+    /// Wait for the refresh [`Panel::start_drive`] began.
+    pub fn wait_drive(&mut self) -> Result<()> {
+        let start = Instant::now();
+        while self.busy.is_low() {
+            if start.elapsed() > DRIVE_TIMEOUT {
+                return Err(anyhow!("drive refresh busy timeout"));
+            }
+            Ets::delay_us(50);
+        }
+        Ok(())
+    }
+
+    /// Power the panel's drive voltages off.
+    pub fn power_off(&mut self) -> Result<()> {
+        self.cmd(CMD_POWER_OFF)?;
+        self.wait_idle_slow()
+    }
+
+    fn write_plane(&mut self, command: u8, plane: &[u8]) -> Result<()> {
+        if plane.len() != FRAME_BYTES {
+            return Err(anyhow!(
+                "plane must be {FRAME_BYTES} bytes, got {}",
+                plane.len()
+            ));
+        }
+        self.cmd(command)?;
+        self.data(plane)
+    }
+
+    fn init_full(&mut self) -> Result<()> {
         self.hardware_reset();
-        self.cmd_data(CMD_PANEL_SETTING, &[0x1F])?;
-        self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
+        self.cmd_data(CMD_POWER_SETTING, &[0x07, 0x07, 0x3F, 0x3F])?;
+        self.cmd_data(CMD_BOOSTER, &[0x17, 0x17, 0x28, 0x17])?;
         self.cmd(CMD_POWER_ON)?;
         FreeRtos::delay_ms(100);
-        self.wait_idle()?;
-        self.cmd_data(CMD_BOOSTER, &[0x27, 0x27, 0x18, 0x17])?;
-        self.cmd_data(CMD_TEMP_SEL, &[0x02])?;
-        self.cmd_data(CMD_TEMP_LUT, &[temp_lut])?;
+        self.wait_idle_slow()?;
+        self.cmd_data(CMD_PANEL_SETTING, &[0x1F])?;
+        self.cmd_data(CMD_RESOLUTION, &[0x03, 0x20, 0x01, 0xE0])?;
+        self.cmd_data(CMD_DUAL_SPI, &[0x00])?;
+        self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
+        self.cmd_data(CMD_TCON, &[0x22])?;
         Ok(())
     }
 
@@ -187,16 +222,7 @@ impl Panel {
         FreeRtos::delay_ms(200);
     }
 
-    fn refresh(&mut self) -> Result<()> {
-        self.cmd(CMD_REFRESH)?;
-        FreeRtos::delay_ms(100);
-        self.wait_idle()
-    }
-
-    fn wait_idle(&mut self) -> Result<()> {
-        // BUSY is low while the UC8179 is working (matches maze_display.rs).
-        // 4-gray and fast refresh times are unmeasured; this timeout is a
-        // generous upper bound, not a measurement of either mode's speed.
+    fn wait_idle_slow(&mut self) -> Result<()> {
         let start = Instant::now();
         loop {
             self.cmd(CMD_GET_STATUS)?;
@@ -204,7 +230,7 @@ impl Panel {
             if !self.busy.is_low() {
                 break;
             }
-            if start.elapsed() > Duration::from_secs(20) {
+            if start.elapsed() > Duration::from_secs(15) {
                 return Err(anyhow!("panel busy timeout"));
             }
         }
@@ -229,19 +255,5 @@ impl Panel {
     fn cmd_data(&mut self, command: u8, bytes: &[u8]) -> Result<()> {
         self.cmd(command)?;
         self.data(bytes)
-    }
-
-    fn data_inverted(&mut self, bytes: &[u8]) -> Result<()> {
-        self.dc.set_high().map_err(|e| anyhow!("dc high: {e:?}"))?;
-        let mut chunk = [0u8; 256];
-        for source in bytes.chunks(chunk.len()) {
-            for (i, &b) in source.iter().enumerate() {
-                chunk[i] = !b;
-            }
-            self.spi
-                .write(&chunk[..source.len()])
-                .map_err(|e| anyhow!("spi inv data: {e:?}"))?;
-        }
-        Ok(())
     }
 }

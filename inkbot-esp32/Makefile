@@ -112,7 +112,7 @@ help:
 	@echo "  make build-grayscale  Cross-compile the grayscale-esp32 measurement demo (not part of 'build')"
 	@echo "  make flash          Build + flash $(FIRMWARE_ID) to $(PORT) (APP=$(APP))"
 	@echo "  make flash APP=maze Flash the maze firmware (same OTA partition table)"
-	@echo "  make flash APP=grayscale  Flash the 4-gray measurement demo (USB-only, no OTA)"
+	@echo "  make flash APP=grayscale  Flash the grayscale video demo (USB-only, no OTA)"
 	@echo "  make build GCP=0    inkbot image without Cloud Logging / Monitoring"
 	@echo "  make flash-all      Erase + write bootloader, partition table, app"
 	@echo "  make provision      Write NVS from provisioning.toml (needs one prior make build)"

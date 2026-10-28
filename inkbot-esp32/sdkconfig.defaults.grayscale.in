@@ -1,6 +1,12 @@
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 
+# The drive loop plans each refresh while the previous one runs, at 20+
+# refreshes a second. Full CPU speed shortens planning, and a 1 ms tick
+# lets the loop yield for 1 ms instead of 10 ms.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+
 # grayscale-esp32 never opens TLS. Skip the CA store the inkbot image carries.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 

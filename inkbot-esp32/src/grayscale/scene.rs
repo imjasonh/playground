@@ -1,80 +1,77 @@
-//! Procedural demo scene: a moving 4-band circle that exercises every shade
-//! and every transition between them, for reading real refresh latency and
-//! ghosting off actual hardware.
+//! Procedural demo scene for tuning the drive mode on real hardware: a dark
+//! disc with a radial gradient that orbits the panel, over a white field
+//! with a fixed 8-step gray ramp along the bottom.
 //!
-//! This is a synthetic test pattern, not a video decoder — there is no SD
-//! card, no file format, and no codec here. It is meant to replace both:
-//! a known, repeatable "video" to watch while tuning, the same role
-//! InkBoy's transition test and PaperBoy's moving targets play for their
-//! panels.
+//! This is a synthetic test pattern, not a video decoder. The moving disc
+//! shows ghosting and how far behind a moving edge the pixels settle; the
+//! ramp shows how many distinct grays the drive steps produce.
 
-use super::{Shade, LOGICAL_HEIGHT, LOGICAL_WIDTH};
+use super::{LOGICAL_HEIGHT, LOGICAL_WIDTH};
 
-/// Render logical frame `tick` (each call one step further along the path).
-/// Output length is always `LOGICAL_WIDTH * LOGICAL_HEIGHT`.
-pub fn render_demo_frame(tick: u32) -> Vec<Shade> {
+const RAMP_STEPS: usize = 8;
+
+/// The scene at refresh `tick`, as a luma function of logical `(x, y)`
+/// (`0` = black, `255` = white).
+pub fn demo_scene(tick: u32) -> impl Fn(usize, usize) -> u8 {
     let w = LOGICAL_WIDTH as i32;
-    let h = LOGICAL_HEIGHT as i32;
-    let margin = 40i32.min(w / 4).min(h / 4).max(1);
-    let t = tick as f32 * 0.08;
+    let ramp_top = LOGICAL_HEIGHT * 7 / 8;
+    let h = ramp_top as i32;
+    let radius = (w.min(h) / 5).max(4);
+    let t = tick as f32 * 0.05;
+    let cx = radius + ((w - 2 * radius) as f32 * (0.5 + 0.5 * t.sin())) as i32;
+    let cy = radius + ((h - 2 * radius) as f32 * (0.5 + 0.5 * (t * 1.7).cos())) as i32;
+    let r_sq = radius * radius;
 
-    let span_x = (w - 2 * margin).max(1) as f32;
-    let span_y = (h - 2 * margin).max(1) as f32;
-    let cx = margin + (span_x * (0.5 + 0.5 * t.sin())) as i32;
-    let cy = margin + (span_y * (0.5 + 0.5 * (t * 1.3).cos())) as i32;
-    let radius = (w.min(h) / 8).max(4);
-
-    let mut out = vec![Shade::White; LOGICAL_WIDTH * LOGICAL_HEIGHT];
-    for y in 0..h {
-        for x in 0..w {
-            let dx = x - cx;
-            let dy = y - cy;
-            let dist_sq = dx * dx + dy * dy;
-            let shade = if dist_sq <= (radius / 4).pow(2) {
-                Shade::Black
-            } else if dist_sq <= (radius / 2).pow(2) {
-                Shade::Gray2
-            } else if dist_sq <= radius.pow(2) {
-                Shade::Gray1
-            } else {
-                Shade::White
-            };
-            out[(y * w + x) as usize] = shade;
+    move |x, y| {
+        if y >= ramp_top {
+            let step = x * RAMP_STEPS / LOGICAL_WIDTH;
+            return (step * 255 / (RAMP_STEPS - 1)) as u8;
+        }
+        let (dx, dy) = (x as i32 - cx, y as i32 - cy);
+        let d_sq = dx * dx + dy * dy;
+        if d_sq >= r_sq {
+            255
+        } else {
+            (d_sq * 255 / r_sq) as u8
         }
     }
-    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn frame_is_logical_sized() {
-        let frame = render_demo_frame(0);
-        assert_eq!(frame.len(), LOGICAL_WIDTH * LOGICAL_HEIGHT);
+    fn frame(tick: u32) -> Vec<u8> {
+        let scene = demo_scene(tick);
+        (0..LOGICAL_HEIGHT)
+            .flat_map(|y| (0..LOGICAL_WIDTH).map(move |x| (x, y)))
+            .map(|(x, y)| scene(x, y))
+            .collect()
     }
 
     #[test]
-    fn frame_uses_every_shade() {
-        let frame = render_demo_frame(0);
-        for shade in [Shade::White, Shade::Gray1, Shade::Gray2, Shade::Black] {
-            assert!(
-                frame.contains(&shade),
-                "demo frame is missing {shade:?}; widen the test pattern"
-            );
-        }
+    fn scene_spans_black_to_white() {
+        let f = frame(0);
+        assert_eq!(f.iter().min(), Some(&0));
+        assert_eq!(f.iter().max(), Some(&255));
     }
 
     #[test]
-    fn frame_changes_with_tick() {
-        let a = render_demo_frame(0);
-        let b = render_demo_frame(10);
-        assert_ne!(a, b, "the circle should have moved after 10 ticks");
+    fn ramp_has_eight_steps() {
+        let scene = demo_scene(0);
+        let y = LOGICAL_HEIGHT - 1;
+        let mut steps: Vec<u8> = (0..LOGICAL_WIDTH).map(|x| scene(x, y)).collect();
+        steps.dedup();
+        assert_eq!(steps.len(), RAMP_STEPS);
     }
 
     #[test]
-    fn frame_is_deterministic() {
-        assert_eq!(render_demo_frame(7), render_demo_frame(7));
+    fn disc_moves_between_ticks() {
+        assert_ne!(frame(0), frame(10));
+    }
+
+    #[test]
+    fn scene_is_deterministic() {
+        assert_eq!(frame(7), frame(7));
     }
 }

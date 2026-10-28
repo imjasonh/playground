@@ -38,7 +38,7 @@ firmware = []
 inkbot-lib = []
 # Maze generator / solver / renderer.
 maze-lib = []
-# 4-gray planner/packer + demo scene (grayscale-esp32 measurement firmware).
+# Drive-step planner, custom waveform tables, and demo scene (grayscale-esp32).
 grayscale-lib = []
 # Wi-Fi + HTTP client types.
 net = ["dep:embedded-svc"]

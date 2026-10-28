@@ -240,35 +240,40 @@ curl -H "Authorization: Bearer $UPLOAD_SECRET" https://inkbot.<account>.workers.
 
 or mention `@inkbot status` in Slack.
 
-## Grayscale measurement demo (experimental)
+## Grayscale video demo (experimental)
 
-`grayscale-esp32` is a measurement tool, not a shipped app: it loops a
-procedurally generated moving scene through the UC8179's native 4-level "4
-Gray" mode and logs each refresh's wall-clock time, so the panel's real
-refresh rate can be read off the serial monitor instead of estimated. It is
-USB-flash only — no Wi-Fi, no OTA pull, and it is not in the `inkbot` /
-`maze` OTA app registry.
+`grayscale-esp32` plays a procedural scene (a dark disc orbiting over a
+white field, with an 8-step gray ramp along the bottom) as many times a
+second as the panel allows. It is USB-flash only: no Wi-Fi, no OTA pull,
+and not in the `inkbot` / `maze` OTA app registry.
 
-The four gray levels and the two-plane (`DTM1`/`DTM2`) bit encoding are
-re-derived from Waveshare's own `EPD_7IN5_V2_Display_4Gray()`
-(`Arduino_R4/src/e-Paper/EPD_7in5_V2.cpp` in
-[waveshare/e-Paper](https://github.com/waveshare/e-Paper)), and the panel
-bring-up matches their `Init_4Gray()` and `Init_Fast()` exactly: no
-waveform-LUT registers (`0x20`-`0x25`) are written, and no
-one-time-programming command is sent. Both modes still redrive the whole
-panel in one `DISPLAY REFRESH` call, timed by the controller's own factory
-waveform — this is not InkBoy's technique of a short, custom, per-pixel
-waveform repeated tens of times a second, which would need LUT bytes this
-firmware does not fabricate.
+Instead of one multi-second factory waveform per image, it loads a custom
+waveform that drives a pixel for one controller frame per refresh, toward
+black, toward white, or not at all. Gray levels come from how many net
+steps a pixel has had, the way [InkBoy](https://github.com/kuslota/InkBoy)
+builds grays. Pixels are planned in 2×2 blocks (400×240).
 
-[`src/grayscale/`](src/grayscale/) is host-tested, hardware-agnostic
-planning: quantizing an 8-bit source image into 4 levels, pixelating it into
-2×2 physical blocks (400×240 logical pixels keep the demo's per-pixel state
-small), and packing the result into the two panel planes.
-`src/grayscale_display.rs` is the ESP32-only UC8179 driver; run `cargo test
---lib` to exercise the planning logic.
+- [`src/grayscale/lut.rs`](src/grayscale/lut.rs) builds the waveform
+  tables for registers `0x20`-`0x25`, in the format GxEPD2 uses for this
+  panel's fast partial mode (`src/epd/GxEPD2_750_T7.cpp` in
+  [ZinggJM/GxEPD2](https://github.com/ZinggJM/GxEPD2)). The drive voltages
+  (power setting `0x01`) are unchanged from Waveshare's init.
+- [`src/grayscale/drive.rs`](src/grayscale/drive.rs) plans each refresh.
+  The old plane holds each pixel's direction, so most refreshes send only
+  the new plane; a pixel that has to reverse waits for an occasional
+  refresh that rewrites both planes.
+- `src/grayscale_main.rs` sends a refresh, plans the next one while the
+  panel is busy, and every 60 seconds drives every pixel back to white and
+  runs a factory full refresh.
 
-Build and flash it like maze, but build it explicitly — it is not part of
+The planner never drives a pixel past white or black, so each pixel's net
+drive is its estimated level and returns to zero before every full
+refresh; `cargo test --lib` checks that by replaying planned planes
+through a simulated controller. The model is only an estimate of the ink:
+ghosting and drift between full refreshes are expected, and the full
+refresh clears them.
+
+Build and flash it like maze, but build it explicitly; it is not part of
 plain `make build`:
 
 ```bash
@@ -278,12 +283,25 @@ make flash APP=grayscale PORT=/dev/cu.usbserial-XXXX
 make monitor PORT=/dev/cu.usbserial-XXXX
 ```
 
-Watch the monitor for `4gray refresh tick=<n> elapsed_ms=<ms> hz=<hz>`
-lines: `elapsed_ms` is the measured time of one 4-gray refresh on your
-panel. This firmware
-has not been build- or hardware-tested from this change; expect to fix
-compile errors against your `espup` toolchain before it flashes, and treat
-any waveform timing as unmeasured until you see it on your panel.
+Every 50 refreshes the monitor prints a line like
+`drive hz=<hz> ms/refresh=<ms> spi=<ms> plan=<ms> wait=<ms> ...`.
+`spi` is the time spent sending planes, `plan` the time spent planning
+while the panel drives, and `wait` how long the panel was still busy
+after planning finished. A `wait` near zero means planning is the
+bottleneck; a large `wait` means the waveform is.
+
+Knobs, all constants:
+
+| Constant | File | Effect |
+|----------|------|--------|
+| `SPI_MHZ` | `src/grayscale_display.rs` | 20 MHz sends a plane in about 19 ms. If the panel shows noise or ignores commands, lower it; `maze_display.rs` uses 4 MHz. |
+| `FRAMES_PER_STEP` | `src/grayscale_main.rs` | Frames per drive step. More frames move ink further per refresh and lower the refresh rate. |
+| `SWAP_DRIVE_POLARITY` | `src/grayscale_main.rs` | Set when the scene appears as a negative, or barely at all. |
+| `FULL_REFRESH_INTERVAL` | `src/grayscale_main.rs` | Time between cleanup full refreshes. |
+| `DriveConfig::swing` | `src/grayscale/drive.rs` | Steps from white to black. Fewer steps give fewer grays and faster swings per step. |
+
+This firmware compiles for `xtensa-esp32-espidf` but has not run on a
+panel.
 
 ## Host tests
 
@@ -307,7 +325,7 @@ inkbot-esp32/
 ├── src/
 │   ├── lib.rs / panel.rs / png_frame.rs / status.rs / ota_format.rs
 │   ├── maze/                         # generate / solve / render (host-tested)
-│   ├── grayscale/                    # 4-gray planner/packer (host-tested; experimental)
+│   ├── grayscale/                    # drive planner + waveform tables (host-tested; experimental)
 │   ├── main.rs                       # inkbot: Wi-Fi + HTTP + OTA + GCP
 │   ├── maze_main.rs / maze_display.rs
 │   ├── grayscale_main.rs / grayscale_display.rs   # experimental; not OTA-registered
