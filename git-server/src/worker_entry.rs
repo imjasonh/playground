@@ -9,10 +9,13 @@
 //!   per-repo `RepoStateDo` Durable Object, the repo's single serialization
 //!   point (load, per-push merge-apply, and the repack manifest swap, over a
 //!   tiny JSON protocol);
+//! * [`KvRepoRegistry`] — implements [`crate::registry::RepoRegistry`] over
+//!   the `GIT_REPOS` KV namespace;
 //! * `#[event(fetch)]` — adapts the Workers request (streamed body) to
 //!   [`crate::http::GitHttp`];
-//! * `#[event(scheduled)]` — walks the repo registry (a KV namespace,
-//!   updated on push) and runs pack consolidation on repos that need it.
+//! * `#[event(scheduled)]` — walks every registered repo
+//!   ([`crate::registry::list_all`]) and runs pack consolidation on the ones
+//!   that need it.
 
 use crate::http::{GitHttp, Request as HttpRequest};
 use crate::metrics::{BackendTimer, Op};
@@ -20,6 +23,7 @@ use crate::protocol::BodyStream;
 use crate::refs::{
     LoadResult, PushApplied, PushDelta, RepackSwap, RepoState, StateError, StateStore,
 };
+use crate::registry::{RegistryPage, RepoRegistry, Result as RegistryResult};
 use crate::storage::{retry_transient, Result as StorageResult, StorageError, Store, Uploader};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -779,22 +783,34 @@ struct FetchCtx {
     cf_ray: Option<String>,
 }
 
-/// Record `repo` in the cron registry. A present key is one read. A missing
-/// key is a read plus a write. Failures are logged. The next push tries again.
-async fn register_repo(kv: &worker::kv::KvStore, repo: &str) {
-    let known = matches!(kv.get(repo).text().await, Ok(Some(_)));
-    if known {
-        return;
-    }
-    let put = match kv.put(repo, "1") {
-        Ok(put) => put,
-        Err(err) => {
-            worker::console_error!("repo registry {repo}: {err}");
-            return;
+/// [`RepoRegistry`] client speaking to the `GIT_REPOS` KV namespace.
+pub struct KvRepoRegistry {
+    kv: worker::kv::KvStore,
+}
+
+#[async_trait(?Send)]
+impl RepoRegistry for KvRepoRegistry {
+    /// A present key is one read. A missing key is a read plus a write.
+    async fn register(&self, repo: &str) -> RegistryResult<()> {
+        let known = matches!(self.kv.get(repo).text().await, Ok(Some(_)));
+        if known {
+            return Ok(());
         }
-    };
-    if let Err(err) = put.execute().await {
-        worker::console_error!("repo registry {repo}: {err}");
+        let put = self.kv.put(repo, "1").map_err(|e| e.to_string())?;
+        put.execute().await.map_err(|e| e.to_string())
+    }
+
+    async fn list_page(&self, cursor: Option<&str>) -> RegistryResult<RegistryPage> {
+        let mut builder = self.kv.list();
+        if let Some(c) = cursor {
+            builder = builder.cursor(c.to_string());
+        }
+        let resp = builder.execute().await.map_err(|e| e.to_string())?;
+        Ok(RegistryPage {
+            names: resp.keys.into_iter().map(|k| k.name).collect(),
+            cursor: resp.cursor,
+            complete: resp.list_complete,
+        })
     }
 }
 
@@ -835,7 +851,10 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         if let Ok(kv) = env.kv(REPOS_KV_BINDING) {
             let repo = repo.to_string();
             ctx.wait_until(crate::scope::run(crate::scope::fresh(), async move {
-                register_repo(&kv, &repo).await;
+                let registry = KvRepoRegistry { kv };
+                if let Err(err) = registry.register(&repo).await {
+                    worker::console_error!("repo registry {repo}: {err}");
+                }
             }));
         }
     }
@@ -886,23 +905,27 @@ async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::Sched
                 return;
             }
         };
-        let repos = match kv.list().execute().await {
-            Ok(list) => list.keys,
+        // Follows the KV cursor across as many pages as the registry holds
+        // (one `list` call only ever returns one page, capped well under the
+        // repo count a busy deployment can reach) — see `crate::registry`.
+        let registry = KvRepoRegistry { kv };
+        let repos = match crate::registry::list_all(&registry).await {
+            Ok(names) => names,
             Err(e) => {
                 worker::console_error!("scheduled: list failed: {e}");
                 return;
             }
         };
-        for key in repos {
+        for name in repos {
             crate::trace::with_active_span(|span| {
                 if span.is_traced() {
-                    span.set_attribute("git.repo", &key.name);
+                    span.set_attribute("git.repo", &name);
                 }
             });
             let repo = crate::repo::Repo {
                 store: &store,
                 states: &states,
-                name: &key.name,
+                name: &name,
             };
             crate::metrics::begin();
             let start = crate::metrics::now_ms();
@@ -911,15 +934,15 @@ async fn scheduled(_event: worker::ScheduledEvent, env: Env, _ctx: worker::Sched
             let metrics = crate::metrics::take();
             match result {
                 Ok(outcome) => {
-                    worker::console_log!("repack {}: {:?}", key.name, outcome);
+                    worker::console_log!("repack {}: {:?}", name, outcome);
                     if let Some(m) = metrics {
                         worker::console_log!(
                             "{}",
-                            m.log_json("CRON", &format!("/repack/{}", key.name), 200, total_ms)
+                            m.log_json("CRON", &format!("/repack/{}", name), 200, total_ms)
                         );
                     }
                 }
-                Err(e) => worker::console_error!("repack {} failed: {e}", key.name),
+                Err(e) => worker::console_error!("repack {} failed: {e}", name),
             }
         }
     });
