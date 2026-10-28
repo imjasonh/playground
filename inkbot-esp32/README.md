@@ -242,13 +242,19 @@ or mention `@inkbot status` in Slack.
 
 ## Grayscale video demo (experimental)
 
-`grayscale-esp32` is a separate, experimental firmware from `maze-esp32` —
-it does not show the maze, just faster. It plays a small flock of boids
-([Reynolds' separation/alignment/cohesion](https://www.red3d.com/cwr/boids/))
-rendered as soft gray blobs, as many times a second as the panel allows,
-chosen to be continuously moving (so every refresh has something new to
-draw) while staying visually calm. It is USB-flash only: no Wi-Fi, no OTA
-pull, and not in the `inkbot` / `maze` OTA app registry.
+`grayscale-esp32` is a separate experimental firmware from `maze-esp32`.
+It does not show the maze. It plays a flock of 12 boids
+([Reynolds' separation, alignment, and cohesion](https://www.red3d.com/cwr/boids/))
+drawn as soft gray blobs. The flock is the scene the drive loop refreshes
+as fast as the panel allows. It is USB-flash only: no Wi-Fi, no OTA pull,
+and not in the `inkbot` / `maze` OTA app registry.
+
+Each refresh can darken or lighten a pixel by only one step of a 30-step
+swing. The flock is tuned for that limit. A boid moves at most 0.4
+logical pixels per refresh (about 18 panel pixels a second at 22
+refreshes a second), so crossing the 800-pixel width takes about 45
+seconds, and the center of a blob stays on a pixel long enough to reach
+its gray before the shape moves on. Faster motion leaves a pale streak.
 
 Instead of one multi-second factory waveform per image, it loads a custom
 waveform that drives a pixel for one controller frame per refresh, toward
@@ -307,6 +313,16 @@ Knobs, all constants:
 | `SWAP_DRIVE_POLARITY` | `src/grayscale_main.rs` | Set when the scene appears as a negative, or barely at all. |
 | `FULL_REFRESH_INTERVAL` | `src/grayscale_main.rs` | Time between cleanup full refreshes. |
 | `DriveConfig::swing` | `src/grayscale/drive.rs` | Steps from white to black. Fewer steps give fewer grays and faster swings per step. |
+
+To watch the estimated ink on the host, run `examples/boids_preview.rs`.
+It writes one 800×480 gray frame per refresh to stdout. Play the frames
+at 22 per second. That is the expected rate when a 19 ms plane transfer
+is followed by a 20 ms drive frame. 660 frames is 30 seconds.
+
+```bash
+cargo run --quiet --example boids_preview -- 660 | \
+  ffmpeg -y -f rawvideo -pix_fmt gray -s 800x480 -r 22 -i - boids.mp4
+```
 
 This firmware compiles for `xtensa-esp32-espidf` but has not run on a
 panel.

@@ -1,7 +1,9 @@
-//! A small flock of boids (Reynolds' separation/alignment/cohesion), stepped
-//! once per refresh and rendered as soft gray blobs — a smoothly moving
-//! scene to show off the drive mode's grayscale instead of a fixed test
-//! pattern.
+//! A small flock of boids (Reynolds' separation, alignment, and cohesion),
+//! stepped once per refresh and rendered as soft gray blobs.
+//!
+//! Speeds in [`FlockConfig::default`] are set for the one-step drive: a
+//! blob has to sit on a pixel for about a full 30-step swing before the
+//! ink reaches the gray the scene asked for.
 //!
 //! Boids steer gently away from the edges of the logical canvas and bounce
 //! off them as a fallback, so the flock stays on screen without the
@@ -47,21 +49,29 @@ pub struct FlockConfig {
 impl Default for FlockConfig {
     fn default() -> Self {
         Self {
-            count: 16,
+            count: 12,
             width: super::LOGICAL_WIDTH as f32,
             height: super::LOGICAL_HEIGHT as f32,
-            max_speed: 2.2,
-            min_speed: 1.0,
-            max_force: 0.15,
-            perception_radius: 48.0,
-            separation_radius: 16.0,
-            separation_weight: 1.6,
-            alignment_weight: 1.0,
-            cohesion_weight: 0.9,
-            edge_margin: 30.0,
-            edge_weight: 0.3,
-            blob_radius: 7.0,
-            blob_min_luma: 20,
+            // One refresh moves the ink one step of a 30-step swing. At
+            // this speed the dark core of a blob stays put long enough to
+            // reach its target gray before the shape moves on, and a boid
+            // takes about 45 seconds to cross the panel at 22 refreshes
+            // a second.
+            max_speed: 0.40,
+            min_speed: 0.22,
+            max_force: 0.010,
+            // Wide enough that a flock spread across the panel still
+            // counts as one neighborhood, so it gathers instead of
+            // splitting into groups that can no longer see each other.
+            perception_radius: 320.0,
+            separation_radius: 42.0,
+            separation_weight: 1.4,
+            alignment_weight: 1.2,
+            cohesion_weight: 0.45,
+            edge_margin: 40.0,
+            edge_weight: 0.25,
+            blob_radius: 18.0,
+            blob_min_luma: 36,
         }
     }
 }
@@ -279,8 +289,26 @@ mod tests {
             count: 10,
             width: 80.0,
             height: 60.0,
+            edge_margin: 8.0,
+            perception_radius: 24.0,
+            separation_radius: 8.0,
+            blob_radius: 3.0,
             ..FlockConfig::default()
         }
+    }
+
+    #[test]
+    fn default_motion_is_slow_enough_for_one_step_drive() {
+        let flock = FlockConfig::default();
+        let swing = super::super::drive::DriveConfig::default().swing as f32;
+        // The dark core (inner 80% of the radius) must cover a pixel for
+        // at least a full white-to-black swing, or the ink stays a pale
+        // streak behind a shape that has already moved on.
+        let dwell_frames = 0.8 * flock.blob_radius / flock.max_speed;
+        assert!(
+            dwell_frames >= swing,
+            "core covers a pixel for {dwell_frames} frames, swing is {swing}"
+        );
     }
 
     #[test]
