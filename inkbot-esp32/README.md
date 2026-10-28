@@ -252,10 +252,10 @@ allows. It is USB-flash only: no Wi-Fi, no OTA pull, and not in the
 
 Each refresh can darken or lighten a pixel by only one step of a 30-step
 swing, so the flock's speed and triangle size are tuned together: a
-18-logical-pixel-long triangle moving 0.58 logical pixels per refresh
-(about 26 panel pixels a second at 22 refreshes a second) keeps a point
+9-logical-pixel-long triangle moving 0.29 logical pixels per refresh
+(about 13 panel pixels a second at 22 refreshes a second) keeps a point
 on its central axis covered for one full swing before the shape
-moves past. A boid crosses the 800-pixel width in about 31 seconds.
+moves past. A boid crosses the 800-pixel width in about 63 seconds.
 Faster motion without a longer triangle leaves a pale streak instead of
 a solid shape.
 
