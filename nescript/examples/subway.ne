@@ -21,6 +21,7 @@ sfx DoorChime {
 
 // "Stand clear of the closing doors, please." Kokoro voice bm_george
 // at speed 1.3, low-passed and encoded at NTSC DMC rate 11.
+// Each bit steps the DAC by 2, and the sample starts and ends at 0.
 dpcm StandClear {
     rate: 11
     data: @binary("subway/stand_clear.dmc")
