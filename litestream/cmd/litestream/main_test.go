@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"database/sql"
 	"errors"
 	"flag"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -355,6 +357,27 @@ func TestNewS3ReplicaFromConfig(t *testing.T) {
 			t.Fatalf("Endpoint=%s, want %s", got, want)
 		} else if got, want := client.ForcePathStyle, true; got != want {
 			t.Fatalf("ForcePathStyle=%v, want %v", got, want)
+		}
+	})
+
+	t.Run("Neon", func(t *testing.T) {
+		r, err := main.NewReplicaFromConfig(&main.ReplicaConfig{URL: "s3://foo.br-cool-darkness-a1b2c3d4.storage.c-6.us-east-2.aws.neon.tech/bar"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		} else if client, ok := r.Client.(*s3.ReplicaClient); !ok {
+			t.Fatal("unexpected replica type")
+		} else if got, want := client.Bucket, "foo"; got != want {
+			t.Fatalf("Bucket=%s, want %s", got, want)
+		} else if got, want := client.Path, "bar"; got != want {
+			t.Fatalf("Path=%s, want %s", got, want)
+		} else if got, want := client.Region, "us-east-2"; got != want {
+			t.Fatalf("Region=%s, want %s", got, want)
+		} else if got, want := client.Endpoint, "https://br-cool-darkness-a1b2c3d4.storage.c-6.us-east-2.aws.neon.tech"; got != want {
+			t.Fatalf("Endpoint=%s, want %s", got, want)
+		} else if got, want := client.ForcePathStyle, true; got != want {
+			t.Fatalf("ForcePathStyle=%v, want %v", got, want)
+		} else if got, want := client.SignPayload, true; got != want {
+			t.Fatalf("SignPayload=%v, want %v", got, want)
 		}
 	})
 
@@ -749,6 +772,94 @@ snapshot:
 		}
 		if !errors.Is(err, main.ErrInvalidSnapshotRetention) {
 			t.Errorf("expected ErrInvalidSnapshotRetention, got %v", err)
+		}
+	})
+
+	t.Run("RetentionShorterThanInterval", func(t *testing.T) {
+		t.Setenv("LOG_LEVEL", "")
+		logOutput, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalStderr, originalLogger := os.Stderr, slog.Default()
+		t.Cleanup(func() {
+			os.Stderr = originalStderr
+			slog.SetDefault(originalLogger)
+			logOutput.Close()
+		})
+		os.Stderr = logOutput
+
+		yaml := `
+snapshot:
+  interval: 1h
+  retention: 30m
+`
+		config, err := main.ParseConfig(strings.NewReader(yaml), false)
+		if err != nil {
+			t.Fatalf("unexpected config error: %v", err)
+		}
+		if got := *config.Snapshot.Retention; got != 30*time.Minute {
+			t.Fatalf("expected retention to remain 30m, got %v", got)
+		}
+		output, err := os.ReadFile(logOutput.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			"level=WARN",
+			"snapshot retention is shorter than snapshot interval",
+			"field=snapshot.retention",
+			"retention=30m0s",
+			"interval=1h0m0s",
+		} {
+			if !strings.Contains(string(output), want) {
+				t.Errorf("expected warning containing %q, got %q", want, string(output))
+			}
+		}
+	})
+
+	t.Run("DBRetentionShorterThanInterval", func(t *testing.T) {
+		t.Setenv("LOG_LEVEL", "")
+		logOutput, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalStderr, originalLogger := os.Stderr, slog.Default()
+		t.Cleanup(func() {
+			os.Stderr = originalStderr
+			slog.SetDefault(originalLogger)
+			logOutput.Close()
+		})
+		os.Stderr = logOutput
+
+		yaml := `
+ dbs:
+  - path: /tmp/test.db
+    snapshot:
+      interval: 1h
+      retention: 30m
+`
+		config, err := main.ParseConfig(strings.NewReader(yaml), false)
+		if err != nil {
+			t.Fatalf("unexpected config error: %v", err)
+		}
+		if got := *config.DBs[0].Snapshot.Retention; got != 30*time.Minute {
+			t.Fatalf("expected retention to remain 30m, got %v", got)
+		}
+		output, err := os.ReadFile(logOutput.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{
+			"level=WARN",
+			"snapshot retention is shorter than snapshot interval",
+			"field=dbs[/tmp/test.db].snapshot.retention",
+			"retention=30m0s",
+			"interval=1h0m0s",
+		} {
+			if !strings.Contains(string(output), want) {
+				t.Errorf("expected warning containing %q, got %q", want, string(output))
+			}
 		}
 	})
 
@@ -3009,6 +3120,154 @@ func TestDirectoryMonitor_DetectsDatabaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestDirectoryMonitor_DetectsRecreatedDatabase(t *testing.T) {
+	ctx := context.Background()
+	rootDir := t.TempDir()
+	replicaDir := filepath.Join(t.TempDir(), "replicas")
+	metaDir := filepath.Join(t.TempDir(), "meta")
+	dbPath := filepath.Join(rootDir, "app.db")
+	createWALSQLiteDB(t, dbPath, "old")
+
+	config := &main.DBConfig{
+		Dir:     rootDir,
+		Pattern: "*.db",
+		Watch:   true,
+		MetaDir: &metaDir,
+		Replica: &main.ReplicaConfig{Type: "file", Path: replicaDir},
+	}
+	dbs, err := main.NewDBsFromDirectoryConfig(config)
+	if err != nil {
+		t.Fatalf("NewDBsFromDirectoryConfig failed: %v", err)
+	}
+
+	storeConfig := main.DefaultConfig()
+	store := litestream.NewStore(dbs, storeConfig.CompactionLevels())
+	store.CompactionMonitorEnabled = false
+	if err := store.Open(ctx); err != nil {
+		t.Fatalf("unexpected error opening store: %v", err)
+	}
+	defer func() {
+		if err := store.Close(context.Background()); err != nil {
+			t.Errorf("unexpected error closing store: %v", err)
+		}
+	}()
+
+	monitor, err := main.NewDirectoryMonitor(ctx, store, config, dbs)
+	if err != nil {
+		t.Fatalf("failed to initialize directory monitor: %v", err)
+	}
+	defer monitor.Close()
+
+	if err := store.FindDB(dbPath).SyncAndWait(ctx); err != nil {
+		t.Fatalf("failed to replicate original database: %v", err)
+	}
+
+	// Remove the WAL first so the sync that runs inside Close must
+	// recreate it through the connection to the deleted database, causing
+	// close to fail.
+	for _, suffix := range []string{"-wal", "-shm", ""} {
+		if err := os.Remove(dbPath + suffix); err != nil {
+			t.Fatalf("failed to remove database file %s: %v", dbPath+suffix, err)
+		}
+	}
+	if !waitForCondition(5*time.Second, func() bool { return !hasDBPath(store.DBs(), dbPath) }) {
+		t.Fatalf("expected deleted database %s to be removed", dbPath)
+	}
+
+	createWALSQLiteDB(t, dbPath, "new")
+	if !waitForCondition(5*time.Second, func() bool { return hasDBPath(store.DBs(), dbPath) }) {
+		t.Fatalf("expected recreated database %s to be detected", dbPath)
+	}
+
+	db := store.FindDB(dbPath)
+	if err := db.SyncAndWait(ctx); err != nil {
+		t.Fatalf("failed to replicate recreated database: %v", err)
+	}
+	opt := litestream.NewRestoreOptions()
+	opt.OutputPath = filepath.Join(t.TempDir(), "restored.db")
+	if err := litestream.NewReplicaWithClient(nil, db.Replica.Client).Restore(ctx, opt); err != nil {
+		t.Fatalf("failed to restore recreated database: %v", err)
+	}
+
+	restored, err := sql.Open("sqlite", opt.OutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	var value string
+	if err := restored.QueryRow("SELECT value FROM test").Scan(&value); err != nil {
+		t.Fatalf("failed to query restored database: %v", err)
+	}
+	if value != "new" {
+		t.Fatalf("restored value = %q, want %q", value, "new")
+	}
+}
+
+func TestDirectoryMonitor_RecursiveDetectsReplacedDirectory(t *testing.T) {
+	ctx := context.Background()
+	rootDir := t.TempDir()
+	replicaDir := filepath.Join(t.TempDir(), "replicas")
+	metaDir := filepath.Join(t.TempDir(), "meta")
+	tenantDir := filepath.Join(rootDir, "tenant")
+	if err := os.Mkdir(tenantDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(tenantDir, "app.db")
+	createWALSQLiteDB(t, dbPath, "old")
+
+	config := &main.DBConfig{
+		Dir:       rootDir,
+		Pattern:   "*.db",
+		Watch:     true,
+		Recursive: true,
+		MetaDir:   &metaDir,
+		Replica:   &main.ReplicaConfig{Type: "file", Path: replicaDir},
+	}
+	dbs, err := main.NewDBsFromDirectoryConfig(config)
+	if err != nil {
+		t.Fatalf("NewDBsFromDirectoryConfig failed: %v", err)
+	}
+
+	storeConfig := main.DefaultConfig()
+	store := litestream.NewStore(dbs, storeConfig.CompactionLevels())
+	store.CompactionMonitorEnabled = false
+	if err := store.Open(ctx); err != nil {
+		t.Fatalf("unexpected error opening store: %v", err)
+	}
+	defer func() {
+		if err := store.Close(context.Background()); err != nil {
+			t.Errorf("unexpected error closing store: %v", err)
+		}
+	}()
+
+	monitor, err := main.NewDirectoryMonitor(ctx, store, config, dbs)
+	if err != nil {
+		t.Fatalf("failed to initialize directory monitor: %v", err)
+	}
+	defer monitor.Close()
+
+	if err := store.FindDB(dbPath).SyncAndWait(ctx); err != nil {
+		t.Fatalf("failed to replicate original database: %v", err)
+	}
+	if err := os.Rename(tenantDir, filepath.Join(t.TempDir(), "moved")); err != nil {
+		t.Fatalf("failed to move directory out of watched tree: %v", err)
+	}
+	if !waitForCondition(5*time.Second, func() bool { return !hasDBPath(store.DBs(), dbPath) }) {
+		t.Fatalf("expected moved database %s to be removed", dbPath)
+	}
+
+	// Stage the replacement outside the watched tree so discovery also works
+	// with fsnotify's kqueue backend when the directory path is reused.
+	stagedDir := t.TempDir()
+	createWALSQLiteDB(t, filepath.Join(stagedDir, "app.db"), "new")
+	if err := os.Rename(stagedDir, tenantDir); err != nil {
+		t.Fatalf("failed to move replacement directory into watched tree: %v", err)
+	}
+	if !waitForCondition(5*time.Second, func() bool { return hasDBPath(store.DBs(), dbPath) }) {
+		t.Fatalf("expected database %s in replacement directory to be detected", dbPath)
+	}
+}
+
 func TestDirectoryMonitor_RecursiveDetectsNestedDatabases(t *testing.T) {
 	ctx := context.Background()
 	rootDir := t.TempDir()
@@ -3103,6 +3362,25 @@ func TestDirectoryMonitor_MetaDir(t *testing.T) {
 		return
 	}
 	t.Fatalf("database %s not found", dbPath)
+}
+
+func createWALSQLiteDB(t *testing.T, path, value string) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		t.Fatalf("failed to enable WAL: %v", err)
+	}
+	if _, err := db.Exec("CREATE TABLE test (value TEXT)"); err != nil {
+		t.Fatalf("failed to create table: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO test (value) VALUES (?)", value); err != nil {
+		t.Fatalf("failed to insert value: %v", err)
+	}
 }
 
 // createSQLiteDB creates a minimal SQLite database file for testing
@@ -3394,6 +3672,7 @@ func TestNewS3ReplicaClientFromConfig(t *testing.T) {
 			{"CloudflareR2", "https://accountid.r2.cloudflarestorage.com"},
 			{"MinIO", "http://localhost:9000"},
 			{"Supabase", "https://myproject.supabase.co/storage/v1/s3"},
+			{"Neon", "https://br-cool-darkness-a1b2c3d4.storage.c-6.us-east-2.aws.neon.tech"},
 			{"Hetzner", "https://fsn1.your-objectstorage.com"},
 		}
 
@@ -3973,5 +4252,66 @@ func waitForCondition(timeout time.Duration, fn func() bool) bool {
 			return fn()
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestNewS3ReplicaClientFromConfig_NeonExplicitOverrideParity(t *testing.T) {
+	for _, key := range []string{"forcePathStyle", "force-path-style"} {
+		t.Run(key, func(t *testing.T) {
+			rawURL := "s3://backup/path?endpoint=https://br-demo.storage.c-6.us-east-2.aws.neon.tech&" + key + "=false"
+			urlClient, err := litestream.NewReplicaClientFromURL(rawURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configClient, err := main.NewS3ReplicaClientFromConfig(&main.ReplicaConfig{URL: rawURL}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if urlClient.(*s3.ReplicaClient).ForcePathStyle || configClient.ForcePathStyle {
+				t.Fatalf("ForcePathStyle: URL=%v, config=%v, want false for both", urlClient.(*s3.ReplicaClient).ForcePathStyle, configClient.ForcePathStyle)
+			}
+		})
+	}
+}
+
+func TestNewS3ReplicaClientFromConfig_NeonYAMLOverride(t *testing.T) {
+	forcePathStyle := false
+	client, err := main.NewS3ReplicaClientFromConfig(&main.ReplicaConfig{
+		URL:             "s3://backup.br-demo.storage.c-6.us-east-2.aws.neon.tech/path",
+		ReplicaSettings: main.ReplicaSettings{ForcePathStyle: &forcePathStyle},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.ForcePathStyle {
+		t.Fatal("expected explicit YAML ForcePathStyle=false to override the host default")
+	}
+}
+
+func TestNewS3ReplicaClientFromConfig_NeonExplicitEndpoint(t *testing.T) {
+	const bucket = "backup.br-demo.storage.c-6.us-east-2.aws.neon.tech"
+	const endpoint = "https://s3.us-west-2.amazonaws.com"
+	for _, tt := range []struct {
+		name           string
+		query          string
+		configEndpoint string
+		region         string
+	}{
+		{name: "Query", query: "?endpoint=" + endpoint},
+		{name: "Config", configEndpoint: endpoint},
+		{name: "ExplicitRegion", query: "?endpoint=" + endpoint + "&region=us-west-2", region: "us-west-2"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := main.NewS3ReplicaClientFromConfig(&main.ReplicaConfig{
+				URL:             "s3://" + bucket + "/path" + tt.query,
+				ReplicaSettings: main.ReplicaSettings{Endpoint: tt.configEndpoint},
+			}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if client.Bucket != bucket || client.Endpoint != endpoint || client.Region != tt.region || client.Path != "path" || !client.ForcePathStyle {
+				t.Fatalf("Bucket=%q Endpoint=%q Region=%q Path=%q ForcePathStyle=%v", client.Bucket, client.Endpoint, client.Region, client.Path, client.ForcePathStyle)
+			}
+		})
 	}
 }

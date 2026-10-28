@@ -195,8 +195,7 @@ func TestVFS_ActiveReadTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wait for replication to sync
-	waitForLTXFiles(t, client, 10*time.Second, db.MonitorInterval)
+	forceReplicaSync(t, db)
 
 	t.Log("opening vfs replica")
 	sqldb1, err := sql.Open("sqlite3", "file:/tmp/test-txn.db?vfs=litestream-txn")
@@ -205,9 +204,15 @@ func TestVFS_ActiveReadTransaction(t *testing.T) {
 	}
 	defer sqldb1.Close()
 
+	conn, err := sqldb1.Conn(context.Background())
+	if err != nil {
+		t.Fatalf("get replica connection: %v", err)
+	}
+	defer conn.Close()
+
 	// Start a read transaction on the replica
 	t.Log("starting read transaction on replica")
-	tx, err := sqldb1.Begin()
+	tx, err := conn.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("failed to begin transaction: %v", err)
 	}
@@ -237,17 +242,27 @@ func TestVFS_ActiveReadTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wait for replication to sync the updates - verify new data is available
-	// by checking from a fresh connection (not the transaction's snapshot)
-	t.Log("waiting for replication sync")
-	require.Eventually(t, func() bool {
-		var data string
-		// Use a new query to check if updates have replicated
-		if err := sqldb1.QueryRow("SELECT data FROM t WHERE id = 5000").Scan(&data); err != nil {
-			return false
+	forceReplicaSync(t, db)
+	pos, err := db.Pos()
+	if err != nil {
+		t.Fatalf("source position: %v", err)
+	}
+
+	t.Log("waiting for transaction connection to observe replicated updates")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var txid string
+		if err := tx.QueryRow("PRAGMA litestream_txid").Scan(&txid); err != nil {
+			t.Fatalf("query transaction connection position: %v", err)
 		}
-		return strings.HasPrefix(data, "updated_data_5000")
-	}, 10*time.Second, db.MonitorInterval, "updates should replicate")
+		if txid == pos.TXID.String() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transaction connection observed TXID %s, want %s", txid, pos.TXID)
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	// The active read transaction should still see old data (snapshot isolation)
 	t.Log("verifying read transaction still sees old data")
@@ -269,7 +284,7 @@ func TestVFS_ActiveReadTransaction(t *testing.T) {
 	t.Log("verifying multiple rows across pages")
 	for _, id := range []int{0, 2500, 5000, 7500, 9999} {
 		var data string
-		if err := sqldb1.QueryRow("SELECT data FROM t WHERE id = ?", id).Scan(&data); err != nil {
+		if err := conn.QueryRowContext(context.Background(), "SELECT data FROM t WHERE id = ?", id).Scan(&data); err != nil {
 			t.Fatalf("failed to query id %d: %v", id, err)
 		}
 		expected := fmt.Sprintf("updated_data_%d", id)
@@ -551,35 +566,37 @@ func TestVFS_HighLoadConcurrentReads(t *testing.T) {
 
 	waitForReplicaRowCount(t, primary, replica, 30*time.Second)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	const writes = 100
+	const readers = 8
 	var writerOps atomic.Int64
 	writerErr := make(chan error, 1)
 	go func() {
 		defer close(writerErr)
 		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-		for {
+		for i := 0; i < writes; i++ {
 			select {
 			case <-ctx.Done():
-				writerErr <- nil
+				writerErr <- ctx.Err()
 				return
 			default:
 			}
 
 			switch rnd.Intn(3) {
 			case 0:
-				if _, err := primary.Exec("INSERT INTO t (value, updated_at) VALUES (?, strftime('%s','now'))", fmt.Sprintf("value-%d", rnd.Int())); err != nil {
+				if _, err := primary.ExecContext(ctx, "INSERT INTO t (value, updated_at) VALUES (?, strftime('%s','now'))", fmt.Sprintf("value-%d", rnd.Int())); err != nil {
 					writerErr <- err
 					return
 				}
 			case 1:
-				if _, err := primary.Exec("UPDATE t SET value = value || '-u' WHERE id IN (SELECT id FROM t ORDER BY RANDOM() LIMIT 1)"); err != nil {
+				if _, err := primary.ExecContext(ctx, "UPDATE t SET value = value || '-u' WHERE id IN (SELECT id FROM t ORDER BY RANDOM() LIMIT 1)"); err != nil {
 					writerErr <- err
 					return
 				}
 			default:
-				if _, err := primary.Exec("DELETE FROM t WHERE id IN (SELECT id FROM t ORDER BY RANDOM() LIMIT 1)"); err != nil {
+				if _, err := primary.ExecContext(ctx, "DELETE FROM t WHERE id IN (SELECT id FROM t ORDER BY RANDOM() LIMIT 1)"); err != nil {
 					writerErr <- err
 					return
 				}
@@ -588,11 +605,12 @@ func TestVFS_HighLoadConcurrentReads(t *testing.T) {
 			writerOps.Add(1)
 			time.Sleep(time.Duration(rnd.Intn(5)+1) * time.Millisecond)
 		}
+		writerErr <- nil
 	}()
 
-	readerErrCh := make(chan error, 1)
+	readerErrCh := make(chan error, readers)
 	var readerWg sync.WaitGroup
-	for i := 0; i < 8; i++ {
+	for i := 0; i < readers; i++ {
 		readerWg.Add(1)
 		go func(id int) {
 			defer readerWg.Done()
@@ -617,10 +635,11 @@ func TestVFS_HighLoadConcurrentReads(t *testing.T) {
 		}(i)
 	}
 
-	<-ctx.Done()
+	err := <-writerErr
+	cancel()
 	readerWg.Wait()
 
-	if err := <-writerErr; err != nil && !errors.Is(err, context.Canceled) {
+	if err != nil {
 		t.Fatalf("writer error: %v", err)
 	}
 	select {
@@ -631,8 +650,8 @@ func TestVFS_HighLoadConcurrentReads(t *testing.T) {
 	default:
 	}
 
-	if ops := writerOps.Load(); ops < 100 {
-		t.Fatalf("expected high write volume, got %d ops", ops)
+	if ops := writerOps.Load(); ops != writes {
+		t.Fatalf("completed %d writes, want %d", ops, writes)
 	}
 
 	waitForReplicaRowCount(t, primary, replica, 30*time.Second)
@@ -1707,7 +1726,7 @@ func TestVFS_PageIndexCorruptionRecovery(t *testing.T) {
 func TestVFS_RapidUpdateCoalescing(t *testing.T) {
 	client := file.NewReplicaClient(t.TempDir())
 	const interval = 5 * time.Millisecond
-	_, primary := openReplicatedPrimary(t, client, interval, interval)
+	db, primary := openReplicatedPrimary(t, client, interval, interval)
 	defer testingutil.MustCloseSQLDB(t, primary)
 
 	if _, err := primary.Exec("CREATE TABLE metrics (id INTEGER PRIMARY KEY, value INTEGER)"); err != nil {
@@ -1717,6 +1736,8 @@ func TestVFS_RapidUpdateCoalescing(t *testing.T) {
 		t.Fatalf("insert row: %v", err)
 	}
 
+	forceReplicaSync(t, db)
+
 	vfs := newVFS(t, client)
 	vfs.PollInterval = interval
 	vfsName := registerTestVFS(t, vfs)
@@ -1724,25 +1745,29 @@ func TestVFS_RapidUpdateCoalescing(t *testing.T) {
 	defer replica.Close()
 
 	const updates = 200
-	writerDone := make(chan struct{})
-	go func() {
-		defer close(writerDone)
-		for i := 1; i <= updates; i++ {
-			if _, err := primary.Exec("UPDATE metrics SET value = ? WHERE id = 1", i); err != nil {
-				return
-			}
-			time.Sleep(time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for i := 1; i <= updates; i++ {
+		if _, err := primary.ExecContext(ctx, "UPDATE metrics SET value = ? WHERE id = 1", i); err != nil {
+			t.Fatalf("update %d: %v", i, err)
 		}
-	}()
+		time.Sleep(time.Millisecond)
+	}
 
-	require.Eventually(t, func() bool {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
 		var value int
 		if err := replica.QueryRow("SELECT value FROM metrics WHERE id = 1").Scan(&value); err != nil {
-			return false
+			t.Fatalf("read replica value: %v", err)
 		}
-		return value == updates
-	}, 3*time.Second, 5*time.Millisecond, "replica should observe final value")
-	<-writerDone
+		if value == updates {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("replica value %d did not converge to %d", value, updates)
+		}
+		time.Sleep(time.Millisecond)
+	}
 
 	var value int
 	if err := replica.QueryRow("SELECT value FROM metrics WHERE id = 1").Scan(&value); err != nil {
@@ -2088,10 +2113,10 @@ func openReplicatedPrimary(tb testing.TB, client litestream.ReplicaClient, monit
 	db.Replica = litestream.NewReplica(db)
 	db.Replica.Client = client
 	db.Replica.SyncInterval = syncInterval
-	if err := db.Open(); err != nil {
-		tb.Fatalf("open db: %v", err)
-	}
 	sqldb := testingutil.MustOpenSQLDB(tb, db.Path())
+	if err := db.Open(); err != nil {
+		tb.Fatalf("open db: %v", errors.Join(err, sqldb.Close()))
+	}
 	tb.Cleanup(func() { _ = db.Close(context.Background()) })
 	return db, sqldb
 }
