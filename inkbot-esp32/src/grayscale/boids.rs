@@ -23,6 +23,12 @@ struct Boid {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FlockConfig {
     pub count: usize,
+    /// Number of separate flocks `count` boids start in. The count splits
+    /// evenly across them (any remainder goes to the first few flocks);
+    /// each starts at its own spot on the canvas with its own shared
+    /// heading. Alignment and cohesion can still merge them later if they
+    /// come within `perception_radius` of each other.
+    pub flock_count: usize,
     pub width: f32,
     pub height: f32,
     /// Fastest a boid may move, in logical pixels per step.
@@ -60,7 +66,8 @@ pub struct FlockConfig {
 impl Default for FlockConfig {
     fn default() -> Self {
         Self {
-            count: 12,
+            count: 36,
+            flock_count: 3,
             width: super::LOGICAL_WIDTH as f32,
             height: super::LOGICAL_HEIGHT as f32,
             // One refresh moves the ink one step of a 30-step swing. At
@@ -135,19 +142,32 @@ pub struct Flock {
 }
 
 impl Flock {
-    /// A flock gathered near the middle of the canvas, sharing one heading
-    /// with a little jitter. `seed` makes the starting layout reproducible.
+    /// `flock_count` flocks, each gathered near its own spot on the canvas
+    /// and sharing one heading with a little jitter. `seed` makes the
+    /// starting layout reproducible.
     pub fn new(config: FlockConfig, seed: u32) -> Self {
         let mut rng = Rng::new(seed);
-        let (cx, cy) = (config.width * 0.5, config.height * 0.5);
+        let groups = config.flock_count.clamp(1, config.count.max(1));
         // Keep the spawn box on the canvas for the small test field too.
         let spread = 18.0_f32.min(config.width * 0.22).min(config.height * 0.22);
-        let heading = rng.next_range(0.0, 2.0 * PI);
-        // About 20 degrees either way, so they start as one flight rather
-        // than twelve independent travelers.
+        // About 20 degrees either way, so each group starts as one flight
+        // rather than independent travelers.
         let jitter = 0.35_f32;
-        let boids = (0..config.count)
-            .map(|_| {
+        // One band per flock, left to right, so starting flocks don't spawn
+        // on top of each other.
+        let band_width = config.width / groups as f32;
+        let cy = config.height * 0.5;
+
+        let mut boids = Vec::with_capacity(config.count);
+        for g in 0..groups {
+            let group_count = config.count / groups + usize::from(g < config.count % groups);
+            if group_count == 0 {
+                continue;
+            }
+            let cx =
+                (band_width * (g as f32 + 0.5)).clamp(spread, (config.width - spread).max(spread));
+            let heading = rng.next_range(0.0, 2.0 * PI);
+            boids.extend((0..group_count).map(|_| {
                 let angle = heading + rng.next_range(-jitter, jitter);
                 let speed = rng.next_range(config.min_speed, config.max_speed);
                 Boid {
@@ -156,8 +176,8 @@ impl Flock {
                     vx: angle.cos() * speed,
                     vy: angle.sin() * speed,
                 }
-            })
-            .collect();
+            }));
+        }
         Self { config, boids, rng }
     }
 
@@ -391,6 +411,7 @@ mod tests {
     fn small_config() -> FlockConfig {
         FlockConfig {
             count: 10,
+            flock_count: 1,
             width: 80.0,
             height: 60.0,
             edge_margin: 8.0,
@@ -426,45 +447,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn default_flock_starts_together_on_one_heading() {
-        let config = FlockConfig::default();
-        assert!(
-            config.separation_radius <= config.triangle_length + 2.0,
-            "separation {} is wide next to an arrow of length {}",
-            config.separation_radius,
-            config.triangle_length
-        );
-        let flock = Flock::new(config, 4);
-        let pos = flock.positions();
-        let mut max_dist = 0.0f32;
-        for (i, a) in pos.iter().enumerate() {
-            for b in &pos[i + 1..] {
-                max_dist = max_dist.max((a.0 - b.0).hypot(a.1 - b.1));
-            }
-        }
-        assert!(max_dist < 40.0, "start spread {max_dist}");
-
-        let headings = flock.headings();
-        for (i, a) in headings.iter().enumerate() {
-            for b in &headings[i + 1..] {
-                let mut d = (a - b).abs() % (2.0 * PI);
-                if d > PI {
-                    d = 2.0 * PI - d;
-                }
-                assert!(d < 0.8, "heading gap {d}");
-            }
-        }
-    }
-
-    #[test]
-    fn wander_keeps_headings_from_fully_converging() {
-        let config = FlockConfig::default();
-        let mut flock = Flock::new(config, 23);
-        for _ in 0..600 {
-            flock.step();
-        }
-        let headings = flock.headings();
+    /// Largest pairwise angular gap, in `[0, PI]`, among `headings`.
+    fn max_heading_gap(headings: &[f32]) -> f32 {
         let mut max_gap = 0.0f32;
         for (i, a) in headings.iter().enumerate() {
             for b in &headings[i + 1..] {
@@ -475,6 +459,76 @@ mod tests {
                 max_gap = max_gap.max(d);
             }
         }
+        max_gap
+    }
+
+    #[test]
+    fn default_flock_starts_as_separate_groups() {
+        let config = FlockConfig::default();
+        assert!(
+            config.separation_radius <= config.triangle_length + 2.0,
+            "separation {} is wide next to an arrow of length {}",
+            config.separation_radius,
+            config.triangle_length
+        );
+        assert_eq!(
+            config.count % config.flock_count,
+            0,
+            "test assumes count splits evenly across flocks"
+        );
+        let group_size = config.count / config.flock_count;
+
+        let flock = Flock::new(config, 4);
+        let pos = flock.positions();
+        let headings = flock.headings();
+
+        // Each starting flock is internally tight and shares one heading,
+        // same as a single flock would.
+        let mut centroids = Vec::with_capacity(config.flock_count);
+        for group in 0..config.flock_count {
+            let range = group * group_size..(group + 1) * group_size;
+            let group_pos = &pos[range.clone()];
+            let mut max_dist = 0.0f32;
+            for (i, a) in group_pos.iter().enumerate() {
+                for b in &group_pos[i + 1..] {
+                    max_dist = max_dist.max((a.0 - b.0).hypot(a.1 - b.1));
+                }
+            }
+            assert!(max_dist < 40.0, "group {group} start spread {max_dist}");
+            assert!(
+                max_heading_gap(&headings[range]) < 0.8,
+                "group {group} heading gap too wide"
+            );
+
+            let (sx, sy) = group_pos
+                .iter()
+                .fold((0.0, 0.0), |(sx, sy), (x, y)| (sx + x, sy + y));
+            let n = group_pos.len() as f32;
+            centroids.push((sx / n, sy / n));
+        }
+
+        // The flocks themselves start apart from each other, not stacked
+        // on the same spot.
+        let mut max_centroid_dist = 0.0f32;
+        for (i, a) in centroids.iter().enumerate() {
+            for b in &centroids[i + 1..] {
+                max_centroid_dist = max_centroid_dist.max((a.0 - b.0).hypot(a.1 - b.1));
+            }
+        }
+        assert!(
+            max_centroid_dist > 60.0,
+            "starting flocks should be spread across the canvas, got {max_centroid_dist}"
+        );
+    }
+
+    #[test]
+    fn wander_keeps_headings_from_fully_converging() {
+        let config = FlockConfig::default();
+        let mut flock = Flock::new(config, 23);
+        for _ in 0..600 {
+            flock.step();
+        }
+        let max_gap = max_heading_gap(&flock.headings());
         // Without wander, alignment alone drives every heading gap toward
         // zero; some spread after 600 steps shows the noise keeps working,
         // not just scattering the initial headings before they settle.
