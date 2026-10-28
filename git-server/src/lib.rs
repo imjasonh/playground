@@ -28,6 +28,9 @@
 //! * [`fileapi`] — file content / directory listing at a ref or commit.
 //! * [`blame`] — line-level blame built on the push-time file-log index.
 //! * [`maintenance`] — budgeted, resumable repacking for scheduled Workers.
+//! * [`registry`] — the repo-registry trait and page-following walk that
+//!   scheduled maintenance uses to find every repo, implemented by a KV
+//!   namespace in production and in-memory in tests.
 //! * [`http`] — the transport-agnostic HTTP request router shared by the
 //!   Workers entry point, the native test server, and the benchmarks.
 //! * [`scope`] — per-request metrics, spans, and CF-Ray on an isolate that
@@ -53,6 +56,7 @@ pub mod pack;
 pub mod pktline;
 pub mod protocol;
 pub mod refs;
+pub mod registry;
 pub mod repo;
 pub mod scope;
 pub mod storage;
