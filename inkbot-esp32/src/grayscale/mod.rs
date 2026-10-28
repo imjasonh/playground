@@ -27,7 +27,7 @@ use crate::panel::{PANEL_HEIGHT, PANEL_WIDTH};
 
 /// Baked into the grayscale demo ELF so `make flash APP=grayscale` can
 /// refuse a stale image, the same way `MAZE_FIRMWARE_ID` does for maze.
-pub const GRAYSCALE_FIRMWARE_ID: &str = "grayscale-esp32/0.10";
+pub const GRAYSCALE_FIRMWARE_ID: &str = "grayscale-esp32/0.11";
 
 /// Logical pixels are `LOGICAL_BLOCK`×`LOGICAL_BLOCK` physical pixels.
 pub const LOGICAL_BLOCK: usize = 2;
