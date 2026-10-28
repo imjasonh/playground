@@ -440,12 +440,14 @@ func (r *Repo) FetchPrune(ctx context.Context, remote Remote, refspec string) er
 	return err
 }
 
-// Maintain runs git's automatic maintenance, such as packing loose
-// objects, if the repository needs it. It runs in the foreground, under
-// the command's timeout, because Git sets gc.autoDetach to false for
-// every command.
+// Maintain packs loose objects when gc.auto says the repository needs
+// that. It runs `git maintenance run --task=gc --auto` in the foreground,
+// under the command's timeout, because Git sets gc.autoDetach to false
+// for every command. The command names the gc task. Since Git 2.56,
+// `git maintenance run --auto` with no task uses the geometric strategy,
+// which ignores gc.auto.
 func (r *Repo) Maintain(ctx context.Context) error {
-	_, err := r.run(ctx, "maintenance", "run", "--auto", "--quiet")
+	_, err := r.run(ctx, "maintenance", "run", "--task=gc", "--auto", "--quiet")
 	return err
 }
 
