@@ -195,6 +195,12 @@ state Platform {
         fight_draw(0)
         draw_hud_bullets()
         draw_sign_bullets()
+        // The transfer hints at the edges would compete with the
+        // gang's sprites; hide them for the same reason riding hides
+        // its in-train transfer bullets during a fight.
+        if not fight_on() {
+            draw_transfer_hints()
+        }
     }
 
     on scanline(80) {

@@ -29,15 +29,15 @@ const S_PLAYER2: u8 = 20
 const S_JEANS0: u8 = 8
 const S_JEANS1: u8 = 18
 const S_JEANS2: u8 = 28
-const S_BULLET1: u8 = 137
-const S_BULLET2: u8 = 183
+const S_BULLET1: u8 = 138
+const S_BULLET2: u8 = 184
 // Per route: sprite palette, bullet tile, and the color the
 // route needs in sprite palette 3 (0 for none).
 const ROUTE_PAL: u8[25] = [
     1, 1, 1, 1, 1, 1, 3, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 0, 3, 3, 3, 3, 0, 0, 0
 ]
 const ROUTE_TILE: u8[25] = [
-    137, 139, 141, 189, 191, 193, 149, 151, 155, 159, 199, 203, 207, 215, 163, 165, 181, 168, 172, 174, 176, 180, 178, 178, 178
+    138, 140, 142, 190, 192, 194, 150, 152, 156, 160, 200, 204, 208, 216, 164, 166, 182, 169, 173, 175, 177, 181, 179, 179, 179
 ]
 const ROUTE_SP3: u8[25] = [
     0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 42, 7, 7, 0, 40, 40, 40, 40, 0, 0, 0
@@ -48,15 +48,15 @@ const ROUTE_MAP: u8[25] = [
     22, 22, 22, 26, 26, 26, 20, 18, 18, 18, 39, 39, 39, 39, 42, 23, 23, 48, 40, 40, 40, 40, 48, 48, 48
 ]
 const ROUTE_DOT: u8[25] = [
-    236, 236, 236, 237, 237, 237, 236, 236, 236, 236, 237, 237, 237, 237, 236, 236, 236, 236, 236, 236, 236, 236, 236, 236, 236
+    237, 237, 237, 238, 238, 238, 237, 237, 237, 237, 238, 238, 238, 238, 237, 237, 237, 237, 237, 237, 237, 237, 237, 237, 237
 ]
-const S_HERE: u8 = 238
-const S_DOT2: u8 = 237
+const S_HERE: u8 = 239
+const S_DOT2: u8 = 238
 const MAP_PANEL_X: u8 = 18
 const FONT_BASE: u8 = 1
-const S_POST: u8 = 229
-const S_SEAM_L: u8 = 230
-const S_SEAM_R: u8 = 231
+const S_POST: u8 = 230
+const S_SEAM_L: u8 = 231
+const S_SEAM_R: u8 = 232
 const MSG_NEXT: u8 = 0
 const MSG_THIS: u8 = 1
 const MSG_LAST: u8 = 2
@@ -84,10 +84,10 @@ const MSG_TEXT: u8[178] = [
     35, 45, 0, 46, 44, 27, 35, 40, 0, 33, 41, 31, 45, 0, 46, 41, 46, 41, 0, 14, 31, 50, 46, 70, 0, 1, 46, 70, 0, 14, 31, 50,
     46, 0, 45, 46, 41, 42, 45, 20, 44, 27, 35, 40, 45, 0, 34, 31, 44, 31
 ]
-const S_DEDGE_L: u8 = 232
-const S_DEDGE_R: u8 = 233
-const S_DCENTER: u8 = 234
-const S_WPOST: u8 = 235
+const S_DEDGE_L: u8 = 233
+const S_DEDGE_R: u8 = 234
+const S_DCENTER: u8 = 235
+const S_WPOST: u8 = 236
 // Fight sprites: Alex's poses (body, then denim) and the gang's.
 const S_P_PUNCH: u8 = 30
 const S_J_PUNCH: u8 = 38
@@ -107,6 +107,7 @@ const S_E_KICK: u8 = 112
 const S_E_HURT: u8 = 120
 const S_E_DOWN: u8 = 128
 const S_SPARK: u8 = 136
+const S_ARROW: u8 = 137
 // Stamina bar cells 0-8 and the dollar sign, on each HUD page.
 const T_BAR0: u8 = 215
 const I_BAR0: u8 = 223

@@ -962,6 +962,12 @@ def build_sprites(page):
             T[f"e_{name}_{i}"] = page.add(px, None, dedup=False)
     T["spark"] = page.add(parse(["3..3..3.", ".3.3.3..", "..323...", "3322233.",
                                  "..323...", ".3.3.3..", "3..3..3.", "........"]), "spark")
+    # A platform-edge transfer arrow, pointing right. Drawn flipped
+    # (attr bit 0x40) for the left edge. Alex's palette (black outline,
+    # white fill) needs no new sprite palette.
+    T["arrow"] = page.add(parse(["1.......", "13......", "133.....", "1333....",
+                                 "133.....", "13......", "1.......", "........"]),
+                          "arrow")
     circle = ["..####..", ".######.", "########", "########",
               "########", "########", ".######.", "..####.."]
     for k in (1, 2):
@@ -1252,6 +1258,7 @@ def main():
     for name in ("stand", "walk1", "walk2", "punch", "kick", "hurt", "down"):
         consts.append(f"const S_E_{name.upper()}: u8 = {ST[f'e_{name}_0']}")
     consts.append(f"const S_SPARK: u8 = {ST['spark']}")
+    consts.append(f"const S_ARROW: u8 = {ST['arrow']}")
     consts.append("// Stamina bar cells 0-8 and the dollar sign, on each HUD page.")
     consts.append(f"const T_BAR0: u8 = {plat_bar}")
     consts.append(f"const I_BAR0: u8 = {inner_bar}")

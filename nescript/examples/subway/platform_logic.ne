@@ -1,3 +1,16 @@
+// Left and right edges of the walkable floor where the transfer
+// arrow and route bullets go, and the nametable cells above them
+// (row 21) for the "UP"/"DN" tag. One tile in from each edge: a TV
+// crops the outer 8 pixels, and so does this game's own test
+// harness (jsnes' clipToTvSize). Both positions are still clear of
+// the benches (columns 9-12 and 20-23).
+const XFER_Y: u8 = 176
+const XFER_L_ARROW_X: u8 = 8
+const XFER_L_BULLET_X0: u8 = 24
+const XFER_R_ARROW_X: u8 = 240
+const XFER_R_BULLET_X0: u8 = 224
+const XFER_FLIP: u8 = 0x40
+
 // Load the platform for cur_st / cur_dir with rendering off.
 fun platform_setup() {
     screen_off()
@@ -6,6 +19,7 @@ fun platform_setup() {
     load_platform(cur_st, cur_dir)
     load_routes(cur_st)
     assign_sp3()
+    compute_transfers()
     pal_set(0, 0x00, 0x10, 0x30)
     pal_set(1, 0x10, 0x30, 0x27)
     pal_set(2, mosaic_color(), 0x10, 0x30)
@@ -59,7 +73,92 @@ fun platform_setup() {
     arrivals_text()
     vram_at(0x20, 0x61)
     vram_text(30)
+    if l_has {
+        set_dir_tag()
+        vram_at(0x22, 0xA1)
+        vram_text(2)
+    }
+    if r_has {
+        set_dir_tag()
+        vram_at(0x22, 0xBD)
+        vram_text(2)
+    }
+    text_len = 0
     screen_on()
+}
+
+// The complex members off the left (next_in_complex) and right
+// (prev_in_complex) edge of this platform, with up to 4 routes each.
+// Reserves a sprite palette 3 slot for any that need one, same as
+// load_xfers does for the in-train transfer HUD. Runs after
+// load_routes(cur_st) / assign_sp3(), and overwrites st_routes:
+// nothing after this reads the current platform's copy again.
+fun compute_transfers() {
+    var l: u16 = next_in_complex(cur_st)
+    l_has = l != cur_st
+    if l_has {
+        load_routes(l)
+        l_n = st_nroutes
+        if l_n > 4 {
+            l_n = 4
+        }
+        var i: u8 = 0
+        while i < l_n {
+            l_routes[i] = st_routes[i]
+            claim_sp3(st_routes[i])
+            i += 1
+        }
+    }
+    var r: u16 = prev_in_complex(cur_st)
+    r_has = r != cur_st
+    if r_has {
+        load_routes(r)
+        r_n = st_nroutes
+        if r_n > 4 {
+            r_n = 4
+        }
+        var j: u8 = 0
+        while j < r_n {
+            r_routes[j] = st_routes[j]
+            claim_sp3(st_routes[j])
+            j += 1
+        }
+    }
+}
+
+// "UP" when cur_dir faces north, "DN" when it faces south. Passages
+// keep cur_dir, so both the adjacent platforms this hints at face the
+// same way.
+fun set_dir_tag() {
+    if cur_dir == 0 {
+        text_buf[0] = 21 // U
+        text_buf[1] = 16 // P
+    } else {
+        text_buf[0] = 4 // D
+        text_buf[1] = 14 // N
+    }
+    text_len = 2
+}
+
+// The transfer arrow and route bullets at each edge that has one.
+// Call only while no fight has the sprite budget those bullets need.
+fun draw_transfer_hints() {
+    if l_has {
+        draw SpriteTiles at: (XFER_L_ARROW_X, XFER_Y) frame: S_ARROW attr: XFER_FLIP
+        var i: u8 = 0
+        while i < l_n {
+            draw_bullet(XFER_L_BULLET_X0 + i * 8, XFER_Y, l_routes[i])
+            i += 1
+        }
+    }
+    if r_has {
+        draw SpriteTiles at: (XFER_R_ARROW_X, XFER_Y) frame: S_ARROW attr: 0
+        var j: u8 = 0
+        while j < r_n {
+            draw_bullet(XFER_R_BULLET_X0 - j * 8, XFER_Y, r_routes[j])
+            j += 1
+        }
+    }
 }
 
 fun mosaic_color() -> u8 {
