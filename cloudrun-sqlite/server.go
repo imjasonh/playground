@@ -41,6 +41,12 @@ type server struct {
 	instance   string
 	started    time.Time
 	adminToken string
+	// readOnly serves a replica that never writes. writerURL, when set,
+	// is where its page links for clicking.
+	readOnly  bool
+	writerURL string
+	// pollInterval is how often the replica's VFS lists for new writes.
+	pollInterval time.Duration
 }
 
 func newServer(st *store.Store, live *fanout.Hub, instance string, started time.Time, adminToken string) *server {
@@ -50,18 +56,70 @@ func newServer(st *store.Store, live *fanout.Hub, instance string, started time.
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
-	mux.HandleFunc("POST /click", s.click)
 	mux.HandleFunc("GET /events", s.events)
 	mux.HandleFunc("GET /htmx.js", script("web/vendor/htmx.js"))
 	mux.HandleFunc("GET /sse.js", script("web/vendor/sse.js"))
 	mux.HandleFunc("GET /items/{id}", s.getItem)
-	mux.HandleFunc("POST /items", s.createItem)
 	mux.HandleFunc("GET /stats", s.stats)
 	mux.Handle("GET /metrics", observe.Metrics())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok\n") })
-	mux.HandleFunc("POST /admin/snapshot", s.admin(s.snapshot))
 	mux.HandleFunc("GET /admin/check", s.admin(s.check))
+	if s.readOnly {
+		for _, pattern := range []string{"POST /click", "POST /items", "POST /admin/snapshot"} {
+			mux.HandleFunc(pattern, s.refuseWrite)
+		}
+	} else {
+		mux.HandleFunc("POST /click", s.click)
+		mux.HandleFunc("POST /items", s.createItem)
+		mux.HandleFunc("POST /admin/snapshot", s.admin(s.snapshot))
+	}
 	return observe.HTTP(mux)
+}
+
+// refuseWrite answers a write sent to a read-only replica. The empty Allow
+// header says that the resource accepts no methods here.
+func (s *server) refuseWrite(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Allow", "")
+	msg := "read-only replica: send writes to the writer"
+	if s.writerURL != "" {
+		msg += " at " + s.writerURL
+	}
+	http.Error(w, msg, http.StatusMethodNotAllowed)
+}
+
+// followReplica sends the click count to connected pages when it changes.
+// A read-only replica handles no clicks, so the count changes only when the
+// VFS installs another instance's writes, on its poll. Checking more often
+// than every second would only reread cached pages.
+func (s *server) followReplica(ctx context.Context) {
+	every := min(s.pollInterval, time.Second)
+	if every <= 0 {
+		every = time.Second
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	last, err := s.clicks(ctx)
+	if err != nil {
+		slog.Warn("read click count", "error", err)
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		n, err := s.clicks(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				slog.Warn("read click count", "error", err)
+			}
+			continue
+		}
+		if n > last {
+			last = n
+			s.live.NotifyClick(n)
+		}
+	}
 }
 
 func script(name string) http.HandlerFunc {
@@ -137,16 +195,23 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	s.st.Read(r.Context(), func(db *sql.DB) error {
 		return db.QueryRowContext(r.Context(), "SELECT sqlite_version()").Scan(&version)
 	})
-	if err := page.Execute(w, view{Count: n, Version: version, Instance: s.instance}); err != nil {
+	v := view{Count: n, Version: version, Instance: s.instance, ReadOnly: s.readOnly, WriterURL: s.writerURL}
+	if s.readOnly {
+		v.Poll = s.pollInterval.String()
+	}
+	if err := page.Execute(w, v); err != nil {
 		slog.Error("render index", "error", err)
 	}
 }
 
 type view struct {
-	Count    int64
-	Version  string
-	Instance string
-	Took     string
+	Count     int64
+	Version   string
+	Instance  string
+	Took      string
+	ReadOnly  bool
+	WriterURL string
+	Poll      string
 }
 
 func (s *server) click(w http.ResponseWriter, r *http.Request) {
@@ -349,14 +414,17 @@ button:focus-visible { outline: 3px solid #0b3a82; outline-offset: 2px; }
 </style>
 </head>
 <body hx-ext="sse">
-<h1>cloudrun-sqlite</h1>
-<p>The click count is one row in SQLite. This process is the writer. <a href="https://litestream.io">Litestream</a> uploads the transaction to the replica before it answers the click.</p>
+<h1>cloudrun-sqlite{{if .ReadOnly}} read-only replica{{end}}</h1>
+{{if .ReadOnly}}<p>The click count is one row in SQLite. This instance reads the database through <a href="https://litestream.io">Litestream</a> and never writes: SQLite opens it read-only, and this service's account can only read the bucket.</p>
+<p>Each open page holds a server-sent event connection to this instance. Litestream lists the replica for new writes every {{.Poll}}. When the count changes, this instance sends it to every page connected here.</p>
+<p>A click reaches this page one poll after the writer uploads it.{{if .WriterURL}} <a href="{{.WriterURL}}">Click on the writer</a>.{{end}}</p>
+{{else}}<p>The click count is one row in SQLite. This process is the writer. <a href="https://litestream.io">Litestream</a> uploads the transaction to the replica before it answers the click.</p>
 <p>Each open page holds a server-sent event connection to this process. After the upload, the same request delivers the new count, in memory, to every page connected here.</p>
-<p>That delivery stays in this process. A different instance reads the new count from the replica on its next poll. A page connected to the writer gets the count straight from the request that produced it.</p>
-<p class="status">SQLite {{.Version}}. Instance {{.Instance}}.</p>
+<p>That delivery stays in this process. A read-only replica reads the new count from the replica on its next poll. A page connected to the writer gets the count straight from the request that produced it.</p>
+{{end}}<p class="status">SQLite {{.Version}}. Instance {{.Instance}}.</p>
 <div sse-connect="/events">
 <p id="count" sse-swap="clicks" hx-swap="innerHTML" aria-live="polite">Clicks: {{.Count}}</p>
-{{template "actions" .}}
+{{if not .ReadOnly}}{{template "actions" .}}{{end}}
 <h2>Notifications this page received</h2>
 <ol id="log" sse-swap="notice" hx-swap="beforeend" aria-live="polite"></ol>
 </div>

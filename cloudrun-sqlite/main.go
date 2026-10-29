@@ -51,6 +51,8 @@ var env = envconfig.MustProcess(context.Background(), &struct {
 	PollInterval    time.Duration `env:"POLL_INTERVAL, default=30s"`
 	Port            string        `env:"PORT, default=8080"`
 	AdminToken      string        `env:"ADMIN_TOKEN"`
+	ReadOnly        bool          `env:"READ_ONLY"`
+	WriterURL       string        `env:"WRITER_URL"`
 }{})
 
 func serveMain(args []string) error {
@@ -65,8 +67,11 @@ func serveMain(args []string) error {
 	cfg.CacheSize = env.CacheSize
 	cfg.SnapshotPlanLen = env.SnapshotPlanLen
 	cfg.PollInterval = env.PollInterval
+	cfg.ReadOnly = env.ReadOnly
 
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	fs.BoolVar(&cfg.ReadOnly, "read-only", cfg.ReadOnly, "serve reads from the replica and never write; open waits until a writer has created the database")
+	writerURL := fs.String("writer-url", env.WriterURL, "writer's URL, for the read-only page's link")
 	fs.StringVar(&cfg.ReplicaURL, "replica-url", cfg.ReplicaURL, "Litestream replica URL (gs://, s3://, or file://)")
 	fs.StringVar(&cfg.Dir, "dir", cfg.Dir, "instance-local scratch directory")
 	fs.BoolVar(&cfg.Durable, "durable", cfg.Durable, "acknowledge writes only after they are in object storage")
@@ -106,14 +111,21 @@ func serveMain(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := migrate(ctx, st); err != nil {
-		st.Close()
-		return err
+	if !cfg.ReadOnly {
+		if err := migrate(ctx, st); err != nil {
+			st.Close()
+			return err
+		}
 	}
 	live := fanout.New()
-	slog.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
+	slog.Info("database open", "open_ms", ms(time.Since(start)), "read_only", cfg.ReadOnly, "durable", cfg.Durable, "hydrate", cfg.Hydrate)
 
-	srv := &http.Server{Handler: newServer(st, live, instance, start, env.AdminToken).routes()}
+	s := newServer(st, live, instance, start, env.AdminToken)
+	s.readOnly, s.writerURL, s.pollInterval = cfg.ReadOnly, *writerURL, cfg.PollInterval
+	if cfg.ReadOnly {
+		go s.followReplica(ctx)
+	}
+	srv := &http.Server{Handler: s.routes()}
 	ln, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
 		live.Close()

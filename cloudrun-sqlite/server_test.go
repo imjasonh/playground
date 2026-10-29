@@ -114,6 +114,57 @@ func TestClickReachesEveryEventConnection(t *testing.T) {
 	}
 }
 
+func TestReadOnlyReplicaFollowsWriter(t *testing.T) {
+	replica := t.TempDir()
+	writer := httptest.NewServer(testServerAt(t, replica, false))
+	t.Cleanup(writer.Close)
+	reader := httptest.NewServer(testServerAt(t, replica, true))
+	t.Cleanup(reader.Close)
+
+	res, err := http.Get(reader.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET / on the replica: %s %s", res.Status, page)
+	}
+	if strings.Contains(string(page), `hx-post="/click"`) {
+		t.Fatalf("replica page has a click button:\n%s", page)
+	}
+	if !strings.Contains(string(page), "read-only replica") {
+		t.Fatalf("replica page doesn't say it's read-only:\n%s", page)
+	}
+
+	for _, path := range []string{"/click", "/items", "/admin/snapshot"} {
+		res, err := http.Post(reader.URL+path, "text/plain", strings.NewReader("x"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s on the replica: %s, want 405", path, res.Status)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	events := openEvents(t, ctx, reader.URL+"/events")
+	defer events.Close()
+	waitEvent(t, events, "clicks", "Clicks: 0")
+	res, err = http.Post(writer.URL+"/click", "text/plain", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST /click on the writer: %s", res.Status)
+	}
+	waitEvent(t, events, "clicks", "Clicks: 1")
+	waitEvent(t, events, "notice", "count 1")
+}
+
 type eventStream struct {
 	body io.ReadCloser
 	r    *bufio.Reader
@@ -180,23 +231,44 @@ func readEvent(r *bufio.Reader) (name, data string, err error) {
 
 func testServer(t *testing.T) http.Handler {
 	t.Helper()
-	ctx := clog.WithLogger(t.Context(), clog.New(slog.DiscardHandler))
+	return testServerAt(t, t.TempDir(), false)
+}
+
+// testServerAt serves the replica in dir. A read-only server must start
+// after a writer, because opening waits until the database exists.
+func testServerAt(t *testing.T, dir string, readOnly bool) http.Handler {
+	t.Helper()
+	ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.New(slog.DiscardHandler)))
 	cfg := store.DefaultConfig()
-	cfg.ReplicaURL = "file://" + t.TempDir()
+	cfg.ReplicaURL = "file://" + dir
 	cfg.Dir = t.TempDir()
 	cfg.SnapshotPlanLen = 0
+	cfg.ReadOnly = readOnly
+	if readOnly {
+		cfg.PollInterval = 50 * time.Millisecond
+	}
 	st, err := store.Open(ctx, cfg)
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
-	if err := migrate(ctx, st); err != nil {
-		st.Close()
-		t.Fatal(err)
+	if !readOnly {
+		if err := migrate(ctx, st); err != nil {
+			cancel()
+			st.Close()
+			t.Fatal(err)
+		}
 	}
 	live := fanout.New()
+	s := newServer(st, live, "test", time.Now(), "")
+	s.readOnly, s.pollInterval = readOnly, cfg.PollInterval
+	if readOnly {
+		go s.followReplica(ctx)
+	}
 	t.Cleanup(func() {
+		cancel()
 		live.Close()
 		st.Close()
 	})
-	return newServer(st, live, "test", time.Now(), "").routes()
+	return s.routes()
 }

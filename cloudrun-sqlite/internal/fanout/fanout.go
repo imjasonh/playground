@@ -4,8 +4,8 @@
 // This app's Cloud Run config runs one writer at a time, so a click and its
 // delivery happen in the same request, in the same process: the HTTP
 // handler calls NotifyClick right after the durable write returns. That
-// makes a SQL-level pub/sub mechanism unnecessary here — there is no other
-// connection or process to signal. Delivery is in-memory and best effort: a
+// makes a SQL-level pub/sub mechanism unnecessary here, because there is no
+// other connection or process to signal. Delivery is in-memory and best effort: a
 // page that misses a notification (a dropped connection, a restart) reads
 // the correct count from the replica on its next connection, so nothing
 // durable depends on this package. A different instance never calls

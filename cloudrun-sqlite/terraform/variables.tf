@@ -26,6 +26,18 @@ variable "durable" {
   default     = true
 }
 
+variable "reader_max_instances" {
+  description = "Most instances of the read-only replica service. Each instance with an open page lists the bucket every reader_poll_interval."
+  type        = number
+  default     = 3
+}
+
+variable "reader_poll_interval" {
+  description = "How often each read-only replica instance lists the bucket for new writes, as a Go duration. A click reaches a replica page up to this long after the writer uploads it. At 2s, an instance kept busy by an open page makes 1,800 LIST requests an hour."
+  type        = string
+  default     = "2s"
+}
+
 variable "hydrate" {
   description = "Download the whole database to the instance in the background. Needs memory for the database on top of memory_limit's other uses."
   type        = bool
