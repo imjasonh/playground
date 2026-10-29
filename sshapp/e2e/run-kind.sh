@@ -155,7 +155,15 @@ fi
 
 echo "::group::Create KinD cluster ${CLUSTER_NAME}"
 if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
-  kind create cluster --name "${CLUSTER_NAME}"
+  # kube-proxy's nftables mode works on kernels without the iptables
+  # statistic match, which iptables mode needs for Services with more than
+  # one endpoint. The kube and git-k8s kind clusters use the same setting.
+  kind create cluster --name "${CLUSTER_NAME}" --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  kubeProxyMode: nftables
+EOF
   KIND_CREATED=1
 else
   echo "Reusing existing cluster ${CLUSTER_NAME}"
@@ -214,9 +222,9 @@ expect_greeting() {
   local out="" attempt
   for attempt in 1 2 3 4 5 6 7 8; do
     out="$("$@" 2>"${WORKDIR}/ssh-stderr.txt" || true)"
-    echo "${label} attempt ${attempt}: ${out}"
+    echo "${label} attempt ${attempt}: ${out}" >&2
     if [[ -s "${WORKDIR}/ssh-stderr.txt" ]]; then
-      echo "${label} stderr: $(cat "${WORKDIR}/ssh-stderr.txt")"
+      echo "${label} stderr: $(cat "${WORKDIR}/ssh-stderr.txt")" >&2
     fi
     if grep -q 'hello,' <<<"${out}"; then
       printf '%s\n' "${out}"
