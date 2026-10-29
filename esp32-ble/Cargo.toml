@@ -25,8 +25,8 @@ firmware = []
 
 [target.'cfg(target_os = "espidf")'.dependencies]
 anyhow = "1"
-esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
-esp32-nimble = "0.12"
+esp-idf-svc = { version = "0.53", features = ["std", "native", "binstart"] }
+esp32-nimble = "0.13"
 log = "0.4"
 
 [build-dependencies]

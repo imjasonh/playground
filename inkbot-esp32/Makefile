@@ -83,11 +83,11 @@ export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 # and the venv at `.embuild/python_env/`. Some older checkouts nested those
 # under `.embuild/espressif/`; accept either.
 NVS_GEN_PY := $(firstword $(wildcard \
-	$(CURDIR)/.embuild/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py \
-	$(CURDIR)/.embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py))
+	$(CURDIR)/.embuild/esp-idf/v6.1/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py \
+	$(CURDIR)/.embuild/espressif/esp-idf/v6.1/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py))
 NVS_GEN_PYTHON := $(firstword $(wildcard \
-	$(CURDIR)/.embuild/python_env/idf5.2_py3.12_env/bin/python \
-	$(CURDIR)/.embuild/espressif/python_env/idf5.2_py3.12_env/bin/python))
+	$(CURDIR)/.embuild/python_env/idf6.1_py3.*_env/bin/python \
+	$(CURDIR)/.embuild/espressif/python_env/idf6.1_py3.*_env/bin/python))
 
 .PHONY: help build build-inkbot build-maze check-firmware-inkbot check-firmware-maze \
 	flash flash-all monitor run clean test \

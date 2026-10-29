@@ -55,7 +55,7 @@ embedded-svc = { version = "0.29", optional = true }
 # Upstream compiles a shared 2.13″ module unconditionally and requires one of
 # its revision flags even when we drive the 7.5″ V2 panel.
 epd-waveshare = { git = "https://github.com/rust-embedded-community/epd-waveshare.git", rev = "8fc19ae69aa7b1243953935dd8b6c076950e6ee7", default-features = false, features = ["graphics", "epd2in13_v3"], optional = true }
-esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
+esp-idf-svc = { version = "0.53", features = ["std", "native", "binstart"] }
 log = "0.4"
 sha2 = { version = "0.11", optional = true }
 hex = { version = "0.4", optional = true }
