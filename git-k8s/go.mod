@@ -6,9 +6,9 @@ go 1.26.0
 replace github.com/imjasonh/playground/kube => ../kube
 
 require (
-	cel.dev/cel-go v0.33.0
+	cel.dev/cel-go v0.33.1
 	github.com/chainguard-dev/clog v1.8.1
-	github.com/imjasonh/playground/kube v0.0.0-20261027023526-f8c83ebe26c7
+	github.com/imjasonh/playground/kube v0.0.0-20261028191013-d3a4e51ccde0
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/mod v0.42.0
 	golang.org/x/sync v0.24.0
