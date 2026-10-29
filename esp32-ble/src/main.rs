@@ -106,7 +106,7 @@ fn main() -> Result<()> {
     }
 }
 
-// esp-idf-hal 0.46 uses PinDriver<'d, MODE>. The pin type is erased into MODE.
+// esp-idf-hal's PinDriver<'d, MODE> erases the pin type into MODE.
 fn drive_led(led: &mut PinDriver<'_, Output>, on: bool) -> Result<()> {
     if on {
         led.set_high()?;

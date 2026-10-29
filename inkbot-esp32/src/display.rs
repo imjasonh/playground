@@ -14,7 +14,7 @@ use esp_idf_svc::hal::{
 
 use inkbot_esp32::{overlay_status_line, FRAME_BYTES};
 
-// esp-idf-hal 0.46: PinDriver<'d, MODE> — pin type is erased into MODE.
+// esp-idf-hal's PinDriver<'d, MODE> erases the pin type into MODE.
 type BusyPin = PinDriver<'static, Input>;
 type DcPin = PinDriver<'static, Output>;
 type RstPin = PinDriver<'static, Output>;
