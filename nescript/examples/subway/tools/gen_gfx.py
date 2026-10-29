@@ -798,6 +798,83 @@ def legs_for(phase):
     return STRIDE_LEGS[phase - 1]
 
 
+# Fight poses, 16x32 like BODY and facing left. Everything stays
+# inside the 2x4 tiles, so a fighter is 8 sprites in any pose (10 for
+# Alex with the denim) and a fight fits the 64-sprite OAM.
+PUNCH = BODY[:12] + [
+    "2221122213333331",
+    "2222211113333331",
+    "2222133333311333",
+    "1111333333112221",
+    ".133333333122221",
+    ".133333333122221",
+    ".133333331222221",
+    ".133333331222221",
+    ".133333331111111",
+    ".13333333333331.",
+    ".11111111111111.",
+    ".1111111111111..",
+] + STAND_LEGS
+KICK = BODY + [
+    "...1BBBBBBB1BB1.",
+    "11111BBBBBBBB11.",
+    "BBBBBBBBBBBBBB1.",
+    "BBBBBBBBB1BBBB1.",
+    "11111111.1BBBB1.",
+    ".........1BBBB1.",
+    ".........1BBBB1.",
+    "........1111111.",
+]
+JUMP = BODY + [
+    "..1BBBBBBBBBBB1.",
+    ".1BBBBBBBBBBBB1.",
+    ".1BBBB11BBBBBB1.",
+    ".1BBB1..1BBBBB1.",
+    "..111...1BBBB1..",
+    ".........1111...",
+    "................",
+    "................",
+]
+# Hit: the head snaps back and the guard drops.
+HURT = [
+    "................",
+    "....11111111111.",
+    "...1111111111111",
+    "..11111112111111",
+    "..11111122211111",
+    "..1111122221111.",
+    "..11122211211...",
+    "...12222111211..",
+    "...12211333211..",
+    "...12221333212..",
+    "...22222222222..",
+    "...222222222111.",
+    "..1222211122133.",
+    "..1222222213333.",
+    "..1311111113333.",
+    ".11333333311133.",
+    "1222133333331221",
+    "1222133333331221",
+    "1221333333331221",
+    ".11333333333111.",
+    "..1333333333331.",
+    "..1333333333331.",
+    "..11111111111111",
+    "...1111111111111",
+] + STAND_LEGS
+
+
+def rot_cw(rows):
+    """Turn a standing picture on its back: 16x32 becomes 32x16, head right."""
+    h = len(rows)
+    return ["".join(rows[h - 1 - y][x] for y in range(h)) for x in range(len(rows[0]))]
+
+
+# Knocked down, 32x16. The legs land in the left tile column.
+DOWN = rot_cw(HURT)
+FIGHT_POSES = {"punch": PUNCH, "kick": KICK, "jump": JUMP, "hurt": HURT}
+
+
 def leg_black(rows):
     """Outline and shoes. Denim is left transparent."""
     return ["".join("1" if c == "1" else "." for c in r) for r in rows]
@@ -819,7 +896,7 @@ def walk_frame(base, phase):
 
 
 def split_16(rows):
-    """Cut a 16-wide picture into 8x8 tiles, column-major per 8 rows."""
+    """Cut a picture into 8x8 tiles, left to right, then top to bottom."""
     tiles = []
     for ty in range(len(rows) // 8):
         for tx in range(len(rows[0]) // 8):
@@ -831,6 +908,32 @@ def split_16(rows):
     return tiles
 
 
+def body_only(rows):
+    """Alex's picture without the denim, which is its own sprite layer."""
+    return ["".join("." if c == "B" else c for c in r) for r in rows]
+
+
+def gang(rows):
+    """An enemy: one sprite palette, so the trousers take the outline color."""
+    return ["".join("1" if c == "B" else c for c in r) for r in rows]
+
+
+def add_hud_tiles(page):
+    """Stamina bar cells filled 0-8 pixels, then a dollar sign. Color 3
+    is the fill and color 1 the empty track, in the HUD row's palette."""
+    page.align_run(10)
+    first = None
+    for k in range(9):
+        rows = ["........", "........"] + ["3" * k + "1" * (8 - k)] * 4 + ["........"] * 2
+        idx = page.add(parse(rows), None, dedup=False)
+        first = idx if first is None else first
+    dollar = page.add(parse(["...3....", "..3333..", ".3.3....", "..333...",
+                             "...3.3..", ".3333...", "...3....", "........"]),
+                      None, dedup=False)
+    assert dollar == first + 9
+    return first
+
+
 def build_sprites(page):
     T = {}
     for f in range(3):
@@ -839,6 +942,32 @@ def build_sprites(page):
         # Denim sits on top of the outline tiles, same 16x8 footprint.
         for i, px in enumerate(split_16(leg_blue(legs_for(f)))):
             T[f"jeans{f}_{i}"] = page.add(px, f"jeans{f}_{i}", dedup=False)
+    # Alex's fight poses: 8 body tiles, then the 2 denim tiles.
+    for name, rows in FIGHT_POSES.items():
+        for i, px in enumerate(split_16(body_only(rows))):
+            T[f"p_{name}_{i}"] = page.add(px, None, dedup=False)
+        for i, px in enumerate(split_16(leg_blue(rows[24:]))):
+            T[f"pj_{name}_{i}"] = page.add(px, None, dedup=False)
+    for i, px in enumerate(split_16(body_only(DOWN))):
+        T[f"p_down_{i}"] = page.add(px, None, dedup=False)
+    legs = [r[:8] for r in leg_blue(DOWN)]
+    for i, px in enumerate(split_16(legs)):
+        T[f"pj_down_{i}"] = page.add(px, None, dedup=False)
+    # The gang: every pose as 8 tiles of one palette.
+    gang_poses = {"stand": BODY + legs_for(0), "walk1": BODY + legs_for(1),
+                  "walk2": BODY + legs_for(2), "punch": PUNCH, "kick": KICK,
+                  "hurt": HURT, "down": DOWN}
+    for name, rows in gang_poses.items():
+        for i, px in enumerate(split_16(gang(rows))):
+            T[f"e_{name}_{i}"] = page.add(px, None, dedup=False)
+    T["spark"] = page.add(parse(["3..3..3.", ".3.3.3..", "..323...", "3322233.",
+                                 "..323...", ".3.3.3..", "3..3..3.", "........"]), "spark")
+    # A platform-edge transfer arrow, pointing right. Drawn flipped
+    # (attr bit 0x40) for the left edge. Alex's palette (black outline,
+    # white fill) needs no new sprite palette.
+    T["arrow"] = page.add(parse(["1.......", "13......", "133.....", "1333....",
+                                 "133.....", "13......", "1.......", "........"]),
+                          "arrow")
     circle = ["..####..", ".######.", "########", "########",
               "########", "########", ".######.", "..####.."]
     for k in (1, 2):
@@ -1034,6 +1163,7 @@ def main():
     TT = build_train(plat)
     wall = platform_screen(PT)
     train = train_screen(plat, TT, wall)
+    plat_bar = add_hud_tiles(plat)
 
     spr = Page("sprites", 0, font=False)
     ST = build_sprites(spr)
@@ -1041,6 +1171,7 @@ def main():
     inner = Page("interior", 1, reserved=JOLT_TILES)
     IT = build_interior(inner)
     car = interior_screen(IT)
+    inner_bar = add_hud_tiles(inner)
 
     mpage = Page("map", 1)
     MT, map_scr = build_map(mpage, out_dir)
@@ -1120,6 +1251,17 @@ def main():
     consts.append(table("MSG_TEXT", blob).rstrip())
     for name in ("dedge_l", "dedge_r", "dcenter", "wpost"):
         consts.append(f"const S_{name.upper()}: u8 = {ST[name]}")
+    consts.append("// Fight sprites: Alex's poses (body, then denim) and the gang's.")
+    for name in (*FIGHT_POSES, "down"):
+        consts.append(f"const S_P_{name.upper()}: u8 = {ST[f'p_{name}_0']}")
+        consts.append(f"const S_J_{name.upper()}: u8 = {ST[f'pj_{name}_0']}")
+    for name in ("stand", "walk1", "walk2", "punch", "kick", "hurt", "down"):
+        consts.append(f"const S_E_{name.upper()}: u8 = {ST[f'e_{name}_0']}")
+    consts.append(f"const S_SPARK: u8 = {ST['spark']}")
+    consts.append(f"const S_ARROW: u8 = {ST['arrow']}")
+    consts.append("// Stamina bar cells 0-8 and the dollar sign, on each HUD page.")
+    consts.append(f"const T_BAR0: u8 = {plat_bar}")
+    consts.append(f"const I_BAR0: u8 = {inner_bar}")
     consts.append("// Car interior page.")
     for name, idx in sorted(IT.items()):
         if not name.startswith("tab_"):

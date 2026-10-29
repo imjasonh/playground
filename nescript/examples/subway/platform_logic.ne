@@ -1,3 +1,20 @@
+// Transfer hints sit in the bottom corners, under the part of the
+// floor where Alex walks and fights. Each side that has a passage
+// stacks its route bullets in one column, bottom-aligned so a short
+// list stays on the floor, with the arrow beside the top bullet and
+// the "UP"/"DN" tag on the row above that. Column 0 and column 31
+// are cropped, so the column is one tile in from the edge. The
+// lowest bullet is the last fully visible row. Both columns are
+// clear of the benches (columns 9-12 and 20-23).
+const XFER_BULLET_BOTTOM: u8 = 224
+const XFER_L_ARROW_X: u8 = 8
+const XFER_L_BULLET_X: u8 = 16
+const XFER_L_TAG_COL: u8 = 1
+const XFER_R_ARROW_X: u8 = 240
+const XFER_R_BULLET_X: u8 = 232
+const XFER_R_TAG_COL: u8 = 29
+const XFER_FLIP: u8 = 0x40
+
 // Load the platform for cur_st / cur_dir with rendering off.
 fun platform_setup() {
     screen_off()
@@ -6,6 +23,7 @@ fun platform_setup() {
     load_platform(cur_st, cur_dir)
     load_routes(cur_st)
     assign_sp3()
+    compute_transfers()
     pal_set(0, 0x00, 0x10, 0x30)
     pal_set(1, 0x10, 0x30, 0x27)
     pal_set(2, mosaic_color(), 0x10, 0x30)
@@ -59,7 +77,108 @@ fun platform_setup() {
     arrivals_text()
     vram_at(0x20, 0x61)
     vram_text(30)
+    if l_has {
+        write_dir_tag(XFER_L_TAG_COL, l_n)
+    }
+    if r_has {
+        write_dir_tag(XFER_R_TAG_COL, r_n)
+    }
+    text_len = 0
     screen_on()
+}
+
+// The complex members off the left (next_in_complex) and right
+// (prev_in_complex) edge of this platform, with up to 4 routes each.
+// Reserves a sprite palette 3 slot for any that need one, same as
+// load_xfers does for the in-train transfer HUD. Runs after
+// load_routes(cur_st) / assign_sp3(), and overwrites st_routes:
+// nothing after this reads the current platform's copy again.
+fun compute_transfers() {
+    var l: u16 = next_in_complex(cur_st)
+    l_has = l != cur_st
+    if l_has {
+        load_routes(l)
+        l_n = st_nroutes
+        if l_n > 4 {
+            l_n = 4
+        }
+        var i: u8 = 0
+        while i < l_n {
+            l_routes[i] = st_routes[i]
+            claim_sp3(st_routes[i])
+            i += 1
+        }
+    }
+    var r: u16 = prev_in_complex(cur_st)
+    r_has = r != cur_st
+    if r_has {
+        load_routes(r)
+        r_n = st_nroutes
+        if r_n > 4 {
+            r_n = 4
+        }
+        var j: u8 = 0
+        while j < r_n {
+            r_routes[j] = st_routes[j]
+            claim_sp3(st_routes[j])
+            j += 1
+        }
+    }
+}
+
+// Y of the top route bullet. The column grows upward from
+// XFER_BULLET_BOTTOM, so one route sits on the floor and four
+// reach the row just under a standing Alex.
+fun xfer_bullet_y(n: u8) -> u8 {
+    if n < 2 {
+        return XFER_BULLET_BOTTOM
+    }
+    return XFER_BULLET_BOTTOM - ((n - 1) << 3)
+}
+
+// "UP" when cur_dir faces north, "DN" when it faces south. Passages
+// keep cur_dir, so both the adjacent platforms this hints at face the
+// same way. The tag sits on the nametable row above the top bullet.
+fun write_dir_tag(col: u8, n: u8) {
+    if cur_dir == 0 {
+        text_buf[0] = 21 // U
+        text_buf[1] = 16 // P
+    } else {
+        text_buf[0] = 4 // D
+        text_buf[1] = 14 // N
+    }
+    text_len = 2
+    var row: u8 = xfer_bullet_y(n) >> 3
+    row -= 1
+    var addr: u16 = 0x2000 + ((row as u16) << 5) + (col as u16)
+    vram_at((addr >> 8) as u8, addr as u8)
+    vram_text(2)
+}
+
+// The transfer arrow and route bullets at each edge that has one.
+// Bullets stack downward from the arrow. Call only while no fight
+// has the sprite budget those bullets need.
+fun draw_transfer_hints() {
+    if l_has {
+        var ly: u8 = xfer_bullet_y(l_n)
+        draw SpriteTiles at: (XFER_L_ARROW_X, ly) frame: S_ARROW attr: XFER_FLIP
+        var i: u8 = 0
+        while i < l_n {
+            draw_bullet(XFER_L_BULLET_X, ly, l_routes[i])
+            ly += 8
+            i += 1
+        }
+    }
+    if r_has {
+        var ry: u8 = xfer_bullet_y(r_n)
+        draw SpriteTiles at: (XFER_R_ARROW_X, ry) frame: S_ARROW attr: 0
+        var j: u8 = 0
+        while j < r_n {
+            draw_bullet(XFER_R_BULLET_X, ry, r_routes[j])
+            ry += 8
+            j += 1
+        }
+    }
 }
 
 fun mosaic_color() -> u8 {
@@ -471,37 +590,4 @@ fun draw_hud_bullets() {
         x = (arr_slot[i] + 1) << 3
         i += 1
     }
-}
-
-// The player: 16x32, two tiles wide. The art faces left; facing
-// right mirrors each row. The bottom row is the black outline and
-// shoes. The denim is two more tiles on sprite palette 2, in the
-// same place.
-fun draw_player(x: u8, y: u8, f: u8, flip: bool) {
-    var a: u8 = 0
-    var l: u8 = 0
-    var r: u8 = 1
-    if flip {
-        a = 0x40
-        l = 1
-        r = 0
-    }
-    var row: u8 = 0
-    var t: u8 = f
-    var yy: u8 = y
-    while row < 4 {
-        draw SpriteTiles at: (x, yy) frame: t + l attr: a
-        draw SpriteTiles at: (x + 8, yy) frame: t + r attr: a
-        t += 2
-        yy += 8
-        row += 1
-    }
-    var jt: u8 = S_JEANS0
-    if f == S_PLAYER1 {
-        jt = S_JEANS1
-    } else if f == S_PLAYER2 {
-        jt = S_JEANS2
-    }
-    draw SpriteTiles at: (x, y + 24) frame: jt + l attr: a | 2
-    draw SpriteTiles at: (x + 8, y + 24) frame: jt + r attr: a | 2
 }
