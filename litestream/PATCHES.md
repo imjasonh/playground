@@ -20,6 +20,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `f9b60a91` | `VFS.ConflictCheckInterval`, which skips the conflict-check LIST while a writer's position is fresh | Not proposed; pairs with conditional L0 uploads below |
 | `8569bca3` | Conditional create-if-absent for level-0 writes on `file`, `gs`, and `s3` replica clients (`L0CreateOnlyReplicaClient`); enabled automatically when the write-enabled VFS opens a client that supports it | Not proposed |
 | `27f1d8c1` | `OpenPrefetchReplicaClient` and `VFS.OpenPrefetch`: concurrent level listings and restore-plan header/page-index fetches during `VFSFile.Open` | Not proposed |
+| `c6e6085d` | Open prefetch drops its cache when the replica has no restore plan, so a read-only open that waits for the database sees the first file | Not proposed; fixes `27f1d8c1` |
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 | `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
 
