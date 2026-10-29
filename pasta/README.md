@@ -15,6 +15,19 @@ rule schemas. It's heavily inspired by Go's
 
 The intention of `pasta` is to be able to declaratively describe rules for ASTs in any supported language, and quickly and reproducibly flag and fix findings. You can hook this up to your editor and/or CI to automatically flag and potentially fix violations of the rules you've specified.
 
+`pasta` has two faces over the same tree-sitter substrate:
+
+- A **deterministic linter and fixer** driven by CUE rules — the `pasta`
+  command, the pre-commit hook, and the `pastals` LSP server. A rule either
+  matches or it doesn't, and a rule with a rewrite fixes in place. This is what
+  you gate CI on.
+- An **agent-facing fact finder** exposed as `pasta facts` and the
+  `pasta mcp` MCP server. It indexes a whole tree and answers questions about
+  the call graph — unused symbols, dead code, constant arguments, duplicate
+  bodies, unexport candidates — that take judgment, not a hard rule, to act on.
+  The findings are ranked and confidence-tagged leads for an agent (or a human)
+  to review, not autofixes. See [Code facts and the MCP server](#code-facts-and-the-mcp-server).
+
 ## Status
 
 Rules are defined in CUE files loaded at runtime. The framework ships generic predicates (parameterized over grammar specifics)
@@ -564,6 +577,73 @@ The full test, with positive and negative cases (different package,
 different method, already-migrated arity), lives in
 [`analyzers/go_api_migration/testdata/a.go`](./analyzers/go_api_migration/testdata/a.go)
 and its `.golden` counterpart.
+
+## Code facts and the MCP server
+
+The CUE rules above are deterministic: a rule matches or it doesn't. Some
+cleanups aren't that crisp — "is this exported function called from anywhere?",
+"do these two functions have the same body?", "does every caller pass the same
+argument?" They need a whole-tree index and a call graph, and the answer is a
+ranked lead to review, not a mechanical fix. `pasta` serves those as **code
+facts**, over the same tree-sitter substrate, through two front-ends:
+
+```
+# CLI: one tool, JSON on stdout. Paths default to ./...
+pasta facts                       # list the tools
+pasta facts report .              # one-shot cleanup summary across every sweep
+pasta facts unused_symbols --no-tests ./pkg
+pasta facts constant_arguments --min-calls 3 --literals-only
+pasta facts symbol_info --name Build
+pasta facts duplicate_bodies --min-size 12
+pasta facts find_nodes --def-lang go --node-type call_expression --text-regex 'panic'
+
+# MCP: a stdio JSON-RPC server exposing the same tools to an agent.
+pasta mcp --root .
+```
+
+Scope flags are shared: `--lang go,rust`, `--exclude 'vendor/**'`,
+`--no-tests`, and `--no-generated` control what the index covers, matching the
+CLI linter's first-party-only defaults. The index is built once per
+`(roots, options)` and cached across tool calls in one `pasta mcp` session.
+
+The tools fall into two groups. **Sweeps** scan the whole tree for cleanup
+leads:
+
+| Tool | What it finds |
+|---|---|
+| `report` | One-shot summary across every sweep, plus coverage and top high-confidence unused symbols |
+| `unused_symbols` | Definitions nothing references by name (production + high-confidence first; methods and interface/test/entrypoint symbols excluded or down-ranked) |
+| `dead_code` | Transitively unreachable definitions via the call graph (DCE-lite); roots include exports, entrypoints, tests, value- and string-refs, and dynamically dispatched methods |
+| `constant_arguments` | Parameters every call passes the same value (literals rank first) |
+| `constant_returns` | Functions whose every return yields the same literal (interface/trait methods excluded) |
+| `constant_conditions` | Branches with a literal condition (`if true` / `if false`) |
+| `redundant_conditions` | Comparisons to a boolean literal (`x == true`); strict `===` in JS/TS is low-confidence |
+| `unreachable_code` | Statements after a `return`/`break`/`continue`/`throw` in the same block |
+| `unused_parameters` | Parameters never read (skips underscore, self/this/cls, and interface-method params) |
+| `unused_imports` | Imports whose bound name never appears in the file (Go, Python) |
+| `unexport_candidates` | Exported definitions whose every in-tree caller shares the package |
+| `duplicate_bodies` | Functions with identical body structure (a shared-helper signal) |
+
+**Queries** answer a question about one name or the tree:
+
+| Tool | What it answers |
+|---|---|
+| `definitions` / `references` | Definitions with metrics; all occurrences of a name |
+| `symbol_info` | A name's definitions, export status, collisions, call count, value-use estimate |
+| `impact` | Transitive callers of a name (who breaks if it changes) |
+| `hotspots` | Definitions ranked by complexity/size/fan-in |
+| `argument_values` / `call_sites` | Value distribution for one parameter; locations that call a name |
+| `coverage` | What parsed, per language |
+| `find_nodes` | Generic escape hatch: AST nodes by tree-sitter type, optionally filtered by a Go regexp on their text |
+
+The facts engine binds by **name and arity**, not by resolving symbols, so a
+finding is a lead to judge, not a proof. It is deliberately conservative where
+the tree can't decide — a Go import whose package name diverges from its path
+(`palette-swap` → package `palette`) is left to the compiler rather than
+reported — and it tags findings with a confidence and ranks production,
+high-confidence results first. The engine lives in
+[`internal/codefacts`](./internal/codefacts/); `pasta facts` and `pasta mcp`
+are thin front-ends over it.
 
 ## LSP
 

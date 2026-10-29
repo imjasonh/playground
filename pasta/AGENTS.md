@@ -61,7 +61,8 @@ than `go test`.
 | `internal/runner/`            | Programmatic API used by both the CLI and Go tests. `LoadRules`, `RunFile`, `RunGroup`, `TestDir`. |
 | `analyzers/<name>/`      | A shipped analyzer: a `<name>.cue` rule + `testdata/` (sources and `.golden` files). |
 | `testdata/<name>/`       | Extension/integration demos (e.g. `notgo_alias` showing user-supplied language modules). |
-| `cmd/pasta/`             | CLI. |
+| `internal/codefacts/`         | The agent-facing **code facts** engine behind `pasta facts` and `pasta mcp`. Builds a whole-tree index + call graph on `tsutil`/`tswasm` (no CUE), runs the cleanup sweeps and name queries. Independent of the CUE rule path. |
+| `cmd/pasta/`             | CLI. `facts.go` is the `pasta facts` subcommand; `mcp.go` is the `pasta mcp` stdio JSON-RPC server. |
 | `pasta_test.go`          | One root test that exercises every directory under `analyzers/` and `testdata/`. |
 
 ## Adding an analyzer
@@ -369,6 +370,40 @@ is a literal git ref (tag / branch / full SHA), no semver
 constraints; `git` is the fetcher. The Fetcher interface in
 `internal/remote/remote.go` is the single seam — swap it later for
 OCI / native CUE modules without changing the manifest format.
+
+## Code facts (`pasta facts` / `pasta mcp`)
+
+`internal/codefacts` is the second face of pasta (see the README's
+[Code facts and the MCP server](./README.md#code-facts-and-the-mcp-server)):
+an agent-usable fact finder for non-deterministic cleanups, as opposed to the
+deterministic CUE linter. It does **not** touch the CUE loader, the rule
+engine, or the fact store — it is a self-contained index over the same
+`tsutil`/`tswasm` tree-sitter substrate.
+
+- `codefacts.go` — per-language `langSpec` table (node types for calls, defs,
+  params, receivers, conditions, imports, interface/trait decls), the `Index`
+  type, and `Build` (walks roots, parses, builds the call graph).
+- `walk.go` — the per-file AST walk: definitions, calls, imports, body analysis
+  (idents, returns, branches, structural hash), receiver/qualifier resolution,
+  and `pasta:ignore` scoping. `goImportName` derives a Go import's bound name
+  (version-suffix and `go-`/`-go` conventions) and reports when the name can't
+  be known from the path.
+- `sweeps.go` — the whole-tree cleanup sweeps, each ranked production- and
+  confidence-first, with interface/trait and test/generated awareness.
+- `queries.go` — the per-name / per-tree queries, plus `FindNodes` (the generic
+  escape hatch; there is no tree-sitter query runtime here).
+- `tools.go` — the tool registry shared by both front-ends, so `pasta facts
+  <tool>` and the MCP `tools/list` stay in lockstep. Add a tool here once and
+  both surfaces get it.
+
+Binding is by **name and arity**, not symbol resolution, so every finding is a
+lead to judge. Precision comes from scoping (`--no-tests`, `--no-generated`,
+`--exclude`, vendored-dir skipping), per-definition call counts where a name is
+unique, excluding interface/trait and standard-library-interface methods, and
+refusing to guess where the tree can't decide. When you add or change a sweep,
+add a fixture case to `internal/codefacts/codefacts_test.go` and re-run it
+against the monorepo (`go run ./cmd/pasta facts report ..`) to check the
+signal-to-noise before shipping.
 
 ## Open work
 
