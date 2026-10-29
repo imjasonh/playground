@@ -55,6 +55,53 @@ def cmd_constants(args) -> int:
     return 0
 
 
+def cmd_unused(args) -> int:
+    idx = analyzer.build_index(args.path, _langs(args.lang))
+    rows = analyzer.unused_symbols(idx, include_exported=not args.skip_exported)
+    if args.json:
+        print(json.dumps([asdict(u) for u in rows], indent=2))
+        return 0
+    print(f"{len(rows)} never-referenced definition(s)\n")
+    for u in rows:
+        exported = {True: "exported", False: "unexported", None: "export?"}[u.exported]
+        extra = f", {u.def_count} defs share name" if u.def_count > 1 else ""
+        print(
+            f"[{u.confidence:^6}] {u.name}  {u.path}:{u.line}  ({u.lang}, {exported}{extra})"
+        )
+    return 0
+
+
+def cmd_dead_branches(args) -> int:
+    idx = analyzer.build_index(args.path, _langs(args.lang))
+    rows = analyzer.constant_conditions(idx)
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    print(f"{len(rows)} literal-constant condition(s)\n")
+    for r in rows:
+        print(
+            f"{r['path']}:{r['line']}  {r['construct']} (condition {r['value']!r}) "
+            f"-> branch {r['effect']}  [{r['lang']}]"
+        )
+    return 0
+
+
+def cmd_definitions(args) -> int:
+    idx = analyzer.build_index(args.path, _langs(args.lang))
+    exported = True if args.exported else (False if args.unexported else None)
+    rows = analyzer.definitions(idx, lang=args.only_lang, exported=exported)
+    print(json.dumps(rows, indent=2) if args.json else
+          "\n".join(f"{d['path']}:{d['line']}  {d['name']}({', '.join(d['params'])})"
+                    f"  calls={d['call_count']}" for d in rows))
+    return 0
+
+
+def cmd_query(args) -> int:
+    res = analyzer.ast_query(args.path, args.lang, args.query, limit=args.limit)
+    print(json.dumps(res, indent=2))
+    return 0
+
+
 def cmd_arg_values(args) -> int:
     idx = analyzer.build_index(args.path, _langs(args.lang))
     print(json.dumps(analyzer.argument_values(idx, args.name, args.index), indent=2))
@@ -88,6 +135,29 @@ def main(argv: list[str]) -> int:
         help="keep only literal/qualified-constant values (drop bare-ident noise)",
     )
     c.set_defaults(fn=cmd_constants)
+
+    u = sub.add_parser("unused", help="definitions nothing in the tree references")
+    u.add_argument("path")
+    u.add_argument("--skip-exported", action="store_true")
+    u.set_defaults(fn=cmd_unused)
+
+    d = sub.add_parser("dead-branches", help="branches with a literal constant condition")
+    d.add_argument("path")
+    d.set_defaults(fn=cmd_dead_branches)
+
+    df = sub.add_parser("definitions", help="list recognized function/method definitions")
+    df.add_argument("path")
+    df.add_argument("--only-lang", help="restrict to one language")
+    df.add_argument("--exported", action="store_true")
+    df.add_argument("--unexported", action="store_true")
+    df.set_defaults(fn=cmd_definitions)
+
+    q = sub.add_parser("query", help="run a raw tree-sitter S-expression query")
+    q.add_argument("path")
+    q.add_argument("lang")
+    q.add_argument("query")
+    q.add_argument("--limit", type=int, default=200)
+    q.set_defaults(fn=cmd_query)
 
     a = sub.add_parser("arg-values", help="value distribution for one parameter")
     a.add_argument("path")

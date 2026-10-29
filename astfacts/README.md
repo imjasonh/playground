@@ -1,12 +1,39 @@
 # astfacts (prototype)
 
-A multi-language code-facts tool that answers one question first: **which
-function parameters does every call pass the same value?** Such a parameter is
-a candidate for removal. The finding is only evidence — whether removing it is
-right depends on facts the tool surfaces so an agent (or you) can judge.
+A multi-language **code-facts substrate for agents doing cleanup work** —
+removing dead code, unused functions, redundant parameters, dead branches. It
+parses with tree-sitter (so it covers many languages out of the box) and gives
+an agent AST insight to do those sweeps faster and more accurately, rather than
+baking every sweep into the tool.
 
-This is a prototype to evaluate the idea, not a finished app. It parses with
-tree-sitter, so it covers many languages out of the box rather than one.
+The design goal: **don't hardcode every cleanup.** Ship a symbol/reference index
+plus a generic tree-sitter query, and let an agent compose them. A few
+high-value sweeps come prebuilt as conveniences on the same facts.
+
+## What it exposes
+
+Primitives (the general substrate):
+
+- `definitions` — every function/method, with location, params, export status,
+  and in-tree call count. Orientation.
+- `symbol_info` / `call_sites` / `argument_values` — drill into one name:
+  where it is defined, who calls it, the full value distribution of a parameter.
+- `ast_query` — run a raw tree-sitter S-expression query and get captures with
+  file/line/snippet. The escape hatch for any pattern no sweep covers.
+
+Prebuilt sweeps (built on the same index):
+
+- `constant_arguments` — parameters every call passes the same value.
+- `unused_symbols` — definitions nothing in the tree references.
+- `constant_conditions` — branches with a literal condition (`if true` /
+  `if false`), i.e. always-run or dead branches.
+
+Every finding carries evidence (export status, name-collision count, value kind,
+confidence) so the agent judges rather than trusts.
+
+These compose. `dead()` called only inside an `if false` is not flagged unused
+yet; `constant_conditions` flags the branch, and once the agent removes it
+`dead()` becomes unused. The tool supplies facts; the agent sequences the edits.
 
 ## Why it exists
 
@@ -46,14 +73,19 @@ CLI:
 
 ```bash
 python3 astfacts.py constants <path> --min-calls 3 --literals-only
+python3 astfacts.py --lang go unused <path>
+python3 astfacts.py dead-branches <path>
+python3 astfacts.py definitions <path> --only-lang go --unexported
+python3 astfacts.py query <path> go '(function_declaration name: (identifier) @fn)'
 python3 astfacts.py --lang go symbol <path> applySyncExecutor
 python3 astfacts.py --lang go arg-values <path> applySyncExecutor 1
-python3 astfacts.py --lang go call-sites <path> applySyncExecutor
 ```
 
 MCP (stdio): run `python3 mcp_server.py` and speak JSON-RPC, or point an MCP
-client at it. Tools: `constant_arguments`, `argument_values`, `call_sites`,
-`symbol_info`.
+client at it. Tools: `constant_arguments`, `unused_symbols`,
+`constant_conditions`, `definitions`, `ast_query`, `argument_values`,
+`call_sites`, `symbol_info`. The server parses once and caches the index, so a
+session's follow-up queries are cheap.
 
 ## Languages
 
@@ -72,6 +104,13 @@ grammars, so coverage is cheap to extend.
   a bucket is contaminated; it does not de-contaminate it.
 - **Export / used-as-value are heuristics**, not type-checked facts.
 - **Keyword/named arguments are ignored** past the first one; positional only.
+- **`unused_symbols` is name-based**: a name used anywhere (even as a method on
+  an unrelated type, or only inside a dead branch) counts as referenced, and
+  dynamic dispatch / reflection / interface satisfaction are invisible. It is a
+  strong "no in-tree use" signal, not proof; exported hits especially need a
+  human or a cross-repo check.
+- **`constant_conditions` only catches literal conditions** (`if true`), not
+  variables that are provably constant — that needs dataflow.
 - Java/Ruby mappings are present but under-tested here (little such code in this
   repo).
 

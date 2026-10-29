@@ -62,6 +62,79 @@ TOOLS = [
         },
     },
     {
+        "name": "unused_symbols",
+        "description": (
+            "Definitions that nothing in the tree references (name-based, "
+            "conservative). Each carries export status, how many definitions "
+            "share the name, and a confidence tier. An exported hit may still "
+            "have external callers (public API), so confidence is lower — the "
+            "fix may be a test, not a deletion."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "include_exported": {"type": "boolean", "default": True},
+                "langs": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "constant_conditions",
+        "description": (
+            "Conditional branches whose condition is a literal constant "
+            "(if true / if false / if 1 / if 0), i.e. a branch that always or "
+            "never runs. Infinite-loop idioms are excluded."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "langs": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "definitions",
+        "description": (
+            "Every function/method definition recognized, with location, "
+            "parameters, export status, and in-tree call count. Optionally "
+            "filter by language or export status. A general orientation primitive."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "only_lang": {"type": "string"},
+                "exported": {"type": "boolean"},
+                "langs": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "ast_query",
+        "description": (
+            "Run a raw tree-sitter S-expression query across a tree and return "
+            "captures with file, line, and a snippet. The escape hatch: when no "
+            "prebuilt sweep fits, write the structural query yourself. Example "
+            "query for Go empty-return functions: "
+            "(function_declaration result: (_)? @r body: (block) @b)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "lang": {"type": "string", "description": "language of the query"},
+                "query": {"type": "string", "description": "S-expression query"},
+                "limit": {"type": "integer", "default": 200},
+            },
+            "required": ["path", "lang", "query"],
+        },
+    },
+    {
         "name": "argument_values",
         "description": (
             "Full distribution of values passed to one parameter (by callee name "
@@ -121,6 +194,19 @@ def _call_tool(name: str, args: dict):
         if args.get("literals_only"):
             cands = [c for c in cands if c.value_kind in ("literal", "const")]
         return {"count": len(cands), "candidates": [asdict(c) for c in cands]}
+    if name == "unused_symbols":
+        idx = _index(path, langs)
+        rows = analyzer.unused_symbols(idx, args.get("include_exported", True))
+        return {"count": len(rows), "unused": [asdict(u) for u in rows]}
+    if name == "constant_conditions":
+        return {"conditions": analyzer.constant_conditions(_index(path, langs))}
+    if name == "definitions":
+        return {"definitions": analyzer.definitions(
+            _index(path, langs), lang=args.get("only_lang"),
+            exported=args.get("exported"),
+        )}
+    if name == "ast_query":
+        return analyzer.ast_query(path, args["lang"], args["query"], args.get("limit", 200))
     if name == "argument_values":
         return analyzer.argument_values(_index(path, langs), args["name"], args["index"])
     if name == "call_sites":

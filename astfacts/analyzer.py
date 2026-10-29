@@ -42,6 +42,10 @@ class LangSpec:
     params_field: str = "parameters"
     stop_arg_types: frozenset[str] = frozenset()  # first of these ends positional args
     exported: str = ""  # heuristic key, see is_exported
+    # Conditional constructs whose condition, if a literal, means a dead branch.
+    # Infinite-loop idioms (Go `for {}`, `while True`) are deliberately excluded.
+    cond_types: frozenset[str] = frozenset()
+    cond_field: str = "condition"
 
 
 SPECS: dict[str, LangSpec] = {
@@ -52,6 +56,7 @@ SPECS: dict[str, LangSpec] = {
         callee_name_fields=("field",),
         params_field="parameters",
         exported="go",
+        cond_types=frozenset({"if_statement"}),
     ),
     "python": LangSpec(
         exts=(".py",),
@@ -62,6 +67,7 @@ SPECS: dict[str, LangSpec] = {
             {"keyword_argument", "dictionary_splat", "list_splat"}
         ),
         exported="python",
+        cond_types=frozenset({"if_statement", "elif_clause"}),
     ),
     "javascript": LangSpec(
         exts=(".js", ".jsx", ".mjs", ".cjs"),
@@ -71,6 +77,7 @@ SPECS: dict[str, LangSpec] = {
         params_field="parameters",
         stop_arg_types=frozenset({"spread_element"}),
         exported="js",
+        cond_types=frozenset({"if_statement"}),
     ),
     "typescript": LangSpec(
         exts=(".ts", ".tsx"),
@@ -80,6 +87,7 @@ SPECS: dict[str, LangSpec] = {
         params_field="parameters",
         stop_arg_types=frozenset({"spread_element"}),
         exported="js",
+        cond_types=frozenset({"if_statement"}),
     ),
     "rust": LangSpec(
         exts=(".rs",),
@@ -88,6 +96,7 @@ SPECS: dict[str, LangSpec] = {
         callee_name_fields=("field", "name"),
         params_field="parameters",
         exported="rust",
+        cond_types=frozenset({"if_expression"}),
     ),
     "java": LangSpec(
         exts=(".java",),
@@ -96,12 +105,14 @@ SPECS: dict[str, LangSpec] = {
         callee_name_on_call="name",
         params_field="parameters",
         exported="java",
+        cond_types=frozenset({"if_statement"}),
     ),
     "c": LangSpec(
         exts=(".c", ".h"),
         call_types=frozenset({"call_expression"}),
         def_types=frozenset({"function_definition"}),
         exported="",
+        cond_types=frozenset({"if_statement"}),
     ),
     "cpp": LangSpec(
         exts=(".cc", ".cpp", ".cxx", ".hpp"),
@@ -109,6 +120,7 @@ SPECS: dict[str, LangSpec] = {
         def_types=frozenset({"function_definition"}),
         callee_name_fields=("field", "name"),
         exported="",
+        cond_types=frozenset({"if_statement"}),
     ),
     "ruby": LangSpec(
         exts=(".rb",),
@@ -117,6 +129,7 @@ SPECS: dict[str, LangSpec] = {
         callee_name_on_call="method",
         params_field="parameters",
         exported="",
+        cond_types=frozenset({"if"}),
     ),
 }
 
@@ -149,15 +162,27 @@ class Definition:
     path: str
     line: int
     exported: Optional[bool]
+    lang: str = ""
+
+
+@dataclass
+class DeadBranch:
+    construct: str  # if_statement, elif_clause, ...
+    value: str  # the literal the condition always evaluates to
+    always: bool  # True: the branch always runs; False: it never runs
+    path: str
+    line: int
+    lang: str
 
 
 @dataclass
 class Index:
     calls: dict[str, list[Call]] = field(default_factory=lambda: defaultdict(list))
     defs: dict[str, list[Definition]] = field(default_factory=lambda: defaultdict(list))
-    # Count of bare-identifier occurrences per name, used to estimate whether a
-    # function name is also referenced as a value (callback, pointer).
+    # Count of bare-identifier occurrences per name, used to decide whether a
+    # defined name is referenced at all (unused) or referenced as a value.
     ident_uses: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    dead: list[DeadBranch] = field(default_factory=list)
     files: int = 0
     langs: set[str] = field(default_factory=set)
 
@@ -292,6 +317,29 @@ def _has_descendant_type(node, types: set[str], depth: int) -> bool:
     return False
 
 
+_PAREN_TYPES = {"parenthesized_expression", "parenthesized", "parenthesized_expression_statement"}
+
+
+def _const_condition(node) -> Optional[tuple[str, bool]]:
+    """If a condition is a literal constant, return (value, always_true)."""
+    if node is None:
+        return None
+    # Unwrap a single parenthesized wrapper (C-like `if (true)`).
+    while node.type in _PAREN_TYPES and len(node.named_children) == 1:
+        node = node.named_children[0]
+    txt = node.text.decode("utf-8", "replace").strip()
+    low = txt.lower()
+    if low == "true":
+        return "true", True
+    if low == "false":
+        return "false", False
+    if txt == "1":
+        return "1", True
+    if txt == "0":
+        return "0", False
+    return None
+
+
 def _walk_file(path: str, lang: str, src: bytes, idx: Index) -> None:
     spec = SPECS[lang]
     parser = get_parser(lang)
@@ -333,8 +381,15 @@ def _walk_file(path: str, lang: str, src: bytes, idx: Index) -> None:
                 idx.defs[name].append(
                     Definition(
                         name, params, path, node.start_point[0] + 1,
-                        _is_exported(name, node, spec),
+                        _is_exported(name, node, spec), lang,
                     )
+                )
+        elif t in spec.cond_types:
+            verdict = _const_condition(node.child_by_field_name(spec.cond_field))
+            if verdict is not None:
+                value, always = verdict
+                idx.dead.append(
+                    DeadBranch(t, value, always, path, node.start_point[0] + 1, lang)
                 )
         elif t in _IDENT_TYPES:
             idx.ident_uses[node.text.decode("utf-8", "replace")] += 1
@@ -480,6 +535,141 @@ def call_sites(idx: Index, name: str, limit: int = 50) -> list[dict]:
         {"path": c.path, "line": c.line, "args": c.args}
         for c in idx.calls.get(name, [])[:limit]
     ]
+
+
+@dataclass
+class Unused:
+    name: str
+    path: str
+    line: int
+    params: list[str]
+    exported: Optional[bool]
+    lang: str
+    def_count: int
+    confidence: str
+
+
+def unused_symbols(idx: Index, include_exported: bool = True) -> list[Unused]:
+    """Defined names that nothing in the tree references.
+
+    Conservative and name-based: a name is unused only when it never appears
+    anywhere except its own definition(s). Because lookup is name-based, a hit is
+    a strong "no in-tree use" signal, but an exported symbol may still have
+    callers outside the tree (public API) — surfaced via ``exported`` and a
+    lower confidence, so the right move may be "add a test," not "delete."
+    """
+    out: list[Unused] = []
+    for name, defs in idx.defs.items():
+        # ident_uses counts every identifier occurrence, including each
+        # definition's own name node. References beyond the declarations:
+        refs = idx.ident_uses.get(name, 0) - len(defs)
+        if refs > 0:
+            continue
+        for d in defs:
+            if d.exported and not include_exported:
+                continue
+            conf = "low" if d.exported or d.exported is None else (
+                "high" if len(defs) == 1 else "medium"
+            )
+            out.append(
+                Unused(
+                    name=name, path=d.path, line=d.line, params=d.params,
+                    exported=d.exported, lang=d.lang, def_count=len(defs),
+                    confidence=conf,
+                )
+            )
+    conf_rank = {"high": 0, "medium": 1, "low": 2}
+    out.sort(key=lambda u: (conf_rank.get(u.confidence, 3), u.path, u.line))
+    return out
+
+
+def constant_conditions(idx: Index) -> list[dict]:
+    """Branches whose condition is a literal constant (dead or always-run)."""
+    return [
+        {
+            "path": d.path, "line": d.line, "lang": d.lang,
+            "construct": d.construct, "value": d.value,
+            "effect": "always runs" if d.always else "never runs",
+        }
+        for d in sorted(idx.dead, key=lambda d: (d.path, d.line))
+    ]
+
+
+def definitions(
+    idx: Index, lang: Optional[str] = None, exported: Optional[bool] = None
+) -> list[dict]:
+    """Every function/method definition recognized, optionally filtered."""
+    out: list[dict] = []
+    for name, defs in idx.defs.items():
+        for d in defs:
+            if lang and d.lang != lang:
+                continue
+            if exported is not None and d.exported is not exported:
+                continue
+            out.append({
+                "name": d.name, "path": d.path, "line": d.line,
+                "params": d.params, "exported": d.exported, "lang": d.lang,
+                "call_count": len(idx.calls.get(name, [])),
+            })
+    out.sort(key=lambda d: (d["path"], d["line"]))
+    return out
+
+
+def ast_query(
+    root: str, lang: str, query: str, limit: int = 200,
+    langs_filter: Optional[Iterable[str]] = None,
+) -> dict:
+    """Run a raw tree-sitter S-expression query across a tree.
+
+    The escape hatch: whatever structural pattern an agent is chasing that no
+    prebuilt sweep covers, it writes the query itself. Returns captures with
+    file, line, and a snippet.
+    """
+    from tree_sitter_languages import get_language
+
+    if lang not in SPECS:
+        return {"error": f"unknown language: {lang}", "matches": []}
+    spec = SPECS[lang]
+    try:
+        compiled = get_language(lang).query(query)
+    except Exception as e:
+        return {"error": f"invalid query: {e}", "matches": []}
+    parser = get_parser(lang)
+    matches: list[dict] = []
+    truncated = False
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for fn in filenames:
+            if os.path.splitext(fn)[1] not in spec.exts:
+                continue
+            full = os.path.join(dirpath, fn)
+            try:
+                with open(full, "rb") as fh:
+                    src = fh.read()
+            except OSError:
+                continue
+            if len(src) > 2_000_000:
+                continue
+            try:
+                tree = parser.parse(src)
+                for node, cap in compiled.captures(tree.root_node):
+                    snippet = _norm(node.text)
+                    matches.append({
+                        "capture": cap,
+                        "path": os.path.relpath(full, root),
+                        "line": node.start_point[0] + 1,
+                        "text": snippet[:200],
+                    })
+                    if len(matches) >= limit:
+                        truncated = True
+                        break
+            except Exception:
+                continue
+            if truncated:
+                break
+        if truncated:
+            break
+    return {"count": len(matches), "truncated": truncated, "matches": matches}
 
 
 def symbol_info(idx: Index, name: str) -> dict:
