@@ -33,17 +33,22 @@ export CARGO_TARGET_DIR
 
 INKBOT_TARGET_DIR := $(CURDIR)/target/inkbot-esp32
 MAZE_TARGET_DIR := $(CURDIR)/target/maze-esp32
+GRAYSCALE_TARGET_DIR := $(CURDIR)/target/grayscale-esp32
 INKBOT_BIN := $(INKBOT_TARGET_DIR)/$(TARGET)/release/inkbot-esp32
 MAZE_BIN := $(MAZE_TARGET_DIR)/$(TARGET)/release/maze-esp32
+GRAYSCALE_BIN := $(GRAYSCALE_TARGET_DIR)/$(TARGET)/release/grayscale-esp32
 INKBOT_FW_BIN := $(INKBOT_TARGET_DIR)/firmware.bin
 MAZE_FW_BIN := $(MAZE_TARGET_DIR)/firmware.bin
 INKBOT_SDKCONFIG_DEFAULTS := $(INKBOT_TARGET_DIR)/sdkconfig.defaults
 MAZE_SDKCONFIG_DEFAULTS := $(MAZE_TARGET_DIR)/sdkconfig.defaults
+GRAYSCALE_SDKCONFIG_DEFAULTS := $(GRAYSCALE_TARGET_DIR)/sdkconfig.defaults
 INKBOT_SDKCONFIG := $(INKBOT_TARGET_DIR)/sdkconfig
 MAZE_SDKCONFIG := $(MAZE_TARGET_DIR)/sdkconfig
+GRAYSCALE_SDKCONFIG := $(GRAYSCALE_TARGET_DIR)/sdkconfig
 NVS_BIN := $(CURDIR)/target/nvs.bin
 INKBOT_FIRMWARE_ID := $(shell awk -F'"' '/pub const FIRMWARE_ID/ { print $$2; exit }' src/status.rs)
 MAZE_FIRMWARE_ID := $(shell awk -F'"' '/MAZE_FIRMWARE_ID/ { print $$2; exit }' src/maze/mod.rs)
+GRAYSCALE_FIRMWARE_ID := $(shell awk -F'"' '/GRAYSCALE_FIRMWARE_ID/ { print $$2; exit }' src/grayscale/mod.rs)
 
 ifneq ($(GCP),0)
 INKBOT_FEATURES := firmware,inkbot-lib,net,ota-pull,epd,gcp
@@ -51,12 +56,18 @@ else
 INKBOT_FEATURES := firmware,inkbot-lib,net,ota-pull,epd
 endif
 MAZE_FEATURES := firmware,maze-lib
+GRAYSCALE_FEATURES := firmware,grayscale-lib
 
 ifeq ($(APP),maze)
 BIN := $(MAZE_BIN)
 FIRMWARE_ID := $(MAZE_FIRMWARE_ID)
 BOOTLOADER := $(firstword $(wildcard $(MAZE_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 FLASH_DEPS := build-maze
+else ifeq ($(APP),grayscale)
+BIN := $(GRAYSCALE_BIN)
+FIRMWARE_ID := $(GRAYSCALE_FIRMWARE_ID)
+BOOTLOADER := $(firstword $(wildcard $(GRAYSCALE_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
+FLASH_DEPS := build-grayscale
 else
 BIN := $(INKBOT_BIN)
 FIRMWARE_ID := $(INKBOT_FIRMWARE_ID)
@@ -89,7 +100,8 @@ NVS_GEN_PYTHON := $(firstword $(wildcard \
 	$(CURDIR)/.embuild/python_env/idf5.2_py3.12_env/bin/python \
 	$(CURDIR)/.embuild/espressif/python_env/idf5.2_py3.12_env/bin/python))
 
-.PHONY: help build build-inkbot build-maze check-firmware-inkbot check-firmware-maze \
+.PHONY: help build build-inkbot build-maze build-grayscale \
+	check-firmware-inkbot check-firmware-maze check-firmware-grayscale \
 	flash flash-all monitor run clean test \
 	ensure-python-shim ensure-idf save-image publish publish-one pull-verify pull-verify-one \
 	provision provision-build bootstrap check-gh-env
@@ -97,8 +109,10 @@ NVS_GEN_PYTHON := $(firstword $(wildcard \
 help:
 	@echo "Targets:"
 	@echo "  make build          Cross-compile inkbot + maze (separate IDF trees)"
+	@echo "  make build-grayscale  Cross-compile the grayscale-esp32 measurement demo (not part of 'build')"
 	@echo "  make flash          Build + flash $(FIRMWARE_ID) to $(PORT) (APP=$(APP))"
 	@echo "  make flash APP=maze Flash the maze firmware (same OTA partition table)"
+	@echo "  make flash APP=grayscale  Flash the grayscale video demo (USB-only, no OTA)"
 	@echo "  make build GCP=0    inkbot image without Cloud Logging / Monitoring"
 	@echo "  make flash-all      Erase + write bootloader, partition table, app"
 	@echo "  make provision      Write NVS from provisioning.toml (needs one prior make build)"
@@ -125,9 +139,17 @@ $(MAZE_SDKCONFIG_DEFAULTS): sdkconfig.defaults.maze.in partitions.csv
 	@mkdir -p $(MAZE_TARGET_DIR)
 	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.maze.in > $@
 
+$(GRAYSCALE_SDKCONFIG_DEFAULTS): sdkconfig.defaults.grayscale.in partitions.csv
+	@mkdir -p $(GRAYSCALE_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.grayscale.in > $@
+
 # Two sequential IDF builds: different sdkconfig + features cannot share
 # one CMake tree, and a combined `cargo build --bin inkbot --bin maze`
 # would compile maze with Wi-Fi too (features are per-package).
+#
+# grayscale-esp32 is an experimental measurement tool, not a shipped app
+# (see src/grayscale_main.rs): build it explicitly with `make
+# build-grayscale`, not as part of plain `make build`.
 build:
 	$(MAKE) build-inkbot
 	$(MAKE) build-maze
@@ -162,6 +184,21 @@ build-maze: ensure-python-shim $(MAZE_SDKCONFIG_DEFAULTS)
 	    -Z build-std=std,panic_abort
 	@$(MAKE) --no-print-directory check-firmware-maze
 
+build-grayscale: ensure-python-shim $(GRAYSCALE_SDKCONFIG_DEFAULTS)
+	@if [ -z "$(GRAYSCALE_FIRMWARE_ID)" ]; then \
+	  echo "ERROR: could not read GRAYSCALE_FIRMWARE_ID from src/grayscale/mod.rs"; \
+	  exit 1; \
+	fi
+	CARGO_TARGET_DIR=$(GRAYSCALE_TARGET_DIR) \
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(GRAYSCALE_SDKCONFIG_DEFAULTS) \
+	ESP_IDF_SDKCONFIG=$(GRAYSCALE_SDKCONFIG) \
+	  cargo +esp build --release \
+	    --features $(GRAYSCALE_FEATURES) \
+	    --bin grayscale-esp32 \
+	    --target $(TARGET) \
+	    -Z build-std=std,panic_abort
+	@$(MAKE) --no-print-directory check-firmware-grayscale
+
 check-firmware-inkbot:
 	@if [ ! -f "$(INKBOT_BIN)" ]; then echo "ERROR: missing $(INKBOT_BIN)"; exit 1; fi
 	@if ! grep -a -F -q "$(INKBOT_FIRMWARE_ID)" "$(INKBOT_BIN)"; then \
@@ -177,6 +214,14 @@ check-firmware-maze:
 	  exit 1; \
 	fi
 	@echo "firmware $(MAZE_FIRMWARE_ID) -> $(MAZE_BIN) ($$(wc -c < "$(MAZE_BIN)") bytes ELF) features=$(MAZE_FEATURES)"
+
+check-firmware-grayscale:
+	@if [ ! -f "$(GRAYSCALE_BIN)" ]; then echo "ERROR: missing $(GRAYSCALE_BIN)"; exit 1; fi
+	@if ! grep -a -F -q "$(GRAYSCALE_FIRMWARE_ID)" "$(GRAYSCALE_BIN)"; then \
+	  echo "ERROR: $(GRAYSCALE_BIN) does not contain $(GRAYSCALE_FIRMWARE_ID) (stale ELF?)"; \
+	  exit 1; \
+	fi
+	@echo "firmware $(GRAYSCALE_FIRMWARE_ID) -> $(GRAYSCALE_BIN) ($$(wc -c < "$(GRAYSCALE_BIN)") bytes ELF) features=$(GRAYSCALE_FEATURES)"
 
 # Always pass the OTA partition table. Without it, espflash 4.x writes a
 # factory-only table and the next OTA poll cannot find a second slot.

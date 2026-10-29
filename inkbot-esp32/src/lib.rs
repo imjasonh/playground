@@ -11,6 +11,9 @@ pub mod panel;
 #[cfg(any(not(target_os = "espidf"), feature = "maze-lib"))]
 pub mod maze;
 
+#[cfg(any(not(target_os = "espidf"), feature = "grayscale-lib"))]
+pub mod grayscale;
+
 #[cfg(any(not(target_os = "espidf"), feature = "inkbot-lib"))]
 pub mod catalog;
 #[cfg(any(not(target_os = "espidf"), feature = "inkbot-lib"))]
