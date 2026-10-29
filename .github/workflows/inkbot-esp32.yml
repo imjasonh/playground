@@ -103,8 +103,6 @@ jobs:
   firmware:
     name: Cross-build firmware
     needs: discover
-    # ESP-IDF v6.1's bundled toolchains run on Ubuntu 26.04 (current
-    # ubuntu-latest); the 5.2.2 toolchains that needed a 24.04 pin are gone.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
