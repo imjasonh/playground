@@ -156,6 +156,124 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   member   = "allUsers"
 }
 
+# The read-only replica has its own account so that its bucket role can't
+# write. The server also opens SQLite read-only and refuses writes, but
+# the role holds even if that code changes.
+resource "google_service_account" "reader" {
+  account_id   = "${var.name}-reader"
+  display_name = "cloudrun-sqlite read-only replica"
+}
+
+resource "google_project_iam_member" "reader_telemetry" {
+  for_each = toset([
+    "roles/cloudtrace.agent",
+    "roles/monitoring.metricWriter",
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.reader.email}"
+}
+
+# Gets and lists only: no uploads, deletes, or overwrites.
+resource "google_storage_bucket_iam_member" "reader" {
+  bucket = google_storage_bucket.replica.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.reader.email}"
+}
+
+# A separate service, so for now it has its own URL. A load balancer can
+# later send GETs here and everything else to the writer.
+resource "google_cloud_run_v2_service" "reader" {
+  name     = "${var.name}-reader"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+    service_account       = google_service_account.reader.email
+
+    scaling {
+      max_instance_count = var.reader_max_instances
+    }
+
+    max_instance_request_concurrency = 1000
+
+    containers {
+      image = ko_build.server.image_ref
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = var.memory_limit
+        }
+        cpu_idle          = !var.cpu_always_allocated
+        startup_cpu_boost = true
+      }
+
+      env {
+        name  = "READ_ONLY"
+        value = "true"
+      }
+      env {
+        name  = "REPLICA_URL"
+        value = "gs://${google_storage_bucket.replica.name}/db"
+      }
+      env {
+        name  = "DATA_DIR"
+        value = "/scratch"
+      }
+      env {
+        name  = "POLL_INTERVAL"
+        value = var.reader_poll_interval
+      }
+      env {
+        name  = "WRITER_URL"
+        value = google_cloud_run_v2_service.service.uri
+      }
+      env {
+        name  = "HYDRATE"
+        value = tostring(var.hydrate)
+      }
+      env {
+        name  = "GOMEMLIMIT"
+        value = var.go_memory_limit
+      }
+
+      volume_mounts {
+        name       = "scratch"
+        mount_path = "/scratch"
+      }
+    }
+
+    volumes {
+      name = "scratch"
+      empty_dir {
+        medium     = "MEMORY"
+        size_limit = var.scratch_size_limit
+      }
+    }
+  }
+
+  # A read-only open waits until the database exists, and the writer
+  # creates it when its first instance starts.
+  depends_on = [
+    google_project_service.services,
+    google_project_iam_member.reader_telemetry,
+    google_storage_bucket_iam_member.reader,
+    google_cloud_run_v2_service.service,
+  ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "reader_public" {
+  count = var.public ? 1 : 0
+
+  name     = google_cloud_run_v2_service.reader.name
+  location = google_cloud_run_v2_service.reader.location
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 # Latency charts for the histograms the server exports to Cloud Monitoring.
 # dashboard_test.go checks that its filters match series the server emits.
 # Cloud Monitoring omits a tile's xPos or yPos when the value is 0, and it

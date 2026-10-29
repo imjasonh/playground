@@ -88,6 +88,9 @@ func (s *Store) snapshotLoop(ctx context.Context) {
 // after it. It then deletes files that the previous snapshot already
 // covered.
 func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
+	if s.cfg.ReadOnly {
+		return nil, ErrReadOnly
+	}
 	s.snapshotMu.Lock()
 	defer s.snapshotMu.Unlock()
 	start := time.Now()

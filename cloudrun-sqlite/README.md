@@ -100,6 +100,76 @@ open fails too, requests get a 503 until a later read or write opens it.
 ones in flight, uploads anything left, and exits. Cloud Run sends SIGKILL 10
 seconds after SIGTERM.
 
+### Live updates
+
+The count is the `counters` row in the Litestream database. `POST /click`
+increments it inside `Store.Write`. With `DURABLE=true`, that call returns
+after the transaction is in the replica.
+
+Delivery is an in-process broadcast in `internal/fanout`. After
+`Store.Write` returns, the same request calls `Hub.NotifyClick`, which sends
+the new count on a channel to every page connected to `GET /events` on this
+instance. Cloud Run runs one writer at a time, so the click and its delivery
+are already in the same request and the same process. Nothing needs to
+signal another connection or process.
+
+An earlier version used [Honker](https://honker.dev), a SQLite pub/sub
+extension, with its own database file so that its polling listener didn't
+take the Litestream connection. Its listener only ever saw writes from the
+same process. Every cold start also downloaded the extension from GitHub,
+so a GitHub outage stopped new instances from starting.
+
+Delivery is in memory and best effort. It isn't part of the write's
+transaction, and nothing durable depends on it. `Store.Write` has put the
+count in the replica before `NotifyClick` runs. A page that misses a
+broadcast reads the correct count the next time it connects to
+`GET /events`. That covers a page that hadn't connected yet, a dropped
+connection, and a restart between the write and the broadcast.
+
+An open page is a request that stays open. With request-based billing, the
+instance keeps CPU while a page is open, and Cloud Run doesn't scale it to
+zero. Cloud Run's request timeout closes the connection, and the browser
+reconnects and reads the current count.
+
+The page uses the htmx SSE extension, served from this process. `sse-connect`
+opens `GET /events`. An event named `clicks` replaces the count. An event
+named `notice` appends a line to the list on that page. The click request
+returns the button and the write duration. The count arrives on the event
+connection, including on the page that sent the click.
+
+### Read-only replica
+
+The `cloudrun-sqlite-reader` service runs the same image with
+`READ_ONLY=true`. It has its own URL. A load balancer could later send GETs
+to it and every other method to the writer. Four separate checks stop it
+from writing:
+
+1. Its service account has `roles/storage.objectViewer` on the bucket, which
+   allows gets and lists but no uploads or deletes.
+1. The store opens the VFS without write support, and doesn't compact or
+   snapshot.
+1. SQLite opens the database with `mode=ro`, so every write statement fails
+   in SQLite. `PRAGMA litestream_write_enabled` can't turn writes on after
+   that, because SQLite records the read-only open.
+1. `Store.Write`, `Flush`, and `Snapshot` return `store.ErrReadOnly`, and
+   `POST /click`, `POST /items`, and `POST /admin/snapshot` return
+   `405 Method Not Allowed`.
+
+The replica learns about writes when its VFS lists the bucket, every
+`POLL_INTERVAL` (2 seconds in Terraform). Every 100 milliseconds it reads
+the count, which between polls comes from cached pages, and sends it to
+connected pages when the count went up. A click reaches a replica page
+between a few milliseconds and one poll interval, plus 100 milliseconds,
+after the writer uploads it.
+
+A read-only open waits until the database exists, so the replica starts
+only after the writer's first instance has created it. Terraform deploys
+the writer first. Each replica instance with an open page lists the bucket
+twice per poll: 3,600 Class A requests an hour at 2 seconds, about $13 a
+month at $0.005 per 1,000. Each write adds about 3 GETs. The instance the
+open page keeps running costs about $66 a month at 512 MiB. For a plan to measure both, see
+[`docs/live-updates-plan.md`](docs/live-updates-plan.md).
+
 ## Measurements
 
 These numbers come from this repository's Cloud Run simulator (`cmd/crsim`)
@@ -266,7 +336,22 @@ go build -tags vfs -o cloudrun-sqlite .
 ./cloudrun-sqlite -replica-url file://$PWD/replica
 ```
 
-Open <http://localhost:8080/>, or use the JSON endpoints:
+Open <http://localhost:8080/> in two browser tabs and click in one. Both tabs show the new count.
+
+To run a read-only replica next to it, start a second server on the same
+replica with `-read-only`. Start it after the writer, because a read-only
+open waits until the database exists:
+
+```bash
+./cloudrun-sqlite -replica-url file://$PWD/replica -read-only \
+  -port 8081 -dir /tmp/cloudrun-sqlite-reader -poll-interval 1s \
+  -writer-url http://localhost:8080/
+```
+
+A page on <http://localhost:8081/> shows each click one poll after the
+writer uploads it.
+
+The JSON endpoints are the same:
 
 ```bash
 curl -X POST --data 'hello' localhost:8080/items   # {"id":1}
@@ -295,6 +380,8 @@ The server reads these environment variables:
 | `SNAPSHOT_PLAN_LEN` | `16` | snapshot when a cold start would read more files (`0` disables) |
 | `POLL_INTERVAL` | `30s` | how often to list the replica for compacted files or another instance's writes |
 | `ADMIN_TOKEN` | none | bearer token that enables `/admin/check` and `/admin/snapshot` |
+| `READ_ONLY` | `false` | serve reads from the replica and never write |
+| `WRITER_URL` | none | writer's URL, for the read-only page's link |
 
 `seed` replaces a replica with a generated database, for benchmarks:
 
@@ -345,7 +432,11 @@ export AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin
 
 Terraform in `terraform/` creates the bucket, the Artifact Registry
 repository, the runtime service account, and a Cloud Run service limited
-to one instance. Apply builds the image with [`ko`](https://ko.build).
+to one instance. It also creates the
+[read-only replica](#read-only-replica) service and its service account,
+after the writer. `tofu output url` prints the writer's URL and
+`tofu output reader_url` prints the replica's. Apply builds the image with
+[`ko`](https://ko.build).
 The build needs CGO. The default compiler is [zig](https://ziglang.org),
 which cross-compiles from any host.
 

@@ -32,6 +32,7 @@ func (c *prefetchCountingClient) OpenLTXFile(ctx context.Context, level int, min
 func TestOpenPrefetchReplicaClient_CachesListings(t *testing.T) {
 	replica := t.TempDir()
 	inner := file.NewReplicaClient(replica)
+	createTestLTXFile(t, inner, 0, 1, 1)
 	counting := &prefetchCountingClient{ReplicaClient: inner}
 	pf := litestream.NewOpenPrefetchReplicaClient(counting)
 
@@ -54,6 +55,25 @@ func TestOpenPrefetchReplicaClient_CachesListings(t *testing.T) {
 	}
 	if counting.lists.Load() <= afterPrefetch {
 		t.Fatal("listing after EndOpenPrefetch did not reach the replica")
+	}
+}
+
+// A read-only open of a replica with no files waits by listing again, so a
+// prefetch that finds no database must not cache the empty listing.
+func TestOpenPrefetchReplicaClient_EmptyReplicaListsFresh(t *testing.T) {
+	replica := t.TempDir()
+	direct := file.NewReplicaClient(replica)
+	pf := litestream.NewOpenPrefetchReplicaClient(direct)
+
+	pf.PrefetchOpen(t.Context(), nil)
+	createTestLTXFile(t, direct, 0, 1, 1)
+
+	plan, err := litestream.CalcRestorePlan(t.Context(), pf, 0, time.Time{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("plan after the first file landed: %v", err)
+	}
+	if len(plan) != 1 || plan[0].MaxTXID != 1 {
+		t.Fatalf("plan = %+v, want the one file at TXID 1", plan)
 	}
 }
 
