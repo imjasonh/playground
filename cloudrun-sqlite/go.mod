@@ -12,7 +12,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/prometheus/client_golang v1.25.0
 	github.com/psanford/sqlite3vfs v0.0.0-20260519004904-f9180fa2acc9
-	github.com/russellromney/honker-go v0.0.0-20261007235446-8e947935d55e
 	github.com/sethvargo/go-envconfig v1.4.3
 	github.com/superfly/ltx v0.5.3
 	go.opentelemetry.io/contrib/detectors/gcp v1.47.0

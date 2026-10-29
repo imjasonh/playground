@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/litestream"
-	"github.com/imjasonh/playground/cloudrun-sqlite/internal/honk"
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/fanout"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
@@ -37,13 +37,13 @@ func migrate(ctx context.Context, st *store.Store) error {
 
 type server struct {
 	st         *store.Store
-	live       *honk.Hub
+	live       *fanout.Hub
 	instance   string
 	started    time.Time
 	adminToken string
 }
 
-func newServer(st *store.Store, live *honk.Hub, instance string, started time.Time, adminToken string) *server {
+func newServer(st *store.Store, live *fanout.Hub, instance string, started time.Time, adminToken string) *server {
 	return &server{st: st, live: live, instance: instance, started: started, adminToken: adminToken}
 }
 
@@ -161,12 +161,10 @@ func (s *server) click(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	// The replica has the count before notify runs. A crash between the two
-	// leaves the count ahead of the notification log. The next page load
-	// reads the count.
-	if err := s.live.NotifyClick(n); err != nil {
-		slog.Error("honker notify", "error", err, "count", n)
-	}
+	// The replica has the count before this call, so a page that misses
+	// the in-memory delivery (a crash, a dropped connection) still reads
+	// the correct count on its next connection.
+	s.live.NotifyClick(n)
 	if err := actions.Execute(w, view{Took: writeTook(time.Since(start))}); err != nil {
 		slog.Error("render click", "error", err)
 	}
@@ -353,8 +351,8 @@ button:focus-visible { outline: 3px solid #0b3a82; outline-offset: 2px; }
 <body hx-ext="sse">
 <h1>cloudrun-sqlite</h1>
 <p>The click count is one row in SQLite. This process is the writer. <a href="https://litestream.io">Litestream</a> uploads the transaction to the replica before it answers the click.</p>
-<p>Each open page holds a server-sent event connection to this process. After the upload, the process inserts a <a href="https://honker.dev">Honker</a> notification into a second SQLite file on this instance. Honker watches that file, and the server sends the new count to every connected page.</p>
-<p>The notification file stays on this instance. A different instance reads the new count from the replica on its next poll. A page connected to the writer gets the count from the notification.</p>
+<p>Each open page holds a server-sent event connection to this process. After the upload, the same request delivers the new count, in memory, to every page connected here.</p>
+<p>That delivery stays in this process. A different instance reads the new count from the replica on its next poll. A page connected to the writer gets the count straight from the request that produced it.</p>
 <p class="status">SQLite {{.Version}}. Instance {{.Instance}}.</p>
 <div sse-connect="/events">
 <p id="count" sse-swap="clicks" hx-swap="innerHTML" aria-live="polite">Clicks: {{.Count}}</p>

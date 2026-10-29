@@ -7,14 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chainguard-dev/clog"
-	"github.com/imjasonh/playground/cloudrun-sqlite/internal/honk"
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/fanout"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 )
 
@@ -194,16 +193,7 @@ func testServer(t *testing.T) http.Handler {
 		st.Close()
 		t.Fatal(err)
 	}
-	ext, err := honk.Extension(ctx, "", cfg.Dir)
-	if err != nil {
-		st.Close()
-		t.Fatal(err)
-	}
-	live, err := honk.Open(ctx, filepath.Join(cfg.Dir, "honker.db"), ext)
-	if err != nil {
-		st.Close()
-		t.Fatal(err)
-	}
+	live := fanout.New()
 	t.Cleanup(func() {
 		live.Close()
 		st.Close()
