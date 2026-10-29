@@ -8,12 +8,10 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use esp_idf_svc::hal::{
-    delay::{Ets, FreeRtos},
-    gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull},
-    spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver},
-    units::FromValueType,
-};
+use esp_idf_svc::hal::delay::{Ets, FreeRtos};
+use esp_idf_svc::hal::gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull};
+use esp_idf_svc::hal::spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver};
+use esp_idf_svc::hal::units::FromValueType;
 
 use inkbot_esp32::maze::ByteRect;
 use inkbot_esp32::FRAME_BYTES;

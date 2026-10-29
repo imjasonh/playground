@@ -4,7 +4,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
 use p256::ecdsa::signature::Verifier as _;
 use serde::Deserialize;
-use x509_cert::der::{oid::ObjectIdentifier, Decode, Encode};
+use x509_cert::der::oid::ObjectIdentifier;
+use x509_cert::der::{Decode, Encode};
 use x509_cert::ext::pkix::name::GeneralName;
 use x509_cert::ext::pkix::SubjectAltName;
 use x509_cert::Certificate;
@@ -267,7 +268,8 @@ fn pem_to_cert(pem: &[u8]) -> Result<Certificate> {
 }
 
 fn verify_signed_by_p384(child: &Certificate, parent: &Certificate) -> Result<()> {
-    use p384::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+    use p384::ecdsa::signature::Verifier;
+    use p384::ecdsa::{Signature, VerifyingKey};
 
     let parent_pubkey_bytes = parent
         .tbs_certificate

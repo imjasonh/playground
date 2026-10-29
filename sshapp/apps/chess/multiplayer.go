@@ -31,7 +31,7 @@ type GameSession struct {
 	White   *Player
 	Black   *Player
 	Updates chan GameUpdate
-	ctx     context.Context
+	ctx     context.Context // pasta:ignore go_context_field (the session owns its lifetime)
 	cancel  context.CancelFunc
 	mu      sync.RWMutex
 }

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::*;
 use crate::analyzer::AnalysisResult;
-use crate::parser::ast::*;
+use crate::parser::ast::*; // pasta:ignore rust_glob_import (this module is written against the ast names)
 use crate::runtime::RETURN_HI;
 
 /// Marker prefix the lowering prepends to the body of a `raw asm`

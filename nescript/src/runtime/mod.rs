@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests;
 
-use crate::asm::{AddressingMode as AM, Instruction, Opcode::*};
+use crate::asm::AddressingMode as AM;
+use crate::asm::Instruction;
+use crate::asm::Opcode::*; // pasta:ignore rust_glob_import (6502 opcode variants)
 use crate::parser::ast::{Mapper, Mirroring};
 
 /// PPU register addresses

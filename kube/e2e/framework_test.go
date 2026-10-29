@@ -498,7 +498,7 @@ func TestStaleFinalizerNeedsPatch(t *testing.T) {
 		}
 	}
 	out := &syncBuffer{}
-	e2e.RunContext(t, clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(out, nil)))), &kube.Manager{
+	e2e.RunContext(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(out, nil)))), t, &kube.Manager{
 		Name: "unfinalized-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "unfinalized"), Namespace: ns,
 	}, kube.For[settings](unfinalized{}, kube.Named("unfinalized")))
 	finalizers := func() ([]string, error) {

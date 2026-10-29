@@ -46,6 +46,7 @@ package schema
 		"empty" |
 		"named_child_count" |
 		"prev_sibling_matches" |
+		"first_sibling_not_matches" |
 		"parent_field"
 	// Positional args. Each is either a string (capture ref, regex,
 	// literal) or a list of strings (e.g. node-type alternatives).

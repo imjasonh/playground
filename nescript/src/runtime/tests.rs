@@ -1,6 +1,7 @@
 use super::*;
 use crate::asm;
-use crate::asm::{AddressingMode as AM, Opcode::*};
+use crate::asm::AddressingMode as AM;
+use crate::asm::Opcode::*; // pasta:ignore rust_glob_import (6502 opcode variants)
 
 #[test]
 fn runtime_main_ram_slots_sit_in_reserved_block() {

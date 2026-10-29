@@ -24,10 +24,23 @@ skip: [
 //
 // pstack scripts under .cursor/skills/ are upstream copies. Do not
 // rewrite them to satisfy playground JS rules.
+//
+// Google JS and TS style allow `== null` / `!= null` as the nullish
+// check. js_no_eq_null is the ESLint ban on that idiom.
+//
+// jest, Playwright, and other tool configs are required to default-export.
+disabled_rules: ["js_no_eq_null"]
 disabled_on: {
 	yaml_truthy: ["**/project.yml"]
 	js_preserve_caught_error: ["**/.cursor/skills/**"]
 	js_no_constant_condition_while: ["**/.cursor/skills/**"]
+	js_no_default_export: [
+		"**/*.config.js",
+		"**/*.config.mjs",
+		"**/*.config.cjs",
+		"**/*.config.ts",
+		"**/*.config.tsx",
+	]
 }
 
 // Keep the per-file parse timeout; hang defense still matters.

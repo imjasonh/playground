@@ -754,7 +754,7 @@ pub fn is_builtin_music(name: &str) -> bool {
 mod tests {
     use super::*;
     use crate::lexer::Span;
-    use crate::parser::ast::*;
+    use crate::parser::ast::*; // pasta:ignore rust_glob_import (this module is written against the ast names)
 
     fn empty_program() -> Program {
         Program {

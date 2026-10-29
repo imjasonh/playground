@@ -77,7 +77,7 @@ type Options struct {
 	// a negative value disables expiry (cache never considered stale).
 	TTL time.Duration
 	// Context is passed to all registry requests.
-	Context context.Context
+	Context context.Context // pasta:ignore go_context_field (applied to every request this client makes)
 	// UserAgent is sent on registry requests.
 	UserAgent string
 	// Keychain authenticates requests. Nil uses the default keychain, which
@@ -528,7 +528,7 @@ func digestFile(digest string) string {
 var _ Backend = (*remoteBackend)(nil)
 
 type remoteBackend struct {
-	ctx       context.Context
+	ctx       context.Context // pasta:ignore go_context_field (the backend applies this to every request)
 	keychain  authn.Keychain
 	userAgent string
 }

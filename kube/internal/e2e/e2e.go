@@ -94,12 +94,12 @@ func Namespace(t testing.TB, c *client.Client) string {
 // Run runs controllers in m until the test ends. Logs go to the test log.
 func Run(t testing.TB, m *kube.Manager, controllers ...kube.Controller) {
 	t.Helper()
-	RunContext(t, WithLogger(context.Background(), t), m, controllers...)
+	RunContext(WithLogger(context.Background(), t), t, m, controllers...)
 }
 
 // RunContext runs controllers in m with ctx until the test ends. The logger
 // on ctx is the one the manager uses.
-func RunContext(t testing.TB, ctx context.Context, m *kube.Manager, controllers ...kube.Controller) {
+func RunContext(ctx context.Context, t testing.TB, m *kube.Manager, controllers ...kube.Controller) {
 	t.Helper()
 	if m.Kubeconfig == "" {
 		m.Kubeconfig = Env(t).Kubeconfig

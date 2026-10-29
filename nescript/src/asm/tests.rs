@@ -1,5 +1,6 @@
 use super::*;
-use opcodes::{AddressingMode as AM, Opcode::*};
+use opcodes::AddressingMode as AM;
+use opcodes::Opcode::*; // pasta:ignore rust_glob_import (6502 opcode variants)
 
 #[allow(clippy::needless_pass_by_value)]
 fn encode_ok(opcode: Opcode, mode: AM) -> Vec<u8> {

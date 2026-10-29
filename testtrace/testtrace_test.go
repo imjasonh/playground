@@ -107,25 +107,25 @@ func assertChild(t testing.TB, child, parent tracetest.SpanStub) {
 
 // hooked runs f as a subtest that calls Hook, and returns the name of the
 // subtest's span once the subtest and its cleanups finish.
-func hooked(t *testing.T, name string, f func(t *testing.T, ctx context.Context)) string {
+func hooked(t *testing.T, name string, f func(ctx context.Context, t *testing.T)) string {
 	t.Helper()
 	var full string
 	t.Run(name, func(t *testing.T) {
 		full = t.Name()
-		f(t, testtrace.Hook(t))
+		f(testtrace.Hook(t), t)
 	})
 	return full
 }
 
 func TestDetachedSpanOnTestGoroutine(t *testing.T) {
-	test := hooked(t, "test", func(t *testing.T, ctx context.Context) {
+	test := hooked(t, "test", func(ctx context.Context, t *testing.T) {
 		detachedWork(t.Name() + "/app")
 	})
 	assertChild(t, span(t, test+"/app"), span(t, test))
 }
 
 func TestDetachedSpanInBackgroundGoroutines(t *testing.T) {
-	test := hooked(t, "test", func(t *testing.T, ctx context.Context) {
+	test := hooked(t, "test", func(ctx context.Context, t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Go(func() {
 			// A grandchild goroutine inherits the binding too.
@@ -169,8 +169,8 @@ func TestParallelTestsKeepTheirOwnParent(t *testing.T) {
 
 func TestSubtestSpanIsChildOfParentTest(t *testing.T) {
 	var sub string
-	test := hooked(t, "parent", func(t *testing.T, ctx context.Context) {
-		sub = hooked(t, "sub", func(t *testing.T, ctx context.Context) {
+	test := hooked(t, "parent", func(ctx context.Context, t *testing.T) {
+		sub = hooked(t, "sub", func(ctx context.Context, t *testing.T) {
 			detachedWork(t.Name() + "/app")
 		})
 	})
@@ -180,7 +180,7 @@ func TestSubtestSpanIsChildOfParentTest(t *testing.T) {
 
 func TestExplicitParentWins(t *testing.T) {
 	var name string
-	test := hooked(t, "test", func(t *testing.T, ctx context.Context) {
+	test := hooked(t, "test", func(ctx context.Context, t *testing.T) {
 		name = t.Name()
 		ctx, outer := appTracer.Start(ctx, name+"/outer")
 		_, inner := appTracer.Start(ctx, name+"/inner")
@@ -201,7 +201,7 @@ func TestGoroutineOutlivingTestIsNotStitched(t *testing.T) {
 	release := make(chan struct{})
 	done := make(chan struct{})
 	var name string
-	hooked(t, "test", func(t *testing.T, ctx context.Context) {
+	hooked(t, "test", func(ctx context.Context, t *testing.T) {
 		name = t.Name()
 		go func() {
 			<-release
@@ -218,7 +218,7 @@ func TestGoroutineOutlivingTestIsNotStitched(t *testing.T) {
 
 func TestHookReturnsContextWithTestSpan(t *testing.T) {
 	var got trace.SpanContext
-	test := hooked(t, "test", func(t *testing.T, ctx context.Context) {
+	test := hooked(t, "test", func(ctx context.Context, t *testing.T) {
 		got = trace.SpanContextFromContext(ctx)
 	})
 	if want := span(t, test).SpanContext; !got.Equal(want) {
@@ -244,11 +244,11 @@ func goroutineID() int64 {
 
 // autoRun runs f as a subtest without Hook, passing it t.Context(), and
 // returns the subtest's name.
-func autoRun(t *testing.T, name string, f func(t *testing.T, ctx context.Context)) (subName string) {
+func autoRun(t *testing.T, name string, f func(ctx context.Context, t *testing.T)) (subName string) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
 		subName = t.Name()
-		f(t, t.Context())
+		f(t.Context(), t)
 	})
 	return subName
 }
@@ -256,7 +256,7 @@ func autoRun(t *testing.T, name string, f func(t *testing.T, ctx context.Context
 // TestAutomaticBindingWithoutHook checks that passing t.Context() to traced
 // code is enough to start the test's span and parent a span on it.
 func TestAutomaticBindingWithoutHook(t *testing.T) {
-	sub := autoRun(t, "direct", func(t *testing.T, ctx context.Context) {
+	sub := autoRun(t, "direct", func(ctx context.Context, t *testing.T) {
 		detachedWorkWithContext(ctx, t.Name()+"/direct")
 	})
 	root := parentOf(t, span(t, sub+"/direct"))
@@ -268,7 +268,7 @@ func TestAutomaticBindingWithoutHook(t *testing.T) {
 // TestAutomaticBindingThroughAppCode checks that the stack walk finds the
 // test when a helper, not the test body, starts the span.
 func TestAutomaticBindingThroughAppCode(t *testing.T) {
-	sub := autoRun(t, "through-app-code", func(t *testing.T, ctx context.Context) {
+	sub := autoRun(t, "through-app-code", func(ctx context.Context, t *testing.T) {
 		func() { // an extra call frame, standing in for application code
 			detachedWorkWithContext(ctx, t.Name()+"/via-helper")
 		}()
@@ -280,7 +280,7 @@ func TestAutomaticBindingThroughAppCode(t *testing.T) {
 // the test starts after the automatic path binds it inherits the binding,
 // even from context.Background().
 func TestAutomaticBindingCoversBackgroundGoroutines(t *testing.T) {
-	sub := autoRun(t, "background", func(t *testing.T, ctx context.Context) {
+	sub := autoRun(t, "background", func(ctx context.Context, t *testing.T) {
 		detachedWorkWithContext(ctx, t.Name()+"/first") // triggers the automatic bind
 		var wg sync.WaitGroup
 		wg.Go(func() { detachedWork(t.Name() + "/background") })
@@ -459,7 +459,7 @@ func TestHookDoesNotCreateASpuriousAutomaticRoot(t *testing.T) {
 // finds the test on a goroutine that the test didn't start.
 func TestHookContextOnUnlabeledGoroutine(t *testing.T) {
 	var ctx context.Context
-	test := hooked(t, "test", func(t *testing.T, c context.Context) {
+	test := hooked(t, "test", func(c context.Context, t *testing.T) {
 		ctx = c
 	})
 	ch := make(chan struct{})

@@ -14,7 +14,7 @@ const NVS_PENDING_DIGEST: &str = "pending_digest";
 const NVS_DIGEST_BUF: usize = 96;
 
 pub fn is_pending_verify() -> bool {
-    use esp_idf_svc::sys::*;
+    use esp_idf_svc::sys::*; // pasta:ignore rust_glob_import (C symbols from esp_idf_svc::sys)
     unsafe {
         let part = esp_ota_get_running_partition();
         if part.is_null() {
@@ -52,7 +52,7 @@ fn persist_pending_as_last(nvs_partition: EspDefaultNvsPartition) -> Result<()> 
 }
 
 pub fn mark_valid_after_pending_verify_passed(nvs_partition: EspDefaultNvsPartition) -> Result<()> {
-    use esp_idf_svc::sys::*;
+    use esp_idf_svc::sys::*; // pasta:ignore rust_glob_import (C symbols from esp_idf_svc::sys)
     let err = unsafe { esp_ota_mark_app_valid_cancel_rollback() };
     if err != ESP_OK {
         bail!("esp_ota_mark_app_valid_cancel_rollback err={err}");

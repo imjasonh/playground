@@ -378,9 +378,9 @@ func TestResultsEndpointWaitsForBranch(t *testing.T) {
 // FakeRequest context, which a test replaces while the request waits, as
 // if this replica's cache changed.
 type changingCache struct {
-	context.Context
-	mu    sync.Mutex
-	world context.Context
+	context.Context // pasta:ignore go_context_field (test double embeds the context it implements)
+	mu              sync.Mutex
+	world           context.Context // pasta:ignore go_context_field (cluster the test swaps in while the request waits)
 }
 
 func (c *changingCache) Value(key any) any {

@@ -294,12 +294,12 @@ func TestSmokeRealRepos(t *testing.T) {
 			if !repo.autofix {
 				return
 			}
-			runAutofix(t, ctx, dir, specs, analyzers, repo.softExpectFix)
+			runAutofix(ctx, t, dir, specs, analyzers, repo.softExpectFix)
 		})
 	}
 }
 
-func runAutofix(t *testing.T, ctx context.Context, dir string, specs []runner.FileSpec, analyzers []*dsl.Analyzer, softExpectFix bool) {
+func runAutofix(ctx context.Context, t *testing.T, dir string, specs []runner.FileSpec, analyzers []*dsl.Analyzer, softExpectFix bool) {
 	t.Helper()
 	// Apply per-file so one overlapping-edit conflict (common with
 	// nested `var` rewrites on older JS) doesn't abort the whole tree.
