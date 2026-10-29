@@ -19,6 +19,7 @@ import (
 
 	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
+	"github.com/imjasonh/playground/cloudrun-sqlite/internal/honk"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/observe"
 	"github.com/imjasonh/playground/cloudrun-sqlite/internal/store"
 	"github.com/sethvargo/go-envconfig"
@@ -50,6 +51,7 @@ var env = envconfig.MustProcess(context.Background(), &struct {
 	PollInterval    time.Duration `env:"POLL_INTERVAL, default=30s"`
 	Port            string        `env:"PORT, default=8080"`
 	AdminToken      string        `env:"ADMIN_TOKEN"`
+	HonkerExtension string        `env:"HONKER_EXTENSION"`
 }{})
 
 func serveMain(args []string) error {
@@ -74,6 +76,7 @@ func serveMain(args []string) error {
 	fs.IntVar(&cfg.SnapshotPlanLen, "snapshot-plan-len", cfg.SnapshotPlanLen, "snapshot when a cold start would read more than this many files (0 disables)")
 	fs.DurationVar(&cfg.PollInterval, "poll-interval", cfg.PollInterval, "how often to list the replica for compacted files or another instance's writes")
 	port := fs.String("port", env.Port, "listen port")
+	honkerExtension := fs.String("honker-extension", env.HonkerExtension, "path to the Honker SQLite extension; empty downloads the pinned build")
 	fs.Parse(args)
 	if cfg.ReplicaURL == "" {
 		return errors.New("set REPLICA_URL or -replica-url")
@@ -109,11 +112,22 @@ func serveMain(args []string) error {
 		st.Close()
 		return err
 	}
-	slog.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate)
+	ext, err := honk.Extension(ctx, *honkerExtension, cfg.Dir)
+	if err != nil {
+		st.Close()
+		return err
+	}
+	live, err := honk.Open(ctx, filepath.Join(cfg.Dir, "honker.db"), ext)
+	if err != nil {
+		st.Close()
+		return err
+	}
+	slog.Info("database open", "open_ms", ms(time.Since(start)), "durable", cfg.Durable, "hydrate", cfg.Hydrate, "honker_extension", ext)
 
-	srv := &http.Server{Handler: newServer(st, instance, start, env.AdminToken).routes()}
+	srv := &http.Server{Handler: newServer(st, live, instance, start, env.AdminToken).routes()}
 	ln, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
+		live.Close()
 		st.Close()
 		return err
 	}
@@ -132,6 +146,9 @@ func serveMain(args []string) error {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("http shutdown", "error", err)
+	}
+	if err := live.Close(); err != nil {
+		slog.Warn("close honker", "error", err)
 	}
 	if err := st.Close(); err != nil {
 		slog.Error("close database", "error", err)

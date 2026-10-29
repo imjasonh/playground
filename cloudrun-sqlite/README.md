@@ -100,6 +100,28 @@ open fails too, requests get a 503 until a later read or write opens it.
 ones in flight, uploads anything left, and exits. Cloud Run sends SIGKILL 10
 seconds after SIGTERM.
 
+### Live updates
+
+The click count and the live notification are two databases.
+
+The count is the `counters` row in the Litestream database. `POST /click` increments it inside `Store.Write`. With `DURABLE=true`, that call returns after the transaction is in the replica.
+
+The notification is a row Honker inserts in `DATA_DIR/honker.db`. That file is ordinary SQLite in WAL mode, and it lives only in `DATA_DIR`. After the count write returns, the server calls Honker `notify` on the channel `clicks`. A goroutine in the same process calls Honker `Listen` on that channel. `Listen` polls `PRAGMA data_version` on `honker.db` and reads new rows from `_honker_notifications`. For each row, the server writes a server-sent event to every page connected to `GET /events`.
+
+Honker has its own file because the Litestream database is one SQLite connection. A second connection is a second VFS, with its own page cache and write buffer. Honker's listener also has to poll while requests run. The separate file lets that poll run without taking the request connection.
+
+Every page on this instance is connected to the process that committed the click, so that process can send the event. An open page is a request that stays open. With request-based billing, the instance keeps CPU while the page is open, and Cloud Run does not scale it to zero. Cloud Run's request timeout closes the connection. The browser reconnects, and the new connection sends the current count from the replica.
+
+A second instance has its own `honker.db`. It reads the count from the replica the next time it polls, at `POLL_INTERVAL`. A page that landed on the second instance shows that count when it connects, and then shows clicks that the second instance handles.
+
+`Write` returns only after the replica has the count. `notify` runs after that. If the process dies between the two, the count stays ahead of the notification log. The next page load reads the count.
+
+The page uses the htmx SSE extension, served from this process. `sse-connect` opens `GET /events`. An event named `clicks` replaces the count. An event named `notice` appends a line to the list on that page. The click request returns the button and the write duration. The count arrives on the event connection, including on the page that sent the click.
+
+The server loads Honker's SQLite extension, `libhonker_ext`. On first start it downloads the `ext-v0.5.0` build, checks the SHA-256 recorded in the source, and caches the file. Set `HONKER_EXTENSION` to a local copy if the instance cannot download it. The extension needs `libc` and `libgcc_s`.
+
+The listener ignores a startup notification on `clicks` that marks the listener as waiting. The first real click can have a notification id greater than 1.
+
 ## Measurements
 
 These numbers come from this repository's Cloud Run simulator (`cmd/crsim`)
@@ -266,7 +288,9 @@ go build -tags vfs -o cloudrun-sqlite .
 ./cloudrun-sqlite -replica-url file://$PWD/replica
 ```
 
-Open <http://localhost:8080/>, or use the JSON endpoints:
+Open <http://localhost:8080/> in two browser tabs and click in one. Both tabs show the new count. The first start downloads the Honker extension unless `HONKER_EXTENSION` is set.
+
+The JSON endpoints are the same:
 
 ```bash
 curl -X POST --data 'hello' localhost:8080/items   # {"id":1}
@@ -295,6 +319,7 @@ The server reads these environment variables:
 | `SNAPSHOT_PLAN_LEN` | `16` | snapshot when a cold start would read more files (`0` disables) |
 | `POLL_INTERVAL` | `30s` | how often to list the replica for compacted files or another instance's writes |
 | `ADMIN_TOKEN` | none | bearer token that enables `/admin/check` and `/admin/snapshot` |
+| `HONKER_EXTENSION` | none | path to `libhonker_ext`; empty downloads the pinned `ext-v0.5.0` build |
 
 `seed` replaces a replica with a generated database, for benchmarks:
 
