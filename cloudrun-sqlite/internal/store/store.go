@@ -35,11 +35,21 @@ var ErrClosed = errors.New("store closed")
 // tries to open it again.
 var ErrUnavailable = errors.New("database unavailable")
 
+// ErrReadOnly is returned by Write, Flush, and Snapshot on a read-only store.
+var ErrReadOnly = errors.New("store is read-only")
+
 // Config configures a Store.
 type Config struct {
 	// ReplicaURL is the Litestream replica: gs://bucket/path,
 	// s3://bucket/path?endpoint=..., or file:///path.
 	ReplicaURL string
+
+	// ReadOnly opens the replica without write support. SQLite opens the
+	// database read-only, so no statement can write, and PRAGMA
+	// litestream_write_enabled can't turn writes on. The store doesn't
+	// compact or snapshot. Open waits until another store has created the
+	// database. Reads see another instance's writes after PollInterval.
+	ReadOnly bool
 
 	// Dir is instance-local scratch space for the write buffer and the
 	// hydrated copy. On Cloud Run that is the in-memory filesystem.
@@ -192,21 +202,23 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	vfs.OpenPrefetch = true
 	vfs.PollInterval = cfg.PollInterval
 	vfs.CacheSize = cfg.CacheSize
-	vfs.WriteEnabled = true
-	vfs.WriteSyncInterval = cfg.SyncInterval
-	vfs.WriteBufferPath = filepath.Join(cfg.Dir, "write-buffer")
-	// Conditional L0 creates are enabled on the replica client, and nothing here deletes
-	// an L0 file younger than L0Retention, so a writer can skip the
-	// conflict-check LIST for half of that, leaving room for clock skew.
-	vfs.ConflictCheckInterval = cfg.L0Retention / 2
+	if !cfg.ReadOnly {
+		vfs.WriteEnabled = true
+		vfs.WriteSyncInterval = cfg.SyncInterval
+		vfs.WriteBufferPath = filepath.Join(cfg.Dir, "write-buffer")
+		// Conditional L0 creates are enabled on the replica client, and nothing here deletes
+		// an L0 file younger than L0Retention, so a writer can skip the
+		// conflict-check LIST for half of that, leaving room for clock skew.
+		vfs.ConflictCheckInterval = cfg.L0Retention / 2
+		if cfg.CompactionLevels != nil {
+			vfs.CompactionEnabled = true
+			vfs.CompactionLevels = cfg.CompactionLevels
+			vfs.L0Retention = cfg.L0Retention
+		}
+	}
 	if cfg.Hydrate {
 		vfs.HydrationEnabled = true
 		vfs.HydrationPath = filepath.Join(cfg.Dir, "hydrated.db")
-	}
-	if cfg.CompactionLevels != nil {
-		vfs.CompactionEnabled = true
-		vfs.CompactionLevels = cfg.CompactionLevels
-		vfs.L0Retention = cfg.L0Retention
 	}
 
 	s := &Store{
@@ -225,6 +237,12 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		return nil, fmt.Errorf("register VFS: %w", err)
 	}
 	s.dsn = fmt.Sprintf("file:db?vfs=%s&_busy_timeout=5000&_txlock=immediate", name)
+	if cfg.ReadOnly {
+		// The VFS reports a read-write open unless SQLite asks for
+		// read-only, so that a runtime PRAGMA can enable writes. mode=ro
+		// asks, and SQLite then refuses every write itself.
+		s.dsn = fmt.Sprintf("file:db?vfs=%s&mode=ro", name)
+	}
 
 	if s.db, err = s.openDB(ctx); err != nil {
 		return nil, err
@@ -232,7 +250,7 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 	s.openDuration = time.Since(start)
 
 	go s.commitLoop(ctx)
-	if cfg.SnapshotPlanLen > 0 && cfg.SnapshotCheckInterval > 0 {
+	if !cfg.ReadOnly && cfg.SnapshotPlanLen > 0 && cfg.SnapshotCheckInterval > 0 {
 		s.bg.Add(1)
 		go s.snapshotLoop(ctx)
 	}
@@ -331,6 +349,10 @@ func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 		observe.Measure(ctx, observe.StoreWrite, d, "durable", strconv.FormatBool(s.cfg.Durable), "result", result)
 		end(err)
 	}()
+	if s.cfg.ReadOnly {
+		err = ErrReadOnly
+		return err
+	}
 	req := &writeReq{ctx: ctx, fn: fn, done: make(chan error, 1), enqueued: start}
 	select {
 	case s.writes <- req:
@@ -610,6 +632,9 @@ func (s *Store) do(ctx context.Context, fn func() error) error {
 
 // Flush uploads everything committed so far.
 func (s *Store) Flush(ctx context.Context) error {
+	if s.cfg.ReadOnly {
+		return ErrReadOnly
+	}
 	return s.do(ctx, func() error { return s.flush(ctx) })
 }
 
@@ -626,6 +651,9 @@ func (s *Store) Close() error {
 	defer s.mu.Unlock()
 	if s.db == nil {
 		return nil
+	}
+	if s.cfg.ReadOnly {
+		return s.db.Close()
 	}
 	return errors.Join(s.flush(context.Background()), s.db.Close())
 }

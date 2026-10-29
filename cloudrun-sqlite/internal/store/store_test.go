@@ -629,6 +629,29 @@ func TestLevelsAboveL0IgnoresFreshFiles(t *testing.T) {
 	}
 }
 
+func TestStatsRecordReplicaReads(t *testing.T) {
+	dir := t.TempDir()
+	w := mustOpen(t, testConfig(t, dir))
+	mustWrite(t, w, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+	mustWrite(t, w, "INSERT INTO t (v) VALUES ('x')")
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := mustOpen(t, testConfig(t, dir))
+	defer s.Close()
+	if err := s.Read(t.Context(), func(db *sql.DB) error {
+		var n int
+		return db.QueryRow("SELECT count(*) FROM t").Scan(&n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st := s.Stats(t.Context())
+	if st.GCS.List.Count < 1 || st.GCS.Get.Count < 1 {
+		t.Fatalf("replica stats = %+v, want lists and gets", st.GCS)
+	}
+}
+
 func TestStatsRecordWritePhases(t *testing.T) {
 	s := mustOpen(t, testConfig(t, t.TempDir()))
 	defer s.Close()

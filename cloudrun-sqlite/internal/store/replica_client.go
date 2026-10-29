@@ -47,7 +47,7 @@ func (c *monitoredClient) WriteLTXFile(ctx context.Context, level int, minTXID, 
 	return info, err
 }
 
-func (c *monitoredClient) remoteOpen(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+func (c *monitoredClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
 	ctx, end := observe.Span(ctx, "replica.get")
 	start := time.Now()
 	rc, err := c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
@@ -58,7 +58,7 @@ func (c *monitoredClient) remoteOpen(ctx context.Context, level int, minTXID, ma
 	return rc, err
 }
 
-func (c *monitoredClient) remoteList(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+func (c *monitoredClient) LTXFiles(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
 	ctx, end := observe.Span(ctx, "replica.list")
 	start := time.Now()
 	itr, err := c.ReplicaClient.LTXFiles(ctx, level, seek, useMetadata)
