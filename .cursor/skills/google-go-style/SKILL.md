@@ -32,7 +32,7 @@ These pasta rules fail the build. Each name is the `pasta:ignore` token.
 | `use_t_context` | `context.Background` or `context.TODO` in a `*_test.go` file. Use `t.Context()`, `b.Context()`, or `f.Context()`. |
 | `use_percent_q` | A `fmt` format string that puts quotes around `%s` (`\"%s\"`, or `"%s"` in a raw string). Use `%q`. |
 
-The decisions guide allows `context.Background` in `main`, `init`, and tests. This repo allows it in `main` and `init`. A test uses `t.Context()`. A helper outside a test file that runs one test starts from `t.Context()`. It can take a context when the caller puts a logger on it, and that context is derived from `t.Context()`.
+The decisions guide allows `context.Background` in `main`, `init`, and tests. This repo allows it in `main` and `init`. A test uses `t.Context()`. A helper outside a test file that runs one test starts from `t.Context()`.
 
 HTTP handlers, streaming RPC methods, and `Test` functions take their context from the request, the stream, or `t.Context()`. They do not add a context parameter, so `go_context_param` does not see them. A test helper that takes a context takes it first. When a signature you cannot change takes context later, mark that line:
 
