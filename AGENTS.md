@@ -825,6 +825,17 @@ bundle exec fastlane test
   open a new PR for the remaining work. Check with
   `gh pr view <number> --json state` (or the GitHub UI / PR URL) before
   `git push`.
+- **Run a dead-code pass before opening a PR, and on any large change.** Use
+  pasta's agent-facing code facts over the directories you touched:
+  `pasta facts dead_code --no-tests <dir>` (and `pasta facts unused_symbols
+  --no-tests --min-confidence high <dir>` / `pasta facts unused_imports <dir>`),
+  or the same tools over the `pasta mcp` stdio server if you're driving it as an
+  MCP client. Delete the high-confidence, first-party findings your change left
+  behind rather than `#[allow(dead_code)]`-ing or ignoring them. Findings are
+  leads, not proofs (binding is by name and arity, not symbol resolution), so
+  judge each one: leave loadable C/dlopen entrypoints, don't restyle
+  `litestream/`, and skip anything the tool itself tags low-confidence. See
+  [`pasta/README.md`](pasta/README.md#code-facts-and-the-mcp-server).
 - CI must pass (changed browser apps are tested; changed Go and Rust apps are built and tested).
 - Preview deploy provides a live URL when a browser app, the posts catalog, or
   the Pages home-page index changed. Use it to verify browser behavior, especially mobile.
