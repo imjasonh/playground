@@ -79,7 +79,7 @@ func trySend(p *Player, update GameUpdate) {
 	}
 }
 
-func (gs *GameSession) GetOpponent(playerID string) *Player {
+func (gs *GameSession) Opponent(playerID string) *Player {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	if gs.White != nil && gs.White.ID == playerID {
@@ -195,14 +195,14 @@ func (gm *GameManager) RemovePlayer(playerID string) {
 	delete(gm.playerToGame, playerID)
 }
 
-func (gm *GameManager) GetGameSession(playerID string) *GameSession {
+func (gm *GameManager) GameSession(playerID string) *GameSession {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 	return gm.activeGames[gm.playerToGame[playerID]]
 }
 
 func (gm *GameManager) BroadcastUpdate(playerID string, update GameUpdate) {
-	session := gm.GetGameSession(playerID)
+	session := gm.GameSession(playerID)
 	if session == nil {
 		return
 	}
@@ -214,7 +214,7 @@ func (gm *GameManager) BroadcastUpdate(playerID string, update GameUpdate) {
 	}
 }
 
-func (gm *GameManager) GetQueuePosition(playerID string) int {
+func (gm *GameManager) QueuePosition(playerID string) int {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 	for i, p := range gm.playerQueue {
