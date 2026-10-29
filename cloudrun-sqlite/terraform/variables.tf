@@ -33,7 +33,7 @@ variable "reader_max_instances" {
 }
 
 variable "reader_poll_interval" {
-  description = "How often each read-only replica instance lists the bucket for new writes, as a Go duration. A click reaches a replica page up to this long after the writer uploads it. At 2s, an instance kept busy by an open page makes 1,800 LIST requests an hour."
+  description = "How often each read-only replica instance lists the bucket for new writes, as a Go duration. A click reaches a replica page up to this long after the writer uploads it. At 2s, an instance kept busy by an open page makes 3,600 LIST requests an hour."
   type        = string
   default     = "2s"
 }

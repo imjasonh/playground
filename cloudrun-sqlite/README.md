@@ -165,9 +165,9 @@ after the writer uploads it.
 A read-only open waits until the database exists, so the replica starts
 only after the writer's first instance has created it. Terraform deploys
 the writer first. Each replica instance with an open page lists the bucket
-once per poll interval: 1,800 Class A requests an hour at 2 seconds, about
-$0.009 an hour at $0.005 per 1,000. The instance it keeps running costs
-more than that. For a plan to measure both, see
+twice per poll: 3,600 Class A requests an hour at 2 seconds, about $13 a
+month at $0.005 per 1,000. Each write adds about 3 GETs. The instance the
+open page keeps running costs about $66 a month at 512 MiB. For a plan to measure both, see
 [`docs/live-updates-plan.md`](docs/live-updates-plan.md).
 
 ## Measurements
