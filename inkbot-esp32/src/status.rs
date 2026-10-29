@@ -5,14 +5,13 @@
 //! nothing is wrong the overlay is a no-op — the image keeps the full 800×480.
 
 use anyhow::Error as AnyhowError;
-use embedded_graphics::{
-    draw_target::DrawTarget,
-    geometry::{OriginDimensions, Point, Size},
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    text::{Baseline, Text},
-};
+use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::geometry::{OriginDimensions, Point, Size};
+use embedded_graphics::mono_font::ascii::FONT_6X10;
+use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::pixelcolor::BinaryColor;
+use embedded_graphics::prelude::*;
+use embedded_graphics::text::{Baseline, Text};
 use serde::{Deserialize, Serialize};
 
 use crate::panel::{FRAME_BYTES, PANEL_HEIGHT, PANEL_WIDTH};

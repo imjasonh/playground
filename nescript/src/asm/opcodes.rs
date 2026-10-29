@@ -198,7 +198,7 @@ pub fn encode(opcode: Opcode, mode: &AddressingMode) -> Option<u8> {
     // 6502 opcode encoding table
     // This covers all legal opcode/addressing mode combinations
     use AddressingMode as AM;
-    use Opcode::*;
+    use Opcode::*; // pasta:ignore rust_glob_import (enum variants inside this function)
 
     let result = match (opcode, mode) {
         // LDA

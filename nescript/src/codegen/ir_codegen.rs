@@ -26,7 +26,9 @@
 use std::collections::HashMap;
 
 use crate::analyzer::VarAllocation;
-use crate::asm::{AddressingMode as AM, Instruction, Opcode::*};
+use crate::asm::AddressingMode as AM;
+use crate::asm::Instruction;
+use crate::asm::Opcode::*; // pasta:ignore rust_glob_import (6502 opcode variants)
 use crate::assets::{MusicData, SfxData};
 use crate::ir::{
     IrBasicBlock, IrFunction, IrOp, IrProgram, IrTemp, IrTerminator, Signedness, VarId,

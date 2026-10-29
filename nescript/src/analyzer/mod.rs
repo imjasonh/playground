@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::errors::{Diagnostic, ErrorCode, Label, Level};
 use crate::lexer::Span;
-use crate::parser::ast::*;
+use crate::parser::ast::*; // pasta:ignore rust_glob_import (this module is written against the ast names)
 
 /// A room's metatile grid is 16×15, giving 240 cells. The compiler
 /// expands each cell into a 2×2 CHR-tile block, covering a full

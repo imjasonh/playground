@@ -170,7 +170,7 @@ type testHooks struct {
 }
 
 type writeReq struct {
-	ctx      context.Context
+	ctx      context.Context // pasta:ignore go_context_field (the queued write carries its caller's context)
 	fn       func(*sql.Tx) error
 	done     chan error
 	enqueued time.Time

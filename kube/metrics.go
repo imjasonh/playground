@@ -62,10 +62,7 @@ func labelString(labels []string) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(labels[i])
-		b.WriteString(`="`)
-		b.WriteString(strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(labels[i+1]))
-		b.WriteByte('"')
+		fmt.Fprintf(&b, "%s=%q", labels[i], labels[i+1])
 	}
 	return b.String()
 }
@@ -152,9 +149,9 @@ func (m *metrics) write(w io.Writer) {
 				sep = ","
 			}
 			for i, b := range buckets {
-				fmt.Fprintf(w, "%s_bucket{%s%sle=\"%s\"} %d\n", name, ls, sep, strconv.FormatFloat(b, 'g', -1, 64), h.counts[i])
+				fmt.Fprintf(w, "%s_bucket{%s%sle=%q} %d\n", name, ls, sep, strconv.FormatFloat(b, 'g', -1, 64), h.counts[i])
 			}
-			fmt.Fprintf(w, "%s_bucket{%s%sle=\"+Inf\"} %d\n", name, ls, sep, h.count)
+			fmt.Fprintf(w, "%s_bucket{%s%sle=%q} %d\n", name, ls, sep, "+Inf", h.count)
 			fmt.Fprintf(w, "%s %s\n%s %d\n", series(name+"_sum", ls), strconv.FormatFloat(h.sum, 'g', -1, 64), series(name+"_count", ls), h.count)
 		}
 	}

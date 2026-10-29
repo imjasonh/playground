@@ -9,7 +9,9 @@ pub use debug_symbols::{
 use std::collections::HashMap;
 
 use crate::asm;
-use crate::asm::{AddressingMode as AM, Instruction, Opcode::*};
+use crate::asm::AddressingMode as AM;
+use crate::asm::Instruction;
+use crate::asm::Opcode::*; // pasta:ignore rust_glob_import (6502 opcode variants)
 use crate::assets::{BackgroundData, MusicData, PaletteData, SfxData};
 use crate::parser::ast::{HeaderFormat, Mapper, Mirroring};
 use crate::rom::RomBuilder;

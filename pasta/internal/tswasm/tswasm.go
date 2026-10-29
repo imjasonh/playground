@@ -109,7 +109,7 @@ type node struct {
 // ---------------------------------------------------------------------------
 
 type runtime struct {
-	ctx context.Context
+	ctx context.Context // pasta:ignore go_context_field (the wasm runtime lives for the process)
 	wz  wazero.Runtime
 	cm  wazero.CompiledModule
 }
@@ -219,7 +219,7 @@ func newRuntime(ctx context.Context, raw []byte, cache wazero.CompilationCache) 
 }
 
 type engine struct {
-	ctx context.Context
+	ctx context.Context // pasta:ignore go_context_field (the compiled module lives for the process)
 	mod api.Module
 	mem api.Memory
 

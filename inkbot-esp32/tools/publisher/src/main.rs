@@ -1,11 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use oci_distribution::{
-    client::{ClientConfig, Config, ImageLayer},
-    manifest::{OciDescriptor, OciImageManifest, OCI_IMAGE_MEDIA_TYPE},
-    secrets::RegistryAuth,
-    Client, Reference,
-};
+use oci_distribution::client::{ClientConfig, Config, ImageLayer};
+use oci_distribution::manifest::{OciDescriptor, OciImageManifest, OCI_IMAGE_MEDIA_TYPE};
+use oci_distribution::secrets::RegistryAuth;
+use oci_distribution::{Client, Reference};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

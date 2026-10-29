@@ -4,13 +4,12 @@
 //! SCLK=13, MOSI=14, CS=15, DC=27, RST=26, BUSY=25.
 
 use anyhow::{anyhow, Context, Result};
-use epd_waveshare::{epd7in5_v2::Epd7in5, prelude::WaveshareDisplay};
-use esp_idf_svc::hal::{
-    delay::Ets,
-    gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull},
-    spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver},
-    units::FromValueType,
-};
+use epd_waveshare::epd7in5_v2::Epd7in5;
+use epd_waveshare::prelude::WaveshareDisplay;
+use esp_idf_svc::hal::delay::Ets;
+use esp_idf_svc::hal::gpio::{Input, InputPin, Output, OutputPin, PinDriver, Pull};
+use esp_idf_svc::hal::spi::{config, SpiAnyPins, SpiDeviceDriver, SpiDriver};
+use esp_idf_svc::hal::units::FromValueType;
 
 use inkbot_esp32::{overlay_status_line, FRAME_BYTES};
 

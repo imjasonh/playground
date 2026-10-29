@@ -242,7 +242,7 @@ func (w *watchHold) release() {
 type heldBody struct {
 	io.ReadCloser
 	w   *watchHold
-	ctx context.Context
+	ctx context.Context // pasta:ignore go_context_field (the held watch keeps the request context)
 	// held is the watchHold's channel while this watch is held, and nil
 	// otherwise. The watchHold's mutex guards it.
 	held chan struct{}

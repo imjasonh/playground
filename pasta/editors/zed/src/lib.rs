@@ -8,9 +8,8 @@
 // this directory. Requires a recent stable Rust toolchain with the
 // wasm32-wasi target.
 
-use zed_extension_api::{
-    self as zed, settings::LspSettings, Command, LanguageServerId, Result, Worktree,
-};
+use zed_extension_api::settings::LspSettings;
+use zed_extension_api::{self as zed, Command, LanguageServerId, Result, Worktree};
 
 struct PastaExtension;
 

@@ -350,7 +350,8 @@ mod tests {
     use super::*;
     use crate::object::hash_object;
     use crate::pack::delta::literal_delta;
-    use crate::pack::write::{deflate, test_support::build_pack, PackWriter};
+    use crate::pack::write::test_support::build_pack;
+    use crate::pack::write::{deflate, PackWriter};
     use crate::pack::PackScanner;
     use crate::storage::MemStore;
     use futures::executor::block_on;
