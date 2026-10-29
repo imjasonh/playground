@@ -156,11 +156,11 @@ from writing:
    `405 Method Not Allowed`.
 
 The replica learns about writes when its VFS lists the bucket, every
-`POLL_INTERVAL` (2 seconds in Terraform). Every second, or every poll
-interval if that is shorter, it reads the count and sends it to connected
-pages when the count went up. A click reaches a
-replica page between a few milliseconds and one poll interval after the
-writer uploads it.
+`POLL_INTERVAL` (2 seconds in Terraform). Every 100 milliseconds it reads
+the count, which between polls comes from cached pages, and sends it to
+connected pages when the count went up. A click reaches a replica page
+between a few milliseconds and one poll interval, plus 100 milliseconds,
+after the writer uploads it.
 
 A read-only open waits until the database exists, so the replica starts
 only after the writer's first instance has created it. Terraform deploys

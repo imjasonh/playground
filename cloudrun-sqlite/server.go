@@ -89,12 +89,13 @@ func (s *server) refuseWrite(w http.ResponseWriter, r *http.Request) {
 
 // followReplica sends the click count to connected pages when it changes.
 // A read-only replica handles no clicks, so the count changes only when the
-// VFS installs another instance's writes, on its poll. Checking more often
-// than every second would only reread cached pages.
+// VFS installs another instance's writes, on its poll. A check between polls
+// rereads cached pages and makes no storage requests, so checking often
+// keeps this loop from adding much to the poll's delay.
 func (s *server) followReplica(ctx context.Context) {
-	every := min(s.pollInterval, time.Second)
-	if every <= 0 {
-		every = time.Second
+	every := 100 * time.Millisecond
+	if s.pollInterval > 0 {
+		every = min(s.pollInterval, every)
 	}
 	t := time.NewTicker(every)
 	defer t.Stop()
