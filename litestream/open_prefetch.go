@@ -146,10 +146,11 @@ func (c *OpenPrefetchReplicaClient) prefetch(ctx context.Context) error {
 	c.cache.Store(w)
 
 	plan, err := CalcRestorePlan(ctx, c, 0, time.Time{}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		return nil
-	}
-	if len(plan) == 0 {
+	if err != nil || len(plan) == 0 {
+		// Without a restore plan there is nothing to prefetch. A read-only
+		// open waits for the database by listing again, and a cached empty
+		// listing would hide the first file until the open ends.
+		c.cache.Store(nil)
 		return nil
 	}
 
