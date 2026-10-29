@@ -25,7 +25,7 @@ import json
 import os
 import statistics
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 DAY_START = 10 * 3600
 # Train motion: cruise speed in pixels a frame, and frames to reach it.

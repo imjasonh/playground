@@ -396,20 +396,6 @@ func markSuppressed(suppress map[int]suppression, rule string, line int) bool {
 	return true
 }
 
-// isSuppressed reports whether rule is suppressed at the given 1-based
-// line without recording usage. Prefer markSuppressed when a finding
-// is actually being dropped.
-func isSuppressed(suppress map[int]suppression, rule string, line int) bool {
-	if len(suppress) == 0 {
-		return false
-	}
-	e, ok := suppress[line]
-	if !ok {
-		return false
-	}
-	return e.all || e.rules[rule]
-}
-
 // unusedIgnoreDiagnostics returns a warning for every pasta:ignore
 // that never suppressed a diagnostic or rewrite on its line.
 //
