@@ -103,7 +103,9 @@ jobs:
   firmware:
     name: Cross-build firmware
     needs: discover
-    runs-on: ubuntu-latest
+    # ESP-IDF 5.2.2's bundled toolchains fail their version check on
+    # Ubuntu 26.04, which is what ubuntu-latest is now. 24.04 still runs them.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Gate
