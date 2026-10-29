@@ -12,7 +12,9 @@ func bad(v string) {
 	_ = fmt.Sprintf(`value "%s"`, v)        // want "use %q"
 	fmt.Fprintf(io.Discard, "le=\"%s\"", v) // want "use %q"
 	_ = fmt.Appendf(nil, "value \"%s\"", v) // want "use %q"
-	fmt.Fprintf(io.Discard, `le="%s"`, v)   // want "use %q"
+	fmt.Fprintf(io.Discard, `le="%s"`, v)       // want "use %q"
+	_ = fmt.Sprintf("a \"%s\" b \"%s\"", v, v) // want "use %q"
+	_ = fmt.Sprintf(`a "%s" b "%s"`, v, v)     // want "use %q"
 }
 
 func ok(v string) string {

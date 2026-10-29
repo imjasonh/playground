@@ -7,6 +7,9 @@
 // The match is the source text of the literal. An interpreted string
 // spells the quotes as \", and a raw string spells them as ".
 // A format string that is only "%s" is not a quoted verb.
+//
+// The rewrite replaces each quoted %s with %q, up to four in one
+// pass, then writes the literal back.
 
 package go_percent_q
 
@@ -17,15 +20,32 @@ import (
 )
 
 // Regexp for a backslash, a quote, %s, a backslash, and a quote.
+// The pattern spells each backslash twice. The source text has one.
 #quotedInInterpreted: #"\\"%s\\""#
 
-// Regexp for a quote, %s, and a quote. Used on raw string literals,
-// whose delimiters are backticks.
+// The characters in the source: backslash, quote, %s, backslash, quote.
+#tokenInterpreted: #"\"%s\""#
+
+// A quote, %s, and a quote. Raw string literals spell that with
+// quote characters. The same text is the regexp and the replacement token.
 #quotedInRaw: ##""%s""##
 
 #diagnose: {
 	message:  "use %q instead of a quoted %s"
 	severity: "warning"
+}
+
+// #fix replaces up to four occurrences. applyWithin replaces the
+// first match of each edit, so the edit is repeated.
+#fix: {
+	old: string
+	rewrite: edits: [
+		{within: "fmtstr", token: old, replace_with: "%q"},
+		{within: "fmtstr", token: old, replace_with: "%q"},
+		{within: "fmtstr", token: old, replace_with: "%q"},
+		{within: "fmtstr", token: old, replace_with: "%q"},
+		{target: "fmtstr", replacement: "@fmtstr"},
+	]
 }
 
 go_percent_q: schema.#Analyzer & {
@@ -56,6 +76,7 @@ go_percent_q: schema.#Analyzer & {
 				]
 			}
 			diagnose: #diagnose
+			rewrite:  (#fix & {old: #tokenInterpreted}).rewrite
 		}
 		printf_raw: {
 			name:      "use_percent_q"
@@ -78,6 +99,7 @@ go_percent_q: schema.#Analyzer & {
 				]
 			}
 			diagnose: #diagnose
+			rewrite:  (#fix & {old: #quotedInRaw}).rewrite
 		}
 		fprintf_interpreted: {
 			name:      "use_percent_q"
@@ -103,6 +125,7 @@ go_percent_q: schema.#Analyzer & {
 				]
 			}
 			diagnose: #diagnose
+			rewrite:  (#fix & {old: #tokenInterpreted}).rewrite
 		}
 		fprintf_raw: {
 			name:      "use_percent_q"
@@ -128,6 +151,7 @@ go_percent_q: schema.#Analyzer & {
 				]
 			}
 			diagnose: #diagnose
+			rewrite:  (#fix & {old: #quotedInRaw}).rewrite
 		}
 	}
 }
