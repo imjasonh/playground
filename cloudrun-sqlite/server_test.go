@@ -91,8 +91,8 @@ func TestClickReachesEveryEventConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
-	a := openEvents(t, ctx, srv.URL+"/events")
-	b := openEvents(t, ctx, srv.URL+"/events")
+	a := openEvents(ctx, t, srv.URL+"/events")
+	b := openEvents(ctx, t, srv.URL+"/events")
 	defer a.Close()
 	defer b.Close()
 	waitEvent(t, a, "clicks", "Clicks: 0")
@@ -150,7 +150,7 @@ func TestReadOnlyReplicaFollowsWriter(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	events := openEvents(t, ctx, reader.URL+"/events")
+	events := openEvents(ctx, t, reader.URL+"/events")
 	defer events.Close()
 	waitEvent(t, events, "clicks", "Clicks: 0")
 	res, err = http.Post(writer.URL+"/click", "text/plain", nil)
@@ -170,7 +170,7 @@ type eventStream struct {
 	r    *bufio.Reader
 }
 
-func openEvents(t *testing.T, ctx context.Context, url string) *eventStream {
+func openEvents(ctx context.Context, t *testing.T, url string) *eventStream {
 	t.Helper()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
