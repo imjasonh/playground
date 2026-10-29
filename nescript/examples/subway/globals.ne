@@ -39,14 +39,10 @@ var door_px: u8 = 32
 // step straight back on.
 var up_lock: bool = false
 
-// The pause map: which state it came from (0 platform, 1 riding), and
-// where the player stood. resume tells that state to pick up where it
-// left off.
+// The pause map: which state it came from (0 platform, 1 riding).
+// resume tells that state to pick up where it left off.
 var pause_from: u8 = 0
 var resume: bool = false
-var save_px: u8 = 0
-var save_py: u8 = 0
-var save_flip: bool = false
 
 // Routes that stop at a station, from load_routes, and which slot of
 // sprite palette 3 each route's bullet uses.
@@ -55,6 +51,16 @@ var st_nroutes: u8 = 0
 var route_slot: u8[25]
 var sp3_c1: u8 = 0
 var sp3_c2: u8 = 0
+
+// Transfers to the complex member off the left or right edge of the
+// current platform, from compute_transfers: whether one exists, and
+// up to 4 of its routes.
+var l_has: bool = false
+var l_n: u8 = 0
+var l_routes: u8[4]
+var r_has: bool = false
+var r_n: u8 = 0
+var r_routes: u8[4]
 
 // Text scratch: station names and labels are copied here from the
 // Stations bank, as font codes.

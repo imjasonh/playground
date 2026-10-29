@@ -256,8 +256,8 @@ pub const PREV_INPUT_P2: u16 = 0x07E7;
 /// The buffer is gated on the `__vram_buf_used` marker label —
 /// programs that never call any of the buffer intrinsics keep
 /// these 256 bytes free for analyzer allocation. When the marker
-/// is present, the analyzer skips `$0400-$04FF` so user globals
-/// are pushed into `$0500+`.
+/// is present, the analyzer fills `$0300-$03FF` and then skips
+/// `$0400-$04FF`, so no user global lands in the ring.
 ///
 /// The buffer is a 256-byte ring indexed by X, so offsets wrap
 /// naturally. `VRAM_BUF_HEAD` is the next-free offset, owned by

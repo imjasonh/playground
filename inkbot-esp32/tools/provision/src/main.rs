@@ -46,7 +46,7 @@ struct Cli {
     /// embuild copy that gets cloned by `make build`.
     #[arg(
         long,
-        default_value = ".embuild/espressif/esp-idf/v5.2.2/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
+        default_value = ".embuild/espressif/esp-idf/v6.1/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
     )]
     nvs_gen: PathBuf,
 
@@ -55,7 +55,7 @@ struct Cli {
     /// firmware build uses; ensures script deps are present).
     #[arg(
         long,
-        default_value = ".embuild/espressif/python_env/idf5.2_py3.12_env/bin/python"
+        default_value = ".embuild/espressif/python_env/idf6.1_py3.12_env/bin/python"
     )]
     python: PathBuf,
 

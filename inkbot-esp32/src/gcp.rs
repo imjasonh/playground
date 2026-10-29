@@ -263,18 +263,10 @@ fn mint_access_token(cfg: &GcpConfig) -> Result<CachedToken> {
 }
 
 fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {
-    use core::ffi::c_void;
     use esp_idf_svc::sys::{
-        esp_fill_random, mbedtls_md_type_t_MBEDTLS_MD_SHA256, mbedtls_pk_context, mbedtls_pk_free,
-        mbedtls_pk_init, mbedtls_pk_parse_key, mbedtls_pk_sign, mbedtls_sha256, psa_crypto_init,
+        mbedtls_md_type_t_MBEDTLS_MD_SHA256, mbedtls_pk_context, mbedtls_pk_free, mbedtls_pk_init,
+        mbedtls_pk_parse_key, mbedtls_pk_sign, mbedtls_sha256, psa_crypto_init,
     };
-
-    unsafe extern "C" fn rng(_p: *mut c_void, output: *mut u8, len: usize) -> i32 {
-        unsafe {
-            esp_fill_random(output as *mut c_void, len);
-        }
-        0
-    }
 
     let mut pem_z = pem.to_vec();
     while pem_z.last() == Some(&b'\n') || pem_z.last() == Some(&b'\r') || pem_z.last() == Some(&0) {
@@ -290,15 +282,10 @@ fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {
         }
         let mut pk: mbedtls_pk_context = core::mem::zeroed();
         mbedtls_pk_init(&mut pk);
-        let parsed = mbedtls_pk_parse_key(
-            &mut pk,
-            pem_z.as_ptr(),
-            pem_z.len(),
-            core::ptr::null(),
-            0,
-            Some(rng),
-            core::ptr::null_mut(),
-        );
+        // mbedTLS 4.x (ESP-IDF v6) drives the RNG through PSA internally, so
+        // parse and sign no longer take an f_rng/p_rng callback pair.
+        let parsed =
+            mbedtls_pk_parse_key(&mut pk, pem_z.as_ptr(), pem_z.len(), core::ptr::null(), 0);
         if parsed != 0 {
             mbedtls_pk_free(&mut pk);
             bail!("mbedtls_pk_parse_key {parsed}");
@@ -318,8 +305,6 @@ fn mbedtls_rs256_sign(pem: &[u8], message: &[u8]) -> Result<Vec<u8>> {
             sig.as_mut_ptr(),
             sig.len(),
             &mut sig_len,
-            Some(rng),
-            core::ptr::null_mut(),
         );
         mbedtls_pk_free(&mut pk);
         if signed != 0 {

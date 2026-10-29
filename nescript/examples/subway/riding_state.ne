@@ -5,8 +5,9 @@
 // leaving and reaches the next stop after that stop's running time.
 //
 // Controls: left and right walk, up and down move between the seats
-// and the aisle. Up at an open door steps off. Hold B between stations
-// to ride faster.
+// and the aisle. Up at an open door steps off. B punches, A kicks, and
+// fight.ne has the rest. Holding B between stations with no fight on
+// rides faster. A fight can start as the train leaves a stop.
 //
 // See scenery.ne for the window band.
 
@@ -80,23 +81,17 @@ var joint: u8 = 0
 const LED_PAGE_FRAMES: u8 = 150
 
 state Riding {
-    var rpx: u8 = 120
-    var rpy: u8 = 132
-    var rflip: bool = false
-    var rwalk: u8 = 0
-
     on enter {
         on_train = true
         if resume {
             resume = false
-            rpx = save_px
-            rpy = save_py
-            rflip = save_flip
             ride_setup()
+            fight_enter(1)
             return
         }
-        rpx = door_px
-        rpy = RIDE_MIN_Y
+        pl_x = door_px
+        pl_y = RIDE_MIN_Y
+        fight_clear()
         rphase = 0
         at_end = false
         rx = 0
@@ -108,28 +103,31 @@ state Riding {
         seg_t = 0
         set_station_a(stop_station(ride_p, ride_k))
         ride_setup()
+        fight_enter(1)
     }
 
     on frame {
         frame_top()
         frame_count += 1
         if button.start.pressed {
-            save_px = rpx
-            save_py = rpy
-            save_flip = rflip
             pause_from = 1
             transition PauseMap
         }
 
+        var fighting: bool = fight_on()
         var speed: u8 = 1
-        if button.b and rphase == 1 {
+        if button.b and rphase == 1 and not fighting {
             speed = 3
         }
         clock_step(speed)
         if ticked {
             clock_job = true
         }
+        var was: u8 = rphase
         ride_update()
+        if was == 0 and rphase == 1 {
+            fight_maybe()
+        }
         sway_update()
         set_splits()
 
@@ -137,52 +135,60 @@ state Riding {
         if n < 2 {
             ride_jobs()
         }
-
-        var moving: bool = false
-        if button.right and rpx < 232 {
-            rpx += 1
-            rflip = true
-            moving = true
+        if n == 0 {
+            fight_hud()
         }
-        if button.left and rpx > 8 {
-            rpx -= 1
-            rflip = false
-            moving = true
+
+        fight_input()
+        var st: u8 = pl_step
+        var ready: bool = pl_act == A_IDLE
+        pl_moving = false
+        if button.right and st > 0 and pl_x < 232 {
+            pl_x += st
+            if pl_x > 232 {
+                pl_x = 232
+            }
+            if ready {
+                pl_flip = true
+            }
+            pl_moving = true
+        }
+        if button.left and st > 0 and pl_x > 8 {
+            pl_x -= st
+            if pl_x < 8 {
+                pl_x = 8
+            }
+            if ready {
+                pl_flip = false
+            }
+            pl_moving = true
         }
         if not button.up {
             up_lock = false
         }
-        if button.up {
-            if rpy > RIDE_MIN_Y {
-                rpy -= 1
-                moving = true
-            } else if not up_lock and rdoors and at_door(rpx) {
+        if button.up and st > 0 {
+            if pl_y > RIDE_MIN_Y {
+                pl_y -= 1
+                pl_moving = true
+            } else if ready and not up_lock and rdoors and at_door(pl_x) {
                 up_lock = true
                 cur_st = stop_station(ride_p, ride_k)
                 cur_dir = pat_dir(ride_p)
-                door_px = rpx
+                door_px = pl_x
                 transition Platform
             }
         }
-        if button.down and rpy < RIDE_MAX_Y {
-            rpy += 1
-            moving = true
+        if button.down and st > 0 and pl_y < RIDE_MAX_Y {
+            pl_y += 1
+            pl_moving = true
         }
-        var f: u8 = S_PLAYER0
-        if moving {
-            rwalk += 1
-            var phase: u8 = (rwalk >> 3) & 3
-            if phase == 1 {
-                f = S_PLAYER1
-            } else if phase == 3 {
-                f = S_PLAYER2
-            }
-        } else {
-            rwalk = 0
-        }
-        draw_player(rpx - ix, rpy, f, rflip)
+        fight_update()
+        fight_draw(ix)
         draw_bullet(8, 7, pat_route(ride_p))
-        draw_xfers()
+        // Four of the gang fill the sprites the transfer bullets use.
+        if not fighting {
+            draw_xfers()
+        }
         draw_band_sprites()
     }
 

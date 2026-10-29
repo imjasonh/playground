@@ -8,4 +8,4 @@ rustflags = ["--cfg", "espidf_time64"]
 
 [env]
 MCU = "esp32"
-ESP_IDF_VERSION = "v5.2.2"
+ESP_IDF_VERSION = "v6.1"

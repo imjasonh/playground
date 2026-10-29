@@ -62,7 +62,7 @@ struct PushArgs {
     target_chip: String,
 
     /// IDF version, recorded in the artifact's config blob.
-    #[arg(long, default_value = "v5.2.2")]
+    #[arg(long, default_value = "v6.1")]
     idf_version: String,
 
     /// App id written into the OCI config blob. Defaults to the last
