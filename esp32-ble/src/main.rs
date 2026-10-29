@@ -117,6 +117,7 @@ fn drive_led(led: &mut PinDriver<'_, Output>, on: bool) -> Result<()> {
 }
 
 fn heap_free() -> Option<u32> {
+    // SAFETY: esp_get_free_heap_size reads a heap counter. It takes no pointer.
     Some(unsafe { esp_get_free_heap_size() })
 }
 

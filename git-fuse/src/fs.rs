@@ -885,7 +885,9 @@ impl GitFuse {
                 // fh 0 is reserved: "no handle" (ref files, directories).
                 next_fh: std::sync::atomic::AtomicU64::new(1),
                 // Present everything as owned by the mounting user.
+                // SAFETY: geteuid reads the process user id. It takes no pointer.
                 uid: unsafe { libc::geteuid() },
+                // SAFETY: getegid reads the process group id. It takes no pointer.
                 gid: unsafe { libc::getegid() },
                 mounted_at: SystemTime::now(),
             }),
