@@ -1,13 +1,15 @@
-// go_test_context prefers testing.T.Context() (Go 1.24+) over
-// context.Background() and context.TODO() in *_test.go files.
-// The test context cancels when the test finishes, which is usually
-// what callers want for work tied to the test lifetime.
+// go_test_context requires t.Context() in tests.
 //
-// Scope is filename-based (`*_test.go`), not a precise "inside
-// func Test*/Benchmark*/Fuzz*" check — pasta has no ancestor-name
-// predicate today. Helpers in test files that lack a *testing.T
-// may need pasta:ignore. Rewrites assume the conventional `t`
-// parameter name.
+// The Google Go decisions guide allows context.Background in main,
+// init, and tests. This repo allows it in main and init. A test uses
+// t.Context() (benchmarks use b.Context(), fuzz targets use
+// f.Context()), which cancels when the test finishes.
+// https://google.github.io/styleguide/go/decisions#contexts
+//
+// Scope is filename-based (`*_test.go`). Pasta has no ancestor-name
+// predicate, so the check covers the whole file. Helpers in test
+// files that lack a *testing.T may need pasta:ignore. Rewrites assume
+// the conventional `t` parameter name.
 
 package go_test_context
 
