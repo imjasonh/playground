@@ -145,7 +145,10 @@ echo "KUBE_IMAGE names the controller's image: $(container image)"
 website_ready() {
   [[ "$(k get website hello -o jsonpath='{.status.readyReplicas}')" == "$1" ]]
 }
-k apply -f - <<EOF
+# Both replicas are Ready before the leader installs the Website CRD, so the
+# first apply can run while the API server still has no Website type.
+apply_website() {
+  k apply -f - <<EOF
 apiVersion: examples.kube.imjasonh.github.io/v1
 kind: Website
 metadata:
@@ -156,6 +159,8 @@ spec:
   replicas: 2
   port: 8080
 EOF
+}
+eventually 180 apply_website
 eventually 180 website_ready 2
 k get website hello
 [[ "$(k get deployment hello -o jsonpath='{.metadata.ownerReferences[0].kind}')" == Website ]]
