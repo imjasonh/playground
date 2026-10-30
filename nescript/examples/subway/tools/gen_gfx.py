@@ -20,8 +20,6 @@ Every background page starts with the same font at the same tile
 numbers, so text code doesn't care which page is mapped.
 """
 
-import json
-import math
 import os
 import sys
 

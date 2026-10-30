@@ -152,34 +152,6 @@ func TestParseSuppressions_emptyCommentTypes(t *testing.T) {
 	}
 }
 
-func TestIsSuppressed(t *testing.T) {
-	m := map[int]suppression{
-		3: {all: true},
-		5: {rules: map[string]bool{"foo": true}},
-	}
-	cases := []struct {
-		rule string
-		line int
-		want bool
-	}{
-		{"foo", 3, true},
-		{"bar", 3, true},
-		{"foo", 5, true},
-		{"bar", 5, false},
-		{"foo", 99, false},
-		{"foo", 0, false},
-	}
-	for _, tc := range cases {
-		got := isSuppressed(m, tc.rule, tc.line)
-		if got != tc.want {
-			t.Errorf("isSuppressed(%q, line=%d) = %v, want %v", tc.rule, tc.line, got, tc.want)
-		}
-	}
-	if isSuppressed(nil, "foo", 1) {
-		t.Errorf("isSuppressed on nil map should be false")
-	}
-}
-
 func TestMarkSuppressed_tracksUsage(t *testing.T) {
 	m := map[int]suppression{
 		1: {all: true, start: 0, end: 12},

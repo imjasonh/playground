@@ -96,6 +96,10 @@ func main() {
 			os.Exit(runInstall(os.Args[2:]))
 		case "uninstall":
 			os.Exit(runUninstall(os.Args[2:]))
+		case "facts":
+			os.Exit(runFacts(os.Args[2:]))
+		case "mcp":
+			os.Exit(runMCP(os.Args[2:]))
 		}
 	}
 	os.Exit(runFix(os.Args[1:]))
