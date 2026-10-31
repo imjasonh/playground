@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2493,6 +2494,145 @@ func TestReplica_Restore_Follow_CrashRecovery(t *testing.T) {
 	}
 }
 
+// TestReplica_Restore_Follow_ResumeAheadOfSnapshot resumes a follow file whose saved
+// TXID is ahead of the latest snapshot, which must succeed since the deltas still exist.
+func TestReplica_Restore_Follow_ResumeAheadOfSnapshot(t *testing.T) {
+	ctx := context.Background()
+
+	db, sqldb := testingutil.MustOpenDBs(t)
+	defer testingutil.MustCloseDBs(t, db, sqldb)
+
+	c := file.NewReplicaClient(t.TempDir())
+	r := litestream.NewReplicaWithClient(db, c)
+
+	// Replicate several transactions as level-0 deltas (no snapshot).
+	if _, err := sqldb.ExecContext(ctx, `CREATE TABLE test(id INTEGER PRIMARY KEY, value TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 5; i++ {
+		if _, err := sqldb.ExecContext(ctx, `INSERT INTO test VALUES (?, ?)`, i, fmt.Sprintf("v%d", i)); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build the follow file, let it catch up, then crash it.
+	outputPath := filepath.Join(t.TempDir(), "follower.db")
+	followCtx, followCancel := context.WithCancel(ctx)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- r.Restore(followCtx, litestream.RestoreOptions{
+			OutputPath:     outputPath,
+			Follow:         true,
+			FollowInterval: 50 * time.Millisecond,
+		})
+	}()
+
+	var savedTXID ltx.TXID
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cur, err := litestream.ReadTXIDFile(outputPath); err == nil && cur > 1 {
+			savedTXID = cur
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if savedTXID <= 1 {
+		t.Fatalf("follow file did not advance past TXID 1 (saved=%s)", savedTXID)
+	}
+
+	followCancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("initial follow returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("initial follow did not shut down within timeout")
+	}
+
+	// Add a transaction while the follower is down.
+	if _, err := sqldb.ExecContext(ctx, `INSERT INTO test VALUES (100, 'post-crash')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Put a snapshot marker behind the follow position. Validation reads only its TXID
+	// range, and follow applies from levels 0..8, so the marker's content is never read.
+	snapshotDir := c.LTXLevelDir(litestream.SnapshotLevel)
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotDir, ltx.FormatFilename(1, 1)), []byte("snapshot-marker"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Precondition: the saved TXID is ahead of the latest snapshot.
+	snap, err := r.MaxLTXFileInfo(ctx, litestream.SnapshotLevel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if savedTXID <= snap.MaxTXID {
+		t.Fatalf("precondition: saved TXID %s must be ahead of latest snapshot %s", savedTXID, snap.MaxTXID)
+	}
+
+	// Restart follow mode: must resume and apply the new transaction.
+	followCtx2, followCancel2 := context.WithCancel(ctx)
+	defer followCancel2()
+	errCh2 := make(chan error, 1)
+	go func() {
+		errCh2 <- r.Restore(followCtx2, litestream.RestoreOptions{
+			OutputPath:     outputPath,
+			Follow:         true,
+			FollowInterval: 50 * time.Millisecond,
+		})
+	}()
+
+	var found bool
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		// A rejected resume returns immediately.
+		select {
+		case err := <-errCh2:
+			t.Fatalf("resume ahead of snapshot was rejected: %v", err)
+		default:
+		}
+
+		followerDB := testingutil.MustOpenSQLDB(t, outputPath)
+		var count int
+		err := followerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM test WHERE value = 'post-crash'`).Scan(&count)
+		followerDB.Close()
+		if err == nil && count > 0 {
+			found = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !found {
+		t.Fatal("resume ahead of snapshot did not apply new data within timeout")
+	}
+
+	followCancel2()
+	select {
+	case err := <-errCh2:
+		if err != nil {
+			t.Fatalf("follow returned error after resume: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("follow did not shut down within timeout after resume")
+	}
+}
+
 func TestReplica_Restore_Follow_NoTXIDFile(t *testing.T) {
 	db, sqldb := testingutil.MustOpenDBs(t)
 	defer testingutil.MustCloseDBs(t, db, sqldb)
@@ -2616,4 +2756,120 @@ func verifyRestoredDB(t *testing.T, path string) {
 	if result != "ok" {
 		t.Fatalf("integrity check returned: %s", result)
 	}
+}
+
+func TestReplica_Restore_CancelledOpenClosesBodies(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	infos := make([]*ltx.FileInfo, 64)
+	for i := range infos {
+		infos[i] = &ltx.FileInfo{
+			Level:   0,
+			MinTXID: ltx.TXID(i + 1),
+			MaxTXID: ltx.TXID(i + 1),
+			Size:    ltx.HeaderSize,
+		}
+	}
+
+	var opened, closed atomic.Int32
+	client := &mock.ReplicaClient{
+		LTXFilesFunc: func(ctx context.Context, level int, seek ltx.TXID, useMetadata bool) (ltx.FileIterator, error) {
+			if level == 0 {
+				return ltx.NewFileInfoSliceIterator(infos), nil
+			}
+			return ltx.NewFileInfoSliceIterator(nil), nil
+		},
+		OpenLTXFileFunc: func(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+			if opened.Add(1) == 32 {
+				cancel()
+			}
+			<-ctx.Done()
+			return &cancelledRestoreBody{Reader: bytes.NewReader(nil), closed: &closed}, nil
+		},
+	}
+
+	err := litestream.NewReplicaWithClient(nil, client).Restore(ctx, litestream.RestoreOptions{
+		OutputPath: filepath.Join(t.TempDir(), "restored.db"),
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Restore() error = %v, want context.Canceled", err)
+	}
+	if got := opened.Load(); got != 32 {
+		t.Fatalf("opened %d bodies, want 32", got)
+	}
+	if got, want := closed.Load(), opened.Load(); got != want {
+		t.Fatalf("closed %d bodies, want %d", got, want)
+	}
+}
+
+type cancelledRestoreBody struct {
+	io.Reader
+	closed *atomic.Int32
+}
+
+func (r *cancelledRestoreBody) Close() error {
+	r.closed.Add(1)
+	return nil
+}
+
+func TestReplica_Restore_OpensPlanConcurrently(t *testing.T) {
+	ctx := context.Background()
+	db, sqldb := testingutil.MustOpenDBs(t)
+	defer testingutil.MustCloseDBs(t, db, sqldb)
+
+	if _, err := sqldb.ExecContext(ctx, `CREATE TABLE t (x)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SyncAndWait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		if _, err := sqldb.ExecContext(ctx, `INSERT INTO t VALUES (?)`, i); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.SyncAndWait(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	client := &rendezvousOpenClient{ReplicaClient: db.Replica.Client}
+	restored := filepath.Join(t.TempDir(), "restored.db")
+	if err := litestream.NewReplicaWithClient(nil, client).Restore(ctx, litestream.RestoreOptions{OutputPath: restored}); err != nil {
+		t.Fatal(err)
+	}
+	if peak := client.peak.Load(); peak < 2 {
+		t.Fatalf("restore opened its plan one file at a time (peak %d in flight)", peak)
+	}
+
+	var count int
+	if err := testingutil.MustOpenSQLDB(t, restored).QueryRowContext(ctx, `SELECT COUNT(*) FROM t`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("restored %d rows, want 3", count)
+	}
+}
+
+// rendezvousOpenClient holds each OpenLTXFile until a second open is in
+// flight, so a restore that opens its plan serially never reaches a peak of 2.
+type rendezvousOpenClient struct {
+	litestream.ReplicaClient
+	inflight atomic.Int64
+	peak     atomic.Int64
+}
+
+func (c *rendezvousOpenClient) OpenLTXFile(ctx context.Context, level int, minTXID, maxTXID ltx.TXID, offset, size int64) (io.ReadCloser, error) {
+	n := c.inflight.Add(1)
+	defer c.inflight.Add(-1)
+	for {
+		peak := c.peak.Load()
+		if n <= peak || c.peak.CompareAndSwap(peak, n) {
+			break
+		}
+	}
+	for deadline := time.Now().Add(time.Second); c.peak.Load() < 2 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
+	return c.ReplicaClient.OpenLTXFile(ctx, level, minTXID, maxTXID, offset, size)
 }
