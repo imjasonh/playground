@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NYPD Helicopter Tracker</title>
+    <meta
+      name="description"
+      content="Daily flight paths, flight times, and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B data."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="titles">
+        <h1>NYPD Helicopter Tracker</h1>
+        <p class="subtitle">
+          Daily flight paths, airborne hours, and estimated fuel cost for the
+          NYPD Aviation Unit fleet &mdash; reconstructed from public ADS-B data.
+        </p>
+      </div>
+      <div id="source-badge" class="badge" hidden></div>
+    </header>
+
+    <section class="controls" aria-label="Controls">
+      <label class="control">
+        <span>Day</span>
+        <select id="day-select"></select>
+      </label>
+      <label class="control">
+        <span>Jet-A price ($/gal)</span>
+        <input id="price" type="number" min="0" step="0.25" value="6.50" />
+      </label>
+      <button id="refresh" type="button" class="ghost">Reload data</button>
+    </section>
+
+    <section id="summary" class="summary" aria-label="Daily summary"></section>
+
+    <main class="layout">
+      <section class="map-wrap">
+        <div id="map" role="img" aria-label="Map of NYPD helicopter flight paths"></div>
+        <div id="legend" class="legend" aria-label="Aircraft legend"></div>
+      </section>
+
+      <section class="table-wrap">
+        <table id="aircraft-table">
+          <thead>
+            <tr>
+              <th scope="col">Aircraft</th>
+              <th scope="col">Type</th>
+              <th scope="col" class="num">Flights</th>
+              <th scope="col" class="num">Est. airborne</th>
+              <th scope="col" class="num">Distance</th>
+              <th scope="col" class="num">Est. fuel</th>
+              <th scope="col" class="num">Est. cost</th>
+            </tr>
+          </thead>
+          <tbody id="aircraft-rows"></tbody>
+        </table>
+        <p id="empty-note" class="empty-note" hidden></p>
+      </section>
+    </main>
+
+    <footer class="methodology">
+      <h2>How these numbers are estimated</h2>
+      <ul>
+        <li>
+          A scheduled job fetches each fleet aircraft's full-day ADS-B
+          <strong>trace</strong> &mdash; the same dense position history
+          (roughly every 30&nbsp;seconds while airborne) the tracking networks
+          use to draw an aircraft's path &mdash; and merges it into per-day
+          files. Because the whole day is re-fetched and de-duplicated, brief
+          flights between hourly runs are not missed and paths follow the
+          actual route, not straight hops between hourly dots.
+        </li>
+        <li>
+          <strong>Airborne time</strong> per flight is the observed span between
+          its first and last airborne sample (flights split on long gaps and on
+          the trace's takeoff/landing markers). It is close to actual with dense
+          trace data; if only sparse fallback data is available for a day, each
+          detection is credited with roughly its sampling interval instead.
+        </li>
+        <li>
+          <strong>Fuel</strong> = estimated airborne hours &times; a per-model
+          cruise burn (Bell&nbsp;429 &asymp; 50, Bell&nbsp;412 &asymp; 100,
+          Bell&nbsp;407 &asymp; 40 US&nbsp;gal/hr). <strong>Cost</strong> = fuel
+          &times; the Jet-A price above. All figures are order-of-magnitude
+          estimates for public interest, not operational or budget data.
+        </li>
+        <li>
+          Fleet identified by FAA tail number &rarr; ICAO Mode-S hex. Trace
+          data via <a href="https://adsb.lol" rel="noopener">adsb.lol</a>
+          (ODbL) and compatible community aggregators.
+        </li>
+      </ul>
+    </footer>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
