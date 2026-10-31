@@ -2892,13 +2892,23 @@ func (f *VFSFile) monitorReplicaClient(ctx context.Context) {
 func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	f.mu.Lock()
 	pos := f.pos
+<<<<<<< HEAD
 	baseCommit := f.indexCommitWithLock()
+=======
+	baseCommit := f.commit
+>>>>>>> 33b5b1bc6ef8f5e9848dce325908c959a5b60970
 	maxTXID1Snapshot := f.maxTXID1
 	maxTXID1AnchoredSnapshot := f.maxTXID1Anchored
 	maxTXID1CoveredSnapshot := f.maxTXID1Covered
 	f.mu.Unlock()
 
 	f.logger.Debug("polling replica client", "txid", pos.TXID.String())
+<<<<<<< HEAD
+=======
+	combined := make(map[uint32]ltx.PageIndexElem)
+	newCommit := baseCommit
+	replaceIndex := false
+>>>>>>> 33b5b1bc6ef8f5e9848dce325908c959a5b60970
 
 	combined := make(map[uint32]ltx.PageIndexElem)
 
@@ -2947,6 +2957,10 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	// Send updates to a pending list if there are active readers.
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if f.pos != pos {
+		return nil
+	}
 
 	if f.targetTime != nil {
 		// Skip applying updates while time travel is active to avoid
