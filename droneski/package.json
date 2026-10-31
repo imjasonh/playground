@@ -10,7 +10,7 @@
     "vendor": "node scripts/vendor.js"
   },
   "dependencies": {
-    "three": "^0.186.1"
+    "three": "^0.187.0"
   },
   "engines": {
     "node": ">=20"
