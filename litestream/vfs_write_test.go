@@ -431,12 +431,17 @@ func TestVFSFile_PollDoesNotRegressLocalSync(t *testing.T) {
 	if pollErr != nil {
 		t.Fatal(pollErr)
 	}
-	if got := f.Pos().TXID; got != 2 {
+	// The fork keeps pos as the replica poll position, so a local sync leaves
+	// it alone; expectedTXID tracks the sync.
+	if got := f.expectedTXID; got != 2 {
 		t.Errorf("poll regressed local sync TXID: got %s, want 2", got)
 	}
 
 	if err := f.pollReplicaClient(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if got := f.Pos().TXID; got != 2 {
+		t.Errorf("poll did not reach local sync TXID: got %s, want 2", got)
 	}
 	f.cache.Purge()
 	buf := make([]byte, pageSize)

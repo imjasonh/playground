@@ -2892,23 +2892,13 @@ func (f *VFSFile) monitorReplicaClient(ctx context.Context) {
 func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	f.mu.Lock()
 	pos := f.pos
-<<<<<<< HEAD
 	baseCommit := f.indexCommitWithLock()
-=======
-	baseCommit := f.commit
->>>>>>> a5ddc7612e79a441b290654e97f8646cbe3384c2
 	maxTXID1Snapshot := f.maxTXID1
 	maxTXID1AnchoredSnapshot := f.maxTXID1Anchored
 	maxTXID1CoveredSnapshot := f.maxTXID1Covered
 	f.mu.Unlock()
 
 	f.logger.Debug("polling replica client", "txid", pos.TXID.String())
-<<<<<<< HEAD
-=======
-	combined := make(map[uint32]ltx.PageIndexElem)
-	newCommit := baseCommit
-	replaceIndex := false
->>>>>>> a5ddc7612e79a441b290654e97f8646cbe3384c2
 
 	combined := make(map[uint32]ltx.PageIndexElem)
 
