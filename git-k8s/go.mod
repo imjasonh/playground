@@ -8,8 +8,8 @@ replace github.com/imjasonh/playground/kube => ../kube
 require (
 	cel.dev/cel-go v0.33.2
 	github.com/chainguard-dev/clog v1.8.1
-	github.com/imjasonh/playground/kube v0.0.0-20261030052412-32ebf12460dc
-	go.yaml.in/yaml/v3 v3.0.5
+	github.com/imjasonh/playground/kube v0.0.0-20261031051221-82f96fafc82e
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/mod v0.42.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
