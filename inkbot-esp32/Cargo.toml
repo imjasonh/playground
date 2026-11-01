@@ -24,6 +24,12 @@ path = "src/maze_main.rs"
 harness = false
 required-features = ["firmware", "maze-lib"]
 
+[[bin]]
+name = "grayscale-esp32"
+path = "src/grayscale_main.rs"
+harness = false
+required-features = ["firmware", "grayscale-lib"]
+
 [features]
 default = []
 # Device firmware (esp-idf HAL + log). Host `cargo test` leaves this off.
@@ -32,6 +38,8 @@ firmware = []
 inkbot-lib = []
 # Maze generator / solver / renderer.
 maze-lib = []
+# Drive-step planner, custom waveform tables, and demo scene (grayscale-esp32).
+grayscale-lib = []
 # Wi-Fi + HTTP client types.
 net = ["dep:embedded-svc"]
 # GHCR pull + Sigstore verify.
