@@ -1,0 +1,11 @@
+{
+  "name": "life-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Draw a Game of Life generation 0 and print the resulting Z-stack \u2014 wasm-powered, self-supporting by construction",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx serve ."
+  }
+}
