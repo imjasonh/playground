@@ -2948,6 +2948,10 @@ func (f *VFSFile) pollReplicaClient(ctx context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if f.pos != pos {
+		return nil
+	}
+
 	if f.targetTime != nil {
 		// Skip applying updates while time travel is active to avoid
 		// overwriting the historical snapshot state.
