@@ -1,5 +1,5 @@
 {
-  "version": "11e-6",
+  "version": "11e-7",
   "edition": "11th",
   "source": {
     "pointsSource": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
@@ -29337,11 +29337,6 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "black-templars--land-raider--7c56-d514-6af0-22da",
-              "name": "Godhammer Lascannon",
-              "points": 0
-            },
-            {
               "id": "black-templars--land-raider--9646-f7ed-1896-1922",
               "name": "Armoured Tracks",
               "points": 0
@@ -29364,6 +29359,11 @@
             {
               "id": "black-templars--land-raider--93d1-f785-ad6a-fc54",
               "name": "Twin heavy bolter",
+              "points": 0
+            },
+            {
+              "id": "black-templars--land-raider--277e-a23e-4c1f-e93c",
+              "name": "Godhammer Lascannon",
               "points": 0
             }
           ]
@@ -30674,7 +30674,7 @@
             },
             {
               "id": "black-templars--sternguard-veteran-squad--464b-51e7-0c71-6895",
-              "name": "Astartes Chainsword",
+              "name": "Chainsword",
               "points": 0
             }
           ]
@@ -35489,11 +35489,6 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "blood-angels--land-raider--7c56-d514-6af0-22da",
-              "name": "Godhammer Lascannon",
-              "points": 0
-            },
-            {
               "id": "blood-angels--land-raider--9646-f7ed-1896-1922",
               "name": "Armoured Tracks",
               "points": 0
@@ -35516,6 +35511,11 @@
             {
               "id": "blood-angels--land-raider--93d1-f785-ad6a-fc54",
               "name": "Twin heavy bolter",
+              "points": 0
+            },
+            {
+              "id": "blood-angels--land-raider--277e-a23e-4c1f-e93c",
+              "name": "Godhammer Lascannon",
               "points": 0
             }
           ]
@@ -37163,7 +37163,7 @@
             },
             {
               "id": "blood-angels--sternguard-veteran-squad--464b-51e7-0c71-6895",
-              "name": "Astartes Chainsword",
+              "name": "Chainsword",
               "points": 0
             }
           ]
@@ -44296,13 +44296,13 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "chaos-space-marines--dark-commune--c42f-7ec3-2301-d273",
-              "name": "Autopistol",
+              "id": "chaos-space-marines--dark-commune--3fe6-3232-9e06-6b0e",
+              "name": "Commune stave",
               "points": 0
             },
             {
-              "id": "chaos-space-marines--dark-commune--3fe6-3232-9e06-6b0e",
-              "name": "Commune stave",
+              "id": "chaos-space-marines--dark-commune--3d8e-f2a5-1ed7-7d35",
+              "name": "Autopistol",
               "points": 0
             }
           ]
@@ -45556,13 +45556,8 @@
           "name": "Legionary w/ other weapon · Weapon",
           "min": 1,
           "max": 1,
-          "defaultOptionID": "chaos-space-marines--legionaries--aad4-5ec4-cc9e-115f",
+          "defaultOptionID": "chaos-space-marines--legionaries--e9cb-69af-41c7-3e59",
           "options": [
-            {
-              "id": "chaos-space-marines--legionaries--aad4-5ec4-cc9e-115f",
-              "name": "Flamer",
-              "points": 0
-            },
             {
               "id": "chaos-space-marines--legionaries--e9cb-69af-41c7-3e59",
               "name": "Havoc autocannon",
@@ -45584,11 +45579,6 @@
               "points": 0
             },
             {
-              "id": "chaos-space-marines--legionaries--b455-5fb4-7ce4-72dc",
-              "name": "Plasma gun",
-              "points": 0
-            },
-            {
               "id": "chaos-space-marines--legionaries--fbc0-6bf0-7d69-ee67",
               "name": "Reaper chaincannon",
               "points": 0
@@ -45601,6 +45591,16 @@
             {
               "id": "chaos-space-marines--legionaries--49c0-32c6-0994-573b",
               "name": "Meltagun",
+              "points": 0
+            },
+            {
+              "id": "chaos-space-marines--legionaries--0a18-5adf-b1ad-a9a8",
+              "name": "Flamer",
+              "points": 0
+            },
+            {
+              "id": "chaos-space-marines--legionaries--e7a1-a59a-f7e0-91da",
+              "name": "Plasma gun",
               "points": 0
             }
           ]
@@ -46272,21 +46272,21 @@
           "name": "Legionary w/ special weapon · Weapon",
           "min": 1,
           "max": 1,
-          "defaultOptionID": "chaos-space-marines--nemesis-claw--28f7-c1cc-3438-cf4c",
+          "defaultOptionID": "chaos-space-marines--nemesis-claw--3bc9-c6e9-26c5-e7a2",
           "options": [
             {
-              "id": "chaos-space-marines--nemesis-claw--28f7-c1cc-3438-cf4c",
-              "name": "Flamer",
+              "id": "chaos-space-marines--nemesis-claw--3bc9-c6e9-26c5-e7a2",
+              "name": "Meltagun",
               "points": 0
             },
             {
-              "id": "chaos-space-marines--nemesis-claw--f7dc-a17d-aece-165a",
+              "id": "chaos-space-marines--nemesis-claw--5bff-7a73-0fe8-2102",
               "name": "Plasma gun",
               "points": 0
             },
             {
-              "id": "chaos-space-marines--nemesis-claw--3bc9-c6e9-26c5-e7a2",
-              "name": "Meltagun",
+              "id": "chaos-space-marines--nemesis-claw--3ac1-1fc5-a540-3545",
+              "name": "Flamer",
               "points": 0
             }
           ]
@@ -51310,11 +51310,6 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "dark-angels--land-raider--7c56-d514-6af0-22da",
-              "name": "Godhammer Lascannon",
-              "points": 0
-            },
-            {
               "id": "dark-angels--land-raider--9646-f7ed-1896-1922",
               "name": "Armoured Tracks",
               "points": 0
@@ -51337,6 +51332,11 @@
             {
               "id": "dark-angels--land-raider--93d1-f785-ad6a-fc54",
               "name": "Twin heavy bolter",
+              "points": 0
+            },
+            {
+              "id": "dark-angels--land-raider--277e-a23e-4c1f-e93c",
+              "name": "Godhammer Lascannon",
               "points": 0
             }
           ]
@@ -53265,7 +53265,7 @@
             },
             {
               "id": "dark-angels--sternguard-veteran-squad--464b-51e7-0c71-6895",
-              "name": "Astartes Chainsword",
+              "name": "Chainsword",
               "points": 0
             }
           ]
@@ -59560,11 +59560,6 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "deathwatch--land-raider--7c56-d514-6af0-22da",
-              "name": "Godhammer Lascannon",
-              "points": 0
-            },
-            {
               "id": "deathwatch--land-raider--9646-f7ed-1896-1922",
               "name": "Armoured Tracks",
               "points": 0
@@ -59587,6 +59582,11 @@
             {
               "id": "deathwatch--land-raider--93d1-f785-ad6a-fc54",
               "name": "Twin heavy bolter",
+              "points": 0
+            },
+            {
+              "id": "deathwatch--land-raider--277e-a23e-4c1f-e93c",
+              "name": "Godhammer Lascannon",
               "points": 0
             }
           ]
@@ -60978,7 +60978,7 @@
             },
             {
               "id": "deathwatch--sternguard-veteran-squad--464b-51e7-0c71-6895",
-              "name": "Astartes Chainsword",
+              "name": "Chainsword",
               "points": 0
             }
           ]
@@ -63566,7 +63566,27 @@
       "leaderTo": [],
       "mustAttach": false,
       "maxCopiesOverride": 6,
-      "optionGroups": []
+      "optionGroups": [
+        {
+          "id": "drukhari--wracks--7cb2-d3db-a8d7-a332",
+          "name": "Acothyst · Weapon Options",
+          "min": 1,
+          "max": 1,
+          "defaultOptionID": "drukhari--wracks--3b28-a84a-639d-8be5",
+          "options": [
+            {
+              "id": "drukhari--wracks--3b28-a84a-639d-8be5",
+              "name": "Twin torturer's tools",
+              "points": 0
+            },
+            {
+              "id": "drukhari--wracks--ba08-6388-37ae-9adb",
+              "name": "Alternative weapon options",
+              "points": 0
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "drukhari--wyches",
@@ -80089,11 +80109,6 @@
               "id": "orks--stompa--f74e-262b-21b9-74b1",
               "name": "Big Shoota",
               "points": 0
-            },
-            {
-              "id": "orks--stompa--846c-e0a-7507-fdcf",
-              "name": "Twin big shoota",
-              "points": 0
             }
           ]
         }
@@ -84024,11 +84039,6 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "space-marines--land-raider--7c56-d514-6af0-22da",
-              "name": "Godhammer Lascannon",
-              "points": 0
-            },
-            {
               "id": "space-marines--land-raider--9646-f7ed-1896-1922",
               "name": "Armoured Tracks",
               "points": 0
@@ -84051,6 +84061,11 @@
             {
               "id": "space-marines--land-raider--93d1-f785-ad6a-fc54",
               "name": "Twin heavy bolter",
+              "points": 0
+            },
+            {
+              "id": "space-marines--land-raider--277e-a23e-4c1f-e93c",
+              "name": "Godhammer Lascannon",
               "points": 0
             }
           ]
@@ -85572,7 +85587,7 @@
             },
             {
               "id": "space-marines--sternguard-veteran-squad--464b-51e7-0c71-6895",
-              "name": "Astartes Chainsword",
+              "name": "Chainsword",
               "points": 0
             }
           ]
@@ -90093,11 +90108,6 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "space-wolves--land-raider--7c56-d514-6af0-22da",
-              "name": "Godhammer Lascannon",
-              "points": 0
-            },
-            {
               "id": "space-wolves--land-raider--9646-f7ed-1896-1922",
               "name": "Armoured Tracks",
               "points": 0
@@ -90120,6 +90130,11 @@
             {
               "id": "space-wolves--land-raider--93d1-f785-ad6a-fc54",
               "name": "Twin heavy bolter",
+              "points": 0
+            },
+            {
+              "id": "space-wolves--land-raider--277e-a23e-4c1f-e93c",
+              "name": "Godhammer Lascannon",
               "points": 0
             }
           ]
@@ -91855,7 +91870,7 @@
             },
             {
               "id": "space-wolves--sternguard-veteran-squad--464b-51e7-0c71-6895",
-              "name": "Astartes Chainsword",
+              "name": "Chainsword",
               "points": 0
             }
           ]
