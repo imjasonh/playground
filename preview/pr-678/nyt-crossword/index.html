@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crossword</title>
+    <meta
+      name="description"
+      content="Solve time by weekday for the NYT crossword, and puzzles that were started but not finished."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="fonts/source-serif-4-600.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="fonts/libre-franklin-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="mast">
+        <div>
+          <h1>Crossword</h1>
+          <p id="generated" class="meta"></p>
+          <p id="unsolved-count" class="meta"></p>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Filters">
+        <label>
+          From
+          <select id="from-year"></select>
+        </label>
+        <label>
+          Through
+          <select id="through-year"></select>
+        </label>
+        <label>
+          Period
+          <select id="bucket">
+            <option value="month">Month</option>
+            <option value="quarter" selected>Quarter</option>
+            <option value="year">Year</option>
+          </select>
+        </label>
+        <label class="check">
+          <input id="hide-outliers" type="checkbox" checked />
+          Hide outliers
+        </label>
+        <label class="check">
+          <input id="trend-days" type="checkbox" />
+          Weekday trends
+        </label>
+        <label class="check">
+          <input id="trend-overall" type="checkbox" />
+          Overall trend
+        </label>
+      </section>
+
+      <p id="solve-count" class="meta count" aria-live="polite"></p>
+      <p id="notice" class="notice" role="status"></p>
+
+      <section>
+        <h2>Median by weekday</h2>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">
+              Median solve time by weekday
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Weekday</th>
+                <th scope="col" class="num">Median</th>
+                <th scope="col" class="num">Solves</th>
+              </tr>
+            </thead>
+            <tbody id="weekday-summary"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2 id="chart-heading">Solve time</h2>
+        <fieldset class="weekday-filter">
+          <legend>Weekdays</legend>
+          <div id="legend" class="legend"></div>
+        </fieldset>
+        <div class="chart-tools">
+          <button id="zoom-in" type="button">Zoom in</button>
+          <button id="zoom-out" type="button">Zoom out</button>
+          <button id="zoom-reset" type="button">Reset</button>
+        </div>
+        <div class="chart-frame">
+          <div class="chart-scroll" id="chart-scroll">
+            <svg
+              id="chart"
+              class="chart"
+              width="720"
+              height="380"
+              viewBox="0 0 720 380"
+              role="img"
+              aria-labelledby="chart-heading"
+            ></svg>
+          </div>
+          <div id="chart-pan" class="chart-pan" hidden>
+            <div id="chart-pan-inner"></div>
+          </div>
+          <div id="chart-tip" class="chart-tip" role="tooltip" hidden></div>
+        </div>
+        <p id="chart-empty" class="meta" hidden></p>
+      </section>
+
+      <section>
+        <h2>Unsolved</h2>
+        <label>
+          Sort
+          <select id="partial-sort">
+            <option value="date" selected>Date</option>
+            <option value="percent">Filled</option>
+            <option value="weekday">Weekday</option>
+          </select>
+        </label>
+        <div class="table-scroll">
+          <table id="partial-table">
+            <caption class="visually-hidden">
+              Puzzles that were started and not solved
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Puzzle</th>
+                <th scope="col" class="num">Filled</th>
+              </tr>
+            </thead>
+            <tbody id="partial-rows"></tbody>
+          </table>
+        </div>
+        <p id="partial-empty" class="meta" hidden>No unsolved puzzles.</p>
+      </section>
+    </div>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
