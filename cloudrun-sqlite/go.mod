@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.10.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.38.0
-	github.com/benbjohnson/litestream v0.5.18-0.20261019170223-716acc52ee80
+	github.com/benbjohnson/litestream v0.5.18
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/fsouza/fake-gcs-server v1.47.3
 	github.com/mattn/go-sqlite3 v1.14.52
@@ -53,7 +53,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.39.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6 // indirect
-	github.com/aws/smithy-go v1.28.7 // indirect
+	github.com/aws/smithy-go v1.28.8 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
@@ -109,7 +109,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e // indirect
 	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.80.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 	modernc.org/sqlite v1.61.1 // indirect
