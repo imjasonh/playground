@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-04T07:29:37.295Z",
+  "generatedAt": "2026-11-04T22:57:11.289Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -28410,9 +28410,9 @@
     {
       "date": "2016-02-11",
       "id": 10949,
-      "solved": false,
-      "percentFilled": 5,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1068
     },
     {
       "date": "2016-02-12",
@@ -28711,9 +28711,9 @@
     {
       "date": "2016-03-25",
       "id": 11107,
-      "solved": false,
-      "percentFilled": 4,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 632
     },
     {
       "date": "2016-03-26",
@@ -29054,9 +29054,9 @@
     {
       "date": "2016-05-13",
       "id": 11420,
-      "solved": false,
-      "percentFilled": 5,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 21,
+      "seconds": 264
     },
     {
       "date": "2016-05-14",
@@ -29635,9 +29635,9 @@
     {
       "date": "2016-08-04",
       "id": 11958,
-      "solved": false,
-      "percentFilled": 4,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 3,
+      "seconds": 332
     },
     {
       "date": "2016-08-05",
@@ -31399,9 +31399,9 @@
     {
       "date": "2017-04-13",
       "id": 13137,
-      "solved": false,
-      "percentFilled": 4,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 883
     },
     {
       "date": "2017-04-14",
@@ -31595,9 +31595,9 @@
     {
       "date": "2017-05-11",
       "id": 13234,
-      "solved": false,
-      "percentFilled": 5,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 454
     },
     {
       "date": "2017-05-12",
@@ -32001,9 +32001,9 @@
     {
       "date": "2017-07-08",
       "id": 13549,
-      "solved": false,
-      "percentFilled": 3,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 990
     },
     {
       "date": "2017-07-09",
@@ -33114,9 +33114,9 @@
     {
       "date": "2017-12-14",
       "id": 14423,
-      "solved": false,
-      "percentFilled": 5,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 682
     },
     {
       "date": "2017-12-15",
