@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// True when this host can actually mount FUSE filesystems. e2e tests skip
@@ -64,6 +64,7 @@ pub struct TempDir {
 }
 
 static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+static GIT_CONFIG_ISOLATED: OnceLock<()> = OnceLock::new();
 
 impl TempDir {
     pub fn new(label: &str) -> TempDir {
@@ -126,6 +127,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 impl TestRepo {
     pub fn new() -> TestRepo {
+        GIT_CONFIG_ISOLATED.get_or_init(|| std::env::remove_var("GIT_CONFIG_COUNT"));
         no_proxy_for_loopback();
         let root = TempDir::new("repo");
         let bare = root.path().join("repo");
