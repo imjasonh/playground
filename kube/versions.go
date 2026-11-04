@@ -2,7 +2,8 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -148,14 +149,14 @@ type conversionReview struct {
 }
 
 type conversionRequest struct {
-	UID               string            `json:"uid"`
-	DesiredAPIVersion string            `json:"desiredAPIVersion"`
-	Objects           []json.RawMessage `json:"objects"`
+	UID               string           `json:"uid"`
+	DesiredAPIVersion string           `json:"desiredAPIVersion"`
+	Objects           []jsontext.Value `json:"objects"`
 }
 
 type conversionResponse struct {
-	UID              string            `json:"uid"`
-	ConvertedObjects []json.RawMessage `json:"convertedObjects"`
+	UID              string           `json:"uid"`
+	ConvertedObjects []jsontext.Value `json:"convertedObjects"`
 	Result           struct {
 		Status  string `json:"status"`
 		Message string `json:"message,omitempty"`
@@ -164,13 +165,13 @@ type conversionResponse struct {
 
 func (c *controller[T, P]) serveConversion(w http.ResponseWriter, r *http.Request) {
 	var review conversionReview
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<20)).Decode(&review); err != nil || review.Request == nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 64<<20), &review); err != nil || review.Request == nil {
 		http.Error(w, "the request body must be a ConversionReview", http.StatusBadRequest)
 		return
 	}
 	start := time.Now()
 	ctx := r.Context()
-	resp := &conversionResponse{UID: review.Request.UID, ConvertedObjects: []json.RawMessage{}}
+	resp := &conversionResponse{UID: review.Request.UID, ConvertedObjects: []jsontext.Value{}}
 	err := func() (err error) {
 		defer func() {
 			if p := recover(); p != nil {
@@ -198,15 +199,15 @@ func (c *controller[T, P]) serveConversion(w http.ResponseWriter, r *http.Reques
 	c.m.metrics.inc("kube_webhook_requests_total", "path", r.URL.Path, "result", result)
 	c.m.metrics.observe("kube_webhook_duration_seconds", time.Since(start).Seconds(), "path", r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(conversionReview{APIVersion: review.APIVersion, Kind: review.Kind, Response: resp})
+	_ = json.MarshalWrite(w, conversionReview{APIVersion: review.APIVersion, Kind: review.Kind, Response: resp})
 }
 
 // convert converts one object to the desired version, through the version
 // the controller reconciles.
-func (c *controller[T, P]) convert(raw json.RawMessage, desired string) (json.RawMessage, error) {
+func (c *controller[T, P]) convert(raw jsontext.Value, desired string) (jsontext.Value, error) {
 	var head struct {
-		APIVersion string          `json:"apiVersion"`
-		Metadata   json.RawMessage `json:"metadata"`
+		APIVersion string         `json:"apiVersion"`
+		Metadata   jsontext.Value `json:"metadata"`
 	}
 	if err := json.Unmarshal(raw, &head); err != nil {
 		return nil, err
@@ -255,7 +256,7 @@ func (c *controller[T, P]) convert(raw json.RawMessage, desired string) (json.Ra
 	}
 	doc["apiVersion"], doc["kind"] = desired, c.ti.kind
 	doc["metadata"] = head.Metadata
-	return json.Marshal(doc)
+	return json.Marshal(doc, json.Deterministic(true))
 }
 
 // versionObject returns a new object of the Go type for apiVersion.
@@ -276,7 +277,7 @@ func (c *controller[T, P]) versionObject(apiVersion string) (any, error) {
 // error, so the API server rejects the request instead of storing an object
 // without the field.
 func roundTrip(from, to any) error {
-	b, err := json.Marshal(from)
+	b, err := json.Marshal(from, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

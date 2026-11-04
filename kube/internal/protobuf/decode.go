@@ -1,7 +1,8 @@
 package protobuf
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math"
 	"reflect"
@@ -51,9 +52,10 @@ type fieldPlan struct {
 }
 
 var (
-	timeType        = reflect.TypeFor[time.Time]()
-	unmarshalerType = reflect.TypeFor[json.Unmarshaler]()
-	plans           sync.Map // planKey -> *Plan or error
+	timeType            = reflect.TypeFor[time.Time]()
+	unmarshalerType     = reflect.TypeFor[interface{ UnmarshalJSON([]byte) error }]()
+	unmarshalerFromType = reflect.TypeFor[json.UnmarshalerFrom]()
+	plans               sync.Map // planKey -> *Plan or error
 )
 
 type planKey struct {
@@ -249,7 +251,7 @@ func (fp *fieldPlan) set(dst reflect.Value, f field) error {
 		if err != nil {
 			return err
 		}
-		b, err := json.Marshal(v)
+		b, err := json.Marshal(v, json.Deterministic(true))
 		if err != nil {
 			return err
 		}
@@ -449,10 +451,10 @@ func messageJSON(m *Message, b []byte) (any, error) {
 		}
 		return i, err
 	case "runtime.RawExtension", "meta.v1.FieldsV1":
-		var raw json.RawMessage
+		var raw jsontext.Value
 		err := each(b, func(f field) error {
-			if f.num == 1 && f.wt == wireBytes && json.Valid(f.data) {
-				raw = append(json.RawMessage{}, f.data...)
+			if f.num == 1 && f.wt == wireBytes && jsontext.Value(f.data).IsValid() {
+				raw = append(jsontext.Value{}, f.data...)
 			}
 			return nil
 		})
@@ -686,7 +688,8 @@ func (b *builder) fieldPlan(gt reflect.Type, pt *Type) (*fieldPlan, error) {
 }
 
 func unmarshals(t reflect.Type) bool {
-	return t.Implements(unmarshalerType) || reflect.PointerTo(t).Implements(unmarshalerType)
+	pt := reflect.PointerTo(t)
+	return t.Implements(unmarshalerType) || pt.Implements(unmarshalerType) || t.Implements(unmarshalerFromType) || pt.Implements(unmarshalerFromType)
 }
 
 // lookup finds a field by JSON name, exactly or, as encoding/json does,

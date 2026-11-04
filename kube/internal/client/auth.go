@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -113,7 +113,7 @@ type execCredential struct {
 		Cluster     *struct {
 			Server                   string `json:"server"`
 			CertificateAuthorityData string `json:"certificate-authority-data,omitempty"`
-			InsecureSkipTLSVerify    bool   `json:"insecure-skip-tls-verify,omitempty"`
+			InsecureSkipTLSVerify    bool   `json:"insecure-skip-tls-verify,omitzero"`
 		} `json:"cluster,omitempty"`
 	} `json:"spec"`
 	Status *struct {
@@ -144,10 +144,10 @@ func (e *execAuth) refresh(ctx context.Context) error {
 		in.Spec.Cluster = &struct {
 			Server                   string `json:"server"`
 			CertificateAuthorityData string `json:"certificate-authority-data,omitempty"`
-			InsecureSkipTLSVerify    bool   `json:"insecure-skip-tls-verify,omitempty"`
+			InsecureSkipTLSVerify    bool   `json:"insecure-skip-tls-verify,omitzero"`
 		}{e.server, e.caData, e.insecure}
 	}
-	info, err := json.Marshal(in)
+	info, err := json.Marshal(in, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

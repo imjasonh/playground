@@ -1,7 +1,8 @@
 package protobuf
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"math"
 	"reflect"
@@ -214,8 +215,8 @@ func TestTimesDecodeLikeJSON(t *testing.T) {
 		Micro *time.Time `json:"micro"`
 	}
 	type asJSON struct {
-		When  json.RawMessage `json:"when"`
-		Micro json.RawMessage `json:"micro"`
+		When  jsontext.Value `json:"when"`
+		Micro jsontext.Value `json:"micro"`
 	}
 	types := []struct {
 		name string
@@ -224,7 +225,7 @@ func TestTimesDecodeLikeJSON(t *testing.T) {
 	}{
 		{"time.Time", testPlan[asTime](t), func() any { return new(asTime) }},
 		{"*time.Time", testPlan[asPointer](t), func() any { return new(asPointer) }},
-		{"json.RawMessage", testPlan[asJSON](t), func() any { return new(asJSON) }},
+		{"jsontext.Value", testPlan[asJSON](t), func() any { return new(asJSON) }},
 	}
 	later := uint64(time.Date(2026, 10, 2, 20, 41, 7, 0, time.UTC).Unix())
 	// The API server sends the zero time as an empty message, and as null in
@@ -312,8 +313,8 @@ func TestJSONFieldErrorsFailTheMessage(t *testing.T) {
 	}
 	var got numbers
 	err := testPlan[numbers](t).Unmarshal(enc{}.str(1, "web").msg(9, enc{}.uint(1, 1).str(3, "http")), &got)
-	if te := (*json.UnmarshalTypeError)(nil); !errors.As(err, &te) {
-		t.Errorf("Unmarshal = %v, want a *json.UnmarshalTypeError", err)
+	if te := (*json.SemanticError)(nil); !errors.As(err, &te) {
+		t.Errorf("Unmarshal = %v, want a *json.SemanticError", err)
 	}
 }
 

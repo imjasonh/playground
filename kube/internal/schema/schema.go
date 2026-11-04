@@ -39,7 +39,8 @@
 package schema
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"reflect"
@@ -73,7 +74,7 @@ type listMapKeyer interface{ ListMapKeys() []string }
 
 var (
 	timeType        = reflect.TypeFor[time.Time]()
-	rawMessageType  = reflect.TypeFor[json.RawMessage]()
+	rawMessageType  = reflect.TypeFor[jsontext.Value]()
 	schemaerType    = reflect.TypeFor[schemaer]()
 	listMapKeyType  = reflect.TypeFor[listMapKeyer]()
 	topLevelStrings = []string{"apiVersion", "kind"}

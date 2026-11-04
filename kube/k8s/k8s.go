@@ -12,7 +12,7 @@
 package k8s
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"strconv"
 
 	"github.com/imjasonh/playground/kube"
@@ -190,7 +190,7 @@ type VolumeMount struct {
 	Name      string `json:"name"`
 	MountPath string `json:"mountPath"`
 	SubPath   string `json:"subPath,omitempty"`
-	ReadOnly  bool   `json:"readOnly,omitempty"`
+	ReadOnly  bool   `json:"readOnly,omitzero"`
 }
 
 // Volume is a pod volume.
@@ -225,7 +225,7 @@ type EmptyDirVolumeSource struct {
 // PersistentVolumeClaim in the pod's namespace is bound to.
 type PersistentVolumeClaimVolumeSource struct {
 	ClaimName string `json:"claimName"`
-	ReadOnly  bool   `json:"readOnly,omitempty"`
+	ReadOnly  bool   `json:"readOnly,omitzero"`
 }
 
 // Probe checks a container's health.
@@ -233,9 +233,9 @@ type Probe struct {
 	HTTPGet             *HTTPGetAction   `json:"httpGet,omitempty"`
 	TCPSocket           *TCPSocketAction `json:"tcpSocket,omitempty"`
 	Exec                *ExecAction      `json:"exec,omitempty"`
-	InitialDelaySeconds int32            `json:"initialDelaySeconds,omitempty"`
-	PeriodSeconds       int32            `json:"periodSeconds,omitempty"`
-	FailureThreshold    int32            `json:"failureThreshold,omitempty"`
+	InitialDelaySeconds int32            `json:"initialDelaySeconds,omitzero"`
+	PeriodSeconds       int32            `json:"periodSeconds,omitzero"`
+	FailureThreshold    int32            `json:"failureThreshold,omitzero"`
 }
 
 // HTTPGetAction probes a container with an HTTP GET request.
@@ -319,7 +319,7 @@ type ServicePort struct {
 	Protocol   string      `json:"protocol,omitempty"`
 	Port       int32       `json:"port"`
 	TargetPort IntOrString `json:"targetPort,omitzero"`
-	NodePort   int32       `json:"nodePort,omitempty"`
+	NodePort   int32       `json:"nodePort,omitzero"`
 }
 
 // Pod is a group of containers on one node.
@@ -346,7 +346,7 @@ type Node struct {
 
 // NodeSpec describes a Node.
 type NodeSpec struct {
-	Unschedulable bool    `json:"unschedulable,omitempty"`
+	Unschedulable bool    `json:"unschedulable,omitzero"`
 	Taints        []Taint `json:"taints,omitempty"`
 }
 
@@ -380,16 +380,16 @@ type DeploymentSpec struct {
 	Replicas *int32          `json:"replicas,omitempty"`
 	Selector *LabelSelector  `json:"selector,omitempty"`
 	Template PodTemplateSpec `json:"template,omitzero"`
-	Paused   bool            `json:"paused,omitempty"`
+	Paused   bool            `json:"paused,omitzero"`
 }
 
 // DeploymentStatus is a Deployment's observed state.
 type DeploymentStatus struct {
-	ObservedGeneration int64       `json:"observedGeneration,omitempty"`
-	Replicas           int32       `json:"replicas,omitempty"`
-	UpdatedReplicas    int32       `json:"updatedReplicas,omitempty"`
-	ReadyReplicas      int32       `json:"readyReplicas,omitempty"`
-	AvailableReplicas  int32       `json:"availableReplicas,omitempty"`
+	ObservedGeneration int64       `json:"observedGeneration,omitzero"`
+	Replicas           int32       `json:"replicas,omitzero"`
+	UpdatedReplicas    int32       `json:"updatedReplicas,omitzero"`
+	ReadyReplicas      int32       `json:"readyReplicas,omitzero"`
+	AvailableReplicas  int32       `json:"availableReplicas,omitzero"`
 	Conditions         []Condition `json:"conditions,omitempty"`
 }
 
@@ -398,9 +398,9 @@ type Job struct {
 	kube.Object `kube:"apiVersion=batch/v1,kind=Job,plural=jobs,scope=Namespaced"`
 	Spec        JobSpec `json:"spec,omitzero"`
 	Status      struct {
-		Active     int32       `json:"active,omitempty"`
-		Succeeded  int32       `json:"succeeded,omitempty"`
-		Failed     int32       `json:"failed,omitempty"`
+		Active     int32       `json:"active,omitzero"`
+		Succeeded  int32       `json:"succeeded,omitzero"`
+		Failed     int32       `json:"failed,omitzero"`
 		Conditions []Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
 }
@@ -499,6 +499,6 @@ type IngressServiceBackend struct {
 
 // ServiceBackendPort is a port of a Service, by number or by name.
 type ServiceBackendPort struct {
-	Number int32  `json:"number,omitempty"`
+	Number int32  `json:"number,omitzero"`
 	Name   string `json:"name,omitempty"`
 }

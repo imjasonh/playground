@@ -1,10 +1,11 @@
 // Package jsonpatch computes and applies JSON patches (RFC 6902) between
 // JSON documents decoded into Go values: map[string]any, []any, string,
-// json.Number or float64, bool, and nil.
+// jsonnum.Number or float64, bool, and nil.
 package jsonpatch
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"reflect"
 	"slices"
@@ -20,14 +21,14 @@ type Op struct {
 }
 
 // MarshalJSON includes value for add and replace, even when it's null.
-func (o Op) MarshalJSON() ([]byte, error) {
+func (o Op) MarshalJSONTo(enc *jsontext.Encoder) error {
 	if o.Op == "remove" {
-		return json.Marshal(struct {
+		return json.MarshalEncode(enc, struct {
 			Op   string `json:"op"`
 			Path string `json:"path"`
 		}{o.Op, o.Path})
 	}
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		Op    string `json:"op"`
 		Path  string `json:"path"`
 		Value any    `json:"value"`

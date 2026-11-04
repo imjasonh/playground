@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -67,10 +69,10 @@ type mcpServer struct {
 }
 
 type rpcRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id,omitempty"`
+	Method  string         `json:"method"`
+	Params  jsontext.Value `json:"params,omitempty"`
 }
 
 type rpcError struct {
@@ -79,16 +81,23 @@ type rpcError struct {
 }
 
 type rpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Result  any             `json:"result,omitempty"`
-	Error   *rpcError       `json:"error,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id,omitzero"`
+	Result  any            `json:"result,omitzero"`
+	Error   *rpcError      `json:"error,omitempty"`
+}
+
+func writeResponse(w io.Writer, resp rpcResponse) error {
+	if err := json.MarshalWrite(w, resp); err != nil {
+		return err
+	}
+	_, err := w.Write([]byte("\n"))
+	return err
 }
 
 func (s *mcpServer) serve(in *os.File, out *os.File) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
-	enc := json.NewEncoder(out)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
@@ -96,14 +105,14 @@ func (s *mcpServer) serve(in *os.File, out *os.File) error {
 		}
 		var req rpcRequest
 		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			_ = enc.Encode(rpcResponse{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: "parse error"}})
+			_ = writeResponse(out, rpcResponse{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: "parse error"}})
 			continue
 		}
 		resp, notify := s.handle(&req)
 		if notify {
 			continue // notifications get no response
 		}
-		if err := enc.Encode(resp); err != nil {
+		if err := writeResponse(out, resp); err != nil {
 			return err
 		}
 	}
@@ -197,7 +206,7 @@ func (s *mcpServer) callTool(req *rpcRequest) rpcResponse {
 	if err != nil {
 		return s.toolError(req.ID, err.Error())
 	}
-	blob, err := json.MarshalIndent(result, "", " ")
+	blob, err := json.Marshal(result, jsontext.WithIndent(" "))
 	if err != nil {
 		return s.toolError(req.ID, err.Error())
 	}
@@ -206,7 +215,7 @@ func (s *mcpServer) callTool(req *rpcRequest) rpcResponse {
 	}}
 }
 
-func (s *mcpServer) toolError(id json.RawMessage, msg string) rpcResponse {
+func (s *mcpServer) toolError(id jsontext.Value, msg string) rpcResponse {
 	return rpcResponse{JSONRPC: "2.0", ID: id, Result: map[string]any{
 		"isError": true,
 		"content": []map[string]any{{"type": "text", "text": "error: " + msg}},

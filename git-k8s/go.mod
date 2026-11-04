@@ -1,6 +1,6 @@
 module github.com/imjasonh/playground/git-k8s
 
-go 1.26.0
+go 1.27.0
 
 // git-k8s builds against the kube framework in this repository at head.
 replace github.com/imjasonh/playground/kube => ../kube

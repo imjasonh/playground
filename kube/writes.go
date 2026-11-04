@@ -2,7 +2,8 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"maps"
 	"slices"
@@ -14,14 +15,14 @@ import (
 // written is what the API server said that a write stored: the object, or,
 // when gone is set, only that the object with uid no longer exists.
 type written struct {
-	obj  json.RawMessage
+	obj  jsontext.Value
 	uid  string
 	gone bool
 }
 
 // stored reads a write's response. deleted is set for a delete. It returns
 // nil if the response doesn't say what the API server stored.
-func stored(resp json.RawMessage, deleted bool) *written {
+func stored(resp jsontext.Value, deleted bool) *written {
 	var r struct {
 		Metadata struct {
 			UID                        string     `json:"uid"`
@@ -38,7 +39,7 @@ func stored(resp json.RawMessage, deleted bool) *written {
 			UID string `json:"uid"`
 		} `json:"details"`
 	}
-	var te *json.UnmarshalTypeError
+	var te *json.SemanticError
 	if err := json.Unmarshal(resp, &r); err != nil && !errors.As(err, &te) {
 		return nil
 	}
@@ -84,7 +85,7 @@ func (m *Manager) track(ti *typeInfo, k Key, write func() (*written, error)) err
 // decodes the response into out unless out is nil.
 func (m *Manager) apply(ctx context.Context, ti *typeInfo, k Key, path, manager string, body, out any) error {
 	return m.track(ti, k, func() (*written, error) {
-		var resp json.RawMessage
+		var resp jsontext.Value
 		if err := m.client.Apply(ctx, path, manager, true, body, &resp); err != nil {
 			return nil, err
 		}
@@ -100,7 +101,7 @@ func (m *Manager) apply(ctx context.Context, ti *typeInfo, k Key, path, manager 
 // out unless out is nil.
 func (m *Manager) patch(ctx context.Context, ti *typeInfo, k Key, path, patchType string, body []byte, out any) error {
 	return m.track(ti, k, func() (*written, error) {
-		var resp json.RawMessage
+		var resp jsontext.Value
 		if err := m.client.Patch(ctx, path, patchType, nil, body, &resp); err != nil {
 			return nil, err
 		}
@@ -118,7 +119,7 @@ func (m *Manager) patch(ctx context.Context, ti *typeInfo, k Key, path, patchTyp
 // webhook can deny a delete with one.
 func (m *Manager) delete(ctx context.Context, ti *typeInfo, k Key, path string, opts client.DeleteOptions) error {
 	return m.track(ti, k, func() (*written, error) {
-		var resp json.RawMessage
+		var resp jsontext.Value
 		err := m.client.DeleteInto(ctx, path, opts, &resp)
 		switch {
 		case err == nil:

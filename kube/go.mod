@@ -1,6 +1,6 @@
 module github.com/imjasonh/playground/kube
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/chainguard-dev/clog v1.8.1

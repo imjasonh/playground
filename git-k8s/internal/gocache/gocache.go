@@ -16,7 +16,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -79,16 +80,16 @@ type request struct {
 	Command  string
 	ActionID []byte `json:",omitempty"`
 	OutputID []byte `json:",omitempty"`
-	BodySize int64  `json:",omitempty"`
+	BodySize int64  `json:",omitzero"`
 }
 
 type response struct {
 	ID            int64
 	Err           string     `json:",omitempty"`
 	KnownCommands []string   `json:",omitempty"`
-	Miss          bool       `json:",omitempty"`
+	Miss          bool       `json:",omitzero"`
 	OutputID      []byte     `json:",omitempty"`
-	Size          int64      `json:",omitempty"`
+	Size          int64      `json:",omitzero"`
 	Time          *time.Time `json:",omitempty"`
 	DiskPath      string     `json:",omitempty"`
 }
@@ -135,20 +136,21 @@ func (p *Prog) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 	}
 	var mu sync.Mutex
-	enc := json.NewEncoder(out)
 	respond := func(r *response) {
 		mu.Lock()
 		defer mu.Unlock()
 		// If the go command stops reading, it closes in too, which ends Run.
-		_ = enc.Encode(r)
+		if b, err := json.Marshal(r); err == nil {
+			_, _ = out.Write(append(b, '\n'))
+		}
 	}
 	respond(&response{KnownCommands: []string{"get", "put", "close"}})
-	dec := json.NewDecoder(bufio.NewReader(in))
+	dec := jsontext.NewDecoder(bufio.NewReader(in))
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	for {
 		var req request
-		if err := dec.Decode(&req); err != nil {
+		if err := json.UnmarshalDecode(dec, &req); err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
@@ -156,7 +158,7 @@ func (p *Prog) Run(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 		var body []byte
 		if req.Command == "put" && req.BodySize > 0 {
-			if err := dec.Decode(&body); err != nil {
+			if err := json.UnmarshalDecode(dec, &body); err != nil {
 				return fmt.Errorf("reading the body of put %d: %w", req.ID, err)
 			}
 		}

@@ -23,7 +23,7 @@ type Cactus struct {
 
 // CactusSpec is how tall a cactus is.
 type CactusSpec struct {
-	Height int32 `json:"height,omitempty"`
+	Height int32 `json:"height,omitzero"`
 }
 
 type reconciler struct{}

@@ -8,7 +8,8 @@ package jsonrpc
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"strconv"
@@ -23,12 +24,12 @@ import (
 //	response:     ID + (Result or Error)
 //	notification: Method + Params (no ID)
 type Message struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *Error          `json:"error,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      jsontext.Value `json:"id,omitzero"`
+	Method  string         `json:"method,omitempty"`
+	Params  jsontext.Value `json:"params,omitzero"`
+	Result  jsontext.Value `json:"result,omitzero"`
+	Error   *Error         `json:"error,omitempty"`
 }
 
 // Error is the JSON-RPC error response payload.
@@ -115,7 +116,7 @@ func (c *Conn) Write(m Message) error {
 }
 
 // Reply sends a successful response to an inbound request.
-func (c *Conn) Reply(id json.RawMessage, result any) error {
+func (c *Conn) Reply(id jsontext.Value, result any) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return err
@@ -124,7 +125,7 @@ func (c *Conn) Reply(id json.RawMessage, result any) error {
 }
 
 // ReplyErr sends an error response.
-func (c *Conn) ReplyErr(id json.RawMessage, code int, msg string) error {
+func (c *Conn) ReplyErr(id jsontext.Value, code int, msg string) error {
 	return c.Write(Message{ID: id, Error: &Error{Code: code, Message: msg}})
 }
 

@@ -2,7 +2,7 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -195,7 +195,7 @@ func (a *crdAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (r crdReply) write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.code)
-	_ = json.NewEncoder(w).Encode(r.body)
+	_ = json.MarshalWrite(w, r.body)
 }
 
 func crdError(code int, reason string) crdReply {

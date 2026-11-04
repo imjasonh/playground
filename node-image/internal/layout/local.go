@@ -3,7 +3,7 @@ package layout
 import (
 	"crypto/sha512"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"io/fs"

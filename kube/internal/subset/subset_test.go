@@ -1,17 +1,15 @@
 package subset
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
+
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 )
 
 func decode(t *testing.T, s string) any {
 	t.Helper()
-	dec := json.NewDecoder(bytes.NewReader([]byte(s)))
-	dec.UseNumber()
 	var v any
-	if err := dec.Decode(&v); err != nil {
+	if err := jsonnum.Unmarshal([]byte(s), &v); err != nil {
 		t.Fatal(err)
 	}
 	return v

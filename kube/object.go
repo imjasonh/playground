@@ -67,7 +67,7 @@ type ObjectMeta struct {
 	Namespace         string            `json:"namespace,omitempty"`
 	UID               string            `json:"uid,omitempty"`
 	ResourceVersion   string            `json:"resourceVersion,omitempty"`
-	Generation        int64             `json:"generation,omitempty"`
+	Generation        int64             `json:"generation,omitzero"`
 	CreationTimestamp time.Time         `json:"creationTimestamp,omitzero"`
 	DeletionTimestamp *time.Time        `json:"deletionTimestamp,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
@@ -125,7 +125,7 @@ type Condition struct {
 	// Status is True, False, or Unknown.
 	Status string `json:"status" kube:"enum=True|False|Unknown"`
 	// ObservedGeneration is the metadata.generation this condition describes.
-	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64 `json:"observedGeneration,omitzero"`
 	// LastTransitionTime is when Status last changed.
 	LastTransitionTime time.Time `json:"lastTransitionTime,omitzero"`
 	// Reason is a CamelCase word for the condition's cause.

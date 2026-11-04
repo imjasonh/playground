@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"debug/buildinfo"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"

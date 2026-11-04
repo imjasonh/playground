@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
-	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -115,14 +114,8 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var res gitk8s.CheckResult
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxResultSize))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&res); err != nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, maxResultSize), &res, json.RejectUnknownMembers(true)); err != nil {
 		http.Error(w, "decoding the result: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		http.Error(w, "the request has data after the result", http.StatusBadRequest)
 		return
 	}
 	if err := res.Validate(); err != nil {

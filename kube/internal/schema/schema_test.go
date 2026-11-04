@@ -1,7 +1,8 @@
 package schema
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -45,7 +46,7 @@ type website struct {
 		Tier     string            `json:"tier,omitempty" kube:"enum=free|pro"`
 		Port     intOrString       `json:"port,omitzero"`
 		Env      map[string]string `json:"env,omitempty" kube:"mapType=atomic"`
-		Extra    json.RawMessage   `json:"extra,omitempty"`
+		Extra    jsontext.Value    `json:"extra,omitempty"`
 		Data     []byte            `json:"data,omitempty"`
 		Tags     []string          `json:"tags" kube:"listType=set"`
 	} `json:"spec"`
@@ -64,7 +65,7 @@ func TestGenerate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.MarshalIndent(r.Schema, "", "  ")
+	b, _ := json.Marshal(r.Schema, jsontext.WithIndent("  "), json.Deterministic(true))
 	got := string(b)
 	for _, want := range []string{
 		`"apiVersion": {
@@ -236,7 +237,7 @@ func TestCRD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(crd)
+	b, _ := json.Marshal(crd, json.Deterministic(true))
 	got := string(b)
 	for _, want := range []string{
 		`"metadata":{"labels":{"managed":"yes"},"name":"websites.example.dev"}`,

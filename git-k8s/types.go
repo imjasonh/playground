@@ -129,7 +129,7 @@ type MergePolicy struct {
 	MaxAgentRuns        *int32        `json:"maxAgentRuns,omitempty" kube:"min=0,max=1000,default=10" doc:"Most agent runs that each agentic check, such as review, can start on one branch. Each new head needs a run, so the limit caps the runs that one branch can start, not what they cost."`
 	// DeleteLandedBranches deletes a branch when the merge controller lands
 	// it.
-	DeleteLandedBranches bool `json:"deleteLandedBranches,omitempty" doc:"Delete a branch when the merge controller lands it."`
+	DeleteLandedBranches bool `json:"deleteLandedBranches,omitzero" doc:"Delete a branch when the merge controller lands it."`
 }
 
 // Check returns the policy for the named check, or nil if the policy doesn't
@@ -172,13 +172,13 @@ const (
 // CheckPolicy names a check that runs on branches.
 type CheckPolicy struct {
 	Name    string `json:"name" pattern:"^[a-z]([-a-z0-9]*[a-z0-9])?$" kube:"maxLength=40" doc:"Check name. The check controller with this name handles it."`
-	MayPush bool   `json:"mayPush,omitempty" doc:"Let the check push commits that fix what it finds, such as formatting, or merging the parent in."`
+	MayPush bool   `json:"mayPush,omitzero" doc:"Let the check push commits that fix what it finds, such as formatting, or merging the parent in."`
 }
 
 // GitRepositoryStatus is what the repository controller observed.
 type GitRepositoryStatus struct {
 	Branches           int32            `json:"branches" kube:"column=Branches" doc:"Number of tracked branches."`
-	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64            `json:"observedGeneration,omitzero"`
 	Conditions         []kube.Condition `json:"conditions,omitempty"`
 }
 
@@ -220,7 +220,7 @@ type GitBranchStatus struct {
 	State              MergeState             `json:"state,omitempty" kube:"enum=Diverged|NoMergePolicy|ParentMissing|NothingToLand|WaitingForChecks|InvalidGate|Queued|NotFastForward|NeedsRebase|Rewritten|Landed,column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Landed condition's reason. Empty for a branch without a parent."`
 	Queued             *Queued                `json:"queued,omitempty" doc:"The branch's place in its parent's merge queue, while it waits to land."`
 	Queue              []string               `json:"queue,omitempty" doc:"Branches in this branch's merge queue, front first. The front branch is the only one that merges this branch in and lands."`
-	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64                  `json:"observedGeneration,omitzero"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
 	Diverged           *Divergence            `json:"diverged,omitempty" doc:"How the branch diverged between the mirror and the external repository, set only while it's diverged. The core program writes it."`
 }
@@ -238,7 +238,7 @@ type Divergence struct {
 type Queued struct {
 	Since    time.Time `json:"since" doc:"When the branch joined the queue. Branches that join together land in this order, then by name."`
 	Head     string    `json:"head" doc:"Branch head when the merge controller last kept the branch in the queue. A later push that adds a commit without the Git-K8s-Fixer trailer, or that removes commits, takes the branch out of the queue."`
-	Position int32     `json:"position,omitempty" kube:"column=Queue" doc:"Place in the parent's queue, from 1 at the front. Unset until the parent's queue includes the branch."`
+	Position int32     `json:"position,omitzero" kube:"column=Queue" doc:"Place in the parent's queue, from 1 at the front. Unset until the parent's queue includes the branch."`
 }
 
 // MergeState says why a branch has or hasn't landed on its parent. The
@@ -353,7 +353,7 @@ type CheckResult struct {
 	Notes        map[string]string `json:"notes,omitempty"`
 	Pod          string            `json:"pod,omitempty"`
 	Fix          string            `json:"fix,omitempty"`
-	FilesOnly    bool              `json:"filesOnly,omitempty"`
+	FilesOnly    bool              `json:"filesOnly,omitzero"`
 }
 
 // OpenAPISchema returns the schema of a result in the GitBranch

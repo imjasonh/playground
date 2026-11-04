@@ -2,7 +2,7 @@ package e2e_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -121,7 +121,7 @@ func showResults(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(rep.Status.Results)
+	_ = json.MarshalWrite(w, rep.Status.Results)
 }
 
 // readReport asks a replica's handler for a Report until it answers with

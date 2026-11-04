@@ -2,7 +2,8 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -449,16 +450,16 @@ func (inf *informer[T, P]) relist(ctx context.Context) (string, error) {
 	// each item's bytes first, to name the items that it skips.
 	var raw, failed bool
 	decode := client.Items{
-		JSON: func(dec *json.Decoder) error {
+		JSON: func(dec *jsontext.Decoder) error {
 			if raw {
-				var b json.RawMessage
-				if err := dec.Decode(&b); err != nil {
+				var b jsontext.Value
+				if err := json.UnmarshalDecode(dec, &b); err != nil {
 					return err
 				}
 				return add(inf.decodeJSON(b))
 			}
 			obj := new(T)
-			if err := dec.Decode(obj); err != nil {
+			if err := json.UnmarshalDecode(dec, obj); err != nil {
 				failed = true
 				return err
 			}
@@ -645,7 +646,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 }
 
 // decodeEvent decodes the object in a watch event frame straight into T, in
-// one pass. Decoding the event into json.RawMessage first and then the
+// one pass. Decoding the event into jsontext.Value first and then the
 // object nearly doubles the cost. If the object doesn't decode, decodeEvent
 // returns what decodeJSON or decodeProto does.
 func (inf *informer[T, P]) decodeEvent(frame []byte, proto bool) (*T, error) {
@@ -661,7 +662,7 @@ func (inf *informer[T, P]) decodeEvent(frame []byte, proto bool) (*T, error) {
 	}{Object: new(T)}
 	if err := json.Unmarshal(frame, &e); err != nil {
 		var raw struct {
-			Object json.RawMessage `json:"object"`
+			Object jsontext.Value `json:"object"`
 		}
 		if json.Unmarshal(frame, &raw) != nil {
 			return nil, err

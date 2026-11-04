@@ -3,7 +3,8 @@
 package dsl
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 )
 
@@ -96,7 +97,7 @@ type Pattern struct {
 // UnmarshalJSON normalizes string-or-list `node` to a slice.
 func (p *Pattern) UnmarshalJSON(data []byte) error {
 	type raw struct {
-		Node         json.RawMessage  `json:"node"`
+		Node         jsontext.Value   `json:"node"`
 		Fields       map[string]Child `json:"fields,omitempty"`
 		Children     []Child          `json:"children,omitempty"`
 		Where        []Predicate      `json:"where,omitempty"`
@@ -184,7 +185,7 @@ func (c *Child) UnmarshalJSON(data []byte) error {
 	type raw struct {
 		Capture      string           `json:"capture,omitempty"`
 		Pattern      *Pattern         `json:"pattern,omitempty"`
-		Node         json.RawMessage  `json:"node,omitempty"`
+		Node         jsontext.Value   `json:"node,omitempty"`
 		Fields       map[string]Child `json:"fields,omitempty"`
 		Children     []Child          `json:"children,omitempty"`
 		Where        []Predicate      `json:"where,omitempty"`
@@ -312,15 +313,15 @@ type Rewrite struct {
 type Edit struct {
 	Target        string `json:"target,omitempty"`
 	Replacement   string `json:"replacement,omitempty"`
-	TrimStart     int    `json:"trim_start,omitempty"`
-	TrimEnd       int    `json:"trim_end,omitempty"`
+	TrimStart     int    `json:"trim_start,omitzero"`
+	TrimEnd       int    `json:"trim_end,omitzero"`
 	Position      string `json:"position,omitempty"`
 	Anchor        string `json:"anchor,omitempty"`
 	Text          string `json:"text,omitempty"`
 	DeleteFrom    string `json:"delete_from,omitempty"`
-	DeleteFromEnd bool   `json:"delete_from_end,omitempty"`
+	DeleteFromEnd bool   `json:"delete_from_end,omitzero"`
 	DeleteTo      string `json:"delete_to,omitempty"`
-	DeleteToEnd   bool   `json:"delete_to_end,omitempty"`
+	DeleteToEnd   bool   `json:"delete_to_end,omitzero"`
 	Within        string `json:"within,omitempty"`
 	Token         string `json:"token,omitempty"`
 	ReplaceWith   string `json:"replace_with,omitempty"`
@@ -328,7 +329,7 @@ type Edit struct {
 
 // RewriteOpts controls rewrite behavior.
 type RewriteOpts struct {
-	PreserveComments bool `json:"preserve_comments,omitempty"`
+	PreserveComments bool `json:"preserve_comments,omitzero"`
 }
 
 // LanguageDecl is a CUE-side language declaration. The runtime resolves

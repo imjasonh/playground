@@ -2,7 +2,7 @@ package e2e_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -25,7 +25,7 @@ type Ballot struct {
 	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
 	Spec        struct {
 		Poll  string `json:"poll"`
-		Votes int    `json:"votes,omitempty"`
+		Votes int    `json:"votes,omitzero"`
 	} `json:"spec"`
 }
 

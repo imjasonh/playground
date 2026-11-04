@@ -1,7 +1,8 @@
 package clone
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"reflect"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ type tree struct {
 
 type withAny struct {
 	Extra  any
-	Raw    json.RawMessage
+	Raw    jsontext.Value
 	Grid   [2][]int
 	hidden []int
 }
@@ -79,7 +80,7 @@ func TestRecursiveTypes(t *testing.T) {
 func TestInterfacesAndArrays(t *testing.T) {
 	in := &withAny{
 		Extra:  map[string]any{"list": []any{"a", map[string]any{"b": 1.0}}},
-		Raw:    json.RawMessage(`{"a":1}`),
+		Raw:    jsontext.Value(`{"a":1}`),
 		Grid:   [2][]int{{1}, {2}},
 		hidden: []int{7},
 	}
