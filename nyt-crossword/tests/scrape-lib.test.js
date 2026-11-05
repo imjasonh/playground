@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   addDays,
+  applyCompleted,
   applyPlayTime,
   chunksNeedingList,
+  completedDates,
   cookieHeader,
   cookieValue,
   dateChunks,
@@ -133,6 +135,58 @@ test("a listing flagged solved with a grid under 100% filled is not a solve", ()
   );
   assert.equal(puzzles[0].solved, false);
   assert.equal(puzzles[0].seconds, null);
+});
+
+test("completed.json counts a short grid as solved and keeps its time", () => {
+  const dates = completedDates({
+    dates: ["2022-05-01", "nope", "2024-02-31"],
+  });
+  assert.equal(dates.has("2022-05-01"), true);
+  assert.equal(dates.has("2024-02-31"), false);
+  assert.equal(completedDates(null).size, 0);
+  const item = {
+    print_date: "2022-05-01",
+    puzzle_id: 20089,
+    publish_type: "Daily",
+    solved: true,
+    percent_filled: 99,
+  };
+  const prev = {
+    date: "2022-05-01",
+    id: 20089,
+    solved: false,
+    percentFilled: 99,
+    seconds: 1590,
+  };
+  const { puzzles, fetchList } = mergeListed(
+    [prev],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+    undefined,
+    dates,
+  );
+  assert.equal(puzzles[0].solved, true);
+  assert.equal(puzzles[0].percentFilled, 100);
+  assert.equal(puzzles[0].seconds, 1590);
+  assert.equal(fetchList.length, 0);
+  const open = applyCompleted(
+    [{ ...prev, seconds: null }],
+    dates,
+  );
+  assert.equal(open[0].solved, true);
+  assert.equal(open[0].percentFilled, 100);
+  assert.equal(open[0].seconds, null);
+  const { fetchList: needTime } = mergeListed(
+    [{ ...prev, seconds: null }],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+    undefined,
+    dates,
+  );
+  assert.deepEqual(
+    needTime.map((puzzle) => puzzle.date),
+    ["2022-05-01"],
+  );
 });
 
 test("mergeListed keeps a stored solve time when the list still says solved", () => {

@@ -6,8 +6,8 @@
 // v6 game URL returns 404 for these solves, so this script does not call it.
 // A solved puzzle that already has a time is not requested again. If a later
 // listing says it is not solved, that stored solve is dropped with no state
-// request. An open puzzle is requested only when it is new or the list shows
-// a change.
+// request, unless that date is listed in completed.json. An open puzzle is
+// requested only when it is new or the list shows a change.
 // Published JSON is written to the gh-pages branch (see the workflow),
 // not to main.
 //
@@ -23,8 +23,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_START,
+  applyCompleted,
   applyPlayTime,
   chunksNeedingList,
+  completedDates,
   cookieHeader,
   cookieValue,
   dateChunks,
@@ -146,6 +148,15 @@ async function fetchJson(url) {
   throw new Error(`HTTP ${lastStatus} for ${url.pathname}`);
 }
 
+async function readCompleted(path) {
+  try {
+    return completedDates(JSON.parse(await readFile(path, "utf8")));
+  } catch (err) {
+    if (err && err.code === "ENOENT") return new Set();
+    throw err;
+  }
+}
+
 async function readPrevious(path) {
   try {
     const raw = await readFile(path, "utf8");
@@ -170,6 +181,7 @@ async function main() {
   const dataDir = resolve(process.argv[2] || process.env.NYT_DATA_DIR || join(APP_DIR, "data"));
   const outPath = join(dataDir, "stats.json");
   const { doc: previous, raw } = await readPrevious(outPath);
+  const completed = await readCompleted(join(APP_DIR, "completed.json"));
 
   const listed = [];
   const allChunks = dateChunks(start, end);
@@ -189,7 +201,13 @@ async function main() {
     throw new Error("NYT returned no puzzles. Leaving the published file unchanged.");
   }
 
-  const { puzzles, fetchList } = mergeListed(previous.puzzles, listed, { start, end }, chunks);
+  const { puzzles, fetchList } = mergeListed(
+    previous.puzzles,
+    listed,
+    { start, end },
+    chunks,
+    completed,
+  );
   const pending = fetchList.filter((puzzle) => !isFinished(puzzle));
   const storedSolved = puzzles.filter(
     (puzzle) => puzzle.date >= start && puzzle.date <= end && isFinished(puzzle),
@@ -230,18 +248,19 @@ async function main() {
     process.exitCode = 1;
   }
 
-  const generatedAt = puzzlesEqual(previous.puzzles, puzzles)
+  const recorded = applyCompleted(puzzles, completed);
+  const generatedAt = puzzlesEqual(previous.puzzles, recorded)
     ? previous.generatedAt
     : new Date().toISOString();
-  const text = serializeStats({ generatedAt, puzzles });
+  const text = serializeStats({ generatedAt, puzzles: recorded });
   if (text === raw) {
     console.log("No puzzle changes.");
     return;
   }
   await mkdir(dataDir, { recursive: true });
   await writeFile(outPath, text);
-  const solved = puzzles.filter((puzzle) => puzzle.solved && puzzle.seconds > 0).length;
-  const partial = puzzles.filter((puzzle) => !puzzle.solved && puzzle.percentFilled > 0).length;
+  const solved = recorded.filter((puzzle) => puzzle.solved && puzzle.seconds > 0).length;
+  const partial = recorded.filter((puzzle) => !puzzle.solved && puzzle.percentFilled > 0).length;
   console.log(
     `Wrote ${outPath}: ${solved} solved, ${partial} partial, ${timed} new times, ${failed} state errors`,
   );
