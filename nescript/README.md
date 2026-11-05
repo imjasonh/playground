@@ -1,8 +1,8 @@
 # NEScript
 
-NEScript is one project in the playground repository. For the original writeup, see [Introducing NEScript](./blog-post.md).
+For the original writeup, see [Introducing NEScript](./blog-post.md).
 
-A statically-typed, compiled programming language for NES game development.
+NEScript is a statically-typed, compiled programming language for NES game development.
 
 NEScript compiles `.ne` source files directly into playable iNES ROM files, with no external assembler or linker dependencies. The compiler handles everything from source text to a ROM you can run in any NES emulator.
 
@@ -29,6 +29,8 @@ _Source: [`examples/rampart.ne`](examples/rampart.ne)_
 ![DVD screensaver demo](docs/dvd_screensaver.gif)
 
 _Source: [`examples/dvd_screensaver.ne`](examples/dvd_screensaver.ne)_
+
+Try it out! Get any `.nes` file in [./examples](https://github.com/imjasonh/playground/tree/main/nescript/examples) and open it on https://jsnes.org/
 
 ## Quick Start
 
