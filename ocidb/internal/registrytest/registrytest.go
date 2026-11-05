@@ -114,7 +114,7 @@ func New() *Fake {
 			{MediaType: types.OCIManifestSchema1, Size: int64(len(attMf)), Digest: mustHash(attDigest), Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"}},
 		},
 	}
-	idxBytes, _ := json.Marshal(idx)
+	idxBytes, _ := json.Marshal(idx, json.Deterministic(true))
 	idxDigest := digestOf(idxBytes)
 	idxManifest := registry.Manifest{Digest: idxDigest, MediaType: string(types.DockerManifestList), Size: int64(len(idxBytes)), Raw: idxBytes}
 
@@ -203,7 +203,7 @@ func buildImage(arch, variant string, layerSizes []int64, specs [][]fileSpec) bu
 			{Created: v1.Time{Time: Created}, CreatedBy: `CMD ["sh"]`, EmptyLayer: true},
 		},
 	}
-	cfgBytes, _ := json.Marshal(cfg)
+	cfgBytes, _ := json.Marshal(cfg, json.Deterministic(true))
 	cfgDigest := digestOf(cfgBytes)
 
 	descs := make([]v1.Descriptor, len(layerSizes))
@@ -227,7 +227,7 @@ func buildImage(arch, variant string, layerSizes []int64, specs [][]fileSpec) bu
 		Config:        v1.Descriptor{MediaType: types.DockerConfigJSON, Size: int64(len(cfgBytes)), Digest: mustHash(cfgDigest)},
 		Layers:        descs,
 	}
-	mfBytes, _ := json.Marshal(mf)
+	mfBytes, _ := json.Marshal(mf, json.Deterministic(true))
 	return builtImage{
 		manifestBytes:  mfBytes,
 		manifestDigest: digestOf(mfBytes),
