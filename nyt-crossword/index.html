@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Crossword</title>
+    <title>NYT Crossword stats and progress</title>
     <meta
       name="description"
       content="Solve time by weekday for the NYT crossword, and puzzles that were started but not finished."
@@ -29,10 +29,8 @@
     <div class="wrap">
       <header class="mast">
         <div>
-          <h1>Crossword</h1>
+          <h1>NYT Crossword stats and progress</h1>
           <p id="completed-since" class="since"></p>
-          <p id="generated" class="meta"></p>
-          <p id="unsolved-count" class="meta"></p>
         </div>
       </header>
 
@@ -142,11 +140,12 @@
 
       <section>
         <h2>Unsolved</h2>
+        <p id="unsolved-count" class="unsolved-count"></p>
         <label>
           Sort
           <select id="partial-sort">
-            <option value="date" selected>Date</option>
-            <option value="percent">Filled</option>
+            <option value="date">Date</option>
+            <option value="percent" selected>Filled</option>
             <option value="weekday">Weekday</option>
           </select>
         </label>
@@ -166,6 +165,7 @@
         </div>
         <p id="partial-empty" class="meta" hidden>No unsolved puzzles.</p>
       </section>
+      <p id="generated" class="updated"></p>
     </div>
     <script type="module" src="src/app.js"></script>
   </body>

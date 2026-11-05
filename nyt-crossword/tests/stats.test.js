@@ -8,6 +8,8 @@ import {
   bucketSpan,
   chartLayout,
   completedSince,
+  currentStreak,
+  formatStreak,
   nearestChartPoint,
   overallByBucket,
   placeView,
@@ -292,6 +294,36 @@ test("completedSince is the first puzzle when none was missed", () => {
 test("completedSince skips puzzles before the chart start and handles no data", () => {
   assert.equal(completedSince([listed("2013-12-31", false), listed("2014-01-01", true)], "2030-01-01"), "2014-01-01");
   assert.equal(completedSince([], "2030-01-01"), null);
+});
+
+test("currentStreak counts inclusive days and leaves today out when it is open", () => {
+  const puzzles = [
+    listed("2023-02-03", false),
+    listed("2023-02-04", true),
+    listed("2023-02-05", true),
+    listed("2024-02-29", true),
+  ];
+  assert.deepEqual(currentStreak(puzzles, "2024-02-29"), {
+    since: "2023-02-04",
+    days: 391,
+  });
+  assert.deepEqual(currentStreak(puzzles, "2024-03-01"), {
+    since: "2023-02-04",
+    days: 391,
+  });
+  const openToday = [...puzzles, listed("2024-03-01", false)];
+  assert.equal(currentStreak(openToday, "2024-03-01").days, 391);
+  assert.equal(currentStreak(puzzles, "2023-02-04").days, 1);
+  assert.equal(currentStreak([], "2024-03-01"), null);
+  assert.equal(
+    formatStreak(currentStreak(puzzles, "2023-02-04")),
+    "Current streak: 1 day since Saturday, February 4, 2023.",
+  );
+  assert.equal(
+    formatStreak({ since: "2023-02-04", days: 1370 }),
+    "Current streak: 1,370 days since Saturday, February 4, 2023.",
+  );
+  assert.equal(formatStreak(null), "");
 });
 
 test("yearBreakdown counts each year and lists unfinished puzzles oldest first", () => {
