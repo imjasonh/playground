@@ -104,8 +104,9 @@ export function listItemToPuzzle(item) {
   };
 }
 
-// A stored solve time means the game is finished. It cannot become unsolved,
-// so later runs leave that record alone.
+// A stored solve time is kept only while the list still says solved. The list
+// is what decides solved. A later listing that says not solved replaces the
+// stored solve, and that does not call the state endpoint.
 export function isFinished(puzzle) {
   return Boolean(puzzle && puzzle.solved === true && puzzle.seconds > 0);
 }
@@ -152,7 +153,7 @@ export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
     const listed = listItemToPuzzle(item);
     if (!listed) continue;
     const prev = prevByDate.get(listed.date) ?? null;
-    if (isFinished(prev)) {
+    if (isFinished(prev) && listed.solved === true) {
       merged.set(prev.date, { puzzle: prev, fetch: false });
       continue;
     }
@@ -161,7 +162,7 @@ export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
       id: listed.id,
       solved: listed.solved,
       percentFilled: listed.percentFilled,
-      seconds: prev && prev.seconds > 0 ? prev.seconds : null,
+      seconds: listed.solved === true && prev && prev.seconds > 0 ? prev.seconds : null,
     };
     merged.set(puzzle.date, { puzzle, fetch: needsGameFetch(prev, puzzle) });
   }
@@ -172,19 +173,13 @@ export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
   };
 }
 
-function stateSaysSolved(data) {
-  const first = data && data.firstSolve;
-  if (first === true) return true;
-  const stamp = Number(first);
-  return Number.isFinite(stamp) && stamp > 0;
-}
-
-// playTimeSeconds is the running timer. A finished puzzle keeps the time it
-// already has. An open puzzle can have a timer and still no solve time.
+// playTimeSeconds is the running timer. It is a solve time only when the
+// list says the puzzle is solved. An open puzzle can have a timer and a
+// firstSolve stamp and still be unfinished.
 export function applyPlayTime(puzzle, gameData) {
   if (isFinished(puzzle)) return { ...puzzle };
   const data = gameData && typeof gameData === "object" ? gameData : {};
-  const solved = puzzle.solved === true || stateSaysSolved(data);
+  const solved = puzzle.solved === true;
   const spent = Number(data.playTimeSeconds);
   let seconds = null;
   if (solved) {
