@@ -483,8 +483,8 @@ func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
 func sameBranch(a, b *branchRec) bool {
 	x, y := *a, *b
 	x.Type, y.Type = "", ""
-	xb, _ := json.Marshal(x)
-	yb, _ := json.Marshal(y)
+	xb, _ := json.Marshal(x, json.Deterministic(true))
+	yb, _ := json.Marshal(y, json.Deterministic(true))
 	return string(xb) == string(yb)
 }
 

@@ -70,7 +70,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		_ = json.NewEncoder(os.Stdout).Encode(r)
+		if err := json.MarshalWrite(os.Stdout, r); err != nil {
+			log.Fatal(err)
+		}
+		if _, err := fmt.Fprintln(os.Stdout); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 	if err := run(); err != nil {

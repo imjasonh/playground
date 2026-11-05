@@ -789,7 +789,7 @@ func TestGenerateProbe(t *testing.T) {
 	in := generateExample(t, reg, "examples/probe", "probe")
 	byKind := map[string]string{}
 	for _, obj := range in.objects {
-		b, _ := json.Marshal(obj)
+		b, _ := json.Marshal(obj, json.Deterministic(true))
 		byKind[obj["kind"].(string)] = string(b)
 	}
 	for kind, want := range map[string]string{

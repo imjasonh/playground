@@ -96,7 +96,10 @@ func runFacts(args []string) int {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 1
 	}
-	os.Stdout.Write(append(out, '\n'))
+	if _, err := os.Stdout.Write(append(out, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 1
+	}
 	return 0
 }
 
