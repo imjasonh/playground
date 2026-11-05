@@ -1,7 +1,8 @@
 # NYT Crossword
 
 Solve times for my daily NYT crossword, one line per weekday, plus the puzzles
-I started and did not finish.
+I started and did not finish. The page also counts completed puzzles for each
+year and links to the ones I have not completed.
 
 The page reads a JSON file. A scheduled job writes that file. The browser does
 not call the NYT API. A PR preview has no copy of that file, so it reads
@@ -34,19 +35,39 @@ from the crossword state endpoint, 30 puzzles at a time. The per-puzzle
 returns 404 for these solves, so the job does not call it. The default first
 print date is 2014-01-01. A solved puzzle that already has a time is not
 requested again, and a 100-day window is not listed again when every day in
-it is one of those solves. An open puzzle is requested when it is new or the
-list shows a change. The list endpoint rejects ranges longer than 100 days,
+it is one of those solves. If a later listing says that puzzle is not solved,
+the stored solve is dropped, and that does not add a request. A puzzle the list
+flags as solved is still treated as unsolved when its grid is under 100%
+filled. An open puzzle
+is requested when it is new or the list shows a change. The list endpoint rejects ranges longer than 100 days,
 so the job walks the calendar in 100-day windows, the same limit as that
 scraper.
 
 You can set a start and end print date when you run the workflow by hand. An
 empty end date means today in New York.
 
+## Completed by year
+
+The top of the page says when the current run of completed puzzles began: the
+print date of the first puzzle after the last one not completed. A puzzle is
+completed when the puzzle list says it is solved. An open puzzle dated today
+does not end the run. The year table counts completed puzzles out of all
+puzzles in that year. Open the list under a year to see every puzzle not
+completed, including ones never opened, each linked to nytimes.com.
+
+The list endpoint already returns every puzzle in a date range with its
+solved flag, so this needs no requests beyond the ones the scrape makes.
+
 ## Excluded solves
 
 `excluded.json` lists print dates that stay off the chart and out of the
 medians. Add a date there and commit it. The page does not list those solves.
-A date can be a short solve or a long one.
+A date can be a short solve or a long one. Use it for solves that are not real
+times, such as a puzzle solved on paper and typed in afterward.
+
+The **Best** column in the weekday table is the fastest time for that weekday
+in the selected years, with each date in `excluded.json` left out. It links to
+that puzzle. **Hide outliers** does not affect it.
 
 **Hide outliers** also drops times outside the usual range for that weekday,
 short or long. That range is the first quartile minus 1.5 times the

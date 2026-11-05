@@ -4,8 +4,10 @@
 // The puzzle list does not include solve time. Solve time is playTimeSeconds
 // on the crossword state endpoint, 30 puzzles at a time. The per-puzzle
 // v6 game URL returns 404 for these solves, so this script does not call it.
-// A solved puzzle that already has a time is not requested again. An open
-// puzzle is requested only when it is new or the list shows a change.
+// A solved puzzle that already has a time is not requested again. If a later
+// listing says it is not solved, that stored solve is dropped with no state
+// request. An open puzzle is requested only when it is new or the list shows
+// a change.
 // Published JSON is written to the gh-pages branch (see the workflow),
 // not to main.
 //
