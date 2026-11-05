@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T07:54:35.283Z",
+  "generatedAt": "2026-11-05T20:24:51.916Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -31651,9 +31651,9 @@
     {
       "date": "2017-05-19",
       "id": 13261,
-      "solved": false,
-      "percentFilled": 3,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 940
     },
     {
       "date": "2017-05-20",
@@ -32645,9 +32645,9 @@
     {
       "date": "2017-10-08",
       "id": 14016,
-      "solved": false,
-      "percentFilled": 2,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 934
     },
     {
       "date": "2017-10-09",
@@ -46254,7 +46254,7 @@
       "date": "2023-02-03",
       "id": 20819,
       "solved": false,
-      "percentFilled": 3,
+      "percentFilled": 2,
       "seconds": null
     },
     {
@@ -55311,9 +55311,9 @@
     {
       "date": "2026-08-20",
       "id": 24321,
-      "solved": false,
-      "percentFilled": 52,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 707
     },
     {
       "date": "2026-08-21",
@@ -55850,9 +55850,9 @@
     {
       "date": "2026-11-05",
       "id": 24616,
-      "solved": false,
-      "percentFilled": 0,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 536
     }
   ]
 }
