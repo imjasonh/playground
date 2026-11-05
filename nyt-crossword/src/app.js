@@ -1,14 +1,17 @@
 // Browser entry point. Stats stay in the DOM-free module.
 
 import { publishedDataUrl } from "./published-data.js";
-import { normalizeDoc } from "./scrape-lib.js";
+import { normalizeDoc, todayInNewYork } from "./scrape-lib.js";
 import {
   WEEKDAYS,
+  bestByWeekday,
   bucketSpan,
   chartLayout,
+  completedSince,
   excludedDates,
   formatDate,
   formatPercent,
+  formatShortDate,
   formatSolveTime,
   formatUnsolvedCount,
   formatUpdated,
@@ -23,6 +26,7 @@ import {
   trendByWeekday,
   trendLine,
   weekdayName,
+  yearBreakdown,
 } from "./stats.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -38,6 +42,7 @@ const SLUG = {
 
 const el = {
   generated: document.getElementById("generated"),
+  completedSince: document.getElementById("completed-since"),
   unsolvedCount: document.getElementById("unsolved-count"),
   fromYear: document.getElementById("from-year"),
   throughYear: document.getElementById("through-year"),
@@ -63,6 +68,7 @@ const el = {
   partialBody: document.getElementById("partial-rows"),
   partialTable: document.getElementById("partial-table"),
   partialEmpty: document.getElementById("partial-empty"),
+  yearRows: document.getElementById("year-rows"),
 };
 
 const CHART_HEIGHT = 380;
@@ -125,7 +131,7 @@ function yearRange() {
   return { fromYear: Math.min(from, through), throughYear: Math.max(from, through) };
 }
 
-function renderSummary(rows) {
+function renderSummary(rows, best) {
   el.summary.replaceChildren();
   for (const row of rows) {
     const tr = document.createElement("tr");
@@ -135,10 +141,24 @@ function renderSummary(rows) {
     const time = document.createElement("td");
     time.className = "num";
     time.textContent = row.median == null ? "None" : formatSolveTime(row.median);
+    const fastest = document.createElement("td");
+    fastest.className = "num";
+    const record = best.get(row.weekday);
+    if (record) {
+      const link = document.createElement("a");
+      link.href = puzzleUrl(record.date);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.title = formatDate(record.date);
+      link.textContent = formatSolveTime(record.seconds);
+      fastest.append(link);
+    } else {
+      fastest.textContent = "None";
+    }
     const count = document.createElement("td");
     count.className = "num";
     count.textContent = row.count.toLocaleString("en-US");
-    tr.append(day, time, count);
+    tr.append(day, time, fastest, count);
     el.summary.append(tr);
   }
 }
@@ -440,6 +460,77 @@ function zoomAt(factor, clientX) {
   render();
 }
 
+function renderCompletedSince(puzzles) {
+  const since = completedSince(puzzles, todayInNewYork());
+  el.completedSince.textContent = since ? `Completed every puzzle since ${formatDate(since)}.` : "";
+}
+
+function unfinishedLink(puzzle) {
+  const item = document.createElement("li");
+  const link = document.createElement("a");
+  link.href = puzzleUrl(puzzle.date);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = formatShortDate(puzzle.date);
+  item.append(link);
+  if (puzzle.percentFilled > 0) item.append(` ${formatPercent(puzzle.percentFilled)}`);
+  return item;
+}
+
+function renderYears(puzzles) {
+  el.yearRows.replaceChildren();
+  for (const row of yearBreakdown(puzzles)) {
+    const tr = document.createElement("tr");
+    const year = document.createElement("th");
+    year.scope = "row";
+    const count = row.unfinished.length;
+    const done = document.createElement("td");
+    const label = document.createElement("span");
+    label.className = "year-count";
+    label.textContent = `${row.completed.toLocaleString("en-US")} of ${row.total.toLocaleString("en-US")}`;
+    const bar = document.createElement("span");
+    bar.className = "year-bar";
+    bar.setAttribute("aria-hidden", "true");
+    const fill = document.createElement("span");
+    fill.style.width = `${row.total === 0 ? 0 : (100 * row.completed) / row.total}%`;
+    bar.append(fill);
+    done.append(label, bar);
+    const open = document.createElement("td");
+    open.className = "num";
+    open.textContent = count === 0 ? "None" : count.toLocaleString("en-US");
+    tr.append(year, done, open);
+    el.yearRows.append(tr);
+    if (count === 0) {
+      year.textContent = String(row.year);
+      year.className = "year-name";
+      continue;
+    }
+    const detailRow = document.createElement("tr");
+    detailRow.hidden = true;
+    const cell = document.createElement("td");
+    cell.colSpan = 3;
+    cell.className = "year-open";
+    const list = document.createElement("ul");
+    list.id = `year-open-${row.year}`;
+    list.replaceChildren(...row.unfinished.map(unfinishedLink));
+    cell.append(list);
+    detailRow.append(cell);
+    el.yearRows.append(detailRow);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "year-toggle";
+    toggle.textContent = String(row.year);
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", list.id);
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      detailRow.hidden = expanded;
+    });
+    year.append(toggle);
+  }
+}
+
 function renderPartials(puzzles) {
   const rows = partialPuzzles(puzzles, el.partialSort.value);
   el.unsolvedCount.textContent = formatUnsolvedCount(rows.length);
@@ -474,7 +565,11 @@ function render() {
   const keptCount = kept.length.toLocaleString("en-US");
   el.solveCount.textContent =
     keptCount === "1" ? "1 solve in range." : `${keptCount} solves in range.`;
-  renderSummary(medianByWeekday(kept));
+  const { kept: eligible } = selectSolves(state.doc.puzzles, {
+    ...range,
+    excludedDates: state.excluded,
+  });
+  renderSummary(medianByWeekday(kept), bestByWeekday(eligible));
   renderLegend();
   const visibleKept = kept.filter(
     (puzzle) => !state.hiddenWeekdays.has(weekdayName(puzzle.date)),
@@ -494,6 +589,8 @@ async function boot() {
   const when = formatUpdated(state.doc.generatedAt);
   el.generated.textContent = when ? `Updated ${when}` : "";
   fillYears();
+  renderCompletedSince(state.doc.puzzles);
+  renderYears(state.doc.puzzles);
   render();
 }
 

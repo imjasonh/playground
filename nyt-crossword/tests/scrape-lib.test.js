@@ -10,6 +10,7 @@ import {
   dateChunks,
   gameDataOf,
   idBatches,
+  listItemToPuzzle,
   listUrl,
   mergeListed,
   needsGameFetch,
@@ -94,14 +95,54 @@ test("needsGameFetch skips a solved puzzle that already has a time", () => {
   );
 });
 
-test("mergeListed does not refetch a finished game when the list disagrees", () => {
+test("mergeListed drops a stored solve when the list says it is not solved", () => {
   const listed = [
     {
       print_date: solved.date,
       puzzle_id: solved.id,
       publish_type: "Daily",
       solved: false,
-      percent_filled: 15,
+      percent_filled: 3,
+    },
+  ];
+  const { puzzles, fetchList } = mergeListed([solved], listed, {
+    start: "2024-01-01",
+    end: "2024-12-31",
+  });
+  assert.equal(fetchList.length, 0);
+  assert.equal(puzzles[0].solved, false);
+  assert.equal(puzzles[0].percentFilled, 3);
+  assert.equal(puzzles[0].seconds, null);
+});
+
+test("a listing flagged solved with a grid under 100% filled is not a solve", () => {
+  const item = {
+    print_date: "2022-05-01",
+    puzzle_id: 20089,
+    publish_type: "Daily",
+    solved: true,
+    percent_filled: 99,
+  };
+  assert.equal(listItemToPuzzle(item).solved, false);
+  assert.equal(listItemToPuzzle({ ...item, percent_filled: 100 }).solved, true);
+  assert.equal(listItemToPuzzle({ ...item, percent_filled: undefined }).solved, true);
+  const { puzzles } = mergeListed(
+    [{ date: "2022-05-01", id: 20089, solved: true, percentFilled: 99, seconds: 1590 }],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+  );
+  assert.equal(puzzles[0].solved, false);
+  assert.equal(puzzles[0].seconds, null);
+});
+
+test("mergeListed keeps a stored solve time when the list still says solved", () => {
+  const listed = [
+    {
+      print_date: solved.date,
+      puzzle_id: solved.id,
+      publish_type: "Daily",
+      solved: true,
+      percent_filled: 100,
     },
   ];
   const { puzzles, fetchList } = mergeListed([solved], listed, {
@@ -214,6 +255,13 @@ test("applyPlayTime reads playTimeSeconds and leaves an open puzzle untimed", ()
   );
   assert.equal(done.seconds, 512);
   assert.equal(done.solved, true);
+  const unfinished = applyPlayTime(
+    { ...solved, solved: false, seconds: null, percentFilled: 3 },
+    { playTimeSeconds: 55, firstSolve: 1717200000 },
+  );
+  assert.equal(unfinished.solved, false);
+  assert.equal(unfinished.percentFilled, 3);
+  assert.equal(unfinished.seconds, null);
   assert.deepEqual(gameDataOf({ puzzle_id: 1, game_data: { playTimeSeconds: 12 } }), {
     playTimeSeconds: 12,
   });
