@@ -1,14 +1,16 @@
 // Browser entry point. Stats stay in the DOM-free module.
 
 import { publishedDataUrl } from "./published-data.js";
-import { normalizeDoc } from "./scrape-lib.js";
+import { normalizeDoc, todayInNewYork } from "./scrape-lib.js";
 import {
   WEEKDAYS,
   bucketSpan,
   chartLayout,
+  completedSince,
   excludedDates,
   formatDate,
   formatPercent,
+  formatShortDate,
   formatSolveTime,
   formatUnsolvedCount,
   formatUpdated,
@@ -23,6 +25,7 @@ import {
   trendByWeekday,
   trendLine,
   weekdayName,
+  yearBreakdown,
 } from "./stats.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -38,6 +41,7 @@ const SLUG = {
 
 const el = {
   generated: document.getElementById("generated"),
+  completedSince: document.getElementById("completed-since"),
   unsolvedCount: document.getElementById("unsolved-count"),
   fromYear: document.getElementById("from-year"),
   throughYear: document.getElementById("through-year"),
@@ -63,6 +67,7 @@ const el = {
   partialBody: document.getElementById("partial-rows"),
   partialTable: document.getElementById("partial-table"),
   partialEmpty: document.getElementById("partial-empty"),
+  yearRows: document.getElementById("year-rows"),
 };
 
 const CHART_HEIGHT = 380;
@@ -440,6 +445,56 @@ function zoomAt(factor, clientX) {
   render();
 }
 
+function renderCompletedSince(puzzles) {
+  const since = completedSince(puzzles, todayInNewYork());
+  el.completedSince.textContent = since ? `Completed every puzzle since ${formatDate(since)}.` : "";
+}
+
+function unfinishedLink(puzzle) {
+  const item = document.createElement("li");
+  const link = document.createElement("a");
+  link.href = puzzleUrl(puzzle.date);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = formatShortDate(puzzle.date);
+  item.append(link);
+  if (puzzle.percentFilled > 0) item.append(` ${formatPercent(puzzle.percentFilled)}`);
+  return item;
+}
+
+function renderYears(puzzles) {
+  el.yearRows.replaceChildren();
+  for (const row of yearBreakdown(puzzles)) {
+    const tr = document.createElement("tr");
+    const year = document.createElement("th");
+    year.scope = "row";
+    year.textContent = String(row.year);
+    const done = document.createElement("td");
+    done.className = "num";
+    done.textContent = `${row.completed.toLocaleString("en-US")} of ${row.total.toLocaleString("en-US")}`;
+    const open = document.createElement("td");
+    open.className = "num";
+    const count = row.unfinished.length;
+    open.textContent = count === 0 ? "None" : count.toLocaleString("en-US");
+    tr.append(year, done, open);
+    el.yearRows.append(tr);
+    if (count === 0) continue;
+    const detailRow = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 3;
+    cell.className = "year-open";
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = `Puzzles not completed in ${row.year}`;
+    const list = document.createElement("ul");
+    list.replaceChildren(...row.unfinished.map(unfinishedLink));
+    details.append(summary, list);
+    cell.append(details);
+    detailRow.append(cell);
+    el.yearRows.append(detailRow);
+  }
+}
+
 function renderPartials(puzzles) {
   const rows = partialPuzzles(puzzles, el.partialSort.value);
   el.unsolvedCount.textContent = formatUnsolvedCount(rows.length);
@@ -494,6 +549,8 @@ async function boot() {
   const when = formatUpdated(state.doc.generatedAt);
   el.generated.textContent = when ? `Updated ${when}` : "";
   fillYears();
+  renderCompletedSince(state.doc.puzzles);
+  renderYears(state.doc.puzzles);
   render();
 }
 

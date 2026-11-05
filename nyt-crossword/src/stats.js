@@ -387,6 +387,57 @@ export function solvedYears(puzzles) {
   return [...years].sort((a, b) => a - b);
 }
 
+// Finished means the list says solved. The list is the only source for
+// puzzles that were never opened, so this does not look at solve time.
+function isCompleted(puzzle) {
+  return puzzle.solved === true;
+}
+
+// The print date of the first puzzle in the unbroken run of completed
+// puzzles that ends at the latest one. An open puzzle dated today or later
+// does not break the run, because it has not had its day yet. Null when the
+// puzzle after the last miss is itself open.
+export function completedSince(puzzles, today) {
+  const rows = puzzles
+    .filter((puzzle) => puzzle.date >= CHART_START)
+    .sort((a, b) => compareIso(a.date, b.date));
+  let lastMiss = -1;
+  for (let i = 0; i < rows.length; i += 1) {
+    if (!isCompleted(rows[i]) && rows[i].date < today) lastMiss = i;
+  }
+  const first = rows[lastMiss + 1];
+  if (!first || !isCompleted(first)) return null;
+  return first.date;
+}
+
+// One row per calendar year from the chart start. Unfinished puzzles include
+// the ones that were never opened, oldest first.
+export function yearBreakdown(puzzles) {
+  const years = new Map();
+  for (const puzzle of puzzles) {
+    if (puzzle.date < CHART_START) continue;
+    const year = yearOf(puzzle.date);
+    if (!years.has(year)) years.set(year, { year, total: 0, completed: 0, unfinished: [] });
+    const row = years.get(year);
+    row.total += 1;
+    if (isCompleted(puzzle)) row.completed += 1;
+    else row.unfinished.push(puzzle);
+  }
+  const rows = [...years.values()].sort((a, b) => a.year - b.year);
+  for (const row of rows) row.unfinished.sort((a, b) => compareIso(a.date, b.date));
+  return rows;
+}
+
+export function formatShortDate(isoDate) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
 export function partialPuzzles(puzzles, sort) {
   const rows = puzzles.filter((puzzle) => isPartial(puzzle));
   rows.sort((a, b) => comparePartial(a, b, sort));

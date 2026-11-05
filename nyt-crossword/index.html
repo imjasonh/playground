@@ -30,6 +30,7 @@
       <header class="mast">
         <div>
           <h1>Crossword</h1>
+          <p id="completed-since" class="since"></p>
           <p id="generated" class="meta"></p>
           <p id="unsolved-count" class="meta"></p>
         </div>
@@ -117,6 +118,25 @@
           <div id="chart-tip" class="chart-tip" role="tooltip" hidden></div>
         </div>
         <p id="chart-empty" class="meta" hidden></p>
+      </section>
+
+      <section>
+        <h2>Completed by year</h2>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">
+              Completed puzzles by year, with links to the ones not completed
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Year</th>
+                <th scope="col" class="num">Completed</th>
+                <th scope="col" class="num">Not completed</th>
+              </tr>
+            </thead>
+            <tbody id="year-rows"></tbody>
+          </table>
+        </div>
       </section>
 
       <section>
