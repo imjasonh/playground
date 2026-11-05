@@ -50,13 +50,22 @@ empty end date means today in New York.
 
 The top of the page says when the current run of completed puzzles began: the
 print date of the first puzzle after the last one not completed. A puzzle is
-completed when the puzzle list says it is solved. An open puzzle dated today
-does not end the run. The year table counts completed puzzles out of all
-puzzles in that year. Open the list under a year to see every puzzle not
-completed, including ones never opened, each linked to nytimes.com.
+completed when the puzzle list says it is solved, or when its print date is
+in `completed.json`. An open puzzle dated today does not end the run. The
+year table counts completed puzzles out of all puzzles in that year. Open
+the list under a year to see every puzzle not completed, including ones
+never opened, each linked to nytimes.com.
 
 The list endpoint already returns every puzzle in a date range with its
 solved flag, so this needs no requests beyond the ones the scrape makes.
+
+## Finished puzzles the list leaves open
+
+`completed.json` lists print dates that count as solved when the puzzle list
+reports the grid under 100% filled. NYT sometimes reports a finished puzzle
+that way. Add the print date and commit the file. The page counts that
+puzzle as completed. The scrape keeps its stored time and does not mark it
+open again.
 
 ## Excluded solves
 
