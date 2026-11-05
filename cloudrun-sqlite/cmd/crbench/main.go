@@ -142,7 +142,7 @@ func soak(args []string) error {
 		return err
 	}
 	if *jsonOut != "" {
-		b, _ := json.Marshal(res, jsontext.WithIndent("  "))
+		b, _ := json.Marshal(res, jsontext.WithIndent("  "), json.Deterministic(true))
 		if err := os.WriteFile(*jsonOut, b, 0o644); err != nil {
 			return err
 		}
@@ -431,7 +431,7 @@ func coldstart(args []string) error {
 		slog.Info("cold start", "rows", r.Rows, "database_mib", float64(r.DBBytes)/(1<<20), "listen_ms", r.ListenMillis, "first_ms", r.FirstMillis, "warm_p50_ms", r.WarmP50, "warm_p99_ms", r.WarmP99, "restore_ms", r.RestoreMs)
 	}
 	if *jsonOut != "" {
-		b, _ := json.Marshal(results, jsontext.WithIndent("  "))
+		b, _ := json.Marshal(results, jsontext.WithIndent("  "), json.Deterministic(true))
 		return os.WriteFile(*jsonOut, b, 0o644)
 	}
 	return nil

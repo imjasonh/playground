@@ -16,12 +16,12 @@ import (
 
 // SnapshotResult describes a snapshot written by Snapshot.
 type SnapshotResult struct {
-	MaxTXID  string        `json:"max_txid"`
-	Size     int64         `json:"size"`
-	Inputs   int           `json:"inputs"`
-	Deleted  int           `json:"deleted"`
-	Duration time.Duration `json:"duration"`
-	At       time.Time     `json:"at"`
+	MaxTXID        string    `json:"max_txid"`
+	Size           int64     `json:"size"`
+	Inputs         int       `json:"inputs"`
+	Deleted        int       `json:"deleted"`
+	DurationMillis float64   `json:"duration_ms"`
+	At             time.Time `json:"at"`
 }
 
 // RestorePlan returns the LTX files a new instance would read to open the
@@ -135,19 +135,19 @@ func (s *Store) Snapshot(ctx context.Context) (*SnapshotResult, error) {
 	}
 
 	res := &SnapshotResult{
-		MaxTXID:  info.MaxTXID.String(),
-		Size:     info.Size,
-		Inputs:   len(plan),
-		Deleted:  deleted,
-		Duration: time.Since(start),
-		At:       time.Now(),
+		MaxTXID:        info.MaxTXID.String(),
+		Size:           info.Size,
+		Inputs:         len(plan),
+		Deleted:        deleted,
+		DurationMillis: float64(time.Since(start)) / float64(time.Millisecond),
+		At:             time.Now(),
 	}
 	s.snapshots.Add(1)
 	s.lastSnapshot.Store(res)
 	if plan, err := s.RestorePlan(ctx); err == nil {
 		s.planLen.Store(int64(len(plan)))
 	}
-	clog.FromContext(ctx).Info("snapshot written", "max_txid", res.MaxTXID, "size", res.Size, "inputs", res.Inputs, "deleted", res.Deleted, "duration", res.Duration)
+	clog.FromContext(ctx).Info("snapshot written", "max_txid", res.MaxTXID, "size", res.Size, "inputs", res.Inputs, "deleted", res.Deleted, "duration_ms", res.DurationMillis)
 	return res, nil
 }
 
