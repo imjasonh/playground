@@ -344,9 +344,11 @@ The kind end-to-end tests of `git-k8s`, `kube`, and `sshapp` run as their own
 steps in the parallel group (`.github/scripts/test-kind-e2e.sh`), beside the
 Go unit tests, because they mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
-runner. The job restores Go's module and build caches from the newest cache
+runner. The job restores Go's module download cache from the newest cache
 that a push to `main` saved, matching by prefix so that a new `go.sum`
-doesn't miss. Only pushes to `main` save a cache.
+doesn't miss. The build cache stays on the runner. A saved copy of it had
+grown past 4 GB and filled the disk while restoring. Only pushes to `main`
+save a cache.
 
 Cloud Agents also check each commit with pasta. When a Cloud Agent VM starts,
 `.cursor/environment.json` runs `.cursor/install.sh`, which builds pasta and
