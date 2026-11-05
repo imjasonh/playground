@@ -1,7 +1,12 @@
 // Browser entry point. Stats stay in the DOM-free module.
 
 import { publishedDataUrl } from "./published-data.js";
-import { normalizeDoc, todayInNewYork } from "./scrape-lib.js";
+import {
+  applyCompleted,
+  completedDates,
+  normalizeDoc,
+  todayInNewYork,
+} from "./scrape-lib.js";
 import {
   WEEKDAYS,
   bestByWeekday,
@@ -98,6 +103,14 @@ async function loadDoc() {
 async function loadExcluded() {
   try {
     return excludedDates(await fetchJson("excluded.json"));
+  } catch {
+    return new Set();
+  }
+}
+
+async function loadCompleted() {
+  try {
+    return completedDates(await fetchJson("completed.json"));
   } catch {
     return new Set();
   }
@@ -583,7 +596,12 @@ function render() {
 
 async function boot() {
   el.notice.textContent = "";
-  const [doc, excluded] = await Promise.all([loadDoc(), loadExcluded()]);
+  const [doc, excluded, completed] = await Promise.all([
+    loadDoc(),
+    loadExcluded(),
+    loadCompleted(),
+  ]);
+  doc.puzzles = applyCompleted(doc.puzzles, completed);
   state.doc = doc;
   state.excluded = excluded;
   const when = formatUpdated(state.doc.generatedAt);
