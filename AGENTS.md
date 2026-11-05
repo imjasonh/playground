@@ -344,9 +344,61 @@ The kind end-to-end tests of `git-k8s`, `kube`, and `sshapp` run as their own
 steps in the parallel group (`.github/scripts/test-kind-e2e.sh`), beside the
 Go unit tests, because they mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
-runner. The job restores Go's module and build caches from the newest cache
-that a push to `main` saved, matching by prefix so that a new `go.sum`
-doesn't miss. Only pushes to `main` save a cache.
+runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
+apps that depend on the same crates compile them once and the job holds one
+copy of the artifacts. The job restores four caches (Go's build cache, npm's package cache, the
+`worker-build` binary, and the Rust dependency artifacts) from the newest
+entry that a push to `main` saved, matching by prefix so that a new lockfile
+doesn't miss. A pull request that does not run an ecosystem's tests does not
+restore that ecosystem's cache. Only pushes to `main` save one, after the
+tests.
+
+### Cache sizes
+
+A GitHub-hosted runner guarantees about 14 GB of free disk, and
+`actions/cache` holds the compressed archive on disk while it extracts.
+The peak is the archive plus the extracted files, and Go's cache extracts
+to about 2.6 times its archive. A 4.4 GB archive therefore needed about 16 GB
+and failed the job that restored it before any step ran. GitHub evicts whole
+caches when a repository passes its 10 GB quota, but nothing bounds a single
+archive. The tools don't either: Go trims its build cache by age (entries
+unused for five days) and never trims the module cache; Cargo trims its
+registry by age and never trims `target/`; npm never evicts. A job that
+restores the newest archive by prefix, adds to it, and saves the union grows
+that archive by every dependency bump until it fills the disk.
+
+A cache that a workflow saves is a function of the current commit and a
+size budget, measured on disk:
+
+- Key it with the commit SHA and restore it by prefix. Each save is a new
+  entry, so nothing depends on an exact match.
+- Bound it before the save. Either remove what the current lockfiles don't
+  name (`Swatinem/rust-cache`, which the ESP32 workflows use, does) or trim
+  to a budget, least recently used first
+  (`trim-go-build-cache.sh` uses the mtime that the go command sets when it
+  uses an entry).
+- Gate the save on the budget, and delete the entries it replaces. The
+  `.github/actions/save-cache` action runs `check-cache-size.sh`, saves,
+  and runs `delete-superseded-caches.sh`, which leaves one entry for each
+  cache family. A cache over budget isn't saved and its family is deleted,
+  so the next run on `main` starts it again from empty. Each step continues
+  on error, so a cache problem never fails the job.
+- Cache what costs more to compute than to restore. `test.yml` caches
+  Go's build cache (3 GiB budget; a cold compile of every module takes about
+  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB), the
+  `worker-build` binary (256 MiB; it takes 36 seconds to build), and the
+  Rust dependency artifacts (6 GiB). A cold compile of one Worker is about
+  half a minute, and a warm one recompiles that app's own crate (about a
+  second) and reuses the dependencies. The saved `target/` is the dependency
+  artifacts only: `prune-cargo-cache.sh` removes the app crates, incremental
+  files, and any dependency the current `Cargo.lock` files no longer name,
+  and the registry sources go with the artifacts so build scripts stay
+  fresh. It doesn't cache Go's module cache (3 GB that `go build` downloads
+  in seconds) or npm's `_npx` directory.
+
+The workflow needs `actions: write` to delete entries. A new cache in
+any workflow uses the same pieces. Run
+`bash .github/scripts/cache-scripts_test.sh` to test them.
 
 Cloud Agents also check each commit with pasta. When a Cloud Agent VM starts,
 `.cursor/environment.json` runs `.cursor/install.sh`, which builds pasta and
@@ -365,7 +417,8 @@ directory changes, so a change under `kube/` tests `git-k8s` too. `inkbot-esp32/
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
 Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
 tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
-pinned Wrangler version) selects every Cloudflare Worker app.
+pinned Wrangler version) selects every Cloudflare Worker app, and a change to
+`test-rust-apps.sh` or `check-worker-deploy-build.sh` selects every Rust app.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
