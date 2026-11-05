@@ -9,7 +9,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -390,7 +391,7 @@ func forAudience(token, audience string) bool {
 		return false
 	}
 	var claims struct {
-		Aud json.RawMessage `json:"aud"`
+		Aud jsontext.Value `json:"aud"`
 	}
 	if json.Unmarshal(payload, &claims) != nil {
 		return false

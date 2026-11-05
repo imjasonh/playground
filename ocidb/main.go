@@ -17,7 +17,8 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/csv"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -464,9 +465,12 @@ func printJSON(w io.Writer, cols []string, data [][]any) error {
 		}
 		out = append(out, m)
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	b, err := json.Marshal(out, jsontext.WithIndent("  "), json.Deterministic(true))
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(append(b, '\n'))
+	return err
 }
 
 func cellString(v any) string {

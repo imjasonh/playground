@@ -1,7 +1,8 @@
 package client
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -128,10 +129,10 @@ type item struct {
 	} `json:"metadata"`
 }
 
-func collect(names *[]string) func(*json.Decoder) error {
-	return func(dec *json.Decoder) error {
+func collect(names *[]string) func(*jsontext.Decoder) error {
+	return func(dec *jsontext.Decoder) error {
 		var it item
-		if err := dec.Decode(&it); err != nil {
+		if err := json.UnmarshalDecode(dec, &it); err != nil {
 			return err
 		}
 		*names = append(*names, it.Metadata.Name)

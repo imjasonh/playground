@@ -2,7 +2,7 @@ package checks
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -49,7 +49,7 @@ type endpoint struct {
 
 func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var res gitk8s.CheckResult
-	_ = json.NewDecoder(r.Body).Decode(&res)
+	_ = json.UnmarshalRead(r.Body, &res)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.received = append(e.received, received{uri: r.URL.RequestURI(), auth: r.Header.Get("Authorization"), result: res})

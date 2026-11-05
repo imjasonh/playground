@@ -2,9 +2,12 @@ package yaml
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"strings"
+
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 )
 
 // FromJSON converts one JSON value to a YAML document in block style,
@@ -15,13 +18,12 @@ import (
 // "1:20", or "2026-10-02" into another type. Other strings use JSON's
 // double-quoted form, which YAML accepts.
 func FromJSON(data []byte) ([]byte, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
+	dec := jsontext.NewDecoder(bytes.NewReader(data))
 	v, err := decodeOrdered(dec)
 	if err != nil {
 		return nil, err
 	}
-	if dec.More() {
+	if dec.PeekKind() != 0 {
 		return nil, fmt.Errorf("yaml: more than one JSON value")
 	}
 	var b strings.Builder
@@ -51,40 +53,47 @@ type member struct {
 	value any
 }
 
-func decodeOrdered(dec *json.Decoder) (any, error) {
-	tok, err := dec.Token()
+func decodeOrdered(dec *jsontext.Decoder) (any, error) {
+	tok, err := dec.ReadToken()
 	if err != nil {
 		return nil, err
 	}
-	switch tok {
-	case json.Delim('{'):
+	switch tok.Kind() {
+	case '{':
 		obj := ordered{}
-		for dec.More() {
-			k, err := dec.Token()
+		for dec.PeekKind() != '}' {
+			k, err := dec.ReadToken()
 			if err != nil {
 				return nil, err
 			}
+			key := k.String()
 			v, err := decodeOrdered(dec)
 			if err != nil {
 				return nil, err
 			}
-			obj = append(obj, member{k.(string), v})
+			obj = append(obj, member{key, v})
 		}
-		_, err := dec.Token()
+		_, err := dec.ReadToken()
 		return obj, err
-	case json.Delim('['):
+	case '[':
 		list := []any{}
-		for dec.More() {
+		for dec.PeekKind() != ']' {
 			v, err := decodeOrdered(dec)
 			if err != nil {
 				return nil, err
 			}
 			list = append(list, v)
 		}
-		_, err := dec.Token()
+		_, err := dec.ReadToken()
 		return list, err
+	case 'n':
+		return nil, nil
+	case 't', 'f':
+		return tok.Bool(), nil
+	case '0':
+		return jsonnum.Number(tok.String()), nil
 	}
-	return tok, nil
+	return tok.String(), nil
 }
 
 func writeMap(b *strings.Builder, m ordered, indent int) {
@@ -163,13 +172,13 @@ func scalar(v any) string {
 			return "true"
 		}
 		return "false"
-	case json.Number:
+	case jsonnum.Number:
 		return v.String()
 	case string:
 		if plain(v) {
 			return v
 		}
-		q, _ := json.Marshal(v)
+		q, _ := json.Marshal(v, json.Deterministic(true))
 		return string(q)
 	}
 	return fmt.Sprint(v)

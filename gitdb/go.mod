@@ -1,6 +1,6 @@
 module github.com/imjasonh/playground/gitdb
 
-go 1.26.0
+go 1.27.0
 
 // The modernc backend pins the core module at the literal version v0.0.0, which
 // it satisfies in-repo with a `replace => ../`. External consumers don't inherit

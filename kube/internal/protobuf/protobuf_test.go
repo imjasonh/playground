@@ -1,7 +1,8 @@
 package protobuf
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"math"
 	"reflect"
@@ -214,8 +215,8 @@ func TestTimesDecodeLikeJSON(t *testing.T) {
 		Micro *time.Time `json:"micro"`
 	}
 	type asJSON struct {
-		When  json.RawMessage `json:"when"`
-		Micro json.RawMessage `json:"micro"`
+		When  jsontext.Value `json:"when"`
+		Micro jsontext.Value `json:"micro"`
 	}
 	types := []struct {
 		name string
@@ -224,7 +225,7 @@ func TestTimesDecodeLikeJSON(t *testing.T) {
 	}{
 		{"time.Time", testPlan[asTime](t), func() any { return new(asTime) }},
 		{"*time.Time", testPlan[asPointer](t), func() any { return new(asPointer) }},
-		{"json.RawMessage", testPlan[asJSON](t), func() any { return new(asJSON) }},
+		{"jsontext.Value", testPlan[asJSON](t), func() any { return new(asJSON) }},
 	}
 	later := uint64(time.Date(2026, 10, 2, 20, 41, 7, 0, time.UTC).Unix())
 	// The API server sends the zero time as an empty message, and as null in
@@ -288,7 +289,7 @@ func TestPlanRejectsFieldsTheSchemaLacks(t *testing.T) {
 
 func TestFieldNamesMatchLikeEncodingJSON(t *testing.T) {
 	type named struct {
-		NAME  string // no tag: matches "name" ignoring case
+		Name  string `json:"name"`
 		Count int32  `json:"count"`
 		Skip  string `json:"-"`
 	}
@@ -296,8 +297,15 @@ func TestFieldNamesMatchLikeEncodingJSON(t *testing.T) {
 	if err := testPlan[named](t).Unmarshal(enc{}.str(1, "x").uint(2, 3), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.NAME != "x" || got.Count != 3 {
+	if got.Name != "x" || got.Count != 3 {
 		t.Errorf("got %+v", got)
+	}
+	type untagged struct {
+		Name string // no tag: its JSON name is "Name", which the schema lacks
+	}
+	b := &builder{plans: map[planKey]*Plan{}}
+	if _, err := b.plan(reflect.TypeFor[untagged](), testMessage(t), true); err == nil || !strings.Contains(err.Error(), `"Name"`) {
+		t.Errorf("plan of a field named Name = %v, want an error, so the type is read as JSON", err)
 	}
 }
 
@@ -312,8 +320,8 @@ func TestJSONFieldErrorsFailTheMessage(t *testing.T) {
 	}
 	var got numbers
 	err := testPlan[numbers](t).Unmarshal(enc{}.str(1, "web").msg(9, enc{}.uint(1, 1).str(3, "http")), &got)
-	if te := (*json.UnmarshalTypeError)(nil); !errors.As(err, &te) {
-		t.Errorf("Unmarshal = %v, want a *json.UnmarshalTypeError", err)
+	if te := (*json.SemanticError)(nil); !errors.As(err, &te) {
+		t.Errorf("Unmarshal = %v, want a *json.SemanticError", err)
 	}
 }
 

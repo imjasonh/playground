@@ -4,7 +4,8 @@ import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math"
 	"strconv"
@@ -260,7 +261,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			prepareEnv = append(prepareEnv, EnvVar{Name: "ATTRIBUTES", Value: attributes})
 		}
 	}
-	agentTask, _ := json.Marshal(task)
+	agentTask, _ := json.Marshal(task, json.Deterministic(true))
 	source := cmp.Or(r.SourceSize, defaultSourceSize)
 	volumes := []Volume{
 		{Name: "git", EmptyDir: &EmptyDir{SizeLimit: source}},
@@ -383,8 +384,11 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	if len(id.Tools) == 0 {
 		id.Tools = nil
 	}
-	idJSON, _ := json.Marshal(id)
-	spec, _ := json.Marshal(p.Spec)
+	// The job half has to stay the same across deploys, so it hashes the
+	// bytes that encoding/json v1 wrote: nil slices as null, and <, >, and
+	// & escaped.
+	idJSON, _ := json.Marshal(id, json.Deterministic(true), json.FormatNilSliceAsNull(true), jsontext.EscapeForHTML(true))
+	spec, _ := json.Marshal(p.Spec, json.Deterministic(true))
 	jobSum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s", attempt, idJSON))
 	specSum := sha256.Sum256(spec)
 	p.Name = r.Name + "-" + hex.EncodeToString(jobSum[:4]) + hex.EncodeToString(specSum[:4])

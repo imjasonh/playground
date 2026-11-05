@@ -2,7 +2,7 @@ package kube
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -78,19 +78,19 @@ func (a *authAPI) sent() []authRequest {
 
 func (a *authAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body map[string]any
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.UnmarshalRead(r.Body, &body)
 	a.mu.Lock()
 	a.requests = append(a.requests, authRequest{path: r.Method + " " + r.URL.Path, body: body})
 	a.mu.Unlock()
 	spec, _ := body["spec"].(map[string]any)
 	reply := func(status any) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"status": status})
+		_ = json.MarshalWrite(w, map[string]any{"status": status})
 	}
 	forbidden := func(message string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "Forbidden", "code": 403, "message": message})
+		_ = json.MarshalWrite(w, map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "Forbidden", "code": 403, "message": message})
 	}
 	switch r.URL.Path {
 	case "/apis/authentication.k8s.io/v1/tokenreviews":
@@ -136,7 +136,7 @@ func TestReviewToken(t *testing.T) {
 	if len(sent) != 1 || sent[0].path != "POST /apis/authentication.k8s.io/v1/tokenreviews" {
 		t.Fatalf("requests = %+v", sent)
 	}
-	if b, _ := json.Marshal(sent[0].body); string(b) != `{"apiVersion":"authentication.k8s.io/v1","kind":"TokenReview","spec":{"audiences":["git-k8s","other"],"token":"valid"}}` {
+	if b, _ := json.Marshal(sent[0].body, json.Deterministic(true)); string(b) != `{"apiVersion":"authentication.k8s.io/v1","kind":"TokenReview","spec":{"audiences":["git-k8s","other"],"token":"valid"}}` {
 		t.Errorf("TokenReview = %s", b)
 	}
 
@@ -186,7 +186,7 @@ func TestRequestToken(t *testing.T) {
 	var bodies []string
 	for _, r := range a.sent() {
 		paths = append(paths, r.path)
-		b, _ := json.Marshal(r.body)
+		b, _ := json.Marshal(r.body, json.Deterministic(true))
 		bodies = append(bodies, string(b))
 	}
 	want := []string{
@@ -284,7 +284,7 @@ func TestRequestTokenWithoutAPod(t *testing.T) {
 	if _, _, err := RequestToken(ctx, "octo-sts.dev"); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := json.Marshal(a.sent()[1].body); strings.Contains(string(b), "boundObjectRef") {
+	if b, _ := json.Marshal(a.sent()[1].body, json.Deterministic(true)); strings.Contains(string(b), "boundObjectRef") {
 		t.Errorf("TokenRequest = %s, want no Pod binding for a token without one", b)
 	}
 

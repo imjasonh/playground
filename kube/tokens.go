@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -22,7 +22,7 @@ import (
 type TokenReview struct {
 	// Authenticated reports whether the token is valid for one of the
 	// audiences that ReviewToken asked for.
-	Authenticated bool `json:"authenticated,omitempty"`
+	Authenticated bool `json:"authenticated,omitzero"`
 	// User is the user or service account that the token belongs to.
 	User UserInfo `json:"user,omitzero"`
 	// Audiences are the audiences that ReviewToken asked for that the token

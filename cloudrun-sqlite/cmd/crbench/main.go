@@ -7,7 +7,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -141,7 +142,7 @@ func soak(args []string) error {
 		return err
 	}
 	if *jsonOut != "" {
-		b, _ := json.MarshalIndent(res, "", "  ")
+		b, _ := json.Marshal(res, jsontext.WithIndent("  "), json.Deterministic(true))
 		if err := os.WriteFile(*jsonOut, b, 0o644); err != nil {
 			return err
 		}
@@ -266,7 +267,7 @@ func live(args []string) error {
 		slog.Info("new instance", "instance", cold.Instance, "request_ms", cold.RequestMS, "open_ms", cold.OpenMS)
 	}
 	if *jsonOut != "" && res != nil {
-		b, _ := json.MarshalIndent(map[string]any{"soak": res, "during": during, "cold": cold}, "", "  ")
+		b, _ := json.Marshal(map[string]any{"soak": res, "during": during, "cold": cold}, jsontext.WithIndent("  "), json.Deterministic(true))
 		if werr := os.WriteFile(*jsonOut, b, 0o644); werr != nil {
 			return werr
 		}
@@ -430,7 +431,7 @@ func coldstart(args []string) error {
 		slog.Info("cold start", "rows", r.Rows, "database_mib", float64(r.DBBytes)/(1<<20), "listen_ms", r.ListenMillis, "first_ms", r.FirstMillis, "warm_p50_ms", r.WarmP50, "warm_p99_ms", r.WarmP99, "restore_ms", r.RestoreMs)
 	}
 	if *jsonOut != "" {
-		b, _ := json.MarshalIndent(results, "", "  ")
+		b, _ := json.Marshal(results, jsontext.WithIndent("  "), json.Deterministic(true))
 		return os.WriteFile(*jsonOut, b, 0o644)
 	}
 	return nil

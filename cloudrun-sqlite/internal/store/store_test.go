@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -541,6 +542,9 @@ func TestSnapshotShortensRestorePlan(t *testing.T) {
 	}
 	if plan, _ = s.RestorePlan(t.Context()); len(plan) != 1 {
 		t.Fatalf("plan has %d files after snapshot, want 1", len(plan))
+	}
+	if _, err := json.Marshal(s.Stats(t.Context())); err != nil {
+		t.Fatalf("marshal stats after snapshot: %v", err)
 	}
 
 	// The writer keeps working after its page index moved to the snapshot.

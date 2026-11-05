@@ -1,9 +1,9 @@
 package kube
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -24,6 +24,7 @@ import (
 
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/clone"
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 	"github.com/imjasonh/playground/kube/internal/queue"
 	"github.com/imjasonh/playground/kube/internal/subset"
 )
@@ -751,7 +752,7 @@ func (c *controller[T, P]) statusChanged(old, new *T) bool {
 	if reflect.DeepEqual(reflect.ValueOf(old).Elem().FieldByIndex(c.ti.status).Interface(), ns) {
 		return false
 	}
-	b, err := json.Marshal(ns)
+	b, err := json.Marshal(ns, json.Deterministic(true))
 	if err != nil {
 		return true
 	}
@@ -1250,7 +1251,7 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 			// as invalid instead.
 			ops = append(ops, map[string]any{"op": "replace", "path": "/metadata/resourceVersion", "value": *rv})
 		}
-		patch, _ := json.Marshal(ops)
+		patch, _ := json.Marshal(ops, json.Deterministic(true))
 		if err := c.m.patch(ctx, c.ti, m.Key(), path, client.JSONPatch, patch, &out); err != nil {
 			switch {
 			case conditional && client.IsConflict(err):
@@ -1333,11 +1334,11 @@ func (c *controller[T, P]) cleanupOwned(ctx context.Context, obj *T, keep map[st
 		res := resolved{apiVersion: kind[:i], plural: r.Name, namespaced: r.Namespaced}
 		var owned []ObjectMeta
 		q := url.Values{"labelSelector": {c.labels.ownerUID + "=" + m.UID + "," + c.labels.controller + "=" + c.name}}
-		_, err = c.m.client.ListAll(ctx, res.path("", ""), q, listAccept, 500, func(dec *json.Decoder) error {
+		_, err = c.m.client.ListAll(ctx, res.path("", ""), q, listAccept, 500, func(dec *jsontext.Decoder) error {
 			var item struct {
 				Metadata ObjectMeta `json:"metadata"`
 			}
-			if err := dec.Decode(&item); err != nil {
+			if err := json.UnmarshalDecode(dec, &item); err != nil {
 				return err
 			}
 			owned = append(owned, item.Metadata)
@@ -1370,14 +1371,12 @@ func replaced(err error) bool {
 }
 
 func toMap(obj any) (map[string]any, error) {
-	b, err := json.Marshal(obj)
+	b, err := json.Marshal(obj, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
 	var m map[string]any
-	if err := dec.Decode(&m); err != nil {
+	if err := jsonnum.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -1394,7 +1393,7 @@ func matches(observed any, body map[string]any) bool {
 }
 
 func hashOf(body map[string]any, manager string) uint64 {
-	b, _ := json.Marshal(body)
+	b, _ := json.Marshal(body, json.Deterministic(true))
 	h := fnv.New64a()
 	h.Write([]byte(manager))
 	h.Write(b)

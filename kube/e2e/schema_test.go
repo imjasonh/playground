@@ -31,7 +31,7 @@ type Bucket struct {
 			Class string `json:"class" kube:"immutable"`
 		} `json:"settings,omitempty"`
 		Routes []BucketRoute `json:"routes,omitempty" kube:"listType=map,listMapKey=name,maxItems=10"`
-		Size   uint8         `json:"size,omitempty"`
+		Size   uint8         `json:"size,omitzero"`
 	} `json:"spec"`
 	Status struct {
 		Phase string `json:"phase"`

@@ -1,7 +1,7 @@
 package jsonpatch
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"math/rand/v2"
 	"reflect"
 	"strconv"
@@ -120,7 +120,7 @@ func TestOverlayKeepsFieldsTheViewsLeaveOut(t *testing.T) {
 		t.Fatalf("Overlay = %s", gb)
 	}
 	ops := Diff(doc, got)
-	b, _ := json.Marshal(ops)
+	b, _ := json.Marshal(ops, json.Deterministic(true))
 	wantOps := `[{"op":"add","path":"/metadata/labels/team","value":"shop"},` +
 		`{"op":"replace","path":"/spec/containers/0/image","value":"app:2"},` +
 		`{"op":"add","path":"/spec/containers/2","value":{"image":"log:1","name":"log"}},` +

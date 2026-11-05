@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,17 +20,16 @@ import (
 
 // rec is one line of a run's log.
 type rec struct {
-	T    time.Time       `json:"t"`
-	Kind string          `json:"kind"`
-	D    json.RawMessage `json:"d"`
+	T    time.Time      `json:"t"`
+	Kind string         `json:"kind"`
+	D    jsontext.Value `json:"d"`
 }
 
 // recorder appends records to log.jsonl in a run's directory.
 type recorder struct {
-	mu  sync.Mutex
-	f   *os.File
-	w   *bufio.Writer
-	enc *json.Encoder
+	mu sync.Mutex
+	f  *os.File
+	w  *bufio.Writer
 }
 
 func newRecorder(path string) (*recorder, error) {
@@ -38,7 +38,7 @@ func newRecorder(path string) (*recorder, error) {
 		return nil, err
 	}
 	w := bufio.NewWriterSize(f, 1<<20)
-	return &recorder{f: f, w: w, enc: json.NewEncoder(w)}, nil
+	return &recorder{f: f, w: w}, nil
 }
 
 func (r *recorder) add(kind string, at time.Time, d any) {
@@ -49,7 +49,12 @@ func (r *recorder) add(kind string, at time.Time, d any) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	_ = r.enc.Encode(rec{T: at.UTC(), Kind: kind, D: b})
+	line, err := json.Marshal(rec{T: at.UTC(), Kind: kind, D: b})
+	if err != nil {
+		slog.Error("encoding record", "kind", kind, "err", err)
+		return
+	}
+	_, _ = r.w.Write(append(line, '\n'))
 }
 
 func (r *recorder) flush() {
@@ -73,13 +78,13 @@ type checkResult struct {
 	State        string            `json:"state,omitempty"`
 	Message      string            `json:"message,omitempty"`
 	Outputs      map[string]string `json:"outputs,omitempty"`
-	FilesOnly    bool              `json:"filesOnly,omitempty"`
+	FilesOnly    bool              `json:"filesOnly,omitzero"`
 }
 
 type queuedStatus struct {
 	Since    time.Time `json:"since"`
 	Head     string    `json:"head,omitempty"`
-	Position int       `json:"position,omitempty"`
+	Position int       `json:"position,omitzero"`
 }
 
 type condition struct {
@@ -87,7 +92,7 @@ type condition struct {
 	Status             string    `json:"status"`
 	Reason             string    `json:"reason,omitempty"`
 	Message            string    `json:"message,omitempty"`
-	ObservedGeneration int64     `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64     `json:"observedGeneration,omitzero"`
 	LastTransitionTime time.Time `json:"lastTransitionTime,omitzero"`
 }
 
@@ -121,7 +126,7 @@ type gitBranch struct {
 		Queued     *queuedStatus          `json:"queued"`
 		Queue      []string               `json:"queue"`
 		Conditions []condition            `json:"conditions"`
-		Diverged   json.RawMessage        `json:"diverged"`
+		Diverged   jsontext.Value         `json:"diverged"`
 	} `json:"status"`
 }
 
@@ -146,10 +151,10 @@ type branchRec struct {
 	Queued     *queuedStatus          `json:"queued,omitempty"`
 	Queue      []string               `json:"queue,omitempty"`
 	Checks     map[string]checkResult `json:"checks,omitempty"`
-	Diverged   json.RawMessage        `json:"diverged,omitempty"`
+	Diverged   jsontext.Value         `json:"diverged,omitempty"`
 	Approve    string                 `json:"approve,omitempty"`
 	ApprovedBy string                 `json:"approvedBy,omitempty"`
-	Deleting   bool                   `json:"deleting,omitempty"`
+	Deleting   bool                   `json:"deleting,omitzero"`
 }
 
 func toBranchRec(typ string, b *gitBranch) *branchRec {
@@ -208,7 +213,7 @@ type eventRec struct {
 	Action     string    `json:"action,omitempty"`
 	Kind       string    `json:"regardingKind"`
 	Object     string    `json:"regardingName"`
-	Count      int       `json:"count,omitempty"`
+	Count      int       `json:"count,omitzero"`
 	Last       time.Time `json:"last,omitzero"`
 }
 
@@ -245,7 +250,7 @@ type containerRec struct {
 	State    string    `json:"state"`
 	Started  time.Time `json:"started,omitzero"`
 	Finished time.Time `json:"finished,omitzero"`
-	Restarts int       `json:"restarts,omitempty"`
+	Restarts int       `json:"restarts,omitzero"`
 }
 
 func toContainerRecs(statuses []containerStatus) []containerRec {
@@ -275,7 +280,7 @@ type podRec struct {
 	App      string         `json:"app,omitempty"`
 	Owner    string         `json:"owner,omitempty"`
 	Phase    string         `json:"phase,omitempty"`
-	Deleting bool           `json:"deleting,omitempty"`
+	Deleting bool           `json:"deleting,omitzero"`
 	Init     []containerRec `json:"init,omitempty"`
 	Main     []containerRec `json:"main,omitempty"`
 }
@@ -316,7 +321,7 @@ type tickBranch struct {
 	Branch string `json:"branch"`
 	Head   string `json:"head"`
 	State  string `json:"state,omitempty"`
-	Pos    int    `json:"pos,omitempty"`
+	Pos    int    `json:"pos,omitzero"`
 	Checks string `json:"checks"`
 }
 
@@ -380,7 +385,7 @@ func (w *world) extRef(repo, ref string) string {
 // startWatchers records GitBranches, Events, and Pods in namespaces that
 // start with w.prefix, and the uids of all Pods for the CPU sampler.
 func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
-	go k.watch(ctx, "/apis/git-k8s.imjasonh.com/v1alpha1/gitbranches", func(typ string, raw json.RawMessage, at time.Time) {
+	go k.watch(ctx, "/apis/git-k8s.imjasonh.com/v1alpha1/gitbranches", func(typ string, raw jsontext.Value, at time.Time) {
 		var b gitBranch
 		if err := json.Unmarshal(raw, &b); err != nil || !strings.HasPrefix(b.Metadata.Namespace, w.prefix) {
 			return
@@ -405,7 +410,7 @@ func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
 			w.notify()
 		}
 	})
-	go k.watch(ctx, "/apis/events.k8s.io/v1/events", func(typ string, raw json.RawMessage, at time.Time) {
+	go k.watch(ctx, "/apis/events.k8s.io/v1/events", func(typ string, raw jsontext.Value, at time.Time) {
 		var e event
 		if err := json.Unmarshal(raw, &e); err != nil || !strings.HasPrefix(e.Metadata.Namespace, w.prefix) || typ == "DELETED" {
 			return
@@ -429,7 +434,7 @@ func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
 		r.add("event", at, er)
 		w.notify()
 	})
-	go k.watch(ctx, "/api/v1/pods", func(typ string, raw json.RawMessage, at time.Time) {
+	go k.watch(ctx, "/api/v1/pods", func(typ string, raw jsontext.Value, at time.Time) {
 		var p pod
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return
@@ -478,8 +483,8 @@ func startWatchers(ctx context.Context, k *kubeClient, r *recorder, w *world) {
 func sameBranch(a, b *branchRec) bool {
 	x, y := *a, *b
 	x.Type, y.Type = "", ""
-	xb, _ := json.Marshal(x)
-	yb, _ := json.Marshal(y)
+	xb, _ := json.Marshal(x, json.Deterministic(true))
+	yb, _ := json.Marshal(y, json.Deterministic(true))
 	return string(xb) == string(yb)
 }
 

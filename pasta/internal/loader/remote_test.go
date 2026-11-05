@@ -1,7 +1,8 @@
 package loader
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,9 +100,9 @@ Recipe: schema.#Analyzer & {
 	lf := remote.Lockfile{Modules: map[string]remote.LockedModule{
 		"example.com/alice/rules": {Version: "v1.0.0", Commit: commit, Hash: hash},
 	}}
-	lfBytes, _ := json.MarshalIndent(struct {
+	lfBytes, _ := json.Marshal(struct {
 		Modules map[string]remote.LockedModule `json:"modules"`
-	}{lf.Modules}, "", "  ")
+	}{lf.Modules}, jsontext.WithIndent("  "))
 	if err := os.WriteFile(filepath.Join(userDir, remote.LockFile), lfBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +254,7 @@ b: schema.#Analyzer & {
 	}{Modules: map[string]remote.LockedModule{
 		"example.com/a": {Version: "v1", Commit: c1, Hash: h1},
 	}}
-	b, _ := json.MarshalIndent(lf, "", "  ")
+	b, _ := json.Marshal(lf, jsontext.WithIndent("  "))
 	if err := os.WriteFile(filepath.Join(dir, remote.LockFile), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +312,7 @@ func writeManifestAndLock(t *testing.T, dir, modPath, ver, commit, modDir string
 			modPath: {Version: ver, Commit: commit, Hash: hash},
 		},
 	}
-	b, _ := json.MarshalIndent(lf, "", "  ")
+	b, _ := json.Marshal(lf, jsontext.WithIndent("  "))
 	if err := os.WriteFile(filepath.Join(dir, remote.LockFile), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +486,7 @@ dup: schema.#Analyzer & {
 		"example.com/alice/rules": {Version: "v1", Commit: c1, Hash: h1},
 		"example.com/bob/rules":   {Version: "v1", Commit: c2, Hash: h2},
 	}}
-	b, _ := json.MarshalIndent(lf, "", "  ")
+	b, _ := json.Marshal(lf, jsontext.WithIndent("  "))
 	if err := os.WriteFile(filepath.Join(userDir, remote.LockFile), b, 0o644); err != nil {
 		t.Fatal(err)
 	}

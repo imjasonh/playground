@@ -2,7 +2,7 @@ package e2e_test
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"strings"
 	"testing"
@@ -83,7 +83,7 @@ func TestGenerateInstall(t *testing.T) {
 		for _, obj := range in.objects {
 			if obj["kind"] == "ClusterRole" || obj["kind"] == "Role" {
 				ns, _ := obj["metadata"].(map[string]any)["namespace"].(string)
-				b, _ := json.Marshal(obj["rules"])
+				b, _ := json.Marshal(obj["rules"], json.Deterministic(true))
 				out[obj["kind"].(string)+" "+ns] = string(b)
 			}
 		}

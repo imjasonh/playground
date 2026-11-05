@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"embed"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"html/template"
@@ -171,7 +171,7 @@ func writeError(w http.ResponseWriter, err error) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	json.MarshalWrite(w, v, json.Deterministic(true))
 }
 
 func (s *server) clicks(ctx context.Context) (int64, error) {

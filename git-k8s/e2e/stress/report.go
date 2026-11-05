@@ -2,7 +2,7 @@ package main
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"maps"

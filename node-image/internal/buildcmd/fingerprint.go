@@ -3,7 +3,8 @@ package buildcmd
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,8 +52,7 @@ type buildFingerprintInput struct {
 
 func (in buildFingerprintInput) digest() string {
 	h := sha256.New()
-	enc := json.NewEncoder(h)
-	_ = enc.Encode(in)
+	_ = json.MarshalWrite(h, in, json.Deterministic(true))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -85,7 +85,7 @@ func storeBuildRecord(cacheRoot string, rec buildRecord) error {
 	if err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(rec, "", "  ")
+	b, err := json.Marshal(rec, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

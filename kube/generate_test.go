@@ -5,7 +5,7 @@ package kube
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,7 +30,7 @@ func TestGrantRules(t *testing.T) {
 	g.add("", "services", "", "create", "list", "patch", "watch")
 	g.add("", "configmaps", "", "list", "watch")
 	g.add("", "secrets", "app-webhook-tls", "get", "update")
-	b, err := json.Marshal(g.rules())
+	b, err := json.Marshal(g.rules(), json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestGrantRules(t *testing.T) {
 	}
 	g.add("", "configmaps", "", "create", "patch")
 	g.add("", "services", "", "list")
-	b, _ = json.Marshal(g.rules())
+	b, _ = json.Marshal(g.rules(), json.Deterministic(true))
 	if !strings.Contains(string(b), `{"apiGroups":[""],"resources":["configmaps","services"],"verbs":["create","list","patch","watch"]}`) {
 		t.Errorf("resources with the same verbs aren't combined: %s", b)
 	}
@@ -186,7 +186,7 @@ func TestManifests(t *testing.T) {
 	var kinds []string
 	var deployment, service map[string]any
 	for _, d := range docs {
-		b, _ := json.Marshal(d)
+		b, _ := json.Marshal(d, json.Deterministic(true))
 		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		kinds = append(kinds, m["kind"].(string))
@@ -212,7 +212,7 @@ func TestManifests(t *testing.T) {
 	if !slices.Equal(kinds, want) {
 		t.Errorf("kinds = %v, want %v", kinds, want)
 	}
-	b, _ := json.Marshal(deployment)
+	b, _ := json.Marshal(deployment, json.Deterministic(true))
 	for _, s := range []string{
 		`"replicas":3`,
 		`"image":"ghcr.io/you/web-site@sha256:abc"`,
@@ -229,13 +229,13 @@ func TestManifests(t *testing.T) {
 			t.Errorf("the Deployment lacks %s: %s", s, b)
 		}
 	}
-	if b, _ := json.Marshal(service); !strings.Contains(string(b), `"ports":[{"name":"webhook","port":443,"targetPort":"webhook"}]`) {
+	if b, _ := json.Marshal(service, json.Deterministic(true)); !strings.Contains(string(b), `"ports":[{"name":"webhook","port":443,"targetPort":"webhook"}]`) {
 		t.Errorf("Service = %s", b)
 	}
 
 	o.tmpSize = "1Gi"
 	docs = o.manifests("ref", p)
-	if b, _ := json.Marshal(docs[len(docs)-2]); !strings.Contains(string(b), `"volumes":[{"name":"tmp","emptyDir":{"sizeLimit":"1Gi"}}]`) {
+	if b, _ := json.Marshal(docs[len(docs)-2], json.Deterministic(true)); !strings.Contains(string(b), `"volumes":[{"name":"tmp","emptyDir":{"sizeLimit":"1Gi"}}]`) {
 		t.Errorf("with -tmp-size=1Gi, the Deployment = %s", b)
 	}
 	o.tmpSize = ""
@@ -249,7 +249,7 @@ func TestManifests(t *testing.T) {
 	if want := []string{"ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Deployment"}; !slices.Equal(kinds, want) {
 		t.Errorf("one replica without webhooks: kinds = %v, want %v", kinds, want)
 	}
-	b, _ = json.Marshal(docs[len(docs)-1])
+	b, _ = json.Marshal(docs[len(docs)-1], json.Deterministic(true))
 	if !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-log-level=debug"]`) {
 		t.Errorf("one replica without webhooks: %s", b)
 	}
@@ -296,7 +296,7 @@ func TestManifestsWebhookSecret(t *testing.T) {
 		var got string
 		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: tc.webhooks}) {
 			if d[1].value == "Secret" {
-				b, _ := json.Marshal(d)
+				b, _ := json.Marshal(d, json.Deterministic(true))
 				got = string(b)
 			}
 		}
@@ -312,7 +312,7 @@ func TestManifestsWebhookSecret(t *testing.T) {
 func TestManifestsProbes(t *testing.T) {
 	o := &generateOptions{program: "prog", name: "prog", namespace: "prog", replicas: 1, shards: 1}
 	docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}})
-	b, _ := json.Marshal(docs[len(docs)-1])
+	b, _ := json.Marshal(docs[len(docs)-1], json.Deterministic(true))
 	for _, s := range []string{
 		`"readinessProbe":{"httpGet":{"path":"/readyz","port":"http"},"periodSeconds":1,"failureThreshold":30}`,
 		`"livenessProbe":{"httpGet":{"path":"/healthz","port":"http"}}`,
@@ -348,7 +348,7 @@ func TestManifestsServe(t *testing.T) {
 		byKind := map[string]string{}
 		var kinds []string
 		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: tc.webhooks, serves: true}) {
-			b, _ := json.Marshal(d)
+			b, _ := json.Marshal(d, json.Deterministic(true))
 			kind := d[1].value.(string)
 			kinds = append(kinds, kind)
 			byKind[kind] = string(b)
@@ -388,7 +388,7 @@ func TestManifestsPreStop(t *testing.T) {
 	} {
 		tc.plan.cluster, tc.plan.local = grants{}, grants{}
 		docs := o.manifests("ref", &tc.plan)
-		b, _ := json.Marshal(docs[len(docs)-1])
+		b, _ := json.Marshal(docs[len(docs)-1], json.Deterministic(true))
 		if tc.sleep && !strings.Contains(string(b), sleep) {
 			t.Errorf("%s: the Deployment lacks %s: %s", tc.name, sleep, b)
 		}
@@ -401,7 +401,7 @@ func TestManifestsPreStop(t *testing.T) {
 func TestManifestsTokens(t *testing.T) {
 	o := &generateOptions{program: "sts", name: "sts", namespace: "sts", replicas: 1, shards: 1, args: []string{"-log-level=debug"}}
 	docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, tokens: []string{"https://octo-sts.dev", "probe"}})
-	b, _ := json.Marshal(docs[len(docs)-1])
+	b, _ := json.Marshal(docs[len(docs)-1], json.Deterministic(true))
 	for _, s := range []string{
 		`"args":["-metrics-addr=:8080","-token-dir=/var/run/secrets/tokens","-log-level=debug"]`,
 		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"tokens","mountPath":"/var/run/secrets/tokens","readOnly":true}]`,
@@ -414,7 +414,7 @@ func TestManifestsTokens(t *testing.T) {
 		}
 	}
 	docs = o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}})
-	if b, _ := json.Marshal(docs[len(docs)-1]); strings.Contains(string(b), "token") {
+	if b, _ := json.Marshal(docs[len(docs)-1], json.Deterministic(true)); strings.Contains(string(b), "token") {
 		t.Errorf("a program that requests no tokens mounts some: %s", b)
 	}
 }
@@ -437,7 +437,7 @@ func TestPlanTokens(t *testing.T) {
 		if !slices.Equal(p.tokens, tc.tokens) {
 			t.Errorf("%s: tokens = %q, want %q", tc.pkg, p.tokens, tc.tokens)
 		}
-		rules, _ := json.Marshal(p.local.rules())
+		rules, _ := json.Marshal(p.local.rules(), json.Deterministic(true))
 		if want := `{"apiGroups":[""],"resources":["serviceaccounts/token"],"resourceNames":["prog"],"verbs":["create"]}`; strings.Contains(string(rules), want) != tc.request {
 			t.Errorf("%s: Role rules = %s, want the rule %s: %v", tc.pkg, rules, want, tc.request)
 		}
@@ -452,7 +452,7 @@ func TestManifestsVolume(t *testing.T) {
 	byKind := map[string]string{}
 	var kinds []string
 	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, serves: true, volume: "/var/lib/eventlog"}) {
-		b, _ := json.Marshal(d)
+		b, _ := json.Marshal(d, json.Deterministic(true))
 		kind := d[1].value.(string)
 		kinds = append(kinds, kind)
 		byKind[kind] = string(b)
@@ -480,12 +480,12 @@ func TestManifestsVolume(t *testing.T) {
 
 	o.storageClass = ""
 	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, volume: "/var/lib/eventlog"}) {
-		if b, _ := json.Marshal(d); d[1].value == "PersistentVolumeClaim" && strings.Contains(string(b), "storageClassName") {
+		if b, _ := json.Marshal(d, json.Deterministic(true)); d[1].value == "PersistentVolumeClaim" && strings.Contains(string(b), "storageClassName") {
 			t.Errorf("without -storage-class, the claim names a StorageClass: %s", b)
 		}
 	}
 	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}}) {
-		if b, _ := json.Marshal(d); d[1].value == "PersistentVolumeClaim" || strings.Contains(string(b), "Recreate") || strings.Contains(string(b), "fsGroup") {
+		if b, _ := json.Marshal(d, json.Deterministic(true)); d[1].value == "PersistentVolumeClaim" || strings.Contains(string(b), "Recreate") || strings.Contains(string(b), "fsGroup") {
 			t.Errorf("without a volume: %s", b)
 		}
 	}
@@ -507,7 +507,7 @@ func TestPlanVolume(t *testing.T) {
 	if p.volume != "/var/lib/prog" || p.electLeader || o.replicas != 1 {
 		t.Errorf("volume = %q, electLeader = %v, replicas = %d; want /var/lib/prog, one replica, and no leader election", p.volume, p.electLeader, o.replicas)
 	}
-	if rules, _ := json.Marshal(p.local.rules()); strings.Contains(string(rules), "leases") {
+	if rules, _ := json.Marshal(p.local.rules(), json.Deterministic(true)); strings.Contains(string(rules), "leases") {
 		t.Errorf("Role rules = %s, want none for leases", rules)
 	}
 
@@ -801,7 +801,7 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	p.watched.add("", "secrets", "", "get")
 	byKind := map[string]map[string]any{}
 	for _, d := range o.manifests("ref", p) {
-		b, _ := json.Marshal(d)
+		b, _ := json.Marshal(d, json.Deterministic(true))
 		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		byKind[m["kind"].(string)] = m
@@ -816,16 +816,16 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	if ref := binding["roleRef"].(map[string]any)["name"]; ref != "app.app-system" {
 		t.Errorf("the RoleBinding in team refers to %v, want app.app-system", ref)
 	}
-	if b, _ := json.Marshal(role["rules"]); string(b) != `[{"apiGroups":[""],"resources":["secrets"],"verbs":["get"]}]` {
+	if b, _ := json.Marshal(role["rules"], json.Deterministic(true)); string(b) != `[{"apiGroups":[""],"resources":["secrets"],"verbs":["get"]}]` {
 		t.Errorf("Role rules = %s", b)
 	}
-	if b, _ := json.Marshal(binding["subjects"]); string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
+	if b, _ := json.Marshal(binding["subjects"], json.Deterministic(true)); string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
 		t.Errorf("RoleBinding subjects = %s", b)
 	}
-	if b, _ := json.Marshal(byKind["ClusterRole"]["rules"]); strings.Contains(string(b), "secrets") {
+	if b, _ := json.Marshal(byKind["ClusterRole"]["rules"], json.Deterministic(true)); strings.Contains(string(b), "secrets") {
 		t.Errorf("ClusterRole rules = %s, want no secrets", b)
 	}
-	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-watch-namespace=team"]`) {
+	if b, _ := json.Marshal(byKind["Deployment"], json.Deterministic(true)); !strings.Contains(string(b), `"args":["-metrics-addr=:8080","-watch-namespace=team"]`) {
 		t.Errorf("Deployment = %s, want -watch-namespace=team", b)
 	}
 }
@@ -856,7 +856,7 @@ func TestManifestsFollowManager(t *testing.T) {
 		o := &generateOptions{program: "app", name: "app", namespace: "app", replicas: 1, shards: tc.shards, watchNamespace: tc.watch,
 			manager: Manager{Shards: tc.fieldShards, Namespace: tc.fieldNamespace, LeaderElection: tc.leaderElection}}
 		docs := o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, electLeader: tc.electLeader})
-		if b, _ := json.Marshal(docs[len(docs)-1]); !strings.Contains(string(b), tc.want) {
+		if b, _ := json.Marshal(docs[len(docs)-1], json.Deterministic(true)); !strings.Contains(string(b), tc.want) {
 			t.Errorf("Shards = %d, Namespace = %q, LeaderElection = %v, -shards=%d, and -watch-namespace=%q: the Deployment lacks %s: %s",
 				tc.fieldShards, tc.fieldNamespace, tc.leaderElection, tc.shards, tc.watch, tc.want, b)
 		}
@@ -945,7 +945,7 @@ spec:
 		{"policies", p.namespaces["policies"], `[` +
 			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["params"],"verbs":["create","get","patch"]}]`},
 	} {
-		if b, _ := json.Marshal(tc.g.rules()); string(b) != tc.want {
+		if b, _ := json.Marshal(tc.g.rules(), json.Deterministic(true)); string(b) != tc.want {
 			t.Errorf("%s rules =\n%s\nwant\n%s", tc.name, b, tc.want)
 		}
 	}
@@ -1003,7 +1003,7 @@ spec:
 		`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicies","validatingadmissionpolicybindings"],"resourceNames":["roles"],"verbs":["create","patch"]},` +
 		`{"apiGroups":["example.dev"],"resources":["cacti"],"resourceNames":["*"],"verbs":["get"]},` +
 		`{"apiGroups":["rbac.authorization.k8s.io"],"resources":["clusterroles"],"resourceNames":["readers"],"verbs":["get"]}]`
-	if b, _ := json.Marshal(p.cluster.rules()); string(b) != want {
+	if b, _ := json.Marshal(p.cluster.rules(), json.Deterministic(true)); string(b) != want {
 		t.Errorf("cluster rules =\n%s\nwant\n%s", b, want)
 	}
 	if !strings.Contains(stderr.String(), "warning: the API server lets only someone who can get every rbac.authorization.k8s.io/v1 ClusterRole create ValidatingAdmissionPolicy roles") {
@@ -1018,7 +1018,7 @@ func TestManifestsForInstalledObjects(t *testing.T) {
 	p.namespaces["other"].add("", "configmaps", "", "create")
 	var roles []string
 	for _, d := range o.manifests("ref", p) {
-		b, _ := json.Marshal(d)
+		b, _ := json.Marshal(d, json.Deterministic(true))
 		var m struct {
 			Kind     string `json:"kind"`
 			Metadata struct {
@@ -1032,7 +1032,7 @@ func TestManifestsForInstalledObjects(t *testing.T) {
 			continue
 		}
 		roles = append(roles, m.Kind+" "+m.Metadata.Namespace+"/"+m.Metadata.Name)
-		if b, _ := json.Marshal(m.Subjects); m.Kind == "RoleBinding" && string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
+		if b, _ := json.Marshal(m.Subjects, json.Deterministic(true)); m.Kind == "RoleBinding" && string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
 			t.Errorf("%s subjects = %s", m.Metadata.Namespace, b)
 		}
 	}
@@ -1052,7 +1052,7 @@ func TestManifestsForInstalledObjectsAndEventsInDefault(t *testing.T) {
 	p.defaultNS.add("events.k8s.io", "events", "", "create", "patch")
 	var roles []string
 	for _, d := range o.manifests("ref", p) {
-		b, _ := json.Marshal(d)
+		b, _ := json.Marshal(d, json.Deterministic(true))
 		var m struct {
 			Kind     string `json:"kind"`
 			Metadata struct {

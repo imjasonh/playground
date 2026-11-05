@@ -4,7 +4,9 @@
 // See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/.
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json/jsontext"
+)
 
 // Position is an LSP zero-based (line, character) location. `Character`
 // counts UTF-16 code units per the spec's default encoding.
@@ -47,8 +49,8 @@ type InitializeParams struct {
 	ProcessID             *int              `json:"processId"`
 	RootURI               string            `json:"rootUri"`
 	WorkspaceFolders      []WorkspaceFolder `json:"workspaceFolders,omitempty"`
-	InitializationOptions *json.RawMessage  `json:"initializationOptions,omitempty"`
-	Capabilities          json.RawMessage   `json:"capabilities"`
+	InitializationOptions *jsontext.Value   `json:"initializationOptions,omitempty"`
+	Capabilities          jsontext.Value    `json:"capabilities"`
 }
 
 // WorkspaceFolder is one of the roots opened by the client.
@@ -91,7 +93,7 @@ type WorkspaceCapabilities struct {
 // WorkspaceFoldersOptions advertises workspace-folder support.
 type WorkspaceFoldersOptions struct {
 	Supported           bool `json:"supported"`
-	ChangeNotifications bool `json:"changeNotifications,omitempty"`
+	ChangeNotifications bool `json:"changeNotifications,omitzero"`
 }
 
 // FileOperationsOptions is reserved for future expansion.
@@ -198,7 +200,7 @@ type CodeAction struct {
 	Kind        string         `json:"kind,omitempty"`
 	Diagnostics []Diagnostic   `json:"diagnostics,omitempty"`
 	Edit        *WorkspaceEdit `json:"edit,omitempty"`
-	IsPreferred bool           `json:"isPreferred,omitempty"`
+	IsPreferred bool           `json:"isPreferred,omitzero"`
 }
 
 // WorkspaceEdit is a set of TextEdits keyed by document URI.
@@ -259,7 +261,7 @@ type DidChangeWatchedFilesRegistrationOptions struct {
 // FileSystemWatcher describes one file-watch glob pattern.
 type FileSystemWatcher struct {
 	GlobPattern string `json:"globPattern"`
-	Kind        int    `json:"kind,omitempty"` // bitmask: 1=Create 2=Change 4=Delete; default = all
+	Kind        int    `json:"kind,omitzero"` // bitmask: 1=Create 2=Change 4=Delete; default = all
 }
 
 // ----------------------------------------------------------------------

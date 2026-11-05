@@ -30,7 +30,7 @@ import (
 	"crypto/sha256"
 	"encoding/gob"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -139,12 +139,11 @@ func HashRules(analyzers []*dsl.Analyzer) string {
 
 	h := sha256.New()
 	h.Write([]byte(schemaVersion))
-	enc := json.NewEncoder(h)
-	enc.SetEscapeHTML(false)
 	for _, n := range ns {
-		if err := enc.Encode(n.A); err != nil {
+		if err := json.MarshalWrite(h, n.A, json.Deterministic(true)); err != nil {
 			return ""
 		}
+		h.Write([]byte("\n"))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

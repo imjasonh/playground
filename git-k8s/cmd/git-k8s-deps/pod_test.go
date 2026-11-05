@@ -3,7 +3,8 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"maps"
@@ -41,12 +42,10 @@ func TestPod(t *testing.T) {
 	ups := []update{{module: greet, version: "v1.1.0", from: map[string]string{"tools": "v1.0.0", ".": "v1.0.0"}}}
 	p := u.pod(b, repo, "0123abcd", 0, ups)
 	var got strings.Builder
-	enc := json.NewEncoder(&got)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(p); err != nil {
+	if err := json.MarshalWrite(&got, p, jsontext.WithIndent("  "), json.Deterministic(true)); err != nil {
 		t.Fatal(err)
 	}
+	got.WriteString("\n")
 	golden := filepath.Join("testdata", "pod.json")
 	if *updateGolden {
 		if err := os.WriteFile(golden, []byte(got.String()), 0o644); err != nil {

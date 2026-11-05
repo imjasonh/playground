@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -49,7 +50,7 @@ type branchPlan struct {
 	Name string `json:"name"`
 	ID   string `json:"id"`
 	Kind string `json:"kind"`
-	Pair int    `json:"pair,omitempty"`
+	Pair int    `json:"pair,omitzero"`
 }
 
 type repoPlan struct {
@@ -342,7 +343,7 @@ func runScenario(ctx context.Context, env map[string]string, p plan, out string)
 }
 
 func saveJSON(path string, v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
+	b, err := json.Marshal(v, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

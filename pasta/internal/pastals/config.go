@@ -1,7 +1,8 @@
 package pastals
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/url"
 	"os"
@@ -35,7 +36,7 @@ func DefaultConfig() Config {
 // parseInitOptions parses an LSP initializationOptions field into a
 // Config, filling defaults for any unset values. nil yields the
 // defaults.
-func parseInitOptions(raw *json.RawMessage) (Config, error) {
+func parseInitOptions(raw *jsontext.Value) (Config, error) {
 	cfg := DefaultConfig()
 	if raw == nil || len(*raw) == 0 {
 		return cfg, nil

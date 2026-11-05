@@ -6,16 +6,18 @@
 // and double-quoted scalars, literal and folded block scalars, comments, and
 // document markers. It rejects anchors, aliases, tags, and multiple
 // documents, which kubeconfig files don't use. The result uses the same Go
-// types as encoding/json: map[string]any, []any, string, bool, json.Number,
+// types as encoding/json: map[string]any, []any, string, bool, jsonnum.Number,
 // and nil.
 package yaml
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 )
 
 // Unmarshal parses data and stores the result in the value that v points to,
@@ -25,7 +27,7 @@ func Unmarshal(data []byte, v any) error {
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(doc)
+	b, err := json.Marshal(doc, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -471,11 +473,11 @@ func resolvePlain(s string) any {
 		return false
 	}
 	if intRE.MatchString(s) {
-		return json.Number(strings.TrimPrefix(s, "+"))
+		return jsonnum.Number(strings.TrimPrefix(s, "+"))
 	}
 	if floatRE.MatchString(s) && strings.ContainsAny(s, "0123456789") {
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return json.Number(strconv.FormatFloat(f, 'g', -1, 64))
+			return jsonnum.Number(strconv.FormatFloat(f, 'g', -1, 64))
 		}
 	}
 	return s

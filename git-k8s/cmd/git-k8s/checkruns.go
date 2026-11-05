@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -133,7 +133,7 @@ type runOutput struct {
 
 // checkRun is a check run as the REST API sends and receives it.
 type checkRun struct {
-	ID         int64  `json:"id,omitempty"`
+	ID         int64  `json:"id,omitzero"`
 	Name       string `json:"name,omitempty"`
 	HeadSHA    string `json:"head_sha,omitempty"`
 	ExternalID string `json:"external_id,omitempty"`

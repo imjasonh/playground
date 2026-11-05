@@ -9,7 +9,7 @@ package main
 
 import (
 	"archive/zip"
-	"encoding/json"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -75,7 +75,7 @@ func serve(w http.ResponseWriter, r *http.Request, root string) int {
 	dir := filepath.Join(root, filepath.FromSlash(module)+"@"+version)
 	switch ext {
 	case ".info":
-		json.NewEncoder(w).Encode(map[string]string{"Version": version, "Time": "2026-01-01T00:00:00Z"})
+		json.MarshalWrite(w, map[string]string{"Version": version, "Time": "2026-01-01T00:00:00Z"})
 	case ".mod":
 		http.ServeFile(w, r, filepath.Join(dir, "go.mod"))
 	case ".zip":

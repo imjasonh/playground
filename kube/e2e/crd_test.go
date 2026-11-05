@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -140,7 +140,7 @@ func stored(t *testing.T, key string) string {
 }
 
 type GizmoStatus struct {
-	Seen int `json:"seen,omitempty"`
+	Seen int `json:"seen,omitzero"`
 }
 
 // GizmoV1 is the first version of Gizmo.
@@ -341,7 +341,7 @@ type Contraption struct {
 		Note  string `json:"note,omitempty"`
 	} `json:"spec"`
 	Status struct {
-		Seen int `json:"seen,omitempty"`
+		Seen int `json:"seen,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -353,7 +353,7 @@ type ContraptionTrimmed struct {
 		Size int `json:"size"`
 	} `json:"spec"`
 	Status struct {
-		Seen int `json:"seen,omitempty"`
+		Seen int `json:"seen,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -535,7 +535,7 @@ type CheckedReceipt struct {
 		ConfigMap string `json:"configMap"`
 	} `json:"spec"`
 	Status struct {
-		Checked bool `json:"checked,omitempty"`
+		Checked bool `json:"checked,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -705,7 +705,7 @@ type Memo struct {
 		Body  string `json:"body,omitempty"`
 	} `json:"spec"`
 	Status struct {
-		Read bool `json:"read,omitempty"`
+		Read bool `json:"read,omitzero"`
 	} `json:"status,omitzero"`
 }
 

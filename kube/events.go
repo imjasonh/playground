@@ -2,7 +2,7 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -288,7 +288,7 @@ func (w *eventWriter) write(ctx context.Context, k eventKey, s *eventSeries) {
 // again if it's gone, as when someone deleted it.
 func (w *eventWriter) put(ctx context.Context, k eventKey, s *eventSeries) (created bool, err error) {
 	path := client.Path("events.k8s.io/v1", "events", s.namespace, s.name)
-	patch, _ := json.Marshal(map[string]any{"series": w.seriesOf(s)})
+	patch, _ := json.Marshal(map[string]any{"series": w.seriesOf(s)}, json.Deterministic(true))
 	if s.written > 0 {
 		if err := w.client.Patch(ctx, path, client.MergePatch, nil, patch, nil); !client.IsNotFound(err) {
 			return false, err

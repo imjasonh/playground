@@ -5,7 +5,7 @@ package e2e_test
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -35,7 +35,7 @@ type Widget struct {
 		Size int `json:"size"`
 	} `json:"spec"`
 	Status struct {
-		Size       int              `json:"size,omitempty"`
+		Size       int              `json:"size,omitzero"`
 		Conditions []kube.Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
 }
@@ -282,7 +282,7 @@ type Poll struct {
 		Question string `json:"question,omitempty"`
 	} `json:"spec"`
 	Status struct {
-		Total      int              `json:"total,omitempty"`
+		Total      int              `json:"total,omitzero"`
 		Votes      map[string]int   `json:"votes,omitempty"`
 		Conditions []kube.Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`

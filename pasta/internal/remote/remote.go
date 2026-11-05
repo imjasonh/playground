@@ -27,7 +27,8 @@ package remote
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"io/fs"
@@ -196,9 +197,9 @@ func WriteLockfile(dir string, lf *Lockfile) error {
 	if mods == nil {
 		mods = map[string]LockedModule{}
 	}
-	data, err := json.MarshalIndent(struct {
+	data, err := json.Marshal(struct {
 		Modules map[string]LockedModule `json:"modules"`
-	}{mods}, "", "  ")
+	}{mods}, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("marshal lockfile: %w", err)
 	}

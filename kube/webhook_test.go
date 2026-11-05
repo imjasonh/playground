@@ -3,7 +3,8 @@ package kube
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -27,7 +28,7 @@ type gizmo struct {
 		Tier     string `json:"tier,omitempty"`
 	} `json:"spec"`
 	Status struct {
-		Seen int `json:"seen,omitempty"`
+		Seen int `json:"seen,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -37,7 +38,7 @@ type gizmoV1 struct {
 		Size int `json:"size"`
 	} `json:"spec"`
 	Status struct {
-		Seen int `json:"seen,omitempty"`
+		Seen int `json:"seen,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -163,7 +164,7 @@ func TestConvert(t *testing.T) {
 	v1 := `{"apiVersion":"test.kube.imjasonh.github.io/v1","kind":"Gizmo",` +
 		`"metadata":{"name":"g","namespace":"ns","uid":"u1","managedFields":[{"manager":"kubectl"}],"generateName":"g-"},` +
 		`"spec":{"size":4},"status":{"seen":2}}`
-	out, err := c.convert(json.RawMessage(v1), "test.kube.imjasonh.github.io/v2")
+	out, err := c.convert(jsontext.Value(v1), "test.kube.imjasonh.github.io/v2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,10 +203,10 @@ func TestConvert(t *testing.T) {
 		t.Errorf("v2 -> v1beta1 = %s", beta)
 	}
 
-	if _, err := c.convert(json.RawMessage(`{"apiVersion":"test.kube.imjasonh.github.io/v1","kind":"Gizmo","metadata":{},"spec":{"size":-1}}`), "test.kube.imjasonh.github.io/v2"); err == nil || !strings.Contains(err.Error(), "can't be negative") {
+	if _, err := c.convert(jsontext.Value(`{"apiVersion":"test.kube.imjasonh.github.io/v1","kind":"Gizmo","metadata":{},"spec":{"size":-1}}`), "test.kube.imjasonh.github.io/v2"); err == nil || !strings.Contains(err.Error(), "can't be negative") {
 		t.Errorf("a failing ConvertTo returned %v", err)
 	}
-	if _, err := c.convert(json.RawMessage(`{"apiVersion":"test.kube.imjasonh.github.io/v9","metadata":{}}`), "test.kube.imjasonh.github.io/v2"); err == nil {
+	if _, err := c.convert(jsontext.Value(`{"apiVersion":"test.kube.imjasonh.github.io/v9","metadata":{}}`), "test.kube.imjasonh.github.io/v2"); err == nil {
 		t.Error("converting an unknown version succeeded")
 	}
 }
@@ -215,7 +216,7 @@ func TestConvert(t *testing.T) {
 type gizmoV1beta2 struct {
 	Object `kube:"group=test.kube.imjasonh.github.io,kind=Gizmo,version=v1beta2"`
 	Spec   struct {
-		Tier int `json:"tier,omitempty"`
+		Tier int `json:"tier,omitzero"`
 	} `json:"spec"`
 }
 
@@ -228,7 +229,7 @@ func TestConvertFailsWhenAValueDoesntFit(t *testing.T) {
 		{`{"apiVersion":"test.kube.imjasonh.github.io/v1","kind":"Gizmo","metadata":{},"spec":{"size":"4"},"status":{"seen":2}}`, "test.kube.imjasonh.github.io/v2"},
 		{`{"apiVersion":"test.kube.imjasonh.github.io/v2","kind":"Gizmo","metadata":{},"spec":{"replicas":1,"tier":"gold"}}`, "test.kube.imjasonh.github.io/v1beta2"},
 	} {
-		if out, err := c.convert(json.RawMessage(tc.obj), tc.to); err == nil {
+		if out, err := c.convert(jsontext.Value(tc.obj), tc.to); err == nil {
 			t.Errorf("converting %s to %s = %s, want an error", tc.obj, tc.to, out)
 		}
 	}
@@ -356,7 +357,7 @@ func TestMutateSendsOnlyChangedFields(t *testing.T) {
 	}
 	obj := `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"cm","namespace":"ns","annotations":{"a/b":"c"}},` +
 		`"data":{"key":"value"},"immutable":false}`
-	resp := mutate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, labeler{}, &admissionRequest{Operation: "CREATE", Object: json.RawMessage(obj)})
+	resp := mutate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, labeler{}, &admissionRequest{Operation: "CREATE", Object: jsontext.Value(obj)})
 	if !resp.Allowed || resp.PatchType != "JSONPatch" {
 		t.Fatalf("response = %+v", resp)
 	}
@@ -384,7 +385,7 @@ func TestMutateSendsOnlyChangedFields(t *testing.T) {
 		t.Errorf("patched object lost fields: %s", b)
 	}
 
-	again := mutate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, labeler{}, &admissionRequest{Operation: "UPDATE", Object: json.RawMessage(b)})
+	again := mutate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, labeler{}, &admissionRequest{Operation: "UPDATE", Object: jsontext.Value(b)})
 	if !again.Allowed || again.Patch != nil {
 		t.Errorf("defaulting a defaulted object = %+v, want no patch", again)
 	}
@@ -395,7 +396,7 @@ func TestValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frozen := json.RawMessage(`{"metadata":{"name":"cm","labels":{"frozen":"true"}}}`)
+	frozen := jsontext.Value(`{"metadata":{"name":"cm","labels":{"frozen":"true"}}}`)
 	m := testManager()
 	if r := validate[configMapMeta, *configMapMeta](t.Context(), m, ti, labeler{}, &admissionRequest{Operation: "CREATE", Object: frozen}); !r.Allowed {
 		t.Errorf("create = %+v", r)
@@ -424,9 +425,9 @@ func TestWebhooksSeeOnlyObjectsThatDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	good := json.RawMessage(`{"metadata":{"name":"cm"},"data":{"count":1}}`)
+	good := jsontext.Value(`{"metadata":{"name":"cm"},"data":{"count":1}}`)
 	// port's error stops encoding/json before it reaches targets.
-	partial := json.RawMessage(`{"metadata":{"name":"cm"},"data":{"port":3000000000,"targets":["a"]}}`)
+	partial := jsontext.Value(`{"metadata":{"name":"cm"},"data":{"port":3000000000,"targets":["a"]}}`)
 	o := &olds{}
 	m := testManager()
 	for _, call := range []func(*admissionRequest) *admissionResponse{
@@ -458,7 +459,7 @@ func (writer) Validate(ctx context.Context, cm, _ *configMapMeta) error {
 
 func TestWebhooksCantWrite(t *testing.T) {
 	ti, _ := typeInfoFor[configMapMeta, *configMapMeta]()
-	r := validate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, writer{}, &admissionRequest{Operation: "CREATE", Object: json.RawMessage(`{"metadata":{"name":"cm"}}`)})
+	r := validate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, writer{}, &admissionRequest{Operation: "CREATE", Object: jsontext.Value(`{"metadata":{"name":"cm"}}`)})
 	if r.Allowed || !strings.Contains(r.Result.Message, "kube.Own can't be called in a webhook") {
 		t.Errorf("response = %+v", r.Result)
 	}

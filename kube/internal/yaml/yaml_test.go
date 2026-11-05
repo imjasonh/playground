@@ -1,7 +1,7 @@
 package yaml
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -9,7 +9,7 @@ import (
 
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

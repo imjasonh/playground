@@ -9,7 +9,7 @@ package crsim
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -488,7 +488,7 @@ func (s *Sim) admin(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/_crsim/stats":
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(s.Instances())
+		json.MarshalWrite(w, s.Instances())
 	case "/_crsim/scale-to-zero":
 		s.ScaleToZero()
 	case "/_crsim/crash":

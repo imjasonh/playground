@@ -2,7 +2,8 @@ package jsonrpc
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"strings"
 	"testing"
@@ -22,7 +23,9 @@ func TestReadFraming(t *testing.T) {
 	if string(m.ID) != "1" {
 		t.Errorf("ID = %s, want 1", string(m.ID))
 	}
-	var p struct{ X int }
+	var p struct {
+		X int `json:"x"`
+	}
 	if err := json.Unmarshal(m.Params, &p); err != nil || p.X != 1 {
 		t.Errorf("Params decode: p=%+v err=%v", p, err)
 	}
@@ -89,11 +92,11 @@ func TestWriteFraming(t *testing.T) {
 func TestRoundTripVariousIDTypes(t *testing.T) {
 	cases := []struct {
 		name string
-		id   json.RawMessage
+		id   jsontext.Value
 	}{
-		{"int", json.RawMessage(`42`)},
-		{"string", json.RawMessage(`"abc"`)},
-		{"null", json.RawMessage(`null`)},
+		{"int", jsontext.Value(`42`)},
+		{"string", jsontext.Value(`"abc"`)},
+		{"null", jsontext.Value(`null`)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -118,10 +121,10 @@ func TestReplyAndError(t *testing.T) {
 	var buf bytes.Buffer
 	c := NewConn(strings.NewReader(""), &buf)
 
-	if err := c.Reply(json.RawMessage(`5`), map[string]int{"n": 1}); err != nil {
+	if err := c.Reply(jsontext.Value(`5`), map[string]int{"n": 1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ReplyErr(json.RawMessage(`6`), CodeMethodNotFound, "nope"); err != nil {
+	if err := c.ReplyErr(jsontext.Value(`6`), CodeMethodNotFound, "nope"); err != nil {
 		t.Fatal(err)
 	}
 

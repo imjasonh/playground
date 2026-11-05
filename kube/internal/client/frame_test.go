@@ -1,7 +1,7 @@
 package client
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"io"
 	"strings"
 	"testing"
@@ -29,7 +29,7 @@ func TestFrameReader(t *testing.T) {
 				if string(got) != want {
 					t.Errorf("frame %d = %s, want %s", i, got, want)
 				}
-				if !json.Valid(got) {
+				if !jsontext.Value(got).IsValid() {
 					t.Errorf("frame %d isn't valid JSON", i)
 				}
 			}

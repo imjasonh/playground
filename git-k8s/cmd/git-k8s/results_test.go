@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"maps"
 	"net/http"
@@ -123,10 +123,10 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"a ConfigMap entry that says the account isn't a check", "/results/default/app-c-x/lint?generation=3", "lint", fresh, http.StatusForbidden, "system:serviceaccount:check-lint:check-lint isn't a check's service account\n"},
 		{"the core program, despite its ConfigMap entry", gofmt, "core", fresh, http.StatusForbidden, "system:serviceaccount:git-k8s:git-k8s isn't a check's service account"},
 		{"invalid JSON", gofmt, "gofmt", `{"commit":`, http.StatusBadRequest, "decoding the result"},
-		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed"} {}`, http.StatusBadRequest, "the request has data after the result"},
-		{"a brace after the result", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed"}}`, http.StatusBadRequest, "the request has data after the result"},
+		{"another value after the result", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed"} {}`, http.StatusBadRequest, "after top-level value"},
+		{"a brace after the result", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed"}}`, http.StatusBadRequest, "after top-level value"},
 		{"a newline after the result", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","parentCommit":"p1","state":"Passed"}` + "\n", http.StatusNoContent, ""},
-		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusBadRequest, `unknown field "approved"`},
+		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","scope":"Parent","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusBadRequest, `unknown object member name "approved"`},
 		{"a body that's too large", gofmt, "gofmt", `{"commit":"h1","scope":"Head","state":"Passed","message":"` + strings.Repeat("x", maxResultSize) + `"}`, http.StatusBadRequest, "too large"},
 		{"a state that checks can't send", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", Scope: gitk8s.ScopeHead, State: gitk8s.Pending}, http.StatusBadRequest, `state "Pending" isn't`},
 		{"no scope", gofmt, "gofmt", `{"commit":"h1","state":"Passed"}`, http.StatusBadRequest, "the result has no scope"},

@@ -8,7 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -629,7 +629,7 @@ func TestGoCommand(t *testing.T) {
 func testToken(t *testing.T, subject string, aud any) string {
 	t.Helper()
 	enc := func(v any) string {
-		b, err := json.Marshal(v)
+		b, err := json.Marshal(v, json.Deterministic(true))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -664,7 +664,7 @@ func newTokenAPI(t *testing.T, answer func(w http.ResponseWriter, r *http.Reques
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /apis/authentication.k8s.io/v1/tokenreviews", func(w http.ResponseWriter, r *http.Request) {
 		var tr tokenReview
-		if err := json.NewDecoder(r.Body).Decode(&tr); err != nil || tr.Kind != "TokenReview" {
+		if err := json.UnmarshalRead(r.Body, &tr); err != nil || tr.Kind != "TokenReview" {
 			http.Error(w, "bad TokenReview", http.StatusBadRequest)
 			return
 		}
@@ -678,7 +678,7 @@ func newTokenAPI(t *testing.T, answer func(w http.ResponseWriter, r *http.Reques
 			case p == nil:
 				http.Error(w, "pods not found", http.StatusNotFound)
 			default:
-				json.NewEncoder(w).Encode(p)
+				json.MarshalWrite(w, p)
 			}
 		})
 	}
@@ -719,7 +719,7 @@ func TestTokenReviewer(t *testing.T) {
 			s.Error = "invalid bearer token"
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(tr)
+		json.MarshalWrite(w, tr)
 	}, nil)
 	review := func(token string) (identity, error) {
 		t.Helper()
@@ -838,7 +838,7 @@ func TestTokenReviewerLimits(t *testing.T) {
 			s.Error = "invalid bearer token"
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(tr)
+		json.MarshalWrite(w, tr)
 	}, nil)
 	releaseAPI := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(releaseAPI)
@@ -956,7 +956,7 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 			s.User.Extra[podUIDExtra] = []string{uid}
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(tr)
+		json.MarshalWrite(w, tr)
 	}, func(namespace, name string) (*pod, error) {
 		mu.Lock()
 		defer mu.Unlock()
