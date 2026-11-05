@@ -95,10 +95,13 @@ export function listItemToPuzzle(item) {
   const id = Number(item.puzzle_id);
   if (!Number.isInteger(id)) return null;
   const percent = Number(item.percent_filled);
+  // Every stored solve that was under 100% filled turned out to be unfinished,
+  // so a grid that is not full is not a solve, whatever the flag says.
+  const notFull = Number.isFinite(percent) && percent < 100;
   return {
     date: item.print_date,
     id,
-    solved: item.solved === true,
+    solved: item.solved === true && !notFull,
     percentFilled: Number.isFinite(percent) ? percent : 0,
     seconds: null,
   };

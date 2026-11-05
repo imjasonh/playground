@@ -10,6 +10,7 @@ import {
   dateChunks,
   gameDataOf,
   idBatches,
+  listItemToPuzzle,
   listUrl,
   mergeListed,
   needsGameFetch,
@@ -111,6 +112,26 @@ test("mergeListed drops a stored solve when the list says it is not solved", () 
   assert.equal(fetchList.length, 0);
   assert.equal(puzzles[0].solved, false);
   assert.equal(puzzles[0].percentFilled, 3);
+  assert.equal(puzzles[0].seconds, null);
+});
+
+test("a listing flagged solved with a grid under 100% filled is not a solve", () => {
+  const item = {
+    print_date: "2022-05-01",
+    puzzle_id: 20089,
+    publish_type: "Daily",
+    solved: true,
+    percent_filled: 99,
+  };
+  assert.equal(listItemToPuzzle(item).solved, false);
+  assert.equal(listItemToPuzzle({ ...item, percent_filled: 100 }).solved, true);
+  assert.equal(listItemToPuzzle({ ...item, percent_filled: undefined }).solved, true);
+  const { puzzles } = mergeListed(
+    [{ date: "2022-05-01", id: 20089, solved: true, percentFilled: 99, seconds: 1590 }],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+  );
+  assert.equal(puzzles[0].solved, false);
   assert.equal(puzzles[0].seconds, null);
 });
 
