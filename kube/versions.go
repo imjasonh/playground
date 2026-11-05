@@ -156,7 +156,7 @@ type conversionRequest struct {
 
 type conversionResponse struct {
 	UID              string           `json:"uid"`
-	ConvertedObjects []jsontext.Value `json:"convertedObjects"`
+	ConvertedObjects []jsontext.Value `json:"convertedObjects,omitzero"`
 	Result           struct {
 		Status  string `json:"status"`
 		Message string `json:"message,omitempty"`

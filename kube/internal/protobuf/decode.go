@@ -692,18 +692,10 @@ func unmarshals(t reflect.Type) bool {
 	return t.Implements(unmarshalerType) || pt.Implements(unmarshalerType) || t.Implements(unmarshalerFromType) || pt.Implements(unmarshalerFromType)
 }
 
-// lookup finds a field by JSON name, exactly or, as encoding/json does,
-// ignoring case.
+// lookup finds a field by JSON name. Like encoding/json/v2, it matches
+// names exactly.
 func (m *Message) lookup(name string) *Field {
-	if f := m.byJSON[name]; f != nil {
-		return f
-	}
-	for json, f := range m.byJSON {
-		if strings.EqualFold(json, name) {
-			return f
-		}
-	}
-	return nil
+	return m.byJSON[name]
 }
 
 // inlineFor returns the inline field of m whose message, or one of its own

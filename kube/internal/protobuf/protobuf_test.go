@@ -289,7 +289,7 @@ func TestPlanRejectsFieldsTheSchemaLacks(t *testing.T) {
 
 func TestFieldNamesMatchLikeEncodingJSON(t *testing.T) {
 	type named struct {
-		NAME  string // no tag: matches "name" ignoring case
+		Name  string `json:"name"`
 		Count int32  `json:"count"`
 		Skip  string `json:"-"`
 	}
@@ -297,8 +297,15 @@ func TestFieldNamesMatchLikeEncodingJSON(t *testing.T) {
 	if err := testPlan[named](t).Unmarshal(enc{}.str(1, "x").uint(2, 3), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.NAME != "x" || got.Count != 3 {
+	if got.Name != "x" || got.Count != 3 {
 		t.Errorf("got %+v", got)
+	}
+	type untagged struct {
+		Name string // no tag: its JSON name is "Name", which the schema lacks
+	}
+	b := &builder{plans: map[planKey]*Plan{}}
+	if _, err := b.plan(reflect.TypeFor[untagged](), testMessage(t), true); err == nil || !strings.Contains(err.Error(), `"Name"`) {
+		t.Errorf("plan of a field named Name = %v, want an error, so the type is read as JSON", err)
 	}
 }
 
