@@ -31959,9 +31959,9 @@
     {
       "date": "2017-07-02",
       "id": 13448,
-      "solved": false,
-      "percentFilled": 86,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 2027
     },
     {
       "date": "2017-07-03",
@@ -44307,9 +44307,9 @@
     {
       "date": "2022-05-01",
       "id": 20089,
-      "solved": false,
-      "percentFilled": 99,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1590
     },
     {
       "date": "2022-05-02",
@@ -49431,9 +49431,9 @@
     {
       "date": "2024-05-02",
       "id": 21855,
-      "solved": false,
-      "percentFilled": 96,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 1391
     },
     {
       "date": "2024-05-03",
