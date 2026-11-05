@@ -218,6 +218,25 @@ export function selectSolves(puzzles, options = {}) {
   return { kept, excluded, fences };
 }
 
+// The fastest solve for each weekday. The caller decides which solves count,
+// so a time listed in excluded.json never wins. Ties go to the earlier date.
+export function bestByWeekday(puzzles) {
+  const best = new Map();
+  for (const puzzle of puzzles) {
+    if (!(puzzle.seconds > 0)) continue;
+    const day = weekdayName(puzzle.date);
+    const current = best.get(day);
+    if (
+      !current ||
+      puzzle.seconds < current.seconds ||
+      (puzzle.seconds === current.seconds && puzzle.date < current.date)
+    ) {
+      best.set(day, puzzle);
+    }
+  }
+  return best;
+}
+
 export function medianByWeekday(puzzles) {
   const groups = new Map(WEEKDAYS.map((day) => [day, []]));
   for (const puzzle of puzzles) {

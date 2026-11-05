@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  bestByWeekday,
   bucketKey,
   bucketLabel,
   bucketSpan,
@@ -312,4 +313,23 @@ test("yearBreakdown counts each year and lists unfinished puzzles oldest first",
 
 test("formatShortDate is a short calendar date in UTC", () => {
   assert.equal(formatShortDate("2024-04-18"), "Thu, Apr 18");
+});
+
+test("bestByWeekday is the fastest time for each weekday, earliest date on a tie", () => {
+  const best = bestByWeekday([
+    solved("2024-06-03", 300),
+    solved("2024-06-10", 280),
+    solved("2024-06-17", 280),
+    solved("2024-06-04", 400),
+    { ...solved("2024-06-05", null), solved: false },
+  ]);
+  assert.equal(best.get("Monday").date, "2024-06-10");
+  assert.equal(best.get("Tuesday").seconds, 400);
+  assert.equal(best.has("Wednesday"), false);
+});
+
+test("a time in excluded.json never becomes the best", () => {
+  const puzzles = [solved("2024-06-03", 4), solved("2024-06-10", 280)];
+  const { kept } = selectSolves(puzzles, { excludedDates: new Set(["2024-06-03"]) });
+  assert.equal(bestByWeekday(kept).get("Monday").date, "2024-06-10");
 });

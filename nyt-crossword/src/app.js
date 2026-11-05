@@ -4,6 +4,7 @@ import { publishedDataUrl } from "./published-data.js";
 import { normalizeDoc, todayInNewYork } from "./scrape-lib.js";
 import {
   WEEKDAYS,
+  bestByWeekday,
   bucketSpan,
   chartLayout,
   completedSince,
@@ -130,7 +131,7 @@ function yearRange() {
   return { fromYear: Math.min(from, through), throughYear: Math.max(from, through) };
 }
 
-function renderSummary(rows) {
+function renderSummary(rows, best) {
   el.summary.replaceChildren();
   for (const row of rows) {
     const tr = document.createElement("tr");
@@ -140,10 +141,24 @@ function renderSummary(rows) {
     const time = document.createElement("td");
     time.className = "num";
     time.textContent = row.median == null ? "None" : formatSolveTime(row.median);
+    const fastest = document.createElement("td");
+    fastest.className = "num";
+    const record = best.get(row.weekday);
+    if (record) {
+      const link = document.createElement("a");
+      link.href = puzzleUrl(record.date);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.title = formatDate(record.date);
+      link.textContent = formatSolveTime(record.seconds);
+      fastest.append(link);
+    } else {
+      fastest.textContent = "None";
+    }
     const count = document.createElement("td");
     count.className = "num";
     count.textContent = row.count.toLocaleString("en-US");
-    tr.append(day, time, count);
+    tr.append(day, time, fastest, count);
     el.summary.append(tr);
   }
 }
@@ -529,7 +544,11 @@ function render() {
   const keptCount = kept.length.toLocaleString("en-US");
   el.solveCount.textContent =
     keptCount === "1" ? "1 solve in range." : `${keptCount} solves in range.`;
-  renderSummary(medianByWeekday(kept));
+  const { kept: eligible } = selectSolves(state.doc.puzzles, {
+    ...range,
+    excludedDates: state.excluded,
+  });
+  renderSummary(medianByWeekday(kept), bestByWeekday(eligible));
   renderLegend();
   const visibleKept = kept.filter(
     (puzzle) => !state.hiddenWeekdays.has(weekdayName(puzzle.date)),
