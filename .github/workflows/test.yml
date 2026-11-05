@@ -49,25 +49,28 @@ jobs:
           check-latest: true
           cache: false
 
-      # Module download cache. setup-go's own cache needs an exact match on
-      # every go.sum, which the daily dependency update changes, so restore
-      # the newest cache with a prefix instead.
-      # The build cache stays on the runner. Saving it under the old go-
-      # prefix kept every package compiled in recent jobs, and that archive
-      # had grown past 4 GB. actions/cache keeps the archive on disk while
-      # it extracts, and that peak filled a runner before the tests started.
-      # The go-mod- prefix matches none of those archives.
+      # Go's module and build caches. setup-go's own cache needs an exact
+      # match on every go.sum in the repository, which the daily dependency
+      # update changes, so restore the newest cache with a prefix instead.
       # Only pushes to main save one, after the tests, so a pull request
       # doesn't spend time uploading a cache that no other run can read.
-      - name: Restore Go module cache
+      # Before the save, prune-go-caches.sh bounds the archive: the module
+      # cache holds the versions the current go.sum files name, and the
+      # build cache is trimmed to a size budget. Without that, each save
+      # held everything earlier jobs downloaded and compiled, and the
+      # archive passed 4 GB and filled a runner's disk while it extracted.
+      # The go-pruned- prefix matches none of those archives.
+      - name: Restore Go caches
         id: go-cache
         if: ${{ steps.setup-go.outcome == 'success' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/go/pkg/mod
-          key: go-mod-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-pruned-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            go-mod-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
+            go-pruned-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs. Use the
@@ -126,9 +129,21 @@ jobs:
             if: ${{ steps.discover.outputs.index == 'true' }}
             run: bash .github/scripts/test-index.sh
 
-      - name: Save Go module cache
+      # The prune step fails when the caches are still over budget, which
+      # skips the save and leaves the job green.
+      - name: Prune Go caches
+        id: prune-go-caches
         if: ${{ github.ref == 'refs/heads/main' && steps.go-cache.outcome == 'success' && steps.go-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        run: |
+          bash .github/scripts/prune-go-caches.sh
+          bash .github/scripts/check-cache-size.sh $((3 * 1024 * 1024 * 1024)) ~/.cache/go-build ~/go/pkg/mod
+
+      - name: Save Go caches
+        if: ${{ steps.prune-go-caches.outcome == 'success' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ steps.go-cache.outputs.cache-primary-key }}

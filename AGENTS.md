@@ -344,11 +344,42 @@ The kind end-to-end tests of `git-k8s`, `kube`, and `sshapp` run as their own
 steps in the parallel group (`.github/scripts/test-kind-e2e.sh`), beside the
 Go unit tests, because they mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
-runner. The job restores Go's module download cache from the newest cache
+runner. The job restores Go's module and build caches from the newest cache
 that a push to `main` saved, matching by prefix so that a new `go.sum`
-doesn't miss. The build cache stays on the runner. A saved copy of it had
-grown past 4 GB and filled the disk while restoring. Only pushes to `main`
-save a cache.
+doesn't miss. Only pushes to `main` save a cache, after
+`.github/scripts/prune-go-caches.sh` has bounded it (run
+`bash .github/scripts/prune-go-caches_test.sh` to test it).
+
+### Cache sizes
+
+A GitHub-hosted runner guarantees about 14 GB of free disk, and
+`actions/cache` holds the compressed archive on disk while it extracts, so
+an archive of a few GB fails the job that restores it before any step runs.
+GitHub evicts whole caches when a repository passes its 10 GB quota, but
+nothing bounds a single archive. The tools don't either: Go trims its build
+cache by age (entries unused for five days) and never trims the module
+cache; Cargo trims its registry by age (one to three months) and never
+trims `target/`. A job that restores the newest archive by prefix, adds to
+it, and saves the union therefore grows that archive by every dependency
+bump, until it fills the disk. The Test job's Go archive reached 4.4 GB
+that way.
+
+Every cache that a workflow saves is bounded before the save, by one of:
+
+- The current commit's lockfiles. `prune-go-caches.sh` empties the module
+  cache and refills it with `go mod download` in every Go module.
+  `Swatinem/rust-cache`, which the ESP32 workflows use, removes registry
+  crates and `target/` artifacts that the current `Cargo.lock` doesn't
+  name.
+- A size budget, least recently used first. `prune-go-caches.sh` trims the
+  build cache to `GO_BUILD_CACHE_BUDGET` bytes (2 GiB) by mtime, which the
+  go command sets when it uses an entry.
+
+Then `check-cache-size.sh MAX_BYTES PATH...` gates the save: when the paths
+still exceed the budget, the save is skipped and the job stays green. A
+new cache in any workflow uses the same two steps. `test.yml` doesn't
+cache Rust; `cargo` downloads and compiles each changed crate's
+dependencies on every run.
 
 Cloud Agents also check each commit with pasta. When a Cloud Agent VM starts,
 `.cursor/environment.json` runs `.cursor/install.sh`, which builds pasta and

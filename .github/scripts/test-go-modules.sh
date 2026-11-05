@@ -20,6 +20,11 @@ if ! bash "${repo_root}/.github/scripts/check-gofmt_test.sh"; then
   exit 1
 fi
 
+if ! bash "${repo_root}/.github/scripts/prune-go-caches_test.sh"; then
+  echo "::error title=cache script tests failed::.github/scripts/prune-go-caches_test.sh"
+  exit 1
+fi
+
 result=0
 for module in "${modules[@]}"; do
   echo "::group::Format, build, and test ${module}"
