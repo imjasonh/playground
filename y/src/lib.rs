@@ -1,4 +1,5 @@
 //! One-user microblog for Cloudflare Workers, in Rust.
+//! Cache demo: comment-only change, not for merge.
 //!
 //! Auth, HTML rendering, and WebAuthn (ES256) verification are transport-agnostic
 //! and unit-tested on the host. The Cloudflare Workers entry point (D1 + R2 +

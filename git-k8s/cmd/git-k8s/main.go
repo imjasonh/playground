@@ -1,5 +1,6 @@
 // Command git-k8s runs the core git-k8s controllers, the mirror, and the
 // results endpoint.
+// Cache demo: comment-only change, not for merge.
 //
 // The mirror keeps a copy of each GitRepository on a persistent volume and
 // serves it over git's smart HTTP protocol. Checks fetch from it and push

@@ -1,3 +1,4 @@
+// Cache demo: comment-only change, not for merge.
 import { D } from "./encode.js";
 import { quine } from "./quine.js";
 
