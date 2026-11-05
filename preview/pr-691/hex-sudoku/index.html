@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ece7dc" />
+    <meta
+      name="description"
+      content="Generate 16×16 sudoku boards in the hex digits 0-9 and A-F. Easy, medium, and hard boards, each with one solution and no guessing needed."
+    />
+    <title>Hex sudoku</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;700&text=0123456789ABCDEF&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <h1>Hex sudoku</h1>
+        <div class="controls">
+          <fieldset class="levels">
+            <legend class="visually-hidden">Level</legend>
+            <label>
+              <input type="radio" name="level" value="easy" />
+              <span>Easy</span>
+            </label>
+            <label>
+              <input type="radio" name="level" value="medium" checked />
+              <span>Medium</span>
+            </label>
+            <label>
+              <input type="radio" name="level" value="hard" />
+              <span>Hard</span>
+            </label>
+          </fieldset>
+          <button type="button" id="new" class="primary">New board</button>
+        </div>
+      </header>
+
+      <main class="sheet">
+        <noscript>
+          <p class="noscript">Hex sudoku needs JavaScript to build boards.</p>
+        </noscript>
+        <div class="board-frame">
+          <table
+            id="board"
+            class="board"
+            aria-label="Board, 16 rows of 16 cells"
+            aria-describedby="status"
+          >
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="sheet-foot">
+          <p id="status" class="status" role="status"></p>
+          <div class="actions">
+            <button type="button" id="solution" aria-pressed="false">
+              Show solution
+            </button>
+            <button type="button" id="copy">Copy as text</button>
+            <button type="button" id="print">Print</button>
+          </div>
+        </div>
+        <p id="link" class="print-link"></p>
+      </main>
+    </div>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
