@@ -93,10 +93,9 @@ jobs:
           restore-keys: |
             npm-cacache-${{ runner.os }}-
 
-      # Rust: the tools that each Worker's wrangler.toml installs with
-      # `cargo install`, which take half a minute to build. Compiled
-      # dependencies are not cached: a restored target directory saves about
-      # as long as it takes to restore, and it is gigabytes.
+      # Rust tools: the binaries each Worker's wrangler.toml installs with
+      # `cargo install`. worker-build takes about half a minute to compile
+      # and the install is a few megabytes.
       - name: Restore the Rust tools
         if: ${{ steps.discover.outputs.rust != '[]' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -105,6 +104,23 @@ jobs:
           key: cargo-tools-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             cargo-tools-${{ runner.os }}-
+
+      # Rust dependencies: the shared target directory plus the registry
+      # sources those artifacts were built from. The registry has to travel
+      # with the target directory, because a build script reruns when its
+      # source tree is newer than the cached output. prune-cargo-cache.sh
+      # removes the app crates and any dependency the current lockfiles no
+      # longer name before the save.
+      - name: Restore the Rust dependency cache
+        if: ${{ steps.discover.outputs.rust != '[]' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/cargo-target
+            ~/.cargo/registry
+          key: cargo-deps-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-deps-${{ runner.os }}-
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs. Use the
@@ -168,6 +184,7 @@ jobs:
             if: ${{ steps.discover.outputs.pasta == 'true' }}
             run: |
               bash .github/scripts/cache-scripts_test.sh
+              bash .github/scripts/prune-cargo-cache_test.sh
               bash .github/scripts/discover-rust-apps_test.sh
 
       - name: Trim the Go build cache
@@ -209,4 +226,25 @@ jobs:
           key: cargo-tools-${{ runner.os }}-${{ github.sha }}
           prefixes: cargo-tools-${{ runner.os }}-
           max-bytes: 268435456
+          token: ${{ github.token }}
+
+      - name: Prune the Rust dependency cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' && steps.discover.outputs.rust != '[]' }}
+        continue-on-error: true
+        run: bash .github/scripts/prune-cargo-cache.sh "$RUNNER_TEMP/cargo-target" "$HOME/.cargo/registry"
+
+      - name: Save the Rust dependency cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            ${{ runner.temp }}/cargo-target
+            ~/.cargo/registry
+          key: cargo-deps-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-deps-${{ runner.os }}-
+          # 6 GiB. The seven Workers' dependency artifacts were 2.5 GB
+          # with reduced debuginfo. The cap leaves room for the other Rust
+          # apps and the default debuginfo level.
+          max-bytes: 6442450944
           token: ${{ github.token }}

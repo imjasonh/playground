@@ -346,11 +346,12 @@ Go unit tests, because they mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
 runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
 apps that depend on the same crates compile them once and the job holds one
-copy of the artifacts. The job restores three caches (Go's build cache, npm's
-package cache, and the `worker-build` binary that each Worker's `wrangler.toml`
-installs) from the newest entry that a push to `main` saved, matching by
-prefix so that a new lockfile doesn't miss. Only pushes to `main` save one,
-after the tests.
+copy of the artifacts. The job restores four caches (Go's build cache, npm's package cache, the
+`worker-build` binary, and the Rust dependency artifacts) from the newest
+entry that a push to `main` saved, matching by prefix so that a new lockfile
+doesn't miss. A pull request that does not run an ecosystem's tests does not
+restore that ecosystem's cache. Only pushes to `main` save one, after the
+tests.
 
 ### Cache sizes
 
@@ -384,11 +385,16 @@ size budget, measured on disk:
   on error, so a cache problem never fails the job.
 - Cache what costs more to compute than to restore. `test.yml` caches
   Go's build cache (3 GiB budget; a cold compile of every module takes about
-  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB), and the
-  `worker-build` binary (256 MiB; it takes 36 seconds to build). It doesn't
-  cache Go's module cache (3 GB that `go build` downloads in seconds),
-  npm's `_npx` directory, or Cargo's `target/` (gigabytes, and a restore
-  costs about what it saves).
+  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB), the
+  `worker-build` binary (256 MiB; it takes 36 seconds to build), and the
+  Rust dependency artifacts (6 GiB). A cold compile of one Worker is about
+  half a minute, and a warm one recompiles that app's own crate (about a
+  second) and reuses the dependencies. The saved `target/` is the dependency
+  artifacts only: `prune-cargo-cache.sh` removes the app crates, incremental
+  files, and any dependency the current `Cargo.lock` files no longer name,
+  and the registry sources go with the artifacts so build scripts stay
+  fresh. It doesn't cache Go's module cache (3 GB that `go build` downloads
+  in seconds) or npm's `_npx` directory.
 
 The workflow needs `actions: write` to delete entries. A new cache in
 any workflow uses the same pieces. Run
