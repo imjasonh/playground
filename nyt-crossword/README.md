@@ -35,8 +35,9 @@ from the crossword state endpoint, 30 puzzles at a time. The per-puzzle
 returns 404 for these solves, so the job does not call it. The default first
 print date is 2014-01-01. A solved puzzle that already has a time is not
 requested again, and a 100-day window is not listed again when every day in
-it is one of those solves. An open puzzle is requested when it is new or the
-list shows a change. The list endpoint rejects ranges longer than 100 days,
+it is one of those solves. If a later listing says that puzzle is not solved,
+the stored solve is dropped, and that does not add a request. An open puzzle
+is requested when it is new or the list shows a change. The list endpoint rejects ranges longer than 100 days,
 so the job walks the calendar in 100-day windows, the same limit as that
 scraper.
 
