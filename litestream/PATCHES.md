@@ -23,6 +23,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `c6e6085d` | Open prefetch drops its cache when the replica has no restore plan, so a read-only open that waits for the database sees the first file | Not proposed; fixes `27f1d8c1` |
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 | `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
+| `0a2c4c89` | Each `file` replica client LTX write uses its own temporary file, so two replicas that write the same file at once can't publish a mix of both | Not proposed |
 
 To see every change against upstream, diff against the last import:
 
