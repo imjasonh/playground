@@ -459,9 +459,61 @@ th {
   border: 0;
 }
 
-.year-open summary {
-  cursor: pointer;
+#year-rows th,
+#year-rows td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.year-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 0;
+  margin-block: -0.55rem;
+  padding: 0.55rem 0;
+  border: 0;
+  background: none;
   color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+
+.year-toggle::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-block: 0.3rem solid transparent;
+  border-inline-start: 0.45rem solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.year-toggle[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.year-name {
+  padding-inline-start: 0.85rem;
+}
+
+.year-count {
+  display: inline-block;
+  min-width: 6.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.year-bar {
+  display: inline-block;
+  vertical-align: middle;
+  width: clamp(2.5rem, 14vw, 10rem);
+  height: 0.6rem;
+  background: var(--rule);
+}
+
+.year-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
 }
 
 .year-open ul {
