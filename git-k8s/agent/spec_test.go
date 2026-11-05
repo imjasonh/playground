@@ -204,6 +204,21 @@ func TestImagesByDigest(t *testing.T) {
 	}
 }
 
+func TestJobNameIsStable(t *testing.T) {
+	r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key"}
+	job := &Job{
+		Name: "app-c-x", Namespace: "default", URL: "http://mirror/app",
+		Credentials: &gitk8s.SecretRef{Name: "creds"},
+		Checkout:    Checkout{Branch: "c/x", Head: "0123", Parent: "main", Base: "abcd"},
+		Task:        Task{Instructions: "Check that a < b && c > d.", Edit: true},
+	}
+	t.Log("A deploy keeps the job half of a Pod's name, so a run that finished before it stays finished.")
+	const want = "review-d9cf7c30"
+	if got := r.jobPod(job, 1).Name; !strings.HasPrefix(got, want) {
+		t.Errorf("jobPod named the Pod %s, want the job half %s", got, want)
+	}
+}
+
 func TestSizes(t *testing.T) {
 	for s, want := range map[string]int64{
 		"2Gi": 2 << 30, "500M": 500e6, "1": 1, "1k": 1000, "64Ki": 64 << 10, "3Ti": 3 << 40, "2097151Ti": 2097151 << 40,
