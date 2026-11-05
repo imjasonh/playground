@@ -483,30 +483,51 @@ function renderYears(puzzles) {
     const tr = document.createElement("tr");
     const year = document.createElement("th");
     year.scope = "row";
-    year.textContent = String(row.year);
+    const count = row.unfinished.length;
     const done = document.createElement("td");
-    done.className = "num";
-    done.textContent = `${row.completed.toLocaleString("en-US")} of ${row.total.toLocaleString("en-US")}`;
+    const label = document.createElement("span");
+    label.className = "year-count";
+    label.textContent = `${row.completed.toLocaleString("en-US")} of ${row.total.toLocaleString("en-US")}`;
+    const bar = document.createElement("span");
+    bar.className = "year-bar";
+    bar.setAttribute("aria-hidden", "true");
+    const fill = document.createElement("span");
+    fill.style.width = `${row.total === 0 ? 0 : (100 * row.completed) / row.total}%`;
+    bar.append(fill);
+    done.append(label, bar);
     const open = document.createElement("td");
     open.className = "num";
-    const count = row.unfinished.length;
     open.textContent = count === 0 ? "None" : count.toLocaleString("en-US");
     tr.append(year, done, open);
     el.yearRows.append(tr);
-    if (count === 0) continue;
+    if (count === 0) {
+      year.textContent = String(row.year);
+      year.className = "year-name";
+      continue;
+    }
     const detailRow = document.createElement("tr");
+    detailRow.hidden = true;
     const cell = document.createElement("td");
     cell.colSpan = 3;
     cell.className = "year-open";
-    const details = document.createElement("details");
-    const summary = document.createElement("summary");
-    summary.textContent = `Puzzles not completed in ${row.year}`;
     const list = document.createElement("ul");
+    list.id = `year-open-${row.year}`;
     list.replaceChildren(...row.unfinished.map(unfinishedLink));
-    details.append(summary, list);
-    cell.append(details);
+    cell.append(list);
     detailRow.append(cell);
     el.yearRows.append(detailRow);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "year-toggle";
+    toggle.textContent = String(row.year);
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", list.id);
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      detailRow.hidden = expanded;
+    });
+    year.append(toggle);
   }
 }
 
