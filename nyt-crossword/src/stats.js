@@ -412,6 +412,14 @@ function isCompleted(puzzle) {
   return puzzle.solved === true;
 }
 
+function daysBetween(start, end) {
+  const [startYear, startMonth, startDay] = start.split("-").map(Number);
+  const [endYear, endMonth, endDay] = end.split("-").map(Number);
+  const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
+  const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
+  return Math.round((endUtc - startUtc) / 86400000);
+}
+
 // The print date of the first puzzle in the unbroken run of completed
 // puzzles that ends at the latest one. An open puzzle dated today or later
 // does not break the run, because it has not had its day yet. Null when the
@@ -427,6 +435,28 @@ export function completedSince(puzzles, today) {
   const first = rows[lastMiss + 1];
   if (!first || !isCompleted(first)) return null;
   return first.date;
+}
+
+// Inclusive length of the current run. Today counts only when it is
+// completed. Null when there is no run.
+export function currentStreak(puzzles, today) {
+  const since = completedSince(puzzles, today);
+  if (!since) return null;
+  let end = since;
+  for (const puzzle of puzzles) {
+    if (puzzle.date < since || puzzle.date > today) continue;
+    if (puzzle.date === today && !isCompleted(puzzle)) continue;
+    if (puzzle.date > end) end = puzzle.date;
+  }
+  return { since, days: daysBetween(since, end) + 1 };
+}
+
+export function formatStreak(streak) {
+  if (!streak || !(streak.days > 0)) return "";
+  const days = streak.days === 1
+    ? "1 day"
+    : `${streak.days.toLocaleString("en-US")} days`;
+  return `Current streak: ${days} since ${formatDate(streak.since)}.`;
 }
 
 // One row per calendar year from the chart start. Unfinished puzzles include
