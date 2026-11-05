@@ -48,8 +48,9 @@ empty end date means today in New York.
 
 ## Completed by year
 
-The top of the page says when the current run of completed puzzles began: the
-print date of the first puzzle after the last one not completed. A puzzle is
+The top of the page states the current streak: how many days it has run, and
+the print date it started. That date is the first puzzle after the last one
+not completed. A puzzle is
 completed when the puzzle list says it is solved, or when its print date is
 in `completed.json`. An open puzzle dated today does not end the run. The
 year table counts completed puzzles out of all puzzles in that year. Open

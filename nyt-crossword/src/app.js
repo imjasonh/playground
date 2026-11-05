@@ -12,12 +12,13 @@ import {
   bestByWeekday,
   bucketSpan,
   chartLayout,
-  completedSince,
+  currentStreak,
   excludedDates,
   formatDate,
   formatPercent,
   formatShortDate,
   formatSolveTime,
+  formatStreak,
   formatUnsolvedCount,
   formatUpdated,
   medianByWeekday,
@@ -474,8 +475,8 @@ function zoomAt(factor, clientX) {
 }
 
 function renderCompletedSince(puzzles) {
-  const since = completedSince(puzzles, todayInNewYork());
-  el.completedSince.textContent = since ? `Completed every puzzle since ${formatDate(since)}.` : "";
+  const streak = currentStreak(puzzles, todayInNewYork());
+  el.completedSince.textContent = formatStreak(streak);
 }
 
 function unfinishedLink(puzzle) {
