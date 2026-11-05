@@ -11,6 +11,7 @@
 #     List Rust apps touched by the given paths (or stdin when no args). A
 #     change under .github/wrangler/ (the pinned Wrangler version) selects
 #     every Cloudflare Worker app, since all of them build and deploy with it.
+#     A change to the scripts that test Rust apps selects every Rust app.
 set -euo pipefail
 
 is_rust_app() {
@@ -69,6 +70,15 @@ collect_rust_apps_from_changes() {
       for dir in */; do
         name="${dir%/}"
         if is_rust_app "$name" && [[ -f "$name/wrangler.toml" ]]; then
+          apps+=("$name")
+        fi
+      done
+      continue
+    fi
+    if [[ "$path" == .github/scripts/test-rust-apps.sh || "$path" == .github/scripts/check-worker-deploy-build.sh ]]; then
+      for dir in */; do
+        name="${dir%/}"
+        if is_rust_app "$name"; then
           apps+=("$name")
         fi
       done

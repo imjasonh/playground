@@ -4,7 +4,23 @@
 # Each app's toolchain comes from its rust-toolchain.toml (rustup honors it).
 # Cloudflare Worker apps (those with a wrangler.toml) additionally get clippy
 # and a release build for the wasm32-unknown-unknown target.
+#
+# Every app builds into one target directory. Cargo keys each artifact by
+# crate, version, features, profile, and compiler, so apps that depend on the
+# same crates compile them once, and the job holds one copy of the artifacts
+# instead of one for each app. A second Worker's wasm build takes seconds
+# instead of the half minute a first one takes.
+#
+# CARGO_INSTALL_ROOT, when set, is where `cargo install` puts the tools that a
+# Worker's wrangler.toml installs (worker-build). test.yml caches that
+# directory, so the install is a no-op after the first run.
 set -uo pipefail
+
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${RUNNER_TEMP:-/tmp}/cargo-target}"
+if [ -n "${CARGO_INSTALL_ROOT:-}" ]; then
+  mkdir -p "$CARGO_INSTALL_ROOT/bin"
+  export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+fi
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"

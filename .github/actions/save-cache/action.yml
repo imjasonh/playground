@@ -1,0 +1,79 @@
+name: Save a bounded cache
+description: >-
+  Save an Actions cache only when it fits a byte budget, then delete the
+  entries it replaces. A cache over budget is not saved, and its family is
+  deleted so that the next run starts from an empty one. Every step continues
+  on error, so a cache problem never fails the job.
+
+inputs:
+  path:
+    description: Paths to save, one per line, as actions/cache takes them.
+    required: true
+  key:
+    description: Key to save under. Include the commit SHA so each save is a new entry.
+    required: true
+  prefixes:
+    description: >-
+      Key prefixes, one per line, that name this cache's family. After a save,
+      older entries that start with one of these are deleted.
+    required: true
+  max-bytes:
+    description: Largest total size of the paths, in bytes, as they sit on disk.
+    required: true
+  token:
+    description: Token with actions write permission, for deleting superseded entries.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the size
+      id: size
+      continue-on-error: true
+      shell: bash
+      env:
+        CACHE_PATHS: ${{ inputs.path }}
+        MAX_BYTES: ${{ inputs.max-bytes }}
+        SCRIPTS: ${{ github.action_path }}/../../scripts
+      run: |
+        paths=()
+        while IFS= read -r path; do
+          [[ -n "$path" ]] && paths+=("${path/#\~/$HOME}")
+        done <<<"$CACHE_PATHS"
+        bash "$SCRIPTS/check-cache-size.sh" "$MAX_BYTES" "${paths[@]}"
+
+    - name: Save the cache
+      id: save
+      if: ${{ steps.size.outcome == 'success' }}
+      continue-on-error: true
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+
+    - name: Delete the entries it replaces
+      if: ${{ steps.save.outcome == 'success' }}
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        KEY: ${{ inputs.key }}
+        PREFIXES: ${{ inputs.prefixes }}
+        SCRIPTS: ${{ github.action_path }}/../../scripts
+      run: |
+        mapfile -t prefixes <<<"$PREFIXES"
+        bash "$SCRIPTS/delete-superseded-caches.sh" "$KEY" "${prefixes[@]}"
+
+    - name: Reset a cache that is over budget
+      if: ${{ steps.size.outcome == 'failure' }}
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        PREFIXES: ${{ inputs.prefixes }}
+        SCRIPTS: ${{ github.action_path }}/../../scripts
+      run: |
+        mapfile -t prefixes <<<"$PREFIXES"
+        bash "$SCRIPTS/delete-superseded-caches.sh" "" "${prefixes[@]}"

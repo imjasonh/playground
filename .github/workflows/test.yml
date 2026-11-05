@@ -9,6 +9,11 @@ concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# actions: write lets the cache saves on main delete the entries they replace.
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,8 +40,6 @@ jobs:
         if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: '**/package-lock.json'
 
       # Go toolchain for Go modules and/or the pasta style leg (pasta is a
       # Go module; the pasta leg builds the CLI even when no other Go app
@@ -49,28 +52,59 @@ jobs:
           check-latest: true
           cache: false
 
-      # Go's module and build caches. setup-go's own cache needs an exact
-      # match on every go.sum in the repository, which the daily dependency
-      # update changes, so restore the newest cache with a prefix instead.
-      # Only pushes to main save one, after the tests, so a pull request
-      # doesn't spend time uploading a cache that no other run can read.
-      # Before the save, prune-go-caches.sh bounds the archive: the module
-      # cache holds the versions the current go.sum files name, and the
-      # build cache is trimmed to a size budget. Without that, each save
-      # held everything earlier jobs downloaded and compiled, and the
+      # Caches. Each one is restored by key prefix, because the daily
+      # dependency update changes every lockfile hash and an exact match
+      # would almost never hit. Only pushes to main save, after the tests, so
+      # a pull request doesn't spend time uploading a cache that no other
+      # run can read.
+      #
+      # A restore by prefix plus a save of everything on disk grows without
+      # bound: every save held all that earlier jobs had added, and the Go
       # archive passed 4 GB and filled a runner's disk while it extracted.
-      # The go-pruned- prefix matches none of those archives.
-      - name: Restore Go caches
+      # So a saved cache is a function of the current commit and a size
+      # budget, measured on disk because that is what an extraction has to
+      # fit. The key names the commit, a trim or a size check bounds the
+      # contents, and the save action deletes the entry it replaces, which
+      # leaves one entry per cache and keeps the repository under its quota.
+      #
+      # Go: only the build cache. The module cache is 3 GB of zip files and
+      # sources that `go build` downloads in seconds, and the build cache
+      # hits without it.
+      - name: Restore the Go build cache
         id: go-cache
         if: ${{ steps.setup-go.outcome == 'success' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-pruned-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
           restore-keys: |
-            go-pruned-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
+            go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
+
+      # npm: the content-addressed package cache, which `npm ci` reads for
+      # the browser apps and `npx` reads for the pinned Wrangler. The
+      # extracted _npx directory is not cached, because it is larger than
+      # the packages it comes from.
+      - name: Restore the npm cache
+        if: ${{ steps.discover.outputs.apps != '[]' || steps.discover.outputs.rust != '[]' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm/_cacache
+          key: npm-cacache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            npm-cacache-${{ runner.os }}-
+
+      # Rust: the tools that each Worker's wrangler.toml installs with
+      # `cargo install`, which take half a minute to build. Compiled
+      # dependencies are not cached: a restored target directory saves about
+      # as long as it takes to restore, and it is gigabytes.
+      - name: Restore the Rust tools
+        if: ${{ steps.discover.outputs.rust != '[]' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cargo-tools
+          key: cargo-tools-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-tools-${{ runner.os }}-
 
       # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
       # pins 1.83) overrides it per directory when cargo runs. Use the
@@ -115,6 +149,7 @@ jobs:
             if: ${{ steps.discover.outputs.rust != '[]' }}
             env:
               RUST_APPS: ${{ steps.discover.outputs.rust }}
+              CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-tools
             run: bash .github/scripts/test-rust-apps.sh
 
           - name: pasta test and lint
@@ -129,21 +164,49 @@ jobs:
             if: ${{ steps.discover.outputs.index == 'true' }}
             run: bash .github/scripts/test-index.sh
 
-      # The prune step fails when the caches are still over budget, which
-      # skips the save and leaves the job green.
-      - name: Prune Go caches
-        id: prune-go-caches
-        if: ${{ github.ref == 'refs/heads/main' && steps.go-cache.outcome == 'success' && steps.go-cache.outputs.cache-hit != 'true' }}
-        continue-on-error: true
-        run: |
-          bash .github/scripts/prune-go-caches.sh
-          bash .github/scripts/check-cache-size.sh $((3 * 1024 * 1024 * 1024)) ~/.cache/go-build ~/go/pkg/mod
+          - name: Test the cache and discovery scripts
+            if: ${{ steps.discover.outputs.pasta == 'true' }}
+            run: |
+              bash .github/scripts/cache-scripts_test.sh
+              bash .github/scripts/discover-rust-apps_test.sh
 
-      - name: Save Go caches
-        if: ${{ steps.prune-go-caches.outcome == 'success' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Trim the Go build cache
+        id: trim-go
+        if: ${{ github.ref == 'refs/heads/main' && steps.setup-go.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/trim-go-build-cache.sh
+
+      - name: Save the Go build cache
+        if: ${{ steps.trim-go.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
+          prefixes: |
+            go-build-${{ runner.os }}-
+            go-${{ runner.os }}-
+          max-bytes: 3221225472
+          token: ${{ github.token }}
+
+      # An npm cache over its budget is deleted, not saved, because the
+      # packages that older lockfiles and Wrangler versions needed stay in it.
+      # The next run on main saves a fresh one.
+      - name: Save the npm cache
+        if: ${{ github.ref == 'refs/heads/main' && (steps.discover.outputs.apps != '[]' || steps.discover.outputs.rust != '[]') }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.npm/_cacache
+          key: npm-cacache-${{ runner.os }}-${{ github.sha }}
+          prefixes: npm-cacache-${{ runner.os }}-
+          max-bytes: 1610612736
+          token: ${{ github.token }}
+
+      - name: Save the Rust tools
+        if: ${{ github.ref == 'refs/heads/main' && steps.discover.outputs.rust != '[]' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ${{ runner.temp }}/cargo-tools
+          key: cargo-tools-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-tools-${{ runner.os }}-
+          max-bytes: 268435456
+          token: ${{ github.token }}
