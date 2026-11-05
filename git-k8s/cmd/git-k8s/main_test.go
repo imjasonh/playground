@@ -24,7 +24,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/internal/mirror"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 var policy = &gitk8s.MergePolicy{
