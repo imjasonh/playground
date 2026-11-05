@@ -200,12 +200,15 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 		return nil, err
 	}
 
-	// Write LTX file to temporary file next to destination path.
-	tmpFilename := filename + ".tmp"
-	f, err := internal.CreateFile(tmpFilename, fileInfo)
+	// Write LTX file to temporary file next to destination path. Each write
+	// gets its own temporary file: replicas that share the directory can
+	// write the same LTX file at once, such as when they compact the same
+	// range, and a shared one would interleave their bytes.
+	f, err := os.CreateTemp(filepath.Dir(filename), filepath.Base(filename)+".*.tmp")
 	if err != nil {
 		return nil, err
 	}
+	tmpFilename := f.Name()
 
 	// Clean up temp file on error. On successful rename, the temp file
 	// becomes the final file and should not be removed.
@@ -215,6 +218,14 @@ func (c *ReplicaClient) WriteLTXFile(ctx context.Context, level int, minTXID, ma
 			_ = os.Remove(tmpFilename)
 		}
 	}()
+
+	if fileInfo != nil {
+		if err := f.Chmod(fileInfo.Mode()); err != nil {
+			return nil, err
+		}
+	}
+	uid, gid := internal.Fileinfo(fileInfo)
+	_ = f.Chown(uid, gid)
 
 	if _, err := io.Copy(f, fullReader); err != nil {
 		return nil, err
