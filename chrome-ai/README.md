@@ -34,6 +34,21 @@ Open http://localhost:3000. The Prompt API needs a secure context, and
 - **Stop** ends the reply in progress and keeps the text so far.
 - **New chat** discards the session and its history.
 
+## Attachments
+
+To attach files, click the paperclip, drag files onto the page, or paste an
+image into the message box. The model takes three kinds of input:
+
+- Images go to the model as they are, if the device supports image input.
+- Audio clips go to the model as they are, if the device supports audio input.
+- Text files, such as `.txt`, `.md`, `.csv`, `.json`, and source code, are
+  read into the prompt. They can be up to 512 KB, and they still have to fit
+  in the context window. SVG files count as text.
+
+On load, the page asks Chrome which of image and audio input this device
+supports. The file picker offers only those, and the page rejects other files
+with a message. The model can't read PDFs, Office documents, or video.
+
 The status line shows how much of the model's context window the chat has
 used. When the conversation outgrows it, Chrome drops the oldest messages and
 the status line says so.
@@ -60,6 +75,6 @@ npm run vendor
 npm test
 ```
 
-The tests run `src/model.js` in Node against a fake `LanguageModel`, and
-`src/markdown.js` against the vendored marked, so they don't need Chrome or
-the model.
+The tests run `src/model.js` in Node against a fake `LanguageModel`,
+`src/attachments.js` on plain objects and `Blob`s, and `src/markdown.js`
+against the vendored marked, so they don't need Chrome or the model.

@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  CHAT_OPTIONS,
   availabilityMessage,
+  chatOptions,
   contextUsage,
   createSession,
   findLanguageModel,
   formatProgress,
   streamReply,
+  supportedMedia,
 } from '../src/model.js';
 
 function streamOf(chunks) {
@@ -89,11 +90,57 @@ test('createSession passes chat options and reports download progress', async ()
   const api = fakeApi({progress: [0, 0.5, 1]});
   await createSession(api, {onProgress: (loaded) => seen.push(loaded)});
   assert.deepEqual(seen, [0, 0.5, 1]);
-  assert.deepEqual(api.createOptions.expectedInputs, CHAT_OPTIONS.expectedInputs);
+  assert.deepEqual(
+    api.createOptions.expectedInputs,
+    chatOptions().expectedInputs,
+  );
   assert.deepEqual(
     api.createOptions.expectedOutputs,
-    CHAT_OPTIONS.expectedOutputs,
+    chatOptions().expectedOutputs,
   );
+});
+
+test('createSession declares the media inputs it was given', async () => {
+  const api = fakeApi();
+  await createSession(api, {media: ['image']});
+  assert.deepEqual(
+    api.createOptions.expectedInputs.map((input) => input.type),
+    ['text', 'image'],
+  );
+});
+
+test('chatOptions always expects English text', () => {
+  assert.deepEqual(chatOptions(['image', 'audio']), {
+    expectedInputs: [
+      {type: 'text', languages: ['en']},
+      {type: 'image'},
+      {type: 'audio'},
+    ],
+    expectedOutputs: [{type: 'text', languages: ['en']}],
+  });
+});
+
+test('supportedMedia keeps types that are not unavailable', async () => {
+  const statuses = {image: 'downloadable', audio: 'unavailable'};
+  const api = {
+    availability: async (options) => statuses[options.expectedInputs[1].type],
+  };
+  assert.deepEqual(await supportedMedia(api), ['image']);
+
+  statuses.audio = 'available';
+  assert.deepEqual(await supportedMedia(api), ['image', 'audio']);
+});
+
+test('supportedMedia treats a rejected check as unsupported', async () => {
+  const api = {
+    availability: async (options) => {
+      if (options.expectedInputs[1].type === 'audio') {
+        throw new TypeError('no audio');
+      }
+      return 'available';
+    },
+  };
+  assert.deepEqual(await supportedMedia(api), ['image']);
 });
 
 test('createSession forwards both overflow event names', async () => {

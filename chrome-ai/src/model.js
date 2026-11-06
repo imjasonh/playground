@@ -1,10 +1,44 @@
 // Wrappers around Chrome's built-in Prompt API (the `LanguageModel` global).
 // They take the API or a session as an argument so Node tests can pass fakes.
 
-export const CHAT_OPTIONS = Object.freeze({
-  expectedInputs: [{type: 'text', languages: ['en']}],
-  expectedOutputs: [{type: 'text', languages: ['en']}],
-});
+/** Input types besides text that a session can accept. */
+export const MEDIA_TYPES = Object.freeze(['image', 'audio']);
+
+/**
+ * Returns the options for `availability()` and `create()`. A session rejects
+ * input types that it didn't declare here when it was created.
+ * @param {!Array<string>=} media Entries from `MEDIA_TYPES`.
+ * @return {!Object}
+ */
+export function chatOptions(media = []) {
+  return {
+    expectedInputs: [
+      {type: 'text', languages: ['en']},
+      ...media.map((type) => ({type})),
+    ],
+    expectedOutputs: [{type: 'text', languages: ['en']}],
+  };
+}
+
+/**
+ * Returns the entries of `MEDIA_TYPES` that the model accepts on this device,
+ * including ones that still need a download.
+ * @param {object} api The `LanguageModel` global.
+ * @return {!Promise<!Array<string>>}
+ */
+export async function supportedMedia(api) {
+  const results = await Promise.all(
+    MEDIA_TYPES.map(async (type) => {
+      try {
+        const status = await api.availability(chatOptions([type]));
+        return status === 'unavailable' ? null : type;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return results.filter((type) => type !== null);
+}
 
 /**
  * Returns the Prompt API from `scope`, or null when the browser lacks it.
@@ -63,13 +97,17 @@ export function formatProgress(loaded) {
  * Creates a chat session. Creating a session can start the model download,
  * which Chrome allows only during a user gesture.
  * @param {object} api The `LanguageModel` global.
- * @param {{onProgress: (function(number))|undefined,
- *     onOverflow: (function())|undefined}=} callbacks
+ * @param {{media: (!Array<string>|undefined),
+ *     onProgress: (function(number))|undefined,
+ *     onOverflow: (function())|undefined}=} options
  * @return {!Promise<object>}
  */
-export async function createSession(api, {onProgress, onOverflow} = {}) {
+export async function createSession(
+  api,
+  {media = [], onProgress, onOverflow} = {},
+) {
   const session = await api.create({
-    ...CHAT_OPTIONS,
+    ...chatOptions(media),
     monitor(m) {
       m.addEventListener('downloadprogress', (e) => onProgress?.(e.loaded));
     },
@@ -83,17 +121,17 @@ export async function createSession(api, {onProgress, onOverflow} = {}) {
 }
 
 /**
- * Streams the model's reply to `text`. Calls `onText` with the reply so far
+ * Streams the model's reply to `input`. Calls `onText` with the reply so far
  * after each chunk, and resolves to the whole reply.
  * @param {object} session
- * @param {string} text
+ * @param {string|!Array<!Object>} input A string or a list of messages.
  * @param {{signal: (AbortSignal|undefined),
  *     onText: (function(string))|undefined}=} options
  * @return {!Promise<string>}
  */
-export async function streamReply(session, text, {signal, onText} = {}) {
+export async function streamReply(session, input, {signal, onText} = {}) {
   let reply = '';
-  for await (const chunk of session.promptStreaming(text, {signal})) {
+  for await (const chunk of session.promptStreaming(input, {signal})) {
     reply += chunk;
     onText?.(reply);
   }
