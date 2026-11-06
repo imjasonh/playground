@@ -20,6 +20,59 @@ import {estimateMs, toCues} from './script.js';
  * }} Deck
  */
 
+const SVG_ATTRS = [
+  'class',
+  'role',
+  'aria-label',
+  'transform',
+  'fill',
+  'fill-opacity',
+  'stroke',
+  'stroke-width',
+  'stroke-opacity',
+  'stroke-dasharray',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'opacity',
+  'font-size',
+  'font-weight',
+  'font-family',
+  'font-style',
+  'text-anchor',
+  'dominant-baseline',
+];
+
+/** Extra attributes per SVG element, on top of SVG_ATTRS. */
+const SVG_ELEMENTS = {
+  svg: ['viewBox', 'width', 'height', 'xmlns', 'preserveAspectRatio'],
+  g: [],
+  title: [],
+  rect: ['x', 'y', 'width', 'height', 'rx', 'ry'],
+  circle: ['cx', 'cy', 'r'],
+  ellipse: ['cx', 'cy', 'rx', 'ry'],
+  line: ['x1', 'y1', 'x2', 'y2'],
+  polyline: ['points'],
+  polygon: ['points'],
+  path: ['d'],
+  text: ['x', 'y', 'dx', 'dy'],
+  tspan: ['x', 'y', 'dx', 'dy'],
+};
+
+/**
+ * Marp's default HTML allowlist plus inline SVG drawing elements, so a deck
+ * can carry its diagrams in one file. Scripts, event handlers, `style`, `id`,
+ * `<foreignObject>`, and `<image>` stay out.
+ */
+const HTML_ALLOWLIST = {
+  ...Marp.html,
+  ...Object.fromEntries(
+    Object.entries(SVG_ELEMENTS).map(([tag, attrs]) => [
+      tag,
+      [...SVG_ATTRS, ...attrs],
+    ]),
+  ),
+};
+
 /**
  * Reads a scalar from the front matter. Marp ignores keys it doesn't know,
  * such as `title`, so they aren't in `lastGlobalDirectives`.
@@ -50,7 +103,11 @@ function firstHeading(markdown) {
  * @return {!Deck}
  */
 export function parseDeck(markdown) {
-  const marp = new Marp({math: false, script: false});
+  const marp = new Marp({
+    math: false,
+    script: false,
+    html: HTML_ALLOWLIST,
+  });
   const {html, css, comments} = marp.render(markdown);
   const lang = marp.lastGlobalDirectives.lang || 'en-US';
   const slides = comments.map((parts) => {

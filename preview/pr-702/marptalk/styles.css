@@ -89,6 +89,13 @@ select {
   white-space: nowrap;
 }
 
+a.ghost {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
 .ghost:hover,
 select:hover {
   border-color: #4a4d58;

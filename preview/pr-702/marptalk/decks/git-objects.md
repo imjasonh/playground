@@ -14,10 +14,9 @@ style: |
   pre {
     font-size: 26px;
   }
-  .cols {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 40px;
+  svg {
+    display: block;
+    margin: 0 auto;
   }
 ---
 
@@ -120,25 +119,50 @@ The fourth kind of object is the annotated tag. It points at another object, alm
 
 # A new commit reuses almost everything
 
-<div class="cols">
-<div>
-
-Edit `src/parse.go` and commit:
-
-- 1 new blob
-- 2 new trees: `src` and the root
-- 1 new commit
-
-</div>
-<div>
-
-Everything else is shared with the parent commit
-
-</div>
-</div>
+<svg viewBox="0 0 1000 450" width="1000" role="img" aria-label="Commit B shares README.md and lex.go with commit A and adds one blob and two trees">
+  <g stroke="#94a3b8" stroke-width="2">
+    <line x1="170" y1="66" x2="170" y2="124" />
+    <line x1="830" y1="66" x2="830" y2="124" />
+    <line x1="170" y1="176" x2="500" y2="234" />
+    <line x1="830" y1="176" x2="500" y2="234" />
+    <line x1="170" y1="176" x2="170" y2="234" />
+    <line x1="830" y1="176" x2="830" y2="234" />
+    <line x1="170" y1="286" x2="500" y2="344" />
+    <line x1="830" y1="286" x2="500" y2="344" />
+    <line x1="170" y1="286" x2="170" y2="344" />
+    <line x1="830" y1="286" x2="830" y2="344" />
+  </g>
+  <line x1="725" y1="40" x2="290" y2="40" stroke="#2563eb" stroke-width="2" stroke-dasharray="8 6" />
+  <polygon points="276,40 292,32 292,48" fill="#2563eb" />
+  <text x="500" y="28" text-anchor="middle" font-size="20" fill="#2563eb">parent</text>
+  <rect x="65" y="14" width="210" height="52" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="170" y="48" text-anchor="middle" font-size="22" fill="currentColor">commit A</text>
+  <rect x="725" y="14" width="210" height="52" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+  <text x="830" y="48" text-anchor="middle" font-size="22" fill="currentColor">commit B</text>
+  <rect x="65" y="124" width="210" height="52" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="170" y="158" text-anchor="middle" font-size="22" fill="currentColor">tree /</text>
+  <rect x="725" y="124" width="210" height="52" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+  <text x="830" y="158" text-anchor="middle" font-size="22" fill="currentColor">tree /</text>
+  <rect x="65" y="234" width="210" height="52" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="170" y="268" text-anchor="middle" font-size="22" fill="currentColor">tree src/</text>
+  <rect x="395" y="234" width="210" height="52" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="500" y="268" text-anchor="middle" font-size="22" fill="currentColor">README.md</text>
+  <rect x="725" y="234" width="210" height="52" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+  <text x="830" y="268" text-anchor="middle" font-size="22" fill="currentColor">tree src/</text>
+  <rect x="65" y="344" width="210" height="52" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="170" y="378" text-anchor="middle" font-size="22" fill="currentColor">parse.go (old)</text>
+  <rect x="395" y="344" width="210" height="52" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="500" y="378" text-anchor="middle" font-size="22" fill="currentColor">lex.go</text>
+  <rect x="725" y="344" width="210" height="52" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+  <text x="830" y="378" text-anchor="middle" font-size="22" fill="currentColor">parse.go (new)</text>
+  <rect x="330" y="420" width="22" height="22" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+  <text x="362" y="438" font-size="20" fill="currentColor">written by commit B</text>
+  <rect x="580" y="420" width="22" height="22" rx="4" fill="#ffffff" stroke="#94a3b8" stroke-width="2" />
+  <text x="612" y="438" font-size="20" fill="currentColor">already stored</text>
+</svg>
 
 <!--
-So why doesn't storing full snapshots fill your disk? Say you edit one file in the source folder and commit. Git writes one new blob for that file, a new tree for the source folder, a new root tree, and a new commit. Every other file and folder already has an object with the right hash, so the new snapshot points at those. A snapshot costs only what changed.
+So why doesn't storing full snapshots fill your disk? Say you edit parse dot go in the source folder and commit. Commit B, on the right, needs a new blob for that file, a new tree for the source folder, and a new root tree. The blue boxes are everything it writes. The README and lex dot go already have objects with the right hashes, so both trees point at the same ones. A snapshot costs only what changed.
 -->
 
 ---

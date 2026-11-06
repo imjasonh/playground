@@ -28,9 +28,6 @@ style: |
   .row > div {
     flex: 0 0 300px;
   }
-  .row.four > div {
-    flex-basis: 220px;
-  }
   .row pre code {
     font-size: 40px;
     line-height: 1.1;
@@ -39,6 +36,16 @@ style: |
     margin: 8px 0 0;
     font-size: 26px;
     text-align: center;
+  }
+  .split {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 48px;
+    align-items: center;
+  }
+  svg {
+    display: block;
+    margin: 32px auto 0;
   }
   table {
     font-size: 32px;
@@ -60,13 +67,48 @@ In 1970 the mathematician John Conway invented a game with no players. You set u
 
 # The board
 
+<div class="split">
+<div>
+
 - An endless grid of square cells
 - Each cell is alive or dead
 - Each cell has eight neighbors
 - Every cell updates at once, each generation
 
+</div>
+
+<svg viewBox="0 0 320 320" width="320" role="img" aria-label="A cell and the eight cells around it">
+  <rect x="3" y="3" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="67" y="3" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="131" y="3" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="195" y="3" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="259" y="3" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="3" y="67" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="67" y="67" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="131" y="67" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="195" y="67" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="259" y="67" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="3" y="131" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="67" y="131" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="131" y="131" width="58" height="58" rx="6" fill="currentColor" />
+  <rect x="195" y="131" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="259" y="131" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="3" y="195" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="67" y="195" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="131" y="195" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="195" y="195" width="58" height="58" rx="6" fill="#ffca28" fill-opacity="0.85" />
+  <rect x="259" y="195" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="3" y="259" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="67" y="259" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="131" y="259" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="195" y="259" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+  <rect x="259" y="259" width="58" height="58" rx="6" fill="currentColor" fill-opacity="0.12" />
+</svg>
+
+</div>
+
 <!--
-The board is a grid that goes on forever in every direction. Each square is a cell, and each cell is either alive or dead. A cell's neighbors are the eight cells that touch it, including the diagonals. Time moves in steps called generations, and on each step every cell on the board updates at the same moment.
+The board is a grid that goes on forever in every direction. Each square is a cell, and each cell is either alive or dead. A cell's neighbors are the eight cells that touch it, including the diagonals, like the yellow ring around the cell in the picture. Time moves in steps called generations, and on each step every cell on the board updates at the same moment.
 -->
 
 ---
@@ -161,48 +203,79 @@ Other patterns cycle forever. This one is the blinker. The middle cell always ha
 
 # The glider travels
 
-<div class="row four">
-<div>
-
-```text
-. # . .
-. . # .
-# # # .
-. . . .
-```
-
-</div>
-<div>
-
-```text
-. . . .
-# . # .
-. # # .
-. # . .
-```
-
-</div>
-<div>
-
-```text
-. . . .
-. . # .
-# . # .
-. # # .
-```
-
-</div>
-<div>
-
-```text
-. . . .
-. # . .
-. . # #
-. # # .
-```
-
-</div>
-</div>
+<svg viewBox="0 0 1088 274" width="1088" role="img" aria-label="Four generations of a glider, each shifted toward the lower right">
+  <rect x="2" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="58" y="2" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="114" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="170" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="2" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="58" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="114" y="58" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="170" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="2" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="58" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="114" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="170" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="2" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="58" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="114" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="170" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <text x="112" y="262" text-anchor="middle" font-size="26" fill="currentColor">generation 0</text>
+  <polygon points="242,100 272,112 242,124" fill="currentColor" fill-opacity="0.6" />
+  <rect x="290" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="346" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="402" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="458" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="290" y="58" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="346" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="402" y="58" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="458" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="290" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="346" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="402" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="458" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="290" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="346" y="170" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="402" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="458" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <text x="400" y="262" text-anchor="middle" font-size="26" fill="currentColor">generation 1</text>
+  <polygon points="530,100 560,112 530,124" fill="currentColor" fill-opacity="0.6" />
+  <rect x="578" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="634" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="690" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="746" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="578" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="634" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="690" y="58" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="746" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="578" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="634" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="690" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="746" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="578" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="634" y="170" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="690" y="170" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="746" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <text x="688" y="262" text-anchor="middle" font-size="26" fill="currentColor">generation 2</text>
+  <polygon points="818,100 848,112 818,124" fill="currentColor" fill-opacity="0.6" />
+  <rect x="866" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="922" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="978" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="1034" y="2" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="866" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="922" y="58" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="978" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="1034" y="58" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="866" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="922" y="114" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="978" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="1034" y="114" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="866" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <rect x="922" y="170" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="978" y="170" width="52" height="52" rx="4" fill="currentColor" />
+  <rect x="1034" y="170" width="52" height="52" rx="4" fill="currentColor" fill-opacity="0.12" />
+  <text x="976" y="262" text-anchor="middle" font-size="26" fill="currentColor">generation 3</text>
+</svg>
 
 <!--
 Then there are spaceships, which move. The smallest is the glider: five cells that cycle through four shapes. After four generations it looks exactly like it did at the start, shifted one cell down and one cell to the right. So it crawls diagonally across the board forever, at a quarter of the fastest speed anything in Life can go.

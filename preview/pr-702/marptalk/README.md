@@ -77,8 +77,8 @@ node marptalk/scripts/check.js my-deck.md
 ```
 
 It reports slides with no voiceover, Markdown or URLs in the voiceover, too
-much narration on one slide, too much text on screen, and math. It needs no
-`npm install`.
+much narration on one slide, too much text on screen, math, HTML tags that
+show as text, and blank lines inside an `<svg>`. It needs no `npm install`.
 
 ### What renders
 
@@ -86,8 +86,32 @@ Everything Marp Core renders, except math: `$...$` stays as text. Built-in
 themes are `default`, `gaia`, and `uncover`. Code fences are highlighted for
 the languages listed in `scripts/vendor.js`; others render as plain text.
 Inline HTML follows Marp's default allowlist, so `<div class="...">` works but
-`style` attributes, `<svg>`, and `<iframe>` don't. Use the `style` directive
+`style` and `id` attributes and `<iframe>` don't. Use the `style` directive
 for CSS.
+
+### Diagrams
+
+Marp has no diagram syntax of its own, such as Mermaid. A deck can show a
+diagram as an image, but an uploaded deck is one file, so images beside it
+don't load. Marptalk therefore also renders inline SVG drawings: `svg`, `g`,
+`rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `text`,
+`tspan`, and `title`, with geometry and presentation attributes such as
+`fill`, `stroke`, `transform`, and `text-anchor`. Scripts, event handlers,
+`style`, `id`, `<image>`, `<foreignObject>`, and `<marker>` are left out, so
+draw arrowheads as small polygons. Each bundled deck has an example:
+the object graph in the Git deck, the circles in the GPS deck, and the cell
+grids in the Game of Life deck.
+
+```html
+<svg viewBox="0 0 400 80" width="800" role="img" aria-label="A blob">
+  <rect x="10" y="10" width="160" height="60" rx="10" fill="none" stroke="currentColor" />
+  <text x="90" y="48" text-anchor="middle" font-size="22" fill="currentColor">blob</text>
+</svg>
+```
+
+Leave no blank lines inside an `<svg>`: Markdown ends the HTML block at a
+blank line and renders the rest as text. Marp CLI and the VS Code extension
+show these drawings only when their HTML setting is on.
 
 ## Speech
 
