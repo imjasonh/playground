@@ -36,8 +36,6 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    env:
-      KO_DOCKER_REPO: ghcr.io/imjasonh/playground/apko-frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -52,17 +50,14 @@ jobs:
         working-directory: apko-frontend
         run: go test ./...
 
-      - name: Install ko
-        run: go install github.com/google/ko@v0.19.1
+      # setup-ko logs in to GHCR and sets KO_DOCKER_REPO to
+      # ghcr.io/imjasonh/playground, so the job must not set it first.
+      - uses: imjasonh/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
+        with:
+          version: v0.19.1
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
-
-      - name: Log in to GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ACTOR: ${{ github.actor }}
-        run: echo "${GH_TOKEN}" | ko login ghcr.io --username "${ACTOR}" --password-stdin
 
       - name: Build and push
         id: build
@@ -71,6 +66,7 @@ jobs:
         # without one. The source label links the GHCR package to this
         # repository.
         run: |
+          export KO_DOCKER_REPO="${KO_DOCKER_REPO}/apko-frontend"
           image="$(ko build --bare \
             --platform=linux/amd64,linux/arm64 \
             --tags="${GITHUB_SHA},latest" \
