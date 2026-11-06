@@ -54,7 +54,8 @@ than `go test`.
 | `internal/tswasm/`            | Official C tree-sitter + grammars as embedded `ts-core.wasm.br`, hosted by wazero. Rebuild with `internal/tswasm/build.sh`. Compiled code is cached under `os.UserCacheDir()/pasta/wazero/`; a damaged cache is removed and the module recompiled. |
 | `internal/tsutil/`            | Tree-sitter `Node` wrapper that carries source bytes + language + file-id, so callers don't have to thread them. |
 | `internal/match/`             | Pattern matcher: node unions, fields, adjacent windows, preceding, predicates (positional), checks (named). |
-| `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group. |
+| `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group, and lookups bind to the nearest definition of a name. |
+| `internal/testpath/`          | Whether a path is test code, by language conventions. Shared by the fact store's tie-break and the code facts engine. |
 | `internal/effect/`            | Compiles edits to byte-range ops, handles `@capture` interpolation, comment preservation, and `trim_start`/`trim_end`. |
 | `internal/apply/`             | Applies ops to source bytes with conflict detection. |
 | `internal/engine/`            | Top-level orchestrator. SCC scheduler with fixpoint groups for cyclic rule deps. `Run` is the single-file entry point; `RunGroup` runs a set of files with a shared fact store. The cross-file (in-memory) path parses in parallel and runs each dependency level (`groupLevels`) across files in parallel, then restores schedule order per file. |
@@ -111,7 +112,8 @@ Two cases:
 
 1. **The grammar is already linked in.** Add a CUE file under
    `internal/loader/cuemod/lang/<name>/<name>.cue` declaring the
-   `Config` value (grammar name, extensions, comment node types).
+   `Config` value (grammar name, extensions, comment node types, and
+   the node types of named function definitions).
    No Go change required. See the existing `lang/go/`, `lang/python/`,
    etc. as templates.
 
@@ -145,15 +147,21 @@ and the runner registers them at startup.
   diagnostics/edit ops must stay self-contained anyway — see how
   `effect.Diagnostic` snapshots byte ranges and the line number rather
   than holding a `Node` reference.
-- **By-name fact lookup is scope-blind AND file-blind.** The
-  factstore's secondary index keys facts by identifier text only —
-  no scope, no file. Two functions that both define `x` (in the
-  same file or in different files of a multi-file group) will share
-  facts on `x`. Scope-blindness has always been the case; the
-  file-blindness is deliberate — it's what makes cross-file
-  analysis work via `has_fact` / `not_has_fact`. Testdata uses
-  unique names where bleed would corrupt the test; production
-  precision needs scope-aware fact keys (see future-work.md).
+- **By-name fact lookup binds to the nearest definition.** The
+  factstore's secondary index keys facts by identifier text, with no
+  scope, so facts propagate across files via `has_fact` /
+  `not_has_fact`. The engine also records every function and method
+  definition it parses (the language's `definition_types`). When
+  every fact on a name is anchored on a definition, a lookup binds to
+  the nearest definition of that name in the same language: the same
+  file, then the same directory, then the deepest common directory,
+  with a test file preferring a test file's definition on a tie. The
+  lookup succeeds only if that definition carries the fact, so a local
+  helper shadows a same-named function elsewhere in the monorepo.
+  Facts anchored on other identifiers, such as tainted variables,
+  still match by name alone, and nothing is scoped within a function.
+  Testdata uses unique names where that bleed would corrupt the test;
+  full precision needs scope-aware fact keys (see future-work.md).
 
 ## The `.pasta/` convention
 

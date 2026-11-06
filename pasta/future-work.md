@@ -244,11 +244,15 @@ What's still missing:
 
 ### Scope-aware fact keys
 **Effort:** M. **Surfaced by:** taint analyzers' caveat.
-Today the fact store has a secondary by-name index that's
-scope-blind: a name shadowed in another function still hits a fact
-keyed by that name. The taint testdata works around this by using
-unique variable names per function. Real precision needs facts keyed
-by `(name, scope-id)` where scope-id is derived from the enclosing
+**Status: partly done.** Lookups by name now bind to the nearest
+definition of the name in the same language (same file, then same
+directory, then deepest common directory) when every fact on the
+name is anchored on a definition, so a local function shadows a
+same-named one elsewhere. What's left is scope within a file: a
+variable shadowed in another function still hits a fact keyed by
+that name, and the taint testdata works around this by using unique
+variable names per function. Real precision needs facts keyed by
+`(name, scope-id)` where scope-id is derived from the enclosing
 function or block.
 
 ### Cross-analyzer fact namespacing

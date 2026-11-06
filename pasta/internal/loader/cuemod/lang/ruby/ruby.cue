@@ -7,6 +7,7 @@ Config: schema.#Language & {
 	grammar:    "ruby"
 	extensions: [".rb"]
 	comment_types: ["comment"]
+	definition_types: ["method", "singleton_method"]
 }
 
 Name: Config.grammar

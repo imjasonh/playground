@@ -7,6 +7,7 @@ Config: schema.#Language & {
 	grammar:    "typescript"
 	extensions: [".ts"]
 	comment_types: ["comment"]
+	definition_types: ["function_declaration", "generator_function_declaration", "method_definition"]
 }
 
 Name: Config.grammar
