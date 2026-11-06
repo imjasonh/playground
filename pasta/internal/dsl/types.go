@@ -341,4 +341,8 @@ type LanguageDecl struct {
 	Grammar      string   `json:"grammar"`
 	Extensions   []string `json:"extensions,omitempty"`
 	CommentTypes []string `json:"comment_types,omitempty"`
+	// DefinitionTypes are the node types of named function and method
+	// definitions, whose `name` field holds the identifier that calls
+	// bind to.
+	DefinitionTypes []string `json:"definition_types,omitempty"`
 }

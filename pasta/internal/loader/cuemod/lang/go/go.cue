@@ -15,6 +15,7 @@ Config: schema.#Language & {
 	extensions: [".go"]
 	// tree-sitter-go uses one comment type for both `//` and `/* */`.
 	comment_types: ["comment"]
+	definition_types: ["function_declaration", "method_declaration"]
 }
 
 // Name re-exports Config.grammar for convenience in rule `languages` lists.

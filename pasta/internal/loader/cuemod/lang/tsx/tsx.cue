@@ -9,6 +9,7 @@ Config: schema.#Language & {
 	grammar:    "tsx"
 	extensions: [".tsx"]
 	comment_types: ["comment"]
+	definition_types: ["function_declaration", "generator_function_declaration", "method_definition"]
 }
 
 Name: Config.grammar

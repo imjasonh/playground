@@ -210,4 +210,12 @@ package schema
 	// Tree-sitter node types to skip during adjacency matching (for
 	// comment filtering primarily).
 	comment_types: [...string]
+
+	// Tree-sitter node types of named function and method definitions.
+	// Each must have a `name` field holding the defined identifier. When
+	// a rule looks a fact up by an identifier's text, the fact store
+	// binds the identifier to the nearest definition of that text in
+	// the same language, so a local definition shadows a same-named
+	// one elsewhere.
+	definition_types?: [...string]
 }

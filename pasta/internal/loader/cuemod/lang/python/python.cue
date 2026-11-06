@@ -8,6 +8,7 @@ Config: schema.#Language & {
 	extensions: [".py"]
 	// Python `"""..."""` parses as a string node, not a comment.
 	comment_types: ["comment"]
+	definition_types: ["function_definition"]
 }
 
 Name: Config.grammar

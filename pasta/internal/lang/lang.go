@@ -29,7 +29,10 @@ type Language struct {
 	Grammar      string
 	Extensions   []string
 	CommentTypes []string
-	GetLanguage  func() *tswasm.Language
+	// DefinitionTypes are the node types of named function and method
+	// definitions, whose `name` field holds the defined identifier.
+	DefinitionTypes []string
+	GetLanguage     func() *tswasm.Language
 }
 
 // All is the live registry, populated from the embedded github.com/imjasonh/pasta module.
@@ -65,11 +68,12 @@ func loadEmbedded() (map[string]Language, error) {
 			return fmt.Errorf("%s: unknown grammar %q (registered: %v)", p, ld.Grammar, grammarNames())
 		}
 		out[ld.Name] = Language{
-			Name:         ld.Name,
-			Grammar:      ld.Grammar,
-			Extensions:   ld.Extensions,
-			CommentTypes: ld.CommentTypes,
-			GetLanguage:  gl,
+			Name:            ld.Name,
+			Grammar:         ld.Grammar,
+			Extensions:      ld.Extensions,
+			CommentTypes:    ld.CommentTypes,
+			DefinitionTypes: ld.DefinitionTypes,
+			GetLanguage:     gl,
 		}
 		return nil
 	}); err != nil {
@@ -107,11 +111,12 @@ func Register(d dsl.LanguageDecl) error {
 			d.Name, d.Grammar, grammarNames())
 	}
 	All[d.Name] = Language{
-		Name:         d.Name,
-		Grammar:      d.Grammar,
-		Extensions:   d.Extensions,
-		CommentTypes: d.CommentTypes,
-		GetLanguage:  gl,
+		Name:            d.Name,
+		Grammar:         d.Grammar,
+		Extensions:      d.Extensions,
+		CommentTypes:    d.CommentTypes,
+		DefinitionTypes: d.DefinitionTypes,
+		GetLanguage:     gl,
 	}
 	return nil
 }
