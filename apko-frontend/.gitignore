@@ -1,0 +1,6 @@
+# Built binary
+/apko-frontend
+
+# Go test artifacts
+*.test
+*.out
