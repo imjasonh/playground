@@ -908,7 +908,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
-| `chrome-ai/` | Chat with the language model built into Chrome (Gemini Nano) through the Prompt API. Streams replies, stops a reply, and shows context window use. Attaches images and audio when the device supports them, and reads text files into the prompt. Renders replies as Markdown with vendored marked and DOMPurify (`npm run vendor`). Needs desktop Chrome that exposes `LanguageModel` | Node test runner (fake `LanguageModel`) |
+| `chrome-ai/` | Chat with the language model built into Chrome (Gemini Nano) through the Prompt API. Streams replies, stops a reply, and shows context window use. Attaches images and audio when the device supports them, and reads text files into the prompt. Saves chats in versioned IndexedDB storage and replays a reopened chat as `initialPrompts`. Renders replies as Markdown with vendored marked and DOMPurify (`npm run vendor`). Needs desktop Chrome that exposes `LanguageModel` | Node test runner (fake `LanguageModel`) |
 | `droneski/` | FPV drone filming a procedurally generated downhill skier | Node test runner |
 | `esp-flash/` | Flash inkbot/maze (or a local `.bin`) to an ESP32 over Web Serial / WebUSB | Node test runner |
 | `kubescheduler-the-game/` | Play the Kubernetes scheduler and cluster operator | Node test runner |

@@ -6,8 +6,10 @@ import {
   chatOptions,
   contextUsage,
   createSession,
+  dropOldestExchange,
   findLanguageModel,
   formatProgress,
+  restoreSession,
   streamReply,
   supportedMedia,
 } from '../src/model.js';
@@ -98,6 +100,75 @@ test('createSession passes chat options and reports download progress', async ()
     api.createOptions.expectedOutputs,
     chatOptions().expectedOutputs,
   );
+});
+
+test('dropOldestExchange starts at the second user message', () => {
+  const messages = [
+    {role: 'user', content: 'a'},
+    {role: 'assistant', content: 'b'},
+    {role: 'user', content: 'c'},
+    {role: 'user', content: 'd'},
+  ];
+  assert.deepEqual(dropOldestExchange(messages), messages.slice(2));
+  assert.deepEqual(dropOldestExchange(messages.slice(2)), messages.slice(3));
+  assert.deepEqual(dropOldestExchange(messages.slice(3)), []);
+  assert.deepEqual(dropOldestExchange([]), []);
+});
+
+test('restoreSession passes history as initial prompts', async () => {
+  const api = fakeApi();
+  const history = [
+    {role: 'user', content: 'hi'},
+    {role: 'assistant', content: 'hello'},
+  ];
+  const {dropped} = await restoreSession(api, history, {media: ['image']});
+  assert.equal(dropped, 0);
+  assert.deepEqual(api.createOptions.initialPrompts, history);
+  assert.equal(api.createOptions.expectedInputs.length, 2);
+});
+
+test('restoreSession leaves out initialPrompts for an empty history', async () => {
+  const api = fakeApi();
+  await restoreSession(api, []);
+  assert.equal('initialPrompts' in api.createOptions, false);
+});
+
+test('restoreSession drops old exchanges until the history fits', async () => {
+  const session = new FakeSession();
+  const sizes = [];
+  const api = {
+    async create(options) {
+      const prompts = options.initialPrompts ?? [];
+      sizes.push(prompts.length);
+      if (prompts.length > 2) {
+        throw new DOMException('Too long', 'QuotaExceededError');
+      }
+      return session;
+    },
+  };
+  const history = [
+    {role: 'user', content: '1'},
+    {role: 'assistant', content: '1'},
+    {role: 'user', content: '2'},
+    {role: 'assistant', content: '2'},
+    {role: 'user', content: '3'},
+    {role: 'assistant', content: '3'},
+  ];
+  const restored = await restoreSession(api, history);
+  assert.equal(restored.session, session);
+  assert.equal(restored.dropped, 4);
+  assert.deepEqual(sizes, [6, 4, 2]);
+});
+
+test('restoreSession rethrows other errors', async () => {
+  const api = {
+    create: async () => {
+      throw new DOMException('No', 'NotAllowedError');
+    },
+  };
+  await assert.rejects(restoreSession(api, [{role: 'user', content: 'a'}]), {
+    name: 'NotAllowedError',
+  });
 });
 
 test('createSession declares the media inputs it was given', async () => {

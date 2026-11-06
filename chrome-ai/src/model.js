@@ -98,16 +98,18 @@ export function formatProgress(loaded) {
  * which Chrome allows only during a user gesture.
  * @param {object} api The `LanguageModel` global.
  * @param {{media: (!Array<string>|undefined),
+ *     initialPrompts: (!Array<!Object>|undefined),
  *     onProgress: (function(number))|undefined,
  *     onOverflow: (function())|undefined}=} options
  * @return {!Promise<object>}
  */
 export async function createSession(
   api,
-  {media = [], onProgress, onOverflow} = {},
+  {media = [], initialPrompts = [], onProgress, onOverflow} = {},
 ) {
   const session = await api.create({
     ...chatOptions(media),
+    ...(initialPrompts.length > 0 ? {initialPrompts} : {}),
     monitor(m) {
       m.addEventListener('downloadprogress', (e) => onProgress?.(e.loaded));
     },
@@ -118,6 +120,41 @@ export async function createSession(
     session.addEventListener('quotaoverflow', onOverflow);
   }
   return session;
+}
+
+/**
+ * Returns `messages` without the first exchange: everything from the second
+ * user message on.
+ * @param {!Array<{role: string}>} messages
+ * @return {!Array<{role: string}>}
+ */
+export function dropOldestExchange(messages) {
+  const next = messages.findIndex((m, i) => i > 0 && m.role === 'user');
+  return next === -1 ? [] : messages.slice(next);
+}
+
+/**
+ * Creates a session that already holds `history`. When the history is too
+ * long for the context window, drops the oldest exchanges until it fits.
+ * @param {object} api The `LanguageModel` global.
+ * @param {!Array<!Object>} history Prompt API messages.
+ * @param {!Object=} options The options for `createSession`.
+ * @return {!Promise<{session: object, dropped: number}>} The session and how
+ *     many messages of `history` it left out.
+ */
+export async function restoreSession(api, history, options = {}) {
+  let initialPrompts = history;
+  for (;;) {
+    try {
+      const session = await createSession(api, {...options, initialPrompts});
+      return {session, dropped: history.length - initialPrompts.length};
+    } catch (err) {
+      if (err?.name !== 'QuotaExceededError' || initialPrompts.length === 0) {
+        throw err;
+      }
+      initialPrompts = dropOldestExchange(initialPrompts);
+    }
+  }
 }
 
 /**

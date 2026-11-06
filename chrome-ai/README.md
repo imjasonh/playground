@@ -49,6 +49,27 @@ On load, the page asks Chrome which of image and audio input this device
 supports. The file picker offers only those, and the page rejects other files
 with a message. The model can't read PDFs, Office documents, or video.
 
+## Saved chats
+
+Each chat is saved in the browser's IndexedDB, attachments included, so
+nothing leaves the device. **Chats** lists them, most recent first, and each
+one has a delete button.
+
+When you open a saved chat, the page shows its messages and creates a model
+session with them as `initialPrompts`, so the next message continues the
+conversation. If the chat no longer fits in the context window, the page
+drops the oldest exchanges until it does, and the status line says so.
+
+Storage is versioned in two places:
+
+- `DB_VERSION` in `src/store.js` covers the IndexedDB object stores. To add
+  a store or index, bump it and add a step to `upgrade`.
+- `CONVERSATION_VERSION` in `src/history.js` covers the record format. To
+  change the format, bump it and add a step to `MIGRATIONS` that upgrades a
+  record from the previous version. Records come up to date when they're
+  read. A record from a newer version of the app is skipped and left in
+  storage.
+
 The status line shows how much of the model's context window the chat has
 used. When the conversation outgrows it, Chrome drops the oldest messages and
 the status line says so.
@@ -76,5 +97,7 @@ npm test
 ```
 
 The tests run `src/model.js` in Node against a fake `LanguageModel`,
-`src/attachments.js` on plain objects and `Blob`s, and `src/markdown.js`
-against the vendored marked, so they don't need Chrome or the model.
+`src/store.js` against [fake-indexeddb](https://github.com/dumbmatter/fakeIndexedDB),
+`src/attachments.js` and `src/history.js` on plain objects and `Blob`s, and
+`src/markdown.js` against the vendored marked, so they don't need Chrome or
+the model.

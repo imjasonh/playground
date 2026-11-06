@@ -101,15 +101,15 @@ export function acceptList(media) {
 }
 
 /**
- * Builds the prompt for a user turn. Without attachments the prompt is the
- * text itself. Otherwise it's one user message whose content lists the text
- * files, then the images and audio, then the typed text.
+ * Returns the content of a user message. Without attachments the content is
+ * the text itself. Otherwise it lists the text files, then the images and
+ * audio, then the typed text.
  * @param {string} text
- * @param {!Array<{kind: string, name: string, file: !Blob, text: ?string}>}
+ * @param {!Array<{kind: string, name: string, file: ?Blob, text: ?string}>}
  *     attachments
  * @return {string|!Array<!Object>}
  */
-export function buildPrompt(text, attachments) {
+export function userContent(text, attachments) {
   if (attachments.length === 0) {
     return text;
   }
@@ -125,5 +125,20 @@ export function buildPrompt(text, attachments) {
   if (text !== '') {
     content.push({type: 'text', value: text});
   }
-  return [{role: 'user', content}];
+  return content;
+}
+
+/**
+ * Builds the prompt for a user turn: the text itself, or one user message
+ * when there are attachments.
+ * @param {string} text
+ * @param {!Array<{kind: string, name: string, file: ?Blob, text: ?string}>}
+ *     attachments
+ * @return {string|!Array<!Object>}
+ */
+export function buildPrompt(text, attachments) {
+  if (attachments.length === 0) {
+    return text;
+  }
+  return [{role: 'user', content: userContent(text, attachments)}];
 }

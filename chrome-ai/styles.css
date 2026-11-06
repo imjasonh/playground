@@ -93,6 +93,121 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sheet {
+  width: min(24rem, 100vw - 3rem);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0 auto 0 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: max(0.75rem, env(safe-area-inset-top)) 1rem 0.75rem
+    max(1rem, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+
+.empty-history {
+  margin: 0;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.conversations {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.5rem 0.5rem max(0.5rem, env(safe-area-inset-bottom))
+    max(0.5rem, env(safe-area-inset-left));
+  list-style: none;
+}
+
+.conversation {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.75rem;
+}
+
+.conversation:hover,
+.conversation.is-current {
+  background: var(--paper);
+}
+
+.conversation .open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+
+.conversation .title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation.is-current .title {
+  font-weight: 600;
+}
+
+.conversation time {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.conversation .delete {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.conversation .delete:hover {
+  border-color: transparent;
+  color: var(--error);
+}
+
 .masthead h1 {
   margin: 0;
   font-size: clamp(1.35rem, 1.15rem + 0.8vw, 1.75rem);
@@ -498,6 +613,18 @@ textarea:focus-visible {
 
 .composer textarea:disabled {
   opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet[open] {
+    animation: slide-in 160ms ease-out;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

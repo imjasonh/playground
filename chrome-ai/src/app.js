@@ -1,15 +1,23 @@
 import {acceptList, buildPrompt, checkFile} from './attachments.js';
+import {
+  formatWhen,
+  newConversation,
+  storedAttachment,
+  titleFor,
+  toPromptMessages,
+} from './history.js';
 import {renderMarkdown} from './markdown.js';
 import {
   availabilityMessage,
   chatOptions,
   contextUsage,
-  createSession,
   findLanguageModel,
   formatProgress,
+  restoreSession,
   streamReply,
   supportedMedia,
 } from './model.js';
+import {openStore} from './store.js';
 
 const el = {
   app: document.querySelector('.app'),
@@ -26,17 +34,28 @@ const el = {
   send: document.querySelector('#send'),
   stop: document.querySelector('#stop'),
   newChat: document.querySelector('#new-chat'),
+  chats: document.querySelector('#chats'),
+  history: document.querySelector('#history'),
+  closeHistory: document.querySelector('#close-history'),
+  emptyHistory: document.querySelector('#empty-history'),
+  conversations: document.querySelector('#conversations'),
+  trashIcon: document.querySelector('#trash-icon'),
 };
 
 const api = findLanguageModel(globalThis);
 
+let store = null;
+let conversation = null;
 let session = null;
+let sessionPromise = null;
+let generation = 0;
 let controller = null;
 let ready = false;
 let overflowed = false;
 let media = [];
 let pending = [];
-const sentUrls = [];
+const shownUrls = [];
+const deletedIds = new Set();
 
 const sessionCallbacks = {
   onProgress: (loaded) => setStatus(formatProgress(loaded)),
@@ -88,6 +107,61 @@ function isNearBottom() {
 
 function scrollToBottom() {
   el.log.scrollTop = el.log.scrollHeight;
+}
+
+function describeError(err) {
+  if (err?.name === 'QuotaExceededError') {
+    return "That message is too long for the model's context window.";
+  }
+  if (err?.name === 'NotAllowedError') {
+    return 'Chrome blocked the model. Click Send again to retry.';
+  }
+  if (err?.name === 'EncodingError') {
+    return "The model couldn't decode one of the attachments.";
+  }
+  return `The model failed: ${err?.message || err}`;
+}
+
+// Returns the session for the open conversation, creating it the first time.
+// A saved conversation's messages go in as the session's initial prompts.
+function ensureSession() {
+  if (sessionPromise) {
+    return sessionPromise;
+  }
+  const started = generation;
+  const history = toPromptMessages(conversation?.messages ?? [], media);
+  const promise = restoreSession(api, history, {...sessionCallbacks, media});
+  sessionPromise = promise.then(
+    (restored) => {
+      if (started !== generation) {
+        restored.session.destroy();
+        throw new DOMException('The chat changed.', 'AbortError');
+      }
+      session = restored.session;
+      overflowed ||= restored.dropped > 0;
+      return session;
+    },
+    (err) => {
+      if (started === generation) {
+        sessionPromise = null;
+      }
+      throw err;
+    },
+  );
+  return sessionPromise;
+}
+
+function save(record) {
+  if (!store || deletedIds.has(record.id)) {
+    return;
+  }
+  record.title = titleFor(record.messages);
+  record.updatedAt = Date.now();
+  store.put(record).catch((err) => {
+    setStatus(`Couldn't save this chat: ${err?.message || err}`, {
+      error: true,
+    });
+  });
 }
 
 function attachmentElement(attachment, {onRemove} = {}) {
@@ -186,38 +260,37 @@ function addMessage(role, text, attachments = []) {
   return body;
 }
 
-function describeError(err) {
-  if (err?.name === 'QuotaExceededError') {
-    return "That message is too long for the model's context window.";
-  }
-  if (err?.name === 'NotAllowedError') {
-    return 'Chrome blocked the model. Click Send again to retry.';
-  }
-  if (err?.name === 'EncodingError') {
-    return "The model couldn't decode one of the attachments.";
-  }
-  return `The model failed: ${err?.message || err}`;
-}
-
 async function send(text, attachments) {
   controller = new AbortController();
   const {signal} = controller;
+  const sessionReady = ensureSession();
+  conversation ??= newConversation({
+    id: crypto.randomUUID(),
+    now: Date.now(),
+  });
+  const record = conversation;
+  record.messages.push({
+    role: 'user',
+    text,
+    attachments: attachments.map(storedAttachment),
+  });
+  save(record);
+
   addMessage('user', text, attachments);
   const reply = addMessage('model', '');
   reply.parentElement.classList.add('is-pending');
   updateSend();
+  let replyText = '';
+  let failed = false;
   try {
-    if (!session) {
-      const created = await createSession(api, {...sessionCallbacks, media});
-      if (signal.aborted) {
-        created.destroy();
-        return;
-      }
-      session = created;
+    const current = await sessionReady;
+    if (signal.aborted) {
+      return;
     }
-    await streamReply(session, buildPrompt(text, attachments), {
+    await streamReply(current, buildPrompt(text, attachments), {
       signal,
       onText: (sofar) => {
+        replyText = sofar;
         const follow = isNearBottom();
         renderMarkdown(reply, sofar);
         if (follow) {
@@ -227,43 +300,152 @@ async function send(text, attachments) {
     });
   } catch (err) {
     if (err?.name !== 'AbortError') {
+      failed = true;
       reply.textContent = describeError(err);
       reply.parentElement.classList.add('is-error');
     }
   } finally {
+    if (!failed && replyText !== '') {
+      record.messages.push({role: 'assistant', text: replyText, attachments: []});
+      save(record);
+    }
     reply.parentElement.classList.remove('is-pending');
     if (signal.aborted && reply.textContent === '') {
       reply.parentElement.remove();
     }
     if (controller?.signal === signal) {
       controller = null;
+      updateSend();
+      showUsage();
     }
-    updateSend();
-    showUsage();
   }
 }
 
-function newChat() {
+function resetChat() {
+  generation++;
   controller?.abort();
   controller = null;
   session?.destroy();
   session = null;
+  sessionPromise = null;
+  conversation = null;
   overflowed = false;
-  for (const url of sentUrls.splice(0)) {
+  for (const url of shownUrls.splice(0)) {
     URL.revokeObjectURL(url);
   }
   el.messages.replaceChildren();
   el.empty.hidden = false;
   setStatus('');
   updateSend();
+}
+
+function newChat() {
+  resetChat();
   el.prompt.focus();
+}
+
+function openConversation(record) {
+  resetChat();
+  conversation = record;
+  for (const message of record.messages) {
+    const attachments = message.attachments.map((a) => {
+      if (!a.file) {
+        return a;
+      }
+      const url = URL.createObjectURL(a.file);
+      shownUrls.push(url);
+      return {...a, url};
+    });
+    if (message.role === 'user') {
+      addMessage('user', message.text, attachments);
+    } else {
+      renderMarkdown(addMessage('model', ''), message.text);
+    }
+  }
+  updateSend();
+  if (!ready) {
+    return;
+  }
+  setStatus('Loading the conversation into the model…');
+  ensureSession().then(showUsage, (err) => {
+    if (err?.name !== 'AbortError') {
+      setStatus(describeError(err), {error: true});
+    }
+  });
+  el.prompt.focus();
+}
+
+function conversationItem(record) {
+  const item = document.createElement('li');
+  item.className = 'conversation';
+  item.classList.toggle('is-current', record.id === conversation?.id);
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'open';
+  const title = document.createElement('span');
+  title.className = 'title';
+  title.textContent = record.title;
+  const when = document.createElement('time');
+  when.dateTime = new Date(record.updatedAt).toISOString();
+  when.textContent = formatWhen(record.updatedAt, Date.now());
+  open.append(title, when);
+  open.addEventListener('click', () => {
+    el.history.close();
+    openConversation(record);
+  });
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'ghost icon delete';
+  remove.setAttribute('aria-label', `Delete ${record.title}`);
+  remove.title = 'Delete';
+  remove.append(el.trashIcon.content.cloneNode(true));
+  remove.addEventListener('click', () => deleteConversation(record));
+
+  item.append(open, remove);
+  return item;
+}
+
+async function showHistory() {
+  try {
+    const records = await store.list();
+    el.conversations.replaceChildren(...records.map(conversationItem));
+    el.emptyHistory.hidden = records.length > 0;
+  } catch (err) {
+    setStatus(`Couldn't load saved chats: ${err?.message || err}`, {
+      error: true,
+    });
+    return;
+  }
+  if (!el.history.open) {
+    el.history.showModal();
+  }
+}
+
+async function deleteConversation(record) {
+  if (!confirm(`Delete "${record.title}"?`)) {
+    return;
+  }
+  deletedIds.add(record.id);
+  if (record.id === conversation?.id) {
+    resetChat();
+  }
+  try {
+    await store.delete(record.id);
+  } catch (err) {
+    setStatus(`Couldn't delete the chat: ${err?.message || err}`, {
+      error: true,
+    });
+  }
+  showHistory();
 }
 
 async function download() {
   el.download.disabled = true;
   setStatus(formatProgress(0));
   try {
-    session = await createSession(api, {...sessionCallbacks, media});
+    await ensureSession();
     el.download.hidden = true;
     setReady(true);
     showUsage();
@@ -283,7 +465,7 @@ el.composer.addEventListener('submit', (e) => {
   }
   const attachments = pending;
   pending = [];
-  sentUrls.push(...attachments.map((a) => a.url).filter(Boolean));
+  shownUrls.push(...attachments.map((a) => a.url).filter(Boolean));
   el.prompt.value = '';
   renderPending();
   send(text, attachments);
@@ -344,8 +526,19 @@ el.prompt.addEventListener('input', updateSend);
 el.stop.addEventListener('click', () => controller?.abort());
 el.newChat.addEventListener('click', newChat);
 el.download.addEventListener('click', download);
+el.chats.addEventListener('click', showHistory);
+el.closeHistory.addEventListener('click', () => el.history.close());
 
-async function init() {
+async function initStore() {
+  try {
+    store = await openStore(indexedDB);
+    el.chats.hidden = false;
+  } catch {
+    store = null;
+  }
+}
+
+async function initModel() {
   if (!api) {
     applyAvailability('unsupported');
     return;
@@ -363,4 +556,5 @@ async function init() {
   }
 }
 
-init();
+initStore();
+initModel();

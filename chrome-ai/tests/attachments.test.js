@@ -8,6 +8,7 @@ import {
   checkFile,
   extensionOf,
   fileKind,
+  userContent,
 } from '../src/attachments.js';
 
 function file(name, type, size = 10) {
@@ -71,6 +72,17 @@ test('acceptList offers media only when the device takes it', () => {
 
 test('buildPrompt returns plain text without attachments', () => {
   assert.equal(buildPrompt('hello', []), 'hello');
+});
+
+test('userContent is the bare content list for a message', () => {
+  assert.equal(userContent('hello', []), 'hello');
+  assert.deepEqual(
+    userContent('hi', [{kind: 'text', name: 'a.txt', file: null, text: 'A'}]),
+    [
+      {type: 'text', value: 'Contents of the file a.txt:\n\nA'},
+      {type: 'text', value: 'hi'},
+    ],
+  );
 });
 
 test('buildPrompt orders text files, media, then the typed text', () => {
