@@ -494,3 +494,11 @@ go test -race ./...
 The tests generate a signed apk repository in memory, resolve a
 configuration against it, and run the build step's apko build offline from
 the fetched files. They need no network or BuildKit.
+
+In the frontend, log with `clog.FromContext(ctx)` or `slog`. The frontend
+installs a handler on its context that reports each record at
+`slog.LevelWarn` or above as a BuildKit build warning, with its attributes
+as `key=value` text, so apko's own warnings reach the user too. Other
+records go to the frontend's stderr, which BuildKit doesn't show. To point
+a warning at a line of the configuration file, add the `warnRange`
+attribute.

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/chainguard-dev/clog"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend/gateway/client"
 )
@@ -48,12 +49,9 @@ type fetcher struct {
 	// mainContext returns the build context, limited to the given paths.
 	mainContext func(ctx context.Context, paths ...string) (llb.State, error)
 
-	// warn reports a problem to the user as a build warning.
-	warn func(msg string)
-
 	mu      sync.Mutex
 	entries map[string]*fetchEntry
-	// warned holds the hosts warn has reported missing credentials for.
+	// warned holds the hosts warnAuth has reported.
 	warned map[string]bool
 }
 
@@ -69,19 +67,20 @@ type fetchEntry struct {
 	err  error
 }
 
-func newFetcher(c client.Client, mainContext func(context.Context, ...string) (llb.State, error), warn func(string)) *fetcher {
-	return &fetcher{c: c, mainContext: mainContext, warn: warn, entries: map[string]*fetchEntry{}, warned: map[string]bool{}}
+func newFetcher(c client.Client, mainContext func(context.Context, ...string) (llb.State, error)) *fetcher {
+	return &fetcher{c: c, mainContext: mainContext, entries: map[string]*fetchEntry{}, warned: map[string]bool{}}
 }
 
-// warnAuth reports, once for each host, how to pass credentials for it.
-func (f *fetcher) warnAuth(host string) {
+// warnAuth logs, once for each host, how to pass credentials for it.
+func (f *fetcher) warnAuth(ctx context.Context, host string) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.warned[host] || f.warn == nil {
+	seen := f.warned[host]
+	f.warned[host] = true
+	f.mu.Unlock()
+	if seen {
 		return
 	}
-	f.warned[host] = true
-	f.warn(fmt.Sprintf("%s requires credentials; pass them with --secret id=%s%s,env=VAR, where VAR holds the whole Authorization header, such as \"Basic <base64 of user:password>\", or with --secret id=%s%s,env=VAR, where VAR holds a bearer token",
+	clog.FromContext(ctx).Warn(fmt.Sprintf("%s requires credentials; pass them with --secret id=%s%s,env=VAR, where VAR holds the whole Authorization header, such as \"Basic <base64 of user:password>\", or with --secret id=%s%s,env=VAR, where VAR holds a bearer token",
 		host, authHeaderSecretPrefix, host, authTokenSecretPrefix, host))
 }
 
@@ -217,7 +216,7 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		// client doesn't retry, and say which secret to pass.
 		for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 			if strings.Contains(err.Error(), fmt.Sprintf("invalid response status %d", code)) {
-				r.f.warnAuth(req.URL.Hostname())
+				r.f.warnAuth(req.Context(), req.URL.Hostname())
 				return textResponse(req, code, err.Error()), nil
 			}
 		}

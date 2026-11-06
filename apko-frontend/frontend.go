@@ -18,6 +18,7 @@ import (
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/lock"
+	"github.com/chainguard-dev/clog"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -79,14 +80,20 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 	if err != nil {
 		return nil, err
 	}
+	// From here on, warnings logged with slog or clog, by the frontend or by
+	// apko, become build warnings.
+	ctx = clog.WithLogger(ctx, clog.New(newWarnHandler(func(ctx context.Context, msg string, ranges []*pb.Range) {
+		src.Warn(ctx, msg, client.WarnOpts{Range: ranges})
+	}, clog.FromContext(ctx).Handler())))
+	log := clog.FromContext(ctx)
 	ic, err := parseConfig(src.Data)
 	if err != nil {
 		return nil, err
 	}
 	for _, k := range ic.Contents.Keyring {
 		if strings.HasPrefix(k, "http://") {
-			src.Warn(ctx, "keyring "+k+" is fetched without TLS; every signature check trusts this key, so use https",
-				client.WarnOpts{Range: lineRange(src.Data, k)})
+			log.Warn("keyring "+k+" is fetched without TLS; every signature check trusts this key, so use https",
+				warnRange(src.Data, k))
 		}
 	}
 	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch], proxy: proxyEnv(dc.BuildArgs), cacheImports: dc.CacheImports}
@@ -105,9 +112,7 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		}
 		return *st, nil
 	}
-	b.fetcher = newFetcher(c, b.mainContext, func(msg string) {
-		src.Warn(ctx, msg, client.WarnOpts{})
-	})
+	b.fetcher = newFetcher(c, b.mainContext)
 	b.rec = b.fetcher.recorder()
 
 	if len(dc.TargetPlatforms) == 0 {
@@ -466,18 +471,6 @@ func proxyEnv(args map[string]string) llb.ProxyEnv {
 		NoProxy:    get("NO_PROXY"),
 		AllProxy:   get("ALL_PROXY"),
 	}
-}
-
-// lineRange returns the range of the first line of data that contains s, for
-// pointing a warning at it.
-func lineRange(data []byte, s string) []*pb.Range {
-	for i, line := range strings.Split(string(data), "\n") {
-		if strings.Contains(line, s) {
-			pos := &pb.Position{Line: int32(i + 1)}
-			return []*pb.Range{{Start: pos, End: pos}}
-		}
-	}
-	return nil
 }
 
 // mergeStates merges states, or returns the only state.
