@@ -26,12 +26,13 @@ npm run vendor   # copies pako into vendor/ for the browser
 npm start        # http://localhost:3000
 ```
 
-Production is the GitHub Pages deploy of this directory. The CORS proxy it calls
-(`cors-proxy-worker.imjasonh.workers.dev`) only allows
-`https://imjasonh.github.io`, so local `npm start` can fetch only if you point
-at a proxy that allows `http://localhost:3000`. Use **Open .pack** to load a
-local packfile (for example from `.git/objects/pack/`) without the network, or
-reopen a previously saved pack from IndexedDB.
+Production is the GitHub Pages deploy of this directory. Fetches use the same
+public CORS proxy as the git browser, `https://cors.isomorphic-git.org`. That
+proxy streams the pack. It is a third party, so it can see the repository URL
+and the bytes it relays. `npm start` can fetch a public repository through it.
+Use **Open .pack** to load a local packfile (for example from
+`.git/objects/pack/`) without the network, or reopen a previously saved pack
+from IndexedDB.
 
 ## Fetch flow
 
@@ -110,5 +111,5 @@ hash, and a live `git repack` fixture when `git` is on `PATH`.
   persisting the resolved object graph.
 - Thin packs (ref-deltas whose base isn't in the pack) show up as unresolved
   entries. A normal shallow fetch from a public host usually isn't thin.
-- Depth defaults to 1. Bump it only when you want more history; response size is
-  capped by the CORS proxy (25 MiB by default).
+- Depth defaults to 1. Raise it when you want more history. The pack is held
+  in memory while it is parsed.

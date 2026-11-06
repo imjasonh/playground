@@ -14,7 +14,7 @@ export async function fetchRefs(proxyBase, base) {
     headers: { Accept: "application/x-git-upload-pack-advertisement" },
   });
   if (!res.ok) {
-    throw new Error(`info/refs failed: HTTP ${res.status}`);
+    throw new Error(await formatHttpError("info/refs", res));
   }
   const bytes = new Uint8Array(await res.arrayBuffer());
   const parsed = parseInfoRefs(bytes);
@@ -43,7 +43,7 @@ export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress
     body,
   });
   if (!res.ok) {
-    throw new Error(`upload-pack failed: HTTP ${res.status}`);
+    throw new Error(await formatHttpError("upload-pack", res));
   }
 
   let result;
@@ -68,4 +68,16 @@ export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress
     throw new Error("no pack data returned");
   }
   return { pack: result.pack, progress: result.progress, control: result.control };
+}
+
+/** `what failed: HTTP status` plus a short response body, when there is one. */
+async function formatHttpError(what, res) {
+  let detail = "";
+  try {
+    const text = (await res.text()).replace(/\s+/g, " ").trim();
+    if (text) detail = `: ${text.slice(0, 180)}`;
+  } catch {
+    detail = "";
+  }
+  return `${what} failed: HTTP ${res.status}${detail}`;
 }
