@@ -154,6 +154,13 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		return nil, err
 	}
 
+	// A detected vcs-url reaches the image's annotations and labels but
+	// not the apko step's configuration, which /etc/apko.json records, so
+	// a new commit doesn't change the step's cache key.
+	if ic.VCSUrl == "" && dc.BuildArgs[argVCS] != "false" {
+		b.ic.VCSUrl = detectVCSURL(c.BuildOpts().Opts)
+	}
+
 	type platformAnnotations struct {
 		platform    ocispecs.Platform
 		annotations map[string]string
@@ -189,7 +196,12 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		}
 	}
 	if dc.MultiPlatformRequested {
-		for k, v := range ic.Annotations {
+		index := maps.Clone(ic.Annotations)
+		if index == nil {
+			index = map[string]string{}
+		}
+		maps.Copy(index, vcsAnnotations(b.ic.VCSUrl))
+		for k, v := range index {
 			rb.AddMeta(exptypes.AnnotationKey{Type: exptypes.AnnotationIndex, Key: k}.String(), []byte(v))
 		}
 	}
@@ -495,6 +507,16 @@ func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 		return nil, nil, err
 	}
 	cfg = cfg.DeepCopy()
+	anns := maps.Clone(m.Annotations)
+	// BuildImageFromLayers derives these from vcs-url, but it copies the
+	// configuration with MergeInto, which drops vcs-url.
+	for k, v := range vcsAnnotations(ic.VCSUrl) {
+		anns[k] = v
+		if cfg.Config.Labels == nil {
+			cfg.Config.Labels = map[string]string{}
+		}
+		cfg.Config.Labels[k] = v
+	}
 	comment := "This is an apko single-layer image"
 	if n > 1 {
 		comment = ""
@@ -523,7 +545,20 @@ func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, nil, err
 	}
-	return &out, m.Annotations, nil
+	return &out, anns, nil
+}
+
+// vcsAnnotations returns the source and revision annotations that apko
+// derives from a vcs-url of the form URL@REVISION.
+func vcsAnnotations(vcsURL string) map[string]string {
+	url, rev, ok := strings.Cut(vcsURL, "@")
+	if !ok {
+		return nil
+	}
+	return map[string]string{
+		"org.opencontainers.image.source":   url,
+		"org.opencontainers.image.revision": rev,
+	}
 }
 
 // specPlatform converts p to the image-spec type that BuildKit's API takes.
