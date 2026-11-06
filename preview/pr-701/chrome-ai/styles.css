@@ -66,16 +66,21 @@ body {
   display: none !important;
 }
 
+/* The rows span the window so the message list's scroll bar sits at the
+   window edge. Padding centers a 48rem column inside each row. */
 .app {
+  --column-left: max(1rem, env(safe-area-inset-left), (100% - 48rem) / 2);
+  --column-right: max(1rem, env(safe-area-inset-right), (100% - 48rem) / 2);
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100dvh;
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: max(0.75rem, env(safe-area-inset-top))
-    max(1rem, env(safe-area-inset-right))
-    max(0.75rem, env(safe-area-inset-bottom))
-    max(1rem, env(safe-area-inset-left));
+}
+
+.masthead,
+.log,
+.dock {
+  padding-left: var(--column-left);
+  padding-right: var(--column-right);
 }
 
 .masthead {
@@ -83,6 +88,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--line);
 }
@@ -131,11 +137,33 @@ textarea:focus-visible {
   border-color: var(--muted);
 }
 
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  padding: 0;
+}
+
+.icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Positioned so the absolutely positioned screen reader labels inside it
+   scroll with it instead of stretching the page. */
 .log {
+  position: relative;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1rem 0;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
 }
 
 .empty {
@@ -170,7 +198,131 @@ textarea:focus-visible {
 }
 
 .from-user {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.from-user .body:empty {
+  display: none;
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.from-user .attachments {
   justify-content: flex-end;
+  max-width: min(65ch, 85%);
+}
+
+.attachment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.attachment img {
+  display: block;
+  max-width: 100%;
+  max-height: 14rem;
+  object-fit: cover;
+}
+
+.attachment audio {
+  display: block;
+  max-width: 100%;
+}
+
+.attachment .name {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment.is-text .name::before,
+.attachment.is-audio .name::before {
+  margin-right: 0.4em;
+  color: var(--muted);
+}
+
+.attachment.is-text .name::before {
+  content: "TXT";
+  font-size: 0.75em;
+  font-weight: 650;
+}
+
+.attachment.is-audio .name::before {
+  content: "♪";
+}
+
+.attachments.pending {
+  align-items: center;
+}
+
+.pending .attachment {
+  max-width: 14rem;
+}
+
+.pending .attachment img {
+  width: 4rem;
+  height: 4rem;
+}
+
+.pending .attachment.is-image {
+  max-width: none;
+}
+
+.attachment .remove {
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+}
+
+.pending .is-image .remove {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: rgb(0 0 0 / 0.6);
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.attachment .remove:hover {
+  color: var(--ink);
+}
+
+.pending .is-image .remove:hover {
+  color: #ffffff;
+  background: rgb(0 0 0 / 0.8);
+}
+
+.app.is-dragging .log {
+  outline: 2px dashed var(--accent);
+  outline-offset: -0.5rem;
+  border-radius: var(--radius);
 }
 
 .from-user .body {
@@ -300,6 +452,7 @@ textarea:focus-visible {
   flex-direction: column;
   gap: 0.5rem;
   padding-top: 0.75rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
 }
 
