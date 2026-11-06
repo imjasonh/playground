@@ -191,3 +191,27 @@ func TestDirTransport(t *testing.T) {
 		t.Errorf("POST = %d, want 405", resp.StatusCode)
 	}
 }
+
+func TestDemoConfigsParse(t *testing.T) {
+	files, err := filepath.Glob("demo/*.apko.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("found no demo configurations")
+	}
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ic, err := parseConfig(data)
+		if err != nil {
+			t.Errorf("%s: %v", f, err)
+			continue
+		}
+		if err := ic.Validate(); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+}
