@@ -95,7 +95,9 @@ export function formatProgress(loaded) {
 
 /**
  * Creates a chat session. Creating a session can start the model download,
- * which Chrome allows only during a user gesture.
+ * which Chrome allows only during a user gesture. `onProgress` hears about a
+ * download only once one is under way: Chrome reports 0 and 1 even when the
+ * model is already on the device.
  * @param {object} api The `LanguageModel` global.
  * @param {{media: (!Array<string>|undefined),
  *     initialPrompts: (!Array<!Object>|undefined),
@@ -111,7 +113,13 @@ export async function createSession(
     ...chatOptions(media),
     ...(initialPrompts.length > 0 ? {initialPrompts} : {}),
     monitor(m) {
-      m.addEventListener('downloadprogress', (e) => onProgress?.(e.loaded));
+      let downloading = false;
+      m.addEventListener('downloadprogress', (e) => {
+        downloading ||= e.loaded > 0 && e.loaded < 1;
+        if (downloading) {
+          onProgress?.(e.loaded);
+        }
+      });
     },
   });
   if (onOverflow) {

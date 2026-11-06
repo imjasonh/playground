@@ -93,7 +93,7 @@ test('createSession passes chat options and reports download progress', async ()
   const seen = [];
   const api = fakeApi({progress: [0, 0.5, 1]});
   await createSession(api, {onProgress: (loaded) => seen.push(loaded)});
-  assert.deepEqual(seen, [0, 0.5, 1]);
+  assert.deepEqual(seen, [0.5, 1]);
   assert.deepEqual(
     api.createOptions.expectedInputs,
     chatOptions().expectedInputs,
@@ -102,6 +102,13 @@ test('createSession passes chat options and reports download progress', async ()
     api.createOptions.expectedOutputs,
     chatOptions().expectedOutputs,
   );
+});
+
+test('createSession stays quiet when the model is already downloaded', async () => {
+  const seen = [];
+  const api = fakeApi({progress: [0, 1]});
+  await createSession(api, {onProgress: (loaded) => seen.push(loaded)});
+  assert.deepEqual(seen, []);
 });
 
 test('dropOldestExchange starts at the second user message', () => {
