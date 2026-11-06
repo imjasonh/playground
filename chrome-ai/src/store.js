@@ -15,6 +15,16 @@ function settle(request) {
   });
 }
 
+// A write is durable once its transaction commits, not when its request
+// succeeds.
+function commit(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
 function upgrade(db, oldVersion) {
   if (oldVersion < 1) {
     db.createObjectStore(CONVERSATIONS, {keyPath: 'id'});
@@ -36,24 +46,28 @@ export async function openStore(factory) {
   // Another tab with a newer version of the app needs this tab to let go.
   db.onversionchange = () => db.close();
 
-  function objects(mode) {
-    return db.transaction(CONVERSATIONS, mode).objectStore(CONVERSATIONS);
+  function write(change) {
+    const transaction = db.transaction(CONVERSATIONS, 'readwrite');
+    change(transaction.objectStore(CONVERSATIONS));
+    return commit(transaction);
   }
 
   return {
     /** Returns the readable conversations, most recently updated first. */
     async list() {
-      const records = await settle(objects('readonly').getAll());
+      const records = await settle(
+        db.transaction(CONVERSATIONS).objectStore(CONVERSATIONS).getAll(),
+      );
       return records
         .map((record) => migrate(record))
         .filter((record) => record !== null)
         .sort((a, b) => b.updatedAt - a.updatedAt);
     },
-    async put(record) {
-      await settle(objects('readwrite').put(record));
+    put(record) {
+      return write((conversations) => conversations.put(record));
     },
-    async delete(id) {
-      await settle(objects('readwrite').delete(id));
+    delete(id) {
+      return write((conversations) => conversations.delete(id));
     },
     close() {
       db.close();

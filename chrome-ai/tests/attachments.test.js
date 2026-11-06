@@ -32,6 +32,8 @@ test('fileKind sorts files by how the model takes them', () => {
   assert.equal(fileKind(file('logo.svg', 'image/svg+xml')), 'text');
   assert.equal(fileKind(file('paper.pdf', 'application/pdf')), null);
   assert.equal(fileKind(file('clip.mp4', 'video/mp4')), null);
+  assert.equal(fileKind(file('app.ts', '')), 'text');
+  assert.equal(fileKind(file('clip.ts', 'video/mp2t')), null);
 });
 
 test('checkFile rejects unsupported kinds, media, and large text', () => {
