@@ -134,6 +134,11 @@ function loadDeck(markdown, source) {
   const box = slideEls[0]?.viewBox?.baseVal;
   const ratio = box?.width && box?.height ? box.width / box.height : 16 / 9;
   els.stage.style.setProperty('--ratio', String(ratio));
+  for (const link of shadow.querySelectorAll('a[href]')) {
+    if (link.getAttribute('href').startsWith('#')) continue;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
   marpCleanup = marpBrowser(shadow);
 
   player = new Player(deck, narrator);
@@ -496,10 +501,14 @@ function wire() {
   els.mute.addEventListener('click', toggleMute);
   els.fullscreen.addEventListener('click', toggleFullscreen);
   els.viewport.addEventListener('click', (e) => {
-    const onLink = e
+    const link = e
       .composedPath()
-      .some((n) => n instanceof Element && n.closest('a'));
-    if (!onLink) player?.toggle();
+      .find((n) => n instanceof Element && n.matches('a[href]'));
+    if (!link) {
+      player?.toggle();
+    } else if (link.target === '_blank') {
+      player?.pause();
+    }
   });
   els.stage.addEventListener('pointermove', pokeIdle);
   document.addEventListener('keydown', onKey);

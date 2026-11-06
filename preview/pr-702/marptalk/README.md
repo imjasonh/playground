@@ -69,6 +69,9 @@ atomic clocks and broadcasts the exact time the signal left.
   Marp directives, such as `<!-- _class: lead -->`, isn't read.
 - Each sentence is spoken and shown as one subtitle. A sentence longer than
   120 characters is split at a comma or a space.
+- Links on a slide open in a new tab and pause playback. A link to `#3`
+  moves to slide 3. Use full URLs: a relative link breaks once the deck is
+  uploaded on its own.
 
 Check a deck before you present it:
 
@@ -78,7 +81,7 @@ node marptalk/scripts/check.js my-deck.md
 
 It reports slides with no voiceover, Markdown or URLs in the voiceover, too
 much narration on one slide, too much text on screen, math, HTML tags that
-show as text, and blank lines inside an `<svg>`. It needs no `npm install`.
+show as text, blank lines inside an `<svg>`, and relative links. It needs no `npm install`.
 
 ### What renders
 

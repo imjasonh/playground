@@ -111,6 +111,25 @@ marp: true
   ]);
 });
 
+test('lintDeck flags relative links but not full URLs or slide links', () => {
+  const md = `---
+marp: true
+---
+
+# Links
+
+[full](https://example.com/) [slide](#2) [mail](mailto:a@example.com)
+[relative](../life-lab/)
+
+<!-- Some links. -->
+`;
+  assert.deepEqual(
+    lintDeck(md).map((f) => f.message),
+    ['Link "../life-lab/" is relative and breaks when the deck is uploaded. ' +
+      'Use a full URL.'],
+  );
+});
+
 test('deckDurationMs scales with rate', () => {
   const deck = parseDeck(SAMPLE);
   const normal = deckDurationMs(deck, 1);

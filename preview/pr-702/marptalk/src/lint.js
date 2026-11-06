@@ -97,6 +97,15 @@ export function lintDeck(markdown) {
     for (const tag of escapedTags(body)) {
       add(n, `<${tag}> is not allowed, so it shows as text.`);
     }
+    for (const [, href] of body.matchAll(/<a\b[^>]*\bhref="([^"]*)"/g)) {
+      if (!/^(?:https?:|mailto:|#)/i.test(href)) {
+        add(
+          n,
+          `Link "${href}" is relative and breaks when the deck is uploaded. ` +
+            'Use a full URL.',
+        );
+      }
+    }
 
     const notes = slide.notes;
     if (!notes) {

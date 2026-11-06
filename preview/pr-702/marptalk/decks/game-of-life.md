@@ -323,8 +323,8 @@ Being universal has a strange consequence. Because Life can simulate any compute
 
 # Try it
 
-Draw a pattern in **life-lab** in this playground and print its history in 3D
+Draw a pattern in [life-lab](https://imjasonh.github.io/playground/life-lab/) and print its history in 3D
 
 <!--
-The best way to understand Life is to play with it. Draw a pattern, step it forward, and see whether it dies, settles, or flies away. The life lab app in this playground lets you draw a starting pattern and turn its history into a 3D printable sculpture, with time running up the vertical axis. Gliders become little diagonal staircases.
+The best way to understand Life is to play with it. Draw a pattern, step it forward, and see whether it dies, settles, or flies away. The life lab app in this playground, linked on this slide, lets you draw a starting pattern and turn its history into a 3D printable sculpture, with time running up the vertical axis. Gliders become little diagonal staircases.
 -->

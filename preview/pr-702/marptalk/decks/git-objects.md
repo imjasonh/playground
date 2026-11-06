@@ -201,6 +201,8 @@ Each new object starts as its own compressed file. Over time, Git packs them int
 Blobs, trees, commits, tags.
 Refs point at them. Packs compress them.
 
+Open a real pack in [packfile-explorer](https://imjasonh.github.io/playground/packfile-explorer/)
+
 <!--
-To recap. Blobs hold contents, trees hold names, commits hold snapshots and history, and tags label commits. Every object is named by the hash of its contents. Branches and HEAD are tiny files that point into that graph, and packfiles keep it small. If you want to look at a real pack, the packfile explorer in this playground fetches one and walks you through its objects.
+To recap. Blobs hold contents, trees hold names, commits hold snapshots and history, and tags label commits. Every object is named by the hash of its contents. Branches and HEAD are tiny files that point into that graph, and packfiles keep it small. If you want to look at a real pack, the packfile explorer linked on this slide fetches one and walks you through its objects.
 -->
