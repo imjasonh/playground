@@ -69,6 +69,13 @@ The slide is what the viewer looks at while listening. It holds the thing that i
 - Avoid images unless the user supplies them. Remote images load from their host, and a missing one leaves a hole. Use `![bg right](url)` syntax only for images you know exist.
 - Inline HTML follows Marp's allowlist: `div`, `span`, `table`, `mark`, `kbd`, `sub`, `sup`, and similar work with a `class`. `style` and `id` attributes are stripped, and `<iframe>` and `<script>` render as text. The check flags tags that render as text.
 
+## Links
+
+- Put links on the slide as Markdown links, such as `[life-lab](https://imjasonh.github.io/playground/life-lab/)`, and say in the voiceover that the link is on the slide. Never put a URL in the voiceover.
+- Use full URLs. A relative link breaks once the deck is uploaded on its own, and the check flags it. Link apps in this repo at `https://imjasonh.github.io/playground/<app>/`.
+- Links open in a new tab and pause playback. `[the rules](#3)` jumps to slide 3 and keeps playing.
+- Link only to pages you know exist.
+
 ## Diagrams
 
 When a slide explains structure, flow, geometry, or change over time, draw it. A diagram with a voiceover that walks through it beats bullets. Each bundled deck has an example: the object graph in `git-objects.md`, the circles in `gps.md`, and the cell grids in `game-of-life.md`.
