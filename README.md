@@ -91,6 +91,10 @@ them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE
   over tree-sitter ASTs (Go CLI).
+- **[`apko-frontend/`](apko-frontend/)** — a BuildKit frontend that builds an
+  image from an apko YAML file with `docker build`. BuildKit fetches the
+  packages, apko's own code lays out the files, and apko's layers become the
+  image's layers (Go, built with ko).
 - **[`liquid/`](liquid/)** — a tank of liquid in the terminal that you push,
   pull into blobs, pour, and tilt with the mouse, simulated as particles
   (Go TUI with Bubble Tea, Lip Gloss, and bubblezone).
