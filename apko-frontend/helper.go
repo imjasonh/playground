@@ -41,15 +41,15 @@ type planLayer struct {
 func runHelper(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet(helperCommand, flag.ContinueOnError)
 	configPath := fs.String("config", "", "apko configuration, as JSON")
-	lockPath := fs.String("lock", "", "apko lock to install from; without one, apko resolves the configuration's pinned packages")
+	lockPath := fs.String("lock", "", "apko lock that pins the packages to install")
 	arch := fs.String("arch", "", "apk architecture to build")
 	fetchDir := fs.String("fetch", "", "directory of files the frontend fetched, named by URL")
 	outDir := fs.String("out", "", "directory to write layers and "+planFile+" to")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *configPath == "" || *arch == "" || *fetchDir == "" || *outDir == "" {
-		return errors.New("-config, -arch, -fetch, and -out are required")
+	if *configPath == "" || *lockPath == "" || *arch == "" || *fetchDir == "" || *outDir == "" {
+		return errors.New("-config, -lock, -arch, -fetch, and -out are required")
 	}
 	data, err := os.ReadFile(*configPath)
 	if err != nil {
@@ -70,16 +70,27 @@ func runHelper(ctx context.Context, args []string) error {
 	return os.WriteFile(filepath.Join(*outDir, planFile), out, 0o644)
 }
 
-// buildLayers runs apko's build, serving every HTTP request from fetchDir,
-// and writes apko's layers to outDir as tar files. With a lock, apko installs
-// the locked packages. Without one, it resolves ic, whose packages the
-// frontend pinned, as apko build does after locking.
+// buildLayers runs apko's build of the locked packages, serving every HTTP
+// request from fetchDir, and writes apko's layers to outDir as tar files.
 func buildLayers(ctx context.Context, ic types.ImageConfiguration, arch types.Architecture, lockPath, fetchDir, outDir string) (*plan, error) {
-	var opts []build.Option
-	if lockPath != "" {
-		opts = append(opts, build.WithLockFile(lockPath))
+	// apko expands packages and writes layers in temporary directories.
+	// Keep them in outDir, which is on disk, rather than in a tmpfs that
+	// holds the whole image in memory, and remove them before BuildKit
+	// snapshots outDir.
+	tmp, err := os.MkdirTemp(outDir, ".tmp-")
+	if err != nil {
+		return nil, err
 	}
-	bc, err := newBuildContext(ctx, ic, arch, dirTransport{dir: fetchDir}, opts...)
+	defer os.RemoveAll(tmp)
+	if old, ok := os.LookupEnv("TMPDIR"); ok {
+		defer os.Setenv("TMPDIR", old)
+	} else {
+		defer os.Unsetenv("TMPDIR")
+	}
+	if err := os.Setenv("TMPDIR", tmp); err != nil {
+		return nil, err
+	}
+	bc, err := newBuildContext(ctx, ic, arch, dirTransport{dir: fetchDir}, build.WithLockFile(lockPath), build.WithTempDir(tmp))
 	if err != nil {
 		return nil, err
 	}

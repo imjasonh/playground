@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,6 +25,7 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	"github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -48,7 +51,7 @@ type builder struct {
 	// locked holds each arch's pinned configuration.
 	locked map[types.Architecture]*locked
 	// localInputs lists the build-context files apko read while
-	// resolving, which the helper needs too.
+	// resolving. The helper needs the keyring files among them.
 	localInputs []string
 	// mainContext returns the build context, limited to the given paths.
 	mainContext func(ctx context.Context, paths ...string) (llb.State, error)
@@ -71,6 +74,12 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 	ic, err := parseConfig(src.Data)
 	if err != nil {
 		return nil, err
+	}
+	for _, k := range ic.Contents.Keyring {
+		if strings.HasPrefix(k, "http://") {
+			src.Warn(ctx, "keyring "+k+" is fetched without TLS; every signature check trusts this key, so use https",
+				client.WarnOpts{Range: lineRange(src.Data, k)})
+		}
 	}
 	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch]}
 	if b.epoch != "" {
@@ -218,8 +227,19 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 	if !ok {
 		return nil, nil, fmt.Errorf("no packages were resolved for %s", arch)
 	}
+	// The helper installs from a lock, so it needs the keys apko fetched
+	// but not the indexes. Leaving the indexes out keeps the helper's
+	// cache key unchanged when an index changes but the packages don't.
 	fetched := b.rec.entries()
-	localPaths := slices.Clone(b.localInputs)
+	maps.DeleteFunc(fetched, func(_ string, e *fetchEntry) bool {
+		return path.Base(e.url) == "APKINDEX.tar.gz"
+	})
+	var localPaths []string
+	for _, p := range b.localInputs {
+		if path.Base(p) != "APKINDEX.tar.gz" {
+			localPaths = append(localPaths, p)
+		}
+	}
 	for _, pkg := range lk.pkgs {
 		if !isRemote(pkg.URL) {
 			p, err := contextPath(pkg.URL)
@@ -240,33 +260,32 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 	if err != nil {
 		return nil, nil, err
 	}
-	files := llb.Mkfile("/config.json", 0o644, configData)
-	args := []string{
-		b.exe, helperCommand,
-		"-arch", arch.ToAPK(),
-		"-config", "/apko/in/config.json",
-		"-fetch", "/apko/fetch",
-		"-out", "/apko/out",
-	}
-	if lk.lockData != nil {
-		files = files.Mkfile("/lock.json", 0o644, lk.lockData)
-		args = append(args, "-lock", "/apko/in/lock.json")
-	}
-	input := llb.Scratch().File(files, llb.WithCustomName("[internal] apko configuration"))
+	input := llb.Scratch().File(
+		llb.Mkfile("/config.json", 0o644, configData).
+			Mkfile("/lock.json", 0o644, lk.lockData),
+		llb.WithCustomName("[internal] apko configuration and lock"),
+	)
 	runOpts := []llb.RunOption{
-		llb.Args(args),
+		llb.Args([]string{
+			b.exe, helperCommand,
+			"-arch", arch.ToAPK(),
+			"-config", "/apko/in/config.json",
+			"-lock", "/apko/in/lock.json",
+			"-fetch", "/apko/fetch",
+			"-out", "/apko/out",
+		}),
 		llb.User("0"),
 		llb.Network(llb.NetModeNone),
 		llb.AddMount("/apko/in", input, llb.Readonly),
 		llb.AddMount("/apko/fetch", mergeStates(entryStates(fetched), "fetched files"), llb.Readonly),
-		llb.AddMount("/tmp", llb.Scratch(), llb.Tmpfs()),
 		llb.WithCustomNamef("apko build %s (%d packages)", arch.ToAPK(), len(lk.pkgs)),
 	}
 	if b.epoch != "" {
 		runOpts = append(runOpts, llb.AddEnv(argSourceDateEpoch, b.epoch))
 	}
 	if len(localPaths) > 0 {
-		src, err := b.mainContext(ctx, localPaths...)
+		slices.Sort(localPaths)
+		src, err := b.mainContext(ctx, slices.Compact(localPaths)...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -343,6 +362,18 @@ func layerName(arch types.Architecture, i, n int, l planLayer) string {
 		what = "all packages"
 	}
 	return fmt.Sprintf("apko layer %s %d/%d: %s", arch.ToAPK(), i+1, n, what)
+}
+
+// lineRange returns the range of the first line of data that contains s, for
+// pointing a warning at it.
+func lineRange(data []byte, s string) []*pb.Range {
+	for i, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, s) {
+			pos := &pb.Position{Line: int32(i + 1)}
+			return []*pb.Range{{Start: pos, End: pos}}
+		}
+	}
+	return nil
 }
 
 // mergeStates merges states, or returns the only state.

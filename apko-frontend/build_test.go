@@ -49,8 +49,8 @@ func testConfig() types.ImageConfiguration {
 	}
 }
 
-// fetchDir writes the files that the helper reads: everything the
-// repository served while resolving, and the resolved packages.
+// fetchDir writes the files that the frontend gives the helper: what the
+// repository served while resolving, except indexes, and the packages.
 func fetchDir(t *testing.T, repo *testRepository, pkgs []lock.LockPkg) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -59,6 +59,9 @@ func fetchDir(t *testing.T, repo *testRepository, pkgs []lock.LockPkg) string {
 		urls = append(urls, p.URL)
 	}
 	for _, u := range urls {
+		if strings.HasSuffix(u, "/APKINDEX.tar.gz") {
+			continue
+		}
 		data, ok := repo.files[u]
 		if !ok {
 			continue
@@ -130,9 +133,6 @@ func TestResolveAndBuildLayers(t *testing.T) {
 	if got := lk.ic.Contents.Packages; !slices.Equal(got, wantPinned) {
 		t.Errorf("pinned packages = %v, want %v", got, wantPinned)
 	}
-	if lk.lockData != nil {
-		t.Errorf("resolve returned lock data %s, want none", lk.lockData)
-	}
 	var urls []string
 	for _, p := range lk.pkgs {
 		urls = append(urls, p.URL)
@@ -149,7 +149,7 @@ func TestResolveAndBuildLayers(t *testing.T) {
 	}
 
 	out := t.TempDir()
-	p, err := buildLayers(ctx, lk.ic, amd64, "", fetchDir(t, repo, lk.pkgs), out)
+	p, err := buildLayers(ctx, lk.ic, amd64, writeLock(t, lk.lockData), fetchDir(t, repo, lk.pkgs), out)
 	if err != nil {
 		t.Fatalf("buildLayers: %v", err)
 	}
@@ -237,13 +237,8 @@ func TestBuildLayersFromLock(t *testing.T) {
 	if want := []string{"bar=0.1-r0"}; !slices.Equal(lk.ic.Contents.Packages, want) {
 		t.Errorf("pinned packages = %v, want %v", lk.ic.Contents.Packages, want)
 	}
-	lockPath := filepath.Join(t.TempDir(), "lock.json")
-	if err := os.WriteFile(lockPath, lk.lockData, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	out := t.TempDir()
-	p, err := buildLayers(ctx, lk.ic, amd64, lockPath, fetchDir(t, repo, lk.pkgs), out)
+	p, err := buildLayers(ctx, lk.ic, amd64, writeLock(t, lk.lockData), fetchDir(t, repo, lk.pkgs), out)
 	if err != nil {
 		t.Fatalf("buildLayers: %v", err)
 	}
@@ -270,7 +265,7 @@ func TestBuildLayersMissingPackage(t *testing.T) {
 	}
 	// Leave the packages out of the fetch directory.
 	dir := fetchDir(t, repo, nil)
-	if _, err := buildLayers(ctx, locked[amd64].ic, amd64, "", dir, t.TempDir()); err == nil {
+	if _, err := buildLayers(ctx, locked[amd64].ic, amd64, writeLock(t, locked[amd64].lockData), dir, t.TempDir()); err == nil {
 		t.Fatal("buildLayers succeeded without the package files")
 	}
 }
@@ -281,5 +276,70 @@ func TestResolveMissingPackage(t *testing.T) {
 	ic.Contents.Packages = []string{"nope"}
 	if _, err := resolve(t.Context(), ic, []types.Architecture{types.ParseArchitecture("amd64")}, repo); err == nil {
 		t.Fatal("resolve succeeded for a package the repository doesn't have")
+	}
+}
+
+func writeLock(t *testing.T, data []byte) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "lock.json")
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestResolveRejectsIndexSignedByAnotherKey(t *testing.T) {
+	repo := newTestRepository(t, "x86_64", testPackages()...)
+	other := newTestRepository(t, "x86_64")
+	// Serve another key under the configured keyring URL, so the index's
+	// signature doesn't verify.
+	repo.files[testRepo+"/"+testKeyName] = other.files[testRepo+"/"+testKeyName]
+	_, err := resolve(t.Context(), testConfig(), []types.Architecture{types.ParseArchitecture("amd64")}, repo)
+	if err == nil || !strings.Contains(err.Error(), "signature") {
+		t.Fatalf("resolve() = %v, want a signature verification error", err)
+	}
+}
+
+func TestBuildLayersRejectsTamperedPackage(t *testing.T) {
+	ctx := t.Context()
+	amd64 := types.ParseArchitecture("amd64")
+	repo := newTestRepository(t, "x86_64", testPackages()...)
+	locked, err := resolve(ctx, testConfig(), []types.Architecture{amd64}, repo)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	// Replace bar with a package of the same name and version that the
+	// signed index doesn't describe.
+	evil := newTestRepository(t, "x86_64", testPackage{
+		name: "bar", version: "0.1-r0", origin: "bar", buildDate: testBuildDate,
+		files: map[string]string{"usr/": "", "usr/bin/": "", "usr/bin/bar": "evil"},
+	})
+	u := testRepo + "/x86_64/bar-0.1-r0.apk"
+	repo.files[u] = evil.files[u]
+	_, err = buildLayers(ctx, locked[amd64].ic, amd64, writeLock(t, locked[amd64].lockData), fetchDir(t, repo, locked[amd64].pkgs), t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "hash mismatch") {
+		t.Fatalf("buildLayers() = %v, want a control hash mismatch", err)
+	}
+}
+
+func TestFromLockRejectsUnsignedPackage(t *testing.T) {
+	ctx := t.Context()
+	amd64 := types.ParseArchitecture("amd64")
+	repo := newTestRepository(t, "x86_64", testPackages()...)
+	ic := testConfig()
+	locked, err := resolve(ctx, ic, []types.Architecture{amd64}, repo)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	pkgs := slices.Clone(locked[amd64].pkgs)
+	pkgs[0].Checksum = "Q1AAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	l := lock.Lock{Version: "v1", Contents: lock.LockContents{Packages: pkgs}}
+	data, err := json.Marshal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = fromLock(ctx, ic, []types.Architecture{amd64}, l, data, repo)
+	if err == nil || !strings.Contains(err.Error(), pkgs[0].Name) {
+		t.Fatalf("fromLock() = %v, want an error naming %s", err, pkgs[0].Name)
 	}
 }

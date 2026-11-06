@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/build"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/lock"
@@ -98,23 +99,24 @@ func newBuildContext(ctx context.Context, ic types.ImageConfiguration, arch type
 }
 
 // locked is one architecture's configuration with its packages pinned, and
-// the packages to fetch for it.
+// the lock the helper installs them from. The helper never resolves
+// packages, so it needs no indexes, and an index that changes without
+// changing the resolved packages doesn't invalidate the helper's cached
+// result.
 type locked struct {
-	ic   types.ImageConfiguration
-	pkgs []lock.LockPkg
-	// lockData is the user's lock file, which the helper installs from.
-	// It is nil when the frontend resolved the packages, and the helper
-	// resolves the pinned configuration again, as apko build does.
+	ic       types.ImageConfiguration
+	pkgs     []lock.LockPkg
 	lockData []byte
 }
 
 // resolve resolves the configuration's packages for every arch at once, as
 // apko build does, so that each package has the same version on every
-// arch. It fetches indexes and keys through t. Each arch's configuration
-// lists every installed package pinned to its version.
+// arch. It fetches indexes and keys through t, and apko verifies each
+// index's signature with the keyring. Each arch's configuration lists every
+// installed package pinned to its version.
 func resolve(ctx context.Context, ic types.ImageConfiguration, archs []types.Architecture, t http.RoundTripper) (map[types.Architecture]*locked, error) {
 	ic.Archs = archs
-	ics, missing, resolved, err := build.LockImageConfigurationWithPackages(ctx, ic, build.WithoutDiskCache(), build.WithTransport(t))
+	ics, missing, _, err := build.LockImageConfigurationWithPackages(ctx, ic, build.WithoutDiskCache(), build.WithTransport(t))
 	if err != nil {
 		if len(missing) > 0 {
 			return nil, fmt.Errorf("%w (missing packages: %v)", err, missing)
@@ -127,24 +129,50 @@ func resolve(ctx context.Context, ic types.ImageConfiguration, archs []types.Arc
 		if !ok {
 			return nil, fmt.Errorf("apko resolved no configuration for %s", arch)
 		}
-		lk := &locked{ic: *lic}
-		for _, p := range resolved[arch] {
-			lk.pkgs = append(lk.pkgs, lock.LockPkg{
-				Name:         p.Name,
-				URL:          p.URL(),
-				Version:      p.Version,
+		// apko build resolves the pinned configuration again and installs
+		// packages in that order, which is the order of the installed
+		// database. Resolving it here and locking that order gives the
+		// helper the same database without the indexes.
+		bc, err := newBuildContext(ctx, *lic, arch, t)
+		if err != nil {
+			return nil, err
+		}
+		pkgs, conflicts, err := bc.BuildPackageList(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(conflicts) > 0 {
+			return nil, fmt.Errorf("conflicting packages for %s: %s", arch, strings.Join(conflicts, ", "))
+		}
+		l := lock.Lock{Version: "v1"}
+		for _, p := range pkgs {
+			l.Contents.Packages = append(l.Contents.Packages, lock.LockPkg{
+				Name:    p.Name,
+				URL:     p.URL(),
+				Version: p.Version,
+				// Use the image's arch rather than the package's, which is
+				// "noarch" for some Alpine packages. apko installs only the
+				// locked packages whose architecture matches the image.
 				Architecture: arch.ToAPK(),
 				Checksum:     p.ChecksumString(),
 			})
 		}
-		out[arch] = lk
+		data, err := json.Marshal(l)
+		if err != nil {
+			return nil, err
+		}
+		out[arch] = &locked{ic: *lic, pkgs: l.Contents.Packages, lockData: data}
 	}
 	return out, nil
 }
 
 // fromLock pins each arch's packages to the versions in a lock file, as apko
-// build --lockfile does. It creates a build context for each arch through t,
-// which fetches the keyring that the helper needs too.
+// build --lockfile does. apko installs locked packages without reading an
+// index, and checks each package against the lock's checksum only. To keep
+// every package tied to a signature, fromLock also fetches each arch's
+// indexes through t, which verifies their signatures with the keyring, and
+// requires every locked package to appear in one with the same version and
+// checksum.
 func fromLock(ctx context.Context, ic types.ImageConfiguration, archs []types.Architecture, l lock.Lock, data []byte, t http.RoundTripper) (map[types.Architecture]*locked, error) {
 	pinned := l.Arch2LockedPackages(archs)
 	out := map[types.Architecture]*locked{}
@@ -159,12 +187,41 @@ func fromLock(ctx context.Context, ic types.ImageConfiguration, archs []types.Ar
 		}
 		lic.Contents.Packages = pinned[arch.String()]
 		lic.Archs = []types.Architecture{arch}
-		if _, err := newBuildContext(ctx, lic, arch, t); err != nil {
+		bc, err := newBuildContext(ctx, lic, arch, t)
+		if err != nil {
 			return nil, err
 		}
-		out[arch] = &locked{ic: lic, lockData: data, pkgs: pkgs}
+		indexes, err := bc.APK().GetRepositoryIndexes(ctx, false)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkLocked(pkgs, indexes); err != nil {
+			return nil, fmt.Errorf("%s: %w", arch, err)
+		}
+		out[arch] = &locked{ic: lic, pkgs: pkgs, lockData: data}
 	}
 	return out, nil
+}
+
+// checkLocked reports an error unless every locked package appears in one of
+// the signed indexes with the same name, version, and checksum.
+func checkLocked(pkgs []lock.LockPkg, indexes []apk.NamedIndex) error {
+	signed := map[[3]string]bool{}
+	for _, idx := range indexes {
+		for _, p := range idx.Packages() {
+			signed[[3]string{p.Name, p.Version, p.ChecksumString()}] = true
+		}
+	}
+	var unsigned []string
+	for _, p := range pkgs {
+		if !signed[[3]string{p.Name, p.Version, p.Checksum}] {
+			unsigned = append(unsigned, p.Name+"="+p.Version)
+		}
+	}
+	if len(unsigned) > 0 {
+		return fmt.Errorf("no signed repository index lists these locked packages with the locked checksum: %s", strings.Join(unsigned, ", "))
+	}
+	return nil
 }
 
 // lockedPackages returns the packages in l that apko installs for arch.
