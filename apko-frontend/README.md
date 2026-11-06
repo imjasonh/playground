@@ -129,15 +129,16 @@ compression are BuildKit's, so layer digests differ from apko's.
 The frontend itself needs no network, which the
 `moby.buildkit.frontend.network.none` label tells BuildKit. The download
 steps use the build's network, so they reach the repositories that a `RUN`
-step in a Dockerfile could reach, and they use the standard `HTTP_PROXY`,
-`HTTPS_PROXY`, and `NO_PROXY` build arguments.
+step in a Dockerfile could reach. They use the standard `HTTP_PROXY`,
+`HTTPS_PROXY`, and `NO_PROXY` build arguments, and the credentials in
+[Private repositories](#private-repositories).
 
 ## What works
 
 | apko field | Notes |
 | --- | --- |
 | `contents.packages` | Including version constraints such as `curl=8.14.1-r4`. |
-| `contents.repositories`, `build_repositories`, `runtime_repositories` | HTTP(S) URLs, or directories in the build context. |
+| `contents.repositories`, `build_repositories`, `runtime_repositories` | HTTP(S) URLs, including repositories that need credentials (see [Private repositories](#private-repositories)), or directories in the build context. |
 | `contents.keyring` | HTTP(S) URLs, or files in the build context. Chainguard and Alpine key discovery also run, through BuildKit. |
 | `contents.runtime_keyring` | |
 | `entrypoint.command`, `entrypoint.shell-fragment`, `cmd`, `work-dir`, `stop-signal` | |
@@ -146,7 +147,8 @@ step in a Dockerfile could reach, and they use the standard `HTTP_PROXY`,
 | `paths` | Every path type apko supports. |
 | `layering` | The `origin` strategy and its budget. |
 | `archs` | Each arch becomes a platform. `--platform` overrides the list. Without `--platform`, Buildx warns that the result's platforms don't match the requested one. |
-| `annotations`, `vcs-url` | Manifest annotations, and index annotations for a multi-platform build. `vcs-url` must include `@REVISION`. |
+| `annotations` | Manifest annotations, and index annotations for a multi-platform build. |
+| `vcs-url` | `URL@REVISION` sets the `org.opencontainers.image.source` and `org.opencontainers.image.revision` annotations and labels. When the file doesn't set it, the frontend detects it from a git checkout, as `apko build` does (see `APKO_VCS`). |
 | `volumes` | |
 
 Paths in the build context are relative to the root of the context, not to
@@ -168,9 +170,44 @@ These build arguments change the build:
     appear, with the same version and checksum, in a signed index of the
     configured repositories (see [Signatures](#signatures)).
 
+`APKO_VCS`
+:   `false` turns off `vcs-url` detection, like `apko build --vcs=false`.
+    When the file doesn't set `vcs-url` and the build context is in a git
+    checkout, Buildx sends the checkout's remote URL and commit with the
+    build, and the frontend makes them the `vcs-url` as `apko build` would:
+    without credentials, with a `user@host:path` remote rewritten as a
+    `git+ssh://` URL, and with `@COMMIT` appended. A detected `vcs-url` sets
+    the image's annotations and labels, but `/etc/apko.json` doesn't record
+    it, unlike with `apko build`. That keeps a new commit from changing the
+    apko step's cache key. A `vcs-url` in the file goes everywhere.
+
 BuildKit's own options work as usual, for example `--platform`, `--push`,
 `--sbom=true` (BuildKit's scanner reads apko's apk database), and
 `--provenance`.
+
+## Private repositories
+
+The frontend uses BuildKit's convention for HTTP credentials: a build
+secret named `HTTP_AUTH_HEADER_<host>` holds the whole `Authorization`
+header for that host, and one named `HTTP_AUTH_TOKEN_<host>` holds a token
+to send as `Bearer <token>`. BuildKit sends them on the index and key
+fetches, and the frontend mounts them into the package download steps,
+which send them only to that host, not to a host that a redirect leads to.
+Secrets aren't part of any cache key, so new credentials don't invalidate
+the cache.
+
+For example, where `apko build` takes
+`HTTP_AUTH=basic:apk.cgr.dev:user:PASSWORD`, pass the same credentials as a
+secret:
+
+```bash
+export APK_AUTH="Basic $(printf 'user:%s' "$(chainctl auth token --audience apk.cgr.dev)" | base64 -w0)"
+docker buildx build --secret id=HTTP_AUTH_HEADER_apk.cgr.dev,env=APK_AUTH \
+  -f apko.yaml -t example.com/image --push .
+```
+
+When a repository answers 401 or 403, the build fails with a warning that
+names the secret to pass.
 
 ## What doesn't work
 
@@ -178,15 +215,12 @@ BuildKit's own options work as usual, for example `--platform`, `--push`,
     configuration.
 -   `contents.baseimage`, which apko marks experimental.
 -   `format: erofs`. BuildKit layers are tar layers.
--   Repositories that need HTTP authentication, such as `apk.cgr.dev`
-    with `HTTP_AUTH`. Supporting them means mounting a BuildKit secret into
-    the download steps and the index fetches.
+-   apko's `HTTP_AUTH` environment variable. Pass the credentials as a
+    build secret instead (see [Private repositories](#private-repositories)).
 -   Repositories on `localhost` with Docker's built-in builder. Its build
     steps run in their own network namespace, where `localhost` is the step
     itself. Use a builder on the host network, such as
     `docker buildx create --driver docker-container --driver-opt network=host`.
--   `vcs-url` detection from a git checkout, which `apko build --vcs` does.
-    Set `vcs-url` in the file.
 -   apko's command-line flags, such as `--package-append`,
     `--repository-append`, `--keyring-append`, and `--annotations`. Put those
     values in the file.
