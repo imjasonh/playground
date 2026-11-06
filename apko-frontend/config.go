@@ -74,6 +74,48 @@ func configPlatforms(ic types.ImageConfiguration) []v1.Platform {
 	return out
 }
 
+// targetPlatforms returns the platforms to build. requested holds the
+// --platform values, if any, and host is the platform BuildKit builds when
+// none is requested. The configuration's archs, when it lists any, are the
+// platforms a build may produce:
+//
+//   - With --platform, the build produces exactly the requested platforms,
+//     and each must be in archs.
+//   - Without it, the build produces host, as docker build does for a
+//     Dockerfile, when archs includes host.
+//   - Otherwise it produces every platform in archs.
+func targetPlatforms(ic types.ImageConfiguration, requested []v1.Platform, host v1.Platform) ([]v1.Platform, error) {
+	allowed := configPlatforms(ic)
+	inArchs := func(p v1.Platform) bool {
+		if len(allowed) == 0 {
+			return true
+		}
+		want := platformArch(p).ToAPK()
+		for _, a := range allowed {
+			if platformArch(a).ToAPK() == want {
+				return true
+			}
+		}
+		return false
+	}
+	if len(requested) > 0 {
+		for _, p := range requested {
+			if !inArchs(p) {
+				var names []string
+				for _, a := range allowed {
+					names = append(names, a.String())
+				}
+				return nil, fmt.Errorf("platform %s isn't in archs (%s)", p, strings.Join(names, ", "))
+			}
+		}
+		return requested, nil
+	}
+	if inArchs(host) {
+		return []v1.Platform{host}, nil
+	}
+	return allowed, nil
+}
+
 // platformArch returns the apko architecture for an OCI platform.
 func platformArch(p v1.Platform) types.Architecture {
 	if p.Architecture == "arm" {

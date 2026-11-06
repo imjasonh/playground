@@ -18,6 +18,7 @@ import (
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/lock"
+	"github.com/chainguard-dev/clog"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -79,14 +80,20 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 	if err != nil {
 		return nil, err
 	}
+	// From here on, warnings logged with slog or clog, by the frontend or by
+	// apko, become build warnings.
+	ctx = clog.WithLogger(ctx, clog.New(newWarnHandler(func(ctx context.Context, msg string, ranges []*pb.Range) {
+		src.Warn(ctx, msg, client.WarnOpts{Range: ranges})
+	}, clog.FromContext(ctx).Handler())))
+	log := clog.FromContext(ctx)
 	ic, err := parseConfig(src.Data)
 	if err != nil {
 		return nil, err
 	}
 	for _, k := range ic.Contents.Keyring {
 		if strings.HasPrefix(k, "http://") {
-			src.Warn(ctx, "keyring "+k+" is fetched without TLS; every signature check trusts this key, so use https",
-				client.WarnOpts{Range: lineRange(src.Data, k)})
+			log.Warn("keyring "+k+" is fetched without TLS; every signature check trusts this key, so use https",
+				warnRange(src.Data, k))
 		}
 	}
 	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch], proxy: proxyEnv(dc.BuildArgs), cacheImports: dc.CacheImports}
@@ -108,19 +115,26 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 	b.fetcher = newFetcher(c, b.mainContext)
 	b.rec = b.fetcher.recorder()
 
-	if len(dc.TargetPlatforms) == 0 {
-		ps := configPlatforms(ic)
-		for _, p := range ps {
+	var requested []v1.Platform
+	for _, p := range dc.TargetPlatforms {
+		requested = append(requested, ggcrPlatform(p))
+	}
+	host := ggcrPlatform(platforms.DefaultSpec())
+	targets, err := targetPlatforms(ic, requested, host)
+	if err != nil {
+		return nil, err
+	}
+	// Without --platform, dockerui builds host. Name the platforms only
+	// when the configuration's archs leave host out.
+	if len(requested) == 0 && !(len(targets) == 1 && targets[0].Equals(host)) {
+		for _, p := range targets {
 			dc.TargetPlatforms = append(dc.TargetPlatforms, specPlatform(p))
 		}
-		dc.MultiPlatformRequested = len(ps) > 1
+		dc.MultiPlatformRequested = len(targets) > 1
 	}
 	var archs []types.Architecture
-	for _, p := range dc.TargetPlatforms {
-		archs = append(archs, platformArch(ggcrPlatform(p)))
-	}
-	if len(archs) == 0 {
-		archs = append(archs, platformArch(ggcrPlatform(platforms.DefaultSpec())))
+	for _, p := range targets {
+		archs = append(archs, platformArch(p))
 	}
 
 	if b.localInputs, err = localInputs(ic, archs); err != nil {
@@ -150,6 +164,13 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		}
 	} else if b.locked, err = resolve(ctx, ic, archs, b.rec); err != nil {
 		return nil, err
+	}
+
+	// A detected vcs-url reaches the image's annotations and labels but
+	// not the apko step's configuration, which /etc/apko.json records, so
+	// a new commit doesn't change the step's cache key.
+	if ic.VCSUrl == "" && dc.BuildArgs[argVCS] != "false" {
+		b.ic.VCSUrl = detectVCSURL(c.BuildOpts().Opts)
 	}
 
 	type platformAnnotations struct {
@@ -187,7 +208,12 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		}
 	}
 	if dc.MultiPlatformRequested {
-		for k, v := range ic.Annotations {
+		index := maps.Clone(ic.Annotations)
+		if index == nil {
+			index = map[string]string{}
+		}
+		maps.Copy(index, vcsAnnotations(b.ic.VCSUrl))
+		for k, v := range index {
 			rb.AddMeta(exptypes.AnnotationKey{Type: exptypes.AnnotationIndex, Key: k}.String(), []byte(v))
 		}
 	}
@@ -340,14 +366,43 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 // step's cache key doesn't depend on the file's content, so BuildKit can
 // find a cached apko step, locally or in a remote cache, without
 // downloading the packages.
+//
+// The step mounts the same optional secrets that BuildKit's HTTP source
+// reads for the package's host, HTTP_AUTH_HEADER_<host> and
+// HTTP_AUTH_TOKEN_<host>, so one --secret authenticates both the index
+// fetches and the downloads. Secrets aren't part of the cache key.
 func (b *builder) fetchPackage(pkg lock.LockPkg, key string) llb.State {
+	var host string
+	if u, err := url.Parse(pkg.URL); err == nil {
+		host = u.Hostname()
+	}
 	return b.helper.Run(
-		llb.Args([]string{b.exe, fetchCommand, "-url", pkg.URL, "-checksum", pkg.Checksum, "-out", "/out/" + key}),
+		llb.Args([]string{
+			b.exe, fetchCommand,
+			"-url", pkg.URL,
+			"-checksum", pkg.Checksum,
+			"-auth-header-file", authHeaderFile,
+			"-auth-token-file", authTokenFile,
+			"-out", "/out/" + key,
+		}),
 		llb.User("0"),
 		llb.WithProxy(b.proxy),
+		llb.AddSecret(authHeaderFile, llb.SecretID(authHeaderSecretPrefix+host), llb.SecretOptional),
+		llb.AddSecret(authTokenFile, llb.SecretID(authTokenSecretPrefix+host), llb.SecretOptional),
 		llb.WithCustomNamef("fetch %s", redactURL(pkg.URL)),
 	).AddMount("/out", llb.Scratch())
 }
+
+const (
+	// authHeaderSecretPrefix and authTokenSecretPrefix name the secrets
+	// that BuildKit's HTTP source reads for a host: the whole
+	// Authorization header, or a token to send as "Bearer <token>".
+	authHeaderSecretPrefix = "HTTP_AUTH_HEADER_"
+	authTokenSecretPrefix  = "HTTP_AUTH_TOKEN_"
+
+	authHeaderFile = "/run/secrets/http-auth-header"
+	authTokenFile  = "/run/secrets/http-auth-token"
+)
 
 // sortedStates returns the states sorted by key, so the build definition
 // doesn't depend on map order.
@@ -425,18 +480,6 @@ func proxyEnv(args map[string]string) llb.ProxyEnv {
 	}
 }
 
-// lineRange returns the range of the first line of data that contains s, for
-// pointing a warning at it.
-func lineRange(data []byte, s string) []*pb.Range {
-	for i, line := range strings.Split(string(data), "\n") {
-		if strings.Contains(line, s) {
-			pos := &pb.Position{Line: int32(i + 1)}
-			return []*pb.Range{{Start: pos, End: pos}}
-		}
-	}
-	return nil
-}
-
 // mergeStates merges states, or returns the only state.
 func mergeStates(states []llb.State, name string) llb.State {
 	switch len(states) {
@@ -464,6 +507,16 @@ func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 		return nil, nil, err
 	}
 	cfg = cfg.DeepCopy()
+	anns := maps.Clone(m.Annotations)
+	// BuildImageFromLayers derives these from vcs-url, but it copies the
+	// configuration with MergeInto, which drops vcs-url.
+	for k, v := range vcsAnnotations(ic.VCSUrl) {
+		anns[k] = v
+		if cfg.Config.Labels == nil {
+			cfg.Config.Labels = map[string]string{}
+		}
+		cfg.Config.Labels[k] = v
+	}
 	comment := "This is an apko single-layer image"
 	if n > 1 {
 		comment = ""
@@ -492,7 +545,20 @@ func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, nil, err
 	}
-	return &out, m.Annotations, nil
+	return &out, anns, nil
+}
+
+// vcsAnnotations returns the source and revision annotations that apko
+// derives from a vcs-url of the form URL@REVISION.
+func vcsAnnotations(vcsURL string) map[string]string {
+	url, rev, ok := strings.Cut(vcsURL, "@")
+	if !ok {
+		return nil
+	}
+	return map[string]string{
+		"org.opencontainers.image.source":   url,
+		"org.opencontainers.image.revision": rev,
+	}
 }
 
 // specPlatform converts p to the image-spec type that BuildKit's API takes.

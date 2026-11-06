@@ -9,7 +9,8 @@
 # that CONFIG's "# syntax=" line names. Set FRONTEND to use another
 # frontend image, or FRONTEND=local to build this checkout with ko and push
 # it to REGISTRY first. The demo images go to REGISTRY, which defaults to a
-# registry container on localhost:5000.
+# registry container on localhost:5000. PLATFORMS sets the platforms to
+# build, linux/amd64,linux/arm64 by default.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -17,6 +18,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 config="${1:-demo/alpine.apko.yaml}"
 registry="${REGISTRY:-localhost:5000}"
 frontend="${FRONTEND:-}"
+platforms="${PLATFORMS:-linux/amd64,linux/arm64}"
 image="${registry}/apko-frontend-demo:$(basename "${config}" .apko.yaml)"
 
 if [[ "${registry}" == "localhost:5000" ]] && ! docker inspect registry >/dev/null 2>&1; then
@@ -38,7 +40,7 @@ trap 'rm -rf "${tmp}"' EXIT
 build() {
   local metadata="$1"
   shift
-  local args=(--provenance=false --metadata-file "${metadata}" --push -f "${config}" -t "${image}")
+  local args=(--platform "${platforms}" --provenance=false --metadata-file "${metadata}" --push -f "${config}" -t "${image}")
   if [[ -n "${frontend}" ]]; then
     args+=(--build-arg "BUILDKIT_SYNTAX=${frontend}")
   fi

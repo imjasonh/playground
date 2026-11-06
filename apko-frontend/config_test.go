@@ -215,3 +215,45 @@ func TestDemoConfigsParse(t *testing.T) {
 		}
 	}
 }
+
+func TestTargetPlatforms(t *testing.T) {
+	amd64 := v1.Platform{OS: "linux", Architecture: "amd64"}
+	arm64 := v1.Platform{OS: "linux", Architecture: "arm64"}
+	arm64v8 := v1.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"}
+	s390x := v1.Platform{OS: "linux", Architecture: "s390x"}
+	both := types.ImageConfiguration{Archs: []types.Architecture{"x86_64", "aarch64"}}
+	armOnly := types.ImageConfiguration{Archs: []types.Architecture{"aarch64"}}
+
+	for _, tc := range []struct {
+		name      string
+		ic        types.ImageConfiguration
+		requested []v1.Platform
+		host      v1.Platform
+		want      []v1.Platform
+		wantErr   string
+	}{
+		{name: "no archs, no request", host: amd64, want: []v1.Platform{amd64}},
+		{name: "no archs, any request", requested: []v1.Platform{s390x}, host: amd64, want: []v1.Platform{s390x}},
+		{name: "host in archs", ic: both, host: amd64, want: []v1.Platform{amd64}},
+		{name: "host variant in archs", ic: both, host: arm64v8, want: []v1.Platform{arm64v8}},
+		{name: "host not in archs", ic: armOnly, host: amd64, want: []v1.Platform{arm64}},
+		{name: "request in archs", ic: both, requested: []v1.Platform{amd64, arm64}, host: amd64, want: []v1.Platform{amd64, arm64}},
+		{name: "request not in archs", ic: both, requested: []v1.Platform{amd64, s390x}, host: amd64, wantErr: "platform linux/s390x isn't in archs (linux/amd64, linux/arm64)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := targetPlatforms(tc.ic, tc.requested, tc.host)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("targetPlatforms() error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.EqualFunc(got, tc.want, platformsEqual) {
+				t.Errorf("targetPlatforms() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
