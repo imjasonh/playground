@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"slices"
 	"strings"
 	"sync"
 
@@ -229,14 +228,4 @@ func (r *recorder) entries() map[string]*fetchEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return maps.Clone(r.used)
-}
-
-// entryStates returns the entries' LLB states, sorted by key so the build
-// definition doesn't depend on fetch order.
-func entryStates(entries map[string]*fetchEntry) []llb.State {
-	out := make([]llb.State, 0, len(entries))
-	for _, k := range slices.Sorted(maps.Keys(entries)) {
-		out = append(out, entries[k].state)
-	}
-	return out
 }

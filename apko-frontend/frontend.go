@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"path"
 	"slices"
@@ -16,6 +17,7 @@ import (
 
 	"chainguard.dev/apko/pkg/build/oci"
 	"chainguard.dev/apko/pkg/build/types"
+	"chainguard.dev/apko/pkg/lock"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -59,6 +61,9 @@ type builder struct {
 	helper llb.State
 	exe    string
 	epoch  string
+	// proxy holds the proxy build arguments for the fetch steps. BuildKit
+	// leaves them out of the steps' cache keys.
+	proxy llb.ProxyEnv
 	// cacheImports are the client's --cache-from caches. A frontend's
 	// solves use them only when it passes them along.
 	cacheImports []client.CacheOptionsEntry
@@ -84,7 +89,7 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 				client.WarnOpts{Range: lineRange(src.Data, k)})
 		}
 	}
-	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch], cacheImports: dc.CacheImports}
+	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch], proxy: proxyEnv(dc.BuildArgs), cacheImports: dc.CacheImports}
 	if b.epoch != "" {
 		if _, err := strconv.ParseInt(b.epoch, 10, 64); err != nil {
 			return nil, fmt.Errorf("invalid %s %q: %w", argSourceDateEpoch, b.epoch, err)
@@ -233,10 +238,12 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 	// The helper installs from a lock, so it needs the keys apko fetched
 	// but not the indexes. Leaving the indexes out keeps the helper's
 	// cache key unchanged when an index changes but the packages don't.
-	fetched := b.rec.entries()
-	maps.DeleteFunc(fetched, func(_ string, e *fetchEntry) bool {
-		return path.Base(e.url) == "APKINDEX.tar.gz"
-	})
+	fetched := map[string]llb.State{}
+	for key, e := range b.rec.entries() {
+		if path.Base(e.url) != "APKINDEX.tar.gz" {
+			fetched[key] = e.state
+		}
+	}
 	var localPaths []string
 	for _, p := range b.localInputs {
 		if path.Base(p) != "APKINDEX.tar.gz" {
@@ -252,11 +259,11 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 			localPaths = append(localPaths, p)
 			continue
 		}
-		e, err := b.fetcher.entry(ctx, pkg.URL)
+		key, err := fetchKey(pkg.URL)
 		if err != nil {
 			return nil, nil, err
 		}
-		fetched[e.key] = e
+		fetched[key] = b.fetchPackage(pkg, key)
 	}
 
 	configData, err := json.Marshal(lk.ic)
@@ -280,7 +287,7 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 		llb.User("0"),
 		llb.Network(llb.NetModeNone),
 		llb.AddMount("/apko/in", input, llb.Readonly),
-		llb.AddMount("/apko/fetch", mergeStates(entryStates(fetched), "fetched files"), llb.Readonly),
+		llb.AddMount("/apko/fetch", mergeStates(sortedStates(fetched), "fetched files"), llb.Readonly),
 		llb.WithCustomNamef("apko build %s (%d packages)", arch.ToAPK(), len(lk.pkgs)),
 	}
 	if b.epoch != "" {
@@ -327,6 +334,39 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 	return &dockerui.BuildResult{Reference: ref, Image: img, Epoch: &created}, anns, nil
 }
 
+// fetchPackage returns a state whose root holds the package pkg in a file
+// named key. A build step downloads it and checks it against the lock's
+// checksum, which came from a signed index. Unlike an HTTP source, the
+// step's cache key doesn't depend on the file's content, so BuildKit can
+// find a cached apko step, locally or in a remote cache, without
+// downloading the packages.
+func (b *builder) fetchPackage(pkg lock.LockPkg, key string) llb.State {
+	return b.helper.Run(
+		llb.Args([]string{b.exe, fetchCommand, "-url", pkg.URL, "-checksum", pkg.Checksum, "-out", "/out/" + key}),
+		llb.User("0"),
+		llb.WithProxy(b.proxy),
+		llb.WithCustomNamef("fetch %s", redactURL(pkg.URL)),
+	).AddMount("/out", llb.Scratch())
+}
+
+// sortedStates returns the states sorted by key, so the build definition
+// doesn't depend on map order.
+func sortedStates(states map[string]llb.State) []llb.State {
+	out := make([]llb.State, 0, len(states))
+	for _, k := range slices.Sorted(maps.Keys(states)) {
+		out = append(out, states[k])
+	}
+	return out
+}
+
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return u.Redacted()
+}
+
 func (b *builder) readPlan(ctx context.Context, out llb.State) (*plan, error) {
 	def, err := out.Marshal(ctx)
 	if err != nil {
@@ -365,6 +405,24 @@ func layerName(arch types.Architecture, i, n int, l planLayer) string {
 		what = "all packages"
 	}
 	return fmt.Sprintf("apko layer %s %d/%d: %s", arch.ToAPK(), i+1, n, what)
+}
+
+// proxyEnv returns the proxy settings from the standard proxy build
+// arguments, which Docker sets from the client's proxy configuration.
+func proxyEnv(args map[string]string) llb.ProxyEnv {
+	get := func(name string) string {
+		if v := args[name]; v != "" {
+			return v
+		}
+		return args[strings.ToLower(name)]
+	}
+	return llb.ProxyEnv{
+		HTTPProxy:  get("HTTP_PROXY"),
+		HTTPSProxy: get("HTTPS_PROXY"),
+		FTPProxy:   get("FTP_PROXY"),
+		NoProxy:    get("NO_PROXY"),
+		AllProxy:   get("ALL_PROXY"),
+	}
 }
 
 // lineRange returns the range of the first line of data that contains s, for
