@@ -87,7 +87,7 @@ h2 {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 17rem;
+  grid-template-columns: minmax(0, 1fr) 20rem;
   gap: 1.5rem;
   align-items: start;
 }
@@ -204,6 +204,7 @@ canvas:focus-visible {
   max-height: calc(100vh - 2rem);
   position: sticky;
   top: 1rem;
+  width: 20rem;
 }
 
 .library-head {
@@ -236,6 +237,7 @@ canvas:focus-visible {
   padding: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  min-height: 0;
 }
 
 .games li {
@@ -269,7 +271,8 @@ canvas:focus-visible {
 }
 
 .controls {
-  max-width: 40rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
 }
 
 .controls table {
@@ -281,7 +284,7 @@ canvas:focus-visible {
 .controls th,
 .controls td {
   text-align: left;
-  padding: 0.35rem 0.75rem 0.35rem 0;
+  padding: 0.2rem 0.6rem 0.2rem 0;
   border-bottom: 1px solid var(--line);
   font-weight: 400;
 }
@@ -299,8 +302,9 @@ canvas:focus-visible {
 }
 
 .controls p {
+  margin: 0.6rem 0 0;
   color: var(--muted);
-  max-width: 65ch;
+  font-size: 0.9rem;
 }
 
 .pad {
@@ -415,7 +419,7 @@ canvas:focus-visible {
 
   .library {
     position: static;
-    max-height: 22rem;
+    max-height: none;
   }
 
   .toolbar .button {

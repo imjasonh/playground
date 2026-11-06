@@ -3,12 +3,14 @@
 Play the NEScript example ROMs in the browser with
 [jsnes](https://github.com/bfirsh/jsnes), or open your own `.nes` file.
 
-The game list comes from the GitHub contents API for
-[`nescript/examples`](../nescript/examples) on `main`. Each ROM is
-downloaded from `raw.githubusercontent.com` on `main` when you pick it, so a
-ROM rebuilt on `main` shows up here without a redeploy. If the API refuses
-the request (it allows 60 anonymous requests an hour per IP address), the
-page falls back to the last list it loaded.
+The list is the games the NEScript README shows (Platformer, War, Pong,
+Subway, Rampart, and the DVD screensaver), plus SHA-256 and Coin Cavern.
+The other ROMs in [`nescript/examples`](../nescript/examples) are compiler
+smoke tests, so they stay off the list. Each ROM is downloaded from
+`raw.githubusercontent.com` on `main` when you pick it, so a ROM rebuilt
+on `main` shows up here without a redeploy. The names come from the GitHub
+contents API. If that refuses the request (it allows 60 anonymous requests
+an hour per IP address), the page falls back to the last list it loaded.
 
 You can drop a `.nes` file anywhere on the page or choose one with
 **Open .nes file**. It is read locally and is not uploaded.

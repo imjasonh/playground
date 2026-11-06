@@ -3,6 +3,7 @@ import {
   listingUrl,
   parseListing,
   romUrl,
+  selectPlayable,
   sourceUrl,
 } from "./catalog.js";
 import {
@@ -126,14 +127,14 @@ function renderGames() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "game";
-      btn.textContent = rom.name;
+      btn.textContent = rom.title;
       btn.setAttribute("aria-current", String(rom.name === current));
       btn.addEventListener("click", () => playRepoRom(rom.name));
       const src = document.createElement("a");
       src.href = sourceUrl(rom.name);
       src.className = "source";
       src.textContent = "Source";
-      src.setAttribute("aria-label", `${rom.name}.ne source`);
+      src.setAttribute("aria-label", `${rom.title} source`);
       li.append(btn, src);
       return li;
     }),
@@ -166,7 +167,7 @@ async function loadCatalog() {
       cached = null;
     }
     if (Array.isArray(cached) && cached.length) {
-      roms = cached;
+      roms = selectPlayable(cached);
     } else {
       noteEl.textContent = `Couldn't load the list of games (${e.message}). You can still open a .nes file.`;
       noteEl.classList.add("error");
@@ -174,7 +175,7 @@ async function loadCatalog() {
     }
   }
   if (!roms.length) {
-    noteEl.textContent = "There are no ROMs on main.";
+    noteEl.textContent = "None of these games are on main right now.";
     return;
   }
   renderGames();
