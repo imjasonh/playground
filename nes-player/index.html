@@ -22,9 +22,7 @@
       <header class="masthead">
         <h1>NES player</h1>
         <p>
-          Plays the ROMs in
-          <a href="https://github.com/imjasonh/playground/tree/main/nescript/examples"><code>nescript/examples</code></a>
-          on <code>main</code> with
+          Plays the NEScript games on <code>main</code> with
           <a href="https://github.com/bfirsh/jsnes">jsnes</a>. Drop an
           <code>.nes</code> file anywhere on the page to play your own. Files
           you open stay on your machine.
@@ -80,22 +78,19 @@
           </div>
           <p class="library-note" id="library-note">Loading the list from GitHub…</p>
           <ul class="games" id="games"></ul>
+
+          <section class="controls" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Controls</h2>
+            <table>
+              <thead>
+                <tr><th scope="col">Button</th><th scope="col">P1</th><th scope="col">P2</th></tr>
+              </thead>
+              <tbody id="keys"></tbody>
+            </table>
+            <p>The first gamepad is player 1 and the second is player 2.</p>
+          </section>
         </aside>
       </main>
-
-      <section class="controls" aria-labelledby="controls-heading">
-        <h2 id="controls-heading">Controls</h2>
-        <table>
-          <thead>
-            <tr><th scope="col">Button</th><th scope="col">Player 1</th><th scope="col">Player 2</th></tr>
-          </thead>
-          <tbody id="keys"></tbody>
-        </table>
-        <p>
-          Gamepads work too: the first one connected is player 1 and the
-          second is player 2.
-        </p>
-      </section>
     </div>
 
     <div class="drop-overlay" id="drop-overlay" hidden>
