@@ -66,16 +66,21 @@ body {
   display: none !important;
 }
 
+/* The rows span the window so the message list's scroll bar sits at the
+   window edge. Padding centers a 48rem column inside each row. */
 .app {
+  --column-left: max(1rem, env(safe-area-inset-left), (100% - 48rem) / 2);
+  --column-right: max(1rem, env(safe-area-inset-right), (100% - 48rem) / 2);
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100dvh;
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: max(0.75rem, env(safe-area-inset-top))
-    max(1rem, env(safe-area-inset-right))
-    max(0.75rem, env(safe-area-inset-bottom))
-    max(1rem, env(safe-area-inset-left));
+}
+
+.masthead,
+.log,
+.dock {
+  padding-left: var(--column-left);
+  padding-right: var(--column-right);
 }
 
 .masthead {
@@ -83,6 +88,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--line);
 }
@@ -131,11 +137,15 @@ textarea:focus-visible {
   border-color: var(--muted);
 }
 
+/* Positioned so the absolutely positioned screen reader labels inside it
+   scroll with it instead of stretching the page. */
 .log {
+  position: relative;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1rem 0;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
 }
 
 .empty {
@@ -300,6 +310,7 @@ textarea:focus-visible {
   flex-direction: column;
   gap: 0.5rem;
   padding-top: 0.75rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
 }
 
