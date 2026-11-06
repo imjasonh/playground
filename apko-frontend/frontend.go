@@ -115,19 +115,26 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 	b.fetcher = newFetcher(c, b.mainContext)
 	b.rec = b.fetcher.recorder()
 
-	if len(dc.TargetPlatforms) == 0 {
-		ps := configPlatforms(ic)
-		for _, p := range ps {
+	var requested []v1.Platform
+	for _, p := range dc.TargetPlatforms {
+		requested = append(requested, ggcrPlatform(p))
+	}
+	host := ggcrPlatform(platforms.DefaultSpec())
+	targets, err := targetPlatforms(ic, requested, host)
+	if err != nil {
+		return nil, err
+	}
+	// Without --platform, dockerui builds host. Name the platforms only
+	// when the configuration's archs leave host out.
+	if len(requested) == 0 && !(len(targets) == 1 && targets[0].Equals(host)) {
+		for _, p := range targets {
 			dc.TargetPlatforms = append(dc.TargetPlatforms, specPlatform(p))
 		}
-		dc.MultiPlatformRequested = len(ps) > 1
+		dc.MultiPlatformRequested = len(targets) > 1
 	}
 	var archs []types.Architecture
-	for _, p := range dc.TargetPlatforms {
-		archs = append(archs, platformArch(ggcrPlatform(p)))
-	}
-	if len(archs) == 0 {
-		archs = append(archs, platformArch(ggcrPlatform(platforms.DefaultSpec())))
+	for _, p := range targets {
+		archs = append(archs, platformArch(p))
 	}
 
 	if b.localInputs, err = localInputs(ic, archs); err != nil {

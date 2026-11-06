@@ -25,7 +25,8 @@ layering:
 ```
 
 ```bash
-docker buildx build -f apko.yaml -t example.com/wolfi-base --push .
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -f apko.yaml -t example.com/wolfi-base --push .
 ```
 
 YAML treats the `# syntax=` line as a comment, so the same file still works
@@ -146,7 +147,7 @@ step in a Dockerfile could reach. They use the standard `HTTP_PROXY`,
 | `accounts` | Users, groups, and `run-as`. |
 | `paths` | Every path type apko supports. |
 | `layering` | The `origin` strategy and its budget. |
-| `archs` | Each arch becomes a platform. `--platform` overrides the list. Without `--platform`, Buildx warns that the result's platforms don't match the requested one. |
+| `archs` | The platforms a build may produce. As with a Dockerfile, a build without `--platform` produces the builder's platform, and `--platform` picks the platforms to build; a requested platform that `archs` leaves out fails the build. When `archs` leaves out the builder's platform, a build without `--platform` produces every platform in `archs`, and BuildKit warns that the result doesn't match the requested platform. The platforms build in parallel. |
 | `annotations` | Manifest annotations, and index annotations for a multi-platform build. |
 | `vcs-url` | `URL@REVISION` sets the `org.opencontainers.image.source` and `org.opencontainers.image.revision` annotations and labels. When the file doesn't set it, the frontend detects it from a git checkout, as `apko build` does (see `APKO_VCS`). |
 | `volumes` | |
