@@ -5,8 +5,9 @@
 // Pass 1: walk decorated_definition wrappers; if any decorator's
 //         expression is `deprecated` or `deprecated(...)`, emit a
 //         fact attached to the inner function's name.
-// Pass 2: walk call expressions; if the callee is an identifier with
-//         the deprecated fact, warn.
+// Pass 2: walk call expressions; if the callee, or the attribute in a
+//         call such as `mod.old_fn()` or `obj.old_fn()`, has the
+//         deprecated fact, warn.
 
 package python_deprecated_use
 
@@ -73,6 +74,35 @@ python_deprecated_use: schema.#Analyzer & {
 					function: {
 						capture: "callee"
 						pattern: {node: "identifier"}
+					}
+				}
+				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]
+			}
+
+			diagnose: {
+				message:  "@callee is deprecated"
+				severity: "warning"
+			}
+		}
+
+		find_attribute_calls: {
+			name:      "find_attribute_calls"
+			doc:       "Flag module-qualified calls and method calls of deprecated functions"
+			languages: [pylang.Name]
+			requires: ["deprecated"]
+			provides: []
+
+			match: {
+				node: "call"
+				fields: {
+					function: {
+						node: "attribute"
+						fields: {
+							attribute: {
+								capture: "callee"
+								pattern: {node: "identifier"}
+							}
+						}
 					}
 				}
 				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]
