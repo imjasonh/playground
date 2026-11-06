@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-06T00:46:57.071Z",
+  "generatedAt": "2026-11-06T01:25:48.227Z",
   "puzzles": [
     {
       "date": "2005-01-01",
@@ -28809,9 +28809,9 @@
     {
       "date": "2016-04-08",
       "id": 11242,
-      "solved": false,
-      "percentFilled": 2,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 629
     },
     {
       "date": "2016-04-09",
@@ -46253,9 +46253,9 @@
     {
       "date": "2023-02-03",
       "id": 20819,
-      "solved": false,
-      "percentFilled": 2,
-      "seconds": null
+      "solved": true,
+      "percentFilled": 100,
+      "seconds": 626
     },
     {
       "date": "2023-02-04",
