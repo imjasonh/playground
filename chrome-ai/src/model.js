@@ -135,7 +135,8 @@ export function dropOldestExchange(messages) {
 
 /**
  * Creates a session that already holds `history`. When the history is too
- * long for the context window, drops the oldest exchanges until it fits.
+ * long for the context window, drops the oldest exchanges until it fits. A
+ * system message at the start of `history` always stays.
  * @param {object} api The `LanguageModel` global.
  * @param {!Array<!Object>} history Prompt API messages.
  * @param {!Object=} options The options for `createSession`.
@@ -143,17 +144,56 @@ export function dropOldestExchange(messages) {
  *     many messages of `history` it left out.
  */
 export async function restoreSession(api, history, options = {}) {
-  let initialPrompts = history;
+  const system = history[0]?.role === 'system' ? history.slice(0, 1) : [];
+  let rest = history.slice(system.length);
   for (;;) {
     try {
-      const session = await createSession(api, {...options, initialPrompts});
-      return {session, dropped: history.length - initialPrompts.length};
+      const session = await createSession(api, {
+        ...options,
+        initialPrompts: [...system, ...rest],
+      });
+      return {session, dropped: history.length - system.length - rest.length};
     } catch (err) {
-      if (err?.name !== 'QuotaExceededError' || initialPrompts.length === 0) {
+      if (err?.name !== 'QuotaExceededError' || rest.length === 0) {
         throw err;
       }
-      initialPrompts = dropOldestExchange(initialPrompts);
+      rest = dropOldestExchange(rest);
     }
+  }
+}
+
+/**
+ * Returns how many tokens the session holds and how many fit, or null when
+ * the session doesn't report them.
+ * @param {object} session
+ * @return {?{used: number, total: number}}
+ */
+export function usageOf(session) {
+  const used = session?.contextUsage ?? session?.inputUsage;
+  const total = session?.contextWindow ?? session?.inputQuota;
+  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) {
+    return null;
+  }
+  return {used, total};
+}
+
+/**
+ * Returns how many tokens `input` would take in the session, or null when
+ * Chrome can't measure it.
+ * @param {object} session
+ * @param {string|!Array<!Object>} input
+ * @return {!Promise<?number>}
+ */
+export async function measureUsage(session, input) {
+  const measure = session.measureContextUsage ?? session.measureInputUsage;
+  if (typeof measure !== 'function') {
+    return null;
+  }
+  try {
+    const tokens = await measure.call(session, input);
+    return Number.isFinite(tokens) ? tokens : null;
+  } catch {
+    return null;
   }
 }
 
@@ -182,11 +222,11 @@ export async function streamReply(session, input, {signal, onText} = {}) {
  * @return {string}
  */
 export function contextUsage(session) {
-  const used = session?.contextUsage ?? session?.inputUsage;
-  const total = session?.contextWindow ?? session?.inputQuota;
-  if (!Number.isFinite(used) || !Number.isFinite(total)) {
+  const usage = usageOf(session);
+  if (!usage) {
     return '';
   }
   const fmt = (n) => n.toLocaleString('en-US');
-  return `${fmt(used)} of ${fmt(total)} tokens used`;
+  const percent = Math.round((usage.used / usage.total) * 100);
+  return `${fmt(usage.used)} of ${fmt(usage.total)} tokens used (${percent}%)`;
 }

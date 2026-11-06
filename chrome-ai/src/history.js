@@ -4,7 +4,7 @@
 // A record looks like this:
 //
 //   {
-//     version: 1,
+//     version: 2,
 //     id: string,
 //     title: string,
 //     createdAt: number,  // milliseconds since the epoch
@@ -14,6 +14,9 @@
 //       text: string,  // Markdown for assistant messages
 //       attachments: [{kind, name, file: ?Blob, text: ?string}],
 //     }],
+//     // The model's summary of messages[0, through), or null. The model sees
+//     // the summary in place of those messages.
+//     summary: ?{text: string, through: number},
 //   }
 //
 // To change the format, bump CONVERSATION_VERSION and add a step to
@@ -21,10 +24,12 @@
 
 import {userContent} from './attachments.js';
 
-export const CONVERSATION_VERSION = 1;
+export const CONVERSATION_VERSION = 2;
 
 /** Maps a version to a function that upgrades a record to the next one. */
-const MIGRATIONS = Object.freeze({});
+const MIGRATIONS = Object.freeze({
+  1: (record) => ({...record, version: 2, summary: null}),
+});
 
 const TITLE_LENGTH = 60;
 const UNTITLED = 'New chat';
@@ -42,6 +47,7 @@ export function newConversation({id, now}) {
     createdAt: now,
     updatedAt: now,
     messages: [],
+    summary: null,
   };
 }
 
@@ -127,6 +133,37 @@ export function toPromptMessages(messages, media) {
     const text = [...notes, message.text].filter(Boolean).join('\n\n');
     return {role: 'user', content: userContent(text, usable)};
   });
+}
+
+/**
+ * Returns the system message that stands in for the summarized messages.
+ * @param {string} summary
+ * @return {{role: string, content: string}}
+ */
+export function summaryMessage(summary) {
+  return {
+    role: 'system',
+    content:
+      'This conversation started earlier than the messages you can see. ' +
+      `Here is a summary of the earlier part:\n\n${summary}`,
+  };
+}
+
+/**
+ * Returns the prompt messages a session needs to continue `record`: the
+ * summary, if there is one, then the messages after it, up to `end`.
+ * @param {!Object} record
+ * @param {!Array<string>} media The media types the session accepts.
+ * @param {number=} end How many of the record's messages to include.
+ * @return {!Array<!Object>}
+ */
+export function historyPrompts(record, media, end = record.messages.length) {
+  const through = record.summary?.through ?? 0;
+  const recent = toPromptMessages(record.messages.slice(through, end), media);
+  if (!record.summary) {
+    return recent;
+  }
+  return [summaryMessage(record.summary.text), ...recent];
 }
 
 /**

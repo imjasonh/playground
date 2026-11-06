@@ -1,10 +1,17 @@
 import {acceptList, buildPrompt, checkFile} from './attachments.js';
 import {
+  COMPACT_AFTER,
+  COMPACT_BEFORE,
+  foldPoint,
+  isOver,
+  summarize,
+} from './compaction.js';
+import {
   formatWhen,
+  historyPrompts,
   newConversation,
   storedAttachment,
   titleFor,
-  toPromptMessages,
 } from './history.js';
 import {renderMarkdown} from './markdown.js';
 import {
@@ -13,9 +20,11 @@ import {
   contextUsage,
   findLanguageModel,
   formatProgress,
+  measureUsage,
   restoreSession,
   streamReply,
   supportedMedia,
+  usageOf,
 } from './model.js';
 import {openStore} from './store.js';
 
@@ -25,6 +34,9 @@ const el = {
   empty: document.querySelector('#empty'),
   messages: document.querySelector('#messages'),
   status: document.querySelector('#status'),
+  meter: document.querySelector('#meter'),
+  meterFill: document.querySelector('#meter-fill'),
+  meterTip: document.querySelector('#meter-tip'),
   download: document.querySelector('#download'),
   attachments: document.querySelector('#attachments'),
   composer: document.querySelector('#composer'),
@@ -70,11 +82,25 @@ function setStatus(text, {error = false} = {}) {
 }
 
 function showUsage() {
-  const usage = session ? contextUsage(session) : '';
-  const note = overflowed
-    ? 'The oldest messages no longer fit, so the model dropped them.'
-    : '';
-  setStatus([note, usage].filter(Boolean).join(' '));
+  const usage = usageOf(session);
+  el.meter.hidden = usage === null;
+  if (usage) {
+    const percent = Math.min(100, Math.round((usage.used / usage.total) * 100));
+    const details = [contextUsage(session)];
+    if (conversation?.summary) {
+      details.push('Older messages are summarized.');
+    }
+    el.meter.style.setProperty('--fill', `${percent}%`);
+    el.meter.classList.toggle('is-high', isOver(usage, COMPACT_AFTER));
+    el.meter.setAttribute('aria-valuenow', String(percent));
+    el.meter.setAttribute('aria-valuetext', details.join(' '));
+    el.meterTip.textContent = details.join('\n');
+  }
+  setStatus(
+    overflowed
+      ? 'The oldest messages no longer fit, so the model dropped them.'
+      : '',
+  );
 }
 
 function setReady(isReady) {
@@ -123,13 +149,13 @@ function describeError(err) {
 }
 
 // Returns the session for the open conversation, creating it the first time.
-// A saved conversation's messages go in as the session's initial prompts.
+// A saved conversation's summary and messages go in as initial prompts.
 function ensureSession() {
   if (sessionPromise) {
     return sessionPromise;
   }
   const started = generation;
-  const history = toPromptMessages(conversation?.messages ?? [], media);
+  const history = conversation ? historyPrompts(conversation, media) : [];
   const promise = restoreSession(api, history, {...sessionCallbacks, media});
   sessionPromise = promise.then(
     (restored) => {
@@ -162,6 +188,86 @@ function save(record) {
       error: true,
     });
   });
+}
+
+// Shows where the summarized part of the chat ends.
+function markSummary(through) {
+  el.messages.querySelector('.divider')?.remove();
+  const first = el.messages.querySelector(`[data-index="${through}"]`);
+  if (!first) {
+    return;
+  }
+  const divider = document.createElement('li');
+  divider.className = 'divider';
+  divider.setAttribute('role', 'separator');
+  divider.textContent = 'The model sees a summary of the messages above';
+  first.before(divider);
+}
+
+// Summarizes the open chat's older messages, then moves the chat to a new
+// session that holds the summary and the messages after it, up to `end`.
+// Resolves to whether the session changed.
+async function compact(record, end, signal) {
+  const from = record.summary?.through ?? 0;
+  const through =
+    foldPoint(record.messages, {from, end}) ??
+    foldPoint(record.messages, {from, end, keep: 1});
+  if (through === null) {
+    return false;
+  }
+  const started = generation;
+  setStatus('Summarizing older messages to make room…');
+  try {
+    const text = await summarize(api, {
+      media,
+      previous: record.summary?.text ?? null,
+      messages: record.messages.slice(from, through),
+      signal,
+    });
+    record.summary = {text, through};
+    save(record);
+    if (started !== generation) {
+      return false;
+    }
+    const restored = await restoreSession(
+      api,
+      historyPrompts(record, media, end),
+      {...sessionCallbacks, media},
+    );
+    if (started !== generation) {
+      restored.session.destroy();
+      return false;
+    }
+    session?.destroy();
+    session = restored.session;
+    overflowed = restored.dropped > 0;
+    markSummary(through);
+    showUsage();
+    return true;
+  } catch (err) {
+    if (started === generation) {
+      if (err?.name === 'AbortError') {
+        showUsage();
+      } else {
+        setStatus(`Couldn't summarize older messages: ${err?.message || err}`, {
+          error: true,
+        });
+      }
+    }
+    return false;
+  }
+}
+
+// Compacts in the background. The next message waits for it, because it
+// waits for the session.
+function compactSoon(record) {
+  if (!sessionPromise) {
+    return;
+  }
+  const end = record.messages.length;
+  sessionPromise = sessionPromise
+    .then(() => compact(record, end))
+    .then(() => session);
 }
 
 function attachmentElement(attachment, {onRemove} = {}) {
@@ -276,18 +382,29 @@ async function send(text, attachments) {
   });
   save(record);
 
-  addMessage('user', text, attachments);
+  const sent = addMessage('user', text, attachments).parentElement;
+  sent.dataset.index = String(record.messages.length - 1);
   const reply = addMessage('model', '');
   reply.parentElement.classList.add('is-pending');
   updateSend();
   let replyText = '';
   let failed = false;
   try {
-    const current = await sessionReady;
+    let current = await sessionReady;
+    const prompt = buildPrompt(text, attachments);
+    const incoming = await measureUsage(current, prompt);
+    if (
+      incoming !== null &&
+      record === conversation &&
+      isOver(usageOf(current), COMPACT_BEFORE, incoming) &&
+      (await compact(record, record.messages.length - 1, signal))
+    ) {
+      current = session;
+    }
     if (signal.aborted) {
       return;
     }
-    await streamReply(current, buildPrompt(text, attachments), {
+    await streamReply(current, prompt, {
       signal,
       onText: (sofar) => {
         replyText = sofar;
@@ -307,6 +424,7 @@ async function send(text, attachments) {
   } finally {
     if (!failed && replyText !== '') {
       record.messages.push({role: 'assistant', text: replyText, attachments: []});
+      reply.parentElement.dataset.index = String(record.messages.length - 1);
       save(record);
     }
     reply.parentElement.classList.remove('is-pending');
@@ -317,6 +435,9 @@ async function send(text, attachments) {
       controller = null;
       updateSend();
       showUsage();
+      if (isOver(usageOf(session), COMPACT_AFTER)) {
+        compactSoon(record);
+      }
     }
   }
 }
@@ -335,6 +456,7 @@ function resetChat() {
   }
   el.messages.replaceChildren();
   el.empty.hidden = false;
+  el.meter.hidden = true;
   setStatus('');
   updateSend();
 }
@@ -347,7 +469,7 @@ function newChat() {
 function openConversation(record) {
   resetChat();
   conversation = record;
-  for (const message of record.messages) {
+  record.messages.forEach((message, index) => {
     const attachments = message.attachments.map((a) => {
       if (!a.file) {
         return a;
@@ -356,22 +478,36 @@ function openConversation(record) {
       shownUrls.push(url);
       return {...a, url};
     });
-    if (message.role === 'user') {
-      addMessage('user', message.text, attachments);
-    } else {
-      renderMarkdown(addMessage('model', ''), message.text);
+    const body =
+      message.role === 'user'
+        ? addMessage('user', message.text, attachments)
+        : addMessage('model', '');
+    if (message.role === 'assistant') {
+      renderMarkdown(body, message.text);
     }
+    body.parentElement.dataset.index = String(index);
+  });
+  if (record.summary) {
+    markSummary(record.summary.through);
   }
   updateSend();
   if (!ready) {
     return;
   }
   setStatus('Loading the conversation into the model…');
-  ensureSession().then(showUsage, (err) => {
-    if (err?.name !== 'AbortError') {
-      setStatus(describeError(err), {error: true});
-    }
-  });
+  ensureSession().then(
+    () => {
+      showUsage();
+      if (overflowed || isOver(usageOf(session), COMPACT_AFTER)) {
+        compactSoon(record);
+      }
+    },
+    (err) => {
+      if (err?.name !== 'AbortError') {
+        setStatus(describeError(err), {error: true});
+      }
+    },
+  );
   el.prompt.focus();
 }
 
