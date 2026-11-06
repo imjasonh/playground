@@ -105,7 +105,9 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		}
 		return *st, nil
 	}
-	b.fetcher = newFetcher(c, b.mainContext)
+	b.fetcher = newFetcher(c, b.mainContext, func(msg string) {
+		src.Warn(ctx, msg, client.WarnOpts{})
+	})
 	b.rec = b.fetcher.recorder()
 
 	if len(dc.TargetPlatforms) == 0 {
@@ -340,14 +342,43 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 // step's cache key doesn't depend on the file's content, so BuildKit can
 // find a cached apko step, locally or in a remote cache, without
 // downloading the packages.
+//
+// The step mounts the same optional secrets that BuildKit's HTTP source
+// reads for the package's host, HTTP_AUTH_HEADER_<host> and
+// HTTP_AUTH_TOKEN_<host>, so one --secret authenticates both the index
+// fetches and the downloads. Secrets aren't part of the cache key.
 func (b *builder) fetchPackage(pkg lock.LockPkg, key string) llb.State {
+	var host string
+	if u, err := url.Parse(pkg.URL); err == nil {
+		host = u.Hostname()
+	}
 	return b.helper.Run(
-		llb.Args([]string{b.exe, fetchCommand, "-url", pkg.URL, "-checksum", pkg.Checksum, "-out", "/out/" + key}),
+		llb.Args([]string{
+			b.exe, fetchCommand,
+			"-url", pkg.URL,
+			"-checksum", pkg.Checksum,
+			"-auth-header-file", authHeaderFile,
+			"-auth-token-file", authTokenFile,
+			"-out", "/out/" + key,
+		}),
 		llb.User("0"),
 		llb.WithProxy(b.proxy),
+		llb.AddSecret(authHeaderFile, llb.SecretID(authHeaderSecretPrefix+host), llb.SecretOptional),
+		llb.AddSecret(authTokenFile, llb.SecretID(authTokenSecretPrefix+host), llb.SecretOptional),
 		llb.WithCustomNamef("fetch %s", redactURL(pkg.URL)),
 	).AddMount("/out", llb.Scratch())
 }
+
+const (
+	// authHeaderSecretPrefix and authTokenSecretPrefix name the secrets
+	// that BuildKit's HTTP source reads for a host: the whole
+	// Authorization header, or a token to send as "Bearer <token>".
+	authHeaderSecretPrefix = "HTTP_AUTH_HEADER_"
+	authTokenSecretPrefix  = "HTTP_AUTH_TOKEN_"
+
+	authHeaderFile = "/run/secrets/http-auth-header"
+	authTokenFile  = "/run/secrets/http-auth-token"
+)
 
 // sortedStates returns the states sorted by key, so the build definition
 // doesn't depend on map order.

@@ -13,8 +13,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"chainguard.dev/apko/pkg/apk/expandapk"
@@ -36,16 +39,78 @@ const fetchAttempts = 4
 
 func runFetch(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet(fetchCommand, flag.ContinueOnError)
-	url := fs.String("url", "", "package URL")
+	pkgURL := fs.String("url", "", "package URL")
 	checksum := fs.String("checksum", "", "checksum of the package's control section, as Q1<base64 SHA-1>")
 	out := fs.String("out", "", "file to write the package to")
+	headerFile := fs.String("auth-header-file", "", "file holding an Authorization header value, if it exists")
+	tokenFile := fs.String("auth-token-file", "", "file holding a bearer token, if it exists")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *url == "" || *checksum == "" || *out == "" {
+	if *pkgURL == "" || *checksum == "" || *out == "" {
 		return errors.New("-url, -checksum, and -out are required")
 	}
-	return fetchAPK(ctx, http.DefaultClient, *url, *checksum, *out)
+	auth, err := authorization(*headerFile, *tokenFile)
+	if err != nil {
+		return err
+	}
+	c := http.DefaultClient
+	if auth != "" {
+		c, err = authClient(*pkgURL, auth)
+		if err != nil {
+			return err
+		}
+	}
+	return fetchAPK(ctx, c, *pkgURL, *checksum, *out)
+}
+
+// authorization returns the Authorization header value from the first of
+// headerFile and tokenFile that exists and isn't empty, or "" when neither
+// does. A token becomes "Bearer <token>".
+func authorization(headerFile, tokenFile string) (string, error) {
+	for _, f := range []struct {
+		path   string
+		prefix string
+	}{{headerFile, ""}, {tokenFile, "Bearer "}} {
+		if f.path == "" {
+			continue
+		}
+		data, err := os.ReadFile(f.path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return "", err
+		}
+		if v := strings.TrimSpace(string(data)); v != "" {
+			return f.prefix + v, nil
+		}
+	}
+	return "", nil
+}
+
+// authClient returns a client that sends auth as the Authorization header
+// to rawURL's host, and to no other host a redirect leads to.
+func authClient(rawURL, auth string) (*http.Client, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{Transport: authTransport{auth: auth, host: u.Host, next: http.DefaultTransport}}, nil
+}
+
+// authTransport sets the Authorization header on requests to host.
+type authTransport struct {
+	auth string
+	host string
+	next http.RoundTripper
+}
+
+func (t authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == t.host {
+		req = req.Clone(req.Context())
+		req.Header.Set("Authorization", t.auth)
+	}
+	return t.next.RoundTrip(req)
 }
 
 // fetchAPK downloads the package at url to out and checks it against

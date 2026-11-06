@@ -48,8 +48,13 @@ type fetcher struct {
 	// mainContext returns the build context, limited to the given paths.
 	mainContext func(ctx context.Context, paths ...string) (llb.State, error)
 
+	// warn reports a problem to the user as a build warning.
+	warn func(msg string)
+
 	mu      sync.Mutex
 	entries map[string]*fetchEntry
+	// warned holds the hosts warn has reported missing credentials for.
+	warned map[string]bool
 }
 
 type fetchEntry struct {
@@ -64,8 +69,20 @@ type fetchEntry struct {
 	err  error
 }
 
-func newFetcher(c client.Client, mainContext func(context.Context, ...string) (llb.State, error)) *fetcher {
-	return &fetcher{c: c, mainContext: mainContext, entries: map[string]*fetchEntry{}}
+func newFetcher(c client.Client, mainContext func(context.Context, ...string) (llb.State, error), warn func(string)) *fetcher {
+	return &fetcher{c: c, mainContext: mainContext, warn: warn, entries: map[string]*fetchEntry{}, warned: map[string]bool{}}
+}
+
+// warnAuth reports, once for each host, how to pass credentials for it.
+func (f *fetcher) warnAuth(host string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.warned[host] || f.warn == nil {
+		return
+	}
+	f.warned[host] = true
+	f.warn(fmt.Sprintf("%s requires credentials; pass them with --secret id=%s%s,env=VAR, where VAR holds the whole Authorization header, such as \"Basic <base64 of user:password>\", or with --secret id=%s%s,env=VAR, where VAR holds a bearer token",
+		host, authHeaderSecretPrefix, host, authTokenSecretPrefix, host))
 }
 
 // entry returns the entry for rawURL, creating its LLB state on first use.
@@ -195,6 +212,14 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		// rather than as failures.
 		if errors.Is(err, errNotFound) || strings.Contains(err.Error(), "invalid response status 404") {
 			return textResponse(req, http.StatusNotFound, err.Error()), nil
+		}
+		// Return an authentication failure as a response, which apko's
+		// client doesn't retry, and say which secret to pass.
+		for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+			if strings.Contains(err.Error(), fmt.Sprintf("invalid response status %d", code)) {
+				r.f.warnAuth(req.URL.Hostname())
+				return textResponse(req, code, err.Error()), nil
+			}
 		}
 		return nil, fmt.Errorf("fetching %s: %w", req.URL.Redacted(), err)
 	}
