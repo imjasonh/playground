@@ -15,7 +15,7 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/lock"
 	"chainguard.dev/apko/pkg/tarfs"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,12 +55,12 @@ func trimRepos(repos []string) []string {
 
 // configPlatforms returns the platforms that the configuration's archs list
 // names, or nil when it names none.
-func configPlatforms(ic types.ImageConfiguration) []ocispecs.Platform {
+func configPlatforms(ic types.ImageConfiguration) []v1.Platform {
 	archs := ic.Archs
 	if slices.Contains(archs, types.Architecture("all")) {
 		archs = types.AllArchs
 	}
-	var out []ocispecs.Platform
+	var out []v1.Platform
 	seen := map[types.Architecture]bool{}
 	for _, a := range archs {
 		a = types.ParseArchitecture(a.String())
@@ -68,14 +68,13 @@ func configPlatforms(ic types.ImageConfiguration) []ocispecs.Platform {
 			continue
 		}
 		seen[a] = true
-		p := a.ToOCIPlatform()
-		out = append(out, ocispecs.Platform{OS: p.OS, Architecture: p.Architecture, Variant: p.Variant})
+		out = append(out, *a.ToOCIPlatform())
 	}
 	return out
 }
 
 // platformArch returns the apko architecture for an OCI platform.
-func platformArch(p ocispecs.Platform) types.Architecture {
+func platformArch(p v1.Platform) types.Architecture {
 	if p.Architecture == "arm" {
 		v := p.Variant
 		if v == "" {

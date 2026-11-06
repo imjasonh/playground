@@ -16,6 +16,7 @@ import (
 	"chainguard.dev/apko/pkg/build/types"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
@@ -91,18 +92,18 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 	b.rec = b.fetcher.recorder()
 
 	if len(dc.TargetPlatforms) == 0 {
-		if ps := configPlatforms(ic); len(ps) > 0 {
-			dc.TargetPlatforms = ps
-			dc.MultiPlatformRequested = len(ps) > 1
+		ps := configPlatforms(ic)
+		for _, p := range ps {
+			dc.TargetPlatforms = append(dc.TargetPlatforms, specPlatform(p))
 		}
-	}
-	targets := dc.TargetPlatforms
-	if len(targets) == 0 {
-		targets = []ocispecs.Platform{platforms.DefaultSpec()}
+		dc.MultiPlatformRequested = len(ps) > 1
 	}
 	var archs []types.Architecture
-	for _, p := range targets {
-		archs = append(archs, platformArch(p))
+	for _, p := range dc.TargetPlatforms {
+		archs = append(archs, platformArch(ggcrPlatform(p)))
+	}
+	if len(archs) == 0 {
+		archs = append(archs, platformArch(ggcrPlatform(platforms.DefaultSpec())))
 	}
 
 	if b.localInputs, err = localInputs(ic, archs); err != nil {
@@ -134,34 +135,36 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 		return nil, err
 	}
 
+	type platformAnnotations struct {
+		platform    ocispecs.Platform
+		annotations map[string]string
+	}
 	var mu sync.Mutex
-	annotations := map[string]map[string]string{}
-	rb, err := dc.Build(ctx, func(ctx context.Context, p *ocispecs.Platform, _ int) (*dockerui.BuildResult, error) {
-		if p == nil {
+	var annotations []platformAnnotations
+	rb, err := dc.Build(ctx, func(ctx context.Context, sp *ocispecs.Platform, _ int) (*dockerui.BuildResult, error) {
+		// dockerui exports a nil platform as the default platform.
+		if sp == nil {
 			def := platforms.DefaultSpec()
-			p = &def
+			sp = &def
 		}
-		res, anns, err := b.buildPlatform(ctx, *p)
+		p := ggcrPlatform(*sp)
+		res, anns, err := b.buildPlatform(ctx, p)
 		if err != nil {
-			return nil, fmt.Errorf("building %s: %w", platforms.Format(*p), err)
+			return nil, fmt.Errorf("building %s: %w", p, err)
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		annotations[platforms.FormatAll(*p)] = anns
+		annotations = append(annotations, platformAnnotations{*sp, anns})
 		return res, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	for ps, anns := range annotations {
-		p, err := platforms.Parse(ps)
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range anns {
+	for _, pa := range annotations {
+		for k, v := range pa.annotations {
 			key := exptypes.AnnotationKey{Type: exptypes.AnnotationManifest, Key: k}
 			if dc.MultiPlatformRequested {
-				key.Platform = &p
+				key.Platform = &pa.platform
 			}
 			rb.AddMeta(key.String(), []byte(v))
 		}
@@ -209,7 +212,7 @@ func helperImage(ctx context.Context, c client.Client, dc *dockerui.Client) (llb
 
 // buildPlatform builds the image for one platform and returns it with the
 // manifest annotations apko would set.
-func (b *builder) buildPlatform(ctx context.Context, p ocispecs.Platform) (*dockerui.BuildResult, map[string]string, error) {
+func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.BuildResult, map[string]string, error) {
 	arch := platformArch(p)
 	lk, ok := b.locked[arch]
 	if !ok {
@@ -282,7 +285,7 @@ func (b *builder) buildPlatform(ctx context.Context, p ocispecs.Platform) (*dock
 			llb.WithCustomName(layerName(arch, i, len(pl.Layers), l)),
 		))
 	}
-	def, err := mergeStates(layers, "apko layers "+arch.ToAPK()).Marshal(ctx, llb.Platform(p))
+	def, err := mergeStates(layers, "apko layers "+arch.ToAPK()).Marshal(ctx, llb.Platform(specPlatform(p)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -368,14 +371,7 @@ func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 	if err != nil {
 		return nil, nil, err
 	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	var out dockerspec.DockerOCIImage
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, nil, err
-	}
+	cfg = cfg.DeepCopy()
 	comment := "This is an apko single-layer image"
 	if n > 1 {
 		comment = ""
@@ -385,14 +381,46 @@ func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 	if hasTitle && hasVendor {
 		comment = title + " by " + vendor
 	}
-	out.History = nil
+	cfg.History = nil
 	for range n {
-		out.History = append(out.History, ocispecs.History{
-			Created:   &created,
+		cfg.History = append(cfg.History, v1.History{
+			Created:   v1.Time{Time: created},
 			CreatedBy: "apko",
 			Author:    "apko",
 			Comment:   comment,
 		})
 	}
+	// dockerui takes the config as BuildKit's type. Both types encode the
+	// same OCI image config JSON.
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out dockerspec.DockerOCIImage
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, nil, err
+	}
 	return &out, m.Annotations, nil
+}
+
+// specPlatform converts p to the image-spec type that BuildKit's API takes.
+func specPlatform(p v1.Platform) ocispecs.Platform {
+	return ocispecs.Platform{
+		OS:           p.OS,
+		Architecture: p.Architecture,
+		Variant:      p.Variant,
+		OSVersion:    p.OSVersion,
+		OSFeatures:   p.OSFeatures,
+	}
+}
+
+// ggcrPlatform converts a platform from BuildKit's API.
+func ggcrPlatform(p ocispecs.Platform) v1.Platform {
+	return v1.Platform{
+		OS:           p.OS,
+		Architecture: p.Architecture,
+		Variant:      p.Variant,
+		OSVersion:    p.OSVersion,
+		OSFeatures:   p.OSFeatures,
+	}
 }

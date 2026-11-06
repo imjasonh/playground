@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"chainguard.dev/apko/pkg/build/types"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestParseConfig(t *testing.T) {
@@ -35,13 +35,13 @@ archs:
 	if ic.Environment["FOO"] != "bar" {
 		t.Errorf("environment = %v", ic.Environment)
 	}
-	if got, want := configPlatforms(ic), []ocispecs.Platform{{OS: "linux", Architecture: "amd64"}, {OS: "linux", Architecture: "arm64"}}; !slices.EqualFunc(got, want, platformsEqual) {
+	if got, want := configPlatforms(ic), []v1.Platform{{OS: "linux", Architecture: "amd64"}, {OS: "linux", Architecture: "arm64"}}; !slices.EqualFunc(got, want, platformsEqual) {
 		t.Errorf("platforms = %v, want %v", got, want)
 	}
 }
 
-func platformsEqual(a, b ocispecs.Platform) bool {
-	return a.OS == b.OS && a.Architecture == b.Architecture && a.Variant == b.Variant
+func platformsEqual(a, b v1.Platform) bool {
+	return a.Equals(b)
 }
 
 func TestParseConfigErrors(t *testing.T) {
@@ -67,7 +67,7 @@ func TestParseConfigErrors(t *testing.T) {
 func TestConfigPlatformsDedupes(t *testing.T) {
 	ic := types.ImageConfiguration{Archs: []types.Architecture{"x86_64", "amd64", "armv7"}}
 	got := configPlatforms(ic)
-	want := []ocispecs.Platform{{OS: "linux", Architecture: "amd64"}, {OS: "linux", Architecture: "arm", Variant: "v7"}}
+	want := []v1.Platform{{OS: "linux", Architecture: "amd64"}, {OS: "linux", Architecture: "arm", Variant: "v7"}}
 	if !slices.EqualFunc(got, want, platformsEqual) {
 		t.Errorf("configPlatforms() = %v, want %v", got, want)
 	}
@@ -78,16 +78,16 @@ func TestConfigPlatformsDedupes(t *testing.T) {
 
 func TestPlatformArch(t *testing.T) {
 	for _, tc := range []struct {
-		p    ocispecs.Platform
+		p    v1.Platform
 		want string
 	}{
-		{ocispecs.Platform{OS: "linux", Architecture: "amd64"}, "x86_64"},
-		{ocispecs.Platform{OS: "linux", Architecture: "arm64"}, "aarch64"},
-		{ocispecs.Platform{OS: "linux", Architecture: "arm", Variant: "v7"}, "armv7"},
-		{ocispecs.Platform{OS: "linux", Architecture: "arm", Variant: "v6"}, "armhf"},
-		{ocispecs.Platform{OS: "linux", Architecture: "arm"}, "armv7"},
-		{ocispecs.Platform{OS: "linux", Architecture: "386"}, "x86"},
-		{ocispecs.Platform{OS: "linux", Architecture: "riscv64"}, "riscv64"},
+		{v1.Platform{OS: "linux", Architecture: "amd64"}, "x86_64"},
+		{v1.Platform{OS: "linux", Architecture: "arm64"}, "aarch64"},
+		{v1.Platform{OS: "linux", Architecture: "arm", Variant: "v7"}, "armv7"},
+		{v1.Platform{OS: "linux", Architecture: "arm", Variant: "v6"}, "armhf"},
+		{v1.Platform{OS: "linux", Architecture: "arm"}, "armv7"},
+		{v1.Platform{OS: "linux", Architecture: "386"}, "x86"},
+		{v1.Platform{OS: "linux", Architecture: "riscv64"}, "riscv64"},
 	} {
 		if got := platformArch(tc.p).ToAPK(); got != tc.want {
 			t.Errorf("platformArch(%v) = %s, want %s", tc.p, got, tc.want)
