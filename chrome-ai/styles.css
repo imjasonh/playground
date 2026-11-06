@@ -588,7 +588,8 @@ textarea:focus-visible {
   transition: width 300ms ease-out;
 }
 
-.meter.is-high .meter-fill {
+.meter.is-high .meter-fill,
+.meter.is-downloading .meter-fill {
   background: var(--accent);
   opacity: 0.7;
 }

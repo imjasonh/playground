@@ -70,7 +70,7 @@ const shownUrls = [];
 const deletedIds = new Set();
 
 const sessionCallbacks = {
-  onProgress: (loaded) => setStatus(formatProgress(loaded)),
+  onProgress: showDownload,
   onOverflow: () => {
     overflowed = true;
   },
@@ -81,20 +81,42 @@ function setStatus(text, {error = false} = {}) {
   el.status.classList.toggle('is-error', error);
 }
 
+// The meter shows the model download while there is one, and the context
+// window the rest of the time.
+function setMeter({label, fraction, details, className = ''}) {
+  const percent = Math.min(100, Math.max(0, Math.round(fraction * 100)));
+  el.meter.hidden = false;
+  el.meter.className = `meter ${className}`.trim();
+  el.meter.style.setProperty('--fill', `${percent}%`);
+  el.meter.setAttribute('aria-label', label);
+  el.meter.setAttribute('aria-valuenow', String(percent));
+  el.meter.setAttribute('aria-valuetext', details.join(' '));
+  el.meterTip.textContent = details.join('\n');
+}
+
+function showDownload(loaded) {
+  setMeter({
+    label: 'Model download',
+    fraction: loaded,
+    details: [formatProgress(loaded)],
+    className: 'is-downloading',
+  });
+}
+
 function showUsage() {
   const usage = usageOf(session);
   el.meter.hidden = usage === null;
   if (usage) {
-    const percent = Math.min(100, Math.round((usage.used / usage.total) * 100));
     const details = [contextUsage(session)];
     if (conversation?.summary) {
       details.push('Older messages are summarized.');
     }
-    el.meter.style.setProperty('--fill', `${percent}%`);
-    el.meter.classList.toggle('is-high', isOver(usage, COMPACT_AFTER));
-    el.meter.setAttribute('aria-valuenow', String(percent));
-    el.meter.setAttribute('aria-valuetext', details.join(' '));
-    el.meterTip.textContent = details.join('\n');
+    setMeter({
+      label: 'Context window',
+      fraction: usage.used / usage.total,
+      details,
+      className: isOver(usage, COMPACT_AFTER) ? 'is-high' : '',
+    });
   }
   setStatus(
     overflowed
@@ -579,7 +601,8 @@ async function deleteConversation(record) {
 
 async function download() {
   el.download.disabled = true;
-  setStatus(formatProgress(0));
+  setStatus(availabilityMessage('downloading'));
+  showDownload(0);
   try {
     await ensureSession();
     el.download.hidden = true;
@@ -587,6 +610,7 @@ async function download() {
     showUsage();
     el.prompt.focus();
   } catch (err) {
+    el.meter.hidden = true;
     setStatus(describeError(err), {error: true});
   } finally {
     el.download.disabled = false;
