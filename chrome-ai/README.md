@@ -30,7 +30,8 @@ Open http://localhost:3000. The Prompt API needs a secure context, and
 
 ## Use it
 
-- Press Enter to send and Shift+Enter for a new line.
+- Press Enter to send and Shift+Enter for a new line. On a touch keyboard,
+  Enter adds a new line and **Send** sends.
 - **Stop** ends the reply in progress and keeps the text so far.
 - **New chat** discards the session and its history.
 
@@ -98,8 +99,15 @@ in `src/compaction.js`.
 Replies render as Markdown with [marked](https://github.com/markedjs/marked)
 (GitHub-flavored: tables, fenced code, task lists). The HTML then goes through
 [DOMPurify](https://github.com/cure53/DOMPurify), because a reply can repeat
-HTML from the prompt. The sanitizer also drops images and other media, which
-would load a URL as soon as they render. Links open in a new tab.
+HTML from the prompt. The sanitizer keeps HTML only (no SVG or MathML) and
+also drops images, media, `<style>`, inline `style` attributes, and forms.
+Those would load a URL as soon as they render, which could send chat text
+off the device, or would restyle the page. Links open in a new tab.
+
+The page's Content-Security-Policy backs this up. It allows scripts, styles,
+and images only from the page itself, plus `blob:` images and media for
+attachments, so the browser refuses any other load even if the sanitizer
+misses one.
 
 Both libraries are vendored in `vendor/`, so Pages serves the app without a
 build step. After you bump either package, run:
