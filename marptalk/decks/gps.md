@@ -17,6 +17,10 @@ style: |
   table {
     font-size: 34px;
   }
+  svg {
+    display: block;
+    margin: 0 auto;
+  }
   .big {
     font-size: 96px;
     font-weight: 700;
@@ -64,14 +68,26 @@ Radio signals travel at the speed of light. Your receiver notes when each signal
 
 # Spheres intersect
 
-| Satellites | You are somewhere on |
-| :---: | --- |
-| 1 | a sphere |
-| 2 | a circle |
-| 3 | two points |
+<svg viewBox="100 0 820 560" width="760" role="img" aria-label="Three circles centered on three satellites meet at one point, your position">
+  <circle cx="330" cy="200" r="197.2" fill="#2563eb" fill-opacity="0.07" stroke="#2563eb" stroke-width="3" />
+  <circle cx="690" cy="215" r="208.1" fill="#dc2626" fill-opacity="0.07" stroke="#dc2626" stroke-width="3" />
+  <circle cx="560" cy="410" r="125.3" fill="#16a34a" fill-opacity="0.07" stroke="#16a34a" stroke-width="3" />
+  <line x1="330" y1="200" x2="500" y2="300" stroke="#2563eb" stroke-width="2" stroke-dasharray="6 6" />
+  <circle cx="330" cy="200" r="16" fill="#2563eb" />
+  <text x="330" y="207" text-anchor="middle" font-size="20" font-weight="700" fill="#ffffff">1</text>
+  <line x1="690" y1="215" x2="500" y2="300" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 6" />
+  <circle cx="690" cy="215" r="16" fill="#dc2626" />
+  <text x="690" y="222" text-anchor="middle" font-size="20" font-weight="700" fill="#ffffff">2</text>
+  <line x1="560" y1="410" x2="500" y2="300" stroke="#16a34a" stroke-width="2" stroke-dasharray="6 6" />
+  <circle cx="560" cy="410" r="16" fill="#16a34a" />
+  <text x="560" y="417" text-anchor="middle" font-size="20" font-weight="700" fill="#ffffff">3</text>
+  <circle cx="500" cy="300" r="10" fill="currentColor" />
+  <text x="480" y="310" text-anchor="end" font-size="30" font-weight="700" stroke="#ffffff" stroke-width="8" fill="#ffffff">you</text>
+  <text x="480" y="310" text-anchor="end" font-size="30" font-weight="700" fill="currentColor">you</text>
+</svg>
 
 <!--
-One distance tells you that you're somewhere on a sphere around that satellite. A second satellite gives a second sphere, and two spheres meet in a circle. A third sphere cuts that circle at two points. One of them is usually far out in space or deep underground, so the receiver can throw it away. That's trilateration.
+One distance tells you that you're somewhere on a sphere around that satellite. Two spheres meet in a circle, and a third cuts that circle at two points. One of them is usually far out in space, so the receiver throws it away. This flat picture shows the idea with circles. Each circle is every point at the measured distance from one satellite, and only your position is on all three. That's trilateration.
 -->
 
 ---

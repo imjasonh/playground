@@ -64,10 +64,37 @@ The slide is what the viewer looks at while listening. It holds the thing that i
 - Use three or four bullets of a few words each, or one table, one code block, or one big number. Not all of them.
 - Don't put on the slide what the voice says word for word. The two should support each other.
 - Code blocks are syntax-highlighted for common languages (see `KEEP_LANGUAGES` in `marptalk/scripts/vendor.js`). Others render as plain text. Keep code under about 10 lines.
-- Text diagrams in a ```` ```text ```` fence work. In a flex or grid layout, give each column a fixed width. Marp shrinks a code block to fit its container, and a flex item that sizes to its content collapses.
+- In a flex or grid layout, give a column that holds a code block a fixed width. Marp shrinks a code block to fit its container, and a flex item that sizes to its content collapses.
 - Math is not rendered; `$...$` stays literal and the check flags it. Write formulas as text or code.
 - Avoid images unless the user supplies them. Remote images load from their host, and a missing one leaves a hole. Use `![bg right](url)` syntax only for images you know exist.
-- Inline HTML follows Marp's allowlist: `div`, `span`, `table`, `mark`, `kbd`, `sub`, `sup`, and similar work with a `class`. `style` and `id` attributes are stripped, and `<svg>`, `<iframe>`, and `<script>` render as text.
+- Inline HTML follows Marp's allowlist: `div`, `span`, `table`, `mark`, `kbd`, `sub`, `sup`, and similar work with a `class`. `style` and `id` attributes are stripped, and `<iframe>` and `<script>` render as text. The check flags tags that render as text.
+
+## Diagrams
+
+When a slide explains structure, flow, geometry, or change over time, draw it. A diagram with a voiceover that walks through it beats bullets. Each bundled deck has an example: the object graph in `git-objects.md`, the circles in `gps.md`, and the cell grids in `game-of-life.md`.
+
+Draw diagrams as inline `<svg>` in the slide, so the deck stays one file. Marp has no Mermaid or other diagram syntax, and images beside an uploaded deck don't load.
+
+```html
+<svg viewBox="0 0 1000 300" width="1000" role="img" aria-label="Commit B points at commit A">
+  <rect x="40" y="120" width="220" height="60" rx="10" fill="none" stroke="currentColor" stroke-width="2" />
+  <text x="150" y="158" text-anchor="middle" font-size="24" fill="currentColor">commit A</text>
+  <line x1="740" y1="150" x2="276" y2="150" stroke="#2563eb" stroke-width="2" />
+  <polygon points="262,150 280,141 280,159" fill="#2563eb" />
+  <rect x="740" y="120" width="220" height="60" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2" />
+  <text x="850" y="158" text-anchor="middle" font-size="24" fill="currentColor">commit B</text>
+</svg>
+```
+
+- Allowed elements: `svg`, `g`, `title`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`, `text`, and `tspan`. Allowed attributes: geometry (`x`, `y`, `width`, `height`, `rx`, `cx`, `r`, `points`, `d`, and so on), `viewBox`, `transform`, `class`, `role`, `aria-label`, `fill`, `stroke`, their `-opacity`, `-width`, `-dasharray`, `-linecap`, and `-linejoin` variants, `opacity`, `font-size`, `font-weight`, `font-family`, `font-style`, `text-anchor`, and `dominant-baseline`.
+- Not allowed: `style`, `id`, `<marker>`, `<defs>`, `<use>`, `<image>`, `<foreignObject>`, gradients, and filters. Draw arrowheads as small `<polygon>`s at the line ends.
+- Leave no blank lines inside an `<svg>`. Markdown ends the HTML block at a blank line and shows the rest as text. The check flags this.
+- Work in slide units. A 16:9 slide is 1280 by 720, and about 1100 by 480 is free under a heading. Set `width` on the `<svg>` and keep every shape inside the `viewBox`; anything outside is clipped.
+- Use `fill="currentColor"` for text and outlines so they follow the theme, including `class: invert`. Use one accent color for the part the voiceover is about, and say which color it is: "the blue boxes are new".
+- Center a diagram with `svg { display: block; margin: 0 auto; }` in the `style` front matter. Beside bullets, use a grid with the text in `1fr` and the SVG in `auto`, as on the second slide of `game-of-life.md`.
+- Add `role="img"` and an `aria-label` that says what the diagram shows.
+- Labels count toward the 50 words on screen. Keep them to a few words each.
+- Compute coordinates instead of guessing. Check where lines cross boxes, and that labels don't overlap lines. Look at the slide in the app before you hand it back.
 
 ## Voiceover
 

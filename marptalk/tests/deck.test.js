@@ -65,6 +65,52 @@ test('parseDeck renders one SVG per slide and no script', () => {
   assert.doesNotMatch(deck.html, /<script/);
 });
 
+test('parseDeck keeps inline SVG drawings and drops anything active', () => {
+  const deck = parseDeck(`# Diagram
+
+<svg viewBox="0 0 200 50" onload="alert(1)" style="color:red" id="d">
+  <rect x="5" y="5" width="60" height="40" rx="6" fill="none" stroke="currentColor" />
+  <path d="M65 25H120" stroke="currentColor" />
+  <text x="35" y="30" text-anchor="middle" fill="currentColor">Blob</text>
+  <foreignObject><p>x</p></foreignObject>
+  <script>alert(1)</script>
+</svg>
+
+<!-- A box and an arrow. -->
+`);
+  assert.match(deck.html, /<svg viewbox="0 0 200 50">/);
+  assert.match(deck.html, /<rect x="5" y="5" width="60" height="40" rx="6"/);
+  assert.match(deck.html, /<path d="M65 25H120" stroke="currentColor" \/>/);
+  assert.match(deck.html, /<text x="35" y="30" text-anchor="middle"/);
+  assert.match(deck.html, /&lt;foreignObject&gt;/);
+  assert.match(deck.html, /&lt;script&gt;/);
+  assert.doesNotMatch(deck.html, /onload|style="color|id="d"/);
+});
+
+test('lintDeck flags blank lines in SVG and tags shown as text', () => {
+  const md = `---
+marp: true
+---
+
+# Broken
+
+<svg viewBox="0 0 10 10">
+  <circle cx="5" cy="5" r="4" />
+
+  <rect x="1" y="1" width="2" height="2" />
+</svg>
+
+<iframe src="x"></iframe> and \`<code>\` is fine.
+
+<!-- Broken diagram. -->
+`;
+  const messages = lintDeck(md).map((f) => `${f.slide}: ${f.message}`);
+  assert.deepEqual(messages, [
+    '0: An <svg> has a blank line, which ends it early. Remove it.',
+    '1: <iframe> is not allowed, so it shows as text.',
+  ]);
+});
+
 test('deckDurationMs scales with rate', () => {
   const deck = parseDeck(SAMPLE);
   const normal = deckDurationMs(deck, 1);
@@ -107,8 +153,8 @@ ${'word '.repeat(60)}
     /^1: .*URL/,
     /^1: .*arrows/,
     /^2: No voiceover/,
-    /^3: Voiceover is 170 words/,
     /^3: Slide shows 61 words/,
+    /^3: Voiceover is 170 words/,
   ];
   assert.equal(messages.length, expected.length, messages.join('\n'));
   expected.forEach((re, i) => assert.match(messages[i], re));

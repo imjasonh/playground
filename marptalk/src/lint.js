@@ -18,24 +18,47 @@ export const MAX_SLIDE_WORDS = 50;
  */
 
 /**
- * Extracts the visible text of each slide from Marp's HTML.
+ * Splits Marp's HTML into the inner HTML of each slide.
  *
  * @param {string} html
  * @return {!Array<string>}
  */
-function slideTexts(html) {
+function slideBodies(html) {
   const sections =
     /<section\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/section>/g;
   return Array.from(html.matchAll(sections))
     .filter(([, attrs]) => /\sid="\d+"/.test(attrs))
-    .map(([, , body]) =>
-      body
-        .replace(/<pre[\s\S]*?<\/pre>/g, ' ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&[a-z#0-9]+;/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim(),
-    );
+    .map(([, , body]) => body);
+}
+
+/**
+ * @param {string} body
+ * @return {string} The slide's visible text, without code blocks.
+ */
+function visibleText(body) {
+  return body
+    .replace(/<pre[\s\S]*?<\/pre>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Lists tags that the HTML allowlist escaped, so they show as text.
+ *
+ * @param {string} body
+ * @return {!Array<string>}
+ */
+function escapedTags(body) {
+  const outsideCode = body
+    .replace(/<pre[\s\S]*?<\/pre>/g, ' ')
+    .replace(/<code[\s\S]*?<\/code>/g, ' ');
+  const tags = Array.from(
+    outsideCode.matchAll(/&lt;([a-zA-Z][\w-]*)/g),
+    (m) => m[1],
+  );
+  return [...new Set(tags)];
 }
 
 /**
@@ -53,13 +76,28 @@ export function lintDeck(markdown) {
   if (/(^|[^\\$])\$\$?[^\s$][^$\n]*\$/m.test(markdown)) {
     add(0, 'Math ($...$) is not rendered. Write the formula as text or code.');
   }
+  for (const [svg] of markdown.matchAll(/<svg\b[\s\S]*?<\/svg>/g)) {
+    if (/\n[ \t]*\r?\n/.test(svg)) {
+      add(0, 'An <svg> has a blank line, which ends it early. Remove it.');
+      break;
+    }
+  }
 
   const deck = parseDeck(markdown);
   if (!deck.slides.length) add(0, 'The deck has no slides.');
-  const texts = slideTexts(deck.html);
+  const bodies = slideBodies(deck.html);
 
   deck.slides.forEach((slide, i) => {
     const n = i + 1;
+    const body = bodies[i] ?? '';
+    const shown = countWords(visibleText(body));
+    if (shown > MAX_SLIDE_WORDS) {
+      add(n, `Slide shows ${shown} words. Move detail into the voiceover.`);
+    }
+    for (const tag of escapedTags(body)) {
+      add(n, `<${tag}> is not allowed, so it shows as text.`);
+    }
+
     const notes = slide.notes;
     if (!notes) {
       add(n, 'No voiceover. Add a <!-- comment --> with the narration.');
@@ -78,10 +116,6 @@ export function lintDeck(markdown) {
     const words = countWords(slide.cues.join(' '));
     if (words > MAX_NOTE_WORDS) {
       add(n, `Voiceover is ${words} words. Split the slide; aim for 40-120.`);
-    }
-    const shown = countWords(texts[i] ?? '');
-    if (shown > MAX_SLIDE_WORDS) {
-      add(n, `Slide shows ${shown} words. Move detail into the voiceover.`);
     }
   });
   return findings;
