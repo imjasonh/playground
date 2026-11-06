@@ -7,6 +7,7 @@ import {
   formatProgress,
   streamReply,
 } from './model.js';
+import {renderMarkdown} from './markdown.js';
 
 const el = {
   log: document.querySelector('#log'),
@@ -124,7 +125,7 @@ async function send(text) {
       signal,
       onText: (sofar) => {
         const follow = isNearBottom();
-        reply.textContent = sofar;
+        renderMarkdown(reply, sofar);
         if (follow) {
           scrollToBottom();
         }
