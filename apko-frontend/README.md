@@ -85,18 +85,20 @@ fetch and holds every layer.
     `http.RoundTripper` that fetches each URL with an `llb.HTTP` source and
     reads the result back through the gateway. The transport records every
     URL apko used.
+1.  For each architecture, it writes an apko lock that pins every package,
+    in the order `apko build` installs them.
 1.  For each architecture, the frontend adds one build step that runs the
     frontend image itself with the `build-layers` argument. BuildKit passes
     a frontend its own image reference, so the frontend pins that image by
     digest and runs it on the build platform. The step has no network. It
-    mounts the files that BuildKit downloaded (indexes, keys, and every
-    resolved `.apk`, named by a hash of their URL) and serves apko's HTTP
-    requests from them.
-1.  In that step, apko builds the image filesystem as `apko build` does,
-    including accounts, paths, busybox links, `/etc/ld.so.cache`, and the
-    apk database, and writes its layers as tar files. With `layering`, it
-    plans one layer per origin group plus a top layer, exactly as
-    `apko build` does.
+    mounts the lock, the keys, and every locked `.apk`, named by a hash of
+    their URL, and serves apko's HTTP requests from them. It doesn't mount
+    the indexes, because installing from a lock doesn't read them.
+1.  In that step, apko installs the locked packages and builds the image
+    filesystem as `apko build` does, including accounts, paths, busybox
+    links, `/etc/ld.so.cache`, and the apk database, and writes its layers as
+    tar files. With `layering`, it plans one layer per origin group plus a
+    top layer, exactly as `apko build` does.
 1.  The frontend unpacks each tar file into its own scratch state with a
     `Copy` that has `AttemptUnpack` set, and merges the states with
     `llb.Merge`. Each state becomes one layer of the image.
@@ -117,7 +119,7 @@ The frontend image needs no network, which the
 
 | apko field | Notes |
 | --- | --- |
-| `contents.packages` | Including version constraints such as `curl=8.14.1-r4` and `@tag` pins. |
+| `contents.packages` | Including version constraints such as `curl=8.14.1-r4`. |
 | `contents.repositories`, `build_repositories`, `runtime_repositories` | HTTP(S) URLs, or directories in the build context. |
 | `contents.keyring` | HTTP(S) URLs, or files in the build context. Chainguard and Alpine key discovery also run, through BuildKit. |
 | `contents.runtime_keyring` | |
@@ -145,7 +147,9 @@ These build arguments change the build:
 `APKO_LOCK`
 :   The path of an apko lock file in the build context, such as one that
     `apko lock apko.yaml` writes. The build installs the locked packages
-    instead of resolving the configuration.
+    instead of resolving the configuration. Each locked package must still
+    appear, with the same version and checksum, in a signed index of the
+    configured repositories (see [Signatures](#signatures)).
 
 BuildKit's own options work as usual, for example `--platform`, `--push`,
 `--sbom=true` (BuildKit's scanner reads apko's apk database), and
@@ -171,24 +175,87 @@ BuildKit's own options work as usual, for example `--platform`, `--push`,
     those packages by absolute path on your machine.
 -   Paths outside the build context.
 
-## Caching and reproducibility
+## Signatures
+
+Every package in the image is tied to a signature from the configured
+keyring:
+
+-   apko checks the signature of each `APKINDEX.tar.gz` against the keyring,
+    for remote and local repositories, while the frontend resolves packages.
+    The frontend never turns this off.
+-   The signed index lists the SHA-1 checksum of each package's control
+    section. The frontend copies those checksums into the lock, and the build
+    step checks each downloaded `.apk` against them.
+-   The control section records the SHA-256 of the data section, and the
+    data section records the SHA-1 of each file. apko checks both while it
+    unpacks the package, and fails the build on a mismatch.
+-   `apko build --lockfile` trusts the lock's checksums without reading an
+    index. With `APKO_LOCK`, the frontend also fetches the indexes, verifies
+    their signatures, and fails unless each locked package is listed with the
+    same version and checksum. A lock can't add a package that no signed
+    index describes.
+
+The keyring is the root of this chain. A keyring URL that starts with
+`http://` gets a build warning, because anyone on the network path can
+replace the key. As `apko build` does, apko also adds keys that it
+discovers: for Alpine repositories, from the release list on
+`alpinelinux.org`, and for any HTTP repository, from
+`REPOSITORY/apk-configuration`, which only Chainguard repositories serve.
+
+## Caching
+
+The frontend leaves caching to BuildKit and turns off apko's own caches.
+apko runs with `WithoutDiskCache`, so it keeps no package, index, or layer
+cache. Each build is a fresh process, and nothing outlives it. These are the
+BuildKit caches a build uses:
+
+-   **Downloads.** Each index, key, and package is an `llb.HTTP` source.
+    BuildKit keeps the file and revalidates it with the server on each build
+    by ETag or modification time, without downloading it again when it's
+    unchanged. That means one conditional request for each package on each
+    build.
+-   **The apko step.** Its cache key covers the frontend image, the pinned
+    configuration, the lock, the keys, and the packages. A build that
+    resolves to the same packages reuses the step, even when an index has
+    changed.
+-   **Layers.** Each layer is a `Copy` from one of the step's tar files, so
+    BuildKit keys it by the tar file's content. When a package changes, the
+    apko step runs again, but layers whose content didn't change are cache
+    hits, and their blobs, and digests, stay the same.
+
+Because these are ordinary BuildKit cache records, `--cache-to` and
+`--cache-from` (registry, local, GitHub Actions, and S3 caches) share them
+between machines, and `docker buildx prune` manages them.
+
+There's one trade-off. apko builds the whole filesystem, so the apko step
+reruns as a unit and reinstalls every package when any package changes. A
+step for each layer would cache better but would duplicate apko's
+filesystem logic, which the frontend avoids. For typical images, the step
+takes a few seconds.
+
+## Reproducibility
 
 Building the same configuration against the same repository contents
 produces the same image digest. The [demo](demo/run.sh) checks this with a
-`--no-cache` rebuild. Buildx adds a provenance attestation to pushed images
-by default, and the attestation records when the build ran, so compare
-builds made with `--provenance=false`, or compare the platform manifests.
-To pin package versions across time, use `APKO_LOCK`.
+`--no-cache` rebuild. These inputs also change the digest:
 
-BuildKit caches each fetched URL. On every build, it revalidates
-`APKINDEX.tar.gz` files with the server, so a build sees new packages. When
-an index changes, the build step runs again, because it mounts the index.
-If the resolved packages haven't changed, it writes the same layers, and the
-image digest stays the same.
+-   **Repository contents.** Without a lock, a build resolves against the
+    indexes at build time. Use `APKO_LOCK` to pin package versions across
+    time.
+-   **The frontend version.** The frontend includes its apko version, so pin
+    it by digest: `# syntax=example.com/apko-frontend@sha256:...`.
+-   **Exporter options and BuildKit's version.** BuildKit compresses the
+    layers, so its compression settings (`compression=zstd`,
+    `oci-mediatypes`) and its version can change layer digests. The
+    uncompressed layer digests (diff IDs) don't change.
+-   **Attestations.** Buildx adds a provenance attestation to pushed images
+    by default, and the attestation records when the build ran. Compare
+    builds made with `--provenance=false`, or compare platform manifests.
+-   **Discovered Alpine keys.** apko picks Alpine keys by the current date.
+    List the keys in `keyring` to fix them.
 
-apko checks the signature of each index with the keyring, and the checksum
-of each package's control section against the signed index, as `apko build`
-does.
+The image creation time is the newest package build time, or
+`SOURCE_DATE_EPOCH` when you set it, so it doesn't depend on when you build.
 
 Every build shows a step that probes `REPOSITORY/apk-configuration` for each
 HTTP repository. This is apko's discovery of Chainguard signing keys.
