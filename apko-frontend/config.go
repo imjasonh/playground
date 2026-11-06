@@ -137,12 +137,12 @@ func resolve(ctx context.Context, ic types.ImageConfiguration, archs []types.Arc
 		if err != nil {
 			return nil, err
 		}
-		pkgs, conflicts, err := bc.BuildPackageList(ctx)
+		// The second result lists packages that must not be installed
+		// alongside these. apko build fails only if one is already
+		// installed, which can't happen in an empty filesystem.
+		pkgs, _, err := bc.BuildPackageList(ctx)
 		if err != nil {
 			return nil, err
-		}
-		if len(conflicts) > 0 {
-			return nil, fmt.Errorf("conflicting packages for %s: %s", arch, strings.Join(conflicts, ", "))
 		}
 		l := lock.Lock{Version: "v1"}
 		for _, p := range pkgs {

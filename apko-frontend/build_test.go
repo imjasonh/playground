@@ -27,7 +27,9 @@ func testPackages() []testPackage {
 		name: "foo", version: "2.0-r1", origin: "foo", depends: []string{"libfoo"}, buildDate: testBuildDate + 100,
 		files: map[string]string{"usr/": "", "usr/bin/": "", "usr/bin/foo": strings.Repeat("F", 3000)},
 	}, {
-		name: "bar", version: "0.1-r0", origin: "bar", buildDate: testBuildDate,
+		// The conflict makes apko's resolver report "baz" as a package
+		// that must not be installed, which isn't an error.
+		name: "bar", version: "0.1-r0", origin: "bar", depends: []string{"!baz"}, buildDate: testBuildDate,
 		files: map[string]string{"usr/": "", "usr/bin/": "", "usr/bin/bar": strings.Repeat("b", 2000)},
 	}}
 }
