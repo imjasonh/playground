@@ -6,7 +6,8 @@
 //   - Pushing against an axis's direction holds the logo still on that
 //     axis. Pushing with it does nothing.
 //   - A corner hit before any input is silent. After input it plays the
-//     coin pickup.
+//     coin pickup, including a miss of 4 pixels. A miss of 5 does not,
+//     and the logo still only reverses when it actually meets a wall.
 //   - Player 2's START launches a second logo that never overlaps the
 //     first. Meeting it bounces both and plays the bump.
 //
@@ -23,7 +24,7 @@ import { createEmulator } from "./emu.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const rom = readFileSync(path.join(here, "..", "..", "examples", "dvd_screensaver.nes"));
 
-const BTN = { START: 3, UP: 4, DOWN: 5, LEFT: 6, RIGHT: 7 };
+const BTN = { A: 0, START: 3, UP: 4, DOWN: 5, LEFT: 6, RIGHT: 7 };
 const POS_X = 0x300;
 const POS_Y = 0x302;
 const RIGHT = 0x304;
@@ -150,6 +151,54 @@ function overlap(a, b) {
   emu.runFrames(2 * 3528 - 40 - 12);
   const peak = peakOver(80, () => emu.runFrames(1));
   check("a corner hit after input plays the coin", peak > 200, `peak ${peak}`);
+}
+
+// From boot the logo heads down and right, and the bottom wall is
+// further away than the right one. Holding left stalls x, one step at
+// a time, until that difference is `gap`, so the right-wall hit lands
+// `gap` pixels short of the corner. The press is released on the step
+// that closes the gap, before the next frame can latch it again.
+function steeredMiss(gap) {
+  const { emu, logo, peakOver } = boot();
+  emu.buttonDown(1, BTN.A);
+  emu.runFrames(2);
+  emu.buttonUp(1, BTN.A);
+  const shortBy = (l) => SIZE[0].ry - l.y - (SIZE[0].rx - l.x);
+  let guard = 0;
+  while ((logo(0).x !== 72 || logo(0).y !== 92) && guard++ < 30) emu.runFrames(1);
+  emu.buttonDown(1, BTN.LEFT);
+  guard = 0;
+  while (shortBy(logo(0)) > gap && guard++ < 80) emu.runFrames(1);
+  emu.buttonUp(1, BTN.LEFT);
+  let atWall = null;
+  let yReversedEarly = false;
+  const peak = peakOver(400, () => {
+    const before = logo(0);
+    emu.runFrames(1);
+    const after = logo(0);
+    if (!atWall && after.x === SIZE[0].rx && before.x !== SIZE[0].rx) {
+      atWall = after;
+      if (!after.down) yReversedEarly = true;
+    }
+  });
+  return { atWall, yReversedEarly, peak };
+}
+{
+  const miss4 = steeredMiss(4);
+  check(
+    "a 4px miss plays the coin",
+    miss4.peak > 200 && miss4.atWall && miss4.atWall.y === SIZE[0].ry - 4,
+    JSON.stringify(miss4.atWall) + ` peak ${miss4.peak}`,
+  );
+  check("a 4px miss does not reverse the short axis early", miss4.yReversedEarly === false);
+}
+{
+  const miss5 = steeredMiss(5);
+  check(
+    "a 5px miss is silent",
+    miss5.peak === 0 && miss5.atWall && miss5.atWall.y === SIZE[0].ry - 5,
+    JSON.stringify(miss5.atWall) + ` peak ${miss5.peak}`,
+  );
 }
 
 // Player 2.

@@ -37,7 +37,11 @@
 //   direction on an axis holds it still on that axis, so a logo
 //   heading up and right that is pushed down only moves right. Pushing
 //   the way it already goes does nothing. Any button press counts as
-//   input, and from then on a corner hit plays the coin sound.
+//   input, and from then on a corner hit plays the coin sound. A miss
+//   within 4 pixels counts: one axis meets its wall while the other is
+//   that close and still heading for its own. The bounce itself does
+//   not change, so a logo nobody has touched still reaches an exact
+//   corner only every 26064 steps.
 // - Player 2 presses START to launch a second logo, a 2/3-scale copy
 //   built from sprites (a background can only be scrolled as one
 //   piece). It bounces, changes color, and fights the d-pad on
@@ -91,6 +95,11 @@ const FIRST_COLOR: u8 = 1
 const HIT_NONE: u8 = 0
 const HIT_WALL: u8 = 1
 const HIT_LOGO: u8 = 2
+
+// After a player has pressed a button, the coin plays when the logo
+// comes this close to a corner, not only on an exact one. An untouched
+// logo ignores this and still bounces only on a real wall.
+const CORNER_FORGIVE: u8 = 4
 
 // Bits of `push`, the d-pad presses a logo has not yet acted on.
 const PUSH_UP: u8 = 1
@@ -459,15 +468,38 @@ fun step_y(n: u8) -> u8 {
     return HIT_NONE
 }
 
+// Pixels between this axis and the wall it is heading for. A wall hit
+// this step is 0. Bouncing off the other logo is not a wall approach.
+fun wall_gap(hit: u8, pos: u8, range: u8, toward_high: u8) -> u8 {
+    if hit == HIT_WALL {
+        return 0
+    }
+    if hit != HIT_NONE {
+        return 255
+    }
+    if toward_high == 1 {
+        return range - pos
+    }
+    return pos
+}
+
 // Move logo `n` one pixel on each axis. A bounce changes the color
 // once, even in a corner, where both axes bounce on one step.
 fun step_logo(n: u8) {
     var hit_x: u8 = step_x(n)
     var hit_y: u8 = step_y(n)
     push[n] = 0
-    if hit_x == HIT_WALL and hit_y == HIT_WALL {
-        if used[n] == 1 {
-            play coin
+    // The coin follows a real wall hit that lands within
+    // CORNER_FORGIVE of the other wall. Both gaps are 0 on an exact
+    // corner. Nothing here reverses an axis, so the logo still travels
+    // the last few pixels and bounces when it actually arrives.
+    if used[n] == 1 {
+        if hit_x == HIT_WALL or hit_y == HIT_WALL {
+            var gap_x: u8 = wall_gap(hit_x, pos_x[n], RANGE_X[n], right[n])
+            var gap_y: u8 = wall_gap(hit_y, pos_y[n], RANGE_Y[n], down[n])
+            if gap_x <= CORNER_FORGIVE and gap_y <= CORNER_FORGIVE {
+                play coin
+            }
         }
     }
     if hit_x == HIT_LOGO or hit_y == HIT_LOGO {
