@@ -6,7 +6,7 @@ configuration file. Put a `# syntax=` line at the top of an apko YAML file
 and build it with `docker build`:
 
 ```yaml
-# syntax=localhost:5000/apko-frontend
+# syntax=ghcr.io/imjasonh/playground/apko-frontend
 contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
@@ -29,44 +29,54 @@ docker buildx build -f apko.yaml -t example.com/wolfi-base --push .
 ```
 
 YAML treats the `# syntax=` line as a comment, so the same file still works
-with the `apko` CLI.
+with the `apko` CLI. There's nothing else to install: Docker pulls the
+frontend image the first time a build names it.
+
+## The frontend image
+
+[`apko-frontend-publish.yml`](../.github/workflows/apko-frontend-publish.yml)
+builds the frontend with ko for `linux/amd64` and `linux/arm64` on every
+push to `main` that changes it. It pushes
+`ghcr.io/imjasonh/playground/apko-frontend` tagged with the commit and with
+`latest`, and signs it with Cosign. The frontend's apko version decides
+what a build produces, so pin a commit tag, or a digest, for builds that
+must reproduce:
+
+```yaml
+# syntax=ghcr.io/imjasonh/playground/apko-frontend:COMMIT
+```
+
+To check the signature, run:
+
+```bash
+cosign verify ghcr.io/imjasonh/playground/apko-frontend:COMMIT \
+  --certificate-identity=https://github.com/imjasonh/playground/.github/workflows/apko-frontend-publish.yml@refs/heads/main \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
 
 ## Try it
 
-You need Docker with Buildx, and [ko](https://ko.build).
+You need Docker with Buildx. Build and run one of the examples in
+[`demo/`](demo/):
 
-1.  Start a registry that BuildKit can pull the frontend from:
+```bash
+docker build -f demo/alpine.apko.yaml -t apko-demo demo
+docker run --rm apko-demo
+```
 
-    ```bash
-    docker run -d --name registry -p 5000:5000 registry:2
-    ```
+[`demo/run.sh`](demo/run.sh) builds an example, runs it, and rebuilds it
+with `--no-cache` to show that the image digest doesn't change. With
+`FRONTEND=local`, it first builds this checkout's frontend with
+[ko](https://ko.build) and pushes it to a registry container on
+`localhost:5000`.
 
-1.  Build the frontend with ko and push it:
-
-    ```bash
-    KO_DOCKER_REPO=localhost:5000/apko-frontend \
-      ko build --bare --platform=linux/amd64,linux/arm64 \
-      --image-label moby.buildkit.frontend.network.none=true .
-    ```
-
-1.  Build and run one of the examples in [`demo/`](demo/):
-
-    ```bash
-    docker build -f demo/alpine.apko.yaml -t localhost:5000/demo:alpine demo
-    docker run --rm localhost:5000/demo:alpine
-    ```
-
-[`demo/run.sh`](demo/run.sh) does these steps and then rebuilds with
-`--no-cache` to show that the image digest doesn't change.
-
-The `# syntax=` line names the frontend image. If you push the frontend
-somewhere else, change that line, or pass the image with
-`--build-arg BUILDKIT_SYNTAX=IMAGE`. With `buildctl`, use the gateway
+To build with a different frontend image without editing the file, pass it
+as `--build-arg BUILDKIT_SYNTAX=IMAGE`. With `buildctl`, use the gateway
 frontend directly:
 
 ```bash
 buildctl build --frontend gateway.v0 \
-  --opt source=localhost:5000/apko-frontend \
+  --opt source=ghcr.io/imjasonh/playground/apko-frontend \
   --opt filename=apko.yaml \
   --local context=. --local dockerfile=. \
   --output type=image,name=example.com/image,push=true
@@ -280,7 +290,8 @@ These inputs also change the digest:
     indexes at build time. Use `APKO_LOCK` to pin package versions across
     time.
 -   **The frontend version.** The frontend includes its apko version, so pin
-    it by digest: `# syntax=example.com/apko-frontend@sha256:...`.
+    it to a commit tag or a digest:
+    `# syntax=ghcr.io/imjasonh/playground/apko-frontend:COMMIT`.
 -   **Exporter options and BuildKit's version.** BuildKit compresses the
     layers, so its compression settings (`compression=zstd`,
     `oci-mediatypes`) and its version can change layer digests. The

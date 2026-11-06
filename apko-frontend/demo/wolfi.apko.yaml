@@ -1,4 +1,4 @@
-# syntax=localhost:5000/apko-frontend
+# syntax=ghcr.io/imjasonh/playground/apko-frontend
 #
 # A Wolfi image with a few language runtimes and tools. Their dependencies
 # span dozens of origins, more than the layering budget. The nine largest

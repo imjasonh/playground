@@ -1,4 +1,4 @@
-# syntax=localhost:5000/apko-frontend
+# syntax=ghcr.io/imjasonh/playground/apko-frontend
 #
 # A curl image from Alpine packages. The packages fall into four layers by
 # origin, under a top layer with the accounts, /data, and the apk database.
