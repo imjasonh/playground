@@ -8,6 +8,7 @@ Config: schema.#Language & {
 	extensions: [".rs"]
 	// Doc comments (`///`, `/** */`) are a separate node type.
 	comment_types: ["line_comment", "block_comment", "doc_comment"]
+	definition_types: ["function_item"]
 }
 
 Name: Config.grammar

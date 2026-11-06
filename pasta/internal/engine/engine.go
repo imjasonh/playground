@@ -852,6 +852,27 @@ func applicableRules(groups []ruleGroup, l lang.Language, file string) []*dsl.Ru
 	return out
 }
 
+// defineAll records the name of every definition under root in store, so
+// that lookups by name can bind to the nearest definition. It runs while
+// files are parsed, before any rule runs.
+func defineAll(store *factstore.Store, root tsutil.Node, definitionTypes []string) {
+	if store == nil || len(definitionTypes) == 0 {
+		return
+	}
+	types := make(map[string]bool, len(definitionTypes))
+	for _, t := range definitionTypes {
+		types[t] = true
+	}
+	tsutil.Walk(root, func(n tsutil.Node) bool {
+		if types[n.Type()] {
+			if name := n.ChildByFieldName("name"); name.IsValid() {
+				store.Define(name)
+			}
+		}
+		return true
+	})
+}
+
 // newFileState parses one file and builds its match environment +
 // suppression map. The caller owns the returned tree and must call
 // Release when done with it.
@@ -866,6 +887,7 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 	for _, t := range f.Lang.CommentTypes {
 		commentTypes[t] = true
 	}
+	defineAll(store, root, f.Lang.DefinitionTypes)
 	env := &match.Env{
 		StmtList:     f.Lang.StmtList,
 		Predicates:   match.DefaultRegistry(),
