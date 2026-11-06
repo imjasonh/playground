@@ -157,6 +157,11 @@ jobs:
         working-directory: nescript/tests/emulator
         run: node run_examples.mjs
 
+      - name: Drive the DVD screensaver with both controllers
+        if: steps.discover.outputs.nescript == 'true'
+        working-directory: nescript/tests/emulator
+        run: node dvd_screensaver_input.mjs
+
       - name: Verify docs/platformer.gif is up to date
         if: steps.discover.outputs.nescript == 'true'
         working-directory: nescript/tests/emulator
