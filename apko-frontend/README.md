@@ -225,7 +225,13 @@ BuildKit caches a build uses:
 
 Because these are ordinary BuildKit cache records, `--cache-to` and
 `--cache-from` (registry, local, GitHub Actions, and S3 caches) share them
-between machines, and `docker buildx prune` manages them.
+between machines, and `docker buildx prune` manages them. A remote cache
+doesn't save the package downloads, though. A builder that has no local
+copy of an HTTP source downloads it to compute its cache key, unless the
+build pins the file's checksum, and `APKINDEX.tar.gz` lists only each
+package's control-section checksum, not a checksum of the whole file. A
+fresh builder with `--cache-from` downloads every package, then reuses the
+cached apko step and layers.
 
 There's one trade-off. apko builds the whole filesystem, so the apko step
 reruns as a unit and reinstalls every package when any package changes.
@@ -270,6 +276,56 @@ Every build shows a step that probes `REPOSITORY/apk-configuration` for each
 HTTP repository. This is apko's discovery of Chainguard signing keys.
 Repositories other than Chainguard's return 404 there, and BuildKit shows
 the 404 as a failed step, but the build continues.
+
+## Performance compared with the apko CLI
+
+The frontend isn't faster than `apko build`. It's about as fast when
+nothing changed and the image is large, and slower otherwise, by a fixed
+overhead of about half a second to a second plus BuildKit's export. Its
+benefits are BuildKit's: `docker build`, shared and standard caches,
+attestations, and multi-platform output.
+
+These are median times of five builds, each writing an image tarball, from
+an nginx mirror on the same machine, so downloads take almost no time:
+
+| Build | Image | `apko build` | Frontend |
+| --- | --- | --- | --- |
+| Cold, every cache empty | 16 packages | 0.25 s | 1.15 s |
+| Cold, every cache empty | 52 packages, 143 MB | 1.41 s | 4.21 s, or 2.9 s with `compression=zstd` |
+| Nothing changed | 16 packages | 0.22 s | 0.34 s |
+| Nothing changed | 52 packages | 1.07 s | 0.89 s |
+| Configuration change | 16 packages | 0.21 s | 0.54 s |
+| Configuration change | 52 packages | 1.05 s | 1.99 s |
+| Fresh builder, `--cache-from` a registry | 52 packages | 1.37 s, fresh apko cache | 4.2 to 4.5 s |
+
+`apko build` does the same work on every run: it unpacks and verifies each
+package, lays out the filesystem, and compresses the layers. BuildKit
+skips all of that when nothing changed, which is why the frontend wins on
+the large image. For the configuration change on the 52-package image, the
+frontend's 1.99 s divides like this:
+
+| Part | Time | Notes |
+| --- | --- | --- |
+| Start the frontend, resolve packages, and revalidate 55 downloads | 0.43 s | BuildKit sends a conditional request for each index, key, and package on every build, which `apko build` doesn't do. |
+| The apko step | 1.08 s | About 0.15 s is starting the container. The rest is the same work as `apko build`, without compression. |
+| Read the step's plan and submit the layers | 0.1 s | The frontend learns the number of layers from the step. |
+| Export | 0.22 s | BuildKit compresses only the layer that changed. |
+
+On a cold build, BuildKit's default gzip export takes 1.8 s of the 4.2 s.
+It compresses each layer on one core, so the 56 MB `nodejs` layer sets the
+time, while apko compresses with `pgzip` across cores. The exporter's
+options belong to the client, so set them when you build:
+`--output type=image,compression=zstd,...` takes the cold build to 2.9 s
+and produces smaller layers. zstd layers need containerd 1.5 or later, or
+Docker 23 or later, to pull. `compression-level=1` keeps gzip and takes
+3.2 s.
+
+A profile of the apko step on the 52-package image showed that about 37% of
+its CPU time went to compressing layer tars that BuildKit decompressed again
+when it unpacked them. The step writes uncompressed tars instead, which
+cut its CPU time by 42%. Its wall time barely moved, because unpacking the
+largest package, `nodejs`, on one core sets the critical path, as it does
+for `apko build`.
 
 ## Future work: a build step for each layer
 
@@ -324,25 +380,24 @@ largest groups:
 
 | Build | Now | With a step for each layer |
 | --- | --- | --- |
-| No change | 3.0 s, all cached | Same |
-| `environment` or `entrypoint` change | 4.3 to 4.6 s, of which apko takes 1.2 s | Only the top-layer step runs, because these fields reach only `/etc/apko.json` |
-| `accounts`, `paths`, or `certificates` change | 4.3 to 4.6 s | Every group step runs, so about the same |
-| One package changes | About 4.5 s, of which apko takes 1.2 s | About 0.5 s less: only the changed group's step and the top-layer step run |
-| Cold build | 2.8 s | About the same; apko already installs packages in parallel |
+| No change | 0.89 s, all cached | Same |
+| `environment` or `entrypoint` change | 1.99 s, of which the apko step takes 1.08 s | Only the top-layer step runs, because these fields reach only `/etc/apko.json`: about 0.8 s less |
+| `accounts`, `paths`, or `certificates` change | 1.99 s | Every group step runs, so about the same |
+| One package changes | About 2 s, of which the apko step takes 1.08 s | Only the changed group's step and the top-layer step run: 0.5 to 0.8 s less, depending on the group's size |
+| Cold build | 4.21 s | About the same; apko already installs packages in parallel |
 
-The apko step processes about 120 MB/s here, so it grows with image size.
+The apko step processes about 130 MB/s here, so it grows with image size.
 For an image of about 2 GB, such as a CUDA or PyTorch image, the step would
-take about 15 to 20 s, and a step for each layer would bring a one-package
+take about 15 s, and a step for each layer would bring a one-package
 rebuild down to the time for that package's group plus the top layer, a few
 seconds.
 
-The larger gain is on machines without a local cache, such as CI runners
-that import a remote cache with `--cache-from`. Today a change to one
-package reruns the apko step, and BuildKit downloads every package to run
-it. With a step for each layer, the unchanged groups are remote cache hits,
-and BuildKit downloads only the changed group's packages. For the image
-measured here, a `nodejs` update would download about 20 MB instead of about
-50 MB. For a 2 GB image, it can save gigabytes per build.
+A step for each layer doesn't reduce downloads on a builder without a
+local cache, such as a CI runner that imports a remote cache with
+`--cache-from`. BuildKit downloads every package to compute the cache keys,
+as [Caching](#caching) describes. It would save downloads only if
+repositories published a checksum of each whole `.apk` that the frontend
+could pin.
 
 Most of the remaining time in a rebuild is fixed. It goes to resolving
 packages, revalidating each download with the server, and exporting the
