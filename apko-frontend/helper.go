@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"chainguard.dev/apko/pkg/build"
@@ -94,33 +97,19 @@ func buildLayers(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 	if err != nil {
 		return nil, err
 	}
+	// BuildLayers writes uncompressed tars. BuildKit unpacks each one and
+	// compresses the layer itself when it exports the image, so a
+	// compressed tar here would only add a compression and a
+	// decompression.
+	layers, err := bc.BuildLayers(ctx)
+	if err != nil {
+		return nil, err
+	}
 	p := &plan{}
-	if layered(ic) {
-		plans, content, err := bc.PlanLayers(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for i, lp := range plans {
-			name := fmt.Sprintf("layer-%d.tar.gz", i)
-			if err := writeFile(filepath.Join(outDir, name), func(w io.Writer) error {
-				_, err := lp.Render(ctx, content, w)
-				return err
-			}); err != nil {
-				return nil, err
-			}
-			l := planLayer{File: name}
-			for _, pkg := range lp.Packages() {
-				l.Packages = append(l.Packages, pkg.Name)
-			}
-			p.Layers = append(p.Layers, l)
-		}
-	} else {
-		_, layer, err := bc.BuildLayer(ctx)
-		if err != nil {
-			return nil, err
-		}
-		name := "layer-0.tar"
-		if err := writeFile(filepath.Join(outDir, name), func(w io.Writer) error {
+	for i, layer := range layers {
+		name := fmt.Sprintf("layer-%d.tar", i)
+		path := filepath.Join(outDir, name)
+		if err := writeFile(path, func(w io.Writer) error {
 			rc, err := layer.Uncompressed()
 			if err != nil {
 				return err
@@ -131,7 +120,15 @@ func buildLayers(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 		}); err != nil {
 			return nil, err
 		}
-		p.Layers = append(p.Layers, planLayer{File: name})
+		l := planLayer{File: name}
+		// In a layered build, each layer but the top one holds one
+		// package group and an installed database of just its packages.
+		if layered(ic) && i < len(layers)-1 {
+			if l.Packages, err = installedPackages(path); err != nil {
+				return nil, err
+			}
+		}
+		p.Layers = append(p.Layers, l)
 	}
 	if p.Created, err = bc.GetBuildDateEpoch(); err != nil {
 		return nil, err
@@ -144,6 +141,42 @@ func buildLayers(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 func layered(ic types.ImageConfiguration) bool {
 	return ic.Layering != nil && (ic.Layering.Strategy != "" || ic.Layering.Budget != 0)
 }
+
+// installedPackages returns the names of the packages in the installed
+// database of the layer tar at path.
+func installedPackages(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	// tar.Reader seeks past file contents when it can, so finding the
+	// database reads little more than the headers.
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil, nil
+		} else if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", path, err)
+		}
+		if strings.TrimLeft(hdr.Name, "./") != installedDB {
+			continue
+		}
+		var names []string
+		sc := bufio.NewScanner(tr)
+		sc.Buffer(make([]byte, 64<<10), 1<<20)
+		for sc.Scan() {
+			if name, ok := strings.CutPrefix(sc.Text(), "P:"); ok {
+				names = append(names, name)
+			}
+		}
+		return names, sc.Err()
+	}
+}
+
+// installedDB is the path of apk's installed database in apko's layers.
+const installedDB = "usr/lib/apk/db/installed"
 
 func writeFile(name string, write func(io.Writer) error) error {
 	f, err := os.Create(name)
