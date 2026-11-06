@@ -38,11 +38,28 @@ The status line shows how much of the model's context window the chat has
 used. When the conversation outgrows it, Chrome drops the oldest messages and
 the status line says so.
 
+## Markdown
+
+Replies render as Markdown with [marked](https://github.com/markedjs/marked)
+(GitHub-flavored: tables, fenced code, task lists). The HTML then goes through
+[DOMPurify](https://github.com/cure53/DOMPurify), because a reply can repeat
+HTML from the prompt. The sanitizer also drops images and other media, which
+would load a URL as soon as they render. Links open in a new tab.
+
+Both libraries are vendored in `vendor/`, so Pages serves the app without a
+build step. After you bump either package, run:
+
+```bash
+npm install
+npm run vendor
+```
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-The tests run `src/model.js` in Node against a fake `LanguageModel`, so they
-don't need Chrome or the model.
+The tests run `src/model.js` in Node against a fake `LanguageModel`, and
+`src/markdown.js` against the vendored marked, so they don't need Chrome or
+the model.

@@ -6,9 +6,14 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "start": "npx --yes serve . -p 3000"
+    "start": "npx --yes serve . -p 3000",
+    "vendor": "node scripts/vendor.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "marked": "^18.1.3"
   }
 }
