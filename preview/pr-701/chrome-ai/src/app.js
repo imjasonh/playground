@@ -35,7 +35,6 @@ const el = {
   messages: document.querySelector('#messages'),
   status: document.querySelector('#status'),
   meter: document.querySelector('#meter'),
-  meterFill: document.querySelector('#meter-fill'),
   meterTip: document.querySelector('#meter-tip'),
   download: document.querySelector('#download'),
   attachments: document.querySelector('#attachments'),
@@ -162,7 +161,7 @@ function describeError(err) {
     return "That message is too long for the model's context window.";
   }
   if (err?.name === 'NotAllowedError') {
-    return 'Chrome blocked the model. Click Send again to retry.';
+    return 'Chrome blocked the model. Try again.';
   }
   if (err?.name === 'EncodingError') {
     return "The model couldn't decode one of the attachments.";
@@ -262,6 +261,7 @@ async function compact(record, end, signal) {
     }
     session?.destroy();
     session = restored.session;
+    sessionPromise = Promise.resolve(session);
     overflowed = restored.dropped > 0;
     markSummary(through);
     showUsage();
@@ -287,8 +287,9 @@ function compactSoon(record) {
     return;
   }
   const end = record.messages.length;
+  const started = generation;
   sessionPromise = sessionPromise
-    .then(() => compact(record, end))
+    .then(() => (started === generation ? compact(record, end) : false))
     .then(() => session);
 }
 
@@ -408,6 +409,7 @@ async function send(text, attachments) {
   sent.dataset.index = String(record.messages.length - 1);
   const reply = addMessage('model', '');
   reply.parentElement.classList.add('is-pending');
+  el.messages.setAttribute('aria-busy', 'true');
   updateSend();
   let replyText = '';
   let failed = false;
@@ -455,6 +457,7 @@ async function send(text, attachments) {
     }
     if (controller?.signal === signal) {
       controller = null;
+      el.messages.setAttribute('aria-busy', 'false');
       updateSend();
       showUsage();
       if (isOver(usageOf(session), COMPACT_AFTER)) {
@@ -477,6 +480,7 @@ function resetChat() {
     URL.revokeObjectURL(url);
   }
   el.messages.replaceChildren();
+  el.messages.setAttribute('aria-busy', 'false');
   el.empty.hidden = false;
   el.meter.hidden = true;
   setStatus('');
@@ -550,7 +554,10 @@ function conversationItem(record) {
   open.append(title, when);
   open.addEventListener('click', () => {
     el.history.close();
-    openConversation(record);
+    // The open chat in memory can be newer than this copy from storage.
+    if (record.id !== conversation?.id) {
+      openConversation(record);
+    }
   });
 
   const remove = document.createElement('button');
@@ -631,8 +638,12 @@ el.composer.addEventListener('submit', (e) => {
   send(text, attachments);
 });
 
+// Touch keyboards have no Shift+Enter, so Enter adds a line there and the
+// Send button sends.
+const enterSends = !matchMedia('(pointer: coarse)').matches;
+
 el.prompt.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  if (enterSends && e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     el.composer.requestSubmit();
   }

@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src blob:; base-uri 'none'; form-action 'none'"
+    />
+    <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
@@ -59,7 +63,12 @@
 
       <main class="log" id="log">
         <p class="empty" id="empty">Ask the on-device model anything</p>
-        <ol class="messages" id="messages" aria-live="polite"></ol>
+        <ol
+          class="messages"
+          id="messages"
+          aria-live="polite"
+          aria-busy="false"
+        ></ol>
       </main>
 
       <footer class="dock">
@@ -74,7 +83,7 @@
           aria-describedby="meter-tip"
           hidden
         >
-          <div class="meter-fill" id="meter-fill"></div>
+          <div class="meter-fill"></div>
           <div class="meter-tip" id="meter-tip" role="tooltip"></div>
         </div>
         <p class="status" id="status" role="status"></p>

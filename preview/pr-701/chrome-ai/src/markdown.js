@@ -5,9 +5,18 @@ import {Marked} from '../vendor/marked.esm.js';
 
 const marked = new Marked({gfm: true, async: false});
 
-// Tags that load a URL as soon as they render. A reply could otherwise send
-// chat text off the device in an image URL.
-const FORBID_TAGS = ['img', 'picture', 'source', 'video', 'audio', 'track'];
+// A reply could otherwise send chat text off the device in a URL that loads
+// as soon as it renders (an image, a CSS background), restyle the page, or
+// show a form. index.html's Content-Security-Policy blocks the loads too.
+const SANITIZE = Object.freeze({
+  USE_PROFILES: {html: true},
+  FORBID_TAGS: [
+    'audio', 'button', 'form', 'img', 'input', 'picture', 'select', 'source',
+    'style', 'textarea', 'track', 'video',
+  ],
+  FORBID_ATTR: ['action', 'background', 'formaction', 'poster', 'srcset',
+    'style'],
+});
 
 let linksHooked = false;
 
@@ -41,5 +50,5 @@ export function renderMarkdown(target, text) {
     });
     linksHooked = true;
   }
-  target.innerHTML = DOMPurify.sanitize(markdownToHtml(text), {FORBID_TAGS});
+  target.innerHTML = DOMPurify.sanitize(markdownToHtml(text), SANITIZE);
 }

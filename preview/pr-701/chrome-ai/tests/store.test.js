@@ -10,6 +10,25 @@ function record(id, updatedAt, fields = {}) {
   return {...newConversation({id, now: updatedAt}), ...fields};
 }
 
+function readRaw(factory) {
+  return new Promise((resolve, reject) => {
+    const request = factory.open(DB_NAME);
+    request.onsuccess = () => {
+      const db = request.result;
+      const all = db
+        .transaction('conversations')
+        .objectStore('conversations')
+        .getAll();
+      all.onsuccess = () => {
+        db.close();
+        resolve(all.result);
+      };
+      all.onerror = () => reject(all.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 test('put, list, and delete round-trip conversations', async () => {
   const store = await openStore(new IDBFactory());
   await store.put(record('old', 1, {title: 'Old'}));
@@ -33,6 +52,17 @@ test('put, list, and delete round-trip conversations', async () => {
   store.close();
 });
 
+test('writes are committed when their promise resolves', async () => {
+  const factory = new IDBFactory();
+  const store = await openStore(factory);
+  await store.put(record('a', 1));
+  store.close();
+  assert.deepEqual(
+    (await readRaw(factory)).map((r) => r.id),
+    ['a'],
+  );
+});
+
 test('list skips records it cannot read and leaves them stored', async () => {
   const factory = new IDBFactory();
   const store = await openStore(factory);
@@ -44,26 +74,19 @@ test('list skips records it cannot read and leaves them stored', async () => {
   );
   store.close();
 
-  const reopened = await openStore(factory);
-  await reopened.put(record('another', 3));
-  reopened.close();
-  const raw = await new Promise((resolve, reject) => {
-    const request = factory.open(DB_NAME);
-    request.onsuccess = () => {
-      const db = request.result;
-      const all = db
-        .transaction('conversations')
-        .objectStore('conversations')
-        .getAll();
-      all.onsuccess = () => {
-        db.close();
-        resolve(all.result);
-      };
-      all.onerror = () => reject(all.error);
-    };
-    request.onerror = () => reject(request.error);
-  });
-  assert.deepEqual(raw.map((r) => r.id).sort(), ['another', 'future', 'ok']);
+  const raw = await readRaw(factory);
+  assert.deepEqual(raw.map((r) => r.id).sort(), ['future', 'ok']);
+});
+
+test('list upgrades older records it can read', async () => {
+  const store = await openStore(new IDBFactory());
+  const v1 = {...record('legacy', 1), version: 1};
+  delete v1.summary;
+  await store.put(v1);
+  const [upgraded] = await store.list();
+  assert.equal(upgraded.version, CONVERSATION_VERSION);
+  assert.equal(upgraded.summary, null);
+  store.close();
 });
 
 test('conversations keep attachment blobs', async () => {

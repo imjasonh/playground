@@ -46,11 +46,7 @@ export function extensionOf(name) {
  * @return {?string}
  */
 export function fileKind({name, type}) {
-  if (
-    type.startsWith('text/') ||
-    TEXT_MIME_TYPES.has(type) ||
-    TEXT_EXTENSIONS.includes(extensionOf(name))
-  ) {
+  if (type.startsWith('text/') || TEXT_MIME_TYPES.has(type)) {
     return 'text';
   }
   if (type.startsWith('image/')) {
@@ -58,6 +54,11 @@ export function fileKind({name, type}) {
   }
   if (type.startsWith('audio/')) {
     return 'audio';
+  }
+  // Browsers leave the type empty, or guess wrong, for many source files.
+  // `.ts` is also an MPEG video, which the type does identify.
+  if (!type.startsWith('video/') && TEXT_EXTENSIONS.includes(extensionOf(name))) {
+    return 'text';
   }
   return null;
 }
