@@ -34,6 +34,7 @@ playground/
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── git-k8s/               # Go: kube controllers that mirror git repositories, run checks, and land branches
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
+├── marptalk/              # present narrated Marp decks with browser TTS and subtitles (vendored Marp Core + Node tests)
 ├── its-not-jaws/          # Cursor SDK harness: knower/guesser secret-guessing game
 ├── nes-player/            # play NEScript example ROMs from main, or a local .nes, with jsnes
 ├── nethack-agent/         # Cursor SDK harness: learn a terminal game from the screen and its own notes
@@ -98,6 +99,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
+| `marptalk/` | yes | Narrated Marp deck player; JS modules, vendored Marp Core, tests |
 | `nes-player/` | yes | Play NEScript ROMs from `main` or a local `.nes` with jsnes; JS modules, vendored jsnes, tests |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `nyt-crossword/` | yes | NYT crossword solve times; JS modules, npm scripts, tests |
@@ -921,6 +923,7 @@ bundle exec fastlane test
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
+| `marptalk/` | Present a Marp deck with each slide's speaker notes read aloud by browser text-to-speech, one sentence at a time, with subtitles, speed control (0.5× to 2×), and voice choice. Plays three bundled decks or an uploaded `.md`. Renders with Marp Core bundled into `vendor/` without math (`npm run vendor`). `scripts/check.js` checks a deck, and the [marptalk skill](.cursor/skills/marptalk/SKILL.md) tells agents how to write one | Node test runner (fake speech synthesizer and clock) |
 | `nes-player/` | Play the NEScript games (the ones the README shows, plus SHA-256 and Coin Cavern), fetched from `raw.githubusercontent.com` on `main`, or a dropped `.nes` file, with jsnes. Keyboard, gamepad, and touch controls for two players | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `nyt-crossword/` | NYT crossword solve times by weekday, and puzzles that were started but not finished | Node test runner |
