@@ -23,6 +23,7 @@ playground/
 ├── gcp/                   # shared GitHub Workload Identity pool for Cloud Run deploys and Chrome Web Store publishing (not an app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
+├── chrome-ai/             # chat with Chrome's built-in on-device model (Prompt API; JS + Node tests)
 ├── chrome-extension/      # Chrome extension (not a Pages app)
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
 ├── kubescheduler-the-game/ # Kubernetes scheduler + cluster-operator game (JS + Node tests)
@@ -83,6 +84,7 @@ its root. This is the same rule used by deploy and preview workflows.
 |------|--------------|-------|
 | `artillery/` | yes | Turn-based artillery duel; JS modules, npm scripts, tests |
 | `cold-climb/` | yes | Touch-first arcade game; JS modules, npm scripts, tests |
+| `chrome-ai/` | yes | Chat with Chrome's built-in model through the Prompt API; JS modules, npm scripts, tests |
 | `droneski/` | yes | FPV drone / downhill skier game; JS modules, vendored three.js, tests |
 | `esp-flash/` | yes | Web Serial / WebUSB ESP32 flasher; JS modules, vendored esptool-js, tests |
 | `kubescheduler-the-game/` | yes | Kubernetes scheduler game; JS modules, npm scripts, tests |
@@ -906,6 +908,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `artillery/` | Turn-based artillery duel with local and AI modes | Node test runner |
 | `cold-climb/` | Two-handle ball-climbing arcade game | Node test runner |
+| `chrome-ai/` | Chat with the language model built into Chrome (Gemini Nano) through the Prompt API. Streams replies, stops a reply, and shows context window use. Needs desktop Chrome that exposes `LanguageModel` | Node test runner (fake `LanguageModel`) |
 | `droneski/` | FPV drone filming a procedurally generated downhill skier | Node test runner |
 | `esp-flash/` | Flash inkbot/maze (or a local `.bin`) to an ESP32 over Web Serial / WebUSB | Node test runner |
 | `kubescheduler-the-game/` | Play the Kubernetes scheduler and cluster operator | Node test runner |

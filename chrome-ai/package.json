@@ -1,0 +1,14 @@
+{
+  "name": "chrome-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chat with the language model built into Chrome",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

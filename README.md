@@ -30,6 +30,8 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`packfile-explorer/`](packfile-explorer/)** — fetch a repository's packfile
   through the CORS proxy, index the objects and deltas locally, and click
   through commits, trees, blobs, and delta chains.
+- **[`chrome-ai/`](chrome-ai/)** — chat with the language model built into
+  Chrome. The model runs on your device, so prompts and replies don't leave it.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
   balance a ball up the wall while avoiding unlit pockets.
 - **[`droneski/`](droneski/)** — pilot an FPV camera drone filming a skier on a
