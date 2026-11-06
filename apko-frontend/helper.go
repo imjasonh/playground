@@ -102,7 +102,7 @@ func buildLayers(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 		}
 		for i, lp := range plans {
 			name := fmt.Sprintf("layer-%d.tar.gz", i)
-			if err := writeLayerFile(filepath.Join(outDir, name), func(w io.Writer) error {
+			if err := writeFile(filepath.Join(outDir, name), func(w io.Writer) error {
 				_, err := lp.Render(ctx, content, w)
 				return err
 			}); err != nil {
@@ -120,7 +120,7 @@ func buildLayers(ctx context.Context, ic types.ImageConfiguration, arch types.Ar
 			return nil, err
 		}
 		name := "layer-0.tar"
-		if err := writeLayerFile(filepath.Join(outDir, name), func(w io.Writer) error {
+		if err := writeFile(filepath.Join(outDir, name), func(w io.Writer) error {
 			rc, err := layer.Uncompressed()
 			if err != nil {
 				return err
@@ -145,7 +145,7 @@ func layered(ic types.ImageConfiguration) bool {
 	return ic.Layering != nil && (ic.Layering.Strategy != "" || ic.Layering.Budget != 0)
 }
 
-func writeLayerFile(name string, write func(io.Writer) error) error {
+func writeFile(name string, write func(io.Writer) error) error {
 	f, err := os.Create(name)
 	if err != nil {
 		return err
