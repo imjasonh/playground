@@ -228,16 +228,25 @@ Because these are ordinary BuildKit cache records, `--cache-to` and
 between machines, and `docker buildx prune` manages them.
 
 There's one trade-off. apko builds the whole filesystem, so the apko step
-reruns as a unit and reinstalls every package when any package changes. A
-step for each layer would cache better but would duplicate apko's
-filesystem logic, which the frontend avoids. For typical images, the step
-takes a few seconds.
+reruns as a unit and reinstalls every package when any package changes.
+[Future work](#future-work-a-build-step-for-each-layer) describes a step for
+each layer instead.
 
 ## Reproducibility
 
 Building the same configuration against the same repository contents
 produces the same image digest. The [demo](demo/run.sh) checks this with a
-`--no-cache` rebuild. These inputs also change the digest:
+`--no-cache` rebuild.
+
+The digest isn't the one `apko build` produces. Each layer holds the same
+files, with the same metadata and contents, but BuildKit writes its own tar
+stream (entry order and header encoding) and its own gzip, so the
+uncompressed layer digests (diff IDs) differ, and so do the config and
+manifest that list them. Matching apko's digests would need BuildKit to use
+apko's tar files as layer blobs unchanged, and LLB has no operation that
+turns a file into a layer blob.
+
+These inputs also change the digest:
 
 -   **Repository contents.** Without a lock, a build resolves against the
     indexes at build time. Use `APKO_LOCK` to pin package versions across
@@ -261,6 +270,83 @@ Every build shows a step that probes `REPOSITORY/apk-configuration` for each
 HTTP repository. This is apko's discovery of Chainguard signing keys.
 Repositories other than Chainguard's return 404 there, and BuildKit shows
 the 404 as a failed step, but the build continues.
+
+## Future work: a build step for each layer
+
+Today one build step per architecture runs apko's whole build. When any
+package changes, that step installs every package again, although BuildKit
+still reuses the blobs of layers whose content didn't change.
+
+### What it would take
+
+A build step for each origin group would install only that group's
+packages, and a last step would write the top layer. That needs four pieces
+of apko's build that apko doesn't export:
+
+1.  **Grouping in the frontend.** apko groups packages by origin, size, and
+    `replaces`. `APKINDEX.tar.gz` doesn't carry `replaces`, so the frontend
+    would read each package's `.PKGINFO`, for example from a small step that
+    writes the control sections as JSON, and port apko's
+    `groupByOriginAndSize` (about 120 lines of `layers.go`).
+1.  **A step for each group.** Install the group's packages with go-apk's
+    exported `APK.InstallPackages` into an empty filesystem, then write the
+    layer as apko's `partitionLayers` does: parent directory entries take the
+    timestamp of the first file under them, and the layer carries a partial
+    installed database with only its packages (about 150 lines).
+1.  **Configuration that changes package files.** apko applies `accounts`,
+    `paths`, and `certificates` to the whole filesystem, and a file that a
+    package owns stays in that package's layer with the change applied. For
+    example, `/etc/passwd` with the configured users is in the layer of the
+    package that owns `/etc/passwd`. So each group step would apply those
+    mutations to the files it owns. That means porting `accounts.go`,
+    `paths.go`, and the relevant parts of `certificates.go` (about 840
+    lines), and it means a change to those fields reruns every group step.
+1.  **A top-layer step.** Mount the merged group layers read-only, and write
+    the files no package owns: the full installed database, `world`,
+    `repositories`, keys, `scripts.tar`, `triggers`, `/etc/apko.json`,
+    busybox links (`busybox.go`, 143 lines), `/etc/ld.so.cache` (apko's
+    `ldsocache` package is exported), character devices, the s6 tree, and
+    the runtime keyring.
+
+That is roughly 1,000 to 1,500 lines that copy unexported apko code, and it
+would drift as apko changes. The file-by-file comparison against
+`apko build`, which this frontend passes, would become an end-to-end test
+to catch the drift. A smaller alternative is to add two exported functions
+to apko upstream, one that builds a group's layer from its packages and one
+that builds the top layer from a base filesystem. With those, the frontend
+needs about 200 lines, and apko keeps owning its filesystem logic.
+
+### Expected gains
+
+Measured with this frontend on an Alpine image of 52 packages, 143 MB
+uncompressed in 11 layers, with `nodejs` (56 MB) and `python3` (25 MB) as the
+largest groups:
+
+| Build | Now | With a step for each layer |
+| --- | --- | --- |
+| No change | 3.0 s, all cached | Same |
+| `environment` or `entrypoint` change | 4.3 to 4.6 s, of which apko takes 1.2 s | Only the top-layer step runs, because these fields reach only `/etc/apko.json` |
+| `accounts`, `paths`, or `certificates` change | 4.3 to 4.6 s | Every group step runs, so about the same |
+| One package changes | About 4.5 s, of which apko takes 1.2 s | About 0.5 s less: only the changed group's step and the top-layer step run |
+| Cold build | 2.8 s | About the same; apko already installs packages in parallel |
+
+The apko step processes about 120 MB/s here, so it grows with image size.
+For an image of about 2 GB, such as a CUDA or PyTorch image, the step would
+take about 15 to 20 s, and a step for each layer would bring a one-package
+rebuild down to the time for that package's group plus the top layer, a few
+seconds.
+
+The larger gain is on machines without a local cache, such as CI runners
+that import a remote cache with `--cache-from`. Today a change to one
+package reruns the apko step, and BuildKit downloads every package to run
+it. With a step for each layer, the unchanged groups are remote cache hits,
+and BuildKit downloads only the changed group's packages. For the image
+measured here, a `nodejs` update would download about 20 MB instead of about
+50 MB. For a 2 GB image, it can save gigabytes per build.
+
+Most of the remaining time in a rebuild is fixed. It goes to resolving
+packages, revalidating each download with the server, and exporting the
+image, and a step for each layer doesn't change it.
 
 ## Develop
 
