@@ -1,0 +1,93 @@
+# Build apko-frontend with ko, push it to GHCR, and Cosign-sign it.
+#
+# Images are ghcr.io/imjasonh/playground/apko-frontend, tagged with the
+# commit that built them and with latest. apko configurations name the
+# image on their first line:
+#
+#   # syntax=ghcr.io/imjasonh/playground/apko-frontend:COMMIT
+#
+# test.yml tests the module on pull requests. This workflow is separate so
+# that one doesn't need packages:write or id-token:write.
+
+name: apko-frontend publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apko-frontend/**
+      - .github/workflows/apko-frontend-publish.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: apko-frontend-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      KO_DOCKER_REPO: ghcr.io/imjasonh/playground/apko-frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: apko-frontend/go.mod
+          cache-dependency-path: apko-frontend/go.sum
+
+      - name: Test
+        working-directory: apko-frontend
+        run: go test ./...
+
+      - name: Install ko
+        run: go install github.com/google/ko@v0.19.1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: echo "${GH_TOKEN}" | ko login ghcr.io --username "${ACTOR}" --password-stdin
+
+      - name: Build and push
+        id: build
+        working-directory: apko-frontend
+        # The frontend needs no network; the label tells BuildKit to run it
+        # without one. The source label links the GHCR package to this
+        # repository.
+        run: |
+          image="$(ko build --bare \
+            --platform=linux/amd64,linux/arm64 \
+            --tags="${GITHUB_SHA},latest" \
+            --image-label=moby.buildkit.frontend.network.none=true \
+            --image-label="org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --image-label="org.opencontainers.image.revision=${GITHUB_SHA}" \
+            .)"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "Published \`${image}\`, tagged \`${GITHUB_SHA}\` and \`latest\`."
+            echo
+            echo '```yaml'
+            echo "# syntax=${KO_DOCKER_REPO}:${GITHUB_SHA}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Sign
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: cosign sign --yes "${IMAGE}"
