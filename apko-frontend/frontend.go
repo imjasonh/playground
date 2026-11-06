@@ -59,6 +59,9 @@ type builder struct {
 	helper llb.State
 	exe    string
 	epoch  string
+	// cacheImports are the client's --cache-from caches. A frontend's
+	// solves use them only when it passes them along.
+	cacheImports []client.CacheOptionsEntry
 }
 
 // frontendBuild is the frontend's entry point.
@@ -81,7 +84,7 @@ func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error)
 				client.WarnOpts{Range: lineRange(src.Data, k)})
 		}
 	}
-	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch]}
+	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch], cacheImports: dc.CacheImports}
 	if b.epoch != "" {
 		if _, err := strconv.ParseInt(b.epoch, 10, 64); err != nil {
 			return nil, fmt.Errorf("invalid %s %q: %w", argSourceDateEpoch, b.epoch, err)
@@ -308,7 +311,7 @@ func (b *builder) buildPlatform(ctx context.Context, p v1.Platform) (*dockerui.B
 	if err != nil {
 		return nil, nil, err
 	}
-	res, err := b.c.Solve(ctx, client.SolveRequest{Definition: def.ToPB()})
+	res, err := b.c.Solve(ctx, client.SolveRequest{Definition: def.ToPB(), CacheImports: b.cacheImports})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -329,7 +332,7 @@ func (b *builder) readPlan(ctx context.Context, out llb.State) (*plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := b.c.Solve(ctx, client.SolveRequest{Definition: def.ToPB()})
+	res, err := b.c.Solve(ctx, client.SolveRequest{Definition: def.ToPB(), CacheImports: b.cacheImports})
 	if err != nil {
 		return nil, err
 	}
