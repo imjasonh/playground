@@ -1,0 +1,710 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f1ea;
+  --paper: #fffdf8;
+  --ink: #1d1b18;
+  --muted: #6b655c;
+  --line: #d8d1c4;
+  --accent: #1a5fd6;
+  --accent-ink: #ffffff;
+  --user: #1a5fd6;
+  --user-ink: #ffffff;
+  --error: #b3261e;
+  --code: #efeadf;
+  --radius: 1.1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514;
+    --paper: #22201e;
+    --ink: #ece8e1;
+    --muted: #a39c91;
+    --line: #3a3733;
+    --accent: #7aa7ff;
+    --accent-ink: #0d1a33;
+    --user: #2f5fb3;
+    --user-ink: #ffffff;
+    --error: #ff8a80;
+    --code: #2c2a27;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* The rows span the window so the message list's scroll bar sits at the
+   window edge. Padding centers a 48rem column inside each row. */
+.app {
+  --column-left: max(1rem, env(safe-area-inset-left), (100% - 48rem) / 2);
+  --column-right: max(1rem, env(safe-area-inset-right), (100% - 48rem) / 2);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100dvh;
+}
+
+.masthead,
+.log,
+.dock {
+  padding-left: var(--column-left);
+  padding-right: var(--column-right);
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sheet {
+  width: min(24rem, 100vw - 3rem);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0 auto 0 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: max(0.75rem, env(safe-area-inset-top)) 1rem 0.75rem
+    max(1rem, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--line);
+}
+
+.sheet-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+
+.empty-history {
+  margin: 0;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.conversations {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.5rem 0.5rem max(0.5rem, env(safe-area-inset-bottom))
+    max(0.5rem, env(safe-area-inset-left));
+  list-style: none;
+}
+
+.conversation {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.75rem;
+}
+
+.conversation:hover,
+.conversation.is-current {
+  background: var(--paper);
+}
+
+.conversation .open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+
+.conversation .title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation.is-current .title {
+  font-weight: 600;
+}
+
+.conversation time {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.conversation .delete {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.conversation .delete:hover {
+  border-color: transparent;
+  color: var(--error);
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: clamp(1.35rem, 1.15rem + 0.8vw, 1.75rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+button {
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.ghost:not(:disabled):hover {
+  border-color: var(--muted);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  padding: 0;
+}
+
+.icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Positioned so the absolutely positioned screen reader labels inside it
+   scroll with it instead of stretching the page. */
+.log {
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  color: var(--muted);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message {
+  display: flex;
+}
+
+.message .body {
+  max-width: min(65ch, 85%);
+  padding: 0.6rem 0.95rem;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.from-user {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.from-user .body:empty {
+  display: none;
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.from-user .attachments {
+  justify-content: flex-end;
+  max-width: min(65ch, 85%);
+}
+
+.attachment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.attachment img {
+  display: block;
+  max-width: 100%;
+  max-height: 14rem;
+  object-fit: cover;
+}
+
+.attachment audio {
+  display: block;
+  max-width: 100%;
+}
+
+.attachment .name {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment.is-text .name::before,
+.attachment.is-audio .name::before {
+  margin-right: 0.4em;
+  color: var(--muted);
+}
+
+.attachment.is-text .name::before {
+  content: "TXT";
+  font-size: 0.75em;
+  font-weight: 650;
+}
+
+.attachment.is-audio .name::before {
+  content: "♪";
+}
+
+.attachments.pending {
+  align-items: center;
+}
+
+.pending .attachment {
+  max-width: 14rem;
+}
+
+.pending .attachment img {
+  width: 4rem;
+  height: 4rem;
+}
+
+.pending .attachment.is-image {
+  max-width: none;
+}
+
+.attachment .remove {
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+}
+
+.pending .is-image .remove {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: rgb(0 0 0 / 0.6);
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.attachment .remove:hover {
+  color: var(--ink);
+}
+
+.pending .is-image .remove:hover {
+  color: #ffffff;
+  background: rgb(0 0 0 / 0.8);
+}
+
+.app.is-dragging .log {
+  outline: 2px dashed var(--accent);
+  outline-offset: -0.5rem;
+  border-radius: var(--radius);
+}
+
+.from-user .body {
+  background: var(--user);
+  color: var(--user-ink);
+  border-bottom-right-radius: 0.35rem;
+}
+
+.from-model .body {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 0.35rem;
+  white-space: normal;
+}
+
+.from-model .body > :first-child {
+  margin-top: 0;
+}
+
+.from-model .body > :last-child {
+  margin-bottom: 0;
+}
+
+.from-model .body :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0.6em 0;
+}
+
+.from-model .body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0.9em 0 0.35em;
+  font-size: 1em;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.from-model .body h1 {
+  font-size: 1.2em;
+}
+
+.from-model .body h2 {
+  font-size: 1.1em;
+}
+
+.from-model .body :is(ul, ol) {
+  padding-left: 1.4em;
+}
+
+.from-model .body ul {
+  list-style: disc;
+}
+
+.from-model .body ol {
+  list-style: decimal;
+}
+
+.from-model .body li + li {
+  margin-top: 0.2em;
+}
+
+.from-model .body a {
+  color: var(--accent);
+}
+
+.from-model .body code {
+  padding: 0.1em 0.3em;
+  border-radius: 0.3rem;
+  background: var(--code);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.from-model .body pre {
+  overflow-x: auto;
+  padding: 0.7em 0.85em;
+  border-radius: 0.6rem;
+  background: var(--code);
+  line-height: 1.45;
+}
+
+.from-model .body pre code {
+  padding: 0;
+  background: none;
+}
+
+.from-model .body blockquote {
+  padding-left: 0.85em;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.from-model .body table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.from-model .body :is(th, td) {
+  padding: 0.3em 0.65em;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.from-model .body hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.from-model.is-error .body {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.is-pending .body:empty::before {
+  content: "…";
+  color: var(--muted);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The meter sits on the dock's top border, so the border is its track. */
+.meter {
+  position: absolute;
+  top: -2px;
+  left: var(--column-left);
+  right: var(--column-right);
+  height: 3px;
+  border-radius: 2px;
+  outline-offset: 6px;
+}
+
+.meter::before {
+  content: "";
+  position: absolute;
+  inset: -0.6rem 0;
+}
+
+.meter-fill {
+  width: var(--fill, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--muted);
+  opacity: 0.45;
+  transition: width 300ms ease-out;
+}
+
+.meter.is-high .meter-fill,
+.meter.is-downloading .meter-fill {
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.meter-tip {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  left: 0;
+  z-index: 1;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.meter:hover .meter-tip,
+.meter:focus-visible .meter-tip {
+  opacity: 1;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
+
+.dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+
+.status {
+  margin: 0;
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.status:empty {
+  display: none;
+}
+
+.status.is-error {
+  color: var(--error);
+}
+
+#download {
+  align-self: flex-start;
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 2.75rem;
+  max-height: 12rem;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 1.4rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  resize: none;
+  field-sizing: content;
+}
+
+.composer textarea:disabled {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet[open] {
+    animation: slide-in 160ms ease-out;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-pending .body:empty::before {
+    animation: none;
+  }
+
+  .meter-fill,
+  .meter-tip {
+    transition: none;
+  }
+}

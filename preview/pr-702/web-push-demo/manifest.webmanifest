@@ -1,0 +1,18 @@
+{
+  "name": "Web Push demo",
+  "short_name": "Web Push",
+  "description": "Subscribe, unsubscribe, and send notifications against the Web Push Cloudflare Worker backend.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
