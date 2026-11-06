@@ -79,6 +79,9 @@ bump when the tests still pass, so old experiments don't rot.
   grow into a 3D-printable tower (time as the Z axis), and export STL or a
   ready-to-slice Bambu 3MF. Powered by the `life-stl` Rust crate compiled to
   WebAssembly.
+- **[`marptalk/`](marptalk/)** — present a Marp deck with its speaker notes
+  read aloud by the browser's text-to-speech, with subtitles and speed
+  control. Plays three bundled decks or a `.md` file you open.
 
 ## Tools
 
