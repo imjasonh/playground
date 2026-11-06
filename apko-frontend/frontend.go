@@ -1,0 +1,398 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"chainguard.dev/apko/pkg/build/oci"
+	"chainguard.dev/apko/pkg/build/types"
+	"github.com/containerd/platforms"
+	"github.com/distribution/reference"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
+	"github.com/moby/buildkit/frontend/dockerui"
+	"github.com/moby/buildkit/frontend/gateway/client"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+)
+
+const (
+	// argLock names a build argument with the path of an apko lock file in
+	// the build context. When set, the frontend installs the locked
+	// packages instead of resolving the configuration.
+	argLock = "APKO_LOCK"
+	// argSourceDateEpoch is the standard build argument for reproducible
+	// timestamps. apko reads the same variable.
+	argSourceDateEpoch = "SOURCE_DATE_EPOCH"
+)
+
+// builder holds what every platform's build shares.
+type builder struct {
+	c       client.Client
+	fetcher *fetcher
+	// rec recorded the URLs apko fetched while resolving packages.
+	rec *recorder
+	// ic is the configuration as written.
+	ic types.ImageConfiguration
+	// locked holds each arch's pinned configuration.
+	locked map[types.Architecture]*locked
+	// localInputs lists the build-context files apko read while
+	// resolving, which the helper needs too.
+	localInputs []string
+	// mainContext returns the build context, limited to the given paths.
+	mainContext func(ctx context.Context, paths ...string) (llb.State, error)
+	// helper runs this binary, exe, on the build platform.
+	helper llb.State
+	exe    string
+	epoch  string
+}
+
+// frontendBuild is the frontend's entry point.
+func frontendBuild(ctx context.Context, c client.Client) (*client.Result, error) {
+	dc, err := dockerui.NewClient(c)
+	if err != nil {
+		return nil, err
+	}
+	src, err := dc.ReadEntrypoint(ctx, "YAML")
+	if err != nil {
+		return nil, err
+	}
+	ic, err := parseConfig(src.Data)
+	if err != nil {
+		return nil, err
+	}
+	b := &builder{c: c, ic: ic, epoch: dc.BuildArgs[argSourceDateEpoch]}
+	if b.epoch != "" {
+		if _, err := strconv.ParseInt(b.epoch, 10, 64); err != nil {
+			return nil, fmt.Errorf("invalid %s %q: %w", argSourceDateEpoch, b.epoch, err)
+		}
+	}
+	if b.helper, b.exe, err = helperImage(ctx, c, dc); err != nil {
+		return nil, err
+	}
+	b.mainContext = func(ctx context.Context, paths ...string) (llb.State, error) {
+		st, err := dc.MainContext(ctx, llb.FollowPaths(paths))
+		if err != nil {
+			return llb.State{}, err
+		}
+		return *st, nil
+	}
+	b.fetcher = newFetcher(c, b.mainContext)
+	b.rec = b.fetcher.recorder()
+
+	if len(dc.TargetPlatforms) == 0 {
+		if ps := configPlatforms(ic); len(ps) > 0 {
+			dc.TargetPlatforms = ps
+			dc.MultiPlatformRequested = len(ps) > 1
+		}
+	}
+	targets := dc.TargetPlatforms
+	if len(targets) == 0 {
+		targets = []ocispecs.Platform{platforms.DefaultSpec()}
+	}
+	var archs []types.Architecture
+	for _, p := range targets {
+		archs = append(archs, platformArch(p))
+	}
+
+	if b.localInputs, err = localInputs(ic, archs); err != nil {
+		return nil, err
+	}
+	if len(b.localInputs) > 0 {
+		if err := b.stage(ctx, b.localInputs); err != nil {
+			return nil, err
+		}
+	}
+	if p := dc.BuildArgs[argLock]; p != "" {
+		e, err := b.fetcher.entry(ctx, contextURL(p))
+		if err != nil {
+			return nil, err
+		}
+		data, err := b.fetcher.get(ctx, e)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s %s: %w", argLock, p, err)
+		}
+		l, err := parseLock(data)
+		if err != nil {
+			return nil, err
+		}
+		b.locked, err = fromLock(ctx, ic, archs, l, data, b.rec)
+		if err != nil {
+			return nil, err
+		}
+	} else if b.locked, err = resolve(ctx, ic, archs, b.rec); err != nil {
+		return nil, err
+	}
+
+	var mu sync.Mutex
+	annotations := map[string]map[string]string{}
+	rb, err := dc.Build(ctx, func(ctx context.Context, p *ocispecs.Platform, _ int) (*dockerui.BuildResult, error) {
+		if p == nil {
+			def := platforms.DefaultSpec()
+			p = &def
+		}
+		res, anns, err := b.buildPlatform(ctx, *p)
+		if err != nil {
+			return nil, fmt.Errorf("building %s: %w", platforms.Format(*p), err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		annotations[platforms.FormatAll(*p)] = anns
+		return res, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for ps, anns := range annotations {
+		p, err := platforms.Parse(ps)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range anns {
+			key := exptypes.AnnotationKey{Type: exptypes.AnnotationManifest, Key: k}
+			if dc.MultiPlatformRequested {
+				key.Platform = &p
+			}
+			rb.AddMeta(key.String(), []byte(v))
+		}
+	}
+	if dc.MultiPlatformRequested {
+		for k, v := range ic.Annotations {
+			rb.AddMeta(exptypes.AnnotationKey{Type: exptypes.AnnotationIndex, Key: k}.String(), []byte(v))
+		}
+	}
+	return rb.Finalize()
+}
+
+// helperImage returns this frontend's own image, pinned by digest, for the
+// build platform, and the path of this binary inside it. BuildKit passes the
+// frontend image reference as the "source" option.
+func helperImage(ctx context.Context, c client.Client, dc *dockerui.Client) (llb.State, string, error) {
+	source := c.BuildOpts().Opts["source"]
+	if source == "" {
+		return llb.State{}, "", errors.New(`the frontend image is unknown; run this frontend with "# syntax=<image>" or the gateway.v0 frontend's source option`)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return llb.State{}, "", err
+	}
+	bp := platforms.DefaultSpec()
+	if len(dc.BuildPlatforms) > 0 {
+		bp = dc.BuildPlatforms[0]
+	}
+	named, err := reference.ParseNormalizedNamed(source)
+	if err != nil {
+		return llb.State{}, "", fmt.Errorf("parsing frontend image %s: %w", source, err)
+	}
+	_, dgst, _, err := c.ResolveImageConfig(ctx, reference.TagNameOnly(named).String(), sourceresolver.Opt{
+		ImageOpt: &sourceresolver.ResolveImageOpt{Platform: &bp},
+	})
+	if err != nil {
+		return llb.State{}, "", fmt.Errorf("resolving frontend image %s: %w", source, err)
+	}
+	pinned, err := reference.WithDigest(reference.TrimNamed(named), dgst)
+	if err != nil {
+		return llb.State{}, "", err
+	}
+	return llb.Image(pinned.String(), llb.Platform(bp)), exe, nil
+}
+
+// buildPlatform builds the image for one platform and returns it with the
+// manifest annotations apko would set.
+func (b *builder) buildPlatform(ctx context.Context, p ocispecs.Platform) (*dockerui.BuildResult, map[string]string, error) {
+	arch := platformArch(p)
+	lk, ok := b.locked[arch]
+	if !ok {
+		return nil, nil, fmt.Errorf("no packages were resolved for %s", arch)
+	}
+	fetched := b.rec.entries()
+	localPaths := slices.Clone(b.localInputs)
+	for _, pkg := range lk.pkgs {
+		if !isRemote(pkg.URL) {
+			p, err := contextPath(pkg.URL)
+			if err != nil {
+				return nil, nil, err
+			}
+			localPaths = append(localPaths, p)
+			continue
+		}
+		e, err := b.fetcher.entry(ctx, pkg.URL)
+		if err != nil {
+			return nil, nil, err
+		}
+		fetched[e.key] = e
+	}
+
+	configData, err := json.Marshal(lk.ic)
+	if err != nil {
+		return nil, nil, err
+	}
+	files := llb.Mkfile("/config.json", 0o644, configData)
+	args := []string{
+		b.exe, helperCommand,
+		"-arch", arch.ToAPK(),
+		"-config", "/apko/in/config.json",
+		"-fetch", "/apko/fetch",
+		"-out", "/apko/out",
+	}
+	if lk.lockData != nil {
+		files = files.Mkfile("/lock.json", 0o644, lk.lockData)
+		args = append(args, "-lock", "/apko/in/lock.json")
+	}
+	input := llb.Scratch().File(files, llb.WithCustomName("[internal] apko configuration"))
+	runOpts := []llb.RunOption{
+		llb.Args(args),
+		llb.User("0"),
+		llb.Network(llb.NetModeNone),
+		llb.AddMount("/apko/in", input, llb.Readonly),
+		llb.AddMount("/apko/fetch", mergeStates(entryStates(fetched), "fetched files"), llb.Readonly),
+		llb.AddMount("/tmp", llb.Scratch(), llb.Tmpfs()),
+		llb.WithCustomNamef("apko build %s (%d packages)", arch.ToAPK(), len(lk.pkgs)),
+	}
+	if b.epoch != "" {
+		runOpts = append(runOpts, llb.AddEnv(argSourceDateEpoch, b.epoch))
+	}
+	if len(localPaths) > 0 {
+		src, err := b.mainContext(ctx, localPaths...)
+		if err != nil {
+			return nil, nil, err
+		}
+		runOpts = append(runOpts, llb.AddMount(contextDir, src, llb.Readonly), llb.Dir(contextDir))
+	}
+	out := b.helper.Run(runOpts...).AddMount("/apko/out", llb.Scratch())
+
+	pl, err := b.readPlan(ctx, out)
+	if err != nil {
+		return nil, nil, err
+	}
+	layers := make([]llb.State, 0, len(pl.Layers))
+	for i, l := range pl.Layers {
+		layers = append(layers, llb.Scratch().File(
+			llb.Copy(out, "/"+l.File, "/", &llb.CopyInfo{AttemptUnpack: true}),
+			llb.WithCustomName(layerName(arch, i, len(pl.Layers), l)),
+		))
+	}
+	def, err := mergeStates(layers, "apko layers "+arch.ToAPK()).Marshal(ctx, llb.Platform(p))
+	if err != nil {
+		return nil, nil, err
+	}
+	res, err := b.c.Solve(ctx, client.SolveRequest{Definition: def.ToPB()})
+	if err != nil {
+		return nil, nil, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, nil, err
+	}
+	img, anns, err := imageConfig(ctx, b.ic, arch, pl.Created, len(pl.Layers))
+	if err != nil {
+		return nil, nil, err
+	}
+	created := pl.Created
+	return &dockerui.BuildResult{Reference: ref, Image: img, Epoch: &created}, anns, nil
+}
+
+func (b *builder) readPlan(ctx context.Context, out llb.State) (*plan, error) {
+	def, err := out.Marshal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := b.c.Solve(ctx, client.SolveRequest{Definition: def.ToPB()})
+	if err != nil {
+		return nil, err
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return nil, err
+	}
+	data, err := ref.ReadFile(ctx, client.ReadRequest{Filename: planFile})
+	if err != nil {
+		return nil, err
+	}
+	var pl plan
+	if err := json.Unmarshal(data, &pl); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", planFile, err)
+	}
+	if len(pl.Layers) == 0 {
+		return nil, errors.New("the apko build wrote no layers")
+	}
+	return &pl, nil
+}
+
+func layerName(arch types.Architecture, i, n int, l planLayer) string {
+	what := "accounts, paths, and apk database"
+	if len(l.Packages) > 0 {
+		what = strings.Join(l.Packages, ", ")
+		if len(what) > 80 {
+			what = what[:77] + "..."
+		}
+	} else if n == 1 {
+		what = "all packages"
+	}
+	return fmt.Sprintf("apko layer %s %d/%d: %s", arch.ToAPK(), i+1, n, what)
+}
+
+// mergeStates merges states, or returns the only state.
+func mergeStates(states []llb.State, name string) llb.State {
+	switch len(states) {
+	case 0:
+		return llb.Scratch()
+	case 1:
+		return states[0]
+	}
+	return llb.Merge(states, llb.WithCustomName(name))
+}
+
+// imageConfig returns the image config and manifest annotations that apko
+// sets for an image of n layers.
+func imageConfig(ctx context.Context, ic types.ImageConfiguration, arch types.Architecture, created time.Time, n int) (*dockerspec.DockerOCIImage, map[string]string, error) {
+	img, err := oci.BuildImageFromLayers(ctx, empty.Image, nil, ic, created, arch)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := img.ConfigFile()
+	if err != nil {
+		return nil, nil, err
+	}
+	m, err := img.Manifest()
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	var out dockerspec.DockerOCIImage
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, nil, err
+	}
+	comment := "This is an apko single-layer image"
+	if n > 1 {
+		comment = ""
+	}
+	title, hasTitle := ic.Annotations["org.opencontainers.image.title"]
+	vendor, hasVendor := ic.Annotations["org.opencontainers.image.vendor"]
+	if hasTitle && hasVendor {
+		comment = title + " by " + vendor
+	}
+	out.History = nil
+	for range n {
+		out.History = append(out.History, ocispecs.History{
+			Created:   &created,
+			CreatedBy: "apko",
+			Author:    "apko",
+			Comment:   comment,
+		})
+	}
+	return &out, m.Annotations, nil
+}
