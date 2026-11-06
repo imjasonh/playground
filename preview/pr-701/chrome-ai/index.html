@@ -63,6 +63,20 @@
       </main>
 
       <footer class="dock">
+        <div
+          class="meter"
+          id="meter"
+          role="meter"
+          tabindex="0"
+          aria-label="Context window"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-describedby="meter-tip"
+          hidden
+        >
+          <div class="meter-fill" id="meter-fill"></div>
+          <div class="meter-tip" id="meter-tip" role="tooltip"></div>
+        </div>
         <p class="status" id="status" role="status"></p>
         <button type="button" class="primary" id="download" hidden>
           Download model

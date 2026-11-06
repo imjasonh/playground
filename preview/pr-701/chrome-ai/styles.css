@@ -562,7 +562,78 @@ textarea:focus-visible {
   }
 }
 
+/* The meter sits on the dock's top border, so the border is its track. */
+.meter {
+  position: absolute;
+  top: -2px;
+  left: var(--column-left);
+  right: var(--column-right);
+  height: 3px;
+  border-radius: 2px;
+  outline-offset: 6px;
+}
+
+.meter::before {
+  content: "";
+  position: absolute;
+  inset: -0.6rem 0;
+}
+
+.meter-fill {
+  width: var(--fill, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--muted);
+  opacity: 0.45;
+  transition: width 300ms ease-out;
+}
+
+.meter.is-high .meter-fill {
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.meter-tip {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  left: 0;
+  z-index: 1;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.meter:hover .meter-tip,
+.meter:focus-visible .meter-tip {
+  opacity: 1;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
+
 .dock {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -575,8 +646,7 @@ textarea:focus-visible {
   margin: 0;
   min-height: 1.4em;
   color: var(--muted);
-  font-size: 0.9rem;
-  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
 }
 
 .status:empty {
@@ -630,5 +700,10 @@ textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .is-pending .body:empty::before {
     animation: none;
+  }
+
+  .meter-fill,
+  .meter-tip {
+    transition: none;
   }
 }

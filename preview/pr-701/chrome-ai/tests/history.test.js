@@ -4,9 +4,11 @@ import test from 'node:test';
 import {
   CONVERSATION_VERSION,
   formatWhen,
+  historyPrompts,
   migrate,
   newConversation,
   storedAttachment,
+  summaryMessage,
   titleFor,
   toPromptMessages,
 } from '../src/history.js';
@@ -27,6 +29,7 @@ test('newConversation starts empty at the current version', () => {
     createdAt: 5,
     updatedAt: 5,
     messages: [],
+    summary: null,
   });
 });
 
@@ -52,6 +55,42 @@ test('storedAttachment keeps text for text files and blobs for media', () => {
     storedAttachment({kind: 'image', name: 'a.png', file, text: null, url: 'u'}),
     {kind: 'image', name: 'a.png', file, text: null},
   );
+});
+
+test('migrate adds an empty summary to version 1 records', () => {
+  const v1 = {
+    version: 1,
+    id: 'a',
+    title: 'Old',
+    createdAt: 1,
+    updatedAt: 2,
+    messages: [],
+  };
+  assert.deepEqual(migrate(v1), {...v1, version: 2, summary: null});
+  assert.equal(CONVERSATION_VERSION, 2);
+});
+
+test('historyPrompts replaces summarized messages with the summary', () => {
+  const record = {
+    ...newConversation({id: 'a', now: 1}),
+    messages: [user('1'), assistant('1'), user('2'), assistant('2'), user('3')],
+  };
+  assert.deepEqual(historyPrompts(record, []), [
+    {role: 'user', content: '1'},
+    {role: 'assistant', content: '1'},
+    {role: 'user', content: '2'},
+    {role: 'assistant', content: '2'},
+    {role: 'user', content: '3'},
+  ]);
+
+  record.summary = {text: 'They counted.', through: 2};
+  assert.deepEqual(historyPrompts(record, [], 4), [
+    summaryMessage('They counted.'),
+    {role: 'user', content: '2'},
+    {role: 'assistant', content: '2'},
+  ]);
+  assert.equal(summaryMessage('x').role, 'system');
+  assert.match(summaryMessage('They counted.').content, /They counted\.$/);
 });
 
 test('migrate passes current records through and skips unknown ones', () => {

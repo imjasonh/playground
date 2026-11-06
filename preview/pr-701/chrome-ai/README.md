@@ -57,8 +57,10 @@ one has a delete button.
 
 When you open a saved chat, the page shows its messages and creates a model
 session with them as `initialPrompts`, so the next message continues the
-conversation. If the chat no longer fits in the context window, the page
-drops the oldest exchanges until it does, and the status line says so.
+conversation. A compacted chat starts from its summary and the messages after
+it. If that still doesn't fit in the context window, the page drops the
+oldest exchanges until it does, compacts the chat, and the status line says
+so.
 
 Storage is versioned in two places:
 
@@ -70,9 +72,26 @@ Storage is versioned in two places:
   read. A record from a newer version of the app is skipped and left in
   storage.
 
-The status line shows how much of the model's context window the chat has
-used. When the conversation outgrows it, Chrome drops the oldest messages and
-the status line says so.
+## Context window
+
+The thin bar on the line above the message box shows how much of the model's
+context window the chat holds. Hover over it or focus it for the token count.
+
+When a chat fills up, the page compacts it:
+
+1. After a reply, if the session holds 70% or more of its window, the model
+   summarizes every message except the last two exchanges. It does this in a
+   separate session, folding in the previous summary if there is one.
+1. A new session starts with the summary as a system prompt, followed by the
+   last two exchanges word for word. The next message waits for this.
+1. Before a message is sent, the page measures it, where Chrome supports
+   `measureContextUsage()`. If the message would push the session past 90%,
+   the page compacts first.
+
+The summary is saved with the chat (`summary` in the record), so a resumed
+chat replays the summary instead of the old messages. The log keeps every
+message and shows a divider where the summarized part ends. The constants are
+in `src/compaction.js`.
 
 ## Markdown
 
@@ -98,6 +117,7 @@ npm test
 
 The tests run `src/model.js` in Node against a fake `LanguageModel`,
 `src/store.js` against [fake-indexeddb](https://github.com/dumbmatter/fakeIndexedDB),
-`src/attachments.js` and `src/history.js` on plain objects and `Blob`s, and
+`src/attachments.js`, `src/history.js`, and `src/compaction.js` on plain
+objects, `Blob`s, and fake sessions, and
 `src/markdown.js` against the vendored marked, so they don't need Chrome or
 the model.

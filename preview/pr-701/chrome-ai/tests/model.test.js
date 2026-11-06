@@ -9,9 +9,11 @@ import {
   dropOldestExchange,
   findLanguageModel,
   formatProgress,
+  measureUsage,
   restoreSession,
   streamReply,
   supportedMedia,
+  usageOf,
 } from '../src/model.js';
 
 function streamOf(chunks) {
@@ -249,12 +251,74 @@ test('streamReply rejects when the signal is already aborted', async () => {
 test('contextUsage reads current and legacy property names', () => {
   assert.equal(
     contextUsage({contextUsage: 1234, contextWindow: 9216}),
-    '1,234 of 9,216 tokens used',
+    '1,234 of 9,216 tokens used (13%)',
   );
   assert.equal(
     contextUsage({inputUsage: 10, inputQuota: 6144}),
-    '10 of 6,144 tokens used',
+    '10 of 6,144 tokens used (0%)',
   );
   assert.equal(contextUsage({}), '');
   assert.equal(contextUsage(null), '');
+});
+
+test('usageOf returns null without a usable window', () => {
+  assert.deepEqual(usageOf({contextUsage: 5, contextWindow: 10}), {
+    used: 5,
+    total: 10,
+  });
+  assert.equal(usageOf({contextUsage: 5, contextWindow: 0}), null);
+  assert.equal(usageOf(null), null);
+});
+
+test('measureUsage uses whichever measure method the session has', async () => {
+  const current = {
+    measureContextUsage: async function(input) {
+      assert.equal(this, current);
+      return input.length;
+    },
+  };
+  assert.equal(await measureUsage(current, 'abcd'), 4);
+  assert.equal(
+    await measureUsage({measureInputUsage: async () => 7}, 'x'),
+    7,
+  );
+  assert.equal(await measureUsage({}, 'x'), null);
+  assert.equal(
+    await measureUsage(
+      {
+        measureContextUsage: async () => {
+          throw new TypeError('no');
+        },
+      },
+      'x',
+    ),
+    null,
+  );
+});
+
+test('restoreSession keeps a leading system message while trimming', async () => {
+  const sizes = [];
+  let kept;
+  const api = {
+    async create(options) {
+      sizes.push(options.initialPrompts.length);
+      if (options.initialPrompts.length > 3) {
+        throw new DOMException('Too long', 'QuotaExceededError');
+      }
+      kept = options.initialPrompts;
+      return new FakeSession();
+    },
+  };
+  const system = {role: 'system', content: 'summary'};
+  const history = [
+    system,
+    {role: 'user', content: '1'},
+    {role: 'assistant', content: '1'},
+    {role: 'user', content: '2'},
+    {role: 'assistant', content: '2'},
+  ];
+  const {dropped} = await restoreSession(api, history);
+  assert.deepEqual(sizes, [5, 3]);
+  assert.equal(dropped, 2);
+  assert.deepEqual(kept, [system, ...history.slice(3)]);
 });
