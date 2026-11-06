@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 import {deckDurationMs, parseDeck} from '../src/deck.js';
-import {DECKS, deckPath} from '../src/decks.js';
+import {DECKS, deckPath, deckSourceUrl} from '../src/decks.js';
 import {lintDeck} from '../src/lint.js';
 import {MAX_CUE_CHARS} from '../src/script.js';
 
@@ -70,6 +70,13 @@ test('deckDurationMs scales with rate', () => {
   const normal = deckDurationMs(deck, 1);
   assert.ok(normal > 0);
   assert.equal(deckDurationMs(deck, 2), normal / 2);
+});
+
+test('deckSourceUrl links to the deck on main', () => {
+  assert.equal(
+    deckSourceUrl('gps'),
+    'https://github.com/imjasonh/playground/blob/main/marptalk/decks/gps.md',
+  );
 });
 
 test('lintDeck reports what makes a deck worse to listen to', () => {

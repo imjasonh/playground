@@ -4,7 +4,7 @@
 import {browser as marpBrowser} from '../vendor/marp-browser.js';
 
 import {deckDurationMs, parseDeck} from './deck.js';
-import {DECKS, deckPath} from './decks.js';
+import {DECKS, deckPath, deckSourceUrl} from './decks.js';
 import {Narrator} from './narrator.js';
 import {Player} from './player.js';
 import {pickVoice, voicesFor} from './voices.js';
@@ -26,6 +26,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   deck: $('deck'),
   open: $('open'),
+  source: $('source'),
   file: $('file'),
   stage: $('stage'),
   viewport: $('viewport'),
@@ -102,9 +103,11 @@ function showStatus(message, ms = 5000) {
  * Renders `markdown` and makes it the current deck.
  *
  * @param {string} markdown
+ * @param {{href: string, download?: string}} source Where the Markdown came
+ *     from. `download` names the file when `href` is a blob URL.
  * @return {boolean} Whether the deck rendered.
  */
-function loadDeck(markdown) {
+function loadDeck(markdown, source) {
   let next;
   try {
     next = parseDeck(markdown);
@@ -141,6 +144,7 @@ function loadDeck(markdown) {
   player.addEventListener('finished', () => showCaption(''));
 
   document.title = `${deck.title} · Marptalk`;
+  showSource(source);
   buildProgress();
   updateVoices();
   updateMeta();
@@ -170,7 +174,7 @@ async function loadBuiltIn(id, {keepHash = false} = {}) {
   try {
     const res = await fetch(deckPath(entry.id));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    loadDeck(await res.text());
+    loadDeck(await res.text(), {href: deckSourceUrl(entry.id)});
   } catch (e) {
     showStatus(`Couldn't load ${entry.title}: ${e.message}`, 0);
   }
@@ -187,10 +191,32 @@ async function loadFile(file) {
   url.searchParams.delete('deck');
   url.hash = '';
   history.replaceState(null, '', url);
-  if (!loadDeck(markdown)) return;
-  upload = {name: file.name, markdown};
+  const href = URL.createObjectURL(
+    new Blob([markdown], {type: 'text/markdown'}),
+  );
+  if (!loadDeck(markdown, {href, download: file.name})) {
+    URL.revokeObjectURL(href);
+    return;
+  }
+  if (upload) URL.revokeObjectURL(upload.href);
+  upload = {name: file.name, markdown, href};
   buildDeckPicker();
   els.deck.value = UPLOAD;
+}
+
+/** @param {{href: string, download?: string}} source */
+function showSource({href, download}) {
+  els.source.href = href;
+  if (download) {
+    els.source.download = download;
+    els.source.removeAttribute('target');
+    els.source.title = `Download ${download}`;
+  } else {
+    els.source.removeAttribute('download');
+    els.source.target = '_blank';
+    els.source.title = 'View the Markdown on GitHub';
+  }
+  els.source.hidden = false;
 }
 
 function buildDeckPicker() {
@@ -444,7 +470,7 @@ function wire() {
 
   els.deck.addEventListener('change', () => {
     if (els.deck.value === UPLOAD) {
-      loadDeck(upload.markdown);
+      loadDeck(upload.markdown, {href: upload.href, download: upload.name});
     } else {
       loadBuiltIn(els.deck.value);
     }
