@@ -6,8 +6,9 @@
 //
 // Pass 1: walk function items whose immediately-preceding named
 //         sibling is an attribute_item containing `deprecated`.
-// Pass 2: walk call expressions; if the callee identifier has the
-//         `deprecated` fact, warn.
+// Pass 2: walk call expressions; if the callee, the last segment of a
+//         path such as `m::old_fn()`, or the method in `x.old_fn()`
+//         has the `deprecated` fact, warn.
 
 package rust_deprecated_use
 
@@ -63,6 +64,64 @@ rust_deprecated_use: schema.#Analyzer & {
 					function: {
 						capture: "callee"
 						pattern: {node: "identifier"}
+					}
+				}
+				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]
+			}
+
+			diagnose: {
+				message:  "@callee is deprecated"
+				severity: "warning"
+			}
+		}
+
+		find_path_calls: {
+			name:      "find_path_calls"
+			doc:       "Flag path-qualified calls of deprecated functions"
+			languages: [rustlang.Name]
+			requires: ["deprecated"]
+			provides: []
+
+			match: {
+				node: "call_expression"
+				fields: {
+					function: {
+						node: "scoped_identifier"
+						fields: {
+							name: {
+								capture: "callee"
+								pattern: {node: "identifier"}
+							}
+						}
+					}
+				}
+				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]
+			}
+
+			diagnose: {
+				message:  "@callee is deprecated"
+				severity: "warning"
+			}
+		}
+
+		find_method_calls: {
+			name:      "find_method_calls"
+			doc:       "Flag method calls of deprecated functions"
+			languages: [rustlang.Name]
+			requires: ["deprecated"]
+			provides: []
+
+			match: {
+				node: "call_expression"
+				fields: {
+					function: {
+						node: "field_expression"
+						fields: {
+							field: {
+								capture: "callee"
+								pattern: {node: "field_identifier"}
+							}
+						}
 					}
 				}
 				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]
