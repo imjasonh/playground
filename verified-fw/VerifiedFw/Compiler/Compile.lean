@@ -65,17 +65,17 @@ def compileStmt (g : Nat) : Stmt → Nat → List Instr
     let ct := compileStmt g t k
     let ce := compileStmt g e k
     compileExpr c 0 ++
-      [.bne (tmp 0) zero 4, .jal zero (jumpBy (ct.length + 2))] ++
-      ct ++ [.jal zero (jumpBy (ce.length + 1))] ++ ce
+      [.bne (tmp 0) zero 4, .jal zero (jumpBy ((ct.length + 2 : Nat) : Int))] ++
+      ct ++ [.jal zero (jumpBy ((ce.length + 1 : Nat) : Int))] ++ ce
   | .loop n body, k =>
     let cb := compileStmt g body (k + 1)
     loadImm (tmp 0) (.ofNat 32 n) ++ [.sw (tmp 0) gp (slot (g + k))] ++
       [.lw (tmp 0) gp (slot (g + k)),
        .bne (tmp 0) zero 4,
-       .jal zero (jumpBy (cb.length + 4)),
+       .jal zero (jumpBy ((cb.length + 4 : Nat) : Int)),
        .addi (tmp 0) (tmp 0) (-1),
        .sw (tmp 0) gp (slot (g + k))] ++
-      cb ++ [.jal zero (jumpBy (-((cb.length : Int) + 5)))]
+      cb ++ [.jal zero (jumpBy (-((cb.length + 5 : Nat) : Int)))]
 
 def prologue (t : Target) (p : Program) : List Instr :=
   loadImm gp t.dataBase ++ (List.range p.globals).map fun i => .sw zero gp (slot i)
