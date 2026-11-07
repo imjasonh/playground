@@ -1,0 +1,17 @@
+name = "verified-fw"
+defaultTargets = ["VerifiedFw", "Checks", "emit"]
+
+[leanOptions]
+autoImplicit = false
+warningAsError = true
+linter.unusedSimpArgs = false
+
+[[lean_lib]]
+name = "VerifiedFw"
+
+[[lean_lib]]
+name = "Checks"
+
+[[lean_exe]]
+name = "emit"
+root = "Emit"

@@ -1,0 +1,72 @@
+# Checks verified-fw: Lean checks every proof, Checks/Axioms.lean rejects
+# sorry and nonstandard axioms, and the emitted images are compared against
+# GNU objdump and run in QEMU.
+#
+# verified-fw has no Cargo.toml, go.mod, or package.json, so test.yml
+# doesn't discover it.
+
+name: verified-fw
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "verified-fw/**"
+      - ".github/workflows/verified-fw.yml"
+  pull_request:
+    paths:
+      - "verified-fw/**"
+      - ".github/workflows/verified-fw.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: verified-fw-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Proofs and images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: verified-fw
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install elan, QEMU, and RISC-V binutils
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq
+          # Newer Ubuntu releases ship RISC-V QEMU in its own package.
+          qemu=qemu-system-misc
+          if apt-cache show qemu-system-riscv >/dev/null 2>&1; then
+            qemu=qemu-system-riscv
+          fi
+          sudo apt-get install -y -qq "${qemu}" binutils-riscv64-unknown-elf
+          qemu-system-riscv32 --version
+          riscv64-unknown-elf-objdump --version | head -n 1
+
+      - name: Check proofs and axioms
+        run: lake build
+
+      - name: Emit images
+        run: lake exe emit out
+
+      - name: Compare with objdump and QEMU
+        run: bash scripts/check-images.sh out
+
+      - name: Upload images
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verified-fw-images
+          path: |
+            verified-fw/out/qemu-counter.bin
+            verified-fw/out/esp32c3-blinky.bin
