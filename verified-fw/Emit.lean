@@ -6,7 +6,9 @@ Writes the example images to a directory (default `out`):
 * `esp32c3-blinky.bin`: direct-boot image for flash offset 0.
 * `encode-vectors.txt`: one instruction per line, checked against GNU objdump.
 -/
-import VerifiedFw
+import VerifiedFw.Image
+import VerifiedFw.Examples.Counter
+import VerifiedFw.Examples.Blinky
 
 open VerifiedFw VerifiedFw.RiscV VerifiedFw.Examples
 

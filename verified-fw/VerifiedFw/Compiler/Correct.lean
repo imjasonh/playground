@@ -575,4 +575,83 @@ theorem stmt_correct (t : Target) (base : Word) (g n : Nat) (hl : Layout t.platf
       simp only [m2]
       rw [ite_neg (slot_ne (by omega) (by omega) (by omega)), hd1]
 
+/-! ## Whole programs -/
+
+/-- The prologue's stores zero the first `n` globals. -/
+theorem zeroGlobals_correct (base : Word) (hbase : aligned base) (nmax : Nat)
+    (hram : ∀ i < nmax, p.isMmio (after base i) = false) (hmax : nmax ≤ 512) :
+    ∀ n, n ≤ nmax → ∀ (m : Machine) (pc : Word),
+      CodeAt m.imem pc ((List.range n).map fun i => .sw zero gp (slot i)) →
+      m.pc = pc → aligned pc → m.reg gp = base →
+      ∃ m', Star p m m' ∧ m'.pc = after pc n ∧ m'.imem = m.imem ∧ m'.reg gp = base ∧
+        m'.trace = m.trace ∧ ∀ i < n, m'.dmem (after base i) = 0 := by
+  intro n
+  induction n with
+  | zero =>
+    intro _ m pc _ hpc _ hgp
+    exact ⟨m, .refl m, by simp [hpc], rfl, hgp, rfl, fun i hi => absurd hi (Nat.not_lt_zero i)⟩
+  | succ n ih =>
+    intro hn m pc hc hpc ha hgp
+    rw [List.range_succ, List.map_append, CodeAt.append] at hc
+    obtain ⟨m1, hs1, hpc1, hi1, hgp1, ht1, hz1⟩ := ih (by omega) m pc hc.1 hpc ha hgp
+    have hsw := CodeAt.single.mp hc.2
+    simp only [List.length_map, List.length_range] at hsw
+    have haddr : m1.reg gp + sext12 (slot n) = after base n := by
+      rw [hgp1, sext12_slot (by omega)]; rfl
+    let m2 : Machine :=
+      { m1.next with dmem := fun x => if x = after base n then m1.reg zero else m1.dmem x }
+    have hs2 : step p m1 = some m2 :=
+      step_of (by rw [hi1]; exact hsw) hpc1 (aligned_after ha _)
+        (exec_sw_ram haddr (aligned_after hbase n) (hram n (by omega)))
+    refine ⟨m2, hs1.trans (.single hs2), ?_, by simp [m2, hi1], hgp1, by simp [m2, ht1], ?_⟩
+    · simp only [m2, next_pc, hpc1, after_succ]
+    · intro i hi
+      simp only [m2]
+      by_cases hin : i = n
+      · subst hin; simp
+      · rw [ite_neg (slot_ne (by omega) (by omega) hin)]; exact hz1 i (by omega)
+
+theorem halt_fixed (m : Machine) (hc : m.imem m.pc = encode (.jal zero 0)) (ha : aligned m.pc) :
+    step p m = some m := by
+  rw [step_at hc ha, exec_jal_zero, jumpOffset_zero]
+  simp
+
+/-- **Compiler correctness.** Start the model with the compiled program in
+instruction memory at `codeBase`, the program counter there, and an empty
+trace. Registers and data RAM can hold anything. The machine then runs without
+faulting to a state whose trace is exactly the source program's trace, and
+that state steps to itself forever. -/
+theorem compile_correct (t : Target) (prog : Program) (hwf : prog.wf t = true)
+    (m : Machine) (hc : CodeAt m.imem t.codeBase (compile t prog))
+    (hpc : m.pc = t.codeBase) (htr : m.trace = []) :
+    ∃ m', Star t.platform m m' ∧ m'.trace = prog.trace ∧ step t.platform m' = some m' := by
+  simp only [Program.wf, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, List.all_eq_true,
+    List.mem_range, Bool.not_eq_true', Bool.and_eq_true] at hwf
+  obtain ⟨⟨⟨⟨⟨hbody, hdepth⟩, hlen⟩, hcode⟩, hdata⟩, hslots⟩ := hwf
+  have hl : Layout t.platform t.dataBase (prog.globals + prog.body.loopDepth) :=
+    ⟨hdata, fun i hi => by
+      have := hslots i hi
+      simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.and_eq_false_iff] at this
+      revert this; cases h : t.platform.isMmio (after t.dataBase i) <;> simp_all [after],
+     hdepth⟩
+  have hca : aligned t.codeBase := hcode
+  simp only [compile, prologue, CodeAt.append] at hc
+  obtain ⟨⟨⟨hli, hzero⟩, hbc⟩, hhalt⟩ := hc
+  obtain ⟨m1, hs1, hpc1, hgp1, hi1, hd1, ht1, _⟩ :=
+    loadImm_correct (p := t.platform) hli hpc hca (by decide)
+  obtain ⟨m2, hs2, hpc2, hi2, hgp2, ht2, hz2⟩ :=
+    zeroGlobals_correct (p := t.platform) t.dataBase hdata _ hl.ram hl.bound prog.globals
+      (by omega) m1 _ (by rw [hi1]; exact hzero) hpc1 (aligned_after hca _) hgp1
+  have hinv : Inv t.dataBase prog.globals m2 State.init :=
+    ⟨hgp2, fun i hi => hz2 i hi, by rw [ht2, ht1, htr]; rfl⟩
+  simp only [compile, prologue, List.length_append] at hlen
+  obtain ⟨m3, hs3, hpc3, hinv3, hi3, _⟩ :=
+    stmt_correct t t.dataBase prog.globals _ hl prog.body 0 m2 State.init _ hbody (by omega)
+      (by omega) (by rw [hi2, hi1]; simpa [loadImm_length] using hbc) (by rw [hpc2, after_after])
+      (aligned_after hca _) hinv
+  refine ⟨m3, (hs1.trans hs2).trans hs3, hinv3.trace, halt_fixed m3 ?_ ?_⟩
+  · rw [hpc3, hi3, hi2, hi1, after_after]
+    simpa [loadImm_length, Nat.add_assoc] using CodeAt.single.mp hhalt
+  · rw [hpc3]; exact aligned_after (aligned_after hca _) _
+
 end VerifiedFw.Compiler

@@ -1,5 +1,5 @@
 name = "verified-fw"
-defaultTargets = ["VerifiedFw", "emit"]
+defaultTargets = ["VerifiedFw", "Checks", "emit"]
 
 [leanOptions]
 autoImplicit = false

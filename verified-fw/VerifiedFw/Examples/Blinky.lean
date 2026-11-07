@@ -48,10 +48,12 @@ def ledOff : Stmt := set 0x60004008 ledBit
 /-- About half a second at the ROM's CPU clock. -/
 def delay : Stmt := .loop 2000000 .skip
 
+def blink : Stmt := seqs [ledOn, delay, ledOff, delay]
+
 def blinks : Nat := 0xFFFFFFFF
 
 def blinky : Program where
   globals := 0
-  body := seqs [disableWatchdogs, setupLed, .loop blinks (seqs [ledOn, delay, ledOff, delay])]
+  body := seqs [disableWatchdogs, setupLed, .loop blinks blink]
 
 end VerifiedFw.Examples.Blinky
