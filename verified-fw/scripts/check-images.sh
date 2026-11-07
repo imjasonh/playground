@@ -9,6 +9,13 @@ set -euo pipefail
 out="${1:-out}"
 objdump="${OBJDUMP:-riscv64-unknown-elf-objdump}"
 
+for tool in "${objdump}" qemu-system-riscv32; do
+  if ! command -v "${tool}" >/dev/null; then
+    echo "missing ${tool}" >&2
+    exit 1
+  fi
+done
+
 "${objdump}" -D -b binary -m riscv:rv32 -M no-aliases "${out}/encode-vectors.bin" \
   | grep -P '^\s+[0-9a-f]+:' \
   | awk -F'\t' '{print $3"\t"$4}' \

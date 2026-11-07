@@ -45,7 +45,14 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-misc binutils-riscv64-unknown-elf
+          # Newer Ubuntu releases ship RISC-V QEMU in its own package.
+          qemu=qemu-system-misc
+          if apt-cache show qemu-system-riscv >/dev/null 2>&1; then
+            qemu=qemu-system-riscv
+          fi
+          sudo apt-get install -y -qq "${qemu}" binutils-riscv64-unknown-elf
+          qemu-system-riscv32 --version
+          riscv64-unknown-elf-objdump --version | head -n 1
 
       - name: Check proofs and axioms
         run: lake build
