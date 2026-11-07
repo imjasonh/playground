@@ -65,8 +65,9 @@ namespace Machine
 def reg (m : Machine) (r : Reg) : Word :=
   if r = 0 then 0 else m.regs r
 
+/-- Writes to `x0` are discarded. -/
 def setReg (m : Machine) (r : Reg) (v : Word) : Machine :=
-  { m with regs := fun x => if x = r then v else m.regs x }
+  if r = 0 then m else { m with regs := fun x => if x = r then v else m.regs x }
 
 def next (m : Machine) : Machine :=
   { m with pc := m.pc + 4 }
