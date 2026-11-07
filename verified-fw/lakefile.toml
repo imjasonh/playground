@@ -1,0 +1,16 @@
+name = "verified-fw"
+defaultTargets = ["VerifiedFw", "emit"]
+
+[leanOptions]
+autoImplicit = false
+warningAsError = true
+
+[[lean_lib]]
+name = "VerifiedFw"
+
+[[lean_lib]]
+name = "Checks"
+
+[[lean_exe]]
+name = "emit"
+root = "Emit"
