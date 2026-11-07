@@ -161,6 +161,9 @@ them:
   Sprites, states, palettes, backgrounds, and controller input are language
   constructs. The test suite includes a jsnes screenshot and audio check for
   every example.
+- **[`verified-fw/`](verified-fw/)** — a firmware language and compiler in
+  Lean 4. Lean checks a proof that the RV32I image the compiler writes for an
+  ESP32-C3 or QEMU makes exactly the device stores the source program says.
 - **[`life-stl/`](life-stl/)** — generate a 3D-printable STL of Conway's Game of
   Life with time as the Z axis (Rust CLI). Self-supporting by construction:
   every birth leans on its three B3 parents via small diagonal braces, so even
