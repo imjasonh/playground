@@ -240,6 +240,128 @@ curl -H "Authorization: Bearer $UPLOAD_SECRET" https://inkbot.<account>.workers.
 
 or mention `@inkbot status` in Slack.
 
+## Grayscale video demo (experimental)
+
+`grayscale-esp32` is a separate experimental firmware from `maze-esp32`.
+It does not show the maze. It plays 36 boids
+([Reynolds' separation, alignment, and cohesion](https://www.red3d.com/cwr/boids/))
+drawn as acute triangles that point in each boid's direction of travel.
+The flock is the scene the drive loop refreshes as fast as the panel
+allows. It is USB-flash only: no Wi-Fi, no OTA pull, and not in the
+`inkbot` / `maze` OTA app registry.
+
+Each refresh can darken or lighten a pixel by only one step of a 30-step
+swing, so the flock's speed and triangle size are tuned together: a
+9-logical-pixel-long triangle moving 0.29 logical pixels per refresh
+(about 13 panel pixels a second at 22 refreshes a second) keeps a point
+on its central axis covered for one full swing before the shape
+moves past. A boid crosses the 800-pixel width in about 63 seconds.
+Faster motion without a longer triangle leaves a pale streak instead of
+a solid shape.
+
+They start as three separate flocks of twelve, spread left, center, and
+right across the panel, each on its own heading within about 20 degrees
+of itself. Separation is 10 logical pixels, about one arrow length, so
+boids within a flock can fly close enough to read as one group. Each
+boid also gets a small random steering nudge every refresh, independent
+of its neighbors, so alignment pulls headings together without ever
+locking them onto the exact same direction.
+
+The three flocks merge, then split back apart. The split's distance,
+strength, and length come from the canvas and the speeds. Targets sit
+on the largest circle that fits inside the edge margin (72 logical
+pixels on this panel). A split lasts long enough to make a U-turn and
+fly out to that circle, about 17 seconds at 22 refreshes a second. The
+U-turn is budgeted as making no progress, so the phase still finishes
+if a flock was headed the other way. After that, ordinary flocking runs
+until the three starting flocks are within half the gap between
+neighboring targets (that gap is about 125 logical pixels). The next
+split starts then, so a flock that is still spread out is not pulled
+apart on a clock. Each boid remembers which flock it started in. During
+a split, alignment and cohesion only listen to flockmates from that
+flock, and the pull toward its target equals the separation push of one
+hex ring of neighbors (six), so a crowd between a boid and its target
+does not cancel the split. Separation still pushes every boid away from
+every close neighbor, so the flocks don't fly through each other on the
+way apart.
+
+Boids steer away from the panel edges with a force that grows with the
+square of how far into the margin they've come, so they stay gentle in
+open water and turn sharply only right at the wall. That keeps the flock
+from lining up along an edge instead of turning back toward the middle.
+
+Instead of one multi-second factory waveform per image, it loads a custom
+waveform that drives a pixel for one controller frame per refresh, toward
+black, toward white, or not at all. Gray levels come from how many net
+steps a pixel has had, the way [InkBoy](https://github.com/kuslota/InkBoy)
+builds grays. Pixels are planned in 2×2 blocks (400×240).
+
+- [`src/grayscale/lut.rs`](src/grayscale/lut.rs) builds the waveform
+  tables for registers `0x20`-`0x25`, in the format GxEPD2 uses for this
+  panel's fast partial mode (`src/epd/GxEPD2_750_T7.cpp` in
+  [ZinggJM/GxEPD2](https://github.com/ZinggJM/GxEPD2)). The drive voltages
+  (power setting `0x01`) are unchanged from Waveshare's init.
+- [`src/grayscale/drive.rs`](src/grayscale/drive.rs) plans each refresh.
+  The old plane holds each pixel's direction, so most refreshes send only
+  the new plane; a pixel that has to reverse waits for an occasional
+  refresh that rewrites both planes.
+- [`src/grayscale/boids.rs`](src/grayscale/boids.rs) steps the flock once
+  per refresh and renders it into a logical-sized luma buffer;
+  [`src/grayscale/scene.rs`](src/grayscale/scene.rs) owns that buffer so
+  `grayscale_main.rs` hands it straight to the planner.
+- `src/grayscale_main.rs` sends a refresh, plans the next one while the
+  panel is busy, and every 60 seconds drives every pixel back to white and
+  runs a factory full refresh. The flock keeps moving through that
+  cleanup; only the panel restarts.
+
+The planner never drives a pixel past white or black, so each pixel's net
+drive is its estimated level and returns to zero before every full
+refresh; `cargo test --lib` checks that by replaying planned planes
+through a simulated controller. The model is only an estimate of the ink:
+ghosting and drift between full refreshes are expected, and the full
+refresh clears them.
+
+Build and flash it like maze, but build it explicitly; it is not part of
+plain `make build`:
+
+```bash
+cd inkbot-esp32
+make build-grayscale
+make flash APP=grayscale PORT=/dev/cu.usbserial-XXXX
+make monitor PORT=/dev/cu.usbserial-XXXX
+```
+
+Every 50 refreshes the monitor prints a line like
+`drive hz=<hz> ms/refresh=<ms> spi=<ms> plan=<ms> wait=<ms> ...`.
+`spi` is the time spent sending planes, `plan` the time spent planning
+while the panel drives, and `wait` how long the panel was still busy
+after planning finished. A `wait` near zero means planning is the
+bottleneck; a large `wait` means the waveform is.
+
+Knobs, all constants:
+
+| Constant | File | Effect |
+|----------|------|--------|
+| `SPI_MHZ` | `src/grayscale_display.rs` | 20 MHz sends a plane in about 19 ms. If the panel shows noise or ignores commands, lower it; `maze_display.rs` uses 4 MHz. |
+| `FRAMES_PER_STEP` | `src/grayscale_main.rs` | Frames per drive step. More frames move ink further per refresh and lower the refresh rate. |
+| `SWAP_DRIVE_POLARITY` | `src/grayscale_main.rs` | Set when the scene appears as a negative, or barely at all. |
+| `FULL_REFRESH_INTERVAL` | `src/grayscale_main.rs` | Time between cleanup full refreshes. |
+| `DriveConfig::swing` | `src/grayscale/drive.rs` | Steps from white to black. Fewer steps give fewer grays and faster swings per step. |
+| `FlockConfig` fields | `src/grayscale/boids.rs` | Flock size, speeds, triangle size, and flocking weights. `max_speed` is matched to `triangle_length` so the ink can reach the triangle's gray before it moves on. `flock_count` splits `count` boids into that many separate starting flocks. `wander_strength` sets how much headings drift apart instead of locking together. Split distance comes from the open canvas inside `edge_margin`, split pull from `separation_weight`, and split length from `max_speed` and `max_force`. The next split starts once those flocks have merged. |
+
+To watch the estimated ink on the host, run `examples/boids_preview.rs`.
+It writes one 800×480 gray frame per refresh to stdout. Play the frames
+at 22 per second. That is the expected rate when a 19 ms plane transfer
+is followed by a 20 ms drive frame. 660 frames is 30 seconds.
+
+```bash
+cargo run --quiet --example boids_preview -- 660 | \
+  ffmpeg -y -f rawvideo -pix_fmt gray -s 800x480 -r 22 -i - boids.mp4
+```
+
+This firmware compiles for `xtensa-esp32-espidf` but has not run on a
+panel.
+
 ## Host tests
 
 PNG decode / geometry logic and OTA encoding helpers are target-agnostic:
@@ -262,8 +384,10 @@ inkbot-esp32/
 ├── src/
 │   ├── lib.rs / panel.rs / png_frame.rs / status.rs / ota_format.rs
 │   ├── maze/                         # generate / solve / render (host-tested)
+│   ├── grayscale/                    # drive planner + waveform tables (host-tested; experimental)
 │   ├── main.rs                       # inkbot: Wi-Fi + HTTP + OTA + GCP
 │   ├── maze_main.rs / maze_display.rs
+│   ├── grayscale_main.rs / grayscale_display.rs   # experimental; not OTA-registered
 │   ├── display.rs                    # Waveshare 7.5″ V2 via epd-waveshare
 │   └── ota.rs / ota_slot.rs / sig.rs / gcp.rs / https.rs / device_config.rs
 ├── tools/provision/                  # NVS image from provisioning.toml
