@@ -6,7 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.1.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/lrstanley/bubblezone/v2 v2.0.0
+	github.com/lrstanley/bubblezone/v2 v2.0.1
 	github.com/lucasb-eyer/go-colorful v1.4.1
 )
 
