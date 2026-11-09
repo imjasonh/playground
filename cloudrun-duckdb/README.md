@@ -406,7 +406,8 @@ instance, and the read-only replica service. It builds the image with
 libstdc++. The build needs CGO and gcc on linux/amd64, which GitHub Actions
 has.
 
-The stack follows cloudrun-sqlite's: apply `gcp/terraform` first, then
+The stack follows cloudrun-sqlite's. Apply `gcp/terraform` first, then run
+the first apply of this stack from your machine:
 
 ```bash
 cd cloudrun-duckdb/terraform
@@ -415,8 +416,15 @@ tofu init -backend-config="bucket=BUCKET"
 tofu apply
 ```
 
-`gcp-deploy.json` opts this app into `deploy-gcp.yml`: a pull request that
-changes it runs `tofu plan`, and a push to `main` runs `tofu apply`. See
+The app doesn't have a `gcp-deploy.json` yet, so `deploy-gcp.yml` neither
+plans nor applies it. The workflow's plan account can only read the state
+bucket, and `tofu init` writes an empty state for a stack that has none, so
+a pull request can't plan this stack until the first apply has created its
+state. After that, add `gcp-deploy.json` with `{"watch": ["cloudrun-duckdb"]}`,
+add `cloudrun-duckdb/terraform/**` to the workflow's pull request paths, and
+update the app list that `.github/scripts/discover-gcp-apps_test.sh`
+expects. Then a pull request that changes the app runs `tofu plan`, and a
+push to `main` runs `tofu apply`. See
 [cloudrun-sqlite's Deploy section](../cloudrun-sqlite/README.md#deploy) for
 the GitHub environment and the plan and deploy accounts.
 

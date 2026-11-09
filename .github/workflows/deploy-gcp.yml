@@ -41,7 +41,6 @@ on:
       - ".github/scripts/install-zig.sh"
       - "**/gcp-deploy.json"
       - "cloudrun-sqlite/terraform/**"
-      - "cloudrun-duckdb/terraform/**"
   workflow_dispatch: {}
 
 # A second push waits. Cancelling an apply can leave state locked.
