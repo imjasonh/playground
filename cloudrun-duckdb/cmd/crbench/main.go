@@ -495,7 +495,7 @@ func measureSize(c *common, replicaURL string, rows, trials, reads int) (coldRes
 			Store struct {
 				OpenMillis float64 `json:"open_ms"`
 				BaseBytes  int64   `json:"base_bytes"`
-			}
+			} `json:"store"`
 		}
 		if err := getJSON(client, srv.URL+"/stats", &st); err != nil {
 			return res, err

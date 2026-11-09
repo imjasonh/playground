@@ -110,6 +110,10 @@ them:
   through the Litestream VFS, so cold starts don't download the database, and
   uploads each write before responding (Go + Terraform, with a local Cloud Run
   simulator).
+- **[`cloudrun-duckdb/`](cloudrun-duckdb/)** — the same service with DuckDB
+  instead of SQLite, to compare the two. A cold start downloads the database,
+  and each write uploads the bytes DuckDB added to its write-ahead log before
+  responding (Go + Terraform, with the same simulator).
 - **[`litestream/`](litestream/)** — a fork of
   [Litestream](https://github.com/benbjohnson/litestream), imported with
   `git subtree`, that `cloudrun-sqlite` builds against. Its patches, listed in
