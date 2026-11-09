@@ -1,5 +1,5 @@
 {
-  "version": "11e-7",
+  "version": "11e-8",
   "edition": "11th",
   "source": {
     "pointsSource": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
@@ -11938,7 +11938,7 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "adeptus-custodes--coronus-grav-carrier--cfaf-17dd-1add-2ac1",
+              "id": "adeptus-custodes--coronus-grav-carrier--4800-1d5f-ce47-fe63",
               "name": "Armoured hull",
               "points": 0
             },
@@ -12143,10 +12143,9 @@
         "Faction: Adeptus Custodes",
         "Character",
         "Faction: Anathema Psykana",
-        "Infantry",
-        "Leader"
+        "Infantry"
       ],
-      "characterRole": "leader",
+      "characterRole": "character",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -12306,7 +12305,7 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "adeptus-custodes--pallas-grav-attack--5158-1b42-e4d3-8a33",
+              "id": "adeptus-custodes--pallas-grav-attack--47bd-899f-0e2b-0512",
               "name": "Armoured hull",
               "points": 0
             }
@@ -74684,7 +74683,7 @@
             },
             {
               "id": "necrons--canoptek-tomb-crawlers--f70b-7187-4cf7-b9de",
-              "name": "Dimensional isolator",
+              "name": "Transdimensional isolator",
               "points": 0
             }
           ]
@@ -93505,7 +93504,7 @@
           "defaultOptionID": null,
           "options": [
             {
-              "id": "space-wolves--wolf-priest--c172-8a25-098f-cb2a",
+              "id": "space-wolves--wolf-priest--86cf-b6f8-5b11-5d39",
               "name": "Crozius arcanum",
               "points": 0
             },
