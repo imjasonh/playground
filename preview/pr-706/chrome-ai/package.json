@@ -1,0 +1,22 @@
+{
+  "name": "chrome-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chat with the language model built into Chrome",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000",
+    "vendor": "node scripts/vendor.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "marked": "^18.1.3"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.8"
+  }
+}
