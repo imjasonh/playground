@@ -1,0 +1,27 @@
+# Built binaries
+/cloudrun-duckdb
+/crsim
+/crbench
+/fakegcs
+
+# Go test/coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Local replicas and scratch directories
+*.db
+*.duckdb
+*.wal
+/replica/
+/data/
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+terraform/crash.*.log
+terraform/*.tfvars
+!terraform/terraform.tfvars.example

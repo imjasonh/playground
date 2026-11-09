@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (gitignored) and fill in values.
+project_id = "your-gcp-project"
+region     = "us-central1"
+
+# Acknowledge writes only after they are in Cloud Storage.
+# durable = true
+
+# The whole database lives in the in-memory volume. Raise both for a
+# database bigger than about 200 MiB.
+# memory_limit       = "512Mi"
+# scratch_size_limit = "256Mi"
+
+# State is in a Cloud Storage bucket created once for the project.
+# GitHub identity lives in gcp/terraform. Pass the bucket only to init:
+#   tofu init -backend-config="bucket=BUCKET"
