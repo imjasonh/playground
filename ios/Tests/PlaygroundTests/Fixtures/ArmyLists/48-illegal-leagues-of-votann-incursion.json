@@ -2,7 +2,7 @@
   "expectedLegal" : false,
   "list" : {
     "battleSizeID" : "incursion",
-    "catalogVersion" : "11e-7",
+    "catalogVersion" : "11e-8",
     "createdAt" : "2026-01-01T00:00:00Z",
     "detachmentIDs" : [
       "leagues-of-votann--brandfast-oathband"
