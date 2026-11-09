@@ -161,6 +161,34 @@ func TestReadOnlyReplicaFollowsWriter(t *testing.T) {
 	waitEvent(t, events, "notice", "count 1")
 }
 
+func TestAdminCheckComparesReplica(t *testing.T) {
+	h := testServer(t)
+	for _, body := range []string{"a", "b", "c"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/items", strings.NewReader(body)))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("POST /items: %d %s", rec.Code, rec.Body)
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/check", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /admin/check without a token: %d", rec.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/admin/check", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/check: %d %s", rec.Code, rec.Body)
+	}
+	for _, want := range []string{`"integrity":"ok"`, `"items":3`, `"replica_items":3`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("check response %s lacks %s", rec.Body, want)
+		}
+	}
+}
+
 type eventStream struct {
 	body io.ReadCloser
 	r    *bufio.Reader
@@ -256,7 +284,7 @@ func testServerAt(t *testing.T, dir string, readOnly bool) http.Handler {
 		}
 	}
 	live := fanout.New()
-	s := newServer(st, live, "test", time.Now(), "")
+	s := newServer(st, live, "test", time.Now(), "secret")
 	s.readOnly, s.pollInterval = readOnly, cfg.PollInterval
 	if readOnly {
 		go s.followReplica(ctx)

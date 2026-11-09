@@ -76,16 +76,17 @@ type Config struct {
 	// new entries.
 	PollInterval time.Duration
 
-	// SnapshotMinEntries is the fewest log entries after a base before the
-	// store uploads a new one. Zero disables snapshots.
+	// SnapshotMinEntries sets the smallest restore cost that triggers a
+	// snapshot: this many entries' worth. Zero disables snapshots.
 	SnapshotMinEntries int
 
 	// SnapshotEntryCost is about how many bytes of base download one log
 	// entry's GET costs at cold start: restore fetches 32 entries at a
 	// time, and a 25 ms round trip at 100 MB/s is about 80 KB spread over
-	// 32 GETs. Past SnapshotMinEntries, the store uploads a new base once
-	// entries times this, plus the WAL bytes, reach the base's size, so a
-	// cold start never takes much longer than twice the base's download.
+	// 32 GETs. The store uploads a new base once the entries, their
+	// commits, and their bytes would cost as much to restore as the base,
+	// so a cold start never takes much longer than twice the base's
+	// download.
 	SnapshotEntryCost int64
 
 	// Retention is the youngest age at which superseded objects are
@@ -138,6 +139,7 @@ type local struct {
 	walSent  int64     // bytes of the local WAL that are in the replica
 	entries  int       // log entries after the base
 	walBytes int64     // bytes in those entries
+	commits  int       // commits in those entries; restored entries count as one each
 	// confirmed is when the replica last had nothing after seq.
 	confirmed time.Time
 }
@@ -221,6 +223,10 @@ type Store struct {
 	// started before the commit is still running on the database.
 	gate sync.RWMutex
 	view *pinned
+	// unpublished counts local commits since the last upload. Only the
+	// committer uses it.
+	unpublished int
+
 	// unpinning counts pinned sets whose transactions are still being
 	// rolled back. A checkpoint or closing the database waits for it.
 	unpinning sync.WaitGroup
@@ -433,6 +439,7 @@ func (s *Store) restoreLocked(ctx context.Context) error {
 		return err
 	}
 	s.db = db
+	s.unpublished = 0
 	s.setLocal(local{
 		seq:       p.last(),
 		baseSeq:   p.baseSeq,
@@ -441,6 +448,7 @@ func (s *Store) restoreLocked(ctx context.Context) error {
 		main:      main,
 		walSent:   walSize,
 		entries:   len(p.entries),
+		commits:   len(p.entries),
 		walBytes:  walSize,
 		confirmed: time.Now(),
 	})
@@ -499,6 +507,8 @@ func (s *Store) catchUpLocked(ctx context.Context) error {
 	ls.seq = p.last()
 	ls.walSent = walSize
 	ls.entries = len(p.entries)
+	ls.commits = len(p.entries)
+	s.unpublished = 0
 	ls.walBytes = walSize
 	ls.confirmed = time.Now()
 	s.setLocal(ls)
@@ -854,6 +864,7 @@ func (s *Store) runTx(ctx context.Context, batch []*writeReq) ([]error, error) {
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
+		s.unpublished++
 		break
 	}
 	return results, nil
@@ -903,6 +914,8 @@ func (s *Store) publish(ctx context.Context) error {
 	ls.walBytes += walSize - ls.walSent
 	ls.walSent = walSize
 	ls.entries++
+	ls.commits += max(s.unpublished, 1)
+	s.unpublished = 0
 	ls.confirmed = time.Now()
 	s.setLocal(ls)
 	return nil
@@ -1018,6 +1031,7 @@ func (s *Store) publishBase(ctx context.Context) (*SnapshotResult, error) {
 		return nil, err
 	}
 	prev := s.ls.baseSeq
+	s.unpublished = 0
 	s.setLocal(local{
 		seq:       next,
 		baseSeq:   next,
@@ -1072,11 +1086,21 @@ func (s *Store) deleteBefore(ctx context.Context, seq uint64) int {
 	return n
 }
 
+// commitReplayCost is about how many bytes of base download replaying one
+// commit costs at cold start. DuckDB replays about 12,000 small commits a
+// second, or 80 µs each, which is 8 KiB at 100 MB/s. Replaying a large
+// commit runs at hundreds of MB/s, so the WAL's bytes count once.
+const commitReplayCost = 8 << 10
+
+// shouldSnapshot estimates, in bytes of base download, what restoring the
+// entries after the base costs, and uploads a new base once that reaches
+// the base's size, or SnapshotMinEntries entries' worth for a small base.
 func (s *Store) shouldSnapshot() bool {
-	if s.cfg.SnapshotMinEntries <= 0 || s.db == nil || s.ls.entries < s.cfg.SnapshotMinEntries {
+	if s.cfg.SnapshotMinEntries <= 0 || s.db == nil || s.ls.entries == 0 {
 		return false
 	}
-	return int64(s.ls.entries)*s.cfg.SnapshotEntryCost+s.ls.walBytes >= s.ls.baseSize
+	cost := int64(s.ls.entries)*s.cfg.SnapshotEntryCost + int64(s.ls.commits)*commitReplayCost + s.ls.walBytes
+	return cost >= max(s.ls.baseSize, int64(s.cfg.SnapshotMinEntries)*s.cfg.SnapshotEntryCost)
 }
 
 // snapshot uploads a new base. When the store isn't durable, it first
@@ -1239,6 +1263,7 @@ func (s *Store) refresh(ctx context.Context) (bool, error) {
 	ls.seq = want - 1
 	ls.walSent = walSize
 	ls.entries += len(payloads)
+	ls.commits += len(payloads)
 	s.setLocal(ls)
 	return true, nil
 }

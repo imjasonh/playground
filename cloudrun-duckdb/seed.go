@@ -54,7 +54,7 @@ func fill(ctx context.Context, db *sql.DB, rows, rowSize int) error {
 		CREATE SEQUENCE items_id START %d;
 		CREATE TABLE items (id BIGINT PRIMARY KEY DEFAULT nextval('items_id'), body VARCHAR NOT NULL);
 		INSERT INTO items
-			SELECT i, array_to_string(list_transform(range(%d), x -> md5(random()::VARCHAR)), '')[1:%d]
+			SELECT i, array_to_string(list_transform(range(%d), lambda x: md5(random()::VARCHAR)), '')[1:%d]
 			FROM range(1, %d) t(i);
 	`, rows+1, chunks, rowSize, rows+1))
 	return err
