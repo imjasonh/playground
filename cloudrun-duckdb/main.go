@@ -43,8 +43,8 @@ var env = envconfig.MustProcess(context.Background(), &struct {
 	ReplicaURL         string        `env:"REPLICA_URL"`
 	Dir                string        `env:"DATA_DIR"`
 	Durable            bool          `env:"DURABLE, default=true"`
-	SnapshotMinEntries int           `env:"SNAPSHOT_MIN_ENTRIES, default=16"`
-	SnapshotEntryCost  int64         `env:"SNAPSHOT_ENTRY_COST, default=262144"`
+	SnapshotMinEntries int           `env:"SNAPSHOT_MIN_ENTRIES, default=128"`
+	SnapshotEntryCost  int64         `env:"SNAPSHOT_ENTRY_COST, default=65536"`
 	PollInterval       time.Duration `env:"POLL_INTERVAL, default=30s"`
 	MemoryLimit        string        `env:"DUCKDB_MEMORY_LIMIT, default=256MB"`
 	Threads            int           `env:"DUCKDB_THREADS, default=2"`

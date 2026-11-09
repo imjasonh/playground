@@ -160,17 +160,29 @@ func soak(args []string) error {
 		}
 		return nil
 	}
+	// The soak scales to zero before reading writes back, so read the
+	// loaded instance's /stats just before the load ends.
+	var server remoteStats
+	statsDone := make(chan bool, 1)
+	go func() {
+		time.Sleep(cfg.Duration - cfg.Duration/20)
+		statsDone <- getJSON(&http.Client{Timeout: 30 * time.Second}, srv.URL+"/stats", &server) == nil
+	}()
 	res, err := scenario.Soak(context.Background(), cfg)
 	if err != nil {
 		return err
 	}
+	haveServer := <-statsDone
 	if *jsonOut != "" {
-		b, _ := json.Marshal(map[string]any{"soak": res, "object_requests": during}, jsontext.WithIndent("  "), json.Deterministic(true))
+		b, _ := json.Marshal(map[string]any{"soak": res, "object_requests": during, "server": server}, jsontext.WithIndent("  "), json.Deterministic(true))
 		if err := os.WriteFile(*jsonOut, b, 0o644); err != nil {
 			return err
 		}
 	}
 	printSoak(res)
+	if haveServer {
+		printRemoteStats(&server)
+	}
 	if counted {
 		printCounts(during, res.Acked)
 	}

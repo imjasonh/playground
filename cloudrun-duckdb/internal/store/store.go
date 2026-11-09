@@ -81,10 +81,11 @@ type Config struct {
 	SnapshotMinEntries int
 
 	// SnapshotEntryCost is about how many bytes of base download one log
-	// entry's GET costs at cold start. Past SnapshotMinEntries, the store
-	// uploads a new base once entries times this, plus the WAL bytes, reach
-	// the base's size, so a cold start never reads much more than twice
-	// the base.
+	// entry's GET costs at cold start: restore fetches 32 entries at a
+	// time, and a 25 ms round trip at 100 MB/s is about 80 KB spread over
+	// 32 GETs. Past SnapshotMinEntries, the store uploads a new base once
+	// entries times this, plus the WAL bytes, reach the base's size, so a
+	// cold start never takes much longer than twice the base's download.
 	SnapshotEntryCost int64
 
 	// Retention is the youngest age at which superseded objects are
@@ -110,8 +111,8 @@ func DefaultConfig() Config {
 		Durable:            true,
 		SyncInterval:       time.Second,
 		PollInterval:       30 * time.Second,
-		SnapshotMinEntries: 16,
-		SnapshotEntryCost:  256 << 10,
+		SnapshotMinEntries: 128,
+		SnapshotEntryCost:  64 << 10,
 		Retention:          5 * time.Minute,
 		MaxBatch:           256,
 		MemoryLimit:        "256MB",
@@ -173,21 +174,27 @@ func stamp(path string) (fileStamp, error) {
 	return fileStamp{size: fi.Size(), header: sha256.Sum256(buf[:n])}, nil
 }
 
-// pinned is a transaction that started before a commit that is still
-// uploading. Durable reads use it until the upload finishes.
+// pinnedTxs is how many transactions each durable commit pins for reads.
+const pinnedTxs = 4
+
+// pinned holds transactions that started before a commit that is still
+// uploading. Durable reads take one from free until the upload finishes.
 type pinned struct {
-	mu       sync.Mutex
-	conn     *sql.Conn
-	tx       *sql.Tx
-	released bool
+	free    chan *sql.Tx
+	conns   []*sql.Conn
+	txs     []*sql.Tx
+	readers sync.WaitGroup
 }
 
-func (p *pinned) release() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.released = true
-	p.tx.Rollback()
-	p.conn.Close()
+// close rolls the transactions back once the reads using them finish.
+func (p *pinned) close() {
+	p.readers.Wait()
+	for _, tx := range p.txs {
+		tx.Rollback()
+	}
+	for _, c := range p.conns {
+		c.Close()
+	}
 }
 
 // Store is a DuckDB database backed by a replica in object storage.
@@ -214,6 +221,9 @@ type Store struct {
 	// started before the commit is still running on the database.
 	gate sync.RWMutex
 	view *pinned
+	// unpinning counts pinned sets whose transactions are still being
+	// rolled back. A checkpoint or closing the database waits for it.
+	unpinning sync.WaitGroup
 
 	writes    chan *writeReq
 	jobs      chan func()
@@ -404,10 +414,7 @@ func (s *Store) openDB(ctx context.Context) (*sql.DB, error) {
 // restoreLocked replaces the local files with the replica's newest base and
 // log and opens them. The caller holds s.mu exclusively, or is Open.
 func (s *Store) restoreLocked(ctx context.Context) error {
-	if s.db != nil {
-		s.db.Close()
-		s.db = nil
-	}
+	s.closeDB()
 	start := time.Now()
 	p, err := readPlan(ctx, s.bucket)
 	if err != nil {
@@ -453,10 +460,7 @@ func (s *Store) restoreLocked(ctx context.Context) error {
 // to what was uploaded and appends the entries it's missing, instead of
 // downloading the base again. The caller holds s.mu exclusively.
 func (s *Store) catchUpLocked(ctx context.Context) error {
-	if s.db != nil {
-		s.db.Close()
-		s.db = nil
-	}
+	s.closeDB()
 	p, err := readPlan(ctx, s.bucket)
 	if err != nil {
 		return fmt.Errorf("read replica: %w", err)
@@ -537,30 +541,24 @@ func (s *Store) Read(ctx context.Context, fn func(Querier) error) error {
 }
 
 func (s *Store) query(fn func(Querier) error) error {
-	for {
-		s.gate.RLock()
-		v := s.view
-		if v == nil {
-			start := time.Now()
-			err := fn(s.db)
-			s.gate.RUnlock()
-			s.note(&s.readQuery, "read_query", time.Since(start))
-			return err
-		}
-		s.gate.RUnlock()
-		v.mu.Lock()
-		if v.released {
-			// The upload finished while this read waited; read the
-			// database instead.
-			v.mu.Unlock()
-			continue
-		}
+	s.gate.RLock()
+	v := s.view
+	if v == nil {
 		start := time.Now()
-		err := fn(v.tx)
-		v.mu.Unlock()
+		err := fn(s.db)
+		s.gate.RUnlock()
 		s.note(&s.readQuery, "read_query", time.Since(start))
 		return err
 	}
+	v.readers.Add(1)
+	s.gate.RUnlock()
+	defer v.readers.Done()
+	tx := <-v.free
+	start := time.Now()
+	err := fn(tx)
+	s.note(&s.readQuery, "read_query", time.Since(start))
+	v.free <- tx
+	return err
 }
 
 // Write runs fn in a transaction shared with other concurrent writes. When
@@ -726,7 +724,7 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 		s.gate.Lock()
 		s.view = nil
 		s.gate.Unlock()
-		pin.release()
+		s.unpinning.Go(pin.close)
 	}
 	results, err := s.runTx(ctx, batch)
 	if err != nil {
@@ -782,25 +780,43 @@ func (s *Store) commitBatch(batch []*writeReq, attempt int) ([]error, error) {
 	return nil, err
 }
 
-// pin starts a transaction on its own connection and reads the database,
-// so the transaction's snapshot predates the next commit.
+// pin starts transactions on their own connections and reads the
+// database in each, so their snapshots predate the next commit. DuckDB
+// starts a transaction's snapshot at its first read of the database, not at
+// BEGIN.
 func (s *Store) pin(ctx context.Context) (*pinned, error) {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return nil, err
+	p := &pinned{free: make(chan *sql.Tx, pinnedTxs)}
+	for range pinnedTxs {
+		conn, err := s.db.Conn(ctx)
+		if err != nil {
+			p.close()
+			return nil, err
+		}
+		p.conns = append(p.conns, conn)
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			p.close()
+			return nil, err
+		}
+		p.txs = append(p.txs, tx)
+		var n int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_tables() WHERE database_name = current_database()").Scan(&n); err != nil {
+			p.close()
+			return nil, err
+		}
+		p.free <- tx
 	}
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		conn.Close()
-		return nil, err
+	return p, nil
+}
+
+// closeDB waits for pinned transactions to roll back, then closes the
+// database. The caller holds s.mu exclusively.
+func (s *Store) closeDB() {
+	s.unpinning.Wait()
+	if s.db != nil {
+		s.db.Close()
+		s.db = nil
 	}
-	var n int
-	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM duckdb_tables() WHERE database_name = current_database()").Scan(&n); err != nil {
-		tx.Rollback()
-		conn.Close()
-		return nil, err
-	}
-	return &pinned{conn: conn, tx: tx}, nil
 }
 
 // runTx runs the batch in one transaction. When a function fails, the
@@ -960,6 +976,7 @@ type RestoreResult struct {
 // so reads continue then.
 func (s *Store) publishBase(ctx context.Context) (*SnapshotResult, error) {
 	start := time.Now()
+	s.unpinning.Wait()
 	s.gate.Lock()
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err := s.db.ExecContext(cctx, "FORCE CHECKPOINT")
@@ -1210,10 +1227,7 @@ func (s *Store) refresh(ctx context.Context) (bool, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.db != nil {
-		s.db.Close()
-		s.db = nil
-	}
+	s.closeDB()
 	walSize, err := appendWAL(s.path+".wal", payloads)
 	if err != nil {
 		return false, err
@@ -1266,5 +1280,6 @@ func (s *Store) Close() error {
 	if !s.cfg.ReadOnly {
 		err = s.publish(context.Background())
 	}
+	s.unpinning.Wait()
 	return errors.Join(err, s.db.Close())
 }
