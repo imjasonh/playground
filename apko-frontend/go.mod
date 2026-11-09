@@ -3,7 +3,7 @@ module github.com/imjasonh/playground/apko-frontend
 go 1.27.0
 
 require (
-	chainguard.dev/apko v1.4.17
+	chainguard.dev/apko v1.4.18
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/distribution/reference v0.6.0
