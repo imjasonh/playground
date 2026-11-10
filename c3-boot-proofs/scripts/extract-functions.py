@@ -44,6 +44,15 @@ FUNCTIONS = [
     ("imageRestore", ("imageParse", 0xC2)),
     ("memcpyStub", "memcpy"),
     ("memcpyBody", ("memcpyStub", 0x00)),
+    ("memset", "memset"),
+    ("borrowingSub", "crypto_bigint::primitives::borrowing_sub"),
+    ("subInner", "p256::arithmetic::field::field_impl::sub_inner"),
+    ("subInnerSave", ("subInner", 0x02)),
+    ("subInnerRestore", ("subInner", 0x12C)),
+    ("wideMul", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<8, 8>"),
+    ("wideMulSave", ("wideMul", 0x02)),
+    ("wideMulRestore", ("wideMul", 0xD2)),
+    ("fieldMul", "<p256::arithmetic::field::FieldElement>::multiply"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

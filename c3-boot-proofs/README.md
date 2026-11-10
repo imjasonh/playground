@@ -98,6 +98,7 @@ ends inside the signed image.
 | `imageParse_correct` | The compiled `image::parse`, through `magic`, `version_1`, `u16`, `u8`, `reserved`, `u32`, `Segment::physical`, `memcpy`, and its outlined helpers, returns to its caller with `sp` and the callee-saved registers restored, and leaves memory outside its 0x190-byte stack region and the 0x110-byte result unchanged. The result holds the error byte that `imgW` gives and the `Err` marker 0xFF at offset 0xC, or the segments, entry point, image length, segment count, and security version that `imgW` gives |
 | `imgW_rel` | `imgW`, which states the compiled checks in the code's own word arithmetic and order, accepts the bytes exactly when the Lean decoder `decodeImageHeader` does, and then returns the decoder's header |
 | `imageParse_decodes` | The two joined: the compiled `image::parse` returns `Err` when `decodeImageHeader` rejects the header, and `Ok` with the decoder's segments and fields in the result when it accepts |
+| `memset_aligned` | The compiled `memset`, called with a 4-byte-aligned buffer and a length of at least 16 bytes that is a multiple of 4, stores the fill byte's word at each word through its word loop (`fillWords`), proved by induction. The P-256 field multiplication's Karatsuba step zeroes its accumulator with it |
 | `imgW_pages_signed` | `mapped_pages_signed` for the compiled parser: when it accepts, each 64 KiB page the cache maps for a flash segment ends inside the image |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about

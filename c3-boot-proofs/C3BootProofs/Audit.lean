@@ -13,6 +13,7 @@ import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
 import C3BootProofs.Proofs.ImageTop
 import C3BootProofs.Proofs.ImageSpecSegs
+import C3BootProofs.Proofs.Memset
 
 /-!
 # Audit
@@ -541,6 +542,46 @@ theorem exists_imageParse_machine :
       RV32.sep_of_le (by decide) (by decide), by decide⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- `witnessMemImageParse` with `memset` and the functions the P-256 field
+multiplication runs added where the image loads them. -/
+def witnessMemField (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat < Image.borrowingSubCode.length then
+    RV32.byteAt Image.borrowingSubCode (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.subInnerAddress).toNat < Image.subInnerCode.length then
+    RV32.byteAt Image.subInnerCode (a - BitVec.ofNat 32 Image.subInnerAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.subInnerSaveAddress).toNat < Image.subInnerSaveCode.length then
+    RV32.byteAt Image.subInnerSaveCode (a - BitVec.ofNat 32 Image.subInnerSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.subInnerRestoreAddress).toNat < Image.subInnerRestoreCode.length then
+    RV32.byteAt Image.subInnerRestoreCode (a - BitVec.ofNat 32 Image.subInnerRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.wideMulAddress).toNat < Image.wideMulCode.length then
+    RV32.byteAt Image.wideMulCode (a - BitVec.ofNat 32 Image.wideMulAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.wideMulSaveAddress).toNat < Image.wideMulSaveCode.length then
+    RV32.byteAt Image.wideMulSaveCode (a - BitVec.ofNat 32 Image.wideMulSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.wideMulRestoreAddress).toNat < Image.wideMulRestoreCode.length then
+    RV32.byteAt Image.wideMulRestoreCode (a - BitVec.ofNat 32 Image.wideMulRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldMulAddress).toNat < Image.fieldMulCode.length then
+    RV32.byteAt Image.fieldMulCode (a - BitVec.ofNat 32 Image.fieldMulAddress).toNat
+  else witnessMemImageParse a
+
+set_option maxRecDepth 20000 in
+/-- A machine that calls `memset` to zero 32 bytes at a word-aligned address
+meets `memset_aligned`'s hypotheses. -/
+theorem exists_memset_machine :
+    ∃ (m : RV32.Machine) (base retAddr dst b : RV32.Word) (w : Nat),
+      RV32.CodeAt m base Image.memsetCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 (4 * w) ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ 4 ≤ w ∧ dst.toNat + 4 * w < 2 ^ 32 ∧
+      BitVec.ofNat 32 (4 * w) &&& 0xFFFFFFFC = BitVec.ofNat 32 (4 * w) ∧ dst.toNat % 4 = 0 ∧
+      RV32.Sep dst (4 * w) base Image.memsetCode.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a2 then 0x20 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.memsetAddress, witnessMemField⟩,
+    BitVec.ofNat 32 Image.memsetAddress, 0, 0x3FCC5000, 0, 8, ?_, by decide, rfl, rfl, rfl, rfl, rfl,
+    by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
+  unfold RV32.CodeAt; decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -728,3 +769,9 @@ end C3
 
 /-- info: 'C3.imgW_pages_signed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.imgW_pages_signed
+
+/-- info: 'C3.RV32.memset_aligned' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.memset_aligned
+
+/-- info: 'C3.exists_memset_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_memset_machine
