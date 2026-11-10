@@ -10,6 +10,7 @@ import C3BootProofs.Proofs.Parse
 import C3BootProofs.Proofs.ParseSpec
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
+import C3BootProofs.Proofs.ImageCalls
 
 /-!
 # Audit
@@ -647,3 +648,30 @@ end C3
 
 /-- info: 'C3.RV32.St.block' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.St.block
+
+/-- info: 'C3.RV32.image_epilogue' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.image_epilogue
+
+/-- info: 'C3.RV32.ip_magic' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_magic
+
+/-- info: 'C3.RV32.ip_version' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_version
+
+/-- info: 'C3.RV32.ip_u16' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_u16
+
+/-- info: 'C3.RV32.ip_u8' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_u8
+
+/-- info: 'C3.RV32.ip_reserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_reserved
+
+/-- info: 'C3.RV32.ip_u32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_u32
+
+/-- info: 'C3.RV32.ip_physical' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_physical
+
+/-- info: 'C3.RV32.ip_memcpy' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ip_memcpy

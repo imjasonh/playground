@@ -20,6 +20,8 @@ import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Parse
 import C3BootProofs.Proofs.ParseSpec
 import C3BootProofs.Proofs.ImageHelpers
+import C3BootProofs.Proofs.ImageParse
+import C3BootProofs.Proofs.ImageCalls
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
