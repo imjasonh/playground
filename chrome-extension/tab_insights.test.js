@@ -13,6 +13,7 @@ import {
   tabCount,
   tabEntries,
   tabLine,
+  tabSignature,
   undoMoves,
   userPrompt,
   withoutTabs,
@@ -315,6 +316,49 @@ test("grouping puts picks in Likely close, topics in their own groups, by window
     { title: "Docs", color: "blue", collapsed: false, windowId: 20, tabIds: [2] },
     { title: "Code", color: "red", collapsed: false, windowId: 10, tabIds: [7] },
   ]);
+});
+
+test("grouping adds tabs to a group with the same name in that window", () => {
+  const e = (id) => ({ id });
+  const open = [
+    { id: 1, windowId: 10, groupId: -1 },
+    { id: 2, windowId: 20, groupId: -1 },
+    { id: 3, windowId: 10, groupId: -1 },
+  ];
+  const groups = [
+    { id: 500, windowId: 10, title: "Docs" },
+    { id: 600, windowId: 20, title: "Likely close" },
+  ];
+  assert.deepEqual(groupingPlan([{ name: "Docs", tabs: [e(1), e(2)] }], [e(3)], open, groups), [
+    { title: "Likely close", color: "grey", collapsed: true, windowId: 10, tabIds: [3] },
+    { title: "Docs", windowId: 10, tabIds: [1], groupId: 500 },
+    { title: "Docs", color: "blue", collapsed: false, windowId: 20, tabIds: [2] },
+  ]);
+});
+
+test("the model sees each tab's group name", () => {
+  const { entries } = tabEntries(
+    [
+      { id: 1, title: "A", url: "https://a.example/", groupId: 7 },
+      { id: 2, title: "B", url: "https://b.example/", groupId: -1 },
+    ],
+    now,
+    own,
+    new Map([[7, "Reading"]]),
+  );
+  assert.deepEqual(entries.map(tabLine), [
+    "1. (group: Reading) A — a.example/",
+    "2. B — b.example/",
+  ]);
+});
+
+test("the tab signature changes when a tab opens, closes, or navigates, not when it moves", () => {
+  const a = { id: 1, url: "https://a.example/" };
+  const b = { id: 2, url: "https://b.example/" };
+  assert.equal(tabSignature([a, b]), tabSignature([{ ...b, index: 0 }, { ...a, index: 1 }]));
+  assert.notEqual(tabSignature([a, b]), tabSignature([a]));
+  assert.notEqual(tabSignature([a, b]), tabSignature([a, { ...b, url: "https://c.example/" }]));
+  assert.equal(tabSignature([a, b], own), tabSignature([a, b, { id: 3, url: `${own}insights.html` }], own));
 });
 
 test("undo moves tabs back in index order within each window", () => {

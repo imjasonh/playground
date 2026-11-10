@@ -1,18 +1,20 @@
+import { analyzeTabs, applyGroups, createSession } from "./analysis.js";
+import { DEFAULT_SETTINGS } from "./background_insights.js";
 import {
   MODEL_OPTIONS,
-  RESPONSE_SCHEMA,
-  SYSTEM_PROMPT,
   closableIds,
   closeLabel,
-  groupingPlan,
+  formatAge,
   matchRestores,
-  parseInsights,
   tabCount,
-  tabEntries,
+  tabSignature,
   undoMoves,
-  userPrompt,
   withoutTabs,
 } from "./tab_insights.js";
+
+// A saved analysis of the same tabs is shown instead of a new run when it is
+// younger than this.
+const SAVED_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 const analyzeButton = document.getElementById("analyze");
 const statusLine = document.getElementById("status");
@@ -26,6 +28,8 @@ const topicsBox = document.getElementById("topics");
 const groupRow = document.getElementById("group-row");
 const groupButton = document.getElementById("group");
 const undoButtons = [document.getElementById("undo"), document.getElementById("group-undo")];
+const backgroundBox = document.getElementById("background");
+const autoGroupBox = document.getElementById("auto-group");
 
 let insights = { topics: [], close: [] };
 let analysis = 0;
@@ -209,38 +213,37 @@ async function analyze() {
   let session = null;
   try {
     setStatus("Starting the built-in model…");
-    // create() is the first await so a download keeps the click's activation.
-    session = await LanguageModel.create({
-      ...MODEL_OPTIONS,
-      initialPrompts: [{ role: "system", content: SYSTEM_PROMPT }],
-      monitor(monitor) {
-        monitor.addEventListener("downloadprogress", (event) => {
-          download.hidden = false;
-          download.value = event.loaded;
-          setStatus(`Downloading the built-in model: ${Math.round(event.loaded * 100)}%`);
-        });
-      },
+    // createSession is the first await so a download keeps the click's
+    // activation.
+    session = await createSession(LanguageModel, (monitor) => {
+      monitor.addEventListener("downloadprogress", (event) => {
+        download.hidden = false;
+        download.value = event.loaded;
+        setStatus(`Downloading the built-in model: ${Math.round(event.loaded * 100)}%`);
+      });
     });
     download.hidden = true;
-    const tabs = await chrome.tabs.query({});
-    const { entries, total } = tabEntries(tabs, Date.now(), chrome.runtime.getURL(""));
-    if (entries.length === 0) {
+    setStatus("Reading tabs…");
+    const result = await analyzeTabs(chrome, session);
+    await chrome.storage.local.set({ insights: result });
+    if (result.read === 0) {
       setStatus("No tabs to read.");
       return;
     }
-    if (total > entries.length) {
-      setStatus(`Reading the ${entries.length} oldest of ${total} tabs…`);
-    } else {
-      setStatus(`Reading ${tabCount(entries.length)}…`);
-    }
-    const started = performance.now();
-    const answer = await session.prompt(userPrompt(entries), {
-      responseConstraint: RESPONSE_SCHEMA,
-    });
-    insights = parseInsights(answer, entries);
+    insights = result.insights;
     render();
-    const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    setStatus(`Read ${tabCount(entries.length)} on this device in ${seconds} s.`);
+    let read = tabCount(result.read);
+    if (result.total > result.read) {
+      read = `the ${result.read} oldest of ${result.total} tabs`;
+    }
+    let status = `Read ${read} on this device in ${result.seconds.toFixed(1)} s.`;
+    if (autoGroupBox.checked) {
+      const { saved } = await groupInto(insights.topics, checkedPicks());
+      if (saved.length > 0) {
+        status = `${status} Grouped ${tabCount(saved.length)}.`;
+      }
+    }
+    setStatus(status);
   } catch (error) {
     setStatus(errorText(error), true);
   } finally {
@@ -249,6 +252,7 @@ async function analyze() {
     }
     download.hidden = true;
     setBusy(false);
+    updateUndo();
     await refreshButton(false);
   }
 }
@@ -348,30 +352,60 @@ async function undo() {
   }
 }
 
+async function groupInto(topics, picks) {
+  const grouping = await applyGroups(chrome, topics, picks);
+  if (grouping.saved.length > 0) {
+    undoStack.push({ kind: "group", saved: grouping.saved });
+  }
+  updateUndo();
+  return grouping;
+}
+
 async function groupTabs() {
   setBusy(true);
   try {
-    const open = await chrome.tabs.query({});
-    const plan = groupingPlan(insights.topics, checkedPicks(), open);
-    if (plan.length === 0) {
+    const { saved, groups } = await groupInto(insights.topics, checkedPicks());
+    if (saved.length === 0) {
       setStatus("Nothing to group. Pinned tabs and tabs already in a group stay as they are.");
-      return;
+    } else {
+      setStatus(`Grouped ${tabCount(saved.length)} into ${groups === 1 ? "1 group" : `${groups} groups`}.`);
     }
-    const where = new Map(open.map((tab) => [tab.id, { id: tab.id, windowId: tab.windowId, index: tab.index }]));
-    const saved = plan.flatMap((group) => group.tabIds.map((id) => where.get(id)));
-    undoStack.push({ kind: "group", saved });
-    for (const { title, color, collapsed, windowId, tabIds } of plan) {
-      const groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
-      await chrome.tabGroups.update(groupId, { title, color, collapsed });
-    }
-    const names = new Set(plan.map((group) => group.title));
-    setStatus(`Grouped ${tabCount(saved.length)} into ${names.size === 1 ? "1 group" : `${names.size} groups`}.`);
   } catch (error) {
     setStatus(errorText(error), true);
   } finally {
     setBusy(false);
+  }
+}
+
+// showSaved renders the last analysis when it covers the open tabs, so the
+// panel doesn't wait for the model. A grouping the service worker made with
+// that analysis joins the undo history.
+async function showSaved() {
+  const { insights: saved } = await chrome.storage.local.get("insights");
+  const tabs = await chrome.tabs.query({});
+  const signature = tabSignature(tabs, chrome.runtime.getURL(""));
+  const current = saved && saved.signature === signature && Date.now() - saved.at < SAVED_MAX_AGE_MS;
+  if (!current || saved.read === 0) {
+    return false;
+  }
+  analysis += 1;
+  insights = saved.insights;
+  render();
+  const age = formatAge(Date.now() - saved.at);
+  setStatus(age === "now" ? "Analyzed just now." : `Analyzed ${age}.`);
+  const { grouping } = await chrome.storage.local.get("grouping");
+  if (grouping && grouping.at === saved.at) {
+    undoStack.push({ kind: "group", saved: grouping.saved });
+    await chrome.storage.local.remove("grouping");
     updateUndo();
   }
+  return true;
+}
+
+async function loadSettings() {
+  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
+  backgroundBox.checked = settings.background;
+  autoGroupBox.checked = settings.autoGroup;
 }
 
 analyzeButton.addEventListener("click", analyze);
@@ -380,8 +414,20 @@ groupButton.addEventListener("click", groupTabs);
 for (const button of undoButtons) {
   button.addEventListener("click", undo);
 }
-refreshButton(true).then((state) => {
-  if (state.ready) {
-    analyze();
+backgroundBox.addEventListener("change", () => chrome.storage.local.set({ background: backgroundBox.checked }));
+autoGroupBox.addEventListener("change", () => chrome.storage.local.set({ autoGroup: autoGroupBox.checked }));
+
+async function openPanel() {
+  await loadSettings();
+  const state = await refreshButton(true);
+  if (await showSaved()) {
+    return;
   }
+  if (state.ready) {
+    await analyze();
+  }
+}
+
+openPanel().catch((error) => {
+  setStatus(errorText(error), true);
 });

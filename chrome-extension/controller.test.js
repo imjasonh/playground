@@ -423,6 +423,34 @@ test("Chrome without the side panel API gets no tab insights item", async () => 
   assert.deepEqual(chrome.state.panels, []);
 });
 
+test("the toolbar title counts saved picks that are still open", async () => {
+  const chrome = fakeChrome([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/a" },
+    { id: 3, url: "https://example.com/b" },
+  ]);
+  const store = {
+    insights: { insights: { close: [{ entry: { id: 3 } }, { entry: { id: 9 } }], topics: [] } },
+  };
+  const changed = listener();
+  chrome.api.storage = {
+    local: {
+      async get(key) {
+        return key in store ? { [key]: store[key] } : {};
+      },
+    },
+    onChanged: changed,
+  };
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · 1 likely close");
+  assert.equal(chrome.state.menu.title, "Close 1 duplicate tab");
+  store.insights.insights.close = [];
+  await changed.emit({ insights: { newValue: store.insights } }, "local");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab");
+});
+
 test("a selection menu click after restart decodes the highlighted text", async () => {
   const { api, state } = await started([{ id: 1, url: "https://example.com/a" }]);
   await api.contextMenus.onClicked.emit({

@@ -139,6 +139,12 @@
   #close {
     margin-top: 12px;
   }
+  .setting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+  }
   [hidden] {
     display: none !important;
   }
@@ -164,5 +170,10 @@
   <button id="group" class="primary" type="button">Group tabs</button>
   <button id="group-undo" class="secondary" type="button" hidden>Undo</button>
 </div>
+<section>
+  <h2>Background</h2>
+  <label class="setting"><input id="background" type="checkbox"> Analyze in the background</label>
+  <label class="setting"><input id="auto-group" type="checkbox"> Group tabs automatically</label>
+</section>
 <script type="module" src="insights.js"></script>
 </html>

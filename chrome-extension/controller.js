@@ -212,11 +212,30 @@ async function copyText(api, text) {
   });
 }
 
-async function showCount(api, count, syncMenu) {
+// likelyCount is how many of the saved tab insights picks are still open.
+async function likelyCount(api, tabs) {
+  if (!api.storage) {
+    return 0;
+  }
+  const { insights } = await api.storage.local.get("insights");
+  if (!insights) {
+    return 0;
+  }
+  const open = new Set(tabs.map((tab) => tab.id));
+  return insights.insights.close.filter((pick) => open.has(pick.entry.id)).length;
+}
+
+async function showCount(api, tabs, syncMenu) {
+  const count = duplicateTabIds(tabs).length;
+  const likely = await likelyCount(api, tabs);
+  let title = actionTitle(count);
+  if (likely > 0) {
+    title = `${title} · ${likely} likely close`;
+  }
   await api.action.setBadgeBackgroundColor({ color: BADGE_COLOR });
   await api.action.setBadgeTextColor({ color: BADGE_TEXT_COLOR });
   await api.action.setBadgeText({ text: badgeText(count) });
-  await api.action.setTitle({ title: actionTitle(count) });
+  await api.action.setTitle({ title });
   await syncMenu(count);
 }
 
@@ -255,7 +274,7 @@ export function start(api) {
   function refresh() {
     return enqueue(async () => {
       const tabs = await api.tabs.query({});
-      await showCount(api, duplicateTabIds(tabs).length, syncMenu);
+      await showCount(api, tabs, syncMenu);
     });
   }
 
@@ -267,7 +286,7 @@ export function start(api) {
         await api.tabs.remove(ids);
       }
       const after = await api.tabs.query({});
-      await showCount(api, duplicateTabIds(after).length, syncMenu);
+      await showCount(api, after, syncMenu);
       return ids;
     });
   }
@@ -327,6 +346,14 @@ export function start(api) {
   api.tabs.onDetached.addListener(() => refresh());
   api.tabs.onUpdated.addListener(onTabUpdated);
   api.action.onClicked.addListener(() => closeDuplicates());
+  if (api.storage) {
+    api.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && changes.insights) {
+        return refresh();
+      }
+      return Promise.resolve();
+    });
+  }
   if (api.runtime.onMessage) {
     api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!message || message.type !== "selection" || message.target) {

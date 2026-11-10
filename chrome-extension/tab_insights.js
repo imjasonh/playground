@@ -24,11 +24,12 @@ export const SYSTEM_PROMPT = [
   "You sort a person's open browser tabs.",
   "Each line is one tab: its number, how long ago it was last used, any flags, its title, and its URL without the query string.",
   "Group the tabs into a few topics with short names. A tab belongs to at most one topic.",
+  "A tab flagged with a group is already in that group. Use the group's name as the topic for it, and reuse that name for similar tabs.",
   "Then pick the few tabs that are clearly safe to close. Most tabs should stay open.",
   "Good picks are empty new tab pages, tabs that show the same page as another tab, search results, and login pages. A tab not used for days may also be stale.",
   "Don't pick a tab used within the last hour unless it is one of those good picks.",
   "Never pick a tab flagged pinned, active, or audio.",
-  "Refer to tabs only by their numbers. Give each pick a reason of at most 12 words.",
+  "Refer to tabs only by their numbers. Give each pick a reason of at most 12 words. A reason must not mention tab numbers.",
 ].join("\n");
 
 export const RESPONSE_SCHEMA = {
@@ -113,8 +114,9 @@ export function formatAge(ms) {
 // tabEntries picks the tabs the model reads and numbers them from 1. Tabs
 // whose URL starts with skipPrefix (the side panel's own pages) are left out.
 // Past MAX_TABS, the tabs used longest ago win, since those are the likely
-// picks to close. The result keeps window and tab order.
-export function tabEntries(tabs, now, skipPrefix) {
+// picks to close. The result keeps window and tab order. groupTitles maps a
+// tab group id to its name, so the model can reuse the names.
+export function tabEntries(tabs, now, skipPrefix, groupTitles = new Map()) {
   const candidates = [];
   for (const tab of tabs) {
     const url = tabUrl(tab);
@@ -146,9 +148,21 @@ export function tabEntries(tabs, now, skipPrefix) {
         pinned: tab.pinned === true,
         active: tab.active === true,
         audible: tab.audible === true,
+        group: clip(groupTitles.get(tab.groupId) || "", MAX_TOPIC_NAME),
       };
     }),
   };
+}
+
+// tabSignature changes when a tab opens, closes, or navigates, so the
+// background job can skip a run when nothing changed. It skips the same
+// pages tabEntries does.
+export function tabSignature(tabs, skipPrefix) {
+  return tabs
+    .map((tab) => `${tab.id} ${tabUrl(tab)}`)
+    .filter((line) => !(skipPrefix && line.split(" ")[1].startsWith(skipPrefix)))
+    .sort()
+    .join("\n");
 }
 
 export function isProtected(entry) {
@@ -169,6 +183,9 @@ export function tabLine(entry) {
   }
   if (entry.audible) {
     flags.push("audio");
+  }
+  if (entry.group) {
+    flags.push(`group: ${entry.group}`);
   }
   if (flags.length > 0) {
     parts.push(`(${flags.join(", ")})`);
@@ -307,7 +324,9 @@ const NO_GROUP = -1;
 // close into a collapsed grey group. A pick leaves its topic's group. A
 // group lives in one window, so each window gets its own copy and no tab
 // moves. Tabs that are closed, pinned, or already in a group are left alone.
-export function groupingPlan(topics, picks, openTabs) {
+// When a window already has a group with the same name, the plan adds the
+// tabs to it with its groupId, so repeated runs don't make copies.
+export function groupingPlan(topics, picks, openTabs, groups = []) {
   const open = new Map(openTabs.map((tab) => [tab.id, tab]));
   const taken = new Set();
   const plan = [];
@@ -327,7 +346,12 @@ export function groupingPlan(topics, picks, openTabs) {
       }
     }
     for (const [windowId, tabIds] of byWindow) {
-      plan.push({ title, color, collapsed, windowId, tabIds });
+      const existing = groups.find((group) => group.windowId === windowId && group.title === title);
+      if (existing) {
+        plan.push({ title, windowId, tabIds, groupId: existing.id });
+      } else {
+        plan.push({ title, color, collapsed, windowId, tabIds });
+      }
     }
   }
   add(LIKELY_CLOSE, "grey", true, picks);

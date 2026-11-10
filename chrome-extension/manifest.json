@@ -3,7 +3,17 @@
   "name": "Close Duplicate Tabs",
   "version": "0.1.3",
   "description": "Closes extra tabs that share a URL. The badge shows that count. Selected base64 adds a menu item that copies the decoded text.",
-  "permissions": ["clipboardWrite", "contextMenus", "offscreen", "sessions", "sidePanel", "tabGroups", "tabs"],
+  "permissions": [
+    "alarms",
+    "clipboardWrite",
+    "contextMenus",
+    "offscreen",
+    "sessions",
+    "sidePanel",
+    "storage",
+    "tabGroups",
+    "tabs"
+  ],
   "side_panel": {
     "default_path": "insights.html"
   },

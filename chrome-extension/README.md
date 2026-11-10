@@ -26,7 +26,9 @@ The content script reads the highlighted text, including text in a text field, a
 
 ## Tab insights
 
-Right-click the toolbar button and choose **Tab insights** to open the side panel. The panel is also in Chrome's side panel menu. When the panel opens and the model is on the device, it analyzes tabs right away. **Analyze tabs** runs it again. The analysis asks Gemini Nano, the model built into Chrome, to group open tabs into topics and pick tabs to close. The panel calls the [Prompt API](https://developer.chrome.com/docs/ai/prompt-api) (`LanguageModel`), which needs desktop Chrome 138 or later and the hardware listed on that page. The API isn't exposed to workers, so the model runs in the panel and not in the service worker.
+Right-click the toolbar button and choose **Tab insights** to open the side panel. The panel is also in Chrome's side panel menu. The analysis asks Gemini Nano, the model built into Chrome, to group open tabs into topics and pick tabs to close. It calls the [Prompt API](https://developer.chrome.com/docs/ai/prompt-api) (`LanguageModel`), which needs desktop Chrome 138 or later and the hardware listed on that page. The API is available in the extension's service worker and in the panel.
+
+When the panel opens, it shows the last analysis if that analysis covers the same tabs and is less than 2 hours old. Otherwise, if the model is on the device, it analyzes tabs right away. **Analyze tabs** runs it again.
 
 If the model isn't on the device yet, the panel waits for a click, because Chrome only downloads the model after a user gesture. The button reads **Download model and analyze**, and the click starts Chrome's one-time download of a few GB. After that, the model runs offline, and tab data stays on the device.
 
@@ -38,7 +40,15 @@ The model answers in JSON that a schema constrains, and it refers to tabs by num
 
 A close from the panel skips tabs that are pinned or active when you click, so no window closes. **Undo** reverses the last close or grouping, and each one can be undone in turn, newest first. Undoing a close restores each tab from Chrome's Recently Closed list, so its history comes back. A tab that isn't in that list is reopened from its URL. If you haven't analyzed again since the close, the panel's lists come back too. Undoing **Group tabs** ungroups the tabs it grouped and moves them back where they were.
 
-The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel, `tabGroups` to name, color, and collapse the groups that **Group tabs** makes, and `sessions` so **Undo** can restore closed tabs. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
+### Background analysis
+
+**Analyze in the background** is on by default. Every 15 minutes, the service worker runs the same analysis and saves it. It skips the run when no tab opened, closed, or navigated since the last one, unless that one is 2 hours old. It runs only when the model is already on the device. The toolbar button's title adds the number of saved picks that are still open, as in `Close 2 duplicate tabs · 3 likely close`. The badge stays the duplicate count. Turning the setting on runs an analysis right away.
+
+**Group tabs automatically** is off by default. When it's on, each analysis, in the background or in the panel, also runs **Group tabs**. Each tab is told which group it's in, so the model can reuse that name, and a tab joins a group with the same name in its window instead of a new copy. Open the panel after a background grouping and **Undo** can reverse it.
+
+When you switch to a tab, it stops being a pick, and if it's in the **Likely close** group, it leaves that group.
+
+The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel, `tabGroups` to name, color, and collapse the groups that **Group tabs** makes, and `sessions` so **Undo** can restore closed tabs. It uses `alarms` to schedule the background analysis and `storage` to keep the last analysis and the two settings. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
 
 ## Load it locally
 
@@ -57,7 +67,7 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, which tabs a panel close skips, keeping one copy of a duplicated URL, undo matching, the grouping plan, the undo order for grouping, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
+`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, which tabs a panel close skips, keeping one copy of a duplicated URL, undo matching, the grouping plan, the undo order for grouping, the background analysis with a fake model, the likely-close count in the toolbar title, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
 
 `node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 
