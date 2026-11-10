@@ -1,6 +1,7 @@
-# Builds and lints the c3-boot crates for the ESP32-C3's RISC-V target, tests
-# fakestore, and boots the bootloader in Espressif's QEMU through the update
-# scenarios in c3-boot/qemu/scenarios.sh.
+# Builds and lints the c3-boot crates for the ESP32-C3's RISC-V target, checks
+# the bootloader image's pinned digest, tests fakestore, boots the bootloader
+# in Espressif's QEMU through the update scenarios in
+# c3-boot/qemu/scenarios.sh, and fuzzes the parsers briefly.
 #
 # test.yml's Rust leg runs c3-boot's `cargo fmt --check`, Clippy, and tests.
 # test.yml doesn't find fakestore, because its go.mod isn't at the top level.
@@ -36,6 +37,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      - name: Check the bootloader image digest
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          bash bootloader/check-digest.sh
 
       - name: Build and lint for riscv32imc-unknown-none-elf
         working-directory: c3-boot
@@ -109,4 +116,34 @@ jobs:
         with:
           name: c3-scenarios
           path: ${{ runner.temp }}/c3-scenarios/*.log
+          if-no-files-found: ignore
+
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    env:
+      FUZZ_TOOLCHAIN: nightly-2026-11-09
+      FUZZ_SECONDS: "30"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install the nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install "${FUZZ_TOOLCHAIN}" --profile minimal
+          cargo "+${FUZZ_TOOLCHAIN}" install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Fuzz each target
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          bash fuzz/run.sh
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: c3-boot-fuzz-artifacts
+          path: c3-boot/fuzz/artifacts
           if-no-files-found: ignore

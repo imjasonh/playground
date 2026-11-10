@@ -86,9 +86,33 @@ C3_GENESIS=dev cargo build --locked --release --target riscv32imc-unknown-none-e
   -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app
 ```
 
+The default test build of the bootloader image (development keys, no eFuse
+burns) is reproducible: building it anywhere gives the digest in
+`bootloader/dev-image.sha256`, and `bootloader/check-digest.sh` checks it in
+CI. A change to the bootloader, `c3-verify`, `c3-crypto`, a dependency, or
+the toolchain changes the digest; run `bootloader/check-digest.sh --update`
+to pin the new one.
+
 `rust-toolchain.toml` pins Rust 1.99.1 and the RISC-V target. The proofs cover
 the machine code that this exact compiler produces, so change the pin only
 together with the pinned image digest.
+
+## Fuzz
+
+`fuzz/` has four [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)
+targets: the format decoders, the key-set chain and trust-root blob, the
+Sigstore bundle checks against a fixed trust root, and whole slots through
+the bootloader's checks. Fuzz builds turn on overflow checks, so an
+arithmetic slip that the lints missed shows up as a crash. `fuzz/seed.sh`
+builds seed inputs from the mutation test's fixtures, and `fuzz/run.sh`
+fuzzes each target for `FUZZ_SECONDS` seconds (30 by default) with a pinned
+nightly toolchain. The `c3-boot` workflow runs it on every change.
+
+```bash
+rustup toolchain install nightly-2026-11-09 --profile minimal
+cargo +nightly-2026-11-09 install cargo-fuzz --locked
+bash fuzz/run.sh
+```
 
 ## Boot in QEMU
 

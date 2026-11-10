@@ -72,11 +72,13 @@ expect_not() {
 # in hexadecimal.
 error_code() {
   awk '/^pub enum Error/,/^}/' "${root}/verify/src/error.rs" |
-    grep -E '^    [A-Z][A-Za-z]*,' | grep -n "^    $1," | cut -d: -f1 |
+    grep -E '^    [A-Z][A-Za-z0-9]*,' | grep -n "^    $1," | cut -d: -f1 |
     { read -r n; printf '%x' "$((n - 1))"; }
 }
 bad_signature="$(error_code BadSignature)"
 bad_level="$(error_code BadLevel)"
+policy_mismatch="$(error_code PolicyMismatch)"
+outside_window="$(error_code OutsideWindow)"
 
 # cut NAME DELAY_MS starts a boot and kills QEMU after DELAY_MS
 # milliseconds, as a power cut would stop the chip.
@@ -183,6 +185,18 @@ for v in 1 2 3 4 5 6; do
     --out "${work}/app${v}.bundle"
 done
 
+# Version 1 signed by another workflow, and version 1 with a timestamp from
+# before every certificate and trust-root window.
+(cd "${root}/fakestore" && go run . sign -dir "${work}/fakestore" \
+  -artifact "${work}/app1.img" -out "${work}/app1-wrong-identity.json" \
+  -build-signer-uri https://github.com/imjasonh/playground/.github/workflows/other.yml@refs/heads/main)
+(cd "${root}/fakestore" && go run . sign -dir "${work}/fakestore" \
+  -artifact "${work}/app1.img" -out "${work}/app1-stale.json" -time 2019-06-01T00:00:00Z)
+for bad in wrong-identity stale; do
+  ota container --bundle "${work}/app1-${bad}.json" --image "${work}/app1.img" \
+    --out "${work}/app1-${bad}.bundle"
+done
+
 # Trust roots. Level 0 and 1 use the genesis keys. Level 2 rotates to a new
 # key set, authorized by two genesis keys.
 genesis="0=${keys}/genesis-dev-1.seed,1=${keys}/genesis-dev-2.seed"
@@ -214,6 +228,10 @@ slot() {
     --chain "${work}/$2" --blob "${work}/$3" --out "${work}/$4"
 }
 slot 1 chain0 blob0 slot-v1
+for bad in wrong-identity stale; do
+  ota slot --image "${work}/app1.img" --bundle "${work}/app1-${bad}.bundle" \
+    --chain "${work}/chain0" --blob "${work}/blob0" --out "${work}/slot-v1-${bad}"
+done
 slot 2 chain0 blob1 slot-v2
 slot 3 chain2 blob2 slot-v3
 slot 3 chain2 blob2-stale slot-v3-stale
@@ -395,5 +413,20 @@ expect "c3-boot: raise failed; booting without it"
 expect "c3-demo: running from slot 0, version 5"
 [[ "$(secure_version_bits "${work}/write-disabled.efuse")" == "0 1 2" ]] ||
   fail "write-disabled: SECURE_VERSION bits $(secure_version_bits "${work}/write-disabled.efuse")"
+
+# On a fresh board, an image signed by another workflow and an image with a
+# stale timestamp are both rejected, and nothing else boots.
+for bad in wrong-identity stale; do
+  dd if=/dev/zero of="${work}/${bad}.efuse" bs=1024 count=1 status=none
+  ota flash --bootloader "${work}/bootloader-burn-off.bin" --slot-a "${work}/slot-v1-${bad}" \
+    --out "${work}/${bad}.flash"
+  boot "${bad}" "${work}/${bad}.flash" "${work}/${bad}.efuse"
+  case "${bad}" in
+    wrong-identity) expect "c3-boot: slot rejected ${policy_mismatch}" ;;
+    stale) expect "c3-boot: slot rejected ${outside_window}" ;;
+  esac
+  expect "c3-boot: halt e5"
+  expect_not "c3-demo:"
+done
 
 echo "all scenarios passed (${work})"
