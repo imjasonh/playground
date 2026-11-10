@@ -106,7 +106,7 @@ test("the store zip is the extension package and the listing images match the st
   assert.match(manifest.description, /badge/);
   assert.match(manifest.description, /URL/);
   assert.match(manifest.description, /base64/);
-  assert.deepEqual(manifest.permissions, ["clipboardWrite", "contextMenus", "offscreen", "sidePanel", "tabs"]);
+  assert.deepEqual(manifest.permissions, ["clipboardWrite", "contextMenus", "offscreen", "sessions", "sidePanel", "tabGroups", "tabs"]);
   assert.deepEqual(manifest.side_panel, { default_path: "insights.html" });
   assert.equal("host_permissions" in manifest, false);
   assert.equal("optional_permissions" in manifest, false);

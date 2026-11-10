@@ -2,14 +2,21 @@ import {
   MODEL_OPTIONS,
   RESPONSE_SCHEMA,
   SYSTEM_PROMPT,
+  closableIds,
   closeLabel,
+  groupingPlan,
+  matchRestores,
   parseInsights,
+  tabCount,
   tabEntries,
+  undoMoves,
   userPrompt,
+  withoutTabs,
 } from "./tab_insights.js";
 
 const analyzeButton = document.getElementById("analyze");
 const statusLine = document.getElementById("status");
+const undoButton = document.getElementById("undo");
 const download = document.getElementById("download");
 const closeSection = document.getElementById("close-section");
 const closeList = document.getElementById("close-list");
@@ -17,8 +24,14 @@ const closeEmpty = document.getElementById("close-empty");
 const closeButton = document.getElementById("close");
 const topicsSection = document.getElementById("topics-section");
 const topicsBox = document.getElementById("topics");
+const groupButton = document.getElementById("group");
 
 let insights = { topics: [], close: [] };
+let analysis = 0;
+let busy = false;
+// A close pushes the tabs it closed and the insights from before it. Group
+// tabs pushes where each tab it grouped was.
+const undoStack = [];
 
 function errorText(error) {
   if (error && typeof error.message === "string") {
@@ -51,7 +64,7 @@ async function modelState() {
   }
   switch (availability) {
     case "available":
-      return { label: "Analyze tabs", enabled: true, status: "Built-in model ready." };
+      return { label: "Analyze tabs", enabled: true, ready: true, status: "Built-in model ready." };
     case "downloadable":
       return {
         label: "Download model and analyze",
@@ -75,10 +88,26 @@ async function modelState() {
 async function refreshButton(withStatus) {
   const state = await modelState();
   analyzeButton.textContent = state.label;
-  analyzeButton.disabled = !state.enabled;
+  analyzeButton.disabled = !state.enabled || busy;
   if (withStatus) {
     setStatus(state.status, state.error === true);
   }
+  return state;
+}
+
+function setBusy(value) {
+  busy = value;
+  analyzeButton.disabled = value;
+  undoButton.disabled = value;
+  closeButton.disabled = value;
+  groupButton.disabled = value;
+  if (!value) {
+    updateCloseButton();
+  }
+}
+
+function updateUndo() {
+  undoButton.hidden = undoStack.length === 0;
 }
 
 async function focusTab(entry) {
@@ -109,7 +138,7 @@ function checkedIds() {
 function updateCloseButton() {
   const count = checkedIds().length;
   closeButton.textContent = closeLabel(count);
-  closeButton.disabled = count === 0;
+  closeButton.disabled = count === 0 || busy;
 }
 
 function render() {
@@ -153,17 +182,25 @@ function render() {
     topicsBox.append(heading, list);
   }
   topicsSection.hidden = insights.topics.length === 0;
+  groupButton.hidden = insights.topics.length === 0 && insights.close.length === 0;
 }
 
 function clearResults() {
   insights = { topics: [], close: [] };
   closeSection.hidden = true;
   topicsSection.hidden = true;
+  groupButton.hidden = true;
+}
+
+function checkedPicks() {
+  const wanted = new Set(checkedIds());
+  return insights.close.filter((pick) => wanted.has(pick.entry.id)).map((pick) => pick.entry);
 }
 
 async function analyze() {
-  analyzeButton.disabled = true;
+  setBusy(true);
   clearResults();
+  analysis += 1;
   let session = null;
   try {
     setStatus("Starting the built-in model…");
@@ -189,7 +226,7 @@ async function analyze() {
     if (total > entries.length) {
       setStatus(`Reading the ${entries.length} oldest of ${total} tabs…`);
     } else {
-      setStatus(`Reading ${entries.length} tabs…`);
+      setStatus(`Reading ${tabCount(entries.length)}…`);
     }
     const started = performance.now();
     const answer = await session.prompt(userPrompt(entries), {
@@ -198,7 +235,7 @@ async function analyze() {
     insights = parseInsights(answer, entries);
     render();
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    setStatus(`Read ${entries.length} tabs on this device in ${seconds} s.`);
+    setStatus(`Read ${tabCount(entries.length)} on this device in ${seconds} s.`);
   } catch (error) {
     setStatus(errorText(error), true);
   } finally {
@@ -206,34 +243,138 @@ async function analyze() {
       session.destroy();
     }
     download.hidden = true;
+    setBusy(false);
     await refreshButton(false);
   }
 }
 
-async function closeChecked() {
-  const wanted = new Set(checkedIds());
-  closeButton.disabled = true;
+async function closeTabs(entries) {
+  setBusy(true);
   try {
     const open = await chrome.tabs.query({});
-    const ids = open.map((tab) => tab.id).filter((id) => wanted.has(id));
-    if (ids.length > 0) {
-      await chrome.tabs.remove(ids);
+    const ids = closableIds(entries.map((entry) => entry.id), open);
+    if (ids.length === 0) {
+      setStatus("Nothing to close. Pinned and active tabs stay open.");
+      return;
     }
-    const gone = new Set(wanted);
-    insights = {
-      close: insights.close.filter((pick) => !gone.has(pick.entry.id)),
-      topics: insights.topics
-        .map((topic) => ({ ...topic, tabs: topic.tabs.filter((entry) => !gone.has(entry.id)) }))
-        .filter((topic) => topic.tabs.length > 0),
-    };
+    const gone = new Set(ids);
+    const closed = entries.filter((entry) => gone.has(entry.id));
+    const before = insights;
+    await chrome.tabs.remove(ids);
+    undoStack.push({ kind: "close", closed, before, analysis });
+    insights = withoutTabs(insights, gone);
     render();
-    setStatus(ids.length === 1 ? "Closed 1 tab." : `Closed ${ids.length} tabs.`);
+    setStatus(`Closed ${tabCount(ids.length)}.`);
   } catch (error) {
     setStatus(errorText(error), true);
-    updateCloseButton();
+  } finally {
+    setBusy(false);
+    updateUndo();
+  }
+}
+
+function closeChecked() {
+  return closeTabs(checkedPicks());
+}
+
+async function reopen(entry) {
+  try {
+    return await chrome.tabs.create({ url: entry.url, windowId: entry.windowId, active: false });
+  } catch {
+    return chrome.tabs.create({ url: entry.url, active: false });
+  }
+}
+
+// Restored tabs get new ids. The entries are shared by the suggestions and
+// the topics, so updating them in place brings back the earlier panel.
+async function undoClose(batch) {
+  const recent = await chrome.sessions.getRecentlyClosed({ maxResults: chrome.sessions.MAX_SESSION_RESULTS });
+  const plan = matchRestores(batch.closed, recent);
+  for (const { sessionId, entry } of plan.restores) {
+    const session = await chrome.sessions.restore(sessionId);
+    if (session && session.tab) {
+      entry.id = session.tab.id;
+      entry.windowId = session.tab.windowId;
+    }
+  }
+  for (const entry of plan.reopen) {
+    const tab = await reopen(entry);
+    entry.id = tab.id;
+    entry.windowId = tab.windowId;
+  }
+  if (batch.analysis === analysis) {
+    insights = batch.before;
+    render();
+  }
+  setStatus(`Reopened ${tabCount(batch.closed.length)}.`);
+}
+
+// Group tabs only groups tabs that were in no group, so ungrouping them and
+// moving each back to its index restores the tab strip. Empty groups go away.
+async function undoGroup(batch) {
+  const open = new Set((await chrome.tabs.query({})).map((tab) => tab.id));
+  const saved = batch.saved.filter((tab) => open.has(tab.id));
+  if (saved.length > 0) {
+    await chrome.tabs.ungroup(saved.map((tab) => tab.id));
+  }
+  for (const { id, windowId, index } of undoMoves(saved)) {
+    await chrome.tabs.move(id, { windowId, index });
+  }
+  setStatus(`Ungrouped ${tabCount(saved.length)}.`);
+}
+
+async function undo() {
+  const batch = undoStack.pop();
+  if (!batch) {
+    return;
+  }
+  setBusy(true);
+  try {
+    if (batch.kind === "group") {
+      await undoGroup(batch);
+    } else {
+      await undoClose(batch);
+    }
+  } catch (error) {
+    setStatus(errorText(error), true);
+  } finally {
+    setBusy(false);
+    updateUndo();
+  }
+}
+
+async function groupTabs() {
+  setBusy(true);
+  try {
+    const open = await chrome.tabs.query({});
+    const plan = groupingPlan(insights.topics, checkedPicks(), open);
+    if (plan.length === 0) {
+      setStatus("Nothing to group. Pinned tabs and tabs already in a group stay as they are.");
+      return;
+    }
+    const where = new Map(open.map((tab) => [tab.id, { id: tab.id, windowId: tab.windowId, index: tab.index }]));
+    const saved = plan.flatMap((group) => group.tabIds.map((id) => where.get(id)));
+    undoStack.push({ kind: "group", saved });
+    for (const { title, color, collapsed, windowId, tabIds } of plan) {
+      const groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
+      await chrome.tabGroups.update(groupId, { title, color, collapsed });
+    }
+    const names = new Set(plan.map((group) => group.title));
+    setStatus(`Grouped ${tabCount(saved.length)} into ${names.size === 1 ? "1 group" : `${names.size} groups`}.`);
+  } catch (error) {
+    setStatus(errorText(error), true);
+  } finally {
+    setBusy(false);
+    updateUndo();
   }
 }
 
 analyzeButton.addEventListener("click", analyze);
 closeButton.addEventListener("click", closeChecked);
-refreshButton(true);
+groupButton.addEventListener("click", groupTabs);
+undoButton.addEventListener("click", undo);
+refreshButton(true).then((state) => {
+  if (state.ready) {
+    analyze();
+  }
+});

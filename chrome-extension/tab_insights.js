@@ -24,7 +24,9 @@ export const SYSTEM_PROMPT = [
   "You sort a person's open browser tabs.",
   "Each line is one tab: its number, how long ago it was last used, any flags, its title, and its URL without the query string.",
   "Group the tabs into a few topics with short names. A tab belongs to at most one topic.",
-  "Then pick tabs that are probably safe to close: stale tabs, finished tasks, empty new tab pages, search results, login pages, and tabs that show the same page as another tab.",
+  "Then pick the few tabs that are clearly safe to close. Most tabs should stay open.",
+  "Good picks are empty new tab pages, tabs that show the same page as another tab, search results, and login pages. A tab not used for days may also be stale.",
+  "Don't pick a tab used within the last hour unless it is one of those good picks.",
   "Never pick a tab flagged pinned, active, or audio.",
   "Refer to tabs only by their numbers. Give each pick a reason of at most 12 words.",
 ].join("\n");
@@ -137,6 +139,7 @@ export function tabEntries(tabs, now, skipPrefix) {
         number: index + 1,
         id: tab.id,
         windowId: tab.windowId,
+        url,
         title: titleText(tab.title, where),
         location: where,
         age: used > 0 ? formatAge(Math.max(0, now - used)) : "",
@@ -214,7 +217,30 @@ export function parseInsights(text, entries) {
       close.push({ entry, reason });
     }
   }
-  return { topics, close };
+  return { topics, close: keepOneCopy(close, entries) };
+}
+
+// keepOneCopy drops the first pick of a URL when the picks cover every open
+// copy of it, so closing the picks never loses a page that had duplicates.
+function keepOneCopy(close, entries) {
+  const copies = new Map();
+  for (const entry of entries) {
+    copies.set(entry.url, (copies.get(entry.url) || 0) + 1);
+  }
+  const picks = new Map();
+  for (const pick of close) {
+    picks.set(pick.entry.url, (picks.get(pick.entry.url) || 0) + 1);
+  }
+  const spared = new Set();
+  return close.filter((pick) => {
+    const url = pick.entry.url;
+    const all = copies.get(url) >= 2 && picks.get(url) === copies.get(url);
+    if (all && !spared.has(url)) {
+      spared.add(url);
+      return false;
+    }
+    return true;
+  });
 }
 
 export function closeLabel(count) {
@@ -222,4 +248,97 @@ export function closeLabel(count) {
     return "Close 1 tab";
   }
   return `Close ${count} tabs`;
+}
+
+export function tabCount(count) {
+  return count === 1 ? "1 tab" : `${count} tabs`;
+}
+
+// closableIds keeps the wanted tabs that are still open and are not pinned
+// or active now. Every window keeps its active tab, so a close never closes
+// a window, and the side panel's window stays open.
+export function closableIds(wanted, openTabs) {
+  const want = new Set(wanted);
+  return openTabs
+    .filter((tab) => want.has(tab.id) && tab.pinned !== true && tab.active !== true)
+    .map((tab) => tab.id);
+}
+
+export function withoutTabs(insights, gone) {
+  return {
+    close: insights.close.filter((pick) => !gone.has(pick.entry.id)),
+    topics: insights.topics
+      .map((topic) => ({ ...topic, tabs: topic.tabs.filter((entry) => !gone.has(entry.id)) }))
+      .filter((topic) => topic.tabs.length > 0),
+  };
+}
+
+// matchRestores pairs closed tabs with Recently Closed entries by URL, newest
+// entry first, so undo restores each tab with its history. A closed tab with
+// no matching entry is reopened from its URL instead. Window entries are
+// skipped, since closableIds never closes a window.
+export function matchRestores(closed, recent) {
+  const waiting = new Map();
+  for (const entry of closed) {
+    const list = waiting.get(entry.url);
+    if (list) {
+      list.push(entry);
+    } else {
+      waiting.set(entry.url, [entry]);
+    }
+  }
+  const restores = [];
+  for (const session of recent) {
+    const tab = session && session.tab;
+    const list = tab && waiting.get(tab.url);
+    if (list && list.length > 0 && typeof tab.sessionId === "string") {
+      restores.push({ sessionId: tab.sessionId, entry: list.shift() });
+    }
+  }
+  const reopen = closed.filter((entry) => !restores.some((restore) => restore.entry === entry));
+  return { restores, reopen };
+}
+
+export const LIKELY_CLOSE = "Likely close";
+const TOPIC_COLORS = ["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"];
+const NO_GROUP = -1;
+
+// groupingPlan turns each topic into a Chrome tab group and the picks to
+// close into a collapsed grey group. A pick leaves its topic's group. A
+// group lives in one window, so each window gets its own copy and no tab
+// moves. Tabs that are closed, pinned, or already in a group are left alone.
+export function groupingPlan(topics, picks, openTabs) {
+  const open = new Map(openTabs.map((tab) => [tab.id, tab]));
+  const taken = new Set();
+  const plan = [];
+  function add(title, color, collapsed, entries) {
+    const byWindow = new Map();
+    for (const entry of entries) {
+      const tab = open.get(entry.id);
+      const free = tab && tab.pinned !== true && (tab.groupId === undefined || tab.groupId === NO_GROUP);
+      if (free && !taken.has(tab.id)) {
+        taken.add(tab.id);
+        const ids = byWindow.get(tab.windowId);
+        if (ids) {
+          ids.push(tab.id);
+        } else {
+          byWindow.set(tab.windowId, [tab.id]);
+        }
+      }
+    }
+    for (const [windowId, tabIds] of byWindow) {
+      plan.push({ title, color, collapsed, windowId, tabIds });
+    }
+  }
+  add(LIKELY_CLOSE, "grey", true, picks);
+  topics.forEach((topic, index) => {
+    add(topic.name, TOPIC_COLORS[index % TOPIC_COLORS.length], false, topic.tabs);
+  });
+  return plan;
+}
+
+// undoMoves orders the saved tab positions so moving each tab back to its
+// index, one at a time, restores the old order in every window.
+export function undoMoves(saved) {
+  return [...saved].sort((left, right) => left.windowId - right.windowId || left.index - right.index);
 }

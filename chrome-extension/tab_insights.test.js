@@ -4,12 +4,18 @@ import test from "node:test";
 import {
   MAX_CLOSE,
   MAX_TABS,
+  closableIds,
   closeLabel,
   formatAge,
+  groupingPlan,
+  matchRestores,
   parseInsights,
+  tabCount,
   tabEntries,
   tabLine,
+  undoMoves,
   userPrompt,
+  withoutTabs,
 } from "./tab_insights.js";
 
 const now = Date.UTC(2026, 10, 10, 12, 0, 0);
@@ -206,4 +212,119 @@ test("the close button counts the checked tabs", () => {
   assert.equal(closeLabel(0), "Close 0 tabs");
   assert.equal(closeLabel(1), "Close 1 tab");
   assert.equal(closeLabel(3), "Close 3 tabs");
+  assert.equal(tabCount(1), "1 tab");
+  assert.equal(tabCount(2), "2 tabs");
+});
+
+test("a close skips tabs that are gone, pinned, or active now", () => {
+  const open = [
+    { id: 1 },
+    { id: 2, pinned: true },
+    { id: 3, active: true },
+    { id: 4 },
+    { id: 5 },
+  ];
+  assert.deepEqual(closableIds([1, 2, 3, 4, 9], open), [1, 4]);
+});
+
+test("closed tabs leave the suggestions and the topics, and empty topics go", () => {
+  const [a, b, c] = sample();
+  const insights = {
+    close: [{ entry: a, reason: "x" }, { entry: b, reason: "y" }],
+    topics: [
+      { name: "AB", tabs: [a, b] },
+      { name: "C", tabs: [c] },
+    ],
+  };
+  const after = withoutTabs(insights, new Set([a.id, c.id]));
+  assert.deepEqual(after.close.map((pick) => pick.entry.id), [b.id]);
+  assert.deepEqual(after.topics.map((topic) => [topic.name, topic.tabs.map((entry) => entry.id)]), [["AB", [b.id]]]);
+  assert.equal(insights.close.length, 2);
+});
+
+test("undo restores each closed tab from the newest matching Recently Closed entry", () => {
+  const a = { id: 1, url: "https://a.example/" };
+  const b1 = { id: 2, url: "https://b.example/" };
+  const b2 = { id: 3, url: "https://b.example/" };
+  const lost = { id: 4, url: "https://lost.example/" };
+  const { restores, reopen } = matchRestores(
+    [a, b1, b2, lost],
+    [
+      { tab: { sessionId: "s1", url: "https://b.example/" } },
+      { window: { sessionId: "w1", tabs: [{ url: "https://a.example/" }] } },
+      { tab: { sessionId: "s2", url: "https://a.example/" } },
+      { tab: { sessionId: "s3", url: "https://b.example/" } },
+      { tab: { sessionId: "s4", url: "https://b.example/" } },
+      { tab: { url: "https://lost.example/" } },
+    ],
+  );
+  assert.deepEqual(
+    restores.map((restore) => [restore.sessionId, restore.entry.id]),
+    [
+      ["s1", 2],
+      ["s2", 1],
+      ["s3", 3],
+    ],
+  );
+  assert.deepEqual(reopen, [lost]);
+});
+
+test("when the picks cover every copy of a URL, one copy stays out", () => {
+  const { entries } = tabEntries(
+    [
+      { id: 1, url: "https://dup.example/" },
+      { id: 2, url: "https://dup.example/" },
+      { id: 3, url: "https://dup.example/" },
+      { id: 4, url: "https://pair.example/" },
+      { id: 5, url: "https://pair.example/" },
+      { id: 6, url: "https://single.example/" },
+    ],
+    now,
+    own,
+  );
+  const { close } = parseInsights(
+    JSON.stringify({
+      topics: [],
+      close: [1, 2, 3, 4, 6].map((tab) => ({ tab, reason: "x" })),
+    }),
+    entries,
+  );
+  assert.deepEqual(close.map((pick) => pick.entry.id), [2, 3, 4, 6]);
+});
+
+test("grouping puts picks in Likely close, topics in their own groups, by window", () => {
+  const e = (id) => ({ id });
+  const topics = [
+    { name: "Docs", tabs: [e(1), e(2), e(3)] },
+    { name: "Code", tabs: [e(4), e(5), e(6), e(7), e(9)] },
+  ];
+  const picks = [e(3), e(5)];
+  const open = [
+    { id: 1, windowId: 10, groupId: -1 },
+    { id: 2, windowId: 20, groupId: -1 },
+    { id: 3, windowId: 10, groupId: -1 },
+    { id: 4, windowId: 10, groupId: -1, pinned: true },
+    { id: 5, windowId: 20, groupId: -1 },
+    { id: 6, windowId: 10, groupId: 77 },
+    { id: 7, windowId: 10 },
+  ];
+  assert.deepEqual(groupingPlan(topics, picks, open), [
+    { title: "Likely close", color: "grey", collapsed: true, windowId: 10, tabIds: [3] },
+    { title: "Likely close", color: "grey", collapsed: true, windowId: 20, tabIds: [5] },
+    { title: "Docs", color: "blue", collapsed: false, windowId: 10, tabIds: [1] },
+    { title: "Docs", color: "blue", collapsed: false, windowId: 20, tabIds: [2] },
+    { title: "Code", color: "red", collapsed: false, windowId: 10, tabIds: [7] },
+  ]);
+});
+
+test("undo moves tabs back in index order within each window", () => {
+  assert.deepEqual(
+    undoMoves([
+      { id: 1, windowId: 2, index: 5 },
+      { id: 2, windowId: 1, index: 3 },
+      { id: 3, windowId: 2, index: 0 },
+      { id: 4, windowId: 1, index: 1 },
+    ]).map((move) => move.id),
+    [4, 2, 3, 1],
+  );
 });

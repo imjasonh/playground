@@ -52,10 +52,36 @@
     opacity: 0.5;
     cursor: default;
   }
-  #status {
+  button.secondary {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    color: var(--accent);
+    background: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.secondary:disabled {
+    color: var(--muted);
+    cursor: default;
+  }
+  .status-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
     margin: 12px 0 0;
+  }
+  #status {
+    flex: 1;
+    margin: 0;
     color: var(--muted);
     min-height: 1.45em;
+  }
+  #group {
+    margin-top: 16px;
   }
   #status.error {
     color: #c5221f;
@@ -111,10 +137,13 @@
 </style>
 <h1>Tab insights</h1>
 <button id="analyze" class="primary" type="button" disabled>Analyze tabs</button>
-<p id="status" role="status"></p>
+<div class="status-row">
+  <p id="status" role="status"></p>
+  <button id="undo" class="secondary" type="button" hidden>Undo</button>
+</div>
 <progress id="download" max="1" value="0" hidden></progress>
 <section id="close-section" hidden>
-  <h2>Suggested to close</h2>
+  <h2>Likely close</h2>
   <ul id="close-list"></ul>
   <p id="close-empty" class="count" hidden>Nothing to close.</p>
   <button id="close" class="primary" type="button">Close 0 tabs</button>
@@ -123,5 +152,6 @@
   <h2>Topics</h2>
   <div id="topics"></div>
 </section>
+<button id="group" class="primary" type="button" hidden>Group tabs</button>
 <script type="module" src="insights.js"></script>
 </html>
