@@ -15,7 +15,7 @@ about the verification.
 ## Summary
 
 The proof covers the exact bytes that ROM Secure Boot loads. Neither the
-Rust compiler nor Rust's semantics is trusted. The main results are four
+Rust compiler nor Rust's semantics is trusted. The main results are five
 theorems:
 
 - **Refinement.** Every run of the bootloader binary, on any flash contents,
@@ -27,9 +27,16 @@ theorems:
   hash-collision advantages.
 - **Transparency.** The bootloader runs an image only if a checkpoint signed
   by a trusted Rekor log commits to that image's log entry.
-- **Rollback and availability.** The security version never decreases, and
-  no sequence of application writes and power losses makes both slots
-  unbootable while one confirmed image exists.
+- **Trust-root rotation and revocation.** The bootloader uses a trust root
+  only if two of the four trust-root keys compiled into it signed that trust
+  root, not counting keys that eFuse marks revoked, and only if its epoch is
+  at least the epoch in eFuse. After a device burns a new epoch, a stolen key
+  that only older trust roots list gives an attacker nothing.
+- **Rollback and availability.** eFuse counters never decrease. If the
+  application follows the update protocol, no sequence of power losses makes
+  both slots unbootable while one confirmed image exists. A malicious
+  application can erase flash, which a USB reflash repairs, but it can't burn
+  eFuse, because the bootloader locks the eFuse controller before it jumps.
 
 This work differs from the libsignal work in five ways:
 
@@ -96,9 +103,10 @@ theorem boot_refines (p : Platform) (hp : p.WellFormed) :
     BootRunsTo bootImage p fun out =>
       out.steps ≤ maxSteps ∧
       match accept p.flash p.efuse p.bootState with
-      | .boot slot entry mapping =>
+      | .boot slot entry mapping burns =>
           out.result = .jumped entry mapping ∧
-          out.efuse = burnAfter p.efuse slot ∧
+          out.efuse = p.efuse.burn burns ∧
+          out.efuseLocked ∧
           out.bootState = nextBootState p.bootState slot
       | .halt =>
           out.result = .halted ∧ out.efuse = p.efuse
@@ -107,10 +115,15 @@ theorem boot_refines (p : Platform) (hp : p.WellFormed) :
 `Platform` is the state that the ROM leaves when it starts the bootloader:
 flash contents, eFuse values, the boot-state record, and the CPU and
 peripheral registers. `accept` is the acceptance function, written in Lean
-and trusted. `BootRunsTo` says that every run ends in an outcome that
-satisfies the postcondition and that no run faults. `out.result = .jumped`
-means the program counter reached `entry` with the flash mapping set to
-`mapping` and interrupts disabled.
+and trusted. It includes the trust-root checks. It picks the trust root
+stored with each slot, checks its signatures and epoch, and returns the
+eFuse bits to burn. Those are a higher epoch, revocations, and a higher
+security version, each only after the application confirmed the image that
+carried it. `BootRunsTo` says that every run ends in an outcome that satisfies the
+postcondition and that no run faults. `out.result = .jumped` means the
+program counter reached `entry` with the flash mapping set to `mapping` and
+interrupts disabled. `out.efuseLocked` means the eFuse controller's
+registers are locked against writes until the next reset.
 
 ### Many boots with power loss
 
@@ -123,7 +136,31 @@ theorem boots_safe (tr : Trace) (htr : tr.Admissible) :
 A `Trace` interleaves bootloader runs, application writes to flash, and
 power losses. A bootloader run can stop at any instruction. A power loss
 during a flash erase or write leaves the affected bytes undefined. The
-availability and rollback theorems are stated over the same traces.
+availability and rollback theorems are stated over the same traces. The
+availability theorem restricts the application to the update protocol,
+because an application that erases both slots makes any device unbootable.
+The other theorems allow arbitrary application writes.
+
+### Trust-root monotonicity
+
+The process that produces new trust roots is in
+[Trust-root rotation](#trust-root-rotation).
+
+```lean
+theorem trust_root_monotone (tr : Trace) (htr : tr.Admissible) :
+    tr.efuseMonotone ∧
+    ∀ b ∈ tr.boots, ∀ r, b.trustRoot = some r →
+      r.epoch ≥ epochOf (tr.efuseAt b) ∧
+      ThresholdSigned 2 r (unrevokedKeys (tr.efuseAt b))
+```
+
+`efuseMonotone` says that no eFuse bit changes from 1 to 0 on any trace, so
+the epoch, the revocation set, and the security version never decrease.
+`ThresholdSigned 2 r ks` says that at least two distinct keys in `ks` signed
+`r`. The bootloader verifies every image with the trust root stored in the
+same slot, so this theorem and `boots_safe` together say that every image
+the device runs passed checks against a trust root that two unrevoked keys
+signed, at the current epoch or later.
 
 ### Authenticity and transparency
 
@@ -135,27 +172,40 @@ can do the following:
   than reality, where the workflow signs only honest builds.
 - Submit any entry to Rekor, and get a TSA timestamp on any bytes.
 - Steal any signing key after its certificate expires.
+- Steal every trust-root key that eFuse has revoked, and at most one other
+  trust-root key.
+- Steal any Sigstore key (a Fulcio intermediate, a log key, or a TSA key)
+  that appears only in trust roots whose epoch is below the device's eFuse
+  epoch.
+- Ask the trust-root key holders to sign trust roots. Honest holders sign
+  only trust roots that list honest Sigstore keys.
 - Choose all flash contents and every application action between boots.
 
 The adversary wins the authenticity game if a device boots an image that the
 release workflow never signed:
 
 ```text
-Adv_auth(A) ≤ Adv_EUF-CMA[Ed25519](trust-root key)
-            + Adv_EUF-CMA[ECDSA P-384](Fulcio intermediate)
-            + q · Adv_EUF-CMA[ECDSA P-256](leaf key)
-            + Adv_EUF-CMA[ECDSA P-384](TSA)
+Adv_auth(A) ≤ 4 · Adv_EUF-CMA[Ed25519](trust-root keys)
+            + k_F · Adv_EUF-CMA[ECDSA P-384](Fulcio intermediates)
+            + q · Adv_EUF-CMA[ECDSA P-256](leaf keys)
+            + k_T · Adv_EUF-CMA[ECDSA P-384](TSA keys)
             + Adv_CR[SHA-256] + Adv_CR[SHA-384]
 ```
 
-In this bound, `q` is the number of releases. The TSA term matters because
-of key theft after expiry. Without a trusted signed time inside the
-certificate's validity window, a stolen ephemeral key could sign forever.
+In this bound, `q` is the number of releases. `k_F` and `k_T` are the
+numbers of Fulcio intermediates and TSA keys listed in honest trust roots at
+or above the device's epoch. The TSA term matters because of key theft after
+expiry. Without a trusted signed time inside the certificate's validity
+window, a stolen ephemeral key could sign forever.
 
 The adversary wins the transparency game if a device boots an image whose
-entry isn't in the log that a trusted checkpoint commits to. That advantage
-is at most the Ed25519 forgery advantage against the log key plus the
+entry isn't in a log that a trusted checkpoint commits to. That advantage is
+at most the trust-root term, plus the Ed25519 forgery advantage against each
+log key listed in honest trust roots at or above the device's epoch, plus the
 SHA-256 collision advantage.
+
+The game makes revocation a theorem. Keys that the adversary steals after a
+device burns a higher epoch don't appear in the bound.
 
 Every computational theorem connects to the binary through `boot_refines`.
 The games run `accept`, and the refinement theorem says the binary does what
@@ -238,7 +288,13 @@ trap as a fault.
   RAM buffer. This keeps the SPI controller and the cache out of the model.
 - **eFuse.** An array of bits that can only change from 0 to 1. Reads and
   program operations go through the eFuse controller's registers, modeled at
-  the register level.
+  the register level. Because bits only get set, every counter is unary, and
+  its value is the number of set bits. That is how ESP-IDF reads the 16-bit
+  `SECURE_VERSION` field.
+- **Register locks.** The memory-protection hardware that the bootloader uses
+  to lock the eFuse controller's registers before it jumps. The model says
+  that after the lock, a write to those registers has no effect until the
+  next reset.
 - **MMU table.** The memory-mapped table that maps flash pages to the
   application's virtual addresses. The postcondition of a boot states the
   mapping that the bootloader wrote.
@@ -297,7 +353,8 @@ groups:
 | Rekor v2 | The rebuilt entry equals the canonical JSON that the Lean function produces. Merkle verification equals the Lean definition |
 | Policy and acceptance | The composition equals `accept` |
 | Boot-state record | Reading picks the newest valid copy. Writing preserves at least one valid copy at every instruction |
-| eFuse and MMU | Register writes produce the specified burn and mapping |
+| Trust root | The blob parser agrees with the Lean decoder. The signature count includes only distinct, unrevoked keys. The epoch comparison uses the eFuse value |
+| eFuse, lock, and MMU | Register writes produce the specified burns, the lock, and the mapping, in that order, before the jump |
 | Entry and exit | From reset to the jump, the stack stays in its region and the code is never written |
 
 ## Writing the Rust for verification
@@ -351,7 +408,14 @@ the following checks.
   - The identity policy matched by prefix
   - The Build Signer URI read from the wrong extension
   - The signed time not compared with the leaf certificate's validity window
-  - A trust-root blob with a lower version accepted
+  - A trust root accepted with one signature, or with the same key counted
+    twice
+  - A signature from a revoked trust-root key counted
+  - The trust-root epoch read from flash instead of eFuse
+  - A trust root from one slot used to verify the image in the other slot
+  - An epoch or revocation burned before the application confirmed the image
+  - The eFuse controller left unlocked at the jump
+  - A counter compared as a binary number instead of a count of set bits
   - The eFuse security version not checked
   - A boot-state write that erases both copies before rewriting either
 - **Review.** Reviewer agents from a different model family than the
@@ -466,6 +530,8 @@ measures it.
 | X.509 or CMS specification is wrong | A theorem about the wrong parser | Differential testing on real bundles, strict profile | Pin more fields by exact byte match, which shortens the specification |
 | CMS is too large to specify well | Delays milestone 4 | Profile pinned to the Sigstore TSA's exact token shape | Use Rekor v1, whose signed entry timestamp gives signed time without CMS, and accept the risk that Rekor v1 is retired |
 | Proof repair after every rebuild | Lost work | Freeze the bootloader early, keep contracts at `#[inline(never)]` boundaries | Accept repair as a campaign cost |
+| The C3 can't lock the eFuse controller against code running in machine mode | A malicious application can burn counters or revocations and permanently block updates | Confirm in milestone 0 which protection unit (the permission-control unit or the CPU's PMP) can lock those registers until reset | Write-protect the counter fields once, and accept that a malicious application can block updates |
+| eFuse bits run out | No more security bumps or revocations | Bump the security version and the epoch only for security fixes and revocations, never for routine releases or routine Sigstore rotations | Reserve more `USER_DATA` bits for the epoch counter |
 | Code size exceeds the bootloader region | The design doesn't fit | Measure in milestone 0 | Move the partition table, or move signature checks into a second verified stage loaded from flash |
 
 ### Go/no-go checkpoints
@@ -497,7 +563,8 @@ there. Each depends on the ones before it.
 4. **Timestamps.** Contracts for the CMS and RFC 3161 subset.
 5. **One boot.** `boot_refines`, from reset to the jump, with cryptographic
    hooks.
-6. **Many boots.** `boots_safe`, rollback, and availability, with power loss.
+6. **Many boots.** `boots_safe`, `trust_root_monotone`, rollback, and
+   availability, with power loss.
 7. **Security games.** Authenticity and transparency in VCVio, connected to
    `boot_refines`.
 8. **Cryptography (optional).** Discharge the P-256, P-384, and Ed25519
@@ -524,8 +591,9 @@ verifies Cosign signatures in the application. This plan doesn't change it.
   against ESP32 Secure Boot and flash encryption
 - Changes to flash by a physical attacker during boot
 - Bugs in the ROM or in the silicon
-- Custody of the two offline keys and the security of the GitHub repository
-  and its workflows
+- Custody of the offline keys and the security of the GitHub repository and
+  its workflows
+- The [rotation process off the device](#rotation-process-off-the-device)
 - The application, its network stack, and its OTA download code
 - Side channels during boot, which leak nothing secret because verification
   uses only public data
@@ -549,24 +617,104 @@ The following ESP32-C3 facts come from ESP-IDF's `soc_caps.h` for the chip:
 1. **ROM.** Verifies the bootloader against an RSA-3072 key whose digest is
    in eFuse.
 2. **Bootloader.** The verified code.
-3. **Trust-root blob.** A file in flash, signed by an offline Ed25519 key
+3. **Trust-root blob.** Stored in each slot next to the image, and signed by
+   two of four offline Ed25519 trust-root keys whose public halves are
    compiled into the bootloader.
 4. **Sigstore bundle.** Shipped with each image.
 5. **Firmware image.** Untrusted until the checks pass.
 
-The RSA-3072 key and the Ed25519 trust-root key are long-lived and stay
+The RSA-3072 key and the four Ed25519 trust-root keys are long-lived and stay
 offline. Routine releases use only the workflow's Sigstore identity.
 
-### Trust-root blob
+### Trust-root rotation
 
 The public Rekor v2 instance starts a new log shard with a new key about
 every six months, and the Fulcio intermediate certificate expires in October
 2031. A trust root compiled into the bootloader would go stale, so it lives
-in a signed blob that an OTA update can replace. The blob has a format
-version, a monotonic blob version, the pinned Fulcio intermediate, the Rekor
-v2 log keys (Ed25519) with log IDs and validity windows, the pinned TSA
-signing certificate, the identity policy, and an Ed25519 signature. The
-bootloader rejects a blob older than the newest one it accepted.
+in a signed blob that ships with each image.
+
+#### Blob contents
+
+- A format version and a sequence number, for ordering and audit.
+- An epoch. The bootloader rejects a blob whose epoch is below the epoch
+  counter in eFuse.
+- The Fulcio intermediates, Rekor v2 log keys with log IDs, and TSA signing
+  certificates to accept, each with a validity window. A blob keeps the keys
+  of inactive Rekor shards, as Sigstore's `trusted_root.json` file does, so
+  that images logged before a shard change still verify.
+- The identity policy.
+- The indexes of trust-root keys for the bootloader to mark revoked in
+  eFuse.
+- Two or more Ed25519 signatures, each tagged with the index of the
+  trust-root key that made it.
+
+#### Where blobs live and when they take effect
+
+Each slot holds its image, its bundle, and its blob, and the bootloader
+verifies a slot's image only with that slot's blob. The application writes
+all three to the inactive slot, so a new trust root becomes active in the
+same step as the image that needs it, and a power loss during the write
+leaves the old slot untouched. A bad blob fails only its own slot, and the
+bootloader falls back to the other slot.
+
+A rotation therefore needs no extra steps on the device. When CI starts
+logging to a new Rekor shard, the next release carries a blob that lists the
+new shard's key, and the blob's signatures don't depend on Sigstore at all.
+
+#### Epochs and eFuse budget
+
+Most rotations add keys and don't need rollback protection, because an
+older blob is still trustworthy. Those rotations keep the same epoch, so the
+older slot keeps booting. The key holders raise the epoch only to drop a key
+that might be compromised, or to tighten the identity policy. After the
+application confirms an image whose blob has a higher epoch or new
+revocations, the bootloader burns them on the next boot. From then on, every
+blob below the new epoch fails, including the one in the other slot.
+
+The counters are unary, so each one has a fixed budget of bumps:
+
+| Counter | eFuse location | Bumps |
+| --- | --- | --- |
+| Image security version | `SECURE_VERSION`, 16 bits in block 0 | 16 |
+| Trust-root epoch | 64 bits of `USER_DATA` in block 3 | 64 |
+| Trust-root key revocations | 4 bits of `USER_DATA` in block 3 | One per key |
+
+`USER_DATA` has 256 bits. ESP-IDF uses bits 200 through 247 for an optional
+custom MAC address, so the layout stays clear of them.
+
+#### Revoking and replacing trust-root keys
+
+The two-of-four threshold means one stolen trust-root key can't sign a blob.
+It also means a stolen key can't revoke the others, because a revocation
+must arrive in a blob that two unrevoked keys signed. The device tolerates up
+to two revoked keys and still meets the threshold. Replacing the four
+compiled-in keys requires a new bootloader signed with the RSA-3072 key and
+written over USB. This plan doesn't include in-field bootloader updates.
+
+#### Rotation process off the device
+
+1. A scheduled CI job fetches Sigstore's `trusted_root.json` file with a TUF
+   client and compares it with the newest blob in the repository.
+2. When they differ, the job builds a candidate blob with a deterministic
+   encoder and opens a pull request that shows the old and new keys side by
+   side.
+3. Two key holders review the pull request and sign the candidate offline,
+   each on a hardware token, and commit the signatures.
+4. CI checks the signed blob with a host build of the bootloader's verifier
+   and with the executable Lean decoder, then merges it.
+5. The release workflow attaches the newest signed blob to every release.
+
+None of these steps runs on the device, so the machine-code proof doesn't
+cover them. The proof shows that a device trusts exactly what two unrevoked
+trust-root keys signed. Whether a signed blob lists the right Sigstore keys
+depends on the key holders' review and the CI checks. A blob with a wrong
+key makes devices reject new images. It can't make them accept a forged
+image unless two key holders signed a blob that lists an attacker's key.
+
+Sigstore lists a new key in `trusted_root.json` before clients sign with it.
+The Rekor v2 key had a validity start of 2025-09-23, while the signing
+configuration still listed only Rekor v1. That gap gives the key holders time
+to sign a blob before the first release that needs it.
 
 ### Release identity policy
 
@@ -596,9 +744,10 @@ Replace the following:
   only signed time, and it must fall inside every validity window.
 - No check of the leaf's embedded SCT.
 
-Each boot runs five software signature checks. Two are Ed25519 checks, on
-the trust-root blob and the checkpoint. Two are P-384 checks, on the leaf
-certificate and the TSA token. One is a P-256 check, on the image signature.
+Each slot check runs six software signature checks. Three are Ed25519
+checks, two on the trust-root blob and one on the checkpoint. Two are P-384
+checks, on the leaf certificate and the TSA token. One is a P-256 check, on
+the image signature.
 
 CI transcodes the protobuf JSON bundle into a fixed binary container that
 holds the same signed byte strings. The bootloader still produces one JSON
@@ -608,21 +757,24 @@ rebuilds from bundle fields, as `ToEntryHash` in rekor-tiles does.
 
 ### Image format and boot procedure
 
-The signed image is a header (magic, chip ID, 16-bit security version,
-segment table, entry point) followed by segments. The bootloader rejects
+The signed image is a header (magic, chip ID, security version, segment
+table, entry point) followed by segments. The security version is compared
+with the count of set bits in `SECURE_VERSION`, so a product line gets 16
+security bumps in total. The bootloader rejects
 overlapping segments, segments that overlap its own memory, segments outside
 the allowed regions, and length mismatches.
 
-The bootloader reads a two-copy boot-state record, chooses a slot, verifies
-the trust-root blob, parses the header, hashes the image, checks the Rekor
-entry and checkpoint, checks the certificate and policy, checks the image
-signature, checks the timestamp, checks the security version, and then maps
-the image and jumps. If a check fails, it tries the other slot. If both
-fail, it halts.
+The bootloader reads a two-copy boot-state record and chooses a slot. It
+verifies the slot's trust-root blob, parses the header, hashes the image,
+checks the Rekor entry and checkpoint, checks the certificate and policy,
+checks the image signature, checks the timestamp, and checks the security
+version. It then burns any pending eFuse updates, locks the eFuse
+controller, maps the image, and jumps. If a check fails, it tries the other
+slot. If both fail, it halts.
 
 A trial image boots a fixed number of times. If the application doesn't
-confirm it, the bootloader reverts. After confirmation, the bootloader burns
-the security version into eFuse.
+confirm it, the bootloader reverts. After confirmation, the next boot burns
+the image's security version and its blob's epoch and revocations.
 
 ### Signing pipeline
 
