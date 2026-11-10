@@ -19,6 +19,7 @@ import sys
 # Lean name, then the demangled symbol.
 FUNCTIONS = [
     ("crc32", "c3_verify::bootstate::crc32"),
+    ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
 ]
 
 

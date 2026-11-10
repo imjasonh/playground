@@ -53,6 +53,26 @@ development genesis keys. A build with other keys has its own image, and
 its functions are covered only if their bytes are the same, which
 `extract-functions.py` would show against that image.
 
+`C3BootProofs/Proofs/Reader.lean` proves `readerBytes_correct` about the
+compiled `Reader::bytes`, which takes `n` bytes from a bounds-checked
+reader. It loads the reader's three words, writes its `Result` through a
+pointer, and updates the reader's position. The theorem gives the exact
+memory afterward (`bytesMem`) for every input, success and both failures,
+with only `a3` through `a5` changed among the registers. Its hypotheses are
+that the result and the reader are 4-byte aligned, the return address is
+even, and the bytes it stores (the result's 8 bytes and the reader's
+position) don't overlap its code. Callers in the image keep both on the
+stack or in data memory, which the proofs of those callers will have to
+show. `bytesResult_eq`
+restates the specification in plain arithmetic: the call succeeds exactly
+when `pos + n ≤ len` as natural numbers, so a sum that wraps past 2^32
+fails.
+
+| Machine-code theorem | Statement, on the RV32 model, about the pinned image's bytes |
+| --- | --- |
+| `crc32_correct`, `crc32_spec` | The compiled `crc32` returns the CRC-32 of the 28 bytes at `a0` |
+| `readerBytes_correct` | The compiled `Reader::bytes` leaves memory exactly as `bytesMem` says, for every input |
+
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose
 digest `c3-boot/bootloader/dev-image.sha256` pins; CI regenerates it and
@@ -60,6 +80,15 @@ fails on any difference, and `c3-boot/bootloader/check-digest.sh --update`
 rewrites both. `C3BootProofs/Proof/Code.lean` has the proof tools: `CodeAt`
 (memory holds a function's bytes), `fetch_code` (a fetch decodes from those
 bytes, so the kernel computes each instruction), and `Steps`.
+`C3BootProofs/Proof/Step.lean` runs one instruction at a time on a
+symbolic state (`St`), with loads, stores, and `Sep`, which says two byte
+ranges don't overlap, so a store leaves the code in place.
+
+The model treats the instruction-bus and data-bus addresses of the same
+SRAM as different memory, while the ESP32-C3 aliases them. A proof is
+sound for the chip as long as no store reaches the code through its
+data-bus alias, which holds when the code's preconditions keep stores in
+the data region. The platform model will make that a stated obligation.
 
 `C3BootProofs/Theorems/Trace.lean` models a device as its eFuse field, its
 boot-state record, and the result of checking each slot. A trace mixes
@@ -74,7 +103,6 @@ trace, it proves the following:
 | `boots_safe` | Every jump goes to a slot accepted at the level the bootloader read, after the level reached that slot's burn target |
 | `availability` | When some slot is accepted, a boot can run to a jump |
 | `mapped_pages_signed` | For an accepted image header, every 64 KiB page the cache maps for a flash segment ends inside the signed image |
-| `crc32_correct`, `crc32_spec` | On the RV32 model, the compiled `crc32` in the bootloader image returns the CRC-32 of the 28 bytes at `a0` |
 | `trust_root_monotone` | When the slot results come from the trust-root checks, every jump goes to a slot whose chain is authorized from the genesis keys, whose blob the chain's last key set signed, whose chain level is at most the blob's level, whose image security version equals the blob's level, and whose blob level is at least the eFuse level |
 
 A boot that halts, including the bootloader's halt when an eFuse bit fails
