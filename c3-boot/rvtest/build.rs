@@ -25,7 +25,8 @@ fn main() {
             println!("cargo:rerun-if-changed={}", path.display());
             fs::read_to_string(path).expect("cases.S is readable")
         }
-        Err(_) => ".section .rodata.rvcases, \"a\"\n.balign 4\n.globl rv_cases\nrv_cases:\n\
+        Err(_) => ".section .text.rvcases, \"ax\"\n.globl rv_call\nrv_call:\n  ret\n\
+            .section .rodata.rvcases, \"a\"\n.balign 4\n.globl rv_cases\nrv_cases:\n\
             .globl rv_case_count\nrv_case_count:\n  .word 0\n"
             .to_string(),
     };
