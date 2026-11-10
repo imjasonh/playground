@@ -33,6 +33,11 @@ FUNCTIONS = [
     ("manifestParse", "c3_verify::manifest::parse"),
     ("parseSave", ("manifestParse", 0x02)),
     ("parseRestore", ("manifestParse", 0xDC)),
+    ("readerMagic", "<c3_verify::reader::Reader>::magic"),
+    ("magicLoad", ("readerMagic", 0x22)),
+    ("readerU16", "<c3_verify::reader::Reader>::u16"),
+    ("readerVersion1", "<c3_verify::reader::Reader>::version_1"),
+    ("readerReserved", "<c3_verify::reader::Reader>::reserved"),
 ]
 
 

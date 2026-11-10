@@ -5,6 +5,7 @@ import C3BootProofs.Proofs.Reader
 import C3BootProofs.Proofs.ReaderArray
 import C3BootProofs.Proofs.ReaderU32
 import C3BootProofs.Proofs.Part
+import C3BootProofs.Proofs.Reserved
 
 /-!
 # Audit
@@ -196,6 +197,148 @@ theorem exists_readerU32_machine :
     | (unfold RV32.Sep; decide +kernel)
     | decide +kernel
 
+/-- `witnessMemU32` with `Reader::magic` and its load helper, `Reader::u16`,
+`Reader::version_1`, and `Reader::reserved` added where the image loads
+them. -/
+def witnessMemChecks (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.readerMagicAddress).toNat < Image.readerMagicCode.length then
+    RV32.byteAt Image.readerMagicCode (a - BitVec.ofNat 32 Image.readerMagicAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.magicLoadAddress).toNat < Image.magicLoadCode.length then
+    RV32.byteAt Image.magicLoadCode (a - BitVec.ofNat 32 Image.magicLoadAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.readerU16Address).toNat < Image.readerU16Code.length then
+    RV32.byteAt Image.readerU16Code (a - BitVec.ofNat 32 Image.readerU16Address).toNat
+  else if (a - BitVec.ofNat 32 Image.readerVersion1Address).toNat < Image.readerVersion1Code.length then
+    RV32.byteAt Image.readerVersion1Code (a - BitVec.ofNat 32 Image.readerVersion1Address).toNat
+  else if (a - BitVec.ofNat 32 Image.readerReservedAddress).toNat < Image.readerReservedCode.length then
+    RV32.byteAt Image.readerReservedCode (a - BitVec.ofNat 32 Image.readerReservedAddress).toNat
+  else witnessMemU32 a
+
+/-- The registers of a call on the witness reader with the stack at
+`0x3FCC8000`, with `a1` set to `a1v`. -/
+def witnessRegs (a1v : RV32.Word) (r : Fin 32) : RV32.Word :=
+  if r = RV32.a0 then 0x3FCC5100 else if r = RV32.a1 then a1v
+  else if r = RV32.sp then 0x3FCC8000 else 0
+
+/-- A machine that calls `Reader::magic` on the witness reader meets
+`readerMagic_correct`'s hypotheses. -/
+theorem exists_readerMagic_machine :
+    ∃ (m : RV32.Machine) (base retAddr self k : RV32.Word),
+      RV32.CodeAt m base Image.readerMagicCode ∧
+      RV32.CodeAt m (base + 0x1AC) Image.readerArray4Code ∧
+      RV32.CodeAt m (base + 0x1AC + 0xFFFFFF96) Image.readerBytesCode ∧
+      RV32.CodeAt m (base + 0x163CA) Image.magicLoadCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.a1 = k ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base Image.readerMagicCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC) Image.readerArray4Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC + 0xFFFFFF96)
+        Image.readerBytesCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x163CA) Image.magicLoadCode.length ∧
+      RV32.Sep (self + 8) 4 base Image.readerMagicCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x1AC) Image.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x1AC + 0xFFFFFF96) Image.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x163CA) Image.magicLoadCode.length ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  refine ⟨⟨witnessRegs 0x4C533343, BitVec.ofNat 32 Image.readerMagicAddress, witnessMemChecks⟩,
+    BitVec.ofNat 32 Image.readerMagicAddress, 0, 0x3FCC5100, 0x4C533343, ?_, ?_, ?_, ?_, by decide, rfl,
+    rfl, rfl, rfl, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
+/-- A machine that calls `Reader::u16` on the witness reader meets
+`readerU16_correct`'s hypotheses. -/
+theorem exists_readerU16_machine :
+    ∃ (m : RV32.Machine) (base retAddr self : RV32.Word),
+      RV32.CodeAt m base Image.readerU16Code ∧
+      RV32.CodeAt m (base + 0xFFFFFFDA) Image.readerBytesCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base Image.readerU16Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0xFFFFFFDA) Image.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base Image.readerU16Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFFDA) Image.readerBytesCode.length ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 Image.readerU16Address, witnessMemChecks⟩,
+    BitVec.ofNat 32 Image.readerU16Address, 0, 0x3FCC5100, ?_, ?_, by decide, rfl, rfl, rfl,
+    by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
+/-- A machine that calls `Reader::version_1` on the witness reader meets
+`readerVersion1_correct`'s hypotheses. -/
+theorem exists_readerVersion1_machine :
+    ∃ (m : RV32.Machine) (base retAddr self : RV32.Word),
+      RV32.CodeAt m base Image.readerVersion1Code ∧
+      RV32.CodeAt m (base + 0x126) Image.readerU16Code ∧
+      RV32.CodeAt m (base + 0x126 + 0xFFFFFFDA) Image.readerBytesCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 base Image.readerVersion1Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 (base + 0x126) Image.readerU16Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 (base + 0x126 + 0xFFFFFFDA)
+        Image.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base Image.readerVersion1Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x126) Image.readerU16Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x126 + 0xFFFFFFDA) Image.readerBytesCode.length ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 Image.readerVersion1Address, witnessMemChecks⟩,
+    BitVec.ofNat 32 Image.readerVersion1Address, 0, 0x3FCC5100, ?_, ?_, ?_, by decide, rfl, rfl, rfl,
+    by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
+/-- A machine that calls `Reader::reserved` for 2 bytes on the witness
+reader meets `readerReserved_correct`'s hypotheses. -/
+theorem exists_readerReserved_machine :
+    ∃ (m : RV32.Machine) (base retAddr self n : RV32.Word),
+      RV32.CodeAt m base Image.readerReservedCode ∧
+      RV32.CodeAt m (base + 0x9C) Image.readerBytesCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.a1 = n ∧
+      n ≠ 0 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base Image.readerReservedCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0x9C) Image.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base Image.readerReservedCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x9C) Image.readerBytesCode.length ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  refine ⟨⟨witnessRegs 2, BitVec.ofNat 32 Image.readerReservedAddress, witnessMemChecks⟩,
+    BitVec.ofNat 32 Image.readerReservedAddress, 0, 0x3FCC5100, 2, ?_, ?_, by decide, rfl, rfl, rfl,
+    by decide, rfl, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
+
 /-- `witnessMemU32` with `manifest::part` and its save and restore helpers added
 where the image loads them. -/
 def witnessMemPart (a : RV32.Word) : BitVec 8 :=
@@ -325,3 +468,33 @@ end C3
 
 /-- info: 'C3.exists_manifestPart_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_manifestPart_machine
+
+/-- info: 'C3.RV32.magicLoad_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.magicLoad_correct
+
+/-- info: 'C3.RV32.readerMagic_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readerMagic_correct
+
+/-- info: 'C3.exists_readerMagic_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_readerMagic_machine
+
+/-- info: 'C3.RV32.readerU16_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readerU16_correct
+
+/-- info: 'C3.exists_readerU16_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_readerU16_machine
+
+/-- info: 'C3.RV32.readerVersion1_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readerVersion1_correct
+
+/-- info: 'C3.exists_readerVersion1_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_readerVersion1_machine
+
+/-- info: 'C3.RV32.reserved_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.reserved_loop
+
+/-- info: 'C3.RV32.readerReserved_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readerReserved_correct
+
+/-- info: 'C3.exists_readerReserved_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_readerReserved_machine

@@ -80,6 +80,9 @@ ends inside the signed image.
 | `readerU32_correct` | The compiled `Reader::u32`, through `Reader::array::<4>` and `Reader::bytes`, leaves memory outside its 48 bytes of stack exactly as `u32Mem` says: on success, tag 0 and the 4 bytes at the slice's position as a little-endian word through `out` |
 | `save_run`, `restore_run` | Any machine-outlined helper that stores (or loads) a list of registers at offsets from `sp` and returns with `jr t0` does exactly that: memory `saveMem`, or registers `restoreRegs`. `decide` checks each helper's bytes against its list |
 | `manifestPart_correct` | The compiled `manifest::part`, through both `Reader::u32` calls and both helpers, restores `sp` and every register but `a0` through `a5` and `t0`, and leaves memory outside its 80 bytes of stack exactly as `partMem` says: the offset, the length, and tag 0 when both reads succeed and `min ≤ length ≤ max`; otherwise tag 1 and `Truncated` or `OutOfRange` |
+| `readerMagic_correct` | The compiled `Reader::magic`, through `Reader::array::<4>` and an outlined load helper, returns 0xFF in `a0` when the next 4 bytes equal the magic, `BadMagic` (2) when they don't, and `Truncated` (0) when fewer remain |
+| `readerU16_correct`, `readerVersion1_correct` | The compiled `Reader::u16` returns its `Result` packed in `a0`, and `Reader::version_1`, through it, returns 0xFF when the version is 1 and `BadVersion` (3) otherwise |
+| `reserved_loop`, `readerReserved_correct` | The compiled `Reader::reserved(n)`, through `Reader::bytes` and a loop proved by induction on the bytes left, returns 0xFF when the `n` bytes are zero and `NonzeroReserved` (4) otherwise |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
@@ -165,7 +168,10 @@ order.
 
 `C3BootProofs/Audit.lean` pins each theorem's axioms (`propext` and
 `Quot.sound`) and proves that admissible traces with a jump exist, including
-one whose slot results come from the trust-root checks.
+one whose slot results come from the trust-root checks. Some core lemmas
+pull in `Classical.choice`: `beq_self_eq_true` does for `BitVec`, so the
+proofs use `beq_iff_eq.mpr rfl` instead. The audit catches any that slip
+in.
 
 The model is the production bootloader configuration, which burns eFuses
 (`C3_EFUSE_BURN=on`) and halts when a burn fails. A test build that doesn't
