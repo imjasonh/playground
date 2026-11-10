@@ -16,6 +16,7 @@ import C3BootProofs.Proofs.ImageSpecSegs
 import C3BootProofs.Proofs.Memset
 import C3BootProofs.Proofs.FieldSub
 import C3BootProofs.Proofs.FieldArith
+import C3BootProofs.Proofs.FieldSubInnerMain
 
 /-!
 # Audit
@@ -600,6 +601,40 @@ theorem exists_borrowingSub_machine :
     by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
+/-- The P-256 modulus as `sub_inner`'s second operand holds it, as bytes. -/
+def pLimbBytes : List Nat :=
+  [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   1, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0]
+
+/-- `witnessMemField` with the modulus at `0x3FCC6100`. -/
+def witnessMemSub (a : RV32.Word) : BitVec 8 :=
+  if (a - 0x3FCC6100).toNat < 36 then RV32.byteAt pLimbBytes (a - 0x3FCC6100).toNat else witnessMemField a
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 2000000 in
+/-- A machine that calls `sub_inner` with the result at `0x3FCC5000`, the
+operands at `0x3FCC6000` and `0x3FCC6100`, and the stack at `0x3FCC8000`
+meets `subInner_correct`'s hypotheses. -/
+theorem exists_subInner_machine :
+    ∃ (m : RV32.Machine) (P sp0 out lp rp retAddr : RV32.Word), RV32.SIEnv m.mem P sp0 out lp rp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = lp ∧ RV32.reg m RV32.a2 = rp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.subInnerAddress, witnessMemSub⟩, BitVec.ofNat 32 Image.subInnerAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), ⟨by decide, by decide, by decide⟩, ?_⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -811,3 +846,9 @@ end C3
 
 /-- info: 'C3.RV32.sub_fin' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.sub_fin
+
+/-- info: 'C3.RV32.subInner_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.subInner_correct
+
+/-- info: 'C3.exists_subInner_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_subInner_machine
