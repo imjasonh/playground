@@ -1,5 +1,6 @@
 import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Theorems.Formats
+import C3BootProofs.Proofs.Crc32
 
 /-!
 # Audit
@@ -70,6 +71,19 @@ theorem exists_flash_header :
     decide +kernel
   exact ⟨_, _, _, hd, ⟨.flashCode, 0x42000000, 0x10000, 0x10000⟩, by simp, rfl⟩
 
+/-- A machine with `crc32`'s bytes at the address the image loads them
+meets `crc32_correct`'s hypotheses, so the theorem is not vacuous. -/
+theorem exists_crc32_machine :
+    ∃ (m : RV32.Machine) (base retAddr : RV32.Word), RV32.CodeAt m base Image.crc32Code ∧
+      m.pc = base ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let base : RV32.Word := BitVec.ofNat 32 Image.crc32Address
+  refine ⟨⟨fun _ => 0, base, fun a => RV32.byteAt Image.crc32Code (a - base).toNat⟩, base, 0,
+    ?_, rfl, rfl, by decide⟩
+  intro i hi
+  have hi' : i < 2 ^ 32 := Nat.lt_trans hi (by decide)
+  show RV32.byteAt Image.crc32Code (base + BitVec.ofNat 32 i - base).toNat = _
+  rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hi']
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -98,3 +112,12 @@ end C3
 
 /-- info: 'C3.exists_flash_header' depends on axioms: [propext] -/
 #guard_msgs in #print axioms C3.exists_flash_header
+
+/-- info: 'C3.RV32.crc32_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.crc32_correct
+
+/-- info: 'C3.RV32.crc32_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.crc32_spec
+
+/-- info: 'C3.exists_crc32_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_crc32_machine

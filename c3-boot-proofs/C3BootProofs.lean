@@ -3,6 +3,9 @@ import C3BootProofs.Spec.BootState
 import C3BootProofs.Spec.Boot
 import C3BootProofs.Spec.Formats
 import C3BootProofs.Model.RV32
+import C3BootProofs.Image.Bootloader
+import C3BootProofs.Proof.Code
+import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats

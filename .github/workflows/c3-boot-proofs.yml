@@ -5,8 +5,9 @@
 # manifest, and image-header decoders on valid and mutated inputs. It also
 # runs the RV32 model in lockstep with Espressif's QEMU on random
 # instruction sequences, compares the model's decoder with LLVM's on every
-# 16-bit encoding and a sample of 32-bit ones, and boots the bootloader
-# image on the model in lockstep with QEMU.
+# 16-bit encoding and a sample of 32-bit ones, boots the bootloader image on
+# the model in lockstep with QEMU, and checks that the function bytes the
+# machine-code proofs are about come from the pinned bootloader image.
 
 name: c3-boot-proofs
 
@@ -92,6 +93,21 @@ jobs:
           echo "${QEMU_SHA256}  /tmp/qemu.tar.xz" | sha256sum -c -
           mkdir -p /tmp/qemu
           tar -xJf /tmp/qemu.tar.xz -C /tmp/qemu --strip-components=1
+
+      - name: Check the extracted bootloader functions against the pinned image
+        working-directory: c3-boot
+        run: |
+          rustup component add llvm-tools
+          bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+          C3_GENESIS=dev C3_EFUSE_BURN=off cargo build --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader
+          elf=target/riscv32imc-unknown-none-elf/release/c3-bootloader
+          cargo run --locked -q -p c3-ota -- bootloader-image --elf "${elf}" \
+            --out "${RUNNER_TEMP}/bootloader.bin"
+          echo "$(cat bootloader/dev-image.sha256)  ${RUNNER_TEMP}/bootloader.bin" | sha256sum -c -
+          python3 ../c3-boot-proofs/scripts/extract-functions.py "${RUNNER_TEMP}/bootloader.bin" \
+            "${elf}" "${bin}/llvm-nm" "${RUNNER_TEMP}/Bootloader.lean"
+          diff ../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean "${RUNNER_TEMP}/Bootloader.lean"
 
       - name: Run the RV32 model in lockstep with QEMU
         working-directory: c3-boot

@@ -5,7 +5,9 @@
 # this digest on purpose and must update the file.
 #
 # The pinned image is the default test build: the public development genesis
-# keys and no eFuse burns.
+# keys and no eFuse burns. --update also regenerates the function bytes that
+# c3-boot-proofs' machine-code proofs are about (it needs the llvm-tools
+# component); a proof whose function's bytes changed then needs redoing.
 #
 # Usage: bootloader/check-digest.sh [--update]
 
@@ -27,6 +29,12 @@ digest="$(sha256sum "${work}/bootloader.bin" | cut -d' ' -f1)"
 if [[ "${1:-}" == "--update" ]]; then
   echo "${digest}" >"${pinned}"
   echo "pinned ${digest}"
+  # The machine-code proofs are about function bytes from this image.
+  nm="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-nm"
+  python3 "${root}/../c3-boot-proofs/scripts/extract-functions.py" "${work}/bootloader.bin" \
+    target/riscv32imc-unknown-none-elf/release/c3-bootloader "${nm}" \
+    "${root}/../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean"
+  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean"
   exit 0
 fi
 if [[ "${digest}" != "$(cat "${pinned}")" ]]; then

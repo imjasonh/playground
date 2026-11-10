@@ -33,6 +33,34 @@ Encodings that would trap make `step` return `none`; it doesn't model CSRs,
 interrupts, or misaligned accesses yet. This is the plan's compact
 semantics, which the machine-code proofs will run the bootloader image on.
 
+## Machine-code proofs
+
+`C3BootProofs/Proofs/Crc32.lean` proves `crc32_correct` about the compiled
+`c3_verify::bootstate::crc32`, the boot-state record's checksum, as it is in
+the bootloader image: 23 instructions with two nested loops, which the
+compiler specialized to the record's 28-byte body. With the function's bytes
+in memory at any address and the program counter at its first byte, the RV32
+model runs it to the return address, memory and every register outside `a0`
+through `a6` are unchanged, and `a0` holds the CRC-32 of the 28 bytes at
+`a0`. `crc32_spec` restates the result as `C3.crc32`, the byte-format
+specification that `decode-check` tests against `c3-verify`.
+`exists_crc32_machine` in `Audit.lean` shows the hypotheses can all hold.
+`Steps` says some execution gets there; the proof follows the function's
+path through both loops to its `ret`.
+
+The proofs are about the pinned image: the default test build with the
+development genesis keys. A build with other keys has its own image, and
+its functions are covered only if their bytes are the same, which
+`extract-functions.py` would show against that image.
+
+The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
+`scripts/extract-functions.py` generates from the bootloader image whose
+digest `c3-boot/bootloader/dev-image.sha256` pins; CI regenerates it and
+fails on any difference, and `c3-boot/bootloader/check-digest.sh --update`
+rewrites both. `C3BootProofs/Proof/Code.lean` has the proof tools: `CodeAt`
+(memory holds a function's bytes), `fetch_code` (a fetch decodes from those
+bytes, so the kernel computes each instruction), and `Steps`.
+
 `C3BootProofs/Theorems/Trace.lean` models a device as its eFuse field, its
 boot-state record, and the result of checking each slot. A trace mixes
 arbitrary flash and record writes by an attacker, boots that lose power and
@@ -46,6 +74,7 @@ trace, it proves the following:
 | `boots_safe` | Every jump goes to a slot accepted at the level the bootloader read, after the level reached that slot's burn target |
 | `availability` | When some slot is accepted, a boot can run to a jump |
 | `mapped_pages_signed` | For an accepted image header, every 64 KiB page the cache maps for a flash segment ends inside the signed image |
+| `crc32_correct`, `crc32_spec` | On the RV32 model, the compiled `crc32` in the bootloader image returns the CRC-32 of the 28 bytes at `a0` |
 | `trust_root_monotone` | When the slot results come from the trust-root checks, every jump goes to a slot whose chain is authorized from the genesis keys, whose blob the chain's last key set signed, whose chain level is at most the blob's level, whose image security version equals the blob's level, and whose blob level is at least the eFuse level |
 
 A boot that halts, including the bootloader's halt when an eFuse bit fails

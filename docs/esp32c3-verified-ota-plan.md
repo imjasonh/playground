@@ -8,7 +8,10 @@
 > logic's, the trust-root rules', and the byte formats' specifications;
 > `rollback`, `boots_safe`, `availability`, and `trust_root_monotone` at
 > that level; and `mapped_pages_signed` for the image header. Phase 4 has
-> started with an executable RV32IMC model tested in lockstep against QEMU. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> an executable RV32IMC model tested in lockstep against QEMU, on random
+> sequences and on whole boots of the bootloader image. Phase 5's pilot has
+> its first function: `crc32_correct` proves the image's compiled `crc32`
+> correct on the model. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
 > checked on 2026-11-10 against the sources listed at the end.
