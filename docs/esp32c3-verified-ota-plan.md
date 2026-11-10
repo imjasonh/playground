@@ -1,140 +1,576 @@
-# Plan: machine-checked Sigstore OTA verification on the ESP32-C3
+# Plan: verify an ESP32-C3 Sigstore bootloader at the machine-code level
 
 > **Status:** proposal. Nothing in this plan is implemented. The facts about
-> Sigstore and the ESP32-C3 were checked on 2026-11-10 against the sources
-> listed at the end.
+> Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
+> checked on 2026-11-10 against the sources listed at the end.
 
-This plan applies the approach from DeepMind's AlphaProof Code work on
-libsignal to over-the-air (OTA) firmware updates on an ESP32-C3. The
-bootloader and firmware are Rust. GitHub Actions signs each release with
-Sigstore keyless signing. Fulcio issues a short-lived certificate for the
-workflow's OIDC identity, and Rekor logs the signature.
+This plan proves security properties of a Rust bootloader for the ESP32-C3,
+in Lean, against the RISC-V machine code that ships on the device. It follows
+the method that DeepMind used to verify libsignal in "AlphaProof Code:
+Verifying Signal's Security at the Machine-Code Level." The bootloader checks
+over-the-air (OTA) firmware updates that GitHub Actions signs with Sigstore.
+The OTA and signing design is in the appendix. The body of this plan is
+about the verification.
 
-## Goal
+## Summary
 
-Prove, with a Lean proof that the Lean kernel checks against the compiled
-RISC-V machine code of the bootloader, the following claim:
+The proof covers the exact bytes that ROM Secure Boot loads. Neither the
+Rust compiler nor Rust's semantics is trusted. The main results are four
+theorems:
 
-> On every boot, whatever bytes are in flash, the bootloader either halts
-> safely or jumps to an image whose SHA-256 digest a Rekor checkpoint commits
-> to, in an entry whose Fulcio certificate names the release workflow on
-> `main`. The signing time falls inside that certificate's validity, and the
-> image's security version is at least the version burned into eFuse.
+- **Refinement.** Every run of the bootloader binary, on any flash contents,
+  does what a short Lean acceptance function says. No run faults, panics, or
+  runs longer than a proved instruction bound.
+- **Authenticity.** The bootloader runs an image only if the release
+  workflow signed it. This holds even if an attacker steals a signing key
+  after its certificate expires. The bound is a sum of signature-forgery and
+  hash-collision advantages.
+- **Transparency.** The bootloader runs an image only if a checkpoint signed
+  by a trusted Rekor log commits to that image's log entry.
+- **Rollback and availability.** The security version never decreases, and
+  no sequence of application writes and power losses makes both slots
+  unbootable while one confirmed image exists.
 
-The proof also shows that the bootloader never faults, never panics, and
-always terminates, on any flash contents.
+This work differs from the libsignal work in five ways:
 
-The firmware application, the network stack, and the OTA download code stay
-outside the proof. The adversary controls them.
+- It targets bare-metal RISC-V, not AArch64 Linux user mode. Peripherals,
+  eFuse, and NOR flash take the place of system calls.
+- Its theorems span many boots with power loss at any instruction, not one
+  run of a command-line tool.
+- The binary that gets verified is the binary that ships. Hooked routines
+  stay in the image as real code, and the proof treats calls to them through
+  contracts that a later campaign can discharge.
+- The security property is short. Most of the specification is parsing:
+  X.509, CMS, and Rekor's formats.
+- The verified code is much smaller. This plan estimates 5,000 to 20,000
+  RV32 instructions outside the hooked cryptography, compared with about
+  140,000 AArch64 instructions for libsignal.
+
+The plan is feasible. The largest risks are building the agent setup, which
+DeepMind didn't release, and getting the new trusted models of the platform
+right. The [feasibility assessment](#feasibility-assessment) covers both, and
+the [milestones](#milestones) include go/no-go checkpoints.
 
 ## Background on AlphaProof Code
 
-The paper "AlphaProof Code: Verifying Signal's Security at the Machine-Code
-Level" and the
+The paper and the
 [`google-deepmind/code-verification`](https://github.com/google-deepmind/code-verification)
 repository describe the following:
 
 - **Target.** Unmodified libsignal, compiled by stock `rustc` into a static
-  AArch64 Linux binary of about 140,000 instructions. The theorems are about
-  whole runs of that binary under a Lean model of AArch64 and Linux. The model
-  has 467 instructions and 31 system calls, and it is single-threaded.
-- **Trust.** The Rust compiler isn't trusted. The reader trusts the Lean
-  kernel, about 18,000 lines of specification, about 8,000 lines of ISA and
-  loader semantics, and 39 hooked routines. A hooked routine is replaced by a
-  contract instead of verified code. Every low-level cryptographic primitive
-  was hooked.
-- **Process.** A human and agents write the specification, and reviewer agents
-  critique it. Teams of 40 to 80 prover agents then run for 24 to 72 hours per
-  campaign. A gatekeeper accepts a proof only if Lean's comparator tool
-  confirms that it proves exactly a held-out copy of the specification, using
-  only Lean's standard axioms.
-- **Lesson.** Proofs became cheap, and most of the human effort went into the
+  AArch64 Linux binary. The theorems are about whole runs of that binary under
+  a Lean model of AArch64 and Linux with 467 instructions and 31 system calls.
+- **Trust.** The reader trusts the Lean kernel, about 18,000 lines of
+  specification, about 8,000 lines of ISA and loader semantics, and 39 hooked
+  routines, including every low-level cryptographic primitive. The compiled
+  binary had stubs in place of hooked routines.
+- **Scale.** About 6.5 million lines of Lean proof, of which 5.3 million are
+  about the binary. Five people worked for four weeks. Campaigns ran 40 to 80
+  prover agents on one machine for 24 to 72 hours. A clean build took hours
+  and 15 to 34 GiB of memory.
+- **Checking.** A gatekeeper accepts a proof only if Lean's comparator tool
+  shows that it proves exactly a held-out copy of the approved
+  specification, using only Lean's standard axioms. `sorry` and
+  `native_decide` are rejected.
+- **Specification quality.** Agents proved non-vacuity witnesses for every
+  hypothesis, and proved that binaries with reintroduced bugs violate the
+  theorems.
+- **Lesson.** Proofs became cheap. Most of the human effort went into the
   specification.
-- **Released.** The AArch64 semantics, the separation-logic proof library,
-  `rust-obj2lean`, the trusted-base checks (`tcb-map`, `axiom-audit`, and
-  comparator configurations), and the proofs. The repository doesn't include
-  the agent skills, the orchestrator, or the gatekeeper, and it has no RISC-V
-  or bare-metal support.
 
-This project reuses the method and the checking discipline. It needs a new
-RISC-V machine model, new peripheral models, and its own agent setup.
+The repository's trusted AArch64 layer, `arm64-semantics/Arm64/Trusted/`, is
+about 16,700 lines. Its untrusted proof library, `ProofLib/`, is about
+185,000 lines and is written for 64-bit AArch64 throughout. The repository
+doesn't include the agent skills, the orchestrator, or the gatekeeper.
 
-## Hardware constraints
+## Theorems
+
+The following Lean is a sketch of the shape of each statement, not final
+syntax. `bootImage` is the bootloader image, which the specification pins by
+its SHA-256 digest.
+
+### Refinement of one boot
+
+```lean
+theorem boot_refines (p : Platform) (hp : p.WellFormed) :
+    BootRunsTo bootImage p fun out =>
+      out.steps ≤ maxSteps ∧
+      match accept p.flash p.efuse p.bootState with
+      | .boot slot entry mapping =>
+          out.result = .jumped entry mapping ∧
+          out.efuse = burnAfter p.efuse slot ∧
+          out.bootState = nextBootState p.bootState slot
+      | .halt =>
+          out.result = .halted ∧ out.efuse = p.efuse
+```
+
+`Platform` is the state that the ROM leaves when it starts the bootloader:
+flash contents, eFuse values, the boot-state record, and the CPU and
+peripheral registers. `accept` is the acceptance function, written in Lean
+and trusted. `BootRunsTo` says that every run ends in an outcome that
+satisfies the postcondition and that no run faults. `out.result = .jumped`
+means the program counter reached `entry` with the flash mapping set to
+`mapping` and interrupts disabled.
+
+### Many boots with power loss
+
+```lean
+theorem boots_safe (tr : Trace) (htr : tr.Admissible) :
+    ∀ b ∈ tr.boots, ∀ e m, b.result = .jumped e m →
+      AcceptedImage (tr.flashAt b) (tr.efuseAt b) e m
+```
+
+A `Trace` interleaves bootloader runs, application writes to flash, and
+power losses. A bootloader run can stop at any instruction. A power loss
+during a flash erase or write leaves the affected bytes undefined. The
+availability and rollback theorems are stated over the same traces.
+
+### Authenticity and transparency
+
+These are computational theorems, stated as games in VCVio. The adversary
+can do the following:
+
+- Get Fulcio certificates for any identity except the release workflow.
+- Ask the release workflow to sign images of its choice. This is stronger
+  than reality, where the workflow signs only honest builds.
+- Submit any entry to Rekor, and get a TSA timestamp on any bytes.
+- Steal any signing key after its certificate expires.
+- Choose all flash contents and every application action between boots.
+
+The adversary wins the authenticity game if a device boots an image that the
+release workflow never signed:
+
+```text
+Adv_auth(A) ≤ Adv_EUF-CMA[Ed25519](trust-root key)
+            + Adv_EUF-CMA[ECDSA P-384](Fulcio intermediate)
+            + q · Adv_EUF-CMA[ECDSA P-256](leaf key)
+            + Adv_EUF-CMA[ECDSA P-384](TSA)
+            + Adv_CR[SHA-256] + Adv_CR[SHA-384]
+```
+
+In this bound, `q` is the number of releases. The TSA term matters because
+of key theft after expiry. Without a trusted signed time inside the
+certificate's validity window, a stolen ephemeral key could sign forever.
+
+The adversary wins the transparency game if a device boots an image whose
+entry isn't in the log that a trusted checkpoint commits to. That advantage
+is at most the Ed25519 forgery advantage against the log key plus the
+SHA-256 collision advantage.
+
+Every computational theorem connects to the binary through `boot_refines`.
+The games run `accept`, and the refinement theorem says the binary does what
+`accept` does.
+
+One assumption sits outside every proof. Fulcio issues a certificate naming
+an identity only to a caller that holds a valid OIDC token for that
+identity, and GitHub issues that token only to the named workflow.
+
+## Trusted computing base
+
+A reader who wants to believe the theorems must read and accept everything
+in this table. Everything else is checked by Lean.
+
+| Component | Estimated size | How it gets validated |
+| --- | --- | --- |
+| RV32IMC + Zicsr semantics in machine mode | 2,000 to 4,000 lines | Proved equivalent to the Sail-generated Lean model on every instruction the binary uses. Lockstep tests against QEMU and hardware |
+| Platform model: memory map, initial state, flash, eFuse, MMU table, watchdog | 1,000 to 3,000 lines | Lockstep tests against Espressif's QEMU fork and hardware |
+| Hook contracts: ROM flash read, SHA accelerator, and the cryptographic routines | 500 to 1,500 lines | Test vectors and hardware runs. Software routines can be discharged by later proofs |
+| Formats: image header, trust-root blob, device bundle container | 500 to 1,000 lines | Differential tests against the host encoder |
+| X.509 and CMS subsets, Rekor v2 entry and checkpoint, RFC 6962 hashing | 2,000 to 5,000 lines | Executable Lean decoders tested against sigstore-go and OpenSSL on a corpus of real bundles |
+| Identity policy, acceptance function, boot state machine | 1,000 to 2,000 lines | Human review, non-vacuity proofs, mutation proofs |
+| Security games and assumptions | 1,000 to 2,000 lines | Human review against the literature |
+| Image extraction tool and build scripts | Tool code | The proof checks extracted bytes against the image digest. Only symbol names are trusted |
+| Lean kernel and comparator | Not ours | Standard |
+
+These are estimates. The total is 8,000 to 18,000 lines, compared with about
+26,000 trusted lines for libsignal.
+
+Lean checks the rest. The Rust compiler and linker, the Rust source, the
+separation logic, the weakest-precondition calculus, symbolic execution,
+every proof, and every agent are outside the trusted base.
+
+## Machine model
+
+### ISA semantics
+
+Sail has a Lean backend, and `opencompl/sail-riscv-lean` publishes a Lean
+model generated from the official Sail RISC-V specification. That model is
+large and covers RV64, RV32, and many extensions. Symbolic execution through
+generated code is slow, so it isn't a good base for millions of lines of
+proof.
+
+The plan uses two models:
+
+1. A compact, hand-written RV32IMC + Zicsr semantics for machine mode. It is
+   trusted, and every proof runs against it.
+2. A Lean theorem, written by agents and checked by the kernel, that the
+   compact semantics agrees with the Sail-generated model on every
+   instruction that appears in the bootloader image.
+
+The libsignal work tested its ISA against the Sail and Unicorn oracles. This
+plan proves agreement with the Sail-generated model, which leaves only the
+Sail model and the generator as trusted. Lockstep testing against QEMU and
+hardware remains as a second check.
+
+The CPU state has the 32 general registers, the program counter, and the
+machine-mode CSRs that the bootloader reads or writes. Memory is a byte map
+with per-region permissions. A fetch from a non-executable region, a write to
+the bootloader's own code, and an access outside the memory map are faults.
+A proof that a run ends normally rules them out. Interrupts are disabled in
+the initial state, and the proof shows that the bootloader never enables
+them. The model therefore doesn't need interrupts or traps beyond treating a
+trap as a fault.
+
+### Platform model
+
+- **Initial state.** The segments that the ROM loaded into SRAM, the stack
+  pointer, the cache and MMU configuration, and the registers that the ROM
+  leaves set. The values come from Espressif's ROM documentation and are
+  checked by dumping state on hardware with a debug probe.
+- **Flash.** A byte array with NOR rules. An erase sets every bit in a sector
+  to 1, and a write can only clear bits. A power loss during an erase or a
+  write leaves the bytes in the affected range undefined. The adversary
+  chooses their values. Flash doesn't change while the bootloader runs,
+  which is an explicit assumption. It excludes a physical attacker during
+  boot.
+- **Flash reads.** The bootloader reads flash through a ROM function. That
+  function is a hook whose contract copies bytes from the flash model into a
+  RAM buffer. This keeps the SPI controller and the cache out of the model.
+- **eFuse.** An array of bits that can only change from 0 to 1. Reads and
+  program operations go through the eFuse controller's registers, modeled at
+  the register level.
+- **MMU table.** The memory-mapped table that maps flash pages to the
+  application's virtual addresses. The postcondition of a boot states the
+  mapping that the bootloader wrote.
+- **Watchdog.** The model counts instructions. `maxSteps` in the refinement
+  theorem bounds them. Measured cycles per instruction on hardware turn that
+  bound into a time to compare with the watchdog timeout.
+
+### Hooks without stubs
+
+The libsignal binary had stubs in place of its hooked routines, so the
+verified binary wasn't the binary that would ship. This plan keeps the real
+cryptographic code in the image. The semantics treats a call to a hooked
+routine's entry address as a single step that applies the routine's
+contract. Each contract has a frame condition. The routine writes only its
+output buffers and the stack below the stack pointer, and it restores the
+callee-saved registers.
+
+The AlphaProof Code semantics already has `HookOk`, `HookSat`, and
+`subroutineHook`, which turn a proof about a subroutine into a proof that the
+subroutine meets a hook contract. A later campaign uses the same mechanism to
+prove that the real P-256, P-384, and Ed25519 code meets its contract. After
+that, the only hooks left are the ROM functions and the SHA accelerator,
+which can't be verified.
+
+## Getting the binary into Lean
+
+`rust-obj2lean` reads relocatable AArch64 objects and quantifies over every
+valid linker placement. The bootloader is a fixed-address image that the ROM
+loads, so this plan verifies the final linked image instead:
+
+1. Build the bootloader with a pinned toolchain into an ESP-IDF image.
+2. A new tool, `rv32-img2lean`, reads the image, emits each segment's bytes
+   and load address as Lean data, and uses the ELF symbol table and DWARF to
+   name functions and suggest loop invariants and stack frames. The names and
+   hints are untrusted, except that the specification refers to hooked
+   routines and entry points by symbol name.
+3. A Lean theorem checks that the emitted segments hash to the pinned image
+   digest. The image that ROM Secure Boot verifies is therefore the image the
+   proofs cover.
+
+Fixed addresses also remove RISC-V linker relaxation from the problem. The
+linker can rewrite instruction sequences, but the proof is about the output.
+
+### Proof decomposition
+
+Agents prove a contract for each function at the machine level, then compose
+the contracts into the whole-boot theorem. The plan expects these contract
+groups:
+
+| Group | What the contracts say |
+| --- | --- |
+| Byte and buffer helpers | `memcpy`, `memset`, and comparison loops, with exact frame conditions |
+| Container and header parsers | Each returns the Lean decoder's value or a rejection, reads only inside its buffer, and terminates |
+| DER and X.509 subset | The parser agrees with the Lean decoder for the pinned profile and rejects everything else |
+| CMS and RFC 3161 subset | Same, for the timestamp token |
+| Rekor v2 | The rebuilt entry equals the canonical JSON that the Lean function produces. Merkle verification equals the Lean definition |
+| Policy and acceptance | The composition equals `accept` |
+| Boot-state record | Reading picks the newest valid copy. Writing preserves at least one valid copy at every instruction |
+| eFuse and MMU | Register writes produce the specified burn and mapping |
+| Entry and exit | From reset to the jump, the stack stays in its region and the code is never written |
+
+## Writing the Rust for verification
+
+The proofs are about optimized machine code, so the source must keep that
+code regular. These are requirements for the bootloader crate:
+
+- `#![no_std]`, no heap, no `dyn` traits, no function pointers in the
+  verified paths, and no floating point.
+- Fixed-size buffers with sizes known at compile time, and loops with
+  explicit bounds.
+- `panic = "abort"`, with one panic handler that halts. The refinement
+  theorem allows a halt, and the agents prove that each panic site that
+  remains is unreachable or leads to a specified halt.
+- `#[inline(never)]` on every function whose contract the specification
+  names, and on every hooked routine.
+- The cryptographic routines in a separate crate behind a narrow interface
+  of byte slices in and a result out.
+- A pinned `rustc`, a fixed `opt-level`, `codegen-units = 1`, and a
+  reproducible build. The build script checks the image digest.
+
+A rebuild changes the binary, and a changed binary needs proof repair. The
+libsignal team saw large repairs early on. For a bootloader, that is
+acceptable. The verified bootloader is built once, proved, signed with the
+Secure Boot key, and rarely changed again.
+
+## Validating the specification
+
+A proof of the wrong specification is worthless, and the specification is
+where most of the effort goes. Every trusted definition gets at least two of
+the following checks.
+
+- **Executable reference decoders.** Write every format definition as an
+  executable Lean function. Run the compiled Lean decoders against a corpus
+  of real Sigstore bundles signed by GitHub Actions, sampled from the public
+  Rekor log, and against mutations of those bundles. Compare each verdict
+  with sigstore-go and with OpenSSL's X.509 and CMS parsers. Every
+  disagreement either fixes the specification or becomes a documented
+  profile restriction.
+- **Whole-binary lockstep.** Run the bootloader image in the Lean semantics,
+  in Espressif's QEMU fork, and on hardware, on the same corpus. Compare the
+  final state of every run. The libsignal team did this for 15.6 million
+  instructions across 10 runs.
+- **Non-vacuity.** Prove that the hypotheses of each theorem are jointly
+  satisfiable and that a real signed release satisfies `accept`.
+- **Mutation proofs.** For each bug in the following list, build a mutated
+  bootloader and prove that the theorems fail for it:
+  - Segments loaded before verification, as in CVE-2018-18558
+  - The signature check skipped
+  - The image digest computed over fewer bytes than the bootloader maps
+  - The identity policy matched by prefix
+  - The Build Signer URI read from the wrong extension
+  - The signed time not compared with the leaf certificate's validity window
+  - A trust-root blob with a lower version accepted
+  - The eFuse security version not checked
+  - A boot-state write that erases both copies before rewriting either
+- **Review.** Reviewer agents from a different model family than the
+  specification writer check each draft for faithfulness to the RFCs and to
+  sigstore-go, and for strength. A human approves the specification before
+  proof work starts.
+
+## Security proofs
+
+The computational theorems use VCVio, as the libsignal work did. Reductions
+are written in a small costed language, and the proofs bound their cost
+explicitly. The reductions here are short. Each one embeds a forgery or a
+collision into one place in the game. This plan has no symbolic model,
+because a single signed message has no protocol interaction for a Dolev-Yao
+analysis to explore.
+
+The games use `accept`, and `boot_refines` transfers their conclusions to
+the binary. The proof doesn't need a model of Rust or of the compiler.
+
+## Running the proof campaigns
+
+### Agent setup
+
+The AlphaProof Code agent setup isn't public, so this project builds its
+own with the same roles:
+
+- A specification writer working with a human, and reviewers from a
+  different model family.
+- An orchestrator that never edits Lean, team leads for large goals, and
+  proof workers for single lemmas.
+- An architect who designs and revises the proof decomposition, and an
+  integrator who merges proofs, removes duplicate lemmas, and is the only
+  role that commits.
+- A critic that judges proposed specification amendments without seeing the
+  proof attempts.
+- A gatekeeper that runs comparator against a held-out copy of the
+  specification and is the only role that can mark a goal done.
+
+Two rules from the paper carry over unchanged. Every new invariant comes with
+a witness that it holds on a reachable state. An amendment that weakens
+security is never accepted, and goes to a human as a possible bug.
+
+### Reuse from the AlphaProof Code repository
+
+| Piece | Reuse |
+| --- | --- |
+| Comparator configuration and scripts | Direct |
+| Axiom audit and `sorry` and `native_decide` rejection | Direct |
+| Trusted and untrusted layering, enforced like `tcb-map` | Direct, with new paths |
+| VCVio game definitions | Direct |
+| Separation logic, weakest-precondition calculus, symbolic execution | Port. About 185,000 untrusted lines assume 64-bit AArch64. Agents can port them because they are untrusted and Lean checks the result |
+| Hook contracts and `subroutineHook` | Port the definitions into the new trusted layer |
+| `rust-obj2lean` | Replace with `rv32-img2lean`. Reuse the DWARF hint code where it applies |
+| ISA semantics, ELF process loader, system calls | Not reused |
+| DyLean | Not used |
+
+Use the same Lean toolchain as the AlphaProof Code repository,
+`leanprover/lean4:v4.34.0`, so that comparator and VCVio work unchanged.
+
+### Compute
+
+A campaign runs dozens of agents and repeated Lean builds on one machine.
+Plan for a workstation or cloud machine with at least 64 GiB of memory. The
+proof check also needs a CI runner with that much memory. A standard GitHub
+runner doesn't have enough, so the proof workflow runs on a larger hosted
+runner or a self-hosted one, outside `test.yml`.
+
+## Feasibility assessment
+
+### Size compared with libsignal
+
+| Measure | libsignal | This plan (estimate) |
+| --- | --- | --- |
+| Verified instructions | About 140,000 AArch64 | 5,000 to 20,000 RV32, excluding hooked cryptography |
+| Trusted specification and semantics | About 26,000 lines | 8,000 to 18,000 lines |
+| Binary proof lines | About 5.3 million | Several hundred thousand to about one million, if lines per instruction are similar |
+| Allocator proof | About 70,000 lines | None, because there is no heap |
+| Security proof | About 1.2 million lines across two models | Much smaller. One computational model with short reductions |
+| New trusted models | AArch64 and Linux process | RV32, bare-metal platform, NOR flash with power loss, eFuse |
+
+The proof-line estimate scales libsignal's ratio of about 38 lines per
+instruction. RISC-V instructions are simpler, but RV32 code has more
+instructions per operation, so the ratio is a rough guide. Milestone 1
+measures it.
+
+### What is easier than libsignal
+
+- The verified code is an order of magnitude smaller.
+- There is no heap, no file system, no protobuf, and no ratchet state.
+- The security argument has one message and short reductions.
+- RV32IMC is a small ISA with an official formal model and a Lean
+  translation of it.
+- The specification can be tested against mature reference implementations.
+
+### What is harder or new
+
+- The platform model has no precedent in the AlphaProof Code repository.
+  Each register-level detail that the proof relies on is a trusted
+  definition.
+- Theorems span many boots and allow a power loss at any instruction.
+- Parsers for DER and CMS have a long history of differential bugs, so the
+  specification must be exact.
+- The proof library must be ported from 64-bit AArch64 to 32-bit RISC-V.
+- The agent setup must be built from scratch.
+
+### Risks
+
+| Risk | Effect | Mitigation | Fallback |
+| --- | --- | --- | --- |
+| Agent setup underperforms | Slow proof throughput | Pilot on milestone 1 before committing to the full scope | Narrow the scope to the parsers and policy at the subroutine level |
+| Platform model is unsound | Theorems don't hold on silicon | Lockstep tests on hardware, minimal register coverage, flash reads through a ROM hook | Shrink the model by moving more operations behind ROM hooks |
+| X.509 or CMS specification is wrong | A theorem about the wrong parser | Differential testing on real bundles, strict profile | Pin more fields by exact byte match, which shortens the specification |
+| CMS is too large to specify well | Delays milestone 4 | Profile pinned to the Sigstore TSA's exact token shape | Use Rekor v1, whose signed entry timestamp gives signed time without CMS, and accept the risk that Rekor v1 is retired |
+| Proof repair after every rebuild | Lost work | Freeze the bootloader early, keep contracts at `#[inline(never)]` boundaries | Accept repair as a campaign cost |
+| Code size exceeds the bootloader region | The design doesn't fit | Measure in milestone 0 | Move the partition table, or move signature checks into a second verified stage loaded from flash |
+
+### Go/no-go checkpoints
+
+- **After milestone 0.** The image fits, boots in an acceptable time, and the
+  extraction tool round-trips the image digest.
+- **After milestone 1.** Measure proof lines per instruction and agent hours
+  per function. If the numbers project the full bootloader at more than
+  about three times the libsignal binary proof, cut scope before milestone 3.
+- **After milestone 3.** The X.509 decoder agrees with sigstore-go on the
+  whole corpus, or every disagreement is a documented restriction.
+
+## Milestones
+
+Each milestone ends with a theorem that is useful even if the project stops
+there. Each depends on the ones before it.
+
+0. **Prototype and measurements.** Build the bootloader and the signing
+   pipeline. Measure image size, boot time, and the instruction count of the
+   verified code. Build `rv32-img2lean`.
+1. **Pipeline pilot.** Write the RV32 semantics, prove agreement with the
+   Sail-generated model for the instructions in use, port the core of the
+   proof library, and prove contracts for the image header parser and the
+   Merkle inclusion check. This milestone measures throughput.
+2. **Rekor v2.** Contracts for rebuilding the canonical entry and parsing the
+   checkpoint.
+3. **X.509 and policy.** Contracts for the DER subset, the certificate
+   checks, and the identity policy, with the differential corpus.
+4. **Timestamps.** Contracts for the CMS and RFC 3161 subset.
+5. **One boot.** `boot_refines`, from reset to the jump, with cryptographic
+   hooks.
+6. **Many boots.** `boots_safe`, rollback, and availability, with power loss.
+7. **Security games.** Authenticity and transparency in VCVio, connected to
+   `boot_refines`.
+8. **Cryptography (optional).** Discharge the P-256, P-384, and Ed25519
+   hooks by proving the real code against Lean specifications of FIPS 186-5,
+   RFC 8032, and FIPS 180-4.
+
+## Repository layout
+
+The repository has no Lean code. These directories are proposals:
+
+- `c3-bootloader/`, the Rust bootloader crate. Like `inkbot-esp32/`, it must
+  be excluded from `test.yml` Rust discovery. A dedicated workflow builds it
+  for `riscv32imc-unknown-none-elf`, runs host tests, and checks that the
+  image matches the digest the proofs pin.
+- `c3-bootloader-proofs/`, the Lean specification, machine model, and proofs,
+  checked by its own workflow on a large runner.
+
+The existing `inkbot-esp32/` firmware runs on a classic ESP32 (Xtensa) and
+verifies Cosign signatures in the application. This plan doesn't change it.
+
+## Out of scope
+
+- Voltage and electromagnetic fault injection, which researchers have used
+  against ESP32 Secure Boot and flash encryption
+- Changes to flash by a physical attacker during boot
+- Bugs in the ROM or in the silicon
+- Custody of the two offline keys and the security of the GitHub repository
+  and its workflows
+- The application, its network stack, and its OTA download code
+- Side channels during boot, which leak nothing secret because verification
+  uses only public data
+
+## Appendix: the system under verification
+
+### Hardware constraints
 
 The following ESP32-C3 facts come from ESP-IDF's `soc_caps.h` for the chip:
 
-- The CPU is RV32IMC, and Rust supports it with the upstream
-  `riscv32imc-unknown-none-elf` target. No Espressif compiler fork is needed.
-- The SHA accelerator supports SHA-1, SHA-224, and SHA-256. It doesn't
-  support SHA-384 or SHA-512.
-- The chip has an RSA accelerator up to 3072 bits, an HMAC peripheral, and a
-  digital signature peripheral. It has no elliptic-curve accelerator, so
-  ECDSA and Ed25519 run in software.
-- ROM Secure Boot v2 verifies the second-stage bootloader with RSA-3072-PSS
-  only. The eFuse holds up to three key digests, and the chip supports key
-  revocation.
+- The CPU is RV32IMC, supported by the upstream
+  `riscv32imc-unknown-none-elf` Rust target.
+- The SHA accelerator supports SHA-1, SHA-224, and SHA-256 only.
+- There is an RSA accelerator up to 3072 bits, an HMAC peripheral, and a
+  digital signature peripheral. There is no elliptic-curve accelerator.
+- ROM Secure Boot v2 verifies the bootloader with RSA-3072-PSS only.
 - Flash encryption uses XTS-AES-128.
 
-## Chain of trust
+### Chain of trust
 
-1. **ROM.** The mask ROM verifies the bootloader against an RSA-3072 key whose
-   digest is in eFuse. The ROM is immutable and trusted.
-2. **Bootloader.** The verified Rust bootloader. It is the only code this plan
-   proves anything about.
-3. **Trust-root blob.** A small file in flash, signed by an offline Ed25519
-   trust-root key whose public half is compiled into the bootloader. It lists
-   the Sigstore keys and certificates to accept and the identity policy.
-4. **Sigstore bundle.** Shipped next to each firmware image. It contains the
-   Fulcio leaf certificate, the image signature, the Rekor inclusion proof and
-   checkpoint, and a timestamp authority (TSA) token.
-5. **Firmware image.** Untrusted code that the bootloader runs only after the
-   checks in this plan pass.
+1. **ROM.** Verifies the bootloader against an RSA-3072 key whose digest is
+   in eFuse.
+2. **Bootloader.** The verified code.
+3. **Trust-root blob.** A file in flash, signed by an offline Ed25519 key
+   compiled into the bootloader.
+4. **Sigstore bundle.** Shipped with each image.
+5. **Firmware image.** Untrusted until the checks pass.
 
-This chain has two long-lived keys, and both stay offline:
+The RSA-3072 key and the Ed25519 trust-root key are long-lived and stay
+offline. Routine releases use only the workflow's Sigstore identity.
 
-- The RSA-3072 bootloader key. It can sign a bootloader with any trust root,
-  so it is the most powerful key in the system. ROM Secure Boot can't use
-  short-lived Fulcio certificates, so this key can't be removed.
-- The Ed25519 trust-root key. It signs a new trust-root blob when Sigstore
-  rotates keys.
+### Trust-root blob
 
-Routine releases use neither key. They use only the workflow's Sigstore
-identity.
+The public Rekor v2 instance starts a new log shard with a new key about
+every six months, and the Fulcio intermediate certificate expires in October
+2031. A trust root compiled into the bootloader would go stale, so it lives
+in a signed blob that an OTA update can replace. The blob has a format
+version, a monotonic blob version, the pinned Fulcio intermediate, the Rekor
+v2 log keys (Ed25519) with log IDs and validity windows, the pinned TSA
+signing certificate, the identity policy, and an Ed25519 signature. The
+bootloader rejects a blob older than the newest one it accepted.
 
-## Why the trust root lives in flash
+### Release identity policy
 
-The bootloader sits at a fixed flash offset, and replacing it in the field
-isn't safe. A trust root compiled into it can't change. Sigstore's keys do
-change:
-
-- The public Rekor v2 instance starts a new log shard, with a new key, about
-  every six months. Clients learn the new key from the TUF-distributed
-  `trusted_root.json` file.
-- The Fulcio intermediate certificate and the TSA certificate can also rotate.
-
-If the bootloader had the trust root compiled in, devices would stop
-accepting updates at the first rotation. With the trust root in a signed blob,
-a rotation is an ordinary OTA update that carries a new blob signed by the
-offline trust-root key.
-
-The trust-root blob has a fixed binary layout:
-
-- A format version and a monotonic blob version. The bootloader rejects a
-  blob older than the newest one it accepted, and records the version in a
-  boot-state record.
-- The pinned Fulcio intermediate certificate, in DER, with its validity
-  window. Pinning the intermediate instead of the root saves one P-384
-  signature check on each boot.
-- The Rekor log keys (Ed25519 for Rekor v2), each with its log ID and a
-  validity window.
-- The TSA certificate chain, with a validity window.
-- The identity policy described in the next section.
-- An Ed25519 signature over all of the preceding fields.
-
-## Release identity policy
-
-The bootloader accepts a Fulcio leaf certificate only if all of the following
-extensions match exactly. Prefix matches aren't allowed.
+The bootloader accepts a Fulcio leaf only if these extensions match exactly:
 
 | Fulcio extension | Required value |
 | --- | --- |
@@ -147,348 +583,66 @@ extensions match exactly. Prefix matches aren't allowed.
 Replace the following:
 
 - `OWNER/REPO`: the GitHub repository that publishes firmware.
-- `release.yml`: the workflow file that signs releases.
+- `release.yml`: the workflow file that signs releases. If signing moves into
+  a reusable workflow, name that file.
 
-The numeric IDs survive a rename. They also stop an attacker who deletes and
-re-registers the repository name. If the signing step moves into a reusable
-workflow, the Build Signer URI names the reusable workflow, not the caller,
-so the policy must name that file.
+### Bundle profile
 
-## Bundle profile
+- `hashedrekord` entries only, with an ECDSA P-256 leaf key over SHA-256.
+- The leaf chains to the pinned intermediate (ECDSA P-384 with SHA-384).
+- A Rekor v2 inclusion proof and a checkpoint signed with Ed25519.
+- An RFC 3161 token from the Sigstore TSA, signed with ECDSA P-384 and
+  SHA-384. Rekor v2 entries have no signed time, so the TSA token is the
+  only signed time, and it must fall inside every validity window.
+- No check of the leaf's embedded SCT.
 
-The bootloader accepts one bundle shape and rejects everything else:
+Each boot runs five software signature checks. Two are Ed25519 checks, on
+the trust-root blob and the checkpoint. Two are P-384 checks, on the leaf
+certificate and the TSA token. One is a P-256 check, on the image signature.
 
-- **Entry type.** `hashedrekord` only, so the leaf key signs the SHA-256
-  digest of the image. No DSSE envelopes.
-- **Leaf key.** ECDSA P-256 with SHA-256.
-- **Certificate chain.** Leaf, then the pinned intermediate. The bootloader
-  rejects a leaf with an unknown critical extension.
-- **Log.** Rekor v2. The bundle carries an RFC 6962 Merkle inclusion proof
-  and a checkpoint that the log key signs with Ed25519.
-- **Time.** An RFC 3161 timestamp token from the TSA in the trust root. Rekor
-  v2 entries carry no signed integrated time, so the TSA token is the only
-  signed time. The signed time must fall inside the leaf certificate's
-  validity window, and inside the validity windows of the log key and TSA
-  certificate in the trust root.
-- **Certificate transparency.** The bootloader doesn't check the Fulcio
-  leaf's embedded SCT. Checking it means rebuilding the precertificate's DER,
-  and Rekor already provides transparency for the signing event.
+CI transcodes the protobuf JSON bundle into a fixed binary container that
+holds the same signed byte strings. The bootloader still produces one JSON
+document. A Rekor v2 leaf is the RFC 6962 leaf hash of the RFC 8785
+canonical JSON form of the `hashedrekord` entry, which the bootloader
+rebuilds from bundle fields, as `ToEntryHash` in rekor-tiles does.
 
-The bootloader needs no wall clock. Every time check compares signed times
-with signed validity windows.
+### Image format and boot procedure
 
-### Device-side encoding
+The signed image is a header (magic, chip ID, 16-bit security version,
+segment table, entry point) followed by segments. The bootloader rejects
+overlapping segments, segments that overlap its own memory, segments outside
+the allowed regions, and length mismatches.
 
-A Sigstore bundle is protobuf JSON, and its JSON wrapper isn't signed. At
-publish time, CI transcodes the bundle into a fixed binary container that
-holds the same signed byte strings. Those are the leaf certificate DER, the
-image signature, the TSA token DER, the checkpoint text, and the proof
-hashes. A
-mistake in transcoding can make verification fail, but it can't make a forged
-bundle pass, because the bootloader checks every security-relevant byte
-cryptographically.
+The bootloader reads a two-copy boot-state record, chooses a slot, verifies
+the trust-root blob, parses the header, hashes the image, checks the Rekor
+entry and checkpoint, checks the certificate and policy, checks the image
+signature, checks the timestamp, checks the security version, and then maps
+the image and jumps. If a check fails, it tries the other slot. If both
+fail, it halts.
 
-The bootloader still produces one JSON document. A Rekor v2 leaf is the RFC
-6962 leaf hash of the RFC 8785 canonical JSON form of the `hashedrekord`
-entry (kind, API version `0.0.2`, digest, signature, and verifier
-certificate). The bootloader rebuilds that entry from the bundle fields and
-hashes it, as `ToEntryHash` in rekor-tiles and `reconstructV2EntryHash` in
-sigstore-go do. Serializing a fixed template is much simpler to specify than
-parsing arbitrary JSON.
+A trial image boots a fixed number of times. If the application doesn't
+confirm it, the bootloader reverts. After confirmation, the bootloader burns
+the security version into eFuse.
 
-## Firmware image format
+### Signing pipeline
 
-The signed image is a header followed by its segments. The SHA-256 digest in
-the Rekor entry covers both. The header has:
-
-- A magic number and a format version
-- The chip ID, which must equal the ESP32-C3 ID
-- A 16-bit security version for anti-rollback, compared with the eFuse
-  counter
-- The segment table, with a load address and length for each segment
-- The entry point
-
-The bootloader rejects an image if any of the following is true:
-
-- A segment overlaps another segment.
-- A segment overlaps the bootloader's own code, data, or stack.
-- A segment falls outside the RAM regions or the flash mapping that the image
-  is allowed to use.
-- The segment lengths don't sum to the length that was hashed.
-
-CVE-2018-18558 was an ESP-IDF bootloader that loaded segments before
-verifying them, which let a crafted segment overwrite the bootloader and
-bypass Secure Boot. That bug is the first mutation test in this plan.
-
-## Boot procedure
-
-The bootloader runs on one core with interrupts disabled and no heap. It
-reads a boot-state record from flash, chooses a slot, and checks the slot in
-this order:
-
-1. Verify the trust-root blob. Reject it if its version is older than the
-   recorded version.
-2. Parse the image header and segment table, with the checks from the
-   previous section.
-3. Hash the header and segments with the SHA accelerator.
-4. Rebuild the Rekor entry, compute its leaf hash, verify the inclusion
-   proof, and verify the checkpoint signature.
-5. Verify the leaf certificate against the pinned intermediate, and check the
-   identity policy.
-6. Verify the image signature with the leaf key.
-7. Verify the TSA token, and check the signed time against every validity
-   window.
-8. Check the security version against eFuse.
-9. Map or copy the image and jump to its entry point.
-
-If any check fails, the bootloader tries the other slot. If both slots fail,
-it halts.
-
-### A/B slots and rollback
-
-- The application writes a new image and bundle to the inactive slot, then
-  asks for a trial boot by writing the boot-state record.
-- The bootloader boots a trial image a fixed number of times. If the
-  application doesn't confirm the image within that count, the bootloader
-  reverts to the previous slot.
-- After the application confirms an image, the bootloader burns the image's
-  security version into eFuse on the next boot. eFuse bits can only change
-  from 0 to 1, so the version never decreases.
-- The boot-state record uses two copies with sequence numbers and checksums,
-  so a power loss while writing it leaves one valid copy.
-
-The application can confirm a bad image that is authentic. That is outside
-the bootloader's guarantee.
-
-### Execute in place or copy to SRAM
-
-The application runs from flash through the cache (execute in place, or XIP).
-A physical attacker can change external flash between the moment the
-bootloader verifies an image and the moment the CPU fetches it. This plan
-must choose one of the following:
-
-- Assume no physical attacker can change flash during boot. The proof then
-  models flash as unchanging while the bootloader runs.
-- Copy the image to SRAM, verify the copy, and run from SRAM. This removes
-  the gap but limits image size to the available SRAM.
-
-The first option fits the C3's memory. Write the choice into the
-specification as an explicit assumption.
-
-## Signing pipeline
-
-1. A build job compiles the firmware and uploads the image as an artifact.
-   This job has no `id-token: write` permission.
-2. A separate signing job downloads the image, computes its SHA-256 digest,
-   and signs it with `cosign`. This job is the only one with
-   `id-token: write`. It uses only pinned first-party actions, because any
-   step in the job can mint an OIDC token and sign arbitrary bytes.
-3. The signing job uses a Sigstore signing configuration that selects Rekor
-   v2 and the Sigstore TSA. The default configuration might still select
-   Rekor v1.
-4. The job transcodes the bundle into the device container, verifies the
-   result with a host build of the bootloader's verifier, and publishes the
-   image and container.
-5. A Rekor monitor watches the log for every entry that matches the release
-   identity and reports any entry that doesn't match a known release.
-   Without a monitor, transparency protects nothing, because an offline
-   device can't detect a log that shows different contents to different
-   readers.
-
-## Formal specification
-
-The specification is written in Lean and approved before any proof work
-starts. It has the following parts:
-
-- **Formats.** The image header, the trust-root blob, and the device bundle
-  container, as byte-level parsers that return either a value or a
-  rejection.
-- **X.509 subset.** DER encoding rules for exactly the structures in a Fulcio
-  leaf and the pinned intermediate, the extensions in the identity policy,
-  and the validity window.
-- **Rekor v2.** The canonical JSON form of a `hashedrekord` entry, RFC 6962
-  leaf and node hashing, inclusion-proof verification, and the checkpoint
-  note format.
-- **RFC 3161 subset.** The parts of a timestamp token and its CMS
-  `SignedData` wrapper that carry the signed time and the message imprint.
-- **Acceptance predicate.** A pure function from flash contents and eFuse
-  state to the slot and entry point the bootloader must choose, or to a halt.
-- **Boot state machine.** Slot selection, trial boots, confirmation,
-  rollback, and eFuse burns, under a power loss at any step.
-- **Adversary.** Arbitrary initial flash contents in every region that the
-  application can write. Arbitrary application behavior between boots,
-  including arbitrary writes to the boot-state record. A power loss at any
-  instruction.
-
-### Theorems
-
-- **Binary refinement.** For every initial flash and eFuse state, every run
-  of the bootloader from reset ends by jumping to the entry point that the
-  acceptance predicate chooses, or by halting. No run faults, panics, or
-  diverges.
-- **Authenticity.** This is a computational theorem in the style of VCVio.
-  The probability that the bootloader jumps to an image that no honest
-  signing run produced is at most the sum of these terms:
-  - The advantage of forging an Ed25519 signature under the trust-root key
-    or a Rekor log key
-  - The advantage of forging an ECDSA P-384 signature under the Fulcio
-    intermediate, or an ECDSA P-256 signature under a leaf key
-  - The advantage of forging a TSA signature
-  - The advantage of finding a SHA-256 collision
-- **Anti-rollback.** The security version of every image the bootloader
-  jumps to is at least the eFuse counter, and the counter never decreases.
-- **Availability.** If one slot holds a confirmed authentic image, no
-  sequence of application writes and power losses leaves both slots
-  unbootable.
-
-The authenticity theorem rests on one assumption that no proof can remove:
-Fulcio issues a certificate naming an identity only to a caller that holds a
-valid OIDC token for that identity, and GitHub issues that token only to the
-named workflow.
-
-## Machine model
-
-The released AArch64 semantics models Linux user mode. This project needs a
-bare-metal RV32IMC model:
-
-- **ISA.** RV32I, M, C, and the Zicsr instructions that the bootloader uses,
-  in machine mode. Derive it from the Sail RISC-V model where possible.
-- **Initial state.** The loaded segments, the stack pointer, and the cache
-  and MMU configuration that the ROM leaves when it starts the bootloader.
-- **Memory map.** SRAM, ROM, the flash mapping, and memory-mapped peripheral
-  registers. An access outside the map is a fault.
-- **Peripherals.** Models of the SPI flash or cache path, eFuse, RTC memory,
-  and the watchdog. Flash follows NOR rules. An erase sets every bit in a
-  sector to 1, a write can only clear bits, and a power loss during an erase
-  or write leaves the affected bytes undefined.
-- **Hooks.** Contracts for ROM functions that the bootloader calls and for
-  the SHA accelerator. Every hook is part of the trusted specification.
-
-Validate the trusted model by testing it against the Sail RISC-V model,
-Espressif's QEMU fork for the ESP32-C3, and real hardware, running the same
-binaries in lockstep. This is the same method the AlphaProof Code team used
-with Unicorn, Sail, and qemu.
-
-## Cryptographic primitives
-
-Hook these routines in the first proof campaign, as the libsignal work did:
-
-- ECDSA P-256 verification
-- ECDSA P-384 verification, with software SHA-384
-- Ed25519 verification, with software SHA-512
-- The SHA-256 accelerator
-
-Test the hooks against published test vectors and against the real
-implementations on hardware. A later campaign can replace the software hooks
-with machine-code proofs of functional correctness against Lean
-specifications of FIPS 186-5, RFC 8032, and FIPS 180-4. The SHA accelerator
-stays a hook, because silicon can't be verified.
-
-Verification on the device uses only public data, so side-channel leaks
-during boot don't expose a secret.
-
-## Proof process
-
-- Reuse comparator, the axiom audit, and the rule that trusted files never
-  import untrusted files, from the AlphaProof Code repository.
-- Reuse VCVio for the computational theorem.
-- Don't use DyLean. A single signed message needs no symbolic protocol model.
-- Build an agent setup with the roles from the paper: a specification writer
-  with reviewers from a different model family, an orchestrator, proof
-  workers, an integrator, and a gatekeeper that only agents outside the proof
-  team can run.
-- Require every new invariant to come with a witness that it holds on a
-  reachable state, so that agents can't make progress with vacuous lemmas.
-
-### Mutation tests
-
-For each of the following bugs, prove that the security theorem is false for
-a bootloader binary built with that bug:
-
-- Segments loaded before verification, as in CVE-2018-18558
-- The signature check skipped
-- The image digest computed over fewer bytes than the bootloader maps
-- The identity policy matched by prefix
-- The Build Signer URI read from the wrong extension
-- The signed time not compared with the leaf certificate's validity window
-- A trust-root blob with a lower version accepted
-- The eFuse security version not checked
-
-## Repository layout
-
-The repository has no Lean code. These directories are proposals:
-
-- `c3-bootloader/`, the Rust bootloader crate. Like `inkbot-esp32/`, it must
-  be excluded from `test.yml` Rust discovery and get a dedicated workflow
-  that builds for `riscv32imc-unknown-none-elf`, runs host tests, and checks
-  that the binary matches the hash the proofs pin.
-- `c3-bootloader-proofs/`, the Lean specification, machine model, and proofs.
-  A full build of the libsignal proofs took hours and 15 to 34 GiB of memory,
-  so this directory needs its own workflow outside `test.yml`, run on a
-  larger runner.
-
-The existing `inkbot-esp32/` firmware runs on a classic ESP32 (Xtensa) and
-verifies Cosign signatures in the application. This plan doesn't change it.
-
-## Phases
-
-Each phase depends on the ones before it.
-
-1. **Design.** Fix the image header, the trust-root blob, the device bundle
-   container, and the boot-state record. Decide between XIP and SRAM
-   execution.
-2. **Prototype.** Build the bootloader and the signing pipeline. Measure code
-   size and boot time on real hardware.
-3. **Specification.** Write the Lean specification and get it approved.
-4. **Machine model.** Build the RV32IMC model, the peripheral models, and the
-   hooks, and validate them in lockstep.
-5. **Source-level pass (optional).** Check the parsers and the state machine
-   with Verus, Aeneas, or Kani, to find design bugs before the more expensive
-   machine-code campaign.
-6. **Machine-code proofs.** Run the agent campaigns and the mutation tests.
-7. **Primitive proofs (optional).** Replace the software cryptography hooks
-   with proofs.
-
-## Risks and open questions
-
-- **Code size.** By default the C3 bootloader has about 32 KB before the
-  partition table at `0x8000`. Software P-256, P-384, Ed25519, SHA-384,
-  SHA-512, a DER parser, and a CMS parser probably need far more. The
-  partition table can move, but the ROM also limits where it loads the
-  bootloader in SRAM. Measure this in the prototype phase.
-- **Boot time.** Each boot runs about five software signature checks on a
-  160 MHz core. Measure this in the prototype phase. Caching a result with
-  the HMAC peripheral and an eFuse key is possible, but it adds a trusted
-  path to the specification.
-- **Peripheral model soundness.** The flash, cache, and eFuse models are new
-  trusted code that the libsignal work had no equivalent of. This is the
-  largest specification risk.
-- **TSA token profile.** The key type and certificate chain of
-  `timestamp.sigstore.dev` determine which signature scheme the bootloader
-  needs for step 7. Confirm both before the design phase ends.
-- **Sigstore changes.** A change to the Fulcio certificate profile, the Rekor
-  v2 entry format, or the TSA token format breaks the strict profile. A new
-  trust-root blob can't fix a format change, so a format change needs a new
-  bootloader.
-- **Agent tooling.** The AlphaProof Code agent setup isn't public. Building
-  an equivalent is a project of its own.
-
-## Out of scope
-
-- Voltage and electromagnetic fault injection, which researchers have used
-  against ESP32 Secure Boot and flash encryption
-- Changes to flash by a physical attacker during boot, unless the design
-  copies images to SRAM
-- Bugs in the ROM or in the silicon
-- Custody of the two offline keys and the security of the GitHub repository
-  and its workflows
-- The application, its network stack, and its OTA download code
+1. A build job without `id-token: write` builds the image.
+2. A separate signing job, the only one with `id-token: write`, signs the
+   image digest with `cosign`, using pinned first-party actions only. Any
+   step in that job can mint a token and sign arbitrary bytes.
+3. The signing configuration selects Rekor v2 and the Sigstore TSA.
+4. The job transcodes the bundle, checks it with a host build of the
+   verifier, and publishes the image and container.
+5. A Rekor monitor reports any entry for the release identity that doesn't
+   match a known release.
 
 ## Sources
 
 - "AlphaProof Code: Verifying Signal's Security at the Machine-Code Level,"
   Google DeepMind, 2026
 - [`google-deepmind/code-verification`](https://github.com/google-deepmind/code-verification)
+- [Sail Lean backend](https://github.com/rems-project/sail/tree/sail2/src/sail_lean_backend)
+- [`opencompl/sail-riscv-lean`](https://github.com/opencompl/sail-riscv-lean)
 - [ESP32-C3 `soc_caps.h`](https://github.com/espressif/esp-idf/blob/master/components/soc/esp32c3/include/soc/soc_caps.h)
 - [Rekor v2 README](https://github.com/sigstore/rekor-tiles/blob/main/README.md)
 - [rekor-tiles `hashedrekord.go`](https://github.com/sigstore/rekor-tiles/blob/main/pkg/types/hashedrekord/hashedrekord.go)
