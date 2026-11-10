@@ -16,6 +16,8 @@ mod rom;
 
 use c3_verify::accept::Accepted;
 use c3_verify::accept::SlotParts;
+use c3_verify::boot::Outcome;
+use c3_verify::boot::decide;
 use c3_verify::bootstate::Current;
 use c3_verify::bootstate::Slot;
 use c3_verify::bootstate::State;
@@ -157,25 +159,17 @@ fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted,
     }
 }
 
-/// Writes `state` to the copy not in use and returns the new current state.
-fn write_state(current: Current, state: State) -> Current {
-    let target = current.write_target();
-    let record = c3_verify::bootstate::encode(&state);
-    if flash::write_record(record_addr(target), &record) {
-        Current {
-            state,
-            copy: Some(target),
-        }
-    } else {
+/// Writes `state` to the copy not in use. A failed write leaves the record
+/// as it was, which the next boot reads again.
+fn write_state(current: &Current, state: &State) {
+    let record = c3_verify::bootstate::encode(state);
+    if !flash::write_record(record_addr(current.write_target()), &record) {
         rom::log(c"c3-boot: boot-state write failed %x\n", 0);
-        current
     }
 }
 
 /// Raises the level if needed, loads and maps the image, and jumps to it.
-fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, state: &State, efuse_level: u8) -> ! {
-    let target =
-        c3_verify::level::burn_target(accepted.level, state.is_confirmed(slot), efuse_level);
+fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, target: u8, efuse_level: u8) -> ! {
     if target > efuse_level {
         rom::log(
             c"c3-boot: raising security level to %x\n",
@@ -233,14 +227,9 @@ extern "C" fn boot_main() -> ! {
     if !read_ok {
         halt(0xE4);
     }
-    let mut current = c3_verify::bootstate::read(&a, &b);
+    let current = c3_verify::bootstate::read(&a, &b);
     let efuse_level = c3_verify::level::level_of(efuse::secure_version());
     rom::log(c"c3-boot: security level %x\n", u32::from(efuse_level));
-
-    let plan = c3_verify::bootstate::plan(&current.state);
-    if let Some(state) = plan.write_first {
-        current = write_state(current, state);
-    }
 
     let mut buffers = Buffers {
         header: [0; MAX_HEADER],
@@ -250,27 +239,20 @@ extern "C" fn boot_main() -> ! {
         chunk: [0; CHUNK],
         scratch: [0; SCRATCH],
     };
-
-    if let Some((accepted, image_flash)) = check(plan.first, efuse_level, &mut buffers) {
-        if plan.is_trial {
-            current = write_state(current, current.state.with_trial_boot_used());
-        }
-        boot(
-            plan.first,
-            &accepted,
-            image_flash,
-            &current.state,
-            efuse_level,
-        );
+    let outcome = decide(
+        &current.state,
+        efuse_level,
+        |slot| check(slot, efuse_level, &mut buffers).map(|found| (found, found.0.level)),
+        |state| write_state(&current, state),
+    );
+    match outcome {
+        Outcome::Boot {
+            slot,
+            accepted: (accepted, image_flash),
+            level_target,
+        } => boot(slot, &accepted, image_flash, level_target, efuse_level),
+        Outcome::Halt => halt(0xE5),
     }
-    if plan.is_trial {
-        current = write_state(current, current.state.without_trial());
-    }
-    let other = plan.first.other();
-    if let Some((accepted, image_flash)) = check(other, efuse_level, &mut buffers) {
-        boot(other, &accepted, image_flash, &current.state, efuse_level);
-    }
-    halt(0xE5)
 }
 
 #[panic_handler]

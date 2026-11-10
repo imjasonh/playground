@@ -1092,7 +1092,10 @@ repair.
 
 ## Repository layout
 
-The repository has no Lean code. These directories are proposals:
+`c3-boot/` exists, and `c3-boot-proofs/` holds the first proofs: the
+decision logic's specification, the boot-safety theorems over traces with
+power loss, and a differential test against `c3-verify`. The rest of this
+layout is a proposal:
 
 - `c3-boot/`, a Cargo workspace with the `verify`, `crypto`, `bootloader`,
   and `c3-ota` crates and the demo application. The repository forbids a

@@ -13,6 +13,7 @@
 
 pub mod accept;
 pub mod base64;
+pub mod boot;
 pub mod bootstate;
 pub mod bundle;
 pub mod chain;

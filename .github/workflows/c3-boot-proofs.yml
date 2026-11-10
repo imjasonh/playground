@@ -1,0 +1,52 @@
+# Checks the Lean proofs in c3-boot-proofs/, re-checks them with leanchecker,
+# audits their axioms, and compares the Lean specification with the Rust
+# code in c3-boot/verify on a grid of inputs.
+
+name: c3-boot-proofs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "c3-boot-proofs/**"
+      - "c3-boot/verify/**"
+      - ".github/workflows/c3-boot-proofs.yml"
+  pull_request:
+    paths:
+      - "c3-boot-proofs/**"
+      - "c3-boot/verify/**"
+      - ".github/workflows/c3-boot-proofs.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: c3-boot-proofs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  proofs:
+    name: Lean proofs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
+        with:
+          lake-package-directory: c3-boot-proofs
+          leanchecker: true
+          axiom-audit: true
+          axiom-audit-allow: propext,Quot.sound
+          axiom-audit-root: C3
+
+      - name: Compare the specification with c3-verify
+        run: |
+          (cd c3-boot-proofs && lake exe spec-vectors) > "${RUNNER_TEMP}/lean.txt"
+          (cd c3-boot && rustup show active-toolchain || rustup toolchain install)
+          (cd c3-boot && cargo run --locked --release -q -p c3-verify --example spec_vectors) \
+            > "${RUNNER_TEMP}/rust.txt"
+          wc -l "${RUNNER_TEMP}/lean.txt" "${RUNNER_TEMP}/rust.txt"
+          diff "${RUNNER_TEMP}/lean.txt" "${RUNNER_TEMP}/rust.txt"

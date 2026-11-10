@@ -20,6 +20,7 @@ playground/
 ├── apko-frontend/         # Go: BuildKit frontend that builds apko YAML (ko image; not a Pages app)
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
 ├── c3-boot/               # Rust: ESP32-C3 OTA verifier built for machine-code proofs (see docs/esp32c3-verified-ota-plan.md)
+├── c3-boot-proofs/        # Lean: c3-boot's specification and boot-safety proofs (not an app)
 ├── cloudrun-sqlite/       # Go: SQLite on a Litestream replica for Cloud Run (VFS, Terraform, Cloud Run simulator)
 ├── gcp/                   # shared GitHub Workload Identity pool for Cloud Run deploys and Chrome Web Store publishing (not an app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
@@ -137,6 +138,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `nethack-agent/` | no | Cursor SDK terminal-game harness; no `index.html` |
 | `bun-image/` | no | bun compile + crane image (shell); no `index.html` |
 | `c3-boot/` | no | Rust workspace: ESP32-C3 OTA verifier; no `index.html` |
+| `c3-boot-proofs/` | no | Lean project: c3-boot's specification and proofs; no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
@@ -267,6 +269,7 @@ discovery scripts.
 | `c3-boot.yml` | push to `main`, pull requests touching `c3-boot/**`, manual | **App-specific:** builds and lints the c3-boot crates for `riscv32imc-unknown-none-elf`, tests `c3-boot/fakestore`, and runs `c3-boot/qemu/scenarios.sh` in Espressif's QEMU (release tarball pinned by SHA-256) |
 | `c3-release.yml` | push to `main`, pull requests touching `c3-boot/**`, manual | **App-specific:** builds the c3-boot demo image, signs it with production Sigstore (Fulcio, Rekor v2, timestamp authority) using the signing config and trusted root pinned in `c3-boot/release/`, and checks the signed slot with the device's code and in QEMU. Only the sign job has `id-token: write`, and it runs no repository code. Fork pull requests skip signing |
 | `c3-trust-root.yml` | weekly Mondays 06:17 UTC, manual | **App-specific:** compares `c3-boot/release/trusted_root.json` and `signing_config.json` with `sigstore/root-signing` (`.github/scripts/update-c3-trust-root.sh`; test with `bash .github/scripts/update-c3-trust-root_test.sh`). On a change, it opens a pull request from `automation/c3-trust-root` that lists what a trust-root blob would hold. It never merges itself, because devices need an offline-signed blob. Uses the `c3-trust-root` Octo STS identity, and leaves the branch alone once someone else pushes to it |
+| `c3-boot-proofs.yml` | push to `main`, pull requests touching `c3-boot-proofs/**` or `c3-boot/verify/**`, manual | **App-specific:** builds the Lean project in `c3-boot-proofs/` with `lean-action`, re-checks it with `leanchecker`, audits axioms (only `propext` and `Quot.sound` allowed), and diffs `lake exe spec-vectors` against `c3-verify`'s `spec_vectors` example |
 | `nescript.yml` | push to `main`, pull requests, manual | **App-specific:** always runs, so the ROM job can be a required check. The benches, ROM diff, jsnes goldens, GIF check, and Mesen probe no-op when `nescript/` and this workflow are unchanged. `test.yml` still runs fmt, Clippy, and `cargo test` for the compiler. The ROM job uploads the ROMs it built as the `nescript-examples` artifact |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
