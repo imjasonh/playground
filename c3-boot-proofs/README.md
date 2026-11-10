@@ -83,6 +83,9 @@ ends inside the signed image.
 | `readerMagic_correct` | The compiled `Reader::magic`, through `Reader::array::<4>` and an outlined load helper, returns 0xFFFFFFFF in `a0` when the next 4 bytes equal the magic, `BadMagic` (2) when they don't, and `Truncated` (0) when fewer remain. LLVM passes the magic as its little-endian word `k` in `a1`, so `parse`'s proof shows `k` is "C3SL". The position advances whenever 4 bytes were read |
 | `readerU16_correct`, `readerVersion1_correct` | The compiled `Reader::u16` returns its `Result` packed in `a0` (error flag in bit 0, error in bits 8 to 15, value in bits 16 to 31). `Reader::version_1`, through it, returns 0xFFFFFFFF when the version is 1, `BadVersion` (3) when it isn't, and `Truncated` (0) when fewer than 2 bytes remain |
 | `reserved_loop`, `readerReserved_correct` | The compiled `Reader::reserved(n)`, for `n` other than 0, through `Reader::bytes` and a loop proved by induction on the bytes left, returns 0xFF when the `n` bytes are zero, `NonzeroReserved` (4) when one isn't, and `Truncated` (0) when fewer than `n` remain |
+| `manifestParse_correct` | The compiled `manifest::parse`, through `magic`, `version_1`, `reserved(2)`, four calls to `part`, and its outlined helpers, returns to its caller with `sp` and every register but `a0` through `a5` and `t0` restored, and leaves memory outside its 144 bytes of stack as `parseMem` says: tag 1 and the error that `parseErr` gives, or tag 0 and the four parts |
+| `decodeManifest_parse` | `parseErr`, which states the compiled checks in the code's own word arithmetic, accepts the 40 bytes exactly when the Lean decoder `decodeManifest` does, and the parts are the decoder's |
+| `manifestParse_decodes` | The two joined: the compiled `parse` returns `Err` when `decodeManifest` rejects the manifest, and `Ok` with the decoder's manifest at `out + 4` when it accepts |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
@@ -126,6 +129,39 @@ that the stack, the result, and the reader's position stay out of, instead
 of a hypothesis for each function. `sep_of_le` turns address order into
 `Sep`, so the audit's witness machine checks that window without comparing
 every pair of bytes.
+
+`C3BootProofs/Proofs/Parse.lean` proves `manifestParse_correct`. LLVM
+specialized `parse` to its only caller, which passes the 40-byte manifest,
+so the compiled function reads the bytes at `a1` and builds its reader with
+length 40 without reading `a2`. The function's facts are in two structures.
+`PCode` says memory holds all 14 functions `parse` runs where the image puts
+them. `PEnv` keeps the 144 bytes of stack below `sp` apart from the code
+window, the result, and the manifest, and the result apart from the code
+window. It also requires a non-null manifest pointer whose 40 bytes don't
+wrap past 2^32, and a 4-byte-aligned result and frame. The manifest may
+overlap the result, because the code reads all 40 bytes before it stores
+any. The proof of `check_slot` will have to show these, and that no address
+in the stack region or the result reaches the code through the data-bus
+alias described below. The theorem ends at the return address after some
+number of steps, so a caller composes it with `Steps.trans`. Each call goes
+through a lemma that applies the
+callee's theorem at that call site. `PEnv.advance` and its `part` variants
+carry the reader, the saved registers, and memory outside the stack across
+each call. Every error path ends at the same store of the error byte, so one
+lemma finishes all 16 of them; the trailing-bytes check can't fail, because
+the four parts end at byte 40, and the proof shows that branch isn't taken.
+`parseErr` lists the checks in the order the
+code makes them, so the error `parse` returns is the first check that fails.
+
+`C3BootProofs/Proofs/ParseSpec.lean` proves `decodeManifest_parse` by
+flattening `decodeManifest` on 40 symbolic bytes into one condition on
+natural numbers (`decodeManifest_bytes`) and translating each of `parse`'s
+word comparisons into it. A sum that wraps past 2^32 is how the compiled
+code detects overflow, and the translation turns each wrap test into the
+decoder's `endOf < 2^32`. `omega`'s proof of a conjunction or an `↔`
+depends on `Classical.choice`, so those goals are split before `omega` sees
+them. The result's fields are at the offsets the compiled code stores them;
+Rust's default layout chose those, and the pinned image fixes them.
 
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose
