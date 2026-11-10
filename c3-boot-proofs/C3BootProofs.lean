@@ -16,6 +16,7 @@ import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Magic
 import C3BootProofs.Proofs.U16
 import C3BootProofs.Proofs.Reserved
+import C3BootProofs.Proofs.Parse
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats

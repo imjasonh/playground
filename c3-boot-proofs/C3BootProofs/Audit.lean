@@ -6,6 +6,7 @@ import C3BootProofs.Proofs.ReaderArray
 import C3BootProofs.Proofs.ReaderU32
 import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Reserved
+import C3BootProofs.Proofs.Parse
 
 /-!
 # Audit
@@ -389,6 +390,42 @@ theorem exists_manifestPart_machine :
     | decide +kernel
 
 
+/-- `witnessMemChecks` with `manifest::parse`, its helpers, and `part` and its
+helpers added where the image loads them. -/
+def witnessMemParse (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.manifestParseAddress).toNat < Image.manifestParseCode.length then
+    RV32.byteAt Image.manifestParseCode (a - BitVec.ofNat 32 Image.manifestParseAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.parseSaveAddress).toNat < Image.parseSaveCode.length then
+    RV32.byteAt Image.parseSaveCode (a - BitVec.ofNat 32 Image.parseSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.parseRestoreAddress).toNat < Image.parseRestoreCode.length then
+    RV32.byteAt Image.parseRestoreCode (a - BitVec.ofNat 32 Image.parseRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat < 106 then
+    RV32.byteAt Image.manifestPartCode (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.partSaveAddress).toNat < 12 then
+    RV32.byteAt Image.partSaveCode (a - BitVec.ofNat 32 Image.partSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.partRestoreAddress).toNat < 14 then
+    RV32.byteAt Image.partRestoreCode (a - BitVec.ofNat 32 Image.partRestoreAddress).toNat
+  else witnessMemChecks a
+
+/-- A machine that calls `manifest::parse` on 40 bytes at `0x3FCC6000`, with
+the result at `0x3FCC5000` and the stack at `0x3FCC8000`, meets
+`manifestParse_correct`'s hypotheses. -/
+theorem exists_manifestParse_machine :
+    ∃ (m : RV32.Machine) (P retAddr out bp R G : RV32.Word),
+      RV32.PCode m.mem P ∧ m.pc = P ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = bp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = G + 0x40 ∧
+      RV32.PEnv P R G bp out := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.manifestParseAddress, witnessMemParse⟩,
+    BitVec.ofNat 32 Image.manifestParseAddress, 0, 0x3FCC5000, 0x3FCC6000, 0x3FCC7F70, 0x3FCC7FC0,
+    ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, by decide,
+    ⟨by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide)⟩⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -498,3 +535,9 @@ end C3
 
 /-- info: 'C3.exists_readerReserved_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_readerReserved_machine
+
+/-- info: 'C3.RV32.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.manifestParse_correct
+
+/-- info: 'C3.exists_manifestParse_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_manifestParse_machine
