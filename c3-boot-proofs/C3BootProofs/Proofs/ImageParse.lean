@@ -113,6 +113,14 @@ def readSegW (pos : Word) : Except (BitVec 8) (SegW × Word) := do
   let pos ← rdRes M ptr len 3 pos
   segA M ptr len pos k
 
+/-- The alignment checks: flash segments (kinds 0 and 1) map whole 64 KiB
+MMU pages, and RAM segments (kinds 2 and 3) are word aligned. -/
+def alignOk (s : SegW) : Bool :=
+  let x := s.addr ||| s.off
+  (if (x &&& 0xFFFF) != 0 then !s.kind.ult 2 else !(s.kind.ult 2 && (s.len &&& 0xFFFF) != 0)) &&
+  (if (x &&& 3) != 0 then !(1 : BitVec 8).ult s.kind
+   else !((1 : BitVec 8).ult s.kind && (s.len &&& 3) != 0))
+
 /-- `check_segment` and the order check, in the compiled code's order; the
 new previous end. -/
 def checkSegW (ilen prev : Word) (s : SegW) : Except (BitVec 8) Word := do
@@ -123,11 +131,7 @@ def checkSegW (ilen prev : Word) (s : SegW) : Except (BitVec 8) Word := do
   if (regionHi s.kind).ult (s.addr + s.len) then throw 9
   if (s.addr + s.len).ult s.addr then throw 9
   if s.addr.ult (regionLo s.kind) then throw 9
-  let x := s.addr ||| s.off
-  if (x &&& 0xFFFF) != 0 then (if s.kind.ult 2 then throw 9 else pure ())
-  else (if s.kind.ult 2 && (s.len &&& 0xFFFF) != 0 then throw 9 else pure ())
-  if (x &&& 3) != 0 then (if (1 : BitVec 8).ult s.kind then throw 9 else pure ())
-  else (if (1 : BitVec 8).ult s.kind && (s.len &&& 3) != 0 then throw 9 else pure ())
+  if !alignOk s then throw 9
   if s.off.ult prev then throw 9
   pure e
 

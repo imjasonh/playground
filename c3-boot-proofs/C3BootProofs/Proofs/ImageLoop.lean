@@ -33,8 +33,9 @@ theorem u32Mem_fr (M : Word → BitVec 8) (o self x : Word) (h1 : Sep (self + 8)
   · dsimp only; rw [memStore8_ne n0, memStore32_get_sep s4, memStore32_get_sep h1]
 
 theorem lo8_and (w : Word) : (w &&& 0xFF).extractLsb' 0 8 = w.extractLsb' 0 8 := by
-  rw [BitVec.extractLsb'_and, show (0xFF : Word).extractLsb' 0 8 = BitVec.allOnes 8 by decide,
-    BitVec.and_allOnes]
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  have hff : ∀ i, i < 8 → (0xFF : Word).getLsbD (0 + i) = true := by decide
+  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_extractLsb', BitVec.getLsbD_and, hff i hi, Bool.and_true]
 
 theorem or_ff_and (v : Word) : (v ||| 0xFF) &&& 0xFF = 0xFF := by
   apply BitVec.eq_of_getLsbD_eq; intro i _
@@ -55,7 +56,12 @@ theorem ByteFr.trans {M'' M' M : Word → BitVec 8} {G : Word} (h1 : ByteFr M'' 
 theorem ByteFr.word {My Mx : Word → BitVec 8} {G : Word} (h : ByteFr My Mx G) (c : Nat)
     (hc : (8 ≤ c ∧ c + 4 ≤ 0x10) ∨ (0x14 ≤ c ∧ c + 4 ≤ 0x18) ∨ (0x24 ≤ c ∧ c + 4 ≤ 0x124)) :
     memLoad32 My (G + BitVec.ofNat 32 c) = memLoad32 Mx (G + BitVec.ofNat 32 c) :=
-  memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact h _ (by omega)
+  memLoad32_congr fun j hj => by
+    rw [add_ofNat_assoc]
+    rcases hc with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · exact h _ (Or.inl ⟨by omega, by omega⟩)
+    · exact h _ (Or.inr (Or.inl ⟨by omega, by omega⟩))
+    · exact h _ (Or.inr (Or.inr ⟨by omega, by omega⟩))
 
 theorem ByteFr.arr {My Mx : Word → BitVec 8} {G : Word} (h : ByteFr My Mx G) : ArrAgree My Mx G :=
   fun k hk => h _ (Or.inr (Or.inr ⟨by omega, by omega⟩))
@@ -71,12 +77,20 @@ def CallFr (My Mx : Word → BitVec 8) (G : Word) : Prop :=
   ∀ k, k < 0x20 ∨ (0x24 ≤ k ∧ k < 0x124) → My (G + BitVec.ofNat 32 k) = Mx (G + BitVec.ofNat 32 k)
 
 theorem CallFr.byteFr {My Mx : Word → BitVec 8} {G : Word} (h : CallFr My Mx G) : ByteFr My Mx G :=
-  fun k hk => h k (by omega)
+  fun k hk => by
+    rcases hk with ⟨_, h2⟩ | ⟨_, h2⟩ | ⟨h1, h2⟩
+    · exact h k (Or.inl (by omega))
+    · exact h k (Or.inl (by omega))
+    · exact h k (Or.inr ⟨h1, h2⟩)
 
 theorem CallFr.word {My Mx : Word → BitVec 8} {G : Word} (h : CallFr My Mx G) (c : Nat)
     (hc : c + 4 ≤ 0x20 ∨ (0x24 ≤ c ∧ c + 4 ≤ 0x124)) :
     memLoad32 My (G + BitVec.ofNat 32 c) = memLoad32 Mx (G + BitVec.ofNat 32 c) :=
-  memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact h _ (by omega)
+  memLoad32_congr fun j hj => by
+    rw [add_ofNat_assoc]
+    rcases hc with h1 | ⟨h1, h2⟩
+    · exact h _ (Or.inl (by omega))
+    · exact h _ (Or.inr ⟨by omega, by omega⟩)
 
 section Loop
 
