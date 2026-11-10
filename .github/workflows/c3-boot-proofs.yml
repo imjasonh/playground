@@ -4,8 +4,9 @@
 # chain and trust-root rules on cases with real signatures, and the record,
 # manifest, and image-header decoders on valid and mutated inputs. It also
 # runs the RV32 model in lockstep with Espressif's QEMU on random
-# instruction sequences, and compares the model's decoder with LLVM's on
-# every 16-bit encoding and a sample of 32-bit ones.
+# instruction sequences, compares the model's decoder with LLVM's on every
+# 16-bit encoding and a sample of 32-bit ones, and boots the bootloader
+# image on the model in lockstep with QEMU.
 
 name: c3-boot-proofs
 
@@ -14,20 +15,12 @@ on:
     branches: [main]
     paths:
       - "c3-boot-proofs/**"
-      - "c3-boot/verify/**"
-      - "c3-boot/ota/**"
-      - "c3-boot/release/trusted_root.json"
-      - "c3-boot/rvtest/**"
-      - "c3-boot/qemu/**"
+      - "c3-boot/**"
       - ".github/workflows/c3-boot-proofs.yml"
   pull_request:
     paths:
       - "c3-boot-proofs/**"
-      - "c3-boot/verify/**"
-      - "c3-boot/ota/**"
-      - "c3-boot/release/trusted_root.json"
-      - "c3-boot/rvtest/**"
-      - "c3-boot/qemu/**"
+      - "c3-boot/**"
       - ".github/workflows/c3-boot-proofs.yml"
   workflow_dispatch: {}
 
@@ -111,3 +104,16 @@ jobs:
           bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
           cd ../c3-boot-proofs
           python3 scripts/decode-vs-llvm.py .lake/build/bin/rv-decode "${bin}"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: c3-boot/fakestore/go.mod
+          cache-dependency-path: c3-boot/fakestore/go.sum
+
+      - name: Build the scenario slots
+        working-directory: c3-boot
+        run: bash qemu/scenarios.sh "${RUNNER_TEMP}/c3-scenarios"
+
+      - name: Boot the bootloader image on the RV32 model in lockstep with QEMU
+        working-directory: c3-boot
+        run: bash qemu/boot-lockstep.sh "${RUNNER_TEMP}/c3-scenarios" "${RUNNER_TEMP}/boot-lockstep"

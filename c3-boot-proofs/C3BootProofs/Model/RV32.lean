@@ -19,37 +19,60 @@ namespace C3.RV32
 
 abbrev Word := BitVec 32
 
-/-- Registers, the program counter, and byte-addressed memory. -/
+/-- The state operations `step` needs: raw register access, the program
+counter, and byte-addressed memory. `step` applies the `x0` rule itself, so
+an instance stores whatever it's given. `Machine` is the instance the
+proofs use; other instances, such as `boot-sim`'s, are for testing. -/
+class Arch (σ : Type) where
+  getReg : σ → Fin 32 → Word
+  setReg : σ → Fin 32 → Word → σ
+  getPc : σ → Word
+  setPc : σ → Word → σ
+  read8 : σ → Word → BitVec 8
+  write8 : σ → Word → BitVec 8 → σ
+
+section Ops
+
+variable {σ : Type} [Arch σ]
+
+/-- A register's value; `x0` reads as zero. -/
+def reg (s : σ) (r : Fin 32) : Word := if r.val = 0 then 0 else Arch.getReg s r
+
+/-- Sets a register; writes to `x0` are discarded. -/
+def writeReg (s : σ) (r : Fin 32) (v : Word) : σ := if r.val = 0 then s else Arch.setReg s r v
+
+def load8 (s : σ) (a : Word) : BitVec 8 := Arch.read8 s a
+
+def load16 (s : σ) (a : Word) : BitVec 16 := load8 s (a + 1) ++ load8 s a
+
+def load32 (s : σ) (a : Word) : Word :=
+  load8 s (a + 3) ++ load8 s (a + 2) ++ load8 s (a + 1) ++ load8 s a
+
+def store8 (s : σ) (a : Word) (v : BitVec 8) : σ := Arch.write8 s a v
+
+def store16 (s : σ) (a : Word) (v : BitVec 16) : σ :=
+  store8 (store8 s a (v.extractLsb' 0 8)) (a + 1) (v.extractLsb' 8 8)
+
+def store32 (s : σ) (a : Word) (v : Word) : σ :=
+  store8 (store8 (store8 (store8 s a (v.extractLsb' 0 8)) (a + 1) (v.extractLsb' 8 8)) (a + 2)
+    (v.extractLsb' 16 8)) (a + 3) (v.extractLsb' 24 8)
+
+end Ops
+
+/-- Registers, the program counter, and byte-addressed memory, as
+functions: the state the proofs use. -/
 structure Machine where
   regs : Fin 32 → Word
   pc : Word
   mem : Word → BitVec 8
 
-/-- A register's value; `x0` reads as zero. -/
-def Machine.reg (m : Machine) (r : Fin 32) : Word :=
-  if r.val = 0 then 0 else m.regs r
-
-/-- Sets a register; writes to `x0` are discarded. -/
-def Machine.setReg (m : Machine) (r : Fin 32) (v : Word) : Machine :=
-  if r.val = 0 then m else { m with regs := fun i => if i = r then v else m.regs i }
-
-def Machine.load8 (m : Machine) (a : Word) : BitVec 8 := m.mem a
-
-def Machine.load16 (m : Machine) (a : Word) : BitVec 16 :=
-  m.load8 (a + 1) ++ m.load8 a
-
-def Machine.load32 (m : Machine) (a : Word) : Word :=
-  m.load8 (a + 3) ++ m.load8 (a + 2) ++ m.load8 (a + 1) ++ m.load8 a
-
-def Machine.store8 (m : Machine) (a : Word) (v : BitVec 8) : Machine :=
-  { m with mem := fun x => if x = a then v else m.mem x }
-
-def Machine.store16 (m : Machine) (a : Word) (v : BitVec 16) : Machine :=
-  (m.store8 a (v.extractLsb' 0 8)).store8 (a + 1) (v.extractLsb' 8 8)
-
-def Machine.store32 (m : Machine) (a : Word) (v : Word) : Machine :=
-  (((m.store8 a (v.extractLsb' 0 8)).store8 (a + 1) (v.extractLsb' 8 8)).store8 (a + 2)
-    (v.extractLsb' 16 8)).store8 (a + 3) (v.extractLsb' 24 8)
+instance : Arch Machine where
+  getReg m r := m.regs r
+  setReg m r v := { m with regs := fun i => if i = r then v else m.regs i }
+  getPc m := m.pc
+  setPc m v := { m with pc := v }
+  read8 m a := m.mem a
+  write8 m a v := { m with mem := fun x => if x = a then v else m.mem x }
 
 inductive BranchOp | beq | bne | blt | bge | bltu | bgeu
   deriving DecidableEq, Repr
@@ -84,7 +107,7 @@ inductive Instr
 /-- Bits `hi` down to `lo` of `w`, as a natural number. -/
 def bits (w : Nat) (hi lo : Nat) : Nat := (w >>> lo) % 2 ^ (hi + 1 - lo)
 
-def reg (n : Nat) : Fin 32 := ⟨n % 32, Nat.mod_lt _ (by decide)⟩
+def regOf (n : Nat) : Fin 32 := ⟨n % 32, Nat.mod_lt _ (by decide)⟩
 
 /-- Sign-extends the low `n` bits of `v` to 32 bits. -/
 def sext (n : Nat) (v : Nat) : Word := (BitVec.ofNat n v).signExtend 32
@@ -94,10 +117,10 @@ def zext (v : Nat) : Word := BitVec.ofNat 32 v
 /-- Decodes a 32-bit instruction. -/
 def decode32 (w : Nat) : Option Instr :=
   let opcode := bits w 6 0
-  let rd := reg (bits w 11 7)
+  let rd := regOf (bits w 11 7)
   let f3 := bits w 14 12
-  let rs1 := reg (bits w 19 15)
-  let rs2 := reg (bits w 24 20)
+  let rs1 := regOf (bits w 19 15)
+  let rs2 := regOf (bits w 24 20)
   let f7 := bits w 31 25
   let immI := sext 12 (bits w 31 20)
   let immS := sext 12 (bits w 31 25 * 32 + bits w 11 7)
@@ -156,14 +179,14 @@ def decode32 (w : Nat) : Option Instr :=
   | _ => none
 
 /-- The register `x8 + n`, for the compressed forms' 3-bit register fields. -/
-def creg (n : Nat) : Fin 32 := reg (8 + n % 8)
+def creg (n : Nat) : Fin 32 := regOf (8 + n % 8)
 
 /-- Decodes and expands a 16-bit instruction. -/
 def decode16 (h : Nat) : Option Instr :=
   let op := bits h 1 0
   let f3 := bits h 15 13
-  let rd := reg (bits h 11 7)
-  let rs2 := reg (bits h 6 2)
+  let rd := regOf (bits h 11 7)
+  let rs2 := regOf (bits h 6 2)
   let rdp := creg (bits h 4 2)
   let rs1p := creg (bits h 9 7)
   let ciImm := bits h 12 12 * 32 + bits h 6 2
@@ -171,9 +194,9 @@ def decode16 (h : Nat) : Option Instr :=
     bits h 6 6 * 128 + bits h 7 7 * 64 + bits h 2 2 * 32 + bits h 11 11 * 16 + bits h 5 3 * 2)
   let cbOff := sext 9 (bits h 12 12 * 256 + bits h 6 5 * 64 + bits h 2 2 * 32 +
     bits h 11 10 * 8 + bits h 4 3 * 2)
-  let x0 : Fin 32 := reg 0
-  let x1 : Fin 32 := reg 1
-  let x2 : Fin 32 := reg 2
+  let x0 : Fin 32 := regOf 0
+  let x1 : Fin 32 := regOf 1
+  let x2 : Fin 32 := regOf 2
   match op, f3 with
   | 0, 0 =>
     let imm := bits h 10 7 * 64 + bits h 12 11 * 16 + bits h 5 5 * 8 + bits h 6 6 * 4
@@ -283,56 +306,63 @@ def aligned (size : Nat) (a : Word) : Bool := a.toNat % size == 0
 
 /-- Fetches the instruction at `pc`: 16 bits if its low two bits aren't
 `11`, and 32 bits otherwise. -/
-def fetch (m : Machine) : Option (Instr × Word) :=
-  let lo := (m.load16 m.pc).toNat
+def fetch {σ : Type} [Arch σ] (s : σ) : Option (Instr × Word) :=
+  let pc := Arch.getPc s
+  let lo := (load16 s pc).toNat
   if lo % 4 == 3 then
-    (decode32 (m.load32 m.pc).toNat).map (·, 4)
+    (decode32 (load32 s pc).toNat).map (·, 4)
   else (decode16 lo).map (·, 2)
 
-/-- Runs one instruction, or returns `none` if it would trap. -/
-def step (m : Machine) : Option Machine := do
-  let (i, len) ← fetch m
-  let next := m.pc + len
+/-- Runs the decoded instruction `i`, `len` bytes long, at the program
+counter, or returns `none` if it would trap. -/
+def exec {σ : Type} [Arch σ] (s : σ) (i : Instr) (len : Word) : Option σ := do
+  let pc := Arch.getPc s
+  let next := pc + len
   match i with
-  | .lui rd imm => pure { m.setReg rd imm with pc := next }
-  | .auipc rd imm => pure { m.setReg rd (m.pc + imm) with pc := next }
+  | .lui rd imm => pure (Arch.setPc (writeReg s rd imm) next)
+  | .auipc rd imm => pure (Arch.setPc (writeReg s rd (pc + imm)) next)
   | .jal rd off =>
-    let target := m.pc + off
+    let target := pc + off
     if target.getLsbD 0 then none
-    pure { m.setReg rd next with pc := target }
+    pure (Arch.setPc (writeReg s rd next) target)
   | .jalr rd rs1 off =>
-    let target := (m.reg rs1 + off) &&& ~~~1
-    pure { m.setReg rd next with pc := target }
+    let target := (reg s rs1 + off) &&& ~~~1
+    pure (Arch.setPc (writeReg s rd next) target)
   | .branch op rs1 rs2 off =>
-    pure { m with pc := if branchTaken op (m.reg rs1) (m.reg rs2) then m.pc + off else next }
+    pure (Arch.setPc s (if branchTaken op (reg s rs1) (reg s rs2) then pc + off else next))
   | .load op rd rs1 off =>
-    let a := m.reg rs1 + off
+    let a := reg s rs1 + off
     if !aligned (loadSize op) a then none
     let v : Word := match op with
-      | .lb => (m.load8 a).signExtend 32
-      | .lh => (m.load16 a).signExtend 32
-      | .lw => m.load32 a
-      | .lbu => (m.load8 a).zeroExtend 32
-      | .lhu => (m.load16 a).zeroExtend 32
-    pure { m.setReg rd v with pc := next }
+      | .lb => (load8 s a).signExtend 32
+      | .lh => (load16 s a).signExtend 32
+      | .lw => load32 s a
+      | .lbu => (load8 s a).zeroExtend 32
+      | .lhu => (load16 s a).zeroExtend 32
+    pure (Arch.setPc (writeReg s rd v) next)
   | .store op rs1 rs2 off =>
-    let a := m.reg rs1 + off
+    let a := reg s rs1 + off
     if !aligned (storeSize op) a then none
-    let v := m.reg rs2
-    let m' := match op with
-      | .sb => m.store8 a (v.extractLsb' 0 8)
-      | .sh => m.store16 a (v.extractLsb' 0 16)
-      | .sw => m.store32 a v
-    pure { m' with pc := next }
-  | .aluImm op rd rs1 imm => pure { m.setReg rd (aluEval op (m.reg rs1) imm) with pc := next }
+    let v := reg s rs2
+    let s' := match op with
+      | .sb => store8 s a (v.extractLsb' 0 8)
+      | .sh => store16 s a (v.extractLsb' 0 16)
+      | .sw => store32 s a v
+    pure (Arch.setPc s' next)
+  | .aluImm op rd rs1 imm => pure (Arch.setPc (writeReg s rd (aluEval op (reg s rs1) imm)) next)
   | .alu op rd rs1 rs2 =>
-    pure { m.setReg rd (aluEval op (m.reg rs1) (m.reg rs2)) with pc := next }
-  | .fence => pure { m with pc := next }
+    pure (Arch.setPc (writeReg s rd (aluEval op (reg s rs1) (reg s rs2))) next)
+  | .fence => pure (Arch.setPc s next)
+
+/-- Runs one instruction, or returns `none` if it would trap. -/
+def step {σ : Type} [Arch σ] (s : σ) : Option σ := do
+  let (i, len) ← fetch s
+  exec s i len
 
 /-- Runs until the program counter reaches `stop`, for at most `fuel`
 instructions. -/
-def runTo (stop : Word) : Nat → Machine → Option Machine
+def runTo {σ : Type} [Arch σ] (stop : Word) : Nat → σ → Option σ
   | 0, _ => none
-  | fuel + 1, m => if m.pc = stop then some m else (step m).bind (runTo stop fuel)
+  | fuel + 1, s => if Arch.getPc s = stop then some s else (step s).bind (runTo stop fuel)
 
 end C3.RV32

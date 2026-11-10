@@ -110,6 +110,18 @@ The `c3-rvtest` firmware runs each in QEMU from a known register and memory
 state and prints what it ends with, and `lake exe rv-check` must get the
 same registers and buffer from the same start. CI runs 3,000 cases.
 
+`c3-boot/qemu/boot-lockstep.sh` runs the bootloader image itself on the
+model. `lake exe boot-sim` loads the image from a flash file the way the ROM
+does and runs it, with the ROM functions it calls (flash read, write, and
+erase, cache control, and `ets_printf`) as hooks and eFuse reads from an
+eFuse file. `c3-boot/qemu/rsp-trace.py` runs the same flash in QEMU through
+its GDB server. Both print each ROM call with its arguments and how the
+boot ended, and the flash the model leaves must match QEMU's byte for byte.
+CI boots three scenarios: two rejected slots, and a trial boot that
+rewrites the boot state and jumps to the new slot. That's about 336 million
+instructions on the model, through SHA-256, ECDSA, Ed25519, and the
+parsers as compiled. The bootloader uses no CSR or system instructions.
+
 `scripts/decode-vs-llvm.py` checks which encodings the decoder accepts
 against LLVM's RISC-V disassembler (RV32IMC, from the pinned Rust
 toolchain's `llvm-tools`): all 49,152 16-bit encodings and 200,000 32-bit

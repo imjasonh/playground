@@ -60,8 +60,8 @@ def runCase (seq : Nat) (code : Array Nat) (regs : Array Nat) (buf : Array Nat) 
     pc := start
     mem := mem }
   let final ← runTo (start + BitVec.ofNat 32 code.size) 2000 m
-  let rs := (List.range 31).map fun i => hex8 (final.reg (reg (i + 1))).toNat
-  let bs := (List.range 256).map fun i => hex2 (final.load8 (BitVec.ofNat 32 (bufBase + i))).toNat
+  let rs := (List.range 31).map fun i => hex8 (reg final (regOf (i + 1))).toNat
+  let bs := (List.range 256).map fun i => hex2 (load8 final (BitVec.ofNat 32 (bufBase + i))).toNat
   pure s!"{String.join rs} {String.join bs}"
 
 def check (tokens : List String) : Option String := do
