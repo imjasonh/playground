@@ -25,6 +25,12 @@ follows the Rust code it names:
 - `Formats.lean`: decoders for the boot-state record (including CRC-32 and
   the newer-copy rule), the slot manifest, and the image header and segment
   table (`c3_verify::bootstate`, `manifest`, and `image`).
+- `Sha256.lean`: SHA-256 as FIPS 180-4 defines it, on 32-bit words of the
+  type the machine model's registers hold, with the standard's examples as
+  build-time checks.
+- `Merkle.lean`: RFC 6962 leaf and node hashes, and `rootFromInclusion`, the
+  RFC 9162 algorithm that computes the root an inclusion proof implies, as
+  `c3_verify::merkle::root_from_inclusion` takes it.
 
 `C3BootProofs/Model/RV32.lean` is an executable model of RV32IMC, the
 ESP32-C3's instruction set: registers, the program counter, byte memory, a
@@ -280,9 +286,14 @@ comparison; `c3-boot`'s conformance and mutation tests cover them.
 records, 5,000 pairs of records, 20,000 manifests, and 20,000 image headers.
 About half are valid; the rest have one change: a field set to a boundary
 value or nearby number, a flipped bit, or a truncation, with the record's
-CRC often recomputed so the field rules are reached. It prints each input
-with `c3-verify`'s result, and `lake exe decode-check` must print the same
-results.
+CRC often recomputed so the field rules are reached. It also hashes a
+random message of every length from 0 to 300 bytes with `c3_crypto::sha256`,
+which crosses each padding boundary, and builds 5,000 inclusion proofs for
+trees of up to 40 leaves. About half of the proofs are valid; the rest have a
+wrong index or size, a dropped, added, or flipped hash, a length that isn't a
+multiple of 32, or 64 or 65 hashes for a tree near 2^64 leaves. It prints
+each input with `c3-verify`'s or `c3-crypto`'s result, and
+`lake exe decode-check` must print the same results.
 
 `c3-boot/qemu/rv-lockstep.sh` tests the RV32 model against Espressif's
 QEMU. `c3-ota`'s `rv_cases` example generates random sequences of 28

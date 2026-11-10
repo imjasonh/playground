@@ -22,6 +22,13 @@ def parseHex : List Char → Option Bytes
     pure ((16 * hi + lo) :: (← parseHex rest))
   | [_] => none
 
+/-- Hex bytes, with `-` for none. -/
+def parseHexTok (s : String) : Option Bytes := if s = "-" then some [] else parseHex s.toList
+
+def hexStr (b : Bytes) : String :=
+  if b.isEmpty then "-"
+  else String.join (b.map fun x => String.ofList ((Nat.toDigits 16 (256 + x)).drop 1))
+
 def showSlot : Slot → String
   | .a => "A"
   | .b => "B"
@@ -48,31 +55,42 @@ parse. -/
 def result (tokens : List String) : Option String :=
   match tokens with
   | ["record", h] => do
-    let bytes ← parseHex h.toList
+    let bytes ← parseHexTok h
     pure <| match decodeRecord bytes with
       | some s => s!"ok {showState s}"
       | none => "err"
   | ["read", ha, hb] => do
-    let a ← parseHex ha.toList
-    let b ← parseHex hb.toList
+    let a ← parseHexTok ha
+    let b ← parseHexTok hb
     let (s, copy) := readRecords a b
     let c := match copy with
       | some slot => showSlot slot
       | none => "-"
     pure s!"{showState s} copy={c}"
   | ["manifest", h] => do
-    let bytes ← parseHex h.toList
+    let bytes ← parseHexTok h
     pure <| match decodeManifest bytes with
       | some m =>
         s!"ok i={showPart m.image} b={showPart m.bundle} c={showPart m.chain} l={showPart m.blob}"
       | none => "err"
   | ["image", len, h] => do
     let n ← len.toNat?
-    let bytes ← parseHex h.toList
+    let bytes ← parseHexTok h
     pure <| match decodeImageHeader bytes n with
       | some hdr =>
         let segs := ",".intercalate (hdr.segments.map showSegment)
         s!"ok sv={hdr.securityVersion} e={hdr.entryPoint} segs={segs}"
+      | none => "err"
+  | ["sha256", h] => do
+    let bytes ← parseHexTok h
+    pure (hexStr (sha256 bytes))
+  | ["merkle", i, s, l, p] => do
+    let index ← i.toNat?
+    let size ← s.toNat?
+    let leaf ← parseHexTok l
+    let proof ← parseHexTok p
+    pure <| match rootFromInclusion index size leaf proof with
+      | some r => s!"ok {hexStr r}"
       | none => "err"
   | _ => none
 

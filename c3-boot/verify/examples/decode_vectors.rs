@@ -9,8 +9,11 @@
 //! - `read HEX HEX | STATE copy=A`, `copy=B`, or `copy=-`
 //! - `manifest HEX | ok i=OFF,LEN b=OFF,LEN c=OFF,LEN l=OFF,LEN` or `| err`
 //! - `image LEN HEX | ok sv=N e=N segs=K@ADDR+OFF:LEN,...` or `| err`
+//! - `sha256 HEX | HEX`, the digest from `c3_crypto::sha256`
+//! - `merkle INDEX SIZE HEX HEX | ok HEX` or `| err`, the leaf hash, the
+//!   proof, and the root from `c3_verify::merkle::root_from_inclusion`
 //!
-//! where `STATE` is `g=N p=A|B t=-|A0..B3 c=N`.
+//! where `STATE` is `g=N p=A|B t=-|A0..B3 c=N`, and an empty `HEX` is `-`.
 
 // A host-side test generator, not device code: its arithmetic and indexing
 // work on values it chose itself.
@@ -62,7 +65,90 @@ impl Rng {
 }
 
 fn hex(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "-".to_string();
+    }
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn node(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+    c3_crypto::sha256_parts(&[&[0x01], left, right])
+}
+
+/// The RFC 6962 root of `leaves`.
+fn tree_root(leaves: &[[u8; 32]]) -> [u8; 32] {
+    if leaves.len() == 1 {
+        return leaves[0];
+    }
+    let mut k = 1;
+    while k * 2 < leaves.len() {
+        k *= 2;
+    }
+    node(&tree_root(&leaves[..k]), &tree_root(&leaves[k..]))
+}
+
+/// The RFC 6962 audit path for leaf `m` of `leaves`.
+fn audit_path(m: usize, leaves: &[[u8; 32]]) -> Vec<u8> {
+    if leaves.len() == 1 {
+        return Vec::new();
+    }
+    let mut k = 1;
+    while k * 2 < leaves.len() {
+        k *= 2;
+    }
+    let mut out;
+    if m < k {
+        out = audit_path(m, &leaves[..k]);
+        out.extend_from_slice(&tree_root(&leaves[k..]));
+    } else {
+        out = audit_path(m - k, &leaves[k..]);
+        out.extend_from_slice(&tree_root(&leaves[..k]));
+    }
+    out
+}
+
+/// An inclusion proof, valid or mutated: the index, the size, the leaf
+/// hash, and the proof.
+fn merkle_case(rng: &mut Rng) -> (u64, u64, [u8; 32], Vec<u8>) {
+    let size = 1 + rng.below(40) as usize;
+    let leaves: Vec<[u8; 32]> = (0..size)
+        .map(|i| {
+            c3_crypto::sha256_parts(&[
+                &[0x00],
+                &(i as u64).to_le_bytes(),
+                &rng.next().to_le_bytes(),
+            ])
+        })
+        .collect();
+    let m = rng.below(size as u64) as usize;
+    let mut index = m as u64;
+    let mut tree_size = size as u64;
+    let leaf = leaves[m];
+    let mut proof = audit_path(m, &leaves);
+    match rng.below(10) {
+        0 => index = index.wrapping_add(1),
+        1 => index = index.wrapping_sub(1),
+        2 => tree_size = tree_size.wrapping_add(1),
+        3 => tree_size = tree_size.wrapping_sub(1),
+        4 => {
+            proof.truncate(proof.len().saturating_sub(32));
+        }
+        5 => proof.extend_from_slice(&rng.next().to_le_bytes().repeat(4)),
+        6 => {
+            if !proof.is_empty() {
+                let i = rng.below(proof.len() as u64) as usize;
+                proof[i] ^= 1;
+            }
+        }
+        7 => proof.push(rng.next() as u8),
+        8 => {
+            tree_size = u64::MAX - rng.below(4);
+            index = tree_size - 1 - rng.below(4);
+            proof = (0..64 + rng.below(2)).flat_map(|i| [i as u8; 32]).collect();
+        }
+        _ => {}
+    }
+    (index, tree_size, leaf, proof)
 }
 
 fn slot_name(s: Slot) -> &'static str {
@@ -404,6 +490,26 @@ fn main() -> std::io::Result<()> {
             },
         );
         writeln!(out, "image {len} {} | {result}", hex(&bytes))?;
+    }
+    for len in 0..=300usize {
+        let data: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+        writeln!(
+            out,
+            "sha256 {} | {}",
+            hex(&data),
+            hex(&c3_crypto::sha256(&data))
+        )?;
+    }
+    for _ in 0..CASES / 4 {
+        let (index, size, leaf, proof) = merkle_case(&mut rng);
+        let result = c3_verify::merkle::root_from_inclusion(index, size, &leaf, &proof)
+            .map_or_else(|_| "err".to_string(), |r| format!("ok {}", hex(&r)));
+        writeln!(
+            out,
+            "merkle {index} {size} {} {} | {result}",
+            hex(&leaf),
+            hex(&proof)
+        )?;
     }
     out.flush()
 }
