@@ -31,6 +31,7 @@ import C3BootProofs.Proofs.Memset
 import C3BootProofs.Proofs.FieldSub
 import C3BootProofs.Proofs.FieldDecode
 import C3BootProofs.Proofs.FieldArith
+import C3BootProofs.Proofs.FieldSubInner
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats

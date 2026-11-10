@@ -99,6 +99,13 @@ theorem St.step1 {M : Word → BitVec 8} {base : Word} {code : List Nat} {m : Ma
   | sw rs1 rs2 o => exact s.sw hc hf hn hok.1
   | sb rs1 rs2 o => exact s.sb hc hf hn
 
+theorem updz {f : Fin 32 → Word} {rd r : Fin 32} {v : Word} (hz : f 0 = 0) (h : r ≠ rd) :
+    upd f rd v r = f r := by
+  by_cases h0 : r.val = 0
+  · have : r = 0 := Fin.ext h0
+    subst this; simp [upd, hz]
+  · simp [upd, h0, h]
+
 /-- **A block runs as one step.** -/
 theorem St.block {base : Word} {code : List Nat} :
     ∀ (is : List BInstr) {M : Word → BitVec 8} {m : Machine} {off off' : Nat} {f : Fin 32 → Word},

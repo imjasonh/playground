@@ -172,13 +172,6 @@ theorem ip_len2 (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
       |> IErrDone.pre (.single d1)
     rw [upd_a0]; simp [upd, aluEval]
 
-theorem updz {f : Fin 32 → Word} {rd r : Fin 32} {v : Word} (hz : f 0 = 0) (h : r ≠ rd) :
-    upd f rd v r = f r := by
-  by_cases h0 : r.val = 0
-  · have : r = 0 := Fin.ext h0
-    subst this; simp [upd, hz]
-  · simp [upd, h0, h]
-
 theorem ofs (a b c : Nat) (h : a + b = c) : BitVec.ofNat 32 a + BitVec.ofNat 32 b = BitVec.ofNat 32 c := by
   rw [ofNat_add_ofNat, h]
 
