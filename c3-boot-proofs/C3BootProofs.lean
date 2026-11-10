@@ -1,8 +1,10 @@
 import C3BootProofs.Spec.Level
 import C3BootProofs.Spec.BootState
 import C3BootProofs.Spec.Boot
+import C3BootProofs.Spec.Formats
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
+import C3BootProofs.Theorems.Formats
 import C3BootProofs.Theorems.Trace
 import C3BootProofs.Spec.TrustRoot
 import C3BootProofs.Theorems.TrustRoot

@@ -22,6 +22,9 @@ follows the Rust code it names:
   blob signed the same way by the chain's last set (`c3_verify::chain`,
   `keys`, and `trustroot`). Signature verification is a parameter; the
   Ed25519 proofs are the plan's cryptography phase.
+- `Formats.lean`: decoders for the boot-state record (including CRC-32 and
+  the newer-copy rule), the slot manifest, and the image header and segment
+  table (`c3_verify::bootstate`, `manifest`, and `image`).
 
 `C3BootProofs/Theorems/Trace.lean` models a device as its eFuse field, its
 boot-state record, and the result of checking each slot. A trace mixes
@@ -35,6 +38,7 @@ trace, it proves the following:
 | `rollback` | If a step ends with the level at L, every jump in that step or a later one goes to a slot whose level is at least L |
 | `boots_safe` | Every jump goes to a slot accepted at the level the bootloader read, after the level reached that slot's burn target |
 | `availability` | When some slot is accepted, a boot can run to a jump |
+| `mapped_pages_signed` | For an accepted image header, every 64 KiB page the cache maps for a flash segment ends inside the signed image |
 | `trust_root_monotone` | When the slot results come from the trust-root checks, every jump goes to a slot whose chain is authorized from the genesis keys, whose blob the chain's last key set signed, whose chain level is at most the blob's level, whose image security version equals the blob's level, and whose blob level is at least the eFuse level |
 
 A boot that halts, including the bootloader's halt when an eFuse bit fails
@@ -82,6 +86,14 @@ the verdicts to match; about a third of the cases are accepted. The
 Sigstore checks and the trust-root blob's byte format are outside this
 comparison; `c3-boot`'s conformance and mutation tests cover them.
 
+`c3-boot/verify/examples/decode_vectors.rs` builds 20,000 boot-state
+records, 5,000 pairs of records, 20,000 manifests, and 20,000 image headers.
+About half are valid; the rest have one change: a field set to a boundary
+value or nearby number, a flipped bit, or a truncation, with the record's
+CRC often recomputed so the field rules are reached. It prints each input
+with `c3-verify`'s result, and `lake exe decode-check` must print the same
+results.
+
 ## Build and test
 
 Install [elan](https://github.com/leanprover/elan), then run:
@@ -94,6 +106,8 @@ lake exe spec-vectors > /tmp/lean.txt
 diff /tmp/lean.txt /tmp/rust.txt
 (cd ../c3-boot && cargo run -q -p c3-ota --example trust_vectors) > /tmp/rust-trust.txt
 lake exe trust-check < /tmp/rust-trust.txt | diff - /tmp/rust-trust.txt
+(cd ../c3-boot && cargo run -q -p c3-verify --example decode_vectors) > /tmp/rust-decode.txt
+lake exe decode-check < /tmp/rust-decode.txt | diff - /tmp/rust-decode.txt
 ```
 
 `lean-toolchain` pins Lean 4.34.0, the version that

@@ -1,4 +1,5 @@
 import C3BootProofs.Theorems.TrustRoot
+import C3BootProofs.Theorems.Formats
 
 /-!
 # Audit
@@ -55,6 +56,20 @@ theorem exists_trust_root_jump :
     subst this
     rfl
 
+/-- The bytes of a header with one flash code segment. -/
+def flashHeaderBytes : Bytes :=
+  [67, 51, 73, 77, 1, 0, 5, 0, 0, 1, 0, 0, 0, 0, 0, 66, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 66, 0, 0, 1, 0, 0, 0, 1, 0]
+
+/-- A header with one flash code segment decodes, so the image-header
+theorems are not vacuous. -/
+theorem exists_flash_header :
+    ∃ (bytes : Bytes) (n : Nat) (h : ImageHeader), decodeImageHeader bytes n = some h ∧
+      ∃ s ∈ h.segments, s.kind.isFlash = true := by
+  have hd : decodeImageHeader flashHeaderBytes 0x20000 =
+      some ⟨0, 0x42000000, 0x20000, [⟨.flashCode, 0x42000000, 0x10000, 0x10000⟩]⟩ := by
+    decide +kernel
+  exact ⟨_, _, _, hd, ⟨.flashCode, 0x42000000, 0x10000, 0x10000⟩, by simp, rfl⟩
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -77,3 +92,9 @@ end C3
 
 /-- info: 'C3.exists_trust_root_jump' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_trust_root_jump
+
+/-- info: 'C3.mapped_pages_signed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.mapped_pages_signed
+
+/-- info: 'C3.exists_flash_header' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.exists_flash_header
