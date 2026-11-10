@@ -7,6 +7,7 @@ import C3BootProofs.Proofs.ReaderU32
 import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Parse
+import C3BootProofs.Proofs.ParseSpec
 
 /-!
 # Audit
@@ -541,3 +542,12 @@ end C3
 
 /-- info: 'C3.exists_manifestParse_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_manifestParse_machine
+
+/-- info: 'C3.decodeManifest_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeManifest_bytes
+
+/-- info: 'C3.decodeManifest_parse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeManifest_parse
+
+/-- info: 'C3.manifestParse_decodes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.manifestParse_decodes

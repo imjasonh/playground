@@ -421,6 +421,8 @@ theorem parse_part {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
 abbrev s5 : Fin 32 := 21
 abbrev s6 : Fin 32 := 22
 
+section
+
 set_option maxRecDepth 20000
 
 theorem pa_0 : fetchRel manifestParseCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFC0, 2) := by decide
@@ -542,6 +544,8 @@ theorem pa_15a : fetchRel manifestParseCode 0x15A = some (.aluImm .add a0 x0 0x1
 theorem pa_15c : fetchRel manifestParseCode 0x15C = some (.jal x0 0xFFFFFF76, 2) := by decide
 theorem pa_15e : fetchRel manifestParseCode 0x15E = some (.aluImm .add a0 x0 0x7, 2) := by decide
 theorem pa_160 : fetchRel manifestParseCode 0x160 = some (.jal x0 0xFFFFFF72, 2) := by decide
+
+end
 
 /-- What `parse`'s save helper stores, and where in the frame. -/
 abbrev parseSavePs : List (Fin 32 × Word) :=
@@ -1023,6 +1027,7 @@ theorem PEnv.part_step {P R G bp out : Word} (env : PEnv P R G bp out) {M0 M2 Mx
     · rw [t2.regs]; simp +decide [upd]
 
 set_option maxHeartbeats 8000000 in
+set_option maxRecDepth 20000 in
 /-- **The compiled `manifest::parse` is correct.** With the functions it
 runs where the image puts them (`PCode`), the result address `out` in `a0`,
 the 40-byte manifest at `bp` in `a1`, `sp` at `G + 0x40`, and the layout
