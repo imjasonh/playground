@@ -1,6 +1,6 @@
 name = "c3-boot-proofs"
 version = "0.1.0"
-defaultTargets = ["C3BootProofs", "spec-vectors"]
+defaultTargets = ["C3BootProofs", "spec-vectors", "trust-check"]
 
 [[lean_lib]]
 name = "C3BootProofs"
@@ -8,3 +8,7 @@ name = "C3BootProofs"
 [[lean_exe]]
 name = "spec-vectors"
 root = "Vectors"
+
+[[lean_exe]]
+name = "trust-check"
+root = "TrustCheck"

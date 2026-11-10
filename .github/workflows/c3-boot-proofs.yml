@@ -1,6 +1,7 @@
 # Checks the Lean proofs in c3-boot-proofs/, re-checks them with leanchecker,
 # audits their axioms, and compares the Lean specification with the Rust
-# code in c3-boot/verify on a grid of inputs.
+# code in c3-boot/verify: the decision logic on a grid of inputs, and the
+# key-set chain and trust-root rules on cases with real signatures.
 
 name: c3-boot-proofs
 
@@ -10,11 +11,15 @@ on:
     paths:
       - "c3-boot-proofs/**"
       - "c3-boot/verify/**"
+      - "c3-boot/ota/**"
+      - "c3-boot/release/trusted_root.json"
       - ".github/workflows/c3-boot-proofs.yml"
   pull_request:
     paths:
       - "c3-boot-proofs/**"
       - "c3-boot/verify/**"
+      - "c3-boot/ota/**"
+      - "c3-boot/release/trusted_root.json"
       - ".github/workflows/c3-boot-proofs.yml"
   workflow_dispatch: {}
 
@@ -54,3 +59,12 @@ jobs:
             > "${RUNNER_TEMP}/rust.txt"
           wc -l "${RUNNER_TEMP}/lean.txt" "${RUNNER_TEMP}/rust.txt"
           diff "${RUNNER_TEMP}/lean.txt" "${RUNNER_TEMP}/rust.txt"
+
+      - name: Compare the trust-root specification with c3-verify
+        run: |
+          (cd c3-boot && cargo run --locked -q -p c3-ota --example trust_vectors) \
+            > "${RUNNER_TEMP}/rust-trust.txt"
+          (cd c3-boot-proofs && lake exe trust-check) \
+            < "${RUNNER_TEMP}/rust-trust.txt" > "${RUNNER_TEMP}/lean-trust.txt"
+          awk '{print $NF}' "${RUNNER_TEMP}/rust-trust.txt" | sort | uniq -c
+          diff "${RUNNER_TEMP}/rust-trust.txt" "${RUNNER_TEMP}/lean-trust.txt"

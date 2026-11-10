@@ -4,4 +4,6 @@ import C3BootProofs.Spec.Boot
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Trace
+import C3BootProofs.Spec.TrustRoot
+import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Audit
