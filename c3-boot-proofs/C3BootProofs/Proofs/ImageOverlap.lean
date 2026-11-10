@@ -574,6 +574,195 @@ theorem ov_inner (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : Lis
           rintro ⟨m5, M5, g5, c5, u5, b5, hd5⟩
           exact ⟨m5, M5, g5, ((pre.trans (.single d3)).trans c4).trans c5, u5, b5, hd5⟩
 
+theorem ov_cnt : ∀ c, c ≤ 16 → BitVec.ofNat 32 (16 * c) >>> ((4 : Word).toNat % 32) = BitVec.ofNat 32 c := by
+  decide
+
+theorem ov_sh : ∀ c, c ≤ 16 → BitVec.ofNat 32 c <<< ((4 : Word).toNat % 32) = BitVec.ofNat 32 (16 * c) := by
+  decide
+
+theorem ov_lt : ∀ a, a ≤ 16 → ∀ b, b ≤ 16 → BitVec.ult (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = decide (a < b) := by
+  decide
+
+theorem ov_ne0 : ∀ a, a ≤ 16 → 1 ≤ a → BitVec.ofNat 32 a ≠ 0 := by decide
+
+theorem ov_end (G : Word) (c : Nat) (hc : c ≤ 16) :
+    aluEval .sub (G + BitVec.ofNat 32 (0x24 + 16 * c)) (G + BitVec.ofNat 32 0x24) = BitVec.ofNat 32 (16 * c) := by
+  show _ - _ = _
+  rw [show G + BitVec.ofNat 32 (0x24 + 16 * c) = BitVec.ofNat 32 (16 * c) + (G + BitVec.ofNat 32 0x24) by
+    rw [BitVec.add_comm (BitVec.ofNat 32 (16 * c)), add_ofNat_assoc], BitVec.add_sub_cancel]
+
+/-- **The outer overlap loop**, from offset 0x322 at segment `j`, to 0x3C0. -/
+theorem ov_outer (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : List SegW} :
+    ∀ n j {Mx : Word → BitVec 8} {g : Fin 32 → Word} {m : Machine}, j + n + 1 = cnt.toNat →
+      OInv R G ptr len out ilen M0 f0 sv cnt entry segs j Mx g → St Mx P m 0x322 g →
+      match overlapW (segs.drop j) with
+      | .error e => IErrDone R G out M0 f0 e m
+      | .ok () => ∃ m' My g', Steps m m' ∧ St My P m' 0x3C0 g' ∧
+          OBase R G ptr len out ilen M0 f0 sv cnt entry segs My g'
+  | n, j, Mx, g, m, hn, oi, st => by
+    have b := oi.base
+    have hj16 : j < 16 := Nat.lt_of_lt_of_le oi.hj b.hc
+    have hjl : j < segs.length := by rw [b.hl]; exact oi.hj
+    have hc := (b.inv.code env code0).parse
+    obtain ⟨m1, g1, c1, u1, fr1⟩ := ov_phys env code0 b.inv st hj16 oi.s5 (b.arr.1 j hjl) (by decide)
+      ip_at_322 ip_at_326 ip_at_32a ip_at_32c ip_at_330 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+      (by decide)
+    have b1 := (b.phys env segs[j].kind segs[j].addr).regs (g' := g1) fun r hr =>
+      fr1 r (nv hr a0) (nv hr a1) (nv hr a2) (nv hr a3) (nv hr a4) (nv hr ra)
+    have k1 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ ra → g1 r = g r := fr1
+    have hc1 := (b1.inv.code env code0).parse
+    obtain ⟨m2, d2, u2⟩ := u1.lbu hc1 ip_at_334 (off' := 0x338) (by decide)
+    rw [b1.inv.sp] at u2
+    rw [List.drop_eq_getElem_cons hjl]
+    unfold overlapW physW
+    cases hph : physResult segs[j].kind segs[j].addr with
+    | none =>
+      obtain ⟨n0, n1⟩ := physMem_none (M := Mx) (o := G + 0x124) hph
+      obtain ⟨m3, d3, u3⟩ := u2.taken hc1 0x414 ip_at_338 (by decide)
+        (by rw [upd_same (by decide), n0, updz b1.inv.zero (by decide), b1.s6]; rfl)
+      obtain ⟨m4, d4, u4⟩ := u3.lbu hc1 ip_at_414 (off' := 0x418) (by decide)
+      exact IErrDone.pre (c1.trans (.cons d2 (.cons d3 (.single d4))))
+        (ip_err418 env code0 ((b1.inv.setR s7).setR (16 : Fin 32)) u4
+          (by rw [upd_same (by decide), updz b1.inv.zero (by decide), b1.inv.sp,
+            show G + (0x125 : Word) = G + 0x124 + 1 by rw [BitVec.add_assoc]; rfl, n1]; rfl))
+    | some r =>
+      obtain ⟨sa, xa⟩ := r
+      obtain ⟨n0, n1⟩ := physMem_some (M := Mx) (o := G + 0x124) (t := 0) hph
+      rw [n0] at u2
+      obtain ⟨m3, d3, u3⟩ := u2.notTaken hc1 0x33C ip_at_338 (by decide)
+        (by rw [upd_same (by decide), updz b1.inv.zero (by decide), b1.s6]
+            exact Bool.eq_false_iff.mpr fun h => phys_tag hph (beq_iff_eq.mp h))
+      obtain ⟨m4, d4, u4⟩ := u3.lw hc1 ip_at_33c (off' := 0x340) (by decide)
+        (by rw [updz b1.inv.zero (by decide), b1.inv.sp]; exact aligned_add env.hG (k := 0x128) (by decide))
+      obtain ⟨m5, d5, u5⟩ := u4.aluImm hc1 ip_at_340 (off' := 0x344) (by decide)
+      obtain ⟨m6, d6, u6⟩ := u5.aluImm hc1 ip_at_344 (off' := 0x346) (by decide)
+      obtain ⟨m7, d7, u7⟩ := u6.lw hc1 ip_at_346 (off' := 0x348) (by decide)
+        (by simp +decide only [upd, ↓reduceIte]; rw [b1.inv.sp]; exact aligned_add env.hG (k := 0x14) (by decide))
+      obtain ⟨m8, d8, u8⟩ := u7.alu hc1 ip_at_348 (off' := 0x34A) (by decide)
+      have hit : memLoad32 (physMem Mx (G + 0x124) segs[j].kind segs[j].addr) (G + 0x14) =
+          G + BitVec.ofNat 32 0x24 := b1.it
+      have r8 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ ra → r ≠ s3 → r ≠ s4 → r ≠ s7 →
+          r ≠ s8 → r ≠ s9 → reg m8 r = g r := fun r h0 h1 h2 h3 h4 h7 hs3 hs4 hs7 hs8 hs9 => by
+        rw [u8.regs, updz (by simp) h1, updz (by simp) hs3, updz (by simp) hs4, updz (by simp) hs8,
+          updz (by simp) hs9, updz b1.inv.zero hs7, k1 r h0 h1 h2 h3 h4 h7]
+      have r8s7 : reg m8 s7 = sa.zeroExtend 32 := by
+        rw [u8.regs]; simp +decide only [upd, ↓reduceIte]
+      have r8s9 : reg m8 s9 = xa := by
+        rw [u8.regs]; simp +decide only [upd, ↓reduceIte]; rw [b1.inv.sp]
+        rw [show G + (0x128 : Word) = G + 0x124 + 4 by rw [BitVec.add_assoc]; rfl, n1]
+      have r8s8 : reg m8 s8 = G + BitVec.ofNat 32 (0x24 + 16 * (j + 1)) := by
+        rw [u8.regs]; simp +decide only [upd, ↓reduceIte]
+        rw [k1 s5 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), oi.s5]
+        show _ + BitVec.ofNat 32 0x10 = _; rw [add_ofNat_assoc]; congr 2 <;> omega
+      have r8s4 : reg m8 s4 = BitVec.ofNat 32 (j + 1) := by
+        rw [u8.regs]; simp +decide only [upd, ↓reduceIte]
+        rw [k1 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), oi.s4]
+        exact ofNat_add_ofNat j 1
+      have r8a1 : reg m8 a1 = BitVec.ofNat 32 (j + 1) := by
+        rw [u8.regs, upd_same (by decide)]; show _ + _ = _
+        simp +decide only [upd, ↓reduceIte]
+        rw [k1 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), oi.s4,
+          show aluEval .add (BitVec.ofNat 32 j) 1 = BitVec.ofNat 32 (j + 1) from ofNat_add_ofNat j 1]
+        exact BitVec.zero_add _
+      have r8s3 : reg m8 s3 = G + BitVec.ofNat 32 0x24 := by
+        rw [u8.regs]; simp +decide only [upd, ↓reduceIte]; rw [b1.inv.sp]; exact hit
+      have b8 := b1.regs (g' := reg m8) fun r hr => by
+        rw [r8 r (nv hr a0) (nv hr a1) (nv hr a2) (nv hr a3) (nv hr a4) (nv hr ra) (nv hr s3) (nv hr s4)
+          (nv hr s7) (nv hr s8) (nv hr s9), k1 r (nv hr a0) (nv hr a1) (nv hr a2) (nv hr a3) (nv hr a4) (nv hr ra)]
+      have hd8 : IHd G j sa xa (reg m8) := ⟨by
+        rw [r8 s5 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide) (by decide), oi.s5], r8s8, r8s4, r8s7, r8s9⟩
+      have hc8 := (b8.inv.code env code0).parse
+      obtain ⟨m9, d9, u9⟩ := u8.self.taken hc8 0x3AA ip_at_34a (by decide)
+        (by rw [r8a1, b8.inv.zero]; exact bne_iff_ne.mpr (ov_ne0 (j + 1) (by omega) (by omega)))
+      obtain ⟨m10, d10, u10⟩ := u9.alu hc8 ip_at_3aa (off' := 0x3AE) (by decide)
+      obtain ⟨m11, d11, u11⟩ := u10.aluImm hc8 ip_at_3ae (off' := 0x3B0) (by decide)
+      obtain ⟨m12, d12, u12⟩ := u11.aluImm hc8 ip_at_3b0 (off' := 0x3B4) (by decide)
+      obtain ⟨m13, d13, u13⟩ := u12.alu hc8 ip_at_3b4 (off' := 0x3B6) (by decide)
+      have r13 : ∀ r, r ≠ a0 → r ≠ s10 → reg m13 r = reg m8 r := fun r h0 h10 => by
+        rw [u13.regs, updz (by simp) h10, updz (by simp) h10, updz (by simp) h0, updz b8.inv.zero h0]
+      have r13a0 : reg m13 a0 = BitVec.ofNat 32 cnt.toNat := by
+        rw [u13.regs]; simp +decide only [upd, ↓reduceIte]
+        rw [b8.s11, r8s3, ov_end G _ b.hc]; exact ov_cnt _ b.hc
+      have r13s10 : reg m13 s10 = G + BitVec.ofNat 32 (0x24 + 16 * (j + 1)) := by
+        rw [u13.regs]; simp +decide only [upd, ↓reduceIte]
+        rw [r8a1, r8s3]
+        show BitVec.ofNat 32 (j + 1) <<< ((4 : Word).toNat % 32) + _ = _
+        rw [ov_sh _ (by omega), BitVec.add_comm, add_ofNat_assoc]
+      have b13 := b8.regs (g' := reg m13) fun r hr => r13 r (nv hr a0) (nv hr s10)
+      have hd13 := hd8.frame (g' := reg m13) fun r h0 _ _ _ _ _ _ _ _ h10 => r13 r h0 h10
+      have hc13 := (b13.inv.code env code0).parse
+      have pre13 : Steps m m13 := c1.trans (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7
+        (.cons d8 (.cons d9 (.cons d10 (.cons d11 (.cons d12 (.single d13))))))))))))
+      -- After the inner loop: back to 0x322 or out to 0x3C0.
+      have after : ∀ {m' : Machine} {My : Word → BitVec 8} {g' : Fin 32 → Word}, Steps m m' →
+          St My P m' 0x3BA g' → OBase R G ptr len out ilen M0 f0 sv cnt entry segs My g' → IHd G j sa xa g' →
+          match overlapW (segs.drop (j + 1)) with
+          | .error e => IErrDone R G out M0 f0 e m
+          | .ok () => ∃ m' My g', Steps m m' ∧ St My P m' 0x3C0 g' ∧
+              OBase R G ptr len out ilen M0 f0 sv cnt entry segs My g' := by
+        intro m' My g' c' st' b' hd'
+        have hc' := (b'.inv.code env code0).parse
+        obtain ⟨m14, d14, u14⟩ := st'.alu hc' ip_at_3ba (off' := 0x3BC) (by decide)
+        have b14 := b'.regs (g' := upd g' s5 (aluEval .add (g' x0) (g' s8))) fun r hr => updz b'.inv.zero (nv hr s5)
+        have s14 : upd g' s5 (aluEval .add (g' x0) (g' s8)) s5 = G + BitVec.ofNat 32 (0x24 + 16 * (j + 1)) := by
+          rw [upd_same (by decide)]; show g' 0 + _ = _; rw [b'.inv.zero, hd'.2.1]; exact BitVec.zero_add _
+        match n with
+        | 0 =>
+          obtain ⟨m15, d15, u15⟩ := u14.notTaken hc' 0x3C0 ip_at_3bc (by decide)
+            (by rw [updz b'.inv.zero (by decide), hd'.2.1, updz b'.inv.zero (by decide), b'.s11,
+                  show j + 1 = cnt.toNat by omega]; exact bne_self_eq_false _)
+          rw [List.drop_of_length_le (by rw [b.hl]; omega)]
+          exact ⟨m15, _, _, c'.trans (.cons d14 (.single d15)), u15, b14⟩
+        | n + 1 =>
+          obtain ⟨m15, d15, u15⟩ := u14.taken hc' 0x322 ip_at_3bc (by decide)
+            (by rw [updz b'.inv.zero (by decide), hd'.2.1, updz b'.inv.zero (by decide), b'.s11]
+                exact bne_iff_ne.mpr fun h => add_ofNat_ne G (c := 0x24 + 16 * (j + 1))
+                  (d := 0x24 + 16 * cnt.toNat) (by omega) (by have := b.hc; omega) (by omega) h)
+          have ih := ov_outer env code0 n (j + 1) (by omega)
+            ⟨b14, by omega, s14, by rw [updz b'.inv.zero (by decide)]; exact hd'.2.2.1⟩ u15
+          revert ih
+          cases overlapW (segs.drop (j + 1)) with
+          | error e => intro ih; exact IErrDone.pre (c'.trans (.cons d14 (.single d15))) ih
+          | ok u => rintro ⟨m16, M16, g16, c16, u16, b16⟩
+                    exact ⟨m16, M16, g16, (c'.trans (.cons d14 (.single d15))).trans c16, u16, b16⟩
+      show match Except.bind (innerW segs[j] sa xa (segs.drop (j + 1))) (fun _ => overlapW (segs.drop (j + 1))) with
+        | .error e => IErrDone R G out M0 f0 e m
+        | .ok () => _
+      by_cases hlt : j + 1 < cnt.toNat
+      · obtain ⟨m14, d14, u14⟩ := u13.self.taken hc13 0x352 ip_at_3b6 (by decide)
+          (by rw [r13 a1 (by decide) (by decide), r8a1, r13a0]; show BitVec.ult _ _ = _
+              rw [ov_lt _ (by omega) _ b.hc]; exact decide_eq_true hlt)
+        have hk' : j + 1 < segs.length := by rw [b.hl]; exact hlt
+        have body := ov_body env code0 b13 u14 (Nat.lt_succ_self j) hlt hd13 r13s10
+          (b13.arr.1 j hjl) (b13.arr.1 (j + 1) hk')
+        rw [List.drop_eq_getElem_cons hk']
+        show match Except.bind (Except.bind (pairW segs[j] sa xa segs[j + 1])
+            (fun _ => innerW segs[j] sa xa (segs.drop (j + 1 + 1)))) (fun _ => overlapW (segs[j + 1] :: segs.drop (j + 1 + 1))) with
+          | .error e => IErrDone R G out M0 f0 e m
+          | .ok () => _
+        rw [← List.drop_eq_getElem_cons hk']
+        revert body
+        cases pairW segs[j] sa xa segs[j + 1] with
+        | error e => intro body; exact IErrDone.pre (pre13.trans (.single d14)) body
+        | ok u =>
+          rintro ⟨m15, M15, g15, c15, u15, b15, hd15, h15a1, h15s3⟩
+          have inner := ov_inner env code0 hjl (cnt.toNat - (j + 2)) (j + 1 + 1) (by omega) (by omega)
+            b15 u15 hd15 h15a1 h15s3
+          revert inner
+          cases innerW segs[j] sa xa (segs.drop (j + 1 + 1)) with
+          | error e => intro inner; exact IErrDone.pre ((pre13.trans (.single d14)).trans c15) inner
+          | ok u' =>
+            rintro ⟨m16, M16, g16, c16, u16, b16, hd16⟩
+            exact after (((pre13.trans (.single d14)).trans c15).trans c16) u16 b16 hd16
+      · obtain ⟨m14, d14, u14⟩ := u13.self.notTaken hc13 0x3BA ip_at_3b6 (by decide)
+          (by rw [r13 a1 (by decide) (by decide), r8a1, r13a0]; show BitVec.ult _ _ = _
+              rw [ov_lt _ (by omega) _ b.hc]; exact decide_eq_false hlt)
+        have a14 := after (pre13.trans (.single d14)) u14 b13 hd13
+        have hd0 : segs.drop (j + 1) = [] := List.drop_of_length_le (by rw [b.hl]; omega)
+        rw [hd0] at a14 ⊢
+        exact a14
+
 end Overlap
 
 end C3.RV32
