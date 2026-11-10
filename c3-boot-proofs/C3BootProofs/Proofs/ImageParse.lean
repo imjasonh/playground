@@ -92,6 +92,18 @@ def regionLo (k : BitVec 8) : Word :=
 def regionHi (k : BitVec 8) : Word :=
   if k = 0 then 0x42800000 else if k = 1 then 0x3C800000 else if k = 2 then 0x403A0000 else 0x3FCA0000
 
+def segL (pos : Word) (k : BitVec 8) (a o : Word) : Except (BitVec 8) (SegW × Word) := do
+  let (l, pos) ← rdU32 M ptr len pos
+  pure (⟨k, a, o, l⟩, pos)
+
+def segO (pos : Word) (k : BitVec 8) (a : Word) : Except (BitVec 8) (SegW × Word) := do
+  let (o, pos) ← rdU32 M ptr len pos
+  segL M ptr len pos k a o
+
+def segA (pos : Word) (k : BitVec 8) : Except (BitVec 8) (SegW × Word) := do
+  let (a, pos) ← rdU32 M ptr len pos
+  segO M ptr len pos k a
+
 /-- `read_segment`: the kind byte, three zero bytes, and the address, offset,
 and length. -/
 def readSegW (pos : Word) : Except (BitVec 8) (SegW × Word) := do
@@ -99,10 +111,7 @@ def readSegW (pos : Word) : Except (BitVec 8) (SegW × Word) := do
   let k := b - 1
   if (3 : BitVec 8).ult k then throw 9
   let pos ← rdRes M ptr len 3 pos
-  let (a, pos) ← rdU32 M ptr len pos
-  let (o, pos) ← rdU32 M ptr len pos
-  let (l, pos) ← rdU32 M ptr len pos
-  pure (⟨k, a, o, l⟩, pos)
+  segA M ptr len pos k
 
 /-- `check_segment` and the order check, in the compiled code's order; the
 new previous end. -/
