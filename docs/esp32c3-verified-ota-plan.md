@@ -55,8 +55,10 @@ This work differs from the libsignal work in five ways:
 
 The plan is feasible. The largest risks are building the agent setup, which
 DeepMind didn't release, and getting the new trusted models of the platform
-right. The [feasibility assessment](#feasibility-assessment) covers both, and
-the [milestones](#milestones) include go/no-go checkpoints.
+right. The [feasibility assessment](#feasibility-assessment) covers both.
+[Phases and deliverables](#phases-and-deliverables) lists what each phase
+produces, starting with the verifier code, and the exit criteria that decide
+whether the next phase starts.
 
 ## Background on AlphaProof Code
 
@@ -360,8 +362,33 @@ groups:
 ## Writing the Rust for verification
 
 The proofs are about optimized machine code, so the source must keep that
-code regular. These are requirements for the bootloader crate:
+code regular, and the code must be split so that each part has one kind of
+proof.
 
+### Crate split
+
+| Crate | Contents | How it is proved |
+| --- | --- | --- |
+| `verify` | Every check: container, header, trust root, X.509 subset, CMS subset, Rekor v2, identity policy, and `accept`. Pure functions over byte slices, with no hardware access | Machine-level contracts that equal the Lean specification |
+| `crypto` | P-256, P-384, Ed25519, SHA-384, and SHA-512, each behind one function that takes byte slices and returns a result | Hooks with contracts. A later phase can prove the real code |
+| `bootloader` | Reset entry, ROM flash reads, the SHA accelerator driver, eFuse reads and burns, the register lock, MMU mapping, the boot-state record, and the jump | Machine-level contracts against the platform model |
+
+The same `verify` source builds for the host and for RV32. The host build is
+what CI and the key holders run, so CI and the device run the same checks.
+
+`verify` mirrors the Lean specification. Each Lean definition in the
+acceptance path has one Rust function with the same name and the same
+argument order, and the specification lists the pairs. This makes the proof
+decomposition follow the code, and makes a mismatch between the two easy to
+find in review.
+
+### Rules
+
+These are requirements for all three crates, enforced by lints and CI where
+a lint exists:
+
+- `verify` has `#![forbid(unsafe_code)]`. Only `bootloader` touches
+  registers.
 - `#![no_std]`, no heap, no `dyn` traits, no function pointers in the
   verified paths, and no floating point.
 - Fixed-size buffers with sizes known at compile time, and loops with
@@ -371,15 +398,15 @@ code regular. These are requirements for the bootloader crate:
   remains is unreachable or leads to a specified halt.
 - `#[inline(never)]` on every function whose contract the specification
   names, and on every hooked routine.
-- The cryptographic routines in a separate crate behind a narrow interface
-  of byte slices in and a result out.
 - A pinned `rustc`, a fixed `opt-level`, `codegen-units = 1`, and a
   reproducible build. The build script checks the image digest.
 
 A rebuild changes the binary, and a changed binary needs proof repair. The
 libsignal team saw large repairs early on. For a bootloader, that is
 acceptable. The verified bootloader is built once, proved, signed with the
-Secure Boot key, and rarely changed again.
+Secure Boot key, and rarely changed again. After the code freeze in phase 5,
+CI fails any change to the bootloader whose image digest differs from the
+digest the specification pins, unless the same change updates the proofs.
 
 ## Validating the specification
 
@@ -498,7 +525,7 @@ runner or a self-hosted one, outside `test.yml`.
 
 The proof-line estimate scales libsignal's ratio of about 38 lines per
 instruction. RISC-V instructions are simpler, but RV32 code has more
-instructions per operation, so the ratio is a rough guide. Milestone 1
+instructions per operation, so the ratio is a rough guide. Phase 5
 measures it.
 
 ### What is easier than libsignal
@@ -525,62 +552,281 @@ measures it.
 
 | Risk | Effect | Mitigation | Fallback |
 | --- | --- | --- | --- |
-| Agent setup underperforms | Slow proof throughput | Pilot on milestone 1 before committing to the full scope | Narrow the scope to the parsers and policy at the subroutine level |
+| Agent setup underperforms | Slow proof throughput | Pilot in phase 5 before committing to the full scope | Narrow the scope to the parsers and policy at the subroutine level |
 | Platform model is unsound | Theorems don't hold on silicon | Lockstep tests on hardware, minimal register coverage, flash reads through a ROM hook | Shrink the model by moving more operations behind ROM hooks |
 | X.509 or CMS specification is wrong | A theorem about the wrong parser | Differential testing on real bundles, strict profile | Pin more fields by exact byte match, which shortens the specification |
-| CMS is too large to specify well | Delays milestone 4 | Profile pinned to the Sigstore TSA's exact token shape | Use Rekor v1, whose signed entry timestamp gives signed time without CMS, and accept the risk that Rekor v1 is retired |
+| CMS is too large to specify well | Delays the CMS contracts in phase 6 | Profile pinned to the Sigstore TSA's exact token shape | Use Rekor v1, whose signed entry timestamp gives signed time without CMS, and accept the risk that Rekor v1 is retired |
 | Proof repair after every rebuild | Lost work | Freeze the bootloader early, keep contracts at `#[inline(never)]` boundaries | Accept repair as a campaign cost |
-| The C3 can't lock the eFuse controller against code running in machine mode | A malicious application can burn counters or revocations and permanently block updates | Confirm in milestone 0 which protection unit (the permission-control unit or the CPU's PMP) can lock those registers until reset | Write-protect the counter fields once, and accept that a malicious application can block updates |
+| The C3 can't lock the eFuse controller against code running in machine mode | A malicious application can burn counters or revocations and permanently block updates | Confirm in phase 0 which protection unit (the permission-control unit or the CPU's PMP) can lock those registers until reset | Write-protect the counter fields once, and accept that a malicious application can block updates |
 | eFuse bits run out | No more security bumps or revocations | Bump the security version and the epoch only for security fixes and revocations, never for routine releases or routine Sigstore rotations | Reserve more `USER_DATA` bits for the epoch counter |
-| Code size exceeds the bootloader region | The design doesn't fit | Measure in milestone 0 | Move the partition table, or move signature checks into a second verified stage loaded from flash |
+| Code size exceeds the bootloader region | The design doesn't fit | Measure in phase 0 | Move the partition table, or move signature checks into a second verified stage loaded from flash |
 
-### Go/no-go checkpoints
+## Phases and deliverables
 
-- **After milestone 0.** The image fits, boots in an acceptable time, and the
-  extraction tool round-trips the image digest.
-- **After milestone 1.** Measure proof lines per instruction and agent hours
-  per function. If the numbers project the full bootloader at more than
-  about three times the libsignal binary proof, cut scope before milestone 3.
-- **After milestone 3.** The X.509 decoder agrees with sigstore-go on the
-  whole corpus, or every disagreement is a documented restriction.
+The project produces two things: Rust code that verifies OTA updates on the
+device, and a Lean proof that the compiled code is correct. The work runs on
+two tracks that meet at a code freeze:
 
-## Milestones
+- **Implementation track** (phases 1 and 2). The verifier, the bootloader,
+  the host tools, and the signing and rotation pipelines, written to the
+  rules in [Writing the Rust for verification](#writing-the-rust-for-verification)
+  from the first commit.
+- **Verification track** (phases 3 and 4). The specification, the machine
+  model, and the proof tooling.
 
-Each milestone ends with a theorem that is useful even if the project stops
-there. Each depends on the ones before it.
+Phase 0 feeds both tracks, and the tracks run in parallel until phase 5
+freezes the code. Phases 6 through 8 prove the frozen code.
 
-0. **Prototype and measurements.** Build the bootloader and the signing
-   pipeline. Measure image size, boot time, and the instruction count of the
-   verified code. Build `rv32-img2lean`.
-1. **Pipeline pilot.** Write the RV32 semantics, prove agreement with the
-   Sail-generated model for the instructions in use, port the core of the
-   proof library, and prove contracts for the image header parser and the
-   Merkle inclusion check. This milestone measures throughput.
-2. **Rekor v2.** Contracts for rebuilding the canonical entry and parsing the
-   checkpoint.
-3. **X.509 and policy.** Contracts for the DER subset, the certificate
-   checks, and the identity policy, with the differential corpus.
-4. **Timestamps.** Contracts for the CMS and RFC 3161 subset.
-5. **One boot.** `boot_refines`, from reset to the jump, with cryptographic
-   hooks.
-6. **Many boots.** `boots_safe`, `trust_root_monotone`, rollback, and
-   availability, with power loss.
-7. **Security games.** Authenticity and transparency in VCVio, connected to
-   `boot_refines`.
-8. **Cryptography (optional).** Discharge the P-256, P-384, and Ed25519
-   hooks by proving the real code against Lean specifications of FIPS 186-5,
-   RFC 8032, and FIPS 180-4.
+| Phase | Track | Starts after |
+| --- | --- | --- |
+| 0. Design and feasibility probes | Both | Approval of this plan |
+| 1. Verifier code, host first | Implementation | Phase 0 |
+| 2. Bootloader and pipelines on hardware | Implementation | Phase 1 |
+| 3. Specification | Verification | Phase 0, and the corpus from phase 1 |
+| 4. Machine model and proof tooling | Verification | Phase 0 |
+| 5. Pilot proofs and code freeze | Both | Phases 2, 3, and 4 |
+| 6. Function contracts | Verification | Phase 5 |
+| 7. Headline theorems | Verification | Phase 6 |
+| 8. Mutation proofs and release | Both | Phase 7 |
+| 9. Cryptography proofs (optional) | Verification | Phase 8 |
+
+Each phase ends with exit criteria. A phase that misses them stops the
+project or changes its scope before more work goes in.
+
+### Phase 0: design and feasibility probes
+
+Deliverables:
+
+- `c3-boot/docs/formats.md`, a byte-exact definition of the image header,
+  the device bundle container, the trust-root blob, the boot-state record,
+  and the eFuse bit layout.
+- A spike bootloader on a development board that reads one slot, runs one
+  check of each signature scheme with the candidate crypto crates, and
+  jumps.
+- Measurements from the spike: code size per crate, cycles per signature
+  check, total boot time, and SRAM use.
+- A hardware test of which protection unit can lock the eFuse controller
+  against machine-mode writes until reset.
+- A prototype of `rv32-img2lean` that turns the spike image into Lean data
+  and checks the image digest.
+- Lint configuration for the rules in
+  [Writing the Rust for verification](#writing-the-rust-for-verification).
+
+Exit criteria:
+
+- The bootloader fits the chosen flash and SRAM layout.
+- Boot time with six signature checks per slot is within a budget you set
+  in this phase.
+- The eFuse lock works, or the fallback in the risk table is accepted.
+- The extracted Lean data hashes to the image digest.
+
+### Phase 1: verifier code, host first
+
+Deliverables:
+
+- The `verify` crate with every check, built and tested on the host.
+- The `crypto` crate with the hook interface.
+- `c3-ota`, a host command-line tool with these subcommands:
+  - `pack` builds a signed-image header and segment table.
+  - `transcode` turns a Sigstore bundle into the device container.
+  - `blob build`, `blob sign`, and `blob verify` handle trust-root blobs.
+  - `verify` runs the host build of `verify` on a slot.
+- A corpus in `c3-boot/testdata/`: real bundles signed by GitHub Actions,
+  mutated bundles, and each one's expected verdict from sigstore-go.
+- Fuzz targets for every parser, and Kani harnesses that prove the parsers
+  can't panic for inputs up to the format's size limits.
+
+Exit criteria:
+
+- `verify` agrees with sigstore-go on the whole corpus, except for
+  documented profile restrictions.
+- The fuzz targets run for a CPU-hour budget set in phase 0 without a
+  finding.
+- The Kani harnesses pass.
+
+Fuzzing and Kani are much cheaper than machine-code proofs. They find bugs
+in the code before the expensive campaign has to.
+
+### Phase 2: bootloader and pipelines on hardware
+
+Deliverables:
+
+- The `bootloader` crate, producing an ESP-IDF image from a reproducible
+  build with a pinned digest.
+- A minimal untrusted demo application that downloads an update, writes it
+  to the inactive slot, and confirms it.
+- `c3-release.yml`, which builds, signs in a separate job, transcodes, and
+  publishes.
+- `c3-trust-root.yml`, the scheduled job that checks Sigstore's trust root
+  and opens a pull request with a candidate blob.
+- `c3-boot.yml`, which builds every crate, runs host tests and a short fuzz
+  run, and checks the reproducible image digest.
+- A hardware test rig: development boards, a relay that cuts power, and a
+  script that runs these scenarios end to end:
+  - A normal update, and updates with a bad signature, the wrong identity, a
+    stale timestamp, and a lower security version
+  - A rotation to a new Rekor log key, an epoch bump, and a trust-root key
+    revocation
+  - Power cuts at random points during an update write, a boot-state write,
+    and an eFuse burn
+- A private Sigstore stack (Fulcio, Rekor v2, and a TSA, from
+  `sigstore/scaffolding`) for the rotation tests, because the rig must
+  rotate keys on demand.
+
+Exit criteria:
+
+- Every scenario passes on hardware.
+- A power-cut soak run leaves every board bootable.
+- The image is tagged `v0`, the input to the verification pilot.
+
+### Phase 3: specification
+
+Deliverables:
+
+- The trusted `Spec/` modules in Lean, all executable: formats, the X.509
+  and CMS subsets, Rekor v2, the trust root, the identity policy, `accept`,
+  the boot state machine, the platform assumptions, and the security games.
+- A differential harness that runs the compiled Lean decoders on the corpus
+  and compares each verdict with `verify` and with sigstore-go.
+- Non-vacuity theorems for every hypothesis in the headline theorems.
+- A review log from reviewer agents and a human.
+- A tagged baseline commit, which the gatekeeper copies into its held-out
+  directory.
+- Optionally, source-level proofs that `verify` matches the specification,
+  using Aeneas, which translates safe Rust into Lean. These find mismatches
+  between the code and the specification before the machine-code campaign.
+
+Exit criteria:
+
+- The Lean decoders, `verify`, and sigstore-go agree on the whole corpus.
+- A human approves the specification.
+
+### Phase 4: machine model and proof tooling
+
+Deliverables:
+
+- The trusted `Model/` modules: the RV32IMC and Zicsr semantics, the
+  platform model, and the hook contracts.
+- A kernel-checked proof that the compact semantics agrees with
+  `sail-riscv-lean` on every opcode in the `v0` image.
+- `rv32-img2lean`, finished, including symbol names and DWARF hints.
+- A lockstep harness that runs the whole bootloader on the corpus in the Lean
+  semantics, in Espressif's QEMU fork, and on hardware through a debug
+  probe, and compares the final states.
+- The core of the proof library ported to RV32: weakest-precondition rules
+  for each instruction, separation logic, and symbolic execution.
+- Gatekeeper scripts: comparator configuration, the axiom audit, and a check
+  that trusted files never import untrusted files.
+- Agent skills for each role in
+  [Running the proof campaigns](#running-the-proof-campaigns), under
+  `.cursor/skills/`.
+
+Exit criteria:
+
+- Lockstep runs agree on every corpus input.
+- The equivalence proof covers every opcode in the `v0` image.
+- The gatekeeper rejects a planted `sorry` and a planted edit to the
+  specification.
+
+### Phase 5: pilot proofs and code freeze
+
+Deliverables:
+
+- Machine-level contract proofs for the image header parser and the Merkle
+  inclusion check in `v0`.
+- A throughput report covering proof lines per instruction, agent hours per
+  function, and Lean build time and memory.
+- A list of code changes that make proofs easier, such as splitting large
+  functions or replacing a pattern the compiler turns into hard-to-prove
+  code. The changes are made, tested on the rig, and rebuilt.
+- The frozen image, tagged `v1`, with its digest pinned in the
+  specification.
+
+Exit criteria:
+
+- The throughput report projects the full proof at no more than about three
+  times the libsignal binary proof. Otherwise, cut scope before phase 6. For
+  example, drop CMS by switching to Rekor v1 signed entry timestamps, or stop
+  after the parser contracts.
+- `v1` passes every phase 2 scenario.
+
+### Phase 6: function contracts
+
+Deliverables:
+
+- Gatekept contract proofs for every function reachable from reset in `v1`,
+  in the groups from [Proof decomposition](#proof-decomposition), in this
+  order: byte helpers, container and header, trust root, Rekor v2, X.509 and
+  policy, CMS, boot-state record, and eFuse, lock, and MMU.
+
+Exit criteria:
+
+- Every function reachable from reset has a contract proof or is a hook.
+
+### Phase 7: headline theorems
+
+Deliverables:
+
+- `boot_refines`
+- `boots_safe`, `trust_root_monotone`, rollback, and availability
+- The authenticity and transparency games, connected to `boot_refines`
+
+Exit criteria:
+
+- Comparator confirms every headline theorem against the held-out
+  specification.
+- The axiom audit is clean.
+
+### Phase 8: mutation proofs and release
+
+Deliverables:
+
+- A mutated image for each bug in
+  [Validating the specification](#validating-the-specification), each with
+  a proof that the headline theorems fail for it.
+- A trusted-base report that lists every trusted file with its line count.
+- Bootloader release 1.0: the `v1` image signed with the Secure Boot key,
+  the proof artifact, and a CI job that checks the proofs from a clean
+  checkout.
+
+Exit criteria:
+
+- Every mutant has a disproof.
+- A clean checkout reproduces the image digest and checks every proof.
+- The release image boots on the rig and passes every phase 2 scenario.
+
+### Phase 9: cryptography proofs (optional)
+
+Deliverables:
+
+- Proofs that the real P-256, P-384, and Ed25519 code in `v1` meets its hook
+  contracts, against Lean specifications of FIPS 186-5, RFC 8032, and
+  FIPS 180-4.
+
+After this phase, the only hooks left are the ROM functions and the SHA
+accelerator.
 
 ## Repository layout
 
 The repository has no Lean code. These directories are proposals:
 
-- `c3-bootloader/`, the Rust bootloader crate. Like `inkbot-esp32/`, it must
-  be excluded from `test.yml` Rust discovery. A dedicated workflow builds it
-  for `riscv32imc-unknown-none-elf`, runs host tests, and checks that the
-  image matches the digest the proofs pin.
-- `c3-bootloader-proofs/`, the Lean specification, machine model, and proofs,
-  checked by its own workflow on a large runner.
+- `c3-boot/`, a Cargo workspace with the `verify`, `crypto`, `bootloader`,
+  and `c3-ota` crates and the demo application. The repository forbids a
+  repository-root workspace and imports between top-level apps, so all the
+  crates live under one top-level directory. Like `inkbot-esp32/`, it must
+  be excluded from `test.yml` Rust discovery, and `c3-boot.yml` builds and
+  tests it instead.
+- `c3-boot-proofs/`, the Lean project, with these directories:
+  - `Spec/` and `Model/`, trusted
+  - `Theorems/`, trusted statements of the headline theorems
+  - `Equiv/`, `ProofLib/`, and `Proofs/`, untrusted
+  - `Extracted/`, generated by `rv32-img2lean` and checked against the
+    image digest
+  - `Validation/`, with the differential harness, the lockstep harness, and
+    the mutant images and their disproofs
+  - `tools/`, with `rv32-img2lean` and the gatekeeper scripts
+
+  A `c3-boot-proofs.yml` workflow checks it on a large runner.
 
 The existing `inkbot-esp32/` firmware runs on a classic ESP32 (Xtensa) and
 verifies Cosign signatures in the application. This plan doesn't change it.
