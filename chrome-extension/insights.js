@@ -16,7 +16,6 @@ import {
 
 const analyzeButton = document.getElementById("analyze");
 const statusLine = document.getElementById("status");
-const undoButton = document.getElementById("undo");
 const download = document.getElementById("download");
 const closeSection = document.getElementById("close-section");
 const closeList = document.getElementById("close-list");
@@ -24,7 +23,9 @@ const closeEmpty = document.getElementById("close-empty");
 const closeButton = document.getElementById("close");
 const topicsSection = document.getElementById("topics-section");
 const topicsBox = document.getElementById("topics");
+const groupRow = document.getElementById("group-row");
 const groupButton = document.getElementById("group");
+const undoButtons = [document.getElementById("undo"), document.getElementById("group-undo")];
 
 let insights = { topics: [], close: [] };
 let analysis = 0;
@@ -98,7 +99,9 @@ async function refreshButton(withStatus) {
 function setBusy(value) {
   busy = value;
   analyzeButton.disabled = value;
-  undoButton.disabled = value;
+  for (const button of undoButtons) {
+    button.disabled = value;
+  }
   closeButton.disabled = value;
   groupButton.disabled = value;
   if (!value) {
@@ -107,7 +110,9 @@ function setBusy(value) {
 }
 
 function updateUndo() {
-  undoButton.hidden = undoStack.length === 0;
+  for (const button of undoButtons) {
+    button.hidden = undoStack.length === 0;
+  }
 }
 
 async function focusTab(entry) {
@@ -182,14 +187,14 @@ function render() {
     topicsBox.append(heading, list);
   }
   topicsSection.hidden = insights.topics.length === 0;
-  groupButton.hidden = insights.topics.length === 0 && insights.close.length === 0;
+  groupRow.hidden = insights.topics.length === 0 && insights.close.length === 0;
 }
 
 function clearResults() {
   insights = { topics: [], close: [] };
   closeSection.hidden = true;
   topicsSection.hidden = true;
-  groupButton.hidden = true;
+  groupRow.hidden = true;
 }
 
 function checkedPicks() {
@@ -372,7 +377,9 @@ async function groupTabs() {
 analyzeButton.addEventListener("click", analyze);
 closeButton.addEventListener("click", closeChecked);
 groupButton.addEventListener("click", groupTabs);
-undoButton.addEventListener("click", undo);
+for (const button of undoButtons) {
+  button.addEventListener("click", undo);
+}
 refreshButton(true).then((state) => {
   if (state.ready) {
     analyze();

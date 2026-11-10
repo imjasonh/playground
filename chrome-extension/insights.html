@@ -80,8 +80,16 @@
     color: var(--muted);
     min-height: 1.45em;
   }
-  #group {
+  .action-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-top: 16px;
+  }
+  .action-row button.secondary {
+    font-size: 1rem;
+    padding: 7px 14px;
+    border-radius: 8px;
   }
   #status.error {
     color: #c5221f;
@@ -152,6 +160,9 @@
   <h2>Topics</h2>
   <div id="topics"></div>
 </section>
-<button id="group" class="primary" type="button" hidden>Group tabs</button>
+<div id="group-row" class="action-row" hidden>
+  <button id="group" class="primary" type="button">Group tabs</button>
+  <button id="group-undo" class="secondary" type="button" hidden>Undo</button>
+</div>
 <script type="module" src="insights.js"></script>
 </html>
