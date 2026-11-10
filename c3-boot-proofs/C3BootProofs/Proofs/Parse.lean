@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Reserved
+import C3BootProofs.Proofs.Block
 
 /-!
 # `c3_verify::manifest::parse`, as compiled
@@ -417,9 +418,6 @@ theorem parse_part {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
   refine ⟨m2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
     fun r h0 h1' h2' h3 h4 h5 h6 h7 => ?_, mem2⟩
   rw [fr2 r h0 h1' h2' h3 h4 h5 h6, r1 r h7]
-
-abbrev s5 : Fin 32 := 21
-abbrev s6 : Fin 32 := 22
 
 section
 

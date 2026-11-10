@@ -9,6 +9,7 @@ import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Parse
 import C3BootProofs.Proofs.ParseSpec
 import C3BootProofs.Proofs.ImageHelpers
+import C3BootProofs.Proofs.Block
 
 /-!
 # Audit
@@ -643,3 +644,6 @@ end C3
 
 /-- info: 'C3.exists_memcpy_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_memcpy_machine
+
+/-- info: 'C3.RV32.St.block' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.block
