@@ -741,6 +741,141 @@ theorem lp_ck2 (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
     (by rw [q _ (by decide) (by decide) (by decide) (by decide), ha6])
     (by rw [q _ (by decide) (by decide) (by decide) (by decide), ha2]) f1 f2 f3 f4' f5' f6')
 
+theorem kind_ff : ∀ k : BitVec 8, (3 : BitVec 8).ult k = false →
+    branchTaken .beq (aluEval .add (k.zeroExtend 32) 0xFFFFFF01) 0 = false := by decide
+
+/-- **A segment's checks**, from offset 0x2CA: the segment `read_segment`
+read is in registers and frame words; the loop checks it as `checkSegW`
+does and stores it, or returns its error. -/
+theorem lp_check (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
+    (ctx : CkCtx R G ptr len out ilen M0 f0 sv cnt entry segs pos prev Ms gs s pos' My g)
+    {m : Machine} (st : St My P m 0x2CA g) (hl : memLoad32 My (G + 0x128) = s.len)
+    (ho : memLoad32 My (G + 4) = s.off) (hs7 : g s7 = s.addr) (hs6 : g s6 = s.kind.zeroExtend 32) :
+    CkPost P R G ptr len out ilen M0 f0 sv cnt entry segs s pos' m (checkSegW ilen prev s) := by
+  have hc := (ctx.inv.code env code0).parse
+  have hz := ctx.inv.zero
+  have sp0 := ctx.inv.sp
+  obtain ⟨m1, d1, u1⟩ := st.lw hc ip_at_2ca (off' := 0x2CE) (by decide)
+    (by rw [sp0]; exact aligned_add env.hG (k := 0x128) (by decide))
+  obtain ⟨m2, d2, u2⟩ := u1.lw hc ip_at_2ce (off' := 0x2D0) (by decide)
+    (by rw [updz hz (by decide), sp0]; exact aligned_add env.hG (k := 0) (by decide))
+  obtain ⟨m3, d3, u3⟩ := u2.aluImm hc ip_at_2d0 (off' := 0x2D4) (by decide)
+  obtain ⟨m4, d4, u4⟩ := u3.alu hc ip_at_2d4 (off' := 0x2D8) (by decide)
+  obtain ⟨m5, d5, u5⟩ := u4.aluImm hc ip_at_2d8 (off' := 0x2DC) (by decide)
+  have c5 := ctx.regs (g' := reg m5) fun r hr => by
+    rw [u5.regs, updz (by simp) (nl hr a0), updz (by simp) (nl hr s10), updz (by simp) (nl hr a0),
+      updz (by simp) (nl hr a0), updz hz (nl hr s3)]
+  have r5 : ∀ r, r ≠ a0 → r ≠ s3 → r ≠ s10 → reg m5 r = g r := fun r h0 h3 h10 => by
+    rw [u5.regs, updz (by simp) h0, updz (by simp) h10, updz (by simp) h0, updz (by simp) h0, updz hz h3]
+  generalize hX : memLoad32 My (G + 0) = X
+  have r5s10 : reg m5 s10 = aluEval .or (aluEval .and X 0xFFFFFF00) (s.kind.zeroExtend 32) := by
+    rw [u5.regs]; simp +decide only [upd, ↓reduceIte]; rw [sp0, hs6]
+    rw [show (0x0 : Word) = 0 from rfl] at hX; rw [hX]
+  have r5a0 : reg m5 a0 = aluEval .srl s.addr 8 := by
+    rw [u5.regs]; simp +decide only [upd, ↓reduceIte]; rw [hs7]
+  have r5s3 : reg m5 s3 = s.len := by
+    rw [u5.regs]; simp +decide only [upd, ↓reduceIte]; rw [sp0]; exact hl
+  have sp5 : reg m5 sp = G := by rw [r5 _ (by decide) (by decide) (by decide), sp0]
+  have hc5 := (c5.inv.code env code0).parse
+  obtain ⟨m6, d6, u6⟩ := u5.self.sw hc5 ip_at_2dc (off' := 0x2DE) (by decide)
+    (by rw [sp5]; exact aligned_add env.hG (k := 0x10) (by decide))
+  rw [sp5, r5a0] at u6
+  have c6 := c5.mem env 0x10 (aluEval .srl s.addr 8) (Or.inr ⟨by omega, by omega⟩)
+  have hc6 := (c6.inv.code env code0).parse
+  obtain ⟨m7, d7, u7⟩ := u6.sw hc6 ip_at_2de (off' := 0x2E0) (by decide)
+    (by rw [sp5]; exact aligned_add env.hG (k := 0) (by decide))
+  rw [sp5, r5s10, show G + (0x0 : Word) = G + BitVec.ofNat 32 0 from rfl] at u7
+  have c7 := c6.mem env 0 (aluEval .or (aluEval .and X 0xFFFFFF00) (s.kind.zeroExtend 32)) (Or.inl (by omega))
+  have hc7 := (c7.inv.code env code0).parse
+  obtain ⟨m8, d8, u8⟩ := u7.lw hc7 ip_at_2e0 (off' := 0x2E2) (by decide)
+    (by rw [sp5]; exact aligned_add env.hG (k := 4) (by decide))
+  have v8 : memLoad32 (memStore32 (memStore32 My (G + 0x10) (aluEval .srl s.addr 8)) (G + BitVec.ofNat 32 0)
+      (aluEval .or (aluEval .and X 0xFFFFFF00) (s.kind.zeroExtend 32))) (G + 4) = s.off := by
+    rw [show G + (4 : Word) = G + BitVec.ofNat 32 4 from rfl,
+      memLoad32_store32_sep (sep_offsets G (c := 0) (n := 4) (d := 4) (k := 4) (by omega) (by omega) (by omega)),
+      memLoad32_store32_sep (show Sep (G + 0x10) 4 (G + BitVec.ofNat 32 4) 4 from
+        sep_offsets G (c := 0x10) (n := 4) (d := 4) (k := 4) (by omega) (by omega) (by omega))]
+    exact ho
+  rw [sp5, v8] at u8
+  obtain ⟨m9, d9, u9⟩ := u8.jump hc7 ip_at_2e2 (off' := 0x21A) (by decide)
+    (by rw [u8.pc, BitVec.add_assoc]; exact even_bit0 (even_at P env.hP 0x21A (by decide)))
+  have c9 := c7.regs (g' := reg m9) fun r hr => by
+    rw [u9.regs, updz c5.inv.zero (nl hr s4)]
+  have r9 : ∀ r, r ≠ s4 → reg m9 r = reg m5 r := fun r h4 => by rw [u9.regs, updz c5.inv.zero h4]
+  have r9s4 : reg m9 s4 = s.off := by rw [u9.regs, upd_same (by decide)]
+  have hc9 := (c9.inv.code env code0).parse
+  obtain ⟨m10, d10, u10⟩ := u9.self.aluImm hc9 ip_at_21a (off' := 0x21E) (by decide)
+  rw [r9 s10 (by decide), r5s10, s10_lo] at u10
+  obtain ⟨m11, d11, u11⟩ := u10.aluImm hc9 ip_at_21e (off' := 0x222) (by decide)
+  obtain ⟨m12, d12, u12⟩ := u11.notTaken hc9 0x224 ip_at_222 (by decide) (by
+    rw [upd_a0, upd_same (by decide), show upd (upd (reg m9) a2 (s.kind.zeroExtend 32)) a0
+      (aluEval .add (s.kind.zeroExtend 32) 0xFFFFFF01) x0 = 0 from rfl]
+    exact kind_ff _ ctx.kd)
+  obtain ⟨m13, d13, u13⟩ := u12.aluImm hc9 ip_at_224 (off' := 0x226) (by decide)
+  have c13 := c9.regs (g' := reg m13) fun r hr => by
+    rw [u13.regs, updz (by simp) (nl hr (16 : Fin 32)), updz (by simp) (nl hr a0),
+      updz c9.inv.zero (nl hr a2)]
+  have r13 : ∀ r, r ≠ a0 → r ≠ a2 → r ≠ (16 : Fin 32) → reg m13 r = reg m9 r := fun r h0 h2 h6 => by
+    rw [u13.regs, updz (by simp) h6, updz (by simp) h0, updz c9.inv.zero h2]
+  have r13a6 : reg m13 (16 : Fin 32) = 9 := by
+    rw [u13.regs, upd_same (by decide)]; show upd _ a0 _ 0 + 9 = 9; rfl
+  have r13a2 : reg m13 a2 = s.kind.zeroExtend 32 := by
+    rw [u13.regs, updz (by simp) (by decide), updz (by simp) (by decide), upd_same (by decide)]
+  have r13s3 : reg m13 s3 = s.len := by
+    rw [r13 _ (by decide) (by decide) (by decide), r9 _ (by decide), r5s3]
+  have r13s4 : reg m13 s4 = s.off := by rw [r13 _ (by decide) (by decide) (by decide), r9s4]
+  have hc13 := (c13.inv.code env code0).parse
+  have pre13 : Steps m m13 := .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7
+    (.cons d8 (.cons d9 (.cons d10 (.cons d11 (.cons d12 (.single d13))))))))))))
+  by_cases f1 : s.len = 0#32
+  · obtain ⟨m14, d14, u14⟩ := u13.self.taken hc13 0x418 ip_at_226 (by decide)
+      (by rw [r13s3, c13.inv.zero, f1]; rfl)
+    exact CkPost.pre (pre13.trans (.single d14)) _ (c13.e418 env code0 u14 (by rw [r13a6])
+      (by simp [checkSegW, f1] <;> rfl))
+  obtain ⟨m14, d14, u14⟩ := u13.self.notTaken hc13 0x22A ip_at_226 (by decide)
+    (by rw [r13s3, c13.inv.zero]; exact Bool.eq_false_iff.mpr fun h => f1 (beq_iff_eq.mp h))
+  obtain ⟨m15, d15, u15⟩ := u14.alu hc13 ip_at_22a (off' := 0x22E) (by decide)
+  rw [r13s4, r13s3, show aluEval .add s.off s.len = s.off + s.len from rfl] at u15
+  have c15 := c13.setR a1 (v := s.off + s.len)
+  have r15 : ∀ r, r ≠ a1 → upd (reg m13) a1 (s.off + s.len) r = reg m13 r := fun r h => updz c13.inv.zero h
+  have hc15 := (c15.inv.code env code0).parse
+  by_cases f2 : (s.off + s.len).ult s.off = true
+  · obtain ⟨m16, d16, u16⟩ := u15.taken hc15 0x300 ip_at_22e (by decide)
+      (by rw [upd_same (by decide), r15 s4 (by decide), r13s4]; exact f2)
+    obtain ⟨m17, d17, u17⟩ := u16.aluImm hc15 ip_at_300 (off' := 0x302) (by decide)
+    obtain ⟨m18, d18, u18⟩ := u17.jump hc15 ip_at_302 (off' := 0x418) (by decide)
+      (by rw [u17.pc, BitVec.add_assoc]; exact even_bit0 (even_at P env.hP 0x418 (by decide)))
+    exact CkPost.pre (pre13.trans (.cons d14 (.cons d15 (.cons d16 (.cons d17 (.single d18)))))) _
+      (c15.setR (16 : Fin 32) |>.e418 env code0 u18 (by rw [upd_same (by decide)])
+        (by simp [checkSegW, f1, f2] <;> rfl))
+  have f2' := Bool.eq_false_iff.mpr f2
+  obtain ⟨m16, d16, u16⟩ := u15.notTaken hc15 0x232 ip_at_22e (by decide)
+    (by rw [upd_same (by decide), r15 s4 (by decide), r13s4]; exact f2')
+  have hs1 : upd (reg m13) a1 (s.off + s.len) s1 = ilen := c15.inv.s1
+  by_cases f3 : ilen.ult (s.off + s.len) = true
+  · obtain ⟨m17, d17, u17⟩ := u16.taken hc15 0x418 ip_at_232 (by decide)
+      (by rw [hs1, upd_same (by decide)]; exact f3)
+    exact CkPost.pre (pre13.trans (.cons d14 (.cons d15 (.cons d16 (.single d17))))) _
+      (c15.e418 env code0 u17 (by rw [r15 _ (by decide), r13a6])
+        (by simp [checkSegW, f1, f2', f3] <;> rfl))
+  have f3' := Bool.eq_false_iff.mpr f3
+  obtain ⟨m17, d17, u17⟩ := u16.notTaken hc15 0x236 ip_at_232 (by decide)
+    (by rw [hs1, upd_same (by decide)]; exact f3')
+  have q : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ (16 : Fin 32) → r ≠ s4 →
+      upd (reg m13) a1 (s.off + s.len) r = reg m5 r := fun r h0 h1 h2 h6 h4 => by
+    rw [r15 r h1, r13 r h0 h2 h6, r9 r h4]
+  exact CkPost.pre (pre13.trans (.cons d14 (.cons d15 (.cons d16 (.single d17))))) _
+    (lp_ck2 env code0 c15 u17
+      (by rw [q _ (by decide) (by decide) (by decide) (by decide) (by decide),
+        r5 _ (by decide) (by decide) (by decide), hs7])
+      (by rw [r15 _ (by decide), r13s4]) (by rw [r15 _ (by decide), r13s3])
+      (by rw [q _ (by decide) (by decide) (by decide) (by decide) (by decide), r5s10])
+      (upd_same (by decide)) (by rw [r15 _ (by decide), r13a6]) (by rw [r15 _ (by decide), r13a2])
+      (by rw [show G + 0x10 = G + BitVec.ofNat 32 0x10 from rfl,
+          memLoad32_store32_sep (sep_offsets G (c := 0) (n := 4) (d := 0x10) (k := 4) (by omega) (by omega)
+            (by omega)), memLoad32_store32_same])
+      f1 f2' f3')
+
 end Check
 
 end C3.RV32
