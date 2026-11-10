@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Boots c3-boot in Espressif's QEMU through an update's life: first boot,
 # a tampered image, a trial update, the security-level raise, a rollback
-# attempt, a failed trial, a stale key set, and a key rotation.
+# attempt, a failed trial, a stale key set, a key rotation, and power cuts
+# during a trial and during a security-level raise.
 #
 # Every boot after the first reuses the same flash and eFuse files, so the
 # boot-state writes and eFuse burns carry over, as on a device. Images are
@@ -47,12 +48,13 @@ with open(path, "r+b") as f:
 EOF
 }
 
-# boot NAME [FLASH] runs one boot and saves its serial log as NAME.log.
+# boot NAME [FLASH [EFUSE]] runs one boot and saves its serial log as
+# NAME.log.
 boot() {
-  local name="$1" flash="${2:-${work}/flash.bin}"
+  local name="$1" flash="${2:-${work}/flash.bin}" efuse="${3:-${work}/efuse.bin}"
   current="${work}/${name}.log"
   echo "--- ${name}"
-  QEMU="${qemu}" bash "${root}/qemu/boot.sh" "${flash}" "${work}/efuse.bin" "${current}" ||
+  QEMU="${qemu}" bash "${root}/qemu/boot.sh" "${flash}" "${efuse}" "${current}" ||
     fail "${name}: boot didn't finish"
 }
 
@@ -76,6 +78,71 @@ error_code() {
 bad_signature="$(error_code BadSignature)"
 bad_level="$(error_code BadLevel)"
 
+# cut NAME DELAY_MS starts a boot and kills QEMU after DELAY_MS
+# milliseconds, as a power cut would stop the chip.
+cut() {
+  local log="${work}/$1.log"
+  : >"${log}"
+  "${qemu}" -machine esp32c3 -display none -monitor none \
+    -serial "file:${log}" \
+    -drive "file=${work}/flash.bin,if=mtd,format=raw" \
+    -drive "file=${work}/efuse.bin,if=none,format=raw,id=efuse" \
+    -global driver=nvram.esp32c3.efuse,property=drive,value=efuse \
+    >/dev/null 2>&1 &
+  local pid=$!
+  sleep "$(printf '0.%03d' "$2")"
+  # The demo application never exits, so QEMU must still be running.
+  kill -9 "${pid}" 2>/dev/null || fail "$1: QEMU exited before the cut"
+  wait "${pid}" 2>/dev/null || true
+}
+
+# set_secure_version EFUSE BITS... sets SECURE_VERSION bits (0 through 15)
+# in a QEMU eFuse file, which holds block 0 from byte 0. SECURE_VERSION is
+# block 0 bits 142 through 157.
+set_secure_version() {
+  python3 - "$@" <<'EOF'
+import sys
+
+path, bits = sys.argv[1], [int(b) for b in sys.argv[2:]]
+with open(path, "r+b") as f:
+    data = bytearray(f.read())
+    for b in bits:
+        at = 142 + b
+        data[at // 8] |= 1 << (at % 8)
+    f.seek(0)
+    f.write(data)
+EOF
+}
+
+# secure_version_bits EFUSE prints the SECURE_VERSION bits that are set.
+secure_version_bits() {
+  python3 - "$1" <<'EOF'
+import sys
+
+data = open(sys.argv[1], "rb").read()
+print(" ".join(str(b) for b in range(16) if data[(142 + b) // 8] >> ((142 + b) % 8) & 1))
+EOF
+}
+
+# levels LOG... prints every security level the bootloader read, in order.
+levels() {
+  cat "$@" | tr -d '\r' | sed -n 's/^c3-boot: security level \([0-9a-f]*\)$/\1/p'
+}
+
+# expect_monotone LOG... fails if the security level ever went down, or if
+# the logs show no level at all.
+expect_monotone() {
+  local previous=0 level seen=0
+  for level in $(levels "$@"); do
+    seen=$((seen + 1))
+    if ((16#${level} < previous)); then
+      fail "security level went from ${previous} to $((16#${level}))"
+    fi
+    previous=$((16#${level}))
+  done
+  ((seen > 0)) || fail "no security level in the logs"
+}
+
 # record ARGS... writes the same boot-state record to both copies.
 record() {
   ota record "$@" --out "${work}/record"
@@ -88,16 +155,18 @@ record() {
 (cd "${root}" && C3_GENESIS=dev cargo build -q --locked --release \
   --target riscv32imc-unknown-none-elf -p c3-bootloader)
 ota bootloader-image --elf "${target}/c3-bootloader" --out "${work}/bootloader.bin"
-for v in 1 2 3; do
+# Version 5 jumps from level 3 to 6, so its raise burns three bits.
+security_versions=(0 0 1 2 3 6)
+for v in 1 2 3 4 5; do
   (cd "${root}" && C3_DEMO_VERSION="${v}" cargo build -q --locked --release \
     --target riscv32imc-unknown-none-elf -p c3-demo-app)
-  ota pack --elf "${target}/c3-demo-app" --security-version "$((v - 1))" \
+  ota pack --elf "${target}/c3-demo-app" --security-version "${security_versions[v]}" \
     --out "${work}/app${v}.img"
 done
 
 # Sign each image with fakestore.
 (cd "${root}/fakestore" && go run . init -dir "${work}/fakestore" >/dev/null)
-for v in 1 2 3; do
+for v in 1 2 3 4 5; do
   (cd "${root}/fakestore" && go run . sign -dir "${work}/fakestore" \
     -artifact "${work}/app${v}.img" -out "${work}/app${v}.json")
   ota container --bundle "${work}/app${v}.json" --image "${work}/app${v}.img" \
@@ -127,6 +196,8 @@ ota blob "${policy[@]}" --level 0 --signers "${genesis}" --out "${work}/blob0"
 ota blob "${policy[@]}" --level 1 --signers "${genesis}" --out "${work}/blob1"
 ota blob "${policy[@]}" --level 2 --signers "${rotated}" --out "${work}/blob2"
 ota blob "${policy[@]}" --level 2 --signers "${genesis}" --out "${work}/blob2-stale"
+ota blob "${policy[@]}" --level 3 --signers "${rotated}" --out "${work}/blob3"
+ota blob "${policy[@]}" --level 6 --signers "${rotated}" --out "${work}/blob6"
 
 slot() {
   ota slot --image "${work}/app$1.img" --bundle "${work}/app$1.bundle" \
@@ -136,6 +207,8 @@ slot 1 chain0 blob0 slot-v1
 slot 2 chain0 blob1 slot-v2
 slot 3 chain2 blob2 slot-v3
 slot 3 chain2 blob2-stale slot-v3-stale
+slot 4 chain2 blob3 slot-v4
+slot 5 chain2 blob6 slot-v5
 cp "${work}/slot-v3" "${work}/slot-v3-tampered"
 flip "${work}/slot-v3-tampered" 0x10100
 
@@ -205,5 +278,64 @@ expect "c3-demo: running from slot 0, version 3"
 boot after-rotation
 expect "c3-boot: security level 2"
 expect "c3-demo: running from slot 0, version 3"
+
+# Power cuts at seeded random points: first during trial boots of version 4
+# at level 3, then during boots that raise the level from 3 to 6. The cuts in
+# each phase run one after another on the same flash and eFuse files, as
+# repeated cuts would on a device. Every boot after the cuts must still
+# succeed, and the level must never go down.
+RANDOM=3164
+patch "${work}/flash.bin" 0x210000 "${work}/slot-v4"
+record --preferred a --trial b --boots 3 --confirmed a --generation 60
+cut_logs=()
+for i in $(seq 1 12); do
+  cut "cut-trial-${i}" "$((RANDOM % 300))"
+  cut_logs+=("${work}/cut-trial-${i}.log")
+done
+boot after-trial-cuts
+expect_not "c3-boot: halt"
+expect "c3-demo: idle"
+if ! grep -qE '^c3-demo: running from slot (0, version 3|1, version 4)\b' "${current}"; then
+  fail "after-trial-cuts: booted neither version 3 from A nor version 4 from B"
+fi
+expect_monotone "${cut_logs[@]}" "${current}"
+
+# Version 5 in slot A, already confirmed, so the next boot raises the level
+# from 3 to 6 before it jumps, and the cuts land before, between, and after
+# the three burns.
+patch "${work}/flash.bin" 0x30000 "${work}/slot-v5"
+record --preferred a --confirmed a,b --generation 70
+cp "${work}/flash.bin" "${work}/flash-before-raise.bin"
+cp "${work}/efuse.bin" "${work}/efuse-before-raise.bin"
+raise_logs=()
+for i in $(seq 1 16); do
+  cut "cut-raise-${i}" "$((RANDOM % 300))"
+  raise_logs+=("${work}/cut-raise-${i}.log")
+done
+boot after-raise-cuts
+expect_not "c3-boot: halt"
+expect "c3-demo: running from slot 0, version 5"
+boot after-raise-cuts-2
+expect "c3-boot: security level 6"
+expect "c3-demo: running from slot 0, version 5"
+expect_monotone "${cut_logs[@]}" "${work}/after-trial-cuts.log" "${raise_logs[@]}" \
+  "${work}/after-raise-cuts.log" "${current}"
+echo "levels read across the cut boots: $(levels "${raise_logs[@]}" | tr '\n' ' ')"
+
+# A raise from 3 to 6 that a cut stopped after one bit, and one that left a
+# gap in the bits. Both finish at 6.
+for partial in "0 1 2 3" "0 1 2 5"; do
+  name="partial-raise-${partial// /}"
+  cp "${work}/flash-before-raise.bin" "${work}/${name}.flash"
+  cp "${work}/efuse-before-raise.bin" "${work}/${name}.efuse"
+  # shellcheck disable=SC2086 # the bit list is meant to split
+  set_secure_version "${work}/${name}.efuse" ${partial}
+  boot "${name}" "${work}/${name}.flash" "${work}/${name}.efuse"
+  expect "c3-boot: security level 4"
+  expect "c3-boot: raising security level to 6"
+  expect "c3-demo: running from slot 0, version 5"
+  [[ "$(secure_version_bits "${work}/${name}.efuse" | wc -w)" == 6 ]] ||
+    fail "${name}: SECURE_VERSION bits $(secure_version_bits "${work}/${name}.efuse")"
+done
 
 echo "all scenarios passed (${work})"

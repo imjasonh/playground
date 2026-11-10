@@ -18,6 +18,11 @@ unsafe_code = "forbid"
 indexing_slicing = "deny"
 arithmetic_side_effects = "deny"
 
+# The crypto backends are slow unoptimized, and the mutation test verifies
+# thousands of slots.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = "z"
 lto = true

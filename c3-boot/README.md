@@ -23,7 +23,10 @@ files with the same bundle profile that Sigstore issues to GitHub Actions.
 See [`fakestore/README.md`](fakestore/README.md).
 
 `ota/tests/conformance.rs` runs the Sigstore conformance bundles in
-`testdata/conformance/` through the device's checks.
+`testdata/conformance/` through the device's checks. `ota/tests/mutation.rs`
+flips one bit in each byte of a valid slot's manifest, image, bundle, chain,
+and blob, and checks that every change is rejected, except in the timestamp
+authority's embedded certificate, which nothing reads.
 
 Not done yet:
 
@@ -72,6 +75,11 @@ scenarios, keeping one flash file and one eFuse file across boots:
    is rejected.
 1. A level 2 slot from a rotated key set boots on trial, gets confirmed,
    and raises the level to 2.
+1. Power cuts (QEMU killed at seeded random points) during trial boots of a
+   level 3 update and during a raise from level 3 to 6. A clean boot works
+   afterward, and the level never goes down across any boot.
+1. A raise from 3 to 6 interrupted after one bit, and one that left a gap
+   in the bits, set up by editing the eFuse file. Both finish at 6.
 
 To run it, install Go and Espressif's QEMU, then run:
 
