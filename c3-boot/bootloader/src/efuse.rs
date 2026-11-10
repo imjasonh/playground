@@ -8,13 +8,17 @@
 const EFUSE_BASE: usize = 0x6000_8800;
 const PGM_DATA0: usize = EFUSE_BASE;
 const PGM_CHECK_VALUE0: usize = EFUSE_BASE + 0x20;
-const RD_REPEAT_DATA4: usize = EFUSE_BASE + 0x40;
+/// Block 0 bits 128 through 159. Word 0 of block 0 reads through
+/// `RD_WR_DIS`, so word 4, which `PGM_DATA4` programs, reads through
+/// `RD_REPEAT_DATA3`.
+const RD_REPEAT_DATA3: usize = EFUSE_BASE + 0x3c;
 const CONF: usize = EFUSE_BASE + 0x1cc;
 const CMD: usize = EFUSE_BASE + 0x1d4;
 const OP_CODE_WRITE: u32 = 0x5A5A;
 const OP_CODE_READ: u32 = 0x5AA5;
 const CMD_READ: u32 = 1 << 0;
 const CMD_PGM: u32 = 1 << 1;
+/// `SECURE_VERSION` is block 0 bits 142 through 157.
 const SECURE_VERSION_SHIFT: u32 = 14;
 const PGM_WORDS: usize = 8;
 const CHECK_WORDS: usize = 3;
@@ -45,7 +49,7 @@ fn run(op_code: u32, cmd: u32) -> bool {
 
 /// The raw 16-bit `SECURE_VERSION` field.
 pub fn secure_version() -> u16 {
-    let word = read_reg(RD_REPEAT_DATA4) >> SECURE_VERSION_SHIFT;
+    let word = read_reg(RD_REPEAT_DATA3) >> SECURE_VERSION_SHIFT;
     u16::try_from(word & 0xFFFF).unwrap_or(u16::MAX)
 }
 

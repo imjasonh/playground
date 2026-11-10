@@ -94,8 +94,21 @@ fn read_part(base: u32, part: c3_verify::manifest::Part, buf: &mut [u8]) -> Opti
 }
 
 /// Checks one slot and returns what `c3-verify` accepted, with the flash
-/// address of the image.
+/// address of the image. Logs when the slot can't be booted.
 fn check(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted, u32)> {
+    let result = check_slot(slot, efuse_level, b);
+    if result.is_none() {
+        let index = match slot {
+            Slot::A => 0xA,
+            Slot::B => 0xB,
+        };
+        rom::log(c"c3-boot: slot %x not bootable\n", index);
+    }
+    result
+}
+
+/// Reads and hashes one slot from flash and passes it to `c3-verify`.
+fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted, u32)> {
     let base = slot_base(slot);
     let mut raw = [0u8; c3_verify::manifest::MANIFEST_LEN];
     if !flash::read(base, &mut raw) {
@@ -163,6 +176,12 @@ fn write_state(current: Current, state: State) -> Current {
 fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, state: &State, efuse_level: u8) -> ! {
     let target =
         c3_verify::level::burn_target(accepted.level, state.is_confirmed(slot), efuse_level);
+    if target > efuse_level {
+        rom::log(
+            c"c3-boot: raising security level to %x\n",
+            u32::from(target),
+        );
+    }
     if !efuse::raise_level(target) {
         halt(0xE1);
     }
@@ -206,6 +225,7 @@ extern "C" fn boot_main() -> ! {
         c"c3-boot: WARNING: built with the public development genesis keys %x\n",
         0,
     );
+    rom::set_flash_size(layout::FLASH_SIZE);
     let mut a = [0u8; c3_verify::bootstate::RECORD_LEN];
     let mut b = [0u8; c3_verify::bootstate::RECORD_LEN];
     let read_ok = flash::read(layout::BOOT_STATE_A_OFFSET, &mut a)

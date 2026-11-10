@@ -75,3 +75,18 @@ data, and keeps its slot buffers on a 95 KiB stack.
 | Boot time for two slot checks with 16-link chains **(hardware)** | Not measured. QEMU instruction counts come first |
 | Software SHA-256 over a full 1,920 KiB slot **(hardware)** | Not measured |
 | eFuse controller lock against machine-mode writes **(hardware)** | Not tested. A release blocker |
+
+## Findings from QEMU
+
+Booting in Espressif's QEMU (`esp-develop-9.2.2-20261109`) found two bugs
+that would also have failed on silicon:
+
+- The ROM flash functions refuse addresses past the flash size the ROM
+  holds, which doesn't cover slot B at `0x210000`. The bootloader now sets
+  that size to 4 MiB at startup, as ESP-IDF's bootloader does.
+- `SECURE_VERSION` was read from `RD_REPEAT_DATA4`. It is block 0 word 4,
+  which reads through `RD_REPEAT_DATA3`. The device would have seen level 0
+  forever, and the first level raise would have halted every boot.
+
+QEMU models the eFuse controller and the ROM, but not their timing or
+failure modes, so both fixes still need checking on a board. (hardware)

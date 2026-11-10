@@ -1,8 +1,9 @@
-# Builds and lints the c3-boot crates for the ESP32-C3's RISC-V target.
+# Builds and lints the c3-boot crates for the ESP32-C3's RISC-V target, tests
+# fakestore, and boots the bootloader in Espressif's QEMU through the update
+# scenarios in c3-boot/qemu/scenarios.sh.
 #
 # test.yml's Rust leg runs c3-boot's `cargo fmt --check`, Clippy, and tests.
-# This workflow adds the cross-build that test.yml doesn't do, so a change that
-# breaks no_std or the RISC-V build fails on the pull request.
+# test.yml doesn't find fakestore, because its go.mod isn't at the top level.
 
 name: c3-boot
 
@@ -46,3 +47,53 @@ jobs:
             -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app
           cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
             -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -- -D warnings
+
+  qemu:
+    name: fakestore and QEMU scenarios
+    runs-on: ubuntu-latest
+    env:
+      QEMU_RELEASE: esp-develop-9.2.2-20261109
+      QEMU_ASSET: qemu-riscv32-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz
+      QEMU_SHA256: afa59465495295b8aa4f804768983fa30b0bbf33d0f68a047f9caa436b9164c0
+      QEMU: /tmp/qemu/bin/qemu-system-riscv32
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: c3-boot/fakestore/go.mod
+          cache-dependency-path: c3-boot/fakestore/go.sum
+
+      - name: Test fakestore
+        working-directory: c3-boot/fakestore
+        run: |
+          bash ../../.github/scripts/check-gofmt.sh .
+          go vet ./...
+          go test -race ./...
+
+      - name: Install Espressif QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgcrypt20 libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          curl -fsSL -o /tmp/qemu.tar.xz \
+            "https://github.com/espressif/qemu/releases/download/${QEMU_RELEASE}/${QEMU_ASSET}"
+          echo "${QEMU_SHA256}  /tmp/qemu.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/qemu
+          tar -xJf /tmp/qemu.tar.xz -C /tmp/qemu --strip-components=1
+          "${QEMU}" --version
+
+      - name: Run scenarios
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          bash qemu/scenarios.sh "${RUNNER_TEMP}/c3-scenarios"
+
+      - name: Upload serial logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: c3-scenarios
+          path: ${{ runner.temp }}/c3-scenarios/*.log
+          if-no-files-found: ignore

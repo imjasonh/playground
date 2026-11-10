@@ -124,6 +124,8 @@ extern "C" fn app_main(slot_index: u32) -> ! {
         // SAFETY: as above.
         unsafe { ets_printf(c"c3-demo: confirmed slot %d\n".as_ptr(), slot_index) };
     }
+    // SAFETY: as above.
+    unsafe { ets_printf(c"c3-demo: idle\n".as_ptr()) };
     loop {
         core::hint::spin_loop();
     }

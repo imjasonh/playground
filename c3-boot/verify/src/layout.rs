@@ -33,6 +33,8 @@ pub fn ranges_overlap(a_start: u32, a_len: u32, b_start: u32, b_len: u32) -> boo
     }
 }
 
+/// The flash chip size the layout assumes.
+pub const FLASH_SIZE: u32 = 0x40_0000;
 /// The size of each OTA slot in flash.
 pub const SLOT_SIZE: u32 = 0x1E_0000;
 /// The flash offset of slot A.

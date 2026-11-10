@@ -18,6 +18,10 @@ Every byte the bootloader reads is defined in
 | `ota` (`c3-ota`) | The host tool: packs images, converts Sigstore bundles, builds and signs chain links and blobs from a `trusted_root.json`, assembles slots and flash images, and checks a slot with `verify` |
 | `demo-app` (`c3-demo-app`) | An untrusted demo application that prints its slot, reads a flash-mapped message, and confirms its slot |
 
+`fakestore/` is a Go program, not a crate: a test-only Sigstore that signs
+files with the same bundle profile that Sigstore issues to GitHub Actions.
+See [`fakestore/README.md`](fakestore/README.md).
+
 `ota/tests/conformance.rs` runs the Sigstore conformance bundles in
 `testdata/conformance/` through the device's checks.
 
@@ -27,12 +31,12 @@ Not done yet:
   controller is a phase 0 hardware question, and the lock is a release
   blocker.
 - eFuse programming timing, the ROM's initial state, and the memory layout
-  are from Espressif's documentation and haven't run on silicon.
+  are from Espressif's documentation and have run only in QEMU, not on
+  silicon.
 - The production genesis keys. The bootloader build requires `C3_GENESIS`,
   set to a key file or to `dev` for the public development keys in
   `testdata/keys/`. A `dev` build warns on every boot.
-- The release and trust-root rotation workflows, and the QEMU scenario
-  runner.
+- The release and trust-root rotation workflows.
 
 ## Build and test
 
@@ -45,14 +49,37 @@ C3_GENESIS=dev cargo build --locked --release --target riscv32imc-unknown-none-e
   -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app
 ```
 
-To boot the bootloader in Espressif's QEMU fork, build a flash image with
-`c3-ota bootloader-image` and `c3-ota flash`, then run
-`qemu-system-riscv32 -nographic -machine esp32c3` with the flash image as an
-`mtd` drive and a 1 KiB eFuse file.
-
 `rust-toolchain.toml` pins Rust 1.99.1 and the RISC-V target. The proofs cover
 the machine code that this exact compiler produces, so change the pin only
 together with the pinned image digest.
+
+## Boot in QEMU
+
+`qemu/scenarios.sh` builds the bootloader and three versions of the demo
+application, signs each with a new fakestore instance, and boots them in
+[Espressif's QEMU](https://github.com/espressif/qemu) through these
+scenarios, keeping one flash file and one eFuse file across boots:
+
+1. First boot of slot A, which the application confirms.
+1. A slot with one changed image byte, rejected for a bad signature.
+1. A trial update to slot B at security level 1, confirmed by the
+   application, with no eFuse burn during the trial.
+1. The next boot raises the eFuse level to 1, and the level stays 1.
+1. Slot A at level 0 is rejected for its level, and slot B boots.
+1. A failed trial of a changed slot falls back to slot B.
+1. A level 2 slot whose trust root is signed by the retired genesis keys
+   is rejected.
+1. A level 2 slot from a rotated key set boots on trial, gets confirmed,
+   and raises the level to 2.
+
+To run it, install Go and Espressif's QEMU, then run:
+
+```bash
+QEMU=/path/to/qemu-system-riscv32 bash qemu/scenarios.sh
+```
+
+The serial log of each boot is saved in the work directory, which the script
+prints. The `c3-boot` workflow runs the same script.
 
 ## Hardware
 

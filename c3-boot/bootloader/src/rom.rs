@@ -16,6 +16,23 @@ unsafe extern "C" {
     fn Cache_Resume_ICache(autoload: u32);
     fn Cache_Invalidate_ICache_All();
     fn ets_printf(fmt: *const core::ffi::c_char, ...) -> i32;
+    /// Points to the ROM flash driver's state, which starts with its
+    /// `esp_rom_spiflash_chip_t`: `device_id`, then `chip_size`.
+    static rom_spiflash_legacy_data: *mut u32;
+}
+
+/// Sets the flash size that the ROM flash functions check addresses against.
+///
+/// The ROM refuses reads and writes past the size it was given, which need
+/// not cover the whole chip. ESP-IDF's bootloader sets the same field in
+/// `bootloader_flash_update_size`. (hardware)
+pub fn set_flash_size(bytes: u32) {
+    // SAFETY: the ROM sets this pointer before it runs the bootloader, and
+    // the word after `device_id` is `chip_size`.
+    unsafe {
+        let chip = rom_spiflash_legacy_data;
+        chip.add(1).write_volatile(bytes);
+    }
 }
 
 /// Reads `dest.len()` words from flash at `src`, which must be 4-aligned.
