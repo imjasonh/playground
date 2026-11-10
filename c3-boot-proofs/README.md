@@ -77,6 +77,7 @@ ends inside the signed image.
 | `crc32_correct`, `crc32_spec` | The compiled `crc32` returns the CRC-32 of the 28 bytes at `a0` |
 | `readerBytes_correct` | The compiled `Reader::bytes` leaves memory exactly as `bytesMem` says, for every input |
 | `readerArray4_correct` | The compiled `Reader::array::<4>`, through its call to `Reader::bytes`, restores its frame and leaves memory outside the frame exactly as `array4Mem` says |
+| `readerU32_correct` | The compiled `Reader::u32`, through `Reader::array::<4>` and `Reader::bytes`, leaves memory outside its 48 bytes of stack exactly as `u32Mem` says: on success, tag 0 and the 4 bytes at the slice's position as a little-endian word through `out` |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
@@ -91,6 +92,16 @@ and from both functions' code. The conclusion restores `sp`, `ra`, `s0`,
 and `s1`, changes only `a0` through `a5` among the other registers, and
 gives every byte of memory outside the frame. `C3BootProofs/Proof/Mem.lean`
 has the load-after-store lemmas.
+
+`C3BootProofs/Proofs/ReaderU32.lean` proves `readerU32_correct`, two calls
+deep: `Reader::u32` calls `Reader::array::<4>` through its theorem, which
+calls `Reader::bytes` through its own. It then loads the 4 bytes at the
+returned address and joins them with shifts and ORs, which `or_assemble`
+shows is the little-endian word. The bytes it loads are the original ones
+because its hypotheses keep the reader's buffer apart from the stack and
+from the reader's position. Rust's layout makes that true at every call
+site, and the proof of each caller, such as `manifest::part`, has to show
+it.
 
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose

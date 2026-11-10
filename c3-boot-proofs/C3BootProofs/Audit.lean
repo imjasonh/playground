@@ -3,6 +3,7 @@ import C3BootProofs.Theorems.Formats
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
 import C3BootProofs.Proofs.ReaderArray
+import C3BootProofs.Proofs.ReaderU32
 
 /-!
 # Audit
@@ -151,6 +152,49 @@ theorem exists_readerArray4_machine :
   · decide +kernel
   all_goals (unfold RV32.Sep; decide +kernel)
 
+/-- `witnessMem` with `Reader::u32` added where the image loads it. -/
+def witnessMemU32 (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.readerU32Address).toNat < 80 then
+    RV32.byteAt Image.readerU32Code (a - BitVec.ofNat 32 Image.readerU32Address).toNat
+  else witnessMem a
+
+/-- A machine that calls `Reader::u32` on the witness reader meets
+`readerU32_correct`'s hypotheses. -/
+theorem exists_readerU32_machine :
+    ∃ (m : RV32.Machine) (base retAddr out self : RV32.Word),
+      RV32.CodeAt m base Image.readerU32Code ∧
+      RV32.CodeAt m (base + 0xFFFFFEFE) Image.readerArray4Code ∧
+      RV32.CodeAt m (base + 0xFFFFFEFE + 0xFFFFFF96) Image.readerBytesCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base Image.readerU32Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFEFE) Image.readerArray4Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFEFE + 0xFFFFFF96)
+        Image.readerBytesCode.length ∧
+      RV32.Sep out 8 base Image.readerU32Code.length ∧
+      RV32.Sep (self + 8) 4 base Image.readerU32Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFEFE) Image.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFEFE + 0xFFFFFF96) Image.readerBytesCode.length ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
+      RV32.Sep out 8 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.readerU32Address, witnessMemU32⟩,
+    BitVec.ofNat 32 Image.readerU32Address, 0, 0x3FCC5000, 0x3FCC5100, ?_, ?_, ?_, by decide, rfl,
+    rfl, rfl, rfl, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -203,3 +247,9 @@ end C3
 
 /-- info: 'C3.exists_readerArray4_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_readerArray4_machine
+
+/-- info: 'C3.RV32.readerU32_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readerU32_correct
+
+/-- info: 'C3.exists_readerU32_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_readerU32_machine

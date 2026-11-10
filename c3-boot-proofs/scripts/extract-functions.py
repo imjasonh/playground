@@ -21,6 +21,7 @@ FUNCTIONS = [
     ("crc32", "c3_verify::bootstate::crc32"),
     ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
     ("readerArray4", "<c3_verify::reader::Reader>::array::<4>"),
+    ("readerU32", "<c3_verify::reader::Reader>::u32"),
 ]
 
 
