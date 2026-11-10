@@ -15,6 +15,7 @@ import C3BootProofs.Proofs.ImageTop
 import C3BootProofs.Proofs.ImageSpecSegs
 import C3BootProofs.Proofs.Memset
 import C3BootProofs.Proofs.FieldSub
+import C3BootProofs.Proofs.FieldArith
 
 /-!
 # Audit
@@ -801,3 +802,12 @@ end C3
 
 /-- info: 'C3.exists_borrowingSub_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_borrowingSub_machine
+
+/-- info: 'C3.RV32.addBack_val' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.addBack_val
+
+/-- info: 'C3.RV32.bchain_val' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bchain_val
+
+/-- info: 'C3.RV32.sub_fin' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sub_fin
