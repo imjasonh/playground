@@ -39,9 +39,14 @@ offline, as the plan's rotation process describes.
   Rekor v1 log removed. With both logs listed, cosign may pick either, and
   c3-boot accepts only Rekor v2 entries.
 
-To update them, copy the new files from `sigstore/root-signing`, remove any
-Rekor v1 log from the signing configuration, and update the commit and hash
-above. The plan's `c3-trust-root.yml` job will automate this.
+`.github/workflows/c3-trust-root.yml` checks `sigstore/root-signing` every
+Monday with `.github/scripts/update-c3-trust-root.sh`. When either file
+changes, it updates both, drops any log but Rekor v2 from the signing
+configuration, updates the commit and hash above, and opens a pull request
+that lists the entries a trust-root blob built from the new root would hold
+(`c3-ota describe`). Devices don't trust a new root until the current key set
+signs a blob for it offline. To test the script, run
+`bash .github/scripts/update-c3-trust-root_test.sh`.
 
 ## Check a release locally
 

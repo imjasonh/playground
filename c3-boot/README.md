@@ -36,8 +36,8 @@ Not done yet:
 - The production genesis keys. The bootloader build requires `C3_GENESIS`,
   set to a key file or to `dev` for the public development keys in
   `testdata/keys/`. A `dev` build warns on every boot.
-- The scheduled trust-root job (`c3-trust-root.yml`) and the offline
-  rotation tooling.
+- Offline tooling for signing chain links and trust-root blobs with
+  hardware-held keys. `c3-ota link` and `c3-ota blob` take seed files.
 
 ## Build and test
 

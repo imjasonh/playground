@@ -25,6 +25,7 @@ commands:
   blob --trusted-root FILE --level N [--sequence N] --issuer S
        --build-signer-uri S --repository-id S --owner-id S --trigger S
        --signers I=SEED,I=SEED --out FILE
+  describe --trusted-root FILE                print what a blob would trust
   slot --image FILE --bundle FILE --chain FILE --blob FILE --out FILE
   verify --slot FILE --genesis FILE [--level N]
   record --preferred a|b [--trial a|b --boots N] [--confirmed a,b]
@@ -165,6 +166,13 @@ fn run(command: &str, a: &Args) -> Result<(), String> {
             let s = signers(a.get("signers")?)?;
             let refs: Vec<_> = s.iter().map(|(i, k)| (*i, k)).collect();
             a.write(&blob::signed_blob(&spec, &refs)?)
+        }
+        "describe" => {
+            let json = String::from_utf8(a.read("trusted-root")?).map_err(|e| e.to_string())?;
+            let policy = Default::default();
+            let spec = blob::TrustRootSpec::from_trusted_root(&json, 0, policy)?;
+            print!("{}", spec.describe()?);
+            Ok(())
         }
         "slot" => a.write(&slot::assemble(
             &a.read("image")?,

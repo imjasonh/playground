@@ -13,10 +13,12 @@ on:
     paths:
       - "c3-boot/**"
       - ".github/workflows/c3-boot.yml"
+      - ".github/scripts/update-c3-trust-root*"
   pull_request:
     paths:
       - "c3-boot/**"
       - ".github/workflows/c3-boot.yml"
+      - ".github/scripts/update-c3-trust-root*"
   workflow_dispatch: {}
 
 concurrency:
@@ -65,6 +67,9 @@ jobs:
         with:
           go-version-file: c3-boot/fakestore/go.mod
           cache-dependency-path: c3-boot/fakestore/go.sum
+
+      - name: Test the trusted-root update script
+        run: bash .github/scripts/update-c3-trust-root_test.sh
 
       - name: Test fakestore
         working-directory: c3-boot/fakestore

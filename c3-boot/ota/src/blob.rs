@@ -7,9 +7,15 @@ use c3_verify::trustroot::BLOB_DOMAIN;
 use ed25519_dalek::Signer;
 use ed25519_dalek::SigningKey;
 use serde_json::Value;
+use std::fmt::Write;
+
 use x509_cert::Certificate;
 use x509_cert::der::Decode;
 use x509_cert::der::Encode;
+use x509_cert::der::Reader;
+use x509_cert::der::SliceReader;
+use x509_cert::name::Name;
+use x509_cert::serial_number::SerialNumber;
 
 /// An inclusive validity window in Unix seconds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +166,51 @@ impl TrustRootSpec {
         Ok(spec)
     }
 
+    /// Describes the entries a device would trust, as Markdown, for people
+    /// who review a trust root before they sign its blob.
+    pub fn describe(&self) -> Result<String, String> {
+        let window = |w: &Window| {
+            let end = if w.1 == u64::MAX {
+                "no end".to_string()
+            } else {
+                crate::time::format(w.1)
+            };
+            format!("{} to {end}", crate::time::format(w.0))
+        };
+        let key_digest = |k: &[u8]| hex(&c3_crypto::sha256(k));
+        let mut out = String::from("### Fulcio certificate authorities\n\n");
+        for (subject, key, w) in &self.fulcio {
+            let name = Name::from_der(subject).map_err(|e| e.to_string())?;
+            let _ = writeln!(
+                out,
+                "- `{name}`, P-384 key SHA-256 `{}`, valid {}",
+                key_digest(key),
+                window(w)
+            );
+        }
+        out.push_str("\n### Logs with Ed25519 keys\n\n");
+        for (origin, key, w) in &self.logs {
+            let _ = writeln!(
+                out,
+                "- `{origin}`, Ed25519 key `{}`, valid {}",
+                hex(key),
+                window(w)
+            );
+        }
+        out.push_str("\n### Timestamp authorities\n\n");
+        for (signer, key, w) in &self.tsas {
+            let (issuer, serial) = signer_parts(signer)?;
+            let _ = writeln!(
+                out,
+                "- issuer `{issuer}`, serial `{}`, P-384 key SHA-256 `{}`, valid {}",
+                hex(serial.as_bytes()),
+                key_digest(key),
+                window(w)
+            );
+        }
+        Ok(out)
+    }
+
     /// The blob without signatures, as `docs/formats.md` lays it out.
     pub fn encode_body(&self) -> Result<Vec<u8>, String> {
         let mut out = b"C3TR".to_vec();
@@ -216,6 +267,18 @@ fn push_window(out: &mut Vec<u8>, w: Window) {
 }
 
 /// Wraps `body` in a DER `SEQUENCE`.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Splits a `SignerIdentifier` into its issuer and serial number.
+fn signer_parts(der: &[u8]) -> Result<(Name, SerialNumber), String> {
+    let mut reader = SliceReader::new(der).map_err(|e| e.to_string())?;
+    reader
+        .sequence(|r| Ok((Name::decode(r)?, SerialNumber::decode(r)?)))
+        .map_err(|e| e.to_string())
+}
+
 fn der_sequence(body: &[u8]) -> Vec<u8> {
     let mut out = vec![0x30];
     let n = body.len();
@@ -277,4 +340,25 @@ pub fn chain(links: &[Vec<u8>]) -> Result<Vec<u8>, String> {
         out.extend_from_slice(l);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn describes_the_production_trusted_root() {
+        let json = include_str!("../../release/trusted_root.json");
+        let spec = TrustRootSpec::from_trusted_root(json, 0, Default::default()).unwrap();
+        let text = spec.describe().unwrap();
+        assert!(text.contains("- `CN=sigstore-intermediate,O=sigstore.dev`, P-384 key SHA-256 `"));
+        assert!(text.contains("- `log2025-1.rekor.sigstore.dev`, Ed25519 key `"));
+        assert!(text.contains("valid 2025-09-23T00:00:00Z to no end"));
+        assert!(text.contains("- issuer `CN=sigstore-tsa-selfsigned,O=sigstore.dev`, serial `"));
+        assert_eq!(
+            spec.logs.len(),
+            1,
+            "only the Rekor v2 log has an Ed25519 key"
+        );
+    }
 }
