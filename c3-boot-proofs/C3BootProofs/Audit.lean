@@ -4,6 +4,7 @@ import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
 import C3BootProofs.Proofs.ReaderArray
 import C3BootProofs.Proofs.ReaderU32
+import C3BootProofs.Proofs.Part
 
 /-!
 # Audit
@@ -195,6 +196,56 @@ theorem exists_readerU32_machine :
     | (unfold RV32.Sep; decide +kernel)
     | decide +kernel
 
+/-- `witnessMemU32` with `manifest::part` and the two outlined helpers added
+where the image loads them. -/
+def witnessMemPart (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat < 106 then
+    RV32.byteAt Image.manifestPartCode (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.outlined83Address).toNat < 12 then
+    RV32.byteAt Image.outlined83Code (a - BitVec.ofNat 32 Image.outlined83Address).toNat
+  else if (a - BitVec.ofNat 32 Image.outlined57Address).toNat < 14 then
+    RV32.byteAt Image.outlined57Code (a - BitVec.ofNat 32 Image.outlined57Address).toNat
+  else witnessMemU32 a
+
+/-- A machine that calls `manifest::part` on the witness reader with the
+image's bounds meets `manifestPart_correct`'s hypotheses. -/
+theorem exists_manifestPart_machine :
+    ∃ (m : RV32.Machine) (base retAddr out self lo hi : RV32.Word),
+      RV32.CodeAt m base Image.manifestPartCode ∧
+      RV32.CodeAt m (base + 0x12BE0) Image.outlined83Code ∧
+      RV32.CodeAt m (base + 0x12A18) Image.outlined57Code ∧
+      RV32.CodeAt m (base + 0xFFFFCAAE) Image.readerU32Code ∧
+      RV32.CodeAt m (base + 0xFFFFCAAE + 0xFFFFFEFE) Image.readerArray4Code ∧
+      RV32.CodeAt m (base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96) Image.readerBytesCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧ RV32.reg m RV32.a2 = lo ∧
+      RV32.reg m RV32.a3 = hi ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFB0) 80 (RV32.partWindow base) RV32.partWindowLen ∧
+      RV32.Sep out 12 (RV32.partWindow base) RV32.partWindowLen ∧
+      RV32.Sep (self + 8) 4 (RV32.partWindow base) RV32.partWindowLen ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFB0) 80 ∧
+      RV32.Sep out 12 (RV32.reg m RV32.sp + 0xFFFFFFB0) 80 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFB0) 80 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100
+    else if r = RV32.a2 then 37 else if r = RV32.a3 then 0x1D0000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.manifestPartAddress, witnessMemPart⟩,
+    BitVec.ofNat 32 Image.manifestPartAddress, 0, 0x3FCC5000, 0x3FCC5100, 37, 0x1D0000,
+    ?_, ?_, ?_, ?_, ?_, ?_, by decide, rfl, rfl, rfl, rfl, rfl, rfl, by decide, by decide, by decide,
+    by decide, ?_, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -253,3 +304,24 @@ end C3
 
 /-- info: 'C3.exists_readerU32_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_readerU32_machine
+
+/-- info: 'C3.RV32.outlined83_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.outlined83_correct
+
+/-- info: 'C3.RV32.outlined57_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.outlined57_correct
+
+/-- info: 'C3.RV32.St.callSave83' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callSave83
+
+/-- info: 'C3.RV32.St.callRestore57' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callRestore57
+
+/-- info: 'C3.RV32.part_call_u32' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.part_call_u32
+
+/-- info: 'C3.RV32.manifestPart_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.manifestPart_correct
+
+/-- info: 'C3.exists_manifestPart_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_manifestPart_machine

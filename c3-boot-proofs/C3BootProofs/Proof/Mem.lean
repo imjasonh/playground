@@ -114,4 +114,12 @@ theorem memStore32_get_sep {M : Word → BitVec 8} {a x v : Word} (h : Sep a 4 x
     memStore32 M a v x = M x :=
   memStore32_ne fun i hi e => h i hi 0 (by decide) (by rw [add_ofNat_zero]; exact e.symm)
 
+/-- Ranges that lie in order without wrapping are apart. -/
+theorem sep_of_le {a b : Word} {n k : Nat} (h : a.toNat + n ≤ b.toNat) (hb : b.toNat + k ≤ 2 ^ 32) :
+    Sep a n b k := by
+  intro i hi j hj e
+  have := congrArg BitVec.toNat e
+  rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat] at this
+  omega
+
 end C3.RV32

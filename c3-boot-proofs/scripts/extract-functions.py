@@ -22,6 +22,9 @@ FUNCTIONS = [
     ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
     ("readerArray4", "<c3_verify::reader::Reader>::array::<4>"),
     ("readerU32", "<c3_verify::reader::Reader>::u32"),
+    ("manifestPart", "c3_verify::manifest::part"),
+    ("outlined83", "OUTLINED_FUNCTION_83"),
+    ("outlined57", "OUTLINED_FUNCTION_57"),
 ]
 
 

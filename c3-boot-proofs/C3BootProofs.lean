@@ -11,6 +11,8 @@ import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
 import C3BootProofs.Proofs.ReaderArray
 import C3BootProofs.Proofs.ReaderU32
+import C3BootProofs.Proofs.Outlined
+import C3BootProofs.Proofs.Part
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats

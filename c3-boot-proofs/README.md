@@ -78,6 +78,8 @@ ends inside the signed image.
 | `readerBytes_correct` | The compiled `Reader::bytes` leaves memory exactly as `bytesMem` says, for every input |
 | `readerArray4_correct` | The compiled `Reader::array::<4>`, through its call to `Reader::bytes`, restores its frame and leaves memory outside the frame exactly as `array4Mem` says |
 | `readerU32_correct` | The compiled `Reader::u32`, through `Reader::array::<4>` and `Reader::bytes`, leaves memory outside its 48 bytes of stack exactly as `u32Mem` says: on success, tag 0 and the 4 bytes at the slice's position as a little-endian word through `out` |
+| `outlined83_correct`, `outlined57_correct` | The machine-outlined `OUTLINED_FUNCTION_83` saves `ra` and `s0` through `s3` in the caller's frame, and `OUTLINED_FUNCTION_57` restores `ra` and `s0` through `s4`; both return through `t0` |
+| `manifestPart_correct` | The compiled `manifest::part`, through both `Reader::u32` calls and both helpers, restores `sp` and every register but `a0` through `a5` and `t0`, and leaves memory outside its 80 bytes of stack exactly as `partMem` says: the offset, the length, and tag 0 when both reads succeed and `min ≤ length ≤ max`; otherwise tag 1 and `Truncated` or `OutOfRange` |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
@@ -102,6 +104,23 @@ because its hypotheses keep the reader's buffer apart from the stack and
 from the reader's position. Rust's layout makes that true at every call
 site, and the proof of each caller, such as `manifest::part`, has to show
 it.
+
+`C3BootProofs/Proofs/Part.lean` proves `manifestPart_correct`. LLVM's
+machine outliner moved `part`'s register saves and restores into
+`OUTLINED_FUNCTION_83` and `OUTLINED_FUNCTION_57`, which `part` enters with
+`auipc t0; jalr t0` and which return with `jr t0`.
+`C3BootProofs/Proofs/Outlined.lean` proves each helper once and gives the
+caller a lemma that runs the entry pair and the whole helper as one step,
+so every function that shares a helper can reuse its proof. The proof
+follows five paths: the offset is truncated, the length is truncated, the
+length is below `min`, the length is above `max`, and success. On every
+path it shows that the saved slots survive both calls and the stores
+through `out`, so the restore gives back the caller's registers. Its code
+hypothesis is one window, from `Reader::bytes` to `OUTLINED_FUNCTION_83`,
+that the stack, the result, and the reader's position stay out of, instead
+of a hypothesis for each function. `sep_of_le` turns address order into
+`Sep`, so the audit's witness machine checks that window without comparing
+every pair of bytes.
 
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose
@@ -203,9 +222,9 @@ erase, cache control, and `ets_printf`) as hooks and eFuse reads from an
 eFuse file. `c3-boot/qemu/rsp-trace.py` runs the same flash in QEMU through
 its GDB server. Both print each ROM call with its arguments and how the
 boot ended, and the flash the model leaves must match QEMU's byte for byte.
-CI boots three scenarios: two rejected slots, and a trial boot that
-rewrites the boot state and jumps to the new slot. That's about 336 million
-instructions on the model, through SHA-256, ECDSA, Ed25519, and the
+CI boots four scenarios: two rejected slots, and a trial boot that
+rewrites the boot state and jumps to the new slot, at eFuse level 0 and at
+level 1. That's about 470 million instructions on the model, through SHA-256, ECDSA, Ed25519, and the
 parsers as compiled. The bootloader uses no CSR or system instructions.
 
 `scripts/decode-vs-llvm.py` checks which encodings the decoder accepts
