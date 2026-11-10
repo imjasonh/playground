@@ -85,26 +85,26 @@ theorem St.callRa {M : Word → BitVec 8} {base cb : Word} {code : List Nat} {m 
 
 /-- `parse`'s code window: from `Reader::magic`, the lowest function it
 reaches, to the end of `part`'s save helper, the highest. -/
-abbrev parseWindow (P : Word) : Word := P + 0xFFFFC802
+abbrev parseWindow (P : Word) : Word := P + 0xFFFFC3E0
 
-abbrev parseWindowLen : Nat := 0x1653A
+abbrev parseWindowLen : Nat := 0x16944
 
 /-- The functions `parse` runs, where the image puts them relative to it. -/
 structure PCode (M : Word → BitVec 8) (P : Word) : Prop where
   parse : CodeIn M P manifestParseCode
-  save : CodeIn M (P + 0x12B3E) parseSaveCode
-  restore : CodeIn M (P + 0x12B30) parseRestoreCode
-  magic : CodeIn M (P + 0xFFFFC802) readerMagicCode
-  load : CodeIn M (P + 0x12BCC) magicLoadCode
-  version : CodeIn M (P + 0xFFFFC844) readerVersion1Code
-  reserved : CodeIn M (P + 0xFFFFC8A8) readerReservedCode
-  bytes : CodeIn M (P + 0xFFFFC944) readerBytesCode
-  u16 : CodeIn M (P + 0xFFFFC96A) readerU16Code
-  array4 : CodeIn M (P + 0xFFFFC9AE) readerArray4Code
-  u32 : CodeIn M (P + 0xFFFFCAB0) readerU32Code
+  save : CodeIn M (P + 0x12B98) parseSaveCode
+  restore : CodeIn M (P + 0x12B8A) parseRestoreCode
+  magic : CodeIn M (P + 0xFFFFC3E0) readerMagicCode
+  load : CodeIn M (P + 0x12BE4) magicLoadCode
+  version : CodeIn M (P + 0xFFFFC422) readerVersion1Code
+  reserved : CodeIn M (P + 0xFFFFC486) readerReservedCode
+  bytes : CodeIn M (P + 0xFFFFC522) readerBytesCode
+  u16 : CodeIn M (P + 0xFFFFC548) readerU16Code
+  array4 : CodeIn M (P + 0xFFFFC58C) readerArray4Code
+  u32 : CodeIn M (P + 0xFFFFCAAE) readerU32Code
   part : CodeIn M (P + 0x162) manifestPartCode
-  psave : CodeIn M (P + 0x12D30) partSaveCode
-  prestore : CodeIn M (P + 0x12B8E) partRestoreCode
+  psave : CodeIn M (P + 0x12D18) partSaveCode
+  prestore : CodeIn M (P + 0x12B56) partRestoreCode
 
 theorem win_addr (P : Word) (d c : Nat) (h : P + BitVec.ofNat 32 d = parseWindow P + BitVec.ofNat 32 c)
     (i : Nat) : P + BitVec.ofNat 32 d + BitVec.ofNat 32 i = parseWindow P + BitVec.ofNat 32 (c + i) := by
@@ -123,23 +123,23 @@ set_option maxRecDepth 8000 in
 theorem PCode.of_agree {M M' : Word → BitVec 8} {P : Word} (hc : PCode M P)
     (h : ∀ k, k < parseWindowLen → M' (parseWindow P + BitVec.ofNat 32 k) = M (parseWindow P + BitVec.ofNat 32 k)) :
     PCode M' P where
-  parse := hc.parse.of_window 0x37FE (by
-    show P = P + 0xFFFFC802 + BitVec.ofNat 32 0x37FE
-    rw [BitVec.add_assoc, show (0xFFFFC802 : Word) + BitVec.ofNat 32 0x37FE = 0 from rfl]
+  parse := hc.parse.of_window 0x3C20 (by
+    show P = P + 0xFFFFC3E0 + BitVec.ofNat 32 0x3C20
+    rw [BitVec.add_assoc, show (0xFFFFC3E0 : Word) + BitVec.ofNat 32 0x3C20 = 0 from rfl]
     exact (BitVec.add_zero P).symm) (by decide) h
-  save := hc.save.of_window 0x1633C (by rw [BitVec.add_assoc]; rfl) (by decide) h
-  restore := hc.restore.of_window 0x1632E (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  save := hc.save.of_window 0x167B8 (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  restore := hc.restore.of_window 0x167AA (by rw [BitVec.add_assoc]; rfl) (by decide) h
   magic := hc.magic.of_window 0 (by rw [BitVec.add_assoc]; rfl) (by decide) h
-  load := hc.load.of_window 0x163CA (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  load := hc.load.of_window 0x16804 (by rw [BitVec.add_assoc]; rfl) (by decide) h
   version := hc.version.of_window 0x42 (by rw [BitVec.add_assoc]; rfl) (by decide) h
   reserved := hc.reserved.of_window 0xA6 (by rw [BitVec.add_assoc]; rfl) (by decide) h
   bytes := hc.bytes.of_window 0x142 (by rw [BitVec.add_assoc]; rfl) (by decide) h
   u16 := hc.u16.of_window 0x168 (by rw [BitVec.add_assoc]; rfl) (by decide) h
   array4 := hc.array4.of_window 0x1AC (by rw [BitVec.add_assoc]; rfl) (by decide) h
-  u32 := hc.u32.of_window 0x2AE (by rw [BitVec.add_assoc]; rfl) (by decide) h
-  part := hc.part.of_window 0x3960 (by rw [BitVec.add_assoc]; rfl) (by decide) h
-  psave := hc.psave.of_window 0x1652E (by rw [BitVec.add_assoc]; rfl) (by decide) h
-  prestore := hc.prestore.of_window 0x1638C (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  u32 := hc.u32.of_window 0x6CE (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  part := hc.part.of_window 0x3D82 (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  psave := hc.psave.of_window 0x16938 (by rw [BitVec.add_assoc]; rfl) (by decide) h
+  prestore := hc.prestore.of_window 0x16776 (by rw [BitVec.add_assoc]; rfl) (by decide) h
 
 /-- `parse`'s layout: the 144 bytes of stack at `R` (its 64-byte frame at
 `G = R + 80` and up to 80 bytes for its callees), the code window, the
@@ -193,7 +193,7 @@ theorem parse_magic {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
     (code : PCode Mx P)
     (h1 : fetchRel manifestParseCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel manifestParseCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFFFFC802)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFFFFC3E0)
     (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (hsp : f sp = G) (ha0 : f a0 = G + 8) (ha1 : f a1 = k)
     (hrp : memLoad32 Mx (G + 8) = bp) (hrl : memLoad32 Mx (G + 8 + 4) = 40) :
@@ -202,7 +202,7 @@ theorem parse_magic {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ t0 → r ≠ ra → reg m' r = f r) ∧
       ∀ x, Sep (G + 0xFFFFFFD0) 48 x 1 → m'.mem x = magicMem Mx (G + 8) x := by
   obtain ⟨e32, -, -, -, e88, e96, -⟩ := env.r_eqs
-  have hev : (P + 0xFFFFC802).toNat % 2 = 0 := even_at P env.hP 0xFFFFC802 (by decide)
+  have hev : (P + 0xFFFFC3E0).toNat % 2 = 0 := even_at P env.hP 0xFFFFC3E0 (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa code.parse h1 h2 hb hev
   have r1 : ∀ r, r ≠ ra → reg m1 r = f r := fun r h => by
     rw [regs1]
@@ -211,20 +211,20 @@ theorem parse_magic {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
       subst this; simp [upd]; exact s.zero.symm
     · simp [upd, hr, h]
   have sp1 : reg m1 sp = G := by rw [r1 sp (by decide), hsp]
-  have W0 : P + 0xFFFFC802 = parseWindow P + BitVec.ofNat 32 0 := (add_ofNat_zero _).symm
-  have WA : P + 0xFFFFC802 + 0x1AC = parseWindow P + BitVec.ofNat 32 0x1AC := rfl
-  have WB : P + 0xFFFFC802 + 0x1AC + 0xFFFFFF96 = parseWindow P + BitVec.ofNat 32 0x142 := by
-    rw [BitVec.add_assoc (P + 0xFFFFC802) 0x1AC 0xFFFFFF96]; rfl
-  have WL : P + 0xFFFFC802 + 0x163CA = parseWindow P + BitVec.ofNat 32 0x163CA := rfl
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerMagic_correct m1 (P + 0xFFFFC802)
+  have W0 : P + 0xFFFFC3E0 = parseWindow P + BitVec.ofNat 32 0 := (add_ofNat_zero _).symm
+  have WA : P + 0xFFFFC3E0 + 0x1AC = parseWindow P + BitVec.ofNat 32 0x1AC := rfl
+  have WB : P + 0xFFFFC3E0 + 0x1AC + 0xFFFFFF96 = parseWindow P + BitVec.ofNat 32 0x142 := by
+    rw [BitVec.add_assoc (P + 0xFFFFC3E0) 0x1AC 0xFFFFFF96]; rfl
+  have WL : P + 0xFFFFC3E0 + 0x16804 = parseWindow P + BitVec.ofNat 32 0x16804 := rfl
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerMagic_correct m1 (P + 0xFFFFC3E0)
     (P + BitVec.ofNat 32 (off + 8)) (G + 8) k
     (fun i hi => by rw [mem1]; exact code.magic i hi)
-    (fun i hi => by rw [mem1, show P + 0xFFFFC802 + 0x1AC = P + 0xFFFFC9AE by rw [BitVec.add_assoc]; rfl]
+    (fun i hi => by rw [mem1, show P + 0xFFFFC3E0 + 0x1AC = P + 0xFFFFC58C by rw [BitVec.add_assoc]; rfl]
                     exact code.array4 i hi)
     (fun i hi => by
-      rw [mem1, show P + 0xFFFFC802 + 0x1AC + 0xFFFFFF96 = P + 0xFFFFC944 by simp only [BitVec.add_assoc]; rfl]
+      rw [mem1, show P + 0xFFFFC3E0 + 0x1AC + 0xFFFFFF96 = P + 0xFFFFC522 by simp only [BitVec.add_assoc]; rfl]
       exact code.bytes i hi)
-    (fun i hi => by rw [mem1, show P + 0xFFFFC802 + 0x163CA = P + 0x12BCC by rw [BitVec.add_assoc]; rfl]
+    (fun i hi => by rw [mem1, show P + 0xFFFFC3E0 + 0x16804 = P + 0x12BE4 by rw [BitVec.add_assoc]; rfl]
                     exact code.load i hi)
     hev pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
     (by rw [regs1]; simp +decide [upd]) (even_clear _ hl) (by rw [sp1]; exact env.hG)
@@ -233,11 +233,11 @@ theorem parse_magic {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
     (by rw [sp1, e32, W0]; exact env.stack_code 32 48 (by omega) 0 _ (by decide))
     (by rw [sp1, e32, WA]; exact env.stack_code 32 48 (by omega) 0x1AC _ (by decide))
     (by rw [sp1, e32, WB]; exact env.stack_code 32 48 (by omega) 0x142 _ (by decide))
-    (by rw [sp1, e32, WL]; exact env.stack_code 32 48 (by omega) 0x163CA _ (by decide))
+    (by rw [sp1, e32, WL]; exact env.stack_code 32 48 (by omega) 0x16804 _ (by decide))
     (by rw [e96, W0]; exact env.stack_code 96 4 (by omega) 0 _ (by decide))
     (by rw [e96, WA]; exact env.stack_code 96 4 (by omega) 0x1AC _ (by decide))
     (by rw [e96, WB]; exact env.stack_code 96 4 (by omega) 0x142 _ (by decide))
-    (by rw [e96, WL]; exact env.stack_code 96 4 (by omega) 0x163CA _ (by decide))
+    (by rw [e96, WL]; exact env.stack_code 96 4 (by omega) 0x16804 _ (by decide))
     (by rw [sp1, e32, e88]; exact env.stack_stack 88 12 32 48 (by omega) (by omega) (by omega))
     (by rw [mem1, hrp, hrl, sp1, e32]
         have := env.stack_buf 32 48 (by omega) 0 40 (by omega); rwa [add_ofNat_zero] at this)
@@ -248,7 +248,7 @@ theorem parse_magic {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
   refine ⟨m2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2, a02, fun r h0 h1' h2' h3 h4 h5 h6 h7 => ?_, mem2⟩
   rw [fr2 r h0 h1' h2' h3 h4 h5 h6, r1 r h7]
 
-theorem wq (P x : Word) (c : Nat) (h : x = 0xFFFFC802 + BitVec.ofNat 32 c) :
+theorem wq (P x : Word) (c : Nat) (h : x = 0xFFFFC3E0 + BitVec.ofNat 32 c) :
     P + x = parseWindow P + BitVec.ofNat 32 c := by rw [h, ← BitVec.add_assoc]
 
 theorem PEnv.reg1 {f : Fin 32 → Word} {m1 : Machine} {L : Word}
@@ -265,7 +265,7 @@ theorem parse_version {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word
     (code : PCode Mx P)
     (h1 : fetchRel manifestParseCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel manifestParseCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFFFFC844)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFFFFC422)
     (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (hsp : f sp = G) (ha0 : f a0 = G + 8)
     (hrp : memLoad32 Mx (G + 8) = bp) (hrl : memLoad32 Mx (G + 8 + 4) = 40) :
@@ -274,23 +274,23 @@ theorem parse_version {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ ra → reg m' r = f r) ∧
       ∀ x, Sep (G + 0xFFFFFFE0) 32 x 1 → m'.mem x = u16Mem Mx (G + 8) x := by
   obtain ⟨-, e48, -, -, e88, e96, -⟩ := env.r_eqs
-  have hev : (P + 0xFFFFC844).toNat % 2 = 0 := even_at P env.hP 0xFFFFC844 (by decide)
+  have hev : (P + 0xFFFFC422).toNat % 2 = 0 := even_at P env.hP 0xFFFFC422 (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa code.parse h1 h2 hb hev
   have r1 := PEnv.reg1 regs1 s.zero
   have sp1 : reg m1 sp = G := by rw [r1 sp (by decide), hsp]
-  have WV : P + 0xFFFFC844 = parseWindow P + BitVec.ofNat 32 0x42 := wq P _ 0x42 (by decide)
-  have WU : P + 0xFFFFC844 + 0x126 = parseWindow P + BitVec.ofNat 32 0x168 := by
+  have WV : P + 0xFFFFC422 = parseWindow P + BitVec.ofNat 32 0x42 := wq P _ 0x42 (by decide)
+  have WU : P + 0xFFFFC422 + 0x126 = parseWindow P + BitVec.ofNat 32 0x168 := by
     rw [BitVec.add_assoc]; exact wq P _ 0x168 (by decide)
-  have WB : P + 0xFFFFC844 + 0x126 + 0xFFFFFFDA = parseWindow P + BitVec.ofNat 32 0x142 := by
-    rw [BitVec.add_assoc (P + 0xFFFFC844) 0x126 0xFFFFFFDA, BitVec.add_assoc P]
+  have WB : P + 0xFFFFC422 + 0x126 + 0xFFFFFFDA = parseWindow P + BitVec.ofNat 32 0x142 := by
+    rw [BitVec.add_assoc (P + 0xFFFFC422) 0x126 0xFFFFFFDA, BitVec.add_assoc P]
     exact wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerVersion1_correct m1 (P + 0xFFFFC844)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerVersion1_correct m1 (P + 0xFFFFC422)
     (P + BitVec.ofNat 32 (off + 8)) (G + 8)
     (fun i hi => by rw [mem1]; exact code.version i hi)
-    (fun i hi => by rw [mem1, show P + 0xFFFFC844 + 0x126 = P + 0xFFFFC96A by
+    (fun i hi => by rw [mem1, show P + 0xFFFFC422 + 0x126 = P + 0xFFFFC548 by
                       rw [BitVec.add_assoc]; rfl]; exact code.u16 i hi)
     (fun i hi => by
-      rw [mem1, show P + 0xFFFFC844 + 0x126 + 0xFFFFFFDA = P + 0xFFFFC944 by simp only [BitVec.add_assoc]; rfl]
+      rw [mem1, show P + 0xFFFFC422 + 0x126 + 0xFFFFFFDA = P + 0xFFFFC522 by simp only [BitVec.add_assoc]; rfl]
       exact code.bytes i hi)
     hev pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [regs1]; simp +decide [upd]) (even_clear _ hl)
     (by rw [sp1]; exact env.hG) (aligned_add env.hG (k := 8) (by decide))
@@ -317,7 +317,7 @@ theorem parse_reserved {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Wor
     (code : PCode Mx P)
     (h1 : fetchRel manifestParseCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel manifestParseCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFFFFC8A8)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0xFFFFC486)
     (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (hsp : f sp = G) (ha0 : f a0 = G + 8) (ha1 : f a1 = 2)
     (hrp : memLoad32 Mx (G + 8) = bp) (hrl : memLoad32 Mx (G + 8 + 4) = 40) :
@@ -326,17 +326,17 @@ theorem parse_reserved {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Wor
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ ra → reg m' r = f r) ∧
       ∀ x, Sep (G + 0xFFFFFFF0) 16 x 1 → m'.mem x = reservedMem Mx (G + 8) 2 x := by
   obtain ⟨-, -, e64, -, e88, e96, -⟩ := env.r_eqs
-  have hev : (P + 0xFFFFC8A8).toNat % 2 = 0 := even_at P env.hP 0xFFFFC8A8 (by decide)
+  have hev : (P + 0xFFFFC486).toNat % 2 = 0 := even_at P env.hP 0xFFFFC486 (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa code.parse h1 h2 hb hev
   have r1 := PEnv.reg1 regs1 s.zero
   have sp1 : reg m1 sp = G := by rw [r1 sp (by decide), hsp]
-  have WR : P + 0xFFFFC8A8 = parseWindow P + BitVec.ofNat 32 0xA6 := wq P _ 0xA6 (by decide)
-  have WB : P + 0xFFFFC8A8 + 0x9C = parseWindow P + BitVec.ofNat 32 0x142 := by
+  have WR : P + 0xFFFFC486 = parseWindow P + BitVec.ofNat 32 0xA6 := wq P _ 0xA6 (by decide)
+  have WB : P + 0xFFFFC486 + 0x9C = parseWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc]; exact wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerReserved_correct m1 (P + 0xFFFFC8A8)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerReserved_correct m1 (P + 0xFFFFC486)
     (P + BitVec.ofNat 32 (off + 8)) (G + 8) 2
     (fun i hi => by rw [mem1]; exact code.reserved i hi)
-    (fun i hi => by rw [mem1, show P + 0xFFFFC8A8 + 0x9C = P + 0xFFFFC944 by
+    (fun i hi => by rw [mem1, show P + 0xFFFFC486 + 0x9C = P + 0xFFFFC522 by
                       rw [BitVec.add_assoc]; rfl]; exact code.bytes i hi)
     hev pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by decide)
     (by rw [regs1]; simp +decide [upd]) (even_clear _ hl)
@@ -376,23 +376,23 @@ theorem parse_part {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word �
   have r1 := PEnv.reg1 regs1 s.zero
   have sp1 : reg m1 sp = G := by rw [r1 sp (by decide), hsp]
   have WPW : partWindow (P + 0x162) = parseWindow P + BitVec.ofNat 32 0x142 := by
-    show P + 0x162 + 0xFFFFC7E2 = _
+    show P + 0x162 + 0xFFFFC3C0 = _
     rw [BitVec.add_assoc]; exact wq P _ 0x142 (by decide)
   have R0 : R = R + BitVec.ofNat 32 0 := (add_ofNat_zero R).symm
   obtain ⟨m2, c2, pc2, sp2, fr2, mem2⟩ := manifestPart_correct m1 (P + 0x162)
     (P + BitVec.ofNat 32 (off + 8)) (G + 0x14) (G + 8) lo hi
     (fun i hi' => by rw [mem1]; exact code.part i hi')
-    (fun i hi' => by rw [mem1, show P + 0x162 + 0x12BCE = P + 0x12D30 by rw [BitVec.add_assoc]; rfl]
+    (fun i hi' => by rw [mem1, show P + 0x162 + 0x12BB6 = P + 0x12D18 by rw [BitVec.add_assoc]; rfl]
                      exact code.psave i hi')
-    (fun i hi' => by rw [mem1, show P + 0x162 + 0x12A2C = P + 0x12B8E by rw [BitVec.add_assoc]; rfl]
+    (fun i hi' => by rw [mem1, show P + 0x162 + 0x129F4 = P + 0x12B56 by rw [BitVec.add_assoc]; rfl]
                      exact code.prestore i hi')
-    (fun i hi' => by rw [mem1, show P + 0x162 + 0xFFFFC94E = P + 0xFFFFCAB0 by rw [BitVec.add_assoc]; rfl]
+    (fun i hi' => by rw [mem1, show P + 0x162 + 0xFFFFC94C = P + 0xFFFFCAAE by rw [BitVec.add_assoc]; rfl]
                      exact code.u32 i hi')
     (fun i hi' => by
-      rw [mem1, show P + 0x162 + 0xFFFFC94E + 0xFFFFFEFE = P + 0xFFFFC9AE by simp only [BitVec.add_assoc]; rfl]
+      rw [mem1, show P + 0x162 + 0xFFFFC94C + 0xFFFFFADE = P + 0xFFFFC58C by simp only [BitVec.add_assoc]; rfl]
       exact code.array4 i hi')
     (fun i hi' => by
-      rw [mem1, show P + 0x162 + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96 = P + 0xFFFFC944 by
+      rw [mem1, show P + 0x162 + 0xFFFFC94C + 0xFFFFFADE + 0xFFFFFF96 = P + 0xFFFFC522 by
         simp only [BitVec.add_assoc]; rfl]
       exact code.bytes i hi')
     hev pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
@@ -427,7 +427,7 @@ set_option maxRecDepth 20000
 
 theorem pa_0 : fetchRel manifestParseCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFC0, 2) := by decide
 theorem pa_2 : fetchRel manifestParseCode 0x2 = some (.auipc t0 0x13000, 4) := by decide
-theorem pa_6 : fetchRel manifestParseCode 0x6 = some (.jalr t0 t0 0xFFFFFB3C, 4) := by decide
+theorem pa_6 : fetchRel manifestParseCode 0x6 = some (.jalr t0 t0 0xFFFFFB96, 4) := by decide
 theorem pa_a : fetchRel manifestParseCode 0xA = some (.store .sw sp s5 0x24, 2) := by decide
 theorem pa_c : fetchRel manifestParseCode 0xC = some (.store .sw sp s6 0x20, 2) := by decide
 theorem pa_e : fetchRel manifestParseCode 0xE = some (.alu .add s0 x0 a0, 2) := by decide
@@ -439,20 +439,20 @@ theorem pa_1a : fetchRel manifestParseCode 0x1A = some (.lui a1 0x4C533000, 4) :
 theorem pa_1e : fetchRel manifestParseCode 0x1E = some (.aluImm .add a1 a1 0x343, 4) := by decide
 theorem pa_22 : fetchRel manifestParseCode 0x22 = some (.aluImm .add a0 sp 0x8, 2) := by decide
 theorem pa_24 : fetchRel manifestParseCode 0x24 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem pa_28 : fetchRel manifestParseCode 0x28 = some (.jalr ra ra 0x7DE, 4) := by decide
+theorem pa_28 : fetchRel manifestParseCode 0x28 = some (.jalr ra ra 0x3BC, 4) := by decide
 theorem pa_2c : fetchRel manifestParseCode 0x2C = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem pa_30 : fetchRel manifestParseCode 0x30 = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem pa_34 : fetchRel manifestParseCode 0x34 = some (.branch .bne a1 x0 0x9E, 2) := by decide
 theorem pa_36 : fetchRel manifestParseCode 0x36 = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem pa_38 : fetchRel manifestParseCode 0x38 = some (.auipc ra 0xFFFFD000, 4) := by decide
-theorem pa_3c : fetchRel manifestParseCode 0x3C = some (.jalr ra ra 0xFFFFF80C, 4) := by decide
+theorem pa_38 : fetchRel manifestParseCode 0x38 = some (.auipc ra 0xFFFFC000, 4) := by decide
+theorem pa_3c : fetchRel manifestParseCode 0x3C = some (.jalr ra ra 0x3EA, 4) := by decide
 theorem pa_40 : fetchRel manifestParseCode 0x40 = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem pa_44 : fetchRel manifestParseCode 0x44 = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem pa_48 : fetchRel manifestParseCode 0x48 = some (.branch .bne a1 x0 0x8A, 2) := by decide
 theorem pa_4a : fetchRel manifestParseCode 0x4A = some (.aluImm .add a0 sp 0x8, 2) := by decide
 theorem pa_4c : fetchRel manifestParseCode 0x4C = some (.aluImm .add a1 x0 0x2, 2) := by decide
-theorem pa_4e : fetchRel manifestParseCode 0x4E = some (.auipc ra 0xFFFFD000, 4) := by decide
-theorem pa_52 : fetchRel manifestParseCode 0x52 = some (.jalr ra ra 0xFFFFF85A, 4) := by decide
+theorem pa_4e : fetchRel manifestParseCode 0x4E = some (.auipc ra 0xFFFFC000, 4) := by decide
+theorem pa_52 : fetchRel manifestParseCode 0x52 = some (.jalr ra ra 0x438, 4) := by decide
 theorem pa_56 : fetchRel manifestParseCode 0x56 = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem pa_5a : fetchRel manifestParseCode 0x5A = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem pa_5e : fetchRel manifestParseCode 0x5E = some (.branch .bne a1 x0 0x74, 2) := by decide
@@ -500,7 +500,7 @@ theorem pa_d2 : fetchRel manifestParseCode 0xD2 = some (.store .sb s0 a0 0x1, 4)
 theorem pa_d6 : fetchRel manifestParseCode 0xD6 = some (.aluImm .add a0 x0 0x1, 2) := by decide
 theorem pa_d8 : fetchRel manifestParseCode 0xD8 = some (.store .sb s0 a0 0x0, 4) := by decide
 theorem pa_dc : fetchRel manifestParseCode 0xDC = some (.auipc t0 0x13000, 4) := by decide
-theorem pa_e0 : fetchRel manifestParseCode 0xE0 = some (.jalr t0 t0 0xFFFFFA54, 4) := by decide
+theorem pa_e0 : fetchRel manifestParseCode 0xE0 = some (.jalr t0 t0 0xFFFFFAAE, 4) := by decide
 theorem pa_e4 : fetchRel manifestParseCode 0xE4 = some (.load .lw s5 sp 0x24, 2) := by decide
 theorem pa_e6 : fetchRel manifestParseCode 0xE6 = some (.load .lw s6 sp 0x20, 2) := by decide
 theorem pa_e8 : fetchRel manifestParseCode 0xE8 = some (.aluImm .add sp sp 0x40, 2) := by decide
@@ -560,9 +560,9 @@ theorem parseRestore_shape : RestoreAt parseRestoreCode 0 parseSavePs := by simp
 and `s6` itself, frees the frame, and returns. -/
 theorem parse_tail {Mx : Word → BitVec 8} {P G out : Word} {m : Machine} {f : Fin 32 → Word}
     (s : St Mx P m 0xD8 f) (hc : CodeIn Mx P manifestParseCode)
-    (hr : CodeIn Mx (P + 0x12B30) parseRestoreCode) (hP : P.toNat % 2 = 0) (hsp : f sp = G)
+    (hr : CodeIn Mx (P + 0x12B8A) parseRestoreCode) (hP : P.toNat % 2 = 0) (hsp : f sp = G)
     (hG : G.toNat % 4 = 0) (hs0 : f s0 = out) (hOp : Sep out 1 P manifestParseCode.length)
-    (hOr : Sep out 1 (P + 0x12B30) parseRestoreCode.length) :
+    (hOr : Sep out 1 (P + 0x12B8A) parseRestoreCode.length) :
     ∃ m', Steps m m' ∧
       m'.pc = memLoad32 (memStore8 Mx out ((f a0).extractLsb' 0 8)) (G + 0x3C) &&& ~~~1 ∧
       m'.mem = memStore8 Mx out ((f a0).extractLsb' 0 8) ∧
@@ -574,8 +574,8 @@ theorem parse_tail {Mx : Word → BitVec 8} {P G out : Word} {m : Machine} {f : 
   rw [hs0, add_lit_zero] at t1
   have hc1 := hc.store8 (a := out) (v := (f a0).extractLsb' 0 8) hOp
   have hr1 := hr.store8 (a := out) (v := (f a0).extractLsb' 0 8) hOr
-  obtain ⟨m2, c2, t2⟩ := t1.callRestore hc1 pa_dc pa_e0 (b := P + 0x12B30)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP 0x12B30 (by decide))
+  obtain ⟨m2, c2, t2⟩ := t1.callRestore hc1 pa_dc pa_e0 (b := P + 0x12B8A)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP 0x12B8A (by decide))
     (even_at P hP (0xDC + 8) (by decide)) hr1 parseRestore_shape (by decide) (fun p hp => by
       rw [hsp]
       simp only [parseSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
@@ -608,9 +608,9 @@ theorem parse_tail {Mx : Word → BitVec 8} {P G out : Word} {m : Machine} {f : 
 and tag 1 at `out`, then runs `parse_tail`. -/
 theorem parse_tail_err {Mx : Word → BitVec 8} {P G out : Word} {m : Machine} {f : Fin 32 → Word}
     (s : St Mx P m 0xD2 f) (hc : CodeIn Mx P manifestParseCode)
-    (hr : CodeIn Mx (P + 0x12B30) parseRestoreCode) (hP : P.toNat % 2 = 0) (hsp : f sp = G)
+    (hr : CodeIn Mx (P + 0x12B8A) parseRestoreCode) (hP : P.toNat % 2 = 0) (hsp : f sp = G)
     (hG : G.toNat % 4 = 0) (hs0 : f s0 = out) (hOp : Sep out 2 P manifestParseCode.length)
-    (hOr : Sep out 2 (P + 0x12B30) parseRestoreCode.length) :
+    (hOr : Sep out 2 (P + 0x12B8A) parseRestoreCode.length) :
     ∃ m', Steps m m' ∧
       m'.pc = memLoad32 (memStore8 (memStore8 Mx (out + 1) ((f a0).extractLsb' 0 8)) out 1) (G + 0x3C)
         &&& ~~~1 ∧
@@ -629,7 +629,7 @@ theorem parse_tail_err {Mx : Word → BitVec 8} {P G out : Word} {m : Machine} {
   rw [show aluEval .add (f x0) 1 = 1 by rw [hz]; rfl] at t2
   have h0p : Sep out 1 P manifestParseCode.length := by
     have := hOp.sub (c := 0) (l := 1) (by omega); rwa [add_ofNat_zero] at this
-  have h0r : Sep out 1 (P + 0x12B30) parseRestoreCode.length := by
+  have h0r : Sep out 1 (P + 0x12B8A) parseRestoreCode.length := by
     have := hOr.sub (c := 0) (l := 1) (by omega); rwa [add_ofNat_zero] at this
   obtain ⟨m3, c3, pc3, mem3, regs3⟩ := parse_tail t2 hc1 hr1 hP (by simp +decide [upd, hsp]) hG
     (by simp +decide [upd, hs0]) h0p h0r
@@ -1067,9 +1067,9 @@ theorem manifestParse_correct (m : Machine) (P retAddr out bp R G : Word)
       subst this; simp [upd, hz]
     · simp [upd, hr, h]
   -- 0x02: the save helper saves `ra` and `s0` through `s4`.
-  have WS : P + 0x12B3E = parseWindow P + BitVec.ofNat 32 0x1633C := wq P _ _ (by decide)
-  obtain ⟨m2, c2, t2⟩ := t1.callSave code.parse pa_2 pa_6 (b := P + 0x12B3E)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x12B3E (by decide))
+  have WS : P + 0x12B98 = parseWindow P + BitVec.ofNat 32 0x167B8 := wq P _ _ (by decide)
+  obtain ⟨m2, c2, t2⟩ := t1.callSave code.parse pa_2 pa_6 (b := P + 0x12B98)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x12B98 (by decide))
     (even_at P env.hP (2 + 8) (by decide)) code.save parseSave_shape (by decide) (fun p hp => by
       rw [f1sp, WS]
       simp only [parseSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
@@ -1160,17 +1160,17 @@ theorem manifestParse_correct (m : Machine) (P retAddr out bp R G : Word)
         memLoad32_store32_same]
     · rw [memLoad32_store32_same]
   -- Every error path ends at offset 0xD2 with the error in `a0`.
-  have WP : P = parseWindow P + BitVec.ofNat 32 0x37FE := by
-    show P = P + 0xFFFFC802 + BitVec.ofNat 32 0x37FE
-    rw [BitVec.add_assoc, show (0xFFFFC802 : Word) + BitVec.ofNat 32 0x37FE = 0 from rfl]
+  have WP : P = parseWindow P + BitVec.ofNat 32 0x3C20 := by
+    show P = P + 0xFFFFC3E0 + BitVec.ofNat 32 0x3C20
+    rw [BitVec.add_assoc, show (0xFFFFC3E0 : Word) + BitVec.ofNat 32 0x3C20 = 0 from rfl]
     exact (BitVec.add_zero P).symm
-  have WRs : P + 0x12B30 = parseWindow P + BitVec.ofNat 32 0x1632E := wq P _ _ (by decide)
-  have Oc : ∀ n, n ≤ 36 → Sep out n P manifestParseCode.length ∧ Sep out n (P + 0x12B30) parseRestoreCode.length :=
+  have WRs : P + 0x12B8A = parseWindow P + BitVec.ofNat 32 0x167AA := wq P _ _ (by decide)
+  have Oc : ∀ n, n ≤ 36 → Sep out n P manifestParseCode.length ∧ Sep out n (P + 0x12B8A) parseRestoreCode.length :=
     fun n hn => by
       have h0 : Sep out n (parseWindow P) parseWindowLen := by
         have := env.hOW.sub (c := 0) (l := n) (by omega); rwa [add_ofNat_zero] at this
-      exact ⟨by rw [WP]; exact h0.subR (c := 0x37FE) (l := _) (by decide),
-        by rw [WRs]; exact h0.subR (c := 0x1632E) (l := _) (by decide)⟩
+      exact ⟨by rw [WP]; exact h0.subR (c := 0x3C20) (l := _) (by decide),
+        by rw [WRs]; exact h0.subR (c := 0x167AA) (l := _) (by decide)⟩
   have outG : ∀ c, c < 64 → ∀ j, j < 36 → out + BitVec.ofNat 32 j ≠ G + BitVec.ofNat 32 c := fun c hc j hj h =>
     (env.hOS.sub (c := j) (l := 1) (by omega)) 0 (by omega) (80 + c) (by omega)
       (by rw [add_ofNat_zero, ← add_ofNat_assoc, ← env.hRG, h])
@@ -1878,7 +1878,7 @@ theorem manifestParse_correct (m : Machine) (P retAddr out bp R G : Word)
                                     (keep_ne t77.regs (by decide) k75)
                                   have sepO : ∀ o, o + 4 ≤ 36 →
                                       Sep (out + BitVec.ofNat 32 o) 4 P manifestParseCode.length ∧
-                                      Sep (out + BitVec.ofNat 32 o) 4 (P + 0x12B30) parseRestoreCode.length :=
+                                      Sep (out + BitVec.ofNat 32 o) 4 (P + 0x12B8A) parseRestoreCode.length :=
                                     fun o ho => ⟨(Oc 36 (by omega)).1.sub (c := o) (l := 4) ho,
                                       (Oc 36 (by omega)).2.sub (c := o) (l := 4) ho⟩
                                   have al : ∀ o, o % 4 = 0 → o < 64 → (reg m78 s0 + BitVec.ofNat 32 o).toNat % 4 = 0 :=

@@ -42,7 +42,7 @@ theorem mg_at_1a : fetchRel readerMagicCode 0x1A = some (.load .lbu a0 sp 1, 4) 
 theorem mg_at_1e : fetchRel readerMagicCode 0x1E = some (.jal x0 0x1C, 2) := by decide
 theorem mg_at_20 : fetchRel readerMagicCode 0x20 = some (.load .lw a0 sp 4, 2) := by decide
 theorem mg_at_22 : fetchRel readerMagicCode 0x22 = some (.auipc t0 0x16000, 4) := by decide
-theorem mg_at_26 : fetchRel readerMagicCode (0x22 + 4) = some (.jalr t0 t0 0x3A8, 4) := by decide
+theorem mg_at_26 : fetchRel readerMagicCode (0x22 + 4) = some (.jalr t0 t0 0x7E2, 4) := by decide
 theorem mg_at_2a : fetchRel readerMagicCode 0x2A = some (.alu .or a2 a2 a3, 2) := by decide
 theorem mg_at_2c : fetchRel readerMagicCode 0x2C = some (.alu .or a0 a0 a2, 2) := by decide
 theorem mg_at_2e : fetchRel readerMagicCode 0x2E = some (.alu .xor a0 a0 s0, 2) := by decide
@@ -166,7 +166,7 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
     (hcode : CodeAt m base readerMagicCode)
     (hacode : CodeAt m (base + 0x1AC) readerArray4Code)
     (hbcode : CodeAt m (base + 0x1AC + 0xFFFFFF96) readerBytesCode)
-    (hlcode : CodeAt m (base + 0x163CA) magicLoadCode)
+    (hlcode : CodeAt m (base + 0x16804) magicLoadCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = self) (ha1 : reg m a1 = k) (hra : reg m ra = retAddr)
     (hret : retAddr &&& ~~~1 = retAddr) (hsp : (reg m sp).toNat % 4 = 0)
@@ -176,11 +176,11 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
     (hSu : Sep (reg m sp + 0xFFFFFFD0) 48 base readerMagicCode.length)
     (hSa : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x1AC) readerArray4Code.length)
     (hSb : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x1AC + 0xFFFFFF96) readerBytesCode.length)
-    (hSl : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x163CA) magicLoadCode.length)
+    (hSl : Sep (reg m sp + 0xFFFFFFD0) 48 (base + 0x16804) magicLoadCode.length)
     (hEu : Sep (self + 8) 4 base readerMagicCode.length)
     (hEa : Sep (self + 8) 4 (base + 0x1AC) readerArray4Code.length)
     (hEb : Sep (self + 8) 4 (base + 0x1AC + 0xFFFFFF96) readerBytesCode.length)
-    (hEl : Sep (self + 8) 4 (base + 0x163CA) magicLoadCode.length)
+    (hEl : Sep (self + 8) 4 (base + 0x16804) magicLoadCode.length)
     (hRS : Sep self 12 (reg m sp + 0xFFFFFFD0) 48)
     (hBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (reg m sp + 0xFFFFFFD0) 48)
     (hBE : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4) :
@@ -398,7 +398,7 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
       fun j hj => by rw [m9x _ (bS j hj), memStore32_get_sep (bE j hj)]
     have hc9 : CodeIn m9.mem base readerMagicCode := fun i hi => by
       rw [m9x _ (codeS i hi), memStore32_get_sep (hEu.subR (c := i) (l := 1) (by omega))]; exact hc i hi
-    have hcl : CodeIn m9.mem (base + 0x163CA) magicLoadCode := fun i hi => by
+    have hcl : CodeIn m9.mem (base + 0x16804) magicLoadCode := fun i hi => by
       rw [m9x _ (hSl.subR (c := i) (l := 1) (by omega)), memStore32_get_sep (hEl.subR (c := i) (l := 1) (by omega))]
       exact hlcode i hi
     have t9 : St m9.mem base m9 0x14 (reg m9) := ⟨by rw [pc9], rfl, fun _ => rfl⟩
@@ -421,12 +421,12 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
     -- 0x22: the load helper.
     obtain ⟨n4, d4, u4⟩ := u3.auipc hc9 mg_at_22 (off' := 0x22 + 4) (by decide)
     obtain ⟨n5, d5, pc5, mem5, regs5⟩ := u4.call hc9 mg_at_26
-    have hevl : (base + 0x163CA).toNat % 2 = 0 := even_at base hbase 0x163CA (by decide)
-    have hpc5 : n5.pc = base + 0x163CA := by
+    have hevl : (base + 0x16804).toNat % 2 = 0 := even_at base hbase 0x16804 (by decide)
+    have hpc5 : n5.pc = base + 0x16804 := by
       rw [pc5]; simp +decide only [upd, ite_true, ite_false]
-      rw [show base + BitVec.ofNat 32 0x22 + 0x16000 + 0x3A8 = base + 0x163CA by
+      rw [show base + BitVec.ofNat 32 0x22 + 0x16000 + 0x7E2 = base + 0x16804 by
         rw [BitVec.add_assoc, BitVec.add_assoc]; rfl, even_clear _ hevl]
-    have v5 : St m9.mem (base + 0x163CA) n5 0 (reg n5) := ⟨by rw [hpc5]; simp, mem5, fun _ => rfl⟩
+    have v5 : St m9.mem (base + 0x16804) n5 0 (reg n5) := ⟨by rw [hpc5]; simp, mem5, fun _ => rfl⟩
     have q5a0 : reg n5 a0 = p := by rw [regs5]; simp +decide [upd]
     have q5t0 : reg n5 t0 = base + BitVec.ofNat 32 0x2A := by
       rw [regs5]; simp +decide only [upd, ite_true, ite_false]

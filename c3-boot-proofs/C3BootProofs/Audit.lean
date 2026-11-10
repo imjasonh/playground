@@ -167,21 +167,21 @@ def witnessMemU32 (a : RV32.Word) : BitVec 8 :=
 theorem exists_readerU32_machine :
     ∃ (m : RV32.Machine) (base retAddr out self : RV32.Word),
       RV32.CodeAt m base Image.readerU32Code ∧
-      RV32.CodeAt m (base + 0xFFFFFEFE) Image.readerArray4Code ∧
-      RV32.CodeAt m (base + 0xFFFFFEFE + 0xFFFFFF96) Image.readerBytesCode ∧
+      RV32.CodeAt m (base + 0xFFFFFADE) Image.readerArray4Code ∧
+      RV32.CodeAt m (base + 0xFFFFFADE + 0xFFFFFF96) Image.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base Image.readerU32Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFEFE) Image.readerArray4Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFEFE + 0xFFFFFF96)
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFADE) Image.readerArray4Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFADE + 0xFFFFFF96)
         Image.readerBytesCode.length ∧
       RV32.Sep out 8 base Image.readerU32Code.length ∧
       RV32.Sep (self + 8) 4 base Image.readerU32Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0xFFFFFEFE) Image.readerArray4Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0xFFFFFEFE + 0xFFFFFF96) Image.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFADE) Image.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFADE + 0xFFFFFF96) Image.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep out 8 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
@@ -228,7 +228,7 @@ theorem exists_readerMagic_machine :
       RV32.CodeAt m base Image.readerMagicCode ∧
       RV32.CodeAt m (base + 0x1AC) Image.readerArray4Code ∧
       RV32.CodeAt m (base + 0x1AC + 0xFFFFFF96) Image.readerBytesCode ∧
-      RV32.CodeAt m (base + 0x163CA) Image.magicLoadCode ∧
+      RV32.CodeAt m (base + 0x16804) Image.magicLoadCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.a1 = k ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
@@ -238,11 +238,11 @@ theorem exists_readerMagic_machine :
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC) Image.readerArray4Code.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC + 0xFFFFFF96)
         Image.readerBytesCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x163CA) Image.magicLoadCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x16804) Image.magicLoadCode.length ∧
       RV32.Sep (self + 8) 4 base Image.readerMagicCode.length ∧
       RV32.Sep (self + 8) 4 (base + 0x1AC) Image.readerArray4Code.length ∧
       RV32.Sep (self + 8) 4 (base + 0x1AC + 0xFFFFFF96) Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x163CA) Image.magicLoadCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x16804) Image.magicLoadCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
         (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
@@ -357,11 +357,11 @@ image's bounds meets `manifestPart_correct`'s hypotheses. -/
 theorem exists_manifestPart_machine :
     ∃ (m : RV32.Machine) (base retAddr out self lo hi : RV32.Word),
       RV32.CodeAt m base Image.manifestPartCode ∧
-      RV32.CodeAt m (base + 0x12BCE) Image.partSaveCode ∧
-      RV32.CodeAt m (base + 0x12A2C) Image.partRestoreCode ∧
-      RV32.CodeAt m (base + 0xFFFFC94E) Image.readerU32Code ∧
-      RV32.CodeAt m (base + 0xFFFFC94E + 0xFFFFFEFE) Image.readerArray4Code ∧
-      RV32.CodeAt m (base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96) Image.readerBytesCode ∧
+      RV32.CodeAt m (base + 0x12BB6) Image.partSaveCode ∧
+      RV32.CodeAt m (base + 0x129F4) Image.partRestoreCode ∧
+      RV32.CodeAt m (base + 0xFFFFC94C) Image.readerU32Code ∧
+      RV32.CodeAt m (base + 0xFFFFC94C + 0xFFFFFADE) Image.readerArray4Code ∧
+      RV32.CodeAt m (base + 0xFFFFC94C + 0xFFFFFADE + 0xFFFFFF96) Image.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧ RV32.reg m RV32.a2 = lo ∧
       RV32.reg m RV32.a3 = hi ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧

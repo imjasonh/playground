@@ -197,6 +197,8 @@ fn check_segment(s: &Segment, image_length: u32) -> Result<(), Error> {
 /// `bytes` holds at least the header and segment table, starting at the
 /// first byte of the image. Bytes after the table are ignored. `image_length`
 /// is the manifest's image length, which the header must repeat.
+// c3-boot-proofs proves this function as compiled, so it needs its own symbol.
+#[inline(never)]
 pub fn parse(bytes: &[u8], image_length: u32) -> Result<Header, Error> {
     let mut r = Reader::new(bytes);
     r.magic(b"C3IM")?;
