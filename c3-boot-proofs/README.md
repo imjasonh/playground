@@ -89,6 +89,7 @@ ends inside the signed image.
 | `readerU8_correct` | The compiled `Reader::u8`, through `Reader::bytes`, returns the error flag in `a0` and the byte or `Truncated` (0) in `a1`, and advances the position by 1 when a byte was left |
 | `segmentPhysical_correct` | The compiled `Segment::physical` writes a segment's address space and start, or `BadSegment` (9) when the address is below its region's base, as `physResult` says |
 | `memcpy_aligned` | The compiled `memcpy`, called with 4-byte-aligned buffers that don't overlap and a length of at least 16 bytes that is a multiple of 4, copies the words through its word loop (`copyWords`), proved by induction |
+| `imageParse_correct` | The compiled `image::parse`, through `magic`, `version_1`, `u16`, `u8`, `reserved`, `u32`, `Segment::physical`, `memcpy`, and its outlined helpers, returns to its caller with `sp` and the callee-saved registers restored, and leaves memory outside its 0x190-byte stack region and the 0x110-byte result unchanged. The result holds the error byte that `imgW` gives and the `Err` marker 0xFF at offset 0xC, or the segments, entry point, image length, segment count, and security version that `imgW` gives |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
@@ -165,6 +166,21 @@ decoder's `endOf < 2^32`. `omega`'s proof of a conjunction or an `↔`
 depends on `Classical.choice`, so those goals are split before `omega` sees
 them. The result's fields are at the offsets the compiled code stores them;
 Rust's default layout chose those, and the pinned image fixes them.
+
+`C3BootProofs/Proofs/ImageTop.lean` proves `imageParse_correct`, which
+composes one theorem for each stage of the compiled function. `ImageHeader`
+covers the prologue and the header checks, `ImageSegs` the loop that zeroes
+the 16 segment slots, `ImageSegLoop` the segment loop (by induction on the
+segments left), `ImageOverlap` the end check and the two overlap loops, and
+`ImageFinal` the entry-point loop and the copy out. `imgW`, in
+`ImageParse.lean`, states the compiled checks in the code's own word
+arithmetic and order, so the error `parse` returns is the first check that
+fails. `IEnv` keeps the stack region, the result, the input, the code
+window, and the region tables apart, and requires that the stack region not
+wrap past 2^32. `exists_imageParse_machine` in the audit shows those
+hypotheses can hold. The proof that `imgW` accepts exactly the headers
+`decodeImageHeader` accepts, which would join the two the way
+`manifestParse_decodes` does for the manifest, is not written yet.
 
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose

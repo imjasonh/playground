@@ -11,6 +11,7 @@ import C3BootProofs.Proofs.ParseSpec
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
+import C3BootProofs.Proofs.ImageTop
 
 /-!
 # Audit
@@ -503,6 +504,42 @@ theorem exists_memcpy_machine :
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
   all_goals (unfold RV32.CodeAt; decide +kernel)
 
+/-- `witnessMemImage` with `image::parse`, its restore helper, and the region
+tables added where the image loads them. -/
+def witnessMemImageParse (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.imageParseAddress).toNat < Image.imageParseCode.length then
+    RV32.byteAt Image.imageParseCode (a - BitVec.ofNat 32 Image.imageParseAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.imageRestoreAddress).toNat < Image.imageRestoreCode.length then
+    RV32.byteAt Image.imageRestoreCode (a - BitVec.ofNat 32 Image.imageRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.regionEndsAddress).toNat < Image.regionEndsData.length then
+    RV32.byteAt Image.regionEndsData (a - BitVec.ofNat 32 Image.regionEndsAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.regionStartsAddress).toNat < Image.regionStartsData.length then
+    RV32.byteAt Image.regionStartsData (a - BitVec.ofNat 32 Image.regionStartsAddress).toNat
+  else witnessMemImage a
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 2000000 in
+/-- A machine that calls `image::parse` on 256 bytes at `0x3FCC6000`, with the
+result at `0x3FCC5000` and the stack at `0x3FCC7F60`, meets
+`imageParse_correct`'s hypotheses. -/
+theorem exists_imageParse_machine :
+    ∃ (m : RV32.Machine) (P R G ptr len out ilen : RV32.Word),
+      RV32.ICode m.mem P ∧ RV32.IEnv P R G ptr len out ∧ m.pc = P ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = ptr ∧ RV32.reg m RV32.a2 = len ∧ RV32.reg m RV32.a3 = ilen ∧
+      RV32.reg m RV32.sp = G + 0x160 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.a2 then 0x100 else if r = RV32.a3 then 0x20000
+    else if r = RV32.sp then 0x3FCC7F60 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.imageParseAddress, witnessMemImageParse⟩,
+    BitVec.ofNat 32 Image.imageParseAddress, 0x3FCC7DD0, 0x3FCC7E00, 0x3FCC6000, 0x100, 0x3FCC5000, 0x20000,
+    ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
+    ⟨by decide, by decide, by decide, by decide, by decide, ⟨by decide, by decide⟩,
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), by decide⟩, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -675,3 +712,9 @@ end C3
 
 /-- info: 'C3.RV32.ip_memcpy' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.ip_memcpy
+
+/-- info: 'C3.RV32.imageParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.imageParse_correct
+
+/-- info: 'C3.exists_imageParse_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_imageParse_machine

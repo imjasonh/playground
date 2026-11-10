@@ -14,8 +14,11 @@
 > model: `manifestParse_decodes` shows that the compiled `manifest::parse`,
 > with the reader functions and `part` under it, returns what the Lean
 > decoder `decodeManifest` returns for the 40 bytes its only caller passes.
-> It assumes a stack and memory layout that the proof of that caller, not
-> yet written, has to establish. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> `imageParse_correct` shows that the compiled `image::parse` returns what
+> `imgW`, the image header checks in the code's word arithmetic, decides;
+> tying `imgW` to the decoder `decodeImageHeader` is next. Both proofs
+> assume a stack and memory layout that the proofs of their callers, not yet
+> written, have to establish. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
 > checked on 2026-11-10 against the sources listed at the end.
