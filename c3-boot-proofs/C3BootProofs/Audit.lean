@@ -14,6 +14,7 @@ import C3BootProofs.Proofs.ImageCalls
 import C3BootProofs.Proofs.ImageTop
 import C3BootProofs.Proofs.ImageSpecSegs
 import C3BootProofs.Proofs.Memset
+import C3BootProofs.Proofs.FieldSub
 
 /-!
 # Audit
@@ -582,6 +583,22 @@ theorem exists_memset_machine :
     by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
+/-- A machine that calls `borrowing_sub` with a borrow mask meets
+`borrowingSub_correct`'s hypotheses. -/
+theorem exists_borrowingSub_machine :
+    ∃ (m : RV32.Machine) (base retAddr l r b : RV32.Word),
+      RV32.CodeAt m base Image.borrowingSubCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = l ∧
+      RV32.reg m RV32.a1 = r ∧ RV32.reg m RV32.a2 = b ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.borrowingSubCode.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 5 else if r = RV32.a1 then 7 else if r = RV32.a2 then 0xFFFFFFFF
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.borrowingSubAddress, witnessMemField⟩,
+    BitVec.ofNat 32 Image.borrowingSubAddress, 0, 5, 7, 0xFFFFFFFF, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
+    by decide, RV32.sep_of_le (by decide) (by decide)⟩
+  unfold RV32.CodeAt; decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -775,3 +792,12 @@ end C3
 
 /-- info: 'C3.exists_memset_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_memset_machine
+
+/-- info: 'C3.RV32.borrowingSub_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.borrowingSub_correct
+
+/-- info: 'C3.RV32.bsubB_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bsubB_eq
+
+/-- info: 'C3.exists_borrowingSub_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_borrowingSub_machine

@@ -99,6 +99,7 @@ ends inside the signed image.
 | `imgW_rel` | `imgW`, which states the compiled checks in the code's own word arithmetic and order, accepts the bytes exactly when the Lean decoder `decodeImageHeader` does, and then returns the decoder's header |
 | `imageParse_decodes` | The two joined: the compiled `image::parse` returns `Err` when `decodeImageHeader` rejects the header, and `Ok` with the decoder's segments and fields in the result when it accepts |
 | `memset_aligned` | The compiled `memset`, called with a 4-byte-aligned buffer and a length of at least 16 bytes that is a multiple of 4, stores the fill byte's word at each word through its word loop (`fillWords`), proved by induction. The P-256 field multiplication's Karatsuba step zeroes its accumulator with it |
+| `borrowingSub_correct`, `bsubB_eq` | The compiled `crypto_bigint::primitives::borrowing_sub` returns `l - r - c` and the borrow out as a mask, all ones exactly when `l < r + c`. Its Hacker's Delight borrow formula is proved from bit 31 of each operand (`hd_borrow`) |
 | `imgW_pages_signed` | `mapped_pages_signed` for the compiled parser: when it accepts, each 64 KiB page the cache maps for a flash segment ends inside the image |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about

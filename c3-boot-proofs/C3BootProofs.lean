@@ -28,6 +28,7 @@ import C3BootProofs.Proofs.ImageTop
 import C3BootProofs.Proofs.ImageSpec
 import C3BootProofs.Proofs.ImageSpecSegs
 import C3BootProofs.Proofs.Memset
+import C3BootProofs.Proofs.FieldSub
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
