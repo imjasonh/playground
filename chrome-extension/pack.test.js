@@ -80,7 +80,9 @@ test("the store zip is the extension package and the listing images match the st
   const files = readZip(await readFile(zipPath));
   const names = [...files.keys()].sort();
   assert.deepEqual(names, [
+    "analysis.js",
     "background.js",
+    "background_insights.js",
     "base64.js",
     "clipboard.js",
     "controller.js",
@@ -89,21 +91,36 @@ test("the store zip is the extension package and the listing images match the st
     "icons/16.png",
     "icons/32.png",
     "icons/48.png",
+    "insights.html",
+    "insights.js",
     "manifest.json",
     "offscreen.html",
     "offscreen.js",
     "selection.js",
+    "tab_insights.js",
   ]);
 
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.3");
+  assert.equal(manifest.version, "0.1.4");
   assert.equal(manifest.name, "Close Duplicate Tabs");
   assert.ok(manifest.description.length <= 132);
   assert.match(manifest.description, /badge/);
   assert.match(manifest.description, /URL/);
   assert.match(manifest.description, /base64/);
-  assert.deepEqual(manifest.permissions, ["clipboardWrite", "contextMenus", "offscreen", "tabs"]);
+  assert.match(manifest.description, /on-device AI/);
+  assert.deepEqual(manifest.permissions, [
+    "alarms",
+    "clipboardWrite",
+    "contextMenus",
+    "offscreen",
+    "sessions",
+    "sidePanel",
+    "storage",
+    "tabGroups",
+    "tabs",
+  ]);
+  assert.deepEqual(manifest.side_panel, { default_path: "insights.html" });
   assert.equal("host_permissions" in manifest, false);
   assert.equal("optional_permissions" in manifest, false);
   assert.equal(manifest.content_scripts.length, 1);

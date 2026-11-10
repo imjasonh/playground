@@ -1,9 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Close Duplicate Tabs",
-  "version": "0.1.3",
-  "description": "Closes extra tabs that share a URL. The badge shows that count. Selected base64 adds a menu item that copies the decoded text.",
-  "permissions": ["clipboardWrite", "contextMenus", "offscreen", "tabs"],
+  "version": "0.1.4",
+  "description": "Closes tabs that share a URL, plans tab groups with Chrome's on-device AI, and copies decoded base64. The badge counts duplicates.",
+  "permissions": [
+    "alarms",
+    "clipboardWrite",
+    "contextMenus",
+    "offscreen",
+    "sessions",
+    "sidePanel",
+    "storage",
+    "tabGroups",
+    "tabs"
+  ],
+  "side_panel": {
+    "default_path": "insights.html"
+  },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],

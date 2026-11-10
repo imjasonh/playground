@@ -40,6 +40,7 @@ function fakeChrome(initial) {
     messages: [],
     offscreenOpen: false,
     offscreenOptions: null,
+    panels: [],
   };
   Object.defineProperty(state, "menu", {
     get() {
@@ -95,6 +96,11 @@ function fakeChrome(initial) {
         state.menus.set(props.id, { ...props });
       },
       onClicked: listener(),
+    },
+    sidePanel: {
+      async open(options) {
+        state.panels.push(options);
+      },
     },
     offscreen: {
       async hasDocument() {
@@ -227,11 +233,11 @@ test("an unsupported tab menu still sets the badge", async () => {
     state.holdQuery.resolve();
     await ready;
     assert.equal(state.badge, "1");
-    assert.equal(errors.length, 2);
+    assert.equal(errors.length, 3);
     const before = state.queries;
     await api.tabs.onCreated.emit();
     assert.ok(state.queries > before);
-    assert.equal(errors.length, 2);
+    assert.equal(errors.length, 3);
   } finally {
     console.error = original;
   }
@@ -371,6 +377,119 @@ test("a non-base64 selection hides a decode item restored after restart", async 
     selectionText: "hello world",
   });
   assert.deepEqual(chrome.state.messages, []);
+});
+
+test("the toolbar button's menu opens tab insights in that window's side panel", async () => {
+  const { api, state } = await started([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/a" },
+  ]);
+  const item = state.menus.get("tab-insights");
+  assert.equal(item.title, "Tab insights");
+  assert.deepEqual(item.contexts, ["action"]);
+  await api.contextMenus.onClicked.emit({ menuItemId: "tab-insights" }, { id: 1, windowId: 4 });
+  assert.deepEqual(state.panels, [{ windowId: 4 }]);
+  assert.deepEqual(state.removed, []);
+  assert.equal(state.badge, "1");
+});
+
+test("tab insights survives a restart that kept its menu item", async () => {
+  const chrome = fakeChrome([{ id: 1, url: "https://example.com/a" }]);
+  chrome.state.menus.set("tab-insights", { id: "tab-insights", title: "Tab insights", contexts: ["action"] });
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => {
+    errors.push(args);
+  };
+  try {
+    const ready = start(chrome.api);
+    chrome.state.holdQuery.resolve();
+    await ready;
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(errors, []);
+  assert.equal(chrome.state.menus.get("tab-insights").title, "Tab insights");
+});
+
+test("Chrome without the side panel API gets no tab insights item", async () => {
+  const chrome = fakeChrome([{ id: 1, url: "https://example.com/a" }]);
+  delete chrome.api.sidePanel;
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.menus.has("tab-insights"), false);
+  await chrome.api.contextMenus.onClicked.emit({ menuItemId: "tab-insights" }, { id: 1, windowId: 4 });
+  assert.deepEqual(chrome.state.panels, []);
+});
+
+function withStorage(chrome, store) {
+  const changed = listener();
+  chrome.api.storage = {
+    local: {
+      async get(keys) {
+        const out = {};
+        for (const key of keys) {
+          if (key in store) {
+            out[key] = store[key];
+          }
+        }
+        return out;
+      },
+    },
+    onChanged: changed,
+  };
+  return changed;
+}
+
+test("an unseen plan turns the badge green and adds to the title until the panel shows it", async () => {
+  const chrome = fakeChrome([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/a" },
+    { id: 3, url: "https://example.com/b" },
+  ]);
+  const store = {
+    insights: {
+      at: 5,
+      insights: { close: [{ entry: { id: 3 } }, { entry: { id: 9 } }], topics: [] },
+    },
+  };
+  const changed = withStorage(chrome, store);
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · grouping ready · 1 likely close");
+  assert.equal(chrome.state.badge, "1");
+  assert.equal(chrome.state.color, "#188038");
+  assert.equal(chrome.state.menu.title, "Close 1 duplicate tab");
+  store.seen = 5;
+  await changed.emit({ seen: { newValue: 5 } }, "local");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · 1 likely close");
+  assert.equal(chrome.state.color, "#174ea6");
+  store.insights.insights.close = [];
+  await changed.emit({ insights: { newValue: store.insights } }, "local");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab");
+});
+
+test("with no duplicates, a ready plan shows a dot, and a plan with nothing to group shows none", async () => {
+  const chrome = fakeChrome([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/b", groupId: 40 },
+  ]);
+  const store = {
+    insights: { at: 7, insights: { close: [], topics: [{ name: "A", tabs: [{ id: 1 }, { id: 2 }] }] } },
+  };
+  const changed = withStorage(chrome, store);
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.badge, "•");
+  assert.equal(chrome.state.color, "#188038");
+  assert.equal(chrome.state.title, "No duplicate tabs · grouping ready");
+  chrome.state.tabs[0].groupId = 41;
+  await changed.emit({ insights: { newValue: store.insights } }, "local");
+  assert.equal(chrome.state.badge, "");
+  assert.equal(chrome.state.title, "No duplicate tabs");
 });
 
 test("a selection menu click after restart decodes the highlighted text", async () => {
