@@ -40,9 +40,9 @@ pub const SLOT_A_OFFSET: u32 = 0x03_0000;
 /// The flash offset of slot B.
 pub const SLOT_B_OFFSET: u32 = 0x21_0000;
 /// The flash offset of boot-state copy A.
-pub const BOOT_STATE_A_OFFSET: u32 = 0x02_0000;
+pub const BOOT_STATE_A_OFFSET: u32 = 0x02_8000;
 /// The flash offset of boot-state copy B.
-pub const BOOT_STATE_B_OFFSET: u32 = 0x02_1000;
+pub const BOOT_STATE_B_OFFSET: u32 = 0x02_9000;
 /// The flash erase-sector size.
 pub const SECTOR_SIZE: u32 = 0x1000;
 /// The cache's flash page size, which flash segments must align to.

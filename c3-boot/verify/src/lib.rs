@@ -11,15 +11,26 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod accept;
+pub mod base64;
 pub mod bootstate;
+pub mod bundle;
 pub mod chain;
+pub mod checkpoint;
+pub mod der;
 pub mod error;
 pub mod image;
 pub mod keys;
 pub mod layout;
 pub mod level;
 pub mod manifest;
+pub mod merkle;
 mod reader;
+pub mod rekor;
+pub mod sigstore;
+pub mod time;
 pub mod trustroot;
+pub mod tsa;
+pub mod x509;
 
 pub use error::Error;

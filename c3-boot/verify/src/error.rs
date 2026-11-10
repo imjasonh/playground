@@ -47,4 +47,28 @@ pub enum Error {
     BadLevel,
     /// A message doesn't fit in the scratch buffer.
     ScratchTooSmall,
+    /// An ASN.1 structure isn't valid DER, or isn't the expected structure.
+    BadDer,
+    /// The leaf certificate breaks the leaf certificate profile.
+    BadCertificate,
+    /// A certificate extension breaks an extension rule.
+    BadExtension,
+    /// A certificate's identity doesn't match the policy.
+    PolicyMismatch,
+    /// The timestamp breaks the timestamp profile.
+    BadTimestamp,
+    /// A time is malformed or out of range.
+    BadTime,
+    /// The checkpoint breaks the checkpoint rules.
+    BadCheckpoint,
+    /// The inclusion proof doesn't lead to the checkpoint's root.
+    BadProof,
+    /// Base64 text isn't standard padded base64.
+    BadBase64,
+    /// No key in the trust root matches.
+    NoMatchingKey,
+    /// A time is outside a validity window.
+    OutsideWindow,
+    /// A digest doesn't match the value it must equal.
+    DigestMismatch,
 }

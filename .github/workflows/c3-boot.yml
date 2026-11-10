@@ -1,4 +1,4 @@
-# Builds the c3-boot no_std crates for the ESP32-C3's RISC-V target.
+# Builds and lints the c3-boot crates for the ESP32-C3's RISC-V target.
 #
 # test.yml's Rust leg runs c3-boot's `cargo fmt --check`, Clippy, and tests.
 # This workflow adds the cross-build that test.yml doesn't do, so a change that
@@ -34,8 +34,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build for riscv32imc-unknown-none-elf
+      - name: Build and lint for riscv32imc-unknown-none-elf
         working-directory: c3-boot
+        env:
+          # CI builds check the code, not a release. Releases name the
+          # production genesis key file instead.
+          C3_GENESIS: dev
         run: |
           rustup show active-toolchain || rustup toolchain install
-          cargo build --locked --release --target riscv32imc-unknown-none-elf -p c3-verify -p c3-crypto
+          cargo build --locked --release --target riscv32imc-unknown-none-elf \
+            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app
+          cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
+            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -- -D warnings

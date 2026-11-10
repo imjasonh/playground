@@ -63,7 +63,10 @@ c3-boot uses a different split, defined in [formats.md](formats.md):
 The application runs mostly from flash through the cache, so its loaded RAM
 segments are small. After the jump, the application can reuse all of SRAM.
 
-The flash layout reserves 128 KiB for the bootloader image.
+The flash layout reserves 160 KiB for the bootloader image. The first
+complete prototype, built on 2026-11-10 with the provisional crypto crates at
+`opt-level = "z"`, has 128,904 bytes of code and 4,544 bytes of read-only
+data, and keeps its slot buffers on a 95 KiB stack.
 
 | Item | Status |
 | --- | --- |

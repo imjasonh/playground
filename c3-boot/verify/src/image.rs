@@ -81,21 +81,31 @@ pub struct Segment {
 /// The address space a segment occupies, for overlap checks.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Space {
-    FlashCode,
-    FlashData,
+    /// The cache's linear address space. The instruction and data windows
+    /// share one MMU table, so both map into this one space.
+    Flash,
+    /// Internal SRAM, through its data-bus addresses.
     Sram,
 }
 
 impl Segment {
     /// The segment's address space, and its start address in that space.
     ///
-    /// RAM code and RAM data share SRAM, so RAM code addresses become their
+    /// Flash code and flash data addresses become offsets in the cache's
+    /// linear address space, because both windows share one MMU table. RAM
+    /// code and RAM data share SRAM, so RAM code addresses become their
     /// data-bus alias. Callers have already checked that the address is in
-    /// the segment's region, so the subtraction can't underflow.
+    /// the segment's region, so the subtractions can't underflow.
     fn physical(&self) -> Result<(Space, u32), Error> {
+        let linear = |base: u32| {
+            self.address
+                .checked_sub(base)
+                .map(|a| (Space::Flash, a))
+                .ok_or(Error::BadSegment)
+        };
         match self.kind {
-            SegmentKind::FlashCode => Ok((Space::FlashCode, self.address)),
-            SegmentKind::FlashData => Ok((Space::FlashData, self.address)),
+            SegmentKind::FlashCode => linear(FLASH_CODE.start),
+            SegmentKind::FlashData => linear(FLASH_DATA.start),
             SegmentKind::RamData => Ok((Space::Sram, self.address)),
             SegmentKind::RamCode => self
                 .address
@@ -168,6 +178,11 @@ fn check_segment(s: &Segment, image_length: u32) -> Result<(), Error> {
     if s.kind.is_flash()
         && !(s.offset.is_multiple_of(FLASH_PAGE) && s.address.is_multiple_of(FLASH_PAGE))
     {
+        return Err(Error::BadSegment);
+    }
+    let words =
+        s.offset.is_multiple_of(4) && s.address.is_multiple_of(4) && s.length.is_multiple_of(4);
+    if !s.kind.is_flash() && !words {
         return Err(Error::BadSegment);
     }
     Ok(())
@@ -283,9 +298,19 @@ mod tests {
     fn good_segments() -> Vec<Seg> {
         vec![
             Seg(4, 0x3FC8_0000, 0x100, 0x200),
-            Seg(1, 0x4200_0000, 0x1_0000, 0x8000),
+            Seg(1, 0x4201_0000, 0x1_0000, 0x8000),
             Seg(2, 0x3C00_0000, 0x2_0000, 0x4000),
         ]
+    }
+
+    #[test]
+    fn rejects_flash_code_and_data_sharing_an_mmu_page() {
+        let mut segs = good_segments();
+        segs[1] = Seg(1, 0x4200_0000, 0x1_0000, 0x8000);
+        assert_eq!(
+            parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
+            Err(Error::SegmentOverlap)
+        );
     }
 
     const GOOD_LEN: u32 = 0x2_4000;
@@ -293,7 +318,7 @@ mod tests {
     #[test]
     fn accepts_good_image() {
         let h = parse(
-            &encode(3, 0x4200_0100, GOOD_LEN, &good_segments()),
+            &encode(3, 0x4201_0100, GOOD_LEN, &good_segments()),
             GOOD_LEN,
         )
         .unwrap();
@@ -306,18 +331,18 @@ mod tests {
     fn rejects_header_fields() {
         let segs = good_segments();
         assert_eq!(
-            parse(&encode(17, 0x4200_0100, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(17, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::OutOfRange)
         );
         assert_eq!(
-            parse(&encode(3, 0x4200_0100, GOOD_LEN, &segs), GOOD_LEN + 1),
+            parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN + 1),
             Err(Error::BadLayout)
         );
-        let mut bytes = encode(3, 0x4200_0100, GOOD_LEN, &segs);
+        let mut bytes = encode(3, 0x4201_0100, GOOD_LEN, &segs);
         bytes[6] = 9;
         assert_eq!(parse(&bytes, GOOD_LEN), Err(Error::WrongChip));
         assert_eq!(
-            parse(&encode(3, 0x4200_0100, GOOD_LEN, &[]), GOOD_LEN),
+            parse(&encode(3, 0x4201_0100, GOOD_LEN, &[]), GOOD_LEN),
             Err(Error::OutOfRange)
         );
     }
@@ -327,7 +352,7 @@ mod tests {
         let mut segs = good_segments();
         segs[0] = Seg(4, 0x3FCA_0000 - 0x100, 0x100, 0x200);
         assert_eq!(
-            parse(&encode(3, 0x4200_0100, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadSegment)
         );
     }
@@ -347,15 +372,15 @@ mod tests {
     #[test]
     fn rejects_unaligned_flash_and_overlapping_data() {
         let mut segs = good_segments();
-        segs[1] = Seg(1, 0x4200_0100, 0x1_0000, 0x8000);
+        segs[1] = Seg(1, 0x4201_0100, 0x1_0000, 0x8000);
         assert_eq!(
-            parse(&encode(3, 0x4200_0100, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadSegment)
         );
         let mut segs = good_segments();
         segs[0] = Seg(4, 0x3FC8_0000, 0x40, 0x200);
         assert_eq!(
-            parse(&encode(3, 0x4200_0100, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadSegment)
         );
     }
@@ -364,7 +389,7 @@ mod tests {
     fn rejects_trailing_bytes_and_bad_entry() {
         let segs = good_segments();
         assert_eq!(
-            parse(&encode(3, 0x4200_0100, GOOD_LEN + 1, &segs), GOOD_LEN + 1),
+            parse(&encode(3, 0x4201_0100, GOOD_LEN + 1, &segs), GOOD_LEN + 1),
             Err(Error::BadSegment)
         );
         assert_eq!(
@@ -372,18 +397,34 @@ mod tests {
             Err(Error::BadEntryPoint)
         );
         assert_eq!(
-            parse(&encode(3, 0x4200_0101, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4201_0101, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadEntryPoint)
         );
         assert_eq!(
-            parse(&encode(3, 0x4200_8000, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4201_8000, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadEntryPoint)
         );
     }
 
     #[test]
+    fn rejects_unaligned_ram_segment() {
+        let mut segs = good_segments();
+        segs[0] = Seg(4, 0x3FC8_0000, 0x100, 0x1FE);
+        let len = GOOD_LEN;
+        assert_eq!(
+            parse(&encode(3, 0x4201_0100, len, &segs), len),
+            Err(Error::BadSegment)
+        );
+        segs[0] = Seg(4, 0x3FC8_0002, 0x100, 0x200);
+        assert_eq!(
+            parse(&encode(3, 0x4201_0100, len, &segs), len),
+            Err(Error::BadSegment)
+        );
+    }
+
+    #[test]
     fn rejects_overflowing_segment() {
-        let segs = vec![Seg(4, 0x3FC8_0000, u32::MAX - 4, 0x10)];
+        let segs = vec![Seg(4, 0x3FC8_0000, u32::MAX - 3, 0x10)];
         assert_eq!(
             parse(&encode(0, 0x4200_0000, 0x400, &segs), 0x400),
             Err(Error::Overflow)

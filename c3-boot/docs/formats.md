@@ -24,10 +24,10 @@ assumes 4 MiB of flash.
 
 | Region | Start | End (exclusive) | Size |
 | --- | --- | --- | --- |
-| Bootloader image, loaded by the ROM | `0x000000` | `0x020000` | 128 KiB |
-| Boot-state record, copy A | `0x020000` | `0x021000` | 4 KiB |
-| Boot-state record, copy B | `0x021000` | `0x022000` | 4 KiB |
-| Reserved | `0x022000` | `0x030000` | 56 KiB |
+| Bootloader image, loaded by the ROM | `0x000000` | `0x028000` | 160 KiB |
+| Boot-state record, copy A | `0x028000` | `0x029000` | 4 KiB |
+| Boot-state record, copy B | `0x029000` | `0x02A000` | 4 KiB |
+| Reserved | `0x02A000` | `0x030000` | 24 KiB |
 | Slot A | `0x030000` | `0x210000` | 1,920 KiB |
 | Slot B | `0x210000` | `0x3F0000` | 1,920 KiB |
 | Application data | `0x3F0000` | `0x400000` | 64 KiB |
@@ -122,10 +122,15 @@ Segment rules:
 - Flash segments (kinds 1 and 2) have `offset` and `address` that are
   multiples of `0x10000`, so the cache maps each 64 KiB image page to one
   64 KiB virtual page.
-- No two segments overlap in physical memory. RAM code and RAM data use two
-  views of the same SRAM, so the check first converts a RAM code address to
-  its data-bus alias by subtracting `0x700000`. Flash code and flash data
-  are separate virtual windows, so they can't alias each other or SRAM.
+- RAM segments (kinds 3 and 4) have `offset`, `address`, and `length` that
+  are multiples of 4, so the bootloader can copy them with the ROM's
+  word-aligned flash read.
+- No two segments overlap in the memory they occupy. RAM code and RAM data
+  use two views of the same SRAM, so the check first converts a RAM code
+  address to its data-bus alias by subtracting `0x700000`. The flash code
+  and flash data windows share one 128-entry MMU table, indexed by the low
+  23 bits of the address, so the check converts each flash address to its
+  offset from its window's base and compares those offsets. **(hardware)**
 - `entry_point` lies inside a segment of kind 1 or 3, and is a multiple of 2.
 
 | Kind | Address region (exclusive end) | **(hardware)** |
@@ -213,6 +218,112 @@ runs from the first byte through the newline that ends the root hash line.
 Exactly one signature line must match. Lines from other keys are ignored.
 
 The bundle's `log_index` must be less than the tree size.
+
+### DER
+
+Every ASN.1 structure the bootloader parses must be DER: definite lengths in
+the shortest form, minimal `INTEGER` encodings, `BOOLEAN` `TRUE` as `0xFF`, no
+default values encoded, and no trailing bytes after the outermost value. Tags
+must be one byte. The parsers below accept only the structures they list,
+and reject any other tag where one of these is expected.
+
+### Leaf certificate profile
+
+The leaf certificate is an X.509 v3 `Certificate`:
+
+1. `tbsCertificate`, a `SEQUENCE` of:
+   1. `[0]` holding `INTEGER` 2 (version 3). Required.
+   2. `serialNumber`, a positive `INTEGER` of 1 through 20 bytes.
+   3. `signature`, the `AlgorithmIdentifier` `ecdsa-with-SHA384`
+      (`1.2.840.10045.4.3.3`) with no parameters.
+   4. `issuer`, a `Name`. Its whole DER encoding, tag and length included,
+      must equal the `subject` of a Fulcio entry in the blob.
+   5. `validity`, a `SEQUENCE` of `notBefore` and `notAfter`, each a
+      `UTCTime` or `GeneralizedTime` in the forms under
+      [Times](#times).
+   6. `subject`, a `Name`. Ignored.
+   7. `subjectPublicKeyInfo`: algorithm `id-ecPublicKey`
+      (`1.2.840.10045.2.1`) with parameters `prime256v1`
+      (`1.2.840.10045.3.1.7`), and a `BIT STRING` with zero unused bits
+      holding a 65-byte uncompressed P-256 point on the curve.
+   8. No unique identifiers.
+   9. `[3]` holding the `Extensions`. Required.
+2. `signatureAlgorithm`, identical to `signature`.
+3. `signatureValue`, a `BIT STRING` with zero unused bits holding a DER
+   `ECDSA-Sig-Value`.
+
+Extension rules:
+
+- No extension OID appears twice.
+- An extension marked critical must be one of `keyUsage` (`2.5.29.15`),
+  `subjectAltName` (`2.5.29.17`), `basicConstraints` (`2.5.29.19`), or
+  `extKeyUsage` (`2.5.29.37`).
+- `keyUsage` is required, is a DER named-bit list (unused bits zero and no
+  trailing zero bits), and has the `digitalSignature` bit set.
+- `extKeyUsage` is required and lists `codeSigning`
+  (`1.3.6.1.5.5.7.3.3`).
+- `basicConstraints`, if present, doesn't set `cA`.
+- The five identity-policy extensions are required. Each value is a DER
+  `UTF8String` whose contents equal the blob's policy string byte for byte.
+- Other non-critical extensions, such as the embedded SCT list, are ignored.
+
+### Timestamp profile
+
+The `timestamp` field is the DER `TimeStampResp` from RFC 3161, as Sigstore
+bundles carry it:
+
+1. `status`, a `SEQUENCE` holding only `INTEGER` 0 (granted).
+2. `timeStampToken`, a `ContentInfo` with content type `signedData`
+   (`1.2.840.113549.1.7.2`) and `[0]` holding `SignedData`:
+   1. `version`, `INTEGER` 3.
+   2. `digestAlgorithms`, a `SET` holding only `sha256`
+      (`2.16.840.1.101.3.4.2.1`), with absent or `NULL` parameters.
+   3. `encapContentInfo`, with content type `id-ct-TSTInfo`
+      (`1.2.840.113549.1.9.16.1.4`) and `[0]` holding an `OCTET STRING`
+      whose contents are the DER `TSTInfo`.
+   4. `[0]` certificates, optional. Skipped and never used: the TSA's key
+      comes only from the blob.
+   5. No `[1]` CRLs.
+   6. `signerInfos`, a `SET` of exactly one `SignerInfo`:
+      1. `version`, `INTEGER` 1.
+      2. `sid`, an `IssuerAndSerialNumber`. Its whole DER encoding must
+         equal the `signer_id` of a TSA entry in the blob.
+      3. `digestAlgorithm`, `sha256`.
+      4. `[0]` signed attributes, required. No attribute OID appears twice.
+         `contentType` must be `id-ct-TSTInfo`. `messageDigest` must hold
+         one 32-byte `OCTET STRING` equal to the SHA-256 digest of the
+         `TSTInfo` encoding. Other attributes are ignored.
+      5. `signatureAlgorithm`, `ecdsa-with-SHA256` (`1.2.840.10045.4.3.2`).
+      6. `signature`, an `OCTET STRING` holding a DER `ECDSA-Sig-Value`.
+      7. No unsigned attributes.
+
+The `TSTInfo` is a `SEQUENCE` of `version` `INTEGER` 1, `policy` (any
+OID), `messageImprint` (algorithm `sha256` and a 32-byte `OCTET STRING`),
+`serialNumber` (a positive `INTEGER` of at most 160 bits, so at most 20
+bytes after any leading sign byte), `genTime`, and then any of the optional fields RFC 3161
+allows, which are skipped. `messageImprint` must equal the SHA-256 digest of
+`image_signature`. `genTime` is the signed time `t`.
+
+The TSA signs with its P-384 key over the SHA-256 digest of the signed
+attributes, encoded with the `SET OF` tag `0x31` in place of `[0]`, as RFC
+5652 requires.
+
+### Times
+
+- `UTCTime`: `YYMMDDHHMMSSZ`. Years 50 through 99 are 1950 through 1999, and
+  00 through 49 are 2000 through 2049.
+- `GeneralizedTime`: `YYYYMMDDHHMMSSZ`, or with a fraction of a second,
+  `YYYYMMDDHHMMSS.fZ` with one or more digits and no trailing zero. The
+  fraction is dropped.
+- Every field is in range: year 1970 or later, month 1 through 12, day
+  within the month, hour 0 through 23, minute and second 0 through 59. The
+  bootloader converts each time to seconds since the Unix epoch.
+
+### ECDSA signatures
+
+An `ECDSA-Sig-Value` is a `SEQUENCE` of two positive, minimally encoded
+`INTEGER`s, `r` and `s`, each in 1 through `n - 1` for the curve's group
+order `n`.
 
 ## Key-set chain
 
@@ -394,3 +505,11 @@ slot's level first:
 3. Repeat until the count equals the slot's level.
 
 It then locks the eFuse controller and jumps.
+
+## Handing off to the application
+
+The bootloader jumps to the image's `entry_point` with interrupts disabled,
+RAM segments copied, flash segments mapped, and register `a0` holding the
+booted slot: 0 for slot A or 1 for slot B. The application sets up its own
+stack. It may use all of SRAM, including the bootloader's region, because
+the bootloader never runs again until the next reset.

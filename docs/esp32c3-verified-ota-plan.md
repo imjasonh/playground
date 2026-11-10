@@ -1356,8 +1356,8 @@ definition.
 | Image signature | ECDSA P-256, leaf key | The SHA-256 digest of the signed image, which is the header followed by the segments | SHA-256 |
 | Leaf certificate | ECDSA P-384, Fulcio intermediate | The leaf's DER `tbsCertificate`, exactly as it appears in the certificate | SHA-384 |
 | Checkpoint | Ed25519, Rekor log key | The checkpoint note body, through its final newline | SHA-512 inside Ed25519 |
-| Timestamp token | ECDSA P-384, TSA certificate | The DER `signedAttrs` of the token's `SignerInfo`, re-tagged as `SET OF` as RFC 5652 requires | The digest algorithm the token names, pinned in phase 0 from real tokens |
-| Timestamp imprint | None | The token's `messageImprint` must equal the hash of the image signature bytes | Pinned in phase 0 from real tokens |
+| Timestamp token | ECDSA P-384, TSA certificate | The DER `signedAttrs` of the token's `SignerInfo`, re-tagged as `SET OF` as RFC 5652 requires | SHA-256, pinned from Sigstore's timestamp authority |
+| Timestamp imprint | None | The token's `messageImprint` must equal the hash of the image signature bytes | SHA-256, pinned from Sigstore's timestamp authority |
 
 The Rekor entry's digest must equal the image signature's SHA-256 digest,
 and the entry's signature and certificate must equal the bundle's.

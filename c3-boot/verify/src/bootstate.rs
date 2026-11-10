@@ -97,6 +97,14 @@ impl State {
         }
     }
 
+    /// This state with `slot` marked confirmed, at the same generation.
+    pub fn with_confirmed(&self, slot: Slot) -> State {
+        State {
+            confirmed: self.confirmed | slot.bit(),
+            ..*self
+        }
+    }
+
     /// The state to write before jumping to a trial slot.
     pub fn with_trial_boot_used(&self) -> State {
         let trial = self.trial.map(|t| Trial {

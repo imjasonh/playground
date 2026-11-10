@@ -1,12 +1,24 @@
-//! Signature checks for the c3-boot bootloader.
+//! Digests and signature checks for the c3-boot bootloader.
 //!
-//! Each function returns `true` only if the signature is valid under the rules
-//! in `docs/esp32c3-verified-ota-plan.md`. Ed25519 uses `ed25519-dalek` as a
-//! provisional backend until phase 0 chooses the implementation that phase 7
-//! proves. The rules below are enforced here explicitly, so they don't depend
-//! on the backend's defaults.
+//! Each check returns `true` only if the signature is valid under the rules
+//! in `docs/esp32c3-verified-ota-plan.md` and `docs/formats.md`. The backends
+//! (`ed25519-dalek`, `p256`, `p384`, and `sha2`) are provisional until phase 0
+//! chooses the implementation that phase 7 proves. The rules are enforced
+//! here explicitly, so they don't depend on a backend's defaults.
 
 #![cfg_attr(not(test), no_std)]
+
+mod ecdsa;
+mod sha;
+
+pub use ecdsa::p256_public_key_ok;
+pub use ecdsa::p256_verify_prehash;
+pub use ecdsa::p384_public_key_ok;
+pub use ecdsa::p384_verify_prehash;
+pub use sha::Sha256;
+pub use sha::sha256;
+pub use sha::sha256_parts;
+pub use sha::sha384;
 
 use ed25519_dalek::Signature;
 use ed25519_dalek::VerifyingKey;

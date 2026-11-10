@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crypto", "verify"]
+members = ["bootloader", "crypto", "demo-app", "ota", "verify"]
+# The bootloader and demo app build only for riscv32imc-unknown-none-elf, so
+# host commands such as `cargo test` and `cargo clippy` skip them.
+default-members = ["crypto", "ota", "verify"]
 
 [workspace.package]
 edition = "2024"

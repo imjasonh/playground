@@ -128,9 +128,10 @@ fn read_window(r: &mut Reader<'_>) -> Result<Window, Error> {
 
 fn read_p384_point<'a>(r: &mut Reader<'a>) -> Result<&'a [u8; P384_POINT_LEN], Error> {
     let point = r.array::<P384_POINT_LEN>()?;
-    match point.first() {
-        Some(0x04) => Ok(point),
-        _ => Err(Error::OutOfRange),
+    if c3_crypto::p384_public_key_ok(point) {
+        Ok(point)
+    } else {
+        Err(Error::BadKey)
     }
 }
 
@@ -285,6 +286,17 @@ pub(crate) mod tests {
     use crate::keys::tests::public_keys;
     use crate::keys::tests::sign_entries;
 
+    /// The P-384 base point, uncompressed: a valid key for structural tests.
+    const P384_G: [u8; 97] = [
+        0x04, 0xaa, 0x87, 0xca, 0x22, 0xbe, 0x8b, 0x05, 0x37, 0x8e, 0xb1, 0xc7, 0x1e, 0xf3, 0x20,
+        0xad, 0x74, 0x6e, 0x1d, 0x3b, 0x62, 0x8b, 0xa7, 0x9b, 0x98, 0x59, 0xf7, 0x41, 0xe0, 0x82,
+        0x54, 0x2a, 0x38, 0x55, 0x02, 0xf2, 0x5d, 0xbf, 0x55, 0x29, 0x6c, 0x3a, 0x54, 0x5e, 0x38,
+        0x72, 0x76, 0x0a, 0xb7, 0x36, 0x17, 0xde, 0x4a, 0x96, 0x26, 0x2c, 0x6f, 0x5d, 0x9e, 0x98,
+        0xbf, 0x92, 0x92, 0xdc, 0x29, 0xf8, 0xf4, 0x1d, 0xbd, 0x28, 0x9a, 0x14, 0x7c, 0xe9, 0xda,
+        0x31, 0x13, 0xb5, 0xf0, 0xb8, 0xc0, 0x0a, 0x60, 0xb1, 0xce, 0x1d, 0x7e, 0x81, 0x9d, 0x7a,
+        0x43, 0x1d, 0x7c, 0x90, 0xea, 0x0e, 0x5f,
+    ];
+
     fn string(out: &mut Vec<u8>, s: &[u8]) {
         out.extend_from_slice(&(s.len() as u16).to_le_bytes());
         out.extend_from_slice(s);
@@ -304,8 +316,7 @@ pub(crate) mod tests {
         out.push(0);
         out.push(1);
         string(&mut out, b"\x30\x00");
-        out.push(0x04);
-        out.extend_from_slice(&[1u8; 96]);
+        out.extend_from_slice(&P384_G);
         window(&mut out, 100, 200);
         out.push(1);
         out.push(14);
@@ -314,8 +325,7 @@ pub(crate) mod tests {
         window(&mut out, 100, 200);
         out.push(1);
         string(&mut out, b"\x30\x01\x00");
-        out.push(0x04);
-        out.extend_from_slice(&[3u8; 96]);
+        out.extend_from_slice(&P384_G);
         window(&mut out, 100, 200);
         for s in [
             &b"https://token.actions.githubusercontent.com"[..],
@@ -394,7 +404,7 @@ pub(crate) mod tests {
         bad[12] = 0;
         assert_eq!(parse(&bad), Err(Error::OutOfRange));
         let mut bad = body(3);
-        let at = bad.iter().position(|&b| b == b'l').unwrap();
+        let at = bad.windows(4).position(|w| w == b"log.").unwrap();
         bad[at] = 0x07;
         bad.extend_from_slice(&sign_entries(&[1, 2], &[0, 1], BLOB_DOMAIN, &bad.clone()));
         assert_eq!(parse(&bad), Err(Error::NotPrintable));
@@ -438,6 +448,15 @@ pub(crate) mod tests {
         let mut bad = body(3);
         bad[12 + 1 + 2 + 2] = 0x02;
         bad.extend_from_slice(&sign_entries(&[1, 2], &[0, 1], BLOB_DOMAIN, &bad.clone()));
-        assert_eq!(parse(&bad), Err(Error::OutOfRange));
+        assert_eq!(parse(&bad), Err(Error::BadKey));
+        let mut off_curve = body(3);
+        off_curve[12 + 1 + 2 + 2 + 96] ^= 1;
+        off_curve.extend_from_slice(&sign_entries(
+            &[1, 2],
+            &[0, 1],
+            BLOB_DOMAIN,
+            &off_curve.clone(),
+        ));
+        assert_eq!(parse(&off_curve), Err(Error::BadKey));
     }
 }
