@@ -27,16 +27,18 @@ theorems:
   hash-collision advantages.
 - **Transparency.** The bootloader runs an image only if a checkpoint signed
   by a trusted Rekor log commits to that image's log entry.
-- **Trust-root rotation and revocation.** The bootloader uses a trust root
-  only if two of the four trust-root keys compiled into it signed that trust
-  root, not counting keys that eFuse marks revoked, and only if its epoch is
-  at least the epoch in eFuse. After a device burns a new epoch, a stolen key
-  that only older trust roots list gives an attacker nothing.
-- **Rollback and availability.** eFuse counters never decrease. If the
-  application follows the update protocol, no sequence of power losses makes
-  both slots unbootable while one confirmed image exists. A malicious
-  application can erase flash, which a USB reflash repairs, but it can't burn
-  eFuse, because the bootloader locks the eFuse controller before it jumps.
+- **Trust-root rotation.** The bootloader uses a trust root only if a chain
+  of key sets, starting from the four keys compiled into it, authorizes it,
+  with two signatures from the previous set at every step, and only if the
+  trust root's level is at least the security level in eFuse. Rotating to a
+  new key set and raising the level shuts out a stolen key.
+- **Rollback and availability.** The security level in eFuse never
+  decreases, and the bootloader never runs an image whose security version
+  is below it. If the application follows the update protocol, no sequence
+  of power losses makes both slots unbootable while one confirmed image
+  exists. A malicious application can erase flash, which a USB reflash
+  repairs, but it can't burn eFuse, because the bootloader locks the eFuse
+  controller before it jumps.
 
 This work differs from the libsignal work in five ways:
 
@@ -44,14 +46,22 @@ This work differs from the libsignal work in five ways:
   eFuse, and NOR flash take the place of system calls.
 - Its theorems span many boots with power loss at any instruction, not one
   run of a command-line tool.
-- The binary that gets verified is the binary that ships. Hooked routines
-  stay in the image as real code, and the proof treats calls to them through
-  contracts that a later campaign can discharge.
+- The binary that gets verified is the binary that ships. The
+  cryptographic routines stay in the image as real code. The rest of the
+  proof treats calls to them through contracts, and phase 7 proves that the
+  real code meets those contracts.
+- The cryptography is proved, not assumed. libsignal's proof hooked every
+  primitive. Here, SHA-2, ECDSA P-256 and P-384 verification, and Ed25519
+  verification are proved against Lean specifications at the machine-code
+  level. Every digest on the verification path uses software SHA-2, so the
+  SHA accelerator isn't trusted. The only hook left is a ROM flash-read
+  function.
 - The security property is short. Most of the specification is parsing:
   X.509, CMS, and Rekor's formats.
 - The verified code is much smaller. This plan estimates 5,000 to 20,000
-  RV32 instructions outside the hooked cryptography, compared with about
-  140,000 AArch64 instructions for libsignal.
+  RV32 instructions for the checks and the hardware code, plus 10,000 to
+  40,000 for the cryptography, compared with about 140,000 AArch64
+  instructions for libsignal.
 
 The plan is feasible. The largest risks are building the agent setup, which
 DeepMind didn't release, and getting the new trusted models of the platform
@@ -106,7 +116,7 @@ theorem boot_refines (p : Platform) (hp : p.WellFormed) :
       out.steps ≤ maxSteps ∧
       match accept p.flash p.efuse p.bootState with
       | .boot slot entry mapping burns =>
-          out.result = .jumped entry mapping ∧
+          out.result = .jumped slot entry mapping ∧
           out.efuse = p.efuse.burn burns ∧
           out.efuseLocked ∧
           out.bootState = nextBootState p.bootState slot
@@ -117,31 +127,54 @@ theorem boot_refines (p : Platform) (hp : p.WellFormed) :
 `Platform` is the state that the ROM leaves when it starts the bootloader:
 flash contents, eFuse values, the boot-state record, and the CPU and
 peripheral registers. `accept` is the acceptance function, written in Lean
-and trusted. It includes the trust-root checks. It picks the trust root
-stored with each slot, checks its signatures and epoch, and returns the
-eFuse bits to burn. Those are a higher epoch, revocations, and a higher
-security version, each only after the application confirmed the image that
-carried it. `BootRunsTo` says that every run ends in an outcome that satisfies the
-postcondition and that no run faults. `out.result = .jumped` means the
-program counter reached `entry` with the flash mapping set to `mapping` and
-interrupts disabled. `out.efuseLocked` means the eFuse controller's
+and trusted. It includes the trust-root checks. For each slot it tries, it
+checks the key-set chain and the trust root stored in that slot, checks the
+image against them, and checks the security version. It returns the eFuse
+bits to burn, which raise the security level only after the application
+confirmed the image that justifies it. `BootRunsTo` says that every run
+ends in an outcome that satisfies the postcondition and that no run faults. `out.result = .jumped` means the
+program counter reached `entry` of `slot` with the flash mapping set to
+`mapping` and interrupts disabled. `out.efuseLocked` means the eFuse controller's
 registers are locked against writes until the next reset.
 
 ### Many boots with power loss
 
 ```lean
 theorem boots_safe (tr : Trace) (htr : tr.Admissible) :
-    ∀ b ∈ tr.boots, ∀ e m, b.result = .jumped e m →
-      AcceptedImage (tr.flashAt b) (tr.efuseAt b) e m
+    ∀ b ∈ tr.boots, ∀ s e m, b.result = .jumped s e m →
+      AcceptedSlot (tr.flashAt b) (tr.efuseAt b) s e m ∧
+      levelOf (tr.efuseAfter b) ≥ burnTarget (tr.flashAt b) (tr.efuseAt b) s
+
+theorem rollback (tr : Trace) (htr : tr.Admissible) :
+    ∀ b₁ b₂ ∈ tr.boots, b₁ ≤ b₂ → ∀ s e m, b₂.result = .jumped s e m →
+      slotLevel (tr.flashAt b₂) s ≥ levelOf (tr.efuseAfter b₁)
+
+theorem availability (tr : Trace) (htr : tr.Admissible)
+    (hp : tr.AppFollowsProtocol) :
+    ∀ b ∈ tr.boots, tr.hasConfirmedAcceptedSlot b →
+      b.completes → ∃ s e m, b.result = .jumped s e m
 ```
 
 A `Trace` interleaves bootloader runs, application writes to flash, and
 power losses. A bootloader run can stop at any instruction. A power loss
-during a flash erase or write leaves the affected bytes undefined. The
-availability and rollback theorems are stated over the same traces. The
-availability theorem restricts the application to the update protocol,
-because an application that erases both slots makes any device unbootable.
-The other theorems allow arbitrary application writes.
+during a flash erase or write leaves the affected bytes undefined, and a
+power loss during an eFuse burn leaves any subset of the requested bits set.
+
+- `AcceptedSlot` is the single definition of every check on a slot, from
+  [Image format and boot procedure](#image-format-and-boot-procedure) and the
+  appendix sections it links to. `trust_root_monotone` and the security games
+  use the same definition.
+- `burnTarget` is the slot's level if the boot-state record marks that slot
+  confirmed, and the current level otherwise. The second clause of
+  `boots_safe` says the bootloader never jumps before the eFuse level reaches
+  that target.
+- `rollback` says that once a boot ends with the level at some value, no
+  later boot runs a slot whose level is below it.
+- `availability` restricts the application to the update protocol, because
+  an application that erases both slots makes any device unbootable. It says
+  that a boot that runs to completion jumps to some slot whenever one
+  confirmed, accepted slot exists. The other theorems allow arbitrary
+  application writes.
 
 ### Trust-root monotonicity
 
@@ -151,18 +184,30 @@ The process that produces new trust roots is in
 ```lean
 theorem trust_root_monotone (tr : Trace) (htr : tr.Admissible) :
     tr.efuseMonotone ∧
-    ∀ b ∈ tr.boots, ∀ r, b.trustRoot = some r →
-      r.epoch ≥ epochOf (tr.efuseAt b) ∧
-      ThresholdSigned 2 r (unrevokedKeys (tr.efuseAt b))
+    ∀ b ∈ tr.boots, ∀ s e m, b.result = .jumped s e m →
+      let (c, r, img) := slotContents (tr.flashAt b) s
+      ChainAuthorized genesisKeys c ∧
+      ThresholdSigned 2 r c.lastKeySet ∧
+      c.lastLevel ≤ r.level ∧
+      img.securityVersion = r.level ∧
+      r.level ≥ levelOf (tr.efuseAt b)
 ```
 
+These conjuncts are consequences of `AcceptedSlot`, stated separately so that
+a reviewer can read the trust-root rules without reading the whole
+acceptance definition.
+
 `efuseMonotone` says that no eFuse bit changes from 1 to 0 on any trace, so
-the epoch, the revocation set, and the security version never decrease.
-`ThresholdSigned 2 r ks` says that at least two distinct keys in `ks` signed
-`r`. The bootloader verifies every image with the trust root stored in the
-same slot, so this theorem and `boots_safe` together say that every image
-the device runs passed checks against a trust root that two unrevoked keys
-signed, at the current epoch or later.
+the security level never decreases. `ChainAuthorized genesisKeys c` says
+that each link in the key-set chain `c` has a strictly higher level than the
+one before it, and carries signatures from at least two distinct keys of the
+previous link's key set, where the first link's predecessor is the
+compiled-in genesis set. `ThresholdSigned 2 r ks` says that at least two
+distinct keys in `ks` signed the trust root `r`. The bootloader verifies
+every image with the chain and trust root stored in the same slot, so this
+theorem and `boots_safe` together say that every image the device runs
+passed checks against an authorized trust root at or above the current
+security level.
 
 ### Authenticity and transparency
 
@@ -174,40 +219,50 @@ can do the following:
   than reality, where the workflow signs only honest builds.
 - Submit any entry to Rekor, and get a TSA timestamp on any bytes.
 - Steal any signing key after its certificate expires.
-- Steal every trust-root key that eFuse has revoked, and at most one other
-  trust-root key.
+- Steal at most one key from each key set while that set is current.
+  Retired key sets are destroyed when the holders rotate away from them, so
+  the adversary can't steal them later.
 - Steal any Sigstore key (a Fulcio intermediate, a log key, or a TSA key)
-  that appears only in trust roots whose epoch is below the device's eFuse
-  epoch.
-- Ask the trust-root key holders to sign trust roots. Honest holders sign
-  only trust roots that list honest Sigstore keys.
+  that appears only in trust roots whose level is below the device's
+  security level.
+- Ask the trust-root key holders to sign trust roots and chain links. Honest
+  holders sign only trust roots that list honest Sigstore keys, and only
+  links that name honest key sets.
 - Choose all flash contents and every application action between boots.
 
 The adversary wins the authenticity game if a device boots an image that the
 release workflow never signed:
 
 ```text
-Adv_auth(A) ≤ 4 · Adv_EUF-CMA[Ed25519](trust-root keys)
+Adv_auth(A) ≤ m · Adv_EUF-CMA[Ed25519](trust-root keys)
             + k_F · Adv_EUF-CMA[ECDSA P-384](Fulcio intermediates)
             + q · Adv_EUF-CMA[ECDSA P-256](leaf keys)
             + k_T · Adv_EUF-CMA[ECDSA P-384](TSA keys)
             + Adv_CR[SHA-256] + Adv_CR[SHA-384]
 ```
 
-In this bound, `q` is the number of releases. `k_F` and `k_T` are the
-numbers of Fulcio intermediates and TSA keys listed in honest trust roots at
-or above the device's epoch. The TSA term matters because of key theft after
+In this bound, `m` is the number of trust-root keys across every key set
+the holders ever create. The theorem takes `m` as a parameter. At most 17
+sets can appear in one chain, but the holders might create sets that never
+reach a chain, so the rotation process records every key set created. `q` is the number of releases.
+`k_F` and `k_T` are the numbers of Fulcio intermediates and TSA keys listed
+in honest trust roots at or above the device's security level. Each factor
+comes from a union bound over the keys of one kind, and the security games
+in phase 3 derive each one in Lean. The TSA term matters because of key theft after
 expiry. Without a trusted signed time inside the certificate's validity
 window, a stolen ephemeral key could sign forever.
 
 The adversary wins the transparency game if a device boots an image whose
 entry isn't in a log that a trusted checkpoint commits to. That advantage is
 at most the trust-root term, plus the Ed25519 forgery advantage against each
-log key listed in honest trust roots at or above the device's epoch, plus the
-SHA-256 collision advantage.
+log key listed in honest trust roots at or above the device's security
+level, plus the SHA-256 collision advantage.
 
-The game makes revocation a theorem. Keys that the adversary steals after a
-device burns a higher epoch don't appear in the bound.
+The game makes rotation a theorem. A Sigstore key that the adversary steals
+after a device raises its security level past every trust root that lists
+the key doesn't appear in the bound. A stolen trust-root key helps only if
+the adversary also steals a second key from the same set before the holders
+rotate away from it.
 
 Every computational theorem connects to the binary through `boot_refines`.
 The games run `accept`, and the refinement theorem says the binary does what
@@ -226,16 +281,19 @@ in this table. Everything else is checked by Lean.
 | --- | --- | --- |
 | RV32IMC + Zicsr semantics in machine mode | 2,000 to 4,000 lines | Proved equivalent to the Sail-generated Lean model on every instruction the binary uses. Lockstep tests against QEMU and hardware |
 | Platform model: memory map, initial state, flash, eFuse, MMU table, watchdog | 1,000 to 3,000 lines | Lockstep tests against Espressif's QEMU fork and hardware |
-| Hook contracts: ROM flash read, SHA accelerator, and the cryptographic routines | 500 to 1,500 lines | Test vectors and hardware runs. Software routines can be discharged by later proofs |
-| Formats: image header, trust-root blob, device bundle container | 500 to 1,000 lines | Differential tests against the host encoder |
+| Hook contract: the ROM flash read | 50 to 200 lines | QEMU, then hardware runs |
+| Cryptography specifications: SHA-256, SHA-384, and SHA-512 (FIPS 180-4), ECDSA P-256 and P-384 verification (FIPS 186-5), and Ed25519 verification (RFC 8032) | 1,000 to 2,500 lines | Executable Lean definitions run against the Wycheproof and NIST test vectors, and against the Rust code |
+| Formats: image header, key-set chain, trust-root blob, device bundle container, boot-state record | 500 to 1,000 lines | Differential tests against the host encoder |
 | X.509 and CMS subsets, Rekor v2 entry and checkpoint, RFC 6962 hashing | 2,000 to 5,000 lines | Executable Lean decoders tested against sigstore-go and OpenSSL on a corpus of real bundles |
 | Identity policy, acceptance function, boot state machine | 1,000 to 2,000 lines | Human review, non-vacuity proofs, mutation proofs |
 | Security games and assumptions | 1,000 to 2,000 lines | Human review against the literature |
 | Image extraction tool and build scripts | Tool code | The proof checks extracted bytes against the image digest. Only symbol names are trusted |
 | Lean kernel and comparator | Not ours | Standard |
 
-These are estimates. The total is 8,000 to 18,000 lines, compared with about
-26,000 trusted lines for libsignal.
+These are estimates. The total is 9,000 to 19,000 lines, compared with about
+26,000 trusted lines for libsignal. The contracts that the rest of the proof
+uses for the cryptographic routines aren't in this table, because phase 7
+proves them.
 
 Lean checks the rest. The Rust compiler and linker, the Rust source, the
 separation logic, the weakest-precondition calculus, symbolic execution,
@@ -284,15 +342,19 @@ trap as a fault.
   write leaves the bytes in the affected range undefined. The adversary
   chooses their values. Flash doesn't change while the bootloader runs,
   which is an explicit assumption. It excludes a physical attacker during
-  boot.
+  boot, and any DMA or peripheral write to flash, which the bootloader never
+  starts.
 - **Flash reads.** The bootloader reads flash through a ROM function. That
   function is a hook whose contract copies bytes from the flash model into a
   RAM buffer. This keeps the SPI controller and the cache out of the model.
 - **eFuse.** An array of bits that can only change from 0 to 1. Reads and
   program operations go through the eFuse controller's registers, modeled at
   the register level. Because bits only get set, every counter is unary, and
-  its value is the number of set bits. That is how ESP-IDF reads the 16-bit
-  `SECURE_VERSION` field.
+  its value is the number of set bits. Every eFuse block except block 0 uses
+  Reed-Solomon coding and can be programmed only once, so the only counter
+  the bootloader can raise one bit at a time is the 16-bit `SECURE_VERSION`
+  field in block 0. ESP-IDF reads that field as a count of set bits too. The
+  plan calls its value the security level.
 - **Register locks.** The memory-protection hardware that the bootloader uses
   to lock the eFuse controller's registers before it jumps. The model says
   that after the lock, a write to those registers has no effect until the
@@ -316,10 +378,12 @@ callee-saved registers.
 
 The AlphaProof Code semantics already has `HookOk`, `HookSat`, and
 `subroutineHook`, which turn a proof about a subroutine into a proof that the
-subroutine meets a hook contract. A later campaign uses the same mechanism to
-prove that the real P-256, P-384, and Ed25519 code meets its contract. After
-that, the only hooks left are the ROM functions and the SHA accelerator,
-which can't be verified.
+subroutine meets a hook contract. Phase 7 uses the same mechanism to prove
+that the real SHA-2, P-256, P-384, and Ed25519 code meets its contracts.
+After that, the only hook left is the ROM flash-read function. The SHA
+accelerator is silicon and can't be verified, so no digest on the
+verification path uses it. Every digest that a security decision depends on
+comes from the software SHA-2 code that phase 7 proves.
 
 ## Getting the binary into Lean
 
@@ -354,8 +418,10 @@ groups:
 | CMS and RFC 3161 subset | Same, for the timestamp token |
 | Rekor v2 | The rebuilt entry equals the canonical JSON that the Lean function produces. Merkle verification equals the Lean definition |
 | Policy and acceptance | The composition equals `accept` |
-| Boot-state record | Reading picks the newest valid copy. Writing preserves at least one valid copy at every instruction |
-| Trust root | The blob parser agrees with the Lean decoder. The signature count includes only distinct, unrevoked keys. The epoch comparison uses the eFuse value |
+| Boot-state record | Reading picks the valid copy with the higher generation, as [Boot-state record](#boot-state-record) defines. Writing preserves at least one valid copy at every instruction |
+| Cryptography | Each routine returns the Lean specification's result. See [Proving the cryptography](#proving-the-cryptography) |
+| Trust root | The chain and blob parsers agree with the Lean decoders. Each signature count includes only distinct keys of the right key set. Level comparisons use the eFuse value |
+| Message extraction | Each signature check receives exactly the bytes that the [message table](#signed-messages) names, and the hash algorithm the table names |
 | eFuse, lock, and MMU | Register writes produce the specified burns, the lock, and the mapping, in that order, before the jump |
 | Entry and exit | From reset to the jump, the stack stays in its region and the code is never written |
 
@@ -370,8 +436,8 @@ proof.
 | Crate | Contents | How it is proved |
 | --- | --- | --- |
 | `verify` | Every check: container, header, trust root, X.509 subset, CMS subset, Rekor v2, identity policy, and `accept`. Pure functions over byte slices, with no hardware access | Machine-level contracts that equal the Lean specification |
-| `crypto` | P-256, P-384, Ed25519, SHA-384, and SHA-512, each behind one function that takes byte slices and returns a result | Hooks with contracts. A later phase can prove the real code |
-| `bootloader` | Reset entry, ROM flash reads, the SHA accelerator driver, eFuse reads and burns, the register lock, MMU mapping, the boot-state record, and the jump | Machine-level contracts against the platform model |
+| `crypto` | ECDSA P-256 and P-384 verification, Ed25519 verification, and SHA-2, each behind one function that takes byte slices and returns a result | Machine-level contracts that equal the Lean cryptography specifications, proved in phase 7. Until then, the rest of the proof uses the contracts as hooks |
+| `bootloader` | Reset entry, ROM flash reads, eFuse reads and burns, the register lock, MMU mapping, the boot-state record, and the jump | Machine-level contracts against the platform model |
 
 The same `verify` source builds for the host and for RV32. The host build is
 what CI and the key holders run, so CI and the device run the same checks.
@@ -397,7 +463,9 @@ a lint exists:
   theorem allows a halt, and the agents prove that each panic site that
   remains is unreachable or leads to a specified halt.
 - `#[inline(never)]` on every function whose contract the specification
-  names, and on every hooked routine.
+  names, and on every cryptographic routine. CI checks that each of these
+  names appears as a symbol in the linked image, so a contract can't silently
+  apply to inlined code.
 - A pinned `rustc`, a fixed `opt-level`, `codegen-units = 1`, and a
   reproducible build. The build script checks the image digest.
 
@@ -425,6 +493,12 @@ the following checks.
   in Espressif's QEMU fork, and on hardware, on the same corpus. Compare the
   final state of every run. The libsignal team did this for 15.6 million
   instructions across 10 runs.
+- **End-to-end vectors.** For each bundle in the corpus, record the exact
+  bytes and hash algorithm that sigstore-go passes to each signature check,
+  and compare them with what the Lean `accept` and the `verify` crate pass.
+  Test vectors for the cryptography alone show that the cryptography
+  specifications are standard. These show that the parsers feed them the
+  right messages.
 - **Non-vacuity.** Prove that the hypotheses of each theorem are jointly
   satisfiable and that a real signed release satisfies `accept`.
 - **Mutation proofs.** For each bug in the following list, build a mutated
@@ -435,15 +509,35 @@ the following checks.
   - The identity policy matched by prefix
   - The Build Signer URI read from the wrong extension
   - The signed time not compared with the leaf certificate's validity window
+  - The signed time compared with only one of the validity windows that
+    [Time checks](#time-checks) requires
   - A trust root accepted with one signature, or with the same key counted
     twice
-  - A signature from a revoked trust-root key counted
-  - The trust-root epoch read from flash instead of eFuse
-  - A trust root from one slot used to verify the image in the other slot
-  - An epoch or revocation burned before the application confirmed the image
+  - A chain link signed by keys from its own key set instead of the previous
+    link's set
+  - A chain link whose level isn't higher than the previous link's level
+  - The security level read from flash instead of eFuse
+  - A trust root or chain from one slot used to verify the image in the
+    other slot
+  - The security level raised before the application confirmed the image
+  - The security level raised above the slot's level
+  - A slot accepted whose image security version differs from its blob's
+    level
+  - A jump after a partial eFuse burn, before the level reaches the target
   - The eFuse controller left unlocked at the jump
   - A counter compared as a binary number instead of a count of set bits
-  - The eFuse security version not checked
+  - The security version not checked
+  - The security version checked as greater than the level instead of
+    greater than or equal, or with an off-by-one in the other direction
+  - The security version not checked on the fallback slot after the first
+    slot fails
+  - The image signature checked against a SHA-384 digest instead of SHA-256
+  - The canonical JSON entry built with its fields in the wrong order
+  - An inclusion proof accepted for a tree size other than the checkpoint's
+  - An ECDSA check that accepts `r` or `s` equal to zero or at least the
+    group order
+  - An Ed25519 check that accepts `S` at or above the group order
+  - A field reduction that skips its final conditional subtraction
   - A boot-state write that erases both copies before rewriting either
 - **Review.** Reviewer agents from a different model family than the
   specification writer check each draft for faithfulness to the RFCs and to
@@ -461,6 +555,106 @@ analysis to explore.
 
 The games use `accept`, and `boot_refines` transfers their conclusions to
 the binary. The proof doesn't need a model of Rust or of the compiler.
+
+Each forgery assumption is about the signature scheme that the Lean
+cryptography specification defines. Phase 7 proves that the machine code
+computes exactly that specification, and the test vectors check that the
+specification is the standard scheme.
+
+## Proving the cryptography
+
+The libsignal proofs assumed every cryptographic primitive. This plan proves
+them, because a parser proof means little if the signature check it feeds
+can be wrong.
+
+### What gets proved
+
+For each routine, a machine-level contract says that, for every input within
+the format's length limits, the routine returns exactly what the Lean
+specification returns, writes only its output buffer and the stack below the
+stack pointer, restores the callee-saved registers, and finishes within a
+proved instruction bound. The routines are:
+
+- SHA-256, SHA-384, and SHA-512, in software
+- ECDSA P-256 verification with SHA-256, for image signatures
+- ECDSA P-384 verification with SHA-384, for the Fulcio leaf certificate and
+  the TSA token
+- Ed25519 verification, for chain links, trust-root blobs, and Rekor
+  checkpoints
+
+The [message table](#signed-messages) lists the exact bytes each check
+covers. The contracts take those bytes as typed arguments, so a proof about
+the parser and a proof about the routine meet at one definition.
+
+### Specifications
+
+- **SHA-2.** FIPS 180-4, written over `BitVec 32` and `BitVec 64`.
+- **ECDSA.** FIPS 186-5 verification, written step for step as the
+  standard gives it, as computations in `ZMod p` and `ZMod n`. It rejects
+  `r` or `s` outside `1` through `n - 1`, derives `e` from the leftmost bits
+  of the digest, computes `u1 G + u2 Q` with the affine group law, rejects
+  the point at infinity, and compares `r` with the x-coordinate reduced
+  modulo `n`. Public keys must be uncompressed SEC1 points on the curve.
+  Mathlib's Weierstrass-curve results are used only in lemmas, not in the
+  trusted definition.
+- **Ed25519.** RFC 8032 verification over the twisted Edwards form of
+  Curve25519, with the addition law written in affine coordinates and these
+  rules fixed now, matching `verify_strict` in `ed25519-dalek`:
+  - Reject `S` at or above the group order `L`.
+  - Reject a non-canonical encoding of `A` or `R`, meaning a y-coordinate at
+    or above `p`, or x equal to 0 with the sign bit set.
+  - Reject `A` or `R` of small order.
+  - Compute `k` as SHA-512 of `R`, `A`, and the message, reduced modulo
+    `L`, and accept only if `[S]B - [k]A` equals `R` as a point, without
+    multiplying by the cofactor.
+
+  An honest RFC 8032 signer, including Go's `crypto/ed25519`, which signs
+  Rekor checkpoints, always produces signatures that pass these rules.
+
+Validate each specification by running its executable Lean form against the
+Wycheproof vectors for ECDSA P-256 and P-384 and for Ed25519, including
+every vector that must be rejected, and against the NIST SHA vectors. Run
+the same vectors against the Rust code on the host and in the lockstep
+harness. Also run the Ed25519 specification on real Rekor v2 checkpoints and
+on signed trust-root blobs, so that the strict rules are checked against the
+signatures the device actually sees.
+
+### Implementation choices that keep the proofs tractable
+
+Verification uses only public data, so the code doesn't need to run in
+constant time. That allows simpler code than signing would. Phase 0 compares
+two designs on code size, cycles, and how much generic code compiles in:
+
+- Audited crates: RustCrypto `p256` and `p384`, and `ed25519-dalek` or
+  `ed25519-compact`.
+- A minimal implementation for this project: field arithmetic generated by
+  fiat-crypto for 32-bit targets, complete addition formulas (Renes,
+  Costello, and Batina for the Weierstrass curves, and extended coordinates
+  for Edwards), and scalar multiplication loops with fixed bounds.
+
+Fiat-crypto's field code is straight-line, with no branches or loops, which
+suits symbolic execution. Its Coq correctness proofs are about the source,
+so this project doesn't rely on them, but they show the code's structure is
+correct. Complete formulas have no special cases, so the point proofs are
+algebraic identities in `ZMod p` with no case splits. A new implementation
+is acceptable here only because the proof covers it.
+
+### Proof layers
+
+1. **Words.** RV32 has no carry flag, so multi-word additions compile to
+   `sltu` sequences, and every 64-bit SHA-512 operation is a pair of 32-bit
+   operations. Lemmas show that these sequences compute the wider value.
+2. **Field.** Each field operation's machine code computes the right value
+   modulo `p`, with the limb bounds that the next operation needs.
+3. **Points.** Each point formula equals the specification's group law,
+   proved with ring identities in `ZMod p`.
+4. **Scalar multiplication.** Loop invariants over the scalar's bits.
+5. **Verification.** The routine's result equals the specification's
+   verdict.
+
+s2n-bignum (HOL Light proofs of P-256, P-384, and Curve25519 machine code on
+x86 and Arm), fiat-crypto, and HACL* show that each layer can be done. None
+of them targets RV32 or Lean, so no proofs carry over.
 
 ## Running the proof campaigns
 
@@ -516,17 +710,19 @@ runner or a self-hosted one, outside `test.yml`.
 
 | Measure | libsignal | This plan (estimate) |
 | --- | --- | --- |
-| Verified instructions | About 140,000 AArch64 | 5,000 to 20,000 RV32, excluding hooked cryptography |
-| Trusted specification and semantics | About 26,000 lines | 8,000 to 18,000 lines |
-| Binary proof lines | About 5.3 million | Several hundred thousand to about one million, if lines per instruction are similar |
+| Verified instructions | About 140,000 AArch64 | 15,000 to 60,000 RV32: 5,000 to 20,000 for the checks and hardware code, and 10,000 to 40,000 for the cryptography |
+| Trusted specification and semantics | About 26,000 lines | 9,000 to 19,000 lines |
+| Binary proof lines | About 5.3 million | About 0.5 million to 2 million, if lines per instruction are similar |
 | Allocator proof | About 70,000 lines | None, because there is no heap |
 | Security proof | About 1.2 million lines across two models | Much smaller. One computational model with short reductions |
 | New trusted models | AArch64 and Linux process | RV32, bare-metal platform, NOR flash with power loss, eFuse |
 
 The proof-line estimate scales libsignal's ratio of about 38 lines per
 instruction. RISC-V instructions are simpler, but RV32 code has more
-instructions per operation, so the ratio is a rough guide. Phase 5
-measures it.
+instructions per operation, so the ratio is a rough guide. Straight-line
+field arithmetic is likely cheaper per instruction than parser code, and the
+algebra in the point proofs is extra work that the ratio doesn't capture.
+Phase 5 measures both.
 
 ### What is easier than libsignal
 
@@ -546,6 +742,9 @@ measures it.
 - Parsers for DER and CMS have a long history of differential bugs, so the
   specification must be exact.
 - The proof library must be ported from 64-bit AArch64 to 32-bit RISC-V.
+- The cryptography proofs have no counterpart in the libsignal work. They
+  need multi-word arithmetic on an ISA with no carry flag, and algebraic
+  proofs that the point formulas match the group law.
 - The agent setup must be built from scratch.
 
 ### Risks
@@ -555,10 +754,12 @@ measures it.
 | Agent setup underperforms | Slow proof throughput | Pilot in phase 5 before committing to the full scope | Narrow the scope to the parsers and policy at the subroutine level |
 | Platform model is unsound | Theorems don't hold on silicon | Lockstep tests on hardware, minimal register coverage, flash reads through a ROM hook | Shrink the model by moving more operations behind ROM hooks |
 | X.509 or CMS specification is wrong | A theorem about the wrong parser | Differential testing on real bundles, strict profile | Pin more fields by exact byte match, which shortens the specification |
-| CMS is too large to specify well | Delays the CMS contracts in phase 6 | Profile pinned to the Sigstore TSA's exact token shape | Use Rekor v1, whose signed entry timestamp gives signed time without CMS, and accept the risk that Rekor v1 is retired |
+| CMS is too large to specify well | Delays the CMS contracts in phase 6 | Profile pinned to the Sigstore TSA's exact token shape | Use Rekor v1, whose signed entry timestamp gives signed time without CMS. That changes the threat model, because time then rests on the Rekor key instead of a TSA, and it carries the risk that Rekor v1 is retired. Escalate before switching |
+| Cryptography proofs take longer than projected | The release waits on phase 7 | Proof-friendly implementation chosen in phase 0, and a field-multiplication proof in the phase 5 pilot | Escalate before changing scope. The release doesn't ship with cryptography hooks |
 | Proof repair after every rebuild | Lost work | Freeze the bootloader early, keep contracts at `#[inline(never)]` boundaries | Accept repair as a campaign cost |
-| The C3 can't lock the eFuse controller against code running in machine mode | A malicious application can burn counters or revocations and permanently block updates | Confirm in phase 0 which protection unit (the permission-control unit or the CPU's PMP) can lock those registers until reset | Write-protect the counter fields once, and accept that a malicious application can block updates |
-| eFuse bits run out | No more security bumps or revocations | Bump the security version and the epoch only for security fixes and revocations, never for routine releases or routine Sigstore rotations | Reserve more `USER_DATA` bits for the epoch counter |
+| The C3 can't lock the eFuse controller against code running in machine mode | A malicious application can burn the security level to 16 and permanently block updates | Confirm in phase 0 which protection unit (the permission-control unit or the CPU's PMP) can lock those registers until reset | None. The lock is a release blocker. If it can't be done, escalate, and don't claim the rollback or availability theorems against a malicious application |
+| The 16 raises of the security level run out | No more security fixes with rollback protection, and no more key rotations | Raise the level only for security fixes and key rotations, never for routine releases or routine Sigstore changes | A new bootloader over USB |
+| Software SHA-256 over a full slot makes boot too slow | Boot time over budget | Measure in phase 0. Hash only the bytes the header declares, not the whole slot | Escalate. The SHA accelerator stays off the verification path |
 | Code size exceeds the bootloader region | The design doesn't fit | Measure in phase 0 | Move the partition table, or move signature checks into a second verified stage loaded from flash |
 
 ## Phases and deliverables
@@ -575,38 +776,55 @@ two tracks that meet at a code freeze:
   model, and the proof tooling.
 
 Phase 0 feeds both tracks, and the tracks run in parallel until phase 5
-freezes the code. Phases 6 through 8 prove the frozen code.
+freezes the code. Phases 6, 7, and 8 prove the frozen code, and phase 9
+releases it. Phases 6 and 7 run in parallel.
 
 | Phase | Track | Starts after |
 | --- | --- | --- |
 | 0. Design and feasibility probes | Both | Approval of this plan |
 | 1. Verifier code, host first | Implementation | Phase 0 |
-| 2. Bootloader and pipelines on hardware | Implementation | Phase 1 |
+| 2. Bootloader and pipelines | Implementation | Phase 1 |
 | 3. Specification | Verification | Phase 0, and the corpus from phase 1 |
 | 4. Machine model and proof tooling | Verification | Phase 0 |
 | 5. Pilot proofs and code freeze | Both | Phases 2, 3, and 4 |
 | 6. Function contracts | Verification | Phase 5 |
-| 7. Headline theorems | Verification | Phase 6 |
-| 8. Mutation proofs and release | Both | Phase 7 |
-| 9. Cryptography proofs (optional) | Verification | Phase 8 |
+| 7. Cryptography proofs | Verification | Phase 5 |
+| 8. Headline theorems | Verification | Phases 6 and 7 |
+| 9. Mutation proofs and release | Both | Phase 8 |
 
 Each phase ends with exit criteria. A phase that misses them stops the
 project or changes its scope before more work goes in.
+
+No ESP32-C3 hardware is available at the start of the project. Deliverables
+and exit criteria marked **(hardware)** need a real board. Until one is
+available, the work proceeds on the substitute listed in
+[Work that needs real hardware](#work-that-needs-real-hardware), assuming the
+hardware behaves as Espressif documents it. A phase can finish on the
+substitute, but the release in phase 9 can't ship until every hardware item
+is validated.
 
 ### Phase 0: design and feasibility probes
 
 Deliverables:
 
 - `c3-boot/docs/formats.md`, a byte-exact definition of the image header,
-  the device bundle container, the trust-root blob, the boot-state record,
-  and the eFuse bit layout.
-- A spike bootloader on a development board that reads one slot, runs one
-  check of each signature scheme with the candidate crypto crates, and
-  jumps.
-- Measurements from the spike: code size per crate, cycles per signature
-  check, total boot time, and SRAM use.
-- A hardware test of which protection unit can lock the eFuse controller
-  against machine-mode writes until reset.
+  the device bundle container, the key-set chain, the trust-root blob, the
+  boot-state record, and the use of `SECURE_VERSION`.
+- A spike bootloader that reads one slot, runs one check of each signature
+  scheme with the candidate crypto crates, and jumps. **(hardware)**
+- A comparison of the two cryptography designs in
+  [Proving the cryptography](#proving-the-cryptography), and a decision.
+- The pinned profile of a real Sigstore TSA token: its `SignerInfo` digest
+  algorithm and its `messageImprint` algorithm, for the
+  [message table](#signed-messages).
+- A measurement of software SHA-256 over a full slot. Software SHA-2 is
+  required on the verification path, so this measures cost, not whether to
+  use it. **(hardware)**
+- Measurements from the spike: code size per crate and SRAM use, which the
+  linked image gives without hardware, and cycles per signature check and
+  total boot time. **(hardware)**
+- A test of which protection unit can lock the eFuse controller against
+  machine-mode writes until reset. **(hardware)**
 - A prototype of `rv32-img2lean` that turns the spike image into Lean data
   and checks the image digest.
 - Lint configuration for the rules in
@@ -615,9 +833,10 @@ Deliverables:
 Exit criteria:
 
 - The bootloader fits the chosen flash and SRAM layout.
-- Boot time with six signature checks per slot is within a budget you set
-  in this phase.
-- The eFuse lock works, or the fallback in the risk table is accepted.
+- Boot time for two slot checks with 16-link chains, the worst case, is
+  within a budget you set in this phase. **(hardware)**
+- The eFuse lock works. If it can't, the project stops for a decision.
+  **(hardware)**
 - The extracted Lean data hashes to the image digest.
 
 ### Phase 1: verifier code, host first
@@ -625,14 +844,19 @@ Exit criteria:
 Deliverables:
 
 - The `verify` crate with every check, built and tested on the host.
-- The `crypto` crate with the hook interface.
+- The `crypto` crate in the design chosen in phase 0, passing the
+  Wycheproof and NIST vectors.
 - `c3-ota`, a host command-line tool with these subcommands:
   - `pack` builds a signed-image header and segment table.
   - `transcode` turns a Sigstore bundle into the device container.
+  - `chain build`, `chain sign`, and `chain verify` handle key-set chain
+    links.
   - `blob build`, `blob sign`, and `blob verify` handle trust-root blobs.
   - `verify` runs the host build of `verify` on a slot.
 - A corpus in `c3-boot/testdata/`: real bundles signed by GitHub Actions,
-  mutated bundles, and each one's expected verdict from sigstore-go.
+  mutated bundles, and each one's expected verdict from sigstore-go. It also
+  has slots with an empty chain, a 16-link chain, a blob level that differs
+  from the image security version, and a blob below its chain's last link.
 - Fuzz targets for every parser, and Kani harnesses that prove the parsers
   can't panic for inputs up to the format's size limits.
 
@@ -647,7 +871,7 @@ Exit criteria:
 Fuzzing and Kani are much cheaper than machine-code proofs. They find bugs
 in the code before the expensive campaign has to.
 
-### Phase 2: bootloader and pipelines on hardware
+### Phase 2: bootloader and pipelines
 
 Deliverables:
 
@@ -661,12 +885,14 @@ Deliverables:
   and opens a pull request with a candidate blob.
 - `c3-boot.yml`, which builds every crate, runs host tests and a short fuzz
   run, and checks the reproducible image digest.
-- A hardware test rig: development boards, a relay that cuts power, and a
-  script that runs these scenarios end to end:
+- A scenario runner that runs these scenarios end to end, first in
+  Espressif's QEMU fork and later on a hardware rig of development boards
+  and a relay that cuts power **(hardware)**:
   - A normal update, and updates with a bad signature, the wrong identity, a
     stale timestamp, and a lower security version
-  - A rotation to a new Rekor log key, an epoch bump, and a trust-root key
-    revocation
+  - A rotation to a new Rekor log key, a security-level raise, and a
+    trust-root key-set rotation
+  - A fallback to the other slot after the first slot fails a check
   - Power cuts at random points during an update write, a boot-state write,
     and an eFuse burn
 - A private Sigstore stack (Fulcio, Rekor v2, and a TSA, from
@@ -675,8 +901,8 @@ Deliverables:
 
 Exit criteria:
 
-- Every scenario passes on hardware.
-- A power-cut soak run leaves every board bootable.
+- Every scenario passes in QEMU, and later on hardware. **(hardware)**
+- A power-cut soak run leaves every board bootable. **(hardware)**
 - The image is tagged `v0`, the input to the verification pilot.
 
 ### Phase 3: specification
@@ -685,7 +911,8 @@ Deliverables:
 
 - The trusted `Spec/` modules in Lean, all executable: formats, the X.509
   and CMS subsets, Rekor v2, the trust root, the identity policy, `accept`,
-  the boot state machine, the platform assumptions, and the security games.
+  the boot state machine, the platform assumptions, the security games, and
+  the cryptography specifications.
 - A differential harness that runs the compiled Lean decoders on the corpus
   and compares each verdict with `verify` and with sigstore-go.
 - Non-vacuity theorems for every hypothesis in the headline theorems.
@@ -699,6 +926,8 @@ Deliverables:
 Exit criteria:
 
 - The Lean decoders, `verify`, and sigstore-go agree on the whole corpus.
+- The executable cryptography specifications pass every Wycheproof and NIST
+  vector.
 - A human approves the specification.
 
 ### Phase 4: machine model and proof tooling
@@ -712,7 +941,8 @@ Deliverables:
 - `rv32-img2lean`, finished, including symbol names and DWARF hints.
 - A lockstep harness that runs the whole bootloader on the corpus in the Lean
   semantics, in Espressif's QEMU fork, and on hardware through a debug
-  probe, and compares the final states.
+  probe, and compares the final states. The hardware leg waits for a board.
+  **(hardware)**
 - The core of the proof library ported to RV32: weakest-precondition rules
   for each instruction, separation logic, and symbolic execution.
 - Gatekeeper scripts: comparator configuration, the axiom audit, and a check
@@ -723,7 +953,8 @@ Deliverables:
 
 Exit criteria:
 
-- Lockstep runs agree on every corpus input.
+- Lockstep runs agree on every corpus input, in QEMU first and on hardware
+  later. **(hardware)**
 - The equivalence proof covers every opcode in the `v0` image.
 - The gatekeeper rejects a planted `sorry` and a planted edit to the
   specification.
@@ -732,8 +963,9 @@ Exit criteria:
 
 Deliverables:
 
-- Machine-level contract proofs for the image header parser and the Merkle
-  inclusion check in `v0`.
+- Machine-level contract proofs for the image header parser, the Merkle
+  inclusion check, one field multiplication, and one point addition in
+  `v0`.
 - A throughput report covering proof lines per instruction, agent hours per
   function, and Lean build time and memory.
 - A list of code changes that make proofs easier, such as splitting large
@@ -748,22 +980,49 @@ Exit criteria:
   times the libsignal binary proof. Otherwise, cut scope before phase 6. For
   example, drop CMS by switching to Rekor v1 signed entry timestamps, or stop
   after the parser contracts.
-- `v1` passes every phase 2 scenario.
+- The cryptography projection from the field multiplication and point
+  addition proofs fits the same bound. If it doesn't, escalate. The release
+  doesn't ship with cryptography hooks, so cutting scope there is your
+  decision.
+- The cryptography specifications are frozen, and each hook contract that
+  phase 6 uses is defined as the corresponding specification function, so
+  phases 6 and 7 prove against the same definitions. A Lean check confirms
+  that the definitions are identical.
+- `v1` passes every phase 2 scenario in QEMU, and on hardware once a board
+  is available. **(hardware)**
 
 ### Phase 6: function contracts
 
 Deliverables:
 
 - Gatekept contract proofs for every function reachable from reset in `v1`,
-  in the groups from [Proof decomposition](#proof-decomposition), in this
-  order: byte helpers, container and header, trust root, Rekor v2, X.509 and
+  in the groups from [Proof decomposition](#proof-decomposition). The order
+  is byte helpers, container and header, trust root, Rekor v2, X.509 and
   policy, CMS, boot-state record, and eFuse, lock, and MMU.
 
 Exit criteria:
 
-- Every function reachable from reset has a contract proof or is a hook.
+- Every function reachable from reset, other than the cryptographic
+  routines, has a contract proof or is the ROM flash-read hook.
 
-### Phase 7: headline theorems
+### Phase 7: cryptography proofs
+
+Deliverables:
+
+- Proof libraries for the word, field, and point layers in
+  [Proof layers](#proof-layers).
+- Machine-level contract proofs for SHA-2, ECDSA P-256 and P-384
+  verification, and Ed25519 verification in `v1`.
+- Proofs, through `subroutineHook`, that the real routines meet the hook
+  contracts that phase 6 used.
+
+Exit criteria:
+
+- Every cryptographic routine in `v1` has a gatekept proof against the Lean
+  specification.
+- No cryptography hook remains.
+
+### Phase 8: headline theorems
 
 Deliverables:
 
@@ -776,8 +1035,11 @@ Exit criteria:
 - Comparator confirms every headline theorem against the held-out
   specification.
 - The axiom audit is clean.
+- The only hook in the headline theorems is the ROM flash-read function.
+- One theorem links each hook contract used in phase 6 to the machine code
+  that phase 7 proved.
 
-### Phase 8: mutation proofs and release
+### Phase 9: mutation proofs and release
 
 Deliverables:
 
@@ -794,17 +1056,33 @@ Exit criteria:
 - Every mutant has a disproof.
 - A clean checkout reproduces the image digest and checks every proof.
 - The release image boots on the rig and passes every phase 2 scenario.
+  **(hardware)**
+- Every row in [Work that needs real hardware](#work-that-needs-real-hardware)
+  is validated. **(hardware)**
 
-### Phase 9: cryptography proofs (optional)
+## Work that needs real hardware
 
-Deliverables:
+Until a board is available, each item uses the substitute in this table. The
+substitutes rest on Espressif's documentation (the ESP32-C3 technical
+reference manual, ESP-IDF, and the ROM headers) and on Espressif's QEMU fork.
+If hardware later disagrees with an assumption, the trusted platform model
+changes, and every proof that depends on that part of the model needs
+repair.
 
-- Proofs that the real P-256, P-384, and Ed25519 code in `v1` meets its hook
-  contracts, against Lean specifications of FIPS 186-5, RFC 8032, and
-  FIPS 180-4.
-
-After this phase, the only hooks left are the ROM functions and the SHA
-accelerator.
+| Item | Phase | Substitute until hardware | What hardware validates |
+| --- | --- | --- | --- |
+| Boot time and cycles per signature check | 0 | Instruction counts from QEMU, at an assumed one cycle per instruction at 160 MHz, plus a margin for flash wait states | Measured boot time against the budget |
+| Software SHA-256 over a full slot | 0 | Same as boot time | The cost fits the boot-time budget |
+| eFuse controller lock against machine-mode writes | 0 | Assume the permission-control unit locks the controller's registers until reset, as the technical reference manual describes | A write after the lock has no effect. This is a release blocker |
+| eFuse burn interrupted by power loss | 2 | Assume any subset of the requested bits ends up set | The power-cut soak, with cuts during burns |
+| `SECURE_VERSION` is free for the bootloader to use | 0 | Assume ESP-IDF's description: 16 bits in block 0, programmable one bit at a time, with no other user | The bootloader raises it one bit at a time on silicon |
+| The state the ROM leaves at bootloader entry | 4 | Values from the technical reference manual and the ROM headers | A debug-probe dump of the registers and memory at entry |
+| ROM flash-read contract | 4 | QEMU's flash emulation and the ROM header's documented behavior | The ROM function on silicon matches the contract |
+| eFuse programming, MMU table, and register-lock models | 4 | QEMU and the technical reference manual | Lockstep runs on hardware |
+| NOR flash behavior under power loss | 2 | The model in [Platform model](#platform-model), which assumes the worst case: affected bytes take any value | The power-cut soak on the relay rig |
+| Watchdog timeout against `maxSteps` | 0 | The ROM's documented watchdog configuration | A boot at `maxSteps` on silicon finishes before the watchdog fires |
+| Scenario runs, including Rekor key rotation and key-set rotation | 2 | The QEMU scenario runner | The same scenarios on the rig |
+| Release boot | 9 | None | The Secure Boot-signed image boots on a board with Secure Boot enabled |
 
 ## Repository layout
 
@@ -840,6 +1118,11 @@ verifies Cosign signatures in the application. This plan doesn't change it.
 - Custody of the offline keys and the security of the GitHub repository and
   its workflows
 - The [rotation process off the device](#rotation-process-off-the-device)
+- Destruction of retired trust-root keys. The theorems assume it. If two
+  keys of a retired set survive, their holder can build a different chain
+  from that point. Each rotation's destruction is a logged step of the key
+  ceremony, and a release can't ship until the log for every retired set
+  exists
 - The application, its network stack, and its OTA download code
 - Side channels during boot, which leak nothing secret because verification
   uses only public data
@@ -862,14 +1145,16 @@ The following ESP32-C3 facts come from ESP-IDF's `soc_caps.h` for the chip:
 
 1. **ROM.** Verifies the bootloader against an RSA-3072 key whose digest is
    in eFuse.
-2. **Bootloader.** The verified code.
-3. **Trust-root blob.** Stored in each slot next to the image, and signed by
-   two of four offline Ed25519 trust-root keys whose public halves are
-   compiled into the bootloader.
-4. **Sigstore bundle.** Shipped with each image.
-5. **Firmware image.** Untrusted until the checks pass.
+2. **Bootloader.** The verified code. It has the four genesis trust-root
+   public keys compiled in.
+3. **Key-set chain.** Stored in each slot. Each link names a new set of up to
+   four Ed25519 keys, and two keys of the previous set sign it.
+4. **Trust-root blob.** Stored in each slot, and signed by two keys of the
+   newest set in the chain.
+5. **Sigstore bundle.** Shipped with each image.
+6. **Firmware image.** Untrusted until the checks pass.
 
-The RSA-3072 key and the four Ed25519 trust-root keys are long-lived and stay
+The RSA-3072 key and the current trust-root key set are long-lived and stay
 offline. Routine releases use only the workflow's Sigstore identity.
 
 ### Trust-root rotation
@@ -879,63 +1164,104 @@ every six months, and the Fulcio intermediate certificate expires in October
 2031. A trust root compiled into the bootloader would go stale, so it lives
 in a signed blob that ships with each image.
 
+#### The security level
+
+The C3 has one eFuse counter that the bootloader can raise one bit at a
+time: `SECURE_VERSION`, 16 bits in block 0. Every other eFuse block uses
+Reed-Solomon coding and can be programmed only once. The plan therefore uses
+one counter, the security level `L`, for everything that needs rollback
+protection. It has 16 raises for the life of the device, shared between
+image security fixes and trust-root key rotations. Spend them only on
+security fixes and key rotations, never on routine releases or routine
+Sigstore changes. Running out means a new bootloader over USB.
+
+#### Chain links
+
+Each link has:
+
+- A level, from 1 through 16, strictly higher than the previous link's
+  level.
+- A key set of one to four Ed25519 public keys.
+- Two or more signatures from distinct keys of the previous link's key set,
+  each tagged with the key's index in that set. The first link's previous
+  set is the genesis set compiled into the bootloader.
+
+A chain has at most 16 links, because levels strictly increase. Each
+signature covers the domain-separation string `c3-boot chain link v1`, a zero
+byte, and the encoded link without its signatures, so a link signature can't
+be reused as a blob signature or the other way around.
+
 #### Blob contents
 
-- A format version and a sequence number, for ordering and audit.
-- An epoch. The bootloader rejects a blob whose epoch is below the epoch
-  counter in eFuse.
+- A format version, and a sequence number for audit. The bootloader ignores
+  the sequence number. Two blobs at the same level are both valid, which is
+  safe because the holders raise the level whenever an older blob must stop
+  working.
+- A level. It must equal the image's security version, be at least the
+  level of the chain's last link, and be at least `L`. This number is the
+  slot's level.
 - The Fulcio intermediates, Rekor v2 log keys with log IDs, and TSA signing
   certificates to accept, each with a validity window. A blob keeps the keys
   of inactive Rekor shards, as Sigstore's `trusted_root.json` file does, so
   that images logged before a shard change still verify.
 - The identity policy.
-- The indexes of trust-root keys for the bootloader to mark revoked in
-  eFuse.
-- Two or more Ed25519 signatures, each tagged with the index of the
-  trust-root key that made it.
+- Two or more signatures from distinct keys of the chain's last key set, or
+  of the genesis set if the chain is empty. Each signature covers the string
+  `c3-boot trust root v1`, a zero byte, and the encoded blob without its
+  signatures.
 
-#### Where blobs live and when they take effect
+#### Where chains and blobs live and when they take effect
 
-Each slot holds its image, its bundle, and its blob, and the bootloader
-verifies a slot's image only with that slot's blob. The application writes
-all three to the inactive slot, so a new trust root becomes active in the
-same step as the image that needs it, and a power loss during the write
-leaves the old slot untouched. A bad blob fails only its own slot, and the
-bootloader falls back to the other slot.
+Each slot holds its image, its bundle, its chain, and its blob, and the
+bootloader verifies a slot's image only with that slot's chain and blob. The
+application writes all four to the inactive slot, so a new trust root
+becomes active in the same step as the image that needs it, and a power loss
+during the write leaves the old slot untouched. A bad blob fails only its
+own slot, and the bootloader falls back to the other slot.
 
-A rotation therefore needs no extra steps on the device. When CI starts
-logging to a new Rekor shard, the next release carries a blob that lists the
-new shard's key, and the blob's signatures don't depend on Sigstore at all.
+A routine rotation needs no extra steps on the device. When CI starts
+logging to a new Rekor shard, the next release carries a blob at the same
+level that lists the new shard's key, signed by the current key set.
 
-#### Epochs and eFuse budget
+#### Raising the level
 
-Most rotations add keys and don't need rollback protection, because an
-older blob is still trustworthy. Those rotations keep the same epoch, so the
-older slot keeps booting. The key holders raise the epoch only to drop a key
-that might be compromised, or to tighten the identity policy. After the
-application confirms an image whose blob has a higher epoch or new
-revocations, the bootloader burns them on the next boot. From then on, every
-blob below the new epoch fails, including the one in the other slot.
+Because the image's security version equals its blob's level, each slot has
+one level. After the application confirms a slot, the next boot that selects
+it raises `L` to the slot's level, if that is higher than `L`. From then on,
+every slot below the new level fails, including the other slot. A security
+fix therefore ships with a higher image security version and a blob
+re-signed at that level by the current key set.
 
-The counters are unary, so each one has a fixed budget of bumps:
+The bootloader burns one bit per eFuse program operation, reads the level
+back after each one, and doesn't jump until the level reaches the slot's
+level. If a bit doesn't read back as set after three attempts, it halts,
+because the eFuse hardware has failed. A power loss during a burn leaves the
+level between the old and the target value. The record still marks the slot
+confirmed, so the next boot that selects the slot finishes the burn before
+jumping.
 
-| Counter | eFuse location | Bumps |
-| --- | --- | --- |
-| Image security version | `SECURE_VERSION`, 16 bits in block 0 | 16 |
-| Trust-root epoch | 64 bits of `USER_DATA` in block 3 | 64 |
-| Trust-root key revocations | 4 bits of `USER_DATA` in block 3 | One per key |
+Rollback protection takes effect when the eFuse level reaches the target,
+not when the application confirms. Until then, the older slot still boots if
+the confirmed slot fails its checks. `rollback` states the guarantee in
+those terms.
 
-`USER_DATA` has 256 bits. ESP-IDF uses bits 200 through 247 for an optional
-custom MAC address, so the layout stays clear of them.
+#### Rotating trust-root keys
 
-#### Revoking and replacing trust-root keys
+To retire a key set, for example because a key might be stolen, two holders
+of the current set sign a new link that names a new set, at a level above
+`L`. The next release carries the longer chain, a blob signed by the new set
+at that level, and an image with a security version at that level. Once a
+device confirms it, older chains no longer reach a blob it accepts.
 
-The two-of-four threshold means one stolen trust-root key can't sign a blob.
-It also means a stolen key can't revoke the others, because a revocation
-must arrive in a blob that two unrevoked keys signed. The device tolerates up
-to two revoked keys and still meets the threshold. Replacing the four
-compiled-in keys requires a new bootloader signed with the RSA-3072 key and
-written over USB. This plan doesn't include in-field bootloader updates.
+The retired set's private keys must then be destroyed. The chain proves only
+that two keys of each set signed the next link, so an attacker who later
+obtained two keys of a retired set could build a different chain from that
+point. Destroying retired keys closes that path. One stolen key from the
+current set can't sign anything on its own.
+
+The genesis keys can't change without a new bootloader, which requires the
+RSA-3072 key and a USB write. This plan doesn't include in-field bootloader
+updates.
 
 #### Rotation process off the device
 
@@ -945,17 +1271,20 @@ written over USB. This plan doesn't include in-field bootloader updates.
    encoder and opens a pull request that shows the old and new keys side by
    side.
 3. Two key holders review the pull request and sign the candidate offline,
-   each on a hardware token, and commit the signatures.
-4. CI checks the signed blob with a host build of the bootloader's verifier
-   and with the executable Lean decoder, then merges it.
-5. The release workflow attaches the newest signed blob to every release.
+   each on a hardware token, and commit the signatures. Key-set rotations
+   and level raises follow the same review.
+4. CI checks the signed blob and chain with a host build of the bootloader's
+   verifier and with the executable Lean decoder, then merges them.
+5. The release workflow attaches the newest signed chain and blob to every
+   release.
 
 None of these steps runs on the device, so the machine-code proof doesn't
-cover them. The proof shows that a device trusts exactly what two unrevoked
-trust-root keys signed. Whether a signed blob lists the right Sigstore keys
+cover them. The proof shows that a device trusts exactly what the key-set
+chain authorizes. Whether a signed blob lists the right Sigstore keys
 depends on the key holders' review and the CI checks. A blob with a wrong
 key makes devices reject new images. It can't make them accept a forged
-image unless two key holders signed a blob that lists an attacker's key.
+image unless two holders of the current set signed a blob that lists an
+attacker's key.
 
 Sigstore lists a new key in `trusted_root.json` before clients sign with it.
 The Rekor v2 key had a validity start of 2025-09-23, while the signing
@@ -983,17 +1312,20 @@ Replace the following:
 ### Bundle profile
 
 - `hashedrekord` entries only, with an ECDSA P-256 leaf key over SHA-256.
-- The leaf chains to the pinned intermediate (ECDSA P-384 with SHA-384).
-- A Rekor v2 inclusion proof and a checkpoint signed with Ed25519.
-- An RFC 3161 token from the Sigstore TSA, signed with ECDSA P-384 and
-  SHA-384. Rekor v2 entries have no signed time, so the TSA token is the
-  only signed time, and it must fall inside every validity window.
+- The leaf chains to a Fulcio intermediate listed in the blob (ECDSA P-384
+  with SHA-384).
+- A Rekor v2 inclusion proof and a checkpoint signed with Ed25519 by a log
+  key listed in the blob.
+- An RFC 3161 token from a TSA listed in the blob, signed with ECDSA P-384.
+  Rekor v2 entries have no signed time, so the TSA token is the only signed
+  time.
 - No check of the leaf's embedded SCT.
 
-Each slot check runs six software signature checks. Three are Ed25519
-checks, two on the trust-root blob and one on the checkpoint. Two are P-384
-checks, on the leaf certificate and the TSA token. One is a P-256 check, on
-the image signature.
+Each slot check runs at least six software signature checks. Two Ed25519
+checks cover the blob, one Ed25519 check covers the checkpoint, two P-384
+checks cover the leaf certificate and the TSA token, and one P-256 check
+covers the image signature. Each chain link adds two Ed25519 checks, so a
+chain at its 16-link limit adds 32.
 
 CI transcodes the protobuf JSON bundle into a fixed binary container that
 holds the same signed byte strings. The bootloader still produces one JSON
@@ -1001,26 +1333,88 @@ document. A Rekor v2 leaf is the RFC 6962 leaf hash of the RFC 8785
 canonical JSON form of the `hashedrekord` entry, which the bootloader
 rebuilds from bundle fields, as `ToEntryHash` in rekor-tiles does.
 
+### Signed messages
+
+Each signature check covers exactly these bytes. A parser bug that feeds a
+check the wrong bytes is as dangerous as a broken signature scheme, so the
+specification defines each message once, and the proofs use that
+definition.
+
+| Check | Key | Message | Hash |
+| --- | --- | --- | --- |
+| Chain link | Ed25519, previous key set | `c3-boot chain link v1`, a zero byte, and the link without signatures | SHA-512 inside Ed25519 |
+| Trust-root blob | Ed25519, last key set | `c3-boot trust root v1`, a zero byte, and the blob without signatures | SHA-512 inside Ed25519 |
+| Image signature | ECDSA P-256, leaf key | The SHA-256 digest of the signed image, which is the header followed by the segments | SHA-256 |
+| Leaf certificate | ECDSA P-384, Fulcio intermediate | The leaf's DER `tbsCertificate`, exactly as it appears in the certificate | SHA-384 |
+| Checkpoint | Ed25519, Rekor log key | The checkpoint note body, through its final newline | SHA-512 inside Ed25519 |
+| Timestamp token | ECDSA P-384, TSA certificate | The DER `signedAttrs` of the token's `SignerInfo`, re-tagged as `SET OF` as RFC 5652 requires | The digest algorithm the token names, pinned in phase 0 from real tokens |
+| Timestamp imprint | None | The token's `messageImprint` must equal the hash of the image signature bytes | Pinned in phase 0 from real tokens |
+
+The Rekor entry's digest must equal the image signature's SHA-256 digest,
+and the entry's signature and certificate must equal the bundle's.
+
+#### Time checks
+
+Let `t` be the TSA token's signed time. The bootloader accepts only if all of
+the following hold:
+
+- `t` is inside the leaf certificate's validity window.
+- `t` is inside the blob's validity window for the Fulcio intermediate that
+  signed the leaf.
+- `t` is inside the blob's validity window for the TSA certificate that
+  signed the token.
+- `t` is inside the blob's validity window for the log key that signed the
+  checkpoint.
+
+Windows of keys that didn't take part in this check don't matter, so a blob
+can keep expired Rekor shard keys without widening what it accepts.
+
 ### Image format and boot procedure
 
 The signed image is a header (magic, chip ID, security version, segment
-table, entry point) followed by segments. The security version is compared
-with the count of set bits in `SECURE_VERSION`, so a product line gets 16
-security bumps in total. The bootloader rejects
-overlapping segments, segments that overlap its own memory, segments outside
-the allowed regions, and length mismatches.
+table, entry point) followed by segments. The security version is a number
+from 0 through 16. The bootloader rejects a slot whose image security version
+is above 16, is below `L`, or differs from its blob's level, on every slot it
+tries, including the fallback slot.
+It also rejects overlapping segments, segments that overlap its own memory,
+segments outside the allowed regions, and length mismatches.
 
-The bootloader reads a two-copy boot-state record and chooses a slot. It
-verifies the slot's trust-root blob, parses the header, hashes the image,
-checks the Rekor entry and checkpoint, checks the certificate and policy,
-checks the image signature, checks the timestamp, and checks the security
-version. It then burns any pending eFuse updates, locks the eFuse
-controller, maps the image, and jumps. If a check fails, it tries the other
-slot. If both fail, it halts.
+The bootloader reads the boot-state record and chooses a slot. For that slot,
+it checks the chain, the blob, and their levels, parses the header, hashes
+the image, checks the Rekor entry and checkpoint, checks the certificate and
+policy, checks the image signature, checks the timestamp, and checks the
+security version. It then raises `L` if a confirmed image calls for it, locks
+the eFuse controller, maps the image, and jumps. If a check fails, it tries
+the other slot with the same checks. If both fail, it halts.
 
 A trial image boots a fixed number of times. If the application doesn't
-confirm it, the bootloader reverts. After confirmation, the next boot burns
-the image's security version and its blob's epoch and revocations.
+confirm it, the bootloader reverts.
+
+### Boot-state record
+
+The record has two copies in two separate flash sectors. Each copy has a
+magic number, a format version, a 32-bit generation, the preferred slot, the
+trial slot and its remaining trial boots, a confirmed flag for each slot, and
+a CRC-32.
+
+- **Reading.** A copy is valid if its magic, format version, and CRC are
+  right. The bootloader uses the valid copy with the higher generation, or
+  copy A if the generations are equal. If neither copy is valid, it tries
+  slot A and then slot B.
+- **Writing.** The bootloader erases and rewrites only the sector that
+  doesn't hold the copy in use, with the generation one higher. The copy in
+  use stays valid until the new one is complete. A generation at its maximum
+  value isn't incremented further.
+
+The CRC detects torn writes, not attacks. The application can write
+anything to the record, so no security property depends on it. Every slot
+the bootloader boots passes every check on that boot. A forged record can
+only change which authentic slot boots, or raise `L` early by marking an
+authentic image confirmed, which can make the other slot unbootable. A forged
+record can also keep selecting an older slot, which postpones the eFuse raise
+for a confirmed newer slot for as long as the application keeps doing it.
+These are availability effects, and a malicious application can already
+erase flash or refuse updates.
 
 ### Signing pipeline
 
