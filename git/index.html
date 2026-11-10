@@ -223,8 +223,8 @@
     </main>
 
     <!-- Content search (grep across file contents) -->
-    <div class="search-overlay" id="content-search" hidden>
-      <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search file contents">
+    <dialog class="search-overlay" id="content-search" closedby="any" aria-label="Search file contents">
+      <div class="search-panel">
         <div class="search-head">
           <input
             id="content-search-input"
@@ -253,7 +253,7 @@
         <div class="search-results" id="content-search-results"></div>
         <p class="search-empty" id="content-search-empty" hidden>No matches.</p>
       </div>
-    </div>
+    </dialog>
 
     <!-- Command palette (fuzzy file finder) -->
     <div class="palette-overlay" id="palette" hidden>

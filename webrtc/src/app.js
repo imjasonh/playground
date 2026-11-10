@@ -1159,6 +1159,11 @@ function bindEvents() {
   el["chat-input"].addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      // Enter confirms an IME candidate mid-composition. keyCode 229 catches
+      // Safari, where isComposing is unreliable on the confirming keydown.
+      if (e.isComposing || e.keyCode === 229) {
+        return;
+      }
       sendChat();
     }
   });
