@@ -86,6 +86,9 @@ ends inside the signed image.
 | `manifestParse_correct` | The compiled `manifest::parse`, through `magic`, `version_1`, `reserved(2)`, four calls to `part`, and its outlined helpers, returns to its caller with `sp` and every register but `a0` through `a5` and `t0` restored, and leaves memory outside its 144 bytes of stack as `parseMem` says: tag 1 and the error that `parseErr` gives, or tag 0 and the four parts |
 | `decodeManifest_parse` | `parseErr`, which states the compiled checks in the code's own word arithmetic, accepts the 40 bytes exactly when the Lean decoder `decodeManifest` does, and the parts are the decoder's |
 | `manifestParse_decodes` | The two joined: the compiled `parse` returns `Err` when `decodeManifest` rejects the manifest, and `Ok` with the decoder's manifest at `out + 4` when it accepts |
+| `readerU8_correct` | The compiled `Reader::u8`, through `Reader::bytes`, returns the error flag in `a0` and the byte or `Truncated` (0) in `a1`, and advances the position by 1 when a byte was left |
+| `segmentPhysical_correct` | The compiled `Segment::physical` writes a segment's address space and start, or `BadSegment` (9) when the address is below its region's base, as `physResult` says |
+| `memcpy_aligned` | The compiled `memcpy`, called with 4-byte-aligned buffers that don't overlap and a length of at least 16 bytes that is a multiple of 4, copies the words through its word loop (`copyWords`), proved by induction |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It

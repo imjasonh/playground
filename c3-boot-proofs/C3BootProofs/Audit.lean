@@ -428,6 +428,79 @@ theorem exists_manifestParse_machine :
       RV32.sep_of_le (by decide) (by decide)⟩⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- `witnessMemParse` with `Reader::u8`, `Segment::physical`, and `memcpy`'s
+stub and body added where the image loads them. -/
+def witnessMemImage (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.readerU8Address).toNat < Image.readerU8Code.length then
+    RV32.byteAt Image.readerU8Code (a - BitVec.ofNat 32 Image.readerU8Address).toNat
+  else if (a - BitVec.ofNat 32 Image.segmentPhysicalAddress).toNat < Image.segmentPhysicalCode.length then
+    RV32.byteAt Image.segmentPhysicalCode (a - BitVec.ofNat 32 Image.segmentPhysicalAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else witnessMemParse a
+
+/-- A machine that calls `Reader::u8` on the witness reader meets
+`readerU8_correct`'s hypotheses. -/
+theorem exists_readerU8_machine :
+    ∃ (m : RV32.Machine) (base retAddr self : RV32.Word),
+      RV32.CodeAt m base Image.readerU8Code ∧ RV32.CodeAt m (base + 0xD6) Image.readerBytesCode ∧
+      base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
+      (RV32.memLoad32 m.mem self ≠ 0 ∧
+        (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base Image.readerU8Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0xD6) Image.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base Image.readerU8Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xD6) Image.readerBytesCode.length ∧
+      RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
+        (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
+      RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
+  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 Image.readerU8Address, witnessMemImage⟩,
+    BitVec.ofNat 32 Image.readerU8Address, 0, 0x3FCC5100, ?_, ?_, by decide, rfl, rfl,
+    rfl, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeAt; decide +kernel)
+    | (unfold RV32.Sep; decide +kernel)
+    | decide +kernel
+
+/-- A machine that calls `Segment::physical` for a flash-data segment meets
+`segmentPhysical_correct`'s hypotheses. -/
+theorem exists_segmentPhysical_machine :
+    ∃ (m : RV32.Machine) (base retAddr out addr : RV32.Word) (k : BitVec 8),
+      RV32.CodeAt m base Image.segmentPhysicalCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = addr ∧ RV32.reg m RV32.a2 = k.zeroExtend 32 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep out 8 base Image.segmentPhysicalCode.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3C010000 else if r = RV32.a2 then 1 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.segmentPhysicalAddress, witnessMemImage⟩,
+    BitVec.ofNat 32 Image.segmentPhysicalAddress, 0, 0x3FCC5000, 0x3C010000, 1, ?_, by decide, rfl, rfl, rfl,
+    rfl, rfl, by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
+  unfold RV32.CodeAt; decide +kernel
+
+set_option maxRecDepth 20000 in
+/-- A machine that calls `memcpy` for 256 bytes between word-aligned buffers
+meets `memcpy_aligned`'s hypotheses. -/
+theorem exists_memcpy_machine :
+    ∃ (m : RV32.Machine) (stub retAddr dst src : RV32.Word) (w : Nat),
+      RV32.CodeAt m stub Image.memcpyStubCode ∧ RV32.CodeAt m (stub + 8) Image.memcpyBodyCode ∧
+      stub.toNat % 2 = 0 ∧ m.pc = stub ∧ RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = src ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 (4 * w) ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ 4 ≤ w ∧ dst.toNat + 4 * w < 2 ^ 32 ∧
+      BitVec.ofNat 32 (4 * w) &&& 0xFFFFFFFC = BitVec.ofNat 32 (4 * w) ∧
+      dst.toNat % 4 = 0 ∧ src.toNat % 4 = 0 ∧ RV32.Sep dst (4 * w) src (4 * w) ∧
+      RV32.Sep dst (4 * w) (stub + 8) Image.memcpyBodyCode.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x100 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.memcpyStubAddress, witnessMemImage⟩,
+    BitVec.ofNat 32 Image.memcpyStubAddress, 0, 0x3FCC5000, 0x3FCC6000, 64, ?_, ?_, by decide, rfl, rfl,
+    rfl, rfl, rfl, by decide, by decide, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
+  all_goals (unfold RV32.CodeAt; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -561,3 +634,12 @@ end C3
 
 /-- info: 'C3.RV32.memcpy_aligned' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.memcpy_aligned
+
+/-- info: 'C3.exists_readerU8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_readerU8_machine
+
+/-- info: 'C3.exists_segmentPhysical_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_segmentPhysical_machine
+
+/-- info: 'C3.exists_memcpy_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_memcpy_machine
