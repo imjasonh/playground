@@ -27,6 +27,10 @@ const fn parse_version(digits: &[u8]) -> u32 {
     n
 }
 
+/// Whether to confirm the slot, so tests can let a trial expire. Set
+/// `C3_DEMO_NO_CONFIRM` at build time to skip confirming.
+const CONFIRM: bool = option_env!("C3_DEMO_NO_CONFIRM").is_none();
+
 /// A message in the flash data window. Reading it proves the bootloader
 /// mapped the flash segment.
 #[unsafe(link_section = ".flash_rodata")]
@@ -110,9 +114,10 @@ extern "C" fn app_main(slot_index: u32) -> ! {
         &read_record(layout::BOOT_STATE_A_OFFSET),
         &read_record(layout::BOOT_STATE_B_OFFSET),
     );
-    if !current.state.is_confirmed(slot)
-        || current.state.preferred != slot
-        || current.state.trial.is_some()
+    if CONFIRM
+        && (!current.state.is_confirmed(slot)
+            || current.state.preferred != slot
+            || current.state.trial.is_some())
     {
         let mut next = current.state.without_trial().with_confirmed(slot);
         next.preferred = slot;

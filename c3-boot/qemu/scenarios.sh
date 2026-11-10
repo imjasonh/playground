@@ -156,17 +156,22 @@ record() {
   --target riscv32imc-unknown-none-elf -p c3-bootloader)
 ota bootloader-image --elf "${target}/c3-bootloader" --out "${work}/bootloader.bin"
 # Version 5 jumps from level 3 to 6, so its raise burns three bits.
-security_versions=(0 0 1 2 3 6)
-for v in 1 2 3 4 5; do
-  (cd "${root}" && C3_DEMO_VERSION="${v}" cargo build -q --locked --release \
-    --target riscv32imc-unknown-none-elf -p c3-demo-app)
+# Version 6 never confirms itself, so its trial expires.
+security_versions=(0 0 1 2 3 6 6)
+for v in 1 2 3 4 5 6; do
+  no_confirm=()
+  if ((v == 6)); then
+    no_confirm=(C3_DEMO_NO_CONFIRM=1)
+  fi
+  (cd "${root}" && env "${no_confirm[@]}" C3_DEMO_VERSION="${v}" cargo build -q --locked \
+    --release --target riscv32imc-unknown-none-elf -p c3-demo-app)
   ota pack --elf "${target}/c3-demo-app" --security-version "${security_versions[v]}" \
     --out "${work}/app${v}.img"
 done
 
 # Sign each image with fakestore.
 (cd "${root}/fakestore" && go run . init -dir "${work}/fakestore" >/dev/null)
-for v in 1 2 3 4 5; do
+for v in 1 2 3 4 5 6; do
   (cd "${root}/fakestore" && go run . sign -dir "${work}/fakestore" \
     -artifact "${work}/app${v}.img" -out "${work}/app${v}.json")
   ota container --bundle "${work}/app${v}.json" --image "${work}/app${v}.img" \
@@ -209,6 +214,7 @@ slot 3 chain2 blob2 slot-v3
 slot 3 chain2 blob2-stale slot-v3-stale
 slot 4 chain2 blob3 slot-v4
 slot 5 chain2 blob6 slot-v5
+slot 6 chain2 blob6 slot-v6
 cp "${work}/slot-v3" "${work}/slot-v3-tampered"
 flip "${work}/slot-v3-tampered" 0x10100
 
@@ -337,5 +343,19 @@ for partial in "0 1 2 3" "0 1 2 5"; do
   [[ "$(secure_version_bits "${work}/${name}.efuse" | wc -w)" == 6 ]] ||
     fail "${name}: SECURE_VERSION bits $(secure_version_bits "${work}/${name}.efuse")"
 done
+
+# A trial that the application never confirms boots three times, then the
+# bootloader ends it and boots the preferred slot.
+patch "${work}/flash.bin" 0x210000 "${work}/slot-v6"
+record --preferred a --trial b --boots 3 --confirmed a --generation 80
+for i in 1 2 3; do
+  boot "unconfirmed-trial-${i}"
+  expect "c3-demo: running from slot 1, version 6"
+  expect_not "c3-demo: confirmed"
+done
+boot trial-expired
+expect "c3-demo: running from slot 0, version 5"
+boot after-trial-expired
+expect "c3-demo: running from slot 0, version 5"
 
 echo "all scenarios passed (${work})"

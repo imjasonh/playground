@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use c3_ota::blob::TrustRootSpec;
+use c3_ota::blob::Window;
 use c3_ota::blob::signed_blob;
 use c3_ota::container::from_bundle_json;
 use c3_ota::keys::read_signing_key;
@@ -77,4 +78,70 @@ fn conformance_cases() {
         "unexpected verdicts:\n{}",
         failures.join("\n")
     );
+}
+
+/// Verifies the happy-path bundle against a blob built from `spec`.
+fn verify_with(spec: &TrustRootSpec) -> Result<u64, String> {
+    let dir = Path::new(ROOT).join("conformance/rekor2-happy-path");
+    let digest = c3_crypto::sha256(&fs::read(Path::new(ROOT).join("conformance/a.txt")).unwrap());
+    let bundle_json = fs::read_to_string(dir.join("bundle.sigstore.json")).unwrap();
+    let container = from_bundle_json(&bundle_json, None)?;
+    let k1 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-1.seed"))?;
+    let k2 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-2.seed"))?;
+    let blob = signed_blob(spec, &[(0, &k1), (1, &k2)])?;
+    let root = c3_verify::trustroot::parse(&blob).map_err(|e| format!("{e:?}"))?;
+    let bundle = c3_verify::bundle::parse(&container).map_err(|e| format!("{e:?}"))?;
+    c3_verify::sigstore::verify(&bundle, &root, &digest)
+        .map(|v| v.signed_time)
+        .map_err(|e| format!("{e:?}"))
+}
+
+#[test]
+fn rejects_identity_and_window_changes() {
+    let root_json =
+        fs::read_to_string(Path::new(ROOT).join("conformance/rekor2-happy-path/trusted_root.json"))
+            .unwrap();
+    let base = TrustRootSpec::from_trusted_root(&root_json, 0, policy()).unwrap();
+    let t = verify_with(&base).expect("the happy path verifies");
+
+    for i in 0..5 {
+        let mut longer = base.clone();
+        longer.policy[i].push('x');
+        assert_eq!(
+            verify_with(&longer),
+            Err("PolicyMismatch".into()),
+            "policy {i} longer"
+        );
+        let mut shorter = base.clone();
+        shorter.policy[i].pop();
+        assert_eq!(
+            verify_with(&shorter),
+            Err("PolicyMismatch".into()),
+            "policy {i} prefix"
+        );
+    }
+
+    let moved: [fn(&mut TrustRootSpec, Window); 3] = [
+        |s, w| s.fulcio.iter_mut().for_each(|e| e.2 = w),
+        |s, w| s.logs.iter_mut().for_each(|e| e.2 = w),
+        |s, w| s.tsas.iter_mut().for_each(|e| e.2 = w),
+    ];
+    for (i, set) in moved.iter().enumerate() {
+        for w in [Window(0, t - 1), Window(t + 1, u64::MAX)] {
+            let mut spec = base.clone();
+            set(&mut spec, w);
+            assert_eq!(
+                verify_with(&spec),
+                Err("OutsideWindow".into()),
+                "window {i} {w:?}"
+            );
+        }
+        let mut spec = base.clone();
+        set(&mut spec, Window(t, t));
+        assert_eq!(
+            verify_with(&spec),
+            Ok(t),
+            "window {i} exactly at the signed time"
+        );
+    }
 }

@@ -42,7 +42,9 @@ pub fn map(image_flash: u32, segments: &[Segment]) -> bool {
             SegmentKind::FlashData => FLASH_DATA.start,
             SegmentKind::RamCode | SegmentKind::RamData => continue,
         };
-        let pages = s.length.div_ceil(FLASH_PAGE);
+        // c3-verify requires whole pages; dividing down means a segment that
+        // broke that rule would map less, never bytes past its end.
+        let pages = s.length / FLASH_PAGE;
         let first_entry = s.address.wrapping_sub(base) / FLASH_PAGE;
         let first_page = image_flash.wrapping_add(s.offset) / FLASH_PAGE;
         for p in 0..pages {

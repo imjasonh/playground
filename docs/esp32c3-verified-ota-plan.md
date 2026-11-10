@@ -1,10 +1,15 @@
 # Plan: verify an ESP32-C3 Sigstore bootloader at the machine-code level
 
-> **Status:** phase 0 and phase 1 are under way in [`c3-boot/`](../c3-boot/).
-> The format definitions, phase 0 measurements, and the first `verify`
-> parsers exist. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
-> done. The facts about Sigstore, the ESP32-C3, Sail, and the AlphaProof Code
-> repository were checked on 2026-11-10 against the sources listed at the end.
+> **Status:** phase 1 is done and phase 2 mostly done in
+> [`c3-boot/`](../c3-boot/). The verifier, the bootloader, the release and
+> trust-root workflows, and QEMU scenarios with power cuts exist, and a
+> production Sigstore bundle signed in GitHub Actions boots in QEMU. Phase 3
+> has started in [`c3-boot-proofs/`](../c3-boot-proofs/) with the decision
+> logic's specification and `rollback`, `boots_safe`, and `availability` at
+> that level. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> done, including the eFuse lock, a release blocker. The facts about
+> Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
+> checked on 2026-11-10 against the sources listed at the end.
 
 This plan proves security properties of a Rust bootloader for the ESP32-C3,
 in Lean, against the RISC-V machine code that ships on the device. It follows
@@ -582,8 +587,8 @@ proved instruction bound. The routines are:
 
 - SHA-256, SHA-384, and SHA-512, in software
 - ECDSA P-256 verification with SHA-256, for image signatures
-- ECDSA P-384 verification with SHA-384, for the Fulcio leaf certificate and
-  the TSA token
+- ECDSA P-384 verification with SHA-384, for the Fulcio leaf certificate,
+  and with SHA-256, for the TSA token
 - Ed25519 verification, for chain links, trust-root blobs, and Rekor
   checkpoints
 
@@ -1263,13 +1268,16 @@ To retire a key set, for example because a key might be stolen, two holders
 of the current set sign a new link that names a new set, at a level above
 `L`. The next release carries the longer chain, a blob signed by the new set
 at that level, and an image with a security version at that level. Once a
-device confirms it, older chains no longer reach a blob it accepts.
+device confirms it and raises its level, blobs and images below that level
+no longer boot.
 
-The retired set's private keys must then be destroyed. The chain proves only
-that two keys of each set signed the next link, so an attacker who later
-obtained two keys of a retired set could build a different chain from that
-point. Destroying retired keys closes that path. One stolen key from the
-current set can't sign anything on its own.
+Chains don't revoke anything on the device, which keeps no record of key
+sets. Any two surviving keys of a retired set can still sign a blob at or
+above `L`: the genesis set with an empty chain, or a retired set with a
+chain that ends at its own link, followed by a link it signs. So the
+retired set's private keys must be destroyed, and that includes the genesis
+set after the first rotation. Destroying retired keys closes that path. One
+stolen key from the current set can't sign anything on its own.
 
 The genesis keys can't change without a new bootloader, which requires the
 RSA-3072 key and a USB write. This plan doesn't include in-field bootloader
@@ -1289,6 +1297,12 @@ updates.
    verifier and with the executable Lean decoder, then merges them.
 5. The release workflow attaches the newest signed chain and blob to every
    release.
+
+Today `c3-trust-root.yml` does part of steps 1 and 2. It reads the files at
+a commit of `sigstore/root-signing` through the GitHub API, without checking
+TUF metadata, and its pull request lists the entries a blob would hold
+(`c3-ota describe`) but carries no candidate blob. The offline signing
+tooling for step 3 and the Lean decoder for step 4 don't exist yet.
 
 None of these steps runs on the device, so the machine-code proof doesn't
 cover them. The proof shows that a device trusts exactly what the key-set
@@ -1318,8 +1332,8 @@ The bootloader accepts a Fulcio leaf only if these extensions match exactly:
 Replace the following:
 
 - `OWNER/REPO`: the GitHub repository that publishes firmware.
-- `release.yml`: the workflow file that signs releases. If signing moves into
-  a reusable workflow, name that file.
+- `c3-release.yml`: the workflow file that signs releases. If signing moves
+  into a reusable workflow, name that file.
 
 ### Bundle profile
 
@@ -1439,6 +1453,13 @@ erase flash or refuse updates.
    verifier, and publishes the image and container.
 5. A Rekor monitor reports any entry for the release identity that doesn't
    match a known release.
+
+Today `c3-release.yml` does steps 1 to 3, checks the bundle in a separate
+job that also boots the slot in QEMU, and publishes only workflow
+artifacts. The monitor doesn't exist yet. It also signs the demo
+application under the release identity on every push to `main`, so every
+demo build is a valid image at security version 0. Before production,
+releases need their own identity or demo builds need to stop signing.
 
 ## Sources
 

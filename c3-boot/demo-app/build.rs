@@ -8,4 +8,5 @@ fn main() {
     println!("cargo:rerun-if-changed=rom.x");
     println!("cargo:rerun-if-changed=app.x");
     println!("cargo:rerun-if-env-changed=C3_DEMO_VERSION");
+    println!("cargo:rerun-if-env-changed=C3_DEMO_NO_CONFIRM");
 }

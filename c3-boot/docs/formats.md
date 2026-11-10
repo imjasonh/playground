@@ -119,9 +119,11 @@ Segment rules:
   segments are padding. They are signed but never loaded or mapped.
 - Each address range, `address` through `address + length`, computed without
   overflow, lies inside the region for its kind, from the next table.
-- Flash segments (kinds 1 and 2) have `offset` and `address` that are
-  multiples of `0x10000`, so the cache maps each 64 KiB image page to one
-  64 KiB virtual page.
+- Flash segments (kinds 1 and 2) have `offset`, `address`, and `length`
+  that are multiples of `0x10000`, so the cache maps each 64 KiB image page
+  to one 64 KiB virtual page, and every mapped byte is a signed byte of the
+  segment. A segment that ended inside a page would map the rest of that
+  page, which may lie past `image_length`.
 - RAM segments (kinds 3 and 4) have `offset`, `address`, and `length` that
   are multiples of 4, so the bootloader can copy them with the ROM's
   word-aligned flash read.
@@ -465,6 +467,15 @@ or leaves it at `0xFFFFFFFF` if it is already there. It erases the sector of
 the other copy and writes the new copy there. The copy in use isn't touched,
 so it stays valid if power fails during the write. If neither copy is valid,
 it writes copy A with `generation` 1.
+
+Two limits affect only which valid slot boots, never whether an invalid one
+does:
+
+- Once both copies hold `generation` `0xFFFFFFFF`, copy A always wins and
+  every write goes to copy B, so the record stops changing. That takes 2^32
+  writes, far past a flash sector's erase endurance.
+- A failed write leaves the record as it was. If that write was the one
+  that uses a trial boot, the trial slot boots without using one.
 
 ### Slot selection
 

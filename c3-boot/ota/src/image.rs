@@ -52,7 +52,8 @@ fn align_up(n: usize, to: usize) -> usize {
 
 /// Packs `elf`'s loadable segments into a signed image with
 /// `security_version`. RAM segments come first, padded to four bytes. Each
-/// flash segment starts on the next 64 KiB boundary.
+/// flash segment starts on the next 64 KiB boundary and is padded to whole
+/// 64 KiB pages, because the cache maps whole pages.
 pub fn pack(elf: &[u8], security_version: u8) -> Result<Vec<u8>, String> {
     let (entry, loads) = loads(elf)?;
     let mut ram = Vec::new();
@@ -73,9 +74,12 @@ pub fn pack(elf: &[u8], security_version: u8) -> Result<Vec<u8>, String> {
     let place =
         |kind: u8, l: &Load, offset: usize, table: &mut Vec<u8>, body: &mut Vec<u8>| -> usize {
             let mut data = l.data.clone();
-            if kind >= 3 {
-                data.resize(align_up(data.len(), 4), 0);
-            }
+            let align = if kind >= 3 {
+                4
+            } else {
+                layout::FLASH_PAGE as usize
+            };
+            data.resize(align_up(data.len(), align), 0);
             body.resize(offset - header_len, 0xFF);
             body.extend_from_slice(&data);
             table.push(kind);

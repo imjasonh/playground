@@ -23,7 +23,9 @@ files with the same bundle profile that Sigstore issues to GitHub Actions.
 See [`fakestore/README.md`](fakestore/README.md).
 
 `ota/tests/conformance.rs` runs the Sigstore conformance bundles in
-`testdata/conformance/` through the device's checks. `ota/tests/mutation.rs`
+`testdata/conformance/` through the device's checks, and check that a
+change to any identity-policy field or to a Fulcio, log, or timestamp
+window rejects the real bundle. `ota/tests/mutation.rs`
 flips one bit in each byte of a valid slot's manifest, image, bundle, chain,
 and blob, and checks that every change is rejected, except in the timestamp
 authority's embedded certificate, which nothing reads.
@@ -32,7 +34,17 @@ Not done yet:
 
 - The eFuse lock is a no-op. Which protection unit can lock the eFuse
   controller is a phase 0 hardware question, and the lock is a release
-  blocker.
+  blocker. Until it exists, a signed application can burn any eFuse,
+  including `SECURE_VERSION`'s write-disable bit, after which every
+  confirmed upgrade that needs a raise halts the boot.
+- `c3-release.yml` signs the demo application under the release identity
+  on every push to `main`, so each demo build is a valid image at security
+  version 0. Releases need their own identity, or demo builds need to stop
+  signing, before any device trusts that identity.
+- Retired trust-root key sets, the genesis set included, keep the power to
+  sign blobs at or above the current level, because the device keeps no
+  record of key sets. The rotation process must destroy them; see the
+  plan's "Rotating trust-root keys".
 - eFuse programming timing, the ROM's initial state, and the memory layout
   are from Espressif's documentation and have run only in QEMU, not on
   silicon.
@@ -80,6 +92,8 @@ scenarios, keeping one flash file and one eFuse file across boots:
    afterward, and the level never goes down across any boot.
 1. A raise from 3 to 6 interrupted after one bit, and one that left a gap
    in the bits, set up by editing the eFuse file. Both finish at 6.
+1. A trial that the application never confirms boots three times, then
+   the bootloader ends it and boots the preferred slot.
 
 To run it, install Go and Espressif's QEMU, then run:
 

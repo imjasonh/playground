@@ -175,9 +175,13 @@ fn check_segment(s: &Segment, image_length: u32) -> Result<(), Error> {
     if !s.kind.region().contains_range(s.address, s.length) {
         return Err(Error::BadSegment);
     }
-    if s.kind.is_flash()
-        && !(s.offset.is_multiple_of(FLASH_PAGE) && s.address.is_multiple_of(FLASH_PAGE))
-    {
+    // The cache maps whole pages, so a flash segment that ended inside a page
+    // would map the bytes after it, which may lie past `image_length` and be
+    // unsigned.
+    let pages = s.offset.is_multiple_of(FLASH_PAGE)
+        && s.address.is_multiple_of(FLASH_PAGE)
+        && s.length.is_multiple_of(FLASH_PAGE);
+    if s.kind.is_flash() && !pages {
         return Err(Error::BadSegment);
     }
     let words =
@@ -298,22 +302,22 @@ mod tests {
     fn good_segments() -> Vec<Seg> {
         vec![
             Seg(4, 0x3FC8_0000, 0x100, 0x200),
-            Seg(1, 0x4201_0000, 0x1_0000, 0x8000),
-            Seg(2, 0x3C00_0000, 0x2_0000, 0x4000),
+            Seg(1, 0x4201_0000, 0x1_0000, 0x1_0000),
+            Seg(2, 0x3C00_0000, 0x2_0000, 0x1_0000),
         ]
     }
 
     #[test]
     fn rejects_flash_code_and_data_sharing_an_mmu_page() {
         let mut segs = good_segments();
-        segs[1] = Seg(1, 0x4200_0000, 0x1_0000, 0x8000);
+        segs[1] = Seg(1, 0x4200_0000, 0x1_0000, 0x1_0000);
         assert_eq!(
-            parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4200_0100, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::SegmentOverlap)
         );
     }
 
-    const GOOD_LEN: u32 = 0x2_4000;
+    const GOOD_LEN: u32 = 0x3_0000;
 
     #[test]
     fn accepts_good_image() {
@@ -377,6 +381,14 @@ mod tests {
             parse(&encode(3, 0x4201_0100, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadSegment)
         );
+        // A flash segment that ends inside a page would map the rest of it.
+        let mut segs = good_segments();
+        segs[2] = Seg(2, 0x3C00_0000, 0x2_0000, 0x8000);
+        let len = 0x2_8000;
+        assert_eq!(
+            parse(&encode(3, 0x4201_0100, len, &segs), len),
+            Err(Error::BadSegment)
+        );
         let mut segs = good_segments();
         segs[0] = Seg(4, 0x3FC8_0000, 0x40, 0x200);
         assert_eq!(
@@ -401,7 +413,7 @@ mod tests {
             Err(Error::BadEntryPoint)
         );
         assert_eq!(
-            parse(&encode(3, 0x4201_8000, GOOD_LEN, &segs), GOOD_LEN),
+            parse(&encode(3, 0x4202_0000, GOOD_LEN, &segs), GOOD_LEN),
             Err(Error::BadEntryPoint)
         );
     }
