@@ -6,8 +6,10 @@ import C3BootProofs.Model.RV32
 import C3BootProofs.Image.Bootloader
 import C3BootProofs.Proof.Code
 import C3BootProofs.Proof.Step
+import C3BootProofs.Proof.Mem
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
+import C3BootProofs.Proofs.ReaderArray
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats

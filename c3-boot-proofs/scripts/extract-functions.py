@@ -20,6 +20,7 @@ import sys
 FUNCTIONS = [
     ("crc32", "c3_verify::bootstate::crc32"),
     ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
+    ("readerArray4", "<c3_verify::reader::Reader>::array::<4>"),
 ]
 
 

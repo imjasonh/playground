@@ -196,6 +196,39 @@ theorem St.sb (s : St M base m off f)
   · rw [← s.mem]; rfl
   · intro r; rw [← s.regs r]; rfl
 
+theorem St.auipc (s : St M base m off f)
+    (hc : ∀ i, i < code.length → M (base + BitVec.ofNat 32 i) = byteAt code i)
+    {rd : Fin 32} {imm len : Word} {off' : Nat}
+    (hf : fetchRel code off = some (.auipc rd imm, len))
+    (hn : BitVec.ofNat 32 off + len = BitVec.ofNat 32 off') :
+    ∃ m1, step m = some m1 ∧ St M base m1 off' (upd f rd (base + BitVec.ofNat 32 off + imm)) := by
+  refine ⟨_, ?_, s.write (v := base + BitVec.ofNat 32 off + imm) (rd := rd) hn⟩
+  rw [step_code (s.codeAt hc) s.pc hf, ← s.pc]; rfl
+
+theorem St.jump (s : St M base m off f)
+    (hc : ∀ i, i < code.length → M (base + BitVec.ofNat 32 i) = byteAt code i)
+    {o len : Word} {off' : Nat} (hf : fetchRel code off = some (.jal 0 o, len))
+    (hn : BitVec.ofNat 32 off + o = BitVec.ofNat 32 off') (heven : (m.pc + o).getLsbD 0 = false) :
+    ∃ m1, step m = some m1 ∧ St M base m1 off' f := by
+  have hz : writeReg m 0 (m.pc + len) = m := by unfold writeReg; simp
+  refine ⟨Arch.setPc m (m.pc + o), ?_, ?_, by simp [s.mem], fun r => by simp only [reg_setPc, s.regs]⟩
+  · rw [step_code (s.codeAt hc) s.pc hf]
+    unfold exec
+    simp only [Machine.getPc_eq, heven, Bool.false_eq_true, ite_false, hz]
+    rfl
+  · simp only [Machine.setPc_pc]; rw [s.pc, BitVec.add_assoc, hn]
+
+/-- A call: `jalr rd, o(rs1)` links `rd` and leaves the code. -/
+theorem St.call (s : St M base m off f)
+    (hc : ∀ i, i < code.length → M (base + BitVec.ofNat 32 i) = byteAt code i)
+    {rd rs1 : Fin 32} {o len : Word} (hf : fetchRel code off = some (.jalr rd rs1 o, len)) :
+    ∃ m1, step m = some m1 ∧ m1.pc = (f rs1 + o) &&& ~~~1 ∧ m1.mem = M ∧
+      ∀ r, reg m1 r = upd f rd (base + BitVec.ofNat 32 off + len) r := by
+  refine ⟨Arch.setPc (writeReg m rd (m.pc + len)) ((f rs1 + o) &&& ~~~1), ?_, rfl,
+    by simp [s.mem], fun r => ?_⟩
+  · rw [step_code (s.codeAt hc) s.pc hf, ← s.regs rs1]; rfl
+  · simp only [reg_setPc, reg_writeReg, upd, s.regs, s.pc]
+
 theorem St.taken (s : St M base m off f)
     (hc : ∀ i, i < code.length → M (base + BitVec.ofNat 32 i) = byteAt code i)
     {op : BranchOp} {rs1 rs2 : Fin 32} {o len : Word} (offT : Nat)

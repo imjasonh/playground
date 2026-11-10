@@ -68,10 +68,29 @@ restates the specification in plain arithmetic: the call succeeds exactly
 when `pos + n ≤ len` as natural numbers, so a sum that wraps past 2^32
 fails.
 
+`mapped_pages_signed` in `Theorems/Formats.lean` proves that, for an
+accepted image header, every 64 KiB page the cache maps for a flash segment
+ends inside the signed image.
+
 | Machine-code theorem | Statement, on the RV32 model, about the pinned image's bytes |
 | --- | --- |
 | `crc32_correct`, `crc32_spec` | The compiled `crc32` returns the CRC-32 of the 28 bytes at `a0` |
 | `readerBytes_correct` | The compiled `Reader::bytes` leaves memory exactly as `bytesMem` says, for every input |
+| `readerArray4_correct` | The compiled `Reader::array::<4>`, through its call to `Reader::bytes`, restores its frame and leaves memory outside the frame exactly as `array4Mem` says |
+
+`C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
+the compiled `Reader::array::<4>`, the first proof that composes a call. It
+saves `ra`, `s0`, and `s1` in a 32-byte stack frame, calls `Reader::bytes`
+with its result slot in the frame, checks the slice it gets back, and
+writes a `Result<&[u8; 4], Error>` through `a0`. The proof runs the call
+through `readerBytes_correct` instead of the callee's instructions. Its
+hypotheses add the slice invariant Rust guarantees (the reader's slice is
+not null and doesn't wrap past 2^32, so a returned slice is never null) and
+keep the frame, the result, and the reader's position apart from each other
+and from both functions' code. The conclusion restores `sp`, `ra`, `s0`,
+and `s1`, changes only `a0` through `a5` among the other registers, and
+gives every byte of memory outside the frame. `C3BootProofs/Proof/Mem.lean`
+has the load-after-store lemmas.
 
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose
@@ -102,7 +121,6 @@ trace, it proves the following:
 | `rollback` | If a step ends with the level at L, every jump in that step or a later one goes to a slot whose level is at least L |
 | `boots_safe` | Every jump goes to a slot accepted at the level the bootloader read, after the level reached that slot's burn target |
 | `availability` | When some slot is accepted, a boot can run to a jump |
-| `mapped_pages_signed` | For an accepted image header, every 64 KiB page the cache maps for a flash segment ends inside the signed image |
 | `trust_root_monotone` | When the slot results come from the trust-root checks, every jump goes to a slot whose chain is authorized from the genesis keys, whose blob the chain's last key set signed, whose chain level is at most the blob's level, whose image security version equals the blob's level, and whose blob level is at least the eFuse level |
 
 A boot that halts, including the bootloader's halt when an eFuse bit fails
