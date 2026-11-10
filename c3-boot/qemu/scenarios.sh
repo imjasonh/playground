@@ -152,9 +152,14 @@ record() {
 
 # Build.
 (cd "${root}" && cargo build -q --locked -p c3-ota)
-(cd "${root}" && C3_GENESIS=dev cargo build -q --locked --release \
-  --target riscv32imc-unknown-none-elf -p c3-bootloader)
-ota bootloader-image --elf "${target}/c3-bootloader" --out "${work}/bootloader.bin"
+# The QEMU eFuse file is disposable, so these scenarios burn eFuses. A second
+# bootloader, built the default way, never does.
+for burn in off on; do
+  (cd "${root}" && C3_GENESIS=dev C3_EFUSE_BURN="${burn}" cargo build -q --locked --release \
+    --target riscv32imc-unknown-none-elf -p c3-bootloader)
+  ota bootloader-image --elf "${target}/c3-bootloader" --out "${work}/bootloader-burn-${burn}.bin"
+done
+cp "${work}/bootloader-burn-on.bin" "${work}/bootloader.bin"
 # Version 5 jumps from level 3 to 6, so its raise burns three bits.
 # Version 6 never confirms itself, so its trial expires.
 security_versions=(0 0 1 2 3 6 6)
@@ -357,5 +362,38 @@ boot trial-expired
 expect "c3-demo: running from slot 0, version 5"
 boot after-trial-expired
 expect "c3-demo: running from slot 0, version 5"
+
+# A bootloader built without C3_EFUSE_BURN=on boots a confirmed level 6
+# slot on a level 3 board without burning anything.
+cp "${work}/flash-before-raise.bin" "${work}/burn-off.flash"
+cp "${work}/efuse-before-raise.bin" "${work}/burn-off.efuse"
+patch "${work}/burn-off.flash" 0 "${work}/bootloader-burn-off.bin"
+boot burn-off "${work}/burn-off.flash" "${work}/burn-off.efuse"
+expect "c3-boot: security level 3"
+expect "c3-boot: eFuse burns off; not raising security level to 6"
+expect "c3-demo: running from slot 0, version 5"
+cmp -s "${work}/efuse-before-raise.bin" "${work}/burn-off.efuse" ||
+  fail "burn-off: the eFuse file changed"
+
+# With SECURE_VERSION write-disabled (block 0 bit 18), a raise fails. A
+# development build boots the accepted slot anyway, so a test board that an
+# application damaged this way stays updatable.
+cp "${work}/flash-before-raise.bin" "${work}/write-disabled.flash"
+cp "${work}/efuse-before-raise.bin" "${work}/write-disabled.efuse"
+python3 - "${work}/write-disabled.efuse" <<'EOF'
+import sys
+
+with open(sys.argv[1], "r+b") as f:
+    data = bytearray(f.read())
+    data[18 // 8] |= 1 << (18 % 8)
+    f.seek(0)
+    f.write(data)
+EOF
+boot write-disabled "${work}/write-disabled.flash" "${work}/write-disabled.efuse"
+expect "c3-boot: raising security level to 6"
+expect "c3-boot: raise failed; booting without it"
+expect "c3-demo: running from slot 0, version 5"
+[[ "$(secure_version_bits "${work}/write-disabled.efuse")" == "0 1 2" ]] ||
+  fail "write-disabled: SECURE_VERSION bits $(secure_version_bits "${work}/write-disabled.efuse")"
 
 echo "all scenarios passed (${work})"

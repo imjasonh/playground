@@ -168,16 +168,37 @@ fn write_state(current: &Current, state: &State) {
     }
 }
 
+/// Raises the eFuse level to `target`, which can't be undone.
+#[cfg(c3_efuse_burn)]
+fn raise(target: u8) {
+    rom::log(
+        c"c3-boot: raising security level to %x\n",
+        u32::from(target),
+    );
+    if efuse::raise_level(target) {
+        return;
+    }
+    // A test board must stay updatable, so a development build boots the
+    // accepted slot without the raise rather than halting on every boot.
+    #[cfg(c3_dev_genesis)]
+    rom::log(c"c3-boot: raise failed; booting without it %x\n", 0);
+    #[cfg(not(c3_dev_genesis))]
+    halt(0xE1);
+}
+
+/// Logs the raise that a build with `C3_EFUSE_BURN=on` would make.
+#[cfg(not(c3_efuse_burn))]
+fn raise(target: u8) {
+    rom::log(
+        c"c3-boot: eFuse burns off; not raising security level to %x\n",
+        u32::from(target),
+    );
+}
+
 /// Raises the level if needed, loads and maps the image, and jumps to it.
 fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, target: u8, efuse_level: u8) -> ! {
     if target > efuse_level {
-        rom::log(
-            c"c3-boot: raising security level to %x\n",
-            u32::from(target),
-        );
-    }
-    if !efuse::raise_level(target) {
-        halt(0xE1);
+        raise(target);
     }
     efuse::lock();
 

@@ -517,6 +517,18 @@ slot's level first:
 
 It then locks the eFuse controller and jumps.
 
+Two build settings change this while boards are being tested, because a
+burn can't be undone:
+
+- Without `C3_EFUSE_BURN=on`, the bootloader has no eFuse programming code.
+  It logs the raise it would make and jumps without it.
+- With the development genesis keys (`C3_GENESIS=dev`), a raise that fails
+  logs and jumps without the raise instead of halting, so the board stays
+  updatable.
+
+A bootloader with production genesis keys must be built with
+`C3_EFUSE_BURN=on`, and halts on a failed raise as described above.
+
 ## Handing off to the application
 
 The bootloader jumps to the image's `entry_point` with interrupts disabled,

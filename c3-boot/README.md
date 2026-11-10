@@ -34,17 +34,16 @@ Not done yet:
 
 - The eFuse lock is a no-op. Which protection unit can lock the eFuse
   controller is a phase 0 hardware question, and the lock is a release
-  blocker. Until it exists, a signed application can burn any eFuse,
-  including `SECURE_VERSION`'s write-disable bit, after which every
-  confirmed upgrade that needs a raise halts the boot.
-- `c3-release.yml` signs the demo application under the release identity
-  on every push to `main`, so each demo build is a valid image at security
-  version 0. Releases need their own identity, or demo builds need to stop
-  signing, before any device trusts that identity.
-- Retired trust-root key sets, the genesis set included, keep the power to
-  sign blobs at or above the current level, because the device keeps no
-  record of key sets. The rotation process must destroy them; see the
-  plan's "Rotating trust-root keys".
+  blocker. Until it exists, a signed application can burn any eFuse.
+- **Demo builds are valid releases, on purpose for now.** `c3-release.yml`
+  signs the demo application under the release identity on every push to
+  `main`, so each demo build is a valid image at security version 0. Once a
+  simple demo has been tested on hardware, this tightens so that devices
+  accept only released images.
+- Retired trust-root key sets keep the power to sign blobs at or above the
+  current level, because the device keeps no record of key sets. **Retired
+  keys are destroyed**, the genesis keys included after the first rotation;
+  see the plan's "Rotating trust-root keys".
 - eFuse programming timing, the ROM's initial state, and the memory layout
   are from Espressif's documentation and have run only in QEMU, not on
   silicon.
@@ -53,6 +52,28 @@ Not done yet:
   `testdata/keys/`. A `dev` build warns on every boot.
 - Offline tooling for signing chain links and trust-root blobs with
   hardware-held keys. `c3-ota link` and `c3-ota blob` take seed files.
+
+## Testing on boards
+
+Burning an eFuse can't be undone, and nothing a test does should stop a
+board from taking updates. The bootloader never enables Secure Boot or
+flash encryption and never disables USB download mode, so a board can
+always be reflashed over USB. Its only permanent action is raising
+`SECURE_VERSION`, which two build settings control:
+
+- `C3_EFUSE_BURN` is `off` by default. An `off` build has no eFuse
+  programming code: it logs `eFuse burns off; not raising security level
+  to N` and boots the slot. Build with `C3_EFUSE_BURN=on` only for a board
+  set aside for eFuse tests, because each raise uses one of its 16 levels
+  for good and stops every lower image from booting.
+- A build with `C3_GENESIS=dev` and `C3_EFUSE_BURN=on` doesn't halt when a
+  raise fails. It logs `raise failed; booting without it` and boots the
+  slot, so a board whose `SECURE_VERSION` field was damaged or
+  write-disabled still updates.
+
+A build with production genesis keys fails unless `C3_EFUSE_BURN=on`, and
+it halts on a failed raise, as the plan and the proofs assume. The QEMU
+scenarios build both ways and test both settings.
 
 ## Build and test
 
@@ -94,6 +115,10 @@ scenarios, keeping one flash file and one eFuse file across boots:
    in the bits, set up by editing the eFuse file. Both finish at 6.
 1. A trial that the application never confirms boots three times, then
    the bootloader ends it and boots the preferred slot.
+1. A bootloader built without `C3_EFUSE_BURN=on` boots a confirmed level 6
+   slot on a level 3 board and leaves the eFuses unchanged.
+1. With `SECURE_VERSION` write-disabled, a raise fails, and a development
+   build boots the slot anyway.
 
 To run it, install Go and Espressif's QEMU, then run:
 

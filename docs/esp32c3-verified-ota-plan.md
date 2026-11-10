@@ -1257,6 +1257,13 @@ level between the old and the target value. The record still marks the slot
 confirmed, so the next boot that selects the slot finishes the burn before
 jumping.
 
+While boards are being tested, nothing should be able to stop a board from
+taking updates. A test build doesn't burn eFuses unless it was built with
+`C3_EFUSE_BURN=on`, and a test build with the development keys boots the
+accepted slot without the raise when a burn fails. Builds with production
+keys must burn and halt as described above. The theorems describe that
+production configuration.
+
 Rollback protection takes effect when the eFuse level reaches the target,
 not when the application confirms. Until then, the older slot still boots if
 the confirmed slot fails its checks. `rollback` states the guarantee in

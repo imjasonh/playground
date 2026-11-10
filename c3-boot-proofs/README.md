@@ -42,6 +42,12 @@ order.
 `C3BootProofs/Audit.lean` pins each theorem's axioms (`propext` and
 `Quot.sound`) and proves that admissible traces with a jump exist.
 
+The model is the production bootloader configuration, which burns eFuses
+(`C3_EFUSE_BURN=on`) and halts when a burn fails. A test build that doesn't
+burn, or that boots after a failed burn, can jump before the level reaches
+the target, so `boots_safe`'s second half doesn't hold for it; `rollback`
+and `efuse_monotone` still do.
+
 These theorems cover the decision logic only. The slot checks
 (signatures, the key-set chain, and the Sigstore bundle) are abstracted as
 the `slots` function, which an attacker's flash writes may set to anything,

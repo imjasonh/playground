@@ -49,6 +49,14 @@ jobs:
             -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app
           cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
             -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -- -D warnings
+          C3_EFUSE_BURN=on cargo clippy --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader -- -D warnings
+          # A key file stands in for production keys, which must burn eFuses.
+          if C3_GENESIS="${PWD}/testdata/keys/genesis-dev.pub" cargo build --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader 2>/dev/null; then
+            echo "::error::a production-key bootloader built without C3_EFUSE_BURN=on"
+            exit 1
+          fi
 
   qemu:
     name: fakestore and QEMU scenarios
