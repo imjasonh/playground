@@ -1,6 +1,6 @@
 # Builds the c3-boot no_std crates for the ESP32-C3's RISC-V target.
 #
-# test.yml's Rust leg runs c3-boot's host format check, Clippy, and tests.
+# test.yml's Rust leg runs c3-boot's `cargo fmt --check`, Clippy, and tests.
 # This workflow adds the cross-build that test.yml doesn't do, so a change that
 # breaks no_std or the RISC-V build fails on the pull request.
 

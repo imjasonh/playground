@@ -12,11 +12,21 @@ Every byte the bootloader reads is defined in
 
 | Crate | Contents |
 | --- | --- |
-| `verify` (`c3-verify`) | Every slot check: the slot manifest, image header and segment rules, boot-state record, key-set chain, trust-root blob, and security-level rules. Pure `no_std` functions with no heap, no `unsafe`, and checked arithmetic and indexing |
+| `verify` (`c3-verify`) | The slot manifest, image header and segment rules, boot-state record, key-set chain, trust-root blob, and security-level rules. Pure `no_std` functions with no heap, no `unsafe`, and checked arithmetic and indexing. It isn't a complete slot verifier yet |
 | `crypto` (`c3-crypto`) | Signature checks. Ed25519 enforces the plan's strict rules on top of a provisional `ed25519-dalek` backend, until phase 0 picks the implementation that phase 7 proves |
 
-The Sigstore checks (DER, CMS, the Rekor checkpoint and inclusion proof, and
-ECDSA), the bootloader crate, and the host tool come in later phases. Until
+Not done yet:
+
+- The Sigstore checks: the bundle container, the Rekor checkpoint, inclusion
+  proof, and canonical JSON entry, the X.509 and CMS subsets, and ECDSA
+  P-256 and P-384.
+- The function that composes every check into one slot decision, the
+  plan's `accept`.
+- The bootloader crate, including the four genesis trust-root keys, which
+  only exist as test seeds today.
+- The `c3-ota` host tool.
+
+These come in later phases. Until
 the P-384 code lands, the blob parser checks only that each P-384 key starts
 with the uncompressed-point prefix. Nothing uses those keys yet, and the
 on-curve check that `docs/formats.md` requires arrives with the code that

@@ -1,8 +1,10 @@
 # Plan: verify an ESP32-C3 Sigstore bootloader at the machine-code level
 
-> **Status:** proposal. Nothing in this plan is implemented. The facts about
-> Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
-> checked on 2026-11-10 against the sources listed at the end.
+> **Status:** phase 0 and phase 1 are under way in [`c3-boot/`](../c3-boot/).
+> The format definitions, phase 0 measurements, and the first `verify`
+> parsers exist. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> done. The facts about Sigstore, the ESP32-C3, Sail, and the AlphaProof Code
+> repository were checked on 2026-11-10 against the sources listed at the end.
 
 This plan proves security properties of a Rust bootloader for the ESP32-C3,
 in Lean, against the RISC-V machine code that ships on the device. It follows

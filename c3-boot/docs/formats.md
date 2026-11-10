@@ -3,7 +3,8 @@
 This page defines every byte that the c3-boot bootloader reads from flash.
 The Lean specification in `c3-boot-proofs/Spec/` and the `verify` crate
 implement these definitions, and each must reject anything this page doesn't
-allow. The design behind the formats is in
+allow. The `verify` crate doesn't implement all of them yet. The
+[README](../README.md) lists what is done. The design behind the formats is in
 [the verification plan](../../docs/esp32c3-verified-ota-plan.md).
 
 All integers are little-endian unless a row says otherwise. Every reserved
@@ -157,6 +158,11 @@ doesn't parse JSON. Each field is a 4-byte length followed by that many bytes.
 | 5 | `checkpoint` | 1 through 1,024 | The signed checkpoint note, as text |
 | 6 | `timestamp` | 1 through 8,192 | The RFC 3161 `TimeStampToken`, DER |
 
+Every field, including `log_index`, has the 4-byte length prefix, and
+`log_index`'s length must be exactly 8. The smallest container is therefore
+49 bytes: the 6-byte header, six 4-byte length prefixes, and 1, 8, 8, 0, 1,
+and 1 bytes of field data.
+
 The container ends after the last field. Trailing bytes are rejected. The
 tree size and root hash come only from the checkpoint, so a container can't
 pair a proof with a different tree than the one the log signed.
@@ -292,7 +298,7 @@ A validity window is two unsigned 64-bit integers, `not_before` and
 | --- | --- | --- |
 | `origin_length` | 1 | 1 through 128 |
 | `origin` | `origin_length` | The log's origin string, printable ASCII |
-| `public_key` | 32 | Ed25519 public key |
+| `public_key` | 32 | Ed25519 public key: a canonical encoding of a curve point that doesn't have small order |
 | `window` | 16 | Validity window |
 
 ### TSA signer entry

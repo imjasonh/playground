@@ -63,9 +63,11 @@ fn is_canonical_point(encoding: &[u8; 32]) -> bool {
     !(sign && (y == FIELD_ONE || y == FIELD_PRIME_MINUS_ONE))
 }
 
-/// Reports whether `public_key` can ever verify a signature under
-/// [`ed25519_verify`]: a canonical encoding of a point on the curve that
+/// Reports whether `encoding` is a canonical encoding of a curve point that
 /// doesn't have small order.
+///
+/// [`ed25519_verify`] requires this of both the public key `A` and the
+/// signature's `R`, so a key that fails it can never verify a signature.
 pub fn ed25519_public_key_ok(public_key: &[u8; 32]) -> bool {
     if !is_canonical_point(public_key) {
         return false;
@@ -91,7 +93,7 @@ pub fn ed25519_verify(public_key: &[u8; 32], message: &[u8], signature: &[u8; 64
     if !less_than_le(s, &GROUP_ORDER) {
         return false;
     }
-    if !ed25519_public_key_ok(public_key) || !is_canonical_point(r) {
+    if !ed25519_public_key_ok(public_key) || !ed25519_public_key_ok(r) {
         return false;
     }
     let Ok(key) = VerifyingKey::from_bytes(public_key) else {
@@ -178,6 +180,14 @@ mod tests {
         let sig = k.sign(b"m").to_bytes();
         // The identity point, y = 1, is canonical but has order 1.
         assert!(!ed25519_verify(&FIELD_ONE, b"m", &sig));
+    }
+
+    #[test]
+    fn rejects_small_order_r() {
+        let k = key(6);
+        let mut sig = k.sign(b"m").to_bytes();
+        sig[..32].copy_from_slice(&FIELD_ONE);
+        assert!(!ed25519_verify(&k.verifying_key().to_bytes(), b"m", &sig));
     }
 
     #[test]

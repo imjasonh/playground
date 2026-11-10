@@ -213,6 +213,9 @@ pub fn parse(bytes: &[u8]) -> Result<TrustRoot<'_>, Error> {
     for slot in logs.iter_mut().take(count) {
         let origin = read_string(&mut r, false, 128, true)?;
         let public_key = r.array::<32>()?;
+        if !c3_crypto::ed25519_public_key_ok(public_key) {
+            return Err(Error::BadKey);
+        }
         let window = read_window(&mut r)?;
         *slot = Some(LogKey {
             origin,
@@ -307,7 +310,7 @@ pub(crate) mod tests {
         out.push(1);
         out.push(14);
         out.extend_from_slice(b"log.example.dv");
-        out.extend_from_slice(&[2u8; 32]);
+        out.extend_from_slice(&public_keys(&[30]));
         window(&mut out, 100, 200);
         out.push(1);
         string(&mut out, b"\x30\x01\x00");
@@ -404,7 +407,7 @@ pub(crate) mod tests {
         assert_eq!(b[logs_at], 1);
         let entry = b[logs_at + 1..logs_at + 64].to_vec();
         let mut second = entry.clone();
-        second[15..47].copy_from_slice(&[9u8; 32]);
+        second[15..47].copy_from_slice(&public_keys(&[31]));
         let mut bad = b[..logs_at].to_vec();
         bad.push(2);
         bad.extend_from_slice(&entry);
@@ -412,6 +415,17 @@ pub(crate) mod tests {
         bad.extend_from_slice(&b[logs_at + 64..]);
         bad.extend_from_slice(&sign_entries(&[1, 2], &[0, 1], BLOB_DOMAIN, &bad.clone()));
         assert_eq!(parse(&bad), Err(Error::DuplicateKey));
+    }
+
+    #[test]
+    fn rejects_unusable_log_key() {
+        let mut bad = body(3);
+        let key_at = 12 + 118 + 1 + 1 + 14;
+        let mut identity = [0u8; 32];
+        identity[0] = 1;
+        bad[key_at..key_at + 32].copy_from_slice(&identity);
+        bad.extend_from_slice(&sign_entries(&[1, 2], &[0, 1], BLOB_DOMAIN, &bad.clone()));
+        assert_eq!(parse(&bad), Err(Error::BadKey));
     }
 
     #[test]
