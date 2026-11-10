@@ -1307,7 +1307,7 @@ The bootloader accepts a Fulcio leaf only if these extensions match exactly:
 | Fulcio extension | Required value |
 | --- | --- |
 | Issuer (V2), `1.3.6.1.4.1.57264.1.8` | `https://token.actions.githubusercontent.com` |
-| Build Signer URI, `1.3.6.1.4.1.57264.1.9` | `https://github.com/OWNER/REPO/.github/workflows/release.yml@refs/heads/main` |
+| Build Signer URI, `1.3.6.1.4.1.57264.1.9` | `https://github.com/OWNER/REPO/.github/workflows/c3-release.yml@refs/heads/main` |
 | Source Repository Identifier, `1.3.6.1.4.1.57264.1.15` | The repository's numeric ID |
 | Source Repository Owner Identifier, `1.3.6.1.4.1.57264.1.17` | The owner's numeric ID |
 | Build Trigger, `1.3.6.1.4.1.57264.1.20` | `push` |

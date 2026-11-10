@@ -50,28 +50,10 @@ EOF
 # boot NAME [FLASH] runs one boot and saves its serial log as NAME.log.
 boot() {
   local name="$1" flash="${2:-${work}/flash.bin}"
-  local log="${work}/${name}.log"
-  : >"${log}"
-  "${qemu}" -machine esp32c3 -display none -monitor none \
-    -serial "file:${log}" \
-    -drive "file=${flash},if=mtd,format=raw" \
-    -drive "file=${work}/efuse.bin,if=none,format=raw,id=efuse" \
-    -global driver=nvram.esp32c3.efuse,property=drive,value=efuse &
-  local pid=$!
-  local waited=0
-  until grep -qE 'c3-demo: idle|c3-boot: halt' "${log}"; do
-    if ((waited >= 300)); then
-      kill "${pid}" 2>/dev/null || true
-      fail "${name}: no result after 30 seconds"
-    fi
-    sleep 0.1
-    waited=$((waited + 1))
-  done
-  kill "${pid}" 2>/dev/null || true
-  wait "${pid}" 2>/dev/null || true
-  current="${log}"
+  current="${work}/${name}.log"
   echo "--- ${name}"
-  grep -E '^c3-' "${log}"
+  QEMU="${qemu}" bash "${root}/qemu/boot.sh" "${flash}" "${work}/efuse.bin" "${current}" ||
+    fail "${name}: boot didn't finish"
 }
 
 expect() {

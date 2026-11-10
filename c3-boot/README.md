@@ -36,7 +36,8 @@ Not done yet:
 - The production genesis keys. The bootloader build requires `C3_GENESIS`,
   set to a key file or to `dev` for the public development keys in
   `testdata/keys/`. A `dev` build warns on every boot.
-- The release and trust-root rotation workflows.
+- The scheduled trust-root job (`c3-trust-root.yml`) and the offline
+  rotation tooling.
 
 ## Build and test
 
@@ -79,7 +80,13 @@ QEMU=/path/to/qemu-system-riscv32 bash qemu/scenarios.sh
 ```
 
 The serial log of each boot is saved in the work directory, which the script
-prints. The `c3-boot` workflow runs the same script.
+prints. The `c3-boot` workflow runs the same script, and `qemu/boot.sh` runs
+a single boot.
+
+## Releases
+
+`c3-release.yml` signs the demo application with production Sigstore and
+boots the signed slot in QEMU. See [`release/README.md`](release/README.md).
 
 ## Hardware
 
