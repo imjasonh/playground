@@ -53,9 +53,9 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           cargo build --locked --release --target riscv32imc-unknown-none-elf \
-            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app
+            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -p c3-rvtest
           cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
-            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -- -D warnings
+            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -p c3-rvtest -- -D warnings
           C3_EFUSE_BURN=on cargo clippy --locked --release \
             --target riscv32imc-unknown-none-elf -p c3-bootloader -- -D warnings
           # A key file stands in for production keys, which must burn eFuses.

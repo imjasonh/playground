@@ -2,6 +2,7 @@ import C3BootProofs.Spec.Level
 import C3BootProofs.Spec.BootState
 import C3BootProofs.Spec.Boot
 import C3BootProofs.Spec.Formats
+import C3BootProofs.Model.RV32
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats

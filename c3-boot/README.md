@@ -17,6 +17,7 @@ Every byte the bootloader reads is defined in
 | `bootloader` (`c3-bootloader`) | The second-stage bootloader for `riscv32imc-unknown-none-elf`: ROM flash and cache hooks, image hashing, boot-state writes, the security-level burn, RAM loading, MMU mapping, and the jump |
 | `ota` (`c3-ota`) | The host tool: packs images, converts Sigstore bundles, builds and signs chain links and blobs from a `trusted_root.json`, assembles slots and flash images, and checks a slot with `verify` |
 | `demo-app` (`c3-demo-app`) | An untrusted demo application that prints its slot, reads a flash-mapped message, and confirms its slot |
+| `rvtest` (`c3-rvtest`) | Firmware for the lockstep test of the Lean RV32 model: runs generated instruction sequences in QEMU and prints the registers and memory they end with (`qemu/rv-lockstep.sh`) |
 
 `fakestore/` is a Go program, not a crate: a test-only Sigstore that signs
 files with the same bundle profile that Sigstore issues to GitHub Actions.

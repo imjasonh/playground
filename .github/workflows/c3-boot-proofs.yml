@@ -2,7 +2,10 @@
 # audits their axioms, and compares the Lean specification with the Rust
 # code in c3-boot/verify: the decision logic on a grid of inputs, the key-set
 # chain and trust-root rules on cases with real signatures, and the record,
-# manifest, and image-header decoders on valid and mutated inputs.
+# manifest, and image-header decoders on valid and mutated inputs. It also
+# runs the RV32 model in lockstep with Espressif's QEMU on random
+# instruction sequences, and compares the model's decoder with LLVM's on
+# every 16-bit encoding and a sample of 32-bit ones.
 
 name: c3-boot-proofs
 
@@ -14,6 +17,8 @@ on:
       - "c3-boot/verify/**"
       - "c3-boot/ota/**"
       - "c3-boot/release/trusted_root.json"
+      - "c3-boot/rvtest/**"
+      - "c3-boot/qemu/**"
       - ".github/workflows/c3-boot-proofs.yml"
   pull_request:
     paths:
@@ -21,6 +26,8 @@ on:
       - "c3-boot/verify/**"
       - "c3-boot/ota/**"
       - "c3-boot/release/trusted_root.json"
+      - "c3-boot/rvtest/**"
+      - "c3-boot/qemu/**"
       - ".github/workflows/c3-boot-proofs.yml"
   workflow_dispatch: {}
 
@@ -35,6 +42,11 @@ jobs:
   proofs:
     name: Lean proofs
     runs-on: ubuntu-latest
+    env:
+      QEMU_RELEASE: esp-develop-9.2.2-20261109
+      QEMU_ASSET: qemu-riscv32-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz
+      QEMU_SHA256: afa59465495295b8aa4f804768983fa30b0bbf33d0f68a047f9caa436b9164c0
+      QEMU: /tmp/qemu/bin/qemu-system-riscv32
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -77,3 +89,25 @@ jobs:
           (cd c3-boot-proofs && lake exe decode-check) \
             < "${RUNNER_TEMP}/rust-decode.txt" > "${RUNNER_TEMP}/lean-decode.txt"
           diff "${RUNNER_TEMP}/rust-decode.txt" "${RUNNER_TEMP}/lean-decode.txt"
+
+      - name: Install Espressif QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgcrypt20 libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          curl -fsSL -o /tmp/qemu.tar.xz \
+            "https://github.com/espressif/qemu/releases/download/${QEMU_RELEASE}/${QEMU_ASSET}"
+          echo "${QEMU_SHA256}  /tmp/qemu.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/qemu
+          tar -xJf /tmp/qemu.tar.xz -C /tmp/qemu --strip-components=1
+
+      - name: Run the RV32 model in lockstep with QEMU
+        working-directory: c3-boot
+        run: bash qemu/rv-lockstep.sh "${RUNNER_TEMP}/rv-lockstep"
+
+      - name: Compare the RV32 decoder with LLVM's
+        run: |
+          cd c3-boot
+          rustup component add llvm-tools
+          bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+          cd ../c3-boot-proofs
+          python3 scripts/decode-vs-llvm.py .lake/build/bin/rv-decode "${bin}"

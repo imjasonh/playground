@@ -5,8 +5,10 @@
 > trust-root workflows, and QEMU scenarios with power cuts exist, and a
 > production Sigstore bundle signed in GitHub Actions boots in QEMU. Phase 3
 > has started in [`c3-boot-proofs/`](../c3-boot-proofs/) with the decision
-> logic's and the trust-root rules' specifications, and `rollback`,
-> `boots_safe`, `availability`, and `trust_root_monotone` at that level. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> logic's, the trust-root rules', and the byte formats' specifications;
+> `rollback`, `boots_safe`, `availability`, and `trust_root_monotone` at
+> that level; and `mapped_pages_signed` for the image header. Phase 4 has
+> started with an executable RV32IMC model tested in lockstep against QEMU. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
 > checked on 2026-11-10 against the sources listed at the end.

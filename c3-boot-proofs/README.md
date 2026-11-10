@@ -26,6 +26,13 @@ follows the Rust code it names:
   the newer-copy rule), the slot manifest, and the image header and segment
   table (`c3_verify::bootstate`, `manifest`, and `image`).
 
+`C3BootProofs/Model/RV32.lean` is an executable model of RV32IMC, the
+ESP32-C3's instruction set: registers, the program counter, byte memory, a
+decoder for every RV32I, M, and 16-bit C instruction, and a step function.
+Encodings that would trap make `step` return `none`; it doesn't model CSRs,
+interrupts, or misaligned accesses yet. This is the plan's compact
+semantics, which the machine-code proofs will run the bootloader image on.
+
 `C3BootProofs/Theorems/Trace.lean` models a device as its eFuse field, its
 boot-state record, and the result of checking each slot. A trace mixes
 arbitrary flash and record writes by an attacker, boots that lose power and
@@ -94,6 +101,23 @@ CRC often recomputed so the field rules are reached. It prints each input
 with `c3-verify`'s result, and `lake exe decode-check` must print the same
 results.
 
+`c3-boot/qemu/rv-lockstep.sh` tests the RV32 model against Espressif's
+QEMU. `c3-ota`'s `rv_cases` example generates random sequences of 28
+instructions or groups each, mixing 16- and 32-bit encodings, with ALU and
+multiply-divide operations on edge-case values, aligned loads and stores
+into a fixed buffer, and forward branches, jumps, and `auipc`/`jalr` pairs.
+The `c3-rvtest` firmware runs each in QEMU from a known register and memory
+state and prints what it ends with, and `lake exe rv-check` must get the
+same registers and buffer from the same start. CI runs 3,000 cases.
+
+`scripts/decode-vs-llvm.py` checks which encodings the decoder accepts
+against LLVM's RISC-V disassembler (RV32IMC, from the pinned Rust
+toolchain's `llvm-tools`): all 49,152 16-bit encodings and 200,000 32-bit
+ones weighted toward the modeled opcodes. An encoding the model accepts and
+LLVM rejects fails the check, because the model would run an instruction
+the hardware traps on. The model leaves out the SYSTEM opcode, `fence.i`,
+and `c.ebreak`, and accepts only the FENCE encodings compilers emit.
+
 ## Build and test
 
 Install [elan](https://github.com/leanprover/elan), then run:
@@ -108,6 +132,9 @@ diff /tmp/lean.txt /tmp/rust.txt
 lake exe trust-check < /tmp/rust-trust.txt | diff - /tmp/rust-trust.txt
 (cd ../c3-boot && cargo run -q -p c3-verify --example decode_vectors) > /tmp/rust-decode.txt
 lake exe decode-check < /tmp/rust-decode.txt | diff - /tmp/rust-decode.txt
+(cd ../c3-boot && QEMU=/path/to/qemu-system-riscv32 bash qemu/rv-lockstep.sh)
+python3 scripts/decode-vs-llvm.py .lake/build/bin/rv-decode \
+  "$(cd ../c3-boot && rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
 ```
 
 `lean-toolchain` pins Lean 4.34.0, the version that
