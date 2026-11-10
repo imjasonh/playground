@@ -43,6 +43,8 @@ FUNCTIONS = [
 
 def call_target(code, addr, off):
     """The target of the auipc/jalr pair at `off` of `code`, loaded at `addr`."""
+    if off + 8 > len(code):
+        sys.exit(f"offset {off:#x} is past the end of the function at {addr:#x}")
     auipc = int.from_bytes(code[off : off + 4], "little")
     jalr = int.from_bytes(code[off + 4 : off + 8], "little")
     rd = (auipc >> 7) & 31
