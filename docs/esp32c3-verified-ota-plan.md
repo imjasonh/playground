@@ -14,9 +14,9 @@
 > model: `manifestParse_decodes` shows that the compiled `manifest::parse`,
 > with the reader functions and `part` under it, returns what the Lean
 > decoder `decodeManifest` returns for the 40 bytes its only caller passes.
-> `imageParse_correct` shows that the compiled `image::parse` returns what
-> `imgW`, the image header checks in the code's word arithmetic, decides;
-> tying `imgW` to the decoder `decodeImageHeader` is next. Both proofs
+> `imageParse_decodes` does the same for the image header: the compiled
+> `image::parse` returns what `decodeImageHeader` returns, so
+> `mapped_pages_signed` holds for its result (`imgW_pages_signed`). Both proofs
 > assume a stack and memory layout that the proofs of their callers, not yet
 > written, have to establish. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about

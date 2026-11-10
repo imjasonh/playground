@@ -12,6 +12,7 @@ import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
 import C3BootProofs.Proofs.ImageTop
+import C3BootProofs.Proofs.ImageSpecSegs
 
 /-!
 # Audit
@@ -718,3 +719,12 @@ end C3
 
 /-- info: 'C3.exists_imageParse_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_imageParse_machine
+
+/-- info: 'C3.imgW_rel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.imgW_rel
+
+/-- info: 'C3.imageParse_decodes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.imageParse_decodes
+
+/-- info: 'C3.imgW_pages_signed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.imgW_pages_signed

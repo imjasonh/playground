@@ -90,6 +90,9 @@ ends inside the signed image.
 | `segmentPhysical_correct` | The compiled `Segment::physical` writes a segment's address space and start, or `BadSegment` (9) when the address is below its region's base, as `physResult` says |
 | `memcpy_aligned` | The compiled `memcpy`, called with 4-byte-aligned buffers that don't overlap and a length of at least 16 bytes that is a multiple of 4, copies the words through its word loop (`copyWords`), proved by induction |
 | `imageParse_correct` | The compiled `image::parse`, through `magic`, `version_1`, `u16`, `u8`, `reserved`, `u32`, `Segment::physical`, `memcpy`, and its outlined helpers, returns to its caller with `sp` and the callee-saved registers restored, and leaves memory outside its 0x190-byte stack region and the 0x110-byte result unchanged. The result holds the error byte that `imgW` gives and the `Err` marker 0xFF at offset 0xC, or the segments, entry point, image length, segment count, and security version that `imgW` gives |
+| `imgW_rel` | `imgW`, which states the compiled checks in the code's own word arithmetic and order, accepts the bytes exactly when the Lean decoder `decodeImageHeader` does, and then returns the decoder's header |
+| `imageParse_decodes` | The two joined: the compiled `image::parse` returns `Err` when `decodeImageHeader` rejects the header, and `Ok` with the decoder's segments and fields in the result when it accepts |
+| `imgW_pages_signed` | `mapped_pages_signed` for the compiled parser: when it accepts, each 64 KiB page the cache maps for a flash segment ends inside the image |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
@@ -178,9 +181,21 @@ arithmetic and order, so the error `parse` returns is the first check that
 fails. `IEnv` keeps the stack region, the result, the input, the code
 window, and the region tables apart, and requires that the stack region not
 wrap past 2^32. `exists_imageParse_machine` in the audit shows those
-hypotheses can hold. The proof that `imgW` accepts exactly the headers
-`decodeImageHeader` accepts, which would join the two the way
-`manifestParse_decodes` does for the manifest, is not written yet.
+hypotheses can hold.
+
+`C3BootProofs/Proofs/ImageSpec.lean` and `ImageSpecSegs.lean` prove
+`imgW_rel`. `Rel` relates an `Except` result of the compiled checks to the
+decoder's `Option` result, and `Rel.bind` composes it through both monads'
+binds, so each reader and each layer of the header check relates to the
+decoder's at the same byte position. The decoder reads every segment and then
+checks them, while the compiled code reads and checks each in turn; both
+reject when any read or check fails, so `segs_rel` relates them by induction
+on the segments left. `check_rel` turns each wrapped-sum test into the
+decoder's `< 2^32` bound, and `align_rel` turns each mask into a remainder.
+The mask lemma is proved from `Nat.testBit`, because the library's
+`Nat.and_two_pow_sub_one_eq_mod` depends on `Classical.choice`.
+`imageParse_decodes` joins `imgW_rel` to `imageParse_correct`, the way
+`manifestParse_decodes` does for the manifest.
 
 The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose
