@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tab insights</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --muted: color-mix(in srgb, CanvasText 62%, Canvas);
+    --rule: color-mix(in srgb, CanvasText 14%, Canvas);
+    --accent: #174ea6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #8ab4f8;
+    }
+  }
+  body {
+    margin: 0;
+    padding: 16px;
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 {
+    margin: 0 0 12px;
+    font-size: 1.2rem;
+    font-weight: 650;
+  }
+  h2 {
+    margin: 24px 0 8px;
+    font-size: 0.8rem;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  h3 {
+    margin: 16px 0 4px;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  button.primary {
+    font: inherit;
+    font-weight: 600;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 8px;
+    color: Canvas;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  button.primary:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  #status {
+    margin: 12px 0 0;
+    color: var(--muted);
+    min-height: 1.45em;
+  }
+  #status.error {
+    color: #c5221f;
+  }
+  progress {
+    width: 100%;
+  }
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    padding: 6px 0;
+    border-top: 1px solid var(--rule);
+  }
+  li label {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 8px;
+    align-items: start;
+  }
+  li input {
+    margin: 3px 0 0;
+  }
+  .tab {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+  .tab:hover {
+    text-decoration: underline;
+  }
+  .reason,
+  .count {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .reason {
+    grid-column: 2;
+  }
+  #close {
+    margin-top: 12px;
+  }
+  [hidden] {
+    display: none !important;
+  }
+</style>
+<h1>Tab insights</h1>
+<button id="analyze" class="primary" type="button" disabled>Analyze tabs</button>
+<p id="status" role="status"></p>
+<progress id="download" max="1" value="0" hidden></progress>
+<section id="close-section" hidden>
+  <h2>Suggested to close</h2>
+  <ul id="close-list"></ul>
+  <p id="close-empty" class="count" hidden>Nothing to close.</p>
+  <button id="close" class="primary" type="button">Close 0 tabs</button>
+</section>
+<section id="topics-section" hidden>
+  <h2>Topics</h2>
+  <div id="topics"></div>
+</section>
+<script type="module" src="insights.js"></script>
+</html>

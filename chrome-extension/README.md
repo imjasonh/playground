@@ -24,7 +24,17 @@ If the selection is standard base64 and the decoded bytes are UTF-8 text that is
 
 The content script reads the highlighted text, including text in a text field, and sends it to the service worker. It does not change the page. The service worker decodes it and updates the menu before the click. The click copies through an offscreen document. The selection and the decoded text stay on the device.
 
-The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item and the selection item. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
+## Tab insights
+
+Right-click the toolbar button and choose **Tab insights** to open the side panel. The panel is also in Chrome's side panel menu. **Analyze tabs** asks Gemini Nano, the model built into Chrome, to group open tabs into topics and pick tabs to close. The panel calls the [Prompt API](https://developer.chrome.com/docs/ai/prompt-api) (`LanguageModel`), which needs desktop Chrome 138 or later and the hardware listed on that page. The API isn't exposed to workers, so the model runs in the panel and not in the service worker.
+
+If the model isn't on the device yet, the button reads **Download model and analyze**, and the click starts Chrome's one-time download of a few GB. After that, the model runs offline, and tab data stays on the device.
+
+The model reads up to 50 tabs from every window. For each tab, it reads the title, the host and path, how long ago the tab was used, and whether the tab is pinned, active, or playing audio. It doesn't read page content, the query string, or the hash. A title that is a URL is cut to its host and path too. When more than 50 tabs are open, it reads the 50 used longest ago. The panel's own page is left out.
+
+The model answers in JSON that a schema constrains, and it refers to tabs by number. `tab_insights.js` maps the numbers back to tabs, drops numbers that weren't in the prompt, and drops any pick for a pinned, active, or audible tab. Each pick shows the model's reason and starts checked. **Close N tabs** closes the checked tabs that are still open. Click a tab's title to switch to it.
+
+The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
 
 ## Load it locally
 
@@ -33,6 +43,7 @@ The extension uses the `tabs` permission so it can read URLs and close tabs. It 
 3. Open two tabs with the same URL. The badge shows `1`.
 4. Click the toolbar button, or right-click a tab and choose **Close 1 duplicate tab**. One of those tabs closes, and the badge clears. Chrome older than 150 has the toolbar button only.
 5. On an https page, select `aGVsbG8=`, right-click, and choose `hello`. That copies `hello`.
+6. Right-click the toolbar button, choose **Tab insights**, and click **Analyze tabs**. To check the model's state, open `chrome://on-device-internals`.
 
 ## Tests
 
@@ -42,7 +53,7 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the store zip layout, the permissions, and the listing image sizes.
+`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
 
 `node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 

@@ -89,10 +89,13 @@ test("the store zip is the extension package and the listing images match the st
     "icons/16.png",
     "icons/32.png",
     "icons/48.png",
+    "insights.html",
+    "insights.js",
     "manifest.json",
     "offscreen.html",
     "offscreen.js",
     "selection.js",
+    "tab_insights.js",
   ]);
 
   const manifest = JSON.parse(files.get("manifest.json").toString("utf8"));
@@ -103,7 +106,8 @@ test("the store zip is the extension package and the listing images match the st
   assert.match(manifest.description, /badge/);
   assert.match(manifest.description, /URL/);
   assert.match(manifest.description, /base64/);
-  assert.deepEqual(manifest.permissions, ["clipboardWrite", "contextMenus", "offscreen", "tabs"]);
+  assert.deepEqual(manifest.permissions, ["clipboardWrite", "contextMenus", "offscreen", "sidePanel", "tabs"]);
+  assert.deepEqual(manifest.side_panel, { default_path: "insights.html" });
   assert.equal("host_permissions" in manifest, false);
   assert.equal("optional_permissions" in manifest, false);
   assert.equal(manifest.content_scripts.length, 1);

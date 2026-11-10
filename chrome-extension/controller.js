@@ -15,6 +15,9 @@ import {
 const MENU_ID = "close-duplicates";
 const DECODE_ID = "decode-base64";
 const HIDDEN_DECODE_TITLE = "Decoded";
+// The left click closes duplicates, so the side panel opens from the toolbar
+// button's right-click menu instead of a popup.
+const INSIGHTS_ID = "tab-insights";
 
 function errorText(error) {
   if (error && typeof error.message === "string") {
@@ -148,6 +151,35 @@ function createDecodeSync(api) {
   }
 
   return { setDecodeMenu, ensureDecodeMenu };
+}
+
+async function ensureInsightsMenu(api) {
+  if (!api.contextMenus || !api.sidePanel) {
+    return;
+  }
+  try {
+    await api.contextMenus.create({
+      id: INSIGHTS_ID,
+      title: "Tab insights",
+      contexts: ["action"],
+    });
+  } catch (error) {
+    if (!errorText(error).includes("duplicate id")) {
+      console.error(error);
+    }
+  }
+}
+
+function openInsights(api, tab) {
+  if (!api.sidePanel || !tab || typeof tab.windowId !== "number") {
+    return Promise.resolve();
+  }
+  return api.sidePanel.open({ windowId: tab.windowId }).then(
+    () => {},
+    (error) => {
+      console.error(error);
+    },
+  );
 }
 
 async function copyText(api, text) {
@@ -309,15 +341,18 @@ export function start(api) {
     });
   }
   if (api.contextMenus) {
-    api.contextMenus.onClicked.addListener((info) => {
+    api.contextMenus.onClicked.addListener((info, tab) => {
       if (info && info.menuItemId === MENU_ID) {
         return closeDuplicates();
       }
       if (info && info.menuItemId === DECODE_ID) {
         return copyDecoded(info);
       }
+      if (info && info.menuItemId === INSIGHTS_ID) {
+        return openInsights(api, tab);
+      }
       return Promise.resolve();
     });
   }
-  return decodeMenu.ensureDecodeMenu().then(() => refresh());
+  return Promise.all([decodeMenu.ensureDecodeMenu(), ensureInsightsMenu(api)]).then(() => refresh());
 }
