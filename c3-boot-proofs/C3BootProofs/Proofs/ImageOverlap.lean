@@ -173,7 +173,7 @@ theorem physMem_none {M : Word → BitVec 8} {o : Word} {k : BitVec 8} {addr : W
   unfold physMem; rw [h]; dsimp only
   exact ⟨memStore8_same _ _ _, by rw [memStore8_ne n10, memStore8_same]⟩
 
-theorem physMem_some {M : Word → BitVec 8} {o : Word} {k : BitVec 8} {addr t v : Word}
+theorem physMem_some {M : Word → BitVec 8} {o : Word} {k : BitVec 8} {addr v : Word}
     {t8 : BitVec 8} (h : physResult k addr = some (t8, v)) :
     physMem M o k addr o = t8 ∧ memLoad32 (physMem M o k addr) (o + 4) = v := by
   have s : Sep o 1 (o + 4) 4 := fun i hi j hj e => by
@@ -220,7 +220,7 @@ theorem ArrAgree.phys (M : Word → BitVec 8) (G : Word) (k : BitVec 8) (addr : 
 address is in `rb`, through the call. -/
 theorem ov_phys (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
     (inv : IInv R G ptr len out ilen M0 f0 Mx g) {m : Machine} {off : Nat} (st : St Mx P m off g)
-    {rb : Fin 32} {o : Word} {i : Nat} {s : SegW} (hi : i < 16)
+    {rb : Fin 32} {o : Word} {i : Nat} {s : SegW}
     (hrb : g rb = G + BitVec.ofNat 32 (0x24 + 16 * i)) (hs : SlotOk Mx G i s) (hrb1 : rb ≠ a1)
     (i1 : fetchRel imageParseCode off = some (.load .lw a1 rb 0, 4))
     (i2 : fetchRel imageParseCode (off + 4) = some (.load .lbu a2 rb 0xC, 4))
@@ -354,7 +354,7 @@ theorem ov_body (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : List
     (by rw [updz hz (by decide), hs10, show upd g s3 (G + BitVec.ofNat 32 (0x24 + 16 * (k + 1))) x0 = 0 from rfl]
         exact Bool.eq_false_iff.mpr fun h => env.g_ne0 _ (by omega) (by omega) (beq_iff_eq.mp h))
   have b2 := b.regs (g' := upd g s3 (G + BitVec.ofNat 32 (0x24 + 16 * (k + 1)))) fun r hr => updz hz (nv hr s3)
-  obtain ⟨m3, g3, c3, u3, fr3⟩ := ov_phys env code0 b2.inv u2 hk16 (by rw [updz hz (by decide), hs10]) hb
+  obtain ⟨m3, g3, c3, u3, fr3⟩ := ov_phys env code0 b2.inv u2 (by rw [updz hz (by decide), hs10]) hb
     (by decide) ip_at_35a ip_at_35e ip_at_362 ip_at_364 ip_at_368 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (by decide)
   have b3 := (b2.phys env bs.kind bs.addr).regs (g' := g3) fun r hr => fr3 r (nv hr a0) (nv hr a1) (nv hr a2)
@@ -386,7 +386,7 @@ theorem ov_body (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : List
           show G + (0x125 : Word) = G + 0x124 + 1 by rw [BitVec.add_assoc]; rfl, n1]; rfl))
   | some r =>
     obtain ⟨sb, xb⟩ := r
-    obtain ⟨n0, n1⟩ := physMem_some (M := Mx) (o := G + 0x124) (t := 0) hph
+    obtain ⟨n0, n1⟩ := physMem_some (M := Mx) (o := G + 0x124) hph
     rw [n0] at u4 b4 hd4
     obtain ⟨m5, d5, u5⟩ := u4.notTaken hc3 0x374 ip_at_370 (by decide)
       (by rw [upd_a0, updz b3.inv.zero (by decide), b3.s6]
@@ -585,7 +585,7 @@ theorem ov_lt : ∀ a, a ≤ 16 → ∀ b, b ≤ 16 → BitVec.ult (BitVec.ofNat
 
 theorem ov_ne0 : ∀ a, a ≤ 16 → 1 ≤ a → BitVec.ofNat 32 a ≠ 0 := by decide
 
-theorem ov_end (G : Word) (c : Nat) (hc : c ≤ 16) :
+theorem ov_end (G : Word) (c : Nat) :
     aluEval .sub (G + BitVec.ofNat 32 (0x24 + 16 * c)) (G + BitVec.ofNat 32 0x24) = BitVec.ofNat 32 (16 * c) := by
   show _ - _ = _
   rw [show G + BitVec.ofNat 32 (0x24 + 16 * c) = BitVec.ofNat 32 (16 * c) + (G + BitVec.ofNat 32 0x24) by
@@ -604,7 +604,7 @@ theorem ov_outer (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : Lis
     have hj16 : j < 16 := Nat.lt_of_lt_of_le oi.hj b.hc
     have hjl : j < segs.length := by rw [b.hl]; exact oi.hj
     have hc := (b.inv.code env code0).parse
-    obtain ⟨m1, g1, c1, u1, fr1⟩ := ov_phys env code0 b.inv st hj16 oi.s5 (b.arr.1 j hjl) (by decide)
+    obtain ⟨m1, g1, c1, u1, fr1⟩ := ov_phys env code0 b.inv st oi.s5 (b.arr.1 j hjl) (by decide)
       ip_at_322 ip_at_326 ip_at_32a ip_at_32c ip_at_330 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
       (by decide)
     have b1 := (b.phys env segs[j].kind segs[j].addr).regs (g' := g1) fun r hr =>
@@ -627,7 +627,7 @@ theorem ov_outer (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : Lis
             show G + (0x125 : Word) = G + 0x124 + 1 by rw [BitVec.add_assoc]; rfl, n1]; rfl))
     | some r =>
       obtain ⟨sa, xa⟩ := r
-      obtain ⟨n0, n1⟩ := physMem_some (M := Mx) (o := G + 0x124) (t := 0) hph
+      obtain ⟨n0, n1⟩ := physMem_some (M := Mx) (o := G + 0x124) hph
       rw [n0] at u2
       obtain ⟨m3, d3, u3⟩ := u2.notTaken hc1 0x33C ip_at_338 (by decide)
         (by rw [upd_same (by decide), updz b1.inv.zero (by decide), b1.s6]
@@ -683,7 +683,7 @@ theorem ov_outer (env : IEnv P R G ptr len out) (code0 : ICode M0 P) {segs : Lis
         rw [u13.regs, updz (by simp) h10, updz (by simp) h10, updz (by simp) h0, updz b8.inv.zero h0]
       have r13a0 : reg m13 a0 = BitVec.ofNat 32 cnt.toNat := by
         rw [u13.regs]; simp +decide only [upd, ↓reduceIte]
-        rw [b8.s11, r8s3, ov_end G _ b.hc]; exact ov_cnt _ b.hc
+        rw [b8.s11, r8s3, ov_end G _]; exact ov_cnt _ b.hc
       have r13s10 : reg m13 s10 = G + BitVec.ofNat 32 (0x24 + 16 * (j + 1)) := by
         rw [u13.regs]; simp +decide only [upd, ↓reduceIte]
         rw [r8a1, r8s3]
