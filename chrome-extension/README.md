@@ -40,6 +40,8 @@ The model answers in JSON that a schema constrains, and it refers to tabs by num
 
 A close from the panel skips tabs that are pinned or active when you click, so no window closes. **Undo** reverses the last close or grouping, and each one can be undone in turn, newest first. Undoing a close restores each tab from Chrome's Recently Closed list, so its history comes back. A tab that isn't in that list is reopened from its URL. If you haven't analyzed again since the close, the panel's lists come back too. Undoing **Group tabs** ungroups the tabs it grouped and moves them back where they were.
 
+The undo history lives in the open panel, so closing the panel clears it. Recently Closed entries are matched by URL, so undoing a close of two tabs that had the same URL can restore either tab's history for either entry.
+
 ### Background analysis
 
 The service worker always plans a grouping in the background, so the plan is ready when you open the panel. It runs the same analysis every 15 minutes, and one minute after tabs stop opening, closing, or navigating. It skips a run when no tab changed since the last one, unless that one is 2 hours old, and it runs only when the model is already on the device. It saves the plan and never groups tabs itself. The panel shows that plan under **Likely close** and **Planned groups**, and **Group tabs** applies it.

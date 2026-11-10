@@ -47,8 +47,9 @@ function setStatus(text, isError = false) {
   statusLine.classList.toggle("error", isError);
 }
 
-// The Prompt API is a window global with no extension permission. It is not
-// exposed to workers, so the model runs here and not in the service worker.
+// The Prompt API is a window global with no extension permission. The panel
+// owns the model download, which needs a user gesture; the service worker can
+// only run the model once it is already on the device.
 async function modelState() {
   if (typeof LanguageModel === "undefined") {
     return {
@@ -247,6 +248,24 @@ async function analyze() {
   }
 }
 
+// syncStored trims the tabs a close removed out of the saved plan and
+// refreshes its signature to the open tabs, so the toolbar title and the next
+// background run match what the panel just did instead of re-planning.
+async function syncStored(gone) {
+  const { insights: saved } = await chrome.storage.local.get("insights");
+  if (!saved) {
+    return;
+  }
+  const tabs = await chrome.tabs.query({});
+  await chrome.storage.local.set({
+    insights: {
+      ...saved,
+      signature: tabSignature(tabs, chrome.runtime.getURL("")),
+      insights: withoutTabs(saved.insights, gone),
+    },
+  });
+}
+
 async function closeTabs(entries) {
   setBusy(true);
   try {
@@ -263,6 +282,7 @@ async function closeTabs(entries) {
     undoStack.push({ kind: "close", closed, before, analysis });
     insights = withoutTabs(insights, gone);
     render();
+    await syncStored(gone);
     setStatus(`Closed ${tabCount(ids.length)}.`);
   } catch (error) {
     setStatus(errorText(error), true);
@@ -388,6 +408,29 @@ groupButton.addEventListener("click", groupTabs);
 for (const button of undoButtons) {
   button.addEventListener("click", undo);
 }
+
+// A background run that finishes while the panel is open leaves a newer,
+// unseen plan in storage. Show it when the panel is idle so the view keeps up
+// without a reopen. A close writes its own at back, so that write stays seen
+// and doesn't trigger this.
+async function refreshFromStorage() {
+  if (busy || undoStack.length > 0) {
+    return;
+  }
+  const { insights: saved, seen } = await chrome.storage.local.get(["insights", "seen"]);
+  if (!saved || saved.at === seen) {
+    return;
+  }
+  await showSaved();
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.insights) {
+    refreshFromStorage().catch((error) => {
+      setStatus(errorText(error), true);
+    });
+  }
+});
 
 async function openPanel() {
   const state = await refreshButton(true);

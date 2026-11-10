@@ -64,7 +64,9 @@ export async function applyGroups(api, topics, picks) {
   const open = await api.tabs.query({});
   const plan = groupingPlan(topics, picks, open, await openGroups(api));
   const where = new Map(open.map((tab) => [tab.id, { id: tab.id, windowId: tab.windowId, index: tab.index }]));
-  const saved = plan.flatMap((group) => group.tabIds.map((id) => where.get(id)));
+  // A tab can close between the plan and the click, so drop ids that are no
+  // longer open rather than saving undefined for undo.
+  const saved = plan.flatMap((group) => group.tabIds.map((id) => where.get(id)).filter(Boolean));
   for (const { title, color, collapsed, windowId, tabIds, groupId } of plan) {
     if (typeof groupId === "number") {
       await api.tabs.group({ groupId, tabIds });
