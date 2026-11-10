@@ -6,6 +6,7 @@ import {
   badgeText,
   duplicateTabIds,
 } from "./duplicates.js";
+import { groupingPlan } from "./tab_insights.js";
 
 // Chrome 150 added the "tab" context. Older Chrome rejects it, and the
 // toolbar button still closes the same tabs. The selection item is separate.
@@ -18,6 +19,10 @@ const HIDDEN_DECODE_TITLE = "Decoded";
 // The left click closes duplicates, so the side panel opens from the toolbar
 // button's right-click menu instead of a popup.
 const INSIGHTS_ID = "tab-insights";
+// The badge is the duplicate count. A tab insights plan the panel hasn't
+// shown turns it green, and shows a dot when there are no duplicates.
+const READY_BADGE = "•";
+const READY_BADGE_COLOR = "#188038";
 
 function errorText(error) {
   if (error && typeof error.message === "string") {
@@ -212,30 +217,42 @@ async function copyText(api, text) {
   });
 }
 
-// likelyCount is how many of the saved tab insights picks are still open.
-async function likelyCount(api, tabs) {
+// savedPlan reads the last tab insights analysis. ready means the panel
+// hasn't shown it yet and it would still group at least one open tab.
+async function savedPlan(api, tabs) {
   if (!api.storage) {
-    return 0;
+    return { likely: 0, ready: false };
   }
-  const { insights } = await api.storage.local.get("insights");
+  const { insights, seen } = await api.storage.local.get(["insights", "seen"]);
   if (!insights) {
-    return 0;
+    return { likely: 0, ready: false };
   }
   const open = new Set(tabs.map((tab) => tab.id));
-  return insights.insights.close.filter((pick) => open.has(pick.entry.id)).length;
+  const picks = insights.insights.close.map((pick) => pick.entry);
+  const likely = picks.filter((entry) => open.has(entry.id)).length;
+  const unseen = insights.at !== seen;
+  const ready = unseen && groupingPlan(insights.insights.topics, picks, tabs).length > 0;
+  return { likely, ready };
 }
 
 async function showCount(api, tabs, syncMenu) {
   const count = duplicateTabIds(tabs).length;
-  const likely = await likelyCount(api, tabs);
-  let title = actionTitle(count);
-  if (likely > 0) {
-    title = `${title} · ${likely} likely close`;
+  const { likely, ready } = await savedPlan(api, tabs);
+  const parts = [actionTitle(count)];
+  if (ready) {
+    parts.push("grouping ready");
   }
-  await api.action.setBadgeBackgroundColor({ color: BADGE_COLOR });
+  if (likely > 0) {
+    parts.push(`${likely} likely close`);
+  }
+  let text = badgeText(count);
+  if (ready && text === "") {
+    text = READY_BADGE;
+  }
+  await api.action.setBadgeBackgroundColor({ color: ready ? READY_BADGE_COLOR : BADGE_COLOR });
   await api.action.setBadgeTextColor({ color: BADGE_TEXT_COLOR });
-  await api.action.setBadgeText({ text: badgeText(count) });
-  await api.action.setTitle({ title });
+  await api.action.setBadgeText({ text });
+  await api.action.setTitle({ title: parts.join(" · ") });
   await syncMenu(count);
 }
 
@@ -348,7 +365,7 @@ export function start(api) {
   api.action.onClicked.addListener(() => closeDuplicates());
   if (api.storage) {
     api.storage.onChanged.addListener((changes, area) => {
-      if (area === "local" && changes.insights) {
+      if (area === "local" && (changes.insights || changes.seen)) {
         return refresh();
       }
       return Promise.resolve();

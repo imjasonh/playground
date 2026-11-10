@@ -423,32 +423,73 @@ test("Chrome without the side panel API gets no tab insights item", async () => 
   assert.deepEqual(chrome.state.panels, []);
 });
 
-test("the toolbar title counts saved picks that are still open", async () => {
+function withStorage(chrome, store) {
+  const changed = listener();
+  chrome.api.storage = {
+    local: {
+      async get(keys) {
+        const out = {};
+        for (const key of keys) {
+          if (key in store) {
+            out[key] = store[key];
+          }
+        }
+        return out;
+      },
+    },
+    onChanged: changed,
+  };
+  return changed;
+}
+
+test("an unseen plan turns the badge green and adds to the title until the panel shows it", async () => {
   const chrome = fakeChrome([
     { id: 1, url: "https://example.com/a", active: true },
     { id: 2, url: "https://example.com/a" },
     { id: 3, url: "https://example.com/b" },
   ]);
   const store = {
-    insights: { insights: { close: [{ entry: { id: 3 } }, { entry: { id: 9 } }], topics: [] } },
-  };
-  const changed = listener();
-  chrome.api.storage = {
-    local: {
-      async get(key) {
-        return key in store ? { [key]: store[key] } : {};
-      },
+    insights: {
+      at: 5,
+      insights: { close: [{ entry: { id: 3 } }, { entry: { id: 9 } }], topics: [] },
     },
-    onChanged: changed,
   };
+  const changed = withStorage(chrome, store);
   const ready = start(chrome.api);
   chrome.state.holdQuery.resolve();
   await ready;
-  assert.equal(chrome.state.title, "Close 1 duplicate tab · 1 likely close");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · grouping ready · 1 likely close");
+  assert.equal(chrome.state.badge, "1");
+  assert.equal(chrome.state.color, "#188038");
   assert.equal(chrome.state.menu.title, "Close 1 duplicate tab");
+  store.seen = 5;
+  await changed.emit({ seen: { newValue: 5 } }, "local");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · 1 likely close");
+  assert.equal(chrome.state.color, "#174ea6");
   store.insights.insights.close = [];
   await changed.emit({ insights: { newValue: store.insights } }, "local");
   assert.equal(chrome.state.title, "Close 1 duplicate tab");
+});
+
+test("with no duplicates, a ready plan shows a dot, and a plan with nothing to group shows none", async () => {
+  const chrome = fakeChrome([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/b", groupId: 40 },
+  ]);
+  const store = {
+    insights: { at: 7, insights: { close: [], topics: [{ name: "A", tabs: [{ id: 1 }, { id: 2 }] }] } },
+  };
+  const changed = withStorage(chrome, store);
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.badge, "•");
+  assert.equal(chrome.state.color, "#188038");
+  assert.equal(chrome.state.title, "No duplicate tabs · grouping ready");
+  chrome.state.tabs[0].groupId = 41;
+  await changed.emit({ insights: { newValue: store.insights } }, "local");
+  assert.equal(chrome.state.badge, "");
+  assert.equal(chrome.state.title, "No duplicate tabs");
 });
 
 test("a selection menu click after restart decodes the highlighted text", async () => {

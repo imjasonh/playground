@@ -1,13 +1,15 @@
-// The service worker analyzes tabs on a timer, so the panel and the toolbar
-// title have picks before you ask. The Prompt API works in an extension
-// service worker without a click once the model is on the device. The job
-// never starts the download.
+// The service worker analyzes tabs on a timer and a minute after tabs
+// change, so a grouping plan is ready when the panel opens. The Prompt API
+// works in an extension service worker without a click once the model is on
+// the device. The job never starts the download, and it never groups tabs.
 
-import { analyzeTabs, applyGroups, createSession } from "./analysis.js";
+import { analyzeTabs, createSession } from "./analysis.js";
 import { LIKELY_CLOSE, MODEL_OPTIONS, tabSignature } from "./tab_insights.js";
 
 export const ALARM = "tab-insights";
-export const DEFAULT_SETTINGS = { background: true, autoGroup: false };
+// Recreating this alarm on every tab change pushes it back, so it fires once
+// tabs have been quiet for a minute.
+export const SOON_ALARM = "tab-insights-soon";
 const PERIOD_MINUTES = 15;
 const MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const NO_GROUP = -1;
@@ -16,11 +18,7 @@ export function startInsights(api, model) {
   let running = null;
 
   async function analyzeNow() {
-    const settings = await api.storage.local.get(DEFAULT_SETTINGS);
-    if (!settings.background || !model) {
-      return;
-    }
-    if ((await model.availability(MODEL_OPTIONS)) !== "available") {
+    if (!model || (await model.availability(MODEL_OPTIONS)) !== "available") {
       return;
     }
     const tabs = await api.tabs.query({});
@@ -37,13 +35,6 @@ export function startInsights(api, model) {
       session.destroy();
     }
     await api.storage.local.set({ insights: result });
-    if (settings.autoGroup) {
-      const picks = result.insights.close.map((pick) => pick.entry);
-      const { saved } = await applyGroups(api, result.insights.topics, picks);
-      if (saved.length > 0) {
-        await api.storage.local.set({ grouping: { at: result.at, saved } });
-      }
-    }
   }
 
   function run() {
@@ -57,6 +48,10 @@ export function startInsights(api, model) {
         });
     }
     return running;
+  }
+
+  function soon() {
+    return api.alarms.create(SOON_ALARM, { delayInMinutes: 1 });
   }
 
   // A tab you switch to is in use, so it stops being a pick and leaves the
@@ -81,8 +76,16 @@ export function startInsights(api, model) {
   }
 
   api.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === ALARM) {
+    if (alarm.name === ALARM || alarm.name === SOON_ALARM) {
       return run();
+    }
+    return Promise.resolve();
+  });
+  api.tabs.onCreated.addListener(() => soon());
+  api.tabs.onRemoved.addListener(() => soon());
+  api.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo && changeInfo.url) {
+      return soon();
     }
     return Promise.resolve();
   });
@@ -91,13 +94,6 @@ export function startInsights(api, model) {
       console.error(error);
     }),
   );
-  api.storage.onChanged.addListener((changes, area) => {
-    const turnedOn = area === "local" && changes.background && changes.background.newValue === true;
-    if (turnedOn) {
-      return run();
-    }
-    return Promise.resolve();
-  });
   const ready = api.alarms.get(ALARM).then((alarm) => {
     if (!alarm) {
       return api.alarms.create(ALARM, { delayInMinutes: 1, periodInMinutes: PERIOD_MINUTES });

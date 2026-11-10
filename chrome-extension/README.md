@@ -42,13 +42,15 @@ A close from the panel skips tabs that are pinned or active when you click, so n
 
 ### Background analysis
 
-**Analyze in the background** is on by default. Every 15 minutes, the service worker runs the same analysis and saves it. It skips the run when no tab opened, closed, or navigated since the last one, unless that one is 2 hours old. It runs only when the model is already on the device. The toolbar button's title adds the number of saved picks that are still open, as in `Close 2 duplicate tabs · 3 likely close`. The badge stays the duplicate count. Turning the setting on runs an analysis right away.
+The service worker always plans a grouping in the background, so the plan is ready when you open the panel. It runs the same analysis every 15 minutes, and one minute after tabs stop opening, closing, or navigating. It skips a run when no tab changed since the last one, unless that one is 2 hours old, and it runs only when the model is already on the device. It saves the plan and never groups tabs itself. The panel shows that plan under **Likely close** and **Planned groups**, and **Group tabs** applies it.
 
-**Group tabs automatically** is off by default. When it's on, each analysis, in the background or in the panel, also runs **Group tabs**. Each tab is told which group it's in, so the model can reuse that name, and a tab joins a group with the same name in its window instead of a new copy. Open the panel after a background grouping and **Undo** can reverse it.
+The model sees the name of the group each tab is in, so it can reuse existing names. **Group tabs** adds a tab to a group with the same name in its window instead of making a copy.
+
+The badge is still the duplicate count. When a plan is ready that you haven't opened the panel to see, and it would group at least one tab, the badge turns green. With no duplicates to count, it shows a green dot. Opening the panel clears it. The button's title also says `grouping ready` and adds the number of picks that are still open, as in `Close 2 duplicate tabs · grouping ready · 3 likely close`.
 
 When you switch to a tab, it stops being a pick, and if it's in the **Likely close** group, it leaves that group.
 
-The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel, `tabGroups` to name, color, and collapse the groups that **Group tabs** makes, and `sessions` so **Undo** can restore closed tabs. It uses `alarms` to schedule the background analysis and `storage` to keep the last analysis and the two settings. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
+The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel, `tabGroups` to name, color, and collapse the groups that **Group tabs** makes, and `sessions` so **Undo** can restore closed tabs. It uses `alarms` to schedule the background analysis and `storage` to keep the last plan and whether the panel has shown it. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
 
 ## Load it locally
 
@@ -67,7 +69,7 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, which tabs a panel close skips, keeping one copy of a duplicated URL, undo matching, the grouping plan, the undo order for grouping, the background analysis with a fake model, the likely-close count in the toolbar title, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
+`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, which tabs a panel close skips, keeping one copy of a duplicated URL, undo matching, the grouping plan, the undo order for grouping, the background plan with a fake model, the green badge and the toolbar title for a ready plan, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
 
 `node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 

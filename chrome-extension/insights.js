@@ -1,5 +1,4 @@
 import { analyzeTabs, applyGroups, createSession } from "./analysis.js";
-import { DEFAULT_SETTINGS } from "./background_insights.js";
 import {
   MODEL_OPTIONS,
   closableIds,
@@ -28,8 +27,6 @@ const topicsBox = document.getElementById("topics");
 const groupRow = document.getElementById("group-row");
 const groupButton = document.getElementById("group");
 const undoButtons = [document.getElementById("undo"), document.getElementById("group-undo")];
-const backgroundBox = document.getElementById("background");
-const autoGroupBox = document.getElementById("auto-group");
 
 let insights = { topics: [], close: [] };
 let analysis = 0;
@@ -225,7 +222,7 @@ async function analyze() {
     download.hidden = true;
     setStatus("Reading tabs…");
     const result = await analyzeTabs(chrome, session);
-    await chrome.storage.local.set({ insights: result });
+    await chrome.storage.local.set({ insights: result, seen: result.at });
     if (result.read === 0) {
       setStatus("No tabs to read.");
       return;
@@ -236,14 +233,7 @@ async function analyze() {
     if (result.total > result.read) {
       read = `the ${result.read} oldest of ${result.total} tabs`;
     }
-    let status = `Read ${read} on this device in ${result.seconds.toFixed(1)} s.`;
-    if (autoGroupBox.checked) {
-      const { saved } = await groupInto(insights.topics, checkedPicks());
-      if (saved.length > 0) {
-        status = `${status} Grouped ${tabCount(saved.length)}.`;
-      }
-    }
-    setStatus(status);
+    setStatus(`Read ${read} on this device in ${result.seconds.toFixed(1)} s.`);
   } catch (error) {
     setStatus(errorText(error), true);
   } finally {
@@ -352,19 +342,13 @@ async function undo() {
   }
 }
 
-async function groupInto(topics, picks) {
-  const grouping = await applyGroups(chrome, topics, picks);
-  if (grouping.saved.length > 0) {
-    undoStack.push({ kind: "group", saved: grouping.saved });
-  }
-  updateUndo();
-  return grouping;
-}
-
 async function groupTabs() {
   setBusy(true);
   try {
-    const { saved, groups } = await groupInto(insights.topics, checkedPicks());
+    const { saved, groups } = await applyGroups(chrome, insights.topics, checkedPicks());
+    if (saved.length > 0) {
+      undoStack.push({ kind: "group", saved });
+    }
     if (saved.length === 0) {
       setStatus("Nothing to group. Pinned tabs and tabs already in a group stay as they are.");
     } else {
@@ -374,12 +358,13 @@ async function groupTabs() {
     setStatus(errorText(error), true);
   } finally {
     setBusy(false);
+    updateUndo();
   }
 }
 
-// showSaved renders the last analysis when it covers the open tabs, so the
-// panel doesn't wait for the model. A grouping the service worker made with
-// that analysis joins the undo history.
+// showSaved renders the plan the service worker saved when it covers the
+// open tabs, so the panel doesn't wait for the model. Showing it marks it
+// seen, which clears the green badge.
 async function showSaved() {
   const { insights: saved } = await chrome.storage.local.get("insights");
   const tabs = await chrome.tabs.query({});
@@ -393,19 +378,8 @@ async function showSaved() {
   render();
   const age = formatAge(Date.now() - saved.at);
   setStatus(age === "now" ? "Analyzed just now." : `Analyzed ${age}.`);
-  const { grouping } = await chrome.storage.local.get("grouping");
-  if (grouping && grouping.at === saved.at) {
-    undoStack.push({ kind: "group", saved: grouping.saved });
-    await chrome.storage.local.remove("grouping");
-    updateUndo();
-  }
+  await chrome.storage.local.set({ seen: saved.at });
   return true;
-}
-
-async function loadSettings() {
-  const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
-  backgroundBox.checked = settings.background;
-  autoGroupBox.checked = settings.autoGroup;
 }
 
 analyzeButton.addEventListener("click", analyze);
@@ -414,11 +388,8 @@ groupButton.addEventListener("click", groupTabs);
 for (const button of undoButtons) {
   button.addEventListener("click", undo);
 }
-backgroundBox.addEventListener("change", () => chrome.storage.local.set({ background: backgroundBox.checked }));
-autoGroupBox.addEventListener("change", () => chrome.storage.local.set({ autoGroup: autoGroupBox.checked }));
 
 async function openPanel() {
-  await loadSettings();
   const state = await refreshButton(true);
   if (await showSaved()) {
     return;
