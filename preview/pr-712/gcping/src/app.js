@@ -188,9 +188,13 @@ stopStart.addEventListener("click", () => {
   }
 });
 
-howButton.addEventListener("click", () => {
-  howDialog.showModal();
-});
+// The button's command/commandfor attributes open the dialog declaratively
+// where Invoker Commands are supported. Older browsers need this fallback.
+if (!("commandForElement" in HTMLButtonElement.prototype)) {
+  howButton.addEventListener("click", () => {
+    howDialog.showModal();
+  });
+}
 
 for (const button of headerButtons) {
   button.addEventListener("click", () => {

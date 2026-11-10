@@ -1378,14 +1378,18 @@ kbd {
   border: 0;
 }
 .search-overlay {
-  position: fixed;
-  inset: 0;
+  margin: 10vh auto auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  max-width: 94vw;
+  overscroll-behavior: contain;
+}
+.search-overlay::backdrop {
   background: rgba(1, 4, 9, 0.6);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 10vh;
-  z-index: 50;
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 .search-panel {
   width: min(720px, 94vw);
