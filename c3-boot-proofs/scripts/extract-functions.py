@@ -38,6 +38,19 @@ FUNCTIONS = [
     ("readerU16", "<c3_verify::reader::Reader>::u16"),
     ("readerVersion1", "<c3_verify::reader::Reader>::version_1"),
     ("readerReserved", "<c3_verify::reader::Reader>::reserved"),
+    ("readerU8", "<c3_verify::reader::Reader>::u8"),
+    ("segmentPhysical", "<c3_verify::image::Segment>::physical"),
+    ("imageParse", "c3_verify::image::parse"),
+    ("imageRestore", ("imageParse", 0xC2)),
+    ("memcpyStub", "memcpy"),
+    ("memcpyBody", ("memcpyStub", 0x00)),
+]
+
+# Lean name, then the Lean name of an extracted function, the offset of a
+# `lui; addi` pair in it that forms the data's address, and the data's size.
+DATA = [
+    ("regionEnds", "imageParse", 0x23C, 16),
+    ("regionStarts", "imageParse", 0x25E, 16),
 ]
 
 
@@ -54,6 +67,26 @@ def call_target(code, addr, off):
     if imm & 0x800:
         imm -= 0x1000
     return (addr + off + (auipc & 0xFFFFF000) + imm) & 0xFFFFFFFE
+
+
+def lui_addi(code, addr, off):
+    """The address that the `lui rd; addi rd, rd` pair at `off` of `code` forms."""
+    if off + 8 > len(code):
+        sys.exit(f"offset {off:#x} is past the end of the function at {addr:#x}")
+    lui = int.from_bytes(code[off : off + 4], "little")
+    addi = int.from_bytes(code[off + 4 : off + 8], "little")
+    rd = (lui >> 7) & 31
+    if (
+        lui & 0x7F != 0x37
+        or addi & 0x707F != 0x13
+        or (addi >> 7) & 31 != rd
+        or (addi >> 15) & 31 != rd
+    ):
+        sys.exit(f"no lui/addi pair at offset {off:#x} of the function at {addr:#x}")
+    imm = addi >> 20
+    if imm & 0x800:
+        imm -= 0x1000
+    return ((lui & 0xFFFFF000) + imm) & 0xFFFFFFFF
 
 
 def segments(image):
@@ -135,6 +168,19 @@ def main():
             "",
             f"def {name}Code : List Nat :=",
             "  [" + ",\n".join(rows).lstrip() + "]",
+        ]
+    for name, func, off, size in DATA:
+        faddr, fcode = extracted[func]
+        addr = lui_addi(fcode, faddr, off)
+        data = bytes_at(segs, addr, size)
+        lines += [
+            "",
+            f"/-- The {size} bytes at `{addr:#x}` in the image, whose address `{func}` forms at",
+            f"offset {off:#x}. -/",
+            f"def {name}Address : Nat := {addr:#x}",
+            "",
+            f"def {name}Data : List Nat :=",
+            "  [" + ", ".join(f"0x{b:02x}" for b in data) + "]",
         ]
     lines += ["", "end C3.Image", ""]
     with open(out, "w") as f:
