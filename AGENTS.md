@@ -19,6 +19,7 @@ playground/
 ├── app-attest/            # Rust Cloudflare Worker: App Attest handshake + assertions (not a Pages app)
 ├── apko-frontend/         # Go: BuildKit frontend that builds apko YAML (ko image; not a Pages app)
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
+├── c3-boot/               # Rust: ESP32-C3 OTA verifier built for machine-code proofs (see docs/esp32c3-verified-ota-plan.md)
 ├── cloudrun-sqlite/       # Go: SQLite on a Litestream replica for Cloud Run (VFS, Terraform, Cloud Run simulator)
 ├── gcp/                   # shared GitHub Workload Identity pool for Cloud Run deploys and Chrome Web Store publishing (not an app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
@@ -135,6 +136,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `nethack-agent/` | no | Cursor SDK terminal-game harness; no `index.html` |
 | `bun-image/` | no | bun compile + crane image (shell); no `index.html` |
+| `c3-boot/` | no | Rust workspace: ESP32-C3 OTA verifier; no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
@@ -978,6 +980,7 @@ bundle exec fastlane test
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. `nescript.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples`. That job always reports a status and no-ops when `nescript/` is unchanged, so it can be a required check |
+| `c3-boot/` | Cargo workspace for the ESP32-C3 OTA verifier that [`docs/esp32c3-verified-ota-plan.md`](docs/esp32c3-verified-ota-plan.md) proves at the machine-code level. `verify` holds every slot check as `no_std` code with no heap or `unsafe`, and `crypto` holds the signature checks. Formats are in `c3-boot/docs/formats.md` | `cargo test` + clippy. `c3-boot.yml` also builds the `no_std` crates for `riscv32imc-unknown-none-elf` |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that

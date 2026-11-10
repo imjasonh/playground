@@ -1,0 +1,41 @@
+# Builds the c3-boot no_std crates for the ESP32-C3's RISC-V target.
+#
+# test.yml's Rust leg runs c3-boot's host format check, Clippy, and tests.
+# This workflow adds the cross-build that test.yml doesn't do, so a change that
+# breaks no_std or the RISC-V build fails on the pull request.
+
+name: c3-boot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "c3-boot/**"
+      - ".github/workflows/c3-boot.yml"
+  pull_request:
+    paths:
+      - "c3-boot/**"
+      - ".github/workflows/c3-boot.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: c3-boot-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  riscv:
+    name: RISC-V no_std build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build for riscv32imc-unknown-none-elf
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          cargo build --locked --release --target riscv32imc-unknown-none-elf -p c3-verify -p c3-crypto

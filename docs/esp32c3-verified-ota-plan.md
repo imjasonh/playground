@@ -54,8 +54,8 @@ This work differs from the libsignal work in five ways:
   primitive. Here, SHA-2, ECDSA P-256 and P-384 verification, and Ed25519
   verification are proved against Lean specifications at the machine-code
   level. Every digest on the verification path uses software SHA-2, so the
-  SHA accelerator isn't trusted. The only hook left is a ROM flash-read
-  function.
+  SHA accelerator isn't trusted. The only hooks left are the ROM's flash
+  read, erase, and write functions.
 - The security property is short. Most of the specification is parsing:
   X.509, CMS, and Rekor's formats.
 - The verified code is much smaller. This plan estimates 5,000 to 20,000
@@ -281,7 +281,7 @@ in this table. Everything else is checked by Lean.
 | --- | --- | --- |
 | RV32IMC + Zicsr semantics in machine mode | 2,000 to 4,000 lines | Proved equivalent to the Sail-generated Lean model on every instruction the binary uses. Lockstep tests against QEMU and hardware |
 | Platform model: memory map, initial state, flash, eFuse, MMU table, watchdog | 1,000 to 3,000 lines | Lockstep tests against Espressif's QEMU fork and hardware |
-| Hook contract: the ROM flash read | 50 to 200 lines | QEMU, then hardware runs |
+| Hook contracts: the ROM's flash read, erase, and write functions | 100 to 300 lines | QEMU, then hardware runs |
 | Cryptography specifications: SHA-256, SHA-384, and SHA-512 (FIPS 180-4), ECDSA P-256 and P-384 verification (FIPS 186-5), and Ed25519 verification (RFC 8032) | 1,000 to 2,500 lines | Executable Lean definitions run against the Wycheproof and NIST test vectors, and against the Rust code |
 | Formats: image header, key-set chain, trust-root blob, device bundle container, boot-state record | 500 to 1,000 lines | Differential tests against the host encoder |
 | X.509 and CMS subsets, Rekor v2 entry and checkpoint, RFC 6962 hashing | 2,000 to 5,000 lines | Executable Lean decoders tested against sigstore-go and OpenSSL on a corpus of real bundles |
@@ -344,9 +344,12 @@ trap as a fault.
   which is an explicit assumption. It excludes a physical attacker during
   boot, and any DMA or peripheral write to flash, which the bootloader never
   starts.
-- **Flash reads.** The bootloader reads flash through a ROM function. That
-  function is a hook whose contract copies bytes from the flash model into a
-  RAM buffer. This keeps the SPI controller and the cache out of the model.
+- **Flash access.** The bootloader reads flash, and erases and writes the
+  boot-state sectors, through ROM functions. Each is a hook. The read
+  contract copies bytes from the flash model into a RAM buffer. The erase
+  and write contracts change only the named sector and follow the NOR rules,
+  including power loss partway through. This keeps the SPI controller and the
+  cache out of the model.
 - **eFuse.** An array of bits that can only change from 0 to 1. Reads and
   program operations go through the eFuse controller's registers, modeled at
   the register level. Because bits only get set, every counter is unary, and
@@ -380,7 +383,7 @@ The AlphaProof Code semantics already has `HookOk`, `HookSat`, and
 `subroutineHook`, which turn a proof about a subroutine into a proof that the
 subroutine meets a hook contract. Phase 7 uses the same mechanism to prove
 that the real SHA-2, P-256, P-384, and Ed25519 code meets its contracts.
-After that, the only hook left is the ROM flash-read function. The SHA
+After that, the only hooks left are the ROM's flash functions. The SHA
 accelerator is silicon and can't be verified, so no digest on the
 verification path uses it. Every digest that a security decision depends on
 comes from the software SHA-2 code that phase 7 proves.
@@ -437,7 +440,7 @@ proof.
 | --- | --- | --- |
 | `verify` | Every check: container, header, trust root, X.509 subset, CMS subset, Rekor v2, identity policy, and `accept`. Pure functions over byte slices, with no hardware access | Machine-level contracts that equal the Lean specification |
 | `crypto` | ECDSA P-256 and P-384 verification, Ed25519 verification, and SHA-2, each behind one function that takes byte slices and returns a result | Machine-level contracts that equal the Lean cryptography specifications, proved in phase 7. Until then, the rest of the proof uses the contracts as hooks |
-| `bootloader` | Reset entry, ROM flash reads, eFuse reads and burns, the register lock, MMU mapping, the boot-state record, and the jump | Machine-level contracts against the platform model |
+| `bootloader` | Reset entry, ROM flash access, eFuse reads and burns, the register lock, MMU mapping, the boot-state record, and the jump | Machine-level contracts against the platform model |
 
 The same `verify` source builds for the host and for RV32. The host build is
 what CI and the key holders run, so CI and the device run the same checks.
@@ -1003,7 +1006,7 @@ Deliverables:
 Exit criteria:
 
 - Every function reachable from reset, other than the cryptographic
-  routines, has a contract proof or is the ROM flash-read hook.
+  routines, has a contract proof or is one of the ROM flash hooks.
 
 ### Phase 7: cryptography proofs
 
@@ -1035,7 +1038,8 @@ Exit criteria:
 - Comparator confirms every headline theorem against the held-out
   specification.
 - The axiom audit is clean.
-- The only hook in the headline theorems is the ROM flash-read function.
+- The only hooks in the headline theorems are the ROM's flash read, erase,
+  and write functions.
 - One theorem links each hook contract used in phase 6 to the machine code
   that phase 7 proved.
 
@@ -1077,7 +1081,7 @@ repair.
 | eFuse burn interrupted by power loss | 2 | Assume any subset of the requested bits ends up set | The power-cut soak, with cuts during burns |
 | `SECURE_VERSION` is free for the bootloader to use | 0 | Assume ESP-IDF's description: 16 bits in block 0, programmable one bit at a time, with no other user | The bootloader raises it one bit at a time on silicon |
 | The state the ROM leaves at bootloader entry | 4 | Values from the technical reference manual and the ROM headers | A debug-probe dump of the registers and memory at entry |
-| ROM flash-read contract | 4 | QEMU's flash emulation and the ROM header's documented behavior | The ROM function on silicon matches the contract |
+| ROM flash read, erase, and write contracts | 4 | QEMU's flash emulation and the ROM header's documented behavior | The ROM functions on silicon match the contracts |
 | eFuse programming, MMU table, and register-lock models | 4 | QEMU and the technical reference manual | Lockstep runs on hardware |
 | NOR flash behavior under power loss | 2 | The model in [Platform model](#platform-model), which assumes the worst case: affected bytes take any value | The power-cut soak on the relay rig |
 | Watchdog timeout against `maxSteps` | 0 | The ROM's documented watchdog configuration | A boot at `maxSteps` on silicon finishes before the watchdog fires |
@@ -1091,9 +1095,12 @@ The repository has no Lean code. These directories are proposals:
 - `c3-boot/`, a Cargo workspace with the `verify`, `crypto`, `bootloader`,
   and `c3-ota` crates and the demo application. The repository forbids a
   repository-root workspace and imports between top-level apps, so all the
-  crates live under one top-level directory. Like `inkbot-esp32/`, it must
-  be excluded from `test.yml` Rust discovery, and `c3-boot.yml` builds and
-  tests it instead.
+  crates live under one top-level directory. While the workspace holds only
+  host-testable crates, `test.yml`'s Rust leg runs its host checks, and
+  `c3-boot.yml` adds the RISC-V `no_std` build. When the bootloader crate,
+  which builds only for RISC-V, joins the workspace, `c3-boot/` moves out of
+  `test.yml` Rust discovery, as `inkbot-esp32/` is, and `c3-boot.yml` takes
+  over its host checks too.
 - `c3-boot-proofs/`, the Lean project, with these directories:
   - `Spec/` and `Model/`, trusted
   - `Theorems/`, trusted statements of the headline theorems

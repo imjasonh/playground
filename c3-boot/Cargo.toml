@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crypto", "verify"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace.lints.rust]
+unused = { level = "deny", priority = -1 }
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
