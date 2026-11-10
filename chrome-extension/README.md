@@ -1,10 +1,10 @@
 # Close Duplicate Tabs
 
-A Chrome extension that closes extra tabs with the same URL, and copies decoded base64 from the selection menu. The toolbar button closes the extra tabs. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
+A Chrome extension that closes extra tabs with the same URL, plans tab groups with Gemini Nano, the model built into Chrome, and copies decoded base64 from the selection menu. The toolbar button closes the extra tabs. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
 
 The Chrome Web Store item ID is `cfmebakopkdpedmdbpcpfibhodmppigj`. That item is already published to trusted testers. This directory has no `index.html`, so GitHub Pages does not publish it.
 
-Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is in review. Version `0.1.3` is the package to submit.
+Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is in review. Publishing `0.1.3` failed with "Your submission does not meet the requirements to be published in the store," which the store reports when the dashboard is missing something, such as a permission justification. Version `0.1.4` adds tab insights and five permissions. Before it publishes, fill in the dashboard's privacy practices with the justifications in [Store listing](#store-listing).
 
 ## What a click does
 
@@ -100,11 +100,26 @@ Upload `chrome-extension.zip` from `bash pack.sh chrome-extension.zip` if you ar
 | Field | Value |
 | --- | --- |
 | Name | Close Duplicate Tabs |
-| Summary | Closes extra tabs that share a URL. The badge shows that count. Selected base64 adds a menu item that copies the decoded text. |
-| Single purpose | Add a toolbar button that closes extra tabs with the same URL, show how many tabs that click will close, offer the same action from the tab menu, and copy decoded base64 from the selection menu. |
-| Permission justification | The tabs permission lets the extension read each tab's URL, count tabs that share a URL, and close the extras. The contextMenus permission adds a Close N duplicate tabs item to the tab menu and a selection item when the highlighted text is base64. N is the same count as the badge. The content script reads the highlighted text on http and https pages so that item can show the decoded text. It does not modify pages. The clipboardWrite and offscreen permissions copy the decoded text to the clipboard when that item is clicked. Decoding and the URL comparison happen on the device. The extension does not transmit tab URLs, titles, or selected text. |
-| Data use | It does not collect or transmit user data. It reads tab URLs and highlighted text on the device to close duplicate tabs and to copy decoded base64. |
+| Summary | Closes tabs that share a URL, plans tab groups with Chrome's on-device AI, and copies decoded base64. The badge counts duplicates. |
+| Single purpose | Help you manage open tabs: close extra tabs with the same URL, plan tab groups and tabs to close with Chrome's built-in model, and copy decoded base64 from the selection menu. |
+| Remote code | No. Every script is in the package. The model is Chrome's built-in Gemini Nano, called through the Prompt API. |
+| Data use | It does not collect or transmit user data. It reads tab URLs, titles, and highlighted text on the device to close duplicate tabs, plan tab groups, and copy decoded base64. Gemini Nano runs on the device. |
 | Visibility | Set this in the dashboard. The publish API cannot change it. |
+
+The dashboard asks for a justification for each permission and for the content script's host access:
+
+| Permission | Justification |
+| --- | --- |
+| `tabs` | Reads each tab's URL and title to count tabs that share a URL, to describe tabs to the on-device model, and to close the tabs you choose. |
+| `contextMenus` | Adds the Close N duplicate tabs item to the tab menu, the Tab insights item to the toolbar button's menu, and the decoded base64 item to the selection menu. |
+| `clipboardWrite` | Copies the decoded base64 text when you click its menu item. |
+| `offscreen` | Opens an offscreen document that writes the decoded text to the clipboard, because a service worker can't. |
+| `sidePanel` | Shows the Tab insights panel, which lists tabs to close and the planned tab groups. |
+| `tabGroups` | Names, colors, and collapses the tab groups that Group tabs makes. |
+| `sessions` | Lets Undo restore tabs that the panel closed, with their history. |
+| `alarms` | Schedules the on-device analysis every 15 minutes and a minute after tabs change. |
+| `storage` | Keeps the last tab plan on the device, and whether the panel has shown it, so the panel opens without waiting and the badge can say a plan is ready. |
+| Host access (`http://*/*`, `https://*/*`) | The content script reads the highlighted text so the selection menu can show decoded base64. It doesn't change pages or read anything else. |
 
 Paste this as the detailed description:
 
@@ -113,9 +128,11 @@ Close Duplicate Tabs adds one toolbar button. The badge on that button shows how
 
 Click the button to close those extra tabs. In Chrome 150 or later, right-click a tab and choose Close N duplicate tabs. That item closes the same tabs as the button, and it is hidden when there is nothing to close. For each URL, one tab stays open. A pinned tab stays ahead of an unpinned tab, then the active tab, then the tab you used most recently.
 
+Right-click the toolbar button and choose Tab insights to open the side panel. Gemini Nano, the model built into Chrome, groups your open tabs by topic and lists tabs that are likely safe to close, each with a reason. Group tabs turns that plan into Chrome tab groups, with the likely-close tabs in a collapsed Likely close group. Close N tabs closes the tabs you check, and Undo reverses a close or a grouping. The extension plans in the background, and the badge turns green when a new plan is ready. It never groups or closes tabs until you click. Tab insights needs desktop Chrome 138 or later on hardware that can run Gemini Nano.
+
 Highlight base64 text on a web page and right-click. If the selection is standard base64, the menu shows the decoded text. Click that item to copy the decoded text. If the selection is not base64, the menu does not add an item.
 
-The extension reads tab URLs and the highlighted text on your device. It does not send URLs, titles, selected text, or the decoded text anywhere. The content script does not change web pages.
+The extension reads tab URLs, titles, and the highlighted text on your device. Gemini Nano runs on your device too. The extension does not send URLs, titles, selected text, or the decoded text anywhere. The content script does not change web pages.
 ```
 
 The API cannot change Private or Public. If you change visibility, publish once in the dashboard. After this item is live, a push to `main` publishes a higher manifest version for you.
