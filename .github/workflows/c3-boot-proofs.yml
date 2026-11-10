@@ -38,9 +38,13 @@ jobs:
         with:
           lake-package-directory: c3-boot-proofs
           leanchecker: true
+          # Without arguments, leanchecker looks for modules named after the
+          # package, c3-boot-proofs, and finds none.
+          leanchecker-args: C3BootProofs
           axiom-audit: true
           axiom-audit-allow: propext,Quot.sound
-          axiom-audit-root: C3
+          # The audit root is a module prefix, not a namespace.
+          axiom-audit-root: C3BootProofs
 
       - name: Compare the specification with c3-verify
         run: |
