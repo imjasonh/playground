@@ -170,23 +170,53 @@ def entryIn (entry : Word) : List SegW → Bool
 def entryW (entry : Word) (segs : List SegW) : Except (BitVec 8) Unit :=
   if (entry &&& 1) != 0 then throw 11 else if entryIn entry segs then pure () else throw 11
 
+/-- The header's image length, which must be `ilen`. -/
+def hdrLn (M : Word → BitVec 8) (ptr len ilen : Word) (sv cnt : BitVec 8) (entry pos : Word) :
+    Except (BitVec 8) (BitVec 8 × BitVec 8 × Word × Word) := do
+  let (ln, pos) ← rdU32 M ptr len pos
+  if ln != ilen then throw 7
+  pure (sv, cnt, entry, pos)
+
+/-- The header from the entry point on. -/
+def hdrLen (M : Word → BitVec 8) (ptr len ilen : Word) (sv cnt : BitVec 8) (pos : Word) :
+    Except (BitVec 8) (BitVec 8 × BitVec 8 × Word × Word) := do
+  let (entry, pos) ← rdU32 M ptr len pos
+  hdrLn M ptr len ilen sv cnt entry pos
+
+/-- The header from the segment count on. -/
+def hdrCnt (M : Word → BitVec 8) (ptr len ilen : Word) (sv : BitVec 8) (pos : Word) :
+    Except (BitVec 8) (BitVec 8 × BitVec 8 × Word × Word) := do
+  let (cnt, pos) ← rdU8 M ptr len pos
+  if cnt.toNat = 0 ∨ 16 < cnt.toNat then throw 5
+  let pos ← rdRes M ptr len 2 pos
+  hdrLen M ptr len ilen sv cnt pos
+
+/-- The fixed header, through the image-length check: the security version,
+the segment count, the entry point, and the reader's position after it. -/
+def hdrSv (M : Word → BitVec 8) (ptr len ilen : Word) (pos : Word) :
+    Except (BitVec 8) (BitVec 8 × BitVec 8 × Word × Word) := do
+  let (sv, pos) ← rdU8 M ptr len pos
+  if 16 < sv.toNat then throw 5
+  hdrCnt M ptr len ilen sv pos
+
+def hdrChip (M : Word → BitVec 8) (ptr len ilen : Word) (pos : Word) :
+    Except (BitVec 8) (BitVec 8 × BitVec 8 × Word × Word) := do
+  let (chip, pos) ← rdU16 M ptr len pos
+  if chip != 5 then throw 8
+  hdrSv M ptr len ilen pos
+
+def hdrW (M : Word → BitVec 8) (ptr len ilen : Word) :
+    Except (BitVec 8) (BitVec 8 × BitVec 8 × Word × Word) := do
+  let pos ← rdMagic M ptr len 0x4D493343 0
+  let pos ← rdVer1 M ptr len pos
+  hdrChip M ptr len ilen pos
+
 /-- **What the compiled `image::parse` decides** for the `len` bytes at `ptr`
 and an image of `ilen` bytes: the error byte, or the security version, entry
 point, segment count, and segments. -/
 def imgW (M : Word → BitVec 8) (ptr len ilen : Word) :
     Except (BitVec 8) (BitVec 8 × Word × BitVec 8 × List SegW) := do
-  let pos ← rdMagic M ptr len 0x4D493343 0
-  let pos ← rdVer1 M ptr len pos
-  let (chip, pos) ← rdU16 M ptr len pos
-  if chip != 5 then throw 8
-  let (sv, pos) ← rdU8 M ptr len pos
-  if 16 < sv.toNat then throw 5
-  let (cnt, pos) ← rdU8 M ptr len pos
-  if cnt.toNat = 0 ∨ 16 < cnt.toNat then throw 5
-  let pos ← rdRes M ptr len 2 pos
-  let (entry, pos) ← rdU32 M ptr len pos
-  let (ln, pos) ← rdU32 M ptr len pos
-  if ln != ilen then throw 7
+  let (sv, cnt, entry, pos) ← hdrW M ptr len ilen
   let (segs, _, prev) ← readSegsW M ptr len ilen cnt.toNat pos (cnt.zeroExtend 32 <<< 4 + 0x14)
   if prev != ilen then throw 9
   overlapW segs
