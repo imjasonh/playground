@@ -67,6 +67,8 @@ fn part(r: &mut Reader<'_>, min: u32, max: u32) -> Result<Part, Error> {
 /// `bytes` must be exactly [`MANIFEST_LEN`] bytes. The parts must lie inside
 /// the slot, in the order image, bundle, chain, blob, without overlapping, and
 /// the image must start at [`IMAGE_OFFSET`].
+// c3-boot-proofs proves this function as compiled, so it needs its own symbol.
+#[inline(never)]
 pub fn parse(bytes: &[u8]) -> Result<Manifest, Error> {
     let mut r = Reader::new(bytes);
     r.magic(b"C3SL")?;

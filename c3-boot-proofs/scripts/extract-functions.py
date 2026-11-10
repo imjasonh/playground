@@ -3,7 +3,11 @@
 functions that have machine-code proofs, taken from the bootloader image.
 
 The bytes come from the ESP image's segments, which are what the ROM loads,
-at the addresses and sizes that the ELF's symbol table gives. The module
+at the addresses and sizes that the ELF's symbol table gives. LLVM's machine
+outliner numbers its helpers (OUTLINED_FUNCTION_N) differently on each
+rebuild, so a helper is named by the call that reaches it: the
+`auipc t0; jalr t0` pair at an offset of an extracted function, decoded the
+way the CPU decodes it. The module
 also records the image's SHA-256, which must equal
 c3-boot/bootloader/dev-image.sha256. CI regenerates the module and fails if
 it differs from the committed one, so the proofs are about the pinned image.
@@ -16,16 +20,33 @@ import struct
 import subprocess
 import sys
 
-# Lean name, then the demangled symbol.
+# Lean name, then the demangled symbol, or the Lean name of an earlier
+# function and the offset of a call in it.
 FUNCTIONS = [
     ("crc32", "c3_verify::bootstate::crc32"),
     ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
     ("readerArray4", "<c3_verify::reader::Reader>::array::<4>"),
     ("readerU32", "<c3_verify::reader::Reader>::u32"),
     ("manifestPart", "c3_verify::manifest::part"),
-    ("outlined83", "OUTLINED_FUNCTION_83"),
-    ("outlined57", "OUTLINED_FUNCTION_57"),
+    ("partSave", ("manifestPart", 0x02)),
+    ("partRestore", ("manifestPart", 0x46)),
+    ("manifestParse", "c3_verify::manifest::parse"),
+    ("parseSave", ("manifestParse", 0x02)),
+    ("parseRestore", ("manifestParse", 0xDC)),
 ]
+
+
+def call_target(code, addr, off):
+    """The target of the auipc/jalr pair at `off` of `code`, loaded at `addr`."""
+    auipc = int.from_bytes(code[off : off + 4], "little")
+    jalr = int.from_bytes(code[off + 4 : off + 8], "little")
+    rd = (auipc >> 7) & 31
+    if auipc & 0x7F != 0x17 or jalr & 0x707F != 0x67 or (jalr >> 15) & 31 != rd:
+        sys.exit(f"no auipc/jalr call at offset {off:#x} of the function at {addr:#x}")
+    imm = jalr >> 20
+    if imm & 0x800:
+        imm -= 0x1000
+    return (addr + off + (auipc & 0xFFFFF000) + imm) & 0xFFFFFFFE
 
 
 def segments(image):
@@ -51,12 +72,15 @@ def main():
     image = open(image_path, "rb").read()
     digest = hashlib.sha256(image).hexdigest()
     symbols = {}
+    at = {}
     for line in subprocess.run(
         [nm, "-C", "-S", elf], check=True, capture_output=True, text=True
     ).stdout.splitlines():
         parts = line.split(None, 3)
         if len(parts) == 4 and parts[2] in ("t", "T"):
-            symbols.setdefault(parts[3], []).append((int(parts[0], 16), int(parts[1], 16)))
+            entry = (int(parts[0], 16), int(parts[1], 16))
+            symbols.setdefault(parts[3], []).append(entry)
+            at.setdefault(entry[0], []).append((parts[3], entry[1]))
     segs = segments(image)
     lines = [
         "/-!",
@@ -72,20 +96,34 @@ def main():
         "",
         f'def imageSha256 : String := "{digest}"',
     ]
-    for name, symbol in FUNCTIONS:
-        if symbol not in symbols:
-            sys.exit(f"no symbol {symbol}")
-        if len(set(symbols[symbol])) != 1:
-            sys.exit(f"{symbol} names more than one function: {symbols[symbol]}")
-        addr, size = symbols[symbol][0]
+    extracted = {}
+    for name, source in FUNCTIONS:
+        if isinstance(source, tuple):
+            caller, off = source
+            caddr, ccode = extracted[caller]
+            addr = call_target(ccode, caddr, off)
+            found = [s for s in at.get(addr, []) if s[1] > 0]
+            if len(found) != 1:
+                sys.exit(f"the call at {caller}+{off:#x} reaches {addr:#x}, which starts {found}")
+            symbol, size = found[0]
+            what = f"`{symbol}`, which `{caller}` calls at offset {off:#x},"
+        else:
+            symbol = source
+            if symbol not in symbols:
+                sys.exit(f"no symbol {symbol}")
+            if len(set(symbols[symbol])) != 1:
+                sys.exit(f"{symbol} names more than one function: {symbols[symbol]}")
+            addr, size = symbols[symbol][0]
+            what = f"`{symbol}`,"
         code = bytes_at(segs, addr, size)
+        extracted[name] = (addr, code)
         rows = [
             "    " + ", ".join(f"0x{b:02x}" for b in code[i : i + 12])
             for i in range(0, len(code), 12)
         ]
         lines += [
             "",
-            f"/-- `{symbol}`, at `{addr:#x}` in the image. -/",
+            f"/-- {what} at `{addr:#x}` in the image. -/",
             f"def {name}Address : Nat := {addr:#x}",
             "",
             f"def {name}Code : List Nat :=",

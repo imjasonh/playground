@@ -8,8 +8,8 @@ with `Reader::u32`, and fails with `Error::OutOfRange` (5) unless
 `min ≤ length ≤ max`. It returns `Result<Part, Error>` through `a0`: a tag
 byte (0 for `Ok`, 1 for `Err`), the error byte at offset 1, and the offset
 and length at offsets 4 and 8. The compiled function saves `ra` and `s0`
-through `s3` with `OUTLINED_FUNCTION_83`, saves `s4` itself, and restores
-all six with `OUTLINED_FUNCTION_57`. `manifestPart_correct` proves it on the
+through `s3` with a machine-outlined save helper, saves `s4` itself, and
+restores all six with an outlined restore helper. `manifestPart_correct` proves it on the
 RV32 model with both `Reader::u32` calls through `readerU32_correct`.
 -/
 
@@ -18,11 +18,26 @@ namespace C3.RV32
 open C3.Image
 
 /-- The span of code that `part` runs: from `Reader::bytes`, the lowest of
-the functions it reaches, to the end of `OUTLINED_FUNCTION_83`, the
+the functions it reaches, to the end of the save helper `part` calls, the
 highest, relative to `part`'s address. -/
-abbrev partWindow (base : Word) : Word := base + 0xFFFFC942
+abbrev partWindow (base : Word) : Word := base + 0xFFFFC7E2
 
-abbrev partWindowLen : Nat := 0x162AA
+abbrev partWindowLen : Nat := 0x163F8
+
+/-- What `part`'s save helper stores, and where in the frame. -/
+abbrev partSavePs : List (Fin 32 × Word) := [(ra, 0x1C), (s0, 0x18), (s1, 0x14), (s2, 0x10), (s3, 0x0C)]
+
+/-- What `part`'s restore helper loads, and from where in the frame. -/
+abbrev partRestorePs : List (Fin 32 × Word) :=
+  [(ra, 0x1C), (s0, 0x18), (s1, 0x14), (s2, 0x10), (s3, 0x0C), (s4, 8)]
+
+/-- Registers after `part`'s restore helper. -/
+abbrev partRestored (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) : Fin 32 → Word :=
+  restoreRegs M G f partRestorePs
+
+theorem partSave_shape : SaveAt partSaveCode 0 partSavePs := by simp only [SaveAt]; decide
+
+theorem partRestore_shape : RestoreAt partRestoreCode 0 partRestorePs := by simp only [RestoreAt]; decide
 
 /-- Memory after `part` returns, outside the stack it uses. -/
 def partMem (M : Word → BitVec 8) (out self lo hi : Word) : Word → BitVec 8 :=
@@ -40,7 +55,7 @@ def partMem (M : Word → BitVec 8) (out self lo hi : Word) : Word → BitVec 8 
 
 theorem part_at_00 : fetchRel manifestPartCode 0x00 = some (.aluImm .add sp sp 0xFFFFFFE0, 2) := by decide
 theorem part_at_02 : fetchRel manifestPartCode 0x02 = some (.auipc t0 0x13000, 4) := by decide
-theorem part_at_06 : fetchRel manifestPartCode (0x02 + 4) = some (.jalr t0 t0 0xFFFFFBDE, 4) := by decide
+theorem part_at_06 : fetchRel manifestPartCode (0x02 + 4) = some (.jalr t0 t0 0xFFFFFBCC, 4) := by decide
 theorem part_at_0a : fetchRel manifestPartCode 0x0A = some (.store .sw sp s4 8, 2) := by decide
 theorem part_at_0c : fetchRel manifestPartCode 0x0C = some (.alu .add s2 x0 a3, 2) := by decide
 theorem part_at_0e : fetchRel manifestPartCode 0x0E = some (.alu .add s3 x0 a2, 2) := by decide
@@ -48,14 +63,14 @@ theorem part_at_10 : fetchRel manifestPartCode 0x10 = some (.alu .add s1 x0 a1, 
 theorem part_at_12 : fetchRel manifestPartCode 0x12 = some (.alu .add s0 x0 a0, 2) := by decide
 theorem part_at_14 : fetchRel manifestPartCode 0x14 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem part_at_16 : fetchRel manifestPartCode 0x16 = some (.auipc ra 0xFFFFD000, 4) := by decide
-theorem part_at_1a : fetchRel manifestPartCode (0x16 + 4) = some (.jalr ra ra 0xFFFFFA98, 4) := by decide
+theorem part_at_1a : fetchRel manifestPartCode (0x16 + 4) = some (.jalr ra ra 0xFFFFF938, 4) := by decide
 theorem part_at_1e : fetchRel manifestPartCode 0x1E = some (.load .lbu a0 sp 0, 4) := by decide
 theorem part_at_22 : fetchRel manifestPartCode 0x22 = some (.branch .bne a0 x0 0x16, 2) := by decide
 theorem part_at_24 : fetchRel manifestPartCode 0x24 = some (.load .lw s4 sp 4, 2) := by decide
 theorem part_at_26 : fetchRel manifestPartCode 0x26 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem part_at_28 : fetchRel manifestPartCode 0x28 = some (.alu .add a1 x0 s1, 2) := by decide
 theorem part_at_2a : fetchRel manifestPartCode 0x2A = some (.auipc ra 0xFFFFD000, 4) := by decide
-theorem part_at_2e : fetchRel manifestPartCode (0x2A + 4) = some (.jalr ra ra 0xFFFFFA84, 4) := by decide
+theorem part_at_2e : fetchRel manifestPartCode (0x2A + 4) = some (.jalr ra ra 0xFFFFF924, 4) := by decide
 theorem part_at_32 : fetchRel manifestPartCode 0x32 = some (.load .lbu a0 sp 0, 4) := by decide
 theorem part_at_36 : fetchRel manifestPartCode 0x36 = some (.branch .beq a0 x0 0x1C, 2) := by decide
 theorem part_at_38 : fetchRel manifestPartCode 0x38 = some (.load .lbu a0 sp 1, 4) := by decide
@@ -63,7 +78,7 @@ theorem part_at_3c : fetchRel manifestPartCode 0x3C = some (.store .sb s0 a0 1, 
 theorem part_at_40 : fetchRel manifestPartCode 0x40 = some (.aluImm .add a0 x0 1, 2) := by decide
 theorem part_at_42 : fetchRel manifestPartCode 0x42 = some (.store .sb s0 a0 0, 4) := by decide
 theorem part_at_46 : fetchRel manifestPartCode 0x46 = some (.auipc t0 0x13000, 4) := by decide
-theorem part_at_4a : fetchRel manifestPartCode (0x46 + 4) = some (.jalr t0 t0 0xFFFFF9D2, 4) := by decide
+theorem part_at_4a : fetchRel manifestPartCode (0x46 + 4) = some (.jalr t0 t0 0xFFFFF9E6, 4) := by decide
 theorem part_at_4e : fetchRel manifestPartCode (0x46 + 8) = some (.aluImm .add sp sp 0x20, 2) := by decide
 theorem part_at_50 : fetchRel manifestPartCode 0x50 = some (.jalr x0 ra 0, 2) := by decide
 theorem part_at_52 : fetchRel manifestPartCode 0x52 = some (.load .lw a1 sp 4, 2) := by decide
@@ -96,21 +111,21 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
     {f : Fin 32 → Word} {G self : Word} (s : St M base m off f) (hc : CodeIn M base manifestPartCode)
     {imm o : Word} (h1 : fetchRel manifestPartCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel manifestPartCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : base + BitVec.ofNat 32 off + imm + o = base + 0xFFFFCAAE)
+    (hb : base + BitVec.ofNat 32 off + imm + o = base + 0xFFFFC94E)
     (hl : (base + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (hbase : base.toNat % 2 = 0)
-    (hu : CodeIn M (base + 0xFFFFCAAE) readerU32Code)
-    (ha : CodeIn M (base + 0xFFFFCAAE + 0xFFFFFEFE) readerArray4Code)
-    (hbb : CodeIn M (base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode)
+    (hu : CodeIn M (base + 0xFFFFC94E) readerU32Code)
+    (ha : CodeIn M (base + 0xFFFFC94E + 0xFFFFFEFE) readerArray4Code)
+    (hbb : CodeIn M (base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode)
     (hsp : f sp = G) (ha0 : f a0 = G) (ha1 : f a1 = self)
     (hG : G.toNat % 4 = 0) (hself : self.toNat % 4 = 0)
     (hbuf : memLoad32 M self ≠ 0 ∧ (memLoad32 M self).toNat + (memLoad32 M (self + 4)).toNat ≤ 2 ^ 32)
-    (hSu : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFCAAE) readerU32Code.length)
-    (hSa : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFCAAE + 0xFFFFFEFE) readerArray4Code.length)
-    (hSb : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode.length)
-    (hOu : Sep G 8 (base + 0xFFFFCAAE) readerU32Code.length)
-    (hEu : Sep (self + 8) 4 (base + 0xFFFFCAAE) readerU32Code.length)
-    (hEa : Sep (self + 8) 4 (base + 0xFFFFCAAE + 0xFFFFFEFE) readerArray4Code.length)
-    (hEb : Sep (self + 8) 4 (base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode.length)
+    (hSu : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFC94E) readerU32Code.length)
+    (hSa : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFC94E + 0xFFFFFEFE) readerArray4Code.length)
+    (hSb : Sep (G + 0xFFFFFFD0) 48 (base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode.length)
+    (hOu : Sep G 8 (base + 0xFFFFC94E) readerU32Code.length)
+    (hEu : Sep (self + 8) 4 (base + 0xFFFFC94E) readerU32Code.length)
+    (hEa : Sep (self + 8) 4 (base + 0xFFFFC94E + 0xFFFFFEFE) readerArray4Code.length)
+    (hEb : Sep (self + 8) 4 (base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode.length)
     (hRS : Sep self 12 (G + 0xFFFFFFD0) 48)
     (hBS : Sep (memLoad32 M self) (memLoad32 M (self + 4)).toNat (G + 0xFFFFFFD0) 48)
     (hBE : Sep (memLoad32 M self) (memLoad32 M (self + 4)).toNat (self + 8) 4) :
@@ -130,8 +145,8 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
       subst this; simp [hz]
     · simp [upd, hr, h]
   have r2ra : reg m2 ra = base + BitVec.ofNat 32 (off + 8) := by rw [regs2, hL]; simp +decide [upd]
-  have hev : (base + 0xFFFFCAAE).toNat % 2 = 0 := even_at base hbase 0xFFFFCAAE (by decide)
-  have hp2 : m2.pc = base + 0xFFFFCAAE := by
+  have hev : (base + 0xFFFFC94E).toNat % 2 = 0 := even_at base hbase 0xFFFFC94E (by decide)
+  have hp2 : m2.pc = base + 0xFFFFC94E := by
     rw [pc2, show upd f ra (base + BitVec.ofNat 32 off + imm) ra = base + BitVec.ofNat 32 off + imm from
       by simp +decide [upd], hb]; exact even_clear _ hev
   have sp2 : reg m2 sp = G := by rw [r2 sp (by decide), hsp]
@@ -142,7 +157,7 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
       rw [BitVec.add_assoc]; exact BitVec.add_zero G] at this
     exact this
   have hm : m2.mem = M := mem2
-  obtain ⟨m3, c3, pc3, sp3, fr3, mem3⟩ := readerU32_correct m2 (base + 0xFFFFCAAE)
+  obtain ⟨m3, c3, pc3, sp3, fr3, mem3⟩ := readerU32_correct m2 (base + 0xFFFFC94E)
     (base + BitVec.ofNat 32 (off + 8)) G self
     (fun i hi => by rw [hm]; exact hu i hi) (fun i hi => by rw [hm]; exact ha i hi)
     (fun i hi => by rw [hm]; exact hbb i hi) hev hp2 (by rw [r2 a0 (by decide), ha0])
@@ -155,38 +170,47 @@ theorem part_call_u32 {M : Word → BitVec 8} {base : Word} {m : Machine} {off :
   · rw [fr3 ra (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r2ra]
   · rw [mem3 x (by rw [sp2]; exact hx), hm]
 
-/-- `part`'s epilogue from offset 0x46: `OUTLINED_FUNCTION_57` restores the
+/-- `part`'s epilogue from offset 0x46: the restore helper restores the
 saved registers from the frame at `G`, then `part` frees the frame and
 returns to the saved `ra`. -/
 theorem part_tail {M : Word → BitVec 8} {base : Word} {m : Machine} {f : Fin 32 → Word} {G : Word}
     (s : St M base m 0x46 f) (hc : CodeIn M base manifestPartCode) (hbase : base.toNat % 2 = 0)
-    (h57 : CodeIn M (base + 0x12A18) outlined57Code) (hsp : f sp = G) (hG : G.toNat % 4 = 0) :
+    (h57 : CodeIn M (base + 0x12A2C) partRestoreCode) (hsp : f sp = G) (hG : G.toNat % 4 = 0) :
     ∃ m', Steps m m' ∧ m'.pc = memLoad32 M (G + 0x1C) &&& ~~~1 ∧ m'.mem = M ∧
-      ∀ r, reg m' r = upd (restore57 M G (upd f t0 (base + BitVec.ofNat 32 0x4E))) sp (G + 0x20) r := by
-  obtain ⟨m1, e1, t1⟩ := s.callRestore57 hc part_at_46 part_at_4a
-    (b := base + 0x12A18) (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
-    (even_at base hbase 0x12A18 (by decide)) (even_at base hbase (0x46 + 8) (by decide)) h57
-    (by rw [hsp]; exact hG)
+      ∀ r, reg m' r = upd (partRestored M G (upd f t0 (base + BitVec.ofNat 32 0x4E))) sp (G + 0x20) r := by
+  obtain ⟨m1, e1, t1⟩ := s.callRestore hc part_at_46 part_at_4a
+    (b := base + 0x12A2C) (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at base hbase 0x12A2C (by decide)) (even_at base hbase (0x46 + 8) (by decide)) h57
+    partRestore_shape (by decide) (fun p hp => by
+      rw [hsp]
+      simp only [partRestorePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x1C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x18) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x14) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x10) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x0C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 8) (by decide)⟩)
   rw [hsp] at t1
   obtain ⟨m2, e2, t2⟩ := t1.aluImm hc part_at_4e (off' := 0x50) (by decide)
-  have q : restore57 M G (upd f t0 (base + BitVec.ofNat 32 (0x46 + 8))) sp = G := by
-    simp +decide only [restore57, upd]; simp [hsp]
+  have q : restoreRegs M G (upd f t0 (base + BitVec.ofNat 32 (0x46 + 8))) partRestorePs sp = G := by
+    simp +decide only [restoreRegs, upd]; simp [hsp]
   rw [q, show aluEval .add G 0x20 = G + 0x20 from rfl] at t2
   obtain ⟨m3, e3, pc3, mem3, regs3⟩ := t2.jalr hc part_at_50
   refine ⟨m3, e1.trans (.cons e2 (.single e3)), ?_, mem3, regs3⟩
-  rw [pc3, add_lit_zero]; simp +decide only [restore57, upd, ite_true, ite_false]
+  rw [pc3, add_lit_zero]; simp +decide only [restoreRegs, upd, ite_true, ite_false]
 
 /-- From offset 0x42: `part` stores the tag from `a0` at `out`, then runs
 `part_tail`. -/
 theorem part_from42 {M : Word → BitVec 8} {base : Word} {m : Machine} {f : Fin 32 → Word}
     {G out : Word} (s : St M base m 0x42 f) (hc : CodeIn M base manifestPartCode)
-    (hbase : base.toNat % 2 = 0) (h57 : CodeIn M (base + 0x12A18) outlined57Code)
+    (hbase : base.toNat % 2 = 0) (h57 : CodeIn M (base + 0x12A2C) partRestoreCode)
     (hsp : f sp = G) (hG : G.toNat % 4 = 0) (hs0 : f s0 = out)
-    (hOp : Sep out 1 base manifestPartCode.length) (hO57 : Sep out 1 (base + 0x12A18) outlined57Code.length) :
+    (hOp : Sep out 1 base manifestPartCode.length) (hO57 : Sep out 1 (base + 0x12A2C) partRestoreCode.length) :
     ∃ m', Steps m m' ∧
       m'.pc = memLoad32 (memStore8 M out ((f a0).extractLsb' 0 8)) (G + 0x1C) &&& ~~~1 ∧
       m'.mem = memStore8 M out ((f a0).extractLsb' 0 8) ∧
-      ∀ r, reg m' r = upd (restore57 (memStore8 M out ((f a0).extractLsb' 0 8)) G
+      ∀ r, reg m' r = upd (partRestored (memStore8 M out ((f a0).extractLsb' 0 8)) G
         (upd f t0 (base + BitVec.ofNat 32 0x4E))) sp (G + 0x20) r := by
   obtain ⟨m1, e1, t1⟩ := s.sb hc part_at_42 (off' := 0x46) (by decide)
   rw [hs0, add_lit_zero] at t1
@@ -197,14 +221,14 @@ theorem part_from42 {M : Word → BitVec 8} {base : Word} {m : Machine} {f : Fin
 and tag 1 at `out`, then runs `part_tail`. -/
 theorem part_from3c {M : Word → BitVec 8} {base : Word} {m : Machine} {f : Fin 32 → Word}
     {G out : Word} (s : St M base m 0x3C f) (hc : CodeIn M base manifestPartCode)
-    (hbase : base.toNat % 2 = 0) (h57 : CodeIn M (base + 0x12A18) outlined57Code)
+    (hbase : base.toNat % 2 = 0) (h57 : CodeIn M (base + 0x12A2C) partRestoreCode)
     (hsp : f sp = G) (hG : G.toNat % 4 = 0) (hs0 : f s0 = out)
-    (hOp : Sep out 2 base manifestPartCode.length) (hO57 : Sep out 2 (base + 0x12A18) outlined57Code.length) :
+    (hOp : Sep out 2 base manifestPartCode.length) (hO57 : Sep out 2 (base + 0x12A2C) partRestoreCode.length) :
     ∃ m', Steps m m' ∧
       m'.pc = memLoad32 (memStore8 (memStore8 M (out + 1) ((f a0).extractLsb' 0 8)) out 1) (G + 0x1C)
         &&& ~~~1 ∧
       m'.mem = memStore8 (memStore8 M (out + 1) ((f a0).extractLsb' 0 8)) out 1 ∧
-      ∀ r, reg m' r = upd (restore57 (memStore8 (memStore8 M (out + 1) ((f a0).extractLsb' 0 8)) out 1) G
+      ∀ r, reg m' r = upd (partRestored (memStore8 (memStore8 M (out + 1) ((f a0).extractLsb' 0 8)) out 1) G
         (upd (upd f a0 1) t0 (base + BitVec.ofNat 32 0x4E))) sp (G + 0x20) r := by
   have hz := s.zero
   obtain ⟨m1, e1, t1⟩ := s.sb hc part_at_3c (off' := 0x40) (by decide)
@@ -215,7 +239,7 @@ theorem part_from3c {M : Word → BitVec 8} {base : Word} {m : Machine} {f : Fin
   rw [show aluEval .add (f x0) 1 = 1 by rw [hz]; rfl] at t2
   have h0p : Sep out 1 base manifestPartCode.length := by
     have := hOp.sub (c := 0) (l := 1) (by omega); rwa [add_ofNat_zero] at this
-  have h057 : Sep out 1 (base + 0x12A18) outlined57Code.length := by
+  have h057 : Sep out 1 (base + 0x12A2C) partRestoreCode.length := by
     have := hO57.sub (c := 0) (l := 1) (by omega); rwa [add_ofNat_zero] at this
   obtain ⟨m3, c3, pc3, mem3, regs3⟩ := part_from42 t2 hc1 hbase h571
     (by simp +decide [upd, hsp]) hG (by simp +decide [upd, hs0]) h0p h057
@@ -267,7 +291,7 @@ theorem part_finish {Mf : Word → BitVec 8} {g h : Fin 32 → Word} {G L : Word
     (hs3 : memLoad32 Mf (G + 0x0C) = h s3) (hs4 : memLoad32 Mf (G + 8) = h s4)
     (hsp : G + 0x20 = h sp) :
     ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ t0 →
-      upd (restore57 Mf G (upd g t0 L)) sp (G + 0x20) r = h r := by
+      upd (partRestored Mf G (upd g t0 L)) sp (G + 0x20) r = h r := by
   intro r h1 h2 h3 h4 h5 h6 h7
   by_cases hr0 : r.val = 0
   · have : r = 0 := Fin.ext hr0
@@ -275,22 +299,22 @@ theorem part_finish {Mf : Word → BitVec 8} {g h : Fin 32 → Word} {G L : Word
   by_cases e : r = sp
   · subst e; simp +decide [upd]; exact hsp
   by_cases e1 : r = ra
-  · subst e1; simp +decide [restore57, upd]; exact hra
+  · subst e1; simp +decide [partRestored, restoreRegs, upd]; exact hra
   by_cases e2 : r = s0
-  · subst e2; simp +decide [restore57, upd]; exact hs0
+  · subst e2; simp +decide [partRestored, restoreRegs, upd]; exact hs0
   by_cases e3 : r = s1
-  · subst e3; simp +decide [restore57, upd]; exact hs1
+  · subst e3; simp +decide [partRestored, restoreRegs, upd]; exact hs1
   by_cases e4 : r = s2
-  · subst e4; simp +decide [restore57, upd]; exact hs2
+  · subst e4; simp +decide [partRestored, restoreRegs, upd]; exact hs2
   by_cases e5 : r = s3
-  · subst e5; simp +decide [restore57, upd]; exact hs3
+  · subst e5; simp +decide [partRestored, restoreRegs, upd]; exact hs3
   by_cases e6 : r = s4
-  · subst e6; simp +decide [restore57, upd]; exact hs4
+  · subst e6; simp +decide [partRestored, restoreRegs, upd]; exact hs4
   have hr : r ∉ partClob := by
     simp only [partClob, List.mem_cons, List.not_mem_nil, or_false]
     intro hh
     rcases hh with hh | hh | hh | hh | hh | hh | hh | hh | hh | hh | hh | hh | hh | hh <;> contradiction
-  simp only [restore57, upd, hr0, e, e1, e2, e3, e4, e5, e6, h7, ite_false]
+  simp only [partRestored, restoreRegs, upd, hr0, e, e1, e2, e3, e4, e5, e6, h7, ite_false]
   exact hk r hr
 
 theorem add_ofNat_assoc' (p q : Word) (j : Nat) :
@@ -308,11 +332,11 @@ restored, every register but `a0` through `a5` and `t0` unchanged, and
 memory outside those 80 bytes exactly as `partMem` says. -/
 theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     (hcode : CodeAt m base manifestPartCode)
-    (h83 : CodeAt m (base + 0x12BE0) outlined83Code)
-    (h57 : CodeAt m (base + 0x12A18) outlined57Code)
-    (hu : CodeAt m (base + 0xFFFFCAAE) readerU32Code)
-    (ha : CodeAt m (base + 0xFFFFCAAE + 0xFFFFFEFE) readerArray4Code)
-    (hb : CodeAt m (base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode)
+    (h83 : CodeAt m (base + 0x12BCE) partSaveCode)
+    (h57 : CodeAt m (base + 0x12A2C) partRestoreCode)
+    (hu : CodeAt m (base + 0xFFFFC94E) readerU32Code)
+    (ha : CodeAt m (base + 0xFFFFC94E + 0xFFFFFEFE) readerArray4Code)
+    (hb : CodeAt m (base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode)
     (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = self) (ha2 : reg m a2 = lo) (ha3 : reg m a3 = hi)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
@@ -338,32 +362,32 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
   rw [hSdef] at hSW hRS hOS hBS ⊢
   have hGa : G.toNat % 4 = 0 := hGdef ▸ aligned_add hsp (k := 0xFFFFFFE0) (by decide)
   -- The code window at `W`.
-  obtain ⟨W, hWdef⟩ : ∃ W, base + 0xFFFFC942 = W := ⟨_, rfl⟩
+  obtain ⟨W, hWdef⟩ : ∃ W, base + 0xFFFFC7E2 = W := ⟨_, rfl⟩
   have hSW' : Sep S 80 W partWindowLen := by rw [← hWdef]; exact hSW
   have hOW' : Sep out 12 W partWindowLen := by rw [← hWdef]; exact hOW
   have hEW' : Sep (self + 8) 4 W partWindowLen := by rw [← hWdef]; exact hEW
   have wa : ∀ (b : Word) (c : Nat), b = W + BitVec.ofNat 32 c → ∀ i,
       b + BitVec.ofNat 32 i = W + BitVec.ofNat 32 (c + i) := fun b c h i => by rw [h, add_ofNat_assoc]
-  have bP : base = W + BitVec.ofNat 32 0x36BE := by
-    rw [← hWdef, BitVec.add_assoc, show (0xFFFFC942 : Word) + BitVec.ofNat 32 0x36BE = 0 from rfl]
+  have bP : base = W + BitVec.ofNat 32 0x381E := by
+    rw [← hWdef, BitVec.add_assoc, show (0xFFFFC7E2 : Word) + BitVec.ofNat 32 0x381E = 0 from rfl]
     exact (BitVec.add_zero base).symm
-  have bU : base + 0xFFFFCAAE = W + BitVec.ofNat 32 0x16C := by rw [← hWdef, BitVec.add_assoc]; rfl
-  have bA : base + 0xFFFFCAAE + 0xFFFFFEFE = W + BitVec.ofNat 32 0x6A := by
+  have bU : base + 0xFFFFC94E = W + BitVec.ofNat 32 0x16C := by rw [← hWdef, BitVec.add_assoc]; rfl
+  have bA : base + 0xFFFFC94E + 0xFFFFFEFE = W + BitVec.ofNat 32 0x6A := by
     rw [← hWdef]; simp only [BitVec.add_assoc]; rfl
-  have bB : base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96 = W + BitVec.ofNat 32 0 := by
+  have bB : base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96 = W + BitVec.ofNat 32 0 := by
     rw [← hWdef]; simp only [BitVec.add_assoc]; rfl
-  have b57 : base + 0x12A18 = W + BitVec.ofNat 32 0x160D6 := by rw [← hWdef, BitVec.add_assoc]; rfl
-  have b83 : base + 0x12BE0 = W + BitVec.ofNat 32 0x1629E := by rw [← hWdef, BitVec.add_assoc]; rfl
+  have b57 : base + 0x12A2C = W + BitVec.ofNat 32 0x1624A := by rw [← hWdef, BitVec.add_assoc]; rfl
+  have b83 : base + 0x12BCE = W + BitVec.ofNat 32 0x163EC := by rw [← hWdef, BitVec.add_assoc]; rfl
   have wS : ∀ k, k < partWindowLen → Sep S 80 (W + BitVec.ofNat 32 k) 1 :=
     fun k hk => hSW'.subR (c := k) (l := 1) (by omega)
   have wE : ∀ k, k < partWindowLen → Sep (self + 8) 4 (W + BitVec.ofNat 32 k) 1 :=
     fun k hk => hEW'.subR (c := k) (l := 1) (by omega)
   have codeAll : ∀ Mx : Word → BitVec 8, (∀ k, k < partWindowLen →
       Mx (W + BitVec.ofNat 32 k) = m.mem (W + BitVec.ofNat 32 k)) →
-      CodeIn Mx base manifestPartCode ∧ CodeIn Mx (base + 0x12BE0) outlined83Code ∧
-      CodeIn Mx (base + 0x12A18) outlined57Code ∧ CodeIn Mx (base + 0xFFFFCAAE) readerU32Code ∧
-      CodeIn Mx (base + 0xFFFFCAAE + 0xFFFFFEFE) readerArray4Code ∧
-      CodeIn Mx (base + 0xFFFFCAAE + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode := by
+      CodeIn Mx base manifestPartCode ∧ CodeIn Mx (base + 0x12BCE) partSaveCode ∧
+      CodeIn Mx (base + 0x12A2C) partRestoreCode ∧ CodeIn Mx (base + 0xFFFFC94E) readerU32Code ∧
+      CodeIn Mx (base + 0xFFFFC94E + 0xFFFFFEFE) readerArray4Code ∧
+      CodeIn Mx (base + 0xFFFFC94E + 0xFFFFFEFE + 0xFFFFFF96) readerBytesCode := by
     intro Mx hx
     have tr : ∀ (b : Word) (c : Nat) (code : List Nat), b = W + BitVec.ofNat 32 c →
         c + code.length ≤ partWindowLen → CodeAt m b code → CodeIn Mx b code :=
@@ -377,8 +401,8 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     fun b c code hb hl => by
       rw [hb]; exact ⟨hSW'.subR hl, hEW'.subR hl, hOW'.subR hl⟩
   obtain ⟨-, -, OP⟩ := cs _ _ manifestPartCode bP (by decide)
-  obtain ⟨S83, -, -⟩ := cs _ _ outlined83Code b83 (by decide)
-  obtain ⟨-, -, O57⟩ := cs _ _ outlined57Code b57 (by decide)
+  obtain ⟨S83, -, -⟩ := cs _ _ partSaveCode b83 (by decide)
+  obtain ⟨-, -, O57⟩ := cs _ _ partRestoreCode b57 (by decide)
   obtain ⟨SU, EU, -⟩ := cs _ _ readerU32Code bU (by decide)
   obtain ⟨SA, EA, -⟩ := cs _ _ readerArray4Code bA (by decide)
   obtain ⟨SB, EB, -⟩ := cs _ _ readerBytesCode bB (by decide)
@@ -468,16 +492,23 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     · have : r = 0 := Fin.ext hr
       subst this; simp [upd, hz]
     · simp [upd, hr, h]
-  -- 0x02: `OUTLINED_FUNCTION_83` saves `ra` and `s0` through `s3`.
-  obtain ⟨m2, k2, t2⟩ := t1.callSave83 c0 part_at_02 part_at_06 (b := base + 0x12BE0)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x12BE0 (by decide))
-    (even_at base hbase (2 + 8) (by decide)) c083 (by rw [f1sp]; exact hGa)
-    (by rw [f1sp]; have := fr 0 32 (by omega) _ _ S83; rwa [g0] at this)
+  -- 0x02: the save helper saves `ra` and `s0` through `s3`.
+  obtain ⟨m2, k2, t2⟩ := t1.callSave c0 part_at_02 part_at_06 (b := base + 0x12BCE)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x12BCE (by decide))
+    (even_at base hbase (2 + 8) (by decide)) c083 partSave_shape (by decide) (fun p hp => by
+      rw [f1sp]
+      simp only [partSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl
+      · exact ⟨by decide, aligned_add hGa (k := 0x1C) (by decide), fr 0x1C 4 (by omega) _ _ S83⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x18) (by decide), fr 0x18 4 (by omega) _ _ S83⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x14) (by decide), fr 0x14 4 (by omega) _ _ S83⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x10) (by decide), fr 0x10 4 (by omega) _ _ S83⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x0C) (by decide), fr 0x0C 4 (by omega) _ _ S83⟩)
   rw [f1sp] at t2
-  obtain ⟨M1, hM1⟩ : ∃ M1, save83 m.mem G (upd (reg m) sp G) = M1 := ⟨_, rfl⟩
+  obtain ⟨M1, hM1⟩ : ∃ M1, saveMem m.mem G (upd (reg m) sp G) partSavePs = M1 := ⟨_, rfl⟩
   rw [hM1] at t2
   have M1out : ∀ x, Sep S 80 x 1 → M1 x = m.mem x := fun x hx => by
-    rw [← hM1]; unfold save83
+    rw [← hM1]; simp only [saveMem]
     rw [memStore32_get_sep (show Sep (G + 0x0C) 4 x 1 from fr 0x0C 4 (by omega) x 1 hx),
       memStore32_get_sep (show Sep (G + 0x10) 4 x 1 from fr 0x10 4 (by omega) x 1 hx),
       memStore32_get_sep (show Sep (G + 0x14) 4 x 1 from fr 0x14 4 (by omega) x 1 hx),
@@ -505,7 +536,7 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     have so : ∀ c d, c < 32 → d < 32 → c + 4 ≤ d ∨ d + 4 ≤ c →
         Sep (G + BitVec.ofNat 32 c) 4 (G + BitVec.ofNat 32 d) 4 :=
       fun c d hc hd h => sep_offsets G h (by omega) (by omega)
-    rw [← hM2, ← hM1]; unfold save83
+    rw [← hM2, ← hM1]; simp only [saveMem]
     refine ⟨?_, ?_, ?_, ?_, ?_, memLoad32_store32_same _ _ _⟩
     · rw [memLoad32_store32_sep (show Sep (G + 8) 4 (G + 0x1C) 4 from so 8 0x1C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x0C) 4 (G + 0x1C) 4 from so 0x0C 0x1C (by omega) (by omega) (by omega)),
         memLoad32_store32_sep (show Sep (G + 0x10) 4 (G + 0x1C) 4 from so 0x10 0x1C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x14) 4 (G + 0x1C) 4 from so 0x14 0x1C (by omega) (by omega) (by omega)),
@@ -551,7 +582,7 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
       (∀ k, 8 ≤ k → k < 32 → Mf (G + BitVec.ofNat 32 k) = M2 (G + BitVec.ofNat 32 k)) →
       (∀ r, r ∉ partClob → g r = reg m r) →
       n.pc = memLoad32 Mf (G + 0x1C) &&& ~~~1 → n.mem = Mf →
-      (∀ r, reg n r = upd (restore57 Mf G (upd g t0 (base + BitVec.ofNat 32 0x4E))) sp (G + 0x20) r) →
+      (∀ r, reg n r = upd (partRestored Mf G (upd g t0 (base + BitVec.ofNat 32 0x4E))) sp (G + 0x20) r) →
       (∀ x, Sep S 80 x 1 → Mf x = partMem m.mem out self lo hi x) →
       n.pc = retAddr ∧ reg n sp = reg m sp ∧
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ t0 → reg n r = reg m r) ∧
@@ -571,16 +602,16 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
     have := outne k hk 0 (by omega); rwa [add_ofNat_zero] at this
   have O2 : Sep out 2 base manifestPartCode.length := by
     have := OP.sub (c := 0) (l := 2) (by omega); rwa [add_ofNat_zero] at this
-  have O257 : Sep out 2 (base + 0x12A18) outlined57Code.length := by
+  have O257 : Sep out 2 (base + 0x12A2C) partRestoreCode.length := by
     have := O57.sub (c := 0) (l := 2) (by omega); rwa [add_ofNat_zero] at this
   have O1 : Sep out 1 base manifestPartCode.length := by
     have := OP.sub (c := 0) (l := 1) (by omega); rwa [add_ofNat_zero] at this
-  have O157 : Sep out 1 (base + 0x12A18) outlined57Code.length := by
+  have O157 : Sep out 1 (base + 0x12A2C) partRestoreCode.length := by
     have := O57.sub (c := 0) (l := 1) (by omega); rwa [add_ofNat_zero] at this
   -- 0x16: the first `Reader::u32`, for the offset.
   have hRS48 : Sep self 12 (G + 0xFFFFFFD0) 48 := by
     rw [hSG]; have := hRS.subR (c := 0) (l := 48) (by omega); rwa [add_ofNat_zero] at this
-  have hOu : Sep G 8 (base + 0xFFFFCAAE) readerU32Code.length := by
+  have hOu : Sep G 8 (base + 0xFFFFC94E) readerU32Code.length := by
     have := fr 0 8 (by omega) _ _ SU; rwa [g0] at this
   have hBS48 : Sep ptr len.toNat (G + 0xFFFFFFD0) 48 := by
     rw [hSG]; have := hBS.subR (c := 0) (l := 48) (by omega); rwa [add_ofNat_zero] at this
@@ -820,9 +851,9 @@ theorem manifestPart_correct (m : Machine) (base retAddr out self lo hi : Word)
           (by rw [qc s0 (by decide), r8s0]; exact aligned_add hout (k := 4) (by decide))
         rw [qc s0 (by decide), qc s4 (by decide), r8s0, r8s4] at ud
         have O4 : Sep (out + 4) 4 base manifestPartCode.length := OP.sub (c := 4) (l := 4) (by omega)
-        have O457 : Sep (out + 4) 4 (base + 0x12A18) outlined57Code.length := O57.sub (c := 4) (l := 4) (by omega)
+        have O457 : Sep (out + 4) 4 (base + 0x12A2C) partRestoreCode.length := O57.sub (c := 4) (l := 4) (by omega)
         have O8 : Sep (out + 8) 4 base manifestPartCode.length := OP.sub (c := 8) (l := 4) (by omega)
-        have O857 : Sep (out + 8) 4 (base + 0x12A18) outlined57Code.length := O57.sub (c := 8) (l := 4) (by omega)
+        have O857 : Sep (out + 8) 4 (base + 0x12A2C) partRestoreCode.length := O57.sub (c := 8) (l := 4) (by omega)
         obtain ⟨ne, de, ue⟩ := ud.sw (c10.store32 O4) part_at_62 (off' := 0x64) (by decide)
           (by rw [qc s0 (by decide), r8s0]; exact aligned_add hout (k := 8) (by decide))
         rw [qc s0 (by decide), qc a1 (by decide), r8s0, r8a1] at ue

@@ -78,7 +78,7 @@ ends inside the signed image.
 | `readerBytes_correct` | The compiled `Reader::bytes` leaves memory exactly as `bytesMem` says, for every input |
 | `readerArray4_correct` | The compiled `Reader::array::<4>`, through its call to `Reader::bytes`, restores its frame and leaves memory outside the frame exactly as `array4Mem` says |
 | `readerU32_correct` | The compiled `Reader::u32`, through `Reader::array::<4>` and `Reader::bytes`, leaves memory outside its 48 bytes of stack exactly as `u32Mem` says: on success, tag 0 and the 4 bytes at the slice's position as a little-endian word through `out` |
-| `outlined83_correct`, `outlined57_correct` | The machine-outlined `OUTLINED_FUNCTION_83` saves `ra` and `s0` through `s3` in the caller's frame, and `OUTLINED_FUNCTION_57` restores `ra` and `s0` through `s4`; both return through `t0` |
+| `save_run`, `restore_run` | Any machine-outlined helper that stores (or loads) a list of registers at offsets from `sp` and returns with `jr t0` does exactly that: memory `saveMem`, or registers `restoreRegs`. `decide` checks each helper's bytes against its list |
 | `manifestPart_correct` | The compiled `manifest::part`, through both `Reader::u32` calls and both helpers, restores `sp` and every register but `a0` through `a5` and `t0`, and leaves memory outside its 80 bytes of stack exactly as `partMem` says: the offset, the length, and tag 0 when both reads succeed and `min ≤ length ≤ max`; otherwise tag 1 and `Truncated` or `OutOfRange` |
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
@@ -106,17 +106,19 @@ site, and the proof of each caller, such as `manifest::part`, has to show
 it.
 
 `C3BootProofs/Proofs/Part.lean` proves `manifestPart_correct`. LLVM's
-machine outliner moved `part`'s register saves and restores into
-`OUTLINED_FUNCTION_83` and `OUTLINED_FUNCTION_57`, which `part` enters with
-`auipc t0; jalr t0` and which return with `jr t0`.
-`C3BootProofs/Proofs/Outlined.lean` proves each helper once and gives the
-caller a lemma that runs the entry pair and the whole helper as one step,
-so every function that shares a helper can reuse its proof. The proof
+machine outliner moved `part`'s register saves and restores into helper
+functions, which `part` enters with `auipc t0; jalr t0` and which return
+with `jr t0`. The outliner numbers them (`OUTLINED_FUNCTION_N`) differently
+on each rebuild, so `scripts/extract-functions.py` finds each helper by
+decoding the call that reaches it. `C3BootProofs/Proofs/Outlined.lean`
+proves every helper of that shape at once, by induction on the list of
+registers it saves or restores, and gives the caller a lemma that runs the
+entry pair and the whole helper as one step. The proof
 follows five paths: the offset is truncated, the length is truncated, the
 length is below `min`, the length is above `max`, and success. On every
 path it shows that the saved slots survive both calls and the stores
 through `out`, so the restore gives back the caller's registers. Its code
-hypothesis is one window, from `Reader::bytes` to `OUTLINED_FUNCTION_83`,
+hypothesis is one window, from `Reader::bytes` to the end of the save helper,
 that the stack, the result, and the reader's position stay out of, instead
 of a hypothesis for each function. `sep_of_le` turns address order into
 `Sep`, so the audit's witness machine checks that window without comparing
