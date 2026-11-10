@@ -152,16 +152,18 @@ def physW (s : SegW) : Except (BitVec 8) (BitVec 8 × Word) :=
   | none => throw 9
   | some r => pure r
 
+/-- `ranges_overlap` for `a` at `xa` and `b` at `xb` in one address space. -/
+def pairChk (a : SegW) (xa : Word) (b : SegW) (xb : Word) : Except (BitVec 8) Unit :=
+  if (a.len + xa).ult a.len then .error 10
+  else if (b.len + xb).ult b.len then .error 10
+  else if xa.ult (b.len + xb) && xb.ult (a.len + xa) then .error 10
+  else .ok ()
+
 /-- `ranges_overlap` for `a`, already placed at `xa` in space `sa`, and `b`. -/
-def pairW (a : SegW) (sa : BitVec 8) (xa : Word) (b : SegW) : Except (BitVec 8) Unit := do
-  let (sb, xb) ← physW b
-  if sa = sb then
-    let ae := a.len + xa
-    if ae.ult a.len then throw 10
-    let be := b.len + xb
-    if be.ult b.len then throw 10
-    if xa.ult be && xb.ult ae then throw 10
-  pure ()
+def pairW (a : SegW) (sa : BitVec 8) (xa : Word) (b : SegW) : Except (BitVec 8) Unit :=
+  match physResult b.kind b.addr with
+  | none => .error 9
+  | some (sb, xb) => if sa = sb then pairChk a xa b xb else .ok ()
 
 def innerW (a : SegW) (sa : BitVec 8) (xa : Word) : List SegW → Except (BitVec 8) Unit
   | [] => pure ()
@@ -324,6 +326,8 @@ structure IEnv (P R G ptr len out : Word) : Prop where
   hOW : Sep out 0x110 (ipWindow P) ipWindowLen
   hOS : Sep out 0x110 R 0x190
   hBS : Sep ptr len.toNat R 0x190
+  /-- The stack region doesn't wrap past address 0, so no pointer into it is null. -/
+  hRw : R.toNat + 0x190 ≤ 2 ^ 32
 
 namespace IEnv
 
@@ -332,6 +336,16 @@ variable {P R G ptr len out : Word}
 theorem g_ofs (env : IEnv P R G ptr len out) (c : Nat) :
     G + BitVec.ofNat 32 c = R + BitVec.ofNat 32 (0x30 + c) := by
   rw [env.hRG, add_ofNat_assoc]
+
+/-- No address in the frame above `G` is null. -/
+theorem g_ne0 (env : IEnv P R G ptr len out) (c : Nat) (h0 : 0 < c) (hc : c < 0x160) :
+    G + BitVec.ofNat 32 c ≠ 0 := fun e => by
+  have hw := env.hRw
+  have h := congrArg BitVec.toNat e
+  rw [env.g_ofs, BitVec.toNat_add, BitVec.toNat_ofNat] at h
+  have : (0 : Word).toNat = 0 := rfl
+  rw [this, Nat.mod_eq_of_lt (by omega : 0x30 + c < 2 ^ 32), Nat.mod_eq_of_lt (by omega)] at h
+  omega
 
 theorem stack_code (env : IEnv P R G ptr len out) (c n : Nat) (hn : c + n ≤ 0x190) (d l : Nat)
     (hl : d + l ≤ ipWindowLen) : Sep (R + BitVec.ofNat 32 c) n (ipWindow P + BitVec.ofNat 32 d) l :=
