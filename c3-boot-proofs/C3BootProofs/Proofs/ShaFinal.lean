@@ -1982,6 +1982,42 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
       Sha256.compress Sha256.h0 := by
     rw [w46, wL, wC, bL, padb]
     simp only [List.foldl_append, List.foldl_cons, List.foldl_nil]
+  have cMZ := codeX MZ MZR
+  have u46 : St MZ U n46 0xD6 (reg n46) := ⟨by rw [pc46], rfl, fun _ => rfl⟩
+  have k46 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+      r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+      r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n46 r = reg n45 r := K46
+  have r46 : ∀ r, r = s0 ∨ r = s1 ∨ r = s2 ∨ r = sp → reg n46 r = reg nC r := by
+    intro r h
+    rcases h with rfl | rfl | rfl | rfl <;>
+      rw [k46 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+        KC45 _ (by decide) (by decide) (by decide)]
+  have cFZ := cMZ _ _ E.cF (by decide) (by decide)
+  obtain ⟨n47, d47, u47⟩ := u46.aluImm cFZ sf_at_d6 (off' := 0xD8) (by decide)
+  have K47 := u47.upd_ne u46.zero
+  have u47' : St MZ U n47 0xD8 (reg n47) := u47.self
+  have a0_47 : reg n47 a0 = BitVec.ofNat 32 8 := by rw [u47.upd_eq (by decide), u46.zero]; rfl
+  obtain ⟨n48, d48, u48⟩ := u47'.notTaken cFZ 0xDA sf_at_d8 (by decide) (by
+    simp only [branchTaken]; rw [a0_47, u47'.zero]; decide)
+  let B := G + BitVec.ofNat 32 0x20
+  have hBn : B.toNat = G.toNat + 0x20 := hGc _ (by omega)
+  have hBc : ∀ (b : Word) (l : Nat), 0x40000000 ≤ b.toNat → b.toNat + l ≤ 2 ^ 32 → Sep B 32 b l :=
+    fun b l hb hbl => data_code (by rw [hBn]; omega) hb hbl
+  have cB : ∀ (Mx : Word → BitVec 8), (∀ x, Sep B 32 x 1 → Mx x = MZ x) → ∀ (b : Word) (code : List Nat),
+      CodeIn M0 b code → 0x40000000 ≤ b.toNat → b.toNat + code.length ≤ 2 ^ 32 → CodeIn Mx b code :=
+    fun Mx h b code hc hb hbl i hi => by
+      rw [h _ ((hBc b code.length hb hbl).subR (c := i) (l := 1) (by omega))]; exact cMZ b code hc hb hbl i hi
+  have hSB : Sep (S + 0x40) 32 B 32 := by
+    show Sep (S + BitVec.ofNat 32 0x40) 32 (G + BitVec.ofNat 32 0x20) 32
+    rw [Gc]; exact (E.sSF.sub (c := 0x40) (l := 32) (by omega)).subR (c := 0x130 + 0x20) (l := 32) (by omega)
+  obtain ⟨n49, Mf, c49, u49, hagF, hbF, K49⟩ := fin_loop (M0 := MZ) (Sst := S + 0x40) (B := B)
+    (fun Mx h => cB Mx h _ _ E.cF (by decide) (by decide)) (fun Mx h => cB Mx h _ _ E.cBe (by decide) (by decide))
+    (by rw [hBn]; omega) hSB (by rw [S40]; have := E.hS; omega) 8 0 n48 MZ rfl (by decide) u48.self
+    (fun _ _ => rfl) rfl (by rw [u48.regs, a0_47])
+    (by rw [u48.regs, K47 s1 (by decide), r46 s1 (by decide), s1C, add_ofNat_zero])
+    (by rw [u48.regs, K47 s0 (by decide), r46 s0 (by decide), s0C, add_ofNat_zero])
+  rw [hX] at hbF
   sorry
 
 end C3.RV32
