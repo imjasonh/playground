@@ -17,6 +17,10 @@ fn node_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 /// `proof` is the concatenation of the audit path's 32-byte hashes, from the
 /// leaf toward the root. Fails if `index` isn't below `size` or if the proof
 /// has the wrong number of hashes for that position.
+///
+/// Kept out of line so that the bootloader image has it as its own function,
+/// which the machine-code proofs cover on its own.
+#[inline(never)]
 pub fn root_from_inclusion(
     index: u64,
     size: u64,

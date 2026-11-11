@@ -86,7 +86,9 @@ tracks the image's size and speed so that such a trade shows up.
 The Lean RV32 model (`c3-boot-proofs`' `boot-sim`) runs the burns-off
 bootloader image on the scenarios that `qemu/boot-lockstep.sh` checks, and
 counts the instructions each boot runs. Measured on 2026-11-11 with the
-image pinned in `bootloader/dev-image.sha256`:
+image pinned in `bootloader/dev-image.sha256` before the proof-friendly
+build settings below (SHA-256
+`4b0fe03668079f6a6bf085aae436104cc27d8d057f53a9e37ab4f02ef6f04cf0`):
 
 | Boot | Instructions | At 160 MHz, one cycle each |
 | --- | --- | --- |
@@ -129,6 +131,32 @@ Findings:
   function alone is 35.7 KB for Ed25519's hashes.
 - **`memcpy` and `memset` run 10 percent of the instructions**, mostly
   moving and zeroing big-number temporaries.
+
+### After the proof-friendly build settings
+
+`.cargo/config.toml` builds the bootloader without LLVM's machine outliner
+and with `sha2`'s compact backend, and `root_from_inclusion` is kept out of
+line, so that the machine-code proofs have fewer and smaller functions (see
+`c3-boot-proofs/docs/throughput.md`). The image shrank from 133,392 to
+89,296 bytes, and its code from 42,490 to 28,526 instructions. The trial
+boot of a valid slot runs 136,797,349 instructions, 2.2 percent more, at
+least 855 ms at 160 MHz:
+
+| Crate | Code (bytes) | Instructions run | Share |
+| --- | --- | --- | --- |
+| `crypto_bigint` | 10,326 | 88,869,532 | 65.0% |
+| `compiler_builtins` (`memcpy`, `memset`) | 534 | 13,780,156 | 10.1% |
+| `sha2` | 2,610 | 12,681,985 | 9.3% |
+| `curve25519_dalek` | 12,958 | 11,333,429 | 8.3% |
+| `p256` | 4,856 | 3,866,865 | 2.8% |
+| `p384` | 542 | 2,328,079 | 1.7% |
+| `c3_bootloader` | 6,188 | 2,325,911 | 1.7% |
+| Everything else | 47,066 | 1,610,768 | 1.2% |
+| **Total** | **84,470** | **136,797,349** | |
+
+The compact `sha2` runs about 4 million more instructions than the
+unrolled one, and code that the outliner had moved into helpers runs about
+1.3 million fewer.
 
 To reproduce, build the scenarios and run the lockstep check, then profile
 one boot:
