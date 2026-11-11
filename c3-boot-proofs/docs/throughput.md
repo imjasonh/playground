@@ -72,8 +72,8 @@ python3 ../c3-boot-proofs/scripts/coverage.py /tmp/trial.prof "${elf}" "${bin}/l
 | Complete point addition | 253 | 2,419 | 9.6 | 97 | 2.0 | 1 h 41 min |
 | `sha2::sha256::compress256` with its outlined helpers | 3,685 | 25,809 | 7.0 | 392 | 1.8 | About 12 h 20 min |
 | P-384's `mul_montgomery_form::<12>` with its outlined helpers and `Uint<12>::select` | 206 | 2,969 | 14.4 | 30 | 0.8 | 1 h 15 min |
-| P-384's `square_montgomery_form::<12>` | 126 | 1,679 | 13.3 | 25 | 0.8 | About 1 h |
-| **Total** | **5,924** | **54,340** | **9.2** | **1,387** | **3.6** | **About 24 h** |
+| P-384's `square_montgomery_form::<12>` | 126 | 1,679 | 13.3 | 25 | 0.8 | 25 min |
+| **Total** | **5,924** | **54,340** | **9.2** | **1,387** | **3.6** | **About 23 h 20 min** |
 
 The 5,924 instructions are 14 percent of the image. The full build of the
 Lean project, with the specification, the RV32 model, and the audit, takes
@@ -121,7 +121,7 @@ Findings:
   `square_montgomery_form::<12>`, which compiles the same loop with other
   registers, reused its arithmetic and its loop proofs, whose copies differ
   only in register numbers and offsets: the squaring took 13.3 lines per
-  instruction and about an hour. The multiplication's
+  instruction and 25 minutes. The multiplication's
   2,969 lines are mostly calls and frames: the prologue, the final
   subtraction, and the call to `Uint<12>::select` take 1,225 lines for 60
   instructions, against 938 lines for the 81 instructions of both loops.
