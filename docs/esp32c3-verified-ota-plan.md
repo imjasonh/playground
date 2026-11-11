@@ -35,7 +35,8 @@
 > form the compiled hasher keeps, and `shaUpdate_correct` shows that the
 > compiled `update` absorbs any input in that form. `shaFinalize_correct`
 > shows that the compiled `finalize` then writes FIPS 180-4's digest of the
-> whole message. The one-shot `sha256` that composes them is next. The boot simulator measures the image's speed: about 135
+> whole message, and `sha256Fn_correct` composes them: the compiled
+> `c3_crypto::sha::sha256` returns FIPS 180-4's SHA-256 of any input. The boot simulator measures the image's speed: about 135
 > million instructions for one full slot check, about half of them P-384
 > arithmetic ([`c3-boot/docs/measurements.md`](../c3-boot/docs/measurements.md)).
 > [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 8.9
