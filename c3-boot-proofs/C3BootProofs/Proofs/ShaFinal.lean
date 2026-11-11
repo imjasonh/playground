@@ -1846,6 +1846,53 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
         rw [fillBytes_sep h (Nat.le_refl 56)]
       · rw [k38 r q12 q13 q14 q15 q16, r37 r q1, K35 r q11, K34 r q10, K33 r q12,
           k32 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K2631 r q1 q10 q11]
+  obtain ⟨nC, MC, cC, uC, MCR, MCs, bC, wC, KC⟩ := C2
+  -- Registers at 0xC2, from `m16`.
+  have KC16 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+      r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+      r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg nC r = reg m16 r :=
+    fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
+      rw [KC r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K26 r q10,
+        K1625 r q1 q10 q11 q12 q13 q14 q15 q16]
+  have rC : ∀ r, r = s0 ∨ r = s1 ∨ r = s2 ∨ r = s4 ∨ r = s5 ∨ r = s6 ∨ r = sp → reg nC r = reg m16 r := by
+    intro r h
+    rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      exact KC16 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+  have g16' : ∀ r, r = s0 ∨ r = s1 ∨ r = s2 ∨ r = s4 ∨ r = sp → reg m16 r = reg m15 r := by
+    intro r h
+    rcases h with rfl | rfl | rfl | rfl | rfl <;>
+      exact g16 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide) (by decide)
+  have s4C : reg nC s4 = S := by rw [rC s4 (by decide), g16' s4 (by decide), s4_15]
+  have s1C : reg nC s1 = S + 0x40 := by rw [rC s1 (by decide), g16' s1 (by decide), s1_15]
+  have s0C : reg nC s0 = G + BitVec.ofNat 32 0x20 := by rw [rC s0 (by decide), g16' s0 (by decide), s0_15]
+  have s2C : reg nC s2 = out := by rw [rC s2 (by decide), g16' s2 (by decide), s2_15]
+  have spC : reg nC sp = G := by rw [rC sp (by decide), g16' sp (by decide), sp15']
+  have s5C := (rC s5 (by decide)).trans s5_16
+  have s6C := (rC s6 (by decide)).trans s6_16
+  have cCC := codeX MC MCR
+  have cFC := cCC _ _ E.cF (by decide) (by decide)
+  -- The length, then the last block.
+  obtain ⟨n40, d40, u40⟩ := uC.sw cFC sf_at_c2 (off' := 0xC6) (by decide)
+    (by rw [s4C]; exact aligned_add E.hS (k := 0x38) (by decide))
+  rw [s4C, s6C, show (0x38 : Word) = BitVec.ofNat 32 0x38 from rfl] at u40
+  have hst : ∀ c, 0x38 ≤ c → c + 4 ≤ 0x40 → ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → Sep (S + BitVec.ofNat 32 c) 4 x 1 :=
+    fun c h1 h2 x _ hy => hy.sub (c := c) (l := 4) (by omega)
+  obtain ⟨n41, d41, u41⟩ := u40.sw (cCC _ _ E.cF (by decide) (by decide) |>.store32 (data_code
+      (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) (by decide) (by decide))) sf_at_c6 (off' := 0xCA) (by decide)
+    (by rw [s4C]; exact aligned_add E.hS (k := 0x3C) (by decide))
+  rw [s4C, s5C, show (0x3C : Word) = BitVec.ofNat 32 0x3C from rfl] at u41
+  let lo : Word := BitVec.ofNat 32 (msg.length / 64)
+  let ML := memStore32 (memStore32 MC (S + BitVec.ofNat 32 0x38) (bswap32 (lo >>> 23))) (S + BitVec.ofNat 32 0x3C)
+    (bswap32 ((lo <<< 9) ||| (BitVec.ofNat 32 pos <<< 3)))
+  have MLR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → ML x = M0 x := fun x hx hy => by
+    show memStore32 (memStore32 MC _ _) _ _ x = _
+    rw [memStore32_get_sep (hst 0x3C (by omega) (by omega) x hx hy),
+      memStore32_get_sep (hst 0x38 (by omega) (by omega) x hx hy), MCR x hx hy]
+  have cML := codeX ML MLR
+  have cFL := cML _ _ E.cF (by decide) (by decide)
+  have u41' : St ML U n41 0xCA (reg n41) := u41.self
   sorry
 
 end C3.RV32
