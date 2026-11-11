@@ -170,9 +170,21 @@ every proved function, so the three changes below land together, as one
 image change, right after P-384's squaring is proved, and before more of
 the image is. Decided on 2026-11-11.
 
-Before the outliner change is adopted, a scratch build measures its code
-size against the 160 KiB bootloader partition and its instruction count in
-`boot-sim`. It is dropped if the image doesn't fit. Each change is checked
+Scratch builds of the pinned image's sources measured the options on
+2026-11-11, with the trial boot that `c3-boot/docs/measurements.md`
+profiles. Every variant booted the slot the same way:
+
+| Build | Image (bytes) | Instructions one boot runs | Change |
+| --- | --- | --- | --- |
+| Pinned image | 133,392 | 133,867,420 | |
+| Machine outliner off | 134,736 | 132,583,063 | −1.0% |
+| `sha2`'s compact software backend | 88,016 | 138,060,641 | +3.1% |
+| Both | 89,264 | 136,797,324 | +2.2% |
+
+All fit the 160 KiB (163,840-byte) partition. `sha2` 0.11.1 chooses its
+compact backend with one setting, `--cfg sha2_backend_soft="compact"`, for
+SHA-256 and SHA-512 together, so a compact SHA-512 alone needs a patched
+copy of the crate. Each change is checked
 the way the image is today: the digest pin, the QEMU scenarios, and the
 Lean-versus-Rust differential tests, plus NIST's SHA-512 vectors for the new
 compression function.
