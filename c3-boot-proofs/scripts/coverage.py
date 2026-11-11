@@ -29,7 +29,20 @@ import re
 import subprocess
 import sys
 
-PROVED = []
+PROVED = [
+    "crc32",
+    "readerBytes",
+    "readerArray4",
+    "readerU16",
+    "readerVersion1",
+    "readerReserved",
+    "readerU8",
+    "segmentPhysical",
+    "memcpyStub",
+    "memcpyBody",
+    "memset",
+    "borrowingSub",
+]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
 

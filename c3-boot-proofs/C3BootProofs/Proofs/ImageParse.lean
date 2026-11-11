@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageHelpers
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `c3_verify::image::parse`, as compiled

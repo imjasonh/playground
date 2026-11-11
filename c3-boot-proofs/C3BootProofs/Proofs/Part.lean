@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Outlined
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `c3_verify::manifest::part`, as compiled

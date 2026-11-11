@@ -27,6 +27,7 @@ import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.ShaOneShot
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # Audit

@@ -14,7 +14,7 @@ returning 0xFF in the low byte of `a0` for `Ok`. `readerU16_correct` and
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 /-- A slice that `Reader::bytes` returns for at least one byte, from a
 buffer that is not null and doesn't wrap, is not null. -/

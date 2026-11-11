@@ -2,6 +2,7 @@ import C3BootProofs.Proofs.FieldWideArith
 import C3BootProofs.Proofs.FieldSub
 import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.MemsetAny
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # P-384's Montgomery multiplication, as compiled

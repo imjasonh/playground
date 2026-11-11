@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ImageHeader
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`: the segment array and the segment loop

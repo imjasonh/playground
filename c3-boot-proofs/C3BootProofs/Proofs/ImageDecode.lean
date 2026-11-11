@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Block
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `image::parse`'s instructions, decoded from the image's bytes -/
 

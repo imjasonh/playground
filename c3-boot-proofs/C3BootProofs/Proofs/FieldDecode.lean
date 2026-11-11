@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Block
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # The P-256 field multiplication's instructions, decoded from the image's bytes

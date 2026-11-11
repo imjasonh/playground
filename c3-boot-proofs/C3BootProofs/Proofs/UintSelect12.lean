@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.MontMul12
 import C3BootProofs.Proofs.FieldWideMulMain
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `Uint<12>::select`, as compiled

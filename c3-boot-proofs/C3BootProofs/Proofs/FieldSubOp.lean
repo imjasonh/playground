@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.PointDecode
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `field_impl::sub`, as compiled -/
 

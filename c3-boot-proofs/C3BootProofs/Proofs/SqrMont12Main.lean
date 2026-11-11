@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.SqrMont12
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # P-384's Montgomery squaring, end to end

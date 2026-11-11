@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ShaFinal
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # SHA-256 of a byte string

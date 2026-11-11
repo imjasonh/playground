@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ImageLoop
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`: a segment's checks

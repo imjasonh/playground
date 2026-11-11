@@ -2,6 +2,7 @@ import C3BootProofs.Proofs.Sha256Compress
 import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.ShaStream
 import C3BootProofs.Proofs.FieldMul
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # SHA-256's `update`

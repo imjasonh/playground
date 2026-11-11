@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FieldSubOp
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `field_impl::add`, as compiled -/
 

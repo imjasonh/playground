@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ShaUpdate
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # SHA-256's `finalize`

@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FieldWideArith
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `widening_mul_fixed::<8, 8>`, as compiled

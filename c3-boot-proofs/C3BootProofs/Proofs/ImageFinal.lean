@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ImageOverlap
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`: the entry-point check and the copy out

@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ReaderArray
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `c3_verify::reader::Reader::u32`, as compiled

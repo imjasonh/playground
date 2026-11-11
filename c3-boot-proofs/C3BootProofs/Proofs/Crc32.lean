@@ -1,5 +1,5 @@
 import C3BootProofs.Proof.Step
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 import C3BootProofs.Spec.Formats
 
 /-!
@@ -16,7 +16,7 @@ register outside `a0` through `a6` unchanged, and return the CRC-32 that
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 /-! ## Specification -/
 

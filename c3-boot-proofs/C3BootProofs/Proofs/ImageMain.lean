@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.ImageCalls
 import C3BootProofs.Proofs.ImageDecode
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`: the frame invariant and the error path

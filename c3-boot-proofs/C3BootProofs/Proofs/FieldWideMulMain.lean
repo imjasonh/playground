@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FieldWideMul
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `widening_mul_fixed::<8, 8>`, end to end -/
 

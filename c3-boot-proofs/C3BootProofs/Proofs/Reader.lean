@@ -1,5 +1,5 @@
 import C3BootProofs.Proof.Step
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-!
 # `c3_verify::reader::Reader::bytes`, as compiled
@@ -20,7 +20,7 @@ about Rust's layout rules.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 /-- What `Reader::bytes` returns for a reader over `len` bytes at `ptr`,
 at position `pos`, asked for `n` bytes: the slice's address and the new

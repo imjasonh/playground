@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FieldMontRed
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `FieldElement::multiply`, end to end -/
 

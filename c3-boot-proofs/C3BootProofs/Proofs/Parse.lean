@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Block
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `c3_verify::manifest::parse`, as compiled

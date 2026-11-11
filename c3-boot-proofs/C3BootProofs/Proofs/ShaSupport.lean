@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.ShaSpec
 import C3BootProofs.Proofs.FieldMont
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # Tools for the compiled SHA-256 compression function

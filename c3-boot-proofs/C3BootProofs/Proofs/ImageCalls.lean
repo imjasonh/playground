@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.ImageParse
 import C3BootProofs.Proofs.Parse
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`'s calls

@@ -14,7 +14,7 @@ the final borrow's mask.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 theorem bit31 (x : Word) : x.toNat.testBit 31 = decide (2 ^ 31 ≤ x.toNat) := by
   rw [Nat.testBit_eq_decide_div_mod_eq]

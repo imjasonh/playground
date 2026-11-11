@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.MontMul12Main
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # P-384's Montgomery squaring, as compiled

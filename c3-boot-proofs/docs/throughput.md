@@ -15,9 +15,11 @@ On 2026-11-11 the build changed (see
 [Code changes](#code-changes-that-would-make-proofs-easier)), and the
 current image (SHA-256
 `c005c412f2faf2f1807ed68dae8bee9b111b5d63e1974f71fdbdba2d1b0d20da`) has
-28,526 instructions. No proof covers it yet: the proofs are being redone
-for it, and coverage restarts at 0 percent of the image and of a boot. The
-figures below are for the earlier image, before the change.
+28,526 instructions. The proofs are being redone for it. Twelve functions
+have the same bytes in both images, because RISC-V code that calls nothing
+doesn't depend on where it is, so their proofs now name the current image:
+1.3 percent of its instructions and 17.3 percent of the instructions a boot
+runs. The figures below are for the earlier image, before the change.
 
 `scripts/coverage.py` counts the instructions in proved functions, in the
 image and in one boot. A function counts once a correctness theorem covers

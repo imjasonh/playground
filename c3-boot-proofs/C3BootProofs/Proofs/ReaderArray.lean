@@ -16,7 +16,7 @@ composes a call through the callee's theorem.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 abbrev sp : Fin 32 := 2
 abbrev s0 : Fin 32 := 8

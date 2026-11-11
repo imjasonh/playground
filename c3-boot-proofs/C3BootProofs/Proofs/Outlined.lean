@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ReaderU32
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # Machine-outlined register saves and restores

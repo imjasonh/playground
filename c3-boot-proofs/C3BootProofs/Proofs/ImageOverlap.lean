@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ImageSegLoop
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`: the end check and the overlap loops

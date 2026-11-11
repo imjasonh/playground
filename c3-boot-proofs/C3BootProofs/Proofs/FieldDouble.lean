@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FieldAdd
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `FieldElement::double`, as compiled -/
 

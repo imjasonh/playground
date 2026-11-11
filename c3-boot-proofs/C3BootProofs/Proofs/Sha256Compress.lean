@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.Sha256Data
 import C3BootProofs.Proofs.Sha256Rounds
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `sha2::sha256::compress256`, as compiled

@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FieldSubInner
+import C3BootProofs.Image.BootloaderV0
 
 /-! # `sub_inner`, end to end -/
 

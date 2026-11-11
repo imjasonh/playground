@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.FieldArith
 import C3BootProofs.Proofs.FieldDecode
 import C3BootProofs.Proofs.Parse
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `sub_inner`, as compiled

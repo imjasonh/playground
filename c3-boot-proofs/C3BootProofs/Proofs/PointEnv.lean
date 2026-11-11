@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.FieldSpec
 import C3BootProofs.Proofs.PointDecode
 import C3BootProofs.Proofs.FieldMul
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # Where the compiled point addition runs, and its calls

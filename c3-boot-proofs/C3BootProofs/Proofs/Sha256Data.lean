@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ShaSupport
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # Environment, byte-block assembly, and helper calls for `compress256`

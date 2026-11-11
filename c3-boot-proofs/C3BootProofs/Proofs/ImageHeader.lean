@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ImageMain
+import C3BootProofs.Image.BootloaderV0
 
 /-!
 # `image::parse`: the fixed header
