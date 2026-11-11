@@ -636,4 +636,172 @@ theorem splice_loop {B : Word → BitVec 8} {base dst src : Word} {h w s : Nat}
       · rw [u10.regs, a7_9 i h1 h2]
       · rw [u10.regs, frame r r4 r6 r7 r28 r29]
 
+/-- A store outside both buffers commutes with the copy. -/
+theorem copyBytes_store8 {M : Word → BitVec 8} {dst src a : Word} {v : BitVec 8} {n k : Nat}
+    (hd : Sep dst n a 1) (hs : Sep src n a 1) (hk : k ≤ n) :
+    memStore8 (copyBytes M dst src k) a v = copyBytes (memStore8 M a v) dst src k := by
+  funext x
+  unfold memStore8 copyBytes
+  dsimp only
+  by_cases hx : x = a
+  · subst hx
+    have : ¬ (x - dst).toNat < k := fun hlt => by
+      have e := sub_eq_ofNat (k := (x - dst).toNat) (x - dst).isLt rfl
+      have := hd (x - dst).toNat (by omega) 0 (by decide)
+      rw [add_ofNat_zero] at this
+      exact this e.symm
+    rw [ite_eq_left rfl, ite_eq_right this, ite_eq_left rfl]
+  · rw [ite_eq_right hx]
+    by_cases hlt : (x - dst).toNat < k
+    · rw [ite_eq_left hlt, ite_eq_left hlt]
+      have hne : src + (x - dst) ≠ a := by
+        have := hs (x - dst).toNat (by omega) 0 (by decide)
+        rw [add_ofNat_zero, BitVec.ofNat_toNat, BitVec.setWidth_eq] at this
+        exact this
+      rw [ite_eq_right hne]
+    · rw [ite_eq_right hlt, ite_eq_right hlt, ite_eq_right hx]
+
+/-- Bytes outside a region keep the copy's value when the copy reads from
+memory that differs from `M` only inside that region. -/
+theorem copyBytes_congr {M B : Word → BitVec 8} {dst src F x : Word} {n : Nat} {l : Nat}
+    (hB : ∀ y, Sep F l y 1 → B y = M y) (hs : Sep F l src n) (hx : Sep F l x 1) :
+    copyBytes B dst src n x = copyBytes M dst src n x := by
+  unfold copyBytes
+  by_cases hlt : (x - dst).toNat < n
+  · rw [ite_eq_left hlt, ite_eq_left hlt]
+    apply hB
+    have := hs.subR (c := (x - dst).toNat) (l := 1) (by omega)
+    rwa [BitVec.ofNat_toNat, BitVec.setWidth_eq] at this
+  · rw [ite_eq_right hlt, ite_eq_right hlt]; exact hB x hx
+
+/-- From 0x166, with `q` bytes copied and fewer than 4 left, the compiled
+`memcpy` copies the rest one byte at a time, pops its frame, and returns. -/
+theorem memcpy_tail {B : Word → BitVec 8} {base dst src : Word} {h w N : Nat} (n : Machine)
+    (hc : ∀ j, j ≤ N → CodeIn (copyBytes B dst src j) base memcpyBodyCode)
+    (hhw : h + 4 * w ≤ N) (hdiv : 4 * w = (N - h) / 4 * 4)
+    (hhN : h ≤ N) (hwrap : dst.toNat + N < 2 ^ 32)
+    (hsrc : ∀ j, j < N → ∀ k, k ≤ N →
+      copyBytes B dst src k (src + BitVec.ofNat 32 j) = B (src + BitVec.ofNat 32 j))
+    (s : St (copyBytes B dst src (h + 4 * w)) base n 0x166 (reg n))
+    (ha1 : reg n a1 = src + BitVec.ofNat 32 h) (ha5 : reg n a5 = BitVec.ofNat 32 (4 * w))
+    (ha2 : reg n a2 = BitVec.ofNat 32 (N - h)) (ha3 : reg n a3 = dst + BitVec.ofNat 32 (h + 4 * w)) :
+    ∃ m', Steps n m' ∧ m'.pc = (reg n ra + 0) &&& ~~~1 ∧ m'.mem = copyBytes B dst src N ∧
+      reg m' sp = reg n sp + 0x10 ∧
+      ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ sp → reg m' r = reg n r := by
+  let q := h + 4 * w
+  have hcq := hc q hhw
+  have hcN := hc N (Nat.le_refl N)
+  obtain ⟨n1, d1, u1⟩ := s.alu hcq mcy_at_166 (off' := 0x168) (by decide)
+  have g1 : reg n1 a1 = src + BitVec.ofNat 32 q := by
+    rw [u1.upd_eq (by decide), ha1, ha5]; exact add_ofNat_assoc src h (4 * w)
+  have K1 := u1.upd_ne s.zero
+  have u1' : St (copyBytes B dst src q) base n1 0x168 (reg n1) := u1.self
+  obtain ⟨n2, d2, u2⟩ := u1'.aluImm hcq mcy_at_168 (off' := 0x16A) (by decide)
+  have g2 : reg n2 a2 = BitVec.ofNat 32 (N - q) := by
+    rw [u2.upd_eq (by decide), K1 a2 (by decide), ha2, and3_val (by omega)]
+    congr 1; show (N - h) % 4 = N - (h + 4 * w); omega
+  have K2 := u2.upd_ne u1'.zero
+  have u2' : St (copyBytes B dst src q) base n2 0x16A (reg n2) := u2.self
+  obtain ⟨n3, d3, u3⟩ := u2'.alu hcq mcy_at_16a (off' := 0x16E) (by decide)
+  have a3_2 : reg n2 a3 = dst + BitVec.ofNat 32 q := by rw [K2 a3 (by decide), K1 a3 (by decide), ha3]
+  have g3 : reg n3 a4 = dst + BitVec.ofNat 32 N := by
+    rw [u3.upd_eq (by decide), a3_2, g2]
+    show dst + BitVec.ofNat 32 q + BitVec.ofNat 32 (N - q) = _
+    rw [add_ofNat_assoc, show q + (N - q) = N by omega]
+  have K3 := u3.upd_ne u2'.zero
+  have u3' : St (copyBytes B dst src q) base n3 0x16E (reg n3) := u3.self
+  have a3_3 : reg n3 a3 = dst + BitVec.ofNat 32 q := by rw [K3 a3 (by decide), a3_2]
+  have Kf : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → reg n3 r = reg n r := fun r q1 q2 _ q4 => by
+    rw [K3 r q4, K2 r q2, K1 r q1]
+  have ult := ult_ofNat (dst := dst) (a := q) (b := N) (by omega) (by omega)
+  -- Both cases reach 0x182 with the copy done.
+  have T : ∃ n5, Steps n n5 ∧ St (copyBytes B dst src N) base n5 0x182 (reg n5) ∧
+      ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → reg n5 r = reg n r := by
+    have c3 : Steps n n3 := .cons d1 (.cons d2 (.single d3))
+    by_cases ht : q = N
+    · obtain ⟨n4, d4, u4⟩ := u3'.taken hcq 0x182 mcy_at_16e (by decide) (by
+        simp only [branchTaken]; rw [a3_3, g3, ult]; simp only [Bool.not_eq_true']
+        exact decide_eq_false (by omega))
+      rw [ht] at u4
+      exact ⟨n4, c3.trans (.single d4), u4.self, fun r q1 q2 q3 q4 => by rw [u4.regs, Kf r q1 q2 q3 q4]⟩
+    · obtain ⟨n4, d4, u4⟩ := u3'.notTaken hcq 0x172 mcy_at_16e (by decide) (by
+        simp only [branchTaken]; rw [a3_3, g3, ult]; simp only [Bool.not_eq_false']
+        exact decide_eq_true (by omega))
+      obtain ⟨n5, c5, u5, _, _, _, f5⟩ := copy_loop (o := 0x172) (e := N) (cnt := a2) (dp := a3) (sp := a1)
+        (tmp := a4) hc (by omega) (by decide) hsrc mcy_at_172 mcy_at_176 mcy_at_178 mcy_at_17c mcy_at_17e
+        mcy_at_180 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide) (by decide) (N - q) q n4 (by omega) (by omega) u4.self
+        (by rw [u4.regs, K3 a2 (by decide), g2]) (by rw [u4.regs, a3_3])
+        (by rw [u4.regs, K3 a1 (by decide), K2 a1 (by decide), g1])
+      exact ⟨n5, c3.trans (.cons d4 c5), u5, fun r q1 q2 q3 q4 => by
+        rw [f5 r q2 q3 q1 q4, u4.regs, Kf r q1 q2 q3 q4]⟩
+  obtain ⟨n5, c5, u5, f5⟩ := T
+  obtain ⟨n6, d6, u6⟩ := u5.aluImm hcN mcy_at_182 (off' := 0x184) (by decide)
+  have K6 := u6.upd_ne u5.zero
+  have u6' : St (copyBytes B dst src N) base n6 0x184 (reg n6) := u6.self
+  obtain ⟨n7, d7, pc7, mem7, regs7⟩ := u6'.jalr hcN mcy_at_184
+  refine ⟨n7, c5.trans (.cons d6 (.single d7)), ?_, mem7, ?_, fun r q1 q2 q3 q4 qs => ?_⟩
+  · rw [pc7, K6 ra (by decide), f5 ra (by decide) (by decide) (by decide) (by decide)]
+  · rw [regs7, u6.upd_eq (by decide), f5 sp (by decide) (by decide) (by decide) (by decide)]; rfl
+  · rw [regs7, K6 r qs, f5 r q1 q2 q3 q4]
+
+theorem copyBytes_store32 {M : Word → BitVec 8} {dst src a v : Word} {n k : Nat}
+    (hd : Sep dst n a 4) (hs : Sep src n a 4) (hk : k ≤ n) :
+    memStore32 (copyBytes M dst src k) a v = copyBytes (memStore32 M a v) dst src k := by
+  have p : ∀ c, c < 4 → Sep dst n (a + BitVec.ofNat 32 c) 1 ∧ Sep src n (a + BitVec.ofNat 32 c) 1 :=
+    fun c hc => ⟨hd.subR (c := c) (l := 1) (by omega), hs.subR (c := c) (l := 1) (by omega)⟩
+  have p0 : Sep dst n a 1 ∧ Sep src n a 1 := by
+    have := p 0 (by decide); rwa [add_ofNat_zero] at this
+  unfold memStore32
+  rw [show (1 : Word) = BitVec.ofNat 32 1 from rfl, show (2 : Word) = BitVec.ofNat 32 2 from rfl,
+    show (3 : Word) = BitVec.ofNat 32 3 from rfl]
+  rw [copyBytes_store8 p0.1 p0.2 hk, copyBytes_store8 (p 1 (by decide)).1 (p 1 (by decide)).2 hk,
+    copyBytes_store8 (p 2 (by decide)).1 (p 2 (by decide)).2 hk,
+    copyBytes_store8 (p 3 (by decide)).1 (p 3 (by decide)).2 hk]
+
+theorem signExtend_lo (a b : BitVec 8) : ((a ++ b).signExtend 32).extractLsb' 0 8 = b := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_signExtend, BitVec.getLsbD_append,
+    show decide (i < 8) = true from decide_eq_true hi, show decide (0 + i < 32) = true from decide_eq_true (by omega),
+    Bool.true_and, Bool.true_and, ite_eq_left (show 0 + i < 16 by omega), ite_eq_left (show 0 + i < 8 by omega),
+    Nat.zero_add]
+
+theorem signExtend_hi (a b : BitVec 8) : ((a ++ b).signExtend 32).extractLsb' 8 8 = a := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_signExtend, BitVec.getLsbD_append,
+    show decide (i < 8) = true from decide_eq_true hi, show decide (8 + i < 32) = true from decide_eq_true (by omega),
+    Bool.true_and, Bool.true_and, ite_eq_left (show 8 + i < 16 by omega), ite_eq_right (show ¬ (8 + i < 8) by omega),
+    show 8 + i - 8 = i by omega]
+
+theorem or_small {x : Word} (hx : x.toNat % 4 = 0) {s : Nat} (hs : s < 4) :
+    aluEval .or x (BitVec.ofNat 32 s) = x + BitVec.ofNat 32 s := by
+  show x ||| BitVec.ofNat 32 s = _
+  rw [Sha256.add_disj]
+  intro i hi
+  rw [BitVec.getLsbD_ofNat, ← BitVec.testBit_toNat]
+  by_cases h2 : i < 2
+  · have := Nat.testBit_mod_two_pow x.toNat 2 i
+    rw [show 2 ^ 2 = 4 from rfl, hx, Nat.zero_testBit, show decide (i < 2) = true from decide_eq_true h2,
+      Bool.true_and] at this
+    rw [← this, Bool.false_and]
+  · rw [Nat.testBit_lt_two_pow (x := s) (Nat.lt_of_lt_of_le hs (by
+      calc 4 = 2 ^ 2 := rfl
+        _ ≤ 2 ^ i := Nat.pow_le_pow_right (by decide) (by omega))), Bool.and_false, Bool.and_false]
+
+/-- The code stays in place under any copy that reads from memory equal to
+`M0` outside the frame. -/
+theorem code_copy {M0 B : Word → BitVec 8} {dst src base F : Word} {N k : Nat} {code : List Nat}
+    (hc : CodeIn M0 base code) (hDC : Sep dst N base code.length) (hFC : Sep F 16 base code.length)
+    (hB : ∀ y, Sep F 16 y 1 → B y = M0 y) (hk : k ≤ N) : CodeIn (copyBytes B dst src k) base code :=
+  fun i hi => by
+    rw [copyBytes_sep (hDC.subR (c := i) (l := 1) (by omega)) hk,
+      hB _ (hFC.subR (c := i) (l := 1) (by omega))]
+    exact hc i hi
+
+/-- The source bytes stay in place under the copy when the buffers don't
+overlap. -/
+theorem src_copy {B : Word → BitVec 8} {dst src : Word} {N : Nat} (hsep : Sep dst N src N) :
+    ∀ j, j < N → ∀ k, k ≤ N → copyBytes B dst src k (src + BitVec.ofNat 32 j) = B (src + BitVec.ofNat 32 j) :=
+  fun j hj k hk => copyBytes_sep (hsep.subR (c := j) (l := 1) (by omega)) hk
+
 end C3.RV32
