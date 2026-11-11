@@ -428,4 +428,101 @@ theorem mmBodyM_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {
   simp +decide only [BlockOk, BInstr.ok, BInstr.run, mmBody, upd, ↓reduceIte, true_and, and_true]
   exact ⟨hn, hy, ho, hs, hsep⟩
 
+theorem back4 (a : Word) (k : Nat) :
+    a + BitVec.ofNat 32 (4 * (k + 1)) + 0xFFFFFFFC = a + BitVec.ofNat 32 (4 * k) := by
+  have e : BitVec.ofNat 32 (4 * (k + 1)) + 0xFFFFFFFC = BitVec.ofNat 32 (4 * k) := by
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    show (4 * (k + 1) % 2 ^ 32 + 0xFFFFFFFC) % 2 ^ 32 = _
+    omega
+  rw [BitVec.add_assoc, e]
+
+theorem cnt11_dec : ∀ k : Nat, k < 11 → BitVec.ofNat 32 (11 - k) + 0xFFFFFFFF = BitVec.ofNat 32 (11 - (k + 1)) := by
+  decide
+
+theorem cnt11_ne : ∀ k : Nat, k < 11 → (BitVec.ofNat 32 (11 - (k + 1)) != 0) = decide (k + 1 < 11) := by decide
+
+theorem pkeep_ne {p : Fin 32 → Bool} {q r : Fin 32} (h : p q = true) (hr : p r = false) : q ≠ r :=
+  fun e => by rw [e, hr] at h; exact Bool.false_ne_true h
+
+/-- The registers the loop body leaves alone. -/
+def bodyKeep (q : Fin 32) : Bool := q.val ∉ [8, 9, 10, 11, 12, 13, 14, 15, 24, 25, 26]
+
+theorem ptr4 (b : Word) (k : Nat) : b + BitVec.ofNat 32 (4 * k) + 4 = b + BitVec.ofNat 32 (4 * (k + 1)) := by
+  rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]; congr 2
+
+/-- **One pass of the inner loop**, from 0x7C: column `k + 1` of a pass,
+which stores the accumulator's word `k`. -/
+theorem mm_iter {M : Word → BitVec 8} {B np yp acc U X CL CH : Word} {n : Machine} {k : Nat}
+    (s : St M B n 0x7C (reg n)) (hc : CodeIn M B mulMont12Code) (hk : k < 11)
+    (hnp : np.toNat % 4 = 0) (hyp : yp.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0)
+    (hS : Sep (acc + BitVec.ofNat 32 (4 * k)) 4 B mulMont12Code.length)
+    (r26 : reg n (26 : Fin 32) = np + BitVec.ofNat 32 (4 * (k + 1)))
+    (r9 : reg n (9 : Fin 32) = yp + BitVec.ofNat 32 (4 * (k + 1)))
+    (ra3 : reg n a3 = acc + BitVec.ofNat 32 (4 * (k + 1)))
+    (r31 : reg n (31 : Fin 32) = U) (r30 : reg n (30 : Fin 32) = X) (ra2 : reg n a2 = CL)
+    (r24 : reg n (24 : Fin 32) = CH) (r25 : reg n (25 : Fin 32) = BitVec.ofNat 32 (11 - k)) :
+    ∃ n', Steps n n' ∧
+      St (memStore32 M (acc + BitVec.ofNat 32 (4 * k))
+        (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1))))
+          (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1)))) U X CL CH).1)
+        B n' (if k + 1 < 11 then 0x7C else 0xCA) (reg n') ∧
+      reg n' a2 = (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+        U X CL CH).2.1 ∧
+      reg n' (24 : Fin 32) = (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+        U X CL CH).2.2 ∧
+      reg n' (26 : Fin 32) = np + BitVec.ofNat 32 (4 * (k + 2)) ∧
+      reg n' (9 : Fin 32) = yp + BitVec.ofNat 32 (4 * (k + 2)) ∧
+      reg n' a3 = acc + BitVec.ofNat 32 (4 * (k + 2)) ∧
+      reg n' (25 : Fin 32) = BitVec.ofNat 32 (11 - (k + 1)) ∧
+      ∀ q, bodyKeep q = true → reg n' q = reg n q := by
+  have hz := s.zero
+  have ok := mmBodyM_ok (M := M) (f := reg n) (base := B) (len := mulMont12Code.length)
+    (by rw [r26, add_lit_zero]; exact aligned_add hnp (by omega))
+    (by rw [r9, add_lit_zero]; exact aligned_add hyp (by omega))
+    (by rw [ra3, add_lit_zero]; exact aligned_add hacc (by omega))
+    (by rw [ra3, back4 acc k]; exact aligned_add hacc (by omega))
+    (by rw [ra3, back4 acc k]; exact hS)
+  obtain ⟨n1, c1, u1⟩ := St.block mmBodyM s hc mmBodyM_end ok
+  obtain ⟨em, e2, e24, e26, e9, e3, e25, fr⟩ := mmBodyM_run (M := M) (f := reg n) hz
+  have u1' := u1.self
+  rw [em, r26, r9, ra3, r31, r30, ra2, r24, add_lit_zero, add_lit_zero, add_lit_zero, back4 acc k] at u1'
+  have g : ∀ q, reg n1 q = (runBlock mmBodyM (M, reg n)).2 q := u1.regs
+  have hb : branchTaken .bne (reg n1 (25 : Fin 32)) (reg n1 x0) = decide (k + 1 < 11) := by
+    rw [g, e25, r25, cnt11_dec k hk, u1'.zero]; exact cnt11_ne k hk
+  have hc1 := CodeIn.store32 (v := (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
+    (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+    U X CL CH).1) hc hS
+  have post : ∀ n2 : Machine, (∀ q, reg n2 q = reg n1 q) →
+      reg n2 a2 = (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+        U X CL CH).2.1 ∧
+      reg n2 (24 : Fin 32) = (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+        U X CL CH).2.2 ∧
+      reg n2 (26 : Fin 32) = np + BitVec.ofNat 32 (4 * (k + 2)) ∧
+      reg n2 (9 : Fin 32) = yp + BitVec.ofNat 32 (4 * (k + 2)) ∧
+      reg n2 a3 = acc + BitVec.ofNat 32 (4 * (k + 2)) ∧
+      reg n2 (25 : Fin 32) = BitVec.ofNat 32 (11 - (k + 1)) ∧
+      ∀ q, bodyKeep q = true → reg n2 q = reg n q := fun n2 h2 => by
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+    · rw [h2, g, e2, r26, r9, ra3, r31, r30, ra2, r24, add_lit_zero, add_lit_zero, add_lit_zero]
+    · rw [h2, g, e24, r26, r9, ra3, r31, r30, ra2, r24, add_lit_zero, add_lit_zero, add_lit_zero]
+    · rw [h2, g, e26, r26, ptr4]
+    · rw [h2, g, e9, r9, ptr4]
+    · rw [h2, g, e3, ra3, ptr4]
+    · rw [h2, g, e25, r25, cnt11_dec k hk]
+    · rw [h2, g]
+      exact fr q (pkeep_ne (r := 26) hq rfl) (pkeep_ne (r := 9) hq rfl) (pkeep_ne (r := a3) hq rfl)
+        (pkeep_ne (r := a2) hq rfl) (pkeep_ne (r := 24) hq rfl) (pkeep_ne (r := 25) hq rfl)
+        (pkeep_ne (r := a4) hq rfl) (pkeep_ne (r := a5) hq rfl) (pkeep_ne (r := a0) hq rfl)
+        (pkeep_ne (r := 8) hq rfl) (pkeep_ne (r := a1) hq rfl)
+  by_cases hl : k + 1 < 11
+  · obtain ⟨n2, d2, u2⟩ := u1'.taken hc1 0x7C mm_at_c6 (by decide) (by rw [hb]; exact decide_eq_true hl)
+    exact ⟨n2, c1.trans (.single d2), by rw [ite_eq_left hl]; exact u2.self, post n2 u2.regs⟩
+  · obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc1 0xCA mm_at_c6 (by decide) (by rw [hb]; exact decide_eq_false hl)
+    exact ⟨n2, c1.trans (.single d2), by rw [ite_eq_right hl]; exact u2.self, post n2 u2.regs⟩
+
 end C3.RV32
