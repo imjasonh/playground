@@ -1763,7 +1763,89 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
             rwa [add_ofNat_zero, add_ofNat_zero] at h)
         (by rw [eT]; have h := E.sKF.subR (c := 0) (l := 0x130) (by omega); rwa [add_ofNat_zero] at h)
         (E.sKS.subR (c := 0x40) (l := 32) (by omega))
-      sorry
+      rw [eT, mem31] at fr32
+      rw [mem31] at w32
+      let MF := n32.mem
+      have fF : ∀ x, Sep R 0x130 x 1 → Sep (S + 0x40) 32 x 1 → MF x = MQ x := fr32
+      have FS : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MF x = MQ x := fun x hx hy =>
+        fF x (by have h := hx.sub (c := 0) (l := 0x130) (by omega); rwa [add_ofNat_zero] at h)
+          (hy.sub (c := 0x40) (l := 32) (by omega))
+      have MFR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MF x = M0 x := fun x hx hy => by rw [FS x hx hy, MQR x hx hy]
+      have cF' := codeX MF MFR
+      have cFF := cF' _ _ E.cF (by decide) (by decide)
+      have u32 : St MF U n32 0xB2 (reg n32) := ⟨by rw [pc32], rfl, fun _ => rfl⟩
+      have k32 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+          r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n32 r = reg n31 r := K32
+      have s4_32 : reg n32 s4 = S := by
+        rw [k32 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+          K2631 s4 (by decide) (by decide) (by decide), s4_26]
+      obtain ⟨n33, d33, u33⟩ := u32.aluImm cFF sf_at_b2 (off' := 0xB6) (by decide)
+      have K33 := u33.upd_ne u32.zero
+      have u33' : St MF U n33 0xB6 (reg n33) := u33.self
+      obtain ⟨n34, d34, u34⟩ := u33'.alu cFF sf_at_b6 (off' := 0xB8) (by decide)
+      have K34 := u34.upd_ne u33'.zero
+      have u34' : St MF U n34 0xB8 (reg n34) := u34.self
+      obtain ⟨n35, d35, u35⟩ := u34'.aluImm cFF sf_at_b8 (off' := 0xBA) (by decide)
+      have K35 := u35.upd_ne u34'.zero
+      have u35' : St MF U n35 0xBA (reg n35) := u35.self
+      obtain ⟨n36, d36, u36⟩ := u35'.auipc cFF sf_at_ba (off' := 0xBE) (by decide)
+      obtain ⟨n37, d37, pc37, mem37, regs37⟩ := u36.call cFF sf_at_be
+      have r37 : ∀ r, r ≠ ra → reg n37 r = reg n35 r := fun r h => by
+        rw [regs37]
+        by_cases h0 : r.val = 0
+        · have : r = 0 := Fin.ext h0
+          subst this; simp [upd]; exact u35'.zero.symm
+        · simp [upd, h0, h]
+      obtain ⟨n38, c38, pc38, mem38, a038, K38⟩ := memset_correct n37 (BitVec.ofNat 32 memsetAddress)
+        (U + BitVec.ofNat 32 0xC2) S 0 56
+        (fun i hi => by show n37.mem _ = _; rw [mem37]; exact cF' _ _ E.cMs (by decide) (by decide) i hi) (by decide)
+        (by rw [pc37, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+            decide)
+        (by rw [r37 a0 (by decide), K35 a0 (by decide), u34.upd_eq (by decide), u33'.zero, K33 s4 (by decide), s4_32]
+            exact BitVec.zero_add _)
+        (by rw [r37 a1 (by decide), u35.upd_eq (by decide), u34'.zero]; rfl)
+        (by rw [r37 a2 (by decide), K35 a2 (by decide), K34 a2 (by decide), u33.upd_eq (by decide), u32.zero]; rfl)
+        (by rw [regs37]; simp +decide [upd]; try rfl) (by decide) (by omega)
+        (data_code (by omega) (by decide) (by decide))
+      rw [mem37] at mem38
+      let MR := fillBytes MF S ((0 : Word).extractLsb' 0 8) 56
+      have RS : ∀ x, Sep S 0x68 x 1 → Sep S 56 x 1 := fun x hy => by
+        have h := hy.sub (c := 0) (l := 56) (by omega); rwa [add_ofNat_zero] at h
+      have MRR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MR x = M0 x := fun x hx hy => by
+        show fillBytes MF _ _ _ x = _
+        rw [fillBytes_sep (RS x hy) (Nat.le_refl 56), MFR x hx hy]
+      have k38 : ∀ r, r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → reg n38 r = reg n37 r := K38
+      refine ⟨n38, MR, .cons d27 (.cons d28 (.cons d29 (.cons d30 (.cons d31 (c32.trans (.cons d33 (.cons d34
+        (.cons d35 (.cons d36 (.cons d37 c38)))))))))), ⟨by rw [pc38], mem38, fun _ => rfl⟩, MRR, ?_, ?_, ?_,
+        fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_⟩
+      · intro k h1 h2
+        have hGk : Sep R 0x130 (G + BitVec.ofNat 32 k) 1 := by
+          rw [Gc]
+          have h := sep_offsets R (c := 0) (n := 0x130) (d := 0x130 + k) (k := 1) (Or.inl (by omega)) (by omega)
+            (by omega)
+          rwa [add_ofNat_zero] at h
+        have hGs : Sep S 0x68 (G + BitVec.ofNat 32 k) 1 := by
+          rw [Gc]; exact (E.sSF.subR (c := 0x130 + k) (l := 1) (by omega))
+        show fillBytes MF _ _ _ _ = _
+        rw [fillBytes_sep (RS _ hGs) (Nat.le_refl 56), fF _ hGk (hGs.sub (c := 0x40) (l := 32) (by omega))]
+      · show memBytes MR S 56 = if pos < 56 then _ else _
+        rw [ite_eq_right_of_eq_false _ _ (eq_false hsh)]
+        exact fill_memBytes MF S _ (Nat.le_refl 56) (by decide)
+      · show _ = (fullBlocks msg ++ (if pos < 56 then [] else _)).foldl _ _
+        rw [ite_eq_right_of_eq_false _ _ (eq_false hsh), List.foldl_append, List.foldl_cons, List.foldl_nil,
+          ← wQ, show 63 - pos = 64 - pos - 1 by omega, ← mq 64 (by omega) (by omega), ← w32]
+        apply wordsAt_congr; intro i hi
+        apply memLoad32_congr; intro j hj
+        rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc, add_ofNat_assoc]
+        have h := sep_offsets S (c := 0) (n := 56) (d := 0x40 + (4 * i + j)) (k := 1) (Or.inl (by omega)) (by omega)
+          (by omega)
+        rw [add_ofNat_zero] at h
+        show fillBytes MF _ _ _ _ = _
+        rw [fillBytes_sep h (Nat.le_refl 56)]
+      · rw [k38 r q12 q13 q14 q15 q16, r37 r q1, K35 r q11, K34 r q10, K33 r q12,
+          k32 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K2631 r q1 q10 q11]
   sorry
 
 end C3.RV32
