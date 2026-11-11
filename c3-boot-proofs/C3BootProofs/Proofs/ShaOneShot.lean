@@ -697,6 +697,85 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   have vS2 : memLoad32 M1 (F + 0xD0) = reg m s2 := by
     show memLoad32 (memStore32 (memStore32 (memStore32 (memStore32 M0 _ _) _ _) _ _) _ _) _ = _
     rw [memLoad32_store32_same, K1 s2 (by decide)]
-  sorry
+  have cMF : ∀ (b : Word) (code : List Nat), CodeIn M0 b code → 0x40000000 ≤ b.toNat →
+      b.toNat + code.length ≤ 2 ^ 32 → CodeIn MF b code := fun b code hc hb hbl i hi => by
+    have hx : Sep R 0x270 (b + BitVec.ofNat 32 i) 1 :=
+      (data_code (by rw [hRn]; omega) hb hbl).subR (c := i) (l := 1) (by omega)
+    rw [fF _ (hx.sub (c := 0) (l := 0x190) (by omega) |> fun h => by rwa [add_ofNat_zero] at h)
+        (by rw [Fc]; exact Rx _ _ (by omega) _ hx)
+        ((data_code hOw hb hbl).subR (c := i) (l := 1) (by omega)), MCR _ hx]
+    exact hc i hi
+  have cXF := cMF _ _ E.cX (by decide) (by decide)
+  have u29 : St MF Q m29 0x4C (reg m29) := ⟨by rw [pc29], rfl, fun _ => rfl⟩
+  have sp29' : reg m29 sp = F := sp29
+  obtain ⟨m30, e30, u30⟩ := u29.lw cXF os_at_4c (off' := 0x4E) (by decide)
+    (by rw [sp29']; exact aligned_add hFa4 (k := 0xDC) (by decide))
+  rw [sp29', show memLoad32 MF (F + 0xDC) = reg m ra from (ldF 0xDC (by omega) (by omega)).trans vRa] at u30
+  have K30 := u30.upd_ne u29.zero
+  have u30' : St MF Q m30 0x4E (reg m30) := u30.self
+  obtain ⟨m31, e31, u31⟩ := u30'.lw cXF os_at_4e (off' := 0x50) (by decide)
+    (by rw [K30 sp (by decide), sp29']; exact aligned_add hFa4 (k := 0xD8) (by decide))
+  rw [K30 sp (by decide), sp29', show memLoad32 MF (F + 0xD8) = reg m s0 from (ldF 0xD8 (by omega) (by omega)).trans vS0]
+    at u31
+  have K31 := u31.upd_ne u30'.zero
+  have u31' : St MF Q m31 0x50 (reg m31) := u31.self
+  obtain ⟨m32, e32, u32⟩ := u31'.lw cXF os_at_50 (off' := 0x52) (by decide)
+    (by rw [K31 sp (by decide), K30 sp (by decide), sp29']; exact aligned_add hFa4 (k := 0xD4) (by decide))
+  rw [K31 sp (by decide), K30 sp (by decide), sp29',
+    show memLoad32 MF (F + 0xD4) = reg m s1 from (ldF 0xD4 (by omega) (by omega)).trans vS1] at u32
+  have K32 := u32.upd_ne u31'.zero
+  have u32' : St MF Q m32 0x52 (reg m32) := u32.self
+  obtain ⟨m33, e33, u33⟩ := u32'.lw cXF os_at_52 (off' := 0x54) (by decide)
+    (by rw [K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29']
+        exact aligned_add hFa4 (k := 0xD0) (by decide))
+  rw [K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29',
+    show memLoad32 MF (F + 0xD0) = reg m s2 from (ldF 0xD0 (by omega) (by omega)).trans vS2] at u33
+  have K33 := u33.upd_ne u32'.zero
+  have u33' : St MF Q m33 0x54 (reg m33) := u33.self
+  obtain ⟨m34, e34, u34⟩ := u33'.aluImm cXF os_at_54 (off' := 0x56) (by decide)
+  have K34 := u34.upd_ne u33'.zero
+  have u34' : St MF Q m34 0x56 (reg m34) := u34.self
+  obtain ⟨m35, e35, pc35, mem35, regs35⟩ := u34'.jalr cXF os_at_56
+  have ra34 : reg m34 ra = reg m ra := by
+    rw [K34 ra (by decide), K33 ra (by decide), K32 ra (by decide), K31 ra (by decide), u30.upd_eq (by decide)]
+  have sp34 : reg m34 sp = sp0 := by
+    rw [u34.upd_eq (by decide), K33 sp (by decide), K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29']
+    show sp0 + 0xFFFFFF20 + 0xE0 = sp0
+    rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
+  have k29 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
+      r ≠ (31 : Fin 32) → reg m29 r = reg m28 r := K29
+  have k6 : ∀ r, r ≠ t0 → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m6 r = reg m1 r := K6
+  have S1 : Steps m m12 := .cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (c6.trans (.cons e7 (.cons e8 (c9.trans
+    (.cons e10 (.cons e11 (.single e12)))))))))))
+  have S2 : Steps m12 m24 := .cons e13 (.cons e14 (.cons e15 (.cons e16 (.cons e17 (c18.trans (.cons e19 (.cons e20
+    (.cons e21 (.cons e22 (.cons e23 c24))))))))))
+  have S3 : Steps m24 m35 := .cons e25 (.cons e26 (.cons e27 (.cons e28 (c29.trans (.cons e30 (.cons e31 (.cons e32
+    (.cons e33 (.cons e34 (.single e35))))))))))
+  refine ⟨m35, S1.trans (S2.trans S3), ?_, ?_, fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_,
+    ?_, fun x hx hz => ?_⟩
+  · rw [pc35, ra34, add_lit_zero, hra, hret]
+  · rw [regs35, sp34]
+  · rw [regs35]
+    by_cases q1 : r = ra
+    · subst q1; exact ra34
+    by_cases q2 : r = sp
+    · subst q2; rw [sp34, hsp]
+    by_cases q8 : r = s0
+    · subst q8; rw [K34 s0 (by decide), K33 s0 (by decide), K32 s0 (by decide), u31.upd_eq (by decide)]
+    by_cases q9 : r = s1
+    · subst q9; rw [K34 s1 (by decide), K33 s1 (by decide), u32.upd_eq (by decide)]
+    by_cases q18 : r = s2
+    · subst q18; rw [K34 s2 (by decide), u33.upd_eq (by decide)]
+    rw [K34 r q2, K33 r q18, K32 r q9, K31 r q8, K30 r q1,
+      k29 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r28 r q1, K26 r q10, K25 r q11,
+      k24 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, K1823 r q1 q10 q11 q12,
+      K1218 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2,
+      K69 r q1 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, k6 r q5 q8 q9 q18 q10 q11 q12, K1 r q2]
+  · rw [mem35]; exact out29
+  · rw [mem35]
+    show MF x = M0 x
+    rw [fF x (by have h := hx.sub (c := 0) (l := 0x190) (by omega); rwa [add_ofNat_zero] at h)
+      (by rw [Fc]; exact Rx _ _ (by omega) x hx) hz, MCR x hx]
 
 end C3.RV32
