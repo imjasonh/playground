@@ -120,7 +120,8 @@ jobs:
   check:
     name: Check like a device
     needs: [build, sign]
-    runs-on: ubuntu-latest
+    # The apt packages that Espressif's QEMU needs have these names on Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     env:
       QEMU_RELEASE: esp-develop-9.2.2-20261109
       QEMU_ASSET: qemu-riscv32-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz
