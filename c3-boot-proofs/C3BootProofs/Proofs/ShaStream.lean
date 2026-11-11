@@ -97,10 +97,6 @@ theorem take_full_length (msg : Bytes) :
     (msg.take (64 * (msg.length / 64))).length = 64 * (msg.length / 64) := by
   rw [List.length_take]; omega
 
-theorem fullBlocks_eq (msg : Bytes) :
-    fullBlocks msg = blocks (msg.length / 64) (msg.take (64 * (msg.length / 64))) := by
-  unfold fullBlocks; exact blocks_take _ _
-
 /-- Appending `d` adds the full blocks of the old buffer followed by `d`, and
 leaves the rest in the buffer. -/
 theorem fullBlocks_append (msg d : Bytes) :

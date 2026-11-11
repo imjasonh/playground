@@ -46,6 +46,9 @@ and remove the replacements:
 | `Proofs/MemcpyAny.lean` | `signExtend_byte`, `ext0_append`, `ext8_append`, `signExtend_lo`, `signExtend_hi` (through `ofInt` and `toInt`) | `BitVec.getLsbD_signExtend`, `BitVec.toNat_signExtend` |
 | `Proofs/MemcpyAny.lean` | `and1_small`, `and1_val`, `and3_word_val` | `Nat.and_two_pow_sub_one_eq_mod` |
 | `Proofs/ShaStream.lean` | `drop_take'` | `List.drop_take` |
+| `Proofs/ShaUpdate.lean` | `and63_small`, `and63` | `Nat.and_two_pow_sub_one_eq_mod` |
+| `Proofs/ShaUpdate.lean` | `mask64_val`, proved bit by bit through `m64_bits` and `Sha256.add_disj` | `Nat.and_two_pow_sub_one_eq_mod` on the value and its complement |
+| `Proofs/ShaUpdate.lean` | Branch conditions closed with `beq_eq_false_iff_ne` and `ofNat_inj` | `simp` on the condition |
 
 ## Other cleanup
 
