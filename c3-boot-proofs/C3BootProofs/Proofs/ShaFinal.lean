@@ -952,4 +952,89 @@ theorem shaFinBlock_correct (m : Machine) {st bp T retAddr : Word}
     rw [mem19, w15, wB, hbl, List.foldl_cons, List.foldl_nil]
   · rw [mem19]; exact MCo x hx hy
 
+theorem xor63 : ∀ p, p < 64 → p ^^^ 63 = 63 - p := by decide
+
+set_option maxHeartbeats 4000000 in
+set_option maxRecDepth 40000 in
+/-- `finalize` from offset 0x2A to 0x86: it loads the block count and the
+buffer's byte count from the hasher at `s4`, and computes the message's
+length in bits, byte-swapped, into `s5` (low word) and `s6` (high word), and
+`63 - pos` into `s3`. -/
+theorem fin_len {Mx : Word → BitVec 8} {n : Machine} {f : Fin 32 → Word} {S lo : Word} {pos : Nat}
+    (s : St Mx (BitVec.ofNat 32 shaFinalizeAddress) n 0x2A f)
+    (hc : CodeIn Mx (BitVec.ofNat 32 shaFinalizeAddress) shaFinalizeCode) (fs4 : f s4 = S)
+    (hS : S.toNat % 4 = 0) (hlo : memLoad32 Mx (S + 0x60) = lo) (hhi : memLoad32 Mx (S + 0x64) = 0)
+    (hpos : Mx (S + 0x3F) = BitVec.ofNat 8 pos) (hp : pos < 64) :
+    ∃ n', Steps n n' ∧ St Mx (BitVec.ofNat 32 shaFinalizeAddress) n' 0x86 (reg n') ∧
+      reg n' s5 = bswap32 ((lo <<< 9) ||| (BitVec.ofNat 32 pos <<< 3)) ∧ reg n' s6 = bswap32 (lo >>> 23) ∧
+      reg n' s3 = BitVec.ofNat 32 (63 - pos) ∧ reg n' a2 = BitVec.ofNat 32 pos ∧
+      ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ s3 →
+        r ≠ s5 → r ≠ s6 → reg n' r = f r := by
+  obtain ⟨n1, e1, t1⟩ := s.lw hc sf_at_2a (off' := 0x2E) (by decide) (by rw [fs4]; exact aligned_add hS (k := 0x60) (by decide))
+  obtain ⟨n2, e2, t2⟩ := t1.lw hc sf_at_2e (off' := 0x32) (by decide)
+    (by rw [show upd f a0 (memLoad32 Mx (f s4 + 0x60)) s4 = f s4 by simp +decide [upd], fs4]
+        exact aligned_add hS (k := 0x64) (by decide))
+  obtain ⟨n3, e3, t3⟩ := t2.lbu hc sf_at_32 (off' := 0x36) (by decide)
+  obtain ⟨n4, e4, t4⟩ := t3.lui hc sf_at_36 (off' := 0x38) (by decide)
+  obtain ⟨n5, e5, t5⟩ := t4.aluImm hc sf_at_38 (off' := 0x3C) (by decide)
+  obtain ⟨n6, e6, t6⟩ := t5.aluImm hc sf_at_3c (off' := 0x40) (by decide)
+  obtain ⟨n7, e7, t7⟩ := t6.aluImm hc sf_at_40 (off' := 0x44) (by decide)
+  obtain ⟨n8, e8, t8⟩ := t7.aluImm hc sf_at_44 (off' := 0x48) (by decide)
+  obtain ⟨n9, e9, t9⟩ := t8.aluImm hc sf_at_48 (off' := 0x4C) (by decide)
+  obtain ⟨n10, e10, t10⟩ := t9.aluImm hc sf_at_4c (off' := 0x4E) (by decide)
+  obtain ⟨n11, e11, t11⟩ := t10.alu hc sf_at_4e (off' := 0x52) (by decide)
+  obtain ⟨n12, e12, t12⟩ := t11.alu hc sf_at_52 (off' := 0x54) (by decide)
+  obtain ⟨n13, e13, t13⟩ := t12.alu hc sf_at_54 (off' := 0x56) (by decide)
+  obtain ⟨n14, e14, t14⟩ := t13.aluImm hc sf_at_56 (off' := 0x58) (by decide)
+  obtain ⟨n15, e15, t15⟩ := t14.alu hc sf_at_58 (off' := 0x5A) (by decide)
+  obtain ⟨n16, e16, t16⟩ := t15.alu hc sf_at_5a (off' := 0x5C) (by decide)
+  obtain ⟨n17, e17, t17⟩ := t16.aluImm hc sf_at_5c (off' := 0x5E) (by decide)
+  obtain ⟨n18, e18, t18⟩ := t17.aluImm hc sf_at_5e (off' := 0x62) (by decide)
+  obtain ⟨n19, e19, t19⟩ := t18.alu hc sf_at_62 (off' := 0x64) (by decide)
+  obtain ⟨n20, e20, t20⟩ := t19.aluImm hc sf_at_64 (off' := 0x66) (by decide)
+  obtain ⟨n21, e21, t21⟩ := t20.alu hc sf_at_66 (off' := 0x6A) (by decide)
+  obtain ⟨n22, e22, t22⟩ := t21.aluImm hc sf_at_6a (off' := 0x6C) (by decide)
+  obtain ⟨n23, e23, t23⟩ := t22.alu hc sf_at_6c (off' := 0x70) (by decide)
+  obtain ⟨n24, e24, t24⟩ := t23.alu hc sf_at_70 (off' := 0x72) (by decide)
+  obtain ⟨n25, e25, t25⟩ := t24.alu hc sf_at_72 (off' := 0x76) (by decide)
+  obtain ⟨n26, e26, t26⟩ := t25.aluImm hc sf_at_76 (off' := 0x78) (by decide)
+  obtain ⟨n27, e27, t27⟩ := t26.aluImm hc sf_at_78 (off' := 0x7A) (by decide)
+  obtain ⟨n28, e28, t28⟩ := t27.alu hc sf_at_7a (off' := 0x7E) (by decide)
+  obtain ⟨n29, e29, t29⟩ := t28.alu hc sf_at_7e (off' := 0x82) (by decide)
+  obtain ⟨n30, e30, t30⟩ := t29.aluImm hc sf_at_82 (off' := 0x86) (by decide)
+  have hz : BitVec.zeroExtend 32 (BitVec.ofNat 8 pos) = BitVec.ofNat 32 pos := by
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_setWidth, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+  have hpb := low_bits_zero (pos := BitVec.ofNat 32 pos) (by rw [BitVec.toNat_ofNat]; omega)
+  have g5 : reg n30 s5 = bswap32 ((lo <<< 9) ||| (BitVec.ofNat 32 pos <<< 3)) := by
+    rw [t30.regs]
+    simp +decide only [upd, ↓reduceIte, fs4]
+    rw [hlo, hpos, hz]
+    exact lenLo_eq lo _ hpb
+  have g6 : reg n30 s6 = bswap32 (lo >>> 23) := by
+    rw [t30.regs]
+    simp +decide only [upd, ↓reduceIte, fs4]
+    rw [hlo, hhi]
+    exact lenHi_eq lo
+  have g3 : reg n30 s3 = BitVec.ofNat 32 (63 - pos) := by
+    rw [t30.regs]
+    simp +decide only [upd, ↓reduceIte, fs4]
+    rw [hpos, hz]
+    show BitVec.ofNat 32 pos ^^^ 0x3F = _
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_xor, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega : pos < 2 ^ 32),
+      Nat.mod_eq_of_lt (by omega : 63 - pos < 2 ^ 32), show (0x3F : Word).toNat = 63 from rfl]
+    exact xor63 pos hp
+  have g2 : reg n30 a2 = BitVec.ofNat 32 pos := by
+    rw [t30.regs]
+    simp +decide only [upd, ↓reduceIte, fs4]
+    rw [hpos, hz]
+  refine ⟨n30, .cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (.cons e9 (.cons e10 (.cons e11 (.cons e12 (.cons e13 (.cons e14 (.cons e15 (.cons e16 (.cons e17 (.cons e18 (.cons e19 (.cons e20 (.cons e21 (.cons e22 (.cons e23 (.cons e24 (.cons e25 (.cons e26 (.cons e27 (.cons e28 (.cons e29 (.single e30))))))))))))))))))))))))))))), t30.self, g5, g6, g3, g2, fun r q10 q11 q12 q13 q14 q15 q16 q17 q5 q19 q21 q22 => ?_⟩
+  rw [t30.regs]
+  simp only [upd, q10, q11, q12, q13, q14, q15, q16, q17, q5, q19, q21, q22, ite_false]
+  by_cases h0 : r.val = 0
+  · have : r = 0 := Fin.ext h0
+    subst this; simp; exact s.zero.symm
+  · simp [h0]
+
 end C3.RV32
