@@ -72,6 +72,13 @@ and remove the replacements:
   any file, because one theorem steps through 107 instructions. A lemma for
   the closing equation, as `PointAdd.lean` does with `pa_spec_eq`, should
   cut both.
+- **Write a bit-blasting tactic.** `lenLo_eq`, `lenHi_eq`, `bswap32_byte`,
+  and `lenLo_toNat` (`Proofs/ShaFinal.lean`) split a 32-bit identity into
+  one goal per bit index with `lt32_cases` and close each with `simp`, given
+  the bits of `0xFF00` as lemmas. `bv_decide` would do it in one line, but
+  the audit rejects it because it trusts the compiled evaluator
+  (`Lean.ofReduceBool`). A tactic that does the case split and the `simp`
+  call would shorten the next proof that needs it.
 - **Revisit the dependency-update skip for `c3-boot`.** The daily update
   skips `c3-boot` because a bump changes the pinned image. An alternative is
   to let it bump `c3-boot` and make the proofs workflow a required check, so
