@@ -40,13 +40,14 @@
 > field multiplication is proved as compiled: `mulMont12_correct` shows that
 > `crypto_bigint`'s `mul_montgomery_form::<12>`, with its final subtraction
 > through `borrowing_sub` and `Uint<12>::select`, returns `r < n` with
-> `r · 2^384 ≡ x · y (mod n)`. The boot simulator measures the image's speed: about 135
+> `r · 2^384 ≡ x · y (mod n)`, and `sqrMont12_correct` proves the squaring
+> `square_montgomery_form::<12>` the same way. The boot simulator measures the image's speed: about 135
 > million instructions for one full slot check, about half of them P-384
 > arithmetic ([`c3-boot/docs/measurements.md`](../c3-boot/docs/measurements.md)).
 > [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 9.1
 > proof lines per instruction and projects the whole image at about a tenth
-> of the libsignal proof. Proved functions hold 14.2 percent of the image's
-> instructions and 72.4 percent of the instructions one boot runs. Three
+> of the libsignal proof. Proved functions hold 14.5 percent of the image's
+> instructions and 79.6 percent of the instructions one boot runs. Three
 > code changes that make the rest easier to prove (a separate
 > `root_from_inclusion`, a loop-based SHA-512, and no machine outliner)
 > land together right after P-384's squaring is proved.
