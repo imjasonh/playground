@@ -427,6 +427,87 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
       hi := by
         show memLoad32 (memStore32 (memStore32 (memStore8 MA _ _) _ _) _ _) _ = _
         rw [memLoad32_store32_same] }
+  have cMH := codeX MH MHR
+  have cXH := cMH _ _ E.cX (by decide) (by decide)
+  have u12' : St MH Q m12 0x22 (reg m12) := u12.self
+  have r12 : ∀ r, reg m12 r = reg m9 r := fun r => u12.regs r
+  have K69 : ∀ r, r ≠ ra → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
+      r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
+      reg m12 r = reg m6 r := fun r q1 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2 => by
+    rw [r12, k9 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, r8 r q1]
+  have s0_12 : reg m12 s0 = BitVec.ofNat 32 n := by
+    rw [K69 s0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_6]
+  have s1_12 : reg m12 s1 = D := by
+    rw [K69 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_6]
+  have s2_12 : reg m12 s2 = out := by
+    rw [K69 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_6]
+  have sp12 : reg m12 sp = F := by rw [r12, sp9']
+  obtain ⟨m13, e13, u13⟩ := u12'.alu cXH os_at_22 (off' := 0x24) (by decide)
+  have K13 := u13.upd_ne u12'.zero
+  have u13' : St MH Q m13 0x24 (reg m13) := u13.self
+  obtain ⟨m14, e14, u14⟩ := u13'.alu cXH os_at_24 (off' := 0x26) (by decide)
+  have K14 := u14.upd_ne u13'.zero
+  have u14' : St MH Q m14 0x26 (reg m14) := u14.self
+  obtain ⟨m15, e15, u15⟩ := u14'.alu cXH os_at_26 (off' := 0x28) (by decide)
+  have K15 := u15.upd_ne u14'.zero
+  have u15' : St MH Q m15 0x28 (reg m15) := u15.self
+  obtain ⟨m16, e16, u16⟩ := u15'.auipc cXH os_at_28 (off' := 0x2C) (by decide)
+  obtain ⟨m17, e17, pc17, mem17, regs17⟩ := u16.call cXH os_at_2c
+  have r17 : ∀ r, r ≠ ra → reg m17 r = reg m15 r := fun r h => by
+    rw [regs17]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u15'.zero.symm
+    · simp [upd, h0, h]
+  have K1217 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m17 r = reg m12 r := fun r q1 q10 q11 q12 => by
+    rw [r17 r q1, K15 r q12, K14 r q11, K13 r q10]
+  have eU : F + 0xFFFFFF00 = R + BitVec.ofNat 32 0x90 := by rw [hFR, BitVec.add_assoc]; rfl
+  have hUn : (F + 0xFFFFFF00).toNat = R.toNat + 0x90 := by rw [eU, hRc _ (by omega)]
+  obtain ⟨m18, c18, pc18, sp18, K18, HU, fr18⟩ := shaUpdate_correct m17 (S := F) (D := D) (sp0 := F) (n := n)
+    (msg := []) (retAddr := Q + BitVec.ofNat 32 0x30)
+    { cU := by rw [mem17]; exact cMH _ _ E.cU (by decide) (by decide)
+      cSave := by rw [mem17]; exact cMH _ _ E.cUSave (by decide) (by decide)
+      cRest := by rw [mem17]; exact cMH _ _ E.cURest (by decide) (by decide)
+      cBlk := by rw [mem17]; exact cMH _ _ E.cUBlk (by decide) (by decide)
+      cC := by rw [mem17]; exact cMH _ _ E.cC (by decide) (by decide)
+      cI := by rw [mem17]; exact cMH _ _ E.cI (by decide) (by decide)
+      c97 := by rw [mem17]; exact cMH _ _ E.c97 (by decide) (by decide)
+      cK := fun i hi => by
+        have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
+        rw [mem17, MHR _ (E.sKF.sub (c := i) (l := 1) (by omega)).symm]; exact E.cK i hi
+      cMS := by rw [mem17]; exact cMH _ _ E.cMS (by decide) (by decide)
+      cMB := by rw [mem17]; exact cMH _ _ E.cMB (by decide) (by decide)
+      hS := hFa4
+      hSw := by omega
+      hsp := hFa
+      hspl := by omega
+      hspw := by omega
+      hDw := hDw
+      sDS := by rw [hFR]; exact E.sDF.subR (c := 0x190) (l := 0x68) (by omega)
+      sDF := by rw [eU]; exact E.sDF.subR (c := 0x90) (l := 0x100) (by omega)
+      sSF := by rw [eU, hFR]; exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega)
+      sKS := by rw [hFR]; exact E.sKF.subR (c := 0x190) (l := 0x68) (by omega)
+      sKF := by rw [eU]; exact E.sKF.subR (c := 0x90) (l := 0x100) (by omega) }
+    (by rw [pc17, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
+    (by rw [r17 a0 (by decide), K15 a0 (by decide), K14 a0 (by decide), u13.upd_eq (by decide), u12'.zero, sp12]
+        exact BitVec.zero_add _)
+    (by rw [r17 a1 (by decide), K15 a1 (by decide), u14.upd_eq (by decide), u13'.zero, K13 s1 (by decide), s1_12]
+        exact BitVec.zero_add _)
+    (by rw [r17 a2 (by decide), u15.upd_eq (by decide), u14'.zero, K14 s0 (by decide), K13 s0 (by decide), s0_12]
+        exact BitVec.zero_add _)
+    (by rw [regs17]; simp +decide [upd]; try rfl) (by decide)
+    (by rw [K1217 sp (by decide) (by decide) (by decide) (by decide), sp12]) (by rw [mem17]; exact H0) hn
+    (by rw [List.length_nil]; omega)
+  rw [mem17] at fr18
+  let MU := m18.mem
+  have fU : ∀ x, Sep (F + 0xFFFFFF00) 0x100 x 1 → Sep F 0x68 x 1 → MU x = MH x := fr18
+  have MUR : ∀ x, Sep R 0x270 x 1 → MU x = M0 x := fun x hx => by
+    rw [fU x (by rw [eU]; exact Rx _ _ (by omega) x hx) (by rw [hFR]; exact Rx _ _ (by omega) x hx), MHR x hx]
+  have hdat : memBytes MH D n = memBytes M0 D n :=
+    memBytes_congr fun i hi => MHR _ (E.sDF.sub (c := i) (l := 1) (by omega)).symm
   sorry
 
 end C3.RV32
