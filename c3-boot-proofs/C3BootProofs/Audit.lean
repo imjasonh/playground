@@ -23,6 +23,7 @@ import C3BootProofs.Proofs.FieldDouble
 import C3BootProofs.Proofs.PointAdd
 import C3BootProofs.Proofs.Sha256Compress
 import C3BootProofs.Proofs.MemsetAny
+import C3BootProofs.Proofs.MemcpyAny
 
 /-!
 # Audit
@@ -607,6 +608,27 @@ theorem exists_memsetAny_machine :
     by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
+set_option maxRecDepth 20000 in
+/-- A machine that calls `memcpy` for 23 bytes from an address 3 bytes past
+a 4-byte boundary to an odd address, so that the misaligned path runs,
+meets `memcpy_correct`'s hypotheses. -/
+theorem exists_memcpyAny_machine :
+    ∃ (m : RV32.Machine) (stub retAddr dst src : RV32.Word) (N : Nat),
+      RV32.CodeAt m stub Image.memcpyStubCode ∧ stub.toNat % 2 = 0 ∧ m.pc = stub ∧
+      RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = src ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 N ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.McEnv m.mem (stub + 8) dst src (RV32.reg m RV32.sp + 0xFFFFFFF0) N := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5001 else if r = RV32.a1 then 0x3FCC6003 else if r = RV32.a2 then 23
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.memcpyStubAddress, witnessMemImage⟩,
+    BitVec.ofNat 32 Image.memcpyStubAddress, 0, 0x3FCC5001, 0x3FCC6003, 23, ?_, by decide, rfl, rfl,
+    rfl, rfl, rfl, by decide,
+    ⟨?_, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), by decide, by decide, by decide, by decide⟩⟩
+  all_goals (first | (unfold RV32.CodeAt; decide +kernel) | (unfold RV32.CodeIn; decide +kernel))
+
 /-- A machine that calls `borrowing_sub` with a borrow mask meets
 `borrowingSub_correct`'s hypotheses. -/
 theorem exists_borrowingSub_machine :
@@ -1082,6 +1104,12 @@ end C3
 
 /-- info: 'C3.exists_memsetAny_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_memsetAny_machine
+
+/-- info: 'C3.RV32.memcpy_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.memcpy_correct
+
+/-- info: 'C3.exists_memcpyAny_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_memcpyAny_machine
 
 /-- info: 'C3.RV32.borrowingSub_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.borrowingSub_correct
