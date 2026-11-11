@@ -20,6 +20,7 @@ import C3BootProofs.Proofs.FieldSubInnerMain
 import C3BootProofs.Proofs.FieldWideMulMain
 import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.FieldDouble
+import C3BootProofs.Proofs.PointAdd
 
 /-!
 # Audit
@@ -700,7 +701,36 @@ def witnessMemPoint (a : RV32.Word) : BitVec 8 :=
     RV32.byteAt Image.fieldDoubleCode (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat
   else if (a - BitVec.ofNat 32 Image.pointAddAddress).toNat < Image.pointAddCode.length then
     RV32.byteAt Image.pointAddCode (a - BitVec.ofNat 32 Image.pointAddAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.curveBAddress).toNat < Image.curveBData.length then
+    RV32.byteAt Image.curveBData (a - BitVec.ofNat 32 Image.curveBAddress).toNat
   else witnessMemField a
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls the point addition with `lhs` at `0x3FCC5000`, `rhs`
+at `0x3FCC6000`, and the stack at `0x3FCC8000` meets `pointAdd_correct`'s
+hypotheses, the coordinates' bounds included. -/
+theorem exists_pointAdd_machine :
+    ∃ (m : RV32.Machine) (P sp0 lhs rhs retAddr : RV32.Word), RV32.PAEnv m.mem P sp0 lhs rhs ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = lhs ∧ RV32.reg m RV32.a1 = rhs ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.limbVal (RV32.wordsAt m.mem lhs 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (lhs + 0x20) 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (lhs + 0x40) 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem rhs 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (rhs + 0x20) 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (rhs + 0x40) 8) < RV32.p256 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.pointAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.pointAddAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide +kernel,
+      by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, by decide, rfl, by decide +kernel, by decide +kernel, by decide +kernel, by decide +kernel,
+    by decide +kernel, by decide +kernel⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 4000000 in
@@ -1020,3 +1050,9 @@ end C3
 
 /-- info: 'C3.exists_fieldDouble_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_fieldDouble_machine
+
+/-- info: 'C3.RV32.pointAdd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pointAdd_correct
+
+/-- info: 'C3.exists_pointAdd_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_pointAdd_machine

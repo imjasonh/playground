@@ -21,7 +21,12 @@
 > written, have to establish. The P-256 field multiplication is proved as
 > compiled: `fieldMul_correct` shows that `FieldElement::multiply`, through
 > `widening_mul_fixed::<8, 8>`, its Montgomery reduction, and `sub_inner`,
-> returns the Montgomery product. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> returns the Montgomery product. The point addition is proved as compiled
+> too: `pointAdd_correct` shows that `primeorder`'s complete addition, through
+> its 46 calls to the field operations and `memcpy`, stores `ptAddSpec` of
+> its operands, the Renes, Costello, and Batina formula in the order of the
+> Rust source. That this formula is the curve's group law is not yet proved.
+> [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
 > checked on 2026-11-10 against the sources listed at the end.

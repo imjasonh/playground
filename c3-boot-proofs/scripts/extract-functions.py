@@ -65,6 +65,7 @@ FUNCTIONS = [
 DATA = [
     ("regionEnds", "imageParse", 0x23C, 16),
     ("regionStarts", "imageParse", 0x25E, 16),
+    ("curveB", "pointAdd", 0x12E, 32),
 ]
 
 

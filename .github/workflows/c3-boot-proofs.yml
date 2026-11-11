@@ -90,6 +90,12 @@ jobs:
           python3 scripts/gen-mont-red.py
           git diff --exit-code C3BootProofs/Proofs/FieldMontRed.lean
 
+      - name: Check the generated point addition proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-point-add.py
+          git diff --exit-code C3BootProofs/Proofs/PointAdd.lean
+
       - name: Install Espressif QEMU
         run: |
           sudo apt-get update

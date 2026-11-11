@@ -43,6 +43,9 @@ import C3BootProofs.Proofs.PointDecode
 import C3BootProofs.Proofs.FieldSubOp
 import C3BootProofs.Proofs.FieldAdd
 import C3BootProofs.Proofs.FieldDouble
+import C3BootProofs.Proofs.FieldSpec
+import C3BootProofs.Proofs.PointEnv
+import C3BootProofs.Proofs.PointAdd
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
