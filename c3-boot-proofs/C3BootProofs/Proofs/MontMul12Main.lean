@@ -509,4 +509,44 @@ theorem mmPro_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1, q2, q18, q19, q20, q21, q23]
 
+theorem accV_lt (M : Word → BitVec 8) (b : Word) : ∀ n, accV M b n < 2 ^ (32 * n)
+  | 0 => Nat.zero_lt_one
+  | n + 1 => by
+    rw [accV_succ1, pow32_succ]
+    have ih := accV_lt M b n
+    have hw := (memLoad32 M (b + BitVec.ofNat 32 (4 * n))).isLt
+    have : (memLoad32 M (b + BitVec.ofNat 32 (4 * n))).toNat * 2 ^ (32 * n) ≤ (2 ^ 32 - 1) * 2 ^ (32 * n) :=
+      Nat.mul_le_mul_right _ (by omega)
+    have e : (2 ^ 32 - 1) * 2 ^ (32 * n) + 2 ^ (32 * n) = 2 ^ (32 * n) * 2 ^ 32 := by
+      rw [Nat.mul_comm (2 ^ (32 * n)), ← Nat.succ_mul, Nat.succ_eq_add_one, Nat.sub_add_cancel (by decide)]
+    omega
+
+/-- **The conditional subtraction picks `T mod N`**, for a sum `T` below
+`2N` held as the accumulator `A` and the top carry `mc`, and the
+subtraction `A - N` into `Dv` with borrow `mb`. -/
+theorem mm_final_arith {A mc N Dv mb Bk : Nat} (hD : Dv < Bk) (hN : N < Bk)
+    (hT : A + mc * Bk < 2 * N) (hsub : A + Bk * mb = N + Dv) (hmb : mb ≤ 1) :
+    (if mc = 0 ∧ mb = 1 then A else Dv) = (A + mc * Bk) % N := by
+  have hmb' : mb = 0 ∨ mb = 1 := by omega
+  have hc : mc = 0 ∨ mc = 1 ∨ 2 ≤ mc := by omega
+  rcases hmb' with rfl | rfl <;> rcases hc with h | h | h
+  · subst h
+    rw [ite_eq_right (fun e => absurd e.2 (by decide)), Nat.zero_mul, Nat.add_zero]
+    rw [Nat.mul_zero, Nat.add_zero] at hsub
+    rw [Nat.mod_eq_sub_mod (by omega), show A - N = Dv by omega, Nat.mod_eq_of_lt (by omega)]
+  · subst h; exfalso; omega
+  · have := Nat.mul_le_mul_right Bk h; exfalso; omega
+  · subst h
+    rw [ite_eq_left ⟨rfl, rfl⟩, Nat.zero_mul, Nat.add_zero]
+    exact (Nat.mod_eq_of_lt (by omega)).symm
+  · subst h
+    rw [ite_eq_right (fun e => Nat.one_ne_zero e.1), Nat.one_mul]
+    rw [Nat.mod_eq_sub_mod (by omega), show A + Bk - N = Dv by omega, Nat.mod_eq_of_lt (by omega)]
+  · have := Nat.mul_le_mul_right Bk h; exfalso; omega
+
+/-- The Montgomery result's congruence, from the sum's. -/
+theorem mont_congr {T N XY U R : Nat} (hR : R = T % N) (h : 2 ^ 384 * T = XY + U * N) :
+    R * 2 ^ 384 % N = XY % N := by
+  rw [hR, Nat.mod_mul_mod, Nat.mul_comm, h, Nat.add_mul_mod_self_right]
+
 end C3.RV32
