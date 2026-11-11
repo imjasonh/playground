@@ -12,7 +12,7 @@ theorems.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 section
 

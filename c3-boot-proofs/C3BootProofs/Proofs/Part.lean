@@ -15,7 +15,7 @@ RV32 model with both `Reader::u32` calls through `readerU32_correct`.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The span of code that `part` runs: from `Reader::bytes`, the lowest of
 the functions it reaches, to the end of the save helper `part` calls, the

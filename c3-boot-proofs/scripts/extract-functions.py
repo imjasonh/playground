@@ -3,11 +3,10 @@
 functions that have machine-code proofs, taken from the bootloader image.
 
 The bytes come from the ESP image's segments, which are what the ROM loads,
-at the addresses and sizes that the ELF's symbol table gives. LLVM's machine
-outliner numbers its helpers (OUTLINED_FUNCTION_N) differently on each
-rebuild, so a helper is named by the call that reaches it: the
-`auipc t0; jalr t0` pair at an offset of an extracted function, decoded the
-way the CPU decodes it. The module
+at the addresses and sizes that the ELF's symbol table gives. Code without a
+symbol of its own, such as `memcpy`'s body, is named by the call that
+reaches it: the `auipc; jalr` pair at an offset of an extracted function,
+decoded the way the CPU decodes it. The module
 also records the image's SHA-256, which must equal
 c3-boot/bootloader/dev-image.sha256. CI regenerates the module and fails if
 it differs from the committed one, so the proofs are about the pinned image.
@@ -28,30 +27,20 @@ FUNCTIONS = [
     ("readerArray4", "<c3_verify::reader::Reader>::array::<4>"),
     ("readerU32", "<c3_verify::reader::Reader>::u32"),
     ("manifestPart", "c3_verify::manifest::part"),
-    ("partSave", ("manifestPart", 0x02)),
-    ("partRestore", ("manifestPart", 0x46)),
     ("manifestParse", "c3_verify::manifest::parse"),
-    ("parseSave", ("manifestParse", 0x02)),
-    ("parseRestore", ("manifestParse", 0xDC)),
     ("readerMagic", "<c3_verify::reader::Reader>::magic"),
-    ("magicLoad", ("readerMagic", 0x22)),
     ("readerU16", "<c3_verify::reader::Reader>::u16"),
     ("readerVersion1", "<c3_verify::reader::Reader>::version_1"),
     ("readerReserved", "<c3_verify::reader::Reader>::reserved"),
     ("readerU8", "<c3_verify::reader::Reader>::u8"),
     ("segmentPhysical", "<c3_verify::image::Segment>::physical"),
     ("imageParse", "c3_verify::image::parse"),
-    ("imageRestore", ("imageParse", 0xC2)),
     ("memcpyStub", "memcpy"),
     ("memcpyBody", ("memcpyStub", 0x00)),
     ("memset", "memset"),
     ("borrowingSub", "crypto_bigint::primitives::borrowing_sub"),
     ("subInner", "p256::arithmetic::field::field_impl::sub_inner"),
-    ("subInnerSave", ("subInner", 0x02)),
-    ("subInnerRestore", ("subInner", 0x12C)),
     ("wideMul", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<8, 8>"),
-    ("wideMulSave", ("wideMul", 0x02)),
-    ("wideMulRestore", ("wideMul", 0xD2)),
     ("fieldMul", "<p256::arithmetic::field::FieldElement>::multiply"),
     ("fieldAdd", "p256::arithmetic::field::field_impl::add"),
     ("fieldSub", "p256::arithmetic::field::field_impl::sub"),
@@ -59,39 +48,20 @@ FUNCTIONS = [
     ("pointAdd", "<primeorder::point_arithmetic::EquationAIsMinusThree as "
      "primeorder::point_arithmetic::sealed::PointArithmetic<p256::NistP256>>::add_assign"),
     ("sha256Compress", "sha2::sha256::compress256"),
-    ("shaIndex", ("sha256Compress", 0x6C)),
-    ("shaSigma1Part", ("sha256Compress", 0x106C)),
     ("shaUpdate", "<sha2::Sha256 as digest::Update>::update"),
-    ("shaUpdateSave", ("shaUpdate", 0x02)),
-    ("shaUpdateRestore", ("shaUpdate", 0x32)),
-    ("shaUpdateBlocks", ("shaUpdate", 0x5C)),
     ("shaFinalize", "<sha2::Sha256 as digest::digest::Digest>::finalize"),
-    ("shaFinalizeSave", ("shaFinalize", 0x02)),
-    ("shaZero32", ("shaFinalize", 0x12)),
-    ("shaFinalizeBlock", ("shaFinalize", 0xAA)),
-    ("shaStoreBe", ("shaFinalize", 0xDE)),
-    ("shaFinalizeRestore", ("shaFinalize", 0x10A)),
     ("shaFinish", "<c3_crypto::sha::Sha256>::finish"),
     ("sha256Fn", "c3_crypto::sha::sha256"),
-    ("shaInit", ("sha256Fn", 0x0A)),
+    ("sha512Compress", "sha2::sha512::compress512"),
+    ("rootFromInclusion", "c3_verify::merkle::root_from_inclusion"),
     ("mulMont12", "crypto_bigint::modular::mul::mul_montgomery_form::<12>"),
-    ("mulMont12Save", ("mulMont12", 0x02)),
-    ("mulMont12Setup", ("mulMont12", 0x24)),
-    ("mulMont12Restore", ("mulMont12", 0x152)),
     ("uintSelect12", "<crypto_bigint::uint::Uint<12>>::select"),
-    ("uintSelect12Step", ("uintSelect12", 0x3E)),
     ("sqMont12", "crypto_bigint::modular::mul::square_montgomery_form::<12>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
 # `lui; addi` pair in it that forms the data's address, and the data's size.
-DATA = [
-    ("regionEnds", "imageParse", 0x23C, 16),
-    ("regionStarts", "imageParse", 0x25E, 16),
-    ("curveB", "pointAdd", 0x12E, 32),
-    ("shaK", "sha256Compress", 0x112, 256),
-    ("shaIV", "shaInit", 0x08, 32),
-]
+DATA = []
 
 
 def call_target(code, addr, off):

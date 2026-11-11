@@ -19,7 +19,7 @@ compresses: a tail call into `compress256`, so it runs through
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 40000 in
 /-- `compress256`'s environment survives a store outside everything it uses. -/

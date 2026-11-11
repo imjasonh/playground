@@ -10,8 +10,9 @@ It counts two things:
   profile (`BOOT_SIM_PROFILE`).
 
 A function counts as proved when it is in PROVED below, which names the
-functions in `C3BootProofs/Image/Bootloader.lean` that a correctness
-theorem covers. Add a function when its theorem lands. Helpers that two
+functions in `C3BootProofs/Image/Bootloader.lean`, the current image, that a
+correctness theorem covers. Theorems about the earlier image in
+`BootloaderV0.lean` don't count until they are redone for the current one. Add a function when its theorem lands. Helpers that two
 functions share are counted once.
 
 A proved function's theorem has hypotheses, such as a stack layout or
@@ -28,18 +29,7 @@ import re
 import subprocess
 import sys
 
-PROVED = [
-    "crc32", "readerBytes", "readerArray4", "readerU32", "manifestPart", "partSave", "partRestore",
-    "manifestParse", "parseSave", "parseRestore", "readerMagic", "magicLoad", "readerU16",
-    "readerVersion1", "readerReserved", "readerU8", "segmentPhysical", "imageParse", "imageRestore",
-    "memcpyStub", "memcpyBody", "memset", "borrowingSub", "subInner", "subInnerSave",
-    "subInnerRestore", "wideMul", "wideMulSave", "wideMulRestore", "fieldMul", "fieldAdd", "fieldSub",
-    "fieldDouble", "pointAdd", "sha256Compress", "shaIndex", "shaSigma1Part", "shaUpdate",
-    "shaUpdateSave", "shaUpdateRestore", "shaUpdateBlocks", "shaFinalize", "shaFinalizeSave",
-    "shaZero32", "shaFinalizeBlock", "shaStoreBe", "shaFinalizeRestore", "sha256Fn", "shaInit",
-    "mulMont12", "mulMont12Save", "mulMont12Setup", "mulMont12Restore", "uintSelect12", "uintSelect12Step",
-    "sqMont12",
-]
+PROVED = []
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
 

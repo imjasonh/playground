@@ -10,7 +10,7 @@ import C3BootProofs.Proofs.ReaderU32
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 abbrev s0' : Fin 32 := 8
 

@@ -13,7 +13,7 @@ byte of `a0` for `Ok`. The compiled function checks the bytes in a loop.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- Whether the `k` bytes at `p` are all zero. -/
 def allZero (M : Word → BitVec 8) (p : Word) : Nat → Bool

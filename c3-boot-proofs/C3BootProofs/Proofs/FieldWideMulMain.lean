@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.FieldWideMul
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 theorem fillWords_load {M : Word → BitVec 8} {dst v : Word} :
     ∀ k i, i < k → dst.toNat + 4 * k ≤ 2 ^ 32 → memLoad32 (fillWords M dst v k) (dst + BitVec.ofNat 32 (4 * i)) = v

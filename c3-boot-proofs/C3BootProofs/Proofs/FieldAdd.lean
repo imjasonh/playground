@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.FieldSubOp
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 theorem limbFlat8 (a0 a1 a2 a3 a4 a5 a6 a7 : Word) :
     limbVal [a0, a1, a2, a3, a4, a5, a6, a7] =

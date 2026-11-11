@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.FieldAdd
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- Where `FieldElement::double` runs: its code at `P`, and `field_impl::add`,
 which it tail-calls with both operands at `ap`, where the image puts it. -/

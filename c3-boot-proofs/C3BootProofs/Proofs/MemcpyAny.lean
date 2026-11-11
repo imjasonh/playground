@@ -21,7 +21,7 @@ with `copyBytes`, which says how many bytes are copied so far.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- `M` with the `k` bytes from `dst` set to the `k` bytes from `src`. -/
 def copyBytes (M : Word → BitVec 8) (dst src : Word) (k : Nat) : Word → BitVec 8 :=

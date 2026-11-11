@@ -15,7 +15,7 @@ entry. `IInv.mem` keeps it across any store outside the reader and the slots.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 20000
 

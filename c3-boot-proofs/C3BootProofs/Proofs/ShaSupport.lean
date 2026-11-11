@@ -15,7 +15,7 @@ by associativity and commutativity alone.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 theorem getD_take_lt : ∀ (code : List Nat) (l i : Nat), i < l → (code.take l).getD i 0 = code.getD i 0
   | [], l, _, _ => by cases l <;> rfl

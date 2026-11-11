@@ -14,7 +14,7 @@ of calls, each through the callee's theorem.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- Memory after `Reader::u32` returns, outside the stack it uses. -/
 def u32Mem (M : Word → BitVec 8) (out self : Word) : Word → BitVec 8 :=

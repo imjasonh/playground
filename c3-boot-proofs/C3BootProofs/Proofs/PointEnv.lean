@@ -19,7 +19,7 @@ result.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The curve constant `b` in Montgomery form, as the image stores it at
 `bAddr`. -/

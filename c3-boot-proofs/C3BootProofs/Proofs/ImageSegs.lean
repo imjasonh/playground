@@ -10,7 +10,7 @@ first segments hold what the loop has read and the rest are zero.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 20000
 

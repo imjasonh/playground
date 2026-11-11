@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.ImageHelpers
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- Memory after storing the word `v` at each of the `k` words from `dst`. -/
 def fillWords (M : Word → BitVec 8) (dst v : Word) : Nat → Word → BitVec 8

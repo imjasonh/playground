@@ -100,14 +100,14 @@ theorem exists_flash_header :
 /-- A machine with `crc32`'s bytes at the address the image loads them
 meets `crc32_correct`'s hypotheses, so the theorem is not vacuous. -/
 theorem exists_crc32_machine :
-    ∃ (m : RV32.Machine) (base retAddr : RV32.Word), RV32.CodeAt m base Image.crc32Code ∧
+    ∃ (m : RV32.Machine) (base retAddr : RV32.Word), RV32.CodeAt m base ImageV0.crc32Code ∧
       m.pc = base ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
-  let base : RV32.Word := BitVec.ofNat 32 Image.crc32Address
-  refine ⟨⟨fun _ => 0, base, fun a => RV32.byteAt Image.crc32Code (a - base).toNat⟩, base, 0,
+  let base : RV32.Word := BitVec.ofNat 32 ImageV0.crc32Address
+  refine ⟨⟨fun _ => 0, base, fun a => RV32.byteAt ImageV0.crc32Code (a - base).toNat⟩, base, 0,
     ?_, rfl, rfl, by decide⟩
   intro i hi
   have hi' : i < 2 ^ 32 := Nat.lt_trans hi (by decide)
-  show RV32.byteAt Image.crc32Code (base + BitVec.ofNat 32 i - base).toNat = _
+  show RV32.byteAt ImageV0.crc32Code (base + BitVec.ofNat 32 i - base).toNat = _
   rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hi']
 
 /-- A machine with `Reader::bytes`'s bytes at the address the image loads
@@ -115,20 +115,20 @@ them, and a result and reader in data memory, meets `readerBytes_correct`'s
 hypotheses. -/
 theorem exists_readerBytes_machine :
     ∃ (m : RV32.Machine) (base retAddr out self n : RV32.Word),
-      RV32.CodeAt m base Image.readerBytesCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.CodeAt m base ImageV0.readerBytesCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧
       RV32.reg m RV32.a1 = self ∧ RV32.reg m RV32.a2 = n ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ out.toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
-      RV32.Sep out 8 base Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerBytesCode.length := by
-  let base : RV32.Word := BitVec.ofNat 32 Image.readerBytesAddress
+      RV32.Sep out 8 base ImageV0.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerBytesCode.length := by
+  let base : RV32.Word := BitVec.ofNat 32 ImageV0.readerBytesAddress
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else 0
-  refine ⟨⟨regs, base, fun a => RV32.byteAt Image.readerBytesCode (a - base).toNat⟩, base, 0,
+  refine ⟨⟨regs, base, fun a => RV32.byteAt ImageV0.readerBytesCode (a - base).toNat⟩, base, 0,
     0x3FCC5000, 0x3FCC5100, 0, ?_, rfl, rfl, rfl, rfl, rfl, by decide, by decide, by decide,
     by unfold RV32.Sep; decide, by unfold RV32.Sep; decide⟩
   intro i hi
   have hi' : i < 2 ^ 32 := Nat.lt_trans hi (by decide)
-  show RV32.byteAt Image.readerBytesCode (base + BitVec.ofNat 32 i - base).toNat = _
+  show RV32.byteAt ImageV0.readerBytesCode (base + BitVec.ofNat 32 i - base).toNat = _
   rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hi']
 
 /-- The reader the `Reader::array::<4>` witness uses: a 16-byte slice at
@@ -138,10 +138,10 @@ def witnessReader : List Nat := [0x00, 0x60, 0xCC, 0x3F, 16, 0, 0, 0, 0, 0, 0, 0
 /-- Memory with `Reader::array::<4>` and `Reader::bytes` where the image
 loads them and the witness reader at `0x3FCC5100`. -/
 def witnessMem (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.readerArray4Address).toNat < 70 then
-    RV32.byteAt Image.readerArray4Code (a - BitVec.ofNat 32 Image.readerArray4Address).toNat
-  else if (a - BitVec.ofNat 32 Image.readerBytesAddress).toNat < 38 then
-    RV32.byteAt Image.readerBytesCode (a - BitVec.ofNat 32 Image.readerBytesAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.readerArray4Address).toNat < 70 then
+    RV32.byteAt ImageV0.readerArray4Code (a - BitVec.ofNat 32 ImageV0.readerArray4Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.readerBytesAddress).toNat < 38 then
+    RV32.byteAt ImageV0.readerBytesCode (a - BitVec.ofNat 32 ImageV0.readerBytesAddress).toNat
   else if (a - 0x3FCC5100).toNat < 12 then RV32.byteAt witnessReader (a - 0x3FCC5100).toNat
   else 0
 
@@ -149,25 +149,25 @@ def witnessMem (a : RV32.Word) : BitVec 8 :=
 the stack at `0x3FCC8000`, meets `readerArray4_correct`'s hypotheses. -/
 theorem exists_readerArray4_machine :
     ∃ (m : RV32.Machine) (base bbase retAddr out self : RV32.Word),
-      RV32.CodeAt m base Image.readerArray4Code ∧ RV32.CodeAt m bbase Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.readerArray4Code ∧ RV32.CodeAt m bbase ImageV0.readerBytesCode ∧
       bbase = base + 0xFFFFFF96 ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧
       self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 base Image.readerArray4Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 bbase Image.readerBytesCode.length ∧
-      RV32.Sep out 8 base Image.readerArray4Code.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerArray4Code.length ∧
-      RV32.Sep (self + 8) 4 bbase Image.readerBytesCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 base ImageV0.readerArray4Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 bbase ImageV0.readerBytesCode.length ∧
+      RV32.Sep out 8 base ImageV0.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 bbase ImageV0.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 ∧
       RV32.Sep out 8 (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.readerArray4Address, witnessMem⟩,
-    BitVec.ofNat 32 Image.readerArray4Address, BitVec.ofNat 32 Image.readerBytesAddress, 0,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.readerArray4Address, witnessMem⟩,
+    BitVec.ofNat 32 ImageV0.readerArray4Address, BitVec.ofNat 32 ImageV0.readerBytesAddress, 0,
     0x3FCC5000, 0x3FCC5100, ?_, ?_, by decide, by decide, rfl, rfl, rfl, rfl, by decide,
     by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · unfold RV32.CodeAt; decide +kernel
@@ -177,30 +177,30 @@ theorem exists_readerArray4_machine :
 
 /-- `witnessMem` with `Reader::u32` added where the image loads it. -/
 def witnessMemU32 (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.readerU32Address).toNat < 80 then
-    RV32.byteAt Image.readerU32Code (a - BitVec.ofNat 32 Image.readerU32Address).toNat
+  if (a - BitVec.ofNat 32 ImageV0.readerU32Address).toNat < 80 then
+    RV32.byteAt ImageV0.readerU32Code (a - BitVec.ofNat 32 ImageV0.readerU32Address).toNat
   else witnessMem a
 
 /-- A machine that calls `Reader::u32` on the witness reader meets
 `readerU32_correct`'s hypotheses. -/
 theorem exists_readerU32_machine :
     ∃ (m : RV32.Machine) (base retAddr out self : RV32.Word),
-      RV32.CodeAt m base Image.readerU32Code ∧
-      RV32.CodeAt m (base + 0xFFFFFADE) Image.readerArray4Code ∧
-      RV32.CodeAt m (base + 0xFFFFFADE + 0xFFFFFF96) Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.readerU32Code ∧
+      RV32.CodeAt m (base + 0xFFFFFADE) ImageV0.readerArray4Code ∧
+      RV32.CodeAt m (base + 0xFFFFFADE + 0xFFFFFF96) ImageV0.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base Image.readerU32Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFADE) Image.readerArray4Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base ImageV0.readerU32Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFADE) ImageV0.readerArray4Code.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0xFFFFFADE + 0xFFFFFF96)
-        Image.readerBytesCode.length ∧
-      RV32.Sep out 8 base Image.readerU32Code.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerU32Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0xFFFFFADE) Image.readerArray4Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0xFFFFFADE + 0xFFFFFF96) Image.readerBytesCode.length ∧
+        ImageV0.readerBytesCode.length ∧
+      RV32.Sep out 8 base ImageV0.readerU32Code.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerU32Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFADE) ImageV0.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFADE + 0xFFFFFF96) ImageV0.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep out 8 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
@@ -209,8 +209,8 @@ theorem exists_readerU32_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.readerU32Address, witnessMemU32⟩,
-    BitVec.ofNat 32 Image.readerU32Address, 0, 0x3FCC5000, 0x3FCC5100, ?_, ?_, ?_, by decide, rfl,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.readerU32Address, witnessMemU32⟩,
+    BitVec.ofNat 32 ImageV0.readerU32Address, 0, 0x3FCC5000, 0x3FCC5100, ?_, ?_, ?_, by decide, rfl,
     rfl, rfl, rfl, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_⟩
   all_goals first
@@ -222,16 +222,16 @@ theorem exists_readerU32_machine :
 `Reader::version_1`, and `Reader::reserved` added where the image loads
 them. -/
 def witnessMemChecks (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.readerMagicAddress).toNat < Image.readerMagicCode.length then
-    RV32.byteAt Image.readerMagicCode (a - BitVec.ofNat 32 Image.readerMagicAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.magicLoadAddress).toNat < Image.magicLoadCode.length then
-    RV32.byteAt Image.magicLoadCode (a - BitVec.ofNat 32 Image.magicLoadAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.readerU16Address).toNat < Image.readerU16Code.length then
-    RV32.byteAt Image.readerU16Code (a - BitVec.ofNat 32 Image.readerU16Address).toNat
-  else if (a - BitVec.ofNat 32 Image.readerVersion1Address).toNat < Image.readerVersion1Code.length then
-    RV32.byteAt Image.readerVersion1Code (a - BitVec.ofNat 32 Image.readerVersion1Address).toNat
-  else if (a - BitVec.ofNat 32 Image.readerReservedAddress).toNat < Image.readerReservedCode.length then
-    RV32.byteAt Image.readerReservedCode (a - BitVec.ofNat 32 Image.readerReservedAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.readerMagicAddress).toNat < ImageV0.readerMagicCode.length then
+    RV32.byteAt ImageV0.readerMagicCode (a - BitVec.ofNat 32 ImageV0.readerMagicAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.magicLoadAddress).toNat < ImageV0.magicLoadCode.length then
+    RV32.byteAt ImageV0.magicLoadCode (a - BitVec.ofNat 32 ImageV0.magicLoadAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.readerU16Address).toNat < ImageV0.readerU16Code.length then
+    RV32.byteAt ImageV0.readerU16Code (a - BitVec.ofNat 32 ImageV0.readerU16Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.readerVersion1Address).toNat < ImageV0.readerVersion1Code.length then
+    RV32.byteAt ImageV0.readerVersion1Code (a - BitVec.ofNat 32 ImageV0.readerVersion1Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.readerReservedAddress).toNat < ImageV0.readerReservedCode.length then
+    RV32.byteAt ImageV0.readerReservedCode (a - BitVec.ofNat 32 ImageV0.readerReservedAddress).toNat
   else witnessMemU32 a
 
 /-- The registers of a call on the witness reader with the stack at
@@ -244,30 +244,30 @@ def witnessRegs (a1v : RV32.Word) (r : Fin 32) : RV32.Word :=
 `readerMagic_correct`'s hypotheses. -/
 theorem exists_readerMagic_machine :
     ∃ (m : RV32.Machine) (base retAddr self k : RV32.Word),
-      RV32.CodeAt m base Image.readerMagicCode ∧
-      RV32.CodeAt m (base + 0x1AC) Image.readerArray4Code ∧
-      RV32.CodeAt m (base + 0x1AC + 0xFFFFFF96) Image.readerBytesCode ∧
-      RV32.CodeAt m (base + 0x16804) Image.magicLoadCode ∧
+      RV32.CodeAt m base ImageV0.readerMagicCode ∧
+      RV32.CodeAt m (base + 0x1AC) ImageV0.readerArray4Code ∧
+      RV32.CodeAt m (base + 0x1AC + 0xFFFFFF96) ImageV0.readerBytesCode ∧
+      RV32.CodeAt m (base + 0x16804) ImageV0.magicLoadCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.a1 = k ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base Image.readerMagicCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC) Image.readerArray4Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 base ImageV0.readerMagicCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC) ImageV0.readerArray4Code.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x1AC + 0xFFFFFF96)
-        Image.readerBytesCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x16804) Image.magicLoadCode.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerMagicCode.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x1AC) Image.readerArray4Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x1AC + 0xFFFFFF96) Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x16804) Image.magicLoadCode.length ∧
+        ImageV0.readerBytesCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 (base + 0x16804) ImageV0.magicLoadCode.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerMagicCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x1AC) ImageV0.readerArray4Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x1AC + 0xFFFFFF96) ImageV0.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x16804) ImageV0.magicLoadCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
         (RV32.reg m RV32.sp + 0xFFFFFFD0) 48 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
-  refine ⟨⟨witnessRegs 0x4C533343, BitVec.ofNat 32 Image.readerMagicAddress, witnessMemChecks⟩,
-    BitVec.ofNat 32 Image.readerMagicAddress, 0, 0x3FCC5100, 0x4C533343, ?_, ?_, ?_, ?_, by decide, rfl,
+  refine ⟨⟨witnessRegs 0x4C533343, BitVec.ofNat 32 ImageV0.readerMagicAddress, witnessMemChecks⟩,
+    BitVec.ofNat 32 ImageV0.readerMagicAddress, 0, 0x3FCC5100, 0x4C533343, ?_, ?_, ?_, ?_, by decide, rfl,
     rfl, rfl, rfl, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals first
     | (unfold RV32.CodeAt; decide +kernel)
@@ -278,23 +278,23 @@ theorem exists_readerMagic_machine :
 `readerU16_correct`'s hypotheses. -/
 theorem exists_readerU16_machine :
     ∃ (m : RV32.Machine) (base retAddr self : RV32.Word),
-      RV32.CodeAt m base Image.readerU16Code ∧
-      RV32.CodeAt m (base + 0xFFFFFFDA) Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.readerU16Code ∧
+      RV32.CodeAt m (base + 0xFFFFFFDA) ImageV0.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base Image.readerU16Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0xFFFFFFDA) Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerU16Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0xFFFFFFDA) Image.readerBytesCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base ImageV0.readerU16Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0xFFFFFFDA) ImageV0.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerU16Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xFFFFFFDA) ImageV0.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
         (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
-  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 Image.readerU16Address, witnessMemChecks⟩,
-    BitVec.ofNat 32 Image.readerU16Address, 0, 0x3FCC5100, ?_, ?_, by decide, rfl, rfl, rfl,
+  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 ImageV0.readerU16Address, witnessMemChecks⟩,
+    BitVec.ofNat 32 ImageV0.readerU16Address, 0, 0x3FCC5100, ?_, ?_, by decide, rfl, rfl, rfl,
     by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals first
     | (unfold RV32.CodeAt; decide +kernel)
@@ -305,27 +305,27 @@ theorem exists_readerU16_machine :
 `readerVersion1_correct`'s hypotheses. -/
 theorem exists_readerVersion1_machine :
     ∃ (m : RV32.Machine) (base retAddr self : RV32.Word),
-      RV32.CodeAt m base Image.readerVersion1Code ∧
-      RV32.CodeAt m (base + 0x126) Image.readerU16Code ∧
-      RV32.CodeAt m (base + 0x126 + 0xFFFFFFDA) Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.readerVersion1Code ∧
+      RV32.CodeAt m (base + 0x126) ImageV0.readerU16Code ∧
+      RV32.CodeAt m (base + 0x126 + 0xFFFFFFDA) ImageV0.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 base Image.readerVersion1Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 (base + 0x126) Image.readerU16Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 base ImageV0.readerVersion1Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 (base + 0x126) ImageV0.readerU16Code.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 (base + 0x126 + 0xFFFFFFDA)
-        Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerVersion1Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x126) Image.readerU16Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x126 + 0xFFFFFFDA) Image.readerBytesCode.length ∧
+        ImageV0.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerVersion1Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x126) ImageV0.readerU16Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x126 + 0xFFFFFFDA) ImageV0.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
         (RV32.reg m RV32.sp + 0xFFFFFFE0) 32 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
-  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 Image.readerVersion1Address, witnessMemChecks⟩,
-    BitVec.ofNat 32 Image.readerVersion1Address, 0, 0x3FCC5100, ?_, ?_, ?_, by decide, rfl, rfl, rfl,
+  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 ImageV0.readerVersion1Address, witnessMemChecks⟩,
+    BitVec.ofNat 32 ImageV0.readerVersion1Address, 0, 0x3FCC5100, ?_, ?_, ?_, by decide, rfl, rfl, rfl,
     by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals first
     | (unfold RV32.CodeAt; decide +kernel)
@@ -336,23 +336,23 @@ theorem exists_readerVersion1_machine :
 reader meets `readerReserved_correct`'s hypotheses. -/
 theorem exists_readerReserved_machine :
     ∃ (m : RV32.Machine) (base retAddr self n : RV32.Word),
-      RV32.CodeAt m base Image.readerReservedCode ∧
-      RV32.CodeAt m (base + 0x9C) Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.readerReservedCode ∧
+      RV32.CodeAt m (base + 0x9C) ImageV0.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.a1 = n ∧
       n ≠ 0 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base Image.readerReservedCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0x9C) Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerReservedCode.length ∧
-      RV32.Sep (self + 8) 4 (base + 0x9C) Image.readerBytesCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base ImageV0.readerReservedCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0x9C) ImageV0.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerReservedCode.length ∧
+      RV32.Sep (self + 8) 4 (base + 0x9C) ImageV0.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
         (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
-  refine ⟨⟨witnessRegs 2, BitVec.ofNat 32 Image.readerReservedAddress, witnessMemChecks⟩,
-    BitVec.ofNat 32 Image.readerReservedAddress, 0, 0x3FCC5100, 2, ?_, ?_, by decide, rfl, rfl, rfl,
+  refine ⟨⟨witnessRegs 2, BitVec.ofNat 32 ImageV0.readerReservedAddress, witnessMemChecks⟩,
+    BitVec.ofNat 32 ImageV0.readerReservedAddress, 0, 0x3FCC5100, 2, ?_, ?_, by decide, rfl, rfl, rfl,
     by decide, rfl, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals first
     | (unfold RV32.CodeAt; decide +kernel)
@@ -363,24 +363,24 @@ theorem exists_readerReserved_machine :
 /-- `witnessMemU32` with `manifest::part` and its save and restore helpers added
 where the image loads them. -/
 def witnessMemPart (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat < 106 then
-    RV32.byteAt Image.manifestPartCode (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.partSaveAddress).toNat < 12 then
-    RV32.byteAt Image.partSaveCode (a - BitVec.ofNat 32 Image.partSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.partRestoreAddress).toNat < 14 then
-    RV32.byteAt Image.partRestoreCode (a - BitVec.ofNat 32 Image.partRestoreAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.manifestPartAddress).toNat < 106 then
+    RV32.byteAt ImageV0.manifestPartCode (a - BitVec.ofNat 32 ImageV0.manifestPartAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.partSaveAddress).toNat < 12 then
+    RV32.byteAt ImageV0.partSaveCode (a - BitVec.ofNat 32 ImageV0.partSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.partRestoreAddress).toNat < 14 then
+    RV32.byteAt ImageV0.partRestoreCode (a - BitVec.ofNat 32 ImageV0.partRestoreAddress).toNat
   else witnessMemU32 a
 
 /-- A machine that calls `manifest::part` on the witness reader with the
 image's bounds meets `manifestPart_correct`'s hypotheses. -/
 theorem exists_manifestPart_machine :
     ∃ (m : RV32.Machine) (base retAddr out self lo hi : RV32.Word),
-      RV32.CodeAt m base Image.manifestPartCode ∧
-      RV32.CodeAt m (base + 0x12BB6) Image.partSaveCode ∧
-      RV32.CodeAt m (base + 0x129F4) Image.partRestoreCode ∧
-      RV32.CodeAt m (base + 0xFFFFC94C) Image.readerU32Code ∧
-      RV32.CodeAt m (base + 0xFFFFC94C + 0xFFFFFADE) Image.readerArray4Code ∧
-      RV32.CodeAt m (base + 0xFFFFC94C + 0xFFFFFADE + 0xFFFFFF96) Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.manifestPartCode ∧
+      RV32.CodeAt m (base + 0x12BB6) ImageV0.partSaveCode ∧
+      RV32.CodeAt m (base + 0x129F4) ImageV0.partRestoreCode ∧
+      RV32.CodeAt m (base + 0xFFFFC94C) ImageV0.readerU32Code ∧
+      RV32.CodeAt m (base + 0xFFFFC94C + 0xFFFFFADE) ImageV0.readerArray4Code ∧
+      RV32.CodeAt m (base + 0xFFFFC94C + 0xFFFFFADE + 0xFFFFFF96) ImageV0.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = self ∧ RV32.reg m RV32.a2 = lo ∧
       RV32.reg m RV32.a3 = hi ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
@@ -399,8 +399,8 @@ theorem exists_manifestPart_machine :
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100
     else if r = RV32.a2 then 37 else if r = RV32.a3 then 0x1D0000
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.manifestPartAddress, witnessMemPart⟩,
-    BitVec.ofNat 32 Image.manifestPartAddress, 0, 0x3FCC5000, 0x3FCC5100, 37, 0x1D0000,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.manifestPartAddress, witnessMemPart⟩,
+    BitVec.ofNat 32 ImageV0.manifestPartAddress, 0, 0x3FCC5000, 0x3FCC5100, 37, 0x1D0000,
     ?_, ?_, ?_, ?_, ?_, ?_, by decide, rfl, rfl, rfl, rfl, rfl, rfl, by decide, by decide, by decide,
     by decide, ?_, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), ?_, ?_, ?_, ?_⟩
@@ -413,18 +413,18 @@ theorem exists_manifestPart_machine :
 /-- `witnessMemChecks` with `manifest::parse`, its helpers, and `part` and its
 helpers added where the image loads them. -/
 def witnessMemParse (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.manifestParseAddress).toNat < Image.manifestParseCode.length then
-    RV32.byteAt Image.manifestParseCode (a - BitVec.ofNat 32 Image.manifestParseAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.parseSaveAddress).toNat < Image.parseSaveCode.length then
-    RV32.byteAt Image.parseSaveCode (a - BitVec.ofNat 32 Image.parseSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.parseRestoreAddress).toNat < Image.parseRestoreCode.length then
-    RV32.byteAt Image.parseRestoreCode (a - BitVec.ofNat 32 Image.parseRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat < 106 then
-    RV32.byteAt Image.manifestPartCode (a - BitVec.ofNat 32 Image.manifestPartAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.partSaveAddress).toNat < 12 then
-    RV32.byteAt Image.partSaveCode (a - BitVec.ofNat 32 Image.partSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.partRestoreAddress).toNat < 14 then
-    RV32.byteAt Image.partRestoreCode (a - BitVec.ofNat 32 Image.partRestoreAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.manifestParseAddress).toNat < ImageV0.manifestParseCode.length then
+    RV32.byteAt ImageV0.manifestParseCode (a - BitVec.ofNat 32 ImageV0.manifestParseAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.parseSaveAddress).toNat < ImageV0.parseSaveCode.length then
+    RV32.byteAt ImageV0.parseSaveCode (a - BitVec.ofNat 32 ImageV0.parseSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.parseRestoreAddress).toNat < ImageV0.parseRestoreCode.length then
+    RV32.byteAt ImageV0.parseRestoreCode (a - BitVec.ofNat 32 ImageV0.parseRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.manifestPartAddress).toNat < 106 then
+    RV32.byteAt ImageV0.manifestPartCode (a - BitVec.ofNat 32 ImageV0.manifestPartAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.partSaveAddress).toNat < 12 then
+    RV32.byteAt ImageV0.partSaveCode (a - BitVec.ofNat 32 ImageV0.partSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.partRestoreAddress).toNat < 14 then
+    RV32.byteAt ImageV0.partRestoreCode (a - BitVec.ofNat 32 ImageV0.partRestoreAddress).toNat
   else witnessMemChecks a
 
 /-- A machine that calls `manifest::parse` on 40 bytes at `0x3FCC6000`, with
@@ -438,8 +438,8 @@ theorem exists_manifestParse_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.manifestParseAddress, witnessMemParse⟩,
-    BitVec.ofNat 32 Image.manifestParseAddress, 0, 0x3FCC5000, 0x3FCC6000, 0x3FCC7F70, 0x3FCC7FC0,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.manifestParseAddress, witnessMemParse⟩,
+    BitVec.ofNat 32 ImageV0.manifestParseAddress, 0, 0x3FCC5000, 0x3FCC6000, 0x3FCC7F70, 0x3FCC7FC0,
     ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, by decide,
     ⟨by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -449,35 +449,35 @@ theorem exists_manifestParse_machine :
 /-- `witnessMemParse` with `Reader::u8`, `Segment::physical`, and `memcpy`'s
 stub and body added where the image loads them. -/
 def witnessMemImage (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.readerU8Address).toNat < Image.readerU8Code.length then
-    RV32.byteAt Image.readerU8Code (a - BitVec.ofNat 32 Image.readerU8Address).toNat
-  else if (a - BitVec.ofNat 32 Image.segmentPhysicalAddress).toNat < Image.segmentPhysicalCode.length then
-    RV32.byteAt Image.segmentPhysicalCode (a - BitVec.ofNat 32 Image.segmentPhysicalAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
-    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
-    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.readerU8Address).toNat < ImageV0.readerU8Code.length then
+    RV32.byteAt ImageV0.readerU8Code (a - BitVec.ofNat 32 ImageV0.readerU8Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.segmentPhysicalAddress).toNat < ImageV0.segmentPhysicalCode.length then
+    RV32.byteAt ImageV0.segmentPhysicalCode (a - BitVec.ofNat 32 ImageV0.segmentPhysicalAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.memcpyStubAddress).toNat < ImageV0.memcpyStubCode.length then
+    RV32.byteAt ImageV0.memcpyStubCode (a - BitVec.ofNat 32 ImageV0.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.memcpyBodyAddress).toNat < ImageV0.memcpyBodyCode.length then
+    RV32.byteAt ImageV0.memcpyBodyCode (a - BitVec.ofNat 32 ImageV0.memcpyBodyAddress).toNat
   else witnessMemParse a
 
 /-- A machine that calls `Reader::u8` on the witness reader meets
 `readerU8_correct`'s hypotheses. -/
 theorem exists_readerU8_machine :
     ∃ (m : RV32.Machine) (base retAddr self : RV32.Word),
-      RV32.CodeAt m base Image.readerU8Code ∧ RV32.CodeAt m (base + 0xD6) Image.readerBytesCode ∧
+      RV32.CodeAt m base ImageV0.readerU8Code ∧ RV32.CodeAt m (base + 0xD6) ImageV0.readerBytesCode ∧
       base.toNat % 2 = 0 ∧ m.pc = base ∧ RV32.reg m RV32.a0 = self ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ self.toNat % 4 = 0 ∧
       (RV32.memLoad32 m.mem self ≠ 0 ∧
         (RV32.memLoad32 m.mem self).toNat + (RV32.memLoad32 m.mem (self + 4)).toNat ≤ 2 ^ 32) ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base Image.readerU8Code.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0xD6) Image.readerBytesCode.length ∧
-      RV32.Sep (self + 8) 4 base Image.readerU8Code.length ∧
-      RV32.Sep (self + 8) 4 (base + 0xD6) Image.readerBytesCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 base ImageV0.readerU8Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 (base + 0xD6) ImageV0.readerBytesCode.length ∧
+      RV32.Sep (self + 8) 4 base ImageV0.readerU8Code.length ∧
+      RV32.Sep (self + 8) 4 (base + 0xD6) ImageV0.readerBytesCode.length ∧
       RV32.Sep self 12 (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat
         (RV32.reg m RV32.sp + 0xFFFFFFF0) 16 ∧
       RV32.Sep (RV32.memLoad32 m.mem self) (RV32.memLoad32 m.mem (self + 4)).toNat (self + 8) 4 := by
-  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 Image.readerU8Address, witnessMemImage⟩,
-    BitVec.ofNat 32 Image.readerU8Address, 0, 0x3FCC5100, ?_, ?_, by decide, rfl, rfl,
+  refine ⟨⟨witnessRegs 0, BitVec.ofNat 32 ImageV0.readerU8Address, witnessMemImage⟩,
+    BitVec.ofNat 32 ImageV0.readerU8Address, 0, 0x3FCC5100, ?_, ?_, by decide, rfl, rfl,
     rfl, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals first
     | (unfold RV32.CodeAt; decide +kernel)
@@ -488,14 +488,14 @@ theorem exists_readerU8_machine :
 `segmentPhysical_correct`'s hypotheses. -/
 theorem exists_segmentPhysical_machine :
     ∃ (m : RV32.Machine) (base retAddr out addr : RV32.Word) (k : BitVec 8),
-      RV32.CodeAt m base Image.segmentPhysicalCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.CodeAt m base ImageV0.segmentPhysicalCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = addr ∧ RV32.reg m RV32.a2 = k.zeroExtend 32 ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ out.toNat % 4 = 0 ∧
-      RV32.Sep out 8 base Image.segmentPhysicalCode.length := by
+      RV32.Sep out 8 base ImageV0.segmentPhysicalCode.length := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3C010000 else if r = RV32.a2 then 1 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.segmentPhysicalAddress, witnessMemImage⟩,
-    BitVec.ofNat 32 Image.segmentPhysicalAddress, 0, 0x3FCC5000, 0x3C010000, 1, ?_, by decide, rfl, rfl, rfl,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.segmentPhysicalAddress, witnessMemImage⟩,
+    BitVec.ofNat 32 ImageV0.segmentPhysicalAddress, 0, 0x3FCC5000, 0x3C010000, 1, ?_, by decide, rfl, rfl, rfl,
     rfl, rfl, by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
@@ -504,17 +504,17 @@ set_option maxRecDepth 20000 in
 meets `memcpy_aligned`'s hypotheses. -/
 theorem exists_memcpy_machine :
     ∃ (m : RV32.Machine) (stub retAddr dst src : RV32.Word) (w : Nat),
-      RV32.CodeAt m stub Image.memcpyStubCode ∧ RV32.CodeAt m (stub + 8) Image.memcpyBodyCode ∧
+      RV32.CodeAt m stub ImageV0.memcpyStubCode ∧ RV32.CodeAt m (stub + 8) ImageV0.memcpyBodyCode ∧
       stub.toNat % 2 = 0 ∧ m.pc = stub ∧ RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = src ∧
       RV32.reg m RV32.a2 = BitVec.ofNat 32 (4 * w) ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ 4 ≤ w ∧ dst.toNat + 4 * w < 2 ^ 32 ∧
       BitVec.ofNat 32 (4 * w) &&& 0xFFFFFFFC = BitVec.ofNat 32 (4 * w) ∧
       dst.toNat % 4 = 0 ∧ src.toNat % 4 = 0 ∧ RV32.Sep dst (4 * w) src (4 * w) ∧
-      RV32.Sep dst (4 * w) (stub + 8) Image.memcpyBodyCode.length := by
+      RV32.Sep dst (4 * w) (stub + 8) ImageV0.memcpyBodyCode.length := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x100 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.memcpyStubAddress, witnessMemImage⟩,
-    BitVec.ofNat 32 Image.memcpyStubAddress, 0, 0x3FCC5000, 0x3FCC6000, 64, ?_, ?_, by decide, rfl, rfl,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.memcpyStubAddress, witnessMemImage⟩,
+    BitVec.ofNat 32 ImageV0.memcpyStubAddress, 0, 0x3FCC5000, 0x3FCC6000, 64, ?_, ?_, by decide, rfl, rfl,
     rfl, rfl, rfl, by decide, by decide, by decide, by decide, by decide, by decide,
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
   all_goals (unfold RV32.CodeAt; decide +kernel)
@@ -522,14 +522,14 @@ theorem exists_memcpy_machine :
 /-- `witnessMemImage` with `image::parse`, its restore helper, and the region
 tables added where the image loads them. -/
 def witnessMemImageParse (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.imageParseAddress).toNat < Image.imageParseCode.length then
-    RV32.byteAt Image.imageParseCode (a - BitVec.ofNat 32 Image.imageParseAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.imageRestoreAddress).toNat < Image.imageRestoreCode.length then
-    RV32.byteAt Image.imageRestoreCode (a - BitVec.ofNat 32 Image.imageRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.regionEndsAddress).toNat < Image.regionEndsData.length then
-    RV32.byteAt Image.regionEndsData (a - BitVec.ofNat 32 Image.regionEndsAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.regionStartsAddress).toNat < Image.regionStartsData.length then
-    RV32.byteAt Image.regionStartsData (a - BitVec.ofNat 32 Image.regionStartsAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.imageParseAddress).toNat < ImageV0.imageParseCode.length then
+    RV32.byteAt ImageV0.imageParseCode (a - BitVec.ofNat 32 ImageV0.imageParseAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.imageRestoreAddress).toNat < ImageV0.imageRestoreCode.length then
+    RV32.byteAt ImageV0.imageRestoreCode (a - BitVec.ofNat 32 ImageV0.imageRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.regionEndsAddress).toNat < ImageV0.regionEndsData.length then
+    RV32.byteAt ImageV0.regionEndsData (a - BitVec.ofNat 32 ImageV0.regionEndsAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.regionStartsAddress).toNat < ImageV0.regionStartsData.length then
+    RV32.byteAt ImageV0.regionStartsData (a - BitVec.ofNat 32 ImageV0.regionStartsAddress).toNat
   else witnessMemImage a
 
 set_option maxRecDepth 20000 in
@@ -546,8 +546,8 @@ theorem exists_imageParse_machine :
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
     else if r = RV32.a2 then 0x100 else if r = RV32.a3 then 0x20000
     else if r = RV32.sp then 0x3FCC7F60 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.imageParseAddress, witnessMemImageParse⟩,
-    BitVec.ofNat 32 Image.imageParseAddress, 0x3FCC7DD0, 0x3FCC7E00, 0x3FCC6000, 0x100, 0x3FCC5000, 0x20000,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.imageParseAddress, witnessMemImageParse⟩,
+    BitVec.ofNat 32 ImageV0.imageParseAddress, 0x3FCC7DD0, 0x3FCC7E00, 0x3FCC6000, 0x100, 0x3FCC5000, 0x20000,
     ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
     ⟨by decide, by decide, by decide, by decide, by decide, ⟨by decide, by decide⟩,
       RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
@@ -558,24 +558,24 @@ theorem exists_imageParse_machine :
 /-- `witnessMemImageParse` with `memset` and the functions the P-256 field
 multiplication runs added where the image loads them. -/
 def witnessMemField (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
-    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat < Image.borrowingSubCode.length then
-    RV32.byteAt Image.borrowingSubCode (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.subInnerAddress).toNat < Image.subInnerCode.length then
-    RV32.byteAt Image.subInnerCode (a - BitVec.ofNat 32 Image.subInnerAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.subInnerSaveAddress).toNat < Image.subInnerSaveCode.length then
-    RV32.byteAt Image.subInnerSaveCode (a - BitVec.ofNat 32 Image.subInnerSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.subInnerRestoreAddress).toNat < Image.subInnerRestoreCode.length then
-    RV32.byteAt Image.subInnerRestoreCode (a - BitVec.ofNat 32 Image.subInnerRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.wideMulAddress).toNat < Image.wideMulCode.length then
-    RV32.byteAt Image.wideMulCode (a - BitVec.ofNat 32 Image.wideMulAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.wideMulSaveAddress).toNat < Image.wideMulSaveCode.length then
-    RV32.byteAt Image.wideMulSaveCode (a - BitVec.ofNat 32 Image.wideMulSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.wideMulRestoreAddress).toNat < Image.wideMulRestoreCode.length then
-    RV32.byteAt Image.wideMulRestoreCode (a - BitVec.ofNat 32 Image.wideMulRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.fieldMulAddress).toNat < Image.fieldMulCode.length then
-    RV32.byteAt Image.fieldMulCode (a - BitVec.ofNat 32 Image.fieldMulAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.memsetAddress).toNat < ImageV0.memsetCode.length then
+    RV32.byteAt ImageV0.memsetCode (a - BitVec.ofNat 32 ImageV0.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.borrowingSubAddress).toNat < ImageV0.borrowingSubCode.length then
+    RV32.byteAt ImageV0.borrowingSubCode (a - BitVec.ofNat 32 ImageV0.borrowingSubAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.subInnerAddress).toNat < ImageV0.subInnerCode.length then
+    RV32.byteAt ImageV0.subInnerCode (a - BitVec.ofNat 32 ImageV0.subInnerAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.subInnerSaveAddress).toNat < ImageV0.subInnerSaveCode.length then
+    RV32.byteAt ImageV0.subInnerSaveCode (a - BitVec.ofNat 32 ImageV0.subInnerSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.subInnerRestoreAddress).toNat < ImageV0.subInnerRestoreCode.length then
+    RV32.byteAt ImageV0.subInnerRestoreCode (a - BitVec.ofNat 32 ImageV0.subInnerRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.wideMulAddress).toNat < ImageV0.wideMulCode.length then
+    RV32.byteAt ImageV0.wideMulCode (a - BitVec.ofNat 32 ImageV0.wideMulAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.wideMulSaveAddress).toNat < ImageV0.wideMulSaveCode.length then
+    RV32.byteAt ImageV0.wideMulSaveCode (a - BitVec.ofNat 32 ImageV0.wideMulSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.wideMulRestoreAddress).toNat < ImageV0.wideMulRestoreCode.length then
+    RV32.byteAt ImageV0.wideMulRestoreCode (a - BitVec.ofNat 32 ImageV0.wideMulRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.fieldMulAddress).toNat < ImageV0.fieldMulCode.length then
+    RV32.byteAt ImageV0.fieldMulCode (a - BitVec.ofNat 32 ImageV0.fieldMulAddress).toNat
   else witnessMemImageParse a
 
 set_option maxRecDepth 20000 in
@@ -583,15 +583,15 @@ set_option maxRecDepth 20000 in
 meets `memset_aligned`'s hypotheses. -/
 theorem exists_memset_machine :
     ∃ (m : RV32.Machine) (base retAddr dst b : RV32.Word) (w : Nat),
-      RV32.CodeAt m base Image.memsetCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.CodeAt m base ImageV0.memsetCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 (4 * w) ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ 4 ≤ w ∧ dst.toNat + 4 * w < 2 ^ 32 ∧
       BitVec.ofNat 32 (4 * w) &&& 0xFFFFFFFC = BitVec.ofNat 32 (4 * w) ∧ dst.toNat % 4 = 0 ∧
-      RV32.Sep dst (4 * w) base Image.memsetCode.length := by
+      RV32.Sep dst (4 * w) base ImageV0.memsetCode.length := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a2 then 0x20 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.memsetAddress, witnessMemField⟩,
-    BitVec.ofNat 32 Image.memsetAddress, 0, 0x3FCC5000, 0, 8, ?_, by decide, rfl, rfl, rfl, rfl, rfl,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.memsetAddress, witnessMemField⟩,
+    BitVec.ofNat 32 ImageV0.memsetAddress, 0, 0x3FCC5000, 0, 8, ?_, by decide, rfl, rfl, rfl, rfl, rfl,
     by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
@@ -600,14 +600,14 @@ set_option maxRecDepth 20000 in
 that every loop runs, meets `memset_correct`'s hypotheses. -/
 theorem exists_memsetAny_machine :
     ∃ (m : RV32.Machine) (base retAddr dst b : RV32.Word) (n : Nat),
-      RV32.CodeAt m base Image.memsetCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.CodeAt m base ImageV0.memsetCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ dst.toNat + n < 2 ^ 32 ∧
-      RV32.Sep dst n base Image.memsetCode.length := by
+      RV32.Sep dst n base ImageV0.memsetCode.length := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5001 else if r = RV32.a1 then 0xAB else if r = RV32.a2 then 21 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.memsetAddress, witnessMemField⟩,
-    BitVec.ofNat 32 Image.memsetAddress, 0, 0x3FCC5001, 0xAB, 21, ?_, by decide, rfl, rfl, rfl, rfl, rfl,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.memsetAddress, witnessMemField⟩,
+    BitVec.ofNat 32 ImageV0.memsetAddress, 0, 0x3FCC5001, 0xAB, 21, ?_, by decide, rfl, rfl, rfl, rfl, rfl,
     by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
@@ -617,15 +617,15 @@ a 4-byte boundary to an odd address, so that the misaligned path runs,
 meets `memcpy_correct`'s hypotheses. -/
 theorem exists_memcpyAny_machine :
     ∃ (m : RV32.Machine) (stub retAddr dst src : RV32.Word) (N : Nat),
-      RV32.CodeAt m stub Image.memcpyStubCode ∧ stub.toNat % 2 = 0 ∧ m.pc = stub ∧
+      RV32.CodeAt m stub ImageV0.memcpyStubCode ∧ stub.toNat % 2 = 0 ∧ m.pc = stub ∧
       RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = src ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 N ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       RV32.McEnv m.mem (stub + 8) dst src (RV32.reg m RV32.sp + 0xFFFFFFF0) N := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5001 else if r = RV32.a1 then 0x3FCC6003 else if r = RV32.a2 then 23
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.memcpyStubAddress, witnessMemImage⟩,
-    BitVec.ofNat 32 Image.memcpyStubAddress, 0, 0x3FCC5001, 0x3FCC6003, 23, ?_, by decide, rfl, rfl,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.memcpyStubAddress, witnessMemImage⟩,
+    BitVec.ofNat 32 ImageV0.memcpyStubAddress, 0, 0x3FCC5001, 0x3FCC6003, 23, ?_, by decide, rfl, rfl,
     rfl, rfl, rfl, by decide,
     ⟨?_, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -636,15 +636,15 @@ theorem exists_memcpyAny_machine :
 `borrowingSub_correct`'s hypotheses. -/
 theorem exists_borrowingSub_machine :
     ∃ (m : RV32.Machine) (base retAddr l r b : RV32.Word),
-      RV32.CodeAt m base Image.borrowingSubCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = l ∧
+      RV32.CodeAt m base ImageV0.borrowingSubCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = l ∧
       RV32.reg m RV32.a1 = r ∧ RV32.reg m RV32.a2 = b ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.borrowingSubCode.length := by
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base ImageV0.borrowingSubCode.length := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 5 else if r = RV32.a1 then 7 else if r = RV32.a2 then 0xFFFFFFFF
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.borrowingSubAddress, witnessMemField⟩,
-    BitVec.ofNat 32 Image.borrowingSubAddress, 0, 5, 7, 0xFFFFFFFF, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.borrowingSubAddress, witnessMemField⟩,
+    BitVec.ofNat 32 ImageV0.borrowingSubAddress, 0, 5, 7, 0xFFFFFFFF, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
     by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
@@ -669,7 +669,7 @@ theorem exists_subInner_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.subInnerAddress, witnessMemSub⟩, BitVec.ofNat 32 Image.subInnerAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.subInnerAddress, witnessMemSub⟩, BitVec.ofNat 32 ImageV0.subInnerAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -694,7 +694,7 @@ theorem exists_wideMul_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.wideMulAddress, witnessMemField⟩, BitVec.ofNat 32 Image.wideMulAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.wideMulAddress, witnessMemField⟩, BitVec.ofNat 32 ImageV0.wideMulAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -719,7 +719,7 @@ theorem exists_fieldMul_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldMulAddress, witnessMemField⟩, BitVec.ofNat 32 Image.fieldMulAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldMulAddress, witnessMemField⟩, BitVec.ofNat 32 ImageV0.fieldMulAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -736,53 +736,53 @@ theorem exists_fieldMul_machine :
 /-- `witnessMemField` with the field addition, subtraction, and doubling and
 the point addition added where the image loads them. -/
 def witnessMemPoint (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.fieldAddAddress).toNat < Image.fieldAddCode.length then
-    RV32.byteAt Image.fieldAddCode (a - BitVec.ofNat 32 Image.fieldAddAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.fieldSubAddress).toNat < Image.fieldSubCode.length then
-    RV32.byteAt Image.fieldSubCode (a - BitVec.ofNat 32 Image.fieldSubAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat < Image.fieldDoubleCode.length then
-    RV32.byteAt Image.fieldDoubleCode (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.pointAddAddress).toNat < Image.pointAddCode.length then
-    RV32.byteAt Image.pointAddCode (a - BitVec.ofNat 32 Image.pointAddAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.curveBAddress).toNat < Image.curveBData.length then
-    RV32.byteAt Image.curveBData (a - BitVec.ofNat 32 Image.curveBAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.fieldAddAddress).toNat < ImageV0.fieldAddCode.length then
+    RV32.byteAt ImageV0.fieldAddCode (a - BitVec.ofNat 32 ImageV0.fieldAddAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.fieldSubAddress).toNat < ImageV0.fieldSubCode.length then
+    RV32.byteAt ImageV0.fieldSubCode (a - BitVec.ofNat 32 ImageV0.fieldSubAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.fieldDoubleAddress).toNat < ImageV0.fieldDoubleCode.length then
+    RV32.byteAt ImageV0.fieldDoubleCode (a - BitVec.ofNat 32 ImageV0.fieldDoubleAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.pointAddAddress).toNat < ImageV0.pointAddCode.length then
+    RV32.byteAt ImageV0.pointAddCode (a - BitVec.ofNat 32 ImageV0.pointAddAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.curveBAddress).toNat < ImageV0.curveBData.length then
+    RV32.byteAt ImageV0.curveBData (a - BitVec.ofNat 32 ImageV0.curveBAddress).toNat
   else witnessMemField a
 
 /-- `witnessMemPoint` with `sha2::sha256::compress256`, its helpers, and the
 round constants added where the image loads them. -/
 def witnessMemSha (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.shaIndexAddress).toNat < Image.shaIndexCode.length then
-    RV32.byteAt Image.shaIndexCode (a - BitVec.ofNat 32 Image.shaIndexAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat < Image.shaSigma1PartCode.length then
-    RV32.byteAt Image.shaSigma1PartCode (a - BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaKAddress).toNat < Image.shaKData.length then
-    RV32.byteAt Image.shaKData (a - BitVec.ofNat 32 Image.shaKAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.sha256CompressAddress).toNat < Image.sha256CompressCode.length then
-    RV32.byteAt Image.sha256CompressCode (a - BitVec.ofNat 32 Image.sha256CompressAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat < ImageV0.shaIndexCode.length then
+    RV32.byteAt ImageV0.shaIndexCode (a - BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat < ImageV0.shaSigma1PartCode.length then
+    RV32.byteAt ImageV0.shaSigma1PartCode (a - BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaKAddress).toNat < ImageV0.shaKData.length then
+    RV32.byteAt ImageV0.shaKData (a - BitVec.ofNat 32 ImageV0.shaKAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat < ImageV0.sha256CompressCode.length then
+    RV32.byteAt ImageV0.sha256CompressCode (a - BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat
   else witnessMemPoint a
 
 set_option maxRecDepth 200000 in
 theorem witnessMemSha_compress :
-    RV32.CodeIn witnessMemSha (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+    RV32.CodeIn witnessMemSha (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
   intro i hi
-  have hlen : Image.sha256CompressCode.length = 11156 := rfl
-  have hlenI : Image.shaIndexCode.length = 22 := rfl
-  have hlen97 : Image.shaSigma1PartCode.length = 26 := rfl
-  have hlenK : Image.shaKData.length = 256 := rfl
-  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
+  have hlenI : ImageV0.shaIndexCode.length = 22 := rfl
+  have hlen97 : ImageV0.shaSigma1PartCode.length = 26 := rfl
+  have hlenK : ImageV0.shaKData.length = 256 := rfl
+  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
     rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have dI : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaIndexAddress).toNat < Image.shaIndexCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaIndexAddress).toNat = 0x403b5e7e from rfl, hlenI]; omega
-  have d97 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat < Image.shaSigma1PartCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat = 0x403bf386 from rfl, hlen97]; omega
-  have dK : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaKAddress).toNat < Image.shaKData.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaKAddress).toNat = 0x3fcc4ebc from rfl, hlenK]; omega
-  have eq_i : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.sha256CompressAddress).toNat = i := by
+  have dI : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat < ImageV0.shaIndexCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat = 0x403b5e7e from rfl, hlenI]; omega
+  have d97 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat < ImageV0.shaSigma1PartCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat = 0x403bf386 from rfl, hlen97]; omega
+  have dK : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaKAddress).toNat < ImageV0.shaKData.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaKAddress).toNat = 0x3fcc4ebc from rfl, hlenK]; omega
+  have eq_i : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = i := by
     rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat]; omega
   unfold witnessMemSha
   rw [ite_eq_right_of_eq_false _ _ (eq_false dI), ite_eq_right_of_eq_false _ _ (eq_false d97),
@@ -801,8 +801,8 @@ theorem exists_sha256Compress_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha256CompressAddress, witnessMemSha⟩,
-    BitVec.ofNat 32 Image.sha256CompressAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 2,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.sha256CompressAddress, witnessMemSha⟩,
+    BitVec.ofNat 32 ImageV0.sha256CompressAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 2,
     ⟨by decide, witnessMemSha_compress, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
@@ -815,49 +815,49 @@ theorem exists_sha256Compress_machine :
 
 /-- The hasher of the empty message: an empty buffer, the initial hash value
 as the image stores it, and a block count of zero. -/
-def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
+def emptyHasherBytes : List Nat := List.replicate 64 0 ++ ImageV0.shaIVData ++ List.replicate 8 0
 
 /-- `witnessMemSha` with an empty hasher at `0x3FCC5000`, and `update`, its
 save and restore helpers, and its block loop added where the image loads
 them. -/
 def witnessMemUpd (a : RV32.Word) : BitVec 8 :=
   if (a - 0x3FCC5000).toNat < 0x68 then RV32.byteAt emptyHasherBytes (a - 0x3FCC5000).toNat
-  else if (a - BitVec.ofNat 32 Image.shaUpdateAddress).toNat < Image.shaUpdateCode.length then
-    RV32.byteAt Image.shaUpdateCode (a - BitVec.ofNat 32 Image.shaUpdateAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat < Image.shaUpdateSaveCode.length then
-    RV32.byteAt Image.shaUpdateSaveCode (a - BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat < Image.shaUpdateRestoreCode.length then
-    RV32.byteAt Image.shaUpdateRestoreCode (a - BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat < Image.shaUpdateBlocksCode.length then
-    RV32.byteAt Image.shaUpdateBlocksCode (a - BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat < ImageV0.shaUpdateCode.length then
+    RV32.byteAt ImageV0.shaUpdateCode (a - BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat < ImageV0.shaUpdateSaveCode.length then
+    RV32.byteAt ImageV0.shaUpdateSaveCode (a - BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat < ImageV0.shaUpdateRestoreCode.length then
+    RV32.byteAt ImageV0.shaUpdateRestoreCode (a - BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat < ImageV0.shaUpdateBlocksCode.length then
+    RV32.byteAt ImageV0.shaUpdateBlocksCode (a - BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat
   else witnessMemSha a
 
 set_option maxRecDepth 200000 in
 theorem witnessMemUpd_compress :
-    RV32.CodeIn witnessMemUpd (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+    RV32.CodeIn witnessMemUpd (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
   intro i hi
-  have hlen : Image.sha256CompressCode.length = 11156 := rfl
-  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
+  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
     rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have dH : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i - 0x3FCC5000).toNat < 0x68) := by
+  have dH : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i - 0x3FCC5000).toNat < 0x68) := by
     rw [BitVec.toNat_sub, ha, show (0x3FCC5000 : RV32.Word).toNat = 0x3FCC5000 from rfl]; omega
-  have dU : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaUpdateAddress).toNat < Image.shaUpdateCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateAddress).toNat = 0x403a6624 from rfl,
-      show Image.shaUpdateCode.length = 168 from rfl]; omega
-  have dS : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat < Image.shaUpdateSaveCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat = 0x403bf24a from rfl,
-      show Image.shaUpdateSaveCode.length = 12 from rfl]; omega
-  have dR : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat < Image.shaUpdateRestoreCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat = 0x403bf088 from rfl,
-      show Image.shaUpdateRestoreCode.length = 14 from rfl]; omega
-  have dB : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat < Image.shaUpdateBlocksCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat = 0x403a66cc from rfl,
-      show Image.shaUpdateBlocksCode.length = 26 from rfl]; omega
+  have dU : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat < ImageV0.shaUpdateCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat = 0x403a6624 from rfl,
+      show ImageV0.shaUpdateCode.length = 168 from rfl]; omega
+  have dS : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat < ImageV0.shaUpdateSaveCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat = 0x403bf24a from rfl,
+      show ImageV0.shaUpdateSaveCode.length = 12 from rfl]; omega
+  have dR : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat < ImageV0.shaUpdateRestoreCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat = 0x403bf088 from rfl,
+      show ImageV0.shaUpdateRestoreCode.length = 14 from rfl]; omega
+  have dB : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat < ImageV0.shaUpdateBlocksCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat = 0x403a66cc from rfl,
+      show ImageV0.shaUpdateBlocksCode.length = 26 from rfl]; omega
   unfold witnessMemUpd
   rw [ite_eq_right_of_eq_false _ _ (eq_false dH), ite_eq_right_of_eq_false _ _ (eq_false dU),
     ite_eq_right_of_eq_false _ _ (eq_false dS), ite_eq_right_of_eq_false _ _ (eq_false dR),
@@ -871,14 +871,14 @@ hasher at `0x3FCC5000`, and the stack at `0x3FCC8000` meets
 `shaUpdate_correct`'s hypotheses. -/
 theorem exists_shaUpdate_machine :
     ∃ (m : RV32.Machine) (S D sp0 retAddr : RV32.Word) (n : Nat) (msg : List Nat),
-      RV32.UpdEnv m.mem S D sp0 n ∧ m.pc = BitVec.ofNat 32 Image.shaUpdateAddress ∧
+      RV32.UpdEnv m.mem S D sp0 n ∧ m.pc = BitVec.ofNat 32 ImageV0.shaUpdateAddress ∧
       RV32.reg m RV32.a0 = S ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
       RV32.HasherAt m.mem S msg ∧ n < 2 ^ 31 ∧ msg.length + n < 2 ^ 32 := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.shaUpdateAddress, witnessMemUpd⟩,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.shaUpdateAddress, witnessMemUpd⟩,
     0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, 100, [],
     ⟨?_, ?_, ?_, ?_, witnessMemUpd_compress, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
       by decide, by decide, (RV32.sep_of_le (by decide) (by decide)).symm,
@@ -893,52 +893,52 @@ theorem exists_shaUpdate_machine :
 zeroing `from_fn`, the block closure, and the big-endian store helper added
 where the image loads them. -/
 def witnessMemFin (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.shaFinalizeAddress).toNat < Image.shaFinalizeCode.length then
-    RV32.byteAt Image.shaFinalizeCode (a - BitVec.ofNat 32 Image.shaFinalizeAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaFinalizeSaveAddress).toNat < Image.shaFinalizeSaveCode.length then
-    RV32.byteAt Image.shaFinalizeSaveCode (a - BitVec.ofNat 32 Image.shaFinalizeSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaFinalizeRestoreAddress).toNat < Image.shaFinalizeRestoreCode.length then
-    RV32.byteAt Image.shaFinalizeRestoreCode (a - BitVec.ofNat 32 Image.shaFinalizeRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaZero32Address).toNat < Image.shaZero32Code.length then
-    RV32.byteAt Image.shaZero32Code (a - BitVec.ofNat 32 Image.shaZero32Address).toNat
-  else if (a - BitVec.ofNat 32 Image.shaFinalizeBlockAddress).toNat < Image.shaFinalizeBlockCode.length then
-    RV32.byteAt Image.shaFinalizeBlockCode (a - BitVec.ofNat 32 Image.shaFinalizeBlockAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaStoreBeAddress).toNat < Image.shaStoreBeCode.length then
-    RV32.byteAt Image.shaStoreBeCode (a - BitVec.ofNat 32 Image.shaStoreBeAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat < ImageV0.shaFinalizeCode.length then
+    RV32.byteAt ImageV0.shaFinalizeCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat < ImageV0.shaFinalizeSaveCode.length then
+    RV32.byteAt ImageV0.shaFinalizeSaveCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat < ImageV0.shaFinalizeRestoreCode.length then
+    RV32.byteAt ImageV0.shaFinalizeRestoreCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaZero32Address).toNat < ImageV0.shaZero32Code.length then
+    RV32.byteAt ImageV0.shaZero32Code (a - BitVec.ofNat 32 ImageV0.shaZero32Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat < ImageV0.shaFinalizeBlockCode.length then
+    RV32.byteAt ImageV0.shaFinalizeBlockCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat < ImageV0.shaStoreBeCode.length then
+    RV32.byteAt ImageV0.shaStoreBeCode (a - BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat
   else witnessMemUpd a
 
 set_option maxRecDepth 200000 in
 theorem witnessMemFin_compress :
-    RV32.CodeIn witnessMemFin (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+    RV32.CodeIn witnessMemFin (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
   intro i hi
-  have hlen : Image.sha256CompressCode.length = 11156 := rfl
-  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
+  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
     rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have d1 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaFinalizeAddress).toNat < Image.shaFinalizeCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaFinalizeAddress).toNat = 0x403a64e0 from rfl,
-      show Image.shaFinalizeCode.length = 280 from rfl]; omega
-  have d2 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaFinalizeSaveAddress).toNat < Image.shaFinalizeSaveCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaFinalizeSaveAddress).toNat = 0x403bee66 from rfl,
-      show Image.shaFinalizeSaveCode.length = 16 from rfl]; omega
-  have d3 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaFinalizeRestoreAddress).toNat < Image.shaFinalizeRestoreCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaFinalizeRestoreAddress).toNat = 0x403bee56 from rfl,
-      show Image.shaFinalizeRestoreCode.length = 16 from rfl]; omega
-  have d4 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaZero32Address).toNat < Image.shaZero32Code.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaZero32Address).toNat = 0x403acdaa from rfl,
-      show Image.shaZero32Code.length = 42 from rfl]; omega
-  have d5 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaFinalizeBlockAddress).toNat < Image.shaFinalizeBlockCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaFinalizeBlockAddress).toNat = 0x403a65f8 from rfl,
-      show Image.shaFinalizeBlockCode.length = 44 from rfl]; omega
-  have d6 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaStoreBeAddress).toNat < Image.shaStoreBeCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaStoreBeAddress).toNat = 0x403bef56 from rfl,
-      show Image.shaStoreBeCode.length = 32 from rfl]; omega
+  have d1 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat < ImageV0.shaFinalizeCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat = 0x403a64e0 from rfl,
+      show ImageV0.shaFinalizeCode.length = 280 from rfl]; omega
+  have d2 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat < ImageV0.shaFinalizeSaveCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat = 0x403bee66 from rfl,
+      show ImageV0.shaFinalizeSaveCode.length = 16 from rfl]; omega
+  have d3 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat < ImageV0.shaFinalizeRestoreCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat = 0x403bee56 from rfl,
+      show ImageV0.shaFinalizeRestoreCode.length = 16 from rfl]; omega
+  have d4 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaZero32Address).toNat < ImageV0.shaZero32Code.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaZero32Address).toNat = 0x403acdaa from rfl,
+      show ImageV0.shaZero32Code.length = 42 from rfl]; omega
+  have d5 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat < ImageV0.shaFinalizeBlockCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat = 0x403a65f8 from rfl,
+      show ImageV0.shaFinalizeBlockCode.length = 44 from rfl]; omega
+  have d6 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat < ImageV0.shaStoreBeCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat = 0x403bef56 from rfl,
+      show ImageV0.shaStoreBeCode.length = 32 from rfl]; omega
   unfold witnessMemFin
   rw [ite_eq_right_of_eq_false _ _ (eq_false d1), ite_eq_right_of_eq_false _ _ (eq_false d2),
     ite_eq_right_of_eq_false _ _ (eq_false d3), ite_eq_right_of_eq_false _ _ (eq_false d4),
@@ -952,13 +952,13 @@ the output at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
 `shaFinalize_correct`'s hypotheses. -/
 theorem exists_shaFinalize_machine :
     ∃ (m : RV32.Machine) (S out sp0 retAddr : RV32.Word) (msg : List Nat),
-      RV32.FinEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 Image.shaFinalizeAddress ∧
+      RV32.FinEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 ImageV0.shaFinalizeAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = S ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.shaFinalizeAddress, witnessMemFin⟩,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.shaFinalizeAddress, witnessMemFin⟩,
     0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, [],
     ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, witnessMemFin_compress, ?_, ?_, ?_, by decide, by decide, by decide,
       by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
@@ -972,34 +972,34 @@ theorem exists_shaFinalize_machine :
 /-- `witnessMemFin` with `sha256`, its outlined initializer, and the initial
 hash value added where the image loads them. -/
 def witnessMemOne (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.sha256FnAddress).toNat < Image.sha256FnCode.length then
-    RV32.byteAt Image.sha256FnCode (a - BitVec.ofNat 32 Image.sha256FnAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaInitAddress).toNat < Image.shaInitCode.length then
-    RV32.byteAt Image.shaInitCode (a - BitVec.ofNat 32 Image.shaInitAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.shaIVAddress).toNat < Image.shaIVData.length then
-    RV32.byteAt Image.shaIVData (a - BitVec.ofNat 32 Image.shaIVAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat < ImageV0.sha256FnCode.length then
+    RV32.byteAt ImageV0.sha256FnCode (a - BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaInitAddress).toNat < ImageV0.shaInitCode.length then
+    RV32.byteAt ImageV0.shaInitCode (a - BitVec.ofNat 32 ImageV0.shaInitAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.shaIVAddress).toNat < ImageV0.shaIVData.length then
+    RV32.byteAt ImageV0.shaIVData (a - BitVec.ofNat 32 ImageV0.shaIVAddress).toNat
   else witnessMemFin a
 
 set_option maxRecDepth 200000 in
 theorem witnessMemOne_compress :
-    RV32.CodeIn witnessMemOne (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+    RV32.CodeIn witnessMemOne (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
   intro i hi
-  have hlen : Image.sha256CompressCode.length = 11156 := rfl
-  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
+  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
     rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have d1 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.sha256FnAddress).toNat < Image.sha256FnCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.sha256FnAddress).toNat = 0x403a6748 from rfl,
-      show Image.sha256FnCode.length = 88 from rfl]; omega
-  have d2 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaInitAddress).toNat < Image.shaInitCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaInitAddress).toNat = 0x403bf262 from rfl,
-      show Image.shaInitCode.length = 22 from rfl]; omega
-  have d3 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 Image.shaIVAddress).toNat < Image.shaIVData.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaIVAddress).toNat = 0x3fcc42a8 from rfl,
-      show Image.shaIVData.length = 32 from rfl]; omega
+  have d1 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat < ImageV0.sha256FnCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat = 0x403a6748 from rfl,
+      show ImageV0.sha256FnCode.length = 88 from rfl]; omega
+  have d2 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaInitAddress).toNat < ImageV0.shaInitCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaInitAddress).toNat = 0x403bf262 from rfl,
+      show ImageV0.shaInitCode.length = 22 from rfl]; omega
+  have d3 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 ImageV0.shaIVAddress).toNat < ImageV0.shaIVData.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaIVAddress).toNat = 0x3fcc42a8 from rfl,
+      show ImageV0.shaIVData.length = 32 from rfl]; omega
   unfold witnessMemOne
   rw [ite_eq_right_of_eq_false _ _ (eq_false d1), ite_eq_right_of_eq_false _ _ (eq_false d2),
     ite_eq_right_of_eq_false _ _ (eq_false d3)]
@@ -1012,13 +1012,13 @@ output at `0x3FCC6000` and the stack at `0x3FCC8000`, meets
 `sha256Fn_correct`'s hypotheses. -/
 theorem exists_sha256Fn_machine :
     ∃ (m : RV32.Machine) (out D sp0 retAddr : RV32.Word) (n : Nat),
-      RV32.Sha256Env m.mem out D sp0 n ∧ m.pc = BitVec.ofNat 32 Image.sha256FnAddress ∧
+      RV32.Sha256Env m.mem out D sp0 n ∧ m.pc = BitVec.ofNat 32 ImageV0.sha256FnAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ n < 2 ^ 31 := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6100 else if r = RV32.a2 then 3
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha256FnAddress, witnessMemOne⟩,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.sha256FnAddress, witnessMemOne⟩,
     0x3FCC6000, 0x3FCC6100, 0x3FCC8000, 0, 3,
     ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, witnessMemOne_compress, ?_, ?_, ?_,
       by decide, by decide, by decide, by decide, by decide,
@@ -1037,18 +1037,18 @@ def montModBytes : List Nat := 3 :: List.replicate 47 0
 and `Uint<12>::select` added where the image loads them, and the modulus at
 `0x3FCC6600`. -/
 def witnessMemMont (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.mulMont12Address).toNat < Image.mulMont12Code.length then
-    RV32.byteAt Image.mulMont12Code (a - BitVec.ofNat 32 Image.mulMont12Address).toNat
-  else if (a - BitVec.ofNat 32 Image.mulMont12SaveAddress).toNat < Image.mulMont12SaveCode.length then
-    RV32.byteAt Image.mulMont12SaveCode (a - BitVec.ofNat 32 Image.mulMont12SaveAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.mulMont12SetupAddress).toNat < Image.mulMont12SetupCode.length then
-    RV32.byteAt Image.mulMont12SetupCode (a - BitVec.ofNat 32 Image.mulMont12SetupAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.mulMont12RestoreAddress).toNat < Image.mulMont12RestoreCode.length then
-    RV32.byteAt Image.mulMont12RestoreCode (a - BitVec.ofNat 32 Image.mulMont12RestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat < Image.uintSelect12Code.length then
-    RV32.byteAt Image.uintSelect12Code (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat
-  else if (a - BitVec.ofNat 32 Image.uintSelect12StepAddress).toNat < Image.uintSelect12StepCode.length then
-    RV32.byteAt Image.uintSelect12StepCode (a - BitVec.ofNat 32 Image.uintSelect12StepAddress).toNat
+  if (a - BitVec.ofNat 32 ImageV0.mulMont12Address).toNat < ImageV0.mulMont12Code.length then
+    RV32.byteAt ImageV0.mulMont12Code (a - BitVec.ofNat 32 ImageV0.mulMont12Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.mulMont12SaveAddress).toNat < ImageV0.mulMont12SaveCode.length then
+    RV32.byteAt ImageV0.mulMont12SaveCode (a - BitVec.ofNat 32 ImageV0.mulMont12SaveAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.mulMont12SetupAddress).toNat < ImageV0.mulMont12SetupCode.length then
+    RV32.byteAt ImageV0.mulMont12SetupCode (a - BitVec.ofNat 32 ImageV0.mulMont12SetupAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.mulMont12RestoreAddress).toNat < ImageV0.mulMont12RestoreCode.length then
+    RV32.byteAt ImageV0.mulMont12RestoreCode (a - BitVec.ofNat 32 ImageV0.mulMont12RestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.uintSelect12Address).toNat < ImageV0.uintSelect12Code.length then
+    RV32.byteAt ImageV0.uintSelect12Code (a - BitVec.ofNat 32 ImageV0.uintSelect12Address).toNat
+  else if (a - BitVec.ofNat 32 ImageV0.uintSelect12StepAddress).toNat < ImageV0.uintSelect12StepCode.length then
+    RV32.byteAt ImageV0.uintSelect12StepCode (a - BitVec.ofNat 32 ImageV0.uintSelect12StepAddress).toNat
   else if (a - 0x3FCC6600).toNat < 48 then RV32.byteAt montModBytes (a - 0x3FCC6600).toNat
   else witnessMemOne a
 
@@ -1069,7 +1069,7 @@ theorem exists_mulMont12_machine :
     if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6500
     else if r = RV32.a3 then 0x3FCC6600 else if r = RV32.a4 then 0x55555555
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.mulMont12Address, witnessMemMont⟩, BitVec.ofNat 32 Image.mulMont12Address,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.mulMont12Address, witnessMemMont⟩, BitVec.ofNat 32 ImageV0.mulMont12Address,
     0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6500, 0x3FCC6600, 0x55555555, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       by decide, by decide,
@@ -1090,8 +1090,8 @@ theorem exists_mulMont12_machine :
 /-- `witnessMemMont` with `square_montgomery_form::<12>` added where the
 image loads it. -/
 def witnessMemSqr (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 Image.sqMont12Address).toNat < Image.sqMont12Code.length then
-    RV32.byteAt Image.sqMont12Code (a - BitVec.ofNat 32 Image.sqMont12Address).toNat
+  if (a - BitVec.ofNat 32 ImageV0.sqMont12Address).toNat < ImageV0.sqMont12Code.length then
+    RV32.byteAt ImageV0.sqMont12Code (a - BitVec.ofNat 32 ImageV0.sqMont12Address).toNat
   else witnessMemMont a
 
 set_option maxRecDepth 20000 in
@@ -1110,7 +1110,7 @@ theorem exists_sqrMont12_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6600
     else if r = RV32.a3 then 0x55555555 else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.sqMont12Address, witnessMemSqr⟩, BitVec.ofNat 32 Image.sqMont12Address,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.sqMont12Address, witnessMemSqr⟩, BitVec.ofNat 32 ImageV0.sqMont12Address,
     0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6600, 0x55555555, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       by decide,
@@ -1145,7 +1145,7 @@ theorem exists_pointAdd_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.pointAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.pointAddAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.pointAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.pointAddAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide +kernel,
       by decide, by decide, by decide, by decide, by decide,
@@ -1166,7 +1166,7 @@ theorem exists_fieldSub_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldSubAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.fieldSubAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldSubAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.fieldSubAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -1189,7 +1189,7 @@ theorem exists_fieldAdd_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.fieldAddAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.fieldAddAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -1211,7 +1211,7 @@ theorem exists_fieldDouble_machine :
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldDoubleAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.fieldDoubleAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldDoubleAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.fieldDoubleAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
     ⟨by decide, ?_, ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),

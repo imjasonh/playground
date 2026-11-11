@@ -11,7 +11,7 @@ inner loop at 0x352 over a later segment `k`.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 20000
 

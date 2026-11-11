@@ -405,7 +405,7 @@ hdr=f'''import C3BootProofs.Proofs.FieldMont
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The registers the reduction block leaves alone. -/
 def fmRedKeep (q : Fin 32) : Bool := q.val ∉ {written}

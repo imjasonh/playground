@@ -6,7 +6,7 @@ import C3BootProofs.Proofs.FieldMont
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The registers the reduction block leaves alone. -/
 def fmRedKeep (q : Fin 32) : Bool := q.val ∉ [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 28, 29, 30, 31]

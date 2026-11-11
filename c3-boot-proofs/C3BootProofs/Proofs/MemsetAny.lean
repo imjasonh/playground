@@ -18,7 +18,7 @@ which says how many bytes from `dst` are filled so far.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- `M` with the `k` bytes from `dst` set to `v`. -/
 def fillBytes (M : Word → BitVec 8) (dst : Word) (v : BitVec 8) (k : Nat) : Word → BitVec 8 :=

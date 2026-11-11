@@ -21,7 +21,7 @@ proves the function computes them, each call through the callee's theorem.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The word at byte `i` of the manifest at `bp`. -/
 abbrev mw (M : Word → BitVec 8) (bp : Word) (i : Nat) : Word := memLoad32 M (bp + BitVec.ofNat 32 i)

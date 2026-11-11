@@ -5,7 +5,7 @@ import C3BootProofs.Proofs.PointDecode
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option exponentiation.threshold 300 in
 /-- `field_impl::sub` modulo `p`, for operands below `p`. -/

@@ -13,7 +13,7 @@ bytes; each `borrowing_sub` call also writes the word 4 bytes below it.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 theorem alu_zadd (x : Word) : aluEval .add 0#32 x = x := BitVec.zero_add x
 

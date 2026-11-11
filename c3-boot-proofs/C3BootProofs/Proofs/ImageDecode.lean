@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.Block
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 20000
 

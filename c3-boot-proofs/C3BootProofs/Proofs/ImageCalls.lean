@@ -11,7 +11,7 @@ the reader is at `G + 0x18`, and every separation the callee needs comes from
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 20000
 

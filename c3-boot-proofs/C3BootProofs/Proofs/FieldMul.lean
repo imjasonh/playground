@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.FieldMontRed
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option exponentiation.threshold 600 in
 /-- What `sub_inner` makes of the reduction's output: the Montgomery product,

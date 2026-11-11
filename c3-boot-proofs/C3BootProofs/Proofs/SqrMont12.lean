@@ -11,7 +11,7 @@ The loop body is `mmBody` over those registers, and the arithmetic lemmas of
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 section
 

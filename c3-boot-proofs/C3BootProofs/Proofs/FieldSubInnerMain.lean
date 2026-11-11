@@ -4,7 +4,7 @@ import C3BootProofs.Proofs.FieldSubInner
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 theorem addBack_length (d0 d1 d2 d3 d4 d5 d6 d7 m : Word) : (addBack d0 d1 d2 d3 d4 d5 d6 d7 m).length = 8 := rfl
 

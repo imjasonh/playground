@@ -10,7 +10,7 @@ and stores it with `lp_check`, as `readSegsW` does.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 set_option maxRecDepth 20000
 

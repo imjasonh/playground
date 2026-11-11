@@ -14,7 +14,7 @@ RV32 model through `readerArray4_correct`.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- What `Reader::magic` returns in `a0`. -/
 def magicResult (M : Word → BitVec 8) (self k : Word) : Word :=

@@ -6,6 +6,7 @@ import C3BootProofs.Spec.Sha256
 import C3BootProofs.Spec.Merkle
 import C3BootProofs.Model.RV32
 import C3BootProofs.Image.Bootloader
+import C3BootProofs.Image.BootloaderV0
 import C3BootProofs.Proof.Code
 import C3BootProofs.Proof.Step
 import C3BootProofs.Proof.Mem

@@ -11,7 +11,7 @@ registers.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The end of a subtraction round, from 0x11C: keep the borrow, store the
 difference, and advance the pointers and the count. -/

@@ -11,7 +11,7 @@ least the modulus: `borrowing_sub` limb by limb into a second buffer, and
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- What `mul_montgomery_form::<12>`'s save helper stores and its restore
 helper loads. -/

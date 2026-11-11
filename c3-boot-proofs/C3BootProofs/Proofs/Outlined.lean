@@ -20,7 +20,7 @@ each rebuild, so nothing here depends on a helper's name.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 abbrev t0 : Fin 32 := 5
 abbrev s2 : Fin 32 := 18

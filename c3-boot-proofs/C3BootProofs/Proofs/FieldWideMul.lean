@@ -10,7 +10,7 @@ zeroes with `memset` first and copies out with `memcpy` last.
 
 namespace C3.RV32
 
-open C3.Image
+open C3.ImageV0
 
 /-- The inner loop's add of the accumulator word at `r` and the carry. -/
 def wmPath (r : Fin 32) : List BInstr :=
