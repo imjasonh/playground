@@ -4,6 +4,8 @@ checks every lemma a generator writes from it, so a decoding mistake fails
 the build instead of slipping into a proof.
 """
 
+import re
+
 NAMES = {0: 'x0', 1: 'ra', 2: 'sp', 10: 'a0', 11: 'a1', 12: 'a2', 13: 'a3', 14: 'a4', 15: 'a5', 16: 'a6'}
 
 
@@ -32,7 +34,8 @@ def decode(code, off):
 
     The kinds and their fields:
     ('alu', op, rd, rs1, rs2), ('alui', op, rd, rs1, imm), ('lw', rd, rs1, imm),
-    ('lbu', rd, rs1, imm), ('sw', rs1, rs2, imm), ('lui', rd, imm), ('auipc', rd, imm),
+    and the same for 'lb', 'lh', 'lbu', and 'lhu', ('sw', rs1, rs2, imm) and the
+    same for 'sb' and 'sh', ('lui', rd, imm), ('auipc', rd, imm),
     ('jalr', rd, rs1, imm), ('jal', rd, imm), ('br', op, rs1, rs2, imm).
     """
     lo = code[off] | (code[off + 1] << 8)
@@ -54,9 +57,9 @@ def _decode32(b):
             return ('alui', 'srl' if f7 == 0 else 'sra', rd, rs1, rs2)
         return ('alui', ALUI[f3], rd, rs1, sext(b >> 20, 12))
     if op == 0x03:
-        return ({2: 'lw', 4: 'lbu'}[f3], rd, rs1, sext(b >> 20, 12))
+        return ({0: 'lb', 1: 'lh', 2: 'lw', 4: 'lbu', 5: 'lhu'}[f3], rd, rs1, sext(b >> 20, 12))
     if op == 0x23:
-        return ({2: 'sw', 0: 'sb'}[f3], rs1, rs2, sext(((b >> 25) << 5) | ((b >> 7) & 31), 12))
+        return ({0: 'sb', 1: 'sh', 2: 'sw'}[f3], rs1, rs2, sext(((b >> 25) << 5) | ((b >> 7) & 31), 12))
     if op == 0x37:
         return ('lui', rd, b & 0xFFFFF000)
     if op == 0x17:
@@ -136,9 +139,9 @@ def lean(ins):
         return f'.alu .{ins[1]} {rname(ins[2])} {rname(ins[3])} {rname(ins[4])}'
     if k == 'alui':
         return f'.aluImm .{ins[1]} {rname(ins[2])} {rname(ins[3])} {w(ins[4])}'
-    if k in ('lw', 'lbu'):
+    if k in ('lb', 'lh', 'lw', 'lbu', 'lhu'):
         return f'.load .{k} {rname(ins[1])} {rname(ins[2])} {w(ins[3])}'
-    if k in ('sw', 'sb'):
+    if k in ('sb', 'sh', 'sw'):
         return f'.store .{k} {rname(ins[1])} {rname(ins[2])} {w(ins[3])}'
     if k in ('lui', 'auipc'):
         return f'.{k} {rname(ins[1])} {w(ins[2])}'
@@ -153,11 +156,9 @@ def lean(ins):
 
 def code_of(lean_src, name):
     """The bytes of `def NAMECode` (or `NAMEData`) in Bootloader.lean."""
-    import re
     m = re.search(r'def %s : List Nat :=\s*\[([^\]]*)\]' % name, lean_src)
     return [int(x, 16) for x in m.group(1).replace('\n', '').split(',') if x.strip()]
 
 
 def address_of(lean_src, name):
-    import re
     return int(re.search(r'def %sAddress : Nat := (0x[0-9a-f]+)' % name, lean_src).group(1), 16)
