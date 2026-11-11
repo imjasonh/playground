@@ -9,8 +9,8 @@ answer.
 import math
 import sys
 
-from kit import (CYAN, MAGENTA, Card, _Rng, card_frame, ellipse_path,
-                 radial, rrect_path, sky)
+from kit import (CYAN, MAGENTA, Card, _Rng, almond_path, card_frame,
+                 limb_capsule, radial, sky)
 
 ACCENT = MAGENTA
 
@@ -22,47 +22,55 @@ ROBE_LT = "#3b3570"
 FRILL = "#8affd6"
 GLINT = "#d8fff4"
 
+VISITOR_NECK = (
+    "M 488 548 C 468 558 462 612 468 648 "
+    "C 472 668 492 678 512 680 "
+    "C 532 678 552 668 556 648 "
+    "C 562 612 556 558 536 548 "
+    "C 524 544 500 544 488 548 Z")
+
 
 def shapes(card):
-    # A tall cranium tapering to a narrow chin.
     card.shape("head", {"type": "path", "d":
-                        "M512 196 C 620 206 648 320 616 430 C 596 500 556 548 512 556 "
-                        "C 468 548 428 500 408 430 C 376 320 404 206 512 196 Z"})
-    card.shape("neck", {"type": "path", "d": rrect_path(474, 540, 76, 96, 30)})
-    # A long robed body.
+                        "M512 188 C 628 198 662 318 624 438 "
+                        "C 598 518 552 568 512 578 "
+                        "C 472 568 426 518 400 438 "
+                        "C 362 318 396 198 512 188 Z"})
+    card.shape("neck", {"type": "path", "d": VISITOR_NECK})
     card.shape("robe", {"type": "path", "d":
-                        "M512 600 C 404 612 356 720 360 900 C 362 1020 388 1120 420 1200 "
-                        "L604 1200 C 636 1120 662 1020 664 900 C 668 720 620 612 512 600 Z"})
+                        "M512 596 C 392 612 338 732 342 912 "
+                        "C 346 1036 378 1148 418 1218 "
+                        "L606 1218 C 646 1148 678 1036 682 912 "
+                        "C 686 732 632 612 512 596 Z"})
     card.shape("collar", {"type": "path", "d":
-                          "M512 584 C 596 584 648 636 648 688 C 600 712 424 712 376 688 "
-                          "C 376 636 428 584 512 584 Z"})
-    # Long arms, one raised with a pointing hand.
-    card.shape("arm-r", {"type": "path", "d":
-                         "M596 672 C 664 628 700 540 694 436 L 724 430 "
-                         "C 746 536 716 648 640 712 Z"})
+                          "M512 578 C 602 578 658 634 658 692 "
+                          "C 608 718 416 718 366 692 "
+                          "C 366 634 422 578 512 578 Z"})
+    card.shape("arm-r", {"type": "path", "d": limb_capsule(
+        (598, 668), (668, 588), (704, 448), 34, 28, 22)})
     card.shape("hand-r", {"type": "path", "d":
-                          "M706 430 C 724 420 736 430 734 448 C 730 470 716 478 700 472 "
-                          "C 690 462 694 440 706 430 Z"})
+                          "M 698 442 C 718 428 738 438 736 462 "
+                          "C 732 486 712 498 692 488 "
+                          "C 678 474 682 452 698 442 Z"})
     card.shape("finger", {"type": "path", "d":
-                          "M712 432 C 716 404 716 372 712 348 L 724 346 "
-                          "C 730 372 730 406 726 434 Z"})
-    card.shape("arm-l", {"type": "path", "d":
-                         "M430 676 C 372 720 344 800 352 880 L 384 876 "
-                         "C 380 806 404 740 456 704 Z"})
-    card.shape("hand-l", {"type": "path", "d": ellipse_path(366, 892, 30, 38)})
-    # The large, deep eyes.
-    card.shape("eye-l", {"type": "path", "d": ellipse_path(470, 404, 42, 56)})
-    card.shape("eye-r", {"type": "path", "d": ellipse_path(558, 404, 42, 56)})
+                          "M 706 438 C 712 406 714 368 708 338 "
+                          "L 722 336 C 728 368 728 408 722 440 Z"})
+    card.shape("arm-l", {"type": "path", "d": limb_capsule(
+        (426, 674), (348, 732), (312, 868), 32, 26, 24)})
+    card.shape("hand-l", {"type": "path", "d":
+                          "M 298 868 C 272 862 258 838 268 814 "
+                          "C 282 792 318 788 334 808 "
+                          "C 346 832 328 858 298 868 Z"})
+    card.shape("eye-l", {"type": "path", "d": almond_path(468, 408, 44, 58, -6)})
+    card.shape("eye-r", {"type": "path", "d": almond_path(556, 408, 44, 58, 6)})
 
 
 def paint(card):
-    # Robe and skin painted as forms; the deep robe keeps a cool shadow so it
-    # reads as cloth, the skin a warmer core, all relief-lit.
     card.paint_form("p-robe", ["robe"], ROBE, weight=20, relief=(4.0, 3.6))
     card.paint_form("p-arm-l", ["arm-l"], ROBE_LT, weight=13, form="cylinder",
-                    axis=70, relief=(3.6, 3.2))
+                    axis=68, relief=(3.6, 3.2))
     card.paint_form("p-arm-r", ["arm-r"], ROBE_LT, weight=13, form="cylinder",
-                    axis=70, relief=(3.6, 3.2))
+                    axis=52, relief=(3.6, 3.2))
     card.paint_form("p-neck", ["neck"], SKIN_DK, weight=9, form="cylinder",
                     axis=90, relief=(2.8, 2.6))
     card.paint_form("p-head", ["head"], SKIN, weight=16, relief=(4.2, 3.6))
@@ -75,24 +83,24 @@ def paint(card):
 
 
 def eyes(card):
-    # Deep glossy eyes: a dark pool, a cool iris, and the astronaut mirrored as
-    # a bright speck in each - the Visitor is looking right back.
-    for cx in (470, 558):
-        card.node("inlay", {"type": "ellipse", "cx": cx, "cy": 404, "rx": 40, "ry": 54,
-                            "fill": radial(cx - 10, 388, 58,
+    for cx, tilt in ((468, -6), (556, 6)):
+        clip = almond_path(cx, 408, 44, 58, tilt)
+        card.node("inlay", {"type": "path", "d": clip,
+                            "fill": radial(cx - 10, 392, 58,
                                            [[0, "#2a4a6a"], [0.55, "#101c30"],
                                             [1, "#05080e"]])})
-        card.node("inlay", {"type": "ellipse", "cx": cx, "cy": 414, "rx": 18, "ry": 26,
-                            "fill": "#02040a"})
-        card.node("light", {"type": "ellipse", "cx": cx - 12, "cy": 384, "rx": 9, "ry": 13,
-                            "fill": GLINT + "ee"})
-        card.node("light", {"type": "ellipse", "cx": cx + 10, "cy": 420, "rx": 4, "ry": 5,
-                            "fill": "#ffffffcc"})
+        card.node("inlay", {"type": "ellipse", "cx": cx, "cy": 418, "rx": 16, "ry": 22,
+                            "fill": "#02040a", "clip": clip})
+        card.node("light", {"type": "ellipse", "cx": cx - 12, "cy": 388, "rx": 9,
+                            "ry": 13, "fill": GLINT + "ee"})
+        card.node("light", {"type": "ellipse", "cx": cx + 8, "cy": 422, "rx": 4,
+                            "ry": 5, "fill": "#ffffffcc"})
+        # Helmet glint in the pupil - looking back at card 02.
+        card.node("light", {"type": "ellipse", "cx": cx - 4, "cy": 412, "rx": 6,
+                            "ry": 8, "fill": "#c8e8ff88"})
 
 
 def freckles(card):
-    # Bioluminescent freckles scattered over the cheeks and brow, brightest
-    # near the eyes, on a screen layer so they read as light under the skin.
     rng = _Rng(41)
     for _ in range(46):
         a = rng.next() * 2 * math.pi
@@ -109,45 +117,46 @@ def freckles(card):
 
 
 def collar_glow(card):
-    # The frill collar glows from under the chin.
     card.node("glow", {"type": "path", "d":
-                       "M512 584 C 596 584 648 636 648 688 C 600 712 424 712 376 688 "
-                       "C 376 636 428 584 512 584 Z",
+                       "M512 578 C 602 578 658 634 658 692 "
+                       "C 608 718 416 718 366 692 "
+                       "C 366 634 422 578 512 578 Z",
                        "fill": radial(512, 660, 150,
                                       [[0, FRILL + "aa"], [0.6, FRILL + "33"],
                                        [1, FRILL + "00"]]),
                        "blur": 6})
-    # Ribs of the frill, drawn as bright arcs.
     for i in range(7):
         t = i / 6
         x = 400 + t * 224
         card.node("glow", {"type": "path",
-                           "d": f"M{x:.0f} 690 C {x:.0f} 648 {512 + (x - 512) * 0.4:.0f} 612 512 600",
+                           "d": f"M{x:.0f} 692 C {x:.0f} 648 "
+                                f"{512 + (x - 512) * 0.4:.0f} 608 512 596",
                            "fill": "none",
                            "stroke": {"paint": FRILL + "88", "width": 2.5}})
 
 
 def fingertip(card):
-    # The glowing fingertip: the point of contact.
-    card.node("glow", {"type": "ellipse", "cx": 718, "cy": 344, "rx": 60, "ry": 60,
-                       "fill": radial(718, 344, 60,
+    card.node("glow", {"type": "ellipse", "cx": 718, "cy": 336, "rx": 60, "ry": 60,
+                       "fill": radial(718, 336, 60,
                                       [[0, "#ffffffcc"], [0.3, FRILL + "aa"],
                                        [0.7, CYAN + "44"], [1, CYAN + "00"]])})
-    card.node("light", {"type": "ellipse", "cx": 718, "cy": 344, "rx": 12, "ry": 14,
+    card.node("light", {"type": "ellipse", "cx": 718, "cy": 336, "rx": 12, "ry": 14,
                         "fill": "#ffffffff"})
-    # A few sparks drifting off the fingertip.
     for dx, dy, r in [(28, -18, 3), (-22, -30, 2.4), (40, 16, 2.2), (14, -44, 2)]:
-        card.node("glow", {"type": "ellipse", "cx": 718 + dx, "cy": 344 + dy,
+        card.node("glow", {"type": "ellipse", "cx": 718 + dx, "cy": 336 + dy,
                            "rx": r, "ry": r,
-                           "fill": radial(718 + dx, 344 + dy, r * 2,
+                           "fill": radial(718 + dx, 336 + dy, r * 2,
                                           [[0, GLINT], [1, CYAN + "00"]])})
 
 
 def ink(card):
-    card.ink(weight=8, seed=3, shapes=["robe", "arm-l", "arm-r"])
-    card.ink(weight=7, seed=4, shapes=["head", "neck"])
-    card.ink(weight=5, seed=5, shapes=["collar", "hand-l", "hand-r", "finger"])
-    card.ink(weight=5, seed=6, shapes=["eye-l", "eye-r"])
+    card.ink(weight=7, seed=3, shapes=["robe"], wobble=1.8)
+    card.ink(weight=6, seed=4, shapes=["arm-l", "arm-r", "head", "neck"],
+             wobble=1.6)
+    card.ink(weight=5, seed=5, shapes=["collar", "hand-l", "hand-r", "finger"],
+             wobble=1.4)
+    # Eyes: rim only, not a heavy outline.
+    card.ink(weight=3, seed=6, shapes=["eye-l", "eye-r"], wobble=1.0)
 
 
 def build(card):
@@ -155,10 +164,13 @@ def build(card):
                         ("frill", FRILL), ("glow", CYAN)]:
         card.palette(name, color)
     sky(card, ACCENT, horizon=0.44)
+    card.layer("shadow", "vector", blend="multiply")
+    card.node("shadow", {"type": "ellipse", "cx": 512, "cy": 1198, "rx": 220,
+                         "ry": 32, "fill": "#120818aa", "blur": 14})
     card.layer("sketch", "vector", visible=False)
     shapes(card)
     paint(card)
-    card.layer("lines", "paint", opacity=0.4)
+    card.layer("lines", "paint", opacity=0.36)
     ink(card)
     card.brushwork()
     card.layer("inlay", "vector")
@@ -175,6 +187,6 @@ if __name__ == "__main__":
     card = Card()
     build(card)
     if "--over" in sys.argv:
-        card.dump_over(sizes=[34, 17, 8], threshold=8)
+        card.dump_over(sizes=[32, 16, 8], threshold=6, brush="oil-load")
     else:
         card.dump()

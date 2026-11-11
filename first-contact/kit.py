@@ -76,6 +76,56 @@ def wobble(cx, cy, r, points, jitter, seed):
     return d + "Z"
 
 
+def _perp(dx, dy):
+    length = math.hypot(dx, dy) or 1.0
+    return -dy / length, dx / length
+
+
+def limb_capsule(anchor, elbow, wrist, w_shoulder, w_elbow, w_wrist):
+    """A two-segment limb outline: shoulder to elbow to wrist, tapered width."""
+    pts = (anchor + (w_shoulder,), elbow + (w_elbow,), wrist + (w_wrist,))
+    left, right = [], []
+    for i, (px, py, half) in enumerate(pts):
+        dx, dy = (pts[i + 1][0] - px, pts[i + 1][1] - py) if i < 2 else (
+            px - pts[i - 1][0], py - pts[i - 1][1])
+        pxp, pyp = _perp(dx, dy)
+        left.append((px + pxp * half, py + pyp * half))
+        right.append((px - pxp * half, py - pyp * half))
+    l0, l1, l2 = left
+    r0, r1, r2 = right
+
+    def cubic(a, b):
+        c1 = (a[0] + (b[0] - a[0]) * 0.35, a[1] + (b[1] - a[1]) * 0.35)
+        c2 = (b[0] - (b[0] - a[0]) * 0.35, b[1] - (b[1] - a[1]) * 0.35)
+        return (f"C {c1[0]:.1f} {c1[1]:.1f} {c2[0]:.1f} {c2[1]:.1f} "
+                f"{b[0]:.1f} {b[1]:.1f} ")
+
+    return (f"M{l0[0]:.1f} {l0[1]:.1f} "
+            f"{cubic(l0, l1)}"
+            f"{cubic(l1, l2)}"
+            f"L{r2[0]:.1f} {r2[1]:.1f} "
+            f"{cubic(r2, r1)}"
+            f"{cubic(r1, r0)}"
+            f"Z")
+
+
+def almond_path(cx, cy, rx, ry, tilt_deg=0):
+    """An asymmetric almond eye, not a perfect ellipse."""
+    t = math.radians(tilt_deg)
+    cos_t, sin_t = math.cos(t), math.sin(t)
+    inner = rx * 0.52
+    d = (f"M{cx - rx:.1f} {cy:.1f} "
+         f"C {cx - rx * 0.2:.1f} {cy - ry:.1f} {cx + inner:.1f} {cy - ry * 0.85:.1f} "
+         f"{cx + rx:.1f} {cy:.1f} "
+         f"C {cx + inner:.1f} {cy + ry * 0.92:.1f} {cx - rx * 0.15:.1f} {cy + ry:.1f} "
+         f"{cx - rx:.1f} {cy:.1f} Z")
+    if abs(tilt_deg) < 0.5:
+        return d
+    # Caller can rotate via sketch transform; path is left axis-aligned for ink.
+    return d
+
+
+
 class _Rng:
     """A tiny deterministic generator, so a seed always draws the same card."""
 
