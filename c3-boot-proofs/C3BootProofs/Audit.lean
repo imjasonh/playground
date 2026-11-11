@@ -24,7 +24,7 @@ import C3BootProofs.Proofs.PointAdd
 import C3BootProofs.Proofs.Sha256Compress
 import C3BootProofs.Proofs.MemsetAny
 import C3BootProofs.Proofs.MemcpyAny
-import C3BootProofs.Proofs.ShaFinal
+import C3BootProofs.Proofs.ShaOneShot
 
 /-!
 # Audit
@@ -967,6 +967,66 @@ theorem exists_shaFinalize_machine :
     | (unfold RV32.CodeIn; decide +kernel)
     | decide +kernel
 
+/-- `witnessMemFin` with `sha256`, its outlined initializer, and the initial
+hash value added where the image loads them. -/
+def witnessMemOne (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.sha256FnAddress).toNat < Image.sha256FnCode.length then
+    RV32.byteAt Image.sha256FnCode (a - BitVec.ofNat 32 Image.sha256FnAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaInitAddress).toNat < Image.shaInitCode.length then
+    RV32.byteAt Image.shaInitCode (a - BitVec.ofNat 32 Image.shaInitAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaIVAddress).toNat < Image.shaIVData.length then
+    RV32.byteAt Image.shaIVData (a - BitVec.ofNat 32 Image.shaIVAddress).toNat
+  else witnessMemFin a
+
+set_option maxRecDepth 200000 in
+theorem witnessMemOne_compress :
+    RV32.CodeIn witnessMemOne (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+  intro i hi
+  have hlen : Image.sha256CompressCode.length = 11156 := rfl
+  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
+  have d1 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.sha256FnAddress).toNat < Image.sha256FnCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.sha256FnAddress).toNat = 0x403a6748 from rfl,
+      show Image.sha256FnCode.length = 88 from rfl]; omega
+  have d2 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaInitAddress).toNat < Image.shaInitCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaInitAddress).toNat = 0x403bf262 from rfl,
+      show Image.shaInitCode.length = 22 from rfl]; omega
+  have d3 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaIVAddress).toNat < Image.shaIVData.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaIVAddress).toNat = 0x3fcc42a8 from rfl,
+      show Image.shaIVData.length = 32 from rfl]; omega
+  unfold witnessMemOne
+  rw [ite_eq_right_of_eq_false _ _ (eq_false d1), ite_eq_right_of_eq_false _ _ (eq_false d2),
+    ite_eq_right_of_eq_false _ _ (eq_false d3)]
+  exact witnessMemFin_compress i hi
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `sha256` on 3 bytes at `0x3FCC6100`, with the
+output at `0x3FCC6000` and the stack at `0x3FCC8000`, meets
+`sha256Fn_correct`'s hypotheses. -/
+theorem exists_sha256Fn_machine :
+    ∃ (m : RV32.Machine) (out D sp0 retAddr : RV32.Word) (n : Nat),
+      RV32.Sha256Env m.mem out D sp0 n ∧ m.pc = BitVec.ofNat 32 Image.sha256FnAddress ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ n < 2 ^ 31 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6100 else if r = RV32.a2 then 3
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha256FnAddress, witnessMemOne⟩,
+    0x3FCC6000, 0x3FCC6100, 0x3FCC8000, 0, 3,
+    ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, witnessMemOne_compress, ?_, ?_, ?_,
+      by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide +kernel
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls the point addition with `lhs` at `0x3FCC5000`, `rhs`
@@ -1366,3 +1426,9 @@ end C3
 
 /-- info: 'C3.exists_shaFinalize_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_shaFinalize_machine
+
+/-- info: 'C3.RV32.sha256Fn_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha256Fn_correct
+
+/-- info: 'C3.exists_sha256Fn_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sha256Fn_machine
