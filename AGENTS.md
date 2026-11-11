@@ -519,7 +519,7 @@ test workflow gates on:
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
 | Go | `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
-| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
+| Rust | `cargo update`, except `c3-boot`, whose build the `c3-boot-proofs` machine-code proofs pin | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:

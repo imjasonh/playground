@@ -60,6 +60,14 @@ fi
 echo "::endgroup::"
 
 for app in "${apps[@]}"; do
+  if [ "$app" = "c3-boot" ]; then
+    # c3-boot-proofs verifies the machine code of one pinned bootloader
+    # build, and its CI fails when that image's digest changes. Bump
+    # c3-boot's lockfile by hand, together with the proofs.
+    echo "- \`c3-boot\`: skipped; the machine-code proofs pin its build" >> "$GITHUB_STEP_SUMMARY"
+    continue
+  fi
+
   echo "::group::Update and verify ${app}"
 
   if (
