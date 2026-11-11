@@ -776,4 +776,113 @@ theorem mm_pro (m : Machine) {P sp0 out xp yp np K : Word} (E : MMEnv m.mem P sp
     obtain ⟨hs, h5, h2, h3, h4, h5', h6, hr, h0, h1, h18, h19, h20, h21, h23, hsp', ht0⟩ := key q hq
     rw [kk q hs h5 h2 h3 h4 h5' h6 hr, pk q h0 h1 h2 h18 h19 h20 h21 h23, r2 q hsp' ht0]
 
+theorem maskBit_zero' : maskBit 0 = 0 := by unfold maskBit; decide
+
+theorem sub_inv0 (M M' : Word → BitVec 8) (a b c : Word) :
+    accV M a 0 + 2 ^ (32 * 0) * maskBit 0 = accV M b 0 + accV M' c 0 := by
+  rw [maskBit_zero']; rfl
+
+/-- The registers the final subtraction leaves alone. -/
+def midKeep (q : Fin 32) : Bool := q.val ∉ [1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 23]
+
+set_option exponentiation.threshold 400 in
+/-- **The final subtraction of `mul_montgomery_form::<12>`**, from 0xE2 to
+0x11C: zero the buffer at `F + 0x3C`, then subtract the modulus from the
+accumulator at `F + 0xC` into it. -/
+theorem mm_mid {P sp0 out xp yp np : Word} {M0 : Word → BitVec 8} (E : MMEnv M0 P sp0 out xp yp np)
+    {M : Word → BitVec 8} {n : Machine} (s : St M P n 0xE2 (reg n))
+    (hfr : ∀ x, Sep (sp0 + 0xFFFFFF60) 0xA0 x 1 → M x = M0 x)
+    (rsp : reg n sp = sp0 + 0xFFFFFF60) (r23 : reg n (23 : Fin 32) = np) :
+    ∃ n' M', Steps n n' ∧ St M' P n' 0x11C (reg n') ∧
+      (∀ x, Sep (sp0 + 0xFFFFFF5C) 4 x 1 → Sep (sp0 + 0xFFFFFF60 + 0x3C) 48 x 1 → M' x = M x) ∧
+      (reg n' a2 = 0 ∨ reg n' a2 = 0xFFFFFFFF) ∧
+      accV M (sp0 + 0xFFFFFF60 + 0xC) 12 + 2 ^ (32 * 12) * maskBit (reg n' a2) =
+        accV M np 12 + accV M' (sp0 + 0xFFFFFF60 + 0x3C) 12 ∧
+      reg n' sp = sp0 + 0xFFFFFF60 ∧ ∀ q, midKeep q = true → reg n' q = reg n q := by
+  obtain ⟨hG, hFG, hFw⟩ := frameA0 sp0 E.hS
+  have hGa : (sp0 + 0xFFFFFF10).toNat % 4 = 0 := aligned_add E.hsp (k := 0xFFFFFF10) (by decide)
+  have eF4 : sp0 + 0xFFFFFF60 + 0xFFFFFFFC = sp0 + 0xFFFFFF10 + BitVec.ofNat 32 0x4C := by
+    rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+  have eF4' : sp0 + 0xFFFFFF5C = sp0 + 0xFFFFFF10 + BitVec.ofNat 32 0x4C := by rw [BitVec.add_assoc]; rfl
+  have eA : sp0 + 0xFFFFFF60 + 0xC = sp0 + 0xFFFFFF10 + BitVec.ofNat 32 0x5C := by
+    rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+  have eD : sp0 + 0xFFFFFF60 + 0x3C = sp0 + 0xFFFFFF10 + BitVec.ofNat 32 0x8C := by
+    rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+  have go : ∀ c d k, c + 4 ≤ d ∨ d + k ≤ c → d + k ≤ 0xF0 → c + 4 ≤ 0xF0 →
+      Sep (sp0 + 0xFFFFFF10 + BitVec.ofNat 32 c) 4 (sp0 + 0xFFFFFF10 + BitVec.ofNat 32 d) k :=
+    fun c d k h h1 h2 => sep_offsets _ h (by omega) (by omega)
+  have codeF : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn M0 b code →
+      Sep (sp0 + 0xFFFFFF10) 0xF0 b code.length →
+      (∀ x, Sep (sp0 + 0xFFFFFF60) 0xA0 x 1 → M' x = M0 x) → CodeIn M' b code :=
+    fun hc hs hM i hi => by rw [hM _ ((E.frame hs).subR (c := i) (l := 1) (by omega))]; exact hc i hi
+  have hc := codeF E.code E.sGC hfr
+  have hz := s.zero
+  obtain ⟨n1, c1, u1⟩ := St.block mmSubPre s hc mmSubPre_end (by
+    simp only [BlockOk, BInstr.ok, mmSubPre]; exact ⟨trivial, trivial, trivial, trivial, trivial⟩)
+  obtain ⟨em1, b0, b2, b1, b19, bk⟩ := mmSubPre_run (M := M) (f := reg n) hz
+  rw [em1] at u1
+  have g1 : ∀ q, reg n1 q = (runBlock mmSubPre (M, reg n)).2 q := u1.regs
+  rw [rsp] at b0 b19
+  have hDa : (sp0 + 0xFFFFFF60 + 0x3C).toNat % 4 = 0 := by rw [eD]; exact aligned_add hGa (by decide)
+  have hDw : (sp0 + 0xFFFFFF60 + 0x3C).toNat + 48 < 2 ^ 32 := by
+    rw [eD, BitVec.toNat_add, BitVec.toNat_ofNat]; have := sp0.isLt; omega
+  obtain ⟨n2, c2, u2, a02, fr2⟩ := u1.self.memsetW (B := P + 0xD2F4) (w := 12) (dst := sp0 + 0xFFFFFF60 + 0x3C)
+    (even_at P E.hP 0xD2F4 (by decide)) hc (codeF E.mset E.sGM hfr) mm_at_ee mm_at_f2
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP (0xEE + 8) (by decide)) (by decide)
+    (by omega) (by decide) hDa (by rw [eD]; exact E.sGM.sub (c := 0x8C) (l := 48) (by decide))
+    (by rw [g1, b0]) (by rw [g1, b1]) (by rw [g1, b2]; rfl)
+  obtain ⟨MS, hMS⟩ : ∃ MS, fillWords M (sp0 + 0xFFFFFF60 + 0x3C) 0 12 = MS := ⟨_, rfl⟩
+  rw [hMS] at u2
+  have hS : ∀ x, Sep (sp0 + 0xFFFFFF60) 0xA0 x 1 → MS x = M0 x := fun x hx => by
+    rw [← hMS, fillWords_outside 12 (by
+      have := hx.sub (c := 0x3C) (l := 48) (by decide); exact this), hfr x hx]
+  have hcS := codeF E.code E.sGC hS
+  obtain ⟨n3, c3, u3⟩ := St.block mmSubInit u2 hcS mmSubInit_end (by
+    simp only [BlockOk, BInstr.ok, mmSubInit]; exact ⟨trivial, trivial, trivial, trivial⟩)
+  obtain ⟨em3, i2, i9, i8, ik⟩ := mmSubInit_run (M := MS) (f := reg n2) u2.zero
+  rw [em3] at u3
+  have g3 : ∀ q, reg n3 q = (runBlock mmSubInit (MS, reg n2)).2 q := u3.regs
+  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hcS 0xFE mm_at_fc (by decide) (by rw [g3, i8, u3.self.zero]; decide)
+  have k2 : ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → reg n2 q = (runBlock mmSubPre (M, reg n)).2 q :=
+    fun q h2 h3 h4 h5 h6 hr => by rw [fr2 q h2 h3 h4 h5 h6 hr, g1]
+  have k4 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → q ≠ (19 : Fin 32) →
+      q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → reg n4 q = reg n q := fun q h0 h1 h2 h3 h4 h5 h6 hr h19 h9 h8 => by
+    rw [u4.regs, g3, ik q h2 h9 h8, k2 q h2 h3 h4 h5 h6 hr, bk q h0 h1 h2 h19]
+  have sp4 : reg n4 sp = sp0 + 0xFFFFFF60 := by
+    rw [k4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide), rsp]
+  have sDA : Sep (sp0 + 0xFFFFFF60 + 0x3C) 48 (sp0 + 0xFFFFFF60 + 0xC) 48 := by
+    rw [eD, eA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide)
+  obtain ⟨n5, M5, c5, u5, hc5, hf5, hm5, hv5, sp5, fr5⟩ := sub_loop (M0 := MS) (F := sp0 + 0xFFFFFF60)
+    (acc := sp0 + 0xFFFFFF60 + 0xC) (np := np) (D := sp0 + 0xFFFFFF60 + 0x3C) E.hP
+    (aligned_add E.hsp (k := 0xFFFFFF60) (by decide)) (by rw [eA]; exact aligned_add hGa (by decide)) E.hnp hDa (Nat.le_of_lt hDw)
+    (by rw [eF4, eA]; exact go _ _ _ (.inl (by decide)) (by decide) (by decide))
+    (by rw [eF4]; exact E.sNG.symm.sub (c := 0x4C) (l := 4) (by decide))
+    (by rw [eF4, eD]; exact go _ _ _ (.inl (by decide)) (by decide) (by decide))
+    sDA (by rw [eD]; exact E.sNG.symm.sub (c := 0x8C) (l := 48) (by decide))
+    (by rw [eF4]; exact E.sGB.sub (c := 0x4C) (l := 4) (by decide))
+    (by rw [eF4]; exact E.sGC.sub (c := 0x4C) (l := 4) (by decide))
+    (by rw [eD]; exact E.sGB.sub (c := 0x8C) (l := 48) (by decide))
+    (by rw [eD]; exact E.sGC.sub (c := 0x8C) (l := 48) (by decide))
+    11 0 (by decide) u4.self hcS (codeF E.bsub E.sGB hS) (fun _ _ _ => rfl) (.inl rfl) (sub_inv0 _ _ _ _ _) sp4
+    (by rw [u4.regs, g3, i9, k2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+      bk _ (by decide) (by decide) (by decide) (by decide), rsp, Nat.mul_zero, add_ofNat_zero])
+    (by rw [k4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide), r23, Nat.mul_zero, add_ofNat_zero])
+    (by rw [u4.regs, g3, ik _ (by decide) (by decide) (by decide), k2 _ (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide), b19, Nat.mul_zero, add_ofNat_zero])
+    (by rw [u4.regs, g3, i8]) (by rw [u4.regs, g3, i2])
+  have eAcc : accV MS (sp0 + 0xFFFFFF60 + 0xC) 12 = accV M (sp0 + 0xFFFFFF60 + 0xC) 12 :=
+    accV_congr 12 fun i hi => by rw [← hMS]; exact fillWords_load_sep (sDA.subR (c := 4 * i) (l := 4) (by omega))
+  have sDN : Sep (sp0 + 0xFFFFFF60 + 0x3C) 48 np 48 := by rw [eD]; exact E.sNG.symm.sub (c := 0x8C) (l := 48) (by decide)
+  have eNp : accV MS np 12 = accV M np 12 :=
+    accV_congr 12 fun i hi => by rw [← hMS]; exact fillWords_load_sep (sDN.subR (c := 4 * i) (l := 4) (by omega))
+  refine ⟨n5, M5, c1.trans (c2.trans (c3.trans (.cons d4 c5))), u5, fun x h1 h2 => ?_, hm5, ?_, sp5, fun q hq => ?_⟩
+  · rw [hf5 x (by rw [eF4]; rw [eF4'] at h1; exact h1) h2, ← hMS, fillWords_outside 12 h2]
+  · rw [← eAcc, ← eNp]; exact hv5
+  · have key : ∀ q : Fin 32, midKeep q = true → q ≠ a0 ∧ q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧ q ≠ a6 ∧
+        q ≠ ra ∧ q ≠ (19 : Fin 32) ∧ q ≠ (9 : Fin 32) ∧ q ≠ (8 : Fin 32) ∧ q ≠ (23 : Fin 32) := by decide
+    obtain ⟨h0, h1, h2, h3, h4, h5, h6, hr, h19, h9, h8, h23⟩ := key q hq
+    rw [fr5 q h0 h1 h2 h3 h4 hr h9 h23 h19 h8, k4 q h0 h1 h2 h3 h4 h5 h6 hr h19 h9 h8]
+
 end C3.RV32
