@@ -1164,6 +1164,48 @@ theorem shaUpdate_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {msg 
   have hdata : data.length = n := memBytes_length _ _ _
   have hmsgd : msg ++ memBytes m.mem D n = msg ++ data := rfl
   have zR : reg n7 0 = 0 := u7'.zero
+  have ld2 : ∀ c, c + 4 ≤ 0x68 → memLoad32 M2 (S + BitVec.ofNat 32 c) = memLoad32 M0 (S + BitVec.ofNat 32 c) :=
+    fun c hc => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact out2 _ (SG _ (by omega))
+  -- The paths that compress end in `upd_join` at 0x6A.
+  have J : ∀ (nn : Machine) (Mx : Word → BitVec 8) (f : Fin 32 → Word) (Dk : Word) (nk : Nat)
+      (pre : List Bytes), Steps m nn → St Mx U nn 0x6A f →
+      (∀ x, Sep R 0x100 x 1 → Sep S 0x68 x 1 → Mx x = M0 x) →
+      (∀ k, 8 ≤ k → k < 32 → Mx (G + BitVec.ofNat 32 k) = M2 (G + BitVec.ofNat 32 k)) →
+      nk ≤ n → Dk = D + BitVec.ofNat 32 (n - nk) →
+      f a1 = Dk → f s1 = BitVec.ofNat 32 nk → f s2 = S + 0x40 → f s4 = S → f sp = G →
+      (∀ r, r ≠ ra → r ≠ sp → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 →
+        r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ s2 → r ≠ s3 →
+        r ≠ s4 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) →
+        f r = reg m r) →
+      wordsAt Mx (S + 0x40) 8 = pre.foldl Sha256.compress Sha256.h0 →
+      memLoad32 Mx (S + 0x60) = BitVec.ofNat 32 pre.length → memLoad32 Mx (S + 0x64) = 0 →
+      fullBlocks (msg ++ data) = pre ++ Sha256.blocks (nk / 64) (memBytes M0 Dk nk) →
+      tailBytes (msg ++ data) = (memBytes M0 Dk nk).drop (64 * (nk / 64)) →
+      ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+        (∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+          r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m' r = reg m r) ∧
+        HasherAt m'.mem S (msg ++ memBytes m.mem D n) ∧
+        ∀ x, Sep (sp0 + 0xFFFFFF00) 0x100 x 1 → Sep S 0x68 x 1 → m'.mem x = m.mem x := by
+    intro nn Mx f Dk nk pre cn sn hag hsl hnk hDk fa1 fs1 fs2 fs4 fsp fo hh hl hhi hf ht
+    obtain ⟨m', c', pc', sp', s0', s1', s2', s3', s4', K', H', fr'⟩ := upd_join (msg' := msg ++ data) nn E sn
+      hag hnk hDk hn fa1 fs1 fs2 fs4 fsp
+      (fun My h => slots My fun k h1 h2 => (h k h1 h2).trans (hsl k h1 h2)) (by rw [hra]; exact hret)
+      hh hl hhi hf ht (by rw [List.length_append, hdata]; exact hlen)
+    refine ⟨m', cn.trans c', by rw [pc', hra], sp',
+      fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, H', fr'⟩
+    by_cases h8 : r = s0
+    · subst h8; exact s0'
+    by_cases h9 : r = s1
+    · subst h9; exact s1'
+    by_cases h18 : r = s2
+    · subst h18; exact s2'
+    by_cases h19 : r = s3
+    · subst h19; exact s3'
+    by_cases h20 : r = s4
+    · subst h20; exact s4'
+    rw [K' r q1 q2 q3 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31,
+      fo r q1 q2 q3 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31]
   by_cases hA : n < 64 - pos
   · -- The bytes fit in the buffer: copy them in and store the new count.
     obtain ⟨n8, d8, u8⟩ := u7'.notTaken cU2 0x1E su_at_1a (by decide) (by
@@ -1336,6 +1378,37 @@ theorem shaUpdate_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {msg 
       · subst h20; rw [vs4, hs4']
       rw [updR_other _ _ _ _ _ u14'.zero r q1 h8 h9 h18 h19 h20 q2 q5, K14 r h8,
         K7_13 r q1 q10 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, K27 r q2 q5 h9 h20 h8 q12]
-  · sorry
+  · -- The bytes fill the buffer.
+    obtain ⟨n8, d8, u8⟩ := u7'.taken cU2 0x3E su_at_1a (by decide) (by
+      simp only [branchTaken]; rw [s1_7, g7, ultR, decide_eq_false hA]; rfl)
+    obtain ⟨n9, d9, u9⟩ := u8.aluImm cU2 su_at_3e (off' := 0x42) (by decide)
+    have K9 := u9.upd_ne zR
+    have u9' : St M2 U n9 0x42 (reg n9) := u9.self
+    have s2_9 : reg n9 s2 = S + 0x40 := by rw [u9.upd_eq (by decide), s4_7]; rfl
+    have hh2 : wordsAt M2 (S + 0x40) 8 = (fullBlocks msg).foldl Sha256.compress Sha256.h0 := by
+      rw [← H.hash]; apply wordsAt_congr; intro i hi
+      rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc]
+      exact ld2 _ (by omega)
+    have hl2 : memLoad32 M2 (S + 0x60) = BitVec.ofNat 32 (fullBlocks msg).length := by
+      rw [fullBlocks_length, ← H.lo, show S + (0x60 : Word) = S + BitVec.ofNat 32 0x60 from rfl]
+      exact ld2 0x60 (by omega)
+    have hhi2 : memLoad32 M2 (S + 0x64) = 0 := by
+      rw [← H.hi, show S + (0x64 : Word) = S + BitVec.ofNat 32 0x64 from rfl]
+      exact ld2 0x64 (by omega)
+    by_cases hp0 : pos = 0
+    · -- The buffer is empty: compress straight from the input.
+      obtain ⟨n10, d10, u10⟩ := u9'.taken cU2 0x6A su_at_42 (by decide) (by
+        simp only [branchTaken]; rw [K9 s0 (by decide), s0_7, u9'.zero, hp0]; rfl)
+      have ht0 : tailBytes msg = [] := List.eq_nil_of_length_eq_zero (by rw [tailBytes_length]; exact hp0)
+      obtain ⟨hf1, hf2⟩ := fullBlocks_append msg data
+      rw [ht0, List.length_nil, Nat.zero_add, List.nil_append, hdata] at hf1 hf2
+      exact J n10 M2 (reg n9) D n (fullBlocks msg) (c7.trans (.cons d8 (.cons d9 (.single d10)))) u10 hM2
+        (fun _ _ _ => rfl) (Nat.le_refl n) (by rw [Nat.sub_self, add_ofNat_zero])
+        (by rw [K9 a1 (by decide), a1_7]) (by rw [K9 s1 (by decide), s1_7]) s2_9
+        (by rw [K9 s4 (by decide), s4_7]) (by rw [K9 sp (by decide), sp7])
+        (fun r q1 q2 _ q5 _ _ h8 h9 _ _ q12 _ _ _ _ _ h18 _ h20 _ _ _ _ => by
+          rw [K9 r h18, K27 r q2 q5 h9 h20 h8 q12])
+        hh2 hl2 hhi2 hf1 hf2
+    · sorry
 
 end C3.RV32

@@ -123,6 +123,28 @@ theorem fullBlocks_append (msg d : Bytes) :
         rw [hA]; omega, List.drop_append, List.drop_eq_nil_of_le (by omega), List.nil_append,
       Nat.add_sub_cancel_left]
 
+/-- Appending at least the `r` bytes that fill the buffer adds the full
+blocks of the old message, then the filled buffer, then the full blocks of
+the rest of `d`. This is `update` with a partly full buffer. -/
+theorem fullBlocks_fill (msg d : Bytes) {r : Nat} (hr : (tailBytes msg).length + r = 64)
+    (hd : r ≤ d.length) :
+    fullBlocks (msg ++ d) = fullBlocks msg ++ (tailBytes msg ++ d.take r) ::
+      blocks ((d.length - r) / 64) (d.drop r) ∧
+    tailBytes (msg ++ d) = (d.drop r).drop (64 * ((d.length - r) / 64)) := by
+  obtain ⟨hf, ht⟩ := fullBlocks_append msg d
+  have hq : ((tailBytes msg).length + d.length) / 64 = (d.length - r) / 64 + 1 := by
+    rw [show (tailBytes msg).length + d.length = 64 + (d.length - r) by omega]; omega
+  have hne : (tailBytes msg ++ d).isEmpty = false := by
+    cases h : tailBytes msg ++ d with
+    | nil => have := congrArg List.length h; rw [List.length_append, List.length_nil] at this; omega
+    | cons x xs => rfl
+  have hdrop : (tailBytes msg ++ d).drop 64 = d.drop r := by
+    rw [List.drop_append, List.drop_eq_nil_of_le (by omega), List.nil_append, show 64 - (tailBytes msg).length = r by omega]
+  refine ⟨?_, ?_⟩
+  · rw [hf, hq, blocks_succ, hne, ite_eq_right Bool.false_ne_true, List.take_append,
+      List.take_of_length_le (by omega), show 64 - (tailBytes msg).length = r by omega, hdrop]
+  · rw [ht, hq, show 64 * ((d.length - r) / 64 + 1) = 64 + 64 * ((d.length - r) / 64) by omega, ← List.drop_drop, hdrop]
+
 theorem be64_length (n : Nat) : (be64 n).length = 8 := by simp [be64]
 
 /-- The number of padding zeros. -/
