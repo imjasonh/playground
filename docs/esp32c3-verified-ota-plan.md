@@ -46,7 +46,10 @@
 > [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 9.1
 > proof lines per instruction and projects the whole image at about a tenth
 > of the libsignal proof. Proved functions hold 14.2 percent of the image's
-> instructions and 72.4 percent of the instructions one boot runs.
+> instructions and 72.4 percent of the instructions one boot runs. Three
+> code changes that make the rest easier to prove (a separate
+> `root_from_inclusion`, a loop-based SHA-512, and no machine outliner)
+> land together right after P-384's squaring is proved.
 > [`c3-boot-proofs/docs/future-work.md`](../c3-boot-proofs/docs/future-work.md)
 > lists cleanup for later, including allowing `Classical.choice` in phase 8.
 > [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
@@ -1023,7 +1026,13 @@ Deliverables:
   function, and Lean build time and memory.
 - A list of code changes that make proofs easier, such as splitting large
   functions or replacing a pattern the compiler turns into hard-to-prove
-  code. The changes are made, tested on the rig, and rebuilt.
+  code. The changes are made, tested on the rig, and rebuilt. The first
+  three, chosen on 2026-11-11 and listed in
+  [the throughput report](../c3-boot-proofs/docs/throughput.md#code-changes-that-would-make-proofs-easier),
+  land together right after P-384's squaring is proved: `root_from_inclusion`
+  as its own function, a loop-based SHA-512, and no machine outliner if the
+  image still fits. Each image change means redoing the proofs written by
+  then, so they land early, while there are fewer.
 - The frozen image, tagged `v1`, with its digest pinned in the
   specification.
 

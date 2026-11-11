@@ -159,10 +159,19 @@ The projection leaves out work that the instruction count doesn't capture:
 
 ## Code changes that would make proofs easier
 
-Phase 5 also asks for a list of code changes. None is made yet, because
-each one changes the pinned image and every function's bytes and offsets
-after it, so the proofs would need to be rebased at once at the code
-freeze.
+Phase 5 also asks for a list of code changes. Each one changes the pinned
+image and every function's bytes and offsets after it, so the proofs
+written by then have to be redone for the new image. That cost grows with
+every proved function, so the three changes below land together, as one
+image change, right after P-384's squaring is proved, and before more of
+the image is. Decided on 2026-11-11.
+
+Before the outliner change is adopted, a scratch build measures its code
+size against the 160 KiB bootloader partition and its instruction count in
+`boot-sim`. It is dropped if the image doesn't fit. Each change is checked
+the way the image is today: the digest pin, the QEMU scenarios, and the
+Lean-versus-Rust differential tests, plus NIST's SHA-512 vectors for the new
+compression function.
 
 - **Give `root_from_inclusion` its own symbol** with `#[inline(never)]`.
   The pinned image inlines it into `sigstore::verify`, a 12.5 KB function,
@@ -170,7 +179,11 @@ freeze.
 - **Use a loop-based SHA-512.** `sha2::sha512::compress512` is 35.7 KB of
   unrolled code, more than a quarter of the image, for Ed25519's one hash
   per signature. A loop-based compression function would be a few
-  kilobytes and could be proved by induction, like `crc32`.
+  kilobytes and could be proved by induction, like `crc32`. It runs about
+  330,000 instructions in a boot, 0.2 percent; a compact version 1.5 to 3
+  times slower stays under 1 percent. Prefer the `sha2` crate's own compact
+  software backend over new code in `c3-crypto`, if the pinned version has
+  one. SHA-256 keeps its unrolled compression function, which is proved.
 - **Turn off LLVM's machine outliner** (`-C llvm-args=-enable-machine-outliner=never`)
   if the size allows. It moves short instruction runs into helpers such as
   `OUTLINED_FUNCTION_97`, which the SHA-256 compression function calls in
