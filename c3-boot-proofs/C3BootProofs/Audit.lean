@@ -22,6 +22,7 @@ import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.FieldDouble
 import C3BootProofs.Proofs.PointAdd
 import C3BootProofs.Proofs.Sha256Compress
+import C3BootProofs.Proofs.MemsetAny
 
 /-!
 # Audit
@@ -590,6 +591,22 @@ theorem exists_memset_machine :
     by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
   unfold RV32.CodeAt; decide +kernel
 
+set_option maxRecDepth 20000 in
+/-- A machine that calls `memset` to fill 21 bytes from an odd address, so
+that every loop runs, meets `memset_correct`'s hypotheses. -/
+theorem exists_memsetAny_machine :
+    ∃ (m : RV32.Machine) (base retAddr dst b : RV32.Word) (n : Nat),
+      RV32.CodeAt m base Image.memsetCode ∧ base.toNat % 2 = 0 ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ dst.toNat + n < 2 ^ 32 ∧
+      RV32.Sep dst n base Image.memsetCode.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5001 else if r = RV32.a1 then 0xAB else if r = RV32.a2 then 21 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.memsetAddress, witnessMemField⟩,
+    BitVec.ofNat 32 Image.memsetAddress, 0, 0x3FCC5001, 0xAB, 21, ?_, by decide, rfl, rfl, rfl, rfl, rfl,
+    by decide, by decide, RV32.sep_of_le (by decide) (by decide)⟩
+  unfold RV32.CodeAt; decide +kernel
+
 /-- A machine that calls `borrowing_sub` with a borrow mask meets
 `borrowingSub_correct`'s hypotheses. -/
 theorem exists_borrowingSub_machine :
@@ -1059,6 +1076,12 @@ end C3
 
 /-- info: 'C3.exists_memset_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_memset_machine
+
+/-- info: 'C3.RV32.memset_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.memset_correct
+
+/-- info: 'C3.exists_memsetAny_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_memsetAny_machine
 
 /-- info: 'C3.RV32.borrowingSub_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.borrowingSub_correct
