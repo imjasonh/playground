@@ -3,7 +3,6 @@ package clash
 import (
 	"fmt"
 	"math/rand"
-	"sort"
 )
 
 // GameResult summarizes one finished game.
@@ -42,51 +41,25 @@ func dealPlan(players int) (hand, draw, rounds int, ok bool) {
 // handCap is the number of cards a seat holds and refills to each clash.
 const handCap = 4
 
-func normalizeIdx(idx []int, n int) []int {
-	seen := make(map[int]bool, len(idx))
-	out := make([]int, 0, len(idx))
-	for _, j := range idx {
-		if j >= 0 && j < n && !seen[j] {
-			seen[j] = true
-			out = append(out, j)
-		}
+// pickCard asks a strategy which card to play and returns a valid hand index.
+// A seat always plays exactly one card, so a strategy that returns an index out
+// of range falls back to the top of the hand. An empty hand returns -1.
+func pickCard(s Strategy, v View, rng *rand.Rand) int {
+	if len(v.Hand) == 0 {
+		return -1
 	}
-	sort.Ints(out)
-	return out
+	j := s.Pick(v, rng)
+	if j < 0 || j >= len(v.Hand) {
+		return 0
+	}
+	return j
 }
 
-// forceBid enforces the must-bid rule: every clash a seat commits at least one
-// card. When a strategy would pass but still holds cards, it is made to commit
-// its single lowest card, so refusing to invest bleeds a card for nothing. A
-// seat that has emptied its hand has nothing to commit and is left alone.
-func forceBid(hand []Card, idx []int) []int {
-	if len(idx) > 0 || len(hand) == 0 {
-		return idx
-	}
-	low := 0
-	for i, c := range hand {
-		if c.Rank < hand[low].Rank {
-			low = i
-		}
-	}
-	return []int{low}
-}
-
-// removeIdx returns hand without the cards at the ascending indices in drop.
-func removeIdx(hand []Card, drop []int) []Card {
-	if len(drop) == 0 {
-		return hand
-	}
-	out := make([]Card, 0, len(hand)-len(drop))
-	k := 0
-	for i, c := range hand {
-		if k < len(drop) && drop[k] == i {
-			k++
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
+// removeAt returns hand without the card at index j.
+func removeAt(hand []Card, j int) []Card {
+	out := make([]Card, 0, len(hand)-1)
+	out = append(out, hand[:j]...)
+	return append(out, hand[j+1:]...)
 }
 
 // PlayGame runs one full game. strategies drive the seats and homes gives each
@@ -134,25 +107,23 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 		}
 		pot = append(pot, carry...)
 
-		commits := make([][]Card, players)
+		played := make([]Card, players)
 		for i := range seats {
 			v := View{Pot: pot, Hand: seats[i].Hand, Home: seats[i].Home, Opponents: players - 1}
-			idx := normalizeIdx(strategies[i].Pick(v, rng), len(seats[i].Hand))
-			idx = forceBid(seats[i].Hand, idx)
-			commit := make([]Card, 0, len(idx))
-			for _, j := range idx {
-				commit = append(commit, seats[i].Hand[j])
+			j := pickCard(strategies[i], v, rng)
+			if j < 0 {
+				continue
 			}
-			seats[i].Hand = removeIdx(seats[i].Hand, idx)
-			commits[i] = commit
-			discarded = append(discarded, commit...)
-			for len(seats[i].Hand) < handCap && len(seats[i].Draw) > 0 {
+			played[i] = seats[i].Hand[j]
+			seats[i].Hand = removeAt(seats[i].Hand, j)
+			discarded = append(discarded, played[i])
+			if len(seats[i].Draw) > 0 {
 				seats[i].Hand = append(seats[i].Hand, seats[i].Draw[0])
 				seats[i].Draw = seats[i].Draw[1:]
 			}
 		}
 
-		out := resolveRound(seats, commits, pot)
+		out := resolveRound(seats, played, pot)
 		if out.winner >= 0 {
 			seats[out.winner].Scored = append(seats[out.winner].Scored, pot...)
 			carry = nil

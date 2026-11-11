@@ -25,30 +25,30 @@ func TestNewDeck(t *testing.T) {
 }
 
 func TestBidAndResolve(t *testing.T) {
-	// 5 pips, plus the Intelligence card in the pot and the committed
-	// Intelligence card: 5 + 1 + 1 = 7.
-	got := bidTotal([]Card{{Intelligence, 5}}, []Card{{Intelligence, 7}, {Strength, 4}}, Intelligence)
+	// A 5, plus the Intelligence card in the pot and the played Intelligence
+	// card: 5 + 1 + 1 = 7.
+	got := bidTotal(Card{Intelligence, 5}, []Card{{Intelligence, 7}, {Strength, 4}}, Intelligence)
 	if got != 7 {
 		t.Errorf("bidTotal = %d, want 7", got)
 	}
 
 	seats := []Seat{{Home: Intelligence}, {Home: Strength}}
 
-	// Higher pips win outright.
+	// The higher card wins outright.
 	neutral := []Card{{Speed, 7}, {Speed, 4}}
-	if out := resolveRound(seats, [][]Card{{{Speed, 6}}, {{Speed, 9}}}, neutral); out.winner != 1 {
+	if out := resolveRound(seats, []Card{{Speed, 6}, {Speed, 9}}, neutral); out.winner != 1 {
 		t.Errorf("higher bid should win, got winner %d", out.winner)
 	}
 
-	// Equal pips, but only seat 0's Home (Intelligence) sits in the pot, so its
+	// Equal cards, but only seat 0's Home (Intelligence) sits in the pot, so its
 	// bonus breaks the tie.
 	homePot := []Card{{Intelligence, 7}, {Speed, 4}}
-	if out := resolveRound(seats, [][]Card{{{Speed, 8}}, {{Speed, 8}}}, homePot); out.winner != 0 {
+	if out := resolveRound(seats, []Card{{Speed, 8}, {Speed, 8}}, homePot); out.winner != 0 {
 		t.Errorf("home bonus should break the tie for seat 0, got winner %d", out.winner)
 	}
 
 	// Equal bids with no bonus to either side: no winner, the pot carries.
-	if out := resolveRound(seats, [][]Card{{{Speed, 8}}, {{Speed, 8}}}, neutral); out.winner != -1 {
+	if out := resolveRound(seats, []Card{{Speed, 8}, {Speed, 8}}, neutral); out.winner != -1 {
 		t.Errorf("tied bids should have no winner, got %d", out.winner)
 	}
 }

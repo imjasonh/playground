@@ -2,9 +2,9 @@
 
 A simultaneous-bidding card game for two to four players, played with a standard
 deck minus its four Aces. Each round a pot of cards gathers on the table and
-everyone bids for it in secret, all at once, from a small hand of four cards
-that refills from a face-down draw pile but spends every bid for good. You must
-bid at least one card every clash, so there is no hoarding. The rules are in
+everyone plays for it in secret, all at once: one card from a small hand of four
+that refills from a face-down draw pile, spent whether it wins or loses. The
+highest bid takes the pot, and the most pips at the end wins. The rules are in
 [`rules.md`](rules.md).
 
 ## Simulation harness
@@ -21,12 +21,11 @@ go test ./...
 | `TestNewDeck` | The deck is 48 cards, Aces removed, 12 per suit |
 | `TestBidAndResolve` | Bids, the Home bonus, tie carries, and winners resolve correctly |
 | `TestResolvability` | Games in 2p/3p/4p end with every card and every pip accounted for |
-| `TestHandRefill` | The hand tops back up from the draw pile each clash and never exceeds the cap |
-| `TestForceBid` | The must-bid rule commits the lowest card when a seat would pass, and leaves real bids alone |
-| `TestMustBidPunishesPassing` | A seat that always tries to pass bleeds out and loses nearly every game |
+| `TestHandRefill` | The hand tops back up from the draw pile, so it is full of four cards every clash |
 | `TestSeatBalance` | Identical strategies win about equally from every seat |
 | `TestBotBeatable` | The printed solo bot gives a real game, not a walkover; "always lowest" is trivial |
-| `TestNoDominantStrategy` | No strategy beats the whole field, so there is no single correct line |
+| `TestNoDominantStrategy` | No strategy beats the whole field heads-up, so there is no single correct line |
+| `TestNoDominantStrategyMultiplayer` | No strategy takes much over a fair share at three- and four-handed tables |
 
 Use `-short` for a smaller, CI-friendly sample:
 

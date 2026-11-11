@@ -1,11 +1,11 @@
 # Clash
 
-A game of tight budgets and held nerve for two to four players. Every round a
-prize gathers on the table and everyone bids for it in secret, all at once. You
-bid from a small hand of four cards that you top back up as you go, but every
-card you bid is spent for good. Your hand and the pile behind it are your whole
-budget for the game, so the real question is never "can I win this one?" but "is
-this the one worth spending on?"
+A game of timing and held nerve for two to four players. Every round a prize
+gathers on the table and everyone plays for it in secret, all at once: one card,
+face down, from a small hand of four that you top back up as you go. The card is
+spent whether it wins or loses, and your strong cards are few, so the real
+question is never "can I win this one?" but "is this the pot worth spending a
+good card on?"
 
 These are the rules as they'd read in the box: the player-facing text first,
 written for a small booklet or a two-sided card, then a few precise rulings that
@@ -40,11 +40,11 @@ down: one is your **draw pile**, the other your **ante pile**. The halves always
 come out even, so there's nothing to count — just deal the leftovers into two
 stacks.
 
-Your hand and draw pile together are your whole budget: the draw pile tops your
-hand back up to four as the game goes on, and you get no more than those, so
-spend them with that in mind. The ante pile is separate — think of it as the
-game's clock. One of its cards feeds the pot each clash, so it also sets how
-many clashes you play.
+The draw pile tops your hand back up to four after each clash, so you always
+have four cards to choose from. But every card you play is gone, and your strong
+cards are few. The ante pile is separate — think of it as the game's clock. One
+of its cards feeds the pot each clash, so it also sets how many clashes you
+play.
 
 ## Playing a clash
 
@@ -52,31 +52,28 @@ Each round is a clash. First, everyone turns the top card of their ante pile
 face up into the middle. Together these cards are the **pot**, and the prize is
 the total of their numbers.
 
-Now everyone bids. Look at the pot, then choose cards from your hand and place
-them face down. You must bid at least one card every clash — you can't sit one
-out to hoard. Beyond that one, commit as few or as many as you like. When
-everyone is ready, reveal together.
+Now everyone bids. Look at the pot, then choose one card from your hand and
+place it face down. When everyone is ready, reveal together.
 
 Work out each player's bid and the highest takes the pot: set those cards in
-front of you as your winnings. Here is the part that makes a budget hurt. The
-cards you bid are spent whether you win or lose. Put them aside, out of the
-game. You win the pot, never your own bid back.
+front of you as your winnings. Here is the part that makes a small hand hurt.
+The card you played is spent whether you win or lose. Put it aside, out of the
+game. You win the pot, never your own card back.
 
-Then everyone draws back up to a full hand of four from their draw pile, and the
-next clash begins. Once your draw pile runs out, your hand only shrinks from
-there, so play out what's left of it. When the ante piles are empty, the game is
+Then everyone draws one card from their draw pile to fill their hand back to
+four, and the next clash begins. When the ante piles are empty, the game is
 over.
 
 ## Working out a bid
 
-Your bid is the total of the numbers on the cards you played. Then you add your
-Home bonus: one for every card of your own faction sitting in the pot, and one
-for every card of your own faction you just played.
+Your bid is the number on the card you played. Then you add your Home bonus: one
+for every card of your own faction sitting in the pot, and one more when the
+card you played is your own faction.
 
 Say your Home is Speed. The pot holds a Speed 9 and an Intelligence 4, so it's
 worth 13, and you've already earned one from the Speed card waiting there. You
-play a Speed 7 and a Strength 6: that's 13 in numbers, plus one more for your
-Speed card, so you bid 13 + 1 (the pot) + 1 (your card) = 15.
+play a Speed 7: that's 7 in numbers, plus one more for playing a Speed card, so
+you bid 7 + 1 (the pot) + 1 (your card) = 9.
 
 ## Winning the clash
 
@@ -102,28 +99,28 @@ too, the way everyone's is. Nobody manages a Bot.
 
 Its whole rule is a flip. Each clash, the Bot antes the top of its ante pile
 into the pot like everyone else. Then, for its bid, you turn over the top card
-of its bid pile. If that card is the Bot's own faction, the Bot is fired up:
-turn over one more. Otherwise it stands on the one. Whatever you flipped is its
-bid, and those cards are spent like any other.
+of its bid pile and play it. That card is its bid, and it's spent like any
+other.
 
 That's the whole of it. You never judge a pot's worth for the Bot and you never
-choose a card for it; you flip from the top and check a single suit. It fights a
-little harder for the pots that turn up its colors, which is enough to keep it
-honest and simple enough to run while you think about your own hand. Because the
-Bot only ever looks at its own card, it plays the same whether it's the one
-empty chair or three of them.
+choose a card for it; you flip from the top. A flipped card is as likely to be
+high as low, so the Bot takes its share of pots by luck while you save your
+strong cards for the pots worth winning — enough to keep it honest, and simple
+enough to run while you think about your own hand. Because the Bot only ever
+flips its own card, it plays the same whether it's the one empty chair or three
+of them.
 
 ## Precise rulings
 
 These settle the rare cases. They change nothing above.
 
-- **You must bid.** Every clash you commit at least one card from your hand;
-  there is no passing to save cards. If you spend too fast and empty your hand,
-  you simply can't bid — you still flip your ante into the pot, but you sit out
-  the fight for it.
+- **One card, always.** Each clash you play exactly one card from your hand —
+  there's no passing, and no playing two. Your draw pile holds exactly as many
+  cards as there are clashes, so your hand is always full of four when your turn
+  comes.
 - **The Home bonus counts faction, not Home.** You add one for each card of your
   own faction, wherever it is in the pot, no matter who anted it.
 - **A tie on the last clash.** If the final clash ties, there's no round left to
   carry into, so set that pot aside; it counts for no one.
-- **Spent cards are gone.** Cards you bid are never won back and never re-enter
-  your hand, win or lose.
+- **Spent cards are gone.** The card you play is never won back and never
+  re-enters your hand, win or lose.

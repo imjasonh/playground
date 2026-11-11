@@ -60,44 +60,15 @@ func seatShares(rng *rand.Rand, s Strategy, players, games int) []float64 {
 	return shares
 }
 
-// TestForceBid checks the must-bid rule: a seat with cards that would pass is
-// made to commit its single lowest card, while an empty hand commits nothing.
-func TestForceBid(t *testing.T) {
-	hand := []Card{{Strength, 9}, {Speed, 3}, {Intelligence, 11}}
-	if got := forceBid(hand, nil); len(got) != 1 || got[0] != 1 {
-		t.Errorf("forceBid on a pass = %v, want [1] (the Speed 3, lowest)", got)
-	}
-	if got := forceBid(hand, []int{2}); len(got) != 1 || got[0] != 2 {
-		t.Errorf("forceBid left an existing bid alone: got %v, want [2]", got)
-	}
-	if got := forceBid(nil, nil); len(got) != 0 {
-		t.Errorf("forceBid on an empty hand = %v, want nothing", got)
-	}
-}
-
-// TestMustBidPunishesPassing checks that refusing to invest bleeds you dry: a
-// seat that always tries to pass is forced to shed its lowest card each clash
-// and loses nearly every game to a competent player.
-func TestMustBidPunishesPassing(t *testing.T) {
-	passer := Strategy{"passer", func(View, *rand.Rand) []int { return nil }}
-	rng := rand.New(rand.NewSource(8))
-	if r := winRate(rng, Competent(), passer, scale(2000, 10000)); r < 0.95 {
-		t.Errorf("competent vs always-pass win rate %.3f, want > 0.95 (passing should bleed out)", r)
-	}
-}
-
 // TestHandRefill checks the hand tops back up from the draw pile between
-// clashes: a seat that spends one card a round keeps a full hand for the whole
-// game, since its draw pile outlasts the rounds, and the hand never exceeds the
-// cap.
+// clashes: because the draw pile holds exactly as many cards as there are
+// clashes, a seat that plays one card a clash sees a full hand in every clash,
+// right through the last.
 func TestHandRefill(t *testing.T) {
 	var sizes []int
-	watch := Strategy{"watch-one", func(v View, _ *rand.Rand) []int {
+	watch := Strategy{"watch", func(v View, _ *rand.Rand) int {
 		sizes = append(sizes, len(v.Hand))
-		if len(v.Hand) == 0 {
-			return nil
-		}
-		return []int{0}
+		return 0
 	}}
 	rng := rand.New(rand.NewSource(5))
 	if _, err := PlayGame(rng, []Strategy{watch, Competent()}, []Suit{Intelligence, Strength}); err != nil {
@@ -108,9 +79,6 @@ func TestHandRefill(t *testing.T) {
 		t.Fatalf("saw %d clashes, want %d", len(sizes), rounds)
 	}
 	for rd, n := range sizes {
-		if n > handCap {
-			t.Errorf("clash %d: hand held %d cards, over the cap of %d", rd, n, handCap)
-		}
 		if n != handCap {
 			t.Errorf("clash %d: hand held %d cards, want a full %d (draw pile should refill it)", rd, n, handCap)
 		}
@@ -223,5 +191,93 @@ func TestNoDominantStrategy(t *testing.T) {
 	// whole field by a wide margin.
 	if worstOfBest > 0.68 {
 		t.Errorf("a strategy wins its worst matchup %.3f of the time (>0.68): looks dominant", worstOfBest)
+	}
+}
+
+// mixedShares returns each seat's win share for a fixed table of distinct
+// strategies, counting a shared win as a fraction.
+func mixedShares(rng *rand.Rand, table []Strategy, games int) []float64 {
+	homes := make([]Suit, len(table))
+	for i := range homes {
+		homes[i] = Suits[i]
+	}
+	shares := make([]float64, len(table))
+	for g := 0; g < games; g++ {
+		res, err := PlayGame(rng, table, homes)
+		if err != nil {
+			panic(err)
+		}
+		best, winners := -1, 0
+		for _, sc := range res.Scores {
+			if sc > best {
+				best, winners = sc, 1
+			} else if sc == best {
+				winners++
+			}
+		}
+		for i, sc := range res.Scores {
+			if sc == best {
+				shares[i] += 1.0 / float64(winners)
+			}
+		}
+	}
+	for i := range shares {
+		shares[i] /= float64(games)
+	}
+	return shares
+}
+
+// combos calls fn with each k-combination of the indices in [0, n).
+func combos(n, k int, fn func([]int)) {
+	pick := make([]int, 0, k)
+	var rec func(start int)
+	rec = func(start int) {
+		if len(pick) == k {
+			fn(pick)
+			return
+		}
+		for i := start; i < n; i++ {
+			pick = append(pick, i)
+			rec(i + 1)
+			pick = pick[:len(pick)-1]
+		}
+	}
+	rec(0)
+}
+
+// TestNoDominantStrategyMultiplayer checks the field stays balanced at three-
+// and four-handed tables, not only heads-up. An earlier version let the "sit on
+// your hand, then slam the fat pots" line take far more than its fair share as
+// players were added, because committing freely cost nothing in the short
+// multi-handed games. Playing exactly one card a clash removes that. Each
+// thinking strategy is seated with distinct opponents across every combination,
+// and none may take much over a fair share.
+func TestNoDominantStrategyMultiplayer(t *testing.T) {
+	rng := rand.New(rand.NewSource(6))
+	games := scale(2000, 12000)
+	field := []Strategy{Hoard(), Steal(), Sniper(), Competent()}
+
+	for _, players := range []int{3, 4} {
+		fair := 1.0 / float64(players)
+		sum := make([]float64, len(field))
+		seen := make([]int, len(field))
+		combos(len(field), players, func(pick []int) {
+			table := make([]Strategy, players)
+			for seat, idx := range pick {
+				table[seat] = field[idx]
+			}
+			shares := mixedShares(rng, table, games)
+			for seat, idx := range pick {
+				sum[idx] += shares[seat]
+				seen[idx]++
+			}
+		})
+		for i, s := range field {
+			mean := sum[i] / float64(seen[i])
+			t.Logf("%d players: %-10s mean share %.3f (fair %.3f)", players, s.Name, mean, fair)
+			if mean > fair*1.6 {
+				t.Errorf("%d players: %s takes mean share %.3f, over 1.6x the fair share %.3f: looks dominant", players, s.Name, mean, fair)
+			}
+		}
 	}
 }
