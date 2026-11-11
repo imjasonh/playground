@@ -1,197 +1,261 @@
 """Card 02 - THE ASTRONAUT.
 
-A spacewalker drifts on a tether, one glove raised. The gold visor reflects the
-magenta world below and a small waving figure - the Visitor from card 03 -
-so the middle card is the moment the two archetypes see each other.
+Purpose: the moment before touch. An astronaut, far from home, leans in and
+reaches a glove towards a light just outside the frame.
+Focus: the gold visor and the reaching glove.
+Light: the Visitor's fingertip, off the right edge (it is on card 03), is the
+key. The ringed planet behind gives a rose rim; the sky a dim blue one.
+Values: a dark sky and a middle-value planet; the suit sits in violet shadow
+and only the planes facing the light go bright, brightest at the fingertips.
 """
 
-import sys
+from kit import (ROSE, SKYLIGHT, Card, area, backdrop, blob, card_frame, cast,
+                 clipped, curve, ellipse, halo, hexc, line, mix, motes, radial,
+                 spot, tube, wave, Shape)
 
-from kit import (CYAN, MAGENTA, Card, card_frame, ellipse_path,
-                 limb_capsule, radial, sky)
+ACCENT = "#79e7ff"
+MINT = "#bffff0"
 
-ACCENT = CYAN
+SUIT = "#e4e1da"
+PACK = "#bfc0c6"
+STEEL = "#8b94a8"
+RUBBER = "#6f7686"
+RED = "#d0473a"
+INK = "#080616"
 
-LINE = "#1b2238"
-SUIT = "#e8ebf2"
-SUIT_DK = "#aeb6c8"
-GOLD = "#ffcf6e"
-TRIM = "#ff7a4d"
-
-ASTRONAUT_PACK = (
-    "M 378 468 C 348 512 356 608 388 688 L 432 672 "
-    "C 418 598 412 528 438 476 Z")
-ASTRONAUT_TORSO = (
-    "M 388 502 C 368 548 364 648 382 744 L 398 812 "
-    "C 412 842 446 858 512 860 C 578 858 612 842 626 812 "
-    "L 642 744 C 660 648 656 548 636 502 "
-    "C 608 478 548 468 512 468 C 476 468 416 478 388 502 Z")
-ASTRONAUT_HELMET = (
-    "M 368 388 C 392 288 448 248 512 244 C 576 248 632 288 656 388 "
-    "C 632 412 576 428 512 432 C 448 428 392 412 368 388 Z")
-ASTRONAUT_VISOR = (
-    "M 402 368 C 428 312 496 288 512 286 C 528 288 596 312 622 368 "
-    "C 596 408 528 424 512 426 C 496 424 428 408 402 368 Z")
-ASTRONAUT_BOOT_L = (
-    "M 382 988 C 364 1020 376 1056 418 1072 L 478 1066 "
-    "C 492 1048 488 1012 468 984 Z")
-ASTRONAUT_BOOT_R = (
-    "M 562 984 C 542 1012 538 1048 552 1066 L 612 1072 "
-    "C 654 1056 666 1020 648 988 Z")
+LAMP = (1148, 508)
 
 
-def shapes(card):
-    card.shape("world", {"type": "path", "d": ellipse_path(512, 1180, 560, 440)})
-    card.shape("pack", {"type": "path", "d": ASTRONAUT_PACK})
-    card.shape("torso", {"type": "path", "d": ASTRONAUT_TORSO})
-    card.shape("belt", {"type": "path", "d":
-                        "M 372 748 C 380 724 408 712 512 710 "
-                        "C 616 712 644 724 652 748 "
-                        "L 648 782 L 376 782 Z"})
-    card.shape("chest", {"type": "path", "d":
-                         "M 454 548 C 446 538 446 624 456 634 "
-                         "L 568 628 C 578 618 578 532 568 542 Z"})
-    card.shape("leg-l", {"type": "path", "d": limb_capsule(
-        (418, 812), (398, 902), (422, 988), 52, 46, 44)})
-    card.shape("leg-r", {"type": "path", "d": limb_capsule(
-        (606, 812), (626, 902), (602, 988), 52, 46, 44)})
-    card.shape("boot-l", {"type": "path", "d": ASTRONAUT_BOOT_L})
-    card.shape("boot-r", {"type": "path", "d": ASTRONAUT_BOOT_R})
-    card.shape("arm-r", {"type": "path", "d": limb_capsule(
-        (588, 548), (668, 468), (736, 318), 42, 36, 48)})
-    card.shape("glove-r", {"type": "path", "d":
-                           "M 722 298 C 748 288 768 306 764 332 "
-                           "C 758 362 728 378 702 368 "
-                           "C 686 352 692 316 722 298 Z"})
-    card.shape("arm-l", {"type": "path", "d": limb_capsule(
-        (432, 560), (352, 620), (298, 728), 40, 34, 42)})
-    card.shape("glove-l", {"type": "path", "d":
-                           "M 278 712 C 252 702 244 678 258 656 "
-                           "C 276 638 312 642 328 662 "
-                           "C 338 688 318 714 278 712 Z"})
-    card.shape("helmet", {"type": "path", "d": ASTRONAUT_HELMET})
-    card.shape("visor", {"type": "path", "d": ASTRONAUT_VISOR})
+
+def bubble():
+    """The helmet: a sphere cut off where it meets the neck ring."""
+    pts = []
+    for x, y in ellipse(408, 392, 174, 178).parts[0]:
+        if abs(x - 408) < 122:
+            y = min(y, 524 + 30 * (1 - ((x - 408) / 122) ** 2) ** 0.5)
+        pts.append((x, y))
+    return Shape(pts)
 
 
-def paint(card):
-    card.paint_form("p-pack", ["pack"], SUIT_DK, weight=16, relief=(3.6, 3.2))
-    card.paint_form("p-torso", ["torso"], SUIT, weight=22, relief=(4.6, 3.8))
-    card.paint_form("p-legs", ["leg-l", "leg-r"], SUIT, weight=15,
-                    form="cylinder", axis=82, relief=(3.8, 3.2))
-    card.paint_form("p-boots", ["boot-l", "boot-r"], SUIT_DK, weight=10,
-                    brush="oil-load", relief=(3.0, 2.6))
-    card.paint_form("p-arm-l", ["arm-l"], SUIT, weight=14, form="cylinder",
-                    axis=28, relief=(3.6, 3.2))
-    card.paint_form("p-arm-r", ["arm-r"], SUIT, weight=14, form="cylinder",
-                    axis=58, relief=(3.6, 3.2))
-    card.paint_form("p-gloves", ["glove-l", "glove-r"], SUIT_DK, weight=10,
-                    relief=(3.2, 2.6))
-    card.paint_form("p-belt", ["belt"], TRIM, weight=9, brush="oil-load",
-                    relief=(3.0, 2.4))
-    card.paint_form("p-chest", ["chest"], SUIT_DK, weight=9, form="flat",
-                    facing=[0.1, -0.2, 1], relief=(2.4, 2.2))
-    card.paint_form("p-helmet", ["helmet"], SUIT, weight=19, relief=(4.2, 3.8))
-    card.paint_form("p-visor", ["visor"], GOLD, weight=15, relief=(2.8, 3.0),
-                    fillStrength=0.42)
+HELMET = bubble()
+VISOR = ellipse(462, 400, 118, 142, turn=4)
+BEZEL = ellipse(459, 400, 133, 157, turn=4)
+SLEEVE = tube([(372, 704), (484, 736), (586, 746), (684, 706), (760, 642)],
+              [88, 76, 64, 54, 46])
+WRIST = (770, 634)
 
 
-def world(card):
-    card.paint_form("p-world", ["world"], MAGENTA, weight=24, relief=(3.4, 4.0),
-                    fillStrength=0.35)
-    card.node("atmosphere", {"type": "ellipse", "cx": 512, "cy": 1180,
-                             "rx": 572, "ry": 452, "fill": "none",
-                             "stroke": {"paint": "#ff9fe0aa", "width": 6}})
+def body(card):
+    card.piece("body", bone="body", sizes=(30, 15, 7, 3.5), threshold=4)
+    # The life-support pack rides high on the back.
+    pack = blob([(176, 500), (196, 462), (262, 448), (320, 468), (338, 560),
+                 (340, 1190), (166, 1190), (158, 820), (164, 600)])
+    card.form(pack, PACK, depth=70, soft=40, extra=[
+        line(curve([(170, 650), (240, 640), (320, 650)]), INK, 3, blur=1.5,
+             opacity=0.5),
+        line(curve([(164, 920), (240, 910), (320, 920)]), INK, 3, blur=1.5,
+             opacity=0.5),
+    ])
+    mast = tube([(206, 470), (198, 400), (190, 338)], [4.5, 3.5, 2.5])
+    card.form(mast, STEEL, depth=2, soft=1.5)
+    torso = blob([(300, 546), (262, 606), (250, 700), (248, 820), (260, 960),
+                  (272, 1190), (606, 1190), (602, 1040), (590, 930), (582, 820),
+                  (572, 716), (560, 630), (522, 552), (410, 536)])
+    card.form(torso, SUIT, depth=120, soft=64, extra=[
+        # The helmet's shadow on the collar and the arm's across the chest.
+        area(ellipse(410, 590, 190, 44), INK, blur=22, opacity=0.6),
+        cast(SLEEVE, -30, 44, 26, 0.6),
+        line(curve([(300, 1010), (400, 1046), (520, 1040), (600, 1056)]), INK,
+             10, blur=8, opacity=0.3),
+        # Creases that run from the armpit.
+        line(curve([(430, 800), (400, 870), (410, 950)]), INK, 12, blur=9,
+             opacity=0.28),
+        line(curve([(500, 806), (490, 860), (506, 930)]), INK, 10, blur=8,
+             opacity=0.25),
+        line(curve([(452, 800), (430, 872), (436, 950)]), "#ffffff", 5, blur=6,
+             opacity=0.1),
+        line(curve([(560, 930), (500, 960), (470, 1010)]), INK, 9, blur=7,
+             opacity=0.3),
+    ])
+    # The chest unit hangs in front. Its side faces us and its face the light.
+    side = blob([(540, 800, 1), (622, 806, 1), (630, 968, 1), (550, 964, 1)],
+                n=2)
+    card.form(side, mix(PACK, "#30323c", 0.35), depth=60, soft=30, extra=[
+        cast(SLEEVE, -10, 40, 14, 0.7),
+        area(blob([(560, 862, 1), (606, 864, 1), (608, 892, 1), (562, 890, 1)],
+                  n=2), "#0b1014"),
+        line("M568 872 L598 873", hexc(MINT, 0.9), 2.2, blur=0.5),
+        line("M568 882 L588 883", hexc(MINT, 0.55), 2.2, blur=0.5),
+        spot(574, 926, 9, 9, "#2a2c34"), spot(574, 926, 4, 4, "#9aa0ac"),
+        spot(602, 928, 5, 5, "#ff5a48"),
+        spot(602, 928, 13, 13, "#ff5a48", blur=7, opacity=0.6),
+    ])
+    face = blob([(622, 806, 1), (644, 816, 1), (650, 962, 1), (630, 968, 1)],
+                n=2)
+    card.form(face, PACK, gain=1.5, flat=True, edge=0, rim=0)
+    hose = tube([(566, 962), (530, 1020), (430, 1046), (332, 1010)],
+                [13, 13, 13, 13])
+    card.form(hose, "#c4c6d0", depth=10, soft=5, rim=0.4)
+    card.close()
 
 
-def visor_reflection(card):
-    clip = ASTRONAUT_VISOR
-    card.node("visorfx", {"type": "ellipse", "cx": 512, "cy": 452, "rx": 108, "ry": 52,
-                          "fill": radial(500, 452, 110,
-                                         [[0, "#ff8fd8aa"], [0.6, "#b0407a88"],
-                                          [1, "#6a2f5a00"]]),
-                          "clip": clip})
-    card.node("visorfx", {"type": "ellipse", "cx": 500, "cy": 392, "rx": 20, "ry": 30,
-                          "fill": "#2e4234cc", "clip": clip})
-    card.node("visorfx", {"type": "ellipse", "cx": 500, "cy": 356, "rx": 19, "ry": 24,
-                          "fill": "#3a5443cc", "clip": clip})
-    card.node("visorfx", {"type": "ellipse", "cx": 494, "cy": 352, "rx": 4, "ry": 6,
-                          "fill": "#0c140f", "clip": clip})
-    card.node("visorfx", {"type": "ellipse", "cx": 508, "cy": 352, "rx": 4, "ry": 6,
-                          "fill": "#0c140f", "clip": clip})
-    card.node("visorfx", {"type": "path", "d": "M518 372 C 540 360 552 340 548 318",
-                          "fill": "none",
-                          "stroke": {"paint": "#3a5444", "width": 6, "cap": "round"},
-                          "clip": clip})
-    card.node("light", {"type": "ellipse", "cx": 470, "cy": 312, "rx": 30, "ry": 20,
-                        "fill": "#fff3cfdd", "clip": clip})
+def arm(card):
+    card.piece("arm", bone="arm", sizes=(26, 13, 6, 3), threshold=4)
+    stripe = hexc(card.lit(RED, 520, 740, 1.0))
+    card.form(SLEEVE, SUIT, depth=58, soft=30, away=(-0.45, 0.89), extra=[
+        # The shoulder bearing, then the bellows at the elbow.
+        line(curve([(440, 648), (462, 730), (446, 812)]), INK, 5, blur=3,
+             opacity=0.45),
+        line(curve([(520, 676), (540, 742), (528, 806)]), stripe, 20, blur=1.5),
+        line(curve([(590, 680), (606, 742), (596, 800)]), INK, 8, blur=5,
+             opacity=0.4),
+        line(curve([(622, 672), (642, 728), (638, 788)]), INK, 8, blur=5,
+             opacity=0.4),
+        line(curve([(654, 656), (678, 708), (680, 764)]), INK, 7, blur=5,
+             opacity=0.35),
+        # A mission patch on the shoulder: the ringed world.
+        spot(382, 690, 34, 38, "#1c2452"),
+        spot(382, 690, 16, 17, "#d0609a"),
+        line("M352 700 L412 680", "#ffd9cf", 2.5, opacity=0.9),
+    ])
+    card.close()
 
 
-def tether(card):
-    card.node("tether", {"type": "path", "d":
-                         "M368 548 C 248 612 168 736 142 908 "
-                         "C 128 1008 148 1124 218 1196",
-                         "fill": "none",
-                         "stroke": {"paint": "#ffd36b", "width": 7, "cap": "round"}})
-    card.node("tether", {"type": "path", "d":
-                         "M368 548 C 248 612 168 736 142 908 "
-                         "C 128 1008 148 1124 218 1196",
-                         "fill": "none",
-                         "stroke": {"paint": "#7a5a20", "width": 7, "cap": "round",
-                                    "dash": [4, 22]}})
-    card.node("patch", {"type": "ellipse", "cx": 512, "cy": 600, "rx": 38, "ry": 38,
-                        "fill": CYAN + "22",
-                        "stroke": {"paint": CYAN, "width": 3}})
-    card.node("patch", {"type": "text", "text": "FC", "font": "Orbitron Bold",
-                        "size": 30, "x": 512, "y": 614, "align": "center",
-                        "tracking": 2, "fill": CYAN})
+def big(points, k=1.15, about=(796, 620)):
+    """Scale glove points up from the wrist: the glove is a bulky thing."""
+    return [(WRIST[0] + (x - about[0]) * k, WRIST[1] + (y - about[1]) * k)
+            for x, y in points]
 
 
-def glow(card):
-    card.node("glow", {"type": "ellipse", "cx": 736, "cy": 318, "rx": 90, "ry": 90,
-                       "fill": radial(736, 318, 90,
-                                      [[0, CYAN + "66"], [1, CYAN + "00"]])})
+def finger(card, points, radii, tip=13):
+    points = big(points)
+    radii = [r * 1.15 for r in radii]
+    tip *= 1.15
+    shape = tube(points, radii)
+    x, y = points[-1]
+    card.form(shape, SUIT, depth=radii[0] * 0.8, soft=radii[0] * 0.45,
+              gain=1.25, away=(-0.3, 0.95), edge=1.0, extra=[
+                  spot(x, y, tip * 1.5, tip * 1.25,
+                       hexc(card.lit(RUBBER, x, y, 1.3)), blur=2.5),
+                  line(curve([points[1], (points[1][0] + 3, points[1][1] + 12)]),
+                       INK, 2.5, blur=2, opacity=0.35),
+              ])
 
 
-def ink(card):
-    card.ink(weight=7, seed=3, shapes=["torso", "pack", "leg-l", "leg-r"],
-             wobble=1.8)
-    card.ink(weight=6, seed=4, shapes=["arm-l", "arm-r"], wobble=1.8)
-    card.ink(weight=5, seed=5, shapes=["helmet", "boot-l", "boot-r", "glove-l",
-                                       "glove-r", "belt", "chest"], wobble=1.6)
-    card.ink(weight=4, seed=6, shapes=["visor"], wobble=1.2)
+def hand(card):
+    card.piece("hand", bone="hand", sizes=(14, 7, 3.5), threshold=4)
+    # The back of the glove, thumb uppermost, first finger out to the light.
+    finger(card, [(842, 574), (868, 542), (900, 524)], [16, 14.5, 12])
+    palm = blob(big([(800, 574), (838, 552), (878, 548), (902, 572),
+                     (902, 606), (884, 630), (846, 640), (812, 628)]))
+    card.form(palm, SUIT, depth=36, soft=20, gain=1.2, away=(-0.3, 0.95),
+              extra=[
+                  line(curve(big([(878, 556), (890, 590), (876, 628)])), INK,
+                       4, blur=3, opacity=0.4),
+                  area(blob(big([(820, 580), (850, 568), (866, 590),
+                                 (850, 614), (822, 610)])),
+                       hexc(card.lit(RUBBER, 830, 600)), blur=3, opacity=0.8),
+              ])
+    finger(card, [(876, 620), (906, 632), (924, 648)], [12.5, 11, 9.5], tip=10)
+    finger(card, [(884, 604), (926, 608), (952, 622)], [14, 12.5, 11], tip=11)
+    finger(card, [(888, 586), (936, 582), (970, 588)], [15, 13.5, 11.5], tip=12)
+    finger(card, [(882, 566), (932, 550), (980, 538)], [15, 13.5, 11.5], tip=12)
+    cuff = ellipse(WRIST[0], WRIST[1], 19, 56, turn=-40)
+    card.form(cuff, STEEL, depth=14, soft=7, edge=1.0)
+    card.close()
 
 
-def build(card):
-    for name, color in [("ink", LINE), ("suit", SUIT), ("gold", GOLD),
-                        ("trim", TRIM), ("glow", CYAN)]:
-        card.palette(name, color)
-    sky(card, ACCENT, horizon=0.52)
-    card.layer("shadow", "vector", blend="multiply")
-    card.node("shadow", {"type": "ellipse", "cx": 512, "cy": 1088, "rx": 180,
-                         "ry": 26, "fill": "#0c1020aa", "blur": 12})
-    card.layer("atmosphere", "vector")
-    card.layer("tether", "vector")
-    card.layer("sketch", "vector", visible=False)
-    shapes(card)
-    world(card)
-    paint(card)
-    card.layer("lines", "paint", opacity=0.35)
-    ink(card)
-    card.brushwork()
-    card.layer("visorfx", "vector")
-    card.layer("patch", "vector")
+def head(card):
+    card.piece("head", bone="head", sizes=(26, 12, 6, 3), threshold=4)
+    card.form(HELMET, SUIT, depth=150, soft=80, extra=[
+        line(curve([(250, 330), (304, 250), (394, 212)]), INK, 4, blur=3,
+             opacity=0.25),
+        cast(BEZEL, -16, 8, 14, 0.4),
+    ])
+    card.form(BEZEL, "#b4b8c2", depth=40, soft=18, edge=0.9)
+    ring = tube([(288, 526), (334, 549), (408, 557), (482, 549), (528, 526)],
+                [13, 15, 16, 15, 13])
+    card.form(ring, "#c2c8d6", depth=13, soft=6, edge=1.0, over=[
+        line(curve([(300, 528), (340, 543), (408, 549), (476, 542),
+                    (518, 526)]), "#e9f2ff", 2, blur=0.8, opacity=0.5),
+    ])
+    gold = "#f6bd6c"
+    horizon = [(338, 470), (400, 492), (462, 499), (526, 488), (582, 462)]
+    kids = [
+        {"type": "rect", "x": 320, "y": 240, "w": 300, "h": 330,
+         "fill": radial(470, 388, 170, [
+             [0, "#100a0c"], [0.45, "#22130c"], [0.78, "#62380f"],
+             [0.93, "#b8741f"], [1, "#e8a740"]])},
+        area(ellipse(440, 330, 104, 56, turn=-12), "#232458", blur=30,
+             opacity=0.7),
+        # The plain reflected: its horizon bows across the glass.
+        area(blob([(horizon[0][0] - 20, horizon[0][1] - 8, 1), *horizon[1:4],
+                   (600, 452, 1), (606, 580, 1), (318, 580, 1)]),
+             "#1c0e12", blur=2, opacity=0.85),
+        line(curve(horizon), "#d2685c", 22, blur=11, opacity=0.6),
+        line(curve(horizon), gold, 3.5, blur=1.4, opacity=0.95),
+        # The Visitor, small in the glass, holding out one lit finger.
+        area(blob([(498, 500), (502, 470), (512, 452), (528, 450), (544, 462),
+                   (556, 500)]), "#1a1740"),
+        area(tube([(520, 452), (518, 436)], [5, 4.5]), "#5f8f8c"),
+        area(ellipse(516, 418, 13, 18, turn=-10), "#8fc4bc"),
+        area(ellipse(521, 421, 12, 17, turn=-10), "#22404a", blur=3,
+             opacity=0.8),
+        spot(509, 420, 2.6, 1.8, "#04060c"),
+        area(tube([(512, 462), (490, 462), (472, 452)], [4, 3, 2]), "#7fb4ae"),
+        halo(468, 449, 52, MINT, 0.9),
+        spot(468, 449, 4.5, 4.5, "#ffffff", blur=0.8),
+        line("M442 449 L494 449", hexc(MINT, 0.8), 1.3, blur=0.8),
+        line("M468 430 L468 468", hexc(MINT, 0.8), 1.3, blur=0.8),
+        # The astronaut's own arm, reaching into the reflection.
+        area(tube([(600, 520), (540, 492), (492, 464)], [20, 12, 5]),
+             "#8d8fb4", blur=2.5, opacity=0.55),
+        # Stars and the sheen of the glass.
+        spot(396, 318, 1.6, 1.6, "#ffffff"), spot(452, 296, 1.3, 1.3, "#ffffff"),
+        spot(514, 330, 1.5, 1.5, "#ffffff"), spot(420, 372, 1.2, 1.2, "#ffffff"),
+        spot(548, 368, 1.2, 1.2, "#ffffff"),
+        area(ellipse(396, 322, 74, 24, turn=-50), "#ffffff", blur=16,
+             opacity=0.14),
+        line(curve([(356, 376), (368, 318), (410, 272)]), "#ffffff", 3,
+             blur=1.4, opacity=0.5),
+        line(VISOR.d, "#000000", 7, blur=4, opacity=0.6),
+    ]
+    card.node(card.cur.under, clipped(VISOR, kids))
+    card.fill(VISOR, "#150d10")
+    card.close()
+
+
+def build():
+    card = Card(panel=1, lamp=LAMP, reach=620, power=1.5, rims=[
+        (-0.86, -0.5, ROSE, 10, 0.85), (0.0, -1.0, SKYLIGHT, 6, 0.45)])
+    backdrop(card)
+    body(card)
+    head(card)
+    arm(card)
+    hand(card)
+    card.skeleton([
+        ("body", None, (430, 1120), (430, 640)),
+        ("head", "body", (408, 545), (408, 300)),
+        ("arm", "body", (384, 706), WRIST),
+        ("hand", "arm", WRIST, (960, 560)),
+    ])
+    card.light_layer("beacon", bone="body")
+    card.node("beacon", halo(190, 336, 30, "#ff5a48", 1.0))
+    card.node("beacon", spot(190, 336, 3.5, 3.5, "#ffe1d6", blur=0.8))
+    card.pulse("beacon", 0.05, 1.0, period=24)
     card.layer("glow", "vector", blend="screen")
-    card.layer("light", "vector", blend="add")
-    visor_reflection(card)
-    tether(card)
-    glow(card)
+    card.node("glow", {**halo(LAMP[0], LAMP[1], 560, MINT, 0.95), "id": "lampglow"})
+    card.pulse("lampglow", 0.7, 1.0)
+    motes(card, "motes", (1000, 520), 14, 170, MINT, seed=7, drift=(-40, -30))
     card_frame(card, "02 / FIRST CONTACT", "THE ASTRONAUT", ACCENT)
+    card.animate(lambda t: ({
+        "body": 1.1 * wave(t),
+        "head": 4.0 * wave(t, phase=-0.08),
+        "arm": -5.0 * wave(t, phase=-0.12),
+        "hand": 7.5 * wave(t, phase=-0.25) + 2.5 * wave(t, 2),
+    }, (0, -9 * wave(t, phase=0.1))))
+    return card
 
 
 if __name__ == "__main__":
-    card = Card()
-    build(card)
-    if "--over" in sys.argv:
-        card.dump_over(sizes=[32, 16, 8], threshold=6, brush="oil-load")
-    else:
-        card.dump()
+    build().run()
