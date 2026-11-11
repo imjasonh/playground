@@ -6,7 +6,7 @@ pinned bootloader image (SHA-256
 [the plan](../../docs/esp32c3-verified-ota-plan.md#phase-5-pilot-proofs-and-code-freeze)
 asks: proof lines per instruction, agent time per function, and Lean build
 time and memory. It then projects the cost of proving the whole image.
-Measured on 2026-11-11.
+Measured on 2026-11-11, with SHA-256 added the same day.
 
 ## Method
 
@@ -36,9 +36,10 @@ Measured on 2026-11-11.
 | `FieldElement::multiply` with `memset`, `borrowing_sub`, `sub_inner`, and `widening_mul_fixed` | 555 | 5,047 | 9.1 | 365 | 2.2 | 2 h 38 min |
 | `field_impl::add`, `field_impl::sub`, and `FieldElement::double` | 173 | 1,489 | 8.6 | 322 | 3.6 | 50 min |
 | Complete point addition | 253 | 2,419 | 9.6 | 97 | 2.0 | 1 h 41 min |
-| **Total** | **1,907** | **23,883** | **12.5** | **940** | **3.6** | **About 9 h 20 min** |
+| `sha2::sha256::compress256` with its outlined helpers | 3,685 | 25,809 | 7.0 | 392 | 1.8 | About 12 h 20 min |
+| **Total** | **5,592** | **49,692** | **8.9** | **1,332** | **3.6** | **About 21 h 40 min** |
 
-The 1,907 instructions are 4.5 percent of the image. The full build of the
+The 5,592 instructions are 13 percent of the image. The full build of the
 Lean project, with the specification, the RV32 model, and the audit, takes
 10 to 13 minutes on the same VM.
 
@@ -47,12 +48,19 @@ Findings:
 - **Lines per instruction are a third of libsignal's.** The libsignal proof
   averages about 38 lines per AArch64 instruction. The pilot averages 12.5
   lines per RV32 instruction: 15 to 18 for the hand-written parser proofs,
-  and 9 to 10 for the field and point code.
+  and 7 to 10 for the field, point, and SHA-256 code.
 - **Generated straight-line proofs are cheapest.** The Montgomery reduction
   (`FieldMontRed.lean`, 199 instructions, 573 lines) and the point
   addition's body (`PointAdd.lean`, 253 instructions, 1,013 lines) take 3 to
   4 lines per instruction, because a script writes them from the decoded
   instructions and Lean checks every step.
+- **SHA-256's generated rounds cost 6.6 lines per instruction, not 3 to 4.**
+  The 3,587 round instructions take 23,502 generated lines in 51 chunks.
+  Each chunk restates the registers and stack slots it starts from, names
+  every new value with its own equation, and folds the compiler's
+  rotations, `Ch`, and `Maj` into the specification's forms before
+  `ac_rfl` closes it. The earlier straight-line proofs had no such
+  bookkeeping. The projection below uses the measured rate.
 - **Build time grows faster than proof length.** The point addition's
   proof steps through its 46 calls with an invariant and one lemma per
   callee, so each step is small. Its first version closed the final
@@ -62,18 +70,23 @@ Findings:
   `fieldAdd_correct`, a single theorem over 107 instructions with one
   hypothesis per instruction, takes 249 seconds and 3.6 GB, the most of any
   file, and is the first candidate for the same split.
-- **About 200 instructions an hour.** One agent proved about 1,900
-  instructions in about 9 hours 20 minutes of wall-clock time. That is
-  about 200 instructions an hour, including the reviews.
+- **About 200 to 300 instructions an hour.** One agent proved about 1,900
+  instructions in about 9 hours 20 minutes of wall-clock time, about 200
+  an hour. SHA-256 took about 12 hours 20 minutes for 3,685 instructions,
+  about 300 an hour, but most of that went to the generator, the RV32
+  decoder in Python, and removing proof steps that depended on
+  `Classical.choice`. Those are one-time costs: the generator's next
+  straight-line function should go faster. The rate for hand-written
+  proofs of branching code is still the 200 an hour measured above.
 
 ## Projection
 
 | Part of the image | Code | Instructions (about) | Lines per instruction | Proof lines (about) |
 | --- | --- | --- | --- | --- |
 | Checks, bootloader, and helpers (`c3_verify`, `c3_bootloader`, outlined helpers, `core`, `memcpy`, `memset`) | 31.5 KB | 10,400 | 15 | 156,000 |
-| `sha2`'s compression functions, unrolled straight-line code | 47.7 KB | 15,700 | 3 to 4 | 47,000 to 63,000 |
+| `sha2`'s compression functions, unrolled straight-line code (SHA-256's 3,685 instructions done) | 47.7 KB | 15,700 | 7 | 110,000 |
 | The rest of the cryptography (`curve25519_dalek`, `crypto_bigint`, `primeorder`, `p256`, `p384`, `ecdsa`, `c3_crypto`) | 49.4 KB | 16,300 | 9.5 | 155,000 |
-| **Whole image** | **128.6 KB** | **42,500** | | **360,000 to 375,000** |
+| **Whole image** | **128.6 KB** | **42,500** | | **About 420,000** |
 
 At the pilot's hand-written rate of 12.5 lines per instruction throughout,
 the whole image would take about 530,000 lines. Either figure is about a
