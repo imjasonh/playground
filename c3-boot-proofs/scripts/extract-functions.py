@@ -58,6 +58,9 @@ FUNCTIONS = [
     ("fieldDouble", "<p256::arithmetic::field::FieldElement as ff::Field>::double"),
     ("pointAdd", "<primeorder::point_arithmetic::EquationAIsMinusThree as "
      "primeorder::point_arithmetic::sealed::PointArithmetic<p256::NistP256>>::add_assign"),
+    ("sha256Compress", "sha2::sha256::compress256"),
+    ("shaIndex", ("sha256Compress", 0x6C)),
+    ("shaSigma1Part", ("sha256Compress", 0x106C)),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -66,6 +69,7 @@ DATA = [
     ("regionEnds", "imageParse", 0x23C, 16),
     ("regionStarts", "imageParse", 0x25E, 16),
     ("curveB", "pointAdd", 0x12E, 32),
+    ("shaK", "sha256Compress", 0x112, 256),
 ]
 
 
@@ -181,6 +185,7 @@ def main():
             f"/-- {what} at `{addr:#x}` in the image. -/",
             f"def {name}Address : Nat := {addr:#x}",
             "",
+            *(["set_option maxRecDepth 40000 in"] if len(code) > 2048 else []),
             f"def {name}Code : List Nat :=",
             "  [" + ",\n".join(rows).lstrip() + "]",
         ]
