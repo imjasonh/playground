@@ -2010,4 +2010,92 @@ theorem mis_tail3 {M0 : Word → BitVec 8} {base dst src F : Word} {N h w : Nat}
     (.single d26))))))))))))))))))))))))), hB4, u26.self, fun r q5 q6 q7 q28 q29 q30 qa6 q17 => ?_⟩
   rw [u26.regs, Kall r q5 q6 q7 q28 q29 q30 qa6 q17]
 
+theorem sub_aligned {x : Word} {s : Nat} (hs : x.toNat % 4 = s) :
+    (x - BitVec.ofNat 32 s).toNat % 4 = 0 := by
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat]
+  have := x.isLt
+  omega
+
+/-- The misaligned path from 0x40 to 0x166: the start for the source's
+offset `s`, the splice loop, and the end for `s`. -/
+theorem memcpy_mis {M0 : Word → BitVec 8} {base dst src F : Word} {N h w s : Nat}
+    (E : McEnv M0 base dst src F N) (n : Machine) (hhw : h + 4 * w ≤ N) (hw : 2 ≤ w)
+    (hal : (src + BitVec.ofNat 32 h).toNat % 4 = s) (hs : s ≠ 0)
+    (hald : (dst + BitVec.ofNat 32 h).toNat % 4 = 0)
+    (s0 : St (copyBytes M0 dst src h) base n 0x40 (reg n))
+    (ra1 : reg n a1 = src + BitVec.ofNat 32 h) (rt0 : reg n (5 : Fin 32) = BitVec.ofNat 32 s)
+    (rsp : reg n sp = F) (ra4 : reg n a4 = dst + BitVec.ofNat 32 h)
+    (ra3 : reg n a3 = dst + BitVec.ofNat 32 (h + 4 * w)) :
+    ∃ n' B, Steps n n' ∧ (∀ y, Sep F 16 y 1 → B y = M0 y) ∧
+      St (copyBytes B dst src (h + 4 * w)) base n' 0x166 (reg n') ∧
+      ∀ r, r ≠ a4 → r ≠ a6 → r ≠ (17 : Fin 32) → r ≠ (5 : Fin 32) → r ≠ (6 : Fin 32) →
+        r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
+        reg n' r = reg n r := by
+  have hs3 : s ≤ 3 := by omega
+  have hdw := E.hdw
+  have hsrcB : ∀ (B : Word → BitVec 8), ∀ j, j < h + 4 * w → ∀ k, k ≤ h + 4 * w →
+      copyBytes B dst src k (src + BitVec.ofNat 32 j) = B (src + BitVec.ofNat 32 j) :=
+    fun B j hj k hk => src_copy E.hsep j (by omega) k (by omega)
+  have toM0 : ∀ (B : Word → BitVec 8), (∀ y, Sep F 16 y 1 → B y = M0 y) → ∀ j, j < N →
+      B (src + BitVec.ofNat 32 j) = M0 (src + BitVec.ofNat 32 j) :=
+    fun B hB j hj => hB _ (E.hsF.symm.subR (c := j) (l := 1) (by omega))
+  rcases (show s = 1 ∨ s = 2 ∨ s = 3 by omega) with rfl | rfl | rfl
+  · obtain ⟨n1, B, c1, hB, u1, t1f, a7f, a6f, t2f, K1⟩ :=
+      mis_head1 E n hhw hw hal s0 ra1 rt0 rsp ra4 ra3
+    obtain ⟨n2, c2, u2, a4f, t1g, a7g, K2⟩ := splice_loop (B := B) (h := h) (w := w) (s := 1)
+      (fun j hj => E.codeB hB (by omega)) (by decide) (by decide) (by omega) hw hald
+      (sub_aligned hal) (by omega) (by omega) (hsrcB B) (w - 1) 0 n1 (by omega) (by omega) u1
+      (by rw [K1 a4 (by decide) (by decide) (by decide) (by decide), ra4]; rfl)
+      (by rw [t1f, add_ofNat_zero]) a7f a6f t2f
+      (by rw [K1 a3 (by decide) (by decide) (by decide) (by decide), ra3])
+    obtain ⟨n3, B', c3, hB', u3, K3⟩ := mis_tail1 E n2 B hB hhw hw hal hald u2 a4f t1g
+      (fun i h1 h4 => by rw [a7g i h1 h4, toM0 B hB _ (by omega)])
+      (by rw [K2 a6 (by decide) (by decide) (by decide) (by decide) (by decide), a6f])
+      (by rw [K2 _ (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 _ (by decide) (by decide) (by decide) (by decide), rt0])
+      (by rw [K2 a1 (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 a1 (by decide) (by decide) (by decide) (by decide), ra1])
+      (by rw [K2 sp (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 sp (by decide) (by decide) (by decide) (by decide), rsp])
+    refine ⟨n3, B', c1.trans (c2.trans c3), hB', u3, fun r q4 q6 q17 q5 qt1 q7 q28 q29 q30 => ?_⟩
+    rw [K3 r q5 qt1 q7 q28 q29 q30 q6 q17, K2 r q4 qt1 q17 q28 q29, K1 r q6 q17 qt1 q7]
+  · obtain ⟨n1, B, c1, hB, u1, t1f, a7f, a6f, t2f, K1⟩ :=
+      mis_head2 E n hhw hw hal s0 ra1 rt0 rsp ra4 ra3
+    obtain ⟨n2, c2, u2, a4f, t1g, a7g, K2⟩ := splice_loop (B := B) (h := h) (w := w) (s := 2)
+      (fun j hj => E.codeB hB (by omega)) (by decide) (by decide) (by omega) hw hald
+      (sub_aligned hal) (by omega) (by omega) (hsrcB B) (w - 1) 0 n1 (by omega) (by omega) u1
+      (by rw [K1 a4 (by decide) (by decide) (by decide) (by decide), ra4]; rfl)
+      (by rw [t1f, add_ofNat_zero]) a7f a6f t2f
+      (by rw [K1 a3 (by decide) (by decide) (by decide) (by decide), ra3])
+    obtain ⟨n3, B', c3, hB', u3, K3⟩ := mis_tail2 E n2 B hB hhw hw hal hald u2 a4f t1g
+      (fun i h1 h4 => by rw [a7g i h1 h4, toM0 B hB _ (by omega)])
+      (by rw [K2 a6 (by decide) (by decide) (by decide) (by decide) (by decide), a6f])
+      (by rw [K2 _ (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 _ (by decide) (by decide) (by decide) (by decide), rt0])
+      (by rw [K2 a1 (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 a1 (by decide) (by decide) (by decide) (by decide), ra1])
+      (by rw [K2 sp (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 sp (by decide) (by decide) (by decide) (by decide), rsp])
+    refine ⟨n3, B', c1.trans (c2.trans c3), hB', u3, fun r q4 q6 q17 q5 qt1 q7 q28 q29 q30 => ?_⟩
+    rw [K3 r q5 qt1 q7 q28 q29 q30 q6 q17, K2 r q4 qt1 q17 q28 q29, K1 r q6 q17 qt1 q7]
+  · obtain ⟨n1, B, c1, hB, u1, t1f, a7f, a6f, t2f, K1⟩ :=
+      mis_head3 E n hhw hw s0 ra1 rt0 rsp ra4 ra3
+    obtain ⟨n2, c2, u2, a4f, t1g, a7g, K2⟩ := splice_loop (B := B) (h := h) (w := w) (s := 3)
+      (fun j hj => E.codeB hB (by omega)) (by decide) (by decide) (by omega) hw hald
+      (sub_aligned hal) (by omega) (by omega) (hsrcB B) (w - 1) 0 n1 (by omega) (by omega) u1
+      (by rw [K1 a4 (by decide) (by decide) (by decide) (by decide), ra4]; rfl)
+      (by rw [t1f, add_ofNat_zero]) a7f a6f t2f
+      (by rw [K1 a3 (by decide) (by decide) (by decide) (by decide), ra3])
+    obtain ⟨n3, B', c3, hB', u3, K3⟩ := mis_tail3 E n2 B hB hhw hw hal hald u2 a4f t1g
+      (fun i h1 h4 => by rw [a7g i h1 h4, toM0 B hB _ (by omega)])
+      (by rw [K2 a6 (by decide) (by decide) (by decide) (by decide) (by decide), a6f])
+      (by rw [K2 _ (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 _ (by decide) (by decide) (by decide) (by decide), rt0])
+      (by rw [K2 a1 (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 a1 (by decide) (by decide) (by decide) (by decide), ra1])
+      (by rw [K2 sp (by decide) (by decide) (by decide) (by decide) (by decide),
+        K1 sp (by decide) (by decide) (by decide) (by decide), rsp])
+    refine ⟨n3, B', c1.trans (c2.trans c3), hB', u3, fun r q4 q6 q17 q5 qt1 q7 q28 q29 q30 => ?_⟩
+    rw [K3 r q5 qt1 q7 q28 q29 q30 q6 q17, K2 r q4 qt1 q17 q28 q29, K1 r q6 q17 qt1 q7]
+
 end C3.RV32
