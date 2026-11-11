@@ -118,6 +118,8 @@ ends inside the signed image.
 [`docs/throughput.md`](docs/throughput.md) measures these proofs (lines per
 instruction, build time and memory, agent time) and projects the cost of the
 whole image.
+[`docs/future-work.md`](docs/future-work.md) lists cleanup for later, including
+the classical-free workarounds to remove once the audit allows `Classical.choice`.
 
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It

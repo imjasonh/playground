@@ -28,10 +28,19 @@
 > Rust source. That this formula is the curve's group law is not yet proved.
 > SHA-256 is proved as compiled: `sha256Compress_correct` shows that
 > `sha2::sha256::compress256`, 3,685 instructions with its unrolled rounds,
-> folds FIPS 180-4's compression function over its blocks.
+> folds FIPS 180-4's compression function over its blocks. `memset_correct`
+> and `memcpy_correct` cover every call to the compiled `memset` and
+> `memcpy` (for buffers that don't overlap), at any alignment and length.
+> `ShaStream.lean` states SHA-256 as full blocks plus a buffered tail, the
+> form the compiled `update` and `finalize` keep, for their proofs, which
+> are in progress. The boot simulator measures the image's speed: about 135
+> million instructions for one full slot check, about half of them P-384
+> arithmetic ([`c3-boot/docs/measurements.md`](../c3-boot/docs/measurements.md)).
 > [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 8.9
 > proof lines per instruction over 13 percent of the image and projects the
 > whole image at about a tenth of the libsignal proof.
+> [`c3-boot-proofs/docs/future-work.md`](../c3-boot-proofs/docs/future-work.md)
+> lists cleanup for later, including allowing `Classical.choice` in phase 8.
 > [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
@@ -1070,7 +1079,11 @@ Exit criteria:
 
 - Comparator confirms every headline theorem against the held-out
   specification.
-- The axiom audit is clean.
+- The axiom audit is clean. Until this phase, the audit also rejects
+  `Classical.choice`; this phase allows it and removes the classical-free
+  workarounds that
+  [`c3-boot-proofs/docs/future-work.md`](../c3-boot-proofs/docs/future-work.md)
+  catalogs. `sorry` and `native_decide` stay rejected.
 - The only hooks in the headline theorems are the ROM's flash read, erase,
   and write functions.
 - One theorem links each hook contract used in phase 6 to the machine code
