@@ -1893,6 +1893,95 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
   have cML := codeX ML MLR
   have cFL := cML _ _ E.cF (by decide) (by decide)
   have u41' : St ML U n41 0xCA (reg n41) := u41.self
+  obtain ⟨n42, d42, u42⟩ := u41'.alu cFL sf_at_ca (off' := 0xCC) (by decide)
+  have K42 := u42.upd_ne u41'.zero
+  have u42' : St ML U n42 0xCC (reg n42) := u42.self
+  obtain ⟨n43, d43, u43⟩ := u42'.alu cFL sf_at_cc (off' := 0xCE) (by decide)
+  have K43 := u43.upd_ne u42'.zero
+  have u43' : St ML U n43 0xCE (reg n43) := u43.self
+  obtain ⟨n44, d44, u44⟩ := u43'.auipc cFL sf_at_ce (off' := 0xD2) (by decide)
+  obtain ⟨n45, d45, pc45, mem45, regs45⟩ := u44.call cFL sf_at_d2
+  have r45 : ∀ r, r ≠ ra → reg n45 r = reg n43 r := fun r h => by
+    rw [regs45]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u43'.zero.symm
+    · simp [upd, h0, h]
+  have r41 : ∀ r, reg n41 r = reg nC r := fun r => u41.regs r
+  have KC45 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → reg n45 r = reg nC r := fun r q1 q10 q11 => by
+    rw [r45 r q1, K43 r q11, K42 r q10, r41]
+  have eT : G + 0xFFFFFED0 = R := by rw [hGR, BitVec.add_assoc]; exact BitVec.add_zero R
+  have S40 : (S + 0x40).toNat = S.toNat + 0x40 := by
+    rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  obtain ⟨n46, c46, pc46, sp46, K46, w46, fr46⟩ := shaFinBlock_correct n45 (st := S + 0x40) (bp := S) (T := G)
+    (retAddr := U + BitVec.ofNat 32 0xD6)
+    (by rw [mem45]; exact cML _ _ E.cBlk (by decide) (by decide))
+    (by rw [mem45]; exact cML _ _ E.cMS (by decide) (by decide))
+    (by rw [mem45]; exact cML _ _ E.cMB (by decide) (by decide))
+    (by rw [mem45]; exact cML _ _ E.cC (by decide) (by decide))
+    (by rw [mem45]; exact cML _ _ E.cI (by decide) (by decide))
+    (by rw [mem45]; exact cML _ _ E.c97 (by decide) (by decide))
+    (fun i hi => by
+      have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
+      rw [mem45, MLR _ (E.sKF.sub (c := i) (l := 1) (by omega)).symm (E.sKS.sub (c := i) (l := 1) (by omega)).symm]
+      exact E.cK i hi)
+    (by rw [pc45, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+        decide)
+    (by rw [r45 a0 (by decide), K43 a0 (by decide), u42.upd_eq (by decide), u41'.zero, r41, s1C]
+        exact BitVec.zero_add _)
+    (by rw [r45 a1 (by decide), u43.upd_eq (by decide), u42'.zero, K42 s4 (by decide), r41, s4C]
+        exact BitVec.zero_add _)
+    (by rw [regs45]; simp +decide [upd]; try rfl) (by decide)
+    (by rw [KC45 sp (by decide) (by decide) (by decide), spC]) hGa (by omega) (by omega)
+    (by rw [S40]; have := E.hS; omega) (by rw [S40]; omega) (by omega)
+    (by rw [eT]; exact (E.sSF.sub (c := 0x40) (l := 32) (by omega)).subR (c := 0) (l := 0x130) (by omega)
+          |> fun h => by rwa [add_ofNat_zero] at h)
+    (by rw [eT]; have h := (E.sSF.sub (c := 0) (l := 64) (by omega)).subR (c := 0) (l := 0x130) (by omega)
+        rwa [add_ofNat_zero, add_ofNat_zero] at h)
+    (by rw [eT]; have h := E.sKF.subR (c := 0) (l := 0x130) (by omega); rwa [add_ofNat_zero] at h)
+    (E.sKS.subR (c := 0x40) (l := 32) (by omega))
+  rw [eT, mem45] at fr46
+  rw [mem45] at w46
+  let MZ := n46.mem
+  have fZ : ∀ x, Sep R 0x130 x 1 → Sep (S + 0x40) 32 x 1 → MZ x = ML x := fr46
+  have MZR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MZ x = M0 x := fun x hx hy => by
+    rw [fZ x (by have h := hx.sub (c := 0) (l := 0x130) (by omega); rwa [add_ofNat_zero] at h)
+      (hy.sub (c := 0x40) (l := 32) (by omega)), MLR x hx hy]
+  -- The final hash value is FIPS 180-4's.
+  have hloN : lo.toNat = msg.length / 64 := by
+    show (BitVec.ofNat 32 (msg.length / 64)).toNat = _; rw [BitVec.toNat_ofNat]; omega
+  have bL : memBytes ML S 64 = lastPre ++ Sha256.be64 (8 * msg.length) := by
+    have e1 : memBytes ML S 56 = memBytes MC S 56 := by
+      apply memBytes_congr; intro i hi
+      show memStore32 (memStore32 MC _ _) _ _ _ = _
+      rw [memStore32_get_sep (sep_offsets S (Or.inr (by omega)) (by omega) (by omega)),
+        memStore32_get_sep (sep_offsets S (Or.inr (by omega)) (by omega) (by omega))]
+    have e2 : memBytes ML (S + BitVec.ofNat 32 56) 8 = Sha256.be64 (8 * msg.length) := by
+      rw [show 8 * msg.length = 8 * (64 * lo.toNat + pos) by rw [hloN]; omega]
+      exact len_bytes MC S lo pos hpos (by rw [hloN]; omega)
+    rw [show (64 : Nat) = 56 + 8 from rfl, memBytes_split, e1, e2, bC]
+  have wL : wordsAt ML (S + 0x40) 8 = wordsAt MC (S + 0x40) 8 := by
+    apply wordsAt_congr; intro i hi
+    apply memLoad32_congr; intro j hj
+    rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc, add_ofNat_assoc]
+    show memStore32 (memStore32 MC _ _) _ _ _ = _
+    rw [memStore32_get_sep (sep_offsets S (Or.inl (by omega)) (by omega) (by omega)),
+      memStore32_get_sep (sep_offsets S (Or.inl (by omega)) (by omega) (by omega))]
+  have padb : Sha256.blocks ((padTail msg).length / 64) (padTail msg) = B1 ++ [lastPre ++ Sha256.be64 (8 * msg.length)] := by
+    by_cases hsh : pos < 56
+    · rw [padTail_short msg hsh]
+      show [padTail msg] = (if pos < 56 then [] else _) ++ [(if pos < 56 then _ else _) ++ _]
+      rw [ite_eq_left_of_eq_true _ _ (eq_true hsh), ite_eq_left_of_eq_true _ _ (eq_true hsh), List.nil_append]
+      unfold padTail padZeros
+      rw [show (119 - msg.length % 64) % 64 = 55 - pos by omega]
+    · rw [padTail_long msg (by omega)]
+      show _ = (if pos < 56 then [] else _) ++ [(if pos < 56 then _ else _) ++ _]
+      rw [ite_eq_right_of_eq_false _ _ (eq_false hsh), ite_eq_right_of_eq_false _ _ (eq_false hsh)]
+      rfl
+  have hX : wordsAt MZ (S + 0x40) 8 = (fullBlocks msg ++ Sha256.blocks ((padTail msg).length / 64) (padTail msg)).foldl
+      Sha256.compress Sha256.h0 := by
+    rw [w46, wL, wC, bL, padb]
+    simp only [List.foldl_append, List.foldl_cons, List.foldl_nil]
   sorry
 
 end C3.RV32
