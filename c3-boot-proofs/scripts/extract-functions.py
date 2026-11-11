@@ -80,6 +80,7 @@ FUNCTIONS = [
     ("mulMont12Restore", ("mulMont12", 0x152)),
     ("uintSelect12", "<crypto_bigint::uint::Uint<12>>::select"),
     ("uintSelect12Step", ("uintSelect12", 0x3E)),
+    ("sqMont12", "crypto_bigint::modular::mul::square_montgomery_form::<12>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
