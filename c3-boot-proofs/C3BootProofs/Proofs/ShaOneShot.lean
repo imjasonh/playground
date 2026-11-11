@@ -578,6 +578,125 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
         exact sep_offsets R (c := 0x180) (n := 16) (d := 0x190 + (0x68 + i)) (k := 1) (Or.inl (by omega)) (by omega)
           (by omega)),
       copyBytes_in hi (by omega)]
+  have cMC := codeX MC MCR
+  have cXC := cMC _ _ E.cX (by decide) (by decide)
+  have u24 : St MC Q m24 0x40 (reg m24) := ⟨by rw [pc24], rfl, fun _ => rfl⟩
+  have k24 : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
+      r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
+      reg m24 r = reg m23 r := K24
+  have sp24' : reg m24 sp = F := by rw [sp24, sp23]
+  obtain ⟨m25, e25, u25⟩ := u24.aluImm cXC os_at_40 (off' := 0x42) (by decide)
+  have K25 := u25.upd_ne u24.zero
+  have u25' : St MC Q m25 0x42 (reg m25) := u25.self
+  obtain ⟨m26, e26, u26⟩ := u25'.alu cXC os_at_42 (off' := 0x44) (by decide)
+  have K26 := u26.upd_ne u25'.zero
+  have u26' : St MC Q m26 0x44 (reg m26) := u26.self
+  obtain ⟨m27, e27, u27⟩ := u26'.auipc cXC os_at_44 (off' := 0x48) (by decide)
+  obtain ⟨m28, e28, pc28, mem28, regs28⟩ := u27.call cXC os_at_48
+  have r28 : ∀ r, r ≠ ra → reg m28 r = reg m26 r := fun r h => by
+    rw [regs28]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u26'.zero.symm
+    · simp [upd, h0, h]
+  have s2_24 : reg m24 s2 = out := by
+    rw [k24 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), K1823 s2 (by decide) (by decide)
+      (by decide) (by decide), K1218 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide), s2_12]
+  have eR : F + 0xFFFFFE70 = R := by rw [hFR, BitVec.add_assoc]; exact BitVec.add_zero R
+  have hS68 : (F + BitVec.ofNat 32 0x68).toNat = F.toNat + 0x68 := hFc _ (by omega)
+  obtain ⟨m29, c29, pc29, sp29, K29, out29, fr29⟩ := shaFinalize_correct m28 (S := F + BitVec.ofNat 32 0x68)
+    (out := out) (sp0 := F) (retAddr := Q + BitVec.ofNat 32 0x4C) (msg := memBytes M0 D n)
+    { cF := by rw [mem28]; exact cMC _ _ E.cF (by decide) (by decide)
+      cSave := by rw [mem28]; exact cMC _ _ E.cFSave (by decide) (by decide)
+      cRest := by rw [mem28]; exact cMC _ _ E.cFRest (by decide) (by decide)
+      cZ := by rw [mem28]; exact cMC _ _ E.cZ (by decide) (by decide)
+      cBlk := by rw [mem28]; exact cMC _ _ E.cFBlk (by decide) (by decide)
+      cBe := by rw [mem28]; exact cMC _ _ E.cBe (by decide) (by decide)
+      cMs := by rw [mem28]; exact cMC _ _ E.cMs (by decide) (by decide)
+      cMS := by rw [mem28]; exact cMC _ _ E.cMS (by decide) (by decide)
+      cMB := by rw [mem28]; exact cMC _ _ E.cMB (by decide) (by decide)
+      cC := by rw [mem28]; exact cMC _ _ E.cC (by decide) (by decide)
+      cI := by rw [mem28]; exact cMC _ _ E.cI (by decide) (by decide)
+      c97 := by rw [mem28]; exact cMC _ _ E.c97 (by decide) (by decide)
+      cK := fun i hi => by
+        have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
+        rw [mem28, MCR _ (E.sKF.sub (c := i) (l := 1) (by omega)).symm]; exact E.cK i hi
+      hS := by rw [hS68]; omega
+      hSw := by rw [hS68]; omega
+      hsp := hFa
+      hspl := by omega
+      hspw := by omega
+      hOw := hOw
+      sSF := by
+        rw [eR, Fc]
+        have h := sep_offsets R (c := 0x190 + 0x68) (n := 0x68) (d := 0) (k := 0x190) (Or.inr (by omega)) (by omega)
+          (by omega)
+        rwa [add_ofNat_zero] at h
+      sOF := by rw [eR]; have h := E.sOF.subR (c := 0) (l := 0x190) (by omega); rwa [add_ofNat_zero] at h
+      sOS := by rw [Fc]; exact E.sOF.subR (c := 0x190 + 0x68) (l := 0x68) (by omega)
+      sKS := by rw [Fc]; exact E.sKF.subR (c := 0x190 + 0x68) (l := 0x68) (by omega)
+      sKF := by rw [eR]; have h := E.sKF.subR (c := 0) (l := 0x190) (by omega); rwa [add_ofNat_zero] at h }
+    (by rw [pc28, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
+    (by rw [r28 a0 (by decide), u26.upd_eq (by decide), u25'.zero, K25 s2 (by decide), s2_24]
+        exact BitVec.zero_add _)
+    (by rw [r28 a1 (by decide), K26 a1 (by decide), u25.upd_eq (by decide), sp24']; rfl)
+    (by rw [regs28]; simp +decide [upd]; try rfl) (by decide)
+    (by rw [r28 sp (by decide), K26 sp (by decide), K25 sp (by decide), sp24']) (by rw [mem28]; exact HC)
+  rw [eR, mem28] at fr29
+  let MF := m29.mem
+  have fF : ∀ x, Sep R 0x190 x 1 → Sep (F + BitVec.ofNat 32 0x68) 0x68 x 1 → Sep out 32 x 1 → MF x = MC x := fr29
+  -- The saved registers survive in the frame.
+  have slotF : ∀ k, 0xD0 ≤ k → k < 0xE0 → MF (F + BitVec.ofNat 32 k) = M1 (F + BitVec.ofNat 32 k) := by
+    intro k h1 h2
+    have rk : F + BitVec.ofNat 32 k = R + BitVec.ofNat 32 (0x190 + k) := Fc k
+    have hR1 : Sep R 0x190 (F + BitVec.ofNat 32 k) 1 := by
+      rw [rk]
+      have h := sep_offsets R (c := 0) (n := 0x190) (d := 0x190 + k) (k := 1) (Or.inl (by omega)) (by omega)
+        (by omega)
+      rwa [add_ofNat_zero] at h
+    have hS1 : Sep (F + BitVec.ofNat 32 0x68) 0x68 (F + BitVec.ofNat 32 k) 1 :=
+      sep_offsets F (c := 0x68) (d := k) (Or.inl (by omega)) (by omega) (by omega)
+    have hO1 : Sep out 32 (F + BitVec.ofNat 32 k) 1 := by rw [rk]; exact E.sOF.subR (c := 0x190 + k) (l := 1) (by omega)
+    have hF1 : Sep F 0x68 (F + BitVec.ofNat 32 k) 1 := by
+      have h := sep_offsets F (c := 0) (n := 0x68) (d := k) (k := 1) (Or.inl (by omega)) (by omega) (by omega)
+      rwa [add_ofNat_zero] at h
+    rw [fF _ hR1 hS1 hO1,
+      mC _ (by rw [rk]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)),
+      copyBytes_sep (sep_offsets F (Or.inl (by omega)) (by omega) (by omega)) (Nat.le_refl _),
+      fU _ (by rw [eU, rk]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)) hF1]
+    show memStore32 (memStore32 (memStore8 MA _ _) _ _) _ _ _ = _
+    rw [memStore32_get_sep (show Sep (F + 0x64) 4 (F + BitVec.ofNat 32 k) 1 from
+        sep_offsets F (c := 0x64) (d := k) (Or.inl (by omega)) (by omega) (by omega)),
+      memStore32_get_sep (show Sep (F + 0x60) 4 (F + BitVec.ofNat 32 k) 1 from
+        sep_offsets F (c := 0x60) (d := k) (Or.inl (by omega)) (by omega) (by omega)),
+      memStore8_ne (show F + BitVec.ofNat 32 k ≠ F + 0x3F from add_ofNat_ne F (c := k) (d := 0x3F) (by omega) (by omega) (by omega)),
+      mA _ (by rw [rk]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)),
+      copyBytes_sep (sep_offsets F (Or.inl (by omega)) (by omega) (by omega)) (Nat.le_refl _)]
+  have ldF : ∀ c, 0xD0 ≤ c → c + 4 ≤ 0xE0 → memLoad32 MF (F + BitVec.ofNat 32 c) = memLoad32 M1 (F + BitVec.ofNat 32 c) :=
+    fun c h1 h2 => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact slotF _ (by omega) (by omega)
+  have so : ∀ c d, c < 0xE0 → d < 0xE0 → c + 4 ≤ d ∨ d + 4 ≤ c → Sep (F + BitVec.ofNat 32 c) 4 (F + BitVec.ofNat 32 d) 4 :=
+    fun c d hc hd h => sep_offsets F h (by omega) (by omega)
+  have vRa : memLoad32 M1 (F + 0xDC) = reg m ra := by
+    show memLoad32 (memStore32 (memStore32 (memStore32 (memStore32 M0 _ _) _ _) _ _) _ _) _ = _
+    rw [memLoad32_store32_sep (show Sep (F + 0xD0) 4 (F + 0xDC) 4 from so 0xD0 0xDC (by omega) (by omega) (by omega)),
+      memLoad32_store32_sep (show Sep (F + 0xD4) 4 (F + 0xDC) 4 from so 0xD4 0xDC (by omega) (by omega) (by omega)),
+      memLoad32_store32_sep (show Sep (F + 0xD8) 4 (F + 0xDC) 4 from so 0xD8 0xDC (by omega) (by omega) (by omega)),
+      memLoad32_store32_same, K1 ra (by decide)]
+  have vS0 : memLoad32 M1 (F + 0xD8) = reg m s0 := by
+    show memLoad32 (memStore32 (memStore32 (memStore32 (memStore32 M0 _ _) _ _) _ _) _ _) _ = _
+    rw [memLoad32_store32_sep (show Sep (F + 0xD0) 4 (F + 0xD8) 4 from so 0xD0 0xD8 (by omega) (by omega) (by omega)),
+      memLoad32_store32_sep (show Sep (F + 0xD4) 4 (F + 0xD8) 4 from so 0xD4 0xD8 (by omega) (by omega) (by omega)),
+      memLoad32_store32_same, K1 s0 (by decide)]
+  have vS1 : memLoad32 M1 (F + 0xD4) = reg m s1 := by
+    show memLoad32 (memStore32 (memStore32 (memStore32 (memStore32 M0 _ _) _ _) _ _) _ _) _ = _
+    rw [memLoad32_store32_sep (show Sep (F + 0xD0) 4 (F + 0xD4) 4 from so 0xD0 0xD4 (by omega) (by omega) (by omega)),
+      memLoad32_store32_same, K1 s1 (by decide)]
+  have vS2 : memLoad32 M1 (F + 0xD0) = reg m s2 := by
+    show memLoad32 (memStore32 (memStore32 (memStore32 (memStore32 M0 _ _) _ _) _ _) _ _) _ = _
+    rw [memLoad32_store32_same, K1 s2 (by decide)]
   sorry
 
 end C3.RV32
