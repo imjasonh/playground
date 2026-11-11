@@ -1,2 +1,6 @@
 # Credentials written by google-github-actions/auth.
 gha-creds-*.json
+
+# Python bytecode.
+__pycache__/
+*.pyc
