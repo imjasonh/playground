@@ -1200,6 +1200,7 @@ theorem shaUpdate_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {msg 
       (by rw [mem12, sp12]; exact mcEnv M2 pos n (by omega) (Nat.le_refl n) hM2)
     rw [sp12, mem12] at mem13
     let MA := n13.mem
+    have mA : ∀ x, Sep (G + 0xFFFFFFF0) 16 x 1 → MA x = copyBytes M2 (S + BitVec.ofNat 32 pos) D n x := mem13
     have hMA := mcOut M2 MA pos n (by omega) hM2 mem13
     have cUA := codeX MA hMA _ _ E.cU (by decide) (by decide)
     have u13 : St MA U n13 0x2C (reg n13) := ⟨by rw [pc13], rfl, fun _ => rfl⟩
@@ -1228,7 +1229,113 @@ theorem shaUpdate_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {msg 
         (by decide) (by decide) (by decide), s4_7]
     have sp14 : reg n14 sp = G := by
       rw [K14 sp (by decide), sp13, sp12]
-    sorry
+    obtain ⟨n15, d15, u15⟩ := u14'.sb cUA su_at_2e (off' := 0x32) (by decide)
+    rw [s4_14, s0_14] at u15
+    let pv := (BitVec.ofNat 32 (pos + n)).extractLsb' 0 8
+    let Mt := memStore8 MA (S + 0x3F) pv
+    have e3F : S + 0x3F = S + BitVec.ofNat 32 0x3F := rfl
+    have hMt : ∀ x, Sep R 0x100 x 1 → Sep S 0x68 x 1 → Mt x = M0 x := fun x hx hy => by
+      have hne : x ≠ S + 0x3F := fun e => by
+        have := hy 0x3F (by omega) 0 (by decide); rw [add_ofNat_zero, ← e3F] at this; exact this e.symm
+      show memStore8 MA _ _ x = _
+      rw [memStore8_ne hne, hMA x hx hy]
+    have cUt := codeX Mt hMt _ _ E.cU (by decide) (by decide)
+    have cRt := codeX Mt hMt _ _ E.cRest (by decide) (by decide)
+    obtain ⟨n16, c16, pc16, mem16, regs16⟩ := upd_ret u15 cUt cRt sp14 hGa
+    have SF : ∀ c, c < 0x68 → Sep (G + 0xFFFFFFF0) 16 (S + BitVec.ofNat 32 c) 1 := fun c hc => by
+      rw [hGF]; exact ((E.sSF.sub (c := c) (l := 1) (by omega)).subR (c := 0xD0) (l := 16) (by omega)).symm
+    -- The hasher's bytes after the buffer's new bytes are the entry memory's.
+    have hiS : ∀ c, pos + n ≤ c → c ≠ 0x3F → c < 0x68 → Mt (S + BitVec.ofNat 32 c) = M0 (S + BitVec.ofNat 32 c) := by
+      intro c h1 h2 h3
+      show memStore8 MA _ _ _ = _
+      rw [memStore8_ne (by rw [e3F]; exact add_ofNat_ne S (by omega) (by omega) h2), mA _ (SF c h3),
+        copyBytes_sep (sep_offsets S (c := pos) (n := n) (d := c) (k := 1) (Or.inl h1) (by omega) (by omega))
+          (Nat.le_refl n), out2 _ (SG c h3)]
+    have ld : ∀ c, 0x40 ≤ c → c + 4 ≤ 0x68 →
+        memLoad32 Mt (S + BitVec.ofNat 32 c) = memLoad32 M0 (S + BitVec.ofNat 32 c) :=
+      fun c h1 h2 => memLoad32_congr fun j hj => by
+        rw [add_ofNat_assoc]; exact hiS _ (by omega) (by omega) (by omega)
+    have slotX : ∀ k', 8 ≤ k' → k' < 32 → Mt (G + BitVec.ofNat 32 k') = M2 (G + BitVec.ofNat 32 k') := by
+      intro k' h1 h2
+      have hGk : G + BitVec.ofNat 32 k' = R + BitVec.ofNat 32 (0xE0 + k') := by rw [hGR, add_ofNat_assoc]
+      have hne : G + BitVec.ofNat 32 k' ≠ S + 0x3F := by
+        intro e
+        have := (E.sSF.sub (c := 0x3F) (l := 1) (by omega)).subR (c := 0xE0 + k') (l := 1) (by omega) 0 (by decide)
+          0 (by decide)
+        rw [add_ofNat_zero, add_ofNat_zero, ← hGk, ← e3F] at this; exact this e.symm
+      show memStore8 MA _ _ _ = _
+      rw [memStore8_ne hne, mA (G + BitVec.ofNat 32 k') (by
+          rw [hGF, hGk]; exact sep_offsets R (c := 0xD0) (n := 16) (d := 0xE0 + k') (k := 1) (Or.inl (by omega))
+            (by omega) (by omega)),
+        copyBytes_sep (by
+          rw [hGk]; exact (E.sSF.sub (c := pos) (l := n) (by omega)).subR (c := 0xE0 + k') (l := 1) (by omega))
+          (Nat.le_refl n)]
+    obtain ⟨hra', hs0', hs1', hs2', hs3', hs4'⟩ := slots Mt slotX
+    obtain ⟨vra, vs0, vs1, vs2, vs3, vs4, vsp⟩ := updR_saved Mt G (G + 0x20)
+      (BitVec.ofNat 32 shaUpdateAddress + BitVec.ofNat 32 (0x32 + 8)) (reg n14)
+    have hm : (msg ++ data).length % 64 = pos + n := by rw [List.length_append, hdata]; omega
+    obtain ⟨hf1, hf2⟩ := fullBlocks_append msg data
+    rw [tailBytes_length, hdata, show (msg.length % 64 + n) / 64 = 0 by omega] at hf1 hf2
+    have H' : HasherAt Mt S (msg ++ data) :=
+      { hlen := by rw [List.length_append, hdata]; omega
+        pos := by
+          rw [hm]; show memStore8 MA _ _ _ = _
+          rw [memStore8_same]; apply BitVec.eq_of_toNat_eq
+          show ((BitVec.ofNat 32 (pos + n)).extractLsb' 0 8).toNat = _
+          rw [BitVec.extractLsb'_toNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.shiftRight_zero]; omega
+        buf := by
+          rw [hm, hf2, Nat.mul_zero, List.drop_zero, ← H.buf, memBytes_split]
+          have b1 : memBytes Mt S pos = memBytes M0 S pos := memBytes_congr fun i hi => by
+            show memStore8 MA _ _ _ = _
+            rw [memStore8_ne (by rw [e3F]; exact add_ofNat_ne S (by omega) (by omega) (by omega)),
+              mA _ (SF i (by omega)),
+              copyBytes_sep (sep_offsets S (c := pos) (n := n) (d := i) (k := 1) (Or.inr (by omega)) (by omega)
+                (by omega)) (Nat.le_refl n), out2 _ (SG i (by omega))]
+          have b2 : memBytes Mt (S + BitVec.ofNat 32 pos) n = data := by
+            unfold memBytes
+            apply List.map_congr_left
+            intro i hi
+            have hi := List.mem_range.mp hi
+            show (Mt (S + BitVec.ofNat 32 pos + BitVec.ofNat 32 i)).toNat = (M0 (D + BitVec.ofNat 32 i)).toNat
+            have h3 : S + BitVec.ofNat 32 pos + BitVec.ofNat 32 i ≠ S + 0x3F := by
+              rw [add_ofNat_assoc, e3F]; exact add_ofNat_ne S (by omega) (by omega) (by omega)
+            have h4 : Sep (G + 0xFFFFFFF0) 16 (S + BitVec.ofNat 32 pos + BitVec.ofNat 32 i) 1 := by
+              rw [add_ofNat_assoc]; exact SF _ (by omega)
+            show (memStore8 MA _ _ _).toNat = _
+            rw [memStore8_ne h3, mA _ h4, copyBytes_in hi (by omega),
+              hM2 _ (E.sDF.sub (c := i) (l := 1) (by omega)).symm (E.sDS.sub (c := i) (l := 1) (by omega)).symm]
+          rw [b1, b2]
+        hash := by
+          rw [hf1, show Sha256.blocks 0 (tailBytes msg ++ data) = [] from rfl, List.append_nil, ← H.hash]
+          apply wordsAt_congr; intro i hi
+          rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc]
+          exact ld _ (by omega) (by omega)
+        lo := by
+          rw [List.length_append, hdata, show (msg.length + n) / 64 = msg.length / 64 by omega, ← H.lo,
+            show S + (0x60 : Word) = S + BitVec.ofNat 32 0x60 from rfl]
+          exact ld 0x60 (by omega) (by omega)
+        hi := by
+          rw [← H.hi, show S + (0x64 : Word) = S + BitVec.ofNat 32 0x64 from rfl]
+          exact ld 0x64 (by omega) (by omega) }
+    refine ⟨n16, c7.trans (.cons d8 (.cons d9 (.cons d10 (.cons d11 (.cons d12 (c13.trans
+      (.cons d14 (.cons d15 c16)))))))), ?_, ?_,
+      fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, by rw [mem16]; exact H',
+      fun x hx hy => by rw [mem16]; exact hMt x hx hy⟩
+    · rw [pc16, hra', hra, hret]
+    · rw [regs16 sp, vsp]; show sp0 + 0xFFFFFFE0 + 0x20 = sp0; rw [BitVec.add_assoc]; exact BitVec.add_zero _
+    · rw [regs16 r]
+      by_cases h8 : r = s0
+      · subst h8; rw [vs0, hs0']
+      by_cases h9 : r = s1
+      · subst h9; rw [vs1, hs1']
+      by_cases h18 : r = s2
+      · subst h18; rw [vs2, hs2']
+      by_cases h19 : r = s3
+      · subst h19; rw [vs3, hs3']
+      by_cases h20 : r = s4
+      · subst h20; rw [vs4, hs4']
+      rw [updR_other _ _ _ _ _ u14'.zero r q1 h8 h9 h18 h19 h20 q2 q5, K14 r h8,
+        K7_13 r q1 q10 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, K27 r q2 q5 h9 h20 h8 q12]
   · sorry
 
 end C3.RV32
