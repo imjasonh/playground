@@ -2,3 +2,7 @@
 *.klad/
 *.klad
 __pycache__/
+# triptych.sh renders the loop frame by frame into here.
+frames/
+# triptych.sh encodes this; the GIF is the committed loop.
+triptych.mp4
