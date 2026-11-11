@@ -505,4 +505,135 @@ theorem sel_loop {S F ap bp c : Word} {MB : Word → BitVec 8} (hS : S.toNat % 2
     exact ⟨n', M', c1.trans c', u', hc', hcs', hf', hw', fun q q0 q2 q3 q4 q9 q20 q8 qt => by
       rw [fr' q q0 q2 q3 q4 q9 q20 q8 qt, fr q q0 q2 q3 q4 q9 q20 q8 qt]⟩
 
+/-- A call to `memset` at `B` that zeroes `4 w` bytes at an aligned `dst`. -/
+theorem St.memsetW {P B : Word} {code : List Nat} {Mx : Word → BitVec 8} {m : Machine} {off : Nat}
+    {f : Fin 32 → Word} {imm o dst : Word} {w : Nat} (hB : B.toNat % 2 = 0) (s : St Mx P m off f)
+    (hc : CodeIn Mx P code) (hms : CodeIn Mx B memsetCode)
+    (h1 : fetchRel code off = some (.auipc ra imm, 4))
+    (h2 : fetchRel code (off + 4) = some (.jalr ra ra o, 4))
+    (hb : P + BitVec.ofNat 32 off + imm + o = B) (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (hw : 4 ≤ w) (hwd : dst.toNat + 4 * w < 2 ^ 32)
+    (hmask : BitVec.ofNat 32 (4 * w) &&& 0xFFFFFFFC = BitVec.ofNat 32 (4 * w))
+    (hdst : dst.toNat % 4 = 0) (hsep : Sep dst (4 * w) B memsetCode.length)
+    (ha0 : f a0 = dst) (ha1 : f a1 = 0) (ha2 : f a2 = BitVec.ofNat 32 (4 * w)) :
+    ∃ m', Steps m m' ∧ St (fillWords Mx dst 0 w) P m' (off + 8) (reg m') ∧ reg m' a0 = dst ∧
+      ∀ r, r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ ra → reg m' r = f r := by
+  obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa hc h1 h2 hb hB
+  have r1 := PEnv.reg1 regs1 s.zero
+  obtain ⟨m2, c2, pc2, mem2, a02, fr2⟩ := memset_aligned m1 B (P + BitVec.ofNat 32 (off + 8)) dst 0 w
+    (fun i hi => by rw [mem1]; exact hms i hi) hB pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hl) hw hwd hmask hdst hsep
+  rw [mem1, fillWord_zero] at mem2
+  refine ⟨m2, c1.trans c2, ⟨by rw [pc2], mem2, fun _ => rfl⟩, a02, fun r q2 q3 q4 q5 q6 q7 => ?_⟩
+  rw [fr2 r q2 q3 q4 q5 q6, r1 r q7]
+
+/-- A call to `memcpy`'s stub at `B` that copies `4 w` bytes between aligned
+buffers. -/
+theorem St.memcpyW {P B : Word} {code : List Nat} {Mx : Word → BitVec 8} {m : Machine} {off : Nat}
+    {f : Fin 32 → Word} {imm o dst src : Word} {w : Nat} (hB : B.toNat % 2 = 0) (s : St Mx P m off f)
+    (hc : CodeIn Mx P code) (hst : CodeIn Mx B memcpyStubCode) (hbd : CodeIn Mx (B + 8) memcpyBodyCode)
+    (h1 : fetchRel code off = some (.auipc ra imm, 4))
+    (h2 : fetchRel code (off + 4) = some (.jalr ra ra o, 4))
+    (hb : P + BitVec.ofNat 32 off + imm + o = B) (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (hw : 4 ≤ w) (hwd : dst.toNat + 4 * w < 2 ^ 32)
+    (hmask : BitVec.ofNat 32 (4 * w) &&& 0xFFFFFFFC = BitVec.ofNat 32 (4 * w))
+    (hdst : dst.toNat % 4 = 0) (hsrc : src.toNat % 4 = 0) (hds : Sep dst (4 * w) src (4 * w))
+    (hsep : Sep dst (4 * w) (B + 8) memcpyBodyCode.length)
+    (ha0 : f a0 = dst) (ha1 : f a1 = src) (ha2 : f a2 = BitVec.ofNat 32 (4 * w)) :
+    ∃ m', Steps m m' ∧ St (copyWords Mx dst src w) P m' (off + 8) (reg m') ∧ reg m' a0 = dst ∧
+      ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 → r ≠ ra →
+        reg m' r = f r := by
+  obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa hc h1 h2 hb hB
+  have r1 := PEnv.reg1 regs1 s.zero
+  obtain ⟨m2, c2, pc2, mem2, a02, fr2⟩ := memcpy_aligned m1 B (P + BitVec.ofNat 32 (off + 8)) dst src w
+    (fun i hi => by rw [mem1]; exact hst i hi) (fun i hi => by rw [mem1]; exact hbd i hi) hB pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hl) hw hwd hmask hdst hsrc hds hsep
+  rw [mem1] at mem2
+  refine ⟨m2, c1.trans c2, ⟨by rw [pc2], mem2, fun _ => rfl⟩, a02, fun r q1 q2 q3 q4 q5 q6 q7 q8 q9 q10 => ?_⟩
+  rw [fr2 r q1 q2 q3 q4 q5 q6 q7 q8 q9, r1 r q10]
+
+set_option maxRecDepth 20000 in
+theorem selEpi_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock selEpi (M, f)).1 = M ∧
+    (runBlock selEpi (M, f)).2 ra = memLoad32 M (f sp + 0x4C) ∧
+    (runBlock selEpi (M, f)).2 (8 : Fin 32) = memLoad32 M (f sp + 0x48) ∧
+    (runBlock selEpi (M, f)).2 (9 : Fin 32) = memLoad32 M (f sp + 0x44) ∧
+    (runBlock selEpi (M, f)).2 (18 : Fin 32) = memLoad32 M (f sp + 0x40) ∧
+    (runBlock selEpi (M, f)).2 (19 : Fin 32) = memLoad32 M (f sp + 0x3C) ∧
+    (runBlock selEpi (M, f)).2 (20 : Fin 32) = memLoad32 M (f sp + 0x38) ∧
+    (runBlock selEpi (M, f)).2 sp = f sp + 0x50 ∧
+    ∀ q, proKeep q = true → q ≠ ra → (runBlock selEpi (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, selEpi]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, ?_, ?_, ?_, fun q hq hr => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp only [upd, h0, ite_false, hr, pkeep_ne (r := sp) hq rfl, pkeep_ne (r := 8) hq rfl,
+        pkeep_ne (r := 9) hq rfl, pkeep_ne (r := 18) hq rfl, pkeep_ne (r := 19) hq rfl, pkeep_ne (r := 20) hq rfl]
+
+theorem selEpi_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (hF : (f sp).toNat % 4 = 0) : BlockOk base len selEpi (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, selEpi, upd, ↓reduceIte, and_true]
+  exact ⟨aligned_add hF (k := 0x4C) (by decide), aligned_add hF (k := 0x48) (by decide),
+    aligned_add hF (k := 0x44) (by decide), aligned_add hF (k := 0x40) (by decide),
+    aligned_add hF (k := 0x3C) (by decide), aligned_add hF (k := 0x38) (by decide)⟩
+
+theorem selPost_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock selPost (M, f)).1 = M ∧ (runBlock selPost (M, f)).2 a1 = f sp + 4 ∧
+    (runBlock selPost (M, f)).2 a2 = 0x30 ∧ (runBlock selPost (M, f)).2 a0 = f (18 : Fin 32) ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → (runBlock selPost (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, selPost]
+  refine ⟨trivial, ?_, ?_, ?_, fun q q0 q1 q2 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1, q2]
+
+/-- The registers `Uint<12>::select` may change. -/
+def selKeep (q : Fin 32) : Bool := q.val ∉ [5, 6, 10, 11, 12, 13, 14, 15, 16, 17]
+
+/-- Where `Uint<12>::select` runs: its code and its callees' at their
+offsets, its 0x50-byte frame below `sp0`, and the result and operands,
+aligned and apart from what each must not touch. -/
+structure SelEnv (M : Word → BitVec 8) (S sp0 out ap bp : Word) : Prop where
+  hS : S.toNat % 2 = 0
+  code : CodeIn M S uintSelect12Code
+  mset : CodeIn M (S + 0xD196) memsetCode
+  stub : CodeIn M (S + 0xD1FE) memcpyStubCode
+  body : CodeIn M (S + 0xD206) memcpyBodyCode
+  step : CodeIn M (S + 0xCFEE) uintSelect12StepCode
+  hsp : sp0.toNat % 4 = 0
+  h50 : 0x50 ≤ sp0.toNat
+  hout : out.toNat % 4 = 0
+  hap : ap.toNat % 4 = 0
+  hbp : bp.toNat % 4 = 0
+  hwo : out.toNat + 48 < 2 ^ 32
+  sFC : Sep (sp0 + 0xFFFFFFB0) 0x50 S uintSelect12Code.length
+  sFM : Sep (sp0 + 0xFFFFFFB0) 0x50 (S + 0xD196) memsetCode.length
+  sFU : Sep (sp0 + 0xFFFFFFB0) 0x50 (S + 0xD1FE) memcpyStubCode.length
+  sFB : Sep (sp0 + 0xFFFFFFB0) 0x50 (S + 0xD206) memcpyBodyCode.length
+  sFS : Sep (sp0 + 0xFFFFFFB0) 0x50 (S + 0xCFEE) uintSelect12StepCode.length
+  sOF : Sep out 48 (sp0 + 0xFFFFFFB0) 0x50
+  sOC : Sep out 48 S uintSelect12Code.length
+  sOB : Sep out 48 (S + 0xD206) memcpyBodyCode.length
+  sAF : Sep ap 48 (sp0 + 0xFFFFFFB0) 0x50
+  sBF : Sep bp 48 (sp0 + 0xFFFFFFB0) 0x50
+
+theorem frame50 (sp0 : Word) (h : 0x50 ≤ sp0.toNat) : (sp0 + 0xFFFFFFB0).toNat + 0x50 = sp0.toNat := by
+  rw [BitVec.toNat_add]
+  have : (0xFFFFFFB0 : Word).toNat = 0xFFFFFFB0 := rfl
+  rw [this]; have := sp0.isLt; omega
+
 end C3.RV32
