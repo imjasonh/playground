@@ -24,6 +24,7 @@ import C3BootProofs.Proofs.PointAdd
 import C3BootProofs.Proofs.Sha256Compress
 import C3BootProofs.Proofs.MemsetAny
 import C3BootProofs.Proofs.MemcpyAny
+import C3BootProofs.Proofs.ShaUpdate
 
 /-!
 # Audit
@@ -810,6 +811,82 @@ theorem exists_sha256Compress_machine :
     rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- The hasher of the empty message: an empty buffer, the initial hash value
+as the image stores it, and a block count of zero. -/
+def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
+
+/-- `witnessMemSha` with an empty hasher at `0x3FCC5000`, and `update`, its
+save and restore helpers, and its block loop added where the image loads
+them. -/
+def witnessMemUpd (a : RV32.Word) : BitVec 8 :=
+  if (a - 0x3FCC5000).toNat < 0x68 then RV32.byteAt emptyHasherBytes (a - 0x3FCC5000).toNat
+  else if (a - BitVec.ofNat 32 Image.shaUpdateAddress).toNat < Image.shaUpdateCode.length then
+    RV32.byteAt Image.shaUpdateCode (a - BitVec.ofNat 32 Image.shaUpdateAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat < Image.shaUpdateSaveCode.length then
+    RV32.byteAt Image.shaUpdateSaveCode (a - BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat < Image.shaUpdateRestoreCode.length then
+    RV32.byteAt Image.shaUpdateRestoreCode (a - BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat < Image.shaUpdateBlocksCode.length then
+    RV32.byteAt Image.shaUpdateBlocksCode (a - BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat
+  else witnessMemSha a
+
+set_option maxRecDepth 200000 in
+theorem witnessMemUpd_compress :
+    RV32.CodeIn witnessMemUpd (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+  intro i hi
+  have hlen : Image.sha256CompressCode.length = 11156 := rfl
+  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
+  have dH : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i - 0x3FCC5000).toNat < 0x68) := by
+    rw [BitVec.toNat_sub, ha, show (0x3FCC5000 : RV32.Word).toNat = 0x3FCC5000 from rfl]; omega
+  have dU : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaUpdateAddress).toNat < Image.shaUpdateCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateAddress).toNat = 0x403a6624 from rfl,
+      show Image.shaUpdateCode.length = 168 from rfl]; omega
+  have dS : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat < Image.shaUpdateSaveCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateSaveAddress).toNat = 0x403bf24a from rfl,
+      show Image.shaUpdateSaveCode.length = 12 from rfl]; omega
+  have dR : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat < Image.shaUpdateRestoreCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateRestoreAddress).toNat = 0x403bf088 from rfl,
+      show Image.shaUpdateRestoreCode.length = 14 from rfl]; omega
+  have dB : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat < Image.shaUpdateBlocksCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaUpdateBlocksAddress).toNat = 0x403a66cc from rfl,
+      show Image.shaUpdateBlocksCode.length = 26 from rfl]; omega
+  unfold witnessMemUpd
+  rw [ite_eq_right_of_eq_false _ _ (eq_false dH), ite_eq_right_of_eq_false _ _ (eq_false dU),
+    ite_eq_right_of_eq_false _ _ (eq_false dS), ite_eq_right_of_eq_false _ _ (eq_false dR),
+    ite_eq_right_of_eq_false _ _ (eq_false dB)]
+  exact witnessMemSha_compress i hi
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `update` with 100 bytes at `0x3FCC6000`, the empty
+hasher at `0x3FCC5000`, and the stack at `0x3FCC8000` meets
+`shaUpdate_correct`'s hypotheses. -/
+theorem exists_shaUpdate_machine :
+    ∃ (m : RV32.Machine) (S D sp0 retAddr : RV32.Word) (n : Nat) (msg : List Nat),
+      RV32.UpdEnv m.mem S D sp0 n ∧ m.pc = BitVec.ofNat 32 Image.shaUpdateAddress ∧
+      RV32.reg m RV32.a0 = S ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.HasherAt m.mem S msg ∧ n < 2 ^ 31 ∧ msg.length + n < 2 ^ 32 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.shaUpdateAddress, witnessMemUpd⟩,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, 100, [],
+    ⟨?_, ?_, ?_, ?_, witnessMemUpd_compress, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
+      by decide, by decide, (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl, ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩, by decide, by decide⟩
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide +kernel
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls the point addition with `lhs` at `0x3FCC5000`, `rhs`
@@ -1182,3 +1259,15 @@ end C3
 
 /-- info: 'C3.exists_sha256Compress_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sha256Compress_machine
+
+/-- info: 'C3.RV32.shaBlocks_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.shaBlocks_correct
+
+/-- info: 'C3.RV32.shaUpdate_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.shaUpdate_correct
+
+/-- info: 'C3.exists_shaUpdate_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_shaUpdate_machine
+
+/-- info: 'C3.fullBlocks_fill' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.fullBlocks_fill
