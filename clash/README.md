@@ -5,7 +5,8 @@ deck minus its four Aces. Each round a pot of cards gathers on the table and
 everyone plays for it in secret, all at once: one card from a small hand of four
 that refills from a face-down draw pile, spent whether it wins or loses. The
 highest bid takes the pot, and the most pips at the end wins. The rules are in
-[`rules.md`](rules.md).
+[`rules.md`](rules.md), with a one-page summary in
+[`quick-reference.md`](quick-reference.md).
 
 ## Simulation harness
 
