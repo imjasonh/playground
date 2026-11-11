@@ -256,20 +256,20 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
       subst this; simp [upd, z2]
     · simp [upd, h0, q19, q21, q18, q0, q2, q1, q22]
   have v0 : reg m10 a0 = sp0 + 0xFFFFFFA0 := by
-    rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2, sp2]; exact BitVec.zero_add _
-  have v1 : reg m10 a1 = 0 := by rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2]
-  have v2 : reg m10 a2 = 0x20 := by rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2]
+    rw [u10.regs]; simp +decide only [upd, ↓reduceIte, sp2]; exact BitVec.zero_add _
+  have v1 : reg m10 a1 = 0 := by rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
+  have v2 : reg m10 a2 = 0x20 := by rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
   have v19 : reg m10 (19 : Fin 32) = bp := by
     rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2]
     rw [r2 _ (by decide) (by decide), ha2]; exact BitVec.zero_add _
   have v21 : reg m10 (21 : Fin 32) = ap := by
-    rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2]
+    rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
     rw [r2 _ (by decide) (by decide), ha1]; exact BitVec.zero_add _
   have v18 : reg m10 (18 : Fin 32) = out := by
-    rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2]
+    rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
     rw [r2 _ (by decide) (by decide), ha0]; exact BitVec.zero_add _
   have v22 : reg m10 (22 : Fin 32) = sp0 + 0xFFFFFFA0 := by
-    rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2, sp2]; exact BitVec.zero_add _
+    rw [u10.regs]; simp +decide only [upd, ↓reduceIte, sp2]; exact BitVec.zero_add _
   have hGw : (sp0 + 0xFFFFFFA0).toNat + 0x60 ≤ 2 ^ 32 := by have := sp0.isLt; omega
   have hG20 : (sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20).toNat = (sp0 + 0xFFFFFFA0).toNat + 0x20 := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
@@ -303,8 +303,8 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
       · simp [upd, hq, h0, h2, h1, h20]
   have y0 : reg n5 a0 = sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20 := by
     rw [w5.regs]; simp +decide only [upd, ↓reduceIte, sp3]; rfl
-  have y1 : reg n5 a1 = 0 := by rw [w5.regs]; simp +decide only [upd, ↓reduceIte, z3]
-  have y2 : reg n5 a2 = 0x20 := by rw [w5.regs]; simp +decide only [upd, ↓reduceIte, z3]
+  have y1 : reg n5 a1 = 0 := by rw [w5.regs]; simp +decide only [upd, ↓reduceIte]
+  have y2 : reg n5 a2 = 0x20 := by rw [w5.regs]; simp +decide only [upd, ↓reduceIte]
   have y20 : reg n5 (20 : Fin 32) = sp0 + 0xFFFFFFA0 + 0x20 := by
     rw [w5.regs]; simp +decide only [upd, ↓reduceIte, sp3]; rfl
   obtain ⟨n6, e6, w6, a06, f6⟩ := wm_memset (dst := sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20) env.hP w5.self c4
@@ -321,7 +321,7 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
   obtain ⟨n7, e7, w7⟩ := w6.aluImm c6 wm_at_38 (off' := 0x3A) (by decide)
   obtain ⟨n8, e8, w8⟩ := w7.alu c6 wm_at_3a (off' := 0x3C) (by decide)
   obtain ⟨n9, e9, w9⟩ := w8.aluImm c6 wm_at_3c (off' := 0x3E) (by decide)
-  have b9 : reg n9 (6 : Fin 32) = 8 := by rw [w9.regs]; simp +decide only [upd, ↓reduceIte, z6]
+  have b9 : reg n9 (6 : Fin 32) = 8 := by rw [w9.regs]; simp +decide only [upd, ↓reduceIte]
   obtain ⟨n10, e10, w10⟩ := w9.self.notTaken c6 0x42 wm_at_3e (by decide)
     (by rw [b9, w9.self.zero]; decide)
   have g17 : ∀ q, q ≠ (5 : Fin 32) → q ≠ a6 → q ≠ (6 : Fin 32) → reg n10 q = reg n6 q := fun q h5 h16 h6 => by
@@ -367,7 +367,7 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
   · rw [back _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide), sp3]
   · rw [w10.regs, w9.regs]; simp +decide only [upd, ↓reduceIte, z6]
-  · rw [w10.regs, w9.regs]; simp +decide only [upd, ↓reduceIte, z6, sp6]
+  · rw [w10.regs, w9.regs]; simp +decide only [upd, ↓reduceIte, sp6]
     exact (BitVec.zero_add _).trans (add_ofNat_zero _).symm
   · rw [back _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide), f1 _ (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -426,10 +426,10 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
       subst this; simp [upd, hz]
     · simp [upd, hq, h0, h1, h2]
   have x0' : reg m3 a0 = out := by
-    rw [u3.regs]; simp +decide only [upd, ↓reduceIte, hz, r18]; exact BitVec.zero_add _
+    rw [u3.regs]; simp +decide only [upd, ↓reduceIte, r18]; exact BitVec.zero_add _
   have x1' : reg m3 a1 = sp0 + 0xFFFFFFA0 := by
     rw [u3.regs]; simp +decide only [upd, ↓reduceIte, hz, rsp]; exact BitVec.zero_add _
-  have x2' : reg m3 a2 = 0x20 := by rw [u3.regs]; simp +decide only [upd, ↓reduceIte, hz]
+  have x2' : reg m3 a2 = 0x20 := by rw [u3.regs]; simp +decide only [upd, ↓reduceIte]
   have hOS := env.sOS
   obtain ⟨m4, c4, u4, a04, f4⟩ := wm_memcpy (dst := out) (src := sp0 + 0xFFFFFFA0) env.hP u3.self cx
     (codeX env.stub env.sSU env.sOU hfr') (codeX env.body env.sSB env.sOB hfr') wm_at_b8 wm_at_bc
@@ -465,7 +465,7 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
     rw [u7.regs]; simp +decide only [upd, ↓reduceIte, o4]; rfl
   have y1' : reg m7 a1 = sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20 := by
     rw [u7.regs]; simp +decide only [upd, ↓reduceIte, sp4]; rfl
-  have y2' : reg m7 a2 = 0x20 := by rw [u7.regs]; simp +decide only [upd, ↓reduceIte, z4]
+  have y2' : reg m7 a2 = 0x20 := by rw [u7.regs]; simp +decide only [upd, ↓reduceIte]
   have hO20 : (out + BitVec.ofNat 32 0x20).toNat = out.toNat + 0x20 := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
   obtain ⟨m8, c8, u8, a08, f8⟩ := wm_memcpy (dst := out + BitVec.ofNat 32 0x20)

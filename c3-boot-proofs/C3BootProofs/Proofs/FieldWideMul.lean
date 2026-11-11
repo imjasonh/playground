@@ -352,7 +352,7 @@ theorem hi_addr (acc : Word) (i : Nat) : BitVec.ofNat 32 (4 * i) + (acc + 0x20) 
   rw [this]; omega
 
 theorem row_arith {A Ai x B8 Pi : Nat} (h : A = Ai * B8) : A + x * B8 * Pi = (Ai + x * Pi) * B8 := by
-  rw [h, Nat.add_mul]; simp only [Nat.mul_comm, Nat.mul_left_comm, Nat.mul_assoc]
+  rw [h, Nat.add_mul]; simp only [Nat.mul_comm, Nat.mul_left_comm]
 
 theorem accV_frame {M M0 : Word → BitVec 8} {acc b : Word} {n : Nat} (hf : ∀ a, Sep acc 64 a 1 → M a = M0 a)
     (hs : Sep acc 64 b (4 * n)) : accV M b n = accV M0 b n :=
