@@ -9,7 +9,9 @@ same boot in QEMU.
 Usage: `boot-sim FLASH EFUSE HALT_ADDRESS [OUT_FLASH]`
 
 With `OUT_FLASH`, it writes the flash as the boot left it, to compare with
-the flash file QEMU wrote.
+the flash file QEMU wrote. With `BOOT_SIM_PROFILE` set to a path, it writes
+how many instructions ran at each code address, one `ADDRESS COUNT` line per
+address, for `scripts/boot-profile.py`.
 
 It loads the ESP image at flash offset 0 the way the ROM does and jumps to
 its entry point. Calls into the ROM functions the bootloader links against
@@ -181,29 +183,33 @@ def cachedStep (s : Sim) : Option Sim :=
 /-- The most instructions a boot may run before the simulator gives up. -/
 def fuel : Nat := 2_000_000_000
 
+/-- Runs the boot. `prof` counts the instructions run at each halfword of
+the code region. -/
 partial def run (halt : Nat) (s : Sim) (flash : ByteArray) (count : Nat)
-    (out : IO.FS.Stream) : IO (Nat × ByteArray) := do
+    (prof : Array Nat) (out : IO.FS.Stream) : IO (Nat × ByteArray × Array Nat) := do
   let pc := s.pc.toNat
   if roms.contains pc then
     let args := (List.range (argCount pc s)).map fun i => " " ++ hex (a s i).toNat
     out.putStrLn s!"call {hex pc}{String.join args}"
     let (s, flash) := romCall pc s flash
-    run halt s flash count out
+    run halt s flash count prof out
   else if pc == halt then
     out.putStrLn s!"halt {hex (a s 0).toNat}"
-    pure (count, flash)
+    pure (count, flash, prof)
   else if !inBootloader pc then
     out.putStrLn s!"jump {hex pc} {hex (a s 0).toNat}"
-    pure (count, flash)
+    pure (count, flash, prof)
   else if count ≥ fuel then
     out.putStrLn s!"fuel {hex pc}"
-    pure (count, flash)
+    pure (count, flash, prof)
   else
     match cachedStep s with
-    | some s' => run halt s' flash (count + 1) out
+    | some s' =>
+      let h := (pc - codeBase) / 2
+      run halt s' flash (count + 1) (prof.set! h (prof[h]! + 1)) out
     | none =>
       out.putStrLn s!"trap {hex pc}"
-      pure (count, flash)
+      pure (count, flash, prof)
 
 def parseHexNat (s : String) : Option Nat :=
   (s.toList.dropWhile (· == '0') |>.drop 0).foldlM (fun acc c =>
@@ -228,7 +234,11 @@ def main (args : List String) : IO UInt32 := do
     efuse := efuse
     decoded := Array.replicate (codeLen / 2) none }
   let s := loadImage flash s0
-  let (n, flash) ← run halt s flash 0 (← IO.getStdout)
+  let (n, flash, prof) ← run halt s flash 0 (Array.replicate (codeLen / 2) 0) (← IO.getStdout)
   if let some o := outPath then IO.FS.writeBinFile o flash
+  if let some p ← IO.getEnv "BOOT_SIM_PROFILE" then
+    let lines := (List.range prof.size).filterMap fun h =>
+      if prof[h]! == 0 then none else some s!"{hex (codeBase + 2 * h)} {prof[h]!}\n"
+    IO.FS.writeFile p (String.join lines)
   IO.eprintln s!"boot-sim: {n} instructions"
   return 0
