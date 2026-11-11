@@ -710,4 +710,33 @@ theorem mmHeadBlock_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Wor
   simp +decide only [BlockOk, BInstr.ok, BInstr.run, mmHeadBlock, upd, ↓reduceIte, true_and, and_true]
   exact ⟨hx, hs⟩
 
+/-- The registers the end of a pass leaves alone. -/
+def tailKeep (q : Fin 32) : Bool := q.val ∉ [10, 11, 22, 28, 29]
+
+set_option maxRecDepth 20000 in
+theorem mmTailBlock_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock mmTailBlock (M, f)).1 = memStore32 M (f sp + 0x38) (aluEval .add (f (22 : Fin 32)) (f a2)) ∧
+    (runBlock mmTailBlock (M, f)).2 (22 : Fin 32) = aluEval .add (aluEval .add (f (24 : Fin 32)) (f (28 : Fin 32)))
+      (aluEval .sltu (aluEval .add (f (22 : Fin 32)) (f a2)) (f a2)) ∧
+    (runBlock mmTailBlock (M, f)).2 (29 : Fin 32) = f (29 : Fin 32) + 1 ∧
+    (runBlock mmTailBlock (M, f)).2 (28 : Fin 32) = 0 ∧
+    ∀ q, tailKeep q = true → (runBlock mmTailBlock (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, mmTailBlock]
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp only [upd, h0, ite_false, pkeep_ne (r := a0) hq rfl, pkeep_ne (r := a1) hq rfl,
+        pkeep_ne (r := 22) hq rfl, pkeep_ne (r := 28) hq rfl, pkeep_ne (r := 29) hq rfl]
+
+theorem mmTailBlock_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (hs : (f sp + 0x38).toNat % 4 = 0) (hsep : Sep (f sp + 0x38) 4 base len) :
+    BlockOk base len mmTailBlock (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, mmTailBlock, upd, ↓reduceIte, true_and, and_true]
+  exact ⟨hs, hsep⟩
+
 end C3.RV32
