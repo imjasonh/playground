@@ -871,7 +871,11 @@ theorem mm_outer_arith {B P T T' x Y u N Xi Ui : Nat} (hB : 0 < B)
     have e : (B - 1) * N + N = B * N := by
       rw [← Nat.succ_mul, Nat.succ_eq_add_one, Nat.sub_add_cancel hB]
     have : B * T' < B * (2 * N) := by rw [Nat.mul_left_comm]; omega
-    exact Nat.lt_of_mul_lt_mul_left this
+    exact Nat.lt_of_not_le fun h => Nat.lt_irrefl _ (Nat.lt_of_lt_of_le this (Nat.mul_le_mul_left B h))
+
+theorem idx_lt1 {i m n : Nat} (h : i + (m + 1) + 1 = n) : i + 1 < n := by omega
+
+theorem idx_succ {i m n : Nat} (h : i + (m + 1) + 1 = n) : i + 1 + m + 1 = n := by omega
 
 set_option exponentiation.threshold 400 in
 /-- **The outer loop**, from pass `i` to its end at 0xE2. The accumulator
@@ -905,7 +909,7 @@ theorem mm_outer {B acc xp yp np K : Word} {M0 : Word → BitVec 8}
   induction m with
   | zero =>
     intro i hi M n s hc hfr hinv hbd r29 r20 r6 r7 r19 rsp rsp38 r17 r16 r21 r28 r5
-    have i11 : i = 11 := by omega
+    have i11 : i = 11 := Nat.succ.inj hi
     subst i11
     obtain ⟨n1, M1, c1, u1, hc1, hf1, ⟨u, hu, hp⟩, e29, e28, k1⟩ := mm_pass (i := 11) (by decide) hxp hyp hnp hacc
       hw hAX hAY hAN hAC hk s hc hfr r29 r20 r6 r7 r19 rsp rsp38 r17 r16 r21 r28 r5
@@ -916,8 +920,8 @@ theorem mm_outer {B acc xp yp np K : Word} {M0 : Word → BitVec 8}
     rw [a1, accV_succ1 M0 xp 11]
   | succ m ih =>
     intro i hi M n s hc hfr hinv hbd r29 r20 r6 r7 r19 rsp rsp38 r17 r16 r21 r28 r5
-    have hl : i + 1 < 12 := by omega
-    obtain ⟨n1, M1, c1, u1, hc1, hf1, ⟨u, hu, hp⟩, e29, e28, k1⟩ := mm_pass (i := i) (by omega) hxp hyp hnp hacc
+    have hl : i + 1 < 12 := idx_lt1 hi
+    obtain ⟨n1, M1, c1, u1, hc1, hf1, ⟨u, hu, hp⟩, e29, e28, k1⟩ := mm_pass (i := i) (Nat.lt_trans (Nat.lt_succ_self i) hl) hxp hyp hnp hacc
       hw hAX hAY hAN hAC hk s hc hfr r29 r20 r6 r7 r19 rsp rsp38 r17 r16 r21 r28 r5
     rw [ite_eq_left hl] at u1
     obtain ⟨U, hU⟩ := hinv
@@ -925,7 +929,7 @@ theorem mm_outer {B acc xp yp np K : Word} {M0 : Word → BitVec 8}
     have inv1 : ∃ U, 2 ^ (32 * (i + 1)) * (accV M1 acc 12 + (reg n1 (22 : Fin 32)).toNat * 2 ^ (32 * 12)) =
         accV M0 xp (i + 1) * accV M0 yp 12 + U * accV M0 np 12 :=
       ⟨U + 2 ^ (32 * i) * u, by rw [pow32_succ i, a1, accV_succ1 M0 xp i]⟩
-    obtain ⟨n', M', c', u', hc', hf', hv', hb', k'⟩ := ih (i + 1) (by omega) u1 hc1 hf1 inv1 a2 e29
+    obtain ⟨n', M', c', u', hc', hf', hv', hb', k'⟩ := ih (i + 1) (idx_succ hi) u1 hc1 hf1 inv1 a2 e29
       (by rw [k1 _ rfl, r20]) (by rw [k1 _ rfl, r6]) (by rw [k1 _ rfl, r7]) (by rw [k1 _ rfl, r19])
       (by rw [k1 _ rfl, rsp]) (by rw [k1 _ rfl, rsp38]) (by rw [k1 _ rfl, r17]) (by rw [k1 _ rfl, r16])
       (by rw [k1 _ rfl, r21]) e28 (by rw [k1 _ rfl, r5])

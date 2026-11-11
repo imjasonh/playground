@@ -187,19 +187,21 @@ end
 /-- The limb the select keeps: `a` when the mask is clear, `b` when set. -/
 def selWord (a b c : Word) : Word := a ^^^ ((b ^^^ a) &&& (0 - c))
 
+theorem ones_bit : ∀ i : Fin 32, (0 - 1 : Word).getLsbD i.val = true := by decide
+
 theorem selWord_eq (a b c : Word) (hc : c = 0 ∨ c = 1) : selWord a b c = if c = 1 then b else a := by
   unfold selWord
   apply BitVec.eq_of_getLsbD_eq
   intro i hi
   rcases hc with rfl | rfl
-  · simp +decide only [ite_false]
-    have : (0 - 0 : Word) = 0 := rfl
-    rw [this, BitVec.getLsbD_xor, BitVec.getLsbD_and]
-    simp
-  · simp only [ite_true]
-    have : (0 - 1 : Word) = BitVec.allOnes 32 := by decide
-    rw [this, BitVec.getLsbD_xor, BitVec.getLsbD_and, BitVec.getLsbD_xor, BitVec.getLsbD_allOnes]
-    cases a.getLsbD i <;> cases b.getLsbD i <;> simp [hi]
+  · have h0 : (0 : Word).getLsbD i = false := BitVec.getLsbD_zero
+    rw [ite_eq_right (by decide), show (0 - 0 : Word) = 0 from rfl, BitVec.getLsbD_xor, BitVec.getLsbD_and,
+      h0, Bool.and_false, Bool.xor_false]
+  · have h1 : (0 - 1 : Word).getLsbD i = true := ones_bit ⟨i, hi⟩
+    rw [ite_eq_left rfl, BitVec.getLsbD_xor, BitVec.getLsbD_and, BitVec.getLsbD_xor, h1, Bool.and_true]
+    generalize a.getLsbD i = x
+    generalize b.getLsbD i = y
+    cases x <;> cases y <;> rfl
 
 /-- The registers the prologue leaves alone. -/
 def proKeep (q : Fin 32) : Bool := q.val ∉ [2, 8, 9, 10, 11, 12, 18, 19, 20]
@@ -242,5 +244,156 @@ theorem selPro_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {l
     ⟨aligned_add hF (k := 0x40) (by decide), hS.sub (c := 0x40) (l := 4) (by decide)⟩,
     ⟨aligned_add hF (k := 0x3C) (by decide), hS.sub (c := 0x3C) (l := 4) (by decide)⟩,
     ⟨aligned_add hF (k := 0x38) (by decide), hS.sub (c := 0x38) (l := 4) (by decide)⟩⟩
+
+set_option maxRecDepth 20000 in
+theorem selIt_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock selIt (M, f)).1 = memStore8 M (f sp + 0x37) ((f (19 : Fin 32)).extractLsb' 0 8) ∧
+    (runBlock selIt (M, f)).2 a2 = memLoad32 M (f (9 : Fin 32) + 0) ∧
+    (runBlock selIt (M, f)).2 a3 =
+      memLoad32 (memStore8 M (f sp + 0x37) ((f (19 : Fin 32)).extractLsb' 0 8)) (f (20 : Fin 32) + 0) ∧
+    (runBlock selIt (M, f)).2 a4 =
+      (memStore8 M (f sp + 0x37) ((f (19 : Fin 32)).extractLsb' 0 8) (f sp + 0x37)).zeroExtend 32 ∧
+    ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → (runBlock selIt (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, selIt]
+  refine ⟨?_, ?_, ?_, ?_, fun q q2 q3 q4 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q2, q3, q4]
+
+theorem selIt_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h9 : (f (9 : Fin 32) + 0).toNat % 4 = 0) (h20 : (f (20 : Fin 32) + 0).toNat % 4 = 0)
+    (hs : Sep (f sp + 0x37) 1 base len) : BlockOk base len selIt (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, selIt, upd, ↓reduceIte, and_true]
+  exact ⟨h9, hs, h20⟩
+
+set_option maxRecDepth 20000 in
+theorem selStep_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock selStep (M, f)).1 = memStore32 M (f (8 : Fin 32) + 0) (selWord (f a2) (f a3) (f a4)) ∧
+    (runBlock selStep (M, f)).2 (9 : Fin 32) = f (9 : Fin 32) + 4 ∧
+    (runBlock selStep (M, f)).2 (20 : Fin 32) = f (20 : Fin 32) + 4 ∧
+    (runBlock selStep (M, f)).2 (8 : Fin 32) = f (8 : Fin 32) + 4 ∧
+    (runBlock selStep (M, f)).2 a0 = f a0 + 0xFFFFFFFF ∧
+    ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ (9 : Fin 32) → q ≠ (20 : Fin 32) → q ≠ (8 : Fin 32) → q ≠ a0 →
+      (runBlock selStep (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, selStep]
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q q2 q3 q4 q9 q20 q8 q0 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q2, q3, q4, q9, q20, q8, q0]
+
+theorem selStep_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h8 : (f (8 : Fin 32) + 0).toNat % 4 = 0) (hs : Sep (f (8 : Fin 32) + 0) 4 base len) :
+    BlockOk base len selStep (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, selStep, upd, ↓reduceIte, true_and, and_true]
+  exact ⟨h8, hs⟩
+
+theorem cnt12_dec : ∀ i : Nat, i < 12 → BitVec.ofNat 32 (12 - i) + 0xFFFFFFFF = BitVec.ofNat 32 (12 - (i + 1)) := by
+  decide
+
+theorem cnt12_ne : ∀ i : Nat, i < 12 → (BitVec.ofNat 32 (12 - (i + 1)) != 0) = decide (i + 1 < 12) := by decide
+
+theorem choice_byte (M : Word → BitVec 8) (a c : Word) (hc : c = 0 ∨ c = 1) :
+    (memStore8 M a (c.extractLsb' 0 8) a).zeroExtend 32 = c := by
+  unfold memStore8; rw [ite_eq_left rfl]; rcases hc with rfl | rfl <;> decide
+
+theorem upd_t0 (f : Fin 32 → Word) (v : Word) : upd f t0 v t0 = v := by simp +decide [upd]
+
+/-- **One limb of the select**, from 0x30: store limb `i` of `b` or `a` to
+the buffer, through the outlined helper. -/
+theorem sel_iter {M : Word → BitVec 8} {S F ap bp c : Word} {n : Machine} {i : Nat}
+    (s : St M S n 0x30 (reg n)) (hc : CodeIn M S uintSelect12Code)
+    (hcs : CodeIn M (S + 0xCFEE) uintSelect12StepCode) (hS : S.toNat % 2 = 0) (hi : i < 12)
+    (hcc : c = 0 ∨ c = 1) (hap : ap.toNat % 4 = 0) (hbp : bp.toNat % 4 = 0) (hF : F.toNat % 4 = 0)
+    (sB : Sep (F + 0x37) 1 (bp + BitVec.ofNat 32 (4 * i)) 4)
+    (sC1 : Sep (F + 0x37) 1 S uintSelect12Code.length)
+    (sC2 : Sep (F + 4 + BitVec.ofNat 32 (4 * i)) 4 S uintSelect12Code.length)
+    (sC3 : Sep (F + 4 + BitVec.ofNat 32 (4 * i)) 4 (S + 0xCFEE) uintSelect12StepCode.length)
+    (sC4 : Sep (F + 0x37) 1 (S + 0xCFEE) uintSelect12StepCode.length)
+    (rsp : reg n sp = F) (r9 : reg n (9 : Fin 32) = ap + BitVec.ofNat 32 (4 * i))
+    (r20 : reg n (20 : Fin 32) = bp + BitVec.ofNat 32 (4 * i))
+    (r8 : reg n (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * i))
+    (ra0 : reg n a0 = BitVec.ofNat 32 (12 - i)) (r19 : reg n (19 : Fin 32) = c) :
+    ∃ n', Steps n n' ∧
+      St (memStore32 (memStore8 M (F + 0x37) (c.extractLsb' 0 8)) (F + 4 + BitVec.ofNat 32 (4 * i))
+          (if c = 1 then memLoad32 M (bp + BitVec.ofNat 32 (4 * i)) else memLoad32 M (ap + BitVec.ofNat 32 (4 * i))))
+        S n' (if i + 1 < 12 then 0x30 else 0x48) (reg n') ∧
+      reg n' (9 : Fin 32) = ap + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (20 : Fin 32) = bp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' a0 = BitVec.ofNat 32 (12 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ (9 : Fin 32) → q ≠ (20 : Fin 32) → q ≠ (8 : Fin 32) →
+        q ≠ t0 → reg n' q = reg n q := by
+  have hz := s.zero
+  have ok1 := selIt_ok (M := M) (f := reg n) (base := S) (len := uintSelect12Code.length)
+    (by rw [r9, add_lit_zero]; exact aligned_add hap (by omega))
+    (by rw [r20, add_lit_zero]; exact aligned_add hbp (by omega)) (by rw [rsp]; exact sC1)
+  obtain ⟨n1, c1, u1⟩ := St.block selIt s hc selIt_end ok1
+  obtain ⟨em1, e2, e3, e4, fr1⟩ := selIt_run (M := M) (f := reg n) hz
+  rw [em1, rsp, r19] at u1
+  rw [rsp, r19] at e3 e4
+  rw [r9, add_lit_zero] at e2
+  rw [r20, add_lit_zero, memLoad32_store8_sep sB] at e3
+  rw [choice_byte M _ c hcc] at e4
+  have hc1 := CodeIn.store8 (v := c.extractLsb' 0 8) hc sC1
+  have hcs1 := CodeIn.store8 (v := c.extractLsb' 0 8) hcs sC4
+  obtain ⟨g1, hg1⟩ : ∃ g1, (runBlock selIt (M, reg n)).2 = g1 := ⟨_, rfl⟩
+  rw [hg1] at u1 e2 e3 e4 fr1
+  have g8 : upd g1 t0 (S + BitVec.ofNat 32 (0x3E + 8)) (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * i) := by
+    rw [upd_ne (by decide) (by decide), fr1 _ (by decide) (by decide) (by decide), r8]
+  have okS := selStep_ok (M := memStore8 M (F + 0x37) (c.extractLsb' 0 8))
+    (f := upd g1 t0 (S + BitVec.ofNat 32 (0x3E + 8))) (base := S + 0xCFEE) (len := uintSelect12StepCode.length)
+    (by rw [g8, add_lit_zero]; exact aligned_add (aligned_add hF (k := 4) (by decide)) (by omega))
+    (by rw [g8, add_lit_zero]; exact sC3)
+  have hzg : upd g1 t0 (S + BitVec.ofNat 32 (0x3E + 8)) 0 = 0 := upd_zero _ _ _
+  obtain ⟨em2, f9, f20, f8, fa0, fr2⟩ := selStep_run (M := memStore8 M (F + 0x37) (c.extractLsb' 0 8))
+    (f := upd g1 t0 (S + BitVec.ofNat 32 (0x3E + 8))) hzg
+  obtain ⟨n2, c2, u2⟩ := u1.callBlock hc1 us_at_3e us_at_42 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at S hS 0xCFEE (by decide)) (even_at S hS (0x3E + 8) (by decide)) hcs1 selStep selStep_end uss_at_14 okS
+    (by rw [fr2 t0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), upd_t0])
+  have u2' := u2.self
+  rw [em2, g8, add_lit_zero, upd_ne (by decide) (by decide), upd_ne (by decide) (by decide),
+    upd_ne (by decide) (by decide), e2, e3, e4, selWord_eq _ _ c hcc] at u2'
+  obtain ⟨g2, hg2⟩ : ∃ g2, (runBlock selStep (memStore8 M (F + 0x37) (c.extractLsb' 0 8),
+      upd g1 t0 (S + BitVec.ofNat 32 (0x3E + 8)))).2 = g2 := ⟨_, rfl⟩
+  rw [hg2] at f9 f20 f8 fa0 fr2
+  have v2 : ∀ q, reg n2 q = g2 q := fun q => by rw [u2.regs, hg2]
+  have hc2 := CodeIn.store32 (v := if c = 1 then memLoad32 M (bp + BitVec.ofNat 32 (4 * i))
+    else memLoad32 M (ap + BitVec.ofNat 32 (4 * i))) hc1 sC2
+  have ea0 : reg n2 a0 = BitVec.ofNat 32 (12 - (i + 1)) := by
+    rw [v2, fa0, upd_ne (by decide) (by decide), fr1 _ (by decide) (by decide) (by decide), ra0, cnt12_dec i hi]
+  have hb : branchTaken .bne (reg n2 a0) (reg n2 x0) = decide (i + 1 < 12) := by
+    rw [ea0, u2'.zero]; exact cnt12_ne i hi
+  have post : ∀ n3 : Machine, (∀ q, reg n3 q = reg n2 q) →
+      reg n3 (9 : Fin 32) = ap + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n3 (20 : Fin 32) = bp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n3 (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n3 a0 = BitVec.ofNat 32 (12 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ (9 : Fin 32) → q ≠ (20 : Fin 32) → q ≠ (8 : Fin 32) →
+        q ≠ t0 → reg n3 q = reg n q := fun n3 h3 => by
+    refine ⟨?_, ?_, ?_, by rw [h3, ea0], fun q q0 q2 q3 q4 q9 q20 q8 qt => ?_⟩
+    · rw [h3, v2, f9, upd_ne (by decide) (by decide), fr1 _ (by decide) (by decide) (by decide), r9, ptr4]
+    · rw [h3, v2, f20, upd_ne (by decide) (by decide), fr1 _ (by decide) (by decide) (by decide), r20, ptr4]
+    · rw [h3, v2, f8, g8, ptr4]
+    · rw [h3, v2, fr2 q q2 q3 q4 q9 q20 q8 q0]
+      by_cases h0 : q.val = 0
+      · have : q = 0 := Fin.ext h0
+        subst this; rw [upd_zero, hz]
+      · rw [upd_ne h0 qt, fr1 q q2 q3 q4]
+  by_cases hl : i + 1 < 12
+  · obtain ⟨n3, d3, u3⟩ := u2'.taken hc2 0x30 us_at_46 (by decide) (by rw [hb]; exact decide_eq_true hl)
+    exact ⟨n3, c1.trans (c2.trans (.single d3)), by rw [ite_eq_left hl]; exact u3.self, post n3 u3.regs⟩
+  · obtain ⟨n3, d3, u3⟩ := u2'.notTaken hc2 0x48 us_at_46 (by decide) (by rw [hb]; exact decide_eq_false hl)
+    exact ⟨n3, c1.trans (c2.trans (.single d3)), by rw [ite_eq_right hl]; exact u3.self, post n3 u3.regs⟩
 
 end C3.RV32
