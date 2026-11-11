@@ -1309,4 +1309,241 @@ structure FinEnv (M : Word → BitVec 8) (S out sp0 : Word) : Prop where
   sKS : Sep (BitVec.ofNat 32 shaKAddress) 256 S 0x68
   sKF : Sep (BitVec.ofNat 32 shaKAddress) 256 (sp0 + 0xFFFFFE70) 0x190
 
+set_option maxHeartbeats 8000000 in
+set_option maxRecDepth 200000 in
+/-- **The compiled `finalize` of `sha2`'s SHA-256.** Called with the hasher
+at `S` holding `msg` and an output buffer at `out`, it writes FIPS 180-4's
+SHA-256 digest of `msg` to the 32 bytes at `out`. It returns to `retAddr`
+with `sp` restored and the callee-saved registers kept, and changes no
+memory outside the hasher, the output, and 0x190 bytes of stack below `sp`. -/
+theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Bytes}
+    (E : FinEnv m.mem S out sp0) (hpc : m.pc = BitVec.ofNat 32 shaFinalizeAddress)
+    (ha0 : reg m a0 = out) (ha1 : reg m a1 = S) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hsp : reg m sp = sp0) (H : HasherAt m.mem S msg) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+        r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
+        r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
+      memBytes m'.mem out 32 = sha256 msg ∧
+      ∀ x, Sep (sp0 + 0xFFFFFE70) 0x190 x 1 → Sep S 0x68 x 1 → Sep out 32 x 1 → m'.mem x = m.mem x := by
+  let U := BitVec.ofNat 32 shaFinalizeAddress
+  let M0 := m.mem
+  let G := sp0 + 0xFFFFFFA0
+  let R := sp0 + 0xFFFFFE70
+  have hspw := E.hspw
+  have hspl := E.hspl
+  have hSw := E.hSw
+  have hOw := E.hOw
+  have hRn : R.toNat = sp0.toNat - 0x190 := by
+    show (sp0 + 0xFFFFFE70).toNat = _
+    rw [BitVec.toNat_add, show (0xFFFFFE70 : Word).toNat = 2 ^ 32 - 0x190 from rfl]; omega
+  have hRc : ∀ c, c ≤ 0x190 → (R + BitVec.ofNat 32 c).toNat = R.toNat + c := fun c hc => by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  have hGR : G = R + BitVec.ofNat 32 0x130 := by
+    show sp0 + 0xFFFFFFA0 = sp0 + 0xFFFFFE70 + BitVec.ofNat 32 0x130; rw [BitVec.add_assoc]; rfl
+  have hGn : G.toNat = sp0.toNat - 0x60 := by rw [hGR, hRc _ (by omega), hRn]; omega
+  have Gc : ∀ c, G + BitVec.ofNat 32 c = R + BitVec.ofNat 32 (0x130 + c) := fun c => by rw [hGR, add_ofNat_assoc]
+  have hGc : ∀ c, c ≤ 0x60 → (G + BitVec.ofNat 32 c).toNat = G.toNat + c := fun c hc => by
+    rw [Gc, hRc _ (by omega), hGn, hRn]; omega
+  have hGa : G.toNat % 16 = 0 := by rw [hGn]; have := E.hsp; omega
+  have hGa4 : G.toNat % 4 = 0 := by omega
+  have codeX : ∀ (My : Word → BitVec 8), (∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → My x = M0 x) →
+      ∀ (b : Word) (code : List Nat), CodeIn M0 b code → 0x40000000 ≤ b.toNat →
+      b.toNat + code.length ≤ 2 ^ 32 → CodeIn My b code := fun My h b code hc hb hbl i hi => by
+    rw [h _ ((data_code (by rw [hRn]; omega) hb hbl).subR (c := i) (l := 1) (by omega))
+      ((data_code (by omega) hb hbl).subR (c := i) (l := 1) (by omega))]
+    exact hc i hi
+  have Rd : ∀ c l, c + l ≤ 0x190 → ∀ (b : Word) (k : Nat), 0x40000000 ≤ b.toNat → b.toNat + k ≤ 2 ^ 32 →
+      Sep (R + BitVec.ofNat 32 c) l b k := fun c l h b k hb hbk =>
+    data_code (by rw [hRc _ (by omega)]; omega) hb hbk
+  have Rx : ∀ c l, c + l ≤ 0x190 → ∀ x, Sep R 0x190 x 1 → Sep (R + BitVec.ofNat 32 c) l x 1 :=
+    fun c l h x hx => hx.sub (c := c) (l := l) h
+  -- The prologue: the frame, the save helper, and `s6`.
+  have st0 : St M0 U m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
+  obtain ⟨m1, e1, tt1⟩ := st0.aluImm E.cF sf_at_0 (off' := 2) (by decide)
+  rw [show aluEval .add (reg m sp) 0xFFFFFFA0 = G by rw [hsp]; rfl] at tt1
+  have f1sp : upd (reg m) sp G sp = G := by simp +decide [upd]
+  have f1 : ∀ r, r ≠ sp → upd (reg m) sp G r = reg m r := fun r h => by
+    by_cases hr : r.val = 0
+    · have : r = 0 := Fin.ext hr
+      subst this; simp [upd, st0.zero]
+    · simp [upd, hr, h]
+  have slotP : ∀ (r : Fin 32) (o : Nat), r ≠ t0 → o + 4 ≤ 0x60 → o % 4 = 0 →
+      r ≠ t0 ∧ (G + BitVec.ofNat 32 o).toNat % 4 = 0 ∧
+        Sep (G + BitVec.ofNat 32 o) 4 (BitVec.ofNat 32 shaFinalizeSaveAddress) shaFinalizeSaveCode.length :=
+    fun r o h1 h2 h3 => ⟨h1, aligned_add hGa4 h3, by rw [Gc]; exact Rd _ _ (by omega) _ _ (by decide) (by decide)⟩
+  obtain ⟨m2, k2, tt2⟩ := tt1.callSave E.cF sf_at_2 sf_at_6 (b := BitVec.ofNat 32 shaFinalizeSaveAddress)
+    (by decide) (by decide) (by decide) E.cSave finSave_shape (by decide) (fun p hp => by
+      rw [f1sp]
+      simp only [finSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      · exact slotP ra 0x5C (by decide) (by omega) (by omega)
+      · exact slotP s0 0x58 (by decide) (by omega) (by omega)
+      · exact slotP s1 0x54 (by decide) (by omega) (by omega)
+      · exact slotP s2 0x50 (by decide) (by omega) (by omega)
+      · exact slotP s3 0x4C (by decide) (by omega) (by omega)
+      · exact slotP s4 0x48 (by decide) (by omega) (by omega)
+      · exact slotP s5 0x44 (by decide) (by omega) (by omega))
+  rw [f1sp] at tt2
+  let g1 := upd (reg m) sp G
+  have SV : ∀ x, Sep (G + BitVec.ofNat 32 0x40) 0x20 x 1 → saveMem M0 G g1 finSavePs x = M0 x := fun x hx => by
+    have := finSaved_out M0 G g1 0 x hx
+    simp only [finSaved] at this
+    rw [memStore32_get_sep (hx.sub (c := 0) (l := 4) (by omega) |> fun h' => by rwa [add_ofNat_zero] at h')] at this
+    exact this
+  have SVR : ∀ x, Sep R 0x190 x 1 → saveMem M0 G g1 finSavePs x = M0 x := fun x hx =>
+    SV x (by rw [Gc]; exact Rx _ _ (by omega) x hx)
+  have g2 : ∀ r, r ≠ sp → r ≠ t0 → upd g1 t0 (U + BitVec.ofNat 32 (2 + 8)) r = reg m r := fun r h1 h2 => by
+    by_cases hr : r.val = 0
+    · have : r = 0 := Fin.ext hr
+      subst this; simp [upd, st0.zero]
+    · simp [g1, upd, hr, h1, h2]
+  have g2sp : upd g1 t0 (U + BitVec.ofNat 32 (2 + 8)) sp = G := by simp +decide [g1, upd]
+  have cS := codeX _ (fun x hx _ => SVR x hx) _ _ E.cF (by decide) (by decide)
+  obtain ⟨m3, e3, tt3⟩ := tt2.sw cS sf_at_a (off' := 0xC) (by decide)
+    (by rw [g2sp]; exact aligned_add hGa4 (k := 0x40) (by decide))
+  rw [g2sp, g2 _ (by decide) (by decide), show (0x40 : Word) = BitVec.ofNat 32 0x40 from rfl] at tt3
+  let M1 := finSaved M0 G g1 (reg m s6)
+  have M1R : ∀ x, Sep R 0x190 x 1 → M1 x = M0 x := fun x hx =>
+    finSaved_out M0 G g1 _ x (by rw [Gc]; exact Rx _ _ (by omega) x hx)
+  have tt3' : St M1 U m3 0xC (upd g1 t0 (U + BitVec.ofNat 32 (2 + 8))) := tt3
+  have K3 : ∀ r, r ≠ sp → r ≠ t0 → reg m3 r = reg m r := fun r h1 h2 => by rw [tt3.regs, g2 r h1 h2]
+  have sp3 : reg m3 sp = G := by rw [tt3.regs, g2sp]
+  have u3 : St M1 U m3 0xC (reg m3) := tt3'.self
+  have cM1 := codeX M1 (fun x hx _ => M1R x hx)
+  have cF1 := cM1 _ _ E.cF (by decide) (by decide)
+  obtain ⟨m4, e4, u4⟩ := u3.alu cF1 sf_at_c (off' := 0xE) (by decide)
+  have K4 := u4.upd_ne u3.zero
+  have u4' : St M1 U m4 0xE (reg m4) := u4.self
+  obtain ⟨m5, e5, u5⟩ := u4'.alu cF1 sf_at_e (off' := 0x10) (by decide)
+  have K5 := u5.upd_ne u4'.zero
+  have u5' : St M1 U m5 0x10 (reg m5) := u5.self
+  obtain ⟨m6, e6, u6⟩ := u5'.alu cF1 sf_at_10 (off' := 0x12) (by decide)
+  have K6 := u6.upd_ne u5'.zero
+  have u6' : St M1 U m6 0x12 (reg m6) := u6.self
+  obtain ⟨m7, e7, u7⟩ := u6'.auipc cF1 sf_at_12 (off' := 0x16) (by decide)
+  obtain ⟨m8, e8, pc8, mem8, regs8⟩ := u7.call cF1 sf_at_16
+  have r8 : ∀ r, r ≠ ra → reg m8 r = reg m6 r := fun r h => by
+    rw [regs8]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u6'.zero.symm
+    · simp [upd, h0, h]
+  have K38 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ s2 → r ≠ s4 → reg m8 r = reg m3 r := fun r q1 q10 q18 q20 => by
+    rw [r8 r q1, K6 r q10, K5 r q18, K4 r q20]
+  have sp8 : reg m8 sp = G := by rw [K38 sp (by decide) (by decide) (by decide) (by decide), sp3]
+  have s4_8 : reg m8 s4 = S := by
+    rw [r8 s4 (by decide), K6 s4 (by decide), K5 s4 (by decide), u4.upd_eq (by decide), u3.zero,
+      K3 a1 (by decide) (by decide), ha1]
+    exact BitVec.zero_add _
+  have s2_8 : reg m8 s2 = out := by
+    rw [r8 s2 (by decide), K6 s2 (by decide), u5.upd_eq (by decide), u4'.zero, K4 a0 (by decide),
+      K3 a0 (by decide) (by decide), ha0]
+    exact BitVec.zero_add _
+  have a0_8 : reg m8 a0 = G := by
+    rw [r8 a0 (by decide), u6.upd_eq (by decide), u5'.zero, K5 sp (by decide), K4 sp (by decide), sp3]
+    exact BitVec.zero_add _
+  have ra8 : reg m8 ra = U + BitVec.ofNat 32 0x1A := by rw [regs8]; simp +decide [upd]; rfl
+  have pc8' : m8.pc = BitVec.ofNat 32 shaZero32Address := by
+    rw [pc8, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+    decide
+  have eZ : G + 0xFFFFFFC0 = R + BitVec.ofNat 32 0xF0 := by
+    rw [hGR, BitVec.add_assoc]; rfl
+  obtain ⟨m9, c9, pc9, sp9, K9, mem9⟩ := shaZero32_correct m8 (d := G) (T := G)
+    (by rw [mem8]; exact cM1 _ _ E.cZ (by decide) (by decide))
+    (by rw [mem8]; exact cM1 _ _ E.cMS (by decide) (by decide))
+    (by rw [mem8]; exact cM1 _ _ E.cMB (by decide) (by decide))
+    pc8' a0_8 ra8 (by decide) sp8 hGa (by omega) (by omega) (by omega)
+    (by rw [eZ, hGR]; exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega))
+  rw [mem8, eZ] at mem9
+  let MA := m9.mem
+  have mA : ∀ x, Sep (R + BitVec.ofNat 32 0xF0) 0x40 x 1 → MA x = fillBytes M1 G 0 32 x := mem9
+  have MAR : ∀ x, Sep R 0x190 x 1 → MA x = M0 x := fun x hx => by
+    rw [mA x (Rx _ _ (by omega) x hx), fillBytes_sep (by rw [hGR]; exact Rx _ _ (by omega) x hx) (Nat.le_refl 32),
+      M1R x hx]
+  have MAs : ∀ k, 0x40 ≤ k → k < 0x60 → MA (G + BitVec.ofNat 32 k) = M1 (G + BitVec.ofNat 32 k) := fun k h1 h2 => by
+    rw [mA _ (by rw [Gc]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)),
+      fillBytes_sep (by
+        have h := sep_offsets G (c := 0) (n := 32) (d := k) (k := 1) (Or.inl (by omega)) (by omega) (by omega)
+        rwa [add_ofNat_zero] at h) (Nat.le_refl 32)]
+  have cMA := codeX MA (fun x hx _ => MAR x hx)
+  have cFA := cMA _ _ E.cF (by decide) (by decide)
+  have u9 : St MA U m9 0x1A (reg m9) := ⟨by rw [pc9], rfl, fun _ => rfl⟩
+  have k9 : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
+      r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → reg m9 r = reg m8 r := K9
+  obtain ⟨m10, e10, u10⟩ := u9.aluImm cFA sf_at_1a (off' := 0x1E) (by decide)
+  have K10 := u10.upd_ne u9.zero
+  have u10' : St MA U m10 0x1E (reg m10) := u10.self
+  obtain ⟨m11, e11, u11⟩ := u10'.aluImm cFA sf_at_1e (off' := 0x20) (by decide)
+  have K11 := u11.upd_ne u10'.zero
+  have u11' : St MA U m11 0x20 (reg m11) := u11.self
+  obtain ⟨m12, e12, u12⟩ := u11'.aluImm cFA sf_at_20 (off' := 0x22) (by decide)
+  have K12 := u12.upd_ne u11'.zero
+  have u12' : St MA U m12 0x22 (reg m12) := u12.self
+  obtain ⟨m13, e13, u13⟩ := u12'.auipc cFA sf_at_22 (off' := 0x26) (by decide)
+  obtain ⟨m14, e14, pc14, mem14, regs14⟩ := u13.call cFA sf_at_26
+  have r14 : ∀ r, r ≠ ra → reg m14 r = reg m12 r := fun r h => by
+    rw [regs14]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u12'.zero.symm
+    · simp [upd, h0, h]
+  have K914 : ∀ r, r ≠ ra → r ≠ s1 → r ≠ a0 → r ≠ s0 → reg m14 r = reg m9 r := fun r q1 q9 q10 q8 => by
+    rw [r14 r q1, K12 r q8, K11 r q10, K10 r q9]
+  have sp14 : reg m14 sp = G := by rw [K914 sp (by decide) (by decide) (by decide) (by decide), sp9]
+  have a0_14 : reg m14 a0 = G + BitVec.ofNat 32 0x20 := by
+    rw [r14 a0 (by decide), K12 a0 (by decide), u11.upd_eq (by decide), K10 sp (by decide), sp9]; rfl
+  have ra14 : reg m14 ra = U + BitVec.ofNat 32 0x2A := by rw [regs14]; simp +decide [upd]; rfl
+  have pc14' : m14.pc = BitVec.ofNat 32 shaZero32Address := by
+    rw [pc14, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+    decide
+  obtain ⟨m15, c15, pc15, sp15, K15, mem15⟩ := shaZero32_correct m14 (d := G + BitVec.ofNat 32 0x20) (T := G)
+    (by rw [mem14]; exact cMA _ _ E.cZ (by decide) (by decide))
+    (by rw [mem14]; exact cMA _ _ E.cMS (by decide) (by decide))
+    (by rw [mem14]; exact cMA _ _ E.cMB (by decide) (by decide))
+    pc14' a0_14 ra14 (by decide) sp14 hGa (by omega) (by omega) (by rw [hGc _ (by omega)]; omega)
+    (by rw [eZ, Gc]; exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega))
+  rw [mem14, eZ] at mem15
+  let M2 := m15.mem
+  have m2 : ∀ x, Sep (R + BitVec.ofNat 32 0xF0) 0x40 x 1 → M2 x = fillBytes MA (G + BitVec.ofNat 32 0x20) 0 32 x :=
+    mem15
+  have M2R : ∀ x, Sep R 0x190 x 1 → M2 x = M0 x := fun x hx => by
+    rw [m2 x (Rx _ _ (by omega) x hx), fillBytes_sep (by rw [Gc]; exact Rx _ _ (by omega) x hx) (Nat.le_refl 32),
+      MAR x hx]
+  have M2s : ∀ k, 0x40 ≤ k → k < 0x60 → M2 (G + BitVec.ofNat 32 k) = M1 (G + BitVec.ofNat 32 k) := fun k h1 h2 => by
+    rw [m2 _ (by rw [Gc]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)),
+      fillBytes_sep (sep_offsets G (Or.inl (by omega)) (by omega) (by omega)) (Nat.le_refl 32), MAs k h1 h2]
+  have u15 : St M2 U m15 0x2A (reg m15) := ⟨by rw [pc15], rfl, fun _ => rfl⟩
+  have k15 : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
+      r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → reg m15 r = reg m14 r := K15
+  -- Registers at 0x2A.
+  have Kp : ∀ r, r ≠ sp → r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ s4 →
+      r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) →
+      r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → reg m15 r = reg m r :=
+    fun r q2 q1 q5 q6 q7 q8 q9 q18 q20 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 => by
+      rw [k15 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30, K914 r q1 q9 q10 q8,
+        k9 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30, K38 r q1 q10 q18 q20, K3 r q2 q5]
+  have sp15' : reg m15 sp = G := sp15
+  have s4_15 : reg m15 s4 = S := by
+    rw [k15 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide), K914 s4 (by decide) (by decide) (by decide)
+      (by decide), k9 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s4_8]
+  have s2_15 : reg m15 s2 = out := by
+    rw [k15 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide), K914 s2 (by decide) (by decide) (by decide)
+      (by decide), k9 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_8]
+  have s1_15 : reg m15 s1 = S + 0x40 := by
+    rw [k15 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide), r14 s1 (by decide), K12 s1 (by decide),
+      K11 s1 (by decide), u10.upd_eq (by decide), k9 s4 (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide), s4_8]; rfl
+  have s0_15 : reg m15 s0 = G + BitVec.ofNat 32 0x20 := by
+    rw [k15 s0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide), r14 s0 (by decide), u12.upd_eq (by decide),
+      K11 sp (by decide), K10 sp (by decide), sp9]; rfl
+  sorry
+
 end C3.RV32
