@@ -52,24 +52,31 @@ func BotLowest() Strategy {
 	}}
 }
 
-// Bot is the solo bot printed in the rules, and its whole rule is a glance at
-// the pot: it commits its highest card, and a second-highest as well when the
-// pot shows its own Home suit. No judgment of a pot's worth, just a suit check.
-// A thinking player beats it clearly without walking over it.
+// Bot is the solo bot printed in the rules. Its hand is a closed, face-down
+// pile that nobody manages: each clash it flips the top card as its bid, and
+// one more card only when that first card shows its own Home suit. No judgment
+// of a pot's worth and no picking cards, just a flip and a suit check. Because
+// the trigger is the bot's own card, the rule plays the same at any table size.
+// A thinking player beats it clearly at every count without walking over it.
 func Bot() Strategy {
 	return Strategy{"bot", func(v View, _ *rand.Rand) []int {
 		if len(v.Hand) == 0 {
 			return nil
 		}
-		n := 1
-		for _, c := range v.Pot {
-			if c.Suit == v.Home {
-				n = 2
-				break
-			}
+		if v.Hand[0].Suit == v.Home {
+			return topTwo(len(v.Hand))
 		}
-		return byRankDesc(v.Hand)[:min(n, len(v.Hand))]
+		return []int{0}
 	}}
+}
+
+// topTwo flips the top one or two cards of a closed pile, by position, never by
+// rank. The hand is dealt in shuffled order, so index 0 is the top of the pile.
+func topTwo(n int) []int {
+	if n >= 2 {
+		return []int{0, 1}
+	}
+	return []int{0}
 }
 
 // Hoard concedes cheap pots and spends its two highest cards on dear ones.

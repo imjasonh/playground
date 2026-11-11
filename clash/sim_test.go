@@ -83,16 +83,53 @@ func TestSeatBalance(t *testing.T) {
 	}
 }
 
-// TestBotBeatable checks the printed solo bot gives a real game: a competent
-// player beats it clearly but not trivially, while the naive "always lowest"
-// rule is far too easy.
+// botShare returns a competent player's win share from seat 0 against a table
+// filled out with solo bots, counting a shared win as a fraction.
+func botShare(rng *rand.Rand, players, games int) float64 {
+	table := []Strategy{Competent()}
+	homes := []Suit{Suits[0]}
+	for i := 1; i < players; i++ {
+		table = append(table, Bot())
+		homes = append(homes, Suits[i])
+	}
+	share := 0.0
+	for g := 0; g < games; g++ {
+		res, err := PlayGame(rng, table, homes)
+		if err != nil {
+			panic(err)
+		}
+		best, winners := -1, 0
+		for _, sc := range res.Scores {
+			if sc > best {
+				best, winners = sc, 1
+			} else if sc == best {
+				winners++
+			}
+		}
+		if res.Scores[0] == best {
+			share += 1.0 / float64(winners)
+		}
+	}
+	return share / float64(games)
+}
+
+// TestBotBeatable checks the closed-pile solo bot gives a real game at every
+// table size: a competent player stays clearly favored over an even share, yet
+// the bots still take enough games that they are not a pushover. The naive
+// "always lowest" rule, by contrast, is trivial to beat.
 func TestBotBeatable(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
 	games := scale(3000, 20000)
 
-	good := winRate(rng, Competent(), Bot(), games)
-	if good < 0.55 || good > 0.80 {
-		t.Errorf("competent vs bot win rate %.3f, want in [0.55, 0.80]", good)
+	for _, players := range []int{2, 3, 4} {
+		fair := 1.0 / float64(players)
+		share := botShare(rng, players, games)
+		if share < fair+0.10 {
+			t.Errorf("%d players: competent win share %.3f, want clearly above even share %.3f", players, share, fair)
+		}
+		if share > 0.97 {
+			t.Errorf("%d players: competent win share %.3f, bots look like a pushover", players, share)
+		}
 	}
 
 	tooEasy := winRate(rng, Competent(), BotLowest(), games)

@@ -87,13 +87,22 @@ Clash wants two to four players, and you fill any empty chairs with Bots. You
 can play a whole game solo against Bots this way, or round out a three-handed
 table to four.
 
-A Bot takes a Home and a full deal like anyone else, and it plays by one rule:
-it commits its highest card, and a second-highest as well whenever the pot shows
-its own faction. That's the whole of it. You never judge a pot's worth for the
-Bot; you glance at the suits in the pot and play one card, or two when one of
-them is the Bot's. It fights a little harder for the pots that carry its colors,
-which is enough to keep it honest and simple enough to run while you think about
-your own hand.
+A Bot takes a Home and a full deal like anyone else, but you never hold or look
+through its hand. Leave its hand in a face-down pile, and leave its ante pile
+face down too, the way everyone's is. Nobody manages a Bot.
+
+Its whole rule is a flip. Each clash, the Bot antes the top of its ante pile
+into the pot like everyone else. Then, for its bid, you turn over the top card
+of its hand. If that card is the Bot's own faction, the Bot is fired up: turn
+over one more. Otherwise it stands on the one. Whatever you flipped is its bid,
+and those cards are spent like any other.
+
+That's the whole of it. You never judge a pot's worth for the Bot and you never
+choose a card for it; you flip from the top and check a single suit. It fights a
+little harder for the pots that turn up its colors, which is enough to keep it
+honest and simple enough to run while you think about your own hand. Because the
+Bot only ever looks at its own card, it plays the same whether it's the one
+empty chair or three of them.
 
 ## Precise rulings
 
