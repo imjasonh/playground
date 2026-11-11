@@ -429,4 +429,80 @@ theorem upd_pro {M : Word → BitVec 8} {m : Machine} {G : Word}
       (e 0x14 (by omega) (by omega)).trans q3, (e 0x10 (by omega) (by omega)).trans q4,
       (e 0x0C (by omega) (by omega)).trans q5, (e 8 (by omega) (by omega)).trans q6⟩
 
+/-- Registers after `update`'s restore helper, with `t0` the helper's link. -/
+abbrev updRestored (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) : Fin 32 → Word :=
+  restoreRegs M G f updRestorePs
+
+set_option maxRecDepth 20000 in
+/-- `update`'s return when the bytes fit in the buffer, from offset 0x32: the
+restore helper, freeing the frame, and `ret`. -/
+theorem upd_ret {M : Word → BitVec 8} {m : Machine} {f : Fin 32 → Word} {G : Word}
+    (s : St M (BitVec.ofNat 32 shaUpdateAddress) m 0x32 f)
+    (hc : CodeIn M (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode)
+    (hR : CodeIn M (BitVec.ofNat 32 shaUpdateRestoreAddress) shaUpdateRestoreCode)
+    (hsp : f sp = G) (hG : G.toNat % 4 = 0) :
+    ∃ m', Steps m m' ∧ m'.pc = memLoad32 M (G + 0x1C) &&& ~~~1 ∧ m'.mem = M ∧
+      ∀ r, reg m' r = upd (updRestored M G (upd f t0 (BitVec.ofNat 32 shaUpdateAddress +
+        BitVec.ofNat 32 (0x32 + 8)))) sp (G + 0x20) r := by
+  obtain ⟨m1, e1, t1⟩ := s.callRestore hc su_at_32 su_at_36 (b := BitVec.ofNat 32 shaUpdateRestoreAddress)
+    (by decide) (by decide) (by decide) hR updRestore_shape (by decide) (fun p hp => by
+      rw [hsp]
+      simp only [updRestorePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x1C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x18) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x14) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x10) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x0C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 8) (by decide)⟩)
+  rw [hsp] at t1
+  obtain ⟨m2, e2, t2⟩ := t1.aluImm hc su_at_3a (off' := 0x3C) (by decide)
+  have q : restoreRegs M G (upd f t0 (BitVec.ofNat 32 shaUpdateAddress + BitVec.ofNat 32 (0x32 + 8)))
+      updRestorePs sp = G := by
+    simp +decide only [restoreRegs, upd]; simp [hsp]
+  rw [q, show aluEval .add G 0x20 = G + 0x20 from rfl] at t2
+  obtain ⟨m3, e3, pc3, mem3, regs3⟩ := t2.jalr hc su_at_3c
+  refine ⟨m3, e1.trans (.cons e2 (.single e3)), ?_, mem3, regs3⟩
+  rw [pc3]; simp +decide only [upd, restoreRegs, add_lit_zero]; simp
+
+set_option maxRecDepth 20000 in
+/-- `update`'s end otherwise, from offset 0x96: the restore helper, freeing
+the frame, and a tail call of `memcpy` for the bytes left over. -/
+theorem upd_tail {M : Word → BitVec 8} {m : Machine} {f : Fin 32 → Word} {G : Word}
+    (s : St M (BitVec.ofNat 32 shaUpdateAddress) m 0x96 f)
+    (hc : CodeIn M (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode)
+    (hR : CodeIn M (BitVec.ofNat 32 shaUpdateRestoreAddress) shaUpdateRestoreCode)
+    (hsp : f sp = G) (hG : G.toNat % 4 = 0) :
+    ∃ m', Steps m m' ∧ m'.pc = BitVec.ofNat 32 memcpyStubAddress ∧ m'.mem = M ∧
+      ∀ r, r ≠ t1 → reg m' r = upd (updRestored M G (upd f t0 (BitVec.ofNat 32 shaUpdateAddress +
+        BitVec.ofNat 32 (0x96 + 8)))) sp (G + 0x20) r := by
+  obtain ⟨m1, e1, t1'⟩ := s.callRestore hc su_at_96 su_at_9a (b := BitVec.ofNat 32 shaUpdateRestoreAddress)
+    (by decide) (by decide) (by decide) hR updRestore_shape (by decide) (fun p hp => by
+      rw [hsp]
+      simp only [updRestorePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x1C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x18) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x14) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x10) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 0x0C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hG (k := 8) (by decide)⟩)
+  rw [hsp] at t1'
+  obtain ⟨m2, e2, t2⟩ := t1'.aluImm hc su_at_9e (off' := 0xA0) (by decide)
+  have q : restoreRegs M G (upd f t0 (BitVec.ofNat 32 shaUpdateAddress + BitVec.ofNat 32 (0x96 + 8)))
+      updRestorePs sp = G := by
+    simp +decide only [restoreRegs, upd]; simp [hsp]
+  rw [q, show aluEval .add G 0x20 = G + 0x20 from rfl] at t2
+  obtain ⟨m3, e3, t3⟩ := t2.auipc hc su_at_a0 (off' := 0xA4) (by decide)
+  obtain ⟨m4, e4, pc4, mem4, regs4⟩ := t3.jalr hc su_at_a4
+  refine ⟨m4, e1.trans (.cons e2 (.cons e3 (.single e4))), ?_, mem4, fun r h6 => ?_⟩
+  · rw [pc4, show ∀ (F : Fin 32 → Word) (v : Word), upd F (6 : Fin 32) v 6 = v from fun F v => by simp [upd]]
+    decide
+  · rw [regs4]
+    have h6' : r ≠ (6 : Fin 32) := h6
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]
+    · simp only [upd, h0, h6', ite_false]
+
 end C3.RV32
