@@ -25,6 +25,7 @@ import C3BootProofs.Proofs.Sha256Compress
 import C3BootProofs.Proofs.MemsetAny
 import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.ShaOneShot
+import C3BootProofs.Proofs.MontMul12Main
 
 /-!
 # Audit
@@ -1027,6 +1028,64 @@ theorem exists_sha256Fn_machine :
     | (unfold RV32.CodeIn; decide +kernel)
     | decide +kernel
 
+/-- A 12-limb modulus of 3, as bytes: its low limb times `0x55555555` is
+`-1` modulo `2^32`. -/
+def montModBytes : List Nat := 3 :: List.replicate 47 0
+
+/-- `witnessMemOne` with `mul_montgomery_form::<12>`, its outlined helpers,
+and `Uint<12>::select` added where the image loads them, and the modulus at
+`0x3FCC6600`. -/
+def witnessMemMont (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.mulMont12Address).toNat < Image.mulMont12Code.length then
+    RV32.byteAt Image.mulMont12Code (a - BitVec.ofNat 32 Image.mulMont12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.mulMont12SaveAddress).toNat < Image.mulMont12SaveCode.length then
+    RV32.byteAt Image.mulMont12SaveCode (a - BitVec.ofNat 32 Image.mulMont12SaveAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.mulMont12SetupAddress).toNat < Image.mulMont12SetupCode.length then
+    RV32.byteAt Image.mulMont12SetupCode (a - BitVec.ofNat 32 Image.mulMont12SetupAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.mulMont12RestoreAddress).toNat < Image.mulMont12RestoreCode.length then
+    RV32.byteAt Image.mulMont12RestoreCode (a - BitVec.ofNat 32 Image.mulMont12RestoreAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat < Image.uintSelect12Code.length then
+    RV32.byteAt Image.uintSelect12Code (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.uintSelect12StepAddress).toNat < Image.uintSelect12StepCode.length then
+    RV32.byteAt Image.uintSelect12StepCode (a - BitVec.ofNat 32 Image.uintSelect12StepAddress).toNat
+  else if (a - 0x3FCC6600).toNat < 48 then RV32.byteAt montModBytes (a - 0x3FCC6600).toNat
+  else witnessMemOne a
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `mul_montgomery_form::<12>` with the result at
+`0x3FCC6000`, the operands at `0x3FCC6400` and `0x3FCC6500`, the modulus 3
+at `0x3FCC6600`, `k = 0x55555555`, and the stack at `0x3FCC8000` meets
+`mulMont12_correct`'s hypotheses. -/
+theorem exists_mulMont12_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp yp np K retAddr : RV32.Word),
+      RV32.MMEnv m.mem P sp0 out xp yp np ∧ m.pc = P ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.a2 = yp ∧ RV32.reg m RV32.a3 = np ∧ RV32.reg m RV32.a4 = K ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      (K.toNat * (RV32.memLoad32 m.mem np).toNat + 1) % 2 ^ 32 = 0 ∧
+      RV32.accV m.mem yp 12 < RV32.accV m.mem np 12 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6500
+    else if r = RV32.a3 then 0x3FCC6600 else if r = RV32.a4 then 0x55555555
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.mulMont12Address, witnessMemMont⟩, BitVec.ofNat 32 Image.mulMont12Address,
+    0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6500, 0x3FCC6600, 0x55555555, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+      by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide +kernel
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls the point addition with `lhs` at `0x3FCC5000`, `rhs`
@@ -1432,3 +1491,12 @@ end C3
 
 /-- info: 'C3.exists_sha256Fn_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sha256Fn_machine
+
+/-- info: 'C3.RV32.mulMont12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.mulMont12_correct
+
+/-- info: 'C3.RV32.uintSelect12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uintSelect12_correct
+
+/-- info: 'C3.exists_mulMont12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_mulMont12_machine

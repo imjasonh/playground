@@ -64,6 +64,7 @@ import C3BootProofs.Proofs.ShaStream
 import C3BootProofs.Proofs.ShaUpdate
 import C3BootProofs.Proofs.ShaFinal
 import C3BootProofs.Proofs.ShaOneShot
+import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
