@@ -320,4 +320,113 @@ theorem data_code {a b : Word} {n l : Nat} (ha : a.toNat + n ≤ 0x40000000) (hb
     (hbl : b.toNat + l ≤ 2 ^ 32) : Sep a n b l :=
   sep_of_le (by omega) hbl
 
+set_option maxRecDepth 20000 in
+/-- `update`'s prologue, to offset 0x0C: it allocates a 0x20-byte frame at
+`G`, saves `ra` and `s0` through `s3` with its save helper, and stores `s4`.
+Any later memory that keeps the frame's top 24 bytes gives back the saved
+registers. -/
+theorem upd_pro {M : Word → BitVec 8} {m : Machine} {G : Word}
+    (st0 : St M (BitVec.ofNat 32 shaUpdateAddress) m 0 (reg m))
+    (cU : CodeIn M (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode)
+    (cSave : CodeIn M (BitVec.ofNat 32 shaUpdateSaveAddress) shaUpdateSaveCode)
+    (hG : reg m sp + 0xFFFFFFE0 = G) (hGa : G.toNat % 4 = 0) (hGw : G.toNat + 32 ≤ 0x40000000) :
+    ∃ m2 M2, Steps m m2 ∧ St M2 (BitVec.ofNat 32 shaUpdateAddress) m2 0x0C (reg m2) ∧ reg m2 sp = G ∧
+      (∀ r, r ≠ sp → r ≠ t0 → reg m2 r = reg m r) ∧ (∀ x, Sep G 32 x 1 → M2 x = M x) ∧
+      ∀ Mx : Word → BitVec 8, (∀ k, 8 ≤ k → k < 32 → Mx (G + BitVec.ofNat 32 k) = M2 (G + BitVec.ofNat 32 k)) →
+        memLoad32 Mx (G + 0x1C) = reg m ra ∧ memLoad32 Mx (G + 0x18) = reg m s0 ∧
+        memLoad32 Mx (G + 0x14) = reg m s1 ∧ memLoad32 Mx (G + 0x10) = reg m s2 ∧
+        memLoad32 Mx (G + 0x0C) = reg m s3 ∧ memLoad32 Mx (G + 8) = reg m s4 := by
+  have hz := st0.zero
+  have sepC : ∀ c l, c + l ≤ 32 → ∀ (b : Word) (k : Nat), 0x40000000 ≤ b.toNat → b.toNat + k ≤ 2 ^ 32 →
+      Sep (G + BitVec.ofNat 32 c) l b k := fun c l h b k hb hbk => by
+    apply data_code _ hb hbk
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := c) (by omega), Nat.mod_eq_of_lt (by omega)]
+    omega
+  have frx : ∀ c l, c + l ≤ 32 → ∀ (x : Word), Sep G 32 x 1 → Sep (G + BitVec.ofNat 32 c) l x 1 :=
+    fun c l h x hx => hx.sub (c := c) (l := l) (by omega)
+  obtain ⟨m1, e1, t1⟩ := st0.aluImm cU su_at_0 (off' := 2) (by decide)
+  rw [show aluEval .add (reg m sp) 0xFFFFFFE0 = G from hG] at t1
+  have f1sp : upd (reg m) sp G sp = G := by simp +decide [upd]
+  have f1 : ∀ r, r ≠ sp → upd (reg m) sp G r = reg m r := fun r h => by
+    by_cases hr : r.val = 0
+    · have : r = 0 := Fin.ext hr
+      subst this; simp [upd, hz]
+    · simp [upd, hr, h]
+  obtain ⟨m2, k2, t2⟩ := t1.callSave cU su_at_2 su_at_6 (b := BitVec.ofNat 32 shaUpdateSaveAddress)
+    (by decide) (by decide) (by decide) cSave updSave_shape (by decide) (fun p hp => by
+      rw [f1sp]
+      simp only [updSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl
+      · exact ⟨by decide, aligned_add hGa (k := 0x1C) (by decide), sepC 0x1C 4 (by omega) _ _ (by decide) (by decide)⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x18) (by decide), sepC 0x18 4 (by omega) _ _ (by decide) (by decide)⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x14) (by decide), sepC 0x14 4 (by omega) _ _ (by decide) (by decide)⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x10) (by decide), sepC 0x10 4 (by omega) _ _ (by decide) (by decide)⟩
+      · exact ⟨by decide, aligned_add hGa (k := 0x0C) (by decide), sepC 0x0C 4 (by omega) _ _ (by decide) (by decide)⟩)
+  rw [f1sp] at t2
+  obtain ⟨M1, hM1⟩ : ∃ M1, saveMem M G (upd (reg m) sp G) updSavePs = M1 := ⟨_, rfl⟩
+  rw [hM1] at t2
+  have M1out : ∀ x, Sep G 32 x 1 → M1 x = M x := fun x hx => by
+    rw [← hM1]; simp only [saveMem]
+    rw [memStore32_get_sep (show Sep (G + 0x0C) 4 x 1 from frx 0x0C 4 (by omega) x hx), memStore32_get_sep (show Sep (G + 0x10) 4 x 1 from frx 0x10 4 (by omega) x hx),
+      memStore32_get_sep (show Sep (G + 0x14) 4 x 1 from frx 0x14 4 (by omega) x hx), memStore32_get_sep (show Sep (G + 0x18) 4 x 1 from frx 0x18 4 (by omega) x hx),
+      memStore32_get_sep (show Sep (G + 0x1C) 4 x 1 from frx 0x1C 4 (by omega) x hx)]
+  have cU1 : CodeIn M1 (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode := fun i hi => by
+    have hs := sepC 0 32 (by omega) (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode.length (by decide) (by decide)
+    rw [add_ofNat_zero] at hs
+    rw [M1out _ (hs.subR (c := i) (l := 1) (by omega))]
+    exact cU i hi
+  have g2 : ∀ r, r ≠ sp → r ≠ t0 →
+      upd (upd (reg m) sp G) t0 (BitVec.ofNat 32 shaUpdateAddress + BitVec.ofNat 32 (2 + 8)) r = reg m r :=
+    fun r h1 h2 => by
+      by_cases hr : r.val = 0
+      · have : r = 0 := Fin.ext hr
+        subst this; simp [upd, hz]
+      · simp [upd, hr, h1, h2]
+  have g2sp : upd (upd (reg m) sp G) t0 (BitVec.ofNat 32 shaUpdateAddress + BitVec.ofNat 32 (2 + 8)) sp = G := by
+    simp +decide [upd]
+  obtain ⟨m3, e3, t3⟩ := t2.sw cU1 su_at_a (off' := 0x0C) (by decide)
+    (by rw [g2sp]; exact aligned_add hGa (k := 8) (by decide))
+  rw [g2sp, g2 s4 (by decide) (by decide)] at t3
+  obtain ⟨M2, hM2⟩ : ∃ M2, memStore32 M1 (G + 8) (reg m s4) = M2 := ⟨_, rfl⟩
+  rw [hM2] at t3
+  have M2out : ∀ x, Sep G 32 x 1 → M2 x = M x := fun x hx => by
+    rw [← hM2, memStore32_get_sep (show Sep (G + 8) 4 x 1 from frx 8 4 (by omega) x hx), M1out x hx]
+  have M2slots : memLoad32 M2 (G + 0x1C) = reg m ra ∧ memLoad32 M2 (G + 0x18) = reg m s0 ∧
+      memLoad32 M2 (G + 0x14) = reg m s1 ∧ memLoad32 M2 (G + 0x10) = reg m s2 ∧
+      memLoad32 M2 (G + 0x0C) = reg m s3 ∧ memLoad32 M2 (G + 8) = reg m s4 := by
+    have so : ∀ c d, c < 32 → d < 32 → c + 4 ≤ d ∨ d + 4 ≤ c →
+        Sep (G + BitVec.ofNat 32 c) 4 (G + BitVec.ofNat 32 d) 4 :=
+      fun c d hc hd h => sep_offsets G h (by omega) (by omega)
+    rw [← hM2, ← hM1]; simp only [saveMem]
+    refine ⟨?_, ?_, ?_, ?_, ?_, memLoad32_store32_same _ _ _⟩
+    · rw [memLoad32_store32_sep (show Sep (G + 8) 4 (G + 0x1C) 4 from so 8 0x1C (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x0C) 4 (G + 0x1C) 4 from so 0x0C 0x1C (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x10) 4 (G + 0x1C) 4 from so 0x10 0x1C (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x14) 4 (G + 0x1C) 4 from so 0x14 0x1C (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x18) 4 (G + 0x1C) 4 from so 0x18 0x1C (by omega) (by omega) (by omega)), memLoad32_store32_same,
+        f1 ra (by decide)]
+    · rw [memLoad32_store32_sep (show Sep (G + 8) 4 (G + 0x18) 4 from so 8 0x18 (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x0C) 4 (G + 0x18) 4 from so 0x0C 0x18 (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x10) 4 (G + 0x18) 4 from so 0x10 0x18 (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x14) 4 (G + 0x18) 4 from so 0x14 0x18 (by omega) (by omega) (by omega)), memLoad32_store32_same,
+        f1 s0 (by decide)]
+    · rw [memLoad32_store32_sep (show Sep (G + 8) 4 (G + 0x14) 4 from so 8 0x14 (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x0C) 4 (G + 0x14) 4 from so 0x0C 0x14 (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x10) 4 (G + 0x14) 4 from so 0x10 0x14 (by omega) (by omega) (by omega)), memLoad32_store32_same,
+        f1 s1 (by decide)]
+    · rw [memLoad32_store32_sep (show Sep (G + 8) 4 (G + 0x10) 4 from so 8 0x10 (by omega) (by omega) (by omega)),
+        memLoad32_store32_sep (show Sep (G + 0x0C) 4 (G + 0x10) 4 from so 0x0C 0x10 (by omega) (by omega) (by omega)), memLoad32_store32_same,
+        f1 s2 (by decide)]
+    · rw [memLoad32_store32_sep (show Sep (G + 8) 4 (G + 0x0C) 4 from so 8 0x0C (by omega) (by omega) (by omega)), memLoad32_store32_same,
+        f1 s3 (by decide)]
+  refine ⟨m3, M2, .cons e1 (k2.trans (.single e3)), t3.self, ?_, fun r h1 h2 => ?_, M2out, fun Mx h => ?_⟩
+  · rw [t3.regs, g2sp]
+  · rw [t3.regs, g2 r h1 h2]
+  · have e : ∀ c, 8 ≤ c → c + 4 ≤ 32 → memLoad32 Mx (G + BitVec.ofNat 32 c) = memLoad32 M2 (G + BitVec.ofNat 32 c) :=
+      fun c h1 h2 => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact h _ (by omega) (by omega)
+    obtain ⟨q1, q2, q3, q4, q5, q6⟩ := M2slots
+    exact ⟨(e 0x1C (by omega) (by omega)).trans q1, (e 0x18 (by omega) (by omega)).trans q2,
+      (e 0x14 (by omega) (by omega)).trans q3, (e 0x10 (by omega) (by omega)).trans q4,
+      (e 0x0C (by omega) (by omega)).trans q5, (e 8 (by omega) (by omega)).trans q6⟩
+
 end C3.RV32
