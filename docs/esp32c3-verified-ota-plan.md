@@ -32,8 +32,9 @@
 > and `memcpy_correct` cover every call to the compiled `memset` and
 > `memcpy` (for buffers that don't overlap), at any alignment and length.
 > `ShaStream.lean` states SHA-256 as full blocks plus a buffered tail, the
-> form the compiled `update` and `finalize` keep, for their proofs, which
-> are in progress. The boot simulator measures the image's speed: about 135
+> form the compiled hasher keeps, and `shaUpdate_correct` shows that the
+> compiled `update` absorbs any input in that form. The proof of `finalize`
+> is in progress. The boot simulator measures the image's speed: about 135
 > million instructions for one full slot check, about half of them P-384
 > arithmetic ([`c3-boot/docs/measurements.md`](../c3-boot/docs/measurements.md)).
 > [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 8.9
