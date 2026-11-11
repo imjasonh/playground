@@ -2,8 +2,10 @@
 
 A game of tight budgets and held nerve for two to four players. Every round a
 prize gathers on the table and everyone bids for it in secret, all at once. You
-bid with cards from a hand that never refills, so the real question is never
-"can I win this one?" but "is this the one worth spending on?"
+bid from a small hand of five cards that you top back up as you go, but every
+card you bid is spent for good. Your hand and the pile behind it are your whole
+budget for the game, so the real question is never "can I win this one?" but "is
+this the one worth spending on?"
 
 These are the rules as they'd read in the box: the player-facing text first,
 written for a small booklet or a two-sided card, then a few precise rulings that
@@ -29,18 +31,19 @@ Bronze (Jack) is 11, Silver (Queen) is 12, and Gold (King) is 13.
 ## Setup
 
 Give each player the Ace that marks their Home. Shuffle the other 48 cards and
-deal each player two face-down stacks: a **hand**, which you look at and keep
-secret, and an **ante pile**, which stays face down until it's spent. Deal the
-sizes for your table from this list, and you'll use the whole deck:
+deal each player three stacks: a **hand** of five cards, which you pick up and
+keep secret; a face-down **draw pile**, which refills your hand through the
+game; and a face-down **ante pile**, which feeds the pot. Deal the sizes for
+your table from this list, and you'll use the whole deck:
 
-| Players | Hand | Ante pile |
-| --- | --- | --- |
-| 2 | 15 | 9 |
-| 3 | 10 | 6 |
-| 4 | 7 | 5 |
+| Players | Hand | Draw pile | Ante pile |
+| --- | --- | --- | --- |
+| 2 | 5 | 10 | 9 |
+| 3 | 5 | 5 | 6 |
+| 4 | 5 | 2 | 5 |
 
-Your hand is your whole budget for the game. You never draw more, so spend it
-with that in mind.
+Your hand and draw pile together are your whole budget for the game. You get no
+more than those, so spend them with that in mind.
 
 ## Playing a clash
 
@@ -57,7 +60,10 @@ front of you as your winnings. Here is the part that makes a budget hurt. The
 cards you bid are spent whether you win or lose. Put them aside, out of the
 game. You win the pot, never your own bid back.
 
-Then the next clash begins. When the ante piles are empty, the game is over.
+Then everyone draws back up to a full hand of five from their draw pile, and the
+next clash begins. Once your draw pile runs out, your hand only shrinks from
+there, so play out what's left of it. When the ante piles are empty, the game is
+over.
 
 ## Working out a bid
 
@@ -87,15 +93,16 @@ Clash wants two to four players, and you fill any empty chairs with Bots. You
 can play a whole game solo against Bots this way, or round out a three-handed
 table to four.
 
-A Bot takes a Home and a full deal like anyone else, but you never hold or look
-through its hand. Leave its hand in a face-down pile, and leave its ante pile
-face down too, the way everyone's is. Nobody manages a Bot.
+A Bot takes a Home and a full deal like anyone else, but you never hold or
+manage its cards. A Bot has no use for a separate hand and draw pile, so stack
+both together into one face-down **bid pile**, and leave its ante pile face down
+too, the way everyone's is. Nobody manages a Bot.
 
 Its whole rule is a flip. Each clash, the Bot antes the top of its ante pile
 into the pot like everyone else. Then, for its bid, you turn over the top card
-of its hand. If that card is the Bot's own faction, the Bot is fired up: turn
-over one more. Otherwise it stands on the one. Whatever you flipped is its bid,
-and those cards are spent like any other.
+of its bid pile. If that card is the Bot's own faction, the Bot is fired up:
+turn over one more. Otherwise it stands on the one. Whatever you flipped is its
+bid, and those cards are spent like any other.
 
 That's the whole of it. You never judge a pot's worth for the Bot and you never
 choose a card for it; you flip from the top and check a single suit. It fights a

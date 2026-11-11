@@ -17,24 +17,29 @@ type GameResult struct {
 	ScoredPips     int
 	SetAsidePips   int // pips left in an unresolved final pot
 	DiscardedPips  int // pips of committed cards, which are spent
-	HandLeftPips   int
+	HandLeftPips   int // pips still in hands and draw piles at the end
 	CardsAccounted int // every dealt card, found in exactly one place
 }
 
-// dealPlan gives the hand and ante-pile sizes for a player count. Each plan
-// uses all 48 cards evenly.
-func dealPlan(players int) (hand, rounds int, ok bool) {
+// dealPlan gives the starting hand, draw-pile, and ante-pile sizes for a player
+// count. The hand refills to its starting size from the draw pile after each
+// clash, so hand+draw is the whole bid budget. Each plan uses all 48 cards
+// evenly, and the hand cap is 5 at every table size.
+func dealPlan(players int) (hand, draw, rounds int, ok bool) {
 	switch players {
 	case 2:
-		return 15, 9, true
+		return 5, 10, 9, true
 	case 3:
-		return 10, 6, true
+		return 5, 5, 6, true
 	case 4:
-		return 7, 5, true
+		return 5, 2, 5, true
 	default:
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 }
+
+// handCap is the number of cards a seat holds and refills to each clash.
+const handCap = 5
 
 func normalizeIdx(idx []int, n int) []int {
 	seen := make(map[int]bool, len(idx))
@@ -83,7 +88,7 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 		}
 		seen[h] = true
 	}
-	handSize, rounds, ok := dealPlan(players)
+	handSize, drawSize, rounds, ok := dealPlan(players)
 	if !ok {
 		return GameResult{}, fmt.Errorf("no deal plan for %d players", players)
 	}
@@ -96,6 +101,8 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 		seats[i].Home = homes[i]
 		seats[i].Hand = append([]Card(nil), deck[pos:pos+handSize]...)
 		pos += handSize
+		seats[i].Draw = append([]Card(nil), deck[pos:pos+drawSize]...)
+		pos += drawSize
 		seats[i].Ante = append([]Card(nil), deck[pos:pos+rounds]...)
 		pos += rounds
 	}
@@ -120,6 +127,10 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 			seats[i].Hand = removeIdx(seats[i].Hand, idx)
 			commits[i] = commit
 			discarded = append(discarded, commit...)
+			for len(seats[i].Hand) < handCap && len(seats[i].Draw) > 0 {
+				seats[i].Hand = append(seats[i].Hand, seats[i].Draw[0])
+				seats[i].Draw = seats[i].Draw[1:]
+			}
 		}
 
 		out := resolveRound(seats, commits, pot)
@@ -145,8 +156,8 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 	for i := range seats {
 		res.Scores[i] = pips(seats[i].Scored)
 		res.ScoredPips += res.Scores[i]
-		res.HandLeftPips += pips(seats[i].Hand)
-		cards += len(seats[i].Scored) + len(seats[i].Hand)
+		res.HandLeftPips += pips(seats[i].Hand) + pips(seats[i].Draw)
+		cards += len(seats[i].Scored) + len(seats[i].Hand) + len(seats[i].Draw)
 		switch {
 		case res.Scores[i] > best:
 			best, ties, res.Winner = res.Scores[i], 1, i

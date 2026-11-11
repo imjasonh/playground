@@ -3,7 +3,8 @@ package clash
 // Seat is one player or bot at the table.
 type Seat struct {
 	Home   Suit
-	Hand   []Card // the bid budget; never refilled
+	Hand   []Card // the cards in hand right now, refilled to the cap each round
+	Draw   []Card // face-down pile that refills the hand; the rest of the budget
 	Ante   []Card // one card fed to the pot each round
 	Scored []Card // cards won, tallied by pips at the end
 }

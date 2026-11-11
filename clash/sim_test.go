@@ -60,6 +60,37 @@ func seatShares(rng *rand.Rand, s Strategy, players, games int) []float64 {
 	return shares
 }
 
+// TestHandRefill checks the hand tops back up from the draw pile between
+// clashes: a seat that spends one card a round keeps a full hand for the whole
+// game, since its draw pile outlasts the rounds, and the hand never exceeds the
+// cap.
+func TestHandRefill(t *testing.T) {
+	var sizes []int
+	watch := Strategy{"watch-one", func(v View, _ *rand.Rand) []int {
+		sizes = append(sizes, len(v.Hand))
+		if len(v.Hand) == 0 {
+			return nil
+		}
+		return []int{0}
+	}}
+	rng := rand.New(rand.NewSource(5))
+	if _, err := PlayGame(rng, []Strategy{watch, Competent()}, []Suit{Intelligence, Strength}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, rounds, _ := dealPlan(2)
+	if len(sizes) != rounds {
+		t.Fatalf("saw %d clashes, want %d", len(sizes), rounds)
+	}
+	for rd, n := range sizes {
+		if n > handCap {
+			t.Errorf("clash %d: hand held %d cards, over the cap of %d", rd, n, handCap)
+		}
+		if n != handCap {
+			t.Errorf("clash %d: hand held %d cards, want a full %d (draw pile should refill it)", rd, n, handCap)
+		}
+	}
+}
+
 func scale(short, full int) int {
 	if testing.Short() {
 		return short
