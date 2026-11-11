@@ -146,46 +146,6 @@ theorem mm_at_152 : fetchRel mulMont12Code 0x152 = some (.auipc (5 : Fin 32) 0xD
 theorem mm_at_156 : fetchRel mulMont12Code 0x156 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFA96, 4) := by decide
 theorem mm_at_15a : fetchRel mulMont12Code 0x15A = some (.aluImm .add sp sp 0xA0, 2) := by decide
 theorem mm_at_15c : fetchRel mulMont12Code 0x15C = some (.jalr x0 ra 0x0, 2) := by decide
-theorem us_at_0 : fetchRel uintSelect12Code 0x0 = some (.aluImm .add sp sp 0xFFFFFFB0, 2) := by decide
-theorem us_at_2 : fetchRel uintSelect12Code 0x2 = some (.store .sw sp ra 0x4C, 2) := by decide
-theorem us_at_4 : fetchRel uintSelect12Code 0x4 = some (.store .sw sp (8 : Fin 32) 0x48, 2) := by decide
-theorem us_at_6 : fetchRel uintSelect12Code 0x6 = some (.store .sw sp (9 : Fin 32) 0x44, 2) := by decide
-theorem us_at_8 : fetchRel uintSelect12Code 0x8 = some (.store .sw sp (18 : Fin 32) 0x40, 2) := by decide
-theorem us_at_a : fetchRel uintSelect12Code 0xA = some (.store .sw sp (19 : Fin 32) 0x3C, 2) := by decide
-theorem us_at_c : fetchRel uintSelect12Code 0xC = some (.store .sw sp (20 : Fin 32) 0x38, 2) := by decide
-theorem us_at_e : fetchRel uintSelect12Code 0xE = some (.alu .add (19 : Fin 32) x0 a3, 2) := by decide
-theorem us_at_10 : fetchRel uintSelect12Code 0x10 = some (.alu .add (20 : Fin 32) x0 a2, 2) := by decide
-theorem us_at_12 : fetchRel uintSelect12Code 0x12 = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
-theorem us_at_14 : fetchRel uintSelect12Code 0x14 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem us_at_16 : fetchRel uintSelect12Code 0x16 = some (.aluImm .add a0 sp 0x4, 2) := by decide
-theorem us_at_18 : fetchRel uintSelect12Code 0x18 = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem us_at_1c : fetchRel uintSelect12Code 0x1C = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem us_at_1e : fetchRel uintSelect12Code 0x1E = some (.aluImm .add (8 : Fin 32) sp 0x4, 2) := by decide
-theorem us_at_20 : fetchRel uintSelect12Code 0x20 = some (.auipc ra 0xD000, 4) := by decide
-theorem us_at_24 : fetchRel uintSelect12Code 0x24 = some (.jalr ra ra 0x176, 4) := by decide
-theorem us_at_28 : fetchRel uintSelect12Code 0x28 = some (.aluImm .add a0 x0 0xC, 2) := by decide
-theorem us_at_2a : fetchRel uintSelect12Code 0x2A = some (.aluImm .add a1 sp 0x37, 4) := by decide
-theorem us_at_2e : fetchRel uintSelect12Code 0x2E = some (.branch .beq a0 x0 0x1A, 2) := by decide
-theorem us_at_30 : fetchRel uintSelect12Code 0x30 = some (.load .lw a2 (9 : Fin 32) 0x0, 2) := by decide
-theorem us_at_32 : fetchRel uintSelect12Code 0x32 = some (.store .sb sp (19 : Fin 32) 0x37, 4) := by decide
-theorem us_at_36 : fetchRel uintSelect12Code 0x36 = some (.load .lw a3 (20 : Fin 32) 0x0, 4) := by decide
-theorem us_at_3a : fetchRel uintSelect12Code 0x3A = some (.load .lbu a4 sp 0x37, 4) := by decide
-theorem us_at_3e : fetchRel uintSelect12Code 0x3E = some (.auipc (5 : Fin 32) 0xD000, 4) := by decide
-theorem us_at_42 : fetchRel uintSelect12Code 0x42 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFFB0, 4) := by decide
-theorem us_at_46 : fetchRel uintSelect12Code 0x46 = some (.branch .bne a0 x0 0xFFFFFFEA, 2) := by decide
-theorem us_at_48 : fetchRel uintSelect12Code 0x48 = some (.aluImm .add a1 sp 0x4, 2) := by decide
-theorem us_at_4a : fetchRel uintSelect12Code 0x4A = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem us_at_4e : fetchRel uintSelect12Code 0x4E = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem us_at_50 : fetchRel uintSelect12Code 0x50 = some (.auipc ra 0xD000, 4) := by decide
-theorem us_at_54 : fetchRel uintSelect12Code 0x54 = some (.jalr ra ra 0x1AE, 4) := by decide
-theorem us_at_58 : fetchRel uintSelect12Code 0x58 = some (.load .lw ra sp 0x4C, 2) := by decide
-theorem us_at_5a : fetchRel uintSelect12Code 0x5A = some (.load .lw (8 : Fin 32) sp 0x48, 2) := by decide
-theorem us_at_5c : fetchRel uintSelect12Code 0x5C = some (.load .lw (9 : Fin 32) sp 0x44, 2) := by decide
-theorem us_at_5e : fetchRel uintSelect12Code 0x5E = some (.load .lw (18 : Fin 32) sp 0x40, 2) := by decide
-theorem us_at_60 : fetchRel uintSelect12Code 0x60 = some (.load .lw (19 : Fin 32) sp 0x3C, 2) := by decide
-theorem us_at_62 : fetchRel uintSelect12Code 0x62 = some (.load .lw (20 : Fin 32) sp 0x38, 2) := by decide
-theorem us_at_64 : fetchRel uintSelect12Code 0x64 = some (.aluImm .add sp sp 0x50, 2) := by decide
-theorem us_at_66 : fetchRel uintSelect12Code 0x66 = some (.jalr x0 ra 0x0, 2) := by decide
 
 end
 
