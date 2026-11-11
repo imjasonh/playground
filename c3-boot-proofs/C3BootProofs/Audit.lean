@@ -26,6 +26,7 @@ import C3BootProofs.Proofs.MemsetAny
 import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.ShaOneShot
 import C3BootProofs.Proofs.MontMul12Main
+import C3BootProofs.Proofs.SqrMont12Main
 
 /-!
 # Audit
@@ -1086,6 +1087,46 @@ theorem exists_mulMont12_machine :
     | (unfold RV32.CodeIn; decide +kernel)
     | decide +kernel
 
+/-- `witnessMemMont` with `square_montgomery_form::<12>` added where the
+image loads it. -/
+def witnessMemSqr (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.sqMont12Address).toNat < Image.sqMont12Code.length then
+    RV32.byteAt Image.sqMont12Code (a - BitVec.ofNat 32 Image.sqMont12Address).toNat
+  else witnessMemMont a
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `square_montgomery_form::<12>` with the result at
+`0x3FCC6000`, the operand at `0x3FCC6400`, the modulus 3 at `0x3FCC6600`,
+`k = 0x55555555`, and the stack at `0x3FCC8000` meets `sqrMont12_correct`'s
+hypotheses. -/
+theorem exists_sqrMont12_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp np K retAddr : RV32.Word),
+      RV32.SQEnv m.mem P sp0 out xp np ∧ m.pc = P ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.a2 = np ∧ RV32.reg m RV32.a3 = K ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      (K.toNat * (RV32.memLoad32 m.mem np).toNat + 1) % 2 ^ 32 = 0 ∧
+      RV32.accV m.mem xp 12 < RV32.accV m.mem np 12 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6600
+    else if r = RV32.a3 then 0x55555555 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sqMont12Address, witnessMemSqr⟩, BitVec.ofNat 32 Image.sqMont12Address,
+    0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6600, 0x55555555, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+      by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl, ?_, ?_⟩
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide +kernel
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls the point addition with `lhs` at `0x3FCC5000`, `rhs`
@@ -1500,3 +1541,9 @@ end C3
 
 /-- info: 'C3.exists_mulMont12_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_mulMont12_machine
+
+/-- info: 'C3.RV32.sqrMont12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sqrMont12_correct
+
+/-- info: 'C3.exists_sqrMont12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sqrMont12_machine

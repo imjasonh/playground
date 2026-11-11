@@ -38,6 +38,7 @@ PROVED = [
     "shaUpdateSave", "shaUpdateRestore", "shaUpdateBlocks", "shaFinalize", "shaFinalizeSave",
     "shaZero32", "shaFinalizeBlock", "shaStoreBe", "shaFinalizeRestore", "sha256Fn", "shaInit",
     "mulMont12", "mulMont12Save", "mulMont12Setup", "mulMont12Restore", "uintSelect12", "uintSelect12Step",
+    "sqMont12",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
