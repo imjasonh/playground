@@ -1290,6 +1290,24 @@ theorem fill_memBytes (M : Word → BitVec 8) (dst : Word) (v : BitVec 8) {k n :
   rw [add_sub_toNat dst (by rw [List.length_map, List.length_range] at h1; omega),
     ite_eq_left (by rw [List.length_map, List.length_range] at h1; omega)]
 
+theorem finR_saved (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) :
+    restoreRegs M G f finSavePs ra = memLoad32 M (G + 0x5C) ∧
+    restoreRegs M G f finSavePs s0 = memLoad32 M (G + 0x58) ∧
+    restoreRegs M G f finSavePs s1 = memLoad32 M (G + 0x54) ∧
+    restoreRegs M G f finSavePs s2 = memLoad32 M (G + 0x50) ∧
+    restoreRegs M G f finSavePs s3 = memLoad32 M (G + 0x4C) ∧
+    restoreRegs M G f finSavePs s4 = memLoad32 M (G + 0x48) ∧
+    restoreRegs M G f finSavePs s5 = memLoad32 M (G + 0x44) := by
+  simp +decide [restoreRegs, upd]
+
+theorem finR_other (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) (hz : f 0 = 0) (r : Fin 32)
+    (q1 : r ≠ ra) (q8 : r ≠ s0) (q9 : r ≠ s1) (q18 : r ≠ s2) (q19 : r ≠ s3) (q20 : r ≠ s4) (q21 : r ≠ s5) :
+    restoreRegs M G f finSavePs r = f r := by
+  by_cases h0 : r.val = 0
+  · have : r = 0 := Fin.ext h0
+    subst this; simp [restoreRegs, upd, hz]
+  · simp only [restoreRegs, upd, h0, q1, q8, q9, q18, q19, q20, q21, ite_false]
+
 /-- Where `finalize` runs: its code and its callees', the hasher at `S`, the
 output at `out`, and 0x190 bytes of stack below `sp0`, all below
 0x40000000 and apart from each other and from the round constants. -/
@@ -2148,8 +2166,112 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
               hdw := by omega
               hsw := by omega })
   rw [mem60, sp60] at mem61
+  have k61' : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
+      r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
+      reg n61 r = reg n60 r := K61
   let M6 := n61.mem
   have m6 : ∀ x, Sep (G + 0xFFFFFFF0) 16 x 1 → M6 x = copyBytes M5 out G 32 x := mem61
+  have M6R : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → Sep out 32 x 1 → M6 x = M0 x := fun x hx hy hz => by
+    rw [m6 x (FR x hx), copyBytes_sep hz (Nat.le_refl 32), M5R x hx hy]
+  have cB6 : ∀ (b : Word) (code : List Nat), CodeIn M0 b code → 0x40000000 ≤ b.toNat →
+      b.toNat + code.length ≤ 2 ^ 32 → CodeIn M6 b code := fun b code hc hb hbl i hi => by
+    rw [M6R _ ((data_code (by rw [hRn]; omega) hb hbl).subR (c := i) (l := 1) (by omega))
+      ((data_code (by omega) hb hbl).subR (c := i) (l := 1) (by omega))
+      ((data_code hOw hb hbl).subR (c := i) (l := 1) (by omega))]
+    exact hc i hi
+  -- The frame's saved words survive to the restore.
+  have M6s : ∀ k, 0x40 ≤ k → k < 0x60 → M6 (G + BitVec.ofNat 32 k) = M1 (G + BitVec.ofNat 32 k) := by
+    intro k h1 h2
+    have hR : Sep R 0x130 (G + BitVec.ofNat 32 k) 1 := by
+      rw [Gc]; have h := sep_offsets R (c := 0) (n := 0x130) (d := 0x130 + k) (k := 1) (Or.inl (by omega))
+        (by omega) (by omega)
+      rwa [add_ofNat_zero] at h
+    have hS : Sep S 0x68 (G + BitVec.ofNat 32 k) 1 := by rw [Gc]; exact E.sSF.subR (c := 0x130 + k) (l := 1) (by omega)
+    rw [m6 _ (by rw [eF, Gc]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)),
+      copyBytes_sep (by rw [Gc]; exact E.sOF.subR (c := 0x130 + k) (l := 1) (by omega)) (Nat.le_refl 32),
+      m5 _ (by rw [eF, Gc]; exact sep_offsets R (Or.inl (by omega)) (by omega) (by omega)),
+      copyBytes_sep (by
+        have h := sep_offsets G (c := 0) (n := 32) (d := k) (k := 1) (Or.inl (by omega)) (by omega) (by omega)
+        rwa [add_ofNat_zero] at h) (Nat.le_refl 32),
+      hagF _ (by
+        show Sep (G + BitVec.ofNat 32 0x20) 32 _ 1
+        exact sep_offsets G (Or.inl (by omega)) (by omega) (by omega)),
+      fZ _ hR (hS.sub (c := 0x40) (l := 32) (by omega))]
+    show memStore32 (memStore32 MC _ _) _ _ _ = _
+    rw [memStore32_get_sep (hS.sub (c := 0x3C) (l := 4) (by omega)),
+      memStore32_get_sep (hS.sub (c := 0x38) (l := 4) (by omega)), MCs k h1 h2]
+    show fillBytes MP _ _ _ _ = _
+    rw [fillBytes_sep (hS.sub (c := pos + 1) (l := 63 - pos) (by omega)) (Nat.le_refl _)]
+    show memStore8 M2 _ _ _ = _
+    rw [memStore8_ne (fun e => hS pos (by omega) 0 (by decide) (by rw [add_ofNat_zero, e])), M2s k h1 h2]
+  have ld6 : ∀ c, 0x40 ≤ c → c + 4 ≤ 0x60 → memLoad32 M6 (G + BitVec.ofNat 32 c) = memLoad32 M1 (G + BitVec.ofNat 32 c) :=
+    fun c h1 h2 => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact M6s _ (by omega) (by omega)
+  obtain ⟨v40, vra, vs0, vs1, vs2, vs3, vs4, vs5⟩ := finSaved_slots M0 G g1 (reg m s6)
+  have cF6 := cB6 _ _ E.cF (by decide) (by decide)
+  have u61 : St M6 U n61 0x10A (reg n61) := ⟨by rw [pc61], rfl, fun _ => rfl⟩
+  have sp61' : reg n61 sp = G := by rw [sp61, sp60]
+  obtain ⟨n62, c62, u62⟩ := u61.callRestore cF6 sf_at_10a sf_at_10e
+    (b := BitVec.ofNat 32 shaFinalizeRestoreAddress) (by decide) (by decide) (by decide)
+    (cB6 _ _ E.cRest (by decide) (by decide)) finRestore_shape (by decide) (fun p hp => by
+      rw [sp61']
+      simp only [finSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x5C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x58) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x54) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x50) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x4C) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x48) (by decide)⟩
+      · exact ⟨by decide, by decide, aligned_add hGa4 (k := 0x44) (by decide)⟩)
+  rw [sp61'] at u62
+  obtain ⟨wra, ws0, ws1, ws2, ws3, ws4, ws5⟩ := finR_saved M6 G (upd (reg n61) t0 (U + BitVec.ofNat 32 (0x10A + 8)))
+  have zr : upd (reg n61) t0 (U + BitVec.ofNat 32 (0x10A + 8)) 0 = 0 := by simp [upd]
+  have rsp : restoreRegs M6 G (upd (reg n61) t0 (U + BitVec.ofNat 32 (0x10A + 8))) finSavePs sp = G := by
+    rw [finR_other _ _ _ zr sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]
+    simp +decide only [upd]; exact sp61'
+  have u62' : St M6 U n62 0x112 (reg n62) := u62.self
+  have K62 : ∀ r, r ≠ ra → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ s3 → r ≠ s4 → r ≠ s5 → r ≠ t0 → reg n62 r = reg n61 r :=
+    fun r q1 q8 q9 q18 q19 q20 q21 q5 => by
+      rw [u62.regs, finR_other _ _ _ zr r q1 q8 q9 q18 q19 q20 q21]
+      by_cases h0 : r.val = 0
+      · have : r = 0 := Fin.ext h0
+        subst this; simp [upd]; exact u61.zero.symm
+      · simp [upd, h0, q5]
+  obtain ⟨n63, d63, u63⟩ := u62'.lw cF6 sf_at_112 (off' := 0x114) (by decide)
+    (by rw [u62.regs, rsp]; exact aligned_add hGa4 (k := 0x40) (by decide))
+  rw [u62.regs, rsp, show (0x40 : Word) = BitVec.ofNat 32 0x40 from rfl, ld6 _ (by omega) (by omega), v40] at u63
+  have K63 := u63.upd_ne u62'.zero
+  have u63' : St M6 U n63 0x114 (reg n63) := u63.self
+  obtain ⟨n64, d64, u64⟩ := u63'.aluImm cF6 sf_at_114 (off' := 0x116) (by decide)
+  have K64 := u64.upd_ne u63'.zero
+  have u64' : St M6 U n64 0x116 (reg n64) := u64.self
+  obtain ⟨n65, d65, pc65, mem65, regs65⟩ := u64'.jalr cF6 sf_at_116
+  -- Restored registers.
+  have lds : ∀ (r : Fin 32) (c : Nat), r ≠ sp → 0x44 ≤ c → c + 4 ≤ 0x60 → memLoad32 M1 (G + BitVec.ofNat 32 c) = g1 r →
+      memLoad32 M6 (G + BitVec.ofNat 32 c) = reg m r := fun r c q h1 h2 h =>
+    (ld6 c (by omega) h2).trans (h.trans (f1 r q))
+  have rRa : reg n64 ra = retAddr := by
+    rw [K64 ra (by decide), K63 ra (by decide), u62.regs, wra]
+    exact (lds ra 0x5C (by decide) (by omega) (by omega) vra).trans hra
+  have rSp : reg n64 sp = sp0 := by
+    rw [u64.upd_eq (by decide), K63 sp (by decide), u62.regs, rsp]
+    show G + 0x60 = sp0
+    show sp0 + 0xFFFFFFA0 + 0x60 = sp0
+    rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
+  -- Everything from `m15` back to the entry, for the registers no callee clobbers.
+  have chain : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
+      r ≠ (31 : Fin 32) → r ≠ ra → r ≠ sp → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ s3 → r ≠ s4 → r ≠ s5 → r ≠ s6 →
+      reg n64 r = reg m r := fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q1 q2 q8 q9 q18 q19
+        q20 q21 q22 => by
+    rw [K64 r q2, K63 r q22, K62 r q1 q8 q9 q18 q19 q20 q21 q5,
+      k61' r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2,
+      K4960 r q1 q10 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2,
+      k49 r q10 q11 q12 q13 q14 q5 q8 q9, u48.regs, K47 r q10,
+      k46 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, KC45 r q1 q10 q11,
+      KC16 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
+      g16 r q10 q11 q12 q13 q14 q15 q16 q17 q5 q19 q21 q22,
+      Kp r q2 q1 q5 q6 q7 q8 q9 q18 q20 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30]
   sorry
 
 end C3.RV32
