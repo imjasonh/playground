@@ -1280,6 +1280,16 @@ theorem finSaved_out (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) (v
       · have := h.sub (c := 8) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
       · have := h.sub (c := 4) (l := 4) (by omega); rwa [add_ofNat_assoc] at this)]
 
+theorem fill_memBytes (M : Word → BitVec 8) (dst : Word) (v : BitVec 8) {k n : Nat} (hk : k ≤ n) (hn : n < 2 ^ 32) :
+    memBytes (fillBytes M dst v n) dst k = List.replicate k v.toNat := by
+  unfold memBytes
+  apply List.ext_getElem (by rw [List.length_map, List.length_range, List.length_replicate])
+  intro i h1 h2
+  rw [List.getElem_map, List.getElem_range, List.getElem_replicate]
+  unfold fillBytes
+  rw [add_sub_toNat dst (by rw [List.length_map, List.length_range] at h1; omega),
+    ite_eq_left (by rw [List.length_map, List.length_range] at h1; omega)]
+
 /-- Where `finalize` runs: its code and its callees', the hasher at `S`, the
 output at `out`, and 0x190 bytes of stack below `sp0`, all below
 0x40000000 and apart from each other and from the round constants. -/
@@ -1544,6 +1554,83 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     rw [k15 s0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide), r14 s0 (by decide), u12.upd_eq (by decide),
       K11 sp (by decide), K10 sp (by decide), sp9]; rfl
+  -- The message length.
+  have hlen := H.hlen
+  have SR : ∀ c, c < 0x68 → Sep R 0x190 (S + BitVec.ofNat 32 c) 1 := fun c hc =>
+    (E.sSF.sub (c := c) (l := 1) (by omega)).symm
+  have ldS : ∀ (My : Word → BitVec 8), (∀ x, Sep R 0x190 x 1 → My x = M0 x) → ∀ c, c + 4 ≤ 0x68 →
+      memLoad32 My (S + BitVec.ofNat 32 c) = memLoad32 M0 (S + BitVec.ofNat 32 c) := fun My h c hc =>
+    memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact h _ (SR _ (by omega))
+  have cF2 := codeX M2 (fun x hx _ => M2R x hx) _ _ E.cF (by decide) (by decide)
+  obtain ⟨m16, c16, u16, s5_16, s6_16, s3_16, a2_16, K16⟩ := fin_len (pos := msg.length % 64) (lo := BitVec.ofNat 32 (msg.length / 64)) u15 cF2 s4_15 E.hS
+    (by rw [show S + (0x60 : Word) = S + BitVec.ofNat 32 0x60 from rfl, ldS M2 M2R 0x60 (by omega)]; exact H.lo)
+    (by rw [show S + (0x64 : Word) = S + BitVec.ofNat 32 0x64 from rfl, ldS M2 M2R 0x64 (by omega)]; exact H.hi)
+    (by rw [show S + (0x3F : Word) = S + BitVec.ofNat 32 0x3F from rfl, M2R _ (SR _ (by omega))]; exact H.pos)
+    (Nat.mod_lt _ (by decide))
+  let pos := msg.length % 64
+  have hpos : pos < 64 := Nat.mod_lt _ (by decide)
+  have k16 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ s3 →
+      r ≠ s5 → r ≠ s6 → reg m16 r = reg m15 r := K16
+  have s4_16 : reg m16 s4 = S := by
+    rw [k16 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide), s4_15]
+  -- The padding byte, then `memset` for the zeros after it.
+  obtain ⟨m17, e17, u17⟩ := u16.alu cF2 sf_at_86 (off' := 0x8A) (by decide)
+  have K17 := u17.upd_ne u16.zero
+  have u17' : St M2 U m17 0x8A (reg m17) := u17.self
+  have a0_17 : reg m17 a0 = S + BitVec.ofNat 32 pos := by rw [u17.upd_eq (by decide), s4_16, a2_16]; rfl
+  obtain ⟨m18, e18, u18⟩ := u17'.aluImm cF2 sf_at_8a (off' := 0x8E) (by decide)
+  have K18 := u18.upd_ne u17'.zero
+  have u18' : St M2 U m18 0x8E (reg m18) := u18.self
+  obtain ⟨m19, e19, u19⟩ := u18'.sb cF2 sf_at_8e (off' := 0x92) (by decide)
+  rw [K18 a0 (by decide), a0_17, add_lit_zero, u18.upd_eq (by decide), u17'.zero] at u19
+  let MP := memStore8 M2 (S + BitVec.ofNat 32 pos) ((aluEval .add 0 0x80 : Word).extractLsb' 0 8)
+  have MPR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MP x = M0 x := fun x hx hy => by
+    show memStore8 M2 _ _ x = _
+    rw [memStore8_ne (fun e => hy pos (by omega) 0 (by decide) (by rw [add_ofNat_zero, e])), M2R x hx]
+  have cMP := codeX MP MPR
+  have cFP := cMP _ _ E.cF (by decide) (by decide)
+  have u19' : St MP U m19 0x92 (reg m19) := u19.self
+  obtain ⟨m20, e20, u20⟩ := u19'.aluImm cFP sf_at_92 (off' := 0x94) (by decide)
+  have K20 := u20.upd_ne u19'.zero
+  have u20' : St MP U m20 0x94 (reg m20) := u20.self
+  obtain ⟨m21, e21, u21⟩ := u20'.aluImm cFP sf_at_94 (off' := 0x96) (by decide)
+  have K21 := u21.upd_ne u20'.zero
+  have u21' : St MP U m21 0x96 (reg m21) := u21.self
+  obtain ⟨m22, e22, u22⟩ := u21'.alu cFP sf_at_96 (off' := 0x98) (by decide)
+  have K22 := u22.upd_ne u21'.zero
+  have u22' : St MP U m22 0x98 (reg m22) := u22.self
+  obtain ⟨m23, e23, u23⟩ := u22'.auipc cFP sf_at_98 (off' := 0x9C) (by decide)
+  obtain ⟨m24, e24, pc24, mem24, regs24⟩ := u23.call cFP sf_at_9c
+  have r24 : ∀ r, r ≠ ra → reg m24 r = reg m22 r := fun r h => by
+    rw [regs24]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u22'.zero.symm
+    · simp [upd, h0, h]
+  have K1624 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m24 r = reg m16 r := fun r q1 q10 q11 q12 => by
+    rw [r24 r q1, K22 r q12, K21 r q11, K20 r q10, u19.regs, K18 r q11, K17 r q10]
+  have hd1 : (S + BitVec.ofNat 32 (pos + 1)).toNat = S.toNat + (pos + 1) := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  obtain ⟨m25, c25, pc25, mem25, a025, K25⟩ := memset_correct m24 (BitVec.ofNat 32 memsetAddress)
+    (U + BitVec.ofNat 32 0xA0) (S + BitVec.ofNat 32 (pos + 1)) 0 (63 - pos)
+    (fun i hi => by show m24.mem _ = _; rw [mem24]; exact cMP _ _ E.cMs (by decide) (by decide) i hi) (by decide)
+    (by rw [pc24, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+        decide)
+    (by rw [r24 a0 (by decide), K22 a0 (by decide), K21 a0 (by decide), u20.upd_eq (by decide), u19.regs,
+          K18 a0 (by decide), a0_17]
+        show S + BitVec.ofNat 32 pos + BitVec.ofNat 32 1 = _; rw [add_ofNat_assoc])
+    (by rw [r24 a1 (by decide), K22 a1 (by decide), u21.upd_eq (by decide), u20'.zero]; rfl)
+    (by rw [r24 a2 (by decide), u22.upd_eq (by decide), u21'.zero, K21 s3 (by decide), K20 s3 (by decide),
+          u19.regs, K18 s3 (by decide), K17 s3 (by decide), s3_16]; exact BitVec.zero_add _)
+    (by rw [regs24]; simp +decide [upd]; rfl) (by decide)
+    (by rw [hd1]; omega)
+    (data_code (by rw [hd1]; omega) (by decide) (by decide))
+  rw [mem24] at mem25
+  let MQ := fillBytes MP (S + BitVec.ofNat 32 (pos + 1)) ((0 : Word).extractLsb' 0 8) (63 - pos)
+  have MQR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MQ x = M0 x := fun x hx hy => by
+    show fillBytes MP _ _ _ x = _
+    rw [fillBytes_sep (hy.sub (c := pos + 1) (l := 63 - pos) (by omega)) (Nat.le_refl _), MPR x hx hy]
   sorry
 
 end C3.RV32
