@@ -525,4 +525,120 @@ theorem mm_iter {M : Word → BitVec 8} {B np yp acc U X CL CH : Word} {n : Mach
   · obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc1 0xCA mm_at_c6 (by decide) (by rw [hb]; exact decide_eq_false hl)
     exact ⟨n2, c1.trans (.single d2), by rw [ite_eq_right hl]; exact u2.self, post n2 u2.regs⟩
 
+theorem mm_inner_arith {Ak lo C C' P B X U y o nn Y O N : Nat}
+    (h1 : B * Ak + C * (P * B) = X * Y + O + U * N) (h2 : lo + B * C' = X * y + o + U * nn + C) :
+    B * (Ak + lo * P) + C' * (P * B * B) = X * (Y + y * (P * B)) + (O + o * (P * B)) + U * (N + nn * (P * B)) := by
+  have e2 : (lo + B * C') * (P * B) = (X * y + o + U * nn + C) * (P * B) := by rw [h2]
+  simp only [Nat.add_mul, Nat.mul_add] at e2 ⊢
+  simp only [Nat.mul_comm, Nat.mul_left_comm] at h1 e2 ⊢
+  omega
+
+theorem load_frame {M M0 : Word → BitVec 8} {acc b : Word} {n : Nat} (hf : ∀ a, Sep acc n a 1 → M a = M0 a)
+    (hs : Sep acc n b 4) : memLoad32 M b = memLoad32 M0 b :=
+  memLoad32_congr fun q hq => hf _ (hs.subR (c := q) (l := 1) (by omega))
+
+theorem pow32_succ (k : Nat) : 2 ^ (32 * (k + 1)) = 2 ^ (32 * k) * 2 ^ 32 := by
+  rw [Nat.mul_succ, Nat.pow_add]
+
+/-- What one inner-loop pass does to the pass's sum: column `k + 1` moves
+from the inputs into the stored words and the carry. -/
+theorem mm_inv_step {M M0 : Word → BitVec 8} {acc yp np U X CL CH lo cl ch : Word} {k : Nat} (hk : k < 11)
+    (hw : acc.toNat + 48 ≤ 2 ^ 32) (hAY : Sep acc 48 yp 48) (hAN : Sep acc 48 np 48)
+    (hfr : ∀ a, Sep acc 48 a 1 → M a = M0 a)
+    (hab : ∀ i, k ≤ i → i < 12 →
+      memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i)))
+    (hinv : 2 ^ 32 * accV M acc k + (CL.toNat + 2 ^ 32 * CH.toNat) * 2 ^ (32 * (k + 1)) =
+      X.toNat * accV M0 yp (k + 1) + accV M0 acc (k + 1) + U.toNat * accV M0 np (k + 1))
+    (hbd : CL.toNat + 2 ^ 32 * CH.toNat ≤ 2 * 2 ^ 32 - 2)
+    (hcol : mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1))))
+      (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1)))) U X CL CH = (lo, cl, ch)) :
+    2 ^ 32 * accV (memStore32 M (acc + BitVec.ofNat 32 (4 * k)) lo) acc (k + 1) +
+        (cl.toNat + 2 ^ 32 * ch.toNat) * 2 ^ (32 * (k + 2)) =
+      X.toNat * accV M0 yp (k + 2) + accV M0 acc (k + 2) + U.toNat * accV M0 np (k + 2) ∧
+    cl.toNat + 2 ^ 32 * ch.toNat ≤ 2 * 2 ^ 32 - 2 ∧
+    (∀ a, Sep acc 48 a 1 → memStore32 M (acc + BitVec.ofNat 32 (4 * k)) lo a = M0 a) ∧
+    (∀ i, k + 1 ≤ i → i < 12 → memLoad32 (memStore32 M (acc + BitVec.ofNat 32 (4 * k)) lo)
+      (acc + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i))) := by
+  have st := mm_step (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1))))
+    (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1)))) U X CL CH hbd
+  rw [hcol] at st
+  obtain ⟨st, bd⟩ := st
+  rw [load_frame hfr (hAN.subR (by omega)), load_frame hfr (hAY.subR (by omega)), hab (k + 1) (by omega) (by omega)] at st
+  refine ⟨?_, bd, fun a ha => ?_, fun i hi1 hi2 => ?_⟩
+  · have hA : accV (memStore32 M (acc + BitVec.ofNat 32 (4 * k)) lo) acc (k + 1) = accV M acc k + lo.toNat * 2 ^ (32 * k) := by
+      show accV _ acc k + _ = _
+      rw [accV_store_above (by omega) k (Nat.le_refl k), memLoad32_store32_same]
+    rw [hA, show k + 2 = (k + 1) + 1 from rfl, pow32_succ (k + 1), pow32_succ k]
+    show _ = X.toNat * (accV M0 yp (k + 1) + _ * 2 ^ (32 * (k + 1))) + (accV M0 acc (k + 1) + _ * 2 ^ (32 * (k + 1))) +
+      U.toNat * (accV M0 np (k + 1) + _ * 2 ^ (32 * (k + 1)))
+    rw [pow32_succ k] at hinv ⊢
+    exact mm_inner_arith hinv (by simp only at st; omega)
+  · rw [memStore32_ne fun j hj e => (ha.point (i := 4 * k + j) (j := 0) (by omega) (by decide)) (by
+      rw [add_ofNat_zero, ← add_ofNat_assoc]; exact e.symm), hfr a ha]
+  · rw [memLoad32_store32_sep (sep_offsets acc (.inl (by omega)) (by omega) (by omega)), hab i (by omega) hi2]
+
+/-- **The inner loop**, from column `k + 1` of a pass to its end at 0xCA:
+columns `k + 1..11` of the pass. -/
+theorem mm_inner {B acc yp np U X : Word} {M0 : Word → BitVec 8}
+    (hnp : np.toNat % 4 = 0) (hyp : yp.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0) (hw : acc.toNat + 48 ≤ 2 ^ 32)
+    (hAY : Sep acc 48 yp 48) (hAN : Sep acc 48 np 48) (hAC : Sep acc 48 B mulMont12Code.length) :
+    ∀ m k, k + m + 1 = 11 → ∀ {M : Word → BitVec 8} {n : Machine} {CL CH : Word},
+      St M B n 0x7C (reg n) → CodeIn M B mulMont12Code →
+      (∀ a, Sep acc 48 a 1 → M a = M0 a) →
+      (∀ i, k ≤ i → i < 12 →
+        memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i))) →
+      2 ^ 32 * accV M acc k + (CL.toNat + 2 ^ 32 * CH.toNat) * 2 ^ (32 * (k + 1)) =
+        X.toNat * accV M0 yp (k + 1) + accV M0 acc (k + 1) + U.toNat * accV M0 np (k + 1) →
+      CL.toNat + 2 ^ 32 * CH.toNat ≤ 2 * 2 ^ 32 - 2 →
+      reg n (26 : Fin 32) = np + BitVec.ofNat 32 (4 * (k + 1)) →
+      reg n (9 : Fin 32) = yp + BitVec.ofNat 32 (4 * (k + 1)) →
+      reg n a3 = acc + BitVec.ofNat 32 (4 * (k + 1)) →
+      reg n (31 : Fin 32) = U → reg n (30 : Fin 32) = X → reg n a2 = CL → reg n (24 : Fin 32) = CH →
+      reg n (25 : Fin 32) = BitVec.ofNat 32 (11 - k) →
+      ∃ n' M', Steps n n' ∧ St M' B n' 0xCA (reg n') ∧ CodeIn M' B mulMont12Code ∧
+        2 ^ 32 * accV M' acc 11 + ((reg n' a2).toNat + 2 ^ 32 * (reg n' (24 : Fin 32)).toNat) * 2 ^ (32 * 12) =
+          X.toNat * accV M0 yp 12 + accV M0 acc 12 + U.toNat * accV M0 np 12 ∧
+        (reg n' a2).toNat + 2 ^ 32 * (reg n' (24 : Fin 32)).toNat ≤ 2 * 2 ^ 32 - 2 ∧
+        (∀ a, Sep acc 48 a 1 → M' a = M0 a) ∧
+        memLoad32 M' (acc + BitVec.ofNat 32 (4 * 11)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * 11)) ∧
+        reg n' (26 : Fin 32) = np + BitVec.ofNat 32 (4 * 12) ∧
+        reg n' (9 : Fin 32) = yp + BitVec.ofNat 32 (4 * 12) ∧
+        reg n' a3 = acc + BitVec.ofNat 32 (4 * 12) ∧
+        reg n' (25 : Fin 32) = 0 ∧
+        ∀ q, bodyKeep q = true → reg n' q = reg n q := by
+  intro m
+  induction m with
+  | zero =>
+    intro k hk M n CL CH s hc hfr hab hinv hbd r26 r9 ra3 r31 r30 ra2 r24 r25
+    have k10 : k = 10 := by omega
+    subst k10
+    obtain ⟨lo, cl, ch, hcol⟩ : ∃ lo cl ch, mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (10 + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (10 + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (10 + 1))))
+        U X CL CH = (lo, cl, ch) := ⟨_, _, _, rfl⟩
+    obtain ⟨n1, c1, u1, e2, e24, e26, e9, e3, e25, fr⟩ := mm_iter (k := 10) s hc (by decide) hnp hyp hacc
+      (hAC.sub (by omega)) r26 r9 ra3 r31 r30 ra2 r24 r25
+    rw [hcol] at u1 e2 e24
+    obtain ⟨i1, i2, i3, i4⟩ := mm_inv_step (k := 10) (by decide) hw hAY hAN hfr hab hinv hbd hcol
+    refine ⟨n1, _, c1, u1, CodeIn.store32 hc (hAC.sub (by omega)), ?_, ?_, i3, i4 11 (by decide) (by decide),
+      e26, e9, e3, e25, fr⟩
+    · rw [e2, e24, show (12 : Nat) = 10 + 2 from rfl]; exact i1
+    · rw [e2, e24]; exact i2
+  | succ m ih =>
+    intro k hk M n CL CH s hc hfr hab hinv hbd r26 r9 ra3 r31 r30 ra2 r24 r25
+    have hl : k + 1 < 11 := by omega
+    obtain ⟨lo, cl, ch, hcol⟩ : ∃ lo cl ch, mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+        U X CL CH = (lo, cl, ch) := ⟨_, _, _, rfl⟩
+    obtain ⟨n1, c1, u1, e2, e24, e26, e9, e3, e25, fr⟩ := mm_iter (k := k) s hc (by omega) hnp hyp hacc
+      (hAC.sub (by omega)) r26 r9 ra3 r31 r30 ra2 r24 r25
+    rw [hcol] at u1 e2 e24
+    rw [ite_eq_left hl] at u1
+    obtain ⟨i1, i2, i3, i4⟩ := mm_inv_step (k := k) (by omega) hw hAY hAN hfr hab hinv hbd hcol
+    have k31 : reg n1 (31 : Fin 32) = U := by rw [fr _ rfl, r31]
+    have k30 : reg n1 (30 : Fin 32) = X := by rw [fr _ rfl, r30]
+    obtain ⟨n', M', c', u', hc', f1, f2, f3, f4, f26, f9, f3', f25, fr'⟩ :=
+      ih (k + 1) (by omega) u1 (CodeIn.store32 hc (hAC.sub (by omega))) i3 i4 i1 i2 e26 e9 e3 k31 k30 e2 e24 e25
+    exact ⟨n', M', c1.trans c', u', hc', f1, f2, f3, f4, f26, f9, f3', f25,
+      fun q hq => by rw [fr' q hq, fr q hq]⟩
+
 end C3.RV32
