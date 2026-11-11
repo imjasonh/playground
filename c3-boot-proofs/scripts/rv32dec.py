@@ -27,9 +27,10 @@ BR = {0: 'beq', 1: 'bne', 4: 'blt', 5: 'bge', 6: 'bltu', 7: 'bgeu'}
 
 
 def decode(code, off):
-    """(kind, fields, length, lean) for the instruction at `off` of `code`.
+    """The instruction at `off` of `code` as a tuple of its kind, its fields,
+    and its length in bytes, last. `lean` prints it for Lean.
 
-    `kind` and `fields` describe the instruction for a generator:
+    The kinds and their fields:
     ('alu', op, rd, rs1, rs2), ('alui', op, rd, rs1, imm), ('lw', rd, rs1, imm),
     ('lbu', rd, rs1, imm), ('sw', rs1, rs2, imm), ('lui', rd, imm), ('auipc', rd, imm),
     ('jalr', rd, rs1, imm), ('jal', rd, imm), ('br', op, rs1, rs2, imm).
