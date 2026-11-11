@@ -353,6 +353,65 @@ theorem lenHi_toNat (lo : Word) : (lo >>> 23).toNat = lo.toNat / 2 ^ 23 := by
 theorem low_bits_zero {pos : Word} (h : pos.toNat < 64) : ∀ k, 6 ≤ k → pos.getLsbD k = false := fun k hk =>
   Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le h (Nat.pow_le_pow_right (by decide) hk : 2 ^ 6 ≤ 2 ^ k))
 
+theorem store32_byte (M : Word → BitVec 8) (a v : Word) :
+    ∀ k, k < 4 → memStore32 M a v (a + BitVec.ofNat 32 k) = v.extractLsb' (8 * k) 8 := by
+  have ne : ∀ i j, i < 4 → j < 4 → i ≠ j → a + BitVec.ofNat 32 i ≠ a + BitVec.ofNat 32 j :=
+    fun i j hi hj h => add_ofNat_ne a (by omega) (by omega) h
+  intro k hk
+  unfold memStore32
+  match k, hk with
+  | 0, _ =>
+    rw [add_ofNat_zero, memStore8_ne (by have := ne 0 3 (by decide) (by decide) (by decide); rwa [add_ofNat_zero] at this),
+      memStore8_ne (by have := ne 0 2 (by decide) (by decide) (by decide); rwa [add_ofNat_zero] at this),
+      memStore8_ne (by have := ne 0 1 (by decide) (by decide) (by decide); rwa [add_ofNat_zero] at this),
+      memStore8_same]
+  | 1, _ =>
+    rw [memStore8_ne (show a + BitVec.ofNat 32 1 ≠ a + 3 from ne 1 3 (by decide) (by decide) (by decide)),
+      memStore8_ne (show a + BitVec.ofNat 32 1 ≠ a + 2 from ne 1 2 (by decide) (by decide) (by decide)),
+      show a + BitVec.ofNat 32 1 = a + 1 from rfl, memStore8_same]
+  | 2, _ =>
+    rw [memStore8_ne (show a + BitVec.ofNat 32 2 ≠ a + 3 from ne 2 3 (by decide) (by decide) (by decide)),
+      show a + BitVec.ofNat 32 2 = a + 2 from rfl,
+      memStore8_same]
+  | 3, _ => rw [show a + BitVec.ofNat 32 3 = a + 3 from rfl, memStore8_same]
+
+set_option maxRecDepth 20000 in
+/-- The two words `finalize` stores at `S + 0x38` are the message's length in
+bits, big-endian. -/
+theorem len_bytes (M : Word → BitVec 8) (S lo : Word) (pos : Nat) (hp : pos < 64) (hlo : lo.toNat < 2 ^ 26) :
+    memBytes (memStore32 (memStore32 M (S + BitVec.ofNat 32 0x38) (bswap32 (lo >>> 23))) (S + BitVec.ofNat 32 0x3C)
+      (bswap32 ((lo <<< 9) ||| (BitVec.ofNat 32 pos <<< 3)))) (S + BitVec.ofNat 32 0x38) 8 =
+      Sha256.be64 (8 * (64 * lo.toNat + pos)) := by
+  have hpb := low_bits_zero (pos := BitVec.ofNat 32 pos) (by rw [BitVec.toNat_ofNat]; omega)
+  have hpn : (BitVec.ofNat 32 pos).toNat = pos := by rw [BitVec.toNat_ofNat]; omega
+  let M' := memStore32 (memStore32 M (S + BitVec.ofNat 32 0x38) (bswap32 (lo >>> 23))) (S + BitVec.ofNat 32 0x3C)
+      (bswap32 ((lo <<< 9) ||| (BitVec.ofNat 32 pos <<< 3)))
+  have bHi : ∀ k, k < 4 → (M' (S + BitVec.ofNat 32 (0x38 + k))).toNat = lo.toNat / 2 ^ 23 / 2 ^ (8 * (3 - k)) % 256 := by
+    intro k hk
+    show (memStore32 _ _ _ _).toNat = _
+    rw [memStore32_ne fun i hi => by
+          rw [add_ofNat_assoc]; exact add_ofNat_ne S (c := 0x38 + k) (d := 0x3C + i) (by omega) (by omega) (by omega),
+      ← add_ofNat_assoc, store32_byte _ _ _ k hk, bswap32_byte _ k hk,
+      byte_toNat, lenHi_toNat]
+  have bLo : ∀ k, k < 4 → (M' (S + BitVec.ofNat 32 (0x3C + k))).toNat =
+      (lo.toNat * 512 + pos * 8) % 2 ^ 32 / 2 ^ (8 * (3 - k)) % 256 := by
+    intro k hk
+    show (memStore32 _ _ _ _).toNat = _
+    rw [← add_ofNat_assoc, store32_byte _ _ _ k hk, bswap32_byte _ k hk, byte_toNat, lenLo_toNat _ _ hpb, hpn]
+  show (List.range 8).map (fun i => (M' (S + BitVec.ofNat 32 0x38 + BitVec.ofNat 32 i)).toNat) =
+    (List.range 8).reverse.map fun i => 8 * (64 * lo.toNat + pos) / 2 ^ (8 * i) % 256
+  rw [show List.range 8 = [0, 1, 2, 3, 4, 5, 6, 7] from rfl]
+  simp only [List.map_cons, List.map_nil, List.reverse_cons, List.reverse_nil, List.nil_append,
+    List.cons_append, add_ofNat_assoc]
+  have h0 := bHi 0 (by decide); have h1 := bHi 1 (by decide); have h2 := bHi 2 (by decide)
+  have h3 := bHi 3 (by decide); have h4 := bLo 0 (by decide); have h5 := bLo 1 (by decide)
+  have h6 := bLo 2 (by decide); have h7 := bLo 3 (by decide)
+  simp only [Nat.add_zero, show 0x3C + 0 = 0x38 + 4 from rfl, show 0x3C + 1 = 0x38 + 5 from rfl,
+    show 0x3C + 2 = 0x38 + 6 from rfl, show 0x3C + 3 = 0x38 + 7 from rfl] at h0 h4 h5 h6 h7
+  rw [h0, h1, h2, h3, h4, h5, h6, h7]
+  simp only [List.cons.injEq, and_true]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> omega
+
 /-- The 4 bytes the big-endian store helper writes at `p`: `v`'s bytes, most
 significant first. -/
 def beStore (M : Word → BitVec 8) (p v : Word) : Word → BitVec 8 :=
