@@ -31,19 +31,24 @@ Bronze (Jack) is 11, Silver (Queen) is 12, and Gold (King) is 13.
 ## Setup
 
 Give each player the Ace that marks their Home. Shuffle the other 48 cards and
-deal each player three stacks: a **hand** of five cards, which you pick up and
-keep secret; a face-down **draw pile**, which refills your hand through the
-game; and a face-down **ante pile**, which feeds the pot. Deal the sizes for
-your table from this list, and you'll use the whole deck:
+deal them out evenly, so everyone holds the same size stack: 24 cards at two
+players, 16 at three, 12 at four.
 
-| Players | Hand | Draw pile | Ante pile |
-| --- | --- | --- | --- |
-| 2 | 5 | 10 | 9 |
-| 3 | 5 | 5 | 6 |
-| 4 | 5 | 2 | 5 |
+From your stack, take five cards into your **hand**, which you look at and keep
+secret. Then count off your **ante pile** — one card for each clash the game
+will last — and set it face down. There is one number to remember:
 
-Your hand and draw pile together are your whole budget for the game. You get no
-more than those, so spend them with that in mind.
+| Players | Clashes (your ante pile) |
+| --- | --- |
+| 2 | 9 |
+| 3 | 6 |
+| 4 | 5 |
+
+Whatever is left after your hand and ante is your face-down **draw pile**, which
+tops your hand back up to five as the game goes on. Your hand and draw pile
+together are your whole budget; you get no more than those, so spend them with
+that in mind. The ante pile is separate — think of it as the game's clock, not
+part of your budget.
 
 ## Playing a clash
 
@@ -51,9 +56,10 @@ Each round is a clash. First, everyone turns the top card of their ante pile
 face up into the middle. Together these cards are the **pot**, and the prize is
 the total of their numbers.
 
-Now everyone bids. Look at the pot, then choose any number of cards from your
-hand, as many or as few as you like, and place them face down. When everyone is
-ready, reveal together.
+Now everyone bids. Look at the pot, then choose cards from your hand and place
+them face down. You must bid at least one card every clash — you can't sit one
+out to hoard. Beyond that one, commit as few or as many as you like. When
+everyone is ready, reveal together.
 
 Work out each player's bid and the highest takes the pot: set those cards in
 front of you as your winnings. Here is the part that makes a budget hurt. The
@@ -115,11 +121,10 @@ empty chair or three of them.
 
 These settle the rare cases. They change nothing above.
 
-- **You may pass.** Playing no cards is a legal bid. Your bid is then just your
-  Home bonus for your faction's cards in the pot, which is often zero.
-- **Winning with an empty bid.** If everyone passes, the highest bid can be a
-  Home bonus alone, and that player wins the pot. If those are tied too, the pot
-  carries like any other tie.
+- **You must bid.** Every clash you commit at least one card from your hand;
+  there is no passing to save cards. If you spend too fast and empty your hand,
+  you simply can't bid — you still flip your ante into the pot, but you sit out
+  the fight for it.
 - **The Home bonus counts faction, not Home.** You add one for each card of your
   own faction, wherever it is in the pot, no matter who anted it.
 - **A tie on the last clash.** If the final clash ties, there's no round left to

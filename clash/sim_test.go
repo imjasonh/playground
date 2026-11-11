@@ -60,6 +60,32 @@ func seatShares(rng *rand.Rand, s Strategy, players, games int) []float64 {
 	return shares
 }
 
+// TestForceBid checks the must-bid rule: a seat with cards that would pass is
+// made to commit its single lowest card, while an empty hand commits nothing.
+func TestForceBid(t *testing.T) {
+	hand := []Card{{Strength, 9}, {Speed, 3}, {Intelligence, 11}}
+	if got := forceBid(hand, nil); len(got) != 1 || got[0] != 1 {
+		t.Errorf("forceBid on a pass = %v, want [1] (the Speed 3, lowest)", got)
+	}
+	if got := forceBid(hand, []int{2}); len(got) != 1 || got[0] != 2 {
+		t.Errorf("forceBid left an existing bid alone: got %v, want [2]", got)
+	}
+	if got := forceBid(nil, nil); len(got) != 0 {
+		t.Errorf("forceBid on an empty hand = %v, want nothing", got)
+	}
+}
+
+// TestMustBidPunishesPassing checks that refusing to invest bleeds you dry: a
+// seat that always tries to pass is forced to shed its lowest card each clash
+// and loses nearly every game to a competent player.
+func TestMustBidPunishesPassing(t *testing.T) {
+	passer := Strategy{"passer", func(View, *rand.Rand) []int { return nil }}
+	rng := rand.New(rand.NewSource(8))
+	if r := winRate(rng, Competent(), passer, scale(2000, 10000)); r < 0.95 {
+		t.Errorf("competent vs always-pass win rate %.3f, want > 0.95 (passing should bleed out)", r)
+	}
+}
+
 // TestHandRefill checks the hand tops back up from the draw pile between
 // clashes: a seat that spends one card a round keeps a full hand for the whole
 // game, since its draw pile outlasts the rounds, and the hand never exceeds the

@@ -54,6 +54,23 @@ func normalizeIdx(idx []int, n int) []int {
 	return out
 }
 
+// forceBid enforces the must-bid rule: every clash a seat commits at least one
+// card. When a strategy would pass but still holds cards, it is made to commit
+// its single lowest card, so refusing to invest bleeds a card for nothing. A
+// seat that has emptied its hand has nothing to commit and is left alone.
+func forceBid(hand []Card, idx []int) []int {
+	if len(idx) > 0 || len(hand) == 0 {
+		return idx
+	}
+	low := 0
+	for i, c := range hand {
+		if c.Rank < hand[low].Rank {
+			low = i
+		}
+	}
+	return []int{low}
+}
+
 // removeIdx returns hand without the cards at the ascending indices in drop.
 func removeIdx(hand []Card, drop []int) []Card {
 	if len(drop) == 0 {
@@ -120,6 +137,7 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 		for i := range seats {
 			v := View{Pot: pot, Hand: seats[i].Hand, Home: seats[i].Home, Opponents: players - 1}
 			idx := normalizeIdx(strategies[i].Pick(v, rng), len(seats[i].Hand))
+			idx = forceBid(seats[i].Hand, idx)
 			commit := make([]Card, 0, len(idx))
 			for _, j := range idx {
 				commit = append(commit, seats[i].Hand[j])
