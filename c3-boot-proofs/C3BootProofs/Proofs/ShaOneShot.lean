@@ -508,6 +508,76 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     rw [fU x (by rw [eU]; exact Rx _ _ (by omega) x hx) (by rw [hFR]; exact Rx _ _ (by omega) x hx), MHR x hx]
   have hdat : memBytes MH D n = memBytes M0 D n :=
     memBytes_congr fun i hi => MHR _ (E.sDF.sub (c := i) (l := 1) (by omega)).symm
+  rw [List.nil_append, mem17, hdat] at HU
+  have cMU := codeX MU MUR
+  have cXU := cMU _ _ E.cX (by decide) (by decide)
+  have u18 : St MU Q m18 0x30 (reg m18) := ⟨by rw [pc18], rfl, fun _ => rfl⟩
+  have k18 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+      r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+      r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m18 r = reg m17 r := K18
+  have K1218 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+      r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+      r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m18 r = reg m12 r :=
+    fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => by
+      rw [k18 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, K1217 r q1 q10 q11 q12]
+  have sp18' : reg m18 sp = F := sp18
+  -- Move the hasher, as `finalize` takes it by value.
+  obtain ⟨m19, e19, u19⟩ := u18.aluImm cXU os_at_30 (off' := 0x32) (by decide)
+  have K19 := u19.upd_ne u18.zero
+  have u19' : St MU Q m19 0x32 (reg m19) := u19.self
+  obtain ⟨m20, e20, u20⟩ := u19'.alu cXU os_at_32 (off' := 0x34) (by decide)
+  have K20 := u20.upd_ne u19'.zero
+  have u20' : St MU Q m20 0x34 (reg m20) := u20.self
+  obtain ⟨m21, e21, u21⟩ := u20'.aluImm cXU os_at_34 (off' := 0x38) (by decide)
+  have K21 := u21.upd_ne u20'.zero
+  have u21' : St MU Q m21 0x38 (reg m21) := u21.self
+  obtain ⟨m22, e22, u22⟩ := u21'.auipc cXU os_at_38 (off' := 0x3C) (by decide)
+  obtain ⟨m23, e23, pc23, mem23, regs23⟩ := u22.call cXU os_at_3c
+  have r23 : ∀ r, r ≠ ra → reg m23 r = reg m21 r := fun r h => by
+    rw [regs23]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u21'.zero.symm
+    · simp [upd, h0, h]
+  have K1823 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m23 r = reg m18 r := fun r q1 q10 q11 q12 => by
+    rw [r23 r q1, K21 r q12, K20 r q11, K19 r q10]
+  have sp23 : reg m23 sp = F := by rw [K1823 sp (by decide) (by decide) (by decide) (by decide), sp18']
+  obtain ⟨m24, c24, pc24, sp24, a024, mem24, K24⟩ := memcpy_correct m23 (BitVec.ofNat 32 memcpyStubAddress)
+    (Q + BitVec.ofNat 32 0x40) (F + BitVec.ofNat 32 0x68) F 0x68
+    (fun i hi => by show m23.mem _ = _; rw [mem23]; exact cMU _ _ E.cMS (by decide) (by decide) i hi) (by decide)
+    (by rw [pc23, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
+    (by rw [r23 a0 (by decide), K21 a0 (by decide), K20 a0 (by decide), u19.upd_eq (by decide), sp18']; rfl)
+    (by rw [r23 a1 (by decide), K21 a1 (by decide), u20.upd_eq (by decide), u19'.zero, K19 sp (by decide), sp18']
+        exact BitVec.zero_add _)
+    (by rw [r23 a2 (by decide), u21.upd_eq (by decide), u20'.zero]; rfl)
+    (by rw [regs23]; simp +decide [upd]; try rfl) (by decide)
+    (by
+      rw [mem23, sp23]
+      exact { code := cMU _ _ E.cMB (by decide) (by decide)
+              hDC := data_code (by rw [hFc _ (by omega)]; omega) (by decide) (by decide)
+              hFC := data_code (by rw [hF16, hRn]; omega) (by decide) (by decide)
+              hdF := by rw [Fc, eF16]; exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega)
+              hsF := by rw [eF16, hFR]; exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega)
+              hsep := by
+                have h := sep_offsets F (c := 0x68) (n := 0x68) (d := 0) (k := 0x68) (Or.inr (by omega)) (by omega)
+                  (by omega)
+                rwa [add_ofNat_zero] at h
+              hF := by rw [hF16, hRn]; have := E.hsp; omega
+              hFw := by rw [hF16, hRn]; omega
+              hdw := by rw [hFc _ (by omega)]; omega
+              hsw := by omega })
+  rw [mem23, sp23, eF16] at mem24
+  let MC := m24.mem
+  have mC : ∀ x, Sep (R + BitVec.ofNat 32 0x180) 16 x 1 → MC x = copyBytes MU (F + BitVec.ofNat 32 0x68) F 0x68 x := mem24
+  have MCR : ∀ x, Sep R 0x270 x 1 → MC x = M0 x := fun x hx => by
+    rw [mC x (Rx _ _ (by omega) x hx), copyBytes_sep (by rw [Fc]; exact Rx _ _ (by omega) x hx) (Nat.le_refl _),
+      MUR x hx]
+  have HC : HasherAt MC (F + BitVec.ofNat 32 0x68) (memBytes M0 D n) := HU.copy fun i hi => by
+    rw [mC (F + BitVec.ofNat 32 0x68 + BitVec.ofNat 32 i) (by
+        rw [add_ofNat_assoc, Fc]
+        exact sep_offsets R (c := 0x180) (n := 16) (d := 0x190 + (0x68 + i)) (k := 1) (Or.inl (by omega)) (by omega)
+          (by omega)),
+      copyBytes_in hi (by omega)]
   sorry
 
 end C3.RV32
