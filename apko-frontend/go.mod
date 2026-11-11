@@ -16,8 +16,8 @@ require (
 
 require (
 	chainguard.dev/go-grpc-kit v0.21.0 // indirect
-	chainguard.dev/sdk v0.1.487 // indirect
-	cloud.google.com/go/auth v0.24.3 // indirect
+	chainguard.dev/sdk v0.1.492 // indirect
+	cloud.google.com/go/auth v0.24.4 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.1 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
@@ -36,7 +36,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/docker/cli v29.9.3+incompatible // indirect
-	github.com/docker/docker-credential-helpers v0.9.12 // indirect
+	github.com/docker/docker-credential-helpers v0.9.13 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
@@ -115,7 +115,7 @@ require (
 	golang.org/x/term v0.48.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/api v0.311.0 // indirect
+	google.golang.org/api v0.312.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261110000943-09e21b237f2c // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c // indirect
 	google.golang.org/grpc v1.85.0 // indirect
