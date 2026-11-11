@@ -59,6 +59,15 @@ development genesis keys. A build with other keys has its own image, and
 its functions are covered only if their bytes are the same, which
 `extract-functions.py` would show against that image.
 
+On 2026-11-11 the build changed to make the image easier to prove: no LLVM
+machine outliner, `sha2`'s compact backend, and `root_from_inclusion` out of
+line (`c3-boot/.cargo/config.toml`). `Image/Bootloader.lean` holds the
+current image's functions, and CI checks them against it.
+`Image/BootloaderV0.lean` keeps the earlier image's functions, which every
+proof below was written against; each theorem still holds for those bytes,
+and is being redone for the current image. `scripts/coverage.py` counts
+only proofs about the current image.
+
 `C3BootProofs/Proofs/Reader.lean` proves `readerBytes_correct` about the
 compiled `Reader::bytes`, which takes `n` bytes from a bounds-checked
 reader. It loads the reader's three words, writes its `Result` through a
@@ -151,8 +160,8 @@ from the reader's position. Rust's layout makes that true at every call
 site, and the proof of each caller, such as `manifest::part`, has to show
 it.
 
-`C3BootProofs/Proofs/Part.lean` proves `manifestPart_correct`. LLVM's
-machine outliner moved `part`'s register saves and restores into helper
+`C3BootProofs/Proofs/Part.lean` proves `manifestPart_correct`. In the
+earlier image, LLVM's machine outliner moved `part`'s register saves and restores into helper
 functions, which `part` enters with `auipc t0; jalr t0` and which return
 with `jr t0`. The outliner numbers them (`OUTLINED_FUNCTION_N`) differently
 on each rebuild, so `scripts/extract-functions.py` finds each helper by

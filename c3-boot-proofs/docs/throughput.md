@@ -1,14 +1,23 @@
 # Phase 5 throughput report
 
 This report measures the machine-code proofs written so far against the
-pinned bootloader image (SHA-256
-`4b0fe03668079f6a6bf085aae436104cc27d8d057f53a9e37ab4f02ef6f04cf0`), as
+bootloader image they were written for (SHA-256
+`4b0fe03668079f6a6bf085aae436104cc27d8d057f53a9e37ab4f02ef6f04cf0`, now
+`Image/BootloaderV0.lean`), as
 [the plan](../../docs/esp32c3-verified-ota-plan.md#phase-5-pilot-proofs-and-code-freeze)
 asks: proof lines per instruction, agent time per function, and Lean build
 time and memory. It then projects the cost of proving the whole image.
 Measured on 2026-11-11, with SHA-256 added the same day.
 
 ## Coverage
+
+On 2026-11-11 the build changed (see
+[Code changes](#code-changes-that-would-make-proofs-easier)), and the
+current image (SHA-256
+`c005c412f2faf2f1807ed68dae8bee9b111b5d63e1974f71fdbdba2d1b0d20da`) has
+28,526 instructions. No proof covers it yet: the proofs are being redone
+for it, and coverage restarts at 0 percent of the image and of a boot. The
+figures below are for the earlier image, before the change.
 
 `scripts/coverage.py` counts the instructions in proved functions, in the
 image and in one boot. A function counts once a correctness theorem covers
@@ -166,9 +175,10 @@ The projection leaves out work that the instruction count doesn't capture:
 Phase 5 also asks for a list of code changes. Each one changes the pinned
 image and every function's bytes and offsets after it, so the proofs
 written by then have to be redone for the new image. That cost grows with
-every proved function, so the three changes below land together, as one
-image change, right after P-384's squaring is proved, and before more of
-the image is. Decided on 2026-11-11.
+every proved function, so the three changes below landed together, as one
+image change, on 2026-11-11, right after P-384's squaring was proved.
+`sha2`'s compact backend covers SHA-256 as well as SHA-512, which retires
+the proof of the unrolled `compress256`; the compact one is a loop.
 
 Scratch builds of the pinned image's sources measured the options on
 2026-11-11, with the trial boot that `c3-boot/docs/measurements.md`
